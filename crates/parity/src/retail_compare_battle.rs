@@ -351,6 +351,9 @@ pub struct RetailBattle {
     pub step_run_start: Option<(u8, i32)>,
     pub run_state: u8,
     pub stage_id: u8,
+    /// The scripted-fight byte `ctx[+0x287]` battle setup latched. The bit
+    /// it was latched from (`0x8007BD60 & 0x80`) does not survive the first
+    /// action's `0x5A` wipe scan.
     pub scripted: bool,
     /// The battle-id word `0x8007B7FC`: non-zero on a fight a development
     /// launcher entered by monster id rather than the field entity SM

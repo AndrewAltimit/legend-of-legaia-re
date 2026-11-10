@@ -1061,7 +1061,13 @@ impl RetailBattle {
             action_state,
             run_state: game_anchors::u8_at(ram, RUN_STATE),
             stage_id: game_anchors::u8_at(ram, STAGE_ID),
-            scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
+            // The latched scripted-fight byte `ctx[+0x287]`, not the bit it
+            // was latched from: battle setup stores `(0x8007BD60 >> 5) & 4`
+            // once (`FUN_800513F0`), and the action SM's `0x5A` wipe scans
+            // clear `0x8007BD60 & 0x80` at the end of an action, so a state
+            // saved past the first action reads the source bit clear on a
+            // scripted fight (115 of 460 library battle states).
+            scripted: game_anchors::u8_at(ram, ctx + 0x287) != 0,
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
             map_define: game_anchors::u16_at(ram, MAP_DEFINE),
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,

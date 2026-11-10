@@ -1105,7 +1105,7 @@ fight runs ([battle](../subsystems/battle.md)):
 | party / monster count | battle context `*0x8007BD24`, `+0x00` / `+0x01` |
 | command-flow byte, action-state cursor | context `+0x06` / `+0x07` |
 | monster ids | formation cell `0x8007BD0C[0..4]` |
-| scripted-fight bit | `0x8007BD60 & 0x80` |
+| scripted-fight byte | `ctx[+0x287]` (latched from `0x8007BD60 & 0x80`) |
 | present party | `0x8007BD10` (1-based roster ids) |
 | combatant HP / max / MP / max | actor table `0x801C9370[slot]`, `+0x14C` / `+0x14E` / `+0x150` / `+0x152` |
 | camera | the field's rotation / translation globals; `H` is `256` |
@@ -1142,7 +1142,13 @@ retail's was, so the scene's track has started.
 - **Formation.** The formation cell is matched against the scene's registered
   MAN rows. A cell no row carries (a fight installed from another table) is
   registered as a formation of its own, carrying the scripted bit, with the
-  monster archive's stats for its ids
+  monster archive's stats for its ids. The bit is read from the byte battle
+  setup latched, `ctx[+0x287]`, not from `0x8007BD60 & 0x80` it was latched
+  from: the action SM's `0x5A` wipe scans clear that bit at the end of an
+  action, so a state saved past the first action reads it clear on a scripted
+  fight (115 of 460 library battle states). Read from the bit, a Muscle Dome leg
+  entered as an ordinary fight, and its Hyper Art film's camera stood `78` px
+  off retail's through the return (`.748`; `.868` on the latched byte)
   ([`FormationCell`](../../crates/engine-capture/src/formation_cell.rs)).
   The bosses and duels are such cells (Cort, Zeto, the Delilas duels at
   `jou`, Zora at `town01`), and so is every showcase fight staged on a scene
