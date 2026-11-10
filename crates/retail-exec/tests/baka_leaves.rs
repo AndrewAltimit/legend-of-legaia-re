@@ -474,3 +474,140 @@ mod digits {
         }
     }
 }
+
+/// The HUD quad emitter `FUN_801D5ED0`, decoded off the POLY_GT4 packet it
+/// writes, against `hud_widget_quad` over the disc's 51 widget records; and
+/// the centre effect spawn `FUN_801D6E04` against `center_effect_spawn`.
+mod widgets {
+    use super::*;
+    use legaia_engine_minigames::baka_fighter::{
+        HudWidgetQuad, center_effect_spawn, hud_widget_quad,
+    };
+    use legaia_minigame_formats::baka_opponents::parse_baka_hud;
+    use psx_retail_exec::{A0, A1, A2, A3};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    const EMIT: u32 = 0x801D_5ED0;
+    const SPAWN_CENTRE: u32 = 0x801D_6E04;
+    const MIRROR: u32 = 0x801D_BE98;
+    const BUCKET: u32 = 0x801D_BEBC;
+    const PACKETS: u32 = 0x1F80_03A0;
+    const PACKET: u32 = 0x8018_0000;
+    const STACK_TOP: u32 = 0x801F_FF00;
+
+    fn decode(cpu: &mut Cpu) -> HudWidgetQuad {
+        let m = &mut cpu.mem;
+        let xy = |m: &mut psx_retail_exec::Memory, o: u32| {
+            (m.rd16(PACKET + o) as i16, m.rd16(PACKET + o + 2) as i16)
+        };
+        let uv =
+            |m: &mut psx_retail_exec::Memory, o: u32| (m.rd8(PACKET + o), m.rd8(PACKET + o + 1));
+        let rgb = |m: &mut psx_retail_exec::Memory, o: u32| {
+            [
+                m.rd8(PACKET + o),
+                m.rd8(PACKET + o + 1),
+                m.rd8(PACKET + o + 2),
+            ]
+        };
+        let (x0, y0) = xy(m, 0x08);
+        let (x1, _) = xy(m, 0x14);
+        let (_, y1) = xy(m, 0x20);
+        HudWidgetQuad {
+            poly_code: m.rd8(PACKET + 0x07),
+            x0,
+            y0,
+            x1,
+            y1,
+            uv: [uv(m, 0x0C), uv(m, 0x18), uv(m, 0x24), uv(m, 0x30)],
+            rgb_top: rgb(m, 0x04),
+            rgb_bottom: rgb(m, 0x1C),
+            clut: m.rd16(PACKET + 0x0E),
+            tpage_attr: m.rd16(PACKET + 0x1A),
+        }
+    }
+
+    #[test]
+    fn a_hud_widget_emits_the_quad_retail_emits() {
+        differential!(prot(976, EMIT));
+        let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let overlay = d.read_entry(976).expect("PROT 0976");
+        cpu.mem.load(OVERLAY_BASE, &overlay);
+        cpu.stub(0x8003_D2C4, 0);
+        let hud = parse_baka_hud(&overlay).expect("widgets");
+        let mut rng = Rng(0x5749_4447);
+        let mut mirrored = 0;
+        for round in 0..50_000 {
+            let id = rng.below(hud.len() as u32);
+            let (x, y) = (rng.below(400) as i16 - 40, rng.below(300) as i16 - 30);
+            let brightness = [0, 0x80, 0xFF, 0x100, rng.below(0x200) as i32][rng.below(5) as usize];
+            let size = [0x1000, 0x800, 0x2000, rng.below(0x3000) as i32][rng.below(4) as usize];
+            let mirror = rng.below(4) == 0;
+            cpu.mem.wr32(PACKETS, PACKET);
+            cpu.mem.wr32(MIRROR, u32::from(mirror));
+            cpu.mem.wr32(BUCKET, rng.below(8));
+            cpu.mem.wr32(STACK_TOP + 0x10, size as u32);
+            let args = [x as i32 as u32, y as i32 as u32, id, brightness as u32];
+            assert_eq!(cpu.call(EMIT, &args), Stop::Returned);
+            let retail = decode(&mut cpu);
+            let port = hud_widget_quad(&hud[id as usize], x, y, brightness, size, mirror);
+            assert_eq!(
+                retail, port,
+                "round {round} widget {id} {:?} x {x} y {y} brightness {brightness} size {size:#x} mirror {mirror}",
+                hud[id as usize]
+            );
+            // The mirror flag is one-shot, and the bucket is left at 3.
+            assert_eq!((cpu.mem.rd32(MIRROR), cpu.mem.rd32(BUCKET)), (0, 3));
+            assert_eq!(cpu.mem.rd32(PACKETS), PACKET + 0x34);
+            mirrored += u32::from(mirror);
+        }
+        assert!(mirrored > 5000, "{mirrored}");
+    }
+
+    #[test]
+    fn the_centre_effect_spawns_where_retail_spawns_it() {
+        differential!(prot(976, SPAWN_CENTRE));
+        let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        cpu.mem
+            .load(OVERLAY_BASE, &d.read_entry(976).expect("PROT 0976"));
+        const PART: u32 = 0x8015_0000;
+        let spawned = Rc::new(RefCell::new(Vec::new()));
+        let sink = spawned.clone();
+        cpu.hook(0x8002_1B04, move |r, m| {
+            let h = |m: &mut psx_retail_exec::Memory, a: u32| m.rd16(a) as i16;
+            let (p, q) = (r.r[A0], r.r[A1]);
+            sink.borrow_mut().push((
+                [h(m, p), h(m, p + 2), h(m, p + 4)],
+                [h(m, q), h(m, q + 2), h(m, q + 4)],
+                r.r[A2],
+                r.r[A3],
+            ));
+            r.r[V0] = PART;
+        });
+        let mut rng = Rng(0x4345_4E54);
+        for _ in 0..2000 {
+            let sprite = rng.next() as u16;
+            let descriptor = 0x801D_0000 + rng.below(0x8000);
+            spawned.borrow_mut().clear();
+            cpu.mem.wr16(PART + 0x50, 0);
+            assert_eq!(
+                cpu.call(SPAWN_CENTRE, &[u32::from(sprite), descriptor]),
+                Stop::Returned
+            );
+            let p = center_effect_spawn(sprite);
+            assert_eq!(
+                (spawned.borrow().clone(), cpu.mem.rd16(PART + 0x50)),
+                (
+                    vec![([p.x, p.y, 0], [0, 0, 0], descriptor, p.scale as u32)],
+                    p.sprite_id
+                )
+            );
+        }
+    }
+}
