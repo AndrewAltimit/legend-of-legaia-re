@@ -254,6 +254,10 @@ pub mod msg {
     pub const ATTACK_MODE_FORCED: MessageId = 0x801F_7918;
     /// What Auto vs Command mode mean.
     pub const ATTACK_MODE_EXPLAIN: MessageId = 0x801F_79C0;
+    /// The hyper-arts lesson's follow-up to the forced mode prompt
+    /// (`0x801F6DC0..0x801F6DC8`): its own string, not the free prompt's
+    /// explainer.
+    pub const ATTACK_MODE_FORCED_EXPLAIN: MessageId = 0x801F_7CA8;
 
     /// Wrong-lesson rewinds.
     pub const WRONG_ITEMS: MessageId = 0x801F_7964;
@@ -625,8 +629,9 @@ pub fn dispatch(
         (40, Attacks) => one(msg::PICK_ATTACK, 0),
         (40, Items) => one(msg::PICK_ITEM, 0),
         (40, Spirit) => two(msg::PICK_SPIRIT, 0, msg::SPIRIT_EXPLAIN, 3),
-        // Lesson 3 has no prompt here - it falls through to the no-op tail.
-        (40, HyperArts) => TutorialEmission::default(),
+        // Hyper Arts are reached through [Attack]: lesson 3 takes lesson 0's
+        // arm (`bne v1,3` at `0x801F6CF4` falls into `0x801F6CFC`).
+        (40, HyperArts) => one(msg::PICK_ATTACK, 0),
 
         // --- 50: Run selected - always rejected (0x801F6CAC) ---
         (50, _) => TutorialEmission::rewind(msg::NO_RUNNING),
@@ -679,7 +684,12 @@ pub fn dispatch(
 
         // --- 120: Auto / Command attack-mode prompt (0x801F6D30) ---
         (120, Attacks) => two(msg::ATTACK_MODE_FREE, 0, msg::ATTACK_MODE_EXPLAIN, 3),
-        (120, HyperArts) => two(msg::ATTACK_MODE_FORCED, 0, msg::ATTACK_MODE_EXPLAIN, 3),
+        (120, HyperArts) => two(
+            msg::ATTACK_MODE_FORCED,
+            0,
+            msg::ATTACK_MODE_FORCED_EXPLAIN,
+            3,
+        ),
         (120, _) => wrong(),
 
         _ => TutorialEmission::default(),
@@ -888,7 +898,7 @@ pub struct BattleTutorialScript {
 
 impl BattleTutorialScript {
     /// Every message VA this module can emit.
-    pub const MESSAGE_IDS: [MessageId; 25] = [
+    pub const MESSAGE_IDS: [MessageId; 26] = [
         msg::LESSON0_INTRO,
         msg::LESSON1_INTRO,
         msg::LESSON2_INTRO,
@@ -903,6 +913,7 @@ impl BattleTutorialScript {
         msg::ATTACK_MODE_FREE,
         msg::ATTACK_MODE_FORCED,
         msg::ATTACK_MODE_EXPLAIN,
+        msg::ATTACK_MODE_FORCED_EXPLAIN,
         msg::WRONG_ITEMS,
         msg::WRONG_SPIRIT,
         msg::WRONG_ATTACKS,

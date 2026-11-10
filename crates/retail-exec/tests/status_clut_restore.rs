@@ -28,6 +28,9 @@ const ACTOR: u32 = 0x8013_0000;
 const CURSOR: u32 = 0x1F80_03A0;
 const PACKETS: u32 = 0x8010_0000;
 
+/// One `LoadImage`: its rect and the entries it hands over.
+type Load = ([u16; 4], Vec<u16>);
+
 #[test]
 fn the_cure_puts_the_palette_back_as_retail_does() {
     differential!(scus(RESTORE));
@@ -36,7 +39,7 @@ fn the_cure_puts_the_palette_back_as_retail_does() {
         return;
     };
     cpu.mem.wr32(CTX_PTR, CTX);
-    let loads: Rc<RefCell<Vec<([u16; 4], Vec<u16>)>>> = Rc::default();
+    let loads: Rc<RefCell<Vec<Load>>> = Rc::default();
     {
         let loads = loads.clone();
         cpu.hook(LOAD_IMAGE, move |r, m| {

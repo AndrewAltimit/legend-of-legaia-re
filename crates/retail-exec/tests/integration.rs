@@ -50,6 +50,7 @@ mod battle_seed;
 mod battle_sideband;
 mod battle_small_leaves;
 mod battle_texture;
+mod battle_tutorial;
 mod battle_vm_leaves;
 mod battle_voice;
 mod bearing;

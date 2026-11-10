@@ -766,14 +766,14 @@ the current lesson is not teaching.
 | Flow state | Handler | What it prompts |
 |---|---|---|
 | `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus the input explainer for the Battle Command option `_DAT_800846C8` (directional or cross-button). |
-| `40` | `0x801F6CB8` | `[Begin]` chosen - name the category to pick. Lesson 3 has no prompt here. |
+| `40` | `0x801F6CB8` | `[Begin]` chosen - name the category to pick. Lesson 3 names `[Attack]`, as lesson 0 does: hyper arts are reached through it (`0x801F6CF4` falls into `0x801F6CFC`). |
 | `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
 | `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
 | `80` | `0x801F6E4C` | Arts command-entry screen - combo hint (lesson 0) or the drill instruction (lesson 3). |
 | `90` | `0x801F6EE4` | Target select; for lesson 3 it first validates the entered command buffer. Reads seat 0's Auto flag `ctx[+0x266]`. |
 | `100` | `0x801F7060` | Target confirm - unconditional, lesson-independent. |
 | `110` | `0x801F7088` | Validates the committed `actor[+0x1DE]` category against the lesson (`3` attack, `1` item, `4` spirit; hyper arts expects `3`, since it is reached through Attack). |
-| `120` | `0x801F6D30` | The Auto / Command attack-mode prompt - free choice for lesson 0, forced `[Command]` for lesson 3. |
+| `120` | `0x801F6D30` | The Auto / Command attack-mode prompt - free choice for lesson 0, forced `[Command]` for lesson 3, each with its own follow-up (`0x801F79C0` / `0x801F7CA8`). |
 
 The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 (`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
