@@ -11,6 +11,7 @@
 mod common;
 
 mod action_tag;
+mod actor_bind;
 mod actor_cull;
 mod actor_draw;
 mod actor_draw_tick;

@@ -235,7 +235,7 @@ compared unsigned, so a negative index fails too) prints rather than aborts. The
 mesh-index rule this establishes - **`rec[+0x10] + prefix`, not the object's
 position in the pack** - is the one recorded in
 [`subsystems/renderer.md`](../../subsystems/renderer.md). Ported as
-`legaia_engine_render::actor_bind`, `REPLACED-BY` the `legaia_scene_formats::field_objects` placement resolution feeding the hosts' per-placement draw lists.
+`legaia_engine_scene::actor_bind`, `REPLACED-BY` the `legaia_scene_formats::field_objects` placement resolution feeding the hosts' per-placement draw lists.
 `see ghidra/scripts/funcs/80020f88.txt`.
 
 ### `800480D8`

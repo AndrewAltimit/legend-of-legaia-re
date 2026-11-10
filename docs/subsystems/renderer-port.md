@@ -1013,7 +1013,7 @@ a host: they carry `REPLACED-BY` naming the engine mechanism
 that does the routine's job (or, for `battle_on_screen`, that nothing on the
 disc references it).
 
-- [`actor_bind`](../../crates/engine-render/src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
+- [`actor_bind`](../../crates/engine-scene/src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
   mesh-pool index off its `.MAP` placement record (`rec[+0x10] + prefix`,
   the rule [`renderer.md`](renderer.md) records as
   replacing the falsified positional one) and reports whether a `0x9C`-byte
@@ -1027,7 +1027,7 @@ disc references it).
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is
   entered behind.
-- [`actor_cull`](../../crates/engine-render/src/actor_cull.rs) (`FUN_801CF754`) - the field actor-contact
+- [`contact_candidates`](../../crates/engine-field/src/contact_candidates.rs) (`FUN_801CF754`) - the field actor-contact
   **broad phase**, not a render cull: the per-frame candidate list (a
   `+/-0x180` window around the player, capped at `0x20`, falling back to the
   full actor walk when full) that the contact probe `FUN_801CFC40` reads.

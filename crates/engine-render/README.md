@@ -72,8 +72,6 @@ The [`window`](src/window.rs) module is the shared winit + wgpu app scaffold
 
 Beyond `window`, `screen_overlay` and `psx_blend` above:
 
-- `actor_bind` - the actor render binding (`FUN_80020F88`): mesh-pool index
-  off the placement record, and the render node the draw path walks.
 - `battle_intro` - the renderer-bound half of the field-to-battle transition
   emitter; the wgpu-free half is `legaia_render_kernels::battle_intro`.
 - `gte_trace` - GTE (cop2) trace capture + replay harness.

@@ -1965,7 +1965,7 @@ textured pack 84, which is what the live battle-scene actor list shows. The
 retail binding pass - both refresh arms, the kind table, the `0x9C`-byte
 render-node allocation and the mesh-chain follow-through - is under
 [`FUN_80020F88`](../reference/functions/renderer.md#80020f88) and ported as
-`legaia_engine_render::actor_bind`, which carries the index rule as a unit
+`legaia_engine_scene::actor_bind`, which carries the index rule as a unit
 test on the obj-114 case.
 
 **Untextured props take the colour pipeline.** A prop whose prims carry no

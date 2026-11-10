@@ -35,7 +35,6 @@ pub const DRAW_ORDER_FAR_CORNER: u8 = 1;
 /// nearer (`actor[+0x10] & 0x80800000`).
 pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
 
-pub mod actor_bind;
 pub mod battle_intro;
 pub mod gte_trace;
 pub mod mode_transition;
