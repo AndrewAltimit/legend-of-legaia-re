@@ -97,16 +97,27 @@ pub fn dialog_reading_box_text_draws_for(
     let (bx, by) = box_origin;
     let band = clip_rows.map(|n| (by - 1, by + n as i32 * DIALOG_ROW_PITCH));
     let mut out = Vec::new();
+    // The pager stages ink 7 once a frame, ahead of its row loop
+    // (`li v0,0x7` / `sw v0,-0x4bac(v1)` at `0x801D9658..0x801D965C`), and
+    // each row's `0xCF n` pairs restage it for what follows - the next row
+    // included. A speaker tag `CF 04, C7 01, CF 07` prints `Terra` in ink 4
+    // and the line after it back in ink 7.
+    let mut ink = DIALOG_DEFAULT_INK;
     for (i, line) in page.split('|').enumerate() {
         let pen = (bx, by + scroll_px + i as i32 * DIALOG_ROW_PITCH);
         // The pager stores `DAT_800740E8 = 1` before each row it draws
         // (`0x801D97D8`), so dialogue runs a pixel wider per glyph than the
         // same text in a menu.
-        let laid = font.layout_padded(
+        let (laid, inks) = font.layout_padded_inked(
             &dialog_page_bytes(line),
             legaia_font::measure::DIALOG_GLYPH_PAD,
+            &mut ink,
         );
-        for d in text_draws_for(&laid, pen, MENU_TEXT_WHITE) {
+        let draws = text_draws_for(&laid, pen, MENU_TEXT_WHITE);
+        for (mut d, (g, glyph_ink)) in draws.into_iter().zip(laid.glyphs.iter().zip(inks)) {
+            if g.byte != legaia_font::ESCAPE_GLYPH_BYTE && glyph_ink != DIALOG_DEFAULT_INK {
+                d.color = crate::menu_ink_color(glyph_ink);
+            }
             match band {
                 None => out.push(d),
                 Some((top, bottom)) => out.extend(crop_rows(d, top, bottom)),
@@ -115,6 +126,9 @@ pub fn dialog_reading_box_text_draws_for(
     }
     out
 }
+
+/// The ink the field pager stages before its rows: `7`, the dialogue white.
+pub const DIALOG_DEFAULT_INK: u8 = 7;
 
 /// Text draws for the pager's option-picker labels: label `i` at
 /// `(picker_x + 0x10, picker_y + i*0xF)` (`0x801D9B6C`) in CLUT-7 white, laid
@@ -201,6 +215,32 @@ mod tests {
         let sprite = d.iter().find(|t| t.dst.2 == 16).expect("the sprite draws");
         assert_eq!(sprite.dst.1, 18, "y_offset -2 from the row pen");
         assert_eq!(sprite.color, [1.0, 1.0, 1.0, MENU_TEXT_WHITE[3]]);
+    }
+
+    /// A speaker tag's colour pairs restage the ink: `CF 04` prints the name
+    /// in ink 4 (green) and `CF 07` the line after it back in the dialogue
+    /// white, the ink carrying into the next row as the pager's one staging
+    /// per frame lets it (GitHub issue 581: `Terra:` drew white). The pair
+    /// itself draws nothing and takes no width.
+    #[test]
+    fn colour_pairs_ink_the_glyphs_after_them() {
+        let font = legaia_font::synthetic_for_tests();
+        let bytes = [
+            0xCF, 0x04, b'T', b'e', 0xCF, 0x07, b':', 0x7C, b'x', 0xCF, 0x04, 0x7C, b'y',
+        ];
+        let page = dialog_page_string(&bytes);
+        let d = dialog_reading_box_text_draws_for(&font, &page, (0, 0), 0, None);
+        let colors: Vec<[f32; 4]> = d.iter().map(|t| t.color).collect();
+        let green = crate::menu_ink_color(4);
+        assert_ne!(green, MENU_TEXT_WHITE);
+        assert_eq!(
+            colors,
+            vec![green, green, MENU_TEXT_WHITE, MENU_TEXT_WHITE, green]
+        );
+        // No width: `Te` lays out exactly as without the pair.
+        let plain = dialog_reading_box_text_draws_for(&font, "Te:", (0, 0), 0, None);
+        let xs = |v: &[TextDraw]| v.iter().take(3).map(|t| t.dst.0).collect::<Vec<_>>();
+        assert_eq!(xs(&d), xs(&plain));
     }
 
     /// The pager's `DAT_800740E8 = 1`: each glyph of a dialogue row sits one

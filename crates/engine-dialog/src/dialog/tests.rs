@@ -501,13 +501,14 @@ fn decode_inline_segments_single_segment() {
     assert_eq!(decode_inline_segments(&inline), vec![b"Hi".to_vec()]);
 }
 
-/// `0xCF XX` in MES bytecode = render XX alone. Both panel variants
-/// must surface the operand byte through the page accumulator, not
-/// silently drop it.
+/// `0xCF n` is the colour escape: `FUN_80036888` stages ink `n` from it and
+/// draws nothing (`0x80036944..0x8003695C`). The borrowing panel folds it into
+/// the glyphs' CLUT; neither panel draws the operand as a glyph. (Reading it
+/// as "render the operand alone" printed a speaker tag's ink byte as an
+/// invisible glyph and left `Terra` white - GitHub issue 581.)
 #[test]
-fn dialog_panel_renders_skip_two_operand() {
-    // Glyph 'a', then 0xCF 'b', then End. Expected page: ['a', 'b'].
-    let buf = vec![b'a', 0xCF, b'b', 0x00];
+fn dialog_panel_stages_the_colour_escape_ink() {
+    let buf = vec![b'a', 0xCF, 0x04, b'b', 0x00];
     let interp = Interpreter::new_at(&buf, 0);
     let mut player = DialogPlayer::new(interp);
     player.set_glyphs_per_frame(1);
@@ -516,16 +517,21 @@ fn dialog_panel_renders_skip_two_operand() {
         panel.tick();
     }
     assert_eq!(panel.page_bytes(), vec![b'a', b'b']);
+    let cluts: Vec<u8> = panel.page_glyphs().iter().map(|g| g.clut).collect();
+    assert_eq!(cluts, vec![0, 4]);
 }
 
+/// The owned panel keeps the pair in its page, as the expander hands it to
+/// the renderer on the draw path (`FUN_80036514` with `a2 = 1`), so the
+/// reading box restages the ink where the text does.
 #[test]
-fn owned_panel_renders_skip_two_operand() {
-    let buf = Arc::new(vec![b'a', 0xCF, b'b', 0x00]);
+fn owned_panel_keeps_the_colour_pair_in_the_page() {
+    let buf = Arc::new(vec![b'a', 0xCF, 0x04, b'b', 0x00]);
     let mut panel = OwnedDialogPanel::new(buf, 0);
     for _ in 0..3 {
         panel.tick();
     }
-    assert_eq!(panel.page_bytes(), vec![b'a', b'b']);
+    assert_eq!(panel.page_bytes(), vec![b'a', COLOUR_ESCAPE, 0x04, b'b']);
 }
 
 #[test]
