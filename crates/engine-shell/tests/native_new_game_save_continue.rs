@@ -202,7 +202,10 @@ pub(crate) fn new_game_to_free_roam(w: &mut HeadlessPlayWindow, log: &mut PadLog
     for f in 0..40_000u32 {
         let world = &w.session().host.world;
         let pad = if world.name_entry_active() {
-            if f % 8 >= 2 {
+            // One press every eighth frame: the call after the Select press
+            // reads no pad (`FUN_801F03F0`), so a press on the next frame is
+            // lost and the prompt's Cross lands on No.
+            if f % 8 != 0 {
                 0
             } else {
                 let p = [PadButton::Cross, PadButton::Up, PadButton::Cross]
@@ -451,7 +454,10 @@ fn page_new_game_reaches_free_roam() {
     for f in 0..20_000u32 {
         let world = &rt.debug_session().expect("session").host.world;
         let pad = if world.name_entry_active() {
-            if f % 8 >= 2 {
+            // One press every eighth frame: the call after the Select press
+            // reads no pad (`FUN_801F03F0`), so a press on the next frame is
+            // lost and the prompt's Cross lands on No.
+            if f % 8 != 0 {
                 0
             } else {
                 let p = [PadButton::Cross, PadButton::Up, PadButton::Cross]
