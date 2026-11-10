@@ -60,6 +60,7 @@ pub(super) fn run_battle(
     let battle = {
         let mut b = battle.clone();
         b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
+        b.harvest_pacing = entry.harvest;
         (b.entry_latches, b.entry_lowers, b.entry_park) =
             crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
         latched = b;

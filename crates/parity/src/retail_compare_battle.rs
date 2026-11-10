@@ -697,6 +697,11 @@ pub struct RetailBattle {
     /// retail's entry with no such draw. `false` as read; the corpus run
     /// fills it.
     pub resident_shiny_seru: bool,
+    /// The scenario's `harvest` topic (`CorpusEntry::harvest`): the drive
+    /// paces its arts target cursor as the harvest probe did
+    /// (`ActionSteer::harvest_pacing`). `false` as read; the corpus run
+    /// fills it.
+    pub harvest_pacing: bool,
     /// Each pool slot's captured live pair, body pair `+0x3C` / `+0x40` and
     /// current clip `+0x1D9`, as read - [`Self::ground`] is what a seed
     /// places and [`Self::undrift`] moves it; this is what the capture

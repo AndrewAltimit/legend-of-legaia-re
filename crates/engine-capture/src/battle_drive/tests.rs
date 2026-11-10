@@ -119,6 +119,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 fading: Some((3, 0xF0)),
                 spoils: true,
                 park: true,
+                harvest_pacing: true,
                 ..ActionSteer::default()
             },
         },

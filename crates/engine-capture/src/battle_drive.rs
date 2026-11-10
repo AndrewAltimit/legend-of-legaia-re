@@ -320,6 +320,13 @@ pub struct ActionSteer {
     /// the Hyper Art `0x1E` at accumulator `0`, the engine still on its
     /// SpecialStarter `0x1A`).
     pub latched: Option<u8>,
+    /// The capture was played by `autorun_battle_harvest.lua`'s party-strike
+    /// arm (scenario topic `harvest`), whose pad presses the target cursor's
+    /// `Cross` 24 vsyncs after the arts entry's: the drive holds that cursor
+    /// until the camera's case-1 glide onto it has landed
+    /// ([`BattleDrive::press`]). A pacing of the capture's own input, read
+    /// off the manifest; no play path reads it.
+    pub harvest_pacing: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -902,6 +909,9 @@ impl BattleDrive {
                 if steer.tough {
                     s.push_str(",z");
                 }
+                if steer.harvest_pacing {
+                    s.push_str(",d");
+                }
                 if let Some(n) = steer.rung {
                     s.push_str(&format!(",n{n}"));
                 }
@@ -989,6 +999,8 @@ impl BattleDrive {
                 steer.strike_aim = true;
             } else if last == "z" {
                 steer.tough = true;
+            } else if last == "d" {
+                steer.harvest_pacing = true;
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(n) = last.strip_prefix('n') {
@@ -1857,9 +1869,31 @@ impl BattleDrive {
                 return Some(PadButton::Right);
             }
         }
-        if matches!(self, Self::Action { steer, .. } if steer.arts)
+        if let Self::Action { steer, .. } = self
+            && steer.arts
             && world.battle.arts_input.is_some()
         {
+            // The entry's confirm opens the target cursor and arms its
+            // case-1 shot (`0x50 -> 0x5A`, `FUN_801D388C(0xC, 0)` at
+            // `0x801D20B0`). The party-strike captures were played by
+            // `autorun_battle_harvest.lua`, which presses the cursor's
+            // `Cross` 24 vsyncs after the entry's - about the shot's
+            // `0xC`-frame tween - so the round's first framing starts from a
+            // landed case 1. Confirmed on the next tick, the replay began it
+            // mid-glide (`battle_ropeway_party_gala_flying_knee_mid` `camera`
+            // `.964` to `.981`, `image` `.592` to `.910`). A harness pacing
+            // ([`ActionSteer::harvest_pacing`]): no play path reads it.
+            if steer.harvest_pacing
+                && world
+                    .battle
+                    .arts_input
+                    .as_ref()
+                    .and_then(|a| a.picker())
+                    .is_some()
+                && world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
+            {
+                return None;
+            }
             return Some(PadButton::Cross);
         }
         // The item window's target step: `Cross` on the row the window opens

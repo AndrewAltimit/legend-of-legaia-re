@@ -1290,6 +1290,7 @@ impl RetailBattle {
             entry_lowers: Vec::new(),
             entry_park: None,
             resident_shiny_seru: false,
+            harvest_pacing: false,
             inflight_idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
             // Only where the close-up's three-frame tween lands inside a pass
             // (`SUMMON_CAST_TWEEN_FRAMES`): on a shorter step the focus is

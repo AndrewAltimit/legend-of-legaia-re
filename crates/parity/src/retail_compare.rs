@@ -248,6 +248,10 @@ pub struct CorpusEntry {
     /// follow-camera staging descriptor the menu's RAM no longer holds
     /// ([`RetailObs::seat_source_staging`]).
     pub staging_source: Option<(&'static str, PathBuf)>,
+    /// The scenario carries the `harvest` topic: it was played by
+    /// `autorun_battle_harvest.lua`, whose pad pacing a party-strike drive
+    /// copies (`ActionSteer::harvest_pacing`).
+    pub harvest: bool,
 }
 
 /// Enumerate every scenario with a library backup on disk, deduplicated by
@@ -294,6 +298,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                         }
                     }),
                     staging_source: sc.staging_source.as_deref().and_then(backup_of),
+                    harvest: sc.topics.iter().any(|t| t == "harvest"),
                 });
             }
         }
