@@ -7,7 +7,9 @@
 //! stubbed. And the info panel's mode selector `FUN_801E3F74` against
 //! `SlotInfoMode::for_grid_cell`, the title strips behind the Load window
 //! `FUN_801E0418` against `title_strip_rows`, and the record quad
-//! `FUN_801E3FF0` against `save_ui_record_quad`.
+//! `FUN_801E3FF0` against `save_ui_record_quad`, and the per-cell drawer
+//! `FUN_801E0FD0` (live, its record quads hooked) against
+//! `slot_preview_grid_draws_for`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_menus::save_select::{SlotContent, SlotInfoMode, SlotSnapshot};
@@ -385,4 +387,120 @@ fn a_save_ui_record_quad_lands_where_retail_puts_it() {
             "{what}"
         );
     }
+}
+
+#[test]
+fn every_grid_cell_draws_what_retail_draws() {
+    differential!(prot(899, CELL));
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem.load(
+        OVERLAY_BASE,
+        &d.read_entry_footprint(899).expect("PROT 0899"),
+    );
+    // The record quad: `(record, rgb word, x, y)`, and the face record's
+    // per-cell `u` and CLUT patch.
+    let quads: Rc<RefCell<Vec<(u32, u32, i32, i32, u32)>>> = Rc::default();
+    let q = quads.clone();
+    cpu.hook(RECORD_QUAD, move |r, m| {
+        q.borrow_mut().push((
+            r.r[A0],
+            r.r[A1],
+            r.r[A2] as i32,
+            r.r[A3] as i32,
+            u32::from(m.rd16(RECORDS + 2)),
+        ))
+    });
+    let face = |i: u32| (0x100 + i * 16, 0x80, 16, 16);
+    let mut rects = legaia_engine_ui::SaveMenuAtlasRects {
+        load_empty_frame: Some((0, 0, 32, 32)),
+        load_used_frame: Some((32, 0, 32, 32)),
+        ..Default::default()
+    };
+    for i in 0..16 {
+        rects.save_icons[i] = Some(face(i as u32));
+    }
+    let mut rng = Rng(0x4345_4C4C);
+    let mut seen = [0u32; 4];
+    for case in 0..2_000 {
+        // A card walk's result over the fifteen cells.
+        let mut cells = Vec::new();
+        for slot in 0..15u32 {
+            let scanned = u8::from(rng.below(6) != 0);
+            let class = [0u8, 1, 1, 2, 3][rng.below(5) as usize];
+            cpu.mem.wr8(SCANNED + slot, scanned);
+            cpu.mem.wr8(CLASSES + slot, class);
+            let mode = if scanned == 0 || class == 0 {
+                2
+            } else if class == 1 {
+                1
+            } else {
+                3
+            };
+            cells.push(legaia_engine_ui::SlotGridCell {
+                present: mode == 1,
+                icon_tile: (mode == 1).then_some(slot as u8),
+                foreign: mode == 2,
+            });
+        }
+        let cursor = rng.below(15);
+        let port =
+            legaia_engine_ui::slot_preview_grid_draws_for(&rects, &cells, cursor as u8, (0, 0), 1);
+        let mut want = Vec::new();
+        for slot in 0..15u32 {
+            let (c, r) = (slot % 5, slot / 5);
+            let x = slot_grid_quad_x(c, r, slot, 0x1000) - 8;
+            let y = 0x24 + 20 * r as i32;
+            quads.borrow_mut().clear();
+            assert_eq!(
+                // The grid loop passes `0` (full) on the focused cell, `3`
+                // (dimmed) on the rest.
+                cpu.call(
+                    CELL,
+                    &[slot, x as u32, y as u32, if slot == cursor { 0 } else { 3 }]
+                ),
+                Stop::Returned
+            );
+            let mode = cpu.regs.r[V0];
+            seen[mode as usize] += 1;
+            for &(record, rgb, px, py, u) in quads.borrow().iter() {
+                let src = match record {
+                    0 => {
+                        assert_eq!(u, slot * 16, "case {case} slot {slot}: the face's column");
+                        face(slot)
+                    }
+                    1 => rects.load_empty_frame.unwrap(),
+                    5 => rects.load_used_frame.unwrap(),
+                    other => panic!("case {case} slot {slot}: record {other}"),
+                };
+                let tint = f32::from((rgb & 0xFF) as u8) / 128.0;
+                want.push((src, (px, py), [tint, tint, tint, 1.0]));
+            }
+        }
+        // The port's cell draws in the grid's order (the frame, then the
+        // face over it; retail links the face first, which the ordering
+        // table draws last), the hand after them.
+        let got: Vec<_> = port
+            .iter()
+            .filter(|s| s.src != rects.cursor)
+            .map(|s| (s.src, (s.dst.0, s.dst.1), s.color))
+            .collect();
+        let mut want_sorted = Vec::new();
+        // Retail per cell: [face, frame] or [frame]; the port: [frame, face].
+        let mut i = 0;
+        while i < want.len() {
+            if i + 1 < want.len() && want[i].0.2 == 16 {
+                want_sorted.push(want[i + 1]);
+                want_sorted.push(want[i]);
+                i += 2;
+            } else {
+                want_sorted.push(want[i]);
+                i += 1;
+            }
+        }
+        assert_eq!(got, want_sorted, "case {case} cursor {cursor}");
+    }
+    assert!(seen[1..].iter().all(|&n| n > 1000), "{seen:?}");
 }
