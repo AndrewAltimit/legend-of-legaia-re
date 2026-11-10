@@ -486,3 +486,94 @@ fn the_clut_cross_fade_matches_retail() {
     }
     assert!(ticks > 50_000 && flat_runs > 300, "{ticks} {flat_runs}");
 }
+
+const PASSIVE_HUD: u32 = 0x801D_095C;
+
+/// The field passive-ability HUD `FUN_801D095C`: the three head points it
+/// hands the projector `FUN_8005BA68` (the player's X / Z, Y lifted by
+/// `hud_anchor_offsets`), and the icons it draws through `FUN_8002C488` from
+/// the projected anchor and the ability bits, against `passive_hud_icons`.
+/// The projector answers generated screen points and the bit test a
+/// generated set.
+#[test]
+fn the_passive_hud_matches_retail() {
+    differential!(prot(897, PASSIVE_HUD));
+    let Some(mut cpu) = cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    use legaia_engine_field::field_passive_hud::{hud_anchor_offsets, passive_hud_icons};
+    use psx_retail_exec::{A2, A3, SP};
+    const PLAYER: u32 = 0x8013_1000;
+    cpu.mem.wr32(0x8007_C364, PLAYER);
+    let bits = Rc::new(Cell::new(0u64));
+    {
+        let bits = bits.clone();
+        cpu.hook(0x8004_31D0, move |r, _| {
+            r.r[V0] = u32::from(bits.get() >> (r.r[A0] & 63) & 1 != 0) * (1 + (r.r[A0] & 6));
+        });
+    }
+    let drawn: Rc<std::cell::RefCell<Vec<(i32, i32, u8)>>> = Rc::default();
+    {
+        let drawn = drawn.clone();
+        cpu.hook(0x8002_C488, move |r, _| {
+            drawn
+                .borrow_mut()
+                .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as u8));
+        });
+    }
+    let screen = Rc::new(Cell::new([(0i16, 0i16); 3]));
+    let points: Rc<Cell<[[i16; 3]; 3]>> = Rc::default();
+    {
+        let (screen, points) = (screen.clone(), points.clone());
+        cpu.hook(0x8005_BA68, move |r, m| {
+            let v = |m: &mut psx_retail_exec::Memory, p: u32| -> [i16; 3] {
+                std::array::from_fn(|i| m.rd16(p + 2 * i as u32) as i16)
+            };
+            points.set([v(m, r.r[A0]), v(m, r.r[A1]), v(m, r.r[A2])]);
+            let outs = [r.r[A3], m.rd32(r.r[SP] + 0x10), m.rd32(r.r[SP] + 0x14)];
+            for (o, (x, y)) in outs.iter().zip(screen.get()) {
+                m.wr16(*o, x as u16);
+                m.wr16(o + 2, y as u16);
+            }
+        });
+    }
+    let mut rng = Rng(0x4855_4421);
+    let mut icons = 0;
+    for run in 0..20_000 {
+        let (x, y, z) = (rng.next() as i16, rng.next() as i16, rng.next() as i16);
+        let height = [0x400u16, 0x600, 0, rng.next() as u16][rng.below(4) as usize];
+        cpu.mem.wr16(PLAYER + 0x14, x as u16);
+        cpu.mem.wr16(PLAYER + 0x16, y as u16);
+        cpu.mem.wr16(PLAYER + 0x18, z as u16);
+        cpu.mem.wr16(PLAYER + 0x72, height);
+        let mut set = 0u64;
+        for b in 0x38..=0x3D {
+            if rng.below(2) == 0 {
+                set |= 1 << b;
+            }
+        }
+        bits.set(set);
+        let pts: [(i16, i16); 3] = std::array::from_fn(|_| {
+            (
+                (rng.below(0x200) as i16) - 0x40,
+                (rng.below(0x180) as i16) - 0x40,
+            )
+        });
+        screen.set(pts);
+        drawn.borrow_mut().clear();
+        assert_eq!(cpu.call(PASSIVE_HUD, &[]), Stop::Returned, "run {run}");
+        let lifts = hud_anchor_offsets(height);
+        let want: [[i16; 3]; 3] =
+            std::array::from_fn(|i| [x, (y as u16).wrapping_sub(lifts[i] as u16) as i16, z]);
+        assert_eq!(points.get(), want, "run {run}: height {height:#x}");
+        let anchor = (i32::from(pts[0].0), i32::from(pts[2].1));
+        let port: Vec<(i32, i32, u8)> = passive_hud_icons(anchor, |b| set >> b & 1 != 0)
+            .iter()
+            .map(|i| (i.x, i.y, i.id))
+            .collect();
+        icons += port.len();
+        assert_eq!(*drawn.borrow(), port, "run {run}: bits {set:#x}");
+    }
+    assert!(icons > 40_000, "{icons}");
+}
