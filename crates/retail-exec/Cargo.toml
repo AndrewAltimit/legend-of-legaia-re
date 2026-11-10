@@ -51,6 +51,7 @@ legaia-minigame-formats.workspace = true
 legaia-save.workspace = true
 psx-pcsx-redux.workspace = true
 psx-lzs.workspace = true
+psx-iso.workspace = true
 psx-mdec.workspace = true
 psx-tim.workspace = true
 legaia-tmd.workspace = true

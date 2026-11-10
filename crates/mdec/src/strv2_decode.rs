@@ -10,7 +10,7 @@
 //! ## What the decoder does
 //!
 //! It converts a demuxed STRv2/v3 frame into the same MDEC command-word list an
-//! Iki frame decodes to (`crate::MdecDecoder` consumes that list). The VLC table
+//! Iki frame decodes to ([`crate::decode_mdec_codes`] consumes that list). The VLC table
 //! that [`crate::strv2_table`] unpacks is not a run/level table - it holds the
 //! **pre-baked MDEC output codes** directly, so the decode is a bit-prefix
 //! lookup that emits one to three ready-made codes per table hit. Only the DC
@@ -82,14 +82,10 @@
 //! preservation artefacts of the two cut slots, not gaps in the shipping
 //! playback path.
 //!
-//! There is a second prerequisite, and it outlives the missing input: this
-//! function stops at the **MDEC command-word list**, which retail DMAs into
-//! the MDEC for the dequantize / IDCT / colour stages. The port has no such
-//! stage as a separate entry - [`crate::MdecDecoder::decode_frame`] fuses the
-//! Iki bitstream walk and the pixel stage into one pass over the Iki payload,
-//! and takes bytes, not codes. So even handed a real STRv2 stream, a caller
-//! could not turn this vector into pixels; a code-list-to-RGBA entry point has
-//! to exist first.
+//! The list it returns is the same MDEC command-word list
+//! [`crate::iki_mdec_codes`] writes for an Iki frame, so
+//! [`crate::decode_mdec_codes`] (the pixel stage
+//! [`crate::MdecDecoder::decode_frame`] runs) turns it into pixels.
 //!
 //! [`Bitstream::Strv2`]: crate::str_player::Bitstream::Strv2
 
