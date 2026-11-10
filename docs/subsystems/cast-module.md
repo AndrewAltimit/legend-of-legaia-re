@@ -5039,6 +5039,18 @@ covers. A ramp's bound is the literal the arm stores behind its bound test
 hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
 spawned twice.
 
+**A word an arm does not store is the last writer's.** Every battle fade writes
+its template into the one block at `0x801C9070`, and nothing clears it. PROT
+0914 (Gola Gola)'s arm 13 kills arm 11's held fade and spawns a red and a white
+flash (`0x801F7670..0x801F76D4`) that store end red and green `1` and no end
+blue, so both end on the `64` arm 11 left there: the white flash fades through
+red to a dark purple. The engine keeps the block
+(`CastFxState::fade_block`, written by the action SM's flash templates and every
+presentation fade) and fills a word the decoder found no store for from it.
+Without it the two fades did not resolve and arm 14 opened on the fire, not the
+flash (`.588` against `.884` with it, on the `party_basic_attack_vs_gobu_gobu`
+film).
+
 **Held fades and their kills.** A fade whose hold word is `-1` stays on its
 end colour until something kills it, and a module kills its own: it parks the
 actor pointer `FUN_80024E80` returned (`sw v0, 0x102C(ctx)`, or a word of its

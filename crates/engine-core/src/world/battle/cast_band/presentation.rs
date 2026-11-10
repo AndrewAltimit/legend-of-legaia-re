@@ -285,16 +285,11 @@ impl World {
             };
             match s.call {
                 PresentationCall::Fade(f) if once && !FADES_PORTED_BY_HAND.contains(&entry) => {
-                    if let Some(r) = f.resolved() {
-                        let t = legaia_engine_system::fade::FadeTemplate {
-                            kind: r.kind,
-                            duration: r.duration,
-                            start_rgb: r.start_rgb,
-                            end_rgb: r.end_rgb,
-                            mode: [r.delay, r.hold, 0],
-                        };
+                    if let Some(t) = fade_from_block(&f, self.casting.fade_block) {
+                        self.casting.fade_block = Some(t);
+                        let id = f.id.unwrap_or(1);
                         let mut seat = None;
-                        legaia_engine_system::fade::spawn_fade(&mut seat, &t, r.id);
+                        legaia_engine_system::fade::spawn_fade(&mut seat, &t, id);
                         if let Some(mut state) = seat {
                             // A fade an arm's exit spawned: its own tick runs
                             // later in that pass, so it takes the frame's step at
@@ -731,5 +726,83 @@ mod tests {
         assert_eq!(wash_add(0x27A, 1, -2, Some(0)), 0);
         assert_eq!(wash_add(0x27A, 5, -1, Some(0)), 4);
         assert_eq!(wash_add(0x286, 0, -1, None), 0xFF);
+    }
+}
+
+/// A module fade's template as `FUN_80024E80` reads it: the words the arm
+/// stored, and for a word it left alone the value the block `0x801C9070`
+/// already held ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::fade_block`]).
+/// `None` when a word is unknown on both counts, or the id is.
+fn fade_from_block(
+    f: &legaia_overlay_images::cast_presentation::FadeCall,
+    block: Option<legaia_engine_system::fade::FadeTemplate>,
+) -> Option<legaia_engine_system::fade::FadeTemplate> {
+    f.id?;
+    let t = &f.template;
+    let pick = |i: usize, old: Option<i16>| t[i].or(old);
+    let b = block.as_ref();
+    Some(legaia_engine_system::fade::FadeTemplate {
+        kind: pick(0, b.map(|b| b.kind))?,
+        duration: pick(1, b.map(|b| b.duration))?,
+        start_rgb: [
+            pick(3, b.map(|b| b.start_rgb[0]))?,
+            pick(4, b.map(|b| b.start_rgb[1]))?,
+            pick(5, b.map(|b| b.start_rgb[2]))?,
+        ],
+        end_rgb: [
+            pick(7, b.map(|b| b.end_rgb[0]))?,
+            pick(8, b.map(|b| b.end_rgb[1]))?,
+            pick(9, b.map(|b| b.end_rgb[2]))?,
+        ],
+        mode: [
+            pick(10, b.map(|b| b.mode[0]))?,
+            pick(11, b.map(|b| b.mode[1]))?,
+            0,
+        ],
+    })
+}
+
+#[cfg(test)]
+mod fade_block_tests {
+    use super::fade_from_block;
+    use legaia_engine_system::fade::FadeTemplate;
+    use legaia_overlay_images::cast_presentation::FadeCall;
+
+    /// PROT 0914's arm 13 (`0x801F7670..0x801F7698`): end red and green are
+    /// stored, end blue is not, so the fade ends on the blue arm 11's held
+    /// fade left in the block.
+    #[test]
+    fn an_unstored_word_reads_the_last_template() {
+        let gola = FadeCall {
+            template: [
+                Some(1),
+                Some(64),
+                None,
+                Some(255),
+                Some(64),
+                Some(64),
+                None,
+                Some(1),
+                Some(1),
+                None,
+                Some(0),
+                Some(0),
+                None,
+            ],
+            id: Some(1),
+        };
+        assert_eq!(fade_from_block(&gola, None), None);
+        let arm_11 = FadeTemplate {
+            kind: 1,
+            duration: 256,
+            start_rgb: [0, 0, 0],
+            end_rgb: [255, 64, 64],
+            mode: [0, -1, 0],
+        };
+        let t = fade_from_block(&gola, Some(arm_11)).expect("resolves on the block");
+        assert_eq!(t.start_rgb, [255, 64, 64]);
+        assert_eq!(t.end_rgb, [1, 1, 64]);
+        assert_eq!(t.mode, [0, 0, 0]);
+        assert_eq!(t.duration, 64);
     }
 }
