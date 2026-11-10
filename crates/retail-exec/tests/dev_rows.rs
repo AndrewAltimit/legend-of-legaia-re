@@ -22,7 +22,7 @@ fn words(image: &[u8], base: u32) -> impl Iterator<Item = (u32, u32)> + '_ {
 }
 
 fn jal_target(w: u32) -> Option<u32> {
-    (w >> 26 == 3 || w >> 26 == 2).then(|| ((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
+    (w >> 26 == 3 || w >> 26 == 2).then_some(((w & 0x03FF_FFFF) << 2) | 0x8000_0000)
 }
 
 /// Every `jal` / `j` target in `[from, to)`, in order.
