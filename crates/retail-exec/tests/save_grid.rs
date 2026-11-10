@@ -32,6 +32,11 @@ const RECORD_QUAD: u32 = 0x801E_3FF0;
 /// The save UI's sprite-record table (`[clut][u][v][w][h]`, 12-byte stride,
 /// eight records).
 const RECORDS: u32 = 0x801E_5048;
+
+/// One `FUN_801E2EE4(mode, x, y, record, brightness, scale)` call.
+type StripCall = (u32, i32, i32, u32, i32, u32);
+/// One `FUN_801E3FF0(record, rgb, x, y)` call, with the face record's `u`.
+type QuadCall = (u32, u32, i32, i32, u32);
 /// The per-slot scanned flags and class bytes the card walk writes, and the
 /// card op flag (`0` save, `1` load).
 const SCANNED: u32 = 0x801F_2A68;
@@ -247,7 +252,7 @@ fn the_title_strips_behind_the_load_window_are_retails() {
         &d.read_entry_footprint(899).expect("PROT 0899"),
     );
     // The record drawer `FUN_801E2EE4(mode, x, y, record, brightness, scale)`.
-    let drawn: Rc<RefCell<Vec<(u32, i32, i32, u32, i32, u32)>>> = Rc::default();
+    let drawn: Rc<RefCell<Vec<StripCall>>> = Rc::default();
     let dr = drawn.clone();
     cpu.hook(0x801E_2EE4, move |r, m| {
         let sp = r.r[psx_retail_exec::SP];
@@ -275,7 +280,7 @@ fn the_title_strips_behind_the_load_window_are_retails() {
             Stop::Returned,
             "case {case}"
         );
-        let want: Vec<(u32, i32, i32, u32, i32, u32)> = title_strip_rows(selected != 0)
+        let want: Vec<StripCall> = title_strip_rows(selected != 0)
             .iter()
             .map(|row| {
                 let b = if row.half_bright {
@@ -402,7 +407,7 @@ fn every_grid_cell_draws_what_retail_draws() {
     );
     // The record quad: `(record, rgb word, x, y)`, and the face record's
     // per-cell `u` and CLUT patch.
-    let quads: Rc<RefCell<Vec<(u32, u32, i32, i32, u32)>>> = Rc::default();
+    let quads: Rc<RefCell<Vec<QuadCall>>> = Rc::default();
     let q = quads.clone();
     cpu.hook(RECORD_QUAD, move |r, m| {
         q.borrow_mut().push((
