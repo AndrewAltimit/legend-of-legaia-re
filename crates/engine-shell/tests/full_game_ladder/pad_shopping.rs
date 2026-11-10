@@ -209,6 +209,40 @@ pub(super) fn heals_held(w: &legaia_engine_core::world::World) -> u32 {
         .sum()
 }
 
+/// What a full restore (`HealAll`: the Healing Berry) is worth in HP: the
+/// present members' mean maximum HP.
+fn full_restore_worth(w: &legaia_engine_core::world::World) -> u32 {
+    let party = w.present_party_list();
+    let maxes: Vec<u32> = party
+        .iter()
+        .filter_map(|&ch| w.party.roster.members.get(usize::from(ch)))
+        .map(|m| u32::from(m.hp_mp_sp().hp_max))
+        .collect();
+    (maxes.iter().sum::<u32>() / (maxes.len().max(1) as u32)).max(1)
+}
+
+/// The bag's HP restoratives in Healing Flowers' worth (800 HP each), an
+/// errand's item aside: the unit a counter's heal reserve and stock are
+/// counted in.
+pub(super) fn heal_worth_held(w: &legaia_engine_core::world::World) -> u32 {
+    use legaia_engine_menus::items::ItemEffect;
+    let full_restore = full_restore_worth(w);
+    w.party
+        .inventory
+        .iter()
+        .filter(|&(&id, _)| !errand_item(w, id))
+        .filter_map(|(&id, &n)| {
+            let restore = match w.tables.item_catalog.get(id)?.effect {
+                ItemEffect::Heal { amount } => u32::from(amount),
+                ItemEffect::HealAll => full_restore,
+                _ => return None,
+            };
+            Some(u32::from(n) * restore)
+        })
+        .sum::<u32>()
+        / 800
+}
+
 /// What the continuous hand sells at a counter whose stock sells a heal
 /// while the bag holds fewer than its [`HEAL_STOCK`]: the armament no member
 /// who has joined is better off wearing. A purse that cannot pay for the
@@ -240,7 +274,7 @@ fn heal_sale_gear(session: &NativeSession, sells_heal: bool) -> BTreeSet<u8> {
 /// every record is seeded from the New Game template, so a character counts
 /// only once the anchors ahead show it grown past level 1
 /// ([`pad_training::TARGET_LEVELS`]).
-fn joining_members(w: &legaia_engine_core::world::World) -> Vec<u8> {
+pub(super) fn joining_members(w: &legaia_engine_core::world::World) -> Vec<u8> {
     let party = w.present_party_list();
     pad_training::TARGET_LEVELS.with(|t| {
         t.borrow()
@@ -324,15 +358,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // restore (`HealAll`: the Healing Berry, "Restores maximum HP") is worth
     // a present member's maximum HP; `doman`'s counter, the last before
     // Nivora's three solo duels, sells no other.
-    let full_restore: u32 = {
-        let party = w.present_party_list();
-        let maxes: Vec<u32> = party
-            .iter()
-            .filter_map(|&ch| w.party.roster.members.get(usize::from(ch)))
-            .map(|m| u32::from(m.hp_mp_sp().hp_max))
-            .collect();
-        (maxes.iter().sum::<u32>() / (maxes.len().max(1) as u32)).max(1)
-    };
+    let full_restore = full_restore_worth(w);
     let heal_row = session
         .inventory
         .items
@@ -353,21 +379,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // counted by the item, 38 Healing Leaves read as a full stock, and a run
     // that bought seven Flowers at `rayman2` met Van Saryu (`jagaroom`) with
     // none.
-    let heals_held: u32 = w
-        .party
-        .inventory
-        .iter()
-        .filter(|&(&id, _)| !errand_item(w, id))
-        .filter_map(|(&id, &n)| {
-            let restore = match w.tables.item_catalog.get(id)?.effect {
-                ItemEffect::Heal { amount } => u32::from(amount),
-                ItemEffect::HealAll => full_restore,
-                _ => return None,
-            };
-            Some(u32::from(n) * restore)
-        })
-        .sum::<u32>()
-        / 800;
+    let heals_held = heal_worth_held(w);
     let heal_want = |target: u32, purse: i64| -> Option<Want> {
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));

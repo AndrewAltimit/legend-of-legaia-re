@@ -135,6 +135,97 @@ const TRAIN_ROUNDS: usize = 24;
 
 /// Walk legs one outing takes.
 const OUTING_LEGS: usize = 160;
+/// Scenes an errand's gold outing hops through from its bed to the first
+/// one that rolls encounters, and the hops [`pad_errand_from_rest`] walks
+/// back to that bed.
+pub(super) const ROAD_HOPS: usize = 4;
+
+thread_local! {
+    /// Set while the hand fights for an errand's gold from the last bed that
+    /// worked ([`pad_errand_from_rest`]): the outing then follows the route
+    /// past scenes that roll nothing.
+    static ERRAND_ROAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The scene the last training outing fought in: where an errand's
+    /// outing from a bed heads for.
+    static LAST_OUTING: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Walk `way` (a scene route whose first entry is the loaded scene), a hop
+/// at a time. `Ok(None)` at its end, `Ok(Some(scene))` where a hop or its
+/// arrival script left the route.
+fn hop_along(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    way: &[String],
+) -> Result<Option<String>, String> {
+    for next in way.iter().skip(1) {
+        let landed = pad_hop(session, graph, next)?;
+        if landed != *next {
+            return Ok(Some(landed));
+        }
+        match run_while_moving(session, SCRIPT_CEILING) {
+            Run::Released => {}
+            Run::Entered(s) => return Ok(Some(s)),
+            Run::Battle(b) => return Err(b),
+            Run::Error(e) => return Err(e),
+            Run::Parked(_) => return Ok(Some(scene_name(session))),
+        }
+    }
+    Ok(None)
+}
+
+/// The errand's gold, fought for from the last rest that lifted the party
+/// ([`LAST_REST`]) when the training on the way came up short: walk back to
+/// that scene, and train from its bed with the outing following the route
+/// as far as the scene the last outing fought in. `Ok(Some(scene))` when it
+/// ended outside `cur`.
+///
+/// Sol's errand is the case. The hand fights for the bread's 48 000 on the
+/// way down from `kor5`, out of the bag from `kor3` (the stairs between roll
+/// nothing, so the training from `kor5`'s bed moves on at `kor4`), and stops
+/// when the bag is down to its reserve. A stream on which that came first
+/// reached `koin2` with 37 313 gold and 7 480 of outgrown gear, bought six
+/// loaves of eight, could not train in the chest room it stood in, and
+/// walked on to `kor`'s guard dogs with two chests unfed.
+pub(super) fn pad_errand_from_rest(
+    session: &mut NativeSession,
+    graph: &DiscGraph,
+    cur: &str,
+) -> Result<Option<String>, String> {
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    let last = LAST_REST.with(|l| l.borrow().clone());
+    let way = last
+        .as_ref()
+        .filter(|b| *b != cur)
+        .and_then(|b| graph.route(cur, b))
+        .filter(|r| r.len() <= ROAD_HOPS + 1);
+    let (Some(bed), Some(way)) = (last.clone(), way) else {
+        if trace {
+            eprintln!("    [errand] {cur}: no rest to fight from (last rest {last:?})");
+        }
+        return Ok(None);
+    };
+    let field = LAST_OUTING
+        .with(|l| l.borrow().clone())
+        .unwrap_or_else(|| cur.to_string());
+    if trace {
+        let w = &session.host.world;
+        eprintln!(
+            "    [errand] {cur}: gold {} short of {} and a reserve of {}; back to the rest in {bed} by {way:?}, to fight in {field}",
+            w.party.money,
+            errand_cost(w),
+            errand_counter_reserve(w)
+        );
+    }
+    if let Some(s) = hop_along(session, graph, &way)? {
+        return Ok(Some(s));
+    }
+    let out = graph.route(&bed, &field).and_then(|r| r.get(1).cloned());
+    ERRAND_ROAD.with(|r| r.set(true));
+    let r = pad_train(session, graph, out.as_deref(), Some(&field));
+    ERRAND_ROAD.with(|r| r.set(false));
+    Ok(r?.or_else(|| Some(scene_name(session)).filter(|s| s != cur)))
+}
 
 /// The present members short of the target plus its margin
 /// ([`LEVEL_MARGIN`], [`SOLO_LEVEL_MARGIN`]).
@@ -201,10 +292,59 @@ pub(super) fn errand_gold_short_after_sales(session: &NativeSession) -> bool {
     // three heals a member: training from the bag spends the heals it is
     // fighting to buy back, and the Sol run met Gaza (`korb3`) with two.
     let reserve = HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32;
+    // From a bed ([`pad_errand_from_rest`]) the fights cost the bag nothing:
+    // the refill, or the reserve a counter sells before the item, is fought
+    // for as well, and in coin - what the outgrown armament fetches is
+    // counted on the way in and has mostly been sold by the way back.
+    if ERRAND_ROAD.with(std::cell::Cell::get) {
+        return cost > 0
+            && i64::from(w.party.money)
+                < cost + errand_heal_budget(w).max(errand_counter_reserve(w));
+    }
     if purse >= cost && heals_held(w) <= reserve {
         return false;
     }
     cost > 0 && purse < cost + errand_heal_budget(w)
+}
+
+/// What a counter's heal reserve can take of an errand's purse: three heals
+/// a member ([`HEAL_RESERVE`]) at the list price of the dearest heal a
+/// counter's reserve is bought in - one that restores at least a hit point
+/// a coin, which leaves out the party-wide ones (the Healing Flower, 800 HP
+/// for 800). A counter sells the reserve before the errand's item, and what
+/// the bag holds of it by then is the road's to say, so the whole of it is
+/// counted.
+fn errand_counter_reserve(w: &legaia_engine_core::world::World) -> i64 {
+    use legaia_engine_menus::items::ItemEffect;
+    let Some(prices) = w.shops.item_shop_data.as_ref() else {
+        return 0;
+    };
+    let dearest = (0u8..=255)
+        .filter_map(|id| {
+            let ItemEffect::Heal { amount } = w.tables.item_catalog.get(id)?.effect else {
+                return None;
+            };
+            let price = i64::from(prices.price(id));
+            (price > 0 && price <= i64::from(amount)).then_some(price)
+        })
+        .max()
+        .unwrap_or(0);
+    let members = (w.present_party_list().len() + joining_members(w).len()).clamp(1, 3) as i64;
+    i64::from(HEAL_RESERVE) * members * dearest
+}
+
+/// Is the purse, with the outgrown armament sold, short of what the
+/// errands' counters will take: the items' price and the heal reserve a
+/// counter sells first ([`errand_counter_reserve`])? Training out of the bag
+/// stops once the items alone are paid for
+/// ([`errand_gold_short_after_sales`]), on a bag at that reserve or under
+/// it: `koin4`'s item counter then took 3 600 of a 48 393 purse for nine
+/// heals, and the bakery sold seven loaves of eight.
+pub(super) fn errand_purse_short(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    let cost = errand_cost(w);
+    cost > 0
+        && i64::from(w.party.money) + outgrown_value(session) < cost + errand_counter_reserve(w)
 }
 
 fn party_xp(session: &NativeSession) -> u64 {
@@ -347,6 +487,7 @@ pub(super) fn pad_train(
     session: &mut NativeSession,
     graph: &DiscGraph,
     out: Option<&str>,
+    goal: Option<&str>,
 ) -> Result<Option<String>, String> {
     if session.host.world.mode != SceneMode::Field || !walking(session) || !released(session) {
         return Ok(None);
@@ -372,7 +513,7 @@ pub(super) fn pad_train(
     PAD_DEADLINE.with(|d| d.set(session.frames + 4 * PAD_SEGMENT_FRAMES));
     PAD_BATTLE_LEFT.with(|l| l.set(4 * PAD_BATTLE_ALLOWANCE));
     TRAINING.with(|t| t.set(true));
-    let r = pad_train_from(session, graph, out, &home, home_rolls);
+    let r = pad_train_from(session, graph, out, goal, &home, home_rolls);
     TRAINING.with(|t| t.set(false));
     // Training is the hand's own errand: a walk that stalled on the way
     // out ends it, and the stretch goes on from wherever the party stands.
@@ -396,6 +537,7 @@ fn pad_train_from(
     session: &mut NativeSession,
     graph: &DiscGraph,
     out: Option<&str>,
+    goal: Option<&str>,
     home: &str,
     home_rolls: bool,
 ) -> Result<Option<String>, String> {
@@ -413,6 +555,9 @@ fn pad_train_from(
         );
     }
     let mut idle = 0usize;
+    // The scenes the outing hopped through from `home`, nearest first.
+    let mut road: Vec<String> = Vec::new();
+    let rest_at_home = !beds.is_empty() || !keepers.is_empty();
     for round in 0..TRAIN_ROUNDS {
         pad_budget(session)?;
         if !wants_training(session) {
@@ -460,6 +605,41 @@ fn pad_train_from(
                 Run::Error(e) => return Err(e),
                 Run::Parked(_) => return Ok(Some(scene_name(session))),
             }
+            road.clear();
+            road.push(dest.to_string());
+            // An errand's gold the bag could not earn is fought for from a
+            // bed that works ([`pad_errand_from_rest`]): where the next
+            // scene rolls nothing either, the outing goes on down the route
+            // to the first scene that does, and comes back the way it went.
+            // `kor5`'s keeper (P1[9]) rests the party three doors above
+            // `kor`, the one floor of Sol's stairs that rolls.
+            while !session.host.world.scene_can_roll_encounters()
+                && road.len() < ROAD_HOPS
+                && rest_at_home
+                && ERRAND_ROAD.with(std::cell::Cell::get)
+                && errand_gold_short_after_sales(session)
+            {
+                let at = scene_name(session);
+                let Some(next) = goal
+                    .and_then(|g| graph.route(&at, g))
+                    .and_then(|r| r.get(1).cloned())
+                    .filter(|n| *n != home && !road.contains(n))
+                else {
+                    break;
+                };
+                let landed = pad_hop(session, graph, &next)?;
+                if landed != next {
+                    return Ok(Some(landed));
+                }
+                match run_while_moving(session, SCRIPT_CEILING) {
+                    Run::Released => {}
+                    Run::Entered(s) => return Ok(Some(s)),
+                    Run::Battle(b) => return Err(b),
+                    Run::Error(e) => return Err(e),
+                    Run::Parked(_) => return Ok(Some(scene_name(session))),
+                }
+                road.push(next);
+            }
             if !session.host.world.scene_can_roll_encounters() {
                 // The road rolls nothing: the hand is simply further along.
                 return Ok(Some(scene_name(session)));
@@ -478,6 +658,7 @@ fn pad_train_from(
         } else {
             650
         };
+        LAST_OUTING.with(|l| *l.borrow_mut() = Some(scene_name(session)));
         let left = outing(session, floor)?;
         let gained = party_xp(session) - xp0.min(party_xp(session))
             + u64::try_from(session.host.world.party.money - gold0).unwrap_or(0);
@@ -507,10 +688,15 @@ fn pad_train_from(
             // no bed trains only while it is fresh.
             break;
         }
-        // Back to the bed.
-        if scene_name(session) != home {
-            let landed = pad_hop(session, graph, &home)?;
-            if landed != home {
+        // Back to the bed, by the road the outing took.
+        while scene_name(session) != home {
+            let here = scene_name(session);
+            let back = match road.iter().position(|s| *s == here) {
+                Some(0) | None => home.clone(),
+                Some(i) => road[i - 1].clone(),
+            };
+            let landed = pad_hop(session, graph, &back)?;
+            if landed != back {
                 return Ok(Some(landed));
             }
             match run_while_moving(session, SCRIPT_CEILING) {

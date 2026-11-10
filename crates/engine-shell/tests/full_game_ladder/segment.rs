@@ -284,7 +284,9 @@ pub(super) fn traverse(
                     let out = graph
                         .route_avoiding(&cur, &goal, &dead)
                         .and_then(|r| r.get(1).cloned());
-                    if let Some(s) = pad_errand(session, graph, &cur, out.as_deref(), trail)? {
+                    if let Some(s) =
+                        pad_errand(session, graph, &cur, out.as_deref(), Some(&goal), trail)?
+                    {
                         trail.push(format!("{s}(errand)"));
                     }
                 }
@@ -342,7 +344,7 @@ pub(super) fn traverse(
                 let out = graph
                     .route_avoiding(&cur, &goal, &dead)
                     .and_then(|r| r.get(1).cloned());
-                if let Some(s) = pad_train(session, graph, out.as_deref())
+                if let Some(s) = pad_train(session, graph, out.as_deref(), Some(&goal))
                     .map_err(|e| format!("in {cur}, training: {e}"))?
                 {
                     trail.push(format!("{s}(training)"));
@@ -396,7 +398,7 @@ pub(super) fn traverse(
                 let out = route
                     .as_ref()
                     .and_then(|r| clock_detour(session, graph, r).or_else(|| r.get(1).cloned()));
-                if let Some(s) = pad_train(session, graph, out.as_deref())
+                if let Some(s) = pad_train(session, graph, out.as_deref(), Some(&goal))
                     .map_err(|e| format!("in {cur}, training: {e}"))?
                 {
                     trail.push(format!("{s}(training)"));
