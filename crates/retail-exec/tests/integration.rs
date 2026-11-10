@@ -89,6 +89,7 @@ mod field_stores;
 mod field_timers;
 mod field_vm;
 mod field_walls;
+mod final_heal;
 mod fishing_cadence;
 mod fishing_fight;
 mod fishing_line_clip;

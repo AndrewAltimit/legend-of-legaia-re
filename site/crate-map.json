@@ -941,6 +941,7 @@
     "encounter_man",
     "encounter_registry",
     "encounter_state",
+    "final_heal",
     "levelup",
     "magic_xp",
     "monster_ai",

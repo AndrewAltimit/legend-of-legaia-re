@@ -203,11 +203,17 @@ impl World {
     /// - re-sets the bit when another Lost Grail is still equipped (the
     ///   second slot scan).
     ///
-    /// Retail dispatches on the acting summon's target byte (`+0x1DD` `< 3`
-    /// = the single party target, `== 8` = sweep all party slots); the
-    /// engine sweeps the whole party after each step - equivalent, since a
-    /// member without the bit stays down and a member with it is revived by
-    /// the first sweep after death. Item id `0xE7` = "Lost Grail"
+    /// Retail dispatches on the acting actor's target byte (`+0x1DD` `< 3`
+    /// = the single party target, `== 8` = sweep all party slots;
+    /// [`legaia_engine_battle::final_heal::final_heal_sweep`], which the
+    /// retail-exec differential runs against the routine). The engine sweeps
+    /// the whole party after each step instead. That matches for a member
+    /// downed by an action aimed at it or at the whole party, which revives
+    /// in the same action; a member downed some other way revives here at
+    /// once, where retail waits for the cleanup of the next action that
+    /// targets it. The per-member arm - bit, Lost Grail spend, bit kept while
+    /// another is equipped or when none was - is the kernel's
+    /// ([`legaia_engine_battle::final_heal::final_heal_member`]). Item id `0xE7` = "Lost Grail"
     /// (disc-decoded `SCUS_942.54` item table); passive `0x27` mapping per
     /// `docs/formats/accessory-passive-table.md`. The dump's tail (first
     /// monster slot dead + `DAT_8007BD0C == 0xB5` boss-transition arm,
@@ -219,8 +225,7 @@ impl World {
     /// REF: FUN_800402F4 (the revive arm this calls - case 4, tier 1 = full
     /// max HP + status clear)
     pub(in crate::world) fn apply_final_heal_revives(&mut self) {
-        const LOST_GRAIL: u8 = 0xE7;
-        const FINAL_HEAL_WORD1_BIT: u32 = 0x80; // ability bit 0x27 (39)
+        use legaia_engine_battle::final_heal::{FinalHealMember, final_heal_member};
         let pc = (self.party.party_count.min(3) as usize).min(self.actors.len());
         for slot in 0..pc {
             let (max_hp, down) = {
@@ -237,24 +242,20 @@ impl World {
                 continue;
             };
             let mut bits = record.ability_bits();
-            let word1 = u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]);
-            if word1 & FINAL_HEAL_WORD1_BIT == 0 {
+            let mut eq = record.equipment();
+            let mut m = FinalHealMember {
+                hp: 0,
+                ability_word1: u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
+                accessories: [eq.slots[5], eq.slots[6], eq.slots[7]],
+            };
+            // The bit spends the first equipped Lost Grail (accessory slots
+            // 5..8) and stays while another is equipped.
+            if !final_heal_member(&mut m) {
                 continue;
             }
-            // Consume the first equipped Lost Grail (accessory slots 5..8).
-            let mut eq = record.equipment();
-            if let Some(i) = (5..8).find(|&i| eq.slots[i] == LOST_GRAIL) {
-                eq.slots[i] = 0;
-                record.set_equipment(eq);
-            }
-            // Clear the bit; re-set it when another Lost Grail remains.
-            let still_equipped = (5..8).any(|i| eq.slots[i] == LOST_GRAIL);
-            let word1 = if still_equipped {
-                word1
-            } else {
-                word1 & !FINAL_HEAL_WORD1_BIT
-            };
-            bits[4..8].copy_from_slice(&word1.to_le_bytes());
+            eq.slots[5..8].copy_from_slice(&m.accessories);
+            record.set_equipment(eq);
+            bits[4..8].copy_from_slice(&m.ability_word1.to_le_bytes());
             record.set_ability_bits(bits);
             // Full revive (FUN_800402F4 class 4, tier 1): max HP + statuses
             // cleared; liveness restored so the SM's scans see them alive.
