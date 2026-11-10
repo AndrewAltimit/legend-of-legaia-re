@@ -1211,6 +1211,11 @@ pub(super) fn pad_walk(
             since += 1;
             if since >= PAD_STALL_FRAMES {
                 session.host.world.set_pad(0);
+                // The stall was a press for a ride that never came: that
+                // contact is no route for the walks after this one.
+                if let Some(w) = path.windows(2).take(3).find(|w| !adjacent(w[0], w[1])) {
+                    note_dead_contact(session, w[1]);
+                }
                 let (px, pz) = player_xz(session);
                 let next: Vec<(i16, i16)> = path.iter().take(4).map(|&c| cell_center(c)).collect();
                 let w = &session.host.world;
