@@ -328,6 +328,7 @@ mod shop_quantity;
 mod sideband_applier;
 mod slot_machine;
 mod slot_marquee;
+mod slot_reel;
 mod spell_cam;
 mod spell_list;
 mod spell_list_scans;

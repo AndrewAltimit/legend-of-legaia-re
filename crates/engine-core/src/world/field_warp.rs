@@ -43,7 +43,7 @@ pub enum FieldWarpTick {
 /// slot-A images hold unrelated code at the same VA, hence the stem.
 ///
 /// PORT: overlay_field_0897_801d58f0
-fn warp_fade_template(
+pub fn warp_fade_template(
     f: &warp_tile::WarpFade,
     delay: i16,
 ) -> legaia_engine_system::fade::FadeTemplate {

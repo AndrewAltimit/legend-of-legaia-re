@@ -219,7 +219,7 @@ mod field_warp;
 mod static_window;
 pub use static_window::StaticObjectWindow;
 mod motion_pause_host;
-pub use field_warp::FieldWarpTick;
+pub use field_warp::{FieldWarpTick, warp_fade_template};
 mod frame_tick;
 mod handler_actors;
 pub use handler_actors::TransitionSweepReport;

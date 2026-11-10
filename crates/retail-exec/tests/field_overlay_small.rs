@@ -117,3 +117,73 @@ fn the_field_audio_release_matches_retail() {
         assert_eq!(cpu.mem.rd32(g + 4), 0x0BAD_F00D, "above {g:#x}");
     }
 }
+
+/// The kind-0 warp's fade repack `FUN_801D58F0`, over generated arguments,
+/// against `warp_fade_template`: the template it hands `FUN_80024E80` (whose
+/// second argument is `0`), `[0]`, `[1]`, `[3..=5]`, `[7..=9]`, `[10]` and
+/// `[11]`. The loader takes `[12]` as the id it stamps and never reads `[2]` /
+/// `[6]`; the repack leaves all three as the stack had them.
+#[test]
+fn the_warp_fade_repack_matches_retail() {
+    use legaia_engine_core::world::warp_fade_template;
+    use legaia_engine_field::field_warp_tile::WarpFade;
+    const REPACK: u32 = 0x801D_58F0;
+    const LOAD_FADE: u32 = 0x8002_4E80;
+    differential!(prot(897, REPACK));
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut cpu = scus_cpu().expect("disc present");
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(897).expect("PROT 0897"));
+    let seen = Rc::new(RefCell::new(Vec::<(Vec<i16>, u32)>::new()));
+    let s = seen.clone();
+    cpu.hook(LOAD_FADE, move |r, m| {
+        let words = (0..13).map(|i| m.rd16(r.r[A0] + 2 * i) as i16).collect();
+        s.borrow_mut().push((words, r.r[A1]));
+    });
+    let mut rng = crate::common::Rng(0x5741_5250);
+    for case in 0..5000 {
+        let f = WarpFade {
+            kind: rng.next() as i16,
+            from_rgb: rng.next(),
+            to_rgb: rng.next(),
+            delay: rng.next() as i16,
+            duration: rng.next() as i16,
+            hold: rng.next() as i16,
+        };
+        cpu.mem
+            .wr32(crate::common::STACK_TOP + 0x10, f.duration as i32 as u32);
+        cpu.mem
+            .wr32(crate::common::STACK_TOP + 0x14, f.hold as i32 as u32);
+        seen.borrow_mut().clear();
+        let args = [
+            f.kind as i32 as u32,
+            f.from_rgb,
+            f.to_rgb,
+            f.delay as i32 as u32,
+        ];
+        assert_eq!(cpu.call(REPACK, &args), Stop::Returned, "case {case}");
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1, "case {case}: one load");
+        let (w, second) = &seen[0];
+        assert_eq!(*second, 0, "case {case}: the loader's second argument");
+        let t = warp_fade_template(&f, f.delay);
+        let got = (
+            w[0],
+            w[1],
+            [w[3], w[4], w[5]],
+            [w[7], w[8], w[9]],
+            [w[10], w[11]],
+        );
+        let want = (
+            t.kind,
+            t.duration,
+            t.start_rgb,
+            t.end_rgb,
+            [t.mode[0], t.mode[1]],
+        );
+        assert_eq!(got, want, "case {case}: {f:?}");
+    }
+}
