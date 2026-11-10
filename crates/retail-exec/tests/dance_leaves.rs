@@ -2,7 +2,9 @@
 //! dancer's pad bit `FUN_801D4040`, the clip-driver gate `FUN_801D4098`, the
 //! banner's thousands glyph `FUN_801D3E28` and the number renderer
 //! `FUN_801D32F8`, against `DanceDir::pad_bit`, `dance_clip_driver_gate`,
-//! `score_thousands_glyph_u` and `dance_number_digits` with its two glyph maps.
+//! `score_thousands_glyph_u` and `dance_number_digits` with its two glyph maps;
+//! the HUD quad emitter `FUN_801D2F38` and the effect spawns `FUN_801D3FD0` /
+//! `FUN_801D40DC`.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_minigames::dance::{
@@ -25,6 +27,8 @@ const BANNER_U: u32 = 0x801D_4760;
 const SCORE_U: u32 = 0x801D_46E8;
 const LEVEL_U: u32 = 0x801D_4968;
 const STACK_TOP: u32 = 0x801F_FF00;
+const SPAWN: u32 = 0x801D_3FD0;
+const BANNER: u32 = 0x801D_40DC;
 
 /// One `FUN_801D2F38(x, y, widget, brightness, scale)` draw, with the glyph
 /// byte the caller patched in before it.
@@ -207,5 +211,142 @@ fn a_number_draws_the_digits_retail_draws() {
             port.as_slice(),
             "round {round} value {value} style_b {style_b}"
         );
+    }
+}
+
+/// The dance HUD's quad emitter `FUN_801D2F38`, decoded off the POLY_GT4
+/// packet it writes, over the overlay's widget table and the three draw
+/// modes the id's high bits pick, against `dance_hud_widget_quad`.
+#[test]
+fn a_dance_widget_emits_the_quad_retail_emits() {
+    differential!(prot(980, QUAD));
+    use legaia_engine_minigames::dance::{
+        DanceHudQuad, dance_hud_widget_quad, dance_widgets_with_abr,
+    };
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const PACKETS: u32 = 0x1F80_03A0;
+    const PACKET: u32 = 0x8018_0000;
+    let overlay = d.read_entry(980).expect("PROT 0980");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    cpu.stub(0x8003_D2C4, 0);
+    let widgets = dance_widgets_with_abr(&overlay);
+    assert!(!widgets.is_empty());
+    let mut rng = Rng(0x4451_5541);
+    let mut modes = [0; 3];
+    for round in 0..50_000 {
+        let index = rng.below(widgets.len() as u32);
+        let mode = rng.below(3);
+        let id = index | mode << 10;
+        let (x, y) = (rng.below(400) as i16 - 40, rng.below(300) as i16 - 30);
+        let brightness = [0, 0x80, 0xFF, 0x100, rng.below(0x200) as i32][rng.below(5) as usize];
+        let size = [0x1000, 0x800, 0x2000, rng.below(0x3000) as i32][rng.below(4) as usize];
+        cpu.mem.wr32(PACKETS, PACKET);
+        cpu.mem.wr32(STACK_TOP + 0x10, size as u32);
+        let args = [x as i32 as u32, y as i32 as u32, id, brightness as u32];
+        assert_eq!(cpu.call(QUAD, &args), Stop::Returned);
+        let m = &mut cpu.mem;
+        let xy = |m: &mut psx_retail_exec::Memory, o: u32| {
+            (m.rd16(PACKET + o) as i16, m.rd16(PACKET + o + 2) as i16)
+        };
+        let uv =
+            |m: &mut psx_retail_exec::Memory, o: u32| (m.rd8(PACKET + o), m.rd8(PACKET + o + 1));
+        let rgb = |m: &mut psx_retail_exec::Memory, o: u32| {
+            [
+                m.rd8(PACKET + o),
+                m.rd8(PACKET + o + 1),
+                m.rd8(PACKET + o + 2),
+            ]
+        };
+        let (x0, y0) = xy(m, 0x08);
+        let (x1, _) = xy(m, 0x14);
+        let (_, y1) = xy(m, 0x20);
+        let retail = DanceHudQuad {
+            poly_code: m.rd8(PACKET + 0x07),
+            x0,
+            y0,
+            x1,
+            y1,
+            uv: [uv(m, 0x0C), uv(m, 0x18), uv(m, 0x24), uv(m, 0x30)],
+            rgb_top: rgb(m, 0x04),
+            rgb_bottom: rgb(m, 0x1C),
+            clut: m.rd16(PACKET + 0x0E),
+            tpage_attr: m.rd16(PACKET + 0x1A),
+        };
+        let (w, abr) = &widgets[index as usize];
+        let port = dance_hud_widget_quad(w, *abr, x, y, id, brightness, size);
+        assert_eq!(
+            retail, port,
+            "round {round} id {id:#x} {w:?} x {x} y {y} brightness {brightness} size {size:#x}"
+        );
+        modes[mode as usize] += 1;
+    }
+    assert!(modes.iter().all(|&n| n > 10_000), "{modes:?}");
+}
+
+/// The cell-placed effect spawn `FUN_801D3FD0` and the sequence-clear
+/// banner `FUN_801D40DC` (its three spawns and the stars' weight), against
+/// `step_mark_effect_spawn` and `good_banner_spawn`.
+#[test]
+fn the_effect_spawns_land_where_retail_lands_them() {
+    differential!(prot(980, SPAWN), prot(980, BANNER));
+    use legaia_engine_minigames::dance::{good_banner_spawn, step_mark_effect_spawn};
+    let Some((mut cpu, _, _)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const PARTS: u32 = 0x8015_0000;
+    let spawned = Rc::new(RefCell::new(Vec::<(u32, u32)>::new()));
+    let sink = spawned.clone();
+    cpu.hook(0x8002_1B04, move |r, _| {
+        let mut s = sink.borrow_mut();
+        let part = PARTS + s.len() as u32 * 0x100;
+        s.push((part, r.r[A3]));
+        r.r[V0] = part;
+    });
+    // `(x, y, sprite, weight)` off a spawned part.
+    let part_of = |cpu: &mut Cpu, part: u32| {
+        (
+            cpu.mem.rd16(part + 0x14) as i16,
+            cpu.mem.rd16(part + 0x16) as i16,
+            cpu.mem.rd16(part + 0x50),
+            cpu.mem.rd16(part + 0x72),
+        )
+    };
+    let mut rng = Rng(0x5350_574E);
+    for round in 0..5000 {
+        for o in (0..0x300).step_by(4) {
+            cpu.mem.wr32(PARTS + o, 0);
+        }
+        spawned.borrow_mut().clear();
+        let (cx, cy) = (rng.below(0x100) as i16, rng.below(0x100) as i16);
+        let sprite = rng.next() as u16;
+        let args = [cx as u32, cy as u32, u32::from(sprite), 0x801D_4A90];
+        assert_eq!(cpu.call(SPAWN, &args), Stop::Returned);
+        let p = step_mark_effect_spawn(cx, cy, sprite);
+        let part = spawned.borrow()[0];
+        assert_eq!(
+            (part_of(&mut cpu, part.0), part.1),
+            ((p.x, p.y, p.sprite_id, 0), p.scale as u32),
+            "round {round}"
+        );
+
+        for o in (0..0x300).step_by(4) {
+            cpu.mem.wr32(PARTS + o, 0);
+        }
+        spawned.borrow_mut().clear();
+        let weight = rng.next() as u16;
+        assert_eq!(cpu.call(BANNER, &[u32::from(weight)]), Stop::Returned);
+        let b = good_banner_spawn(weight);
+        let parts: Vec<u32> = spawned.borrow().iter().map(|p| p.0).collect();
+        let retail: Vec<_> = parts.iter().map(|&a| part_of(&mut cpu, a)).collect();
+        let port = vec![
+            (b.banner.x, b.banner.y, b.banner.sprite_id, 0),
+            (b.stars[0].x, b.stars[0].y, b.stars[0].sprite_id, b.weight),
+            (b.stars[1].x, b.stars[1].y, b.stars[1].sprite_id, b.weight),
+        ];
+        assert_eq!(retail, port, "round {round} weight {weight}");
     }
 }
