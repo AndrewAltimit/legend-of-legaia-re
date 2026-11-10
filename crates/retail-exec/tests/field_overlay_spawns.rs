@@ -111,7 +111,7 @@ fn the_clip_pick_matches_retail() {
         // half stays clear here.
         let base = [99u16, 0, 1, 40, rng.next() as u16][rng.below(5) as usize];
         let leader =
-            rng.below(4) as u16 | (rng.next() as u16 & 0xFFF0) * u16::from(rng.below(4) == 0);
+            rng.below(4) as u16 | ((rng.next() as u16 & 0xFFF0) * u16::from(rng.below(4) == 0));
         let over = [0u32, 0, 1, 3, rng.next()][rng.below(5) as usize];
         let flag_set = rng.below(2) == 0;
         let flags = rng.next() & !0x0100_0000 | if flag_set { 0x0100_0000 } else { 0 };

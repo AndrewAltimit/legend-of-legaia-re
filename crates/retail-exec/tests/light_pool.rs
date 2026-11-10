@@ -192,12 +192,12 @@ fn decode(
     }
 }
 
-/// The light pool's draw `FUN_801E3984` with its three emitters - the fan
-/// `FUN_801E3658`, the ring `FUN_801E3764` and the side fill `FUN_801E3894`
-/// - against `light_pool_polys`: every primitive it links, in link order,
+/// The light pool's draw `FUN_801E3984` with its three emitters (the fan
+/// `FUN_801E3658`, the ring `FUN_801E3764` and the side fill `FUN_801E3894`)
+/// against `light_pool_polys`: every primitive it links, in link order,
 /// decoded back from the packet bytes (vertices and per-vertex colours),
-/// after the draw-mode packet it links first. The emitters are also called
-/// on their own, each against the matching primitive of the port's list.
+/// between the two draw-mode packets. The emitters are also called on their
+/// own, each against the matching primitive of the port's list.
 #[test]
 fn the_light_pool_draws_what_retail_draws() {
     differential!(
