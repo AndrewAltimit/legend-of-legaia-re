@@ -229,7 +229,7 @@ pub fn emit_horizon(
 
     let half = scale >> 1;
     let lo = scale / 5;
-    let hi = scale - lo;
+    let hi = scale.wrapping_sub(lo);
 
     let band_offset = if alt_band { ALT_BAND_OFFSET } else { 0 };
 
@@ -245,14 +245,14 @@ pub fn emit_horizon(
 
         // Each term is truncated to i16 on its own, then added - matching
         // the per-term `(short)` casts in the retail C.
-        let x_a = (-(half as i16)).wrapping_sub(((half * c) >> 12) as i16);
+        let x_a = (-(half as i16)).wrapping_sub((half.wrapping_mul(c) >> 12) as i16);
         let x_b = x_a
-            .wrapping_add(((hi * c) >> 12) as i16)
+            .wrapping_add((hi.wrapping_mul(c) >> 12) as i16)
             .wrapping_add(hi as i16)
             .wrapping_add(0xFF);
         let x_c = x_b
             .wrapping_add(lo as i16)
-            .wrapping_add(((lo * c) >> 12) as i16)
+            .wrapping_add((lo.wrapping_mul(c) >> 12) as i16)
             .wrapping_add(0x40);
 
         bands.push(HorizonBand {
@@ -357,7 +357,7 @@ mod tests {
         let scale = 0x500;
         let half = scale >> 1;
         let lo = scale / 5;
-        let hi = scale - lo;
+        let hi = scale.wrapping_sub(lo);
 
         let b = emit_horizon(scale, 0, 0, 0, 0, false, &flat);
         let band = &b.bands[0];
