@@ -112,6 +112,7 @@ mod group_aim;
 mod gte_capture;
 mod gte_engine;
 mod gte_leaves;
+mod homing_flight;
 mod hop_arc;
 mod hop_session;
 mod hop_spawn;

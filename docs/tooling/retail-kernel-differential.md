@@ -818,3 +818,12 @@ Matched on their first run: the side-band tick `FUN_80056208` (`battle_sideband`
 `FUN_801D02C0`, both passes and every packet, the GTE answered by the interpreter's (`ground_grid`); the per-actor
 draw `FUN_80048A08`, per object and the shadow (`actor_draw`); and the arts-entry build `FUN_801D388C` case `9`, the
 four chip records (`arts_entry_build`).
+
+The move projectile's slots in `FUN_801E09F8` (`homing_flight`), run whole pass after pass over every shipped
+move-power record and mutations of it at every frame step, match `HomingSlots::step_pass` and the streak word's
+`MoveFxStreak::tick_counter_by` on every slot's phase, child, position, heading and counter, the census, the spawns,
+the drags, the tints, the shivers and the hits. They found two arms with no port. A flying slot calls the streak ribbon
+once per `0xFF` byte of the `+0x12` list on every pass (`0x801E1284..0x801E12D8`), so the four records whose flight
+list is four `0xFF` drew no bolts between the caster and the target. And the two lists do not read a byte alike: the
+landing list's `0x64` is a screen flash (`FUN_80024E80(0x801C9070, 2)`, `0x801E14E0..0x801E1534`) and `0x65..=0x7F`
+spawns nothing, where the port handed both to the prototype table; the flight list has no such test.

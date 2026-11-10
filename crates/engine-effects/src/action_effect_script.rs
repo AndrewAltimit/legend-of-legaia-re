@@ -596,6 +596,33 @@ pub struct HomingSpawn {
     /// that slot's handle `ctx[+0x1018 + slot * 4]` (`sw v0,0x1018(v1)` at
     /// `0x801E1238` / `0x801E14DC`), the one [`HomingSlots::follows`] drags.
     pub slot: u8,
+    /// The landing list's screen flash rather than a spawn: a `+0x16` byte
+    /// of exactly [`HOMING_FLASH_EFFECT`] writes the template at
+    /// `0x801C9070` and calls `FUN_80024E80(0x801C9070, 2)`
+    /// (`0x801E14E0..0x801E1534`, and `0x801E0EE4..0x801E0F38` on the
+    /// hand-over), see [`homing_flash_template`].
+    pub flash: bool,
+}
+
+/// The landing list's flash byte (`li v0,0x64` at `0x801E14E0`).
+pub const HOMING_FLASH_EFFECT: u8 = 0x64;
+
+/// The fade the landing list's [`HOMING_FLASH_EFFECT`] spawns, with the id it
+/// is stamped with (`a1 = 2`): kind `1`, a `0x78`-frame ramp from black to
+/// `(0x80, 0x40, 0x40)`, no start delay and a one-frame hold - the stores at
+/// `0x801E14F4..0x801E1534` into `0x801C9070`. The id word `+0x18` is not
+/// written there; `FUN_80024E80` stamps its argument over it.
+pub fn homing_flash_template() -> (legaia_engine_system::fade::FadeTemplate, i16) {
+    (
+        legaia_engine_system::fade::FadeTemplate {
+            kind: 1,
+            duration: 0x78,
+            start_rgb: [0; 3],
+            end_rgb: [0x80, 0x40, 0x40],
+            mode: [0, 1, 0],
+        },
+        2,
+    )
 }
 
 /// The four homing slots a move's projectile flies on - the per-slot half of
@@ -659,6 +686,15 @@ pub struct HomingSlots {
     /// flight last seated rides the flight's head until the next spawn; a
     /// slot that spawned this step, or does not track, reads `None`.
     pub follows: [Option<[i32; 3]>; HOMING_SLOTS],
+    /// Where this pass drew each phase-`2` slot's flight ribbons: on every
+    /// pass a slot flies, after the move and any list spawn, the arm walks
+    /// all four bytes of the `+0x12` list and calls
+    /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
+    /// `0xFF` (`0x801E1284..0x801E12D8`), ahead of the arrival test. So a
+    /// record whose flight list is `0xFF` bytes draws its bolts all the way
+    /// to the target, not only on the landed countdown ([`Self::shocks`]).
+    /// `None` for a slot that did not fly this pass or a list with no `0xFF`.
+    pub trails: [Option<[i32; 3]>; HOMING_SLOTS],
 }
 
 impl HomingSlots {
@@ -752,6 +788,8 @@ impl HomingSlots {
         self.shocks = [0; HOMING_SLOTS];
         self.landed = [0; HOMING_SLOTS];
         self.follows = [None; HOMING_SLOTS];
+        self.trails = [None; HOMING_SLOTS];
+        let trail_list = (0..4).any(|k| record.get(0x12 + k) == Some(&0xFF));
         let shock_list = (0..4).any(|k| record.get(0x16 + k) == Some(&0xFF));
         let tracks = record.get(0x09).copied().unwrap_or(0) != 0;
         let byte = |o: usize| record.get(o).copied().unwrap_or(0);
@@ -804,6 +842,9 @@ impl HomingSlots {
                         }
                         s.counter = (s.counter - fall).max(0);
                     } else {
+                        // The flight list knows no flash: every byte but
+                        // `0xFF` spawns, bit 7 to the 2D pool and the rest
+                        // to the prototype table (`0x801E1178..0x801E1238`).
                         for e in list(0x12) {
                             if e != 0xFF {
                                 out.push(HomingSpawn {
@@ -811,10 +852,14 @@ impl HomingSlots {
                                     at: s.pos,
                                     heading: s.heading,
                                     slot: i as u8,
+                                    flash: false,
                                 });
                             }
                         }
                         s.counter = (0x40 - speed) as i16;
+                    }
+                    if trail_list {
+                        self.trails[i] = Some(s.pos);
                     }
                     if (s.pos[0] - t[0]).abs() + (s.pos[2] - t[2]).abs() <= HOMING_ARRIVAL {
                         land(s, i as u8, t, record, &list, &mut out);
@@ -890,13 +935,19 @@ fn land(
     s.phase = 3;
     s.counter = half(0x06);
     s.pos = [t[0], t[1] - i32::from(half(0x02)), t[2]];
+    // The landing list tests the byte where the flight list does not
+    // (`sltiu v0,s0,0x64` at `0x801E1440`): bit 7 goes to the 2D pool, a
+    // byte below `0x64` to the prototype table, `0x64` itself is the screen
+    // flash, and `0x65..=0x7F` spawns nothing.
     for e in list(0x16) {
-        if e != 0xFF {
+        let flash = e == HOMING_FLASH_EFFECT;
+        if e != 0xFF && (e & 0x80 != 0 || e <= HOMING_FLASH_EFFECT) {
             out.push(HomingSpawn {
                 effect: e,
                 at: s.pos,
                 heading: s.heading,
                 slot,
+                flash,
             });
         }
     }
