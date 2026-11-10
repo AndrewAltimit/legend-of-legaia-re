@@ -1179,6 +1179,17 @@ pub(super) fn pad_walk(
                         .collect();
                     bodies.sort_unstable();
                     eprintln!("      [stall-npc] bodies {bodies:?}");
+                    for c in w.field_vm.channels.iter().filter(|c| !c.object_bind) {
+                        let (x, z) = (i32::from(c.ctx.world_x), i32::from(c.ctx.world_z));
+                        if (x - i32::from(px)).abs() < 400 && (z - i32::from(pz)).abs() < 400 {
+                            eprintln!(
+                                "      [stall-chan] P1[{}] at ({x},{z}) flags {:#x} pos {:?}",
+                                c.placement_index,
+                                c.ctx.flags,
+                                w.npcs.positions.get(&(c.placement_index as u8))
+                            );
+                        }
+                    }
                     for c in &w.props.colliders {
                         if (c.center.0 - i32::from(px)).abs() < 400
                             && (c.center.1 - i32::from(pz)).abs() < 400

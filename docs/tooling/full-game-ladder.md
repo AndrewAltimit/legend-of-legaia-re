@@ -559,6 +559,17 @@ to Nivora set four rules the continuous hand plays by:
   `0x36E` and the lift's `0x371`) for a player standing in (40..41, 81). A
   box record whose only raise is a flag the scene lowers again (the lift)
   is stood in only while a story talk waits in another walk component.
+- **The intercom answers from a six-unit strip.** In `doman` the scratchpad
+  flag `0x20000` is up, so the box test takes the `x >> 7` form, and the
+  box row ends at z `10495`; the facing probe reaches the intercom (centre
+  z `10624`) only from z `10490`. A lean toward it from inside the box
+  steps eight a frame, so a lean that starts at z `10448` lands on
+  `10488`, then `10496`, outside. The hand then backs off one step at the
+  other speed (R1 inverts Field Move, twelve a frame) and leans again,
+  which moves the landing by four. Without it the lift's `0x371` came up
+  only when the walk into the box happened to leave the lean on the
+  right step, and a run that left `doman` short of Dr. Usha's `0x370`
+  reached `nilboa` barred ([Nivora](#nivora)).
 - **A box held by a member.** When the entry script tests a named member's
   actor on the same box as the leader's (`nilboa`'s `CD 31`), that member
   takes control and walks in, and control passes on until a leader stands
@@ -2145,7 +2156,15 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
 
   The continuous run plays the chain as the two milestones' `continuous_via`
   ([the spine](#the-spine)). Without it the run reaches `doman` and `nilboa`
-  on arrival and stalls inside the tunnels on P2[32]'s `0x370`. Gaza's second
+  on arrival and stalls inside the tunnels on P2[32]'s `0x370`.
+- `nilboa`'s mouth is barred until `0x370` as well. The `BLOCK` placements
+  P1[27..42] stand round the landing at (10, 24), solid (`+0x10 & 3`
+  clear), and only the entry script's `0x370` arm (P1[0] `+0xD2`) retires
+  placements, nineteen of them (`4C EB <id> 05 00`, `B1 <id> 03` for
+  targets `0x33..0x45`). A run whose hand walks through bodies never sees
+  them; with `npcs.solid` armed, one that arrived without `0x370` stood
+  boxed in at the landing, every beat stalled one step south of (10, 25),
+  and `0x456` was never raised. Gaza's second
   fight is the stretch's risk: it is won out of what the Sol errand leaves
   in the bag ([above](#an-errand-the-story-waits-on)), and a party that
   meets it with one Healing Flower loses it.
