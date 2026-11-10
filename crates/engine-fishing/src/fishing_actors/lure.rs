@@ -102,12 +102,18 @@ fn lure_polar(angle: i32, radius: i32, scale: i32) -> (i32, i32) {
 /// rests on, so a float root will not do.
 ///
 /// PORT: FUN_8005AF0C
-/// PORT: FUN_8005ADB8
 pub fn scus_sqrt(n: i32) -> i32 {
     if n == 0 {
         return 0;
     }
-    let e = 8 - n.leading_zeros() as i32;
+    // `FUN_8005BA1C` reads the GTE's `LZCR`: the run of leading bits equal
+    // to the sign, so a negative input counts its leading ones.
+    let lead = if n < 0 {
+        (!n).leading_zeros()
+    } else {
+        n.leading_zeros()
+    };
+    let e = 8 - lead as i32;
     let (scale, arg) = if e >= 0 {
         let s = e >> 1;
         (s, n >> (s * 2))
@@ -115,6 +121,17 @@ pub fn scus_sqrt(n: i32) -> i32 {
         let s = (e >> 1) + 1;
         (s, n.wrapping_shl((-2 * s) as u32))
     };
+    let x = hyperbolic_root(arg);
+    let shift = scale - 6;
+    if shift >= 0 { x << shift } else { x >> -shift }
+}
+
+/// `FUN_8005ADB8`: the hyperbolic rotation [`scus_sqrt`] runs on its
+/// normalised argument, from `(arg + 0x5D50AD, arg - 0x5D50AD)` through
+/// shifts `1..=6` with `4` taken twice. Returns the `x` it leaves.
+///
+/// PORT: FUN_8005ADB8
+pub fn hyperbolic_root(arg: i32) -> i32 {
     let (mut x, mut y) = (arg.wrapping_add(0x5D_50AD), arg.wrapping_sub(0x5D_50AD));
     let mut turn = |shift: i32| {
         let (dx, dy) = (y >> shift, x >> shift);
@@ -132,8 +149,7 @@ pub fn scus_sqrt(n: i32) -> i32 {
             turn(shift);
         }
     }
-    let shift = scale - 6;
-    if shift >= 0 { x << shift } else { x >> -shift }
+    x
 }
 
 impl LureActor {
