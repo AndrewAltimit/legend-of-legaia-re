@@ -23,7 +23,7 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_menus::name_entry::{Control, NameEntryInput, NameEntryState};
+use legaia_engine_menus::name_entry::{Control, NameEntryState};
 use legaia_engine_ui as ui;
 
 /// The shared name-entry view (`engine-screens::field_screens::name_entry_view`,
@@ -100,7 +100,7 @@ impl LegaiaRuntime {
         if !h.world.name_entry_active() {
             return false;
         }
-        h.world.step_name_entry(NameEntryInput::from_pad_edge(edge))
+        h.world.step_name_entry_pad(edge)
     }
 
     /// Live overlay state for the page's status line (and headless checks):

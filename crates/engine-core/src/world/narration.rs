@@ -125,6 +125,18 @@ impl World {
         }
     }
 
+    /// Step the naming prompt from this frame's pad **edge** word, with the
+    /// window kernel's cursor auto-repeat this pump raised folded into the
+    /// d-pad (retail's `_DAT_8007BB84`): a held direction re-fires after
+    /// `0x14` vsyncs and then every three. `true` on the committing frame.
+    /// Every host's naming input comes through here.
+    pub fn step_name_entry_pad(&mut self, edge: u16) -> bool {
+        let repeat = edge | self.input.take_menu_repeat();
+        self.step_name_entry(
+            legaia_engine_menus::name_entry::NameEntryInput::from_pad_words(edge, repeat),
+        )
+    }
+
     /// One frame of the modal naming prompt, from a pad **edge** word (bits
     /// newly pressed this frame, the [`Self::set_pad`] layout).
     ///
@@ -145,7 +157,7 @@ impl World {
         if !self.name_entry_active() {
             return false;
         }
-        self.step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.step_name_entry_pad(edge);
         self.name_entry_display_frames(1);
         true
     }

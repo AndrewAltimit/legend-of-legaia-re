@@ -210,13 +210,22 @@ impl NameEntryInput {
     /// Triangle to cancel. Both hosts route their naming-prompt edges through
     /// this one decode; each used to spell the six masks out locally.
     pub fn from_pad_edge(edge: u16) -> Self {
+        Self::from_pad_words(edge, edge)
+    }
+
+    /// Decode the two words the machine reads: the buttons off the edge word
+    /// `_DAT_8007B874`, the d-pad off the auto-repeat word `_DAT_8007BB84`
+    /// (`0x801F0754`, `0x801F0A0C`) - the edge word with the window kernel's
+    /// cursor repeat folded in, so a held direction walks the grid.
+    pub fn from_pad_words(edge: u16, repeat: u16) -> Self {
         use legaia_engine_system::input::PadButton;
         let pressed = |b: PadButton| edge & b.mask() != 0;
+        let stepped = |b: PadButton| repeat & b.mask() != 0;
         Self {
-            up: pressed(PadButton::Up),
-            down: pressed(PadButton::Down),
-            left: pressed(PadButton::Left),
-            right: pressed(PadButton::Right),
+            up: stepped(PadButton::Up),
+            down: stepped(PadButton::Down),
+            left: stepped(PadButton::Left),
+            right: stepped(PadButton::Right),
             confirm: pressed(PadButton::Cross),
             cancel: pressed(PadButton::Triangle),
             start: edge == PadButton::Start.mask(),

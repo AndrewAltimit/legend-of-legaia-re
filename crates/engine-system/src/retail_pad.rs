@@ -304,6 +304,25 @@ impl RetailPadState {
     /// engine reads a keyboard or a gamepad, not a PSX controller port - and
     /// still gets the retail edge words and the 32-vsync auto-repeat window.
     pub fn pump_packed(&mut self, held: u32, vsync_delta: u32) {
+        self.pump_words(held, vsync_delta);
+        self.menu_repeat = self.menu.step(held as u16, MENU_REPEAT_MASK, vsync_delta);
+    }
+
+    /// [`Self::pump_packed`] for a host that hands over the **raw** pad word
+    /// (the engine's `PadButton` layout, the packed word byte-swapped) and
+    /// reads the held / pressed words back in that layout. The cursor
+    /// auto-repeat is the one piece that names buttons, so it runs on the
+    /// packed form: its chord is the D-pad and the shoulders, not whatever
+    /// raw bits share the mask's positions.
+    pub fn pump_raw(&mut self, raw: u16, vsync_delta: u32) {
+        self.pump_words(u32::from(raw), vsync_delta);
+        self.menu_repeat = self
+            .menu
+            .step(raw.swap_bytes(), MENU_REPEAT_MASK, vsync_delta);
+    }
+
+    /// The pump's words and history ring, layout-blind.
+    fn pump_words(&mut self, held: u32, vsync_delta: u32) {
         self.held = held;
         self.changed = held ^ self.prev;
         self.pressed = held & !self.prev;
@@ -323,7 +342,6 @@ impl RetailPadState {
             self.countdown += REPEAT_PERIOD;
             self.repeat_pulse = self.held_32;
         }
-        self.menu_repeat = self.menu.step(held as u16, MENU_REPEAT_MASK, vsync_delta);
     }
 }
 
