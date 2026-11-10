@@ -181,6 +181,7 @@ mod menu_subscreens;
 mod mesh_swap;
 mod mode_frame;
 mod mode_init;
+mod model_select;
 mod monster_install;
 mod monster_load;
 mod monster_pick;
