@@ -231,17 +231,20 @@ impl World {
         if slot >= self.actors.len() || !self.actors[slot].active {
             return;
         }
-        if self.actors[slot].move_state.flags & 0x0008_0000 != 0 {
-            return;
-        }
+        // The player tick's walk gate (`0x801D1694..0x801D16E4`): the
+        // player's own lock, the scratchpad system lock, then the warp pair.
         // A kind-0 warp in flight, and the hold its landing leaves, keep the
-        // pad controller off entirely (`0x801D16C8..0x801D16E4`): the player
-        // stands through the fade instead of walking out of it - and stands
-        // idle, because the warp is not a movement lock, so the system
-        // channel's per-tick reset of the clip base still runs after each
-        // settle ([`Self::tick_field_system_channel_clip_reset`]) and leaves
-        // the idle base `2` for the next one.
-        if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+        // pad controller off entirely: the player stands through the fade
+        // instead of walking out of it - and stands idle, because the warp is
+        // not a movement lock, so the system channel's per-tick reset of the
+        // clip base still runs after each settle
+        // ([`Self::tick_field_system_channel_clip_reset`]) and leaves the
+        // idle base `2` for the next one.
+        if !legaia_engine_field::field_warp_tile::player_tick_walks(
+            self.actors[slot].move_state.flags & 0x0008_0000 != 0,
+            self.flags.story_flags & crate::world::save::FIELD_SYSTEM_LOCK_BIT != 0,
+            &self.locomotion.warp,
+        ) {
             return;
         }
         // Past the walk gate (`field_warp_tile::player_tick_walks`) the tick

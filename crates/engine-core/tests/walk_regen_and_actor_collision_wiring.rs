@@ -88,7 +88,7 @@ fn walk_regen_gates_are_per_passive_and_a_bare_party_is_untouched() {
 /// first free frame pays it.
 #[test]
 fn a_held_player_s_walk_regen_waits_for_the_walk_gate() {
-    for hold in ["lock", "warp", "pad hold"] {
+    for hold in ["lock", "system lock", "warp", "pad hold"] {
         let mut world = World::new();
         world.mode = SceneMode::Field;
         world.install_field_player(0);
@@ -96,6 +96,7 @@ fn a_held_player_s_walk_regen_waits_for_the_walk_gate() {
         world.locomotion.walk_regen_steps = WALK_REGEN_STEP_COST + 1;
         match hold {
             "lock" => world.actors[0].move_state.flags |= 0x0008_0000,
+            "system lock" => world.flags.story_flags |= 0x400,
             "warp" => world.locomotion.warp.timer = 0x7FFF,
             _ => world.locomotion.warp.hold = 0x7FFF,
         }
@@ -107,6 +108,7 @@ fn a_held_player_s_walk_regen_waits_for_the_walk_gate() {
             "{hold}"
         );
         world.actors[0].move_state.flags &= !0x0008_0000;
+        world.flags.story_flags &= !0x400;
         world.locomotion.warp = Default::default();
         world.tick();
         assert_eq!(pools(&world), (58, 20, 10), "{hold}: released");
