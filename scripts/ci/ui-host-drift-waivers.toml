@@ -717,7 +717,7 @@ follow past the page's own helper.
 [[frame_content]]
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
-native_only = ["battle_stage_layers"]
+native_only = ["battle_stage_layers", "push_back"]
 web_only = ["armed", "battle_monster_slots", "battle_party_forms", "ensure_battle_party_forms", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_wave_monsters", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
 The presentation itself is one session step on both hosts
@@ -732,7 +732,9 @@ Native-only `battle_stage_layers` is the window's mid-fight stage-shell
 rebuild (`tick_battle_stage_shell`, run after the re-stamps): the page's
 twin (`tick_battle_stage_shell_web`) re-reads the same
 `SceneHost::battle_stage_object_indices` and rebuilds through its own mesh
-path.
+path. Native-only `push_back` is the window's own battle event ring
+(`push_battle_log`, the HUD's scrolling log of the step's events), a
+read-out the page does not draw; it changes no world state.
 
 The web-only list is where the code sits, not whether the host does it. The
 page folds its whole battle presentation frame into this one named step: the

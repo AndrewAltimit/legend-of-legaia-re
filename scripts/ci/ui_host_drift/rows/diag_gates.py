@@ -67,6 +67,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_CAST_HIDE", "additive": False, "note": "leave the cast scene's parts seated from these record VAs out of the draw lists, to name the part a film frame shows; draws less, never more"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR", "additive": False, "note": "cast film: seat the caster's clip and cursor on the cast begin; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_SEAT", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ caster seat filter; draws nothing"},
+    {"env": "LEGAIA_DIAG_CAST_SEQ_PRE", "additive": False, "note": "beside a gate-started LEGAIA_DIAG_CAST_SEQ, print the acting seat's walk-in line per tick before the gate (the engine half of the probe's pre.csv); draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_TAIL", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ ticks past the Done band; draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV", "additive": False, "note": "record the capture child's mix from its gate on to a WAV for the real-PCM cast channel (and the applied audio level beside it); draws nothing"},
     {"env": "LEGAIA_DIAG_AUDIO_WAV_BUS", "additive": False, "note": "LEGAIA_DIAG_AUDIO_WAV: `all` keeps the music bus (default silent); draws nothing"},
