@@ -353,8 +353,9 @@ fn duel_draws_through_the_engine_surface_with_the_picked_fighter() {
         assert!(!mg.baka_scene_vram().is_empty());
         assert_eq!(mg.baka_scene_vp(4.0 / 3.0).len(), 16);
         verts.push(n);
-        // Ticking poses the same buffers while the round-start spin moves
-        // the arena camera.
+        // Ticking poses the same buffers. A fight seated straight into the
+        // duel stands on the settled duel camera: the round-start spin is the
+        // banner arm `0x35`'s, which this seat never runs.
         let vp0 = mg.baka_scene_vp(1.0);
         for _ in 0..30 {
             mg.baka_tick(1);
@@ -364,7 +365,7 @@ fn duel_draws_through_the_engine_surface_with_the_picked_fighter() {
             generation,
             "same pairing, same buffers"
         );
-        assert_ne!(mg.baka_scene_vp(1.0), vp0, "the round-start spin moves");
+        assert_eq!(mg.baka_scene_vp(1.0), vp0, "no spin in the duel state");
     }
     // The chrome's announcer lines stage off the disc's XA32 / XA33 and the
     // duel starts them - the round banner's line once the first round ends.

@@ -260,6 +260,18 @@ impl DuelCamera {
         false
     }
 
+    /// The settled duel camera ([`DUEL_CAMERA`]) with nothing armed: the pose
+    /// a round stands under once the spin and its glide are done. A fight
+    /// seated straight into the duel state starts here, since no round-start
+    /// arm runs to turn it.
+    pub fn settled() -> Self {
+        Self {
+            globals: DUEL_CAMERA,
+            glide: None,
+            sweeping: false,
+        }
+    }
+
     /// The player-select camera ([`SELECT_CAMERA`]), held still.
     ///
     /// REF: FUN_801CF388 (state `0x0A`, `0x801CF8CC..0x801CF924`)
