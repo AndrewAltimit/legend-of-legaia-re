@@ -60,6 +60,23 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "the scene's own track restarted, native vs play page - the "
+        "page started `World::audio.current_bgm` through a body of its own, "
+        "and its late-output start ran it ahead of a scene pick's first tick, "
+        "while the entry's op-0x35 events were still queued: Mt. Rikuroa's "
+        "summit logged `start, stop, start, start` on the page where the "
+        "window logs `stop, start, start`. Both hosts restart the track "
+        "through the session's `restore_field_bgm`; the page's late output "
+        "asks `start_field_bgm_on_attach`, which leaves a queued event to "
+        "the tick's routing",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": ("crates/web-play/src/play_bgm.rs", "start_world_bgm"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["restore_field_bgm"],
+    },
+    {
         "what": "a battle body's blend word, native vs play page - the native "
         "posed override was keyed by TMD index, so two bodies on one TMD shared "
         "one mesh and one blend. Each host re-uploads a body's own stream with "
