@@ -50,6 +50,42 @@ impl World {
         self.dialog.active_inline_slot = None;
     }
 
+    /// Drop what the previous scene's MAN installed when the scene being
+    /// entered has none (a pack map, whose base scene runs no retail
+    /// script): the carrier set, the per-placement field-VM channel state,
+    /// and the ambient tail-section-1 motion streams. A scene with a MAN
+    /// replaces each of these from its own installers
+    /// ([`Self::install_field_carriers_from_man`], [`Self::seed_field_channels`],
+    /// [`Self::seed_field_npc_ambient`]); a scene without one used to keep
+    /// the old set, so a pack map entered over a running retail scene kept
+    /// that scene's wanderers walking - their ambient VMs published
+    /// positions for placement slots the map does not have, a stale NPC
+    /// stood and collided there, and its `rand()` draws parted the run from
+    /// the same map entered cold.
+    pub fn drop_man_installed_state(&mut self) {
+        self.install_field_carriers(Vec::new());
+        self.field_vm.pending_engagements.clear();
+        self.field_vm.retired_placements.clear();
+        self.field_vm.pending_placement_respawns.clear();
+        self.field_vm.object_channel_binds.clear();
+        self.field_vm.object_binds_by_key.clear();
+        self.field_vm.retired_objects.clear();
+        let n = &mut self.npcs;
+        n.ambient.clear();
+        n.ambient_order.clear();
+        n.ambient_engaged = false;
+        n.ambient_engage_owner = None;
+        n.object_ambient.clear();
+        n.object_models.clear();
+        n.clip_cursors.clear();
+        n.phase_draws.clear();
+        n.faces.clear();
+        n.face_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
+        n.heading_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
+        n.slot_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
+        n.clip_rate_live.clear();
+    }
+
     /// Install the scene's field carriers **derived from its MAN actor-placement
     /// partition** ([`legaia_engine_field::man_field_scripts::derive_field_carriers`]) rather
     /// than from a hand-built list, replacing any previously installed set.

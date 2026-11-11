@@ -694,7 +694,7 @@ impl SceneHost {
                 self.world.terrain.placed_spawn_lut = self.world.terrain.floor_height_lut;
             }
             Some(Err(err)) => eprintln!("[scene] field floor-height LUT load skipped: {err:#}"),
-            _ => {}
+            _ => self.world.drop_man_installed_state(),
         }
         // The installed ladder is the baseline a scripted floor wave moves
         // from (`FieldLocomotion::ladder_seen`).
@@ -1088,10 +1088,19 @@ impl SceneHost {
                     self.world
                         .install_boss_stagers_from_man(&man_file, &man_bytes);
                 }
-                Err(err) => eprintln!("[scene] field-carrier MAN parse skipped: {err:#}"),
+                Err(err) => {
+                    eprintln!("[scene] field-carrier MAN parse skipped: {err:#}");
+                    self.world.drop_man_installed_state();
+                }
             },
-            Some(Err(err)) => eprintln!("[scene] field-carrier MAN payload skipped: {err:#}"),
-            _ => {}
+            Some(Err(err)) => {
+                eprintln!("[scene] field-carrier MAN payload skipped: {err:#}");
+                self.world.drop_man_installed_state();
+            }
+            // No MAN (a pack map's base scene): nothing replaces the previous
+            // scene's MAN-installed carriers, channels and ambient streams,
+            // so drop them here.
+            _ => self.world.drop_man_installed_state(),
         }
         // Install the VDF ("set_mime") buffer so the `0x4C 0xD8`
         // synchronous-spawn host hook can resolve actor templates. Only
@@ -1356,7 +1365,7 @@ impl SceneHost {
                     }
                 }
                 Some(Err(err)) => eprintln!("[scene] prologue MAN payload skipped: {err:#}"),
-                _ => {}
+                _ => self.world.drop_man_installed_state(),
             }
         }
         // New-game opening: when `town01` is entered via the prologue hand-off
@@ -1398,7 +1407,7 @@ impl SceneHost {
                     }
                 }
                 Some(Err(err)) => eprintln!("[scene] town01 opening MAN payload skipped: {err:#}"),
-                _ => {}
+                _ => self.world.drop_man_installed_state(),
             }
         }
         // Decode the scene's gold-shop stock from its MAN so the field-menu
