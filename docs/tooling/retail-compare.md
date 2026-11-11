@@ -4660,6 +4660,30 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   have it in view yet. A sweep of a leg past the frame edge in two passes
   is the residual, not the ghost's colour.
 
+### Which pose names a strike capture's ghost bits
+
+The ghost bits are a function of the camera pose, so the image child
+re-derives them on retail's pose rather than keeping the ones its own glide
+left. With every pose component aligned it reads the ghost pose (one pass
+older than the displayed frame, `RetailBattle::displayed_ghost_pose`); in the
+capture band it reads that pose whatever the alignment took.
+
+The strike band `0x1E..=0x20` runs no row arm either, so a partly aligned
+strike frame re-derives its bits on the displayed pose
+(`LEGAIA_BATTLE_CAM_ALIGN`'s live half) instead of keeping the replay's:
+`battle_garmel_party_noa_lizard_tail_mid`'s replay ghosted Vahn, `1624` units
+from the test point against a radius of `1228` on retail's pose, where
+retail's frame draws him solid (`image` `.902` to `.911`;
+`battle_ropeway_party_gala_flying_knee_mid` `.910` to `.928`).
+
+A party seat's first swing (`ctx[+0x15] == 1`) dates its strike loop on the
+accumulator `ctx[+0x87C]`, which climbs `8 * step` a pass from the commit
+that opened it. A ghost pose walked back further than that stands on a pass
+before case 7 armed, so it holds the displayed pose:
+`battle_ropeway_party_noa_sonic_javelin_open` (accumulator `48`) ghosted Vahn
+`17` units inside the radius on the further walk, where the displayed pose
+clears him by `43` and retail draws him solid (`.854` to `.861`).
+
 ### A rung's phase is time since the install
 
 Op `4C 90` sets a rung of the floor ladder swinging (`FUN_801DA930`), and nothing
