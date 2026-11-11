@@ -315,9 +315,10 @@ impl PlayWindowApp {
             // `[terrain, placements]`: the list order the occlusion gate's
             // per-frame draw test reads (`field_occlusion::OCCLUDER_LIST_*`).
             let occ = sc.spawn(|| {
-                legaia_engine_scene::field_occlusion::FieldOccluders::build(
+                legaia_engine_scene::field_occlusion::FieldOccluders::build_with_binds(
                     &[&terrain, &placements],
                     res,
+                    binds.as_ref(),
                 )
             });
             let fog = sc.spawn(|| {

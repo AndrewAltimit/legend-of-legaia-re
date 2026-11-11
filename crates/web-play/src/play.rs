@@ -379,8 +379,11 @@ pub fn build_field_render(
         .ok()
         .flatten()
         .filter(|h| !h.indices.is_empty());
-    let occluders =
-        legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
+    let occluders = legaia_engine_scene::field_occlusion::FieldOccluders::build_with_binds(
+        &[&terrain, &placements],
+        res,
+        binds.as_ref(),
+    );
     // Cross-draw coplanar lifts over the combined layers in retail's emission
     // order (`coplanar_draws::emission_order`: placements, then terrain) - the
     // order the native shell and the field-scene viewer rank, so all three

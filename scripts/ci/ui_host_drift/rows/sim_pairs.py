@@ -760,6 +760,39 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["player_body_centre"],
     },
     {
+        "what": "camera-occlusion fade draw gate, native vs play page - the "
+        "gate asked the crop and the actor cull per occluder range, but not "
+        "the placed-draw loop's other two tests, so a placed wall parked at "
+        "the hide box or off the windowed static-object list still hid the "
+        "player on both hosts while neither drew it. Both sites build the one "
+        "`OccluderGate` per frame over occluders keyed by the scene's binds",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_stage.rs",
+                "stage_occlusion_fade",
+            ),
+            "web": (WEB_PLAY_PLAYER_MESH, "field_player_occluded"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["OccluderGate"],
+    },
+    {
+        "what": "camera-occlusion fade occluder set, native vs play page - "
+        "the set is keyed by the scene's object binds "
+        "(`FieldOccluders::build_with_binds`), which is what lets the draw "
+        "gate test a placed wall's window and object keys; a bare `build` "
+        "leaves both `None` and the gate passes every placed wall",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/field_render/placements.rs",
+                "build_static_env_products",
+            ),
+            "web": (WEB_PLAY, "build_field_render"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["build_with_binds"],
+    },
+    {
         "what": "camera-distance preset cycle, native vs play page - the "
         "stored option is what every options apply re-asserts onto the "
         "camera, so a cycle that steps the camera alone is undone by the next "

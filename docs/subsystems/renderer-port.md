@@ -464,9 +464,11 @@ by default in the renderer, and off IS retail** - the disabled path is pixel-ide
 the static scene that arms the fade only when the character is completely
 hidden - a partially visible character never fades. Only draws the frame
 draws count: the occluder set is built once per scene from every static
-draw, and the gate asks the shared `field_view_window::occluder_drawn` for
-each range (the terrain crop, the actor cull at the object's base position),
-so a wall the crop or the cull dropped cannot open a hole over the player. A fragment then fades
+draw, and the gate asks the shared `field_view_window::OccluderGate` for
+each range (the terrain crop; for a placed object the tests its own draw
+loop makes - not parked at the hide box, live on the windowed static-object
+list, through the actor cull at its base position), so a wall the frame does
+not draw cannot open a hole over the player. A fragment then fades
 only when its draw is environment geometry (the
 `set_occlusion_env_draws` watermark exempts the player / NPC draws via
 `flags[2]`), it is nearer the camera than the player by more than a small

@@ -199,22 +199,51 @@ pub fn placed_actor_visible(
 
 /// The occlusion fade's draw gate
 /// ([`legaia_engine_scene::field_occlusion::FieldOccluders::fully_occluded_where`]):
-/// `true` when the static draw an occluder range came from is drawn this
-/// frame. A terrain draw asks the terrain crop
-/// ([`legaia_engine_scene::field_view_window::terrain_draw_visible`]), a
-/// placed object the actor cull ([`placed_actor_visible`]) at its base
-/// position - where its occluder triangles stand. With no crop (`cells =
-/// None`) every draw is drawn. Both play hosts ask this one gate, so the
-/// fade opens over the same walls on both.
-pub fn occluder_drawn(
-    world: &World,
-    cells: Option<&ViewCells>,
-    d: &legaia_engine_scene::field_occlusion::OccluderDraw,
-) -> bool {
-    if d.list == legaia_engine_scene::field_occlusion::OCCLUDER_LIST_PLACEMENTS {
-        placed_actor_visible(world, cells, d.world_x, d.world_z, d.key.cull_radius)
-    } else {
-        legaia_engine_scene::field_view_window::terrain_draw_visible(cells, d.key)
+/// [`Self::drawn`] is `true` when the static draw an occluder range came from
+/// is drawn this frame. A terrain draw asks the terrain crop
+/// ([`legaia_engine_scene::field_view_window::terrain_draw_visible`]); a
+/// placed object asks the three tests the hosts' placed-draw loops make
+/// before drawing it - not parked at the hide box
+/// (`World::hidden_object_records`), live on the windowed static-object list
+/// ([`crate::scene_staging::placed_draw_live`]) and through the actor cull
+/// ([`placed_actor_visible`]) at its base position, where its occluder
+/// triangles stand. With no crop (`cells = None`) the cull passes every
+/// draw. Both play hosts build this one gate per frame, so the fade opens
+/// over the same walls on both.
+pub struct OccluderGate<'a> {
+    world: &'a World,
+    cells: Option<&'a ViewCells>,
+    hidden: std::collections::HashSet<usize>,
+}
+
+impl<'a> OccluderGate<'a> {
+    /// The gate for this frame's world and crop.
+    pub fn new(world: &'a World, cells: Option<&'a ViewCells>) -> Self {
+        Self {
+            world,
+            cells,
+            hidden: world.hidden_object_records(),
+        }
+    }
+
+    /// Whether occluder source `d` is drawn this frame.
+    pub fn drawn(&self, d: &legaia_engine_scene::field_occlusion::OccluderDraw) -> bool {
+        if d.list == legaia_engine_scene::field_occlusion::OCCLUDER_LIST_PLACEMENTS {
+            !d.object.is_some_and(|k| self.hidden.contains(&k))
+                && crate::scene_staging::placed_draw_live(
+                    d.window.as_ref(),
+                    &self.world.terrain.static_window,
+                )
+                && placed_actor_visible(
+                    self.world,
+                    self.cells,
+                    d.world_x,
+                    d.world_z,
+                    d.key.cull_radius,
+                )
+        } else {
+            legaia_engine_scene::field_view_window::terrain_draw_visible(self.cells, d.key)
+        }
     }
 }
 
@@ -374,5 +403,47 @@ mod tests {
         assert!(!placed_actor_visible(&world, Some(&wide), 10 * 128, z, 100));
         // No crop: everything draws.
         assert!(placed_actor_visible(&world, None, 10 * 128, z, 0));
+    }
+
+    /// The occluder gate makes the placed-draw loop's own tests: a placed
+    /// wall the sub-area window sweep owns hides the player only while the
+    /// windowed list draws it, the same way the hosts' draw loops ask
+    /// `placed_draw_live`; a wall the init sweep owns and a terrain wall
+    /// are not on the list and stay.
+    #[test]
+    fn a_wall_off_the_windowed_list_does_not_occlude() {
+        use legaia_engine_scene::field_env::PlacedWindowKey;
+        use legaia_engine_scene::field_occlusion::{
+            OCCLUDER_LIST_PLACEMENTS, OCCLUDER_LIST_TERRAIN, OccluderDraw,
+        };
+        let mut world = World::new();
+        let windowed = OccluderDraw {
+            list: OCCLUDER_LIST_PLACEMENTS,
+            key: Default::default(),
+            world_x: 0,
+            world_z: 0,
+            window: Some(PlacedWindowKey {
+                anchor: (1, 1),
+                world_x: 0,
+                world_z: 0,
+            }),
+            object: None,
+        };
+        let init = OccluderDraw {
+            window: None,
+            ..windowed
+        };
+        let terrain = OccluderDraw {
+            list: OCCLUDER_LIST_TERRAIN,
+            ..init
+        };
+        // The port's whole-map default: every draw is live.
+        let gate = OccluderGate::new(&world, None);
+        assert!(gate.drawn(&windowed) && gate.drawn(&init) && gate.drawn(&terrain));
+        // Retail windowing with an empty list: the windowed wall is gone.
+        world.terrain.static_window.retail_windowing = true;
+        let gate = OccluderGate::new(&world, None);
+        assert!(!gate.drawn(&windowed));
+        assert!(gate.drawn(&init) && gate.drawn(&terrain));
     }
 }
