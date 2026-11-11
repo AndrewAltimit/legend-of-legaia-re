@@ -275,31 +275,29 @@ fn bake_env(
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
-    // The floor pass `FUN_801D6BBC` spawns a placed record only inside the box
-    // the setup state latches at the venue's anchor tile (`jal 0x800180EC` at
-    // `0x801CF65C`, the loops at `0x801D6C74..0x801D6ED8` read
-    // `0x1F800384..87`), so each venue sees its own half of the one map: the
-    // other's mountain backdrop stands past this box.
+    // The floor pass `FUN_801D6BBC` spawns the unbound placed records only
+    // inside the box the setup state latches at the venue's anchor tile (`jal
+    // 0x800180EC` at `0x801CF65C`), so each venue sees its own half of the one
+    // map: the other's mountain backdrop stands past this box.
     let (tile_x, tile_z) = crate::fishing_venue::PARTY_ANCHOR_TILE[venue.min(1)];
     let block = scene.field_map_region_block(index).ok().flatten();
-    let table = block
-        .as_deref()
-        .and_then(legaia_engine_field::field_regions::RegionTable::parse);
-    let (_, attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
-        table.as_ref(),
-        i32::from(tile_x),
-        i32::from(tile_z),
-        false,
+    let region_box = crate::venue_floor::latched_region_box(
+        block.as_deref(),
+        (i32::from(tile_x), i32::from(tile_z)),
     );
-    let [x0, z0, x1, z1] = attrs.box_bytes;
-    let placement_records: Vec<_> = scene
-        .field_object_placements(index)
+    let map = scene
+        .field_map_bytes(index)
         .ok()
         .flatten()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| (x0..x1).contains(&p.col) && (z0..z1).contains(&p.row))
-        .collect();
+        .unwrap_or_default();
+    let placement_records = crate::venue_floor::keep_spawned(
+        scene
+            .field_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        &crate::venue_floor::floor_pass_cells(&map, region_box),
+    );
     let terrain_records: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()

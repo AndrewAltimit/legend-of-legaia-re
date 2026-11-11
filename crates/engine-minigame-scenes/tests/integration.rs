@@ -7,3 +7,4 @@
 
 mod dance_cast_scene_disc;
 mod dance_hud_vram_real;
+mod venue_floor_disc;

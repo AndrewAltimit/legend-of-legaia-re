@@ -20,3 +20,4 @@ pub mod fishing_venue;
 pub mod minigame_state;
 pub mod minigame_status;
 pub mod muscle_dome_scene;
+pub mod venue_floor;

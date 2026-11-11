@@ -2049,7 +2049,8 @@
     "fishing_venue",
     "minigame_state",
     "minigame_status",
-    "muscle_dome_scene"
+    "muscle_dome_scene",
+    "venue_floor"
    ],
    "band": "kernels",
    "track": "engine",
