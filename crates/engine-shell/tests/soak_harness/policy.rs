@@ -308,7 +308,12 @@ impl Policy {
                 // takes the first rows, and a conversation whose way out is
                 // its last option ("Nothing in particular.") then reads as
                 // one that cannot be left.
-                if picker_open(s) && self.rng.chance(85) {
+                // A plan under way runs to its confirm: a stray press drawn
+                // in the middle confirmed whatever row the taps had reached,
+                // so a plan aimed at `town01`'s "Forget it" (the panoramic
+                // map's fourth row, its one way out) landed on the rows
+                // above it for longer than the starve window.
+                if picker_open(s) && (self.picker_downs.is_some() || self.rng.chance(85)) {
                     // Wait out the slide: the plan's taps count only once
                     // the cursor moves. Spent during the slide, they biased
                     // every pick toward the first rows, and a quiz whose one

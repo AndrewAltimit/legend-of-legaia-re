@@ -275,7 +275,7 @@ what holds the frame:
 | field / overworld | segments of: held walks (one direction or a diagonal, sometimes with Cross taps), Cross/Circle mashing, a Start tap, idle, and chaos (random masks of every button but Start) |
 | dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
 | a script polls the held pad | the face button it polls, held - op `0x42` mode 1 reads the held word on one frame of its loop (`edlast`'s credits end on `4A 08 00 42 01 08`: wait eight frames, test a held Circle or Cross), which a tap reaches only by luck |
-| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count |
+| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count. A plan under way runs to its confirm: a stray press drawn mid-plan confirmed the row the taps had reached, and `town01`'s panoramic map, whose one way out is its fourth row, kept landing above it |
 | pause menu | random taps for a random budget, then Circle until it closes |
 | battle | mostly a fighter (Begin, Attack, Auto, confirm the target, Cross any message box) that now and then takes Item, Magic, Spirit, a typed Command art or Run instead and goes through with the pick; otherwise random taps. The report lists the battle surfaces runs reached (command phases, item / spell pickers, arts entry). In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
@@ -475,7 +475,9 @@ default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
 walk started. `LEGAIA_SOAK_TRACE_WALLS=1` adds the wall bits of the 9 x 9 sub-cells
 around the player (`#` wall, `@` the player) - what a walled-in landing is
-walled by. The inline runner's record (an NPC talk, a prop record) is
+walled by - and the body-probe candidates within two tiles: the placement
+centres (`bodies[..]`) and the solid prop boxes (`props[..]`, `m` moving,
+`s` static, `x` exempt), so an `A` in the direction probes names its actor. The inline runner's record (an NPC talk, a prop record) is
 dumped with the script bodies, and a roster line prints whenever a member's
 level, base maxima or live maxima move - the frame a level-up or a stat item
 landed on. The trace goes to the terminal only; it is never written into a
