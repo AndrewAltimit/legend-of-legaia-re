@@ -175,8 +175,8 @@ fn list(
             for a in db.armor() {
                 let price = a.price.map(|p| format!("{p}G")).unwrap_or_default();
                 println!(
-                    "{:>20}  [{:>6}]  UDF {:>3}  LDF {:>3}  {:<6}  {:>8}",
-                    a.name, a.slot, a.udf, a.ldf, a.equip, price
+                    "{:>20}  [{:>6}]  ATK {:>3}  UDF {:>3}  LDF {:>3}  SPD {:>3}  INT {:>3}  {:<6}  {:>8}",
+                    a.name, a.slot, a.atk, a.udf, a.ldf, a.spd, a.int, a.equip, price
                 );
             }
         }

@@ -274,12 +274,21 @@ pub struct Armor {
     /// Shop price in Gold; `None` for endgame Ra-Seru gear.
     #[serde(default)]
     pub price: Option<u32>,
-    /// Upper Defense Factor.
+    /// Upper Defense Factor bonus (equipment record `+2`).
     pub udf: u16,
-    /// Lower Defense Factor.
+    /// Lower Defense Factor bonus (equipment record `+3`).
     pub ldf: u16,
-    /// Equipment restriction: `Vahn` / `Noa` / `Gala` / `None` (None =
-    /// quest-restricted, e.g. War God Plate).
+    /// Attack bonus (equipment record `+1`; footwear sets it).
+    #[serde(default)]
+    pub atk: u16,
+    /// Speed bonus (equipment record `+4`; footwear sets it).
+    #[serde(default)]
+    pub spd: u16,
+    /// Intelligence bonus (equipment record `+0`; helmets set it).
+    #[serde(default)]
+    pub int: u16,
+    /// The character who can equip it: `Vahn` / `Noa` / `Gala` (the
+    /// equipment record's `+6` mask; every armour piece has exactly one).
     pub equip: String,
 }
 

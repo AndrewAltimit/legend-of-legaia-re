@@ -376,7 +376,7 @@ fn armor_equip_field_is_canonical() {
     let db = Database::load();
     for a in db.armor() {
         assert!(
-            ["Vahn", "Noa", "Gala", "None"].contains(&a.equip.as_str()),
+            ["Vahn", "Noa", "Gala"].contains(&a.equip.as_str()),
             "armor {:?} equip {:?}",
             a.name,
             a.equip

@@ -8,17 +8,22 @@
 //! makes a clean oracle for the curated `gamedata` prices mined from
 //! walkthroughs.
 //!
-//! Across weapons + armor + accessories the disc agrees with the curated tables
-//! on every priced item that name-matches (119+), and this oracle pinned three
-//! walkthrough errors that were then corrected to the disc values (Forest /
-//! Magic Amulet 4000→2000, Evil Medallion 9998→9999). It now asserts **zero**
-//! mismatches so a future curated edit that diverges from the disc is caught.
+//! Every curated item, weapon, armour piece and accessory must name-join a
+//! disc item id (the one exception is [`NO_DISC_ITEM`], a walkthrough entry
+//! with no item of its own), and its `price` must equal the disc price, with
+//! a missing curated price meaning a disc price of `0`. Consumables also pin
+//! the restore amount their `effect` text names against the item-effect
+//! table's resolved amount (`legaia_game_tables::item_effect`). This oracle
+//! pinned walkthrough errors that were corrected to the disc values (Forest /
+//! Magic Amulet 4000→2000, Evil Medallion 9998→9999, Healing Flower 800→400,
+//! Honey's unlisted 10000, the "TimeSpace Bomb" and "Light Egg" spellings).
 //!
 //! Skips silently when `extracted/SCUS_942.54` is missing.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use legaia_game_tables::item_effect::{ItemEffectTable, RestoreAmount};
 use legaia_game_tables::item_names::{self, ItemNameTable};
 use legaia_gamedata::Database;
 
@@ -35,9 +40,13 @@ fn norm(s: &str) -> String {
         .collect()
 }
 
-/// `name -> disc shop price` over all 256 item ids (price `0` = quest /
-/// not-priced; excluded).
-fn disc_prices(scus: &[u8]) -> HashMap<String, u16> {
+/// Curated entries with no disc item of their own: the walkthrough's
+/// "Soren Book of Arts" names no row of the SCUS item-name table.
+const NO_DISC_ITEM: &[&str] = &["Soren Book of Arts"];
+
+/// `name -> (disc item id, disc shop price)` over all 256 item ids (the first
+/// id wins for a repeated name).
+fn disc_items(scus: &[u8]) -> HashMap<String, (u8, u16)> {
     let names = ItemNameTable::from_scus(scus).expect("parse item-name table");
     let mut out = HashMap::new();
     for id in 0u8..=u8::MAX {
@@ -45,65 +54,108 @@ fn disc_prices(scus: &[u8]) -> HashMap<String, u16> {
         if name.is_empty() {
             continue;
         }
-        if let Some(price) = item_names::item_price(scus, id)
-            && price != 0
-        {
-            out.insert(norm(name), price);
-        }
+        let price = item_names::item_price(scus, id).unwrap_or(0);
+        out.entry(norm(name)).or_insert((id, price));
     }
     out
 }
 
 #[test]
-fn curated_shop_prices_match_the_disc() {
+fn curated_prices_match_the_disc() {
     let Some(scus) = scus_bytes() else {
         eprintln!("[skip] extracted/SCUS_942.54 missing");
         return;
     };
-    let disc = disc_prices(&scus);
+    let disc = disc_items(&scus);
     let db = Database::load();
 
-    // (label, name, curated price) over every priced equippable.
-    let mut items: Vec<(&str, String, u32)> = Vec::new();
-    for w in db.weapons() {
-        if let Some(p) = w.price {
-            items.push(("weapon", w.name.clone(), p));
-        }
-    }
-    for a in db.armor() {
-        if let Some(p) = a.price {
-            items.push(("armor", a.name.clone(), p));
-        }
-    }
-    for a in db.accessories() {
-        if let Some(p) = a.price {
-            items.push(("accessory", a.name.clone(), p));
-        }
-    }
+    // (label, name, curated price) over every curated item row.
+    let mut rows: Vec<(&str, &str, Option<u32>)> = Vec::new();
+    rows.extend(
+        db.items()
+            .iter()
+            .map(|i| ("item", i.name.as_str(), i.price)),
+    );
+    rows.extend(
+        db.weapons()
+            .iter()
+            .map(|w| ("weapon", w.name.as_str(), w.price)),
+    );
+    rows.extend(
+        db.armor()
+            .iter()
+            .map(|a| ("armor", a.name.as_str(), a.price)),
+    );
+    rows.extend(
+        db.accessories()
+            .iter()
+            .map(|a| ("accessory", a.name.as_str(), a.price)),
+    );
 
     let mut matched = 0usize;
-    let mut mismatches: Vec<String> = Vec::new();
-    for (label, name, gp) in &items {
-        // Name-misses are tolerated (curated names that don't map to a disc id,
-        // e.g. Ra-Seru weapon variants the disc enumerates per-tier); only a
-        // present-but-different price is a failure.
-        let Some(&dp) = disc.get(&norm(name)) else {
+    let mut fail: Vec<String> = Vec::new();
+    for (label, name, curated) in &rows {
+        let Some(&(_, disc_price)) = disc.get(&norm(name)) else {
+            if !NO_DISC_ITEM.contains(name) {
+                fail.push(format!("[{label}] {name}: no disc item of that name"));
+            }
             continue;
         };
-        if dp as u32 == *gp {
-            matched += 1;
-        } else {
-            mismatches.push(format!("[{label}] {name}: disc={dp} curated={gp}"));
+        assert!(
+            !NO_DISC_ITEM.contains(name),
+            "{name} now joins a disc item; drop it from NO_DISC_ITEM"
+        );
+        matched += 1;
+        if curated.unwrap_or(0) != u32::from(disc_price) {
+            fail.push(format!(
+                "[{label}] {name}: curated={curated:?} disc={disc_price}"
+            ));
         }
     }
+    assert!(
+        fail.is_empty(),
+        "curated items disagree with the disc (disc is authoritative): {fail:#?}"
+    );
+    assert_eq!(matched, rows.len() - NO_DISC_ITEM.len(), "every row joined");
+}
 
-    assert!(
-        mismatches.is_empty(),
-        "curated prices disagree with the disc (disc is authoritative): {mismatches:#?}"
-    );
-    // Non-vacuous: the oracle must actually be comparing a healthy set.
-    assert!(
-        matched >= 119,
-        "expected 119+ price cross-checks, only matched {matched}"
-    );
+#[test]
+fn curated_restore_amounts_match_the_disc() {
+    let Some(scus) = scus_bytes() else {
+        eprintln!("[skip] extracted/SCUS_942.54 missing");
+        return;
+    };
+    let disc = disc_items(&scus);
+    let effects = ItemEffectTable::from_scus(&scus).expect("parse item-effect table");
+    let db = Database::load();
+    let mut checked = 0usize;
+    for it in db.items().iter().filter(|i| i.category == "consumable") {
+        let Some(&(id, _)) = disc.get(&norm(&it.name)) else {
+            continue;
+        };
+        let (amount, stat) = match effects.restore_amount(id) {
+            Some(RestoreAmount::Hp(9999)) => {
+                assert!(
+                    it.effect.contains("maximum HP"),
+                    "{}: disc is a full HP restore, curated {:?}",
+                    it.name,
+                    it.effect
+                );
+                checked += 1;
+                continue;
+            }
+            Some(RestoreAmount::Hp(n)) => (n, "HP"),
+            Some(RestoreAmount::Mp(n)) => (n, "MP"),
+            _ => continue,
+        };
+        let want = format!("Restores {amount} {stat}");
+        assert!(
+            it.effect.starts_with(&want),
+            "{}: disc restores {amount} {stat}, curated {:?}",
+            it.name,
+            it.effect
+        );
+        checked += 1;
+    }
+    assert!(checked >= 8, "only {checked} restore amounts checked");
 }

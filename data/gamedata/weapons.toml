@@ -134,7 +134,9 @@ name = "Noa Feral"
 price = 600
 attack = 9
 equip_best = "Noa"
-equip_others = ["Vahn", "Gala"]
+# The walkthrough lists Vahn and Gala as well; the equipment record's +6
+# mask (DAT_80074F68) is Noa alone.
+equip_others = []
 
 [[weapon]]
 key = "holy_claw"

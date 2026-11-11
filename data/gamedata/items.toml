@@ -41,7 +41,9 @@ effect = "Restores 200 HP to each character."
 key = "healing_flower"
 name = "Healing Flower"
 category = "consumable"
-price = 800
+# The walkthrough's 800 is the amount restored; the SCUS item record's price
+# (DAT_80074368 +2, what the shop reads) is 400.
+price = 400
 effect = "Restores 800 HP."
 
 [[item]]
@@ -211,7 +213,9 @@ effect = "Permanently raises all stats by 4."
 key = "honey"
 name = "Honey"
 category = "permanent_stat"
-price = 0
+# No shop stocks it, but the SCUS item record carries a price of 10000 (it
+# sells for half that).
+price = 10000
 effect = "Permanently raises all stats by 4. Hidden boss reward in Rim Elm (Queen Bee tree)."
 
 # ---- Hyper Art books ----
@@ -379,7 +383,8 @@ effect = "Calls Tieg at Uru Mais."
 
 [[item]]
 key = "timespace_bomb"
-name = "Timespace Bomb"
+# Spelled as the SCUS item-name table spells it.
+name = "TimeSpace Bomb"
 category = "key"
 effect = "Required to open Nivora Ravine."
 

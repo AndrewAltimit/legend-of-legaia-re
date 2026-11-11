@@ -152,3 +152,82 @@ fn curated_magic_mp_and_target_match_the_disc() {
         "curated target shapes disagree with the disc spell table: {target_fail:#?}"
     );
 }
+
+/// Element plates of the spell-name icon escape, in the dialog font's order
+/// (`docs/formats/dialog-font.md`): `0x14..=0x1A` for a Seru spell, the
+/// winged `0x1D..=0x23` for a Ra-Seru summon.
+const ICON_ELEMENTS: [&str; 7] = ["fire", "thunder", "wind", "water", "earth", "light", "dark"];
+
+/// The one curated summon whose disc name differs: the walkthrough's
+/// Juggernaut is spell `0x99`, "Evil Seru Magic", which carries no element
+/// plate (its curated element is "evil").
+const JUGGERNAUT: u8 = 0x99;
+
+/// Every curated spell joins its disc id, and its MP, element (the name's
+/// element plate) and - for a Seru spell - its Lv1 / Lv2 / Lv3 absorb
+/// chances (the catch rate `+0x3F` of the monster records whose Seru id
+/// `+0x3E` is the spell's, `spell = seru_id + 0x80`) are the disc's.
+#[test]
+fn every_curated_spell_joins_with_mp_element_and_absorb_rates() {
+    let Some(scus) = scus_bytes() else {
+        eprintln!("[skip] extracted/SCUS_942.54 missing");
+        return;
+    };
+    let ws = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let Ok(archive) = std::fs::read(ws.join("extracted/PROT/0867_battle_data.BIN")) else {
+        eprintln!("[skip] extracted/PROT/0867_battle_data.BIN missing");
+        return;
+    };
+    let table = SpellNameTable::from_scus(&scus).expect("parse spell table");
+    let monsters = legaia_actor_formats::monster_archive::records(&archive).expect("archive");
+    let db = Database::load();
+    let mut fail: Vec<String> = Vec::new();
+    for s in db.spells() {
+        let id = if s.name == "Juggernaut" {
+            Some(JUGGERNAUT)
+        } else {
+            (0u8..=u8::MAX).find(|&id| table.name(id).is_some_and(|n| norm(n) == norm(&s.name)))
+        };
+        let Some(id) = id else {
+            fail.push(format!("{}: no disc spell of that name", s.name));
+            continue;
+        };
+        let e = table.entry(id).unwrap();
+        if s.mp != u16::from(e.mp) {
+            fail.push(format!("{}: mp curated={} disc={}", s.name, s.mp, e.mp));
+        }
+        let element = match e.icon {
+            Some(i @ 0x14..=0x1A) => ICON_ELEMENTS[usize::from(i - 0x14)],
+            Some(i @ 0x1D..=0x23) => ICON_ELEMENTS[usize::from(i - 0x1D)],
+            None if id == JUGGERNAUT => "evil",
+            other => panic!("{} ({id:#04x}): unexpected name icon {other:?}", s.name),
+        };
+        if s.element != element {
+            fail.push(format!(
+                "{}: element curated={} disc={element}",
+                s.name, s.element
+            ));
+        }
+        if s.family == legaia_gamedata::SpellFamily::Seru {
+            // The level forms are named `X`, `X $2`, `X $3`, which sorts them.
+            let mut rates: Vec<(&str, u8)> = monsters
+                .iter()
+                .filter(|m| m.seru_id != 0 && u16::from(m.seru_id) + 0x80 == u16::from(id))
+                .map(|m| (m.name.as_str(), m.catch_rate_pct))
+                .collect();
+            rates.sort();
+            let disc: Vec<Option<u8>> = rates.iter().map(|&(_, r)| Some(r)).collect();
+            let curated = vec![s.absorb_lv1, s.absorb_lv2, s.absorb_lv3];
+            if disc != curated {
+                fail.push(format!(
+                    "{}: absorb curated={curated:?} disc={disc:?}",
+                    s.name
+                ));
+            }
+        }
+    }
+    assert!(
+        fail.is_empty(),
+        "curated magic disagrees with the disc (disc is authoritative): {fail:#?}"
+    );
+}

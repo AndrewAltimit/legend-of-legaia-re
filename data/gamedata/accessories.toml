@@ -384,7 +384,9 @@ element = "water"
 
 [[accessory]]
 key = "light_ra_seru_egg"
-name = "Light Ra-Seru Egg"
+# The SCUS item-name table calls it "Light Egg" (beside the Earth and Water
+# Eggs); the walkthrough's "Light Ra-Seru Egg" is a description.
+name = "Light Egg"
 effect = "Light defense up; converted by Zalan to Light Talisman."
 effect_class = "elemental_def"
 element = "light"
