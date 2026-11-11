@@ -373,13 +373,17 @@ impl LegaiaMinigames {
         .ok()?;
         let scene = Scene::load(&index, FISHING_SCENE_NAME).ok()?;
         self.fishing_sfx_bundle = scene.find_event_scripts().map(|e| e.bytes.to_vec());
+        // The boot-resident system UI atlas under the venue's uploads, as the
+        // play hosts' venue lays it (`FishingSceneAssets::load`): the lure and
+        // ripple rings sample its page and CLUT row.
+        let system_ui = index.system_ui_bundle().ok();
         let (res, _stats) = SceneResources::build_targeted_with_options(
             &scene,
             &[],
             BuildOptions {
                 kind: SceneLoadKind::Field,
                 upload_all_tims: true,
-                system_ui: None,
+                system_ui: system_ui.as_deref(),
             },
         )
         .ok()?;

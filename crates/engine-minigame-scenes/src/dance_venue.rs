@@ -383,6 +383,11 @@ impl DanceVenue {
         let e = dance_scene_entry();
         let name = venue_scene_name(index, &e)?;
         let scene = Scene::load(index, &name).ok()?;
+        // The boot-resident system UI atlas (raw entry 0), under the venue's
+        // own uploads: retail never evicts it, so it is in the hall's VRAM as
+        // in every scene's - the fishing venue and every field scene lay it
+        // the same way.
+        let system_ui = index.system_ui_bundle().ok();
         let (mut resources, _) = SceneResources::build_targeted_with_options(
             &scene,
             &[],
@@ -391,7 +396,7 @@ impl DanceVenue {
                 // The venue's field file is uploaded whole: the dancer atlases
                 // and their CLUT rows must all be resident.
                 upload_all_tims: true,
-                system_ui: None,
+                system_ui: system_ui.as_deref(),
             },
         )
         .ok()?;
