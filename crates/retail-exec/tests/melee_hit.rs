@@ -358,6 +358,8 @@ fn seed_port(w: &mut World, h: &Hit) {
         a.battle.hp_bar_pending = 0;
         a.battle_juggle_window = false;
         a.battle_reaction_entry = None;
+        // A stage the previous round's hit left would read as this round's.
+        a.battle_reaction_stage = None;
         a.battle_animation = None;
         a.battle_monster_id = if is_party {
             None
@@ -522,7 +524,11 @@ fn a_melee_hit_lands_what_retail_lands() {
             status: w.raw_status_word(h.target),
             juggle: w.battle.juggle,
             ramps: (w.battle.attack_ramp, w.battle.guard_ramp),
-            reaction: if ta.battle_clip_commits != commits {
+            // Retail's `+0x1DA` is the staged byte: a hit stages its reaction
+            // and the seat's own anim tick commits it (`FUN_80047430`).
+            reaction: if let Some((entry, _)) = ta.battle_reaction_stage {
+                entry
+            } else if ta.battle_clip_commits != commits {
                 ta.battle_reaction_entry.unwrap_or(0)
             } else {
                 0
