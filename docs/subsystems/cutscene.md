@@ -1749,6 +1749,13 @@ would drop that shot's focus / pitch / eye depth. The set is cleared on scene en
   through the lead actor: a Configure from a record that is **not** the modal timeline - a
   helper spawned by op `0x44`, as `jouine`'s evolved-Cort arrival is - stages its shots through
   the follow frame.
+- The hand-back `45 C0 <trigger>` composes the follow pose from the camera block the MAN load
+  queried (`FUN_801DE3E0` at `0x8003B800`), which retail loads before any script runs. A record
+  that holds the player from a scene's first tick never lets the port's follow tick run, so the
+  camera loads that block and counts the arrival actor (`FUN_801DBE9C`, engaged leg
+  `0x801DC078..0x801DC0A4`) down under the scripted shot too (`Camera::load_scene_zone_block`,
+  `Camera::tick_arrival_under_script`). Without them the hand-back glided toward the reset block's
+  `H = 0` and shrank the scene to a point before the follow camera snapped in.
 
 **Camera model.** Both hosts render a cutscene shot with the **retail GTE model** whenever a
 timeline is installed. The shell's `compute_scene_camera` hands the glided view to

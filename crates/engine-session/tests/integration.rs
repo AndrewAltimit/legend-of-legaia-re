@@ -54,6 +54,7 @@ mod rugi_arrival_player_clip_disc;
 mod save_gate_field_menu;
 mod save_roundtrip_library;
 mod scene_encounter_rollable;
+mod scene_entry_cutscene_handback_disc;
 mod sfx_cue_resident_bank;
 mod sfx_shared_region;
 mod taiku_security_door_camera;
