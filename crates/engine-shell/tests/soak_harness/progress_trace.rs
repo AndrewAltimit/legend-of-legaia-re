@@ -371,6 +371,46 @@ pub(super) fn trace_line(s: &NativeSession, pad: u16) -> String {
                 })
                 .collect();
             let _ = write!(out, " walls[{}]", rows.join("/"));
+            // And the solid prop boxes within two tiles: a body probe's `A`
+            // with no placement near is one of these.
+            let (px, pz) = (i32::from(m.world_x), i32::from(m.world_z));
+            let near: Vec<String> = w
+                .props
+                .colliders
+                .iter()
+                .filter(|c| c.solid)
+                .filter(|c| {
+                    let (cx, cz) = if c.moving_box { c.live } else { c.center };
+                    (cx - px).abs() <= 256 && (cz - pz).abs() <= 256
+                })
+                .map(|c| {
+                    let (cx, cz) = if c.moving_box { c.live } else { c.center };
+                    format!(
+                        "{:?}@({cx},{cz}){}{}",
+                        c.anchor,
+                        if c.moving_box { "m" } else { "s" },
+                        if c.anchor
+                            .and_then(|a| w.props.bank.props.get(&a))
+                            .is_some_and(|p| p.collision_exempt())
+                        {
+                            "x"
+                        } else {
+                            ""
+                        }
+                    )
+                })
+                .collect();
+            if !near.is_empty() {
+                let _ = write!(out, " props[{}]", near.join(" "));
+            }
+            let bodies: Vec<String> = w
+                .field_moving_actor_centres()
+                .filter(|&(ax, az)| (ax - px).abs() <= 256 && (az - pz).abs() <= 256)
+                .map(|(ax, az)| format!("({ax},{az})"))
+                .collect();
+            if !bodies.is_empty() {
+                let _ = write!(out, " bodies[{}]", bodies.join(" "));
+            }
         }
         let _ = write!(
             out,

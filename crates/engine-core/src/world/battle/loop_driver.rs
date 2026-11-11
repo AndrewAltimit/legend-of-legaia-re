@@ -648,10 +648,17 @@ impl World {
             && self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
             && self.run_boss_transition_arm();
 
+        // The menu SM's gate on the pass grid: every pass runs it, ahead of
+        // the action SM (`FUN_80046A20`, `0x80047014` / `0x80047048`).
+        let menu_gated = sm_pass && self.battle.step_pass_glide_gate();
+
         // A finished round's boundary (`RoundFlow::boundary_hold`): the SM
-        // holds its passes, and the last one opens the next round.
+        // holds its passes, and the last one opens the next round - the
+        // flow byte's `0x14` dispatch, which the menu SM's gate skips while
+        // a glide (the Done band's closing ones, at a round's end) is still
+        // live on the pass.
         if self.battle.round_flow.boundary_hold > 0 {
-            if sm_pass {
+            if sm_pass && !(self.battle.round_flow.boundary_hold == 1 && menu_gated) {
                 self.battle.round_flow.boundary_hold -= 1;
                 if self.battle.round_flow.boundary_hold == 0 {
                     self.end_battle_round();
@@ -955,14 +962,30 @@ impl World {
     /// [`Self::live_battle_tick`]): a fresh seed arms the read time off its
     /// base `ctx[+0x277]`, and the byte drops once that has run out.
     ///
-    /// REF: FUN_801F12D0 - a timing model of its stage byte, not its code:
-    /// retail drops `ctx[+0x276]` as each slot's read and `LoadImage` uploads
+    /// A timing model of `FUN_801F12D0`'s stage byte for its reads, not their
+    /// code: retail drops `ctx[+0x276]` as each slot's read and `LoadImage` uploads
     /// finish; this counts down a measured read cost per slot
     /// ([`legaia_engine_battle_vm::battle_action::SIDEBAND_SLOT_READ_VSYNCS`]).
     /// The slot count it reads is the ported slice
     /// (`battle_action::sideband_slot_count`).
+    ///
+    /// The applier opens on the drive word: while a CD-XA one-shot sounds
+    /// (`_DAT_8007BC20 >= 2`, `slti v0,v0,0x2` / `bne` at `0x801F12E4`) it
+    /// stores stage `1` and returns (`0x801F12F0..0x801F1300`), so a read in
+    /// flight restarts from its base slot once the clip ends and no stream
+    /// load starts over a sounding clip. Its caller `FUN_801F17F8` runs it only
+    /// while the stage is up (`0x801F180C..0x801F181C`), so a clip outside a
+    /// read raises nothing. The port's stand-in re-seeds its read time the
+    /// same way ([`crate::world::AudioState::battle_xa_busy_frames`] is the
+    /// word).
+    // PORT: FUN_801F12D0 (`0x801F12D0..0x801F1300`, the drive-word hold)
+    // REF: FUN_801F17F8 (the caller's stage gate)
     fn tick_sideband_token(&mut self) {
         if self.battle_ctx.menu_open == 0 {
+            self.casting.sideband_read_left = None;
+            return;
+        }
+        if self.audio.battle_xa_busy_frames != 0 {
             self.casting.sideband_read_left = None;
             return;
         }
@@ -980,6 +1003,20 @@ impl World {
             self.battle_ctx.menu_open = 0;
             self.casting.sideband_read_left = None;
         }
+    }
+
+    /// `FUN_8003DE7C(1) != 0` on the retail path: a **data** stream read is
+    /// in flight (the stream queue's `gp+0x988`, `0x8003DF70..0x8003DF78`).
+    /// The battle's stream reads are the side-band applier's, which the port
+    /// stands in for with [`legaia_engine_battle_loop::cast_fx_state::CastFxState::sideband_read_left`].
+    /// A CD-XA one-shot is not a data read and does not hold the poll: the
+    /// poll's `gp+0x91C` countdown is read only behind `0x8007BA70 != 0`,
+    /// which every retail capture holds at `0`. The clip's own lifetime is
+    /// the drive word `0x8007BC20` ([`crate::world::AudioState::battle_xa_busy_frames`]).
+    ///
+    /// REF: FUN_8003DE7C
+    pub(in crate::world) fn battle_stream_read_in_flight(&self) -> bool {
+        self.casting.sideband_read_left.is_some()
     }
 
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
@@ -1201,6 +1238,40 @@ mod power_byte_tests {
 
 #[cfg(test)]
 mod melee_cue_tests;
+
+#[cfg(test)]
+mod sideband_hold_tests {
+    use crate::world::World;
+
+    /// `FUN_801F12D0`'s head: a sounding one-shot (`_DAT_8007BC20 >= 2`)
+    /// puts the stage back to `1`, so the read starts over once the clip ends.
+    #[test]
+    fn a_side_band_read_restarts_behind_a_sounding_clip() {
+        let mut w = World::new();
+        w.battle_ctx.menu_open = 1;
+        w.casting.sideband_read_left = Some(3);
+        w.audio.battle_xa_busy_frames = 10;
+        w.tick_sideband_token();
+        assert_eq!(w.battle_ctx.menu_open, 1, "the stage stays up");
+        assert_eq!(w.casting.sideband_read_left, None, "the read restarts");
+        w.audio.battle_xa_busy_frames = 0;
+        w.tick_sideband_token();
+        let seeded = w.casting.sideband_read_left.expect("re-seeded");
+        assert!(seeded > 3, "the whole read again: {seeded}");
+    }
+
+    /// With no clip sounding the stand-in counts down as before.
+    #[test]
+    fn a_side_band_read_runs_with_the_drive_word_clear() {
+        let mut w = World::new();
+        w.battle_ctx.menu_open = 1;
+        w.casting.sideband_read_left = Some(2);
+        w.tick_sideband_token();
+        assert_eq!(w.casting.sideband_read_left, Some(1));
+        w.tick_sideband_token();
+        assert_eq!(w.battle_ctx.menu_open, 0);
+    }
+}
 
 #[cfg(test)]
 mod melee_inputs_tests;

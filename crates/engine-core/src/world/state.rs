@@ -708,6 +708,7 @@ impl World {
         self.field_vm.eased_moves.clear();
         self.terrain.floor_tier_bobs.clear();
         self.terrain.floor_ladder_ramps.reset_pool();
+        self.camera.offset_ramps.reset_pool();
         self.cutscene.prologue_naming_pending = false;
         self.cutscene.prologue_naming_armed = false;
         self.cutscene.naming_owner = None;

@@ -1,0 +1,161 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; port provenance</div>
+  <h1>Port provenance</h1>
+  <p class="lede">The <a href="port-catalog.html">port catalog</a> asks whether a <code>// PORT: FUN_&lt;addr&gt;</code> tag exists and whether the Rust carrying it is reachable. Neither asks the third question: <em>does that address name the routine this Rust code implements?</em> A live, tested port can wear the wrong address with every other gate green, and <a href="disc-coverage.html">disc coverage</a> then credits the wrong retail bytes. <code>scripts/ci/check-port-provenance.py</code> asks it.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a PORT tag is judged. From the disassembly only, the checker recovers the data addresses each tagged routine forms and the routines it calls, weighted by how rare each is across the whole dump corpus. Four signals rank suspicion: module-orphan, dual-label, the two citation signals, and non-entry. A finding goes to a reader, who fixes the tag or waives it with what the bytes showed. The check mode ratchets the count of unwaived findings and of waivers that match nothing, so a commit that adds one fails. Separately, a retail kernel differential that runs the routine settles the tag outright as verified.">
+      <defs>
+        <marker id="pp-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="dg-node-accent" x="14" y="96" width="140" height="62" rx="5"/>
+      <text class="dg-label" x="84" y="122">PORT: tag</text><text class="dg-sub" x="84" y="140">address + module</text>
+
+      <rect class="dg-node" x="196" y="96" width="170" height="62" rx="5"/>
+      <text class="dg-label" x="281" y="118">features</text><text class="dg-sub" x="281" y="135">tables and callees</text><text class="dg-sub" x="281" y="150">rare in the corpus</text>
+      <path class="dg-edge" d="M154 127 L192 127" marker-end="url(#pp-ah)"/>
+
+      <rect class="dg-group" x="404" y="14" width="190" height="230" rx="8"/>
+      <text class="dg-sub" x="499" y="32">signals rank suspicion</text>
+      <rect class="dg-node" x="418" y="42" width="162" height="34" rx="4"/><text class="dg-label" x="499" y="64">module-orphan</text>
+      <rect class="dg-node" x="418" y="84" width="162" height="34" rx="4"/><text class="dg-label" x="499" y="106">dual-label</text>
+      <rect class="dg-node" x="418" y="126" width="162" height="34" rx="4"/><text class="dg-label" x="499" y="148">citations</text>
+      <rect class="dg-node" x="418" y="168" width="162" height="34" rx="4"/><text class="dg-label" x="499" y="190">non-entry</text>
+      <text class="dg-sub" x="499" y="226">worklist, not proof</text>
+      <path class="dg-edge" d="M366 127 L400 127" marker-end="url(#pp-ah)"/>
+
+      <rect class="dg-node" x="634" y="40" width="226" height="56" rx="5"/>
+      <text class="dg-label" x="747" y="62">a reader</text><text class="dg-sub" x="747" y="80">fix the tag, or waive it</text>
+      <path class="dg-edge" d="M594 100 L630 72" marker-end="url(#pp-ah)"/>
+      <rect class="dg-node-warn" x="634" y="116" width="226" height="56" rx="5"/>
+      <text class="dg-label" x="747" y="138">--check ratchet</text><text class="dg-sub" x="747" y="156">findings may not rise</text>
+      <path class="dg-edge" d="M747 96 L747 112" marker-end="url(#pp-ah)"/>
+      <rect class="dg-node-ok" x="634" y="192" width="226" height="56" rx="5"/>
+      <text class="dg-label" x="747" y="214">differential runs it</text><text class="dg-sub" x="747" y="232">verified, no waiver</text>
+      <path class="dg-edge-dim" d="M84 158 L84 272 L747 272 L747 252" marker-end="url(#pp-ah)"/>
+    </svg>
+    <figcaption>The signals are cheap enough to run over the whole corpus in seconds and only rank suspicion. What gates is the delta; what proves a tag is a <a href="retail-kernel-differential.html">retail kernel differential</a> that runs the routine.</figcaption>
+  </figure>
+  <dl class="kv">
+    <dt>Tool</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/check-port-provenance.py" target="_blank" rel="noopener"><code>scripts/ci/check-port-provenance.py</code></a> over the <code>port_provenance</code> package beside it</dd>
+    <dt>Inputs</dt><dd>The Ghidra dump corpus and the extracted overlay images, both gitignored</dd>
+    <dt>Gate</dt><dd><code>--check</code> against <code>scripts/ci/port-provenance-baseline.json</code>, in the pre-commit hook; without the corpus it prints <code>SKIPPED, NOT RATCHETED</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="defect" data-doc="the-defect-this-exists-for">
+  <h2>The defect this exists for</h2>
+  <p>The prize list's ink kernel carried <code>PORT: FUN_801D5DE0</code> while live on both hosts. That routine is the <strong>casino prize list's</strong> row renderer: it indexes the prize table at <code>0x801E4518</code> and gates affordability on the coin bank, and the party's gold purse appears nowhere in its instructions. The mis-attribution came from a dump filename that names the <em>image the routine was dumped from</em> - an overlay that carries menu, save, shop and casino code alike - and it travelled: three subsystem pages described the one routine three ways, none aware of the others.</p>
+  <p><strong>Why nothing noticed.</strong> Every text agreed with the disassembly about the <em>operands</em>. Only the subsystem label was invented. A checker that verifies cited addresses against the disassembly passes all three texts; the contradiction is only visible between them. The same law for load bases is <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md" target="_blank" rel="noopener">dump-corpus integrity</a>; this page applies it to function identity.</p>
+</section>
+
+<section class="doc-section" id="signals" data-doc="the-signals">
+  <h2>The signals</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Signal</th><th>Question it asks</th></tr></thead>
+    <tbody>
+      <tr><td><code>module-orphan</code></td><td>Does this routine corroborate anything else its module claims?</td></tr>
+      <tr><td><code>dual-label</code></td><td>Is it given a defining description on two unrelated docs pages?</td></tr>
+      <tr><td><code>absent-citation</code></td><td>Does a <code>PORT:</code> line cite evidence the routine's dump does not carry?</td></tr>
+      <tr><td><code>doc-citation</code></td><td>The same, for the key-functions directory rows.</td></tr>
+      <tr><td><code>non-entry</code></td><td>Does the rest of the repo already say no routine starts at this address?</td></tr>
+    </tbody>
+  </table></div>
+  <p><code>module-orphan</code> reproduces the shop defect: the routine shares no rare table, no rare callee and no call edge with its module's siblings, while those siblings corroborate each other - and its rare prize table turns up under the prize-exchange module instead.</p>
+  <ul class="bullets">
+    <li><strong>Distinctiveness is the whole trick.</strong> The text writer is called from dozens of dumps, so "these two share a callee" is true of almost any pair. The checker counts, over every dump that printed instructions, how many routines form each address and call each target, and only rare features carry information.</li>
+    <li><strong>The cut follows the module.</strong> A module of window painters shares nothing rare by nature, so one fixed cut reports every painter as an orphan. The cut climbs per module until the module reads as cohesive, and only a member still unlinked there is a finding; a module that never coheres produces silence, not a finding per member.</li>
+    <li><strong>A pointer is not a claim.</strong> For <code>dual-label</code>, a directory row that links to the page it seems to contradict is filing that page's claim, and only subsystem, format and function-directory pages define a routine.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="deleted" data-doc="what-was-tried-and-deleted">
+  <h2>What was tried and deleted</h2>
+  <p>A signal reporting every pair of tagged routines that shared a rare table across unrelated modules produced hundreds of findings, and none of the top ones was a defect: sharing a subsystem's own tables is the normal case, and a dispatcher module pairs with everything it dispatches. It survives only as corroboration on a <code>module-orphan</code> row. It is recorded because the premise is the attractive one, and the next person to build this instrument will reach for it first.</p>
+</section>
+
+<section class="doc-section" id="precision" data-doc="precision-measured">
+  <h2>Precision, measured</h2>
+  <p>The first run raised seven citation findings. Triaged by hand against the disassembly, six were checker defects and one was real. Among the defects: a tag line naming several routines was checked against every address on it, a dump's header size was read as its extent, and the indexed jump-table idiom lost its base register. Triage of the other signals found more of the same kind - calls to a sibling not counted as corroboration, a function-reference exemption keyed on whether a dump existed rather than on how the citation was written, and a tracker carrying an address through a pointer load and reporting a runtime field as a global the routine owns.</p>
+  <div class="callout callout-tip"><p class="callout-title">The lesson generalises</p><p>When a new measurement's first output is a pile of findings, the first hypothesis to test is that the measurement is wrong, and hand-triage of the top rows is how you test it.</p></div>
+</section>
+
+<section class="doc-section" id="code" data-doc="where-the-code-and-the-rows-live">
+  <h2>Where the code and the rows live</h2>
+  <p>The package's <code>rows.py</code> holds what a contributor edits: modules split into directories for size (kept as one module so siblings and waiver keys survive the move), the pages that define a routine, and the accepted-site lists. A split-module row whose directory was renamed matches no file and silently regroups every tag under it, so <code>path_check.py</code> requires each row's directory and parent file to exist and exits 1 before the corpus is read.</p>
+</section>
+
+<section class="doc-section" id="reading" data-doc="reading-a-report">
+  <h2>Reading a report</h2>
+<pre><code>python3 scripts/ci/check-port-provenance.py              # ranked report
+python3 scripts/ci/check-port-provenance.py --live-only  # live ports only
+python3 scripts/ci/check-port-provenance.py --addr 801d5de0
+python3 scripts/ci/check-port-provenance.py \
+    --funcs /path/to/checkout/ghidra/scripts/funcs     # from a worktree</code></pre>
+  <p>Both corpora are gitignored; <code>--funcs</code> / <code>--extracted</code> point a worktree at another checkout's copies, because copying either in would stage Sony bytes. <code>--live-only</code> is the one to prefer: a wrong tag on an inert port is a doc bug, a wrong tag on a live one also mis-credits disc coverage.</p>
+  <p>The report is a worklist. <code>--check</code> fails when the unwaived count of any signal, or the count of waivers matching no finding, rises above the baseline - which sits at zero - so a commit that adds a finding owes it a read. Reviewed findings go in <code>port-provenance-waivers.toml</code> with a reason that says what was read and what it showed; "probably fine" is not a reason. <code>dual-label</code>, <code>doc-citation</code> and <code>non-entry</code> each found real defects at a rate worth gating on; <code>module-orphan</code> moves when a neighbouring instrument is corrected, so it is counted on the delta and not trusted on its own numbers.</p>
+</section>
+
+<section class="doc-section" id="against-bytes" data-doc="reading-the-tags-against-the-bytes">
+  <h2>Reading the tags against the bytes</h2>
+  <p>The measurement the signals are ranked against is a person reading a tag's Rust beside the routine's disassembly. One full pass over the live tags in the engine's VM, world, audio, camera, locomotion and scene-host code sorted each into four verdicts:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Verdict</th><th>Share</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>match</td><td class="num">222 / 316</td><td>The Rust implements the routine and its prose fits the operands.</td></tr>
+      <tr><td>misnamed</td><td class="num">45 / 316</td><td>Right routine, wrong description.</td></tr>
+      <tr><td>partial</td><td class="num">43 / 316</td><td>Right routine, arms missing.</td></tr>
+      <tr><td>wrong routine</td><td class="num">6 / 316</td><td>The tagged address is not what the Rust implements.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The wrong addresses share a few shapes: a print at the wrong load base, a word that is not a function entry (a prologue word, an exit label), a module tag over code the module does not port, and the composite named for the leaf it inlines. <code>non-entry</code> reads the first two from verdicts already committed elsewhere (the ignore list, the dump-extent attribution, the overlay-band floor). An image-qualified tag (<code>overlay_&lt;label&gt;_&lt;NNNN&gt;_&lt;addr&gt;</code>) is checked from the bytes: it is accepted when that image, at its recorded base, opens a stack frame at the address. A second address named in passing on a tag line counts as a port of it, so spell it <code>0x&lt;addr&gt;</code> or move it to a <code>REF:</code> line; a faithful copy of one fragment of a routine is a <code>REF:</code> naming the instruction range, not a <code>PORT:</code>.</p>
+  <p class="hint">A waiver can check the operands and miss the owner: a misbased print is byte-for-byte the real routine, so a review of what it does without asking which image holds it answers a question the signal did not ask.</p>
+</section>
+
+<section class="doc-section" id="caller-sites" data-doc="a-caller-site-citation-is-checkable-from-the-bytes">
+  <h2>A caller-site citation is checkable from the bytes</h2>
+  <p>A row saying "called from the <code>jal</code> at <code>0x801E4B1C</code>" cites evidence that lives in somebody else's body, so the dump corpus always read it as unsupported and each such row carried a waiver. The word at that address either is a call to the subject or it is not, so the checker now decodes the extracted images at their recorded bases and accepts six byte-derived relations: the citation <em>reaches</em> the subject, is the <em>return address</em> of a call to it, sits in an <em>adjacent</em> <code>jr ra</code>-delimited body, is <em>co-sited</em> with a citation that reaches it, holds it in a <em>jump table</em>, or <em>sets up an argument</em> a few words before a call to it.</p>
+  <ul class="bullets">
+    <li>A waiver that matches no current finding is listed on every run and counted by the ratchet; it is a claim nobody can check.</li>
+    <li>Dumps with no image tag were once left out of the evidence map, which silenced two signals over the whole executable while the run reported zero findings. One executable ships on the disc, so an untagged executable dump withholds nothing.</li>
+    <li>Which body wins at an overlay VA is taken from the dump-extent attribution first, so adding one more dump under a different image cannot flip a verdict with no byte on the disc changing.</li>
+    <li>A stale waiver is answered, silenced, re-keyed or moved; answered and silenced look identical from outside, and only a <code>--show-waived</code> run tells them apart.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="known-good" data-doc="known-good-shapes-excluded-by-construction">
+  <h2>Known-good shapes, excluded by construction</h2>
+  <ul class="bullets">
+    <li>One routine linked into two overlays: identical bodies at different VAs never produce a finding.</li>
+    <li>VA aliasing: corroboration across the overlay band needs a shared image tag.</li>
+    <li>Fragmentary dumps (a dispatcher printed as its head and epilogue) can corroborate a sibling and can never make a routine an orphan.</li>
+    <li>Call targets decoded from a dump window at a wrong load base contribute no callee signal.</li>
+    <li>Reusing a retail kernel in a different subsystem because the shape matches is not the defect; claiming the routine belongs to that subsystem is.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="differential" data-doc="a-differential-is-evidence">
+  <h2>A differential is evidence</h2>
+  <p>A <a href="retail-kernel-differential.html">retail kernel differential</a> fails unless the routine at the declared entry ran off the named image and a Rust kernel computed what it wrote. The checker reads those declarations (no disc needed) and reports every tag site whose address a differential runs as <strong>verified</strong>; a <code>module-orphan</code> or citation finding there is settled by the run, not by a waiver. Provenance ranks every tag cheaply and gates on the delta; the differential proves the ones it runs - two rungs of <a href="verification-ladder.html">the verification ladder</a>.</p>
+</section>
+
+<section class="doc-section" id="empty-corpus" data-doc="an-empty-corpus-is-not-a-clean-run">
+  <h2>An empty corpus is not a clean run</h2>
+  <p>A fresh clone or a worktree has no dumps, and every port looks unimpeachable. A corpus-blind report run exits <strong>2</strong> and names the directory it looked in and the flag that fixes it; a run with dumps but no extracted images exits 2 as well, because it reports too much rather than nothing. <code>--allow-vacuous</code> accepts either. The gate's own <code>--check</code> mode prints <code>SKIPPED, NOT RATCHETED</code> and exits 0, the convention every corpus ratchet here follows, so the log still says nothing was compared.</p>
+</section>
+
+<section class="doc-section" id="register" data-doc="the-sibling-question-for-the-register-does-a-disassembly-row-cite-an-address">
+  <h2>The sibling question for the register</h2>
+  <p>A <a href="../reference/re-settled-threads.html">settled thread</a> graded <code>disassembly</code> may name only a function and a behaviour, and then reads exactly like a row checked against the listing. <code>scripts/ci/check-register-address-cites.py</code> lists every such row with no instruction-shaped address in its answer or its write-up. It is a worklist and always exits zero: many listed rows are not code claims at all and want a different grade rather than an address. A cited row is not thereby a correct one; the tool answers whether a claim can be re-read.</p>
+  <div class="see-also">
+    <span class="see-also-label">Related</span>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="disc-coverage.html">Disc coverage</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
+    <a href="ratchet-integrity.html">Ratchet integrity</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md" target="_blank" rel="noopener">Full page on GitHub</a>
+  </div>
+</section>

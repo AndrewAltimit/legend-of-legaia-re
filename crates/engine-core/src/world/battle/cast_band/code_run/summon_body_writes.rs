@@ -132,18 +132,21 @@ impl World {
     ///
     /// | Arm | Edge | Store |
     /// |---|---|---|
+    /// | 4 (`0x801F71E0`) | pass | victim `+0x21C = 0`: the band's hide eases out |
+    /// | 7 (`0x801F74C0..0x801F74D0`) | pass | victim `+0x04 = 0x20080200` |
     /// | 15 (`0x801F7B24..0x801F7B7C`) | pass | the arm-14 records ended; creature `+0x04 = 0`, `+0x21C = 0xFF` |
     /// | `0x11` (`0x801F7E8C`, `0x801F7E94`, `0x801F7CF4..0x801F7D08`) | pass | victim rate `1`, `+0x21C = 0xC8`, facing the creature's `+ 0x800` |
     /// | `0x12`, `0x13` (`0x801F81C0..0x801F81DC`) | every, while the victim's clip is `0` | the same rate and tint |
     /// | `0x12` on the damage path (`0x801F8680..0x801F868C`) | pass | victim rate `2`, impact `2`, `+0x21C = 0` |
     /// | `0xFF` (`0x801F88BC`) | every | a dead victim hidden |
     ///
-    /// The word the `0xC8` state reads is the neutral `0x20080200` an earlier arm
-    /// stored (`0x801F74C0..0x801F74D0`).
+    /// The word the `0xC8` state reads is the neutral `0x20080200` arm 7
+    /// stored.
     ///
-    /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15 and the seat tints of arms 15, 0x11..0x13)
+    /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15 and the seat tints of arms 4, 7, 15, 0x11..0x13)
     fn apply_aluru_seat_writes(&mut self, phase_in: u8, passed: bool, victim: u8, seat_slot: u8) {
         use legaia_engine_cast::cast_module_camera as cam;
+        const ALURU_VICTIM_SHOWN_ARM: u8 = 7;
         const TINT_FLAT: u8 = 0xC8;
         const NEUTRAL_WORD: u32 = 0x2008_0200;
         const HIDDEN: u8 = 0xFF;
@@ -176,6 +179,22 @@ impl World {
                 a.battle.render_blend = cam::ALURU_ASSEMBLY_BLEND;
                 a.battle.render_flag = HIDDEN;
                 a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
+            }
+        }
+        // The victim the summon band hid comes back on the creature's way in:
+        // arm 4's pass drops its `+0x21C` (`sb zero,0x21c(s3)` at
+        // `0x801F71E0`, `s3` the caster's `+0x1DD` seat), so the tint ease
+        // takes its zero word back up, and arm 7's pass stores the neutral word
+        // (`0x801F74C0..0x801F74D0`). The engine's zero word under a lowered
+        // state is its resting neutral, so the victim stands at once where
+        // retail's eases in over sixteen vsyncs.
+        if passed
+            && (phase_in == cam::ALURU_ASSEMBLY_ARM || phase_in == ALURU_VICTIM_SHOWN_ARM)
+            && let Some(a) = self.actors.get_mut(usize::from(victim))
+        {
+            a.battle.render_flag = 0;
+            if phase_in == ALURU_VICTIM_SHOWN_ARM {
+                a.battle.render_color = NEUTRAL_WORD;
             }
         }
         if phase_in == cam::ALURU_ASSEMBLED_ARM
@@ -942,6 +961,18 @@ impl World {
             .collect();
         let living = |w: &Self, s: usize| w.actors.get(s).is_some_and(|a| a.battle.hp != 0);
         let stand = |x: i16| ((i32::from(x).abs() >> 2) - 0x400) as i16;
+        // Arms `0xB` and `0xC` tip the creature nose-up every pass, held or
+        // not: pitch `+0x44 += (scalar * step) >> 1` (`0x801F7C54..0x801F7C60`,
+        // `0x801F7D00..0x801F7D0C`); no later arm sets it back.
+        if matches!(phase_in, 0xB | 0xC)
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|c| self.actors.get_mut(usize::from(c)))
+        {
+            let d = (legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK >> 1) as u16;
+            a.battle.render_pitch = a.battle.render_pitch.wrapping_add(d) & 0xFFF;
+        }
         match (phase_in, passed) {
             (0, true) => {
                 self.casting.module_saved_poses.clear();
@@ -1032,6 +1063,11 @@ impl World {
                     let a = &mut self.actors[s];
                     if a.battle.facing_angle == 0 {
                         a.move_state.world_z = stand(a.move_state.world_x);
+                        // ... and pins its pose: node cursor `+0x68 = 0x10`
+                        // every pass (`0x801F8418`, `0x801F8474`).
+                        if let Some(p) = a.battle_animation.as_mut() {
+                            p.seek_sixteenths(0x10);
+                        }
                     }
                 }
             }

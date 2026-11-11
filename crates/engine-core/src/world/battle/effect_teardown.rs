@@ -133,6 +133,7 @@ impl World {
         self.battle.cast_ribbons = None;
         self.battle.cast_ribbon_seeds = None;
         self.battle.flight_ribbons = None;
+        self.battle.flight_ribbon_seeds = None;
         self.battle.effect_spawns.clear();
     }
 }

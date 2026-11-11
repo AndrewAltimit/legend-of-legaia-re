@@ -253,7 +253,7 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
         if actor.battle_pose_history.is_empty() || battle_body_word_zero(actor) {
             continue;
         }
-        let monster = actor.battle_monster_id.is_some();
+        let monster = world.battle_seat_walks_as_monster(i);
         let base = if monster {
             ai::GHOST_COLOR_MONSTER
         } else {

@@ -1242,6 +1242,8 @@ pub enum OptionRow {
     MusicVolume,
     SfxVolume,
     MonoDownmix,
+    /// How far the controller's stick goes before it holds a direction.
+    StickDeadZone,
     EntryPulse,
     SmartMonsters,
     ArtsSavedList,
@@ -1266,7 +1268,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 41] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 42] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1287,6 +1289,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 41] = [
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
+    (None, OptionRow::StickDeadZone),
     (Some("Gameplay tweaks"), OptionRow::ShinySeru),
     (None, OptionRow::FleeExp),
     (None, OptionRow::BonusDrop),
@@ -1368,26 +1371,15 @@ fn capitalise(s: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The [`OptionRow::Preset`] row's values.
-const PRESET_ENHANCED: &str = "Enhanced";
-const PRESET_ORIGINAL: &str = "Original";
-const PRESET_CUSTOM: &str = "Custom";
-
-/// Which preset the rows add up to.
+/// Which preset the rows add up to: the shared answer both play hosts give
+/// (`legaia_engine_session::look_and_feel`, the play page's *Look and feel*
+/// selector), which `preset_is_the_shared_look_and_feel` holds to the rows'
+/// own [`OptionRow::in_preset`].
 fn preset_of(
     opts: &legaia_engine_menus::options::OptionsState,
     s: &LauncherSettings,
 ) -> &'static str {
-    if s.switches.retail {
-        PRESET_ORIGINAL
-    } else if OPTION_ROWS
-        .iter()
-        .all(|(_, r)| !r.in_preset() || r.is_default(opts, s))
-    {
-        PRESET_ENHANCED
-    } else {
-        PRESET_CUSTOM
-    }
+    legaia_engine_session::look_and_feel::look_and_feel(opts, &s.switches).label()
 }
 
 impl OptionRow {
@@ -1422,6 +1414,7 @@ impl OptionRow {
             Self::MusicVolume => "Music volume",
             Self::SfxVolume => "Sound effects volume",
             Self::MonoDownmix => "Mono output",
+            Self::StickDeadZone => "Stick dead zone",
             Self::EntryPulse => "Living ground pulse",
             Self::SmartMonsters => "Smarter monsters",
             Self::ArtsSavedList => "Saved-chain Arts list",
@@ -1503,6 +1496,10 @@ impl OptionRow {
             Self::MasterVolume => "Overall output level, 0 to 100%; 100% is the full mix.",
             Self::MusicVolume => "Music level, 0 to 10; 8 is the original mix.",
             Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
+            Self::StickDeadZone => {
+                "How far a controller's stick moves before it walks or moves a cursor. \
+                 Higher ignores a worn stick's drift; lower answers a lighter push."
+            }
             Self::MonoDownmix => {
                 "Mix everything, voices and movies included, down to one channel for \
                  a single speaker. In-game Monaural is the original's own mono mode."
@@ -1632,6 +1629,7 @@ impl OptionRow {
                 | Self::MusicVolume
                 | Self::SfxVolume
                 | Self::MonoDownmix
+                | Self::StickDeadZone
                 | Self::Fullscreen
                 | Self::WindowSize
                 | Self::WholeStepScale
@@ -1669,6 +1667,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
             Self::MonoDownmix => on_off(opts.downmix_mono),
+            Self::StickDeadZone => format!("{}%", opts.stick_dead_zone),
             Self::EntryPulse => on_off(!s.switches.no_entry_pulse),
             Self::SmartMonsters => on_off(s.switches.smart_monsters),
             Self::ArtsSavedList => on_off(s.switches.arts_saved_list),
@@ -1719,6 +1718,7 @@ impl OptionRow {
             | Self::MusicVolume
             | Self::SfxVolume
             | Self::MonoDownmix
+            | Self::StickDeadZone
             | Self::Retail => None,
             _ => {
                 let (opts, s) = original_state();
@@ -1752,6 +1752,20 @@ impl OptionRow {
                 return None;
             }
         })
+    }
+
+    /// The play window's key for the row as a player reads it (`I`, `F9`,
+    /// `F11` for the fullscreen row), or `None` for a row no key reaches.
+    /// The `F12` settings page letters it beside the row's label, so the
+    /// key is learned where the setting is.
+    pub fn hotkey_label(self) -> Option<&'static str> {
+        if self == Self::Fullscreen {
+            return Some("F11");
+        }
+        legaia_engine_session::hotkeys::HOST_HOTKEYS
+            .iter()
+            .find(|(h, _)| Self::for_hotkey(*h) == Some(self))
+            .map(|(h, _)| h.key_label())
     }
 
     /// Whether the row shows a value the original game does not have (an
@@ -1796,11 +1810,7 @@ impl OptionRow {
         let w = &mut s.switches;
         match self {
             Self::Preset => {
-                for (_, row) in OPTION_ROWS {
-                    if row.in_preset() {
-                        row.reset(opts, s);
-                    }
-                }
+                legaia_engine_session::look_and_feel::reset_to_enhanced(opts, &mut s.switches)
             }
             Self::Fullscreen => opts.fullscreen = o.fullscreen,
             Self::Theme => opts.ui_theme = o.ui_theme,
@@ -1821,6 +1831,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = o.bgm_volume,
             Self::SfxVolume => opts.sfx_volume = o.sfx_volume,
             Self::MonoDownmix => opts.downmix_mono = o.downmix_mono,
+            Self::StickDeadZone => opts.stick_dead_zone = o.stick_dead_zone,
             Self::EntryPulse => w.no_entry_pulse = d.no_entry_pulse,
             Self::SmartMonsters => w.smart_monsters = d.smart_monsters,
             Self::ArtsSavedList => w.arts_saved_list = d.arts_saved_list,
@@ -1865,9 +1876,7 @@ impl OptionRow {
             // Original is the session switch, so the rows under it keep their
             // values: stepping away finds a Custom mix where it was left.
             Self::Preset => {
-                let on = !s.switches.retail;
-                s.switches.retail = on;
-                s.switches.psx_render = on;
+                legaia_engine_session::look_and_feel::toggle_original(&mut s.switches);
             }
             Self::Fullscreen => opts.fullscreen ^= true,
             Self::WholeStepScale => opts.integer_scale ^= true,
@@ -1923,6 +1932,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
             Self::MonoDownmix => opts.downmix_mono ^= true,
+            Self::StickDeadZone => opts.step_stick_dead_zone(dir),
             Self::EntryPulse => s.switches.no_entry_pulse ^= true,
             Self::SmartMonsters => s.switches.smart_monsters ^= true,
             Self::ArtsSavedList => s.switches.arts_saved_list ^= true,
@@ -2136,6 +2146,40 @@ mod tests {
         assert_eq!(value(&o, &s), "Enhanced");
         assert_eq!((o.bgm_volume, o.window_scale), (3, 4));
         assert!(!s.switches.smart_monsters);
+    }
+
+    /// The shared preset speaks for exactly the rows [`OptionRow::in_preset`]
+    /// names: each such row moved alone reads Custom, every other row moved
+    /// alone leaves Enhanced, and the shared reset puts each preset row back
+    /// on its own default.
+    #[test]
+    fn preset_is_the_shared_look_and_feel() {
+        use legaia_engine_menus::options::OptionsState;
+        for (_, row) in OPTION_ROWS {
+            if matches!(row, OptionRow::Preset | OptionRow::Retail) {
+                continue;
+            }
+            let mut o = OptionsState::default();
+            let mut s = LauncherSettings::default();
+            row.adjust(&mut o, &mut s, 1);
+            if row.is_default(&o, &s) {
+                row.adjust(&mut o, &mut s, -1);
+            }
+            let want = if row.in_preset() {
+                "Custom"
+            } else {
+                "Enhanced"
+            };
+            assert_eq!(OptionRow::Preset.value(&o, &s), want, "{}", row.label());
+            OptionRow::Preset.reset(&mut o, &mut s);
+            if row.in_preset() {
+                assert!(
+                    row.is_default(&o, &s),
+                    "{}: the reset restores it",
+                    row.label()
+                );
+            }
+        }
     }
 
     fn ok_info(p: &Path) -> DiscInfo {
@@ -2854,9 +2898,8 @@ mod tests {
         Some(match row {
             // The page's canvas takes the size its layout gives it.
             WindowSize | WholeStepScale | Theme => return None,
-            // The page says the same two things with its Retail-faithful switch
-            // and its Reset to defaults button.
-            Preset => "play-retail-mode",
+            // The page's Look and feel selector, over the same shared preset.
+            Preset => "play-look-and-feel",
             Fullscreen => "play-fullscreen",
             EnhancedLighting => "play-dyn-light",
             TimeOfDay => "play-time-of-day",
@@ -2873,6 +2916,7 @@ mod tests {
             MusicVolume => "play-bgm-volume",
             SfxVolume => "play-sfx-volume",
             MonoDownmix => "play-downmix-mono",
+            StickDeadZone => "play-stick-dead-zone",
             EntryPulse => "play-entry-pulse",
             SmartMonsters => "play-smart-monsters",
             ArtsSavedList => "play-arts-saved-list",
@@ -2977,6 +3021,23 @@ mod tests {
             legaia_engine_menus::options::MASTER_VOLUME_DEFAULT,
             legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT
         );
+    }
+
+    /// A row's key, as the `F12` page letters it, is the key its help names
+    /// (`In game: I.`), and a row whose help names none has no key.
+    #[test]
+    fn a_rows_key_is_the_key_its_help_names() {
+        for (_, row) in OPTION_ROWS {
+            let named = row
+                .help()
+                .split("In game: ")
+                .nth(1)
+                .map(|t| t.split([' ', '.']).next().unwrap_or(""));
+            assert_eq!(row.hotkey_label(), named, "{row:?}");
+        }
+        assert_eq!(OptionRow::GroundFog.hotkey_label(), Some("F9"));
+        assert_eq!(OptionRow::EnhancedLighting.hotkey_label(), Some("I"));
+        assert_eq!(OptionRow::PsxRender.hotkey_label(), None);
     }
 
     #[test]

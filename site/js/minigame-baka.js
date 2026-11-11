@@ -389,6 +389,18 @@
       for (const c of ((cab && cab.cells) || []).slice().reverse()) {
         this._widget(g, c.w, c.x, c.y, Math.max(0, Math.min(1, c.b / 128)), false, c.b, 0x1000);
       }
+      /* The chrome's full-screen tint (FUN_80024EE4(1, 1, colour): the title
+       * card's red flash and its white fade-in), in front of every widget.
+       * Retail adds it (B + F); a canvas over WebGL cannot add into the
+       * picture under it, so the colour at its mean channel strength stands
+       * in (a full white is exact; the red flash reads as a red wash), as the
+       * clear fade's black does. */
+      const t = cab && cab.tint;
+      if (t && (t[0] | t[1] | t[2])) {
+        const a = (t[0] + t[1] + t[2]) / (3 * 255);
+        g.fillStyle = `rgba(${t[0]},${t[1]},${t[2]},${a})`;
+        g.fillRect(0, 0, HUD_W, HUD_H);
+      }
     }
 
     /* The between-match tally menu (the retail NEXT GAME / PAY OUT cells).

@@ -162,6 +162,9 @@ impl Automation {
 const VIEW_ABOUT_W: f32 = 110.0;
 /// The bar width from which the first row also carries the app's name.
 const TITLE_ROOM_W: f32 = 860.0;
+/// The room the *Game options* button takes with its long label and the
+/// item spacing before it.
+const GAME_OPTIONS_LONG_W: f32 = 104.0;
 
 /// A collapsing header's title laid out to fit the row it sits on, cut with
 /// an ellipsis when it does not; `true` when it was cut.
@@ -355,6 +358,9 @@ pub struct App {
     engine: Option<PathBuf>,
     /// A game started with Play, while it runs.
     game: Option<crate::launch::Game>,
+    /// What [`Self::game`] is: the game's launcher screen (*Game options*),
+    /// which plays the game itself from its own Play, or the game.
+    game_is_launcher: bool,
     /// The banner a failed game put up and the report its button copies.
     error_report: Option<(String, String)>,
     /// The failed game's log the error banner's *Show log* button opens.
@@ -475,6 +481,7 @@ impl App {
                 .ok()
                 .and_then(|exe| crate::launch::find_engine(&exe)),
             game: None,
+            game_is_launcher: false,
             error_report: None,
             error_log: None,
             side_widths: Default::default(),
@@ -890,6 +897,13 @@ impl App {
         if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::L))) {
             self.path_row = !self.path_row;
             self.path_focus = self.path_row;
+        }
+        // Before plain F5, whose pattern a held Shift also matches.
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, egui::Key::F5)) {
+            match self.play_blocked() {
+                Some(why) => self.explorer.status = Some(why),
+                None => self.open_game_launcher(),
+            }
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
             // A key has no greyed-out look to hover over: say why not.
@@ -1336,6 +1350,9 @@ impl App {
             None => Err("Open your Legend of Legaia (USA) disc image first.".to_string()),
         };
         match (&self.engine, &disc) {
+            _ if self.game.is_some() && self.game_is_launcher => {
+                Some("The game's options window is open; its Play starts the game.".to_string())
+            }
             _ if self.game.is_some() => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
                 "{} was not found. It ships in the release folder's {} \
@@ -1351,7 +1368,9 @@ impl App {
     fn play_button(&mut self, ui: &mut egui::Ui) {
         let running = self.game.is_some();
         let blocked = self.play_blocked();
-        let button = if running {
+        let button = if running && self.game_is_launcher {
+            egui::Button::new("Options open")
+        } else if running {
             egui::Button::new("Game running")
         } else if blocked.is_none() {
             crate::theme::primary_button("Play")
@@ -1370,10 +1389,48 @@ impl App {
         if resp.clicked() {
             self.start_game();
         }
+        // The game's launcher screen: its options, keys and saves, which a
+        // start from here plays with. Without it they sit in another program
+        // a player who began here may never open.
+        // The long label where the row has room for it beside View and
+        // About, else the short one, so the bar stays one row at the
+        // minimum window width; the hover says whose options they are.
+        let left = ui.max_rect().right() - ui.cursor().left();
+        let label = if left >= VIEW_ABOUT_W + GAME_OPTIONS_LONG_W {
+            "Game options"
+        } else {
+            "Options"
+        };
+        let options = ui
+            .add_enabled(blocked.is_none(), egui::Button::new(label))
+            .on_hover_text(
+                "Open the game's own launcher on this disc: the look (Enhanced or the \
+                 original game), the enhancements, gameplay tweaks, keys and saves. \
+                 Its Play starts the game; Play here uses the same settings. In game, \
+                 F12 changes them too. Shift+F5.",
+            );
+        let options = match &blocked {
+            Some(why) => options.on_disabled_hover_text(why),
+            None => options,
+        };
+        if options.clicked() {
+            self.open_game_launcher();
+        }
     }
 
     /// Start the game on the open disc (the Play button, `LEGAIA_EXPLORER_PLAY`).
     fn start_game(&mut self) {
+        self.start_engine(false);
+    }
+
+    /// Start the game's launcher screen on the open disc (*Game options*):
+    /// its option list, key table and saves, then its own Play.
+    fn open_game_launcher(&mut self) {
+        self.start_engine(true);
+    }
+
+    /// The game itself, or its launcher screen with the disc chosen.
+    fn start_engine(&mut self, launcher: bool) {
         let disc = match &self.explorer.library {
             Some(lib) => crate::launch::playable_disc(lib),
             None => return,
@@ -1383,26 +1440,37 @@ impl App {
         }
         if let (Some(engine), Ok(bin)) = (self.engine.clone(), disc) {
             self.player.stop();
-            match crate::launch::Game::start(
+            // The path as chosen (a `.cue` stays a `.cue`), like the game's
+            // own picker.
+            let chosen = self
+                .explorer
+                .settings
+                .last_source
+                .clone()
+                .filter(|p| p.is_file())
+                .unwrap_or_else(|| bin.clone());
+            let args = if launcher {
+                crate::launch::launcher_args(&chosen)
+            } else {
+                crate::launch::play_args(&bin)
+            };
+            match crate::launch::Game::start_with(
                 &engine,
-                &bin,
+                args,
                 crate::launch::engine_data_dir().as_deref(),
             ) {
                 Ok(g) => {
-                    self.explorer.status = Some(format!("Started the game on {}", bin.display()));
+                    self.explorer.status = Some(if launcher {
+                        "Opened the game's options. Its Play starts the game with them.".into()
+                    } else {
+                        format!("Started the game on {}", bin.display())
+                    });
                     self.explorer.error = None;
                     self.last_written = None;
                     self.game = Some(g);
+                    self.game_is_launcher = launcher;
                     // Remember the disc for the game itself, so starting it
-                    // directly later does not ask for it again. The path as
-                    // chosen (a `.cue` stays a `.cue`), like its own picker.
-                    let chosen = self
-                        .explorer
-                        .settings
-                        .last_source
-                        .clone()
-                        .filter(|p| p.is_file())
-                        .unwrap_or(bin);
+                    // directly later does not ask for it again.
                     if let Some(file) = crate::launch::engine_launcher_settings()
                         && let Err(e) = crate::launch::record_disc_for_engine(&file, &chosen)
                     {
@@ -1423,7 +1491,14 @@ impl App {
         let log = game.log.clone();
         self.game = None;
         match res {
-            Ok(()) => self.explorer.status = Some("The game has closed.".into()),
+            Ok(()) => {
+                // The launcher ends with a game its Play started, or on Quit.
+                self.explorer.status = Some(if self.game_is_launcher {
+                    "The game's options window has closed.".into()
+                } else {
+                    "The game has closed.".into()
+                })
+            }
             Err(headline) => {
                 // The launcher's words for the same failure: how it ended,
                 // then the reason its log gives, if it gives one.
@@ -3365,6 +3440,7 @@ const KEYS: &[(&str, &str)] = &[
     ("Ctrl+L", "type a path to open"),
     ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
     ("F5", "play the open disc"),
+    ("Shift+F5", "the game's options, keys and saves"),
     (
         "Ctrl+E",
         "save what the view shows (texture, model, entry, frame)",
@@ -3543,7 +3619,8 @@ impl App {
                                     (
                                         "Play",
                                         "Start the game itself on the open disc (the USA \
-                                         disc). F5",
+                                         disc). F5. Game options (Shift+F5) sets its look, \
+                                         keys and saves.",
                                     ),
                                 ] {
                                     ui.label(RichText::new(title).strong().color(accent));

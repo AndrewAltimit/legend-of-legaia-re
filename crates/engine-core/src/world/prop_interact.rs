@@ -530,8 +530,12 @@ impl World {
         if let Some(prop) = self.props.bank.props.get(&anchor) {
             id.ctx.local_flags = prop.anim.flags;
         }
-        let mut parked = false;
         let own_record = self.object_key_at_anchor(anchor);
+        // A morphing object's envelope words live on its channel.
+        if let Some(key) = own_record {
+            self.load_object_morph_words(key, &mut id.ctx);
+        }
+        let mut parked = false;
         // Where the record's own `23 <x> <z>` seated the prop this slice.
         let mut own_seat: Option<(i32, i32)> = None;
         {
@@ -985,6 +989,9 @@ impl World {
     /// as `FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors from then
     /// on.
     fn sync_prop_from_ctx(&mut self, anchor: (u8, u8), ctx: &FieldCtx) {
+        if let Some(key) = self.object_key_at_anchor(anchor) {
+            self.store_object_morph_words(key, ctx);
+        }
         let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
             return;
         };
@@ -1441,13 +1448,17 @@ impl World {
     /// while its own box is still on screen.
     /// Hand a reading box opening now the window format the field VM set
     /// (op `4C E0`) and reset it, as the pager's reset stores `3` when the
-    /// box closes: a format lasts one box.
+    /// box closes: a format lasts one box. The line load also seats the
+    /// option cursor on the preset (`4C E0 <n>`, `n >= 100`) and spends it,
+    /// as the script runner does (`0x80039F88..0x80039F98`).
     ///
-    /// REF: FUN_801D84D0 (`0x801D8798`, `0x801D90EC`)
+    /// REF: FUN_801D84D0 (`0x801D8798`, `0x801D90EC`), FUN_80039B7C
     pub(crate) fn apply_dialog_window_format(
         &mut self,
         panel: &mut legaia_engine_dialog::dialog::OwnedDialogPanel,
     ) {
+        let preset = std::mem::take(&mut self.dialog.picker_cursor_preset);
+        panel.seat_picker_cursor(usize::from(preset));
         let rows = std::mem::replace(
             &mut self.dialog.window_rows,
             legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,

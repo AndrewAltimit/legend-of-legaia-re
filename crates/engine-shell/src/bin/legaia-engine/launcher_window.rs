@@ -573,6 +573,8 @@ struct LauncherApp {
     /// scripted capture): the D-pad moves the focus, Cross activates, as in
     /// the game's own menus ([`Self::pad_input`]).
     pad: Option<legaia_engine_shell::window::GamepadHost>,
+    /// A held controller direction's auto-repeat.
+    nav_repeat: NavRepeat,
     /// The Controls page's table and the key it may be waiting for. Read from
     /// [`launcher::INPUT_FILE`] when the page opens; every bound key is
     /// written straight back, the same file the game's Key Config writes.
@@ -644,6 +646,7 @@ impl LauncherApp {
             ))),
             screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
             pad: None,
+            nav_repeat: NavRepeat::default(),
         };
         app.set_disc(disc);
         app.refresh_recent_offer();
@@ -1142,15 +1145,39 @@ impl LauncherApp {
         if self.win.window.is_none() {
             return;
         }
+        // The table the Controls page edits, and the stick's dead zone.
+        pad.set_mapping(&self.rebind.mapping().gamepad);
+        pad.set_dead_zone(self.options.stick_dead_zone_fraction());
         let poll = pad.poll();
+        let now = Instant::now();
         let pressed = poll.edges.pressed | poll.taps;
-        evl.set_control_flow(ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(16),
-        ));
-        if pressed == 0
-            || self.awaiting_key().is_some()
-            || self.opened_at.elapsed() < Duration::from_millis(300)
-        {
+        // A held direction steps again, as a held arrow key does.
+        let pressed = pressed | self.nav_repeat.step(poll.edges.held, now);
+        evl.set_control_flow(ControlFlow::WaitUntil(now + Duration::from_millis(16)));
+        for name in &poll.connected {
+            self.status = Some(vec![(format!("Controller connected: {name}"), GOOD)]);
+            self.win.request_redraw();
+        }
+        for name in &poll.disconnected {
+            self.status = Some(vec![(format!("Controller disconnected: {name}"), DIM)]);
+            self.win.request_redraw();
+        }
+        if let Some((_, glyphs)) = poll.capture {
+            self.rebind
+                .set_pad_style(glyphs, legaia_engine_system::gamepad::ButtonSpace::Standard);
+        }
+        if self.opened_at.elapsed() < Duration::from_millis(300) {
+            return;
+        }
+        // A row waiting for its key takes a controller button too.
+        if self.awaiting_key().is_some() {
+            if let Some((name, _)) = poll.capture {
+                self.bind_capture(name);
+                self.win.request_redraw();
+            }
+            return;
+        }
+        if pressed == 0 {
             return;
         }
         for nav in pad_nav(pressed) {
@@ -1455,6 +1482,37 @@ impl LauncherApp {
             if let KeyRebindEvent::Bound { button, key, .. } = e {
                 let done = bound_message(&before, self.rebind.mapping(), button.name(), &key);
                 self.save_bindings(done);
+            }
+        }
+    }
+
+    /// A controller button arrived while the Controls page waits: it takes
+    /// the row's controller slot (`KeyRebindSession`'s capture), under the
+    /// keys' swap rule.
+    fn bind_capture(&mut self, name: &str) {
+        let events = self.rebind.tick(KeyRebindInput {
+            key_pressed: Some(name.to_string()),
+            ..Default::default()
+        });
+        for e in events {
+            if let KeyRebindEvent::Bound {
+                button,
+                key,
+                evicted,
+            } = e
+            {
+                let mut done = format!(
+                    "{} is on the controller's {key}.",
+                    button_label(button.name())
+                );
+                if let Some(old) = evicted {
+                    done.push_str(&format!(" The button that was there moved to {old}."));
+                }
+                self.save_bindings(done);
+                // The button that bound is still down (`swallow_held`).
+                if let Some(pad) = self.pad.as_mut() {
+                    pad.swallow_held();
+                }
             }
         }
     }
@@ -2229,11 +2287,18 @@ impl LauncherApp {
             // Explorer's shortcut list use (`chrome::KEY`); gold is for
             // headings and values here.
             let (shown, ink) = if waiting == Some(i as u8) {
-                ("Press a key...".to_string(), GOLD)
+                ("Press a key or button...".to_string(), GOLD)
             } else {
+                // The keys, then the controller button (in the labels of the
+                // controller pressed last).
+                let pad = if row.pad.is_empty() {
+                    "no button"
+                } else {
+                    row.pad.as_str()
+                };
                 match keys_for_button(mapping, row.button.name()) {
-                    k if k.is_empty() => ("No key".to_string(), WARN),
-                    k => (k, KEY),
+                    k if k.is_empty() => (format!("No key  |  {pad}"), WARN),
+                    k => (format!("{k}  |  {pad}"), KEY),
                 }
             };
             let shown = if focused && waiting.is_none() {
@@ -2251,7 +2316,7 @@ impl LauncherApp {
             c.rect(r, FOCUS);
             c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
         }
-        c.text(panel.x + 10, y, "All keys back to default", INK);
+        c.text(panel.x + 10, y, "All keys and buttons back to default", INK);
         y += ROW_PITCH;
         for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {
             c.text(panel.x + 10, y + 4 + i as i32 * 12, &l, DIM);
@@ -2331,8 +2396,8 @@ impl LauncherApp {
         match self.focus {
             Item::Play => {
                 if self.disc.is_some() {
-                    "Start the game at the title screen. Saves and settings are kept in \
-                     your own folder. Option values in green differ from the original game."
+                    "Start the game at the title screen. In game, F12 or Select+Start \
+                     opens these options. Values in green differ from the original game."
                         .into()
                 } else {
                     "Choose your disc image first.".into()
@@ -2403,12 +2468,14 @@ impl LauncherApp {
             Item::Bind(row) => match self.awaiting_key() {
                 Some(_) => waiting_message(self.rebind_button_label(row)),
                 None => format!(
-                    "Enter or click, then press the key for {}. A key another button is on \
-                     swaps with it.",
+                    "Enter, Cross or click, then press the key or controller button for {}. \
+                     One another button is on swaps with it.",
                     self.rebind_button_label(row)
                 ),
             },
-            Item::BindReset => "Put every button back on the key it starts on.".into(),
+            Item::BindReset => {
+                "Put every button back on the key and controller button it starts on.".into()
+            }
             Item::DataFolder => {
                 data_folder_help(self.card.as_ref(), self.settings.other_recent_cards())
             }
@@ -3250,6 +3317,39 @@ enum PadNav {
     Play,
 }
 
+/// A held controller move steps again, as a held arrow key does
+/// (`gamepad::NavRepeat`, the `F12` panel's too). Only the moves repeat
+/// (D-pad, stick, L1 / R1); a held Cross does not press twice.
+#[derive(Debug)]
+struct NavRepeat {
+    repeat: legaia_engine_system::gamepad::NavRepeat,
+    epoch: Instant,
+}
+
+impl Default for NavRepeat {
+    fn default() -> Self {
+        Self {
+            repeat: Default::default(),
+            epoch: Instant::now(),
+        }
+    }
+}
+
+impl NavRepeat {
+    /// The moves to repeat this poll, given what the controller holds.
+    fn step(&mut self, held: u16, now: Instant) -> u16 {
+        use legaia_engine_system::pad::PadButton as B;
+        let moves = B::Up.mask()
+            | B::Down.mask()
+            | B::Left.mask()
+            | B::Right.mask()
+            | B::L1.mask()
+            | B::R1.mask();
+        let ms = now.saturating_duration_since(self.epoch).as_millis() as u64;
+        self.repeat.step(held, moves, ms)
+    }
+}
+
 /// The launcher actions for one poll's newly pressed PSX buttons, in order:
 /// the moves first, then at most one activation (Triangle before Cross
 /// before Start), so a chord cannot both play and change an option.
@@ -3493,8 +3593,7 @@ const BIND_ROWS: u8 = 14;
 const CONTROLS_ROWS: i32 = BIND_ROWS as i32 + 1;
 
 /// The note under the controls table, wrapped to the panel.
-const CONTROLS_NOTES: [&str; 1] =
-    ["Gamepad: bottom Cross, right Circle, left Square, top Triangle."];
+const CONTROLS_NOTES: [&str; 1] = ["Each row: keys | controller button."];
 
 /// Why a pressed key was refused, and which ones work: the names
 /// `keycode_to_name` knows. The rest are the game window's own shortcuts.
@@ -3504,7 +3603,10 @@ const UNBINDABLE_KEY: &str = "That key belongs to the game window's own shortcut
 
 /// The help line while a row waits for its key.
 fn waiting_message(button: &str) -> String {
-    format!("Press the key for {button}. Esc cancels.")
+    format!(
+        "Press the key or controller button for {button}. Esc cancels; the button it has \
+         keeps it."
+    )
 }
 
 /// A pad button's name on the Controls page.
@@ -4368,6 +4470,46 @@ mod tests {
                 "{k:?}"
             );
         }
+    }
+
+    /// A held controller direction steps again, a held Cross does not.
+    #[test]
+    fn a_held_direction_repeats_and_a_held_cross_does_not() {
+        use legaia_engine_system::pad::PadButton as B;
+        let mut r = NavRepeat::default();
+        let t0 = r.epoch;
+        let at = |ms| t0 + Duration::from_millis(ms);
+        let down = B::Down.mask() | B::Cross.mask();
+        assert_eq!(
+            r.step(down, at(0)),
+            0,
+            "the press itself is the poll's edge"
+        );
+        assert_eq!(r.step(down, at(300)), 0);
+        assert_eq!(r.step(down, at(400)), B::Down.mask());
+        assert_eq!(r.step(down, at(440)), 0);
+        assert_eq!(r.step(down, at(480)), B::Down.mask());
+        assert_eq!(r.step(B::Cross.mask(), at(500)), 0, "let go");
+        assert_eq!(r.step(B::Cross.mask(), at(2000)), 0, "Cross never repeats");
+    }
+
+    /// A controller press while a row waits binds the row's controller
+    /// button and writes nothing to the key table.
+    #[test]
+    fn a_waiting_row_takes_a_controller_button() {
+        let before = Mapping::default();
+        let mut s = KeyRebindSession::new(before.clone());
+        s.begin_bind(0);
+        let _ = s.tick(KeyRebindInput {
+            key_pressed: Some("Pad3".into()),
+            ..Default::default()
+        });
+        use legaia_engine_system::gamepad::ButtonSpace;
+        assert_eq!(
+            s.mapping().gamepad.button_for(ButtonSpace::Standard, 3),
+            Some(legaia_engine_system::pad::PadButton::Cross)
+        );
+        assert_eq!(s.mapping().bindings, before.bindings);
     }
 
     /// A rebind says what moved, and a key nothing else was on moves nothing.

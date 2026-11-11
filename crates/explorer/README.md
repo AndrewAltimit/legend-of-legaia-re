@@ -154,6 +154,10 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   (`launch::play_args`). A game started from either program is the same game,
   and a switch added to the launcher needs nothing here. The enhancement
   options live in the game's `legaia-options.toml`, which both starts read.
+  *Game options* beside Play (`Shift+F5`; *Options* when the bar is short
+  of room) opens the game's own launcher screen on the open disc
+  (`launch::launcher_args`, the engine's `--open`): the look, enhancements,
+  tweaks, keys and saves a start from here plays with, and its own Play.
 - **Dropped files on Wayland.** winit 0.30 has no Wayland drag-and-drop, so
   on a Wayland session that also offers XWayland Explorer opens as an X11
   client, as the launcher does (`legaia_app_theme::drop_backend`), and a disc
@@ -202,6 +206,7 @@ starts); otherwise the window opens centred.
 
 Keyboard: Ctrl+O opens a disc image, Ctrl+L shows the path field, Ctrl+1 .. Ctrl+4 switch between Browse,
 Characters & monsters, Movies & voice and Extract, F5 plays the open disc,
+Shift+F5 opens the game's options (its launcher screen),
 Ctrl+E presses the shown view's main export (the selected texture's PNG, the
 model as textured glTF, the raw `.BIN` on Overview and Hex, the first text
 block, the character or monster `.glb`, the movie frame; a view with nothing

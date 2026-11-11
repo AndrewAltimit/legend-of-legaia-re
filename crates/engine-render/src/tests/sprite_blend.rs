@@ -135,8 +135,7 @@ fn overlay_quad(
     ];
     let entry = match mode {
         None => "fs_main",
-        Some(m) if crate::psx_blend::src_shader_scale(m) == 1.0 => "fs_blend",
-        Some(_) => "fs_blend_quarter",
+        Some(m) => crate::psx_blend::blend_entry(m),
     };
     let consts = [("UI_QUANTIZE", if quantize { 1.0 } else { 0.0 })];
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

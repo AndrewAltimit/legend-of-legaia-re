@@ -132,6 +132,15 @@ impl World {
         std::mem::take(&mut self.pending_field_events)
     }
 
+    /// Whether an op-`0x35` music event is still queued for the host's
+    /// routing ([`Self::pending_field_events`]): a scene entry's prologue
+    /// raises its starts before the first tick routes them.
+    pub fn bgm_event_queued(&self) -> bool {
+        self.pending_field_events
+            .iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { .. }))
+    }
+
     /// The play hosts' end-of-frame field-event drain: empty
     /// [`Self::pending_field_events`] and queue, onto `pending`, every
     /// [`FieldEvent::ActorSpawned`] slot whose actor carries a TMD reference

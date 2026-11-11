@@ -216,7 +216,13 @@ fn a_reaction_ends_on_the_pass_its_cursor_crosses_the_end() {
     world.mode = SceneMode::Battle;
     world.toggles.battle_sm_frame_cadence = true;
     world.queue_battle_reaction(0, true);
+    // The primitive only stages; the seat's next node tick commits.
+    assert_eq!(world.actors[0].battle_reaction_stage, Some((2, 5)));
+    assert_eq!(world.actors[0].battle_reaction, None);
+    world.battle.anim_pass_vsyncs = 1;
+    world.tick_battle_anim_pass();
     assert_eq!(world.actors[0].battle_reaction, Some(2));
+    assert_eq!(world.actors[0].battle_reaction_stage, None);
     world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
     world.battle.anim_pass_vsyncs = 2;
     world.tick_battle_anim_pass();
@@ -225,6 +231,47 @@ fn a_reaction_ends_on_the_pass_its_cursor_crosses_the_end() {
         world.actors[0].battle_pose,
         Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
     );
+}
+
+/// A staged reaction over a clip whose entry carries the `+0x76` lock: the
+/// bit-0 cut refuses it, the clip plays on, and its natural end commits the
+/// staged byte - or idle, when the stage raised bit 2. The damage primitive
+/// raises bit 2 on the flinch arm only (`0x80042124..0x80042144`), so a
+/// flinch is dropped and a knockdown lands at the end.
+#[test]
+fn a_locked_clip_holds_a_staged_reaction_to_its_natural_end() {
+    for (with_getup, want) in [(false, None), (true, Some(4))] {
+        let mut world = reaction_test_world(with_getup);
+        world.mode = SceneMode::Battle;
+        world.toggles.battle_sm_frame_cadence = true;
+        let mut swing = pose_test_clip(0x0C, 4, 70);
+        swing.effect_script = vec![0; 0x80];
+        swing.effect_script[0] = 0x0C;
+        swing.effect_script[0x10] = 2;
+        swing.effect_script[0x76] = 1;
+        world.actors[0].battle_animation =
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(&swing);
+        world.queue_battle_reaction(0, true);
+        assert!(world.actors[0].battle_reaction_stage.is_some());
+        world.battle.anim_pass_vsyncs = 1;
+        world.tick_battle_anim_pass();
+        assert_eq!(
+            world.actors[0].battle_reaction, None,
+            "the lock refuses the cut"
+        );
+        assert!(
+            world.actors[0].battle_reaction_stage.is_some(),
+            "still staged"
+        );
+        world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+        world.battle.anim_pass_frame = None;
+        world.tick_battle_anim_pass();
+        assert_eq!(
+            world.actors[0].battle_reaction_stage, None,
+            "the end takes it"
+        );
+        assert_eq!(world.actors[0].battle_reaction, want, "getup {with_getup}");
+    }
 }
 
 #[test]
@@ -1156,8 +1203,9 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
 /// with no seat flag and no starter mark, the constant behind the starter
 /// names a Hyper Art and the commit dispatches its fanfare - Vahn's Burning
 /// Flare `0x1C` is id `0x104` or `0x107` (`XA1.XA` channel 4 or 7) on one
-/// `rand()` coin. The dispatcher's read-span gate drops a second request
-/// inside the first clip's span. The known-art starter (`0x19`) commit asks
+/// `rand()` coin. A second request inside the first clip's span plays over
+/// it (the dispatcher's gate is a data stream read, not the clip). The
+/// known-art starter (`0x19`) commit asks
 /// the arts-voice selector instead, which a staged table resolves onto
 /// `XA2.XA`.
 #[test]
@@ -1182,11 +1230,15 @@ fn starter_commits_voice_the_hyper_fanfare_and_the_arts_shout() {
     assert!(matches!(cues[0].channel, 4 | 7), "{cues:?}");
     assert_eq!(cues[0].duration_sectors, (10u32 * 60).div_ceil(100));
 
-    // Inside that clip's read span the dispatcher declines the next one.
+    // Inside that clip's read span the next one still starts.
     world.battle_ctx.arts_banner_stage = 0;
     stage(&mut world, &[0x1A, 0x1C], 1, 0x1A);
     world.commit_staged_battle_anim_at_boundary(0);
-    assert!(world.drain_battle_xa_cues().is_empty(), "the drive is busy");
+    assert_eq!(
+        world.drain_battle_xa_cues().len(),
+        1,
+        "a sounding clip does not hold the dispatcher"
+    );
     world.audio.battle_xa_busy_frames = 0;
 
     // A non-Hyper constant behind the starter plays nothing.

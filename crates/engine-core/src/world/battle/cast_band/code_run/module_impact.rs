@@ -27,6 +27,13 @@ impl World {
                 ImpactSeat::Caster => vec![caster],
                 ImpactSeat::Creature => vec![creature],
                 ImpactSeat::Party => (0..party).collect(),
+                ImpactSeat::LiveParty => (0..party)
+                    .filter(|&s| {
+                        self.actors
+                            .get(usize::from(s))
+                            .is_some_and(|a| a.active && a.battle.hp != 0)
+                    })
+                    .collect(),
                 ImpactSeat::LiveMonsters => (party..party + 4)
                     .filter(|&s| {
                         self.actors.get(usize::from(s)).is_some_and(|a| {
@@ -46,7 +53,12 @@ impl World {
                     a.battle.render_blend =
                         legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
                 }
-                a.battle.impact_state = m.selector;
+                if let Some(state) = m.tint_state {
+                    a.battle.render_flag = state;
+                }
+                if let Some(selector) = m.selector {
+                    a.battle.impact_state = selector;
+                }
             }
         }
     }

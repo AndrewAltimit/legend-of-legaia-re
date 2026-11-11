@@ -161,10 +161,30 @@ impl<S: AudioSink> BootSession<S> {
     /// re-uploading its VAB. No-op when the scene had no track or it isn't a
     /// global-pool id. The slot machine + fishing don't need this: they never
     /// replaced the director's bank.
-    pub fn restore_field_bgm(&mut self) {
-        if let Some(id) = self.host.world.audio.current_bgm {
-            self.start_global_bgm(id);
+    pub fn restore_field_bgm(&mut self) -> bool {
+        match self.host.world.audio.current_bgm {
+            Some(id) => self.start_global_bgm(id),
+            None => false,
         }
+    }
+
+    /// Bring the scene's track up on an audio output attached after the
+    /// session's scene was entered: [`Self::restore_field_bgm`], unless an
+    /// op-`0x35` event is still queued ([`World::bgm_event_queued`]), whose
+    /// routing on the next tick plays the script's own sequence. A host that
+    /// opens its output with the session never needs this; the browser page
+    /// opens one on a user gesture, and the gesture that picks a scene lands
+    /// after the entry and before its first tick, where a start here would
+    /// sound ahead of the script's own stop and starts (Mt. Rikuroa's
+    /// summit read `start, stop, start, start` on the page where the window
+    /// reads `stop, start, start`). Returns whether a track started.
+    ///
+    /// [`World::bgm_event_queued`]: legaia_engine_core::world::World::bgm_event_queued
+    pub fn start_field_bgm_on_attach(&mut self) -> bool {
+        if self.host.world.bgm_event_queued() {
+            return false;
+        }
+        self.restore_field_bgm()
     }
 
     /// One per-frame step: tick the world, route field-VM camera + BGM

@@ -25,9 +25,10 @@ pub const ST_OPPONENT_INSTALL: u32 = 0x1E;
 pub const ST_ROUND_SETUP: u32 = 0x32;
 /// Round banner, first beat.
 pub const ST_ROUND_BANNER_A: u32 = 0x33;
-/// Round banner, second beat (secret-opponent BGM ramp runs here).
+/// Round banner, second beat (a secret opponent's first round raises the
+/// camera here).
 pub const ST_ROUND_BANNER_B: u32 = 0x34;
-/// Round banner, camera pull-in.
+/// Round banner, the camera spin: held until the yaw passes a full turn.
 pub const ST_ROUND_BANNER_C: u32 = 0x35;
 /// Round banner hold (`0x79` frame-steps).
 pub const ST_ROUND_BANNER_D: u32 = 0x36;

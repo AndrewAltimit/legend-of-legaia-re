@@ -17,7 +17,10 @@ use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
     /// Battle mesh `i`'s draw plan this frame (`None` off a battle body).
-    fn body_blend_plan(&self, i: u32) -> Option<legaia_engine_core::world::BattleActorDrawPlan> {
+    pub(crate) fn body_blend_plan(
+        &self,
+        i: u32,
+    ) -> Option<legaia_engine_core::world::BattleActorDrawPlan> {
         let (actor_idx, _, _) = self
             .battle_render
             .as_ref()?

@@ -56,7 +56,7 @@ A pack can gate content on the run: while a pack is active the world raises the 
 
 ## Ironman
 
-An ironman run draws a run id at New Game, which its saves carry. The card writer every host shares (`write_save_into_card` and its siblings) keeps one save per run: after writing a save of an ironman run it erases every other save of that run from the card. When the party falls (the wipe that returns to the title) the world marks the run, and the host erases the run's save from port 1 (`ironman_erase_run`). Each scene entry owes an autosave, which the host writes over the run's own save or into the lowest free save number (`ironman_autosave`). Hardcore adds one rule: the battle Item command is refused, as a pack challenge's `no_items` rule refuses it.
+An ironman run draws a run id at New Game, which its saves carry. The card writer every host shares (`write_save_into_card` and its siblings) keeps one save per run: after writing a save of an ironman run it erases every other save of that run from the card. When the party falls (the wipe that returns to the title) the world marks the run, and the host erases the run's save from port 1 (`ironman_erase_run`). Each scene entry owes an autosave, which the host writes over the run's own save or into the lowest free save number (`ironman_autosave`). Hardcore adds one rule: the battle Item command is refused, as a pack challenge's `no_items` rule refuses it - except in the sparring tutorial, whose Item lesson rewinds on any other pick and so would hold Tetsu's spar on it for good.
 
 An erase marks the save's directory frame deleted (`0xA1`, `MountedCard::erase_save_block`), as the BIOS's own delete does.
 

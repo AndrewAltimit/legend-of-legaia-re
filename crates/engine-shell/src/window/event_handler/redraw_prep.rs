@@ -477,8 +477,10 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps)
-                .map(|t| legaia_engine_capture::ground_snap::strike_heading_target(world, t, end));
+            let armed =
+                legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps).map(|t| {
+                    legaia_engine_capture::ground_snap::strike_heading_target(world, t, end, None)
+                });
             // On a display-lag retake the frame is two game frames older than
             // the RAM the endpoints were read from, and the framing armed
             // here may stand a step of yaw drift or depth ramp short of them;
@@ -561,7 +563,7 @@ impl PlayWindowApp {
             } else {
                 mask
             };
-            // A monster's strike: case 7 re-arms every pass, so the RAM's pose
+            // A strike loop: case 7 re-arms every pass, so the RAM's pose
             // walked back is the displayed frame's on every component, whatever
             // the replay's body pairs put the framing on
             // (`RetailBattle::stand_on_displayed_pose`).
@@ -654,6 +656,21 @@ impl PlayWindowApp {
                 // the second Nurga faint as retail draws it). A magic-band
                 // frame keeps the replay's bits, which its row arm set.
                 world.refresh_battle_camera_ghost_on(pose);
+            } else if let Some((shown, _)) =
+                self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
+                && (0x1E..=0x20).contains(&world.battle_ctx.action_state)
+            {
+                // The strike band has no row arm either, so its bits are the
+                // near-camera test's on retail's camera rather than on the
+                // replay's own glide, which a partial alignment leaves
+                // standing (`battle_garmel_party_noa_lizard_tail_mid`: the
+                // replay's pose ghosted Vahn, `1624` units from the test
+                // point against a radius of `1228` on retail's; the
+                // displayed pose and the pass-older ghost pose agree there).
+                // The displayed pose is the one the alignment aimed at, and
+                // the one `battle_ropeway_party_noa_sonic_javelin_open`'s
+                // frame confirms where the two part.
+                world.refresh_battle_camera_ghost_on(shown);
             }
             // A seat the displayed frame drew elsewhere than the RAM's ground
             // (`LEGAIA_BATTLE_DISPLAYED_SEAT`): moved after the alignment, so

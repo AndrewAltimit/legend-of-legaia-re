@@ -372,3 +372,32 @@ fn the_marker_block_is_cut_like_the_hall() {
         "the kept set never moved with the camera: {kept:?}"
     );
 }
+
+/// The standalone page's dance frame judges through `dance_tick_pressing`,
+/// the export that hands the press to the play hosts' kernel
+/// (`DanceGame::advance_vsync`); `dance_press` after the tick judged ahead of
+/// the game frame's advance, up to a frame early. Disc-free.
+#[test]
+fn the_dance_page_judges_on_the_game_frame() {
+    let p =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/_content/minigames.html");
+    let src = std::fs::read_to_string(&p).expect("read minigames.html");
+    let frame = src
+        .find("function danceFrame()")
+        .map(|i| &src[i..])
+        .expect("danceFrame");
+    let frame = &frame[..frame.find("\n  }\n").expect("danceFrame end")];
+    assert!(
+        frame.contains("danceTickPressing("),
+        "the frame ticks through danceTickPressing"
+    );
+    assert!(
+        !frame.contains("api.dance_tick(1)"),
+        "no bare tick in the frame"
+    );
+    let tick = src
+        .find("function danceTickPressing(")
+        .map(|i| &src[i..])
+        .expect("danceTickPressing");
+    assert!(tick.contains("api.dance_tick_pressing(1, sym)"));
+}

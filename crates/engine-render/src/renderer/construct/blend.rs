@@ -6,9 +6,9 @@ use super::*;
 /// PSX semi-transparency blend pipelines: one per ABR mode, for both
 /// the single-mesh layout and the scene (dynamic-offset) layout. Same
 /// shader module + vertex state as the opaque VRAM-mesh pipelines;
-/// the blend-pass fragment entry keeps only STP texels and the
-/// per-mode fixed-function [`psx_blend::blend_state`] applies the PSX
-/// equation (mode 3 pre-scales F by 0.25 via its own entry point).
+/// the blend-pass fragment entry keeps only STP texels and writes its
+/// mode's foreground term ([`psx_blend::blend_entry`]), and the per-mode
+/// fixed-function [`psx_blend::blend_state`] completes the PSX equation.
 /// Depth: test against the opaque pass but don't write (the PSX has
 /// no depth buffer and blended fragments must not occlude later
 /// draws); GreaterEqual (reversed-Z LessEqual) so decal prims coplanar
@@ -22,11 +22,7 @@ fn blend_pipeline(
     vertex_layout: &wgpu::VertexBufferLayout,
     mode: u8,
 ) -> wgpu::RenderPipeline {
-    let entry = if psx_blend::src_shader_scale(mode) == 1.0 {
-        "fs_blend"
-    } else {
-        "fs_blend_quarter"
-    };
+    let entry = psx_blend::blend_entry(mode);
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),

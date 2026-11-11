@@ -594,6 +594,15 @@ sections, the filter box and its script - and marks where the register goes:
 <!--REGISTER:settled-->       every area, row and write-up
 ```
 
+The open-threads fragment carries a third marker, `<!--REGISTER-SUMMARY:open-->`,
+which renders its at-a-glance table: the live hunts of each area, split by
+status, with a jump link per area. The counts are taken from the same parse as
+the rows, so they cannot disagree with the tables under them. A thread counts
+once whether it is a table row or a `###` write-up whose first line states its
+status; a write-up a row links to is that row's long form. An area whose table
+has a header and no rows renders as "No open threads in this area" rather than
+as an empty table.
+
 `site/_gen.py` expands the markers through `site/_registers.py` on every build,
 from the current `docs/` (the settled register reads its index page and the
 nine area pages under `re-settled-threads/`). A settled row renders its

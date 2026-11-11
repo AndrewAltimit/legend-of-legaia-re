@@ -288,6 +288,12 @@ impl BattleRender {
 
     /// Mesh `i`'s world actor slot, rest packet-colour stream and per-vertex
     /// object ids - what [`crate::play_battle_limb_dim`] re-colours.
+    /// Bound actor mesh `i`'s triangle list (the stream
+    /// [`Self::actor_colour_stream`]'s per-vertex colours index).
+    pub(crate) fn actor_indices(&self, i: usize) -> Option<&[u32]> {
+        self.actors.get(i).map(|a| a.mesh.mesh.indices.as_slice())
+    }
+
     pub(crate) fn actor_colour_stream(&self, i: usize) -> Option<(usize, &[u8], &[u32])> {
         self.actors
             .get(i)

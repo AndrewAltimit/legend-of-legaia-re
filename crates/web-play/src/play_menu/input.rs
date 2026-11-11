@@ -167,6 +167,12 @@ impl LegaiaRuntime {
                 // Step the grid cursor and gate an empty-block Load BEFORE
                 // the session ticks, so a confirm on the same edge commits
                 // the cell the player is looking at.
+                // Key Config labels the controller pressed last.
+                if let (Some(style), FieldMenuSubsession::Config(s)) =
+                    (crate::pad_bindings::last_pad(), session.as_mut())
+                {
+                    s.set_pad_style(style);
+                }
                 if let FieldMenuSubsession::Save(s) = session.as_mut() {
                     edge = m.save_flow.before_tick(s, edge);
                     save_edge = Some(edge);

@@ -57,12 +57,14 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
-/// The stagers of PROT 0935, 0941, 0942, 0943, 0945, 0951, 0953, 0955, 0956 and 0964 (`gp[+0x714]` off the
+/// The stagers of PROT 0935, 0936, 0937, 0941, 0942, 0943, 0945, 0951, 0953, 0955, 0956 and 0964 (`gp[+0x714]` off the
 /// 64-word table at `0x801F6734`), reached from their parts' op `0x20`:
 ///
 /// | PROT | stager | arm: seats, on the caller |
 /// |---|---|---|
 /// | 0935 | `FUN_801F7FF0` | 0: `0x801F81EC` |
+/// | 0936 | `FUN_801F7BD0` | 0: `0x801F7DE4`, then eight `0x801F7D84` on two draws each; 1: `0x801F8094`, `0x801F810C` |
+/// | 0937 | `FUN_801F7850` | 0: `0x801F7AF4`, then eight `0x801F7A94` on two draws each; 1: `0x801F7D00`; 2: `0x801F7AF4`, then eight `0x801F7DB0` on three draws each |
 /// | 0941 | `FUN_801F7DB0` | 1: `0x801F7F98`, 2: `0x801F8184`, 3: `0x801F81C8`, 4: `0x801F8238` |
 /// | 0942 | `FUN_801F8118` | 0: `0x801F81D0`, 1: `0x801F8480`, 2: `0x801F84F8`, each at the caller's scale |
 /// | 0943 | `FUN_801F769C` | 0: `0x801F7788`; 1: `0x801F784C`, `0x801F78A8`; 2: `0x801F791C`, each at the caller's scale |
@@ -79,6 +81,8 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 ///
 /// PORT: overlay_cast_earthquake_0935_801f7ff0, overlay_cast_steal_0941_801f7db0, overlay_cast_power_up_0942_801f8118, overlay_cast_chaos_flare_0951_801f81dc, overlay_cast_element_change_0964_801f8bf8
 /// PORT: FUN_801F769C (PROT 0943's stager)
+/// PORT: overlay_cast_hyper_crush_0936_801f7bd0 (PROT 0936's stager)
+/// PORT: overlay_cast_hyper_lightning_0937_801f7850 (PROT 0937's stager)
 /// PORT: FUN_801F776C (PROT 0945's stager)
 /// PORT: FUN_801F7EC4 (PROT 0956's stager)
 /// PORT: overlay_cast_white_shield_0955_801f9370 (PROT 0955's stager)
@@ -167,8 +171,45 @@ pub fn enemy_cast_stager_spawns(
             })
             .collect(),
         (964, 2) => vec![at(0x801F_9568, own)],
+        // Hyper Crush's ray burst: the flash, then eight rays, each turned
+        // `i * 0x200 + (rand() & 0x1FF)` about its roll `+0x28` with a spin
+        // `+0x84 = (rand() & 0xFF) - 0x80` (`0x801F7C04..0x801F7C70`). Called
+        // seven times, five vsyncs apart, by arm 1's `0x801F7D6C`.
+        (936, 0) => ray_burst(at(0x801F_7DE4, 0x1000), 0x801F_7D84, caller, false, rand),
+        (936, 1) => vec![at(0x801F_8094, 0x1000), at(0x801F_810C, 0x1000)],
+        // Hyper Lightning's: arm 0 is Hyper Crush's on its own records
+        // (`0x801F78A8..0x801F7910`), arm 2 the same with a third draw into
+        // the ray's height `+0xB4 = (rand() & 0xF) + 0x10`
+        // (`0x801F793C..0x801F79B4`).
+        (937, 0) => ray_burst(at(0x801F_7AF4, 0x1000), 0x801F_7A94, caller, false, rand),
+        (937, 1) => vec![at(0x801F_7D00, 0x1000)],
+        (937, 2) => ray_burst(at(0x801F_7AF4, 0x1000), 0x801F_7DB0, caller, true, rand),
         _ => Vec::new(),
     }
+}
+
+/// A flash and eight rays on the caller, the ray burst PROT 0936's and
+/// 0937's stagers share: each ray's spin `+0x84` and roll `+0x28` off two
+/// `rand()` draws, and with `height` a third into `+0xB4`.
+fn ray_burst(
+    flash: StagerSpawn,
+    ray: u32,
+    caller: StagerCaller,
+    height: bool,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let mut out = vec![flash];
+    for i in 0..8u16 {
+        let mut s = on_caller(ray, caller, 0x1000);
+        let spin = ((rand() & 0xFF) as i16 - 0x80) as u16;
+        let roll = (i << 9).wrapping_add((rand() & 0x1FF) as u16) & 0xFFF;
+        s.pokes = vec![(0x84, spin), (0x28, roll)];
+        if height {
+            s.pokes.push((0xB4, (rand() & 0xF) as u16 + 0x10));
+        }
+        out.push(s);
+    }
+    out
 }
 
 /// PROT 0962's stager `FUN_801F813C`:

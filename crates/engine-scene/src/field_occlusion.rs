@@ -113,6 +113,13 @@ pub const OCCLUDER_MIN_OPACITY: f32 = 0.55;
 /// position. [`FieldOccluders::fully_occluded_where`] hands it to the host's
 /// gate, so a draw the visible-tile crop or the actor cull dropped this frame
 /// cannot hide the character.
+///
+/// A placed draw also carries the two keys the hosts' own draw loops test
+/// before they draw it: its windowed static-object key ([`Self::window`],
+/// the sub-area window sweep's ownership, `field_env::placed_window_key`) and
+/// its per-object key ([`Self::object`], `field_env::placed_object_key`), so
+/// an object off the windowed list or parked at the hide box occludes no
+/// more than it draws.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OccluderDraw {
     /// Index of the draw list in [`FieldOccluders::build`]'s `draw_lists`.
@@ -123,6 +130,13 @@ pub struct OccluderDraw {
     pub world_x: i32,
     /// The draw's world Z (retail units).
     pub world_z: i32,
+    /// The draw's windowed static-object key: `Some` for a placed draw the
+    /// sub-area window sweep owns, `None` for one the scene-init sweep owns
+    /// and for every terrain draw.
+    pub window: Option<crate::field_env::PlacedWindowKey>,
+    /// The draw's per-object key (`World::hidden_object_records` is keyed
+    /// on it): `Some` for a bound placed draw, `None` otherwise.
+    pub object: Option<usize>,
 }
 
 /// The list index [`FieldOccluders::build`]'s callers give the terrain draws.
@@ -230,6 +244,17 @@ impl FieldOccluders {
     /// ([`OCCLUDER_MEMO`]), so a scene rebuilt from the same meshes and VRAM
     /// derives them once.
     pub fn build(draw_lists: &[&[EnvDraw]], res: &SceneResources) -> Self {
+        Self::build_with_binds(draw_lists, res, None)
+    }
+
+    /// [`Self::build`] with the scene's object binds, which key each draw of
+    /// the [`OCCLUDER_LIST_PLACEMENTS`] list ([`OccluderDraw::window`],
+    /// [`OccluderDraw::object`]) the way the hosts key the draws they draw.
+    pub fn build_with_binds(
+        draw_lists: &[&[EnvDraw]],
+        res: &SceneResources,
+        binds: Option<&std::collections::HashMap<(u8, u8), crate::field_env::ObjectBind>>,
+    ) -> Self {
         use std::collections::HashMap;
         use std::sync::Arc;
         type Tris = (Vec<[f32; 3]>, Vec<u32>);
@@ -252,7 +277,7 @@ impl FieldOccluders {
                     }))
                 });
                 if let Some(m) = mesh {
-                    out.add_instanced_mesh_from(&m.0, &m.1, d, list);
+                    out.add_instanced_mesh_bound(&m.0, &m.1, d, list, binds);
                 }
             }
         }
@@ -264,6 +289,28 @@ impl FieldOccluders {
     /// raw geometry) can compose a set without a [`SceneResources`].
     pub fn add_instanced_mesh(&mut self, positions: &[[f32; 3]], indices: &[u32], d: &EnvDraw) {
         self.add_instanced_mesh_from(positions, indices, d, 0);
+    }
+
+    /// [`Self::add_instanced_mesh_from`] keyed by the scene's object binds: a
+    /// draw of [`OCCLUDER_LIST_PLACEMENTS`] carries its windowed static-object
+    /// key and its per-object key ([`OccluderDraw::window`],
+    /// [`OccluderDraw::object`]), as [`Self::build_with_binds`] keys it.
+    pub fn add_instanced_mesh_bound(
+        &mut self,
+        positions: &[[f32; 3]],
+        indices: &[u32],
+        d: &EnvDraw,
+        list: usize,
+        binds: Option<&std::collections::HashMap<(u8, u8), crate::field_env::ObjectBind>>,
+    ) {
+        let start = self.draws.len();
+        self.add_instanced_mesh_from(positions, indices, d, list);
+        if list == OCCLUDER_LIST_PLACEMENTS
+            && let Some(dr) = self.draws.get_mut(start)
+        {
+            dr.source.window = crate::field_env::placed_window_key(d, binds);
+            dr.source.object = crate::field_env::placed_object_key(d, binds);
+        }
     }
 
     /// [`Self::add_instanced_mesh`] for a draw of `list`
@@ -314,6 +361,8 @@ impl FieldOccluders {
                     key: crate::field_view_window::CellKey::of_draw(d),
                     world_x: d.world_x,
                     world_z: d.world_z,
+                    window: None,
+                    object: None,
                 },
             });
         }
@@ -422,7 +471,7 @@ impl FieldOccluders {
     /// but the visible-tile crop and the actor cull drop draws per frame; a
     /// dropped wall is not on screen, so it must not open a hole over the
     /// character. Both hosts pass the same gate
-    /// (`engine-world-views::field_view_window::occluder_drawn`).
+    /// (`engine-world-views::field_view_window::OccluderGate`).
     pub fn fully_occluded_where(
         &self,
         eye: [f32; 3],
@@ -595,6 +644,44 @@ mod tests {
         let d = seen.get().expect("the gate asks about the wall");
         assert_eq!(d.list, OCCLUDER_LIST_PLACEMENTS);
         assert_eq!((d.world_x, d.world_z), (0, 0));
+    }
+
+    /// A placed draw carries the keys its host's own draw loop tests: a
+    /// bindless anchor is the window sweep's (a window key, no object key),
+    /// a bound one the init sweep's (no window key, an object key), and a
+    /// terrain draw carries neither.
+    #[test]
+    fn a_placed_occluder_carries_its_window_and_object_keys() {
+        use crate::field_env::{ObjectBind, PlacedWindowKey};
+        let (p, i) = wall();
+        let mut bound = draw_at(0, 0, 0, 0);
+        bound.anchor = (3, 4);
+        bound.cell = (3, 4);
+        let free = draw_at(100, 0, 0, 0);
+        let binds: std::collections::HashMap<(u8, u8), ObjectBind> = [(
+            (3, 4),
+            ObjectBind {
+                record: 7,
+                anim_id: 0,
+            },
+        )]
+        .into_iter()
+        .collect();
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh_bound(&p, &i, &bound, OCCLUDER_LIST_PLACEMENTS, Some(&binds));
+        o.add_instanced_mesh_bound(&p, &i, &free, OCCLUDER_LIST_PLACEMENTS, Some(&binds));
+        o.add_instanced_mesh_bound(&p, &i, &free, OCCLUDER_LIST_TERRAIN, Some(&binds));
+        let src: Vec<OccluderDraw> = o.draws.iter().map(|d| d.source).collect();
+        assert_eq!(src[0].window, None);
+        assert_eq!(
+            src[0].object,
+            Some(legaia_engine_field::field_channels::object_instance_key((
+                3, 4
+            )))
+        );
+        assert_eq!(src[1].window, Some(PlacedWindowKey::of_draw(&free)));
+        assert_eq!(src[1].object, None);
+        assert_eq!((src[2].window, src[2].object), (None, None));
     }
 
     /// The same wall BEHIND the player does not block (the segment ends at

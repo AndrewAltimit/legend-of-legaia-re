@@ -368,8 +368,9 @@ pub struct VenueCameraFrame {
 enum Catch {
     #[default]
     None,
-    /// The line actor's close-up of the landed fish.
-    CloseUp(CatchLift),
+    /// The line actor's close-up of the landed fish, lifted from world
+    /// `(x, z)`; the last field is the height this frame drew it at.
+    CloseUp(CatchLift, (i16, i16), i16),
     /// The close-up is over; the next frame cuts to the showcase.
     Restored,
     /// State `0x21`: the showcase tilting up.
@@ -440,6 +441,20 @@ impl VenueCameraDriver {
         &self.camera
     }
 
+    /// The landed fish's world point `(x, y, z)` while the close-up lifts it
+    /// (the line actor's `+0x14..+0x18`, which it copies from the lure's
+    /// 24.8 accumulators `0x801D9174..0x801D917C` at the top of every tick,
+    /// `0x801D4954..0x801D499C`); `None` outside the close-up. The height is
+    /// the one this frame's draw reads: the accumulator as this tick started
+    /// (`0` on the first frame, the `sh zero,0x16` at `0x801D4BDC`), before
+    /// the tick's own rise.
+    pub fn lift_point(&self) -> Option<(i16, i16, i16)> {
+        match self.catch {
+            Catch::CloseUp(_, (x, z), y) => Some((x, y, z)),
+            _ => None,
+        }
+    }
+
     fn landed(&mut self, f: VenueCameraFrame, step: i32) {
         let (lx, _, lz, facing) = f.lead;
         match (self.catch, f.close_up) {
@@ -451,12 +466,13 @@ impl VenueCameraDriver {
                 self.camera.celebrate_step(0, step);
                 let mut lift = CatchLift::at_record(f.record);
                 lift.step(step);
-                self.catch = Catch::CloseUp(lift);
+                self.catch = Catch::CloseUp(lift, (x, z), 0);
             }
-            (Catch::CloseUp(mut lift), _) => {
-                self.camera.celebrate_step(lift.y(), step);
+            (Catch::CloseUp(mut lift, at, _), _) => {
+                let y = lift.y();
+                self.camera.celebrate_step(y, step);
                 lift.step(step);
-                self.catch = Catch::CloseUp(lift);
+                self.catch = Catch::CloseUp(lift, at, y);
             }
             (Catch::None, _) => {
                 // No close-up ran (no line actor): straight to the showcase.
@@ -473,7 +489,7 @@ impl VenueCameraDriver {
             }
             (Catch::Held, _) => {}
         }
-        if f.close_up_done && matches!(self.catch, Catch::CloseUp(_)) {
+        if f.close_up_done && matches!(self.catch, Catch::CloseUp(..)) {
             self.camera.celebrate_end();
             self.catch = Catch::Restored;
         }

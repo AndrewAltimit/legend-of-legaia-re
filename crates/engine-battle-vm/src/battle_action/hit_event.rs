@@ -235,17 +235,12 @@ pub struct TickCommits {
 /// PORT: FUN_80047430 (`0x800478EC..0x80047B58`, the commit sites)
 /// REF: FUN_800402F4
 ///
-/// NOT WIRED: the engine has no one per-seat pass that owns both commit
-/// sites. Its two halves are live apart - [`mid_clip_cut`] where a reaction
-/// is staged on a struck seat, [`event_commit_due`] on the strike loop's
-/// staged byte, [`natural_end_commit`] where a reaction clip runs out - each
-/// called from the place the engine's clip players reach that boundary. What
-/// only this composition carries is the order inside one tick: the natural
-/// end tested on the entry the cut installed, with the cursor the cut
-/// zeroed, so a cut onto an entry of no frames commits twice in the pass.
-/// Wiring it takes the anim pass deciding a seat's commits in one place,
-/// after that seat's advance, from the node's own `+0x1DC` / `+0x1DA` pair.
-/// Until then the differential (`retail-exec`'s `tick_commits`) holds it.
+/// The engine runs it in each seat's slice of the anim walk for a reaction a
+/// hit staged there (`World::commit_staged_battle_reaction` in
+/// `legaia-engine-core`): the cut, or the lock that refuses it and the
+/// natural end that then takes the staged byte or idle. The action channel's
+/// commits reach the same sites through [`mid_clip_cut`]'s callers,
+/// [`event_commit_due`] and [`natural_end_commit`].
 #[allow(clippy::too_many_arguments)]
 pub fn tick_commits(
     flags: u8,

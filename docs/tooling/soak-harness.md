@@ -110,7 +110,7 @@ opens the Incense notice (handler slot `0x32`), whose close stores
 `_DAT_8007B450 = 0` (`0x801F1F20`), so the op's next pass finds the park Idle
 and opens the notice again. A `49 0E` is past the op's sub-op bound
 (`sltiu v0,v0,0xe` at `0x801E098C`), and the Idle arm returns the same PC
-(`0x801E0990`).
+(`0x801E0990`); a modal record's `49 48` parks the same way.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
@@ -154,6 +154,11 @@ the player:
 - where the locomotion's own wall and body probes let the player walk a whole
   tile away. `son`'s camp has a wall nook at (74..75, 68) shut by two NPCs who
   never move, and a seat there read as `confined`.
+- where that walk still gets out with every placement solid. The visibility
+  cull is the camera's, and at the seat the camera still frames where the
+  player stood: `son`'s nook seat flooded out north through slot 25, culled
+  from the old view, and once the camera followed, slot 25 shut the nook's one
+  way out.
 - where a walk could also come back in from a tile away. The body probes test
   points 64 ahead of the player, so a pocket can let the player out and never
   back in: `dolk`'s monk formation stands its rows 128 apart, and a seat in the
@@ -181,6 +186,20 @@ the anim tick's Rage arm delegates the whole party in every battle
 the command ring refuses every member, and the round must still open, take
 `Begin` and play out. It is re-applied each frame because an equipment change
 rebuilds the ability bits from what is worn.
+
+A run-rules run is a label ending in `+rules=<preset>` (before any
+`@<save>`): the New Game slate starts under the port's run rules
+([`run-rules.md`](../subsystems/run-rules.md)), staged as the New Game rules
+screen stages them (`BootSession::stage_run_rules`). The presets are `easy`,
+`hard`, `nightmare`, `rando` (every randomizer part, seeded from the run
+seed), `ironman`, `hardcore`, `ngplus` (cycle 1; with an `@<save>` the save is
+the carry source, not the starting state) and `bossrush`, which starts through
+the rules screen's Start (`BootSession::start_run`). Every frame the run does
+what both hosts' `poll_run_rules` does: a due Boss Rush stage is entered and
+armed, its intermission or result screen takes the frame's pad edge in place
+of the field tick, and ironman's autosave and erase land on the soak card. A
+dismissed Boss Rush result ends the run. The scene set carries each story
+preset in `town01`, `map01` and `keikoku`, and the Boss Rush from `town01`.
 
 ### Front-end runs
 
@@ -256,8 +275,8 @@ Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
 destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
 round-trip twin of every scene, a `+talk` twin of every field scene, a
-`+shop` twin of every scene with a shop, and the two front-end runs. Nothing
-else is hand-listed.
+`+shop` twin of every scene with a shop, the two front-end runs and the run-rules runs.
+Nothing else is hand-listed.
 
 ## Policies
 
@@ -270,7 +289,7 @@ what holds the frame:
 | field / overworld | segments of: held walks (one direction or a diagonal, sometimes with Cross taps), Cross/Circle mashing, a Start tap, idle, and chaos (random masks of every button but Start) |
 | dialogue owns input, or a script holds the player | mostly Cross, some directions, some Circle - a cutscene timeline pages its own text boxes, and the ending's last record waits on a held confirm |
 | a script polls the held pad | the face button it polls, held - op `0x42` mode 1 reads the held word on one frame of its loop (`edlast`'s credits end on `4A 08 00 42 01 08`: wait eight frames, test a held Circle or Cross), which a tap reaches only by luck |
-| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count |
+| a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count. A plan under way runs to its confirm: a stray press drawn mid-plan confirmed the row the taps had reached, and `town01`'s panoramic map, whose one way out is its fourth row, kept landing above it |
 | pause menu | random taps for a random budget, then Circle until it closes |
 | battle | mostly a fighter (Begin, Attack, Auto, confirm the target, Cross any message box) that now and then takes Item, Magic, Spirit, a typed Command art or Run instead and goes through with the pick; otherwise random taps. The report lists the battle surfaces runs reached (command phases, item / spell pickers, arts entry). In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
@@ -470,7 +489,9 @@ default). `LEGAIA_SOAK_TRACE_NPC=<slot>` adds that placement's position to
 every line, walking or not, which is how to find where an actor stood before a
 walk started. `LEGAIA_SOAK_TRACE_WALLS=1` adds the wall bits of the 9 x 9 sub-cells
 around the player (`#` wall, `@` the player) - what a walled-in landing is
-walled by. The inline runner's record (an NPC talk, a prop record) is
+walled by - and the body-probe candidates within two tiles: the placement
+centres (`bodies[..]`) and the solid prop boxes (`props[..]`, `m` moving,
+`s` static, `x` exempt), so an `A` in the direction probes names its actor. The inline runner's record (an NPC talk, a prop record) is
 dumped with the script bodies, and a roster line prints whenever a member's
 level, base maxima or live maxima move - the frame a level-up or a stat item
 landed on. The trace goes to the terminal only; it is never written into a
@@ -552,6 +573,11 @@ regression.
 | `jou_level_up_bakes_accessory_into_base` | `jou@...:PRO-01`: Noa, wearing Max HP / MP +25%, levelled to base 2691 / 446 - her boosted live maxima plus the growth - and the live maxima no longer matched the aggregator's rebuild | a level-up grows the base window and the aggregator rebuilds the live maxima from it |
 | `genesis_resume_previous_scene` | `xp:genesis_1f+rt`: a save made on the pack map came back from its load naming the map's base scene (`tower`) as the previous scene instead of the scene the party came from | the resume re-enters the pack map over its base scene, which is a scene change; the save's own previous scene is restored after it (`BootSession::resume_save`) |
 | `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |
+| `teien_mist_question_cursor_carried` | `teien+rt`: after a No, the Mist question (`P2[5]`) asked again with the cursor still on No, so a confirm with no Down took No again and the question never let go | every line load seats the option cursor on the `4C E0` preset, else row 0 (`FUN_80039B7C` `0x80039F88..0x80039F98`); a box carried over a `0x24` had kept its old cursor - see [mes.md](../formats/mes.md#the-option-cursor) |
+| `vell_bridge_grass_envelope_never_latches` | `vell+talk`: Yes to the Fertilizer on the Bridge Grass (`P0[1]`) parked the examine on `AD 01 0B` for good | the record's own context and the object's channel share the envelope words (`+0x62 & 0xFC00`, `+0x10 & 0x1000`), so the spin sees the ADVANCE latch `FUN_80020740` raises when the lanes drain (`0x80020A78`) - see [field-ambient-fx.md](../subsystems/field-ambient-fx.md#a-record-that-drives-its-own-objects-morph) |
+| `son_nook_seat_through_culled_npc` | `son+talk`: a talk seat in the camp's wall nook left the player `confined` | harness: the seat floods count culled placements as solid (the camera had not yet followed the seat) |
+| `kor3_warp_pad_parks_on_capped_screen` | `other7+rt@...:PRO-09`: the anti-hang cap ended `other7`'s modal `49 0A` with its screen up, and in `kor3` the Sol Tower warp pad's `49 04` read that stale screen as its own and parked for good | a record the cap ends takes the op-`0x49` screen it opened with it (`World::drop_capped_op49_screen`); retail has no cap |
+| `town01_hardcore_spar_item_lesson` | `town01+rules=hardcore`: Tetsu's sparring tutorial held its Item lesson for good, the Item chip refused by the hardcore rule | hardcore leaves the tutorial's Item lesson its window (`command_ring.rs`) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

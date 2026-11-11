@@ -181,8 +181,9 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls) and the words the read-span poll
-`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
+token a module's stream-wait arm polls) and the words the stream poll
+`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, the countdown only the
+development path steps, `cdbusy` `0x8007BA70`, that path's cell,
 `cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`), the BIOS `rand()` seed word
 `0x80009010` (`rand`), the frame-cost ring's newest entry (`cost`: `0x80084098`
 at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and which ordering table links a screen fade's quad
@@ -992,6 +993,10 @@ number is `2 * matched / (retail cues + engine cues)`, once each id's pairs are 
 in time order (repeats play in order, and the nearest-free pick can cross them); `id score` is the same
 over the id multisets alone, whatever the time.
 
+`--calc-clock` (retail only) writes `calc.csv`: every entry of the libsnd calc `FUN_80062F98` and every
+KON write `FUN_8006B854(1, mask)` with the CPU cycle, the action state and the module phase, so a calc
+skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs.
+
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
 
@@ -1055,6 +1060,14 @@ adds its reaction-channel entry). What the recordings on
 - **A deal is not a cue defect.** Void Accessories' three engine-only cues are its
   strip landing where retail's roll said "Nothing happened": `--rand-at 0x70:3` scores
   it `1.000`.
+- **A block is a roll as well.** A cast whose hits run the melee kernel rolls the victim's
+  block per hit, and the block clip and the flinch ring different cues: on Lu's Plasma
+  Strike (`nivora_duel_pre_plasma_strike`) retail's Noa blocks all seven beats (`0x0C` and
+  `0x249` each) where the engine's stream flinched on three (`0x60` / `0x61` and `0x4A`);
+  on Gaza's Astral Slash (`battle_kor_gaza_165_astral_slash_mid_cast`) the reverse, Vahn
+  flinching in retail (`0x54`, `0x27F`) and blocking in the engine (`0x51`, `0x0C`). The
+  draw counts per frame match retail's up to the first roll, and `--rand-track` scores both
+  `1.000`.
 - **A flinch with its cues skipped.** Palma's three engine-only cues were its pre-hit's
   flinch: arm `0xF`'s pass stores `8` into each row's `+0x1F6` (`0x801F8360`), one past the
   track, and `seats.csv` reads the jump with no cue behind it.
@@ -1237,7 +1250,8 @@ A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
   finisher halves the hit, so an engine child standing the party out of the stance
   takes about twice retail's damage: the Rogue casts read `1591` against `751` on Vahn.
   The driver stands the probe's `guard=` seats (the state's stance for an older
-  recording); `--guard` overrides it. A `--monster-pick` run several rounds on from a
+  recording, read with `pcsxr-state`, which the driver's build step builds; it warns when
+  the state cannot be read rather than standing no seat); `--guard` overrides it. A `--monster-pick` run several rounds on from a
   `*_strike` state has tapped Attack since: its `guard=` reads the stance at the cast,
   and a recording without the field stands no seat.
 - A monster-pick run from a `*_strike` state wants `LEGAIA_PRESS_UNTIL=7000` and

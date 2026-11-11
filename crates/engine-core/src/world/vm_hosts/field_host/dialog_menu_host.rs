@@ -6,13 +6,17 @@ impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
     // Op `4C E0 <b1>` (arm `0x801E306C`): `0` raises the instant-page latch
     // `_DAT_801F2744`, `1..100` sets the reading box's row capacity
     // `_DAT_801F2740` - `izumi`'s help pages open twelve-row boxes that load
-    // whole. `>= 100` writes the picker word `*(_DAT_801C6EA4) + 0xE`, which
-    // nothing in the port reads.
+    // whole. `>= 100` writes the picker preset `*(_DAT_801C6EA4 + 0xE)`,
+    // which the next line load copies into the option cursor: `izumi`'s
+    // statue pages reopen their four-topic picker on a set row (`4C E0 65`
+    // .. `67` ahead of the prompt).
     fn op4c_ne_sub0_state_write(&mut self, b1: u8) {
         if b1 == 0 {
             self.world.dialog.window_instant = true;
         } else if b1 < 100 {
             self.world.dialog.window_rows = b1;
+        } else {
+            self.world.dialog.picker_cursor_preset = u16::from(b1 - 100);
         }
     }
 
@@ -152,5 +156,28 @@ mod window_format_tests {
         let mut next = legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(bytes, 0);
         w.apply_dialog_window_format(&mut next);
         assert_eq!(next.box_rows(), Some(3), "a format lasts one box");
+    }
+
+    /// `4C E0 65`: the next line load seats the option cursor on row 1 and
+    /// spends the preset, so the box after it opens on row 0 - and so does a
+    /// box carried over a `0x24` whose cursor was left on another row
+    /// (`teien`'s "You're the ones who got rid of the Mist, right?", asked
+    /// again after a No).
+    #[test]
+    fn op_4c_e0_preset_seats_the_cursor_once() {
+        let mut w = World::new();
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0xE0, 0x65], 0);
+        assert_eq!(w.dialog.picker_cursor_preset, 1);
+        let bytes = std::sync::Arc::new(vec![0x1F, b'A', 0x00, 0x21]);
+        let mut panel =
+            legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(bytes.clone(), 0);
+        w.apply_dialog_window_format(&mut panel);
+        assert_eq!(panel.picker_cursor(), 1);
+        assert_eq!(w.dialog.picker_cursor_preset, 0, "the preset is spent");
+        let mut held = panel.held_after_press();
+        w.apply_dialog_window_format(&mut held);
+        assert_eq!(held.picker_cursor(), 0, "a carried box reopens on row 0");
     }
 }

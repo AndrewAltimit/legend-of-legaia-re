@@ -553,3 +553,19 @@ fn capture_body_for_action_is_unique_per_id() {
     );
     assert_eq!(capture_body_for_action(0x5B), Some((951, SCYTHE_WIND_TICK)));
 }
+
+#[test]
+fn theeder_and_viguro_shrink_the_effect_sprites_and_restore_them() {
+    assert_eq!(effect_sprite_scale_store(904, 0), Some(0x400));
+    assert_eq!(effect_sprite_scale_store(909, 0), Some(0x600));
+    assert_eq!(
+        effect_sprite_scale_store(904, 0xFF),
+        Some(DEFAULT_SPRITE_SCALE)
+    );
+    assert_eq!(
+        effect_sprite_scale_store(909, 0xFF),
+        Some(DEFAULT_SPRITE_SCALE)
+    );
+    assert_eq!(effect_sprite_scale_store(909, 5), None);
+    assert_eq!(effect_sprite_scale_store(903, 0), None);
+}

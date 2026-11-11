@@ -393,7 +393,7 @@ The floor is drawn by a small cluster that **reuses the field engine's scene inf
 
 | Function | Role |
 |---|---|
-| `FUN_801d3a2c` | **Per-frame floor pass.** Clears `DAT_801d6084`, walks the actor list when not paused, then sweeps the cell grid spawning one tile actor per drawn cell. The exact per-cell emit is **Inferred**. |
+| `FUN_801d3a2c` | **Floor pass**, called once from the init (`jal` at `0x801CF1CC`). Clears `DAT_801d6084`; unless gated off ([below](#which-placed-records-stand)), frees the floor-actor list and spawns one tile actor per drawn cell of the latched region box. |
 | `FUN_801d2a10` | **Height-ramp install + step-marker floor pass** over a `(x0, y0, width, height)` rect. |
 | `FUN_801d3ec0` | **Two-layer lookup.** Calls `FUN_801d3f54` against scene-data layer `+0x10000`; on a miss, retries against `+0x12000`. |
 | `FUN_801d3f54` | **Sub-table record lookup by cell.** First argument is the **kind** index: header offset `s16` at `base + kind*4 + 2`, count `s16` at `+4`, record stride the byte at `_DAT_8007B318 + kind`. Returns the first record whose two leading bytes match `(x, y)`, else NULL. |
@@ -421,6 +421,15 @@ Per cell, both passes:
 4. Fold the record's `+0x1e` / `+0x12` bits into the spawned actor's `+0x74` and `+0x10`.
 
 `FUN_801d2a10` adds two things. Before the walk it writes the 16-entry terrain height ladder `ramp[i] = i * 0x20` into scratchpad at `0x1f80035c` - the same table `FUN_801d6028` and both floor passes index by the terrain nibble. Its loop bounds are `x1 = a2 + a0` and `y1 = a3 + a1`, so the third and fourth arguments are extents, not end coordinates. And per cell it asks for a step marker.
+
+### Which placed records stand
+
+The init runs both walks back to back, and only the first one spawns anything on the retail path:
+
+1. `FUN_801d2a10(0x28, 0x50, 0x14, 0x1e)` (`0x801CF1AC..0x801CF1BC`) walks the rect `x 40..60`, `z 80..110` and spawns a cell only when its anchor tile resolves a kind-1 record (`beq s2,zero` at `0x801D2BFC`), into `_DAT_8007C354`.
+2. The region box is latched at tile `(0x30, 0x66)` (`jal 0x800180EC` at `0x801CF1C4`) and `FUN_801d3a2c` runs. Its first two tests skip the whole pass when the dev word `_DAT_8007B868` has bit `2` or the field-entry word `_DAT_8007B8B8` is non-zero (`0x801D3A64..0x801D3A7C`). Leaving the field for mode `0x18` (the [door warp](script-vm.md#0x3e-warp-mode-24-minigame-door-warp)) runs the mode-change field snapshot in `FUN_80016230`, which sets that word to `1` (`ghidra/scripts/funcs/80016230.txt`, the `0x18` compare at `0x800163D4`), so the pass spawns nothing.
+
+The retail dance states (`minigame_dance_retail_ready`, `_dancing`, `_judged`) hold `_DAT_8007B8B8 = 1`, an empty `_DAT_8007C36C` list and 35 nodes on `_DAT_8007C354`, which is exactly the 35 triggered cells of the rect. The other 28 placed records of `other7` - the five whose anchor lacks `0x400`, and the bound ones north of the hall (rows `30..40`) and east of it (columns `85..93`) - stand nowhere in the dance. Port: `legaia_engine_minigame_scenes::venue_floor` (`marker_walk_cells`, `dance_floor_pass_runs`), which the venue's draw list keeps to; the marker pool walks the same rect.
 
 ### Step-marker tiles
 
@@ -566,7 +575,7 @@ PROT 1230 / 1231 sit against the PROT TOC's zeroed tail, where the indexed size 
 | `1` hosenn | `0x420` (`0x801CFB14`) | 1054 |
 | `3` asobi | rotation over `_DAT_80084468` | 1065 / 1048 / 1054 |
 
-Free play reads the counter at `0x80084140 + 0x328`: `0x81D`, `0x80C` or `0x812` for counter `0`, `1`, `2`, less `0x3F2` (`addiu a0,a0,-0x3f2` at `0x801CFB6C`), giving `0x42B`, `0x41A`, `0x420`. It then bumps the counter and wraps it to `0` at `3` (`0x801CFB84..0x801CFBA0`). The counter sits in the game-state window the save block is composed from, so the rotation carries across visits and saves.
+Free play reads the counter at `0x80084140 + 0x328`: `0x81D`, `0x80C` or `0x812` for counter `0`, `1`, `2`, less `0x3F2` (`addiu a0,a0,-0x3f2` at `0x801CFB6C`), giving `0x42B`, `0x41A`, `0x420`. It then bumps the counter and wraps it to `0` at `3` (`0x801CFB84..0x801CFBA0`). The counter sits in the game-state window the save block is composed from, so the rotation carries across visits and saves. The port keeps it as `MinigameState::dance_free_play_song`; saves carry it as the eleventh word of the `LGX7` block and at `0x328` of a retail block (`legaia_save::minigame_save::RETAIL_DANCE_FREE_PLAY_SONG_OFFSET`).
 
 Extraction 1065 is chart-sized like the other two: its SEQ (at `+0x1828`) runs 15 840 ticks. The piecewise map labels it sound-test #75, `M47B`; the bytes measured here do not test that label.
 
@@ -633,7 +642,7 @@ Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_da
 
 The stage's front riser is two coplanar layers of one mesh: an opaque base (`0x7EC0`) and an additive lamp sheet (`0x7E84`, ABR `1`, a `(64, 506)` cycler cell). The sheet comes first in the mesh, and a later prim links ahead of an earlier one in its ordering-table bucket, so the base draws first and the sheet lands on it. `legaia_tmd::mesh::separate_coplanar_prims` follows that order between equal areas.
 
-The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners, and the hall's floor currently hides them ([open threads](../reference/open-rev-eng-threads.md)).
+The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners. Retail links each blob into the same ordering-table slot as the stage-floor quad under it and draws the floor first; the port takes the blob's depth six units nearer the eye, which wins that tie under the hall's level camera. What the blob does to the pixels is the GPU's 5-bit average, which leaves the hall's dark floor nearly where it was, on retail and in PSX mode alike ([renderer](renderer.md#the-field-drop-shadow-fun_8001c394)).
 
 ## HUD
 
@@ -876,7 +885,7 @@ Each row's dump is `overlay_dance_<addr>.txt`.
 | `FUN_801d2f38` | Textured-quad sprite emitter; the id's upper bits carry a per-draw blend mode. |
 | `FUN_801d32f8` | Multi-digit number renderer. |
 | `FUN_801d387c` | Sprite-part / shadow emit dispatch. |
-| `FUN_801d3a2c` | Per-frame dance-floor draw pass. |
+| `FUN_801d3a2c` | Dance-floor floor pass (init only; gated off on the retail entry). |
 | `FUN_801d3d78` | Good-step sting: keys two SPU voices directly. |
 | `FUN_801d3e28` | Groove-gauge level draw. |
 | `FUN_801d3ec0` / `FUN_801d3f54` | Two-layer / per-cell `.MAP` record lookup. |

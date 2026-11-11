@@ -252,7 +252,8 @@ impl BakaFight {
             afterimage_frames: Vec::new(),
             roster_clips: None,
             motion: Default::default(),
-            camera: Default::default(),
+            // Born in the duel state: no banner arm runs to spin the camera.
+            camera: crate::baka_duel::DuelCamera::settled(),
             stand_off: [0; 2],
             stand_z: [0; 2],
             special_cameras: Vec::new(),

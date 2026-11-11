@@ -251,13 +251,54 @@ impl World {
     /// [`legaia_engine_effects::summon::SummonScene::install_part_snapshot`]
     /// for the table-form scenes, which are one scene per spawn rather than
     /// one scene per cast. Seeds go onto the live parts of their tag in
-    /// scene order, one each; a seed with no part left is skipped and a
-    /// part with no seed is left alone - the snapshot re-poses parts the
-    /// replay spawned, it neither invents nor retires one.
+    /// scene order, one each; a part with no seed is left alone, and a seed
+    /// with no part left is skipped - the snapshot re-poses parts the
+    /// replay spawned and retires none.
+    ///
+    /// The one exception is the effect script's floor ring
+    /// ([`legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD`]):
+    /// a seed carrying the ring's ground point and scale `+0x72` seats a
+    /// ring the replay holds none of, through the same
+    /// [`Self::spawn_battle_record_posed`] the stomp takes. Those rings are a
+    /// walk's footfalls, and a replay that stands its caster on the
+    /// capture's walked ground never walks: PROT 0962's charge bodies walk
+    /// Koru in on his run clip, whose script stomps a ring every four
+    /// frames (code `0x83` at frames `1`, `5`, `9`, `13`), and the three
+    /// `koru_*_mid_cast` states hold three of them under him.
     pub fn install_action_fx_part_snapshot(
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],
     ) {
+        use legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD;
+        let live_rings = self
+            .casting
+            .active_action_fx
+            .iter()
+            .flat_map(|s| s.parts.iter())
+            .filter(|p| !p.finished && p.tag == Some(FLOOR_PART_RECORD))
+            .count();
+        let mut seated = false;
+        for seed in seeds
+            .iter()
+            .filter(|s| s.tag == FLOOR_PART_RECORD)
+            .skip(live_rings)
+        {
+            let word = |o: u16| seed.pokes.iter().find(|&&(k, _)| k == o).map(|&(_, v)| v);
+            if let (Some(x), Some(z), Some(scale)) = (word(0x14), word(0x18), word(0x72)) {
+                let y = word(0x16).unwrap_or(0);
+                seated |= self.spawn_battle_record_posed(
+                    FLOOR_PART_RECORD,
+                    [x as i16, y as i16, z as i16],
+                    [0; 3],
+                    scale,
+                );
+            }
+        }
+        // The seater runs a new ring's program before it returns (its colour
+        // word and rates); the seed's words then go over that.
+        if seated {
+            self.seat_run_battle_fx();
+        }
         let mut used: std::collections::BTreeMap<u32, usize> = Default::default();
         for seed in seeds {
             let n = used.entry(seed.tag).or_insert(0);
@@ -694,11 +735,39 @@ impl World {
         &self,
         draw: &legaia_engine_effects::summon::SummonPartDraw,
     ) -> Option<legaia_engine_scene::model_bank::GlobalTmd> {
+        if draw.morph.lanes().is_empty() {
+            return None;
+        }
+        let rest = self.global_tmd(draw.model_index as i16)?;
+        let tmd = self.part_morphed_tmd(draw, &rest.tmd)?;
+        Some(legaia_engine_scene::model_bank::GlobalTmd {
+            tmd,
+            raw: rest.raw.clone(),
+        })
+    }
+
+    /// `rest` with the part draw's live VDF morph lanes staged onto every
+    /// group they name, or `None` when the part carries no armed lane or no
+    /// lane resolves. The kernel under [`Self::morphed_part_tmd`], for a
+    /// host that holds the part's rest mesh itself.
+    ///
+    /// The field stager parts take it with their scene-pack TMD: the case-5
+    /// model draw `FUN_8001ADA4` copies the actor's `+0x10` flag word to the
+    /// scratchpad (`0x8001ADF4..0x8001ADFC`) and, per group, calls the
+    /// morph substitution `FUN_8001C604` while bit `0x1000` is up
+    /// (`0x8001B43C..0x8001B448`) - the part draws its own morphed
+    /// vertices, whichever placed objects share its pack slot. `rikuroa`'s
+    /// rockfall rocks (pack slots `58` / `59`) are stalactites at rest; the
+    /// lanes lay each one across the cave path.
+    pub fn part_morphed_tmd(
+        &self,
+        draw: &legaia_engine_effects::summon::SummonPartDraw,
+        rest: &legaia_tmd::Tmd,
+    ) -> Option<legaia_tmd::Tmd> {
         let lanes = draw.morph.lanes();
         if lanes.is_empty() {
             return None;
         }
-        let rest = self.global_tmd(draw.model_index as i16)?;
         let resolve = |idx: u8| -> Option<&[u8]> {
             if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
                 legaia_engine_scene::scene_bundle::vdf_entry(
@@ -716,7 +785,7 @@ impl World {
         if slots.is_empty() {
             return None;
         }
-        let mut tmd = rest.tmd.clone();
+        let mut tmd = rest.clone();
         for (group, obj) in tmd.objects.iter_mut().enumerate() {
             let deltas = legaia_scene_formats::vdf_morph::sum_group_deltas(
                 obj.vertices.len(),
@@ -729,10 +798,7 @@ impl World {
                 v.z = v.z.wrapping_add(d[2]);
             }
         }
-        Some(legaia_engine_scene::model_bank::GlobalTmd {
-            tmd,
-            raw: rest.raw.clone(),
-        })
+        Some(tmd)
     }
 
     /// The local-space mesh a summon / move-FX part draw renders: its

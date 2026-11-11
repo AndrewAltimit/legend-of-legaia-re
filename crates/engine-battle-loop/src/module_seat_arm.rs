@@ -212,8 +212,10 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         932 => seat(Lit(-0x96), Lit(-0x1C0), 0)
             .rate(0x10)
             .render_scale(0x1800),
-        // `0x801F6D90..0x801F6DA8`.
-        933 => seat(Lit(0), Lit(0), 0).rate(4),
+        // `0x801F6D90..0x801F6DA8`, and the hide beside them (`sw zero,0x4`
+        // / `sb 0xFF,0x21C` at `0x801F6DAC` / `0x801F6DB0`): the clip holds
+        // its first advance until arm 4's pass shows the creature.
+        933 => seat(Lit(0), Lit(0), 0).rate(4).colour(0).tint(0xFF, 0),
         // `0x801F7048..0x801F7060`.
         934 => seat(Lit(0), Lit(-0x600), 0).rate(4),
         // `0x801F7134..0x801F7148` (`s1 = 0x800` at `0x801F710C`).
@@ -255,7 +257,8 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
 /// summon-hold modules already name the arm after theirs. The recorded
 /// `creature.csv` of each cast reads the seat's node first on the arm after.
-/// PROT 0910 (`0x801F6CDC`), 0913 (`0x801F6D14`) and 0914 (`0x801F6C98`) poll the creature stream
+/// PROT 0910 (`0x801F6CDC`), 0913 (`0x801F6D14`), 0914 (`0x801F6C98`) and 0933
+/// (`bne v0,zero` at `0x801F6D58`, the `jal` at `0x801F6D70`) poll the creature stream
 /// (`FUN_8003F2B8(1)`, `bne` to the busy return) right ahead of the
 /// installer, on the arm that is also the module's CD poll, so they seat as
 /// the poll lets the arm through: seated on entry, the creature stood in the
@@ -263,10 +266,11 @@ pub const PUERA_WAKE_ARM: u8 = 5;
 /// same gate (`0x801F6C24`) but seats its crystal records on the creature in
 /// the same pass, which the host stages ahead of a seat owed to the pass, so
 /// it keeps the entry seat.
-/// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
-/// pass, so it seats as it is entered and the hide lands on the seat.
-pub const SEATS_ON_PASS: [u32; 19] = [
-    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930, 931, 932, 934,
+/// Seated on entry, PROT 0933's creature ran its clip through the drive's
+/// modelled wait and opened arm 6 four keyframes ahead of retail's.
+pub const SEATS_ON_PASS: [u32; 20] = [
+    904, 905, 907, 910, 911, 913, 914, 915, 916, 917, 920, 921, 923, 928, 929, 930, 931, 932, 933,
+    934,
 ];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
@@ -320,5 +324,17 @@ mod seat_due_tests {
     fn swordie_seats_as_its_poll_lets_arm_two_through() {
         assert!(!seat_due(Some(910), 2, 2));
         assert!(seat_due(Some(910), 2, 3));
+    }
+
+    /// PROT 0933's arm 2 polls the stream (`bne v0,zero` at `0x801F6D58`)
+    /// ahead of `jal 0x801F19EC` at `0x801F6D70` and hides what it seats.
+    #[test]
+    fn terra_seats_hidden_as_its_poll_lets_arm_two_through() {
+        assert!(!seat_due(Some(933), 2, 2));
+        assert!(seat_due(Some(933), 2, 3));
+        let w = seat_arm_write(933).expect("seat row");
+        assert_eq!(w.colour, Some(0));
+        assert_eq!(w.tint, Some((0xFF, 0)));
+        assert_eq!(w.rate, Some(4));
     }
 }

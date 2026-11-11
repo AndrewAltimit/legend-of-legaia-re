@@ -6,7 +6,7 @@
 //! is `capture_rgba` plus [`legaia_render_kernels::vram_capture::blit_rgba_into_vram`], and
 //! `Renderer` cannot be built without a window - so this drives the same two
 //! halves through the headless harness instead: the real
-//! `SCREEN_OVERLAY_SHADER_SRC` pipeline draws the frame, the readback goes
+//! `screen_overlay_shader_src` pipeline draws the frame, the readback goes
 //! through the real blit, and the result is read out of the real `Vram`.
 //!
 //! Skips (passes vacuously) with no GPU adapter, like its sibling.

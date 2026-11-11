@@ -2037,6 +2037,20 @@ position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
 
+A ring the replay never stomped is seated outright. The seed carries the ring's
+scale `+0x72` beside its ground point, and the snapshot seats each ring past the
+replay's own count through `World::spawn_battle_record_posed`, runs the seater's
+program on it and then pokes the seed's words over it. That is the walk-in a
+replay skips: PROT 0962's charge bodies walk Koru in on his run clip, whose
+effect script stomps code `0x83` at frames `1`, `5`, `9` and `13`, and a `0x70`
+capture stands him on the walked ground, so the replay's walk takes no steps.
+The three `koru_*_mid_cast` states hold three of those rings under him, the
+flat gold ellipse of nested bands (radii `224`, `448`, `672`, scale `3072`); the
+replay drew none of them, and seated they read `image` `.974` to `.997` each.
+The engine's own walk stomps the same rings (a cast-sequence film of
+`koru_pre_gigaton_press` shows them from arm 2 on), so the gap was the seat's,
+not the game's.
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
@@ -2720,10 +2734,16 @@ same state byte. Three refinements:
   agrees with its endpoints. The capture takes the live pose outright
   (`RetailBattle::camera_behind_commit`, `LEGAIA_SEAT_CAM_BEHIND_COMMIT`,
   `BattleCamera::align_commit_pass`): `image` `.678` to `.706`, `camera`
-  `.986` to `1.0`. What remains is mostly the rays' own `rand()` stream:
-  retail's two framebuffers score `.860` against each other, the engine's
-  frame `.848` against the displayed one. Vahn's pose is the smaller part,
-  and the display lag cannot move it: the SpecialStarter's event-path cut
+  `.986` to `1.0`.
+- **Speed lines.** The rays behind the banner are a static part, the
+  effect-script table arm's code `45` (record `0x801F5628`, library mesh
+  `13`; codes `10`, `46` and `47` seat the same fan). Its program never
+  moves it, so the RAM's position and banks are every frame's since the
+  seat, and the capture seats them (`SPEED_LINE_RECORDS`): the replay had
+  seated its fan on its own ground, about eight units and `19` angle units
+  off, and every ray stood a few pixels wide of retail's (`image` `.874` to
+  `.980`). Vahn's pose is what is left, and the display lag cannot move it:
+  the SpecialStarter's event-path cut
   freezes every slot until the art commits
   ([battle-actor-rendering](../subsystems/battle-actor-rendering.md)), so
   the child's frames from tick `460` to `536` of the drive draw one pose, and
@@ -4324,6 +4344,57 @@ It is not a general rule: over every other battle state the same stand loses
 `battle_rugi_barra_windcutter_mid_cast` `.861` to `.543`), because a shot armed
 once holds a table that does not describe the passes behind it.
 
+#### A party strike stands on the walked-back pose too
+
+`0x1E` arms case 7 on every pass whoever strikes, so a party seat's strike-loop
+capture stands on the walked-back pose as a monster's does. Aligned onto
+agreeing endpoints instead, the image measured the seat: a party strike's
+attacker turns onto the target as the swing carries it round, and the replay's
+glide set out from its own history, so `battle_jou_party_gala_chain_mid` drew
+its frame at yaw `2897` where retail's frame stood at `2972`. Retail films of
+the strike (`cast-sequence.py --physical --retail-only` from the matching
+`_open` or `_mid` state, which replays to the later capture exactly) put the
+displayed frame two passes back: seated on the film's own pose there,
+`battle_jou_party_gala_chain_mid` reads `image` `.992`,
+`battle_garmel_party_noa_lizard_tail_mid` `.996` and
+`battle_ropeway_party_gala_flying_knee_late` `.985`; seated one pass back,
+`.821`, `.788` and `.818`.
+
+The walk back chases the endpoint each earlier pass armed, and in a party strike
+both halves of it move (`walker_end_shift`'s party arm, `party_strike_end_shift`):
+
+- **Focus.** Case 7 focuses the midpoint of the attacker's and the target's body
+  pairs. The swing's root motion carries the one and the hits knock back the
+  other, so each pass's midpoint comes off both actors' rings (position slot,
+  cursor slot and clip record, decoded as `framing_body` does). Gala's chain
+  endpoint z stood `19`, `-10`, `-36` on the RAM's arm and the two before it.
+- **Yaw.** Case 7's yaw is `ctx[+0x6DA] + 0x900 - heading`, half a turn on for
+  an odd style `ctx[+0xD]`, armed before the pass re-faces the attacker. The
+  heading the RAM's arm read is therefore the table's own (Gala `129` under a
+  stored `157`), and the one before it is rebuilt from the rings as the bearing
+  from the attacker's live pair onto the target's body pair, on whichever slot
+  pairing rebuilds both of those headings. Across a target clip commit inside
+  those slots the rebuild is not trusted (a hit reaction re-faces the target, and
+  the rings keep no heading): the pass takes the counter's drift alone.
+- **A gap that changes side.** An endpoint that turned past the pose (the
+  attacker crossing the yaw it frames) was chased from the other side; the walk
+  back then steps the other way rather than stopping.
+
+The headless camera channel reads the same fact: where the snap stands the
+attacker on the heading its pass stored, the strike's turn as the RAM states it
+(`RetailBattle::strike_arm_turn`) is taken back off the probe's yaw
+(`ground_snap::strike_heading_target`), so the channel reads the counter and the
+law rather than an eight-unit slack (`battle_jou_party_gala_chain_mid` `camera`
+`.979` to `1.000`, `battle_ropeway_party_gala_flying_knee_mid` `.981` to
+`1.000`).
+
+What the walk back cannot recover is the heading on the pass a target's hit
+reaction re-faced it: `battle_ropeway_party_gala_flying_knee_late` walks back to
+yaw `2143` where retail's frame stood at `2152`, and reads `.876` against the
+film pose's `.985`. Nor does it settle the pass steps where the history and the
+floor disagree (`battle_jou_party_vahn_chain_late`: steps read `3, 3`, the film
+ran `4, 3`, yaw `3198` against `3206`).
+
 #### A shot whose endpoint walks with the clip
 
 The magic band's case `0xA` re-arms on the anim cursor, so its yaw endpoint moved
@@ -4337,7 +4408,7 @@ capture and changes no game state.
 The alignment takes only the components whose endpoint the replay's framing agrees
 with, which suits a shot armed once. A shot re-armed every pass reads its inputs on
 its own clock, so it agrees on nothing and the child would keep the replay's pose.
-The monster strike loop and Scythe Wind's arms `3..=5` stand on the walked-back pose
+The strike loop (a monster's or a party seat's) and Scythe Wind's arms `3..=5` stand on the walked-back pose
 outright instead (`RetailBattle::stand_on_displayed_pose`,
 `LEGAIA_BATTLE_CAM_STAND_DISPLAYED`).
 
@@ -4659,6 +4730,43 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   `y = 4`), and the displayed frame two passes older (`y = 244`) does not
   have it in view yet. A sweep of a leg past the frame edge in two passes
   is the residual, not the ghost's colour.
+- `battle_map01_lippian_kiss_of_death_mid_cast`: the near Lippian ghosts
+  whole on retail too. A PCSX-Redux film of the state shows the frame one
+  pass newer than the displayed one, and that frame is the state's older
+  ordering table rasterised (mean error `4.3`): every packet of the body is
+  there, its green stem included. The stem is faint on the film where the
+  raster draws it: over the stem the film adds `(2, 3.5)` to red / green
+  where the raster adds `(4, 8)`, and over the lips `(12, 0)` against
+  `(18, 6)`. That emulator's software GPU quarters the 5-bit texel before
+  modulating it on its `B + F/4` path (`((t >> 2) * m) >> 7`,
+  `getTextureTransColShade` in `gpu/soft/soft.cc`), so a texel channel
+  under `4` adds nothing whatever its colour. The dark stem drops out and
+  the red lips keep a trace, which is the open faintness above: the residual
+  is the blend's arithmetic, not the ghost's pose or facing.
+
+### Which pose names a strike capture's ghost bits
+
+The ghost bits are a function of the camera pose, so the image child
+re-derives them on retail's pose rather than keeping the ones its own glide
+left. With every pose component aligned it reads the ghost pose (one pass
+older than the displayed frame, `RetailBattle::displayed_ghost_pose`); in the
+capture band it reads that pose whatever the alignment took.
+
+The strike band `0x1E..=0x20` runs no row arm either, so a partly aligned
+strike frame re-derives its bits on the displayed pose
+(`LEGAIA_BATTLE_CAM_ALIGN`'s live half) instead of keeping the replay's:
+`battle_garmel_party_noa_lizard_tail_mid`'s replay ghosted Vahn, `1624` units
+from the test point against a radius of `1228` on retail's pose, where
+retail's frame draws him solid (`image` `.902` to `.911`;
+`battle_ropeway_party_gala_flying_knee_mid` `.910` to `.928`).
+
+A party seat's first swing (`ctx[+0x15] == 1`) dates its strike loop on the
+accumulator `ctx[+0x87C]`, which climbs `8 * step` a pass from the commit
+that opened it. A ghost pose walked back further than that stands on a pass
+before case 7 armed, so it holds the displayed pose:
+`battle_ropeway_party_noa_sonic_javelin_open` (accumulator `48`) ghosted Vahn
+`17` units inside the radius on the further walk, where the displayed pose
+clears him by `43` and retail draws him solid (`.854` to `.861`).
 
 ### A rung's phase is time since the install
 
@@ -4732,14 +4840,17 @@ record holds the player ([script-vm](../subsystems/script-vm.md#engagement-and-t
 `cort_evolved_approach_cutscene` holds `0x19F` while `jouind P2[4]` has Vahn
 on region type 3, where the body would select `0x19E`: retail chose `0x19F` at
 the arrival tile and has sat out every pass since. The engine's seed enters,
-hydrates and seats before its first tick, and in a scene the engine does not
-pre-run (every scene but the three opening legs) the entry script's install
-slice runs on that first tick - after the seat - so the band is cleared and
-re-selected at the seat. Retail runs the install slice in the load frame
-(`FUN_8003AB2C`, to the first executed `0x21`). Moving every scene's install
-slice into the load frame closes this bit but runs the entry's BGM cue and fog
-op before the seed's flags exist, and the corpus `bgm` channel fell by a
-fifth (by a tenth even with `--flags-first`), so the order stands, and the
+hydrates and seats before its first tick, and the entry script's install
+slice runs at the head of that tick
+([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)) -
+after the seat - so the band is cleared and re-selected at the seat. Retail
+runs the install slice in the load frame (`FUN_8003AB2C`, to the first
+executed `0x21`), over the arrival seat. Running it inside the engine's scene
+entry instead reads the seat before a host's staging has run: a card load
+hydrates the save after the landing and lands the save's band bits over the
+slice's clears, and the live loop arms the field mode after it, so the
+selector arms never re-ran: every state whose view window a selector arm
+owns lost it. The
 seed lands the save's bit back over the band once the settle has run
 ([below](#the-band-is-held)), with the window of the arm that bit names. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
@@ -5870,8 +5981,8 @@ body does not play. And it lands a walked-in charge cast whose image child
 keeps the gate's frame (`RetailBattle::walk_in_shot_aligned`): the three Koru
 mid-casts hold the wind-up entry (`5` / `6` / `7`) at cursor `0` on the live
 slot and the run entry `1` at `136` on the displayed one, the run clip the
-walk-in played, with the gold ground ring around it (`image` `.943` to
-`.976` each). The walk itself is the fourth case
+walk-in played (`image` `.943` to `.976` each; the walk's floor rings
+[seated](#a-turning-effect-parts-banks-are-a-clock) take them to `.997`). The walk itself is the fourth case
 (`RetailBattle::walk_arm_follow_aligned`): arm 0 of a walking body queues the
 walk clip with the `+0x1DC` bump (PROT 0952 at `0x801F72C4..0x801F72D0`), which
 commits it mid-clip on the next anim tick, so a capture one pass into the walk
@@ -6138,6 +6249,20 @@ every pass, so it moves with the phase of both clips):
   keeps the age seat. `battle_gimard_tail_fire_a` `.966` to `.973`,
   `battle_gimard_tail_fire_b` `.961` to `.972`, `rim_elm_gimard_victory`
   level.
+- **Every live numeral, cell by cell.** The arenas carry each numeral the
+  ring still draws, so a chain's earlier hit resting on the row sits beside
+  the newest one still rising. The rest-row test reads each cell against its
+  own older cell, not the run against the run:
+  `battle_jou_party_vahn_chain_late` draws `346` on row `32` beside `464` at
+  `y = 60` / `83`, and a run-wide test read the resting `346` as the rising
+  numeral's unknown, dropped both and drew `464` alone off the age seat
+  (`.938` to `.944`). What is left there is the resting `346`'s column: the
+  step back puts it at `x = 97`, four pixels right of the older pass's `93`,
+  and seated at `93` the state reads `.961`, but `battle_gimard_tail_fire_a`
+  loses `.007` the same way. A cell at the cap moves with the anchor's
+  projection alone and its width with the cut's parity
+  (`0x801DF930..0x801DF9C8` trims to `23` or `24` px), so two passes do not
+  say how it moved before them.
 - **A frame step the replay does not run.** `battle_melee_hit_spark`'s
   passes ran step `3` and an action plan runs the default `2`, so the
   step seed (`RetailBattle::frame_step_seed`) also covers an action in

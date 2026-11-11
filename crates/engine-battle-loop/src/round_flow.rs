@@ -94,8 +94,9 @@ pub struct RoundFlow {
     pub leader_first: bool,
     /// Battle frames left before a finished round's next round start.
     /// Retail takes the round boundary in passes the engine has no state
-    /// byte for: the `0x5A` pass, the `0xFF` arm, and the flow byte's two
-    /// passes at `0x14` (measured `4` vsyncs on the sparring fight's rounds).
+    /// byte for: the `0x5A` pass, the `0xFF` arm, and the flow byte's passes
+    /// at `0x14` - one, plus every pass the menu SM's glide gate skips
+    /// (`BattleState::step_pass_glide_gate`; the last count holds there).
     /// While it runs the action SM holds; see `World::live_battle_tick`.
     pub boundary_hold: u8,
 }

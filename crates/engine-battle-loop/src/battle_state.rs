@@ -670,6 +670,13 @@ pub struct BattleState {
     /// `ctx[+0x6B2]`: the last non-zero stepper return, which costs a staged
     /// battle (stage id non-zero) one more undispatched pass.
     pub widget_glide_latch: u8,
+    /// A tracked glide was still in flight as the last battle pass ended,
+    /// so the stepper's return on the next pass is non-zero
+    /// ([`Self::step_pass_glide_gate`]).
+    pub pass_glide_live: bool,
+    /// The last battle pass's menu dispatch was gated by the stepper's
+    /// return: `ctx[+0x6B2]` is set ([`Self::step_pass_glide_gate`]).
+    pub pass_glide_gated: bool,
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
@@ -1134,6 +1141,10 @@ pub struct BattleState {
     /// the landing to the hit. Rewritten by every pass of the flight
     /// (`World::tick_homing_slots`), drawn beside [`Self::cast_ribbons`].
     pub flight_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
+    /// The `rand()` word each of [`Self::flight_ribbons`] starts from, dealt
+    /// on the pass that made them (`World::deal_flight_ribbon_rands`), as
+    /// [`Self::cast_ribbon_seeds`] is for a module arm's ring.
+    pub flight_ribbon_seeds: Option<[u32; 16]>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1510,6 +1521,8 @@ impl BattleState {
             round_armed: false,
             widget_glide_return: 0,
             widget_glide_latch: 0,
+            pass_glide_live: false,
+            pass_glide_gated: false,
             command_pad_buffer: None,
             result_windows_glide: None,
             target_plate_cleared: false,
@@ -1590,6 +1603,7 @@ impl BattleState {
             cast_ribbons: None,
             cast_ribbon_seeds: None,
             flight_ribbons: None,
+            flight_ribbon_seeds: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

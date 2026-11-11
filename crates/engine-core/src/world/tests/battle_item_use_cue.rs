@@ -46,8 +46,15 @@ fn the_cast_cue_band_reaches_the_xa_channel() {
     assert_eq!((xa[0].clip, xa[0].channel), (0x1A, 0));
     assert_eq!(xa[0].duration_sectors, 6, "(10 * 60).div_ceil(100)");
 
-    // The clip holds the drive: a second cue inside its span is declined,
-    // as `FUN_8003DE7C(1)` declines it.
+    // A second cue inside the clip's span replaces it: `FUN_8003DE7C(1)`
+    // asks for a data stream read, which a sounding clip is not.
+    {
+        let mut host = BattleHostImpl { world: &mut world };
+        host.one_shot_sfx(0x10B);
+    }
+    assert_eq!(world.drain_battle_xa_cues().len(), 1);
+    // A side-band read in flight is one, and declines the cue.
+    world.casting.sideband_read_left = Some(8);
     {
         let mut host = BattleHostImpl { world: &mut world };
         host.one_shot_sfx(0x10B);

@@ -68,6 +68,18 @@ pub(super) const MINIGAME_RUNS: [&str; 5] = [
     "koin1+mg6",
 ];
 
+/// Run-rules runs soaked alongside the scene set: every story preset in the
+/// cold-boot town, on the chapter-1 overworld and in its first dungeon, and
+/// the Boss Rush from its own start (`run_rules_runs.rs`).
+pub(super) fn rules_runs() -> Vec<String> {
+    RULES_PRESETS
+        .iter()
+        .filter(|&&p| p != "bossrush")
+        .flat_map(|p| ["town01", "map01", "keikoku"].map(|s| format!("{s}+rules={p}")))
+        .chain(std::iter::once("town01+rules=bossrush".to_string()))
+        .collect()
+}
+
 /// `"town01+rt"` -> `("town01", true)`: the run round-trips a save every
 /// [`ROUND_TRIP_EVERY`] frames. A plain label passes through.
 pub(super) fn split_round_trip(label: &str) -> (&str, bool) {
@@ -168,6 +180,8 @@ pub(super) fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
             .chain(extra.iter().cloned())
             // The boot front end's two ways into the game.
             .chain(FRONT_END_RUNS.iter().map(|s| s.to_string()))
+            // The port's run rules.
+            .chain(rules_runs())
             .collect(),
     };
     // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save. A

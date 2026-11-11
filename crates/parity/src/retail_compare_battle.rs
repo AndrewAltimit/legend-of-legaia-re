@@ -270,6 +270,7 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_melee_hit_spark", 0x9E37_79B9),
+    ("battle_jou_gola_gola_v3_strike", 0x0BAD_F00D),
     ("gaza2_pre_neo_star_slash", 0x3C6E_F372),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];

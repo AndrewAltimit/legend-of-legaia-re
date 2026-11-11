@@ -294,7 +294,7 @@ impl World {
                 .and_then(|t| t.get(usize::from(id - 0x100)).copied());
             let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
                 side_band_stage: 0,
-                clip_span_left: self.audio.battle_xa_busy_frames,
+                stream_read: self.battle_stream_read_in_flight(),
             };
             if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
                 legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
@@ -341,7 +341,7 @@ impl World {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             side_band_streaming: false,
-            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
+            cd_read_busy: self.battle_stream_read_in_flight(),
         };
         // The last-played word lives with the drainer on the host: the ring op
         // below carries the key, and the router's own compare never matches.
@@ -454,6 +454,18 @@ impl World {
         } else {
             usize::from(self.clock.frame_step.max(1))
         }
+    }
+
+    /// Whether the after-image walk treats actor `i` as a monster seat: its
+    /// category `+0x5A` is `3` or more (`sltiu v0,s3,0x3` at `0x8004938C`),
+    /// which doubles the ring depths (`0x8004941C..0x80049428`) and takes the
+    /// monster's ghost colour. The summoned creature stands in category `7`,
+    /// so it walks as a monster although it is none.
+    pub fn battle_seat_walks_as_monster(&self, i: usize) -> bool {
+        self.actors
+            .get(i)
+            .is_some_and(|a| a.battle_monster_id.is_some())
+            || self.casting.summon_actor_slot == Some(i as u8)
     }
 
     /// Close the ghost walk's slot for `depth` battle frames back (its
@@ -978,35 +990,90 @@ impl World {
             let facing = a.battle.facing_angle;
             let red = plan.tint.colour as u8;
             let lut = legaia_engine_system::rotation_lut::retail_rotation_lut();
-            for _ in 0..emits {
-                let idx = self.next_rand() as usize % objects.len();
-                let rands = [
-                    self.next_rand() as i32,
-                    self.next_rand() as i32,
-                    self.next_rand() as i32,
-                ];
-                let p = ifx::burn_emit_point(
-                    base,
-                    facing,
-                    objects[idx],
-                    plan.radius,
-                    rands,
-                    |a| lut.b(i32::from(a)),
-                    |a| lut.a(i32::from(a)),
-                );
-                if p[1] <= 0
-                    && let Some(fx) = ifx::burn_effect(selector, red)
-                {
-                    self.try_spawn_effect(fx, p, facing & 0xFFF);
-                    if selector == 2 && !self.battle_vibration_off() {
-                        let r0 = self.next_rand();
-                        let r1 = self.next_rand();
-                        self.rumble
-                            .battle_write(legaia_engine_system::rumble::burning_body_write(r0, r1));
+            // The draw tick runs the after-image walk `FUN_80049348` ahead of
+            // the live draw, and each ghost it draws goes through the same
+            // draw callback (`jal 0x80048A08` at `0x8004950C`) and so through
+            // this loop, posed on its ring slot's cursor; the base stays the
+            // actor's live pair `+0x34` / `+0x38` (`0x8004A648..0x8004A650`).
+            // So a body with two ghosts sheds three times a live body's puffs
+            // (Astral Wave's charge: six a battle frame on step `4`).
+            let mut draws = self.battle_burn_ghost_objects(i);
+            draws.push(objects);
+            for objects in draws.iter().filter(|o| !o.is_empty()) {
+                for _ in 0..emits {
+                    let idx = self.next_rand() as usize % objects.len();
+                    let rands = [
+                        self.next_rand() as i32,
+                        self.next_rand() as i32,
+                        self.next_rand() as i32,
+                    ];
+                    let p = ifx::burn_emit_point(
+                        base,
+                        facing,
+                        objects[idx],
+                        plan.radius,
+                        rands,
+                        |a| lut.b(i32::from(a)),
+                        |a| lut.a(i32::from(a)),
+                    );
+                    if p[1] <= 0
+                        && let Some(fx) = ifx::burn_effect(selector, red)
+                    {
+                        self.try_spawn_effect(fx, p, facing & 0xFFF);
+                        if selector == 2 && !self.battle_vibration_off() {
+                            let r0 = self.next_rand();
+                            let r1 = self.next_rand();
+                            self.rumble.battle_write(
+                                legaia_engine_system::rumble::burning_body_write(r0, r1),
+                            );
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// The objects of actor `i`'s after-image ghosts this frame, in the
+    /// walk's order (`FUN_80049348`, depth rising): each the stream objects'
+    /// translations on the ring slot the walk re-poses the node on. Empty for
+    /// a body with no history or under a zero colour word.
+    fn battle_burn_ghost_objects(&self, i: usize) -> Vec<Vec<[i16; 3]>> {
+        use legaia_engine_battle::battle_afterimage as ai;
+        let Some(actor) = self.actors.get(i) else {
+            return Vec::new();
+        };
+        if actor.battle_pose_history.is_empty()
+            || (actor.battle.render_color == 0 && actor.battle.render_flag != 0)
+        {
+            return Vec::new();
+        }
+        let per_frame = self.ghost_ring_slots_per_frame();
+        let hist = &actor.battle_pose_history;
+        let monster = self.battle_seat_walks_as_monster(i);
+        ai::plan_ghosts(
+            actor.battle.anim_rate.get(),
+            monster,
+            ai::GHOST_COLOR_MONSTER,
+            |depth| {
+                depth < ai::HISTORY_DEPTH
+                    && hist
+                        .get(per_frame * depth)
+                        .is_some_and(|f| f.ghost_eligible)
+            },
+        )
+        .into_iter()
+        .filter_map(|p| hist.get(per_frame * p.depth))
+        .map(|f| {
+            let parts = &f.pose.bone_outputs;
+            let n = usize::from(f.variant_track.stream_parts);
+            let parts = if n != 0 && n < parts.len() {
+                &parts[..n]
+            } else {
+                &parts[..]
+            };
+            parts.iter().map(|(t, _)| *t).collect()
+        })
+        .collect()
     }
 
     /// `FUN_8004CE2C` pass 2's Jette hook (`0x8004D330..0x8004D438`,

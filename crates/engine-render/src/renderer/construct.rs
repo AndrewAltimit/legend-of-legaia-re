@@ -215,6 +215,7 @@ impl Renderer {
             config,
             view_format,
             pipeline: quad.pipeline,
+            scanout_pipeline: quad.scanout_pipeline,
             sampler: quad.sampler,
             bind_group_layout: quad.bind_group_layout,
             uniforms_buf: quad.uniforms_buf,

@@ -18,7 +18,13 @@
  * pixel's colour, so the resolve hands back the same bytes.
  *
  * A context without MSAA has nothing to avoid, and this does nothing on one,
- * until a cast needs a frame that outlives its draw.
+ * until a cast needs a frame that outlives its draw or the frame is read out as
+ * the 15-bit framebuffer (`begin`'s `scanout`, below).
+ *
+ * That readout is the copy's: the native window presents and captures PSX mode's
+ * frame through `fs_scanout15` unless SSAO, bloom or the volumetric fog lays a
+ * smooth term over it (`Renderer::scanout_15bit`), and `present(scanout15)` does
+ * the same here.
  *
  * That frame is the one thing this target has that the canvas does not. A retail
  * battle frame's farthest bucket holds an opaque black rect, and an arm that arms
@@ -38,11 +44,25 @@ void main() {
   vec2 p = vec2(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID & 2) * 2 - 1));
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
+  /* The copy reads the frame out as the 15-bit framebuffer PSX mode models when
+   * `u_scanout15` is set: each channel's 5-bit value `v >> 3` expanded
+   * `(c5 << 3) | (c5 >> 2)`, the native renderer's `fs_scanout15` (twin of
+   * engine-render's `psx_blend::scanout15`). PSX mode leaves every channel
+   * inside its 5-bit bin, so a blended pixel's low bits are the background's,
+   * not the display's; read raw, it stood up to seven levels off the window's. */
   const FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_frame;
+uniform int u_scanout15;
 out vec4 o;
-void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }`;
+void main() {
+  vec3 c = texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb;
+  if (u_scanout15 != 0) {
+    vec3 c5 = floor(clamp(c, 0.0, 1.0) * 255.0 / 8.0 + 0.001);
+    c = (c5 * 8.0 + floor(c5 / 4.0)) / 255.0;
+  }
+  o = vec4(c, 1.0);
+}`;
 
   /* How far back a persisting frame reads: the native `FRAME_PERSIST_VSYNCS`. */
   const FRAME_PERSIST_VSYNCS = 8;
@@ -71,8 +91,8 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
      * which is what the canvas's own buffer hands a frame after a composite.
      * `keepLast`: a cast module is resident, so this frame or a later one may ask
      * for the picture the last frame left (`loadEarlierFrame`). */
-    begin(keepLast) {
-      if (this.broken || (!this.needed && !keepLast && !this.fbo)) return;
+    begin(keepLast, scanout) {
+      if (this.broken || (!this.needed && !keepLast && !scanout && !this.fbo)) return;
       const gl = this.gl;
       const hadFrame = !!this.fbo && this.w === gl.drawingBufferWidth && this.h === gl.drawingBufferHeight;
       this._ensure(gl.drawingBufferWidth, gl.drawingBufferHeight);
@@ -103,8 +123,9 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       return true;
     }
 
-    /* Copy the frame to the canvas, with the GL state the frame left put back. */
-    present() {
+    /* Copy the frame to the canvas, with the GL state the frame left put back;
+     * `scanout15` reads it out as the 15-bit framebuffer (the FS above). */
+    present(scanout15) {
       if (!this.live) return;
       this.live = false;
       const gl = this.gl;
@@ -131,6 +152,7 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       gl.colorMask(true, true, true, true);
       gl.viewport(0, 0, this.w, this.h);
       gl.useProgram(this.program);
+      gl.uniform1i(this.locScanout, scanout15 ? 1 : 0);
       gl.bindVertexArray(this.vao);
       gl.bindSampler(0, null);
       gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -230,6 +252,7 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
           gl.deleteShader(sh);
         }
         gl.linkProgram(this.program);
+        this.locScanout = gl.getUniformLocation(this.program, 'u_scanout15');
         this.vao = gl.createVertexArray();
       }
       if (this.fbo) {

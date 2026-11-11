@@ -157,6 +157,23 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
             None => actor_at(acting_slot, None),
         },
     };
+    // The strike band arms its framing ahead of the pass's re-face
+    // (`jal 0x801D5854` at `0x801E36E8` / `0x801E3AC8`, the heading stored at
+    // `0x801E371C` / `0x801E3AFC`), so the attacker's heading as the arm read
+    // it is the one the pass before stored (`BattleActor::strike_arm_facing`).
+    let acting = match (acting, world.battle_camera_state()) {
+        (Some(mut a), 0x1E | 0x1F) => {
+            if let Some(f) = world
+                .actors
+                .get(usize::from(acting_seat))
+                .and_then(|x| x.battle.strike_arm_facing)
+            {
+                a.facing = i32::from(f & 0xFFF);
+            }
+            Some(a)
+        }
+        (a, _) => a,
+    };
     // The body pair `+0x3C` / `+0x40` (`World::refresh_battle_body_pairs`).
     let acting_body = world
         .actors

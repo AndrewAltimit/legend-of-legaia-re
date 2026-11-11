@@ -1,6 +1,6 @@
 //! The slot-A minigame overlays' **scene-floor kernels**: the ground-height
 //! solver every floor actor is settled onto, the 16-entry height ramp the
-//! solver indexes, and the per-frame floor pass that spawns one tile actor per
+//! solver indexes, and the setup floor pass that spawns one tile actor per
 //! drawn grid cell.
 //!
 //! These are *not* dance- or fishing-specific. `FUN_801D6028` and
@@ -486,9 +486,10 @@ pub fn floor_tile_spawns(
     out
 }
 
-/// The per-frame floor pass: despawn the floor list, then walk the rect the
-/// scratchpad bytes `0x1F800384..0x1F800387` hold - `x0, z0, x1, z1`, **end**
-/// coordinates, exclusive - and spawn one plain floor tile per drawn cell.
+/// The floor pass each overlay runs once at setup: despawn the floor list,
+/// then walk the rect the scratchpad bytes `0x1F800384..0x1F800387` hold -
+/// `x0, z0, x1, z1`, **end** coordinates, exclusive - and spawn one plain
+/// floor tile per drawn cell.
 ///
 /// Unlike [`floor_tile_spawns`] (the `FUN_801D2A10` walk) the columns are the
 /// outer loop (`x` outer, `z` inner), so the spawn order is column-major, the
@@ -498,9 +499,14 @@ pub fn floor_tile_spawns(
 // word `0x8007B868` bit 2 and by a non-zero `0x8007B8B8`)
 // PORT: FUN_801d6bbc (the same pass in the fishing image; it opens with the
 // `x0/z0/x1/z1` debug print and counts into its own overlay-local word)
-// NOT WIRED: the cells this pass spawns are the plain floor template, static
-// hall and pond geometry with no flipbook, which both hosts already draw from
-// the scene's env-pack bake; nothing in the port re-spawns them as actors.
+// WIRED, as the venue's placed-record selection: both play hosts' fishing
+// venue keeps the placed records standing on the cells this pass spawns over
+// the box latched at the venue's anchor tile
+// (`legaia_engine_minigame_scenes::venue_floor::floor_pass_cells`, called by
+// the fishing surface's env bake), and the dance venue asks the pass's gates
+// (`venue_floor::dance_floor_pass_runs`), which the door warp's field-entry
+// word holds shut. The spawned actors themselves are the env-pack bake's
+// static draws; nothing re-spawns them as actors.
 pub fn floor_pass_spawns(
     grid: FloorGrid<'_>,
     ramp: &[i16],

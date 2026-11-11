@@ -67,6 +67,8 @@ pub struct FishingSceneAssets {
     /// the per-frame swell (its corner tiers).
     ground: Option<(usize, legaia_scene_formats::field_objects::WalkHeightfield)>,
     bodies: Vec<Body>,
+    /// The ten landed-fish bodies ([`crate::fishing_catch`]).
+    catch: crate::fishing_catch::CatchBodies,
     vram: psx_tim::Vram,
 }
 
@@ -103,7 +105,11 @@ fn append(dst: &mut VramMesh, dst_flat: &mut Vec<u8>, src: &VramMesh, flat: &[u8
 
 /// Every frame of ANM record `rec` on a `bones`-wide rig, or `None` when the
 /// record does not decode or its rig is another width.
-fn clip_frames(anm: &PlayerAnmBundle, rec: usize, bones: usize) -> Option<Vec<Vec<[i32; 6]>>> {
+pub(crate) fn clip_frames(
+    anm: &PlayerAnmBundle,
+    rec: usize,
+    bones: usize,
+) -> Option<Vec<Vec<[i32; 6]>>> {
     let r = anm.record_lenient(rec).ok()?;
     if r.bone_count as usize != bones || r.frame_count == 0 {
         return None;
@@ -239,12 +245,14 @@ impl FishingSceneAssets {
                 frames,
             });
         }
+        let catch = crate::fishing_catch::CatchBodies::load(&scene, anm.as_ref());
         Some(Self {
             venue,
             env,
             env_flat,
             ground,
             bodies,
+            catch,
             vram,
         })
     }
@@ -275,31 +283,29 @@ fn bake_env(
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
-    // The floor pass `FUN_801D6BBC` spawns a placed record only inside the box
-    // the setup state latches at the venue's anchor tile (`jal 0x800180EC` at
-    // `0x801CF65C`, the loops at `0x801D6C74..0x801D6ED8` read
-    // `0x1F800384..87`), so each venue sees its own half of the one map: the
-    // other's mountain backdrop stands past this box.
+    // The floor pass `FUN_801D6BBC` spawns the unbound placed records only
+    // inside the box the setup state latches at the venue's anchor tile (`jal
+    // 0x800180EC` at `0x801CF65C`), so each venue sees its own half of the one
+    // map: the other's mountain backdrop stands past this box.
     let (tile_x, tile_z) = crate::fishing_venue::PARTY_ANCHOR_TILE[venue.min(1)];
     let block = scene.field_map_region_block(index).ok().flatten();
-    let table = block
-        .as_deref()
-        .and_then(legaia_engine_field::field_regions::RegionTable::parse);
-    let (_, attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
-        table.as_ref(),
-        i32::from(tile_x),
-        i32::from(tile_z),
-        false,
+    let region_box = crate::venue_floor::latched_region_box(
+        block.as_deref(),
+        (i32::from(tile_x), i32::from(tile_z)),
     );
-    let [x0, z0, x1, z1] = attrs.box_bytes;
-    let placement_records: Vec<_> = scene
-        .field_object_placements(index)
+    let map = scene
+        .field_map_bytes(index)
         .ok()
         .flatten()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| (x0..x1).contains(&p.col) && (z0..z1).contains(&p.row))
-        .collect();
+        .unwrap_or_default();
+    let placement_records = crate::venue_floor::keep_spawned(
+        scene
+            .field_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        &crate::venue_floor::floor_pass_cells(&map, region_box),
+    );
     let terrain_records: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()
@@ -610,6 +616,15 @@ pub struct FishingScene {
     /// Vertex offset and count of the walk ground inside the map span - the
     /// vertices the pond swell moves each frame (`(0, 0)` with no ground).
     pub ground_span: (usize, usize),
+    /// Vertex offset and count of each species' landed-fish body
+    /// ([`crate::fishing_catch`]); a body not on show this frame has every
+    /// vertex at one point, so it rasterises nothing.
+    pub catch_spans: Vec<Option<(usize, usize)>>,
+    /// The landed fish this frame, as the kernel places it.
+    pub catch_fish: Option<legaia_engine_fishing::fishing_actors::CatchFish>,
+    /// The result plate's line this frame on the 320x240 retail screen,
+    /// `(top, tie)` ([`crate::fishing_catch::plate_line`]).
+    pub catch_line: Option<((i16, i16), (i16, i16))>,
 }
 
 impl FishingScene {
@@ -630,7 +645,7 @@ fn fa_yaw(facing: i16) -> i16 {
 /// Pose a body's `base` into `out` at clip frame `frame`, then place it at
 /// `(x, y, z)` with yaw `facing` (12-bit) - per object `Rz Ry Rx v + T`, the
 /// composition every field-body poser runs.
-fn pose_into(
+pub(crate) fn pose_into(
     out: &mut [[f32; 3]],
     base: &[[f32; 3]],
     oids: &[u32],
@@ -683,6 +698,8 @@ pub struct FishingSurface {
     generation: u32,
     /// Per-body clip cursor, sixteenths of a frame.
     cursors: Vec<u32>,
+    /// The landed fish's clip frame.
+    catch_frame: usize,
 }
 
 impl FishingSurface {
@@ -753,6 +770,13 @@ impl FishingSurface {
                 bases.push(m.positions.len());
                 append(&mut m, &mut flat, &b.mesh, &b.flat);
             }
+            let (catch_mesh, catch_flat, spans) = assets.catch.combined();
+            let catch_base = m.positions.len();
+            append(&mut m, &mut flat, &catch_mesh, &catch_flat);
+            let catch_spans = spans
+                .into_iter()
+                .map(|sp| sp.map(|(b, n)| (catch_base + b, n)))
+                .collect();
             let env_base = m.positions.len();
             append(&mut m, &mut flat, &assets.env, &assets.env_flat);
             let ground_span = assets
@@ -781,6 +805,9 @@ impl FishingSurface {
                 bases,
                 sky_base,
                 ground_span,
+                catch_spans,
+                catch_fish: None,
+                catch_line: None,
             }
         });
         self.cursors.resize(assets.bodies.len(), 0);
@@ -839,6 +866,27 @@ impl FishingSurface {
             let live = swell_ground_positions(hf, &mg.fishing_venue.floor_ladder);
             scene.positions[base..base + n].copy_from_slice(&live);
         }
+        // The landed fish: the lifted body through the close-up, the
+        // camera-locked one on the result plate, under this frame's camera.
+        let fish = legaia_engine_fishing::fishing_actors::catch_fish(
+            session,
+            &mg.fishing_venue.camera,
+            &mg.fishing_catch_poses,
+        );
+        self.catch_frame = if fish.is_some() {
+            self.catch_frame.wrapping_add(1)
+        } else {
+            0
+        };
+        scene.catch_line = assets.catch.pose_spans(
+            &mut scene.positions,
+            &scene.catch_spans,
+            fish.as_ref(),
+            &mg.fishing_catch_poses,
+            self.catch_frame,
+            &scene.camera,
+        );
+        scene.catch_fish = fish;
         self.scene.as_ref()
     }
 

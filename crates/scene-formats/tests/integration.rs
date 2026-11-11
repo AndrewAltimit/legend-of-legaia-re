@@ -5,6 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-scene-formats --test integration <name>::`.
 
+mod bgm_swap_word_census_disc;
 mod clut_walk_real;
 mod field_anim_tables_real;
 mod field_op_census_real;

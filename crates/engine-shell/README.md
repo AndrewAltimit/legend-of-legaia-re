@@ -132,8 +132,11 @@ frame every time.
 
 An interactive `play-window` reads every connected gamepad through gilrs
 (`window::gamepad`, default `gamepad` feature; Linux links libudev), folded
-through the shared `legaia_engine_system::gamepad` layout the browser pages
-use. `--no-default-features` builds a keyboard-only window.
+through the player's controller table (`legaia_engine_system::gamepad::GamepadMapping`,
+the `[gamepad]` half of `legaia-input.toml`, rebound on Key Config) at the
+options' stick dead zone - the fold the browser pages run too. Controllers
+that come and go are named on the notice line; every connected one drives the
+player. `--no-default-features` builds a keyboard-only window.
 Pair with `mednafen-state vram-dump --display-crop` to diff engine output against
 retail framebuffers.
 

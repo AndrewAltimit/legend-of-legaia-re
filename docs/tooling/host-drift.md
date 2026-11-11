@@ -488,10 +488,12 @@ window read no controller at all, so no file held both columns. Two more rules
 hold it:
 
 - An array literal of four or more quoted PSX button names is a controller
-  table. The layout is served by the engine
-  ([`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs)
-  through `gamepad_layout_json`), the table the native window folds gilrs
-  through.
+  table. The table is the engine's
+  ([`legaia_engine_system::gamepad::GamepadMapping`](../../crates/engine-system/src/gamepad.rs),
+  the player's rebindable `[gamepad]` half of the binding table): a page
+  hands each pad's button values and axes to `gamepad_fold`, the fold the
+  native window runs gilrs through (a bundle without it falls back to
+  `gamepad_layout_json`, the fixed default).
 - `navigator.getGamepads` is read only by `site/js/pad-bindings.js`
   (`GAMEPAD_ADOPTER`); every page reads controllers through its
   `legaiaPollGamepad` (a key-set host) or `legaiaGamepadEdges` (a page whose
@@ -1360,6 +1362,23 @@ row to its page control through an exhaustive match, so a new row cannot land
 without an answer for the page, and fails a launch-switch row that leaves the
 shared set untouched.
 
+### The Look and feel preset
+
+The launcher's first row, the window's `F12` panel's first row and the page's
+*Look and feel* selector are one switch over the rows above, read back as
+Enhanced, Original or Custom. All three answer through
+`legaia_engine_session::look_and_feel`: which rows the preset speaks for
+(every stored switch but `retail`, and the options `OptionsState::pin_retail`
+pins plus the time of day; never the window, the sound levels or the menu
+colours), what Original raises (Retail-faithful plus PSX rasterisation, the
+rows under it untouched) and what Enhanced resets. The page's selector reads
+the stored options, so a Retail-faithful pin reads Original rather than a
+Custom mix. The page's *Reset to defaults* button stays narrower: it resets
+the Visual enhancements panel alone. Pinned by
+`launcher::tests::preset_is_the_shared_look_and_feel` (the kernel's rows are
+exactly `OptionRow::in_preset`) and
+`play_toggles::tests::look_and_feel_steps_as_the_native_row`.
+
 ## The host pair run
 
 [`scripts/ci/host-pair.mjs`](../../scripts/ci/host-pair.mjs) runs the same scene
@@ -1463,6 +1482,7 @@ the world was right and the picture was not:
 | A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive now takes an eighth of a row; a textured one keeps the 64th, since more shifts the texels the battle intro's rotated shards sample |
 | One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
 | Perspective colour on one host | The window's untextured colour mesh interpolated its packet colour perspective-correct where the page and retail interpolate it screen-linearly, so the Baka duel's additive floor glow, a fan lying on the floor plane, drew darker toward the camera: rows `200..240` read `13.5` brighter on the page at tick `331`. The colour now takes `@interpolate(linear)`, as the VRAM mesh's does; the pair reads `0.12` |
+| A start ahead of the queue | A scene picked before the page had an audio output brings the output up on the pick's own gesture, after the entry and before its first tick. The page's late-output start then played the world's last track while the entry's op-`0x35` events still sat in the queue, and the first tick routed them over it: Mt. Rikuroa's summit (`summit582`) logged `BgmStartOwned(2006)` ahead of the script's `BgmStop` and two starts. The late start is the session's `start_field_bgm_on_attach` now, which leaves a queued event to the routing, and both hosts restart a track through `restore_field_bgm` |
 | A wash run twice | The page washed its 2D overlay canvas for every over-text fade and then composited that canvas into the GL frame under the same fade, the older fallback left running beside the composite that replaced it. A battle's exit fade took the results box to black at twice the scene's rate (`results` ticks `2153..2180`, up to `21.9%` of a frame off). The canvas wash now runs only on a frame whose over half the GL pass cannot draw; the span reads `0.10%` |
 
 ## Pairing frames: what a screenshot adds
@@ -1711,7 +1731,7 @@ reverse-engineering questions, so they are not on
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
 | default key layout | Two named layouts in the engine, on purpose: `Mapping::default` natively (`X` Square, `A` Triangle, `S` Circle, `W` R1) and `Mapping::web_default` on the page (`WASD` walks, `X` Circle, `C` Triangle, `V` Square, `E` R1). A map holds one button per key, so the desktop layout and `WASD` walking cannot share a table; Key Config edits either. |
 | output level | The window's master volume defaults to `25%` of the full mix (`DESKTOP_MASTER_VOLUME_DEFAULT`); the page's `1x` slider is `0.125` of it (`WEB_MASTER_TRIM` times `PLAY_PAGE_GAIN_SCALE`), half the window's default, and reaches `10x`. The site's pages share a level the desktop has no reason to take. |
-| look-and-feel preset | The launcher's Look and feel row sets every row at once: Original is retail-faithful **and** the PlayStation pixel look. The page has the two as separate boxes (Retail-faithful, PSX rasterisation) and a Reset to defaults for Enhanced, so its Retail-faithful alone matches the launcher's Original game only row, not its Original preset. Every row the preset moves has a page box (`every_launcher_row_has_a_play_page_twin`). |
+| look-and-feel preset | Closed: the page's *Look and feel* selector is the launcher's row over the same kernel ([above](#the-look-and-feel-preset)). The page keeps Retail-faithful and PSX rasterisation as boxes too, which the window's `F12` panel also carries live (*Original game only*, *PlayStation pixel look*). |
 | settings panel | Native only by choice: `F12` or `Select` + `Start` is a settings page inside the frame because a window has nowhere else; the page's panel sits beside the canvas. |
 | debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
 | offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
@@ -1725,9 +1745,39 @@ reverse-engineering questions, so they are not on
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
-| packet colour through the near plane | Open. On the Baka duel's intro sweep (`baka`, ticks 195..235) the additive floor fan crosses the near plane, and its colour reads 4 to 8 levels darker on the page over the frame's bottom 25 rows: `2.8%` of a retail-mode frame, `1.7%` enhanced, `0.07%` once the camera settles, with the trace agreeing throughout. The window interpolates a packet colour screen-linearly over the clipped polygon (`@interpolate(linear)`); the page recovers it from varyings premultiplied by clip `w`, and the two agree only while every vertex is in front of the eye. Which of them retail's unclipped projection matches is not measured. `host-pair.mjs --scene baka --mode retail --from 195 --ticks 230 --every 5` shows it. |
+| packet colour through the near plane | Open. On the Baka duel's intro sweep (`baka`, ticks 195..235) the additive floor fan's colour reads 4 to 8 levels darker on the page over the frame's bottom 25 rows: `2.8%` of a retail-mode frame, `1.7%` enhanced, `0.07%` once the camera settles, with the trace agreeing throughout. The window interpolates a packet colour screen-linearly (`@interpolate(linear)`); the page recovers it from varyings premultiplied by clip `w`. Retail's side is measured ([below](#the-baka-floor-fan-against-retail)) and does not decide between them. `host-pair.mjs --scene baka --mode retail --from 195 --ticks 230 --every 5` shows it. |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
+
+### The Baka floor fan against retail
+
+Retail never takes the glow fan through the eye on the intro sweep. RAM dumps of a
+PCSX-Redux film played on from `minigame_baka_fighter_retail_attract` (`START`, then
+`Cross` every 20 vsyncs) at vsyncs `198`, `204`, `210` and `216` hold the glow as its
+`24` `POLY_GT4`s (CLUT `0x7F84`, page `0x3F`), centre near `(170, 220)` and the near
+rim below the screen at `y` up to `442`, none at a saturated coordinate. The camera
+globals are the spin's: yaw `2808`, `3192`, `3576` (`64` a vsync) and the eye trio
+`(200, 1928, 9184)` climbing `4` and `32` a vsync, so the rim's nearest corner stays
+hundreds of units in front of the eye. Retail's draw there is the unclipped quad under
+screen-linear Gouraud, which both hosts' formulas give while every corner is in front.
+
+The frame retail shows is `320 x 224` inside a `228`-line display: its last four
+lines are black, and a shot is not a `240`-row frame to be scaled onto the port's.
+Set row for row against the window at the matching pose (the window's tick `230`
+against retail's vsync `216`, the spin's yaw `3576`), the bottom rows `200..223` read
+`2.9` levels **darker** in the window, not brighter; resampling the `228`-line shot
+to `240` rows reads `31` levels brighter over rows `200..236`, which is where a
+brighter floor came from. At the same camera globals the window's glow disc has
+retail's packets to the pixel: centre `(170, 220)`, the near rim at `(605, 286)`,
+`(592, 327)` and `(575, 253)`, centre colour red `191`, green `159`, blue `127` and rim `6`
+on both sides. Rows `224..239` are frame the
+hardware never shows ([renderer](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)).
+
+The round HUD now waits for the spin as retail's does: the spin is cabinet state
+`0x35`'s body, which holds until the yaw passes a full turn, and the HUD is drawn
+from `0x36` on ([Baka Fighter](../subsystems/minigame-baka-fighter.md#duel-hud-fun_801d2afc)).
+The window's bars rise at tick `244`, `14` ticks after the pose that matches retail's
+vsync `216`; retail's are absent at vsync `231` and up at `234` of the same film.
 
 ### The minigames page has no `World`
 
@@ -1738,7 +1788,7 @@ fold the standalone games into the play page.
 
 | Lacks | Because |
 |---|---|
-| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
+| a frame path (tier 11) | It exports one tick per game (`dance_tick_pressing`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. The dance tick takes the frame's press and judges it through the play hosts' `DanceGame::advance_vsync`, on the next game frame; `dance_press` judges at the call and is kept for the API tests. |
 | the Muscle Dome ringside still | Armed by `World::exit_muscle_dome` writing `MinigameState::muscle_ringside_still` ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)). |
 | fishing venue actors and exchange session | No venue scene; it lays the exchange out from `fishing_exchange_json` and treats every tackle item as held. |
 | the residency-driven slot-2 bank | `stage_sfx_slot` holds PROT 0869 in slot 2 for every game; no cue it plays differs today. |
@@ -1960,16 +2010,31 @@ and the `engine-netplay` `keys` test.
 
 ### Controllers
 
-A gamepad binds buttons to buttons by position, so the Key Config table never
-reaches it. One layout, the W3C standard mapping, lives in
-[`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs).
+A gamepad binds physical buttons to PSX buttons through its own table,
+[`GamepadMapping`](../../crates/engine-system/src/gamepad.rs), stored beside the
+keys in `Mapping::gamepad` (`legaia-input.toml` natively, `legaia.bindings` on
+the page) and rebound on the same Key Config screen. Its default is the W3C
+standard mapping; a browser pad without that mapping folds through the table's
+raw half.
 
 | Decision | Kernel | Native | Pages |
 |---|---|---|---|
-| button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
+| the fold: table, raw half, hat, trigger threshold | `GamepadMapping::fold` / `fold_pad`, `RawHat::detect`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`), folded through `GamepadHost::set_mapping`'s table | `gamepad_fold` per pad with its resting axes (`pad-bindings.js`); fallback `gamepad_layout_json` |
+| stick dead zone | `OptionsState::stick_dead_zone` | `GamepadHost::set_dead_zone`; the launcher's and `F12` panel's *Stick dead zone* row | `#play-stick-dead-zone` (`every_launcher_row_has_a_play_page_twin`) |
+| rebinding a controller button | capture names (`gamepad::capture_name`), `KeyRebindSession`'s wait, the keys' swap rule (`GamepadMapping::bind`) | `GamepadPoll::capture` into `pending_key_name`; the launcher's `bind_capture` | `play_menu_pad_button` from `pad-bindings.js`'s capture flush |
+| the button that made a bind | held through the table change it reads as its new button | `GamepadHost::swallow_held` until released | `swallowHeldPads` on the rebind revision |
+| several pads, hot-plug | every connected pad's word ORed into the one player | `GamepadPoll::connected` / `disconnected` on the notice line | `gamepadconnected` / `gamepaddisconnected` on the notice line and `#play-pad-status` |
+| prompts naming a button | `Mapping::prompt_label` over the last pressed pad's `PadStyle` (`GlyphSet` by maker) | `last_pad`: start-up hint, fishing caption | `pad_prompt_label`: fishing caption, the minigames page's hints |
 | press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
 | where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
 | rumble | `legaia_engine_system::rumble` over `World::rumble`, read through `BootSession::rumble_frame` (a `SIM_PAIRS` row) | `GamepadHost::set_rumble`: two endless gilrs force-feedback effects whose gains are the levels, once per redraw after its ticks | `legaiaSetRumble` (`pad-bindings.js`): a `dual-rumble` effect on every pad with a `vibrationActuator`, re-sent while a level holds |
+
+Pinned by `controller_input::a_rebound_button_and_the_stick_walk_like_the_keys`
+(disc-gated, the window's real frame path), `window::gamepad::table_tests`,
+`pad_bindings::tests::the_page_fold_is_the_shared_fold`, and the `controls`
+section of [`check-pages.mjs`](../../scripts/ci/check-pages.mjs), which drives
+a stubbed `navigator.getGamepads` through a non-standard pad's hat, a second
+pad, the plug notices and a controller-made Key Config bind.
 
 Scripted and headless native runs open no controller: the pad word there is
 the script's. Two native surfaces read the pad outside the tick's word and
@@ -2070,6 +2135,8 @@ and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
 | place-name banner | `engine-scene-host::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
 | minigame purses in a save | `World::save_full` / `load_full`, `LGSF` block `LGX7` ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)) |
+| the port's own save words across hosts | the run rules (`LGXF`), a pack's `LXP1` block and dance free play's song counter (SC `+0x328`) ride the same `save_full` / `load_full` and card kernels on both hosts, so a card or `.lgsf` either host writes loads on the other with all three (`cards::tests::the_ports_own_save_words_cross_between_the_hosts`; the disc-gated `cross_host` test adds the scene entries) |
+| save persistence on the page | `localStorage`, not IndexedDB: the port-1 card under `legaia.card.v1.browser`, up to twelve `.lgsf` sessions under the save bar's keys (`site/js/legaia-saves.js`); a refused store reads "Unable to save." in the save beat (`card_store_handshake`) |
 
 Shop windows 35 and 39 are the tier-1 denominator case
 ([above](#the-tiers-denominator-is-engine-ui-and-a-screen-can-live-outside-it)).
@@ -2423,7 +2490,7 @@ output, and lay SPU RAM out through `legaia_engine_audio::spu_layout`.
 | movies and the score | `legaia_engine_system::movie::movie_audio::MovieScore` ([`audio.md`](../subsystems/audio.md#movies-and-the-score)) |
 | pause latch | the output gate (`AudioOut::sequencer_paused`); the script's bit is mirrored as `AudioState::bgm_script_paused` |
 | direct entry restage | `BootSession::restage_audio_for_direct_entry` |
-| field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage` |
+| field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage`; the scripted-scene voice line is listed at its program's seek-ahead (`FUN_80019794`), at least `0x28` vsyncs before the one-shot (`World::tick_scene_programs`) |
 | battle XA prestage | `World::drain_battle_xa_prestage` -> `AudioDirector::prestage_xa_clip` (inside `route_battle_audio`) |
 | CD-XA clip staging | `AudioDirector::play_xa_clip`: a synchronous `XaChannelSource`, or a deferred `XaStageRequest` the host serves through `install_xa_span` |
 | one-shot voices | `VoiceAttr::from_cue_words`, `key_on_voice_attr` |
@@ -2522,8 +2589,10 @@ The gates around it:
   at `0x801F6CC0`, `jal 0x801F19EC` at `0x801F6D3C`, the cue at `0x801F6E50`).
   The port's side-band is resident, so the engine passes `0`
   (`side_band_streaming`).
-- `FUN_8003DE7C(1)` is the read-span countdown `gp+0x91C`: a cast inside the
-  previous clip's span plays nothing (`battle_xa_busy_frames`).
+- `FUN_8003DE7C(1)` is a data stream read in flight, not the last clip: a
+  voice inside a sounding clip's span replaces it
+  ([cast module](../subsystems/cast-module.md#the-casts-own-cd-xa-voice);
+  `World::battle_stream_read_in_flight`).
 
 Not this path: the arts shout (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on
 both hosts - including its one forced-channel exception, formation slot 0

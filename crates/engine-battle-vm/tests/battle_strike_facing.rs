@@ -113,3 +113,15 @@ fn a_group_target_code_leaves_the_heading_alone() {
     host.actors[0].flag_bits.set(ActorFlags::ADVANCE_DONE);
     assert_eq!(host.step_in(ActionState::AttackChain), 0x123);
 }
+
+#[test]
+fn the_strike_band_keeps_the_heading_its_framing_arm_read() {
+    // `0x801E36E8` arms the camera before `0x801E371C` stores the new
+    // heading, so the arm reads the heading the pass before stored.
+    let mut host = PairedHost::new();
+    host.actors[0].facing_angle = 0x123;
+    assert_eq!(host.step_in(ActionState::AttackChain), TOWARDS_BODY);
+    assert_eq!(host.actors[0].strike_arm_facing, Some(0x123));
+    assert_eq!(host.step_in(ActionState::AttackRecovery), TOWARDS_BODY);
+    assert_eq!(host.actors[0].strike_arm_facing, Some(TOWARDS_BODY));
+}

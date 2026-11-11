@@ -497,8 +497,9 @@ flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
 Stage 6 latches the requested index of that call (`0x800247B4..0x800247C4`), not the one
 stage 2 read. A new word arriving past stage 2 therefore plays the old track with the
 walk reporting the new one loaded; the port's `route_bgm_events` starts the newer word
-instead. No library state catches a walk in that window, so whether a script reaches it
-is unmeasured.
+instead. No script record reaches that window: a walk of every scene MAN finds no second
+sub-op `1` a frame or more behind a first inside the read
+([settled](../reference/re-settled-threads/audio.md#no-script-changes-the-bgm-word-inside-a-swaps-read)).
 
 Stage 4's commit also closes battle source 5 (`0x80024750..0x80024760`) and rests every
 source's volume at `0` until stage 6: the only thing that stops a battle theme is the next
@@ -2710,8 +2711,9 @@ A Seru cast's voice is the paged slot-B module's own `FUN_8004FCC8` head cue
 scans it off the module's bytes at the arming seam
 (`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
 CD-XA arm with its two gates (`admit_voice_cue`; the `ctx[+0x276]` side-band
-stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
-`AudioState::battle_xa_busy_frames`) and raises the starter triple on
+stage is `0` on a resident side-band, and `FUN_8003DE7C(1)` is a data stream
+read in flight, which the port has only for the side-band read's stand-in:
+[a sounding clip does not hold it](cast-module.md#the-casts-own-cd-xa-voice)) and raises the starter triple on
 `battle_xa_cues`. Neither host decodes the seventeen voice files up front: a
 `(slot, channel)` the clip bank lacks is read from the file's first sector to
 the starter's stop point and that one channel decoded
@@ -2909,8 +2911,10 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
   the high ring leg (`id + 0x19C = 0x2A8`). Taken while `_DAT_8007BD84` is
   **non-zero** (`bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the
   grunt), and further gated on the attacker's clip being a plain action-table
-  entry and - inside the router - the drive being idle (`FUN_8003DE7C(1) ==
-  0`, `0x8004FE9C`).
+  entry and - inside the router - no data stream read in flight
+  (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The grunt arm has its own CD gate:
+  the drive word `_DAT_8007BC20 < 2` (`0x801EEAA8..0x801EEAB8`), so a block
+  inside a sounding one-shot grunts nothing.
 
 Both are `see ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` (disassembly,
 not the C). The word decides, never the order: after the grunt the routine
@@ -3651,13 +3655,21 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.995` | `+0.00` dB | `-1070` | the cast fits `1.45` vsyncs before its gate ([a frame step](#the-cast-offset-reaches-a-frame-step)) |
-| `cort_guilty_cross_mid_cast` | `0.981` | `-0.01` dB | `-1392` | the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
+| `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-1910` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
 | `theeder_summon_mid_cast` | `0.712` | `+0.11` dB | `-1100` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
-| `zenoir_summon_mid_cast` | `0.998` | `+0.09` dB | `-4031` | the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); seconds `13..14` hold both struck seats' reaction cues ([settled](../reference/re-settled-threads/audio.md#what-sounds-at-the-end-of-zenoirs-cast)), the port's a few vsyncs late on the module's frame step |
+| `zenoir_summon_mid_cast` | `0.855` | `+0.06` dB | `-5151` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); seconds `13..14` hold both struck seats' reaction cues ([settled](../reference/re-settled-threads/audio.md#what-sounds-at-the-end-of-zenoirs-cast)), the port's a few vsyncs late on the module's frame step |
 | `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `9.7` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
 | `gilium_summon_mid_cast` | `0.991` | `+0.02` dB | `-1365` | the voice `6.0` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
+
+<a id="the-casts-step-is-pcsx-reduxs"></a>
+**The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
+frame and charges a loading CD-XA clip from the pass after its cue, both fitted to PCSX-Redux recordings
+with cue-caller logs, where Guilty Cross ramps its arm step `3` then `4` and Zenoir `1`, `3` then `4`.
+These recordings are mednafen's, which prices those arms at other steps, and the channel holds one
+offset per cast: the Guilty Cross and Zenoir rows read low with the level within
+`0.06` dB and the per-second loss in timing, not level. It is the two emulators' frame costs, not a cue.
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 

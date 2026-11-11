@@ -194,6 +194,7 @@ op `4C 8A`) is what made the town's lit rows look baked. See
 
 | Thread | Verdict | Why |
 |---|---|---|
+| The Hyper Art speed lines are dealt afresh each pass off `rand()`, so no seat can match them | falsified (a static fan the replay seated elsewhere) | Plausible: the rays differed between retail's two framebuffers, and the battle draw does deal `rand()` words to jittered rings. The rays are a library-mesh part whose program never moves it (record `0x801F5628`); the two buffers hold the same fan under two camera depths. Seating the part on the RAM's position and banks takes `minigame_muscle_dome_retail_skeleton_hyper_arts` from `.874` to `.980` ([settled](re-settled-threads/battle.md)). |
 | Ozma's arms 7..9 draw an orb dark where the port draws it orange, so the port has the orb's blend mode or CLUT wrong | falsified (a blink phase) | Plausible: the same disc, the same seat, another colour. In a retail recording's RAM the orb is the opaque `POLY_GT4` `0x3C`, CLUT `0x76C2`, page `0x0006`, and the port's packet carries the same three. Record `0x801F9F2C`'s colour word `0x48000000` cues toward black, and its level walks `4096`, `0`, `1364`, `2728`, `4092`, `4096` a frame at a time on both sides. The dark disc is an orb on `4096`. Where the orbs and the additive glows (`0x801F9E28`, page `0x0026`) stand is the arms' `rand()` scatter ([cast-module.md](../subsystems/cast-module.md)). |
 | A full-party fight's summon flash-in opens about five vsyncs late in the port because retail spawns it earlier | falsified (spawn and delay match) | Plausible: the Zenoir and Gimard films from `battle_kor_spoon_strike` lag in `0x34` while the solo-Vahn films do not. Retail's fade actor appears on the `0x34` entry pass in both fights with delay `0x14`, which `FUN_80020c14` drains by the frame step (`lbu 0x393` at `0x80020C34`). It ends 20 vsyncs after entry both times: `17` at vsync `966` to `-1` at `986` in `kor`, `18` at `373` to `0` at `393` in the solo fight. The port's ends there too. The residual is the film's display lag on fade frames: `--retail-lag 0` lifts the `kor` `0x34` segment from `.437` to `.802` ([cast-sequence oracle](../tooling/cast-sequence-oracle.md)). |
 | A four-slot event list reads a byte no disc data decides, and it reads `0` | falsified (the disc decides it, and most fights read non-zero) | Plausible: the index is the low byte of the entry's RAM address, the block "moves with the fight", and the first two fights measured read `0`. The heap starts empty, ids load in ascending order (`0x800543EC..0x800549F0`) and each block is carved from the top of the free node, so the address is fixed by the seated count, the ids and the block sizes; 145 placements and 22 reads in 86 retail states match. Demon Fly's attack reads `209` ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)). |
@@ -997,6 +998,20 @@ larger figure is off by more than an order of magnitude; see
 [`effect-vm.md`](../subsystems/effect-vm.md).
 
 ## Audio / sound driver
+
+### `FUN_8003DE7C(1)` waits out the last voice clip's span
+
+The poll drains `gp+0x91C` by the frame step and answers busy while it is positive
+(`0x8003DF24..0x8003DF34`), so it read as "the drive is still reading the last clip", and
+the port declined every battle voice requested inside the previous clip's span. That
+arm is the development host's: it is reached only while `0x8007BA70 != 0`
+(`beq v0,zero,0x8003DEE4` at `0x8003DE90`, the second test at `0x8003DF04`). On the
+retail path the poll reads the stream queue, `gp+0x988` (`0x8003DF70..0x8003DF78`), which
+a CD-XA one-shot never sets, and the starter stores its span to `gp+0x918`, not
+`0x91C`. Every PCSX-Redux cast film reads `0x8007BA70 = 0` and `gp+0x91C = 120`, the
+stream load's timeout, through clips that play. A voice inside a sounding clip
+replaces it. What the clip does hold is the drive word `0x8007BC20`
+([memory map](memory-map.md)), which the shout fallback and the block grunt read.
 
 ### `zeto_call_wave_mid_cast`'s `+5` dB is not a volume path
 
@@ -2136,6 +2151,7 @@ answered from the extracted image at its mapped base.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| Aluru's head tip shows through arm 11's ray burst because the engine's depth test draws the body in front of the additive rays where retail's ordering table links them after it | falsified (retail links the rays nearer, and so does the port) | Plausible: hiding every arm-11 record leaves the dark triangle, and Ozma's rays raised an order question of the same shape. Retail's table of an arm-11 frame links the tip at bucket `89` and the crossing rays at `77..84`, the order the port's mean-depth draw keeps; on retail's `rand()` words (`--rand-track`) the engine's rays cover the tip as retail's do. The gap was the rays' directions, a `rand()` deal ([settled](re-settled-threads/rendering-camera.md)). |
 | The far framing takes over at the end-of-action gate `0x5A`, between two actors of a round | falsified (`0x5A` re-arms the last actor's case 6 / 8, `0x801E6428`) | Plausible: `evil_medallion_rage_battle` reads case 9 in `0x0A`, and the C's `0x5A` arm starts a long way above the wipe scans. That capture is its round's first actor. Every later actor's `0x0A` holds the last shot landed: `kor_ghost_knight_pre_v_windhash`'s Spirit member, `chitei2_kemaro_v2_pre_lava_breath`'s struck Noa. |
 | Per-primitive painter order cannot be the field's rule, since mean depth hides `casino_ticket_counter`'s cabinet and `doman`'s floor | falsified (the trial left out two rules and overrode the ground) | Plausible: a pass that keyed every primitive on its mean broke those frames while `AVSZ4` reads plain. It also overwrote the ground cells' own buckets, ignored a record's flag `0x800` (farthest corner) and the actors' ten-bucket bias. With all three the same pass lifts `concend_field_door_hop` to `1.000` and hides nothing ([renderer-port](../subsystems/renderer-port.md#the-field-sorts-by-each-primitives-link)). |
 | `noaru_field_card_walk`'s bowl turns on the wrong yaw, since fitting the part's angle lowers the frame's error | falsified (the capture's quad walk) | Plausible: the texture sits up to `14` px off and moving the seated yaw from `-237` to `-243` helps. The bowl's corners match the table at `-241` within truncation, and a raster of those packets by two triangles matches the engine frame and misses retail's. PCSX-Redux walks a `POLY_FT4`'s outline ([renderer-port](../subsystems/renderer-port.md#the-native-target)). |

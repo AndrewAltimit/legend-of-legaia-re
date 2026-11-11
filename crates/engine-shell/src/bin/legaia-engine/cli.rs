@@ -26,7 +26,7 @@ use std::path::PathBuf;
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
         Playing:      play-window, launch, play-str, config, save, load, packs\n  \
-        Exploring:    list-scenes, info, record, replay, export-glb, mesh-catalog\n  \
+        Exploring:    list-scenes, info, record, replay, replay-compact, export-glb, mesh-catalog\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue, entry-bench\n    \
         parity:                   gte-replay, scenarios\n    \
@@ -644,6 +644,20 @@ pub(crate) enum Cmd {
         /// content hash differs from the recorded one is refused.
         #[arg(long = "pack")]
         packs: Vec<PathBuf>,
+    },
+    /// Rewrite `j-replay-v1` files with many pad events into the compact
+    /// `[pad_runs]` form (`legaia_engine_shell::replay::PadRuns`). A file's
+    /// leading `#` comment lines are kept; each rewrite is checked to
+    /// expand to the same per-frame pad stream before it is written. Files
+    /// at or under the threshold, or already compact, are left alone.
+    #[command(display_order = 9)]
+    ReplayCompact {
+        /// Replay files to rewrite.
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// Report what would change without writing.
+        #[arg(long, default_value_t = false)]
+        check: bool,
     },
     /// Open a play-window session and capture your pad input into a
     /// replay file for `replay`. Thin shim over `play-window`: every

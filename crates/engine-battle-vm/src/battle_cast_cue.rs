@@ -805,13 +805,21 @@ pub struct VoiceCueGates {
     /// port's side-band is resident, not streamed, so its window is zero
     /// frames wide and a host passes `0`.
     pub side_band_stage: u8,
-    /// `FUN_8003DE7C(1)`'s countdown `gp+0x91C`: vsyncs left in the read span
-    /// of the clip the drive last started (`dur` from the starter, stepped
-    /// down by the frame-speed byte each poll). Non-zero declines the cue -
-    /// a cast while the previous voice is still inside its span plays
-    /// nothing, and that is the one decline the port reproduces
-    /// (`AudioState::battle_xa_busy_frames`).
-    pub clip_span_left: u16,
+    /// `FUN_8003DE7C(1) != 0`: a **data** stream read is in flight. On the
+    /// retail path (`0x8007BA70 == 0`, `0x8007B8C2 != 0`) the poll skips the
+    /// `gp+0x91C` countdown altogether (`beq v0,zero,0x8003DEE4` at
+    /// `0x8003DE90`, the second test at `0x8003DF04`) and answers busy only
+    /// while the stream queue holds a read (`lw v0,0x988(gp)` /
+    /// `beq v0,zero` at `0x8003DF70..0x8003DF78`, then `CdSync(1)` and the
+    /// command state `gp+0x928`). A CD-XA one-shot sets neither: the starter
+    /// `FUN_8003D53C` stops a data read before it starts the clip
+    /// (`0x8003D580..0x8003D59C`), and a later voice request replaces the
+    /// sounding clip rather than waiting it out. Every PCSX-Redux cast film
+    /// reads `0x8007BA70 = 0` and the countdown resting at `120` through
+    /// clips that play. The battle's stream reads are the side-band
+    /// applier's (`AudioState`'s modelled read is the drive word
+    /// `0x8007BC20`, a different gate).
+    pub stream_read: bool,
 }
 
 /// The starter's three arguments, `FUN_8003D53C(clip_slot, channel, dur)`.
@@ -832,8 +840,8 @@ pub enum VoiceCueVerdict {
     NotVoice,
     /// Declined at `ctx[+0x276] != 0`.
     SideBandStreaming,
-    /// Declined at `FUN_8003DE7C(1) != 0`.
-    ClipStillSounding,
+    /// Declined at `FUN_8003DE7C(1) != 0`: a data stream read in flight.
+    StreamReadInFlight,
     /// The span table has no entry for the cue (a disc-free build), or the
     /// entry is zero - the starter would read two sectors of nothing.
     NoSpan,
@@ -849,6 +857,7 @@ pub enum VoiceCueVerdict {
 /// `DAT_800788B8[id - 0x100]` (`legaia_game_tables::xa_cue_table`).
 ///
 /// PORT: FUN_8004FCC8
+// REF: FUN_8003DE7C (the stream-read gate), FUN_8003D53C (the starter)
 pub fn admit_voice_cue(id: u16, gates: VoiceCueGates, raw_span: Option<u16>) -> VoiceCueVerdict {
     if id < XA_CUE_BASE {
         return VoiceCueVerdict::NotVoice;
@@ -856,8 +865,8 @@ pub fn admit_voice_cue(id: u16, gates: VoiceCueGates, raw_span: Option<u16>) -> 
     if gates.side_band_stage != 0 {
         return VoiceCueVerdict::SideBandStreaming;
     }
-    if gates.clip_span_left != 0 {
-        return VoiceCueVerdict::ClipStillSounding;
+    if gates.stream_read {
+        return VoiceCueVerdict::StreamReadInFlight;
     }
     let Some(raw) = raw_span.filter(|&r| r != 0) else {
         return VoiceCueVerdict::NoSpan;
@@ -1100,7 +1109,7 @@ mod tests {
                 0x134,
                 VoiceCueGates {
                     side_band_stage: 3,
-                    clip_span_left: 5
+                    stream_read: true
                 },
                 Some(1143)
             ),
@@ -1112,11 +1121,11 @@ mod tests {
                 0x134,
                 VoiceCueGates {
                     side_band_stage: 0,
-                    clip_span_left: 5
+                    stream_read: true
                 },
                 Some(1143)
             ),
-            VoiceCueVerdict::ClipStillSounding
+            VoiceCueVerdict::StreamReadInFlight
         );
         assert_eq!(admit_voice_cue(0x134, open, None), VoiceCueVerdict::NoSpan);
         assert_eq!(

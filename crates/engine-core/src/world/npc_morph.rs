@@ -151,6 +151,57 @@ impl World {
                 .is_some_and(|st| st.keyframe_count > 0)
     }
 
+    /// The object-bind channel of placed object `key` when the object carries
+    /// a morph: the channel whose words the ramp envelope reads and writes
+    /// ([`Self::tick_npc_morphs`]).
+    fn object_morph_channel(&self, key: usize) -> Option<usize> {
+        let owner = MorphOwner::Object(self.object_key_record(key as u16));
+        if !self.npcs.morphs.contains_key(&owner) {
+            return None;
+        }
+        self.field_vm
+            .channels
+            .iter()
+            .position(|c| c.object_bind && c.placement_index == key)
+    }
+
+    /// Load placed object `key`'s envelope words into `ctx`, a prop record's
+    /// own context: the `+0x62` envelope bits ([`MORPH_ENV_BITS`]) and the
+    /// `+0x10 & 0x1000` gate, from the object's channel.
+    ///
+    /// Retail has one actor and one pair of words. The port keeps the
+    /// object's clip-control word on its prop and its envelope on its
+    /// channel, so a record that drives its own morph (`vell` `P0[1]`, the
+    /// Bridge Grass: `AC 01 0C`, `AC 01 0A`, `AB 01 0D`, then `AC 01 0B` /
+    /// `AD 01 0B` until the grass has grown) must read the envelope's
+    /// ADVANCE latch from where the envelope writes it. Read off the prop
+    /// alone, the spin never saw `0x800` and the Fertilizer parked the
+    /// examine for good.
+    ///
+    /// REF: FUN_80020740, FUN_801DE840 (ops 0x2B / 0x2C / 0x2D)
+    pub(crate) fn load_object_morph_words(&self, key: usize, ctx: &mut FieldCtx) {
+        let Some(ci) = self.object_morph_channel(key) else {
+            return;
+        };
+        let c = &self.field_vm.channels[ci].ctx;
+        ctx.local_flags = (ctx.local_flags & !MORPH_ENV_BITS) | (c.local_flags & MORPH_ENV_BITS);
+        ctx.flags =
+            (ctx.flags & !STATUS_FLAG_ENVELOPE_ACTIVE) | (c.flags & STATUS_FLAG_ENVELOPE_ACTIVE);
+    }
+
+    /// Store a prop record's own context's envelope words back onto placed
+    /// object `key`'s channel: the other half of
+    /// [`Self::load_object_morph_words`].
+    pub(crate) fn store_object_morph_words(&mut self, key: usize, ctx: &FieldCtx) {
+        let Some(ci) = self.object_morph_channel(key) else {
+            return;
+        };
+        let c = &mut self.field_vm.channels[ci].ctx;
+        c.local_flags = (c.local_flags & !MORPH_ENV_BITS) | (ctx.local_flags & MORPH_ENV_BITS);
+        c.flags =
+            (c.flags & !STATUS_FLAG_ENVELOPE_ACTIVE) | (ctx.flags & STATUS_FLAG_ENVELOPE_ACTIVE);
+    }
+
     /// The channel context that owns `owner` (its `+0x10` / `+0x62` words).
     fn morph_channel(&self, owner: MorphOwner) -> Option<usize> {
         self.field_vm.channels.iter().position(|c| match owner {

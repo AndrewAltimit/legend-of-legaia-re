@@ -1,0 +1,151 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; tagged releases</div>
+  <h1>Tagged releases</h1>
+  <p class="lede">Pushing a <code>v*</code> tag builds the workspace's programs for four platforms and attaches one archive per platform, plus a <code>SHA256SUMS</code> manifest, to that tag's GitHub release. GitHub releases are the only distribution channel. The archives carry compiled programs and the project's own text files only: no game data is packaged, and no step of the pipeline reads a disc image.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Workflow</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/.github/workflows/release.yml" target="_blank" rel="noopener"><code>.github/workflows/release.yml</code></a>: tag trigger, test gate, two build jobs, publish</dd>
+    <dt>Toolchains</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/setup-cross-toolchain.sh" target="_blank" rel="noopener"><code>scripts/ci/setup-cross-toolchain.sh</code></a>: the cross toolchain per target, idempotent</dd>
+    <dt>Build and package</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/release-build.sh" target="_blank" rel="noopener"><code>scripts/ci/release-build.sh</code></a>: build, stage, archive, checksum</dd>
+    <dt>For players</dt><dd>Which archive to download and what to open: <a href="../guides/desktop-apps.html">desktop apps</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="cutting" data-doc="cutting-a-release">
+  <h2>Cutting a release</h2>
+<pre><code>git tag v0.2.0
+git push origin v0.2.0</code></pre>
+  <p>That is the whole procedure. The workflow runs the test gate, builds every target, and creates the release for the tag if it does not exist yet.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The release workflow. A v-star tag starts three jobs in parallel: verify runs fmt, clippy and the test suite on the self-hosted runner; build-cross builds the two Linux targets and Windows on the arm64 self-hosted runner; build-macos builds the universal macOS archive on a GitHub-hosted macOS runner. Each build job uploads its archives as workflow artifacts and never touches the release. The publish job waits for all three, checks that all four archives are present, writes SHA256SUMS and makes the one edit to the GitHub release.">
+      <defs>
+        <marker id="rel-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="dg-node-accent" x="16" y="100" width="110" height="50" rx="5"/>
+      <text class="dg-label" x="71" y="122">v* tag</text><text class="dg-sub" x="71" y="139">git push</text>
+
+      <rect class="dg-node" x="190" y="14" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="37">verify</text><text class="dg-sub" x="315" y="55">fmt, clippy, tests (self-hosted)</text>
+      <rect class="dg-node" x="190" y="97" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="120">build-cross</text><text class="dg-sub" x="315" y="138">Linux x2 + Windows, arm64 host</text>
+      <rect class="dg-node" x="190" y="180" width="250" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="203">build-macos</text><text class="dg-sub" x="315" y="221">universal macOS (GitHub-hosted)</text>
+
+      <path class="dg-edge" d="M126 125 L160 125 L160 42 L186 42" marker-end="url(#rel-ah)"/>
+      <path class="dg-edge" d="M126 125 L186 125" marker-end="url(#rel-ah)"/>
+      <path class="dg-edge" d="M160 125 L160 208 L186 208" marker-end="url(#rel-ah)"/>
+
+      <rect class="dg-node-ok" x="520" y="90" width="170" height="70" rx="5"/>
+      <text class="dg-label" x="605" y="115">publish</text><text class="dg-sub" x="605" y="133">needs all three</text><text class="dg-sub" x="605" y="149">4 archives or fail</text>
+      <path class="dg-edge" d="M440 42 L480 42 L480 110 L516 110" marker-end="url(#rel-ah)"/>
+      <path class="dg-edge" d="M440 125 L516 125" marker-end="url(#rel-ah)"/>
+      <path class="dg-edge" d="M440 208 L480 208 L480 140 L516 140" marker-end="url(#rel-ah)"/>
+      <text class="dg-edge-label" x="488" y="232">archives as artifacts</text>
+
+      <rect class="dg-node-accent" x="730" y="90" width="136" height="70" rx="5"/>
+      <text class="dg-label" x="798" y="115">GitHub release</text><text class="dg-sub" x="798" y="133">4 archives</text><text class="dg-sub" x="798" y="149">+ SHA256SUMS</text>
+      <path class="dg-edge" d="M690 125 L726 125" marker-end="url(#rel-ah)"/>
+    </svg>
+    <figcaption>Only <code>publish</code> edits the release, after the test gate and both build jobs, so a release never appears with a platform missing and <code>SHA256SUMS</code> always covers every archive. The macOS build runs beside the test gate rather than after it; nothing it builds is published until the gate is green.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li>A tag containing <code>-</code> (say <code>v0.2.0-rc1</code>) is marked as a prerelease.</li>
+    <li><strong>A dry run publishes nothing.</strong> The <code>workflow_dispatch</code> trigger (<code>gh workflow run release.yml -f tag=&lt;ref&gt;</code>) runs every job and leaves the archives as workflow artifacts unless its <code>publish</code> input is checked. A dry run takes any ref, a branch included; publishing takes only an existing tag, since the release action would otherwise mint a new one.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="targets" data-doc="target-matrix">
+  <h2>Target matrix</h2>
+  <p>The self-hosted runner is <strong>arm64 Linux</strong>, so every other target is a cross-compile - including x86_64 Linux.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Target</th><th>Toolchain</th><th>Top-level programs</th></tr></thead>
+    <tbody>
+      <tr><td><code>aarch64-unknown-linux-gnu</code></td><td>Native</td><td><code>Legend of Legaia</code>, <code>Legaia Explorer</code></td></tr>
+      <tr><td><code>x86_64-pc-windows-gnu</code></td><td>mingw-w64 cross</td><td><code>Legend of Legaia.exe</code>, <code>Legaia Explorer.exe</code> (both GUI-subsystem)</td></tr>
+      <tr><td><code>x86_64-unknown-linux-gnu</code></td><td><code>cargo-zigbuild</code> + an amd64 ALSA / libudev sysroot, glibc pinned to 2.28</td><td>As on arm64 Linux</td></tr>
+      <tr><td><code>universal-apple-darwin</code></td><td>Native on a macOS runner; the two slices fused by <code>lipo</code></td><td><code>Legend of Legaia.app</code>, <code>Legaia Explorer.app</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>Every target also carries every command-line program. The per-target list is declared in <code>release-build.sh</code>, which fails when an expected program is missing from the build, so a target cannot quietly drop one.</p>
+</section>
+
+<section class="doc-section" id="layout" data-doc="archive-layout">
+  <h2>Archive layout</h2>
+  <p>The top folder holds only what a player should open; every command-line program sits one level down.</p>
+<pre><code>legaia-tools-&lt;version&gt;-&lt;target&gt;/
+    Legend of Legaia            (.exe on Windows, .app on macOS)
+    Legaia Explorer             (.exe on Windows, .app on macOS)
+    README-PLAY.txt
+    LICENSE  LICENSE-MIT  THIRD-PARTY-LICENSES.txt
+    packs/
+        sample.lxpack           the Sample Expansion Pack
+    command-line-tools/
+        README.txt              every tool, one line each
+        legaia-engine           the engine: launcher, play-window, every subcommand
+        asset-viewer  legaia-extract  legaia-patcher  asset  tim  tmd  vab  ...</code></pre>
+  <p><code>Legend of Legaia</code> on Linux and Windows is a small launcher stub that starts <code>command-line-tools/legaia-engine</code> with the same arguments; a lone file argument (from "Open with", or a drop on the icon) becomes <code>--open &lt;file&gt;</code>. One copy of the engine serves both the game and the command line. The stub and Explorer's <em>Play</em> button find the engine by walking up to four folders above the running program, which also covers a plain <code>cargo build</code> and a macOS bundle.</p>
+  <p><strong>The bundled pack.</strong> <code>packs/sample.lxpack</code> is <a href="../guides/sample-pack.html">the Sample Expansion Pack</a>, bundled at staging time by the format's one deterministic writer, which refuses a pack that fails validation - the <a href="../formats/expansion-pack.html">no-disc-bytes rule</a> among the checks. What ships is disc coordinates plus the pack's own art and audio.</p>
+</section>
+
+<section class="doc-section" id="icons" data-doc="icons">
+  <h2>Icons and the per-platform details</h2>
+  <p>The game and Explorer carry original icons drawn by a script in <code>crates/app-theme/icons/</code>; no game asset is drawn from, and the outputs are committed so a release never runs the script. Windows executables embed the icon through <code>windres</code>; the macOS bundles name it in <code>Info.plist</code>; the engine and Explorer also set a window icon at runtime. <code>release-build.sh</code> fails unless all three Windows executables carry an icon group.</p>
+  <dl class="kv">
+    <dt>macOS</dt><dd>Built on a GitHub-hosted runner, since Apple's SDK cannot be redistributed onto a Linux one. Both slices are fused into one file per program, deployment target macOS 11. The bundles are <strong>ad-hoc signed</strong> - arm64 macOS refuses to run unsigned code - but not notarised, so Gatekeeper asks the player to confirm the first launch; <code>README-PLAY.txt</code> gives the steps.</dd>
+    <dt>Windows console</dt><dd><code>legaia-engine.exe</code> is a console program and keeps the terminal contract every subcommand relies on. The top-level <code>Legend of Legaia.exe</code> is a GUI-subsystem stub that starts it with no console window and reports a failure in a message box. The build reads the PE headers and fails unless the stub is GUI and the engine console.</dd>
+    <dt>Legaia Explorer</dt><dd>A GUI program on every target with no command-line contract, so it is GUI-subsystem itself on Windows and needs no stub. It draws through OpenGL (egui's glow backend) and links no wgpu.</dd>
+    <dt>Why <code>-gnu</code> on Windows</dt><dd>mingw-w64 is an apt package that emits x86_64 PE objects on an arm64 host, and the whole workspace crosses with it, GUI included. The MSVC ABI would need a downloaded Microsoft SDK.</dd>
+    <dt>Why an ALSA sysroot</dt><dd>The engine's audio and controller crates bind <code>libasound</code> and <code>libudev</code> through <code>pkg-config</code>, which needs x86_64 copies to cross-link. Arm64 Ubuntu's package mirror publishes no amd64 packages, so the setup script fetches the four <code>.deb</code>s from the main archive and unpacks them into a cache - no root, no apt sources touched. The glibc 2.28 pin survives, and the build checks it in the symbol table.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="artifacts" data-doc="artifacts">
+  <h2>Artifacts</h2>
+<pre><code>legaia-tools-&lt;version&gt;-aarch64-unknown-linux-gnu.tar.gz
+legaia-tools-&lt;version&gt;-x86_64-pc-windows-gnu.zip
+legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz
+legaia-tools-&lt;version&gt;-universal-apple-darwin.tar.gz
+SHA256SUMS</code></pre>
+  <p><code>&lt;version&gt;</code> is the tag without its leading <code>v</code>. Each archive extracts to one top-level folder. Besides the programs and the license files (the project is <code>MIT OR Unlicense</code>) it carries three generated text files: <code>README-PLAY.txt</code> (what to open, bring your own disc image, controls, where settings and saves live), <code>command-line-tools/README.txt</code> (one line per tool), and <code>THIRD-PARTY-LICENSES.txt</code>.</p>
+  <p><strong>Third-party notices</strong> are written at staging time by <code>scripts/ci/third-party-licenses.py</code> from the crates the programs actually link (<code>cargo tree</code> per target, so features resolve as in the build), with each distinct license text once. The release fails when a linked crate declares no license or a license has no text anywhere.</p>
+  <p>Where the build host can run the result (the native Linux row and macOS), the build starts the staged engine, game entry and Explorer with <code>--version</code>, so a program that cannot start fails the release rather than a player. To check a download:</p>
+  <div class="cli"><code>sha256sum -c SHA256SUMS --ignore-missing</code></div>
+</section>
+
+<section class="doc-section" id="provisioning" data-doc="runner-provisioning">
+  <h2>Runner provisioning</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Requirement</th><th>How it arrives</th><th>Root?</th></tr></thead>
+    <tbody>
+      <tr><td><code>mingw-w64</code></td><td><code>sudo apt install mingw-w64</code></td><td>Yes, once</td></tr>
+      <tr><td>Rust target std</td><td><code>rustup target add</code>, automatic</td><td>No</td></tr>
+      <tr><td><code>zig</code></td><td>pip wheel into a cache venv, automatic</td><td>No</td></tr>
+      <tr><td><code>cargo-zigbuild</code></td><td><code>cargo install</code>, automatic</td><td>No</td></tr>
+      <tr><td>amd64 ALSA / libudev sysroot</td><td><code>.deb</code>s unpacked into the cache, automatic</td><td>No</td></tr>
+      <tr><td><code>libasound2-dev</code>, <code>libudev-dev</code></td><td>Already present for the native build</td><td>Yes, once</td></tr>
+    </tbody>
+  </table></div>
+  <p>Root-free tooling is cached under <code>$LEGAIA_RELEASE_CACHE</code> (default <code>~/.cache/legaia-release</code>); deleting it forces a clean reinstall. The macOS job names its hosted image by version; when GitHub retires that image the job fails before its first step, and the fix is to move <code>runs-on</code> to a supported label and rehearse with a build-only dispatch before tagging.</p>
+</section>
+
+<section class="doc-section" id="main-ci" data-doc="interaction-with-main-ciyml">
+  <h2>Interaction with <code>main-ci.yml</code></h2>
+  <p><code>main-ci.yml</code> does not trigger on tags: two workflows on one tag would contend for the single self-hosted runner. The release stays test-gated anyway, because its <code>verify</code> job runs the same format, lint and test gates, and <code>publish</code> needs it. Disc-gated tests skip there exactly as in CI.</p>
+</section>
+
+<section class="doc-section" id="rehearsal" data-doc="local-rehearsal">
+  <h2>Local rehearsal</h2>
+  <p>Both scripts run outside CI, the fastest way to check a matrix change before tagging:</p>
+<pre><code>scripts/ci/setup-cross-toolchain.sh x86_64-pc-windows-gnu
+scripts/ci/release-build.sh 0.0.0-test x86_64-pc-windows-gnu</code></pre>
+  <p>On a Mac the same pair builds the <code>universal-apple-darwin</code> row. The archive and its <code>.sha256</code> land in <code>target/dist/</code>, inside the gitignored <code>target/</code>.</p>
+  <div class="see-also">
+    <span class="see-also-label">Related</span>
+    <a href="../guides/desktop-apps.html">Desktop apps</a>
+    <a href="../guides/getting-started.html">Getting started</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md" target="_blank" rel="noopener">Full page on GitHub</a>
+  </div>
+</section>

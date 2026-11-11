@@ -177,3 +177,32 @@ fn the_delta_arm_snaps_the_accumulator_instead_of_easing_to_it() {
         "one frame, not the ~30 the easing would take"
     );
 }
+
+/// With a non-zero `ticks` operand the bit-24 arm hands both stores to the
+/// property-ramp pool (`FUN_8003C5F0` at `0x801E1584` and `0x801E175C`): the
+/// accumulator walks from its live value to `target` over `ticks` frame steps
+/// while the input lock keeps the easing off it. `concnow`'s door-hop record
+/// climbs it about a unit a vsync from `163` to `266`.
+#[test]
+fn the_timed_bit_24_arm_ramps_the_accumulator_over_its_ticks() {
+    let mut world = world_with_player();
+    world.actors[0].move_state.world_y = -192;
+    world.flags.story_flags = legaia_engine_field::camera_ease::PAD_INPUT_LOCKED;
+    let start = world.camera.offset_ease;
+    let mut script = sub9_default(0x10A);
+    script[4] = 100;
+    world.load_field_script(script);
+    let mut seen = vec![world.camera.offset_ease];
+    for _ in 0..200 {
+        let _ = world.tick();
+        seen.push(world.camera.offset_ease);
+    }
+    assert!(seen.windows(2).all(|w| w[0] <= w[1]), "a monotonic climb");
+    assert_eq!(*seen.last().unwrap(), 0x10A, "landing on the target");
+    let first_landed = seen.iter().position(|&v| v == 0x10A).unwrap();
+    assert!(
+        (90..=110).contains(&first_landed),
+        "over the operand's hundred frame steps, not at once ({first_landed}, from {start})"
+    );
+    assert_eq!(world.camera.scene_offset, 0x10A - 192);
+}

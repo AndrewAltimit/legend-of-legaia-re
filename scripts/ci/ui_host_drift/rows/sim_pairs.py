@@ -60,6 +60,23 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "the scene's own track restarted, native vs play page - the "
+        "page started `World::audio.current_bgm` through a body of its own, "
+        "and its late-output start ran it ahead of a scene pick's first tick, "
+        "while the entry's op-0x35 events were still queued: Mt. Rikuroa's "
+        "summit logged `start, stop, start, start` on the page where the "
+        "window logs `stop, start, start`. Both hosts restart the track "
+        "through the session's `restore_field_bgm`; the page's late output "
+        "asks `start_field_bgm_on_attach`, which leaves a queued event to "
+        "the tick's routing",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": ("crates/web-play/src/play_bgm.rs", "start_world_bgm"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["restore_field_bgm"],
+    },
+    {
         "what": "a battle body's blend word, native vs play page - the native "
         "posed override was keyed by TMD index, so two bodies on one TMD shared "
         "one mesh and one blend. Each host re-uploads a body's own stream with "
@@ -758,6 +775,39 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["player_body_centre"],
+    },
+    {
+        "what": "camera-occlusion fade draw gate, native vs play page - the "
+        "gate asked the crop and the actor cull per occluder range, but not "
+        "the placed-draw loop's other two tests, so a placed wall parked at "
+        "the hide box or off the windowed static-object list still hid the "
+        "player on both hosts while neither drew it. Both sites build the one "
+        "`OccluderGate` per frame over occluders keyed by the scene's binds",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_stage.rs",
+                "stage_occlusion_fade",
+            ),
+            "web": (WEB_PLAY_PLAYER_MESH, "field_player_occluded"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["OccluderGate"],
+    },
+    {
+        "what": "camera-occlusion fade occluder set, native vs play page - "
+        "the set is keyed by the scene's object binds "
+        "(`FieldOccluders::build_with_binds`), which is what lets the draw "
+        "gate test a placed wall's window and object keys; a bare `build` "
+        "leaves both `None` and the gate passes every placed wall",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/field_render/placements.rs",
+                "build_static_env_products",
+            ),
+            "web": (WEB_PLAY, "build_field_render"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["build_with_binds"],
     },
     {
         "what": "camera-distance preset cycle, native vs play page - the "

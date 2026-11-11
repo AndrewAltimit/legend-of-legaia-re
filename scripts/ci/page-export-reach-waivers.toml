@@ -168,3 +168,8 @@ names = ["set_ui_psx_tint", "ui_psx_tint"]
 kind = "probe"
 reason = "Measurement hooks a headless run calls from the page's console: firing a battle shout to measure a CD-XA clip's start and level, and the battle memos' verify switch (rebuild behind every hit, panic on a difference)."
 names = ["play_xa_probe_fire_shout", "set_battle_memo_verify"]
+
+[[waiver]]
+kind = "probe"
+reason = "Key Config's state (selected row, waiting bind, the stored table) for check-pages.mjs, which drives the screen with a virtual controller and asserts a bind lands without re-opening its wait; the page draws Key Config from the play-menu draw list."
+names = ["play_menu_key_config_json"]

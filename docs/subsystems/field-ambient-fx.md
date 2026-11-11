@@ -546,6 +546,35 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+The substitution belongs to the part's own draw, not to every mesh of its
+pack slot: `FUN_8001ADA4` copies the drawn actor's `+0x10` to the scratchpad
+(`0x8001ADF4..0x8001ADFC`) and tests that copy per group. So a mesh-bearing
+stager part draws its own staged vertices (`World::part_morphed_tmd`, which
+both hosts' field-FX passes take), whatever the placed objects sharing its
+slot draw.
+
+**rikuroa's rockfall rocks** are the case where that is the whole picture.
+The two rockfall records install effect trees (`P2[44]` and `P2[45]`, both
+`34 30 0D`) whose mesh parts are stager records `54` / `55` (`model_sel` `63`
+/ `64`, pack slots `58` / `59`). Each mesh at rest is a stalactite hanging
+150 to 650 units above the part's origin. The record seats the part `0x400`
+above its spawner, lets it fall for 63 vsyncs, then op `0x0A` arms lanes `9..=0xC` / `0xD..=0x12`, and
+the envelope ramps them to full weight, which lays each rock across the cave
+path: rows `119..120` for the first, rows `109..110` for the second, under
+the walls each record paints. The part then loops on `X_IF_NOT_FLAG 0x300`
+and stays drawn until the Golem record `P2[47]` raises `0x300` ("the cave is
+about to collapse"). A scene entered with `0x281` / `0x282` set reseats both
+rocks from the entry tree (records `69` / `70`: the same lanes, the same
+loop). Drawn from the rest mesh, the rock hung invisibly in the roof while
+Terra said "That was close", and the player hopped over a bare path. A
+retail film of the second rockfall (poked seat from
+`rikuroa_field_card_walk` with `0x282` and `0x300` cleared) shows the rock on
+the path after the beat. A card-loaded state holding `0x300` keeps both
+parts in the pool with `+0x10` bit `0x8` up, and a film walked over the
+rows from it shows the path bare. Pinned by
+`engine-session/tests/rikuroa_rockfall_rock_disc.rs` and
+`web-play/tests/rikuroa_rockfall_rock_page.rs`.
+
 **Field actors arm the same lanes through field-VM op `0x4B`**
 (`0x801E0820..0x801E08C0` in `FUN_801DE840`): `[4B count base (up:u16
 down:u16) x count]` writes sub-entry `base + i` to `+0xB0 + i`, the two
@@ -580,6 +609,27 @@ Two worked examples on this side:
   `0x8001B43C`). `jouind_field_card_boot` holds all four at `0x08009881`; the
   engine lands the system context's `B1` / `B2` on a placed object's context
   as on a placement's (`World::step_field_cross_context_cflag`).
+
+#### A record that drives its own object's morph
+
+`vell`'s Bridge Grass is a placed object bound to `P0[1]` whose bind-time
+prologue arms a swaying pulse (`+0x62 = 0x5000`: recycle `0x1000` plus
+reset-on-complete `0x4000`). Its examine body, after Yes to "Do you wish to use
+the Fertilizer?", re-arms the lanes (`4B 07 00 ..`), raises the gate on its own
+actor (`B1 01 0C`), drops the recycle and hold bits (`AC 01 0C`, `AC 01 0A`),
+primes the envelope (`AB 01 0D`) and waits on ADVANCE (`AC 01 0B` / `AD 01
+0B`). With recycle clear the envelope latches `0x800` when lane 0 drains
+(`0x80020A78`), about 160 frames on, and the grass stands grown across the
+river.
+
+Retail has one actor, so the words the script writes are the words
+`FUN_80020740` steps. The port keeps the object's clip-control word on its
+prop and its envelope on its object-bind channel, and a prop record runs on a
+context of its own. The prop runner therefore loads the envelope bits
+(`+0x62 & 0xFC00`) and the gate (`+0x10 & 0x1000`) from the object's channel
+before each slice and stores them back after it
+(`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
+`engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
 
 #### town0e's installer is a placed actor, not an effect actor
 

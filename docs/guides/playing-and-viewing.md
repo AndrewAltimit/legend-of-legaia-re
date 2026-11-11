@@ -196,7 +196,9 @@ A controller works the launcher the way it works the game's menus: the D-pad
 or left stick moves the focus and steps an option, Cross presses, Triangle is
 the right-click (an option a value back, the previous disc on *Choose
 disc...*), Circle leaves the *Controls* or *Recent* page, Start plays a ready disc, and
-L1 / R1 page the option list. Key rebinding stays a keyboard task.
+L1 / R1 page the option list. A held direction repeats, as a held arrow key
+does. A controller also rebinds: on the *Controls* page Cross starts a row's
+wait and the next controller button takes it (see [Changing the keys](#changing-the-keys)).
 
 The first row, *Look and feel*, speaks for every row below it except the
 window and the sound levels. *Enhanced* is the first-start set, *Original* is
@@ -226,6 +228,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |
+| Play | Stick dead zone: how far a controller's stick moves before it walks (20% to 80%) | `legaia-options.toml` | - | 50% |
 | Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Fortress battles fix (off = `--no-fortress-encounter-fix`) | `launcher.toml` | - | on |
@@ -292,8 +295,18 @@ to `legaia-input.toml`, the same file the in-game *Key Config* screen and
 `config set --binding` edit. Keys the game window keeps for its own shortcuts
 (the function keys, `R`, `T`, `I`, ...) are refused with the list of those that
 work: an arrow key, `Z` `X` `C` `V` `A` `S` `D` `Q` `W` `E`, `1`, `2`, `Enter`,
-`Space` and right `Shift`. *All keys back to default* at the bottom of the table
-restores the first-start layout. A gamepad's layout is fixed.
+`Space` and right `Shift`. *All keys and buttons back to default* at the bottom
+of the table restores the first-start layout of both.
+
+Each row shows its keys and, after the bar, its controller button, in the
+labels printed on the controller pressed last (*A* / *B* on an Xbox-style pad,
+*Cross* / *Circle* on a PlayStation one, *B* / *A* on a Nintendo one). A row
+waiting for its key takes a controller button just as well: the controller's
+table changes and the keys stay. Every button is a candidate there, Circle
+included, so a controller press never cancels the wait; pressing the button the
+row already has keeps it, and `Esc` cancels. A button another PSX button was on
+swaps with it, as keys do. The controller table is saved in the same
+`legaia-input.toml`, under `[gamepad]`.
 
 The *Gameplay tweaks* and *Battle tuning* rows are disc-patcher features the engine runs itself,
 so they need no patched disc: each matches one `legaia-patcher` flag, except
@@ -325,7 +338,9 @@ the pad. Run from a terminal, the game's output still prints there too.
 `legaia-engine launch --disc <bin>` starts what *Play* starts on that disc,
 with the launcher's remembered switches and expansion pack and no screen. Legaia
 Explorer's *Play* runs it, so a game started from Explorer plays with everything
-set here.
+set here. Explorer's *Game options* (`Shift+F5`) opens this screen on the disc
+Explorer has open (`legaia-engine --open <bin>`, as a dropped disc), so a player
+who starts from Explorer reaches these rows without finding the other program.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
@@ -392,14 +407,46 @@ Circle there, `C` / `V` carry Triangle / Square, and WASD doubles the arrows),
 so a key that works in the tab is not necessarily the same button in the
 window. `config show` prints the desktop table, including any rebinding.
 
-Both the native window and the browser pages read a gamepad, by position:
-bottom / right / left / top face buttons are Cross / Circle / Square /
-Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and
-both the d-pad and the left stick drive the d-pad. The browser takes any
-controller it reports with the `standard` mapping; the native window takes any
+Both the native window and the browser pages read a gamepad. Out of the box it
+plays by position: bottom / right / left / top face buttons are Cross / Circle /
+Square / Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select /
+Start, and both the d-pad and the left stick drive the d-pad (the stick past
+the *Stick dead zone* option, 50% by default). The native window takes any
 controller its platform's gamepad backend sees, and works with the keyboard
-alone when none is connected. The launcher's *Controls* page and Key Config
-(Select on the Options screen) rebind keys only; a controller's layout is fixed.
+alone when none is connected.
+
+Every button can be moved: *Key Config* (Select on the pause menu's Options
+screen, on both hosts) and the launcher's *Controls* page take a controller
+button on a row waiting for its key, as above, and the change is saved with
+the keys (the browser keeps it in the same browser storage as its keys). The
+reset (*All keys and buttons back to default*, the play page's *Reset keys and
+buttons*) puts both back.
+
+Plug a controller in at any time: the window and the page say *Controller
+connected* (and *disconnected* when it goes) on the notice line, and it works
+at once. Every connected controller drives the one player; the game has one
+player, so a second pad is a second pair of hands on the same character, not
+a second character. In a multiplayer session each player plays on their own
+machine's controllers. A browser reports a controller only after its first
+button press.
+
+A browser reports most controllers with the `standard` mapping. One it does
+not (common for less-known pads in Firefox on Linux) still plays: its buttons
+are read in the driver's own order, guessed to match the standard one, and its
+d-pad is read off its hat; the notice line says the buttons are guessed, and
+*Key Config* with that pad fixes whichever are wrong, in a table of their own.
+The play page's *Controls* card names what is connected.
+
+Once a controller was pressed last, the hints that name a key name its button
+instead - the window's start-up line (*A: confirm  B: back  Back+Menu:
+settings*), the fishing captions and the minigames page's hints - until a key
+is pressed again.
+
+A controller reaches everything inside the game: the title, every menu and
+screen, the launcher, and the window's `F12` panel (`Select` + `Start`). It does
+not reach what sits outside the game: the play page's own boxes and sliders
+beside the picture, its disc and save file pickers (a browser opens a file
+dialog only for a click or a key), and Legaia Explorer.
 
 On a touch screen the browser play page draws an on-screen pad over the
 picture: a D-pad you can roll a thumb around (diagonals included), the four
@@ -453,9 +500,14 @@ around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a 
 which with `L1` and `R1` also held stays the original game's soft reset. The
 game holds still under it, and the field party readout, which the panel's
 plate covers, is not drawn until it closes. Its first page, **Settings**, lists what the game
-reads live: every launcher row but *Look and feel* and the window size, in the
-launcher's order and words - the display and enhancement rows, the play rows,
-the gameplay tweaks, the battle tuning, the volumes and *Original game only*.
+reads live: every launcher row but the window size, in the launcher's order
+and words - *Look and feel* first, then the display and enhancement rows, the
+play rows, the gameplay tweaks, the battle tuning, the volumes and *Original
+game only*. The panel opens on *Look and feel*, so one Right press plays the
+original game (*Original game only* with the PlayStation pixel look) and the
+next gives the mix back; `Delete` on it puts every row it speaks for back on
+*Enhanced*. A row with a window key letters the key after its label (*Ground
+fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
 tuning*). Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
 `Delete` puts it back on its default as on the launcher, with the row's help
@@ -526,8 +578,10 @@ canvas focused: each moves the matching control under the canvas, and `F1`
 hides the readout bar above it. Every presentation toggle sits in one
 **Visual enhancements** panel there, each row naming its key, a one-line
 description and whether it is a port enhancement or a piece of retail's own
-drawing; the panel also carries the Retail-faithful switch and a **Reset to
-defaults** button for the panel's settings.
+drawing; the panel opens with the same *Look and feel* choice as the
+desktop's first row (Enhanced, Original, Custom), and also carries the
+Retail-faithful switch and a **Reset to defaults** button for the panel's
+settings.
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,

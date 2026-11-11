@@ -516,6 +516,28 @@ impl LegaiaRuntime {
         self.options_state.downmix_mono
     }
 
+    /// The controller stick's dead zone in percent
+    /// (`OptionsState::stick_dead_zone`), the native launcher's *Stick dead
+    /// zone* row: snapped to its steps, persisted with the other options.
+    /// The page hands it to [`crate::pad_bindings::gamepad_fold`].
+    pub fn set_stick_dead_zone(&mut self, percent: u8) {
+        use legaia_engine_menus::options::STICK_DEAD_ZONE_STEPS;
+        let snapped = STICK_DEAD_ZONE_STEPS
+            .iter()
+            .copied()
+            .min_by_key(|v| v.abs_diff(percent))
+            .unwrap_or(percent);
+        if self.options_state.stick_dead_zone != snapped {
+            self.options_state.stick_dead_zone = snapped;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// The dead zone [`Self::set_stick_dead_zone`] set.
+    pub fn stick_dead_zone(&self) -> u8 {
+        self.options_state.stick_dead_zone
+    }
+
     /// Retail-faithful mode, the native `--retail`: pin every persisted
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,
@@ -578,6 +600,70 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .is_some_and(|h| h.world.system_flag_test(idx))
+    }
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// The *Look and feel* preset the stored options and remembered switches
+    /// add up to - `Enhanced`, `Original` or `Custom` - through the shared
+    /// `legaia_engine_session::look_and_feel`, the native launcher's and
+    /// `F12` panel's own row. Read over the options as stored, so a
+    /// Retail-faithful pin is Original rather than a Custom mix.
+    pub fn look_and_feel(&self) -> String {
+        let opts = self.options_pins.persistable(&self.options_state);
+        legaia_engine_session::look_and_feel::look_and_feel(&opts, &self.page_toggles.persisted())
+            .label()
+            .to_string()
+    }
+
+    /// Pick a preset, as the native row steps it: `Original` raises
+    /// Retail-faithful and the PlayStation rasterisation together; `Custom`
+    /// leaves Original for the mix the rows under it still hold; `Enhanced`
+    /// puts every row the preset speaks for back on its first-start value
+    /// (`look_and_feel::reset_to_enhanced`) - the window, the sound levels
+    /// and the options-screen rows keep the player's values. Returns the
+    /// preset now in effect; the page's boxes read the rows back after.
+    pub fn set_look_and_feel(&mut self, name: &str) -> String {
+        use legaia_engine_session::look_and_feel::{self as laf, LookAndFeel};
+        match LookAndFeel::from_label(name) {
+            Some(LookAndFeel::Original) => {
+                if !self.page_toggles.retail {
+                    let mut p = self.page_toggles.persisted();
+                    laf::toggle_original(&mut p);
+                    self.set_psx_render(p.psx_render);
+                    self.set_retail_mode(p.retail);
+                }
+            }
+            Some(LookAndFeel::Custom) => {
+                if self.page_toggles.retail {
+                    let mut p = self.page_toggles.persisted();
+                    laf::toggle_original(&mut p);
+                    self.set_retail_mode(p.retail);
+                    self.set_psx_render(p.psx_render);
+                }
+            }
+            Some(LookAndFeel::Enhanced) => {
+                // Out of Retail-faithful first: its pins would otherwise put
+                // the player's own values back over the reset ones.
+                self.set_retail_mode(false);
+                let mut p = self.page_toggles.persisted();
+                laf::reset_to_enhanced(&mut self.options_state, &mut p);
+                // The session-only switches are not the preset's.
+                let session = self.page_toggles;
+                self.page_toggles = PageToggles {
+                    world_map_markers: session.world_map_markers,
+                    battle_frame_cadence: session.battle_frame_cadence,
+                    battle_memo_verify: session.battle_memo_verify,
+                    ui_psx_tint: session.ui_psx_tint,
+                    ..PageToggles::from_persisted(&p)
+                };
+                self.persist_and_apply_options();
+                self.apply_page_toggles();
+            }
+            None => {}
+        }
+        self.look_and_feel()
     }
 }
 
@@ -660,6 +746,35 @@ mod tests {
         // No scene: the flag write is refused, not dropped silently.
         assert!(!rt.set_system_flag(0x142, true));
         assert!(!rt.system_flag(0x142));
+    }
+
+    /// The page's Look and feel selector is the native row: Original is
+    /// Retail-faithful plus the PlayStation rasterisation, leaving it keeps
+    /// the mix, and Enhanced resets every preset row (but not the session's
+    /// own switches or the sound levels).
+    #[test]
+    fn look_and_feel_steps_as_the_native_row() {
+        let mut rt = LegaiaRuntime::new();
+        assert_eq!(rt.look_and_feel(), "Enhanced");
+        rt.set_smart_monsters(true);
+        rt.set_world_map_markers(true);
+        rt.options_state.bgm_volume = 3;
+        assert_eq!(rt.look_and_feel(), "Custom");
+        assert_eq!(rt.set_look_and_feel("Original"), "Original");
+        assert!(rt.retail_mode() && rt.psx_render());
+        assert_eq!(rt.retail_deviations_json(), "[]");
+        assert_eq!(rt.set_look_and_feel("Custom"), "Custom");
+        assert!(!rt.retail_mode() && !rt.psx_render());
+        assert!(rt.smart_monsters(), "the mix is kept");
+        rt.set_look_and_feel("Original");
+        assert_eq!(rt.set_look_and_feel("Enhanced"), "Enhanced");
+        assert!(!rt.retail_mode() && !rt.psx_render() && !rt.smart_monsters());
+        assert!(rt.world_map_markers(), "a session switch is no preset row");
+        assert_eq!(rt.options_state.bgm_volume, 3, "levels are no look");
+        assert_eq!(rt.persisted_switches, PersistedSwitches::default());
+        let page = include_str!("../../../site/_content/play.html");
+        assert!(page.contains("id=\"play-look-and-feel\""));
+        assert!(page.contains("rtCall('set_look_and_feel'"));
     }
 
     /// The remembered launch switches are the native launcher's: the page

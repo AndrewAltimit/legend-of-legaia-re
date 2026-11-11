@@ -86,9 +86,12 @@ the opaque pass draws everything but discards the STP texels of
 semi-transparent prims, then a blend pass re-draws only the
 semi-transparent triangles keeping only STP texels - a per-ABR-mode index
 tail appended at upload time by `psx_blend::append_semi_tail`. The blend pass uses
-one fixed-function pipeline per mode (mode 0 uses a 0.5 blend constant,
-mode 2 is reverse-subtract, mode 3 pre-scales F by 0.25 in its fragment
-entry point). Blend draws depth-test (`LessEqual`) but don't write
+one fixed-function pipeline per mode, each with its own fragment entry
+(`psx_blend::blend_entry`) that writes the mode's foreground term: off PSX
+mode `F` times the mode's factor (`0.5` over a `0.5` background constant for
+mode 0, `0.25` for mode 3; mode 2 is reverse-subtract), in PSX mode the term
+that lands the GPU's truncating 5-bit result
+([renderer](renderer.md#psx-mode-blends-at-the-gpus-5-bit-precision)). Blend draws depth-test (`LessEqual`) but don't write
 depth, and run after all opaque scene draws. `blend_apply` is the CPU
 mirror the blend-state mapping is unit-tested against.
 
@@ -150,7 +153,16 @@ before the blend; the textured blend pass draws raw texels and stays
 undithered. Its foreground is truncated to a 5-bit channel before the blend
 equation reads it (`psx_blend_foreground`, both hosts, every render mode),
 which is how the GPU hands the modulated texel to the blend
-([shading](shading.md#step-6-semi-transparency)).
+([shading](shading.md#step-6-semi-transparency)). In PSX mode the blend
+itself is the GPU's 5-bit arithmetic too, on the console's rule or the
+PCSX-Redux instrument's, and the native target presents and captures the
+frame as the 15-bit framebuffer it models (`fs_scanout15`). The play page's PSX
+target copies its frame to the canvas through the same readout, on the same gate:
+no SSAO, no bloom, no fog drawn over the frame. Read raw, a blended pixel kept the
+background's low bits and stood up to seven levels off the window's; on the host
+pair's `cast` scene at a 4-level threshold the share of pixels apart fell from
+about 17% to under 3%. The instrument stays the window's alone: the page scores
+no PCSX-Redux capture.
 
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),
@@ -464,9 +476,11 @@ by default in the renderer, and off IS retail** - the disabled path is pixel-ide
 the static scene that arms the fade only when the character is completely
 hidden - a partially visible character never fades. Only draws the frame
 draws count: the occluder set is built once per scene from every static
-draw, and the gate asks the shared `field_view_window::occluder_drawn` for
-each range (the terrain crop, the actor cull at the object's base position),
-so a wall the crop or the cull dropped cannot open a hole over the player. A fragment then fades
+draw, and the gate asks the shared `field_view_window::OccluderGate` for
+each range (the terrain crop; for a placed object the tests its own draw
+loop makes - not parked at the hide box, live on the windowed static-object
+list, through the actor cull at its base position), so a wall the frame does
+not draw cannot open a hole over the player. A fragment then fades
 only when its draw is environment geometry (the
 `set_occlusion_env_draws` watermark exempts the player / NPC draws via
 `flags[2]`), it is nearer the camera than the player by more than a small

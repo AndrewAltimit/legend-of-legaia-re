@@ -119,6 +119,11 @@ pub fn baka_screen_prims(
     if let Some(level) = fight.cabinet_frame().clear_fade {
         out.push(legaia_engine_ui::baka_strips::baka_clear_fade(level));
     }
+    // The round chrome's full-screen tint (the title card's red flash and
+    // its fade-in): neither host drew it while the chrome produced it.
+    if let Some(tint) = fight.chrome_frame().tint {
+        out.push(legaia_engine_ui::baka_strips::baka_screen_tint(tint.rgb()));
+    }
     if let Some((frame, _)) = fight.pause_panel() {
         out.push(legaia_engine_ui::baka_strips::baka_pause_shade(
             (frame.x, frame.y, frame.w, frame.h),

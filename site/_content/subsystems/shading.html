@@ -67,7 +67,7 @@
     <li><b>Key</b><span>A <code>0x0000</code> entry skips the texel, opaque primitive or not.</span></li>
     <li><b>Colour word</b><span>One per primitive (flat) or per corner (gouraud), baked by the artists.</span></li>
     <li><b>Depth cue</b><span><code>c + (far &minus; c) &times; IR0 / 4096</code>; unfogged field scenes use <code>IR0 = 0</code>.</span></li>
-    <li><b>Blend</b><span>STP texels mix with the screen: <code>B/2+F/2</code>, <code>B+F</code>, <code>B&minus;F</code> or <code>B+F/4</code>.</span></li>
+    <li><b>Blend</b><span>STP texels mix with the screen: <code>B/2+F/2</code>, <code>B+F</code>, <code>B&minus;F</code> or <code>B+F/4</code>, on 5-bit channels and truncated - the console averages <code>(B+F)&gt;&gt;1</code>; PCSX-Redux does too on textured polygons but halves each side first on sprites and untextured flats. PSX mode blends the same way on both hosts.</span></li>
     <li><b>Dither</b><span>4&times;4 ordered offset, then each channel cut to 5 bits.</span></li>
   </ol>
 </section>

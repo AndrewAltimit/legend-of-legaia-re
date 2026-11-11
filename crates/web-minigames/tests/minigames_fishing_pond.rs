@@ -301,3 +301,116 @@ fn the_page_camera_follows_the_cast() {
         &cast[12..16]
     );
 }
+
+/// The page's venue bake stands the play hosts' floor-pass selection: Buma's
+/// bake carries `other1`'s three placed records (its mountains and bank, rows
+/// `102..=110`), Vidna's none of them, so the Vidna view no longer shows
+/// Buma's mountains. Selecting a venue swaps the buffers once.
+#[test]
+fn each_venue_bake_stands_its_own_floor_pass() {
+    let Some(mut mg) = loaded() else {
+        return;
+    };
+    assert!(mg.fishing_scene_ready(), "the venue scene decodes");
+    assert!(
+        !mg.fishing_scene_select_venue(0),
+        "Buma is the opening bake"
+    );
+    let buma = mg.fishing_scene_positions().len();
+    let buma_ground = mg.fishing_scene_ground_base();
+    assert!(mg.fishing_scene_select_venue(1), "Vidna swaps the bake");
+    assert!(!mg.fishing_scene_select_venue(1), "once");
+    let vidna = mg.fishing_scene_positions().len();
+    assert!(
+        vidna < buma,
+        "Vidna drops Buma's placed props: {vidna} vs {buma}"
+    );
+    let vidna_ground = mg.fishing_scene_ground_base();
+    assert!(vidna_ground >= 0 && vidna_ground < buma_ground);
+    // The ground span is the same heightfield, appended last in each bake.
+    assert_eq!(
+        buma as i32 / 3 - buma_ground,
+        vidna as i32 / 3 - vidna_ground
+    );
+    assert!(mg.fishing_scene_select_venue(0));
+    assert_eq!(mg.fishing_scene_positions().len(), buma);
+}
+
+/// The landed fish draws on this page as on the play hosts: the shared
+/// catch bodies (`fishing_catch_*`, one span per species), every one
+/// collapsed before the catch, the landed one posed through the close-up and
+/// then hung from the plate's line (`fishing_catch_line_json`).
+#[test]
+fn the_landed_fish_is_posed_and_hung_on_the_plate() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    assert!(mg.fishing_pond_start(0, 1, 2, 60, 0, 0, 0, 0, 0xBADF00D));
+    let n = mg.fishing_catch_positions().len();
+    assert!(n > 0, "the ten bodies decode");
+    assert_eq!(mg.fishing_catch_uvs().len() / 2, n / 3);
+    assert_eq!(mg.fishing_catch_flat_rgba().len() / 4, n / 3);
+    let spread = |p: &[f32]| {
+        let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+        for v in p.chunks(3) {
+            lo = lo.min(v[1]);
+            hi = hi.max(v[1]);
+        }
+        hi - lo
+    };
+    assert_eq!(
+        spread(&mg.fishing_catch_positions()),
+        0.0,
+        "nothing shows yet"
+    );
+    assert_eq!(mg.fishing_catch_line_json(), "null");
+
+    let state = |mg: &LegaiaMinigames| -> serde_json::Value {
+        serde_json::from_str(&mg.fishing_pond_state_json()).unwrap()
+    };
+    let mut landed = false;
+    for f in 0..200_000usize {
+        let st = state(&mg);
+        match st["phase"].as_str() {
+            Some("landed") => {
+                landed = true;
+                break;
+            }
+            Some("idle") => {
+                mg.fishing_pond_tick(0, true, 0);
+                for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 112 {
+                    mg.fishing_pond_tick(0, false, 0);
+                }
+                mg.fishing_pond_tick(0, true, 0);
+            }
+            Some("hooked") => {
+                let t = st["tension"].as_i64().unwrap();
+                mg.fishing_pond_tick(if t < 0x800 { 0x40 } else { 0 }, false, 0);
+            }
+            _ => {
+                let m = if f % 65 < 25 { 0x40 } else { 0 };
+                mg.fishing_pond_tick(m, false, m);
+            }
+        }
+    }
+    assert!(landed, "a fish lands");
+    let mut lifted = 0;
+    let mut line = None;
+    for _ in 0..2000 {
+        mg.fishing_pond_tick(0, false, 0);
+        if spread(&mg.fishing_catch_positions()) > 0.0 {
+            lifted += 1;
+        }
+        let l = mg.fishing_catch_line_json();
+        if l != "null" {
+            line = Some(l);
+        }
+    }
+    assert!(lifted > 100, "the body shows through the catch: {lifted}");
+    let line: serde_json::Value =
+        serde_json::from_str(&line.expect("the plate hangs it from a line")).unwrap();
+    assert_eq!(line["top"][1].as_i64(), Some(0), "{line}");
+    assert_eq!(line["top"][0], line["tie"][0], "{line}");
+    eprintln!("[ran] plate line {line}");
+}

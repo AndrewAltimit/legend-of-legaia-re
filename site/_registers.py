@@ -10,6 +10,7 @@ filter box and its script) and marks where the register goes:
 
     <!--REGISTER-NAV:settled-->     the "Jump to" area list
     <!--REGISTER:settled-->         every area, every row, every write-up
+    <!--REGISTER-SUMMARY:open-->    live hunts counted per area (open page only)
 
 `site/_gen.py` expands the markers at build time from the current `docs/`, so
 the published page cannot disagree with its source. Each expansion opens with a
@@ -579,6 +580,10 @@ def _thread_table_hook(kind: str, ctx: Ctx, ids: Ids, counter: Counter):
         hl = [plain(c).lower() for c in header]
         if h0 not in ("thread", "reading"):
             return None
+        if kind == "open" and not rows:
+            # A doc may keep an area's table header with no row under it; a
+            # header over nothing reads as a rendering fault, not as "none".
+            return '<p class="ore-empty">No open threads in this area.</p>'
         out = []
         for r in rows:
             r = (r + [""] * len(header))[:len(header)]
@@ -716,6 +721,76 @@ def render(kind: str, site_pages: set[str]) -> tuple[str, str]:
     return nav_html, stamp(kind) + "\n" + "\n\n".join(sections)
 
 
+# A `###` write-up on the open page is a thread of its own (not the long form
+# of a table row) when its first line states a live status, in any of the
+# three spellings the doc uses: `open`, **Status: open.**, *Status:* open.
+SECTION_STATUS_RE = re.compile(r"^(?:status:\s*)?(open|partial|mostly\s+resolved)\b", re.IGNORECASE)
+
+
+def open_area_counts() -> list[tuple[str, str, dict]]:
+    """(area slug, area title, {status: count}) for each live-hunt area of the open doc.
+
+    Counts the live rows of the area's thread table plus each `###` section
+    that opens on a live status line and is not linked from the table (a
+    linked section is a row's long form, already counted as the row).
+    """
+    md = _read(OPEN_DOC)
+    out = []
+    for title, lines in split_sections(md, 2)[1:]:
+        s = slug(title)
+        if s in HAND_SECTIONS["open"] or s == "recently-corrected":
+            continue
+        subs = split_sections("\n".join(lines), 3)
+        top = subs[0][1]
+        counts = {"open": 0, "partial": 0, "mostly resolved": 0}
+        for b in parse_blocks(top):
+            if b[0] == "table" and b[1] and plain(b[1][0]).lower() == "thread":
+                for r in b[2]:
+                    m = LIVE_STATUS_RE.match(plain(r[1]) if len(r) > 1 else "")
+                    if m:
+                        counts[re.sub(r"\s+", " ", m.group(1).lower())] += 1
+        body = "\n".join(top)
+        for t, sl in subs[1:]:
+            if "#" + slug(t) in body:
+                continue
+            first = next((l for l in sl if l.strip()), "")
+            m = SECTION_STATUS_RE.match(plain(first).strip().lstrip("*").strip())
+            if m:
+                counts[re.sub(r"\s+", " ", m.group(1).lower())] += 1
+        out.append((s, title, counts))
+    return out
+
+
+def render_summary(kind: str) -> str:
+    """The open page's at-a-glance table: live hunts per area, by status."""
+    if kind != "open":
+        return ""
+    areas = open_area_counts()
+    total = sum(sum(c.values()) for _, _, c in areas)
+    peak = max([sum(c.values()) for _, _, c in areas] + [1])
+    rows = []
+    for s, title, c in areas:
+        n = sum(c.values())
+        aid = AREA_IDS["open"].get(s, s)
+        parts = [f'<span class="tag {cls}">{c[w]} {w}</span>'
+                 for w, cls in (("open", "tag-open"), ("partial", "tag-partial"),
+                                ("mostly resolved", "tag-mostly")) if c[w]]
+        split = " ".join(parts) if parts else '<span class="reg-kw">nothing open</span>'
+        pct = round(100 * n / peak)
+        bar = (f'<span class="ore-bar" role="img" aria-label="{n} live">'
+               f'<span style="width:{pct}%"></span></span>')
+        rows.append(
+            f'<tr><td><a href="#{aid}">{html.escape(plain(title))}</a></td>'
+            f'<td class="num">{n}</td><td>{bar}</td><td>{split}</td>'
+            f'<td>{BLURBS["open"].get(s, "")}</td></tr>')
+    return ('<div class="table-wrap"><table class="ore-summary">\n'
+            '    <thead><tr><th>Area</th><th>Live</th><th></th><th>By status</th>'
+            '<th>What the area covers</th></tr></thead>\n    <tbody>\n      '
+            + "\n      ".join(rows)
+            + f'\n    </tbody>\n    <tfoot><tr><td>All areas</td><td class="num">{total}</td>'
+              '<td></td><td></td><td></td></tr></tfoot>\n  </table></div>')
+
+
 def expand(body: str, site_pages: set[str]) -> str:
     """Replace every register marker in a fragment with its rendering."""
     for kind in PAGE:
@@ -723,4 +798,7 @@ def expand(body: str, site_pages: set[str]) -> str:
         if nav_m in body or body_m in body:
             nav, rendered = render(kind, site_pages)
             body = body.replace(nav_m, nav).replace(body_m, rendered)
+        sum_m = f"<!--REGISTER-SUMMARY:{kind}-->"
+        if sum_m in body:
+            body = body.replace(sum_m, render_summary(kind))
     return body

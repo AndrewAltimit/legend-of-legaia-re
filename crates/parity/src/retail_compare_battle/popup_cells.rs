@@ -94,9 +94,13 @@ fn linked_into(prev: &std::collections::HashMap<u32, u32>, addr: u32, table: u32
 /// those taken one more pass back - each corner stepped back by the older
 /// pass's own move - when it shows the pass before it (`2`). The newer
 /// arena is the one linked into the newest ordering table
-/// ([`DisplayPhase::newest`]). A newer run on the rest row `32` stood
-/// higher than the row lets it draw, so its step back is unknown and the
-/// cells are not read (the age seat, [`popup_age_seat`], stands in).
+/// ([`DisplayPhase::newest`]). A newer cell on the rest row `32` over an
+/// older one below it stood higher than the row lets it draw, so its step
+/// back is unknown and the cells are not read (the age seat,
+/// [`popup_age_seat`], stands in). The test is cell by cell: the arenas
+/// carry every live numeral, and an older numeral resting on the row beside
+/// a younger one still rising is two known runs, not one unknown
+/// (`battle_jou_party_vahn_chain_late`'s `346` at rest over its `464`).
 pub fn displayed_popup_cells(ram: &[u8]) -> Option<Vec<DigitQuad>> {
     let (a, b) = arena_runs(ram)?;
     let phase = display_phase(ram);
@@ -121,10 +125,18 @@ pub fn displayed_popup_cells(ram: &[u8]) -> Option<Vec<DigitQuad>> {
     if phase.back == 1 {
         return Some(older);
     }
-    if newer.iter().any(|q| q.y <= 32) && older.iter().any(|q| q.y > 32) {
+    if rest_row_unknown(&older, &newer) {
         return None;
     }
     Some(step_back(&older, &newer))
+}
+
+/// Whether a cell pair's step back is unknown: the newer pass drew it on
+/// the rest row `32` and the older one below it, so the newer stood higher
+/// than the row let it draw. Cell by cell, so a numeral resting on the row
+/// beside one still rising is not one.
+pub(super) fn rest_row_unknown(older: &[DigitQuad], newer: &[DigitQuad]) -> bool {
+    older.iter().zip(newer).any(|(o, n)| n.y <= 32 && o.y > 32)
 }
 
 /// Each of the older run's cells taken one more pass back, by the move the

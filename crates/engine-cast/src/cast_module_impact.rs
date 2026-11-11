@@ -25,6 +25,11 @@ pub enum ImpactSeat {
     LiveMonsters,
     /// `actor_table[0..ctx[+0]]`: the party row.
     Party,
+    /// The party row's seats with HP `+0x14C`: the loops that skip a fallen
+    /// seat ahead of its hit. The host reads the HP after the tick's hits, so
+    /// a seat this hit felled goes untinted, and it does not read the
+    /// `+0x16E & 4` skip.
+    LiveParty,
 }
 
 /// The edge of its arm a store sits on.
@@ -50,12 +55,16 @@ pub struct ModuleImpact {
     pub colour: Option<u32>,
     /// Whether the site also stores `+0x0C = 0x1000`.
     pub full_blend: bool,
-    /// `+0x21F`.
-    pub selector: u8,
+    /// `+0x21F`, where the site writes it.
+    pub selector: Option<u8>,
+    /// `+0x21C`, the tint state machine's state, where the site writes it.
+    pub tint_state: Option<u8>,
 }
 
 /// `0x3FF`: the colour word's red lane at its top, no green or blue.
 const RED: u32 = 0x3FF;
+/// `+0x21C = 7`: the tint state that ramps a body's red lane up.
+const SOFT_RED_TINT_STATE: u8 = 7;
 /// `0x3FF00000`: the colour word's blue lane at its top.
 const BLUE: u32 = 0x3FF0_0000;
 /// `0x3FF003FF`: red and blue.
@@ -70,7 +79,8 @@ const fn tint(entry: u32, arm: u8, seat: ImpactSeat, colour: u32, selector: u8) 
         seat,
         colour: Some(colour),
         full_blend: true,
-        selector,
+        selector: Some(selector),
+        tint_state: None,
     }
 }
 
@@ -89,7 +99,8 @@ const fn latch(
         seat,
         colour: None,
         full_blend: false,
-        selector,
+        selector: Some(selector),
+        tint_state: None,
     }
 }
 
@@ -134,9 +145,33 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
     latch(937, 7, ImpactEdge::EveryPass, ImpactSeat::Victim, 2),
     // PROT 0948 Cross Beam: arm 3's hit (`0x801F7030..0x801F7044`).
     tint(948, 3, ImpactSeat::Victim, RED, 1),
-    // PROT 0950 Rolling Flare, body `0x801F79F8`: the last `0x40` scalars of
-    // arm 3's countdown burn both seats (`sll v0,v0,0x6` / `slt` at
-    // `0x801F7F34..0x801F7F48`).
+    // PROT 0950 Rolling Flare, body `0x801F79F8`: the last `0x60` scalars of
+    // arm 3's countdown turn both seats red (`+0x21C = 7`, the soft-red tint
+    // state, `0x801F7F00..0x801F7F28`), and the last `0x40` burn them
+    // (`sll v0,v0,0x6` / `slt` at `0x801F7F34..0x801F7F48`). The burn sheds
+    // fire only once the red lane the tint state ramps reaches `0xB0`.
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::CountdownAtMost(SPEED_SCALAR * 0x60),
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: None,
+        tint_state: Some(SOFT_RED_TINT_STATE),
+    },
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::CountdownAtMost(SPEED_SCALAR * 0x60),
+        seat: ImpactSeat::Caster,
+        colour: None,
+        full_blend: false,
+        selector: None,
+        tint_state: Some(SOFT_RED_TINT_STATE),
+    },
     ModuleImpact {
         entry: 950,
         body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
@@ -145,7 +180,8 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Victim,
         colour: None,
         full_blend: false,
-        selector: 1,
+        selector: Some(1),
+        tint_state: None,
     },
     ModuleImpact {
         entry: 950,
@@ -155,7 +191,34 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Caster,
         colour: None,
         full_blend: false,
-        selector: 1,
+        selector: Some(1),
+        tint_state: None,
+    },
+    // Arm 3's pass, after its hit, puts both seats' tint state back to `0`
+    // (`sb zero,0x21c` at `0x801F800C` / `0x801F8010`), past the stores
+    // above on the same pass: the red ramps back down and the fire stops
+    // with it, the selector left standing.
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Caster,
+        colour: None,
+        full_blend: false,
+        selector: None,
+        tint_state: Some(0),
+    },
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: None,
+        tint_state: Some(0),
     },
     // PROT 0958 Blazing Slash: arms 6 and 7 hold the victim's fire every pass
     // (`0x801F7440`, `0x801F7574`, `s1` the victim).
@@ -167,7 +230,8 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Victim,
         colour: None,
         full_blend: false,
-        selector: 1,
+        selector: Some(1),
+        tint_state: None,
     },
     ModuleImpact {
         entry: 958,
@@ -177,7 +241,8 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Victim,
         colour: None,
         full_blend: false,
-        selector: 1,
+        selector: Some(1),
+        tint_state: None,
     },
     // PROT 0960 Plasma Strike's burst, arm `0x0D`
     // (`sw 0x3FF00000, 0x1000` then `sb v1,0x21f(s3)` at `0x801F81D4..0x801F8200`).
@@ -189,7 +254,36 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Victim,
         colour: None,
         full_blend: true,
-        selector: 2,
+        selector: Some(2),
+        tint_state: None,
+    },
+    // Arm 5's pass shows the victim again and clears its tint state and
+    // selector (`sb zero,0x21c(s3)`, `sw 0x20080200,4(s3)`,
+    // `sb zero,0x21f(s3)` at `0x801F7C0C..0x801F7C18`), and arm `0x10`'s
+    // pass does the same after the burst (`0x801F85CC..0x801F85D4`): a
+    // selector the victim brought into the cast burns no further. The
+    // colour and state are the director's (`plasma_strike_camera`).
+    ModuleImpact {
+        entry: 960,
+        body: crate::cast_module_ticks::PLASMA_STRIKE_TICK,
+        arm: 5,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: Some(0),
+        tint_state: None,
+    },
+    ModuleImpact {
+        entry: 960,
+        body: crate::cast_module_ticks::PLASMA_STRIKE_TICK,
+        arm: 0x10,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: Some(0),
+        tint_state: None,
     },
     // PROT 0963 Genocidal Cannon: arm 14's party row (`0x801F7D10..0x801F7D20`).
     ModuleImpact {
@@ -201,9 +295,103 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         seat: ImpactSeat::Party,
         colour: Some(RED),
         full_blend: false,
-        selector: 1,
+        selector: Some(1),
+        tint_state: None,
     },
+    // PROT 0964's Element Strike body (`0xB0..=0xB2`), whose arm 1 forks into
+    // three six-arm runs: Flame on phases `2..=7`, Wind on `0x32..=0x37`,
+    // Thunder on `0x64..=0x69`. The standing-in creature is seat 7
+    // (`lw v1,0x1C(0x801C9370)`). `k = 3`'s pass gives it its element's tint
+    // state and the selector; `k = 4` restores `+0x21F` from the prologue's
+    // stack word `1` every pass (`lbu t3,0x28(sp)`), and its pass tints and
+    // burns each party seat the hit loop reaches.
+    element(
+        2 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        Some(3),
+    ),
+    element(
+        2 + 4,
+        ImpactEdge::EveryPass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        None,
+    ),
+    element(
+        2 + 4,
+        ImpactEdge::Pass,
+        ImpactSeat::LiveParty,
+        Some(RED),
+        Some(1),
+        None,
+    ),
+    element(
+        0x32 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        None,
+        Some(8),
+    ),
+    element(
+        0x64 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        Some(2),
+        Some(4),
+    ),
+    element(
+        0x64 + 4,
+        ImpactEdge::EveryPass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        None,
+    ),
+    element(
+        0x64 + 4,
+        ImpactEdge::Pass,
+        ImpactSeat::LiveParty,
+        Some(BLUE),
+        Some(2),
+        None,
+    ),
 ];
+
+/// One store of PROT 0964's Element Strike body. Flame's `k = 3` pass:
+/// `+0x21C = 3`, `+0x21F = 1` (`0x801F828C..0x801F829C`); its `k = 4` head
+/// `+0x21F = 1` (`0x801F82D0`) and party loop `+0x04 = 0x3FF`, `+0x21F = 1`
+/// (`0x801F8608..0x801F8618`). Wind's `k = 3` pass: `+0x21C = 8`
+/// (`0x801F7AD0`). Thunder's `k = 3` pass: `+0x21C = 4`, `+0x21F = 2`
+/// (`0x801F7208..0x801F7218`); its `k = 4` head `+0x21F = 1` (`0x801F7238`)
+/// and party loop `+0x04 = 0x3FF00000`, `+0x21F = 2` (`0x801F7598..0x801F75A8`).
+/// Each party loop skips a seat with no HP or with `+0x16E & 4` ahead of its
+/// hit (`0x801F850C..0x801F8528`).
+const fn element(
+    arm: u8,
+    edge: ImpactEdge,
+    seat: ImpactSeat,
+    colour: Option<u32>,
+    selector: Option<u8>,
+    tint_state: Option<u8>,
+) -> ModuleImpact {
+    ModuleImpact {
+        entry: 964,
+        body: crate::cast_module_ticks::ELEMENT_STRIKE_CHAIN.body,
+        arm,
+        edge,
+        seat,
+        colour,
+        full_blend: false,
+        selector,
+        tint_state,
+    }
+}
 
 /// The stores `entry`'s `body` makes on `arm` this tick: `passed` is whether
 /// the arm's gate let it through, `countdown` the module countdown before
@@ -238,18 +426,30 @@ mod tests {
         assert_eq!(hit.len(), 1);
         assert_eq!(hit[0].colour, Some(RED));
         assert!(hit[0].full_blend);
-        assert_eq!(hit[0].selector, 1);
+        assert_eq!(hit[0].selector, Some(1));
     }
 
     #[test]
     fn rolling_flare_burns_both_seats_for_its_countdowns_last_stretch() {
         let body = crate::cast_arm_ticks::ROLLING_FLARE_TICK;
+        let burns = |cd| {
+            module_impacts_due(950, body, 3, false, cd)
+                .filter(|m| m.selector == Some(1))
+                .map(|m| m.seat)
+                .collect::<Vec<_>>()
+        };
+        let reddens = |cd| {
+            module_impacts_due(950, body, 3, false, cd)
+                .filter(|m| m.tint_state == Some(7))
+                .count()
+        };
         let top = SPEED_SCALAR << 6;
-        assert_eq!(module_impacts_due(950, body, 3, false, top + 1).count(), 0);
-        let seats: Vec<_> = module_impacts_due(950, body, 3, false, top)
-            .map(|m| m.seat)
-            .collect();
-        assert_eq!(seats, [ImpactSeat::Victim, ImpactSeat::Caster]);
+        assert!(burns(top + 1).is_empty());
+        assert_eq!(burns(top), [ImpactSeat::Victim, ImpactSeat::Caster]);
+        // The red tint state goes in first, from the last `0x60` scalars.
+        assert_eq!(reddens(SPEED_SCALAR * 0x60 + 1), 0);
+        assert_eq!(reddens(SPEED_SCALAR * 0x60), 2);
+        assert_eq!(reddens(top), 2);
     }
 
     #[test]

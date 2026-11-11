@@ -862,7 +862,15 @@ pub struct CountedArmSpawns {
 /// |---:|---|---|
 /// | 0940 2 | `& 3`, then `& 7` (`0x801F7440` / `0x801F7470`) | effect `3` on the caster (`0x801F7460`); `0x801F8370` |
 /// | 0940 4, 5 | `& 7` (`0x801F75A4` / `0x801F7708`) | `0x801F84EC` |
-pub fn capture_arm_counted(prot_entry: u32, phase: u8) -> Option<CountedArmSpawns> {
+///
+/// The counter, its zeroing and these calls are Mystic Shield's body
+/// (`0xAC`, `0x801F7240..0x801F78B8`); the image's Glare (`0x3C`) and
+/// `0x50` / `0xAE` bodies run arms of the same numbers and make none of
+/// them.
+pub fn capture_arm_counted(prot_entry: u32, spell: u8, phase: u8) -> Option<CountedArmSpawns> {
+    if prot_entry == 940 && spell != MYSTIC_SHIELD_ACTION {
+        return None;
+    }
     match (prot_entry, phase) {
         (940, 2) => Some(CountedArmSpawns {
             mask: 7,
@@ -878,12 +886,28 @@ pub fn capture_arm_counted(prot_entry: u32, phase: u8) -> Option<CountedArmSpawn
     }
 }
 
+/// The `rand()` words capture-class module `prot_entry`'s arm `phase` draws
+/// on every pass, held or not, whose results the arm stores nowhere it later
+/// reads: PROT 0961's arm 2 draws one ahead of its countdown test
+/// (`jal 0x80056798` at `0x801F6ED8`) into the cut's roll `sp+0x14`, which
+/// the passing cut then stores `0` over (`sh zero,0x14(sp)` at
+/// `0x801F7074`). Only the stream's cursor moves.
+pub fn capture_arm_pass_rands(prot_entry: u32, body: Option<u32>, phase: u8) -> u8 {
+    match (prot_entry, body, phase) {
+        (961, Some(super::DEAD_END_CRISIS_BODY), 2) => 1,
+        _ => 0,
+    }
+}
+
 /// Whether capture-class module `prot_entry`'s arm `phase` zeroes the body's
 /// frame counter as it passes: PROT 0940's arms 1 and 3
 /// (`sw zero,-0x79B0` at `0x801F73A8` / `0x801F7568`).
-pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
-    matches!((prot_entry, phase), (940, 1 | 3))
+pub fn capture_arm_resets_pass_counter(prot_entry: u32, spell: u8, phase: u8) -> bool {
+    spell == MYSTIC_SHIELD_ACTION && matches!((prot_entry, phase), (940, 1 | 3))
 }
+
+/// The action PROT 0940's counted body runs: Cort's Mystic Shield.
+const MYSTIC_SHIELD_ACTION: u8 = 0xAC;
 
 /// Whether the director of `prot_entry`'s body `body` names every record the
 /// body seats, on its own arms: nothing of the module's image goes in on the

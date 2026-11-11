@@ -13,6 +13,7 @@
     <li><a href="#ghidra"><strong>Dig in Ghidra</strong></a> - the static path: disassemble the executable, recover the RAM overlays, answer "who calls this?".</li>
     <li><a href="#capture"><strong>Capture the emulator</strong></a> - the dynamic path: watch the retail game run and record what the code actually does.</li>
     <li><a href="#measure"><strong>Measure the port</strong></a> - how much of the game is understood, how much is ported, and whether the port matches retail.</li>
+    <li><a href="#ship"><strong>Ship a release</strong></a> - how the per-platform download archives are built from a tag.</li>
     <li><a href="#beyond"><strong>Beyond Legaia</strong></a> - how reimplementation compares with decomp and recomp, how its fidelity is measured, and what carries to other PS1 games.</li>
     <li><a href="#more"><strong>More tooling docs</strong></a> - CI gates and triage ledgers, on GitHub only.</li>
   </ul>
@@ -135,7 +136,7 @@
       <div class="card-title">Super Art queue capture</div>
       <div class="card-body">Runbook + Lua capture pinning the byte-exact action queue each Super / Miracle Art combo expands to.</div>
     </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/playthrough-coverage.md" target="_blank" rel="noopener">
+    <a class="card" href="playthrough-coverage.html">
       <div class="card-title">Playthrough coverage</div>
       <div class="card-body">Play a scripted opening segment with a breakpoint on every not-yet-understood function, and let the hits pick what to document next.</div>
     </a>
@@ -161,6 +162,10 @@
     <a class="card" href="port-catalog.html">
       <div class="card-title">Port catalog</div>
       <div class="card-body">Per-function status - dumped &times; documented &times; ported &times; ignored - from <code>// PORT:</code> tags in the crates, with feature views and a regenerable open-work dashboard.</div>
+    </a>
+    <a class="card" href="port-provenance.html">
+      <div class="card-title">Port provenance</div>
+      <div class="card-body">A <code>// PORT:</code> address can name the wrong routine while every other gate passes. Ranked signals, a ratchet on unwaived findings, and a differential as the proof.</div>
     </a>
     <a class="card" href="field-op-census.html">
       <div class="card-title">Field-op census</div>
@@ -229,6 +234,17 @@
     <a class="card" href="build-and-test-speed.html">
       <div class="card-title">Build and test speed</div>
       <div class="card-body">The <code>dev-fast</code> profile, the wasm <code>--fast</code> path, where a test run goes, and <code>full-gate.py</code>, the end-of-work gate as one command.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="ship">
+  <h2>Ship a release</h2>
+  <p>How the downloadable archives are built: one per platform from a pushed tag, programs and licenses only.</p>
+  <div class="card-grid">
+    <a class="card" href="releases.html">
+      <div class="card-title">Tagged-release pipeline</div>
+      <div class="card-body">Pushing a <code>v*</code> tag builds the workspace binaries and attaches per-target archives + <code>SHA256SUMS</code> to the GitHub release. Binaries and licenses only - never game data.</div>
     </a>
   </div>
 </section>
@@ -346,10 +362,6 @@
       <div class="card-title">Dump-corpus integrity</div>
       <div class="card-body">A dump's <em>printed addresses</em> depend on its load base; only the header tag is evidence. Census of mis-based and truncated dumps plus the checker.</div>
     </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md" target="_blank" rel="noopener">
-      <div class="card-title">Port provenance</div>
-      <div class="card-body">A <code>// PORT:</code> address can name the wrong routine while every other gate passes. Ranked signals, a ratchet on unwaived findings, and a differential as the proof.</div>
-    </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/phantom-print-index.md" target="_blank" rel="noopener">
       <div class="card-title">Phantom print index</div>
       <div class="card-body">Address by address in the <code>0x801C****</code> / <code>0x801D****</code> band: which image and VA a printed address's bytes really occupy, and whether that VA is a function entry.</div>
@@ -369,14 +381,6 @@
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/doc-density.md" target="_blank" rel="noopener">
       <div class="card-title">Doc density + link gates</div>
       <div class="card-body">The two pre-commit doc checks: over-long lines and table cells, and relative links + <code>#anchors</code> that must resolve.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">
-      <div class="card-title">Ratchet integrity</div>
-      <div class="card-body">What keeps a ratchet honest: a baselined value that moved the wrong way needs a ledger entry, and a skipped disc test is not a pass.</div>
-    </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md" target="_blank" rel="noopener">
-      <div class="card-title">Tagged-release pipeline</div>
-      <div class="card-body">Pushing a <code>v*</code> tag builds the workspace binaries and attaches per-target archives + <code>SHA256SUMS</code> to the GitHub release. Binaries and licenses only - never game data.</div>
     </a>
     <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dependency-policy.md" target="_blank" rel="noopener">
       <div class="card-title">Dependency policy</div>

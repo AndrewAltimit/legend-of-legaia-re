@@ -136,6 +136,10 @@ in float v_log_depth;
 out vec4 o_color;
 
 uniform vec3 u_log_depth;
+/* The blend run's ABR mode when PSX mode runs the GPU's 5-bit arithmetic,
+ * -1 otherwise (TmdRenderer._setSemiBlend stages it; the native overlay
+ * shader's blend_out). */
+uniform int u_semi_mode;
 /* Which half of a semi-transparent run this draw is (PSX semi-transparency
  * is per texel: inside an ABE prim only the STP-set texels blend, an
  * STP-clear texel draws opaque; an untextured ABE prim blends every pixel).
@@ -207,6 +211,14 @@ void main() {
     if (u_stp_pass == 1) discard;
     o_color = v_color;
   }
+  /* The blend half in PSX mode writes its mode's term of the GPU's 5-bit
+   * result (engine-render's psx_blend, "The GPU's 5-bit arithmetic"). */
+  if (u_stp_pass == 2 && u_semi_mode >= 0) {
+    vec3 f5 = min(floor(clamp(o_color.rgb, 0.0, 1.0) * 255.0 / 8.0 + 0.001), vec3(31.0));
+    if (u_semi_mode == 0) o_color = vec4(f5 * (4.0 / 255.0), 1.0);
+    else if (u_semi_mode == 3) o_color = vec4(floor(f5 / 4.0) * (8.0 / 255.0), 1.0);
+    else o_color = vec4(f5 * (8.0 / 255.0), 1.0);
+  }
 }
 `;
 
@@ -254,6 +266,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.locVram = gl.getUniformLocation(this.program, 'u_vram');
       this.locLogDepth = gl.getUniformLocation(this.program, 'u_log_depth');
       this.locStpPass = gl.getUniformLocation(this.program, 'u_stp_pass');
+      this.locSemiMode = gl.getUniformLocation(this.program, 'u_semi_mode');
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -346,7 +359,7 @@ void main() { o_color = texture(u_layer, v_uv); }
           gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
           gl.enable(gl.BLEND); blendOn = true;
           /* One ABR table on this page, and it lives in webgl-tmd.js. */
-          this.renderer._setSemiBlend((code - 1) & 3);
+          this.renderer._setSemiBlend((code - 1) & 3, this.locSemiMode);
           gl.uniform1i(this.locStpPass, 2);
         }
         gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
@@ -473,8 +486,9 @@ void main() { o_color = texture(u_layer, v_uv); }
            * own; bloom reads the frame it adds to, so it stands the frames
            * down, as the native renderer's bloom target does. */
           const rt = this.rt;
+          this._fogDrew = false;
           this._psxTarget.begin(typeof rt.play_cast_module_resident === 'function'
-            && rt.play_cast_module_resident());
+            && rt.play_cast_module_resident(), !this.ssao && !this.bloom);
           this.renderer.loadFrameHook = () => !this.bloom
             && typeof rt.play_cast_frame_persists === 'function'
             && rt.play_cast_frame_persists()
@@ -483,7 +497,10 @@ void main() { o_color = texture(u_layer, v_uv); }
         const r = drawFrame.call(this, skipDraw);
         if (psx) {
           this.renderer.loadFrameHook = null;
-          this._psxTarget.present();
+          /* The 15-bit readout, on the native gate (`Renderer::scanout_15bit`):
+           * off under SSAO and bloom, which the window keys on their options,
+           * and under a frame the volumetric fog drew over. */
+          this._psxTarget.present(!this.ssao && !this.bloom && !this._fogDrew);
         }
         return r;
       };

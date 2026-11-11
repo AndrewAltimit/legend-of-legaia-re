@@ -57,27 +57,19 @@ impl LegaiaRuntime {
     }
 
     /// Start the world's last-routed op-`0x35` track
-    /// (`World::audio.current_bgm`) through the page's director - a
-    /// scene-local id plays retail's fallback track
-    /// ([`legaia_engine_scene_host::scene_host::bgm_bank_id`]), as the native
-    /// `BootSession::restore_field_bgm` plays it. Returns whether it started.
+    /// (`World::audio.current_bgm`) through the page's director: the
+    /// session's [`BootSession::restore_field_bgm`], the native window's own
+    /// restore (a scene-local id plays retail's fallback track,
+    /// [`legaia_engine_scene_host::scene_host::bgm_bank_id`]). Returns
+    /// whether it started.
+    ///
+    /// [`BootSession::restore_field_bgm`]: legaia_engine_session::BootSession::restore_field_bgm
     pub(crate) fn start_world_bgm(&mut self) -> bool {
-        let Some(host) = self.scene_host.host() else {
-            return false;
-        };
-        let Some(id) = host.world.audio.current_bgm else {
-            return false;
-        };
-        let Ok(Some(entry)) =
-            host.music_bank_entry_bytes(legaia_engine_scene_host::scene_host::bgm_bank_id(id))
-        else {
-            return false;
-        };
-        let Some(d) = self.audio_director() else {
-            return false;
-        };
-        d.start_owned_vab(id, &entry);
-        d.last_started == Some(id)
+        self.audio_director().is_some()
+            && self
+                .scene_host
+                .session_mut()
+                .is_some_and(|s| s.restore_field_bgm())
     }
 
     /// Bring the scene's own track up on an audio output that arrived late.
@@ -102,7 +94,14 @@ impl LegaiaRuntime {
             .scene_host
             .host()
             .is_some_and(|h| h.world.audio.bgm_script_paused());
-        if self.start_world_bgm() && paused {
+        // The session's attach start: nothing while the scene's own
+        // op-`0x35` events are still queued for the next tick's routing.
+        let _ = self.audio_director();
+        let started = self
+            .scene_host
+            .session_mut()
+            .is_some_and(|s| s.start_field_bgm_on_attach());
+        if started && paused {
             // The script paused the track before the output existed: bring
             // it up the way the pause left it (op-`0x35` sub-op 2 / 3), so
             // its own sub-op 4 resumes it.
@@ -110,5 +109,66 @@ impl LegaiaRuntime {
                 d.pause();
             }
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use legaia_engine_session::audio_director::AudioCommand;
+
+    /// A scene picked before the page has an audio output: the pick's own
+    /// gesture brings the output up (`audio_init`) after `enter_field` and
+    /// before the first tick, while the scene's op-`0x35` events are still
+    /// queued. The late-audio start must leave them to the tick's routing,
+    /// so the director hears what the native window's does (Mt. Rikuroa's
+    /// summit: `stop, start, start`) and no start ahead of the script's.
+    #[test]
+    fn a_late_output_before_the_first_tick_leaves_the_queued_start_to_the_route() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable (disc-gated)");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load_disc");
+        for f in [0x2FB, 0x281, 0x282, 0x283, 0x284, 0x285] {
+            assert!(rt.set_system_flag(f, true));
+        }
+        rt.enter_field_core("rikuroa", false)
+            .expect("enter rikuroa");
+        let before = rt
+            .scene_host
+            .director()
+            .map(|d| d.commands().recent().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        rt.start_current_bgm_on_late_audio();
+        rt.tick_frame().expect("tick");
+        let all: Vec<AudioCommand> = rt
+            .scene_host
+            .director()
+            .map(|d| d.commands().recent().copied().collect())
+            .unwrap_or_default();
+        let after: Vec<AudioCommand> = all[before.len()..]
+            .iter()
+            .copied()
+            .filter(|c| {
+                matches!(
+                    c,
+                    AudioCommand::BgmStart(_)
+                        | AudioCommand::BgmStartOwned(_)
+                        | AudioCommand::BgmStop
+                )
+            })
+            .collect();
+        eprintln!("before {before:?}\nafter {after:?}");
+        assert_eq!(
+            after.first(),
+            Some(&AudioCommand::BgmStop),
+            "the script's own stop leads: {after:?}"
+        );
     }
 }

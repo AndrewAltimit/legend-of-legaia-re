@@ -2044,12 +2044,14 @@
     "dance_cast_scene",
     "dance_hud_art",
     "dance_venue",
+    "fishing_catch",
     "fishing_rod",
     "fishing_scene",
     "fishing_venue",
     "minigame_state",
     "minigame_status",
-    "muscle_dome_scene"
+    "muscle_dome_scene",
+    "venue_floor"
    ],
    "band": "kernels",
    "track": "engine",
@@ -2677,6 +2679,7 @@
     "front_end",
     "host_trace",
     "hotkeys",
+    "look_and_feel",
     "mode_trace",
     "native",
     "party_spec",

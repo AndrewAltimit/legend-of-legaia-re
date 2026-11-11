@@ -564,6 +564,38 @@ fn the_round_caption_stands_only_on_the_banner_arms() {
     );
 }
 
+/// The spin arm `0x35` holds until the camera's yaw passes a full turn, and
+/// the HUD (the epilogue's `s7`, raised from `0x36` on) waits for it: no
+/// frame draws the HUD while the camera is still turning, and the first
+/// frame after the turn does.
+#[test]
+fn the_round_hud_waits_for_the_camera_spin() {
+    use crate::baka_cabinet::{ST_ROUND_BANNER_C, ST_ROUND_BANNER_D};
+    let mut f = fight();
+    f.end_round(0, false);
+    let (mut spin_frames, mut hud_after) = (0, None);
+    for i in 0..0x800 {
+        let before = f.cabinet().state();
+        f.tick(1);
+        if before == ST_ROUND_BANNER_C {
+            spin_frames += 1;
+            assert!(f.cabinet_frame().hud.is_none(), "no HUD while it spins");
+        }
+        if before == ST_ROUND_BANNER_D {
+            assert_eq!(f.duel_camera().globals().0[1], 0, "the spin is over");
+            hud_after = Some(i);
+            assert!(f.cabinet_frame().hud.is_some(), "the HUD is up on 0x36");
+            break;
+        }
+    }
+    assert!(hud_after.is_some(), "the fixture reaches 0x36");
+    // From the setup's yaw `0x2F8` at `0x40` a frame.
+    assert_eq!(
+        spin_frames,
+        (crate::baka_duel::SWEEP_END_YAW - 0x2F8 + 0x3F) / 0x40
+    );
+}
+
 /// A fight with the pause text in, standing in the duel state.
 fn paused_ready_fight() -> BakaFight {
     let mut f = fight();

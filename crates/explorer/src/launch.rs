@@ -112,6 +112,15 @@ pub fn play_args(bin: &Path) -> Vec<std::ffi::OsString> {
     vec!["launch".into(), "--disc".into(), bin.as_os_str().to_owned()]
 }
 
+/// The engine's argument list for its launcher screen with `bin` chosen, as
+/// if the disc were dropped on it (the hidden `--open`): the display and
+/// gameplay options, the key table, saves and memory cards, then its own
+/// Play. What *Game options* runs, so a player who starts from Explorer
+/// reaches the options without finding the other program.
+pub fn launcher_args(bin: &Path) -> Vec<std::ffi::OsString> {
+    vec!["--open".into(), bin.as_os_str().to_owned()]
+}
+
 /// A game Explorer started.
 pub struct Game {
     child: Child,
@@ -143,7 +152,16 @@ impl Game {
     /// engine's data folder, [`engine_data_dir`]; created when missing);
     /// stdout and stderr go to [`GAME_LOG`] inside it.
     pub fn start(engine: &Path, bin: &Path, data_dir: Option<&Path>) -> anyhow::Result<Self> {
-        let args = play_args(bin);
+        Self::start_with(engine, play_args(bin), data_dir)
+    }
+
+    /// Start `engine` with `args` (the game, [`play_args`], or its launcher
+    /// screen, [`launcher_args`]), as [`Self::start`] does.
+    pub fn start_with(
+        engine: &Path,
+        args: Vec<std::ffi::OsString>,
+        data_dir: Option<&Path>,
+    ) -> anyhow::Result<Self> {
         let (child, log) = spawn(engine, &args, data_dir, false)?;
         Ok(Self {
             child,
@@ -338,6 +356,12 @@ mod tests {
     fn play_args_go_through_the_engines_launcher() {
         let a = play_args(Path::new("/g/legaia.bin"));
         assert_eq!(a, ["launch", "--disc", "/g/legaia.bin"]);
+    }
+
+    #[test]
+    fn the_options_open_the_engines_launcher_on_the_disc() {
+        let a = launcher_args(Path::new("/g/legaia.cue"));
+        assert_eq!(a, ["--open", "/g/legaia.cue"]);
     }
 
     #[test]

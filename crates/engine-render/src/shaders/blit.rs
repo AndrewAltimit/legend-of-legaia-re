@@ -38,4 +38,16 @@ fn vs_main(@builtin(vertex_index) vidx: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     return textureSample(t_diffuse, s_diffuse, in.uv);
 }
+
+// The native frame scanned out as the 15-bit framebuffer it models: each
+// channel's 5-bit value `v >> 3` expanded `(c5 << 3) | (c5 >> 2)`. PSX mode
+// leaves every channel inside its 5-bit bin (`psx_blend`, "The GPU's 5-bit
+// arithmetic"), so this reads the bin as the console's display does. Twin of
+// `psx_blend::scanout15`.
+@fragment
+fn fs_scanout15(in: VertexOutput) -> @location(0) vec4<f32> {
+    let c = textureSample(t_diffuse, s_diffuse, in.uv);
+    let c5 = floor(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0 / 8.0 + 0.001);
+    return vec4<f32>((c5 * 8.0 + floor(c5 / 4.0)) / 255.0, c.a);
+}
 "#;

@@ -250,13 +250,20 @@ pub fn key_rebind_draws_for(
     }
     let shown = rows.len().min(per_col) as i32;
     let hint_y = pen.1 + HEADER_H + shown * LINE_H + 2;
+    // A controller press binds in the wait (Circle included), so the wait's
+    // hint says how to keep a row as it is.
+    let (first, second) = if awaiting {
+        ("Press a key or a pad button", "Its own button keeps it")
+    } else {
+        ("Cross: Bind   Circle: Cancel", "Start: Save")
+    };
     out.extend(text_draws_for(
-        &font.layout_ascii("Cross: Bind   Circle: Cancel"),
+        &font.layout_ascii(first),
         (pen.0, hint_y),
         dim,
     ));
     out.extend(text_draws_for(
-        &font.layout_ascii("Start: Save"),
+        &font.layout_ascii(second),
         (pen.0, hint_y + LINE_H),
         dim,
     ));
@@ -267,8 +274,10 @@ pub fn key_rebind_draws_for(
 pub const KEY_REBIND_COLUMN_ROWS: usize = 8;
 /// Column pitch of the key-rebind panel (half the settings window's width).
 pub const KEY_REBIND_COLUMN_W: i32 = 128;
-/// Key-name inset inside a key-rebind column.
-pub const KEY_REBIND_KEY_X: i32 = 70;
+/// Key-name inset inside a key-rebind column. The value is the key and the
+/// controller button (`"RShift Back"`), so it starts just past the longest
+/// button name (`Triangle`).
+pub const KEY_REBIND_KEY_X: i32 = 56;
 
 /// Menu ink 5 - the teal the confirm-prompt option rows stage
 /// (`DAT_8007B454 = 5` before each option string).

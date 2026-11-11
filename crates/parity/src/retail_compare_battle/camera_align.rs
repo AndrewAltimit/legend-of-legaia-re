@@ -672,8 +672,11 @@ pub(super) fn displayed_cam_live_steps(
                 continue;
             }
             // The gap pass `n` armed, to the endpoint it chased.
-            let wide = (g.abs() + moved + dir * end_shift[k as usize] * n as i32).max(0);
-            let step = (wide + (d - fs_n) - 1) / (d - fs_n);
+            // An endpoint that moved past the pose (the attacker turning
+            // across the yaw it frames) was chased from the other side: that
+            // pass stepped toward `-dir`, and the pose stood further on.
+            let wide = g.abs() + moved + dir * end_shift[k as usize] * n as i32;
+            let step = wide.signum() * ((wide.abs() + (d - fs_n) - 1) / (d - fs_n));
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
             if let Some(p) = prior_end[k as usize]
@@ -716,14 +719,32 @@ pub(super) fn displayed_cam_live_steps(
 /// the re-arm law does not describe, and the earlier framing had all but
 /// landed: `battle_korb2_aluru_strike` stands on yaw `2188` under an endpoint
 /// of `395`, one unit from where case 6 was resting. Such a pass holds `shown`.
+///
+/// A party seat's first swing dates its strike loop the same way: the
+/// accumulator `ctx[+0x87C]` climbs `8 * step` a pass from the commit that
+/// opened the loop (`ctx[+0x15] == 1`, the first swing), so a walk of
+/// `further_vsyncs` past it reaches a pass before case 7 armed at all, where
+/// the yaw-unwrap test cannot see it because the approach's framing sat
+/// within `0x700` of the strike's. That pass holds `shown` too
+/// (`battle_ropeway_party_noa_sonic_javelin_open`: accumulator `48`, the
+/// further walk's yaw `2108` ghosts Vahn `17` units inside the radius where
+/// retail's frame draws him solid; `shown`'s `1892` clears him by `43`).
 pub(super) fn displayed_ghost_pose(
     ram: &[u8],
     ctx: u32,
     action_state: u8,
     shown: legaia_engine_camera::projection::BattleCamPose,
     further: legaia_engine_camera::projection::BattleCamPose,
+    further_vsyncs: u32,
 ) -> legaia_engine_camera::projection::BattleCamPose {
     const CASE_7_UNWRAP: f32 = 0x700 as f32;
+    if action_state == STRIKE_LOOP_STATE
+        && game_anchors::u8_at(ram, ctx + 0x13) < 3
+        && game_anchors::u8_at(ram, ctx + 0x15) == 1
+        && game_anchors::u32_at(ram, ctx + 0x87C) < 8 * further_vsyncs
+    {
+        return shown;
+    }
     if action_state == STRIKE_LOOP_STATE {
         let (live, end) = retail_cam_tween(ram, ctx);
         let dir = (end.yaw - live.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
@@ -1038,6 +1059,8 @@ pub(super) fn strike_framed_body(ram: &[u8], ctx: u32) -> Option<(u32, [i16; 2])
 /// re-faced onto), but only by a few units, and is left on the RAM's: the
 /// image child tests its yaw on the gate tick's framing, which is the RAM's.
 ///
+/// A party seat's strike is [`party_strike_end_shift`].
+///
 /// `None` off the strike loop, off a monster's walk clip, on a seat that has not moved over those
 /// slots, or when the RAM's focus endpoint is not the midpoint of the body
 /// pair slot `1` names and the target's (another framing owns the table).
@@ -1051,6 +1074,9 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     // pair too, but the frame of a seat on its strike clip is drawn from
     // the replay's pose (`battle_map03_grude_strike` read `.982` to `.980`
     // walked back against it).
+    if seat < 3 {
+        return party_strike_end_shift(ram, ctx, actor);
+    }
     if !(3..=7).contains(&seat)
         || !in_ram(actor)
         || game_anchors::u8_at(ram, actor + 0x1D9) != WALK_CLIP
@@ -1105,6 +1131,160 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     shift[8] = -((b2[1] - b1[1]) / 2);
     Some(shift)
 }
+
+/// [`walker_end_shift`] for a party seat's strike loop: the swing's root
+/// motion carries the attacker's body pair, and its hits knock the target's
+/// back, so both halves of case 7's midpoint move between passes. Each comes
+/// off the actor's own rings ([`super::framing_body::body_pair_on_ring_slot`]):
+/// the RAM's arm read slot `1` of both, the pass before slot `2`.
+/// `battle_jou_party_gala_chain_mid`'s focus endpoint z stood `19` on the
+/// RAM's arm and `-10` / `-36` on the two before it (a PCSX-Redux film of the
+/// same chain), the attacker carrying `-19` / `-22` of each step and the
+/// target the rest.
+///
+/// `None` when either ring does not decode, when the RAM's focus endpoint
+/// is not the midpoint of the two slot-`1` pairs (another framing owns the
+/// table), or when neither body moved.
+fn party_strike_end_shift(ram: &[u8], ctx: u32, actor: u32) -> Option<[i32; 9]> {
+    if !in_ram(actor) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    if target_slot > 7 {
+        return None;
+    }
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot * 4);
+    if !in_ram(target) {
+        return None;
+    }
+    let body = |a: u32, k: u32| {
+        super::framing_body::body_pair_on_ring_slot(ram, a, k).map(|b| b.map(i32::from))
+    };
+    let (a1, a2) = (body(actor, 1)?, body(actor, 2)?);
+    let (t1, t2) = (body(target, 1)?, body(target, 2)?);
+    // The focus records hold the midpoint negated.
+    let end = |k: u32| i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16);
+    // The decode turns each pose by the RAM's heading, not the one its own
+    // pass stood on, so the arm's pair is also taken as the RAM holds it.
+    let held = |a: u32| {
+        [
+            i32::from(game_anchors::i16_at(ram, a + 0x3C)),
+            i32::from(game_anchors::i16_at(ram, a + 0x40)),
+        ]
+    };
+    let fits = |a: [i32; 2], t: [i32; 2]| {
+        [(6u32, 0usize), (8, 1)]
+            .iter()
+            .all(|&(k, i)| (-end(k) - (a[i] + t[i]) / 2).abs() <= STRIKE_FOCUS_FIT)
+    };
+    let fits = fits(a1, t1) || fits(held(actor), t1) || fits(held(actor), held(target));
+    if !fits || (a1 == a2 && t1 == t2) {
+        return None;
+    }
+    let mut shift = [0i32; 9];
+    shift[6] = -((a2[0] + t2[0]) / 2 - (a1[0] + t1[0]) / 2);
+    shift[8] = -((a2[1] + t2[1]) / 2 - (a1[1] + t1[1]) / 2);
+    shift[1] = party_strike_yaw_end_shift(ram, ctx, actor, target).unwrap_or(0);
+    Some(shift)
+}
+
+/// The yaw half of [`party_strike_end_shift`]. Case 7's yaw is
+/// `ctx[+0x6DA] - actor[+0x46]` plus the style's constants, armed ahead of
+/// the pass's re-face (`0x801E36E8` before `0x801E371C`), so the endpoint of
+/// pass `n` back reads the counter that pass drifted to and the heading pass
+/// `n + 1` back stored. Each pass stores the bearing from the attacker's live
+/// pair onto the target's body pair (`0x801E36F0..0x801E371C`); the store of
+/// pass `k` back reads position-ring slot `k` and the target's slot-`k + 1`
+/// pose. Between the RAM's arm and the one before, the counter climbed one
+/// pass of drift and the heading the arm reads moved by one pass's turn
+/// (`battle_ropeway_party_gala_flying_knee_late`: endpoint `2165` on the
+/// RAM's arm, `2146` on the one before, the heading read `807` then `822`).
+///
+/// The heading the RAM's arm read comes off the table itself; the one before
+/// it is rebuilt from the rings, on the slot pairing that rebuilds both the
+/// RAM's stored heading and the arm's to within [`HEADING_REBUILD_SLACK`].
+///
+/// Across a target clip commit inside the slots read, the shift is the
+/// counter's drift alone (below). `None` where a swing commit between the two
+/// arms re-seeded the counter (`FUN_8004E13C`), where no pairing rebuilds
+/// both headings, or where a ring does not decode.
+fn party_strike_yaw_end_shift(ram: &[u8], ctx: u32, actor: u32, target: u32) -> Option<i32> {
+    use legaia_engine_battle_vm::battle_action::bearing_12bit_approx;
+    use legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment;
+    let step = super::frame_step::display_pass_steps(ram)[0];
+    let drift = i32::from(action_yaw_pass_increment(step));
+    // A swing commit between the two arms re-seeded the counter: the anim
+    // commit's re-seed is gated on the new clip's header byte `+0x87 == 2`
+    // over a previous commit's other value (`0x8004BE28`), and the clip-record
+    // ring `+0x234` holds each pass's committed record.
+    let record = |k: u32| game_anchors::u32_at(ram, actor + super::ram_read::RING_RECORD + k * 4);
+    let solo = |r: u32| in_ram(r).then(|| game_anchors::u8_at(ram, r + 0x87));
+    if record(1) != record(2) && solo(record(1)) == Some(2) && solo(record(2)) != Some(2) {
+        return None;
+    }
+    let pos = |k: u32| {
+        let at = actor + POSITION_RING + k * 8;
+        [
+            game_anchors::u32_at(ram, at) as i32 as i16,
+            game_anchors::u32_at(ram, at + 4) as i32 as i16,
+        ]
+    };
+    // `(bearing(target body -> attacker live) + 0x800) & 0xFFF`, from
+    // position-ring slot `o + k` onto the target's slot-`q + k` pose.
+    let stored = |o: u32, q: u32, k: u32| {
+        let a = pos(o + k);
+        let t = super::framing_body::body_pair_on_ring_slot(ram, target, q + k)?;
+        Some(i32::from(
+            bearing_12bit_approx(t[1], t[0], a[1], a[0]).wrapping_add(0x800) & 0xFFF,
+        ))
+    };
+    // The heading the RAM's arm read is the table's own: case 7's yaw is
+    // `ctx[+0x6DA] + 0x900 - heading`, half a turn on for an odd style
+    // `ctx[+0xD]`, so the endpoint and the counter name it exactly.
+    let counter = i32::from(game_anchors::u16_at(ram, ctx + 0x6DA));
+    let style = i32::from(game_anchors::u8_at(ram, ctx + 0xD));
+    let end_yaw = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 4 + 2));
+    let h1 = (counter + CASE7_YAW_BASE + 0x800 * (style & 1) - end_yaw).rem_euclid(4096);
+    // Whether the capture's pass had shifted the rings yet depends on where
+    // in the pass the state was cut, so the pairing is the one that rebuilds
+    // both the heading the RAM's pass stored and the one its arm read.
+    let facing = i32::from(game_anchors::u16_at(ram, actor + 0x46));
+    let off = |h: i32, want: i32| ((h - want + 2048).rem_euclid(4096) - 2048).abs();
+    let ((o, q), miss) = [(0u32, 1u32), (1, 1), (0, 0), (1, 2)]
+        .into_iter()
+        .filter_map(|(o, q)| {
+            let miss = off(stored(o, q, 0)?, facing).max(off(stored(o, q, 1)?, h1));
+            Some(((o, q), miss))
+        })
+        .min_by_key(|&(_, d)| d)?;
+    // The pose decode turns each slot by the target's heading in the RAM: a
+    // clip commit between the slots (a hit reaction re-facing the target)
+    // leaves the older slot's pose turned wrong, and the rings keep no
+    // heading to put it right (`battle_ropeway_party_gala_flying_knee_late`:
+    // the target's slot-`3` pose decodes to `(24, -14)` where a retail film
+    // of the strike reads `(28, -21)`, a heading `21` off). The counter's
+    // drift is still exact, so that pass takes it and no turn.
+    let record = |k: u32| game_anchors::u32_at(ram, target + super::ram_read::RING_RECORD + k * 4);
+    if miss > HEADING_REBUILD_SLACK {
+        return None;
+    }
+    if record(q + 1) != record(q + 2) {
+        return Some(-drift);
+    }
+    let h2 = stored(o, q, 2)?;
+    let turn = (h1 - h2 + 2048).rem_euclid(4096) - 2048;
+    Some(turn - drift)
+}
+
+/// How far a rebuilt heading may stand from the RAM's and still be the same
+/// store: the bearing table rounds a unit or two either way between
+/// neighbouring pose decodes.
+const HEADING_REBUILD_SLACK: i32 = 4;
+
+/// Case 7's yaw over the counter less the heading (`0x801D65DC..0x801D6700`:
+/// case 6's `ctx[+0x6DA] - actor[+0x46]`, the `- 0x700` unwrap, `0x1000` a
+/// full turn).
+pub(super) const CASE7_YAW_BASE: i32 = 0x900;
 
 /// How far the focus endpoint stood, on each pass before the RAM's, from the
 /// RAM's own - [`displayed_cam_live_steps`]'s `end_shift` - on a monster's

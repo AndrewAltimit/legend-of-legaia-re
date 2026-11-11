@@ -139,6 +139,8 @@ impl PlayWindowApp {
     fn latch_key_name(&mut self, code: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {
+                // A key press hands the prompts back to the keyboard.
+                self.last_pad = None;
                 if self.keys_down.insert(code) {
                     let name = keycode_to_name(code);
                     if !name.is_empty() {

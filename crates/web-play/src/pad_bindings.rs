@@ -70,16 +70,108 @@ thread_local! {
     static LIVE_BINDINGS: RefCell<(Option<Mapping>, u32)> = const { RefCell::new((None, 0)) };
 }
 
+thread_local! {
+    /// The controller pressed last (its labels and index space), or `None`
+    /// while a key was: what the prompts name ([`last_pad`]). Free-standing
+    /// for the same reason as [`LIVE_BINDINGS`]: the title loop folds the
+    /// controller before a runtime exists.
+    static LAST_PAD: std::cell::Cell<Option<legaia_engine_system::gamepad::PadStyle>> =
+        const { std::cell::Cell::new(None) };
+}
+
 /// The live table, loading the persisted one (or the default layout) on first
 /// use.
 pub fn live_mapping() -> Mapping {
+    with_live_mapping(Mapping::clone)
+}
+
+/// Run `f` over the live table without cloning it (the per-frame
+/// controller fold).
+pub fn with_live_mapping<R>(f: impl FnOnce(&Mapping) -> R) -> R {
     LIVE_BINDINGS.with(|c| {
         let mut c = c.borrow_mut();
         if c.0.is_none() {
             c.0 = Some(load_persisted_mapping());
         }
-        c.0.clone().expect("just seeded")
+        f(c.0.as_ref().expect("just seeded"))
     })
+}
+
+/// The controller pressed last, while it was pressed after any key.
+pub fn last_pad() -> Option<legaia_engine_system::gamepad::PadStyle> {
+    LAST_PAD.with(|c| c.get())
+}
+
+/// A key was pressed: prompts name keys again.
+pub fn note_keyboard() {
+    LAST_PAD.with(|c| c.set(None));
+}
+
+/// A controller with `Gamepad.id` `id`, reporting in `space`, was pressed.
+pub fn note_pad(space: legaia_engine_system::gamepad::ButtonSpace, id: &str) {
+    let style = legaia_engine_system::gamepad::PadStyle {
+        glyphs: legaia_engine_system::gamepad::GlyphSet::from_name(id),
+        space,
+    };
+    LAST_PAD.with(|c| c.set(Some(style)));
+}
+
+/// Fold one `navigator.getGamepads()` pad through the live controller
+/// table into a PSX pad word - the fold the native window runs gilrs
+/// through (`GamepadMapping::fold_pad`).
+///
+/// `standard` is `Gamepad.mapping === "standard"`; a pad without it folds
+/// through the table's raw half, with a d-pad read off a hat found from
+/// `rest` (the pad's axes as first seen, nothing held). `buttons` is each
+/// button's value (`1` for a pressed digital button), `axes` the axes now,
+/// `id` the pad's `Gamepad.id` (whose maker labels the prompts once it is
+/// pressed), `dead_zone` the stick's in percent (`stick_dead_zone`).
+#[wasm_bindgen]
+pub fn gamepad_fold(
+    standard: bool,
+    buttons: &[f32],
+    axes: &[f32],
+    rest: &[f32],
+    id: &str,
+    dead_zone: u8,
+) -> u16 {
+    use legaia_engine_system::gamepad::ButtonSpace;
+    let space = if standard {
+        ButtonSpace::Standard
+    } else {
+        ButtonSpace::Raw
+    };
+    let dz = legaia_engine_menus::options::OptionsState {
+        stick_dead_zone: dead_zone,
+        ..Default::default()
+    }
+    .stick_dead_zone_fraction();
+    let word = with_live_mapping(|m| m.gamepad.fold_pad(space, buttons, axes, rest, dz));
+    if word != 0 {
+        note_pad(space, id);
+    }
+    word
+}
+
+/// What a prompt names for pad button `button`: the live table's key, or
+/// the last pressed controller's button ([`Mapping::prompt_label`]).
+pub fn prompt_label(button: &str) -> Option<String> {
+    let pad = last_pad();
+    with_live_mapping(|m| m.prompt_label(button, pad))
+}
+
+/// [`prompt_label`] for a page's printed hints (`""` when nothing is bound):
+/// the page asks it once the controller or the keyboard was pressed last.
+#[wasm_bindgen]
+pub fn pad_prompt_label(button: &str) -> String {
+    prompt_label(button).unwrap_or_default()
+}
+
+/// A key was pressed on a page that hands no key to the menu
+/// (`LegaiaRuntime::play_menu_key` notes it itself): prompts name keys again.
+#[wasm_bindgen]
+pub fn pad_note_keyboard() {
+    note_keyboard();
 }
 
 /// Adopt `mapping` as the live table and persist it - the browser twin of the
@@ -238,6 +330,29 @@ impl LegaiaRuntime {
     pub fn pad_bindings_reset(&self) {
         pad_bindings_reset();
     }
+
+    /// See [`pad_prompt_label`].
+    pub fn pad_prompt_label(&self, button: &str) -> String {
+        pad_prompt_label(button)
+    }
+
+    /// See [`pad_note_keyboard`].
+    pub fn pad_note_keyboard(&self) {
+        pad_note_keyboard();
+    }
+
+    /// See [`gamepad_fold`].
+    pub fn gamepad_fold(
+        &self,
+        standard: bool,
+        buttons: &[f32],
+        axes: &[f32],
+        rest: &[f32],
+        id: &str,
+        dead_zone: u8,
+    ) -> u16 {
+        gamepad_fold(standard, buttons, axes, rest, id, dead_zone)
+    }
 }
 
 #[cfg(test)]
@@ -256,6 +371,58 @@ mod tests {
         for (code, bit) in want {
             assert_eq!(obj.get(code).and_then(|b| b.as_u64()), Some(u64::from(bit)));
         }
+    }
+
+    /// The page's fold runs the live table: a standard pad by position, a
+    /// raw pad through its own half and hat, the stick at the dead zone
+    /// asked for, and a press makes the prompts name that pad's buttons.
+    #[test]
+    fn the_page_fold_is_the_shared_fold() {
+        use legaia_engine_system::input::PadButton;
+        note_keyboard();
+        let cross = PadButton::Cross.mask();
+        assert_eq!(gamepad_fold(true, &[1.0], &[0.0, 0.0], &[], "x", 50), cross);
+        assert_eq!(
+            gamepad_fold(true, &[], &[0.3, 0.0], &[], "x", 50),
+            0,
+            "inside the dead zone"
+        );
+        assert_eq!(
+            gamepad_fold(true, &[], &[0.3, 0.0], &[], "x", 20),
+            PadButton::Right.mask()
+        );
+        let rest = [0.0; 6];
+        let mut axes = rest;
+        axes[5] = -1.0;
+        assert_eq!(
+            gamepad_fold(
+                false,
+                &[0.0, 1.0],
+                &axes,
+                &rest,
+                "054c-0268-PLAYSTATION(R)3",
+                50
+            ),
+            PadButton::Circle.mask() | PadButton::Up.mask()
+        );
+        assert_eq!(prompt_label("Cross").as_deref(), Some("Btn 1"));
+        note_keyboard();
+        assert_eq!(prompt_label("Cross").as_deref(), Some("Z"));
+    }
+
+    /// The stored table carries the controller half, so a page reload keeps
+    /// a controller rebind (`legaia.bindings`).
+    #[test]
+    fn the_stored_json_carries_the_controller_table() {
+        use legaia_engine_system::gamepad::ButtonSpace;
+        use legaia_engine_system::input::PadButton;
+        let mut m = Mapping::web_default();
+        m.gamepad.bind(ButtonSpace::Raw, 4, PadButton::Start);
+        let json = serde_json::to_string(&m).unwrap();
+        let back: Mapping = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.gamepad, m.gamepad);
+        let old: Mapping = serde_json::from_str(r#"{"bindings":{"KeyZ":"Cross"}}"#).unwrap();
+        assert_eq!(old.gamepad, Default::default());
     }
 
     #[test]

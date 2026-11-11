@@ -789,14 +789,12 @@ impl PlayWindowApp {
                             self.field_debug_camera,
                         ),
                     );
+                    let gate = legaia_engine_world_views::field_view_window::OccluderGate::new(
+                        world,
+                        cells.as_ref(),
+                    );
                     self.field_occluders
-                        .fully_occluded_where(eye.to_array(), centre, |d| {
-                            legaia_engine_world_views::field_view_window::occluder_drawn(
-                                world,
-                                cells.as_ref(),
-                                d,
-                            )
-                        })
+                        .fully_occluded_where(eye.to_array(), centre, |d| gate.drawn(d))
                 })
                 .unwrap_or(false);
             let mut ramp = self.occl_fade_strength.get();

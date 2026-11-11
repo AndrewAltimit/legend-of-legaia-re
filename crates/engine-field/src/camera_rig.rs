@@ -40,6 +40,14 @@ pub struct CameraRig {
     /// there too. The op `0x4C` n4 sub-9 **delta** arm snaps it instead of
     /// letting the easing arrive.
     pub offset_ease: i32,
+    /// The timed form of op `0x4C` n4 sub-9: with a non-zero `ticks` operand
+    /// every arm hands its stores to the property-ramp pool (`FUN_8003C5F0`,
+    /// ticker `FUN_80036D80`) instead of writing them - `_DAT_8007BCAC` as a
+    /// word ([`CAMERA_OFFSET_RAMP_EASE`]) and scene control `+0x4A` as a
+    /// halfword ([`CAMERA_OFFSET_RAMP_SCENE`]), each lerped from its live
+    /// value over `ticks` frame steps. `World::tick_field_timer_actors` steps
+    /// them.
+    pub offset_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// Previous tick's player `(world_y, world_z)`. Stands in for the
     /// `+0x1E`/`+0x20` slots retail's settle test compares `+0x16`/`+0x18`
     /// against; the question the comparison asks is whether the actor has
@@ -93,6 +101,7 @@ impl CameraRig {
             shake_amplitude: 0,
             scene_offset: 0,
             offset_ease: crate::camera_ease::CAMERA_OFFSET_EASE_SEED,
+            offset_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             ease_prev_yz: None,
             state: CameraState::default(),
             register_ramps: Vec::new(),
@@ -103,6 +112,13 @@ impl CameraRig {
         }
     }
 }
+
+/// [`CameraRig::offset_ramps`] destination: `_DAT_8007BCAC`
+/// ([`CameraRig::offset_ease`]).
+pub const CAMERA_OFFSET_RAMP_EASE: u32 = 0;
+/// [`CameraRig::offset_ramps`] destination: scene control `+0x4A`
+/// ([`CameraRig::scene_offset`]).
+pub const CAMERA_OFFSET_RAMP_SCENE: u32 = 1;
 
 impl Default for CameraRig {
     fn default() -> Self {

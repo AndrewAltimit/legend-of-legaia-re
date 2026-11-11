@@ -74,9 +74,10 @@ impl World {
             // The opening counter `gp[+0x330]` rests at `0xFF` on every frame
             // the engine drives a live battle.
             opening_negative: true,
-            // `FUN_8003DE7C(1) == 0`: the modelled drive is idle once the
-            // last battle clip's read span has elapsed.
-            cd_idle: self.audio.battle_xa_busy_frames == 0,
+            // `FUN_8003DE7C(1) == 0`: no data stream read in flight. A
+            // sounding CD-XA clip does not hold the poll
+            // ([`World::battle_stream_read_in_flight`]).
+            cd_idle: !self.battle_stream_read_in_flight(),
         }
     }
 

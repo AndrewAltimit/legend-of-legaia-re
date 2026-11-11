@@ -142,3 +142,32 @@ pub fn death_game_outcome(
         }
     }
 }
+
+/// The effect pool's sprite scale (pool head `+0x2`, `0xA00` from the pool
+/// init) that Theeder's arm-12 hits store (`li v0,0x800; sh v0,0x2(v1)` at
+/// `0x801F7DD0..0x801F7DD4`, on `_DAT_8007BD30`).
+pub const THEEDER_HIT_SPRITE_SCALE: u16 = 0x800;
+
+/// The pool's default sprite scale, which a module's way out restores.
+pub const DEFAULT_SPRITE_SCALE: u16 = 0xA00;
+
+/// The store a module arm makes on the effect pool's sprite scale (pool head
+/// `+0x2`, read by pass 2 as `atlas w/h * scale >> 8`), if any. Two player
+/// Seru modules shrink the effect-pool sprites their creature sheds and put
+/// the scale back on their `0xFF` arm:
+///
+/// - PROT 0904 (Theeder): arm 0 `0x400` (`0x801F6C28..0x801F6C34`), arm
+///   `0xFF` `0xA00` (`0x801F80F4..0x801F8104`); its arm-12 hits store
+///   [`THEEDER_HIT_SPRITE_SCALE`].
+/// - PROT 0909 (Viguro): arm 0 `0x600` (`0x801F6BC4..0x801F6BCC`), arm `0xFF`
+///   `0xA00` (`0x801F7908..0x801F7910`).
+///
+/// No other dumped routine stores into the pool head after the init.
+pub fn effect_sprite_scale_store(prot_entry: u32, phase: u8) -> Option<u16> {
+    match (prot_entry, phase) {
+        (904, 0) => Some(0x400),
+        (909, 0) => Some(0x600),
+        (904 | 909, 0xFF) => Some(DEFAULT_SPRITE_SCALE),
+        _ => None,
+    }
+}

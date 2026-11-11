@@ -109,6 +109,7 @@ mod field_system_caller_halt_bypass_disc;
 mod field_unspawned_actor_draw_disc;
 mod field_xa_prestage_disc;
 mod first_town_run;
+mod fishing_catch_body_disc;
 mod fishing_hub_and_floor_window_disc;
 mod fishing_line_frame;
 mod fishing_minigame_real;

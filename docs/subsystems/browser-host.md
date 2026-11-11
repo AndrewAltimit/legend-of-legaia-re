@@ -216,7 +216,9 @@ hand-off runs, as a page with no disc does.
 row per frame, oldest first. A line whose row was served plays on the call that raises it.
 A line nothing listed is deferred: it plays when its row is served, a read and at least
 a frame after the request. Neither path reaches the simulation, which never reads the XA
-lane back.
+lane back. The listed lines are a scene's op-`0x36` clips and its minigame door's
+announcer lines at scene load, a round's at battle entry, and the scripted-scene voice
+line at its program's seek-ahead, the vsyncs before that program starts it.
 
 **A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `psx_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds, and `SYSTEM.CNF` for another region's disc, which the desktop programs also refuse.
 
@@ -276,6 +278,30 @@ opens the pause menu and the first touch has brought sound up; a controller
 on the standard mapping walks by D-pad and by stick and opens and closes the
 menu on Start; the Fullscreen button presents the 4:3 picture at the screen's
 height with the keyboard still on the canvas.
+
+## Controllers (`pad_bindings` + `pad-bindings.js`)
+
+`pad-bindings.js` is the one reader of `navigator.getGamepads()`. Once a frame it
+hands each connected pad's button values and axes to `gamepad_fold`, the engine's
+`GamepadMapping::fold_pad` over the live binding table's `[gamepad]` half, at the
+stick dead zone the runtime stores (`stick_dead_zone`). A pad whose
+`Gamepad.mapping` is not `"standard"` folds through the table's raw half; the axes
+the page saw when the pad first appeared are its resting values, from which the
+engine finds a hat (`RawHat::detect`: a DirectInput POV axis resting past `1`, or
+a last pair of axes resting at `0` on a pad with six or more). Every connected
+pad's word is ORed into the one player.
+
+A fresh press is also handed to `play_menu_pad_button`, which only the Options
+screen's Key Config consumes while a row waits; the bind lands in the same table
+and storage key (`legaia.bindings`) as a key bind. When the binding revision moves
+the page keeps every held button out of the fold until it is let go
+(`swallowHeldPads`), since the button that made the bind is a different PSX
+button through the new table. `gamepadconnected` / `gamepaddisconnected` are said
+on the notice line and listed in `#play-pad-status`. The last device pressed
+drives the prompts: a fold that holds anything notes the pad (its maker's labels
+from `Gamepad.id`), a keydown notes the keyboard, and `pad_prompt_label` answers
+for either. A bundle without `gamepad_fold` falls back to the fixed default
+layout (`gamepad_layout_json`) for every pad.
 
 ## FMV beats (`play_fmv`)
 
@@ -818,12 +844,15 @@ gate:
 | Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and both hosts draw the trade screens through the one shared composition (`legaia_engine_screens`). |
 | Options screen | Closed. The page persists `OptionsState` to `localStorage` (`legaia.options`, `runtime/options.rs`) through the same serde impl the native window writes to `legaia-options.toml`, and both save `OptionsPins::persistable` on an Options close. |
 | Remembered launch switches | Closed. PSX rasterisation, retail-faithful, the entry pulse, smart monsters and the gameplay tweaks persist to `localStorage` (`legaia.switches`, `play_toggles`) as `PersistedSwitches`, the type the native launcher flattens into its settings file ([`host-drift.md`](../tooling/host-drift.md#remembered-between-runs)). |
+| Look and feel preset | Closed. The page's *Look and feel* selector is the launcher's and the `F12` panel's first row over one kernel (`legaia_engine_session::look_and_feel`): Original is Retail-faithful plus PSX rasterisation, Enhanced resets every row the preset speaks for ([`host-drift.md`](../tooling/host-drift.md#the-look-and-feel-preset)). |
 | Live launch switches | Closed. The page's boxes act mid-game; the window's `F12` panel carries the same launcher rows live (*PlayStation pixel look*, entry pulse, action movement, smarter monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning, *Original game only*) over the same `SessionSwitches::apply` and option pins, and writes each change to `launcher.toml` as the page writes `legaia.switches`. |
 | Scene picker | Closed. The page's *Scenes* list and the window's `F12` *Scenes* page offer the same rows (the scene-name table's towns, field areas and overworlds) and enter through the same picker rules (`World::stage_picker_entry`, `SceneHost::arm_picker_entry_seat`) and scene entry. The page's list also starts a game from the title; the window's page refuses under a front-end screen, where a New Game or Continue is the way in. |
 | Debug tools | Open, by choice. The page's *Battle tools* (party, force a battle, learn a spell, story flags, GameShark codes) are launch switches on the window (`--party`, `--battle`, `--learn-spell`, `--set-flag`, `--cheat-file`) with no in-game surface. |
 | Inn prompt | Closed. Neither host opens an inn session (the retail inn is an ordinary field-VM dialogue), and both draw the prompt when one is up: `play_shop`'s inn arm ports the native `window/hud.rs` arm. |
 | Load / Save rows | Closed. Both hosts browse the console's two memory-card ports, each a mounted card image (the page's port 1 in browser storage, the window's `memcard1.mcr` in its save directory), and every Save / Load goes through one card kernel (`write_save_into_card`, `save_at`); the slot is built from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
+| PSX mode's 15-bit readout | Closed. The PSX target's copy to the canvas reads the frame out as the 15-bit framebuffer on the window's gate (SSAO and bloom off, no fog drawn), the window's `fs_scanout15`; the pair is evaluated byte for byte in `engine-render`'s tests and pinned by two tier-17 rows ([renderer-port](renderer-port.md#semi-transparency)). |
+| PCSX-Redux instrument | Open, by design. The window's `PsxTexelRule::PcsxRedux` (texel rule, flat-quad walk, that emulator's dither table and blend terms) is set only by a retail-compare image child scoring a PCSX-Redux capture; the page scores no capture, draws the console's rules only, and carries no half of the instrument. |
 | Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. The cast-cue band's voice (the item-use shout) resolves in the world onto the XA channel and plays through `play_xa` on both hosts. |
 
 The Options row deserves the sharpest statement, because it is the shape that
@@ -1439,7 +1468,7 @@ Only the BGM is a buffer: an offline render on its own context at the same unity
 so the BGM to cue balance is the SPU's.
 
 Per game: `<g>_start` / a step or input method
-(`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
+(`dance_tick_pressing` / `baka_choose` / `slot_step`, one packed pad word a frame /
 `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. The dome adds a second tier for the contest above a leg

@@ -228,6 +228,9 @@ pub struct LegaiaMinigames {
     /// run on `World::minigames.fishing_venue`, here over this page's own
     /// session and effect pool.
     fishing_venue_actors: legaia_engine_minigame_scenes::fishing_venue::FishingVenue,
+    /// The landed fish's clip frame, advanced by the pond tick while a
+    /// catch shows.
+    fishing_catch_frame: usize,
     /// SCUS item-name table (present on full-disc loads only), naming the
     /// point-exchange prize rows.
     item_names: Option<legaia_game_tables::item_names::ItemNameTable>,
@@ -466,6 +469,7 @@ impl LegaiaMinigames {
             fishing_angler_facing: 0x800,
             fishing_lures_held: [fishing_web::MINIGAMES_TACKLE_HELD; 3],
             fishing_venue_actors: Default::default(),
+            fishing_catch_frame: 0,
             item_names: None,
             muscle: None,
             muscle_run: None,

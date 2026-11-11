@@ -370,13 +370,7 @@ impl Renderer {
                     // selecting the matching ABR blend pipeline per run.
                     // Gated like the rest of the faithful extras.
                     if self.semi_blend.get() && mesh.has_semi_prims() {
-                        let c = psx_blend::MODE0_BLEND_CONSTANT;
-                        rp.set_blend_constant(wgpu::Color {
-                            r: c,
-                            g: c,
-                            b: c,
-                            a: c,
-                        });
+                        rp.set_blend_constant(self.mode0_blend_color());
                         let mut list = self.blend_list.borrow_mut();
                         list.clear();
                         psx_blend::push_draw_prims(&mut list, false, 0, &mvp, mesh.semi_prims());
@@ -508,13 +502,7 @@ impl Renderer {
                             .iter()
                             .any(|d| d.mesh.has_semi_prims() || forced(d.cue).is_some());
                     if self.semi_blend.get() && any_semi {
-                        let c = psx_blend::MODE0_BLEND_CONSTANT;
-                        rp.set_blend_constant(wgpu::Color {
-                            r: c,
-                            g: c,
-                            b: c,
-                            a: c,
-                        });
+                        rp.set_blend_constant(self.mode0_blend_color());
                         let color_base =
                             scene.draws.len() as u32 + scene.overlay_lines.is_some() as u32;
                         let mut list = self.blend_list.borrow_mut();

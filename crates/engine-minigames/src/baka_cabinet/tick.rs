@@ -142,12 +142,19 @@ impl BakaCabinet {
             ST_ROUND_BANNER_B => {
                 f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
-                self.state = ST_ROUND_BANNER_C;
+                if !input.camera_hold {
+                    self.state = ST_ROUND_BANNER_C;
+                }
             }
+            // The spin's arm (`0x801D0324..0x801D0454`) holds until the yaw
+            // passes a full turn, so the HUD (drawn from `0x36` on, the
+            // epilogue's `s7` test at `0x801D218C`) waits for the camera.
             ST_ROUND_BANNER_C => {
                 f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
-                self.state = ST_ROUND_BANNER_D;
+                if !input.camera_hold {
+                    self.state = ST_ROUND_BANNER_D;
+                }
             }
             ST_ROUND_BANNER_D => {
                 f.round_banner = Some(self.scene_timer);

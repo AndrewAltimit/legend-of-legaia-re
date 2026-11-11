@@ -1,5 +1,5 @@
 //! Headless GPU smoke test for the screen-space overlay pass. Builds the
-//! *real* `SCREEN_OVERLAY_SHADER_SRC` + vertex layout + `build_geometry`
+//! *real* `screen_overlay_shader_src` + vertex layout + `build_geometry`
 //! output and renders to an offscreen target on whatever adapter is present,
 //! reading pixels back. Skips (passes vacuously) when no GPU adapter is
 //! available - CI machines without a render node just get the CPU-side
@@ -223,7 +223,7 @@ pub(super) fn build_harness_with(
 ) -> Harness {
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("test screen overlay shader"),
-        source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
+        source: wgpu::ShaderSource::Wgsl(screen_overlay_shader_src().into()),
     });
     let vram_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("test vram bgl"),
@@ -290,11 +290,7 @@ pub(super) fn build_harness_with(
     let opaque = mk("fs_opaque", Some(wgpu::BlendState::ALPHA_BLENDING));
     let semi_opaque = mk("fs_semi_opaque", Some(wgpu::BlendState::ALPHA_BLENDING));
     let blend: [wgpu::RenderPipeline; 4] = std::array::from_fn(|m| {
-        let entry = if crate::psx_blend::src_shader_scale(m as u8) == 1.0 {
-            "fs_blend"
-        } else {
-            "fs_blend_quarter"
-        };
+        let entry = crate::psx_blend::blend_entry(m as u8);
         mk(entry, Some(crate::psx_blend::blend_state(m as u8)))
     });
 

@@ -510,19 +510,27 @@ The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is
 `0x24` / `0x25`) and leaves after the op it ran was `0x21`
 (`0x8003AD58`), on a PC that did not move (`0x8003AD68`), or on a text byte
-(`0x8003AD84`). Everything after that `0x21` - an entry's per-frame body, the
-region selector `0x19B..0x1AA`, an op-`0x44` spawn placed in the body - waits
-for the SM's passes. The engine installs the three opening legs' cutscene
-records at scene entry, so `World::pre_run_entry_script` runs those legs'
-passes in the load frame up to the one that spawns the record (`opdeene`
-ends at PC `0x99`, as the `s1_newgame_field` capture does).
-Every other scene's install pass runs on the engine's first tick, not
-inside the load, so a cold entry is one pass behind retail until then:
-`balden`'s install pass seats `P1[62]` at tile `(10, 105)` (`A3 55 0A 69`,
-`+0x1A8`) and the engine shows it parked until the first frame. Running the
-slice at load (after the spawn pre-run, as `0x8003BAD8` does) also lands the
-pass's region-selector clears (`0x19B..0x1AA`, `0x527..0x52E`) in the entry
-state, which the field NPC-state oracle's entry model does not yet expect.
+(`0x8003AD84`). The loader `FUN_8003AEB0` calls it (`0x8003BAD8`) after the
+spawn loop, the object binds and the player's entry seat
+(`0x8003BAA4..0x8003BAC4`, from `_DAT_80073EF4` / `_DAT_80073EF8`), so the
+slice's `CD F8` box tests read the arrival seat. Everything after that `0x21` -
+an entry's per-frame body, the region selector `0x19B..0x1AA`, an op-`0x44`
+spawn placed in the body - waits for the SM's passes, and the first frame runs
+the script's second pass.
+
+The engine's scene entry hands the world on to its host's staging (the live
+loop, a card load's hydration, a door's seat) before anything ticks, so the
+slice runs at the head of the first tick
+(`World::run_entry_script_install_slice`, from
+`World::step_install_slice_ahead_of_records`), ahead of the records and the
+player tick, and that tick's own system pass is the script's second, as
+retail's first frame is. Run as the tick's only pass, the engine stood one pass
+behind retail for the whole visit. `balden`'s slice seats `P1[62]` at tile
+`(10, 105)` (`A3 55 0A 69`, `+0x1A8`) and sets `0x5B3` (`55 B3`, `+0x1F5`).
+The three opening legs install their cutscene records at scene entry, so
+`World::pre_run_entry_script` runs those legs' passes in the load frame up to
+the one that spawns the record (`opdeene` ends at PC `0x99`, as the
+`s1_newgame_field` capture does).
 
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,

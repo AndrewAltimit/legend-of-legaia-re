@@ -151,8 +151,8 @@ impl PondSession {
 
     /// The hooked fish object's render scale (actor `+0x72`, mirrored into
     /// `DAT_801D9108`): `strength + 0x400`, stored as a halfword. `0` before
-    /// the first hook. No host draws the hooked fish's body yet, so this is
-    /// the value a fish model would scale by, not one any frame shows.
+    /// the first hook. The landed fish's body draws at it, lifted and on the
+    /// plate ([`crate::fishing_actors::catch_fish`]).
     pub fn fish_scale(&self) -> u16 {
         self.fish_scale
     }

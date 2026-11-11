@@ -393,6 +393,18 @@ impl FogView {
             .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
     }
 
+    /// [`Self::ndc_depth`] taken `pull` world units nearer the eye along the
+    /// view axis (the point's `w` less `pull`), so a primitive lying on a
+    /// surface wins the depth tie with it under any camera pitch. `None` at
+    /// or behind the eye.
+    pub fn ndc_depth_toward_eye(&self, p: [i32; 3], pull: f32) -> Option<f32> {
+        let m = &self.vp;
+        let v = [p[0] as f32, -(p[1] as f32), p[2] as f32, 1.0];
+        let w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3] - pull;
+        (w.is_finite() && w > 0.5)
+            .then(|| crate::overworld_draw_order::ndc_at_w(m, w * self.depth_scale))
+    }
+
     /// The `(a, b)` of `ndc = a + b / w` that [`Self::ndc_at_sz`] and
     /// [`Self::ndc_depth`] evaluate, bit for bit
     /// ([`crate::overworld_draw_order::depth_affine`] of this matrix).

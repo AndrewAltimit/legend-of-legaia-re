@@ -241,6 +241,18 @@ pub(in crate::window) fn startup_hint_line(cross: &str, circle: &str) -> String 
     format!("{cross}: confirm  {circle}: back  F12: settings  Esc twice: quit")
 }
 
+/// [`startup_hint_line`] while a controller was pressed last: its own
+/// buttons, and the settings chord (`settings_panel::settings_chord`) in
+/// place of `F12`.
+pub(in crate::window) fn startup_hint_line_pad(
+    cross: &str,
+    circle: &str,
+    select: &str,
+    start: &str,
+) -> String {
+    format!("{cross}: confirm  {circle}: back  {select}+{start}: settings")
+}
+
 /// The one-line key hint a player's window shows when it opens. Armed only
 /// for an interactive window (`cmd_play_window_with_record`, no
 /// `--screenshot` harness),
@@ -851,6 +863,14 @@ pub(super) struct PlayWindowApp {
     /// keyboard's [`Self::pad`] so a released button never clears a bit a
     /// key still holds; each tick sees the OR of the two.
     pub(super) gamepad_held: u16,
+    /// The labels of the controller pressed last, or `None` when a key was
+    /// (or nothing yet): the prompts that name a button's key name the
+    /// controller's button instead while this is set.
+    pub(super) last_pad: Option<legaia_engine_system::gamepad::PadStyle>,
+    /// The `F12` panel's auto-repeat for a held controller direction, on a
+    /// clock from [`Self::started_at`].
+    pub(super) panel_pad_repeat: legaia_engine_system::gamepad::NavRepeat,
+    pub(super) started_at: std::time::Instant,
     /// Pad bits the `--simple-dialogue` picker owned and that are still held
     /// (`step_simple_dialog_picker`): hidden from the world until released.
     pub(super) picker_swallow: u16,

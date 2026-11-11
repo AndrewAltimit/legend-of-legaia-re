@@ -43,7 +43,7 @@ pub(crate) fn scene_lights_wgsl_for_tests() -> &'static str {
 /// stub.
 pub(crate) fn compose_psx_shader(base: &str) -> String {
     format!(
-        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}"
+        "{PSX_DITHER_WGSL}\n{PSX_BLEND_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_STUB_WGSL}\n{base}"
     )
 }
 
@@ -52,6 +52,6 @@ pub(crate) fn compose_psx_shader(base: &str) -> String {
 /// lights uniform + shadow-map array at group 2) in place of the stub.
 pub(crate) fn compose_scene_lit_shader(base: &str) -> String {
     format!(
-        "{PSX_DITHER_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}"
+        "{PSX_DITHER_WGSL}\n{PSX_BLEND_WGSL}\n{OVERWORLD_CURVE_WGSL}\n{PRIM_NEAR_WGSL}\n{EFFECT_CLIP_WGSL}\n{SCENE_LIGHTS_REAL_WGSL}\n{base}"
     )
 }

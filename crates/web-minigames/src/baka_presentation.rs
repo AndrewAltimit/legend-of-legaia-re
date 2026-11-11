@@ -900,6 +900,11 @@ impl LegaiaMinigames {
             })),
             "seat_retired": [f.seat_retired(0), f.seat_retired(1)],
             "clear_fade": f.cabinet_frame().clear_fade,
+            // The round chrome's full-screen additive tint (the title card's
+            // red flash and its fade-in, `FUN_80024EE4(1, 1, colour)`), as
+            // `[r, g, b]` - the quad the play hosts draw through
+            // `minigame_hud::baka_screen_prims`.
+            "tint": f.chrome_frame().tint.map(|t| t.rgb()),
             // Whether this cabinet state's epilogue draws the duel HUD
             // (not under the result screens or the NEXT GAME / PAY OUT
             // sheet), and the sheet's pot numeral over the run's winnings

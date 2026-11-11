@@ -177,7 +177,7 @@ Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whol
 
 The engine's turn cycling claims `0x5A` on the pass the state is reached: it dispatches the next pick, which rewrites the state byte to `0x00` (the arm path to `0x0A`). A digest of the engine shows `0x51 -> 0x00 -> 0x0A` where retail shows `0x51 -> 0x5A -> 0x0A` - the same frame count, one state name apart; the engine then shows `0x5A` through the command band where retail shows `0xFF`.
 
-At the round's end the engine holds `4` passes (`0x5A`, `0xFF`, two at flow `0x14`) before the next round's `0x14` pick and prompt ([`RoundFlow::boundary_hold`](../../crates/engine-battle-loop/src/round_flow.rs)). `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
+At the round's end the engine holds `3` passes (`0x5A`, `0xFF`, the flow byte's first pass at `0x14`) before the next round's `0x14` pick and prompt, and the last of them waits while the menu SM's glide gate is shut, which the Done band's closing glides can keep it a pass ([`RoundFlow::boundary_hold`](../../crates/engine-battle-loop/src/round_flow.rs); [the closing glides and the round boundary](battle-hud.md#the-closing-glides-and-the-round-boundary)). `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 
@@ -1389,8 +1389,8 @@ staged pose byte this routine commits to `+0x1DA` at `0x801EEC6C`; of the fourte
 that reach the compare only `0x801EC884` loads `+0x1F3`, so the condition really can fail. The
 re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
-gated on the attacker clip test and, inside the funnel, on the drive being idle
-(`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
+gated on the attacker clip test and, inside the funnel, on no data stream read
+in flight (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
 battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so the grunt is the
 unflagged leg and the `XA27` channel-4 sting is the flagged case.
 
@@ -1491,8 +1491,11 @@ his live pair steps `(-39, -134)` three times. Theeder's walk, which measures hi
 body pair, follows him down the stage, and the strike camera's yaw climbs with
 it. Without the cut the block's pose snapped back over the guard's feet, the
 range law read Theeder in reach, and the back-off and reach snap walked him back
-each swing. Port: `World::commit_melee_reaction`, which installs the reaction
-on the hit itself and so takes the cut on the frame one advance ahead
+each swing. Port: `World::commit_melee_reaction` stages the reaction
+(`Actor::battle_reaction_stage`) and turns the defender; the defender's own
+slice of the anim walk makes the cut after its advance
+(`World::commit_staged_battle_reaction`). Off retail's frame cadence the
+reaction installs on the hit and takes the cut one advance ahead
 (`MonsterAnimPlayer::frame_after_vsyncs`).
 
 **The reaction slides from the defender's own next tick.** The root-motion term
@@ -1519,16 +1522,20 @@ counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the
 debug printf at `0x80016EC0` whose format string is at `0x80010238` - and which
 `FUN_8004DA00` zeroes on five arms. It is XA-drive state, so the gate reads "don't
 open a voice clip once the streamer is past level 1", not "mute at level 2". The
-capture read it as `2` in one fight and `0` in the other.
+capture read it as `2` in one fight and `0` in the other. The port carries the gate on
+`AudioState::battle_xa_busy_frames`: `2` while a one-shot plays, `1` only between a seek
+and its caller's re-zero.
 
 The port carries both halves. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
 enemy-defender halve). The grunt is gated on the strike committing the defender's
 `+0x1F3` block entry, so an ordinary swing - which commits the flinch or the
 knockdown - raises none; it goes out as a `(clip, channel, dur)` request on
-`World::audio.battle_xa_cues`. The cue arm routes `0x10C` through the shared funnel
-seat `World::route_battle_cue` with a modelled drive-busy flag (`dur` vsyncs after
-any clip start: `dur * 2.5` sectors at 150/s is `dur / 60` s) and the `0x800788B8`
+`World::audio.battle_xa_cues`, unless a one-shot is still sounding (the drive word
+`_DAT_8007BC20 < 2` at `0x801EEAB4`, held `2` for `dur` vsyncs after a clip start:
+`dur * 2.5` sectors at 150/s is `dur / 60` s). The cue arm routes `0x10C` through the
+shared funnel seat `World::route_battle_cue`, whose voice leg waits only on a data stream
+read (`World::battle_stream_read_in_flight`), with the `0x800788B8`
 duration table parsed off the user's SCUS (`legaia_game_tables::xa_cue_table`). The native
 window plays the clip requests off a boot-staged `XaClipBank` (`XA27` / `XA30`
 demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA

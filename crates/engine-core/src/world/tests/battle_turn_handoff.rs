@@ -103,16 +103,70 @@ fn a_blocked_actors_turn_runs_the_done_band_instead_of_being_skipped() {
 }
 
 #[test]
-fn a_finished_round_waits_four_passes_before_the_next_round_starts() {
+fn a_finished_round_waits_three_passes_before_the_next_round_starts() {
     let mut world = auto_fight();
     tick_until(&mut world, 3000, |w| w.battle.round_flow.boundary_hold > 0);
     let round_before = world.battle_mode();
-    assert_eq!(world.battle.round_flow.boundary_hold, 4);
-    tick_until(&mut world, 200, |w| w.battle.round_flow.boundary_hold == 0);
+    assert_eq!(world.battle.round_flow.boundary_hold, 3);
+    // The band's own closing glides have landed by the `0x14` pass, so it
+    // dispatches on its first pass: three passes, none of them gated.
+    let mut ticks = 0u32;
+    while world.battle.round_flow.boundary_hold > 0 {
+        world.tick();
+        ticks += 1;
+        assert!(ticks < 200, "the boundary must end");
+    }
+    // Retail at the battle's step of `2`: `0x51` exits, then `0x5A`, `0xFF`
+    // and the `0x14` dispatch, six vsyncs (`party_basic_attack_vs_gobu_gobu`,
+    // `autorun_round_boundary_hold.lua`).
+    assert_eq!(ticks, 6, "three passes of two vsyncs");
     assert_eq!(
         world.battle_mode(),
         round_before + 1,
         "the 0xFF round bump lands when the boundary's passes are over"
+    );
+}
+
+/// The boundary's `0x14` pass dispatches only once the menu SM's glide gate
+/// opens: a glide still in flight as the pass before it ended - the Done
+/// band's closing ones, at a round's end - holds the round start a pass.
+#[test]
+fn a_closing_glide_still_live_holds_the_next_round_start() {
+    use legaia_engine_battle_loop::battle_state::ActionHudClose;
+    use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+    let mut world = auto_fight();
+    tick_until(&mut world, 3000, |w| w.battle.round_flow.boundary_hold > 0);
+    // Count the passes the boundary takes with a closing glide that lands
+    // only after the `0xFF` pass.
+    let mut glide = LogLaunch::new(true);
+    glide.elapsed = 0;
+    world.battle.action_hud_close = Some(ActionHudClose {
+        glide,
+        plaque: None,
+        bar: None,
+        panels: false,
+        spirit: None,
+    });
+    let mut ticks = 0u32;
+    let mut held_at_one = 0u32;
+    while world.battle.round_flow.boundary_hold > 0 {
+        if world.battle.round_flow.boundary_hold == 1 {
+            held_at_one += 1;
+        }
+        world.tick();
+        ticks += 1;
+        assert!(ticks < 200, "the boundary must end");
+    }
+    assert!(
+        world
+            .battle
+            .action_hud_close
+            .is_some_and(|c| c.glide.settled()),
+        "the round started after the closing glide landed"
+    );
+    assert!(
+        held_at_one > 2,
+        "the 0x14 pass waited for the glide ({held_at_one} ticks)"
     );
 }
 

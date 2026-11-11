@@ -233,9 +233,18 @@ impl RetailBattle {
         self.monster_magic_band_age()
     }
 
-    /// A monster's strike loop on its clip age. `0x1E` arms case 7 on every
-    /// pass (`li a1,0x7` at `0x801E36EC`), so the table describes the pass it
-    /// is read on and the walk back along it is retail's own displayed pose.
+    /// A strike loop on its clip age, a monster's or a party seat's. `0x1E`
+    /// arms case 7 on every pass (`li a1,0x7` at `0x801E36EC`), whoever
+    /// strikes, so the table describes the pass it is read on and the walk
+    /// back along it is retail's own displayed pose. A party strike's walk
+    /// back chases endpoints both bodies and the attacker's heading moved
+    /// (`camera_align::walker_end_shift`); retail films of three party
+    /// strikes put the displayed frame two passes back, where their poses
+    /// read `image` `.992` (`battle_jou_party_gala_chain_mid`), `.996`
+    /// (`battle_garmel_party_noa_lizard_tail_mid`) and `.985`
+    /// (`battle_ropeway_party_gala_flying_knee_late`), against `.746`,
+    /// `.911` and `.927` on the replay's own glide aligned onto agreeing
+    /// endpoints.
     /// The alignment otherwise takes only the components whose endpoint the
     /// replay's framing agrees with, and the replay's case 7 reads the body
     /// pairs a pass newer than the arm did: `battle_korb2_aluru_strike`'s
@@ -254,13 +263,45 @@ impl RetailBattle {
     pub fn stand_on_displayed_pose(&self) -> bool {
         let strike = matches!(
             (self.seed_plan(), self.span_gate),
-            (SeedPlan::Action { seat, state: 0x1E }, SpanGate::Age { .. }) if seat >= 3
+            (SeedPlan::Action { state: 0x1E, .. }, SpanGate::Age { .. })
         ) && self.queued_category == 3;
         let scythe_sweep = self.active_actor >= 3
             && self.action_state == 0x70
             && self.queued_action == 0x5B
             && (3..=5).contains(&self.module_phase);
         strike || scythe_sweep
+    }
+
+    /// The strike's turn on the RAM's pass: the heading `+0x46` the pass
+    /// stored less the one its framing arm read, on a strike-loop capture.
+    ///
+    /// State `0x1E` arms case 7 (`0x801E36E8`) before it re-faces the attacker
+    /// (`0x801E371C`), and case 7's yaw is `ctx[+0x6DA] + 0x900 - heading`,
+    /// half a turn on for an odd style `ctx[+0xD]`: the table's endpoint and
+    /// the counter name the heading the arm read exactly. Retail films of
+    /// three strikes read it so on every pass (`battle_jou_party_gala_chain_mid`
+    /// `129` under a stored `157`; `battle_jou_party_vahn_chain_late` `3857`
+    /// under `3853`; `battle_ropeway_party_gala_flying_knee_late` `807` under
+    /// `804`). `None` off the strike loop, without a captured heading, or for
+    /// a turn wider than [`STRIKE_ARM_TURN_MAX`] (another framing's table).
+    pub fn strike_arm_turn(&self) -> Option<f32> {
+        if self.action_state != 0x1E {
+            return None;
+        }
+        let facing = i32::from(
+            self.facing
+                .get(usize::from(self.active_actor))
+                .copied()
+                .flatten()?,
+        );
+        let end = (self.cam_tween.1.yaw.round() as i32).rem_euclid(4096);
+        let arm = (i32::from(self.walk_yaw_base)
+            + super::camera_align::CASE7_YAW_BASE
+            + 0x800 * i32::from(self.cam_style & 1)
+            - end)
+            .rem_euclid(4096);
+        let turn = (facing - arm + 2048).rem_euclid(4096) - 2048;
+        (turn.abs() <= STRIKE_ARM_TURN_MAX).then_some(turn as f32)
     }
 
     /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,
@@ -2365,3 +2406,8 @@ pub fn stale_pass_gap(gap: i32, s1: i32, s2: i32) -> i32 {
         })
         .map_or(gap, |k| gap + s1 * k)
 }
+
+/// The widest strike turn [`RetailBattle::strike_arm_turn`] reads as one
+/// pass's re-face: a heading a pass moves by far less than this
+/// (`battle_jou_party_gala_chain_mid`'s `28` is the widest the corpus holds).
+const STRIKE_ARM_TURN_MAX: i32 = 0x80;

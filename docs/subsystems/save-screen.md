@@ -964,6 +964,7 @@ Ten words inside the window, each at SC offset `VA - 0x80084140`:
 | `0x8008445C` | `0x31C` | best species |
 | `0x80084460` | `0x320` | cast counter |
 | `0x80084464` | `0x324` | dance hall best score ([dance](minigame-dance.md#the-saved-best)) |
+| `0x80084468` | `0x328` | dance free play's song counter |
 | `0x8008446C` | `0x32C` | prize bitmask |
 | `0x800845A4` | `0x464` | casino coins |
 | `0x800845B4` | `0x474` | Point Card bank |
@@ -971,7 +972,8 @@ Ten words inside the window, each at SC offset `VA - 0x80084140`:
 `legaia_save::MinigameSave` carries them: `SaveFile::from_retail_sc_block`
 reads them, `write_into_retail_sc_block` writes them, an engine `LGSF` file
 holds them in the optional `LGX7` block (emitted only when one is non-zero; a
-nine-word body from before the dance best reads it as `0`),
+shorter body from before the dance best or the song counter reads each
+missing word as `0`),
 and `World::save_full` / `load_full` map them to `World::minigames`.
 
 ### The play clock

@@ -221,6 +221,20 @@ const DEFAULT_ARM_CHANNEL_OFFSETS: [u16; 5] = [0xB4, 0xB6, 0xB8, 0xBA, 0xC8];
 
 const FLOOR_RING_RECORD: u32 = 0x801F_5EB0;
 
+/// The art speed lines: the effect-script table arm's codes `10`, `45`,
+/// `46` and `47` (`0x801F6324[10]`, `[45..=47]`), each a library mesh `13`
+/// ray fan seated by `FUN_801DEA50` on the acting actor's facing turned
+/// half a circle. Their programs set a colour word, a morph lane, a level
+/// rate and a wait and halt (op `0x0C`, `0x0A`, `0x0D`, `0x09`, `0x08`):
+/// nothing moves or turns them, so the pose the RAM holds is the one every
+/// frame since the seat drew. The replay seats its fan on its own facing
+/// and ground, which the capture's displayed seat replaces only after the
+/// seat: `minigame_muscle_dome_retail_skeleton_hyper_arts` holds code
+/// `45`'s fan at `(-32, -170, -139)` turned `2144` (Vahn's `96` plus
+/// `0x800`), where the replay seated it at `(-26, -170, -147)` turned
+/// `2125`, and every ray stood a few pixels off retail's.
+const SPEED_LINE_RECORDS: [u32; 4] = [0x801F_55F8, 0x801F_5628, 0x801F_5658, 0x801F_5688];
+
 /// Whether part `node` is a draw-kind-4 node on the default arm
 /// (`+0x56 == 4`, `+0x9E & 0x6000 == 0`, `0x8001B128..0x8001B134`) in a
 /// render mode whose channel block grows (`+0x5A` `2` or `6`,
@@ -381,6 +395,7 @@ pub(super) fn retail_action_fx_parts(
                     || fan_fading_through_lag(ram, n, lag))
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
+                    || SPEED_LINE_RECORDS.contains(&rec)
                     || is_growing_default_arm(ram, n)
                     || is_ray_burst(ram, n)
                     || (0x80..=0x84)
@@ -393,6 +408,12 @@ pub(super) fn retail_action_fx_parts(
                 legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                     .iter()
                     .chain(&BURST_CHILD_EXTRA_OFFSETS)
+                    .copied()
+                    .collect()
+            } else if SPEED_LINE_RECORDS.contains(&tag) {
+                RAY_BURST_POSITION_OFFSETS
+                    .iter()
+                    .chain(&ACTION_FX_SEED_OFFSETS)
                     .copied()
                     .collect()
             } else if is_growing_default_arm(ram, n) {
@@ -426,9 +447,12 @@ pub(super) fn retail_action_fx_parts(
             let level = (fan_level_ramping(ram, n) || is_floor_ring(ram, n))
                 .then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             // A floor ring stands where the strike's stomp seated it, a point
-            // on a walk the replay runs on its own clock.
+            // on a walk the replay runs on its own clock - or never runs, when
+            // it stands the caster on the walked ground: the scale `+0x72`
+            // lets the snapshot seat such a ring itself.
             let stood: Vec<(u16, u16)> = RAY_BURST_POSITION_OFFSETS
                 .iter()
+                .chain(&[0x72])
                 .filter(|_| is_floor_ring(ram, n))
                 .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
                 .collect();
@@ -1012,7 +1036,7 @@ impl RetailBattle {
                             shift[1] = walk_heading(ram, ctx)
                                 .map(|h| h.end_shift)
                                 .or_else(|| clip_clock_end_shift(ram, ctx))
-                                .unwrap_or(0);
+                                .unwrap_or(shift[1]);
                             shift
                         },
                         walk_arm.is_some(),
@@ -1051,7 +1075,15 @@ impl RetailBattle {
             }
             let mut further_steps = steps.clone();
             further_steps.push(steps.last().copied().unwrap_or(frame_step(ram)));
-            let ghost = displayed_ghost_pose(ram, ctx, action_state, shown, walk(&further_steps));
+            let further_vsyncs = further_steps.iter().map(|&s| u32::from(s.max(1))).sum();
+            let ghost = displayed_ghost_pose(
+                ram,
+                ctx,
+                action_state,
+                shown,
+                walk(&further_steps),
+                further_vsyncs,
+            );
             (shown, ghost)
         };
         Ok(Self {

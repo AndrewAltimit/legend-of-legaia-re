@@ -552,6 +552,31 @@ probe.run({
                 end)
             end
         end
+        if probe.getenv_num("LEGAIA_CALC_CLOCK", 0) ~= 0 then
+            -- Each libsnd calc FUN_80062F98 (the root-counter callback) and
+            -- each KON write FUN_8006B854(1, mask), with the CPU cycle: a calc
+            -- skipped or doubled across a cast's blocking arms shows as a
+            -- cycle gap of 0 or 2 vsyncs (breakpoint core). The mask is a1.
+            local calc_csv = probe.csv_open(probe.out_path("calc.csv"), "vsync,st7,phase,kind,cycle,mask,ra")
+            local function calc_row(kind)
+                local R = PCSX.getRegisters()
+                local n = R.GPR.n
+                local function w(v)
+                    v = tonumber(v) or 0
+                    return v < 0 and v + 0x100000000 or v
+                end
+                local c = u32(CTX_PTR)
+                local ok = c >= 0x80000000
+                calc_csv:row("%d,%d,%d,%s,%.0f,0x%06X,0x%08X", probe.cast_elapsed or 0,
+                    ok and u8(c + 7) or -1, ok and u8(c + 0x279) or -1, kind,
+                    tonumber(PCSX.getCPUCycles()), kind == "kon" and w(n.a1) or 0, w(n.ra))
+            end
+            probe.arm_breakpoint(0x80062F98, "Exec", 4, "calc", function() calc_row("calc") end)
+            probe.arm_breakpoint(0x8006B854, "Exec", 4, "kon", function()
+                local R = PCSX.getRegisters()
+                if (tonumber(R.GPR.n.a0) or 0) == 1 then calc_row("kon") end
+            end)
+        end
         if probe.getenv_num("LEGAIA_PRIM_CALLS", 0) ~= 0 then
             -- Each entry of the prim dispatcher FUN_80043390: mesh a0, colour
             -- word a1, level a2, the caller, and the mesh's first group words;

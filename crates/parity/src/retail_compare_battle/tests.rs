@@ -1894,6 +1894,31 @@ fn numeral_cells_come_off_the_arenas_and_step_back_a_pass() {
     );
 }
 
+/// Two numerals in the arenas: `battle_jou_party_vahn_chain_late`'s `346`
+/// resting on row `32` (`93` at 24 px older, `89` at 23 px newer) beside
+/// its `464` still rising (`(112, 83)` 13 px older, `(103, 60)` 16 px
+/// newer). The resting numeral does not make the rising one's step
+/// unknown, and each cell steps back by its own move.
+#[test]
+fn a_resting_numeral_beside_a_rising_one_steps_back_cell_by_cell() {
+    let q = |x: i16, y: i16, w: i16, digit: u8| popup_cells::DigitQuad {
+        x,
+        y,
+        w,
+        digit,
+        addr: 0,
+    };
+    let older = [q(93, 32, 24, 3), q(112, 83, 13, 4)];
+    let newer = [q(89, 32, 23, 3), q(103, 60, 16, 4)];
+    assert!(!popup_cells::rest_row_unknown(&older, &newer));
+    let back = popup_cells::step_back(&older, &newer);
+    assert_eq!((back[0].x, back[0].y, back[0].w), (97, 32, 24));
+    assert_eq!((back[1].x, back[1].y, back[1].w), (121, 106, 10));
+    // A rising cell the newer pass already put on the row is still unknown.
+    let newer = [q(89, 32, 23, 3), q(103, 32, 16, 4)];
+    assert!(popup_cells::rest_row_unknown(&older, &newer));
+}
+
 /// A strike-loop swing committed between the displayed frame and the RAM's:
 /// the ring ids and the cursor ring say so, and the image child stands the
 /// acting seat on the ring's displayed pair (`rim_elm_gimard_victory`'s
@@ -2424,7 +2449,7 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
 }
 
 #[test]
-fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
+fn a_strike_loop_capture_stands_on_the_walked_back_pose() {
     let mut ram = vec![0u8; 0x20_0000];
     let ctx = 0x800E_B654;
     put32(&mut ram, BATTLE_CTX, ctx);
@@ -2444,7 +2469,7 @@ fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
     b.span_gate = SpanGate::Age { accum: 0 };
     assert!(b.stand_on_displayed_pose());
     b.active_actor = 0;
-    assert!(!b.stand_on_displayed_pose(), "a party seat");
+    assert!(b.stand_on_displayed_pose(), "a party seat's strike");
     b.active_actor = 4;
     b.action_state = 0x2B;
     assert!(!b.stand_on_displayed_pose(), "a cast");
@@ -2954,4 +2979,74 @@ fn a_party_strike_on_its_first_swing_stands_on_the_walks_start() {
         "a committed swing keeps the captured pair"
     );
     assert_eq!(b.seeded_ground()[0], Some([-128, -258]));
+}
+
+/// Case 7's endpoint names the heading the strike pass's arm read
+/// (`ctx[+0x6DA] + 0x900 - heading`, half a turn on for an odd style): the
+/// two retail films' passes, `battle_jou_party_gala_chain_mid` (`129` under a
+/// stored `157`) and `battle_garmel_party_noa_lizard_tail_mid` (style `3`,
+/// `3114` under `3105`).
+#[test]
+fn a_strike_capture_names_the_turn_its_arm_did_not_see() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.action_state = 0x1E;
+    b.active_actor = 2;
+    b.facing = vec![None, None, Some(157)];
+    b.walk_yaw_base = 646;
+    b.cam_style = 2;
+    b.cam_tween.1.yaw = 2821.0;
+    assert_eq!(b.strike_arm_turn(), Some(28.0));
+    b.facing = vec![None, Some(3105)];
+    b.active_actor = 1;
+    b.walk_yaw_base = 604;
+    b.cam_style = 3;
+    b.cam_tween.1.yaw = 1842.0;
+    assert_eq!(b.strike_arm_turn(), Some(-9.0));
+    b.action_state = 0x1F;
+    assert_eq!(b.strike_arm_turn(), None, "case 8 can own 0x1F's table");
+    b.action_state = 0x1E;
+    b.cam_tween.1.yaw = 1000.0;
+    assert_eq!(b.strike_arm_turn(), None, "another framing's endpoint");
+}
+
+/// A floor ring (record `0x801F5EB0`, the effect script's stomp ring) is
+/// seeded with its ground point and its scale `+0x72` beside its banks,
+/// radii and level, so the snapshot can seat a ring the replay never
+/// stomped: `koru_gigaton_press_mid_cast`'s youngest ring stands at
+/// `(-214, 0, 75)`, scale `3072`, radii `224 / 320`, not yet fading.
+#[test]
+fn a_floor_ring_is_seeded_with_its_ground_point_and_scale() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let n = 0x8008_2D74;
+    put32(&mut ram, 0x8007_C34C + 4, n);
+    put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, n + 0x10, 0x0004_4880);
+    put32(&mut ram, n + 0x48, 0x801F_5EB0);
+    put16(&mut ram, n + 0x14, (-214i16) as u16);
+    put16(&mut ram, n + 0x18, 75);
+    put16(&mut ram, n + 0x56, 4);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x72, 3072);
+    put16(&mut ram, n + 0x9E, 1);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(seeds[0].tag, 0x801F_5EB0);
+    let poke = |o: u16| {
+        seeds[0]
+            .pokes
+            .iter()
+            .find(|&&(k, _)| k == o)
+            .map(|&(_, v)| v)
+    };
+    assert_eq!(poke(0x14), Some((-214i16) as u16));
+    assert_eq!(poke(0x16), Some(0));
+    assert_eq!(poke(0x18), Some(75));
+    assert_eq!(poke(0x72), Some(3072));
 }

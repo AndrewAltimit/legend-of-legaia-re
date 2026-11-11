@@ -56,6 +56,43 @@ pub fn apply_flat_bank(cba_tsb: &mut [[u16; 2]]) {
     }
 }
 
+/// Give a bank-2 body's every corner the colour its packet carries: the
+/// bank's textured leaves write one colour word per primitive, the record's
+/// first (`lw s7,0x0(a1)` at `0x80045988`, cued by `DPCS` and stored as the
+/// `POLY_FT4`'s word at `0x80045B58..0x80045B78`; the triangle leaf
+/// `0x800457C4` likewise), so a Gouraud primitive draws flat in its first
+/// corner's colour. `colours` holds one entry per vertex of the triangle list
+/// `indices`, a quad split `[0,1,2, 1,3,2]` as the mesh builders split it
+/// ([`legaia_render_kernels::prim_near_reject::prim_corner_plan`] groups it
+/// back); a vertex shared between primitives keeps its own colour.
+pub fn apply_flat_bank_colours<T: Copy>(colours: &mut [T], indices: &[u32]) {
+    use legaia_render_kernels::prim_near_reject::{PrimPlanScratch, prim_corner_plan_into};
+    use std::cell::RefCell;
+    // A ghost body flattens every frame it is near the eye; the plan's buffers
+    // stay with the thread so the pass allocates nothing once warm.
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<[u32; 5]>, PrimPlanScratch)> = RefCell::default();
+    }
+    SCRATCH.with_borrow_mut(|(plan, scratch)| {
+        prim_corner_plan_into(colours.len(), indices, plan, scratch);
+        flatten(colours, plan);
+    });
+}
+
+fn flatten<T: Copy>(colours: &mut [T], plan: &[[u32; 5]]) {
+    // In place: the plan marks only the corners of primitives that own every
+    // corner alone, and such a primitive's first corner plans to itself, so
+    // no corner that is read as a first corner is ever written.
+    for (v, rec) in plan.iter().enumerate() {
+        if rec[4] != 0
+            && let Some(&first) = colours.get(rec[0] as usize)
+            && let Some(c) = colours.get_mut(v)
+        {
+            *c = first;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +108,22 @@ mod tests {
         let mut ct = [[0x7980, 0x8035 | g], [0x7980, 0x0015]];
         apply_flat_bank(&mut ct);
         assert_eq!(ct, [[0x7980, 0x8035], [0x7980, 0x0015]]);
+    }
+
+    #[test]
+    fn a_bank_2_primitive_draws_in_its_first_corners_colour() {
+        // A Gouraud quad `[88, 128, 88, 128]` (Gala's near panel) and a
+        // triangle `[96, 128, 104]`: each corner takes corner 0's word.
+        let mut c = [
+            [88u8; 3], [128; 3], [88; 3], [128; 3], [96; 3], [128; 3], [104; 3],
+        ];
+        apply_flat_bank_colours(&mut c, &[0, 1, 2, 1, 3, 2, 4, 5, 6]);
+        assert_eq!(
+            c,
+            [
+                [88; 3], [88; 3], [88; 3], [88; 3], [96; 3], [96; 3], [96; 3]
+            ]
+        );
     }
 
     #[test]

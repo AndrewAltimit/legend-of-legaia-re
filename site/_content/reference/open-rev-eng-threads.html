@@ -4,6 +4,17 @@
   <p class="lede">The live list of this project's unsolved mysteries. Every row is a reverse-engineering <em>question</em> about how Legaia's runtime works that is still contested, with what is already known and the concrete next step that would close it. If you are looking for a way to contribute, this page is the invitation.</p>
 </header>
 
+<style>
+.ore-summary td:nth-child(3) { width: 22%; min-width: 5rem; }
+.ore-summary tfoot td { font-weight: 600; color: var(--text-bright); border-top: 1px solid var(--border); }
+.ore-bar { display: block; height: 0.55rem; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ore-bar > span { display: block; height: 100%; background: var(--accent); }
+.ore-empty { color: var(--text-dim); font-style: italic; }
+@media (max-width: 620px) {
+  .ore-summary th:nth-child(5), .ore-summary td:nth-child(5) { display: none; }
+}
+</style>
+
 <!--REGISTER-NAV:open-->
 
 <section class="doc-section" id="overview" data-doc="what-this-page-is-for">
@@ -47,7 +58,10 @@
 
 <section class="doc-section" id="at-a-glance" data-doc="-">
   <h2>Where the live hunts are</h2>
-  <p>The live list is kept area by area below, one table per area holding every open question in it. An area with no open question stays on the page and says so - "this area has nothing open" is worth knowing before you start a hunt in it - and points at the settled and falsified pages for that area. The areas, their rows and the corrected-claims list are rendered from <code>docs/reference/open-rev-eng-threads.md</code> when the site is built, so a thread that closes in the docs leaves this page in the same build.</p>
+  <p>Each live hunt sits in one area of the game. The table counts them per area and by status, so you can see at a glance where the open questions cluster before reading any of them. Pick an area, jump to its table, and read a row's last column: it names the probe, dump or capture that would close the question.</p>
+  <!--REGISTER-SUMMARY:open-->
+  <p class="hint">The counts, the areas and every row below are rendered from <code>docs/reference/open-rev-eng-threads.md</code> when the site is built, so a thread that opens or closes in the docs changes this table in the same build. A thread is either a row of an area's table or a write-up of its own whose first line states its status; a write-up that a row links to is that row's long form and is not counted twice.</p>
+  <p>An area with nothing open stays on the page and says so - "this area has nothing open" is worth knowing before you start a hunt in it - and points at the settled and falsified pages for that area.</p>
 </section>
 
 <section class="doc-section" id="grades" data-doc="what-an-evidence-grade-means">

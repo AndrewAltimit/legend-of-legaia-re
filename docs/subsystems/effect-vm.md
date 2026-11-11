@@ -171,9 +171,17 @@ For each live child, one flat textured **semi-transparent quad** (9-word GPU
 packet, tag `0x09000000`, prim code `0x2E`):
 
 - **Brightness envelope.** With `n = frame_count >> 3`, the modulation ramps in over the first eighth of the animation (`0x80 * (frame_cursor+1) / n`), then back out over the rest (`0x80 * (frame_count - frame_cursor) / (frame_count - n)`), clamped at `0x80` (neutral) and written as `r = g = b`.
-- **Size.** Atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00`, so x10 texel size) is the **half**-extent: `FUN_800195A8` forms the corners as the view-space centre minus and plus it (`0x801E082C..0x801E0880` hand it over as `a1` / `a2`), so the quad spans twice the value. The quad is inserted into the ordering table at `_DAT_1F8003F4 + depth * 4`.
+- **Size.** Atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00`, so x10 texel size; PROT 0904 and 0909 lower it for their casts, below) is the **half**-extent: `FUN_800195A8` forms the corners as the view-space centre minus and plus it (`0x801E082C..0x801E0880` hand it over as `a1` / `a2`), so the quad spans twice the value. The quad is inserted into the ordering table at `_DAT_1F8003F4 + depth * 4`.
 - **UV corners.** Base / extent from the 8-byte atlas entry, corner order swapped per the child's mirror bits.
 - **Atlas fields.** `+4` is the CLUT (u16) and `+6` the tpage (byte): the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field. `0x7680` in that slot is a CLUT - CBA framebuffer `(0,474)`, an effect-CLUT row - not a tpage naming page `(0,0)` at 8bpp. A melee hit-spark capture confirms it: no prim samples page `(0,0)`, and the spark's quads sample the loaded effect pages.
+
+The scale is pool state, not per-effect: two player Seru modules store it.
+Viguro's arm 0 sets `0x600` (`0x801F6BC4..0x801F6BCC`) and Theeder's `0x400`
+(`0x801F6C28..0x801F6C34`), Theeder's arm-12 hits `0x800`
+(`0x801F7DC8..0x801F7DD4`), and both `0xFF` arms restore `0xA00`, so the sparks
+their creatures shed draw smaller than a melee hit's. Port:
+`cast_module_ticks::effect_sprite_scale_store` onto `Pool::head`; the battle
+teardown re-inits the pool as the battle load does.
 
 ### Blending comes from the prim code
 
@@ -460,6 +468,13 @@ the stream's word as its seed (`BattleState::cast_ribbon_seeds`) and steps the
 stream past its draws; the draw replays each ribbon from its seed
 (`streak_pass::ribbon_quads_seeded`). Per frame the engine's counts through
 arms 5..9 are retail's.
+
+A homing flight's bolts are the same calls from the flight's slot loop
+(`0x801E1284..0x801E12D8` in flight, `0x801E17EC..0x801E1834` once landed), and
+the port deals them the same way (`World::deal_flight_ribbon_rands`,
+`BattleState::flight_ribbon_seeds`). Drawn off a per-frame seed instead, every bolt
+pass left the stream short: Thunder Break's state `0x2B` read `312` draws against
+retail's `3000`.
 
 The dispatcher hands the emitter `src = actor + 0x9C`, so the emitter's
 "record" is the actor. The selector and the draw kind are written by the

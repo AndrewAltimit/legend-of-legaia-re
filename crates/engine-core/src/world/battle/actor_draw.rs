@@ -118,6 +118,25 @@ impl BattleActorDrawPlan {
         }
     }
 
+    /// Flatten this body's per-vertex packet colours when its colour word
+    /// takes handler bank 2 (the near-camera ghost, bit `0x04000000`),
+    /// whose leaves write one colour per primitive
+    /// ([`legaia_engine_battle::battle_body_blend::apply_flat_bank_colours`]).
+    /// Both hosts call it beside [`Self::apply_body_blend`]: the native
+    /// window on its posed and blended rest meshes, the browser page on the
+    /// packet-colour stream it re-sends.
+    pub fn apply_flat_bank_colours<T: Copy>(&self, colours: &mut [T], indices: &[u32]) {
+        use legaia_engine_battle::battle_body_blend as bb;
+        if bb::draw_colour_flat_bank(self.draw_colour) {
+            bb::apply_flat_bank_colours(colours, indices);
+        }
+    }
+
+    /// Whether the body's colour word takes handler bank 2 (flat packets).
+    pub fn flat_bank(&self) -> bool {
+        legaia_engine_battle::battle_body_blend::draw_colour_flat_bank(self.draw_colour)
+    }
+
     /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)
     /// this frame, given its render flag. The target cursor's two flags
     /// carry their own cue (`battle_action::cursor_cue`); the capture /

@@ -573,6 +573,12 @@ impl LegaiaMinigames {
             &mut self.fx,
             || scene.as_ref().and_then(|s| s.map.clone()),
         );
+        self.fishing_catch_frame = if p.phase() == legaia_engine_fishing::fishing::PondPhase::Landed
+        {
+            self.fishing_catch_frame.wrapping_add(1)
+        } else {
+            0
+        };
         // A broken line spends the equipped lure (the break arm's
         // `FUN_80042310(lure + 0x9D, 1)`), off this page's stand-in stock.
         for id in p.take_spent_lures() {

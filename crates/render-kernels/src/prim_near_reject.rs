@@ -252,10 +252,40 @@ pub fn prim_corner_refs(positions: &[[f32; 3]], indices: &[u32]) -> Vec<PrimRef>
 /// with no single owner). A mesh that re-poses keeps its plan and re-reads only
 /// the positions - the browser host does, per mesh per frame.
 pub fn prim_corner_plan(vertex_count: usize, indices: &[u32]) -> Vec<[u32; 5]> {
-    let mut plan = vec![[0u32; 5]; vertex_count];
+    let mut plan = Vec::new();
+    prim_corner_plan_into(
+        vertex_count,
+        indices,
+        &mut plan,
+        &mut PrimPlanScratch::default(),
+    );
+    plan
+}
+
+/// The working buffers [`prim_corner_plan_into`] reuses between calls.
+#[derive(Default)]
+pub struct PrimPlanScratch {
+    groups: Vec<([u32; 4], u8)>,
+    owner: Vec<usize>,
+    shared: Vec<bool>,
+}
+
+/// [`prim_corner_plan`] into a caller's buffers: `plan` is cleared and refilled,
+/// and a caller that keeps `plan` and `scratch` between frames allocates nothing
+/// once they have grown to its largest mesh.
+pub fn prim_corner_plan_into(
+    vertex_count: usize,
+    indices: &[u32],
+    plan: &mut Vec<[u32; 5]>,
+    scratch: &mut PrimPlanScratch,
+) {
+    plan.clear();
+    plan.resize(vertex_count, [0u32; 5]);
     let tris = indices.as_chunks::<3>().0;
     // Group the triangles into primitives (three or four corners, held inline).
-    let mut groups: Vec<([u32; 4], u8)> = Vec::with_capacity(tris.len());
+    let groups = &mut scratch.groups;
+    groups.clear();
+    groups.reserve(tris.len());
     let mut i = 0;
     while i < tris.len() {
         let a = tris[i];
@@ -273,8 +303,12 @@ pub fn prim_corner_plan(vertex_count: usize, indices: &[u32]) -> Vec<[u32; 5]> {
         i += 1;
     }
     // A vertex owned by more than one primitive disqualifies all of them.
-    let mut owner = vec![usize::MAX; vertex_count];
-    let mut shared = vec![false; groups.len()];
+    let owner = &mut scratch.owner;
+    owner.clear();
+    owner.resize(vertex_count, usize::MAX);
+    let shared = &mut scratch.shared;
+    shared.clear();
+    shared.resize(groups.len(), false);
     for (g, (corners, n)) in groups.iter().enumerate() {
         for &v in &corners[..*n as usize] {
             let Some(o) = owner.get_mut(v as usize) else {
@@ -299,7 +333,6 @@ pub fn prim_corner_plan(vertex_count: usize, indices: &[u32]) -> Vec<[u32; 5]> {
             plan[v as usize] = rec;
         }
     }
-    plan
 }
 
 #[cfg(test)]

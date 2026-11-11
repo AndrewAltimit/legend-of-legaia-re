@@ -142,7 +142,13 @@ fn an_absorbing_kill_flinches_a_monster_without_a_get_up() {
     seat_reaction_clips(&mut w, false);
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
     assert_eq!(w.battle_ctx.absorbed_seru, 1, "Seru 1 staged");
-    assert_eq!(w.actors[1].battle_reaction_entry, Some(1), "flinch");
+    // Staged for the defender's next node tick on retail's cadence.
+    let staged = w.actors[1].battle_reaction_stage.map(|(e, _)| e);
+    assert_eq!(
+        w.actors[1].battle_reaction_entry.or(staged),
+        Some(1),
+        "flinch"
+    );
 }
 
 /// The War God Icon carry (apply mode `0xFF`) branches from `0x801EE12C`
@@ -334,17 +340,46 @@ fn a_flagged_swing_on_a_party_member_takes_the_xa_leg() {
 }
 
 #[test]
-fn a_flagged_sting_is_dropped_while_the_drive_is_busy() {
+fn a_flagged_sting_is_dropped_while_a_stream_read_is_in_flight() {
     let mut w = duel();
     w.battle.monster_ai_state.flag_bd84 = 1;
     w.audio.xa_cue_durations = Some(durations_with_melee_entry());
     w.battle_ctx.active_actor = 1;
-    // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a read in flight drops the
-    // voice leg's request.
-    w.audio.battle_xa_busy_frames = 5;
+    // `FUN_8003DE7C(1) != 0` at `0x8004FE9C`: a data read in flight (the
+    // side-band applier's) drops the voice leg's request.
+    w.casting.sideband_read_left = Some(5);
     w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
     assert!(w.take_sfx_ring_ops().is_empty());
     assert!(w.drain_battle_xa_cues().is_empty());
+}
+
+#[test]
+fn a_flagged_sting_replaces_a_sounding_clip() {
+    let mut w = duel();
+    w.battle.monster_ai_state.flag_bd84 = 1;
+    w.audio.xa_cue_durations = Some(durations_with_melee_entry());
+    w.battle_ctx.active_actor = 1;
+    // A clip still inside its read span is not a data read: the poll's
+    // `gp+0x91C` countdown sits behind `0x8007BA70 != 0`, which retail
+    // holds at `0`, so the sting starts over the sounding clip.
+    w.audio.battle_xa_busy_frames = 5;
+    w.land_melee_hit(1, 0, BASIC_ATTACK_COMMAND, 0, false, true);
+    assert_eq!(w.drain_battle_xa_cues().len(), 1);
+}
+
+#[test]
+fn a_block_grunt_waits_for_the_sounding_clip() {
+    let mut w = duel();
+    w.audio.xa_cue_durations = Some(durations_with_melee_entry());
+    w.actors[1].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
+    // `_DAT_8007BC20 < 2` at `0x801EEAB4`: a one-shot still playing holds
+    // the word at `2`, and the grunt is skipped.
+    w.audio.battle_xa_busy_frames = 5;
+    w.fire_melee_impact_cue(0, 1, Some(0x0B));
+    assert!(w.drain_battle_xa_cues().is_empty());
+    w.audio.battle_xa_busy_frames = 0;
+    w.fire_melee_impact_cue(0, 1, Some(0x0B));
+    assert_eq!(w.drain_battle_xa_cues().len(), 1);
 }
 
 /// Seat a playing clip on `slot` whose event-frame list (`+0x10..`)

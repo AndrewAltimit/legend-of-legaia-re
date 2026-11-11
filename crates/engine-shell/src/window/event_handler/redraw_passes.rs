@@ -403,12 +403,14 @@ impl PlayWindowApp {
                 {
                     let mut cba_tsb = rest.cba_tsb.clone();
                     plan.apply_body_blend(&mut cba_tsb);
+                    let mut colors = rest.colors.clone();
+                    plan.apply_flat_bank_colours(&mut colors, &rest.indices);
                     match r.upload_vram_mesh(
                         &rest.positions,
                         &rest.uvs,
                         &cba_tsb,
                         &rest.normals,
-                        &rest.colors,
+                        &colors,
                         &rest.indices,
                     ) {
                         Ok(m) => posed_overrides[ai] = Some(m),
@@ -519,6 +521,7 @@ impl PlayWindowApp {
             // `web-play::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
                 plan.apply_body_blend(&mut vmesh.cba_tsb);
+                plan.apply_flat_bank_colours(&mut vmesh.colors, &vmesh.indices);
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
@@ -785,6 +788,10 @@ impl PlayWindowApp {
             .iter()
             .filter_map(|fp| {
                 let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                // A part with armed morph lanes draws its own staged
+                // vertices (`FUN_8001ADA4` -> `FUN_8001C604`).
+                let morphed = world.part_morphed_tmd(&fp.draw, tmd);
+                let tmd = morphed.as_ref().unwrap_or(tmd);
                 let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
                 // The case-5 draw's render state: scale `+0x72`, colour word
                 // `+0x74` / `+0x78` (ABE / ABR ORed into every packet).
@@ -808,6 +815,8 @@ impl PlayWindowApp {
             .iter()
             .filter_map(|fp| {
                 let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                let morphed = world.part_morphed_tmd(&fp.draw, tmd);
+                let tmd = morphed.as_ref().unwrap_or(tmd);
                 let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(tmd, raw);
                 if cmesh.is_empty() {
                     return None;

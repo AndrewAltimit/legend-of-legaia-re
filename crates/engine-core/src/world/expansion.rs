@@ -675,6 +675,7 @@ impl World {
         a.battle_reaction = None;
         a.battle_reaction_entry = None;
         a.battle_reaction_next = None;
+        a.battle_reaction_stage = None;
         a.battle_effect_script = None;
         a.battle_effect_cursor = 0;
         a.battle_anim_cue_cursor = 0;

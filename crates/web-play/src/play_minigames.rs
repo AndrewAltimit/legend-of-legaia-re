@@ -325,23 +325,29 @@ impl LegaiaRuntime {
     /// This host's two answers: the slot machine draws itself once its
     /// resident set decoded, and the fishing rows name the keys of the
     /// page's **live** binding table ([`crate::pad_bindings::live_mapping`],
-    /// so a rebind shows) plus the prize-exchange button beside the frame.
+    /// so a rebind shows) - or the controller's buttons while one was pressed
+    /// last ([`crate::pad_bindings::prompt_label`]) - plus the prize-exchange
+    /// button beside the frame.
     pub(crate) fn minigame_caption(
         &self,
     ) -> Option<legaia_engine_minigame_scenes::minigame_status::MinigameCaption> {
         use legaia_engine_minigame_scenes::minigame_status as ms;
         let host = self.scene_host.host()?;
-        let mapping = crate::pad_bindings::live_mapping();
-        let key = |button: &'static str| mapping.key_label_for_button(button).unwrap_or(button);
+        // The keys, or the controller's buttons while one was pressed last.
+        let key = |button: &str| {
+            crate::pad_bindings::prompt_label(button).unwrap_or_else(|| button.to_string())
+        };
+        let [cross, circle, square, triangle, start] =
+            ["Cross", "Circle", "Square", "Triangle", "Start"].map(key);
         host.world.minigame_caption(&ms::StatusHost {
             slot_machine_drawn: self.play_mg_slot_cabinet_ready(),
             fishing_keys: ms::FishingKeys {
-                cast: key("Cross"),
-                back: key("Circle"),
-                reel_a: key("Cross"),
-                reel_b: key("Square"),
-                menu: key("Triangle"),
-                quit: key("Start"),
+                cast: &cross,
+                back: &circle,
+                reel_a: &cross,
+                reel_b: &square,
+                menu: &triangle,
+                quit: &start,
                 prizes: "Prize exchange button",
             },
         })

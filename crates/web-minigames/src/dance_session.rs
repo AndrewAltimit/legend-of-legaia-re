@@ -180,6 +180,40 @@ impl LegaiaMinigames {
         }
     }
 
+    /// [`Self::dance_tick`] with this frame's press, judged where the play
+    /// hosts judge it: `World::tick_dance` hands the frame's edge to
+    /// `DanceGame::advance_vsync`, which latches it and judges it on the next
+    /// game frame (one every third vsync), in slot 0's turn after that
+    /// frame's beat-clock advance. `dir` is [`Self::dance_press`]'s symbol for
+    /// the first of the `frames` vsyncs (`0` = no press).
+    ///
+    /// Returns the event a game frame inside these vsyncs judged, in
+    /// [`Self::dance_press`]'s names, or `""` when none did (no press
+    /// pending, or the latched press waits for the next game frame).
+    ///
+    /// The page's [`Self::dance_press`] judges at the call, ahead of the
+    /// frame's advance, so the same input judged up to a game frame early
+    /// against the play hosts; this is the call the page's frame makes.
+    pub fn dance_tick_pressing(&mut self, frames: u32, dir: u8) -> String {
+        let Some(g) = self.dance.as_mut() else {
+            return String::new();
+        };
+        let mut press = match dir {
+            1 => Some(DanceDir::A),
+            2 => Some(DanceDir::B),
+            3 => Some(DanceDir::C),
+            _ => None,
+        };
+        let mut event = None;
+        for _ in 0..frames {
+            if let Some(e) = g.advance_vsync(press.take()) {
+                event = Some(e);
+            }
+        }
+        g.advance_camera(frames.min(u32::from(u8::MAX)) as u8);
+        event.map_or_else(String::new, |e| dance_event_name(e).to_string())
+    }
+
     /// Press a dance button. `1` = Square, `2` = Circle (the judged directions),
     /// `3` = **Triangle**, the three-per-song "groovy move" wildcard.
     ///
@@ -198,16 +232,7 @@ impl LegaiaMinigames {
             3 => DanceDir::C,
             _ => return "none".to_string(),
         };
-        match g.press(d) {
-            DanceEvent::Miss => "miss",
-            DanceEvent::Hit { .. } => "hit",
-            DanceEvent::Sequence { .. } => "sequence",
-            DanceEvent::Groovy { landed: true, .. } => "groovy",
-            DanceEvent::Groovy { landed: false, .. } => "groovy_off",
-            DanceEvent::NoCharge => "no_charge",
-            DanceEvent::Ignored => "ignored",
-        }
-        .to_string()
+        dance_event_name(g.press(d)).to_string()
     }
 
     /// Live dance state.
@@ -393,5 +418,71 @@ impl LegaiaMinigames {
     /// Decode the dance step chart out of the dance overlay (PROT 0980).
     pub(super) fn dance_chart(&self) -> Option<legaia_minigame_formats::dance_chart::DanceChart> {
         legaia_minigame_formats::dance_chart::parse(&self.dance_overlay()?)
+    }
+}
+
+/// A dance press event's page name ([`LegaiaMinigames::dance_press`]).
+fn dance_event_name(e: DanceEvent) -> &'static str {
+    match e {
+        DanceEvent::Miss => "miss",
+        DanceEvent::Hit { .. } => "hit",
+        DanceEvent::Sequence { .. } => "sequence",
+        DanceEvent::Groovy { landed: true, .. } => "groovy",
+        DanceEvent::Groovy { landed: false, .. } => "groovy_off",
+        DanceEvent::NoCharge => "no_charge",
+        DanceEvent::Ignored => "ignored",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_minigame_formats::dance_chart::{BEATS_PER_ROW, DANCE_CHART_ROWS, DanceChart};
+
+    fn game() -> DanceGame {
+        let rows = (0..DANCE_CHART_ROWS)
+            .map(|r| {
+                let mut row = [0u8; BEATS_PER_ROW];
+                for (b, cell) in row.iter_mut().enumerate() {
+                    *cell = [1, 2, 0, 1][(r + b) % 4];
+                }
+                row
+            })
+            .collect();
+        DanceGame::new(DanceChart { rows }, false)
+    }
+
+    /// The page's frame judges a press where `World::tick_dance` does: the
+    /// edge goes to `advance_vsync` and is judged on the next game frame. A
+    /// run driven through `dance_tick_pressing` and one driven straight
+    /// through the kernel the play hosts call read the same events and the
+    /// same score on every vsync.
+    #[test]
+    fn the_page_judges_a_press_on_the_play_hosts_game_frame() {
+        let mut mg = LegaiaMinigames::new();
+        mg.dance = Some(game());
+        let mut host = game();
+        let mut events = 0;
+        for vsync in 0..3000u32 {
+            let sym = [0u8, 1, 0, 0, 2, 0, 0, 3, 0, 0, 0][(vsync % 11) as usize];
+            let page = mg.dance_tick_pressing(1, sym);
+            let dir = match sym {
+                1 => Some(DanceDir::A),
+                2 => Some(DanceDir::B),
+                3 => Some(DanceDir::C),
+                _ => None,
+            };
+            let expect = host.advance_vsync(dir);
+            host.advance_camera(1);
+            assert_eq!(
+                page,
+                expect.map_or_else(String::new, |e| dance_event_name(e).to_string()),
+                "vsync {vsync}"
+            );
+            events += usize::from(!page.is_empty());
+            let g = mg.dance.as_ref().unwrap();
+            assert_eq!(g.score(), host.score(), "vsync {vsync}");
+        }
+        assert!(events > 100, "the schedule judges presses: {events}");
     }
 }

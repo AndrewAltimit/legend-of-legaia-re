@@ -18,28 +18,35 @@ pub struct BladeBreathShape {
     /// The `+0x21F` render sub-flag arm `3` writes on the victim, `None`
     /// where it writes none.
     pub strike_sub_flag: Option<u8>,
+    /// The colour word `+0x04` arm `3` stamps on the victim beside a full
+    /// tint blend `+0x0C = 0x1000`, `None` where it stamps neither.
+    pub strike_tint: Option<u32>,
     /// What arm `4` waits on before latching `0xFF`: `true` the victim's
     /// `+0x1D9` back at `0` or `8`, `false` the caster's node cursor at
     /// `0x1C0` (answered by the host).
     pub tail_waits_on_victim: bool,
 }
 
-/// `0xA2` at `0x801F7AE4`: windup clip `5`, `victim[+0x21F] = 1`, tail on the
+/// `0xA2` at `0x801F7AE4`: windup clip `5`, `victim[+0x21F] = 1` beside
+/// `+0x04 = 0x3FF`, `+0x0C = 0x1000` (`0x801F7F50..0x801F7F68`), tail on the
 /// victim.
 pub const BLADE_BREATH_A: BladeBreathShape = BladeBreathShape {
     windup_clip: 5,
     windup_rate: None,
     strike_sub_flag: Some(1),
+    strike_tint: Some(0x3FF),
     tail_waits_on_victim: true,
 };
 
 /// `0xA3` at `0x801F74A0`: windup clip `6` at rate `3`,
-/// `victim[+0x21F] = 2`, tail on the caster (`caster[+0x21D] = 2` then the
+/// `victim[+0x21F] = 2` beside `+0x04 = 0x3FF00000`, `+0x0C = 0x1000`
+/// (`0x801F78CC..0x801F78E8`), tail on the caster (`caster[+0x21D] = 2` then the
 /// `+0x1DC` bump).
 pub const BLADE_BREATH_B: BladeBreathShape = BladeBreathShape {
     windup_clip: 6,
     windup_rate: Some(3),
     strike_sub_flag: Some(2),
+    strike_tint: Some(0x3FF0_0000),
     tail_waits_on_victim: false,
 };
 
@@ -49,6 +56,7 @@ pub const BLADE_BREATH_C: BladeBreathShape = BladeBreathShape {
     windup_clip: 7,
     windup_rate: Some(4),
     strike_sub_flag: None,
+    strike_tint: None,
     tail_waits_on_victim: true,
 };
 
@@ -132,6 +140,13 @@ pub fn blade_breath_tick(
             // sheds its fire or sparks from here (`FUN_8004998C`).
             if let Some(sub) = shape.strike_sub_flag {
                 victim.render_21f = sub;
+            }
+            // The full blend is what keeps the selector: the tint pass
+            // retires `+0x21F` only once `+0x0C` has drained to zero, so the
+            // victim burns some thirty battle frames past its colour's ease.
+            if let Some(tint) = shape.strike_tint {
+                victim.present_04 = tint;
+                victim.root_speed = 0x1000;
             }
             caster.staged_anim = 0;
             CastArmStep::Advance

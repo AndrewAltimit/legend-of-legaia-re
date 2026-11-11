@@ -168,18 +168,16 @@ impl LegaiaRuntime {
         };
         // Only what this frame draws can hide the player: the crop and the
         // actor cull drop static draws per frame (the shared
-        // `field_view_window::occluder_drawn` gate the native window asks).
+        // `field_view_window::OccluderGate` the native window builds).
         // The fade never arms under the `F3` vantage, so the crop is the
         // follow camera's.
         let cells = self.field_view_cells_now(false);
+        let gate = legaia_engine_world_views::field_view_window::OccluderGate::new(
+            &h.world,
+            cells.as_ref(),
+        );
         f.occluders
-            .fully_occluded_where([eye_x, eye_y, eye_z], centre, |d| {
-                legaia_engine_world_views::field_view_window::occluder_drawn(
-                    &h.world,
-                    cells.as_ref(),
-                    d,
-                )
-            })
+            .fully_occluded_where([eye_x, eye_y, eye_z], centre, |d| gate.drawn(d))
     }
 
     /// The player's op-`4C 81` draw tint, `[r, g, b, ir0]`, or empty while

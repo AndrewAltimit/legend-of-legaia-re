@@ -40,7 +40,9 @@ impl World {
     pub(in crate::world) fn runs_part_stager_calls(entry: u32) -> bool {
         matches!(
             entry,
-            935 | 941
+            935 | 936
+                | 937
+                | 941
                 | 957
                 | 943
                 | 945
@@ -229,7 +231,7 @@ impl World {
                     self.casting.module_cam.death_game.table,
                     self.casting.module_cam.death_game.cards,
                 ),
-                935 | 941 | 942 | 943 | 945 | 951 | 953 | 955 | 956 | 964 => {
+                935 | 936 | 937 | 941 | 942 | 943 | 945 | 951 | 953 | 955 | 956 | 964 => {
                     let roll = self.battle.monster_ai_state.counter() as u8;
                     enemy_cast_stager_spawns(entry, arm, caller, roll, &mut || self.next_rand())
                 }

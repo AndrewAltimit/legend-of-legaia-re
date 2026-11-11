@@ -134,6 +134,32 @@ impl HeadlessPlayWindow {
             .set_scripted(word);
     }
 
+    /// Hold physical controller buttons - a bit per W3C standard index
+    /// (`1 << 0` is the bottom face button) - and a left-stick position (`y`
+    /// down-positive) from the next [`Self::controller_frame`] on. Unlike
+    /// [`Self::set_controller`] the poll folds them through the window's
+    /// live table and dead zone, so a Key Config bind and the options' stick
+    /// row reach them, and a fresh press is handed to Key Config as a
+    /// capture, as a real controller's is.
+    pub fn set_controller_buttons(&mut self, held: u32, stick: (f32, f32)) {
+        self.app
+            .gamepad
+            .get_or_insert_with(super::gamepad::GamepadHost::scripted)
+            .set_scripted_buttons(held, stick);
+    }
+
+    /// The live binding table (keys and controller), as Key Config leaves
+    /// it, mutable for a test that binds the way the screen would.
+    pub fn mapping_mut(&mut self) -> &mut legaia_engine_system::input::Mapping {
+        &mut self.app.mapping
+    }
+
+    /// The live options (`OptionsState`), mutable for a test that steps a
+    /// row the panel would.
+    pub fn options_mut(&mut self) -> &mut legaia_engine_menus::options::OptionsState {
+        &mut self.app.options_state
+    }
+
     /// One display frame with the keyboard holding `pad` and the controller
     /// polled first, as the redraw orders them (`run_frame_ticks`).
     pub fn controller_frame(&mut self, pad: u16, ticks: u32) {

@@ -95,7 +95,7 @@ fn the_cue_dispatcher_is_retails() {
             let raw = spans[usize::from(id - 0x100)];
             let gates = VoiceCueGates {
                 side_band_stage: stage,
-                clip_span_left: reading as u16,
+                stream_read: reading != 0,
             };
             let want = match admit_voice_cue(id, gates, Some(raw)) {
                 VoiceCueVerdict::Play(VoiceClipRequest {
@@ -173,4 +173,58 @@ fn the_cue_dispatcher_is_retails() {
         voices > 20_000 && pushed > 10_000 && deduped > 4000,
         "{voices} {silent} {pushed} {deduped}"
     );
+}
+
+/// The gate the voice arm hooks above, run itself: on the retail path
+/// (`0x8007BA70 == 0`, `0x8007B8C2 != 0`) `FUN_8003DE7C(1)` answers idle with
+/// the stream queue empty, whatever the `gp+0x91C` countdown holds, and does
+/// not step the countdown. So a CD-XA clip inside its read span does not
+/// decline the next voice cue: `VoiceCueGates::stream_read` is the queue,
+/// not the clip. Only the development cell `0x8007BA70` turns the countdown
+/// on (`0x8003DE90`, `0x8003DF04`).
+#[test]
+fn the_voice_gate_poll_reads_the_stream_queue_not_the_clip() {
+    const DEV_CELL: u32 = 0x8007_BA70;
+    const BY_INDEX: u32 = 0x8007_B8C2;
+    const GP: u32 = 0x8007_B318;
+    const COUNTDOWN: u32 = GP + 0x91C;
+    const IN_FLIGHT: u32 = GP + 0x988;
+    differential!(scus(CD_BUSY));
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x5345_4B54);
+    for case in 0..200 {
+        let left = 1 + rng.below(0x2A30);
+        cpu.mem.wr16(DEV_CELL, 0);
+        cpu.mem.wr16(BY_INDEX, 1);
+        cpu.mem.wr32(IN_FLIGHT, 0);
+        cpu.mem.wr32(COUNTDOWN, left);
+        cpu.mem.wr8(FRAME_STEP, 1 + rng.below(4) as u8);
+        assert_eq!(cpu.call(CD_BUSY, &[1]), Stop::Returned);
+        assert_eq!(
+            cpu.regs.r[V0], 0,
+            "case {case}: span {left} left, queue empty"
+        );
+        assert_eq!(
+            cpu.mem.rd32(COUNTDOWN),
+            left,
+            "case {case}: the span is not stepped"
+        );
+        let gates = VoiceCueGates {
+            side_band_stage: 0,
+            stream_read: cpu.regs.r[V0] != 0,
+        };
+        assert!(matches!(
+            admit_voice_cue(0x134, gates, Some(1143)),
+            VoiceCueVerdict::Play(_)
+        ));
+        // The development host's path is the countdown: one per call.
+        cpu.mem.wr16(DEV_CELL, 1);
+        cpu.mem.wr16(0x8007_B83C, 0);
+        assert_eq!(cpu.call(CD_BUSY, &[1]), Stop::Returned);
+        assert_eq!(cpu.regs.r[V0], 1, "case {case}: the dev path counts");
+        assert_eq!(cpu.mem.rd32(COUNTDOWN), left - 1, "case {case}");
+    }
 }

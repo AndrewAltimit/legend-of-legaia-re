@@ -112,6 +112,14 @@ pub struct CabinetInput {
     /// finisher flag `+0x2C` (`0x801DBFE8` / `0x801DC090`, raised when a
     /// special lands its full chain, `0x801D3C2C`) or both HPs at zero.
     pub round_clock: bool,
+    /// The round-start camera beat this frame ran left the camera short of
+    /// its mark, so the arm holds: state `0x35`'s spin with the yaw not yet
+    /// past `0x1000` (`slti a0,a0,0x1001` at `0x801D03A0`), or state
+    /// `0x34`'s rise on a secret opponent's first round with eye Y not yet
+    /// past `0xBB8` (`0x801D02F4`). The camera is the duel's
+    /// ([`crate::baka_duel::DuelCamera::spin`]); a cabinet driven with no
+    /// camera leaves this clear and steps straight through.
+    pub camera_hold: bool,
 }
 
 /// PORT: FUN_801cf388 - the Baka Fighter cabinet's top-level state machine.

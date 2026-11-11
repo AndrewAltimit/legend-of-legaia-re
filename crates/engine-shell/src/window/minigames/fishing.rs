@@ -77,10 +77,12 @@ impl PlayWindowApp {
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let center = legaia_engine_world_views::screen_passes::scene_centre(self.scene_aabb);
+        let catch_line = self.fishing_surface.scene().and_then(|s| s.catch_line);
         legaia_engine_screens::fishing_line_screen_prims(
             &mut self.session.host.world,
             &self.session.camera,
             center,
+            catch_line,
         )
     }
 }

@@ -36,10 +36,16 @@ fn update_attack_facing<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8, ta
 /// `lh a1,0x3c(s8)`) rather than its live pair. It follows the framing call
 /// and precedes the `+0x1DC` bit-1 test, so it runs on every pass of both
 /// states: the attacker keeps turning onto a target its own hits (and the
-/// separation pass) move, and the heading the post-strike framings subtract
-/// is the live one.
+/// separation pass) move. The framing call comes first, so the heading the
+/// post-strike framings subtract is the one the pass before stored
+/// ([`BattleActor::strike_arm_facing`] keeps it for the camera).
 // PORT: FUN_801E295C (`0x801E36F0..0x801E371C` / `0x801E3AD0..0x801E3AFC`, the strike band's facing store)
 fn update_strike_facing<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
+    // The framing arm of this pass ran ahead of the store below
+    // (`0x801E36E8` before `0x801E371C`): keep the heading it read.
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.strike_arm_facing = Some(actor.facing_angle);
+    }
     let Some(target) = host.actor(slot).map(|a| a.active_target) else {
         return;
     };

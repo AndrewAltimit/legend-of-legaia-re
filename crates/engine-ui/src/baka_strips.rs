@@ -226,9 +226,43 @@ pub fn baka_clear_fade(level: u8) -> legaia_render_kernels::screen_prim::ScreenP
     )
 }
 
+/// The ordering-table layer the chrome's full-screen tint links at: the
+/// first argument of the title card's `FUN_80024EE4(1, 1, colour)` calls
+/// (`0x801D5AC4`, `0x801D5BCC`), in front of the HUD renderer's and the
+/// widget emitter's buckets.
+pub const BAKA_TINT_OT: u8 = 1;
+
+/// The round chrome's full-screen tint (`baka_fighter_chrome::ScreenTint`,
+/// its `rgb()` as `rgb`): the title card's
+/// red flash and its white-to-black fade-in, both `FUN_80024EE4(1, 1,
+/// colour)` - an untextured semi-transparent quad on layer
+/// [`BAKA_TINT_OT`] under blend mode `1` (`B + F`), so the colour adds over
+/// the frame.
+///
+/// REF: FUN_801D59D4 (`0x801D5ACC`, `0x801D5BE0`), FUN_80024EE4
+pub fn baka_screen_tint(rgb: [u8; 3]) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    legaia_render_kernels::screen_prim::screen_fade_prim(rgb, 1, BAKA_TINT_OT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The title card's red flash adds pure red over the whole display, in
+    /// front of the HUD.
+    #[test]
+    fn the_chrome_tint_is_an_additive_full_screen_quad_in_front() {
+        use legaia_render_kernels::screen_prim::ScreenPrim;
+        let ScreenPrim::Flat(q) = baka_screen_tint([0xFF, 0, 0]) else {
+            panic!("a flat quad");
+        };
+        assert_eq!(q.xy, [(0, 0), (320, 0), (0, 240), (320, 240)]);
+        assert_eq!(&q.color[..3], &[0xFF, 0, 0]);
+        assert!(q.semi_transparent);
+        assert_eq!(q.abr_mode, 1);
+        assert!(u32::from(BAKA_TINT_OT) < BAKA_HUD_OT);
+        assert_eq!(q.ot_index, u32::from(BAKA_TINT_OT));
+    }
 
     #[test]
     fn every_placed_digit_becomes_at_least_one_quad_at_its_pen() {

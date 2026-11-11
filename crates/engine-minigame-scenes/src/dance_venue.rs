@@ -383,6 +383,11 @@ impl DanceVenue {
         let e = dance_scene_entry();
         let name = venue_scene_name(index, &e)?;
         let scene = Scene::load(index, &name).ok()?;
+        // The boot-resident system UI atlas (raw entry 0), under the venue's
+        // own uploads: retail never evicts it, so it is in the hall's VRAM as
+        // in every scene's - the fishing venue and every field scene lay it
+        // the same way.
+        let system_ui = index.system_ui_bundle().ok();
         let (mut resources, _) = SceneResources::build_targeted_with_options(
             &scene,
             &[],
@@ -391,7 +396,7 @@ impl DanceVenue {
                 // The venue's field file is uploaded whole: the dancer atlases
                 // and their CLUT rows must all be resident.
                 upload_all_tims: true,
-                system_ui: None,
+                system_ui: system_ui.as_deref(),
             },
         )
         .ok()?;
@@ -565,7 +570,7 @@ fn split_prop_draws(
 }
 
 /// Resolve the venue's step-marker tiles off its `.MAP` and the overlay's
-/// script table, as the floor pass does over the whole grid. `None` when the
+/// script table, as the step-marker walk does over [`DANCE_MARKER_WALK_RECT`]. `None` when the
 /// overlay's table or the `.MAP` will not resolve.
 pub fn marker_floor(
     index: &ProtIndex,
@@ -590,13 +595,14 @@ pub fn marker_floor(
         .map(parse_tile_triggers)
         .unwrap_or_default();
     let ramp = mf::height_ramp();
+    let (x0, z0, w, h) = DANCE_MARKER_WALK_RECT;
     let floor = mf::MarkerFloor::build(
         mf::FloorGrid::new(&map),
         &ramp,
-        0,
-        0,
-        mf::GRID_EXTENT,
-        mf::GRID_EXTENT,
+        x0,
+        z0,
+        w,
+        h,
         false,
         &primary,
         &fallback,
@@ -637,6 +643,33 @@ fn split_marker_draws(
     markers
 }
 
+/// The tile the dance init latches the region box at before its floor pass
+/// (`li a0,0x30` / `li a1,0x66`, `jal 0x800180EC` at `0x801CF1C4`).
+pub const DANCE_FLOOR_PASS_TILE: (i32, i32) = (0x30, 0x66);
+
+/// The rect `(x0, z0, width, height)` the dance init hands the step-marker
+/// walk `FUN_801D2A10` (`a0..a3 = 0x28, 0x50, 0x14, 0x1E` at
+/// `0x801CF1AC..0x801CF1BC`).
+pub const DANCE_MARKER_WALK_RECT: (i32, i32, i32, i32) = (0x28, 0x50, 0x14, 0x1E);
+
+/// The `.MAP`'s kind-1 trigger tables, primary then fallback.
+fn map_triggers(
+    map: &[u8],
+) -> (
+    Vec<legaia_engine_field::field_regions::TileTrigger>,
+    Vec<legaia_engine_field::field_regions::TileTrigger>,
+) {
+    use legaia_engine_field::field_regions::parse_tile_triggers;
+    (
+        map.get(MAP_TRIGGER_BLOCK_OFFSET..)
+            .map(parse_tile_triggers)
+            .unwrap_or_default(),
+        map.get(MAP_TRIGGER_FALLBACK_OFFSET..)
+            .map(parse_tile_triggers)
+            .unwrap_or_default(),
+    )
+}
+
 /// The venue's static draw list: terrain tiles (records without
 /// `FLAG_PLACED`) then placed objects, resolved through the same
 /// [`field_env`] calls the field scene uses, each with the cross-draw
@@ -646,11 +679,37 @@ fn venue_draws(index: &ProtIndex, scene: &Scene, res: &SceneResources) -> Vec<Ve
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
-    let placement_records = scene
-        .field_object_placements(index)
+    // The placed layer is what the init's two floor walks spawn
+    // (`crate::venue_floor`): the step-marker walk `FUN_801D2A10` over its
+    // rect, every drawn cell with a kind-1 trigger at its anchor; and the
+    // floor pass `FUN_801D3A2C` over the box latched at
+    // [`DANCE_FLOOR_PASS_TILE`], which the door warp's field-entry word gates
+    // off.
+    let map = scene
+        .field_map_bytes(index)
         .ok()
         .flatten()
         .unwrap_or_default();
+    let (primary, fallback) = map_triggers(&map);
+    let mut cells =
+        crate::venue_floor::marker_walk_cells(&map, DANCE_MARKER_WALK_RECT, &primary, &fallback);
+    if crate::venue_floor::dance_floor_pass_runs(
+        0,
+        legaia_engine_mode::mode_transition::REENTRY_FLAG,
+    ) {
+        let block = scene.field_map_region_block(index).ok().flatten();
+        let region_box =
+            crate::venue_floor::latched_region_box(block.as_deref(), DANCE_FLOOR_PASS_TILE);
+        cells.extend(crate::venue_floor::floor_pass_cells(&map, region_box));
+    }
+    let placement_records = crate::venue_floor::keep_spawned(
+        scene
+            .field_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        &cells,
+    );
     let terrain_records: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()

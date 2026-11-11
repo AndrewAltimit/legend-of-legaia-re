@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// The `efect.dat` pool id PROT 0935's rock passes puff on (`li a0,0x2` at
+/// `0x801F7698` / `0x801F7A38`).
+const ROCK_PUFF_EFFECT: u8 = 2;
+
 impl World {
     /// The capture-class module a cast of `spell_id` pages, when the body
     /// its trampoline picks has its spawns seated per arm
@@ -128,6 +132,16 @@ impl World {
             // held 127 live rays against retail's 33.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm, spell_id);
             let opens_pass = self.module_tick_opens_pass();
+            // An arm's dead-store draws, one battle frame at a time.
+            if opens_pass {
+                let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
+                    run.prot_entry,
+                    spell_id,
+                );
+                for _ in 0..cmc::capture_arm_pass_rands(run.prot_entry, body, arm) {
+                    self.next_rand();
+                }
+            }
             if !every.is_empty() && opens_pass {
                 let roll = (self.next_rand() % 0x1000) as i16;
                 self.stage_module_arm_spawns(
@@ -139,7 +153,7 @@ impl World {
             }
             // An arm that spawns on the passes its body's own frame counter
             // picks (PROT 0940's sparks), the counter read before its bump.
-            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, arm) {
+            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, spell_id, arm) {
                 let n = self.casting.module_pass_counter;
                 if let Some((id, mask)) = c.effect
                     && n & mask == 0
@@ -190,6 +204,14 @@ impl World {
                     })
                     .collect();
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+                // Then the dust puff on the same point and yaw:
+                // `FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`,
+                // arm 5's at `0x801F7A40`), whose particles draw their own
+                // jitter off the stream. The module tick runs ahead of the
+                // frame's pool walker, so the puff takes the sweeps this
+                // tick's walker already gave the rest.
+                let owed = self.battle.anim_pass_vsyncs;
+                self.spawn_effect_caught_up(ROCK_PUFF_EFFECT, [x, 0, z], yaw as u16, owed);
             }
             if let Some((records, rot)) = self.casting.module_ring.take() {
                 let mut used = [false; 8];
@@ -305,7 +327,24 @@ impl World {
                         });
                     }
                 }
+                let first = self
+                    .casting
+                    .active_summon
+                    .as_ref()
+                    .map_or(0, |s| s.parts.len());
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+                // Arm 6 seats its pairs (`jal 0x80050ED4` at `0x801F7834` /
+                // `0x801F784C`) ahead of its store of the fade word into every
+                // pooled part's level (`sh a0,0x78(v0)` at `0x801F78D4`), so a
+                // pair seated on the pass takes the fade over the level its
+                // own seat run set (`CTRL_74`'s `+0x78 = 0`).
+                if let Some(level) = self.casting.module_scatter_level.take()
+                    && let Some(scene) = self.casting.active_summon.as_mut()
+                {
+                    for part in scene.parts.iter_mut().skip(first) {
+                        part.seat_pokes.push((0x78, level));
+                    }
+                }
             }
             if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y)
                 && let Some(ring) = self.battle.cast_ribbons.as_mut()
@@ -330,7 +369,7 @@ impl World {
                         ));
                 }
                 self.apply_capture_arm_part_writes(run.prot_entry, arm);
-                if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
+                if cmc::capture_arm_resets_pass_counter(run.prot_entry, spell_id, arm) {
                     self.casting.module_pass_counter = 0;
                 }
                 // Water Hazard's ring goes in ahead of the arm's last call.

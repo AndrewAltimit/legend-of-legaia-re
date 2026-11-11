@@ -73,7 +73,8 @@
 /// Game mode whose entry validates the overlay cache (`BATTLE INIT`).
 pub const MODE_BATTLE_INIT: i16 = 0x14;
 /// Modes that snapshot the field before entry: `BATTLE INIT`, `EFECT TEST`,
-/// `OTHER INIT` (the mode-24 minigame door warp) and `STR INIT`.
+/// `STR INIT` (`0x1A`) and `OTHER INIT` (`0x18`, the mode-24 minigame door
+/// warp).
 pub const SNAPSHOT_MODES: [i16; 4] = [0x14, 0x08, 0x1A, 0x18];
 /// Outgoing-mode value the field snapshot requires - `MAIN MODE`, the
 /// field / town loop.

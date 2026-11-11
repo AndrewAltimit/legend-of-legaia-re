@@ -35,6 +35,7 @@
 //! blocker in place.
 
 mod bite;
+mod catch_fish;
 mod line_actor;
 mod lure;
 mod pre_hook;
@@ -46,6 +47,7 @@ mod walk_grid_probe;
 mod wander;
 
 pub use bite::*;
+pub use catch_fish::*;
 pub use line_actor::*;
 pub use lure::*;
 pub use pre_hook::*;
