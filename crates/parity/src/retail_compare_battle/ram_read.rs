@@ -1051,7 +1051,15 @@ impl RetailBattle {
             }
             let mut further_steps = steps.clone();
             further_steps.push(steps.last().copied().unwrap_or(frame_step(ram)));
-            let ghost = displayed_ghost_pose(ram, ctx, action_state, shown, walk(&further_steps));
+            let further_vsyncs = further_steps.iter().map(|&s| u32::from(s.max(1))).sum();
+            let ghost = displayed_ghost_pose(
+                ram,
+                ctx,
+                action_state,
+                shown,
+                walk(&further_steps),
+                further_vsyncs,
+            );
             (shown, ghost)
         };
         Ok(Self {

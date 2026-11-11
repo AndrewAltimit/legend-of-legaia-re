@@ -716,14 +716,32 @@ pub(super) fn displayed_cam_live_steps(
 /// the re-arm law does not describe, and the earlier framing had all but
 /// landed: `battle_korb2_aluru_strike` stands on yaw `2188` under an endpoint
 /// of `395`, one unit from where case 6 was resting. Such a pass holds `shown`.
+///
+/// A party seat's first swing dates its strike loop the same way: the
+/// accumulator `ctx[+0x87C]` climbs `8 * step` a pass from the commit that
+/// opened the loop (`ctx[+0x15] == 1`, the first swing), so a walk of
+/// `further_vsyncs` past it reaches a pass before case 7 armed at all, where
+/// the yaw-unwrap test cannot see it because the approach's framing sat
+/// within `0x700` of the strike's. That pass holds `shown` too
+/// (`battle_ropeway_party_noa_sonic_javelin_open`: accumulator `48`, the
+/// further walk's yaw `2108` ghosts Vahn `17` units inside the radius where
+/// retail's frame draws him solid; `shown`'s `1892` clears him by `43`).
 pub(super) fn displayed_ghost_pose(
     ram: &[u8],
     ctx: u32,
     action_state: u8,
     shown: legaia_engine_camera::projection::BattleCamPose,
     further: legaia_engine_camera::projection::BattleCamPose,
+    further_vsyncs: u32,
 ) -> legaia_engine_camera::projection::BattleCamPose {
     const CASE_7_UNWRAP: f32 = 0x700 as f32;
+    if action_state == STRIKE_LOOP_STATE
+        && game_anchors::u8_at(ram, ctx + 0x13) < 3
+        && game_anchors::u8_at(ram, ctx + 0x15) == 1
+        && game_anchors::u32_at(ram, ctx + 0x87C) < 8 * further_vsyncs
+    {
+        return shown;
+    }
     if action_state == STRIKE_LOOP_STATE {
         let (live, end) = retail_cam_tween(ram, ctx);
         let dir = (end.yaw - live.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
