@@ -143,7 +143,7 @@ impl World {
             }
             // An arm that spawns on the passes its body's own frame counter
             // picks (PROT 0940's sparks), the counter read before its bump.
-            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, arm) {
+            if opens_pass && let Some(c) = cmc::capture_arm_counted(run.prot_entry, spell_id, arm) {
                 let n = self.casting.module_pass_counter;
                 if let Some((id, mask)) = c.effect
                     && n & mask == 0
@@ -359,7 +359,7 @@ impl World {
                         ));
                 }
                 self.apply_capture_arm_part_writes(run.prot_entry, arm);
-                if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
+                if cmc::capture_arm_resets_pass_counter(run.prot_entry, spell_id, arm) {
                     self.casting.module_pass_counter = 0;
                 }
                 // Water Hazard's ring goes in ahead of the arm's last call.
