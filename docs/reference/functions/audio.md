@@ -256,8 +256,9 @@ both hosts; the scheduler's own delay queue is port-side, not this routine
 
 **At or above `0x100` - the streamed voice.** Two gates decline before anything
 is armed: the context byte `*(gp+0xA0C)+0x276` being non-zero (`lbu` at
-`0x8004FCE8`) and the drive-idle poll `FUN_8003DE7C(1)` returning non-zero
-(`jal` at `0x8004FCF8`). Past them the call is `FUN_8003D53C(slot, mode, span)`
+`0x8004FCE8`) and the stream poll `FUN_8003DE7C(1)` returning non-zero
+(`jal` at `0x8004FCF8`), which is a data read in flight; a clip still sounding
+does not hold it. Past them the call is `FUN_8003D53C(slot, mode, span)`
 with slot `= (id-0x100)>>3` remapped `1 -> 0x1A`, `3 -> 0x1B`, `5 -> 0x1C`,
 mode `= id & 7`, and span `= (DAT_800788B8[id-0x100]*0x3C + 99)/100`.
 

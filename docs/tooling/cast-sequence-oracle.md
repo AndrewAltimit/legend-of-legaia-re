@@ -181,8 +181,9 @@ caster's cast begin (`0x28`) it grabs `PCSX.GPU.takeScreenShot()` every
 the `ctx[+0x6D8]` / `+0x6DA` / `+0x87C` words, PROT 0903's countdown, every
 seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
-token a module's stream-wait arm polls) and the words the read-span poll
-`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
+token a module's stream-wait arm polls) and the words the stream poll
+`FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, the countdown only the
+development path steps, `cdbusy` `0x8007BA70`, that path's cell,
 `cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`), the BIOS `rand()` seed word
 `0x80009010` (`rand`), the frame-cost ring's newest entry (`cost`: `0x80084098`
 at the cursor `gp+0x440` less one, the hblanks the last finished frame cost) and which ordering table links a screen fade's quad

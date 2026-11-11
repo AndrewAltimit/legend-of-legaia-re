@@ -4650,13 +4650,27 @@ sound funnel `FUN_8004FE5C` runs the same pair on its voice leg
   before installing its actor record and raises its head cue after (PROT
   0903: `lbu v0,0x276(s1)` at `0x801F6CC0`, `jal 0x801F19EC` at `0x801F6D3C`,
   the cue at `0x801F6E50`).
-- `FUN_8003DE7C(1)` is the read-span countdown `gp+0x91C`, which the starter
-  arms with `dur` and each poll steps down by the frame-speed byte, plus the
-  read-in-flight cells. A cast inside the previous clip's span plays no voice.
+- `FUN_8003DE7C(1)` asks whether a **data** stream read is in flight. On the
+  retail path (`0x8007BA70 == 0`, `0x8007B8C2 != 0`) it never reads its
+  `gp+0x91C` countdown (`beq v0,zero,0x8003DEE4` at `0x8003DE90`, the second
+  test at `0x8003DF04`): it answers busy only while the stream queue holds a
+  read (`lw v0,0x988(gp)` / `beq` at `0x8003DF70..0x8003DF78`, then
+  `CdSync(1)` and the command state `gp+0x928`). The starter `FUN_8003D53C`
+  arms neither: it stops a data read before starting the clip
+  (`0x8003D580..0x8003D59C`) and stores the span to `gp+0x918`. So a voice
+  requested while the last clip sounds starts over it. Every PCSX-Redux cast
+  film reads `0x8007BA70 = 0` and the countdown resting at the stream queue's
+  `120` through clips that play, and `retail-exec`'s
+  `the_voice_gate_poll_reads_the_stream_queue_not_the_clip` runs the routine
+  over any countdown with the queue empty and reads idle. Grade `disassembly`
+  + `capture`.
 
-The engine models the second gate (`AudioState::battle_xa_busy_frames`) and
-passes the first as `0`, its side-band being resident rather than streamed
-(`battle_cast_cue::admit_voice_cue`).
+The engine passes the first gate as `0`, its side-band being resident rather
+than streamed, and the second as the side-band read's stand-in
+(`World::battle_stream_read_in_flight`, `battle_cast_cue::admit_voice_cue`). What a
+sounding clip does hold is the drive word `0x8007BC20` (`2` for the clip's
+`dur` vsyncs, `AudioState::battle_xa_busy_frames`), which the shout's CD-busy
+fallback and the block grunt read.
 
 Four dispatcher sites in the band pass an id below `0x100` and raise an SFX,
 not a voice: `0x22` at `0x801F88FC` and `0x801F894C` and `0x21` at

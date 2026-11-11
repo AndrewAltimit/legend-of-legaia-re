@@ -2522,8 +2522,10 @@ The gates around it:
   at `0x801F6CC0`, `jal 0x801F19EC` at `0x801F6D3C`, the cue at `0x801F6E50`).
   The port's side-band is resident, so the engine passes `0`
   (`side_band_streaming`).
-- `FUN_8003DE7C(1)` is the read-span countdown `gp+0x91C`: a cast inside the
-  previous clip's span plays nothing (`battle_xa_busy_frames`).
+- `FUN_8003DE7C(1)` is a data stream read in flight, not the last clip: a
+  voice inside a sounding clip's span replaces it
+  ([cast module](../subsystems/cast-module.md#the-casts-own-cd-xa-voice);
+  `World::battle_stream_read_in_flight`).
 
 Not this path: the arts shout (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on
 both hosts - including its one forced-channel exception, formation slot 0

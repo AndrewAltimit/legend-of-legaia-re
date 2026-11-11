@@ -1389,8 +1389,8 @@ staged pose byte this routine commits to `+0x1DA` at `0x801EEC6C`; of the fourte
 that reach the compare only `0x801EC884` loads `+0x1F3`, so the condition really can fail. The
 re-read at `0x801EEB60` then skips the cue. While the word is
 non-zero, `bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the grunt into the `0x10C` cue,
-gated on the attacker clip test and, inside the funnel, on the drive being idle
-(`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
+gated on the attacker clip test and, inside the funnel, on no data stream read
+in flight (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The word's only dumped stores are zeros (the
 battle-start sweep `FUN_80055B6C`, the round reset `FUN_8004CE2C`), so the grunt is the
 unflagged leg and the `XA27` channel-4 sting is the flagged case.
 
@@ -1519,16 +1519,20 @@ counter - `FUN_80016B6C` loads it at `0x80016EB8` and passes it straight to the
 debug printf at `0x80016EC0` whose format string is at `0x80010238` - and which
 `FUN_8004DA00` zeroes on five arms. It is XA-drive state, so the gate reads "don't
 open a voice clip once the streamer is past level 1", not "mute at level 2". The
-capture read it as `2` in one fight and `0` in the other.
+capture read it as `2` in one fight and `0` in the other. The port carries the gate on
+`AudioState::battle_xa_busy_frames`: `2` while a one-shot plays, `1` only between a seek
+and its caller's re-zero.
 
 The port carries both halves. `World::fire_melee_impact_cue` selects on
 `MonsterAiState::flag_bd84` (the port's mirror of the word - the damage finisher's
 enemy-defender halve). The grunt is gated on the strike committing the defender's
 `+0x1F3` block entry, so an ordinary swing - which commits the flinch or the
 knockdown - raises none; it goes out as a `(clip, channel, dur)` request on
-`World::audio.battle_xa_cues`. The cue arm routes `0x10C` through the shared funnel
-seat `World::route_battle_cue` with a modelled drive-busy flag (`dur` vsyncs after
-any clip start: `dur * 2.5` sectors at 150/s is `dur / 60` s) and the `0x800788B8`
+`World::audio.battle_xa_cues`, unless a one-shot is still sounding (the drive word
+`_DAT_8007BC20 < 2` at `0x801EEAB4`, held `2` for `dur` vsyncs after a clip start:
+`dur * 2.5` sectors at 150/s is `dur / 60` s). The cue arm routes `0x10C` through the
+shared funnel seat `World::route_battle_cue`, whose voice leg waits only on a data stream
+read (`World::battle_stream_read_in_flight`), with the `0x800788B8`
 duration table parsed off the user's SCUS (`legaia_game_tables::xa_cue_table`). The native
 window plays the clip requests off a boot-staged `XaClipBank` (`XA27` / `XA30`
 demuxed + decoded, `crate::boot::read_battle_xa_clip_bank`) through the same XA

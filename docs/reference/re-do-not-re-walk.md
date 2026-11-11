@@ -998,6 +998,20 @@ larger figure is off by more than an order of magnitude; see
 
 ## Audio / sound driver
 
+### `FUN_8003DE7C(1)` waits out the last voice clip's span
+
+The poll drains `gp+0x91C` by the frame step and answers busy while it is positive
+(`0x8003DF24..0x8003DF34`), so it read as "the drive is still reading the last clip", and
+the port declined every battle voice requested inside the previous clip's span. That
+arm is the development host's: it is reached only while `0x8007BA70 != 0`
+(`beq v0,zero,0x8003DEE4` at `0x8003DE90`, the second test at `0x8003DF04`). On the
+retail path the poll reads the stream queue, `gp+0x988` (`0x8003DF70..0x8003DF78`), which
+a CD-XA one-shot never sets, and the starter stores its span to `gp+0x918`, not
+`0x91C`. Every PCSX-Redux cast film reads `0x8007BA70 = 0` and `gp+0x91C = 120`, the
+stream load's timeout, through clips that play. A voice inside a sounding clip
+replaces it. What the clip does hold is the drive word `0x8007BC20`
+([memory map](memory-map.md)), which the shout fallback and the block grunt read.
+
 ### `zeto_call_wave_mid_cast`'s `+5` dB is not a volume path
 
 The real-PCM `track` channel reads the state `+5.09` dB louder in retail with

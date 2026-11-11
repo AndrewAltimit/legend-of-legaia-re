@@ -2710,8 +2710,9 @@ A Seru cast's voice is the paged slot-B module's own `FUN_8004FCC8` head cue
 scans it off the module's bytes at the arming seam
 (`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
 CD-XA arm with its two gates (`admit_voice_cue`; the `ctx[+0x276]` side-band
-stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
-`AudioState::battle_xa_busy_frames`) and raises the starter triple on
+stage is `0` on a resident side-band, and `FUN_8003DE7C(1)` is a data stream
+read in flight, which the port has only for the side-band read's stand-in:
+[a sounding clip does not hold it](cast-module.md#the-casts-own-cd-xa-voice)) and raises the starter triple on
 `battle_xa_cues`. Neither host decodes the seventeen voice files up front: a
 `(slot, channel)` the clip bank lacks is read from the file's first sector to
 the starter's stop point and that one channel decoded
@@ -2909,8 +2910,10 @@ two** emissions from one routine, selected by the `_DAT_8007BD84` word.
   the high ring leg (`id + 0x19C = 0x2A8`). Taken while `_DAT_8007BD84` is
   **non-zero** (`bne v0,zero,0x801EEB70` at `0x801EEAC8` jumps over the
   grunt), and further gated on the attacker's clip being a plain action-table
-  entry and - inside the router - the drive being idle (`FUN_8003DE7C(1) ==
-  0`, `0x8004FE9C`).
+  entry and - inside the router - no data stream read in flight
+  (`FUN_8003DE7C(1) == 0`, `0x8004FE9C`). The grunt arm has its own CD gate:
+  the drive word `_DAT_8007BC20 < 2` (`0x801EEAA8..0x801EEAB8`), so a block
+  inside a sounding one-shot grunts nothing.
 
 Both are `see ghidra/scripts/funcs/overlay_0898_801ec3e4.txt` (disassembly,
 not the C). The word decides, never the order: after the grunt the routine
