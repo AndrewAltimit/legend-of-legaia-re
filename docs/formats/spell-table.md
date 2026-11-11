@@ -372,8 +372,9 @@ spells.)
 ## Player Seru-magic block (`0x81..=0x8b`)
 
 MP cost + target shape are byte-exact from `SCUS_942.54`; the element column
-is the cross-reference against the curated [`gamedata`](../reference/gamedata.md)
-magic table (every MP value matches). Spell id `0x81` = Gimard also matches
+is the element plate each name opens with (the `0xCE` icon operand), and the
+curated [`gamedata`](../reference/gamedata.md) magic table matches all three
+for every spell. Spell id `0x81` = Gimard also matches
 the save-state pin recorded in `legaia_parity::capture_observations::seru_capture`.
 
 | Id | Name | Element | MP | Target |

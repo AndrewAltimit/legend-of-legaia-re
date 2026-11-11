@@ -614,7 +614,9 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       rows.push(['Bonus', `<div class="stat-bars">${pill('ATK', `+${item.attack}`)}</div>`]);
     } else if (kind === 'armor') {
       if (item.slot) rows.push(['Slot', escapeHtml(item.slot)]);
-      const b = [['UDF', item.udf], ['LDF', item.ldf]].filter(([, v]) => v != null).map(([k, v]) => pill(k, `+${v}`)).join('');
+      /* armor.toml carries the equipment record's five bonuses; zero ones are omitted. */
+      const b = [['ATK', item.atk], ['UDF', item.udf], ['LDF', item.ldf], ['SPD', item.spd], ['INT', item.int]]
+        .filter(([, v]) => v).map(([k, v]) => pill(k, `+${v}`)).join('');
       if (b) rows.push(['Bonus', `<div class="stat-bars">${b}</div>`]);
     }
 

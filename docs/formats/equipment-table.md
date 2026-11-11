@@ -102,20 +102,18 @@ absence-of-evidence argument.
 ### What is pinned vs. best-effort
 
 All five `+0..+4` stat *targets* are **pinned** from the accumulator ->
-record-offset mapping above. The `+1` / `+2` / `+3` magnitudes are additionally
-**byte-exact** against the curated gamedata (every weapon's `+1` equals its
-`attack`, every body armor's `+2`/`+3` equal its `udf`/`ldf`). The `+6` mask
-matches each item's `equip_best` / `equip_others`, and the `+7` slot byte cleanly
-partitions weapons / body / head / footwear with the Ra-Seru upgrade flag. The
-curated tables don't carry per-item SPD/INT bonuses, so the `+0`/`+4` magnitudes
-aren't cross-checked against an external source, but their stat targets are fixed
-and the disc-gated test asserts the slot invariant (INT only on head gear, SPD
-only on footwear).
+record-offset mapping above. The curated gamedata carries every record's five
+magnitudes (`int`, `atk`, `udf`, `ldf`, `spd` on armour; `attack` on weapons),
+its `+6` wearer mask and its `+7` slot, and
+`crates/gamedata/tests/equip_slots_vs_disc.rs` pins all of them byte-exact for
+every weapon and armour piece. The `+7` slot byte cleanly partitions weapons /
+body / head / footwear with the Ra-Seru upgrade flag.
 
-Note that boots/shoes spread bonuses across `+1` (a small attack bump), `+3`
-(`LDF`), and `+4`, so a walkthrough that lists only "two defense numbers" for a
-boot is reading `+1` and `+3`, not `+2`/`+3` - the byte positions here are the
-ground truth.
+Boots and shoes spread bonuses across `+1` (`ATK`), `+3` (`LDF`) and `+4`
+(`SPD`), and helmets across `+0` (`INT`) and `+2` (`UDF`). The walkthroughs list
+"two defense numbers" for each piece, which for a boot are `+1` and `+3` and for
+a helmet `+2` and `+0` - the byte positions here are the ground truth, and the
+curated table follows them.
 
 ## Provenance + parser
 

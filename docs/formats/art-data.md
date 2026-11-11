@@ -671,10 +671,13 @@ command sources:
   `parse_record`, and asserts the decode round-trips through the oracle. That
   pins the `1=L,2=R,3=D,4=U` command decode, not the rest of the prefix.
 - **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
-  `crates/gamedata/tests/arts_scus_oracle.rs` matches each curated art to its
-  SCUS row by name and asserts AP + directions agree. Its allowlist for
-  documented walkthrough errors is empty: each error found is corrected in the
-  curated table instead.
+  `crates/gamedata/tests/arts_scus_oracle.rs` joins each regular, hyper and
+  miracle art to its SCUS row by action constant (`index = constant - 0x1B`)
+  and asserts name, AP, directions and the miracle flag, with every SCUS row
+  required to have a curated art. Each Super Art's directions must be the input
+  the retail tokenizer turns into its trigger pattern, and its AP the sum of
+  its chain's. There is no allowlist: each walkthrough error found is
+  corrected in the curated table.
 
 ## See also
 
