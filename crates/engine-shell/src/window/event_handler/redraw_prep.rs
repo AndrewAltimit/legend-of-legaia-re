@@ -858,12 +858,15 @@ impl PlayWindowApp {
                     cam.arm_module_shot(end, raw_z, u32::from(left));
                 }
             }
-            if (if on_gate {
+            // A gate film seats the acting body's clip cursor on the gate
+            // with the pose: the capture's own clip seeds are the displayed
+            // frame's, two passes behind the RAM the gate stands on.
+            let seat_cursor = if on_gate {
                 seat_now
             } else {
                 matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
-            }) && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take()
-            {
+            };
+            if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
                 world.seat_battle_clip_cursor(slot, clip, cursor);
             }

@@ -544,7 +544,9 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR=clip,cursor`: the caster's clip and
     /// cursor on the recording's cast begin, seated with the pose. A heal's
     /// `0x3D` waits out the idle the caster stands on, and the child's idle
-    /// has its own phase. Taken once.
+    /// has its own phase. A gate film (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`)
+    /// seats it on the gate's tick: the state's own RAM cursor, where the
+    /// capture's clip seeds stand the displayed frame's. Taken once.
     pub cast_seq_seat_cursor: std::cell::Cell<Option<(u8, i32)>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the

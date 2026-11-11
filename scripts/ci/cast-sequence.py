@@ -287,11 +287,9 @@ def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
         pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
 
 
-def state_guard_seats(sstate: str) -> str | None:
-    """The party seats a PCSX-Redux state holds in the Spirit stance
-    (`+0x1DE == 4` on actor `(&DAT_801C9370)[seat]`), as a comma list, for a
-    recording older than the probe's `guard=` field. `None` when the state
-    cannot be read."""
+def state_ram(sstate: str) -> bytes | None:
+    """A PCSX-Redux state's main RAM `0x80000000..0x80200000`, or `None` when
+    the state cannot be read."""
     exe = REPO / "target" / PROFILE / "pcsxr-state"
     if not exe.exists() or not sstate:
         return None
@@ -301,29 +299,91 @@ def state_guard_seats(sstate: str) -> str | None:
         sstate = str(REPO / "saves" / "library" / "pcsx-redux" / Path(sstate).name)
         if not Path(sstate).exists():
             return None
-    base, top = 0x80000000, 0x80200000
-    tmp = REPO / "target" / "cast-sequence-guard-ram.bin"
-    r = subprocess.run([str(exe), "extract", sstate, "--start", hex(base), "--end", hex(top),
+    tmp = REPO / "target" / "cast-sequence-state-ram.bin"
+    r = subprocess.run([str(exe), "extract", sstate, "--start", hex(RAM_BASE), "--end", hex(RAM_TOP),
                         "--out", str(tmp)], capture_output=True)
     if r.returncode != 0 or not tmp.exists():
         return None
     ram = tmp.read_bytes()
     tmp.unlink()
+    return ram
 
-    def u32(va: int) -> int:
-        o = va - base
-        return int.from_bytes(ram[o:o + 4], "little") if 0 <= o <= len(ram) - 4 else 0
 
+RAM_BASE, RAM_TOP = 0x80000000, 0x80200000
+
+
+def ram_u32(ram: bytes, va: int) -> int:
+    o = va - RAM_BASE
+    return int.from_bytes(ram[o:o + 4], "little") if 0 <= o <= len(ram) - 4 else 0
+
+
+def state_guard_seats(sstate: str) -> str | None:
+    """The party seats a PCSX-Redux state holds in the Spirit stance
+    (`+0x1DE == 4` on actor `(&DAT_801C9370)[seat]`), as a comma list, for a
+    recording older than the probe's `guard=` field. `None` when the state
+    cannot be read."""
+    ram = state_ram(sstate)
+    if ram is None:
+        return None
     seats = []
     for s in range(3):
-        a = u32(0x801C9370 + 4 * s)
-        if not base <= a < top - 0x200:
+        a = ram_u32(ram, 0x801C9370 + 4 * s)
+        if not RAM_BASE <= a < RAM_TOP - 0x200:
             continue
-        o = a - base
+        o = a - RAM_BASE
         max_hp = int.from_bytes(ram[o + 0x14E:o + 0x150], "little")
         if max_hp > 0 and ram[o + 0x1DE] == 4:
             seats.append(str(s))
     return ",".join(seats)
+
+
+def state_opening_cursor(out: Path) -> str | None:
+    """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
+    anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. The film's gate tick is the state's
+    instant, while the capture's clip seeds stand each body on the displayed
+    frame, two passes older: seated so, `battle_geremi_ogre_strike`'s Ogre
+    walked two passes longer than retail's before its swing. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None:
+        return None
+    a = ram_u32(ram, 0x801C9370 + 4 * min(int(first["acting"]), 7))
+    if not RAM_BASE <= a < RAM_TOP - 0x300:
+        return None
+    node = ram_u32(ram, a + 0x22C)
+    if not RAM_BASE <= node < RAM_TOP - 0x80:
+        return None
+    o = node - RAM_BASE
+    return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
+
+
+def state_strike_queue(out: Path) -> str | None:
+    """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
+    own RAM, as the drive's `q` field, for a `--physical` film of a monster
+    strike. The picker drew those clips (`FUN_801E9FD4`) on a `rand()` stream
+    the replay does not share, and the still steers the queue only when no
+    stream reaches its gate, so a film whose replay reached the gate on
+    another pick plays another swing: `battle_geremi_ogre_strike`'s Ogre
+    swung `09` where retail's queue holds `07 07`. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None or int(first["acting"]) < 3:
+        return None
+    a = ram_u32(ram, 0x801C9370 + 4 * min(int(first["acting"]), 7))
+    if not RAM_BASE <= a < RAM_TOP - 0x300:
+        return None
+    return ram[a - RAM_BASE + 0x1DF:a - RAM_BASE + 0x1EF].hex()
 
 
 def engine_guard(a, out: Path, done: dict) -> str:
@@ -552,6 +612,14 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # A monster strike's drive (`action,<seat>,<state>,3,...`) plays the
+    # state's own queue unless the still already steered it.
+    drive = env.get("LEGAIA_BATTLE_DRIVE", "")
+    f = drive.split(",")
+    if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
+            and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
+            and (q := state_strike_queue(out))):
+        env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
@@ -607,7 +675,7 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
-    if (cursor := retail_opening_cursor(out, first_row=a.physical)):
+    if (cursor := (state_opening_cursor(out) or retail_opening_cursor(out, first_row=True)) if a.physical else retail_opening_cursor(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     edir = out / "engine"
     env.update({

@@ -349,6 +349,21 @@ second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 
+Two more seats stand the gate on the state's own instant rather than on the
+still's. The capture's clip seeds (`LEGAIA_SEAT_BATTLE_CLIPS`) put each body on
+the displayed frame, two passes older than the RAM, which is right for the still
+and wrong for a film that runs on from the gate: the driver seats the acting body's
+clip and node cursor read off the state (`state_opening_cursor`,
+`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`, taken on the gate's tick). And a monster
+striker's committed queue `+0x1DF..` goes on the drive (`state_strike_queue`, the
+`q` field) unless the still already steered it: the picker drew those clips before
+the state was saved, and a replay that reached the gate on another pick swings
+another clip. `battle_geremi_ogre_strike`'s Ogre walked from cursor `72` where
+retail's stood on `96`, then swung `09` where retail's queue holds `07 07`; seated
+on both, every segment runs retail's length and the film reads `.983` for `.920`.
+Neither is a deal: both are bytes the state holds, and `--strike-deal` still owns
+the later draws.
+
 A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
 Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
 lands and the three behind it cannot block a victim mid-reaction, while the
