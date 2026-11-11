@@ -196,6 +196,13 @@
     <li><code>0x2A</code> is a real 2-option picker whose cursor clamps instead of wrapping. Every inn's Yes / No offer is one (<a href="../subsystems/inn.html#trigger">inn</a>); a decoder that stops at <code>0x29</code> finds no inn menus.</li>
   </ul>
   <p>In the port: <code>legaia_mes::picker</code> decodes the menus; <code>engine-field::inline_dialogue</code> runs the whole interaction script through the field VM (flag tests, scene changes) and pauses only at each <code>0x1F</code> segment, applying the picked jump on confirm.</p>
+  <h3 id="the-option-cursor">The option cursor</h3>
+  <p>Every box shares one cursor word, <code>*(DAT_801C6EA4 + 0xC)</code>. The pager's Up / Down handler at <code>0x801D941C</code> is its only stepper and never resets it. The reset is the script runner's: each time <code>FUN_80039B7C</code> hands a line to the pager it copies the preset word <code>+0xE</code> into the cursor and zeroes the preset (<code>lhu v1,0xe(v0)</code> / <code>sh zero,0xe(v0)</code> / <code>sh v1,0xc(v0)</code> at <code>0x80039F90..0x80039F98</code>).</p>
+  <ul class="bullets">
+    <li>Every picker therefore opens on row 0, unless op <code>4C E0 &lt;n&gt;</code> with <code>n &gt;= 100</code> set the preset to <code>n - 100</code> ahead of it (<a href="../subsystems/script-vm-menuctrl.html">op 0x4C</a>). <code>izumi</code>'s statue pages do (<code>4C E0 65</code> .. <code>67</code>), the only carriers on the disc.</li>
+    <li>A box carried on over a <code>0x24</code> continuation keeps its rows but not its cursor: <code>teien</code>'s Mist question loops back to itself on No, and the second ask opens on Yes.</li>
+  </ul>
+  <p>Port: <code>OwnedDialogPanel::seat_picker_cursor</code>, called with the spent preset from <code>World::apply_dialog_window_format</code> on every line load.</p>
   <details class="disclosure">
     <summary>Box geometry and render</summary>
     <div class="disclosure-body">
