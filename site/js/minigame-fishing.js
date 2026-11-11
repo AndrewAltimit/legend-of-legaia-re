@@ -240,6 +240,8 @@ window.MgFishing = (function () {
 
     function loadAssets() {
       try {
+        /* The stage opens on Buma's bake (venue 0). */
+        if (api.fishing_scene_select_venue) api.fishing_scene_select_venue(0);
         scene = build3D();
         if (scene) applyVenue(0);
       } catch (e) {
@@ -660,7 +662,15 @@ window.MgFishing = (function () {
     function draw(st, hud, fx) {
       const W = canvas.width, H = canvas.height;
       if (scene) {
-        if (st && st.live && st.venue !== scene.venue) applyVenue(st.venue);
+        if (st && st.live && st.venue !== scene.venue) {
+          /* Each venue stands only the placed props its floor pass spawns
+           * (the box latched at its anchor tile - engine venue_floor), so a
+           * venue switch swaps the baked map and the stage is rebuilt. */
+          if (api.fishing_scene_select_venue && api.fishing_scene_select_venue(st.venue)) {
+            try { scene = build3D() || scene; } catch (e) { console.warn('MgFishing:', e); }
+          }
+          applyVenue(st.venue);
+        }
         render3D(st);
         g.clearRect(0, 0, W, H);
       } else {

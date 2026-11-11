@@ -301,3 +301,37 @@ fn the_page_camera_follows_the_cast() {
         &cast[12..16]
     );
 }
+
+/// The page's venue bake stands the play hosts' floor-pass selection: Buma's
+/// bake carries `other1`'s three placed records (its mountains and bank, rows
+/// `102..=110`), Vidna's none of them, so the Vidna view no longer shows
+/// Buma's mountains. Selecting a venue swaps the buffers once.
+#[test]
+fn each_venue_bake_stands_its_own_floor_pass() {
+    let Some(mut mg) = loaded() else {
+        return;
+    };
+    assert!(mg.fishing_scene_ready(), "the venue scene decodes");
+    assert!(
+        !mg.fishing_scene_select_venue(0),
+        "Buma is the opening bake"
+    );
+    let buma = mg.fishing_scene_positions().len();
+    let buma_ground = mg.fishing_scene_ground_base();
+    assert!(mg.fishing_scene_select_venue(1), "Vidna swaps the bake");
+    assert!(!mg.fishing_scene_select_venue(1), "once");
+    let vidna = mg.fishing_scene_positions().len();
+    assert!(
+        vidna < buma,
+        "Vidna drops Buma's placed props: {vidna} vs {buma}"
+    );
+    let vidna_ground = mg.fishing_scene_ground_base();
+    assert!(vidna_ground >= 0 && vidna_ground < buma_ground);
+    // The ground span is the same heightfield, appended last in each bake.
+    assert_eq!(
+        buma as i32 / 3 - buma_ground,
+        vidna as i32 / 3 - vidna_ground
+    );
+    assert!(mg.fishing_scene_select_venue(0));
+    assert_eq!(mg.fishing_scene_positions().len(), buma);
+}

@@ -50,7 +50,7 @@ pub(crate) const FISHING_SCENE_DEFINE_END: usize = 1200;
 pub(crate) const FISHING_SCENE_NAME: &str = "other1";
 
 /// One static baked mesh (world space, retail Y-down coordinates).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct FishingEnv {
     positions: Vec<f32>,
     uvs: Vec<i32>,
@@ -151,16 +151,19 @@ fn clip_stream(anm: &PlayerAnmBundle, rec: usize, bones: usize) -> Option<([u32;
 
 /// Everything the fishing panel's 3D layer renders with.
 pub(crate) struct FishingScene {
-    /// The venue map, baked into one static world-space mesh.
+    /// The selected venue's map, baked into one static world-space mesh
+    /// (one of [`FishingScene::venue_envs`]).
     env: FishingEnv,
+    /// Each venue's bake (`0` Buma, `1` Vidna): the floor pass keeps each to
+    /// the placed records inside the box latched at its own anchor tile.
+    venue_envs: [FishingEnv; 2],
+    /// The venue [`FishingScene::env`] holds.
+    venue: usize,
     /// World AABB of the baked map (`[lo], [hi]`).
     aabb: ([f32; 3], [f32; 3]),
     /// The walk-ground heightfield, kept for shore-anchor height queries and
     /// the pond swell.
     ground: Option<WalkHeightfield>,
-    /// First vertex of the walk ground inside [`FishingScene::env`] (the bake
-    /// appends it last).
-    ground_base: usize,
     /// The shore party: one body per spawned actor, in spawn order (lead
     /// first). A member whose field body does not decode is left out.
     party: Vec<FishingMember>,
@@ -202,22 +205,43 @@ fn frame0_bone_offsets(
     )
 }
 
-/// Bake the venue's full static map (placed objects + terrain tiles + the
-/// walk-ground heightfield) into one [`FishingEnv`], world space.
+/// Bake one venue's static map (the placed objects its floor pass stands,
+/// terrain tiles and the walk-ground heightfield) into one [`FishingEnv`],
+/// world space.
 fn bake_env(
     index: &ProtIndex,
     scene: &Scene,
     res: &SceneResources,
     anm: Option<&PlayerAnmBundle>,
+    venue: usize,
 ) -> (FishingEnv, Option<WalkHeightfield>) {
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
-    let placement_records = scene
-        .field_object_placements(index)
+    // The placed records the fishing floor pass `FUN_801D6BBC` stands: the
+    // ones inside the box the setup latches at this venue's anchor tile -
+    // the play hosts' `FishingSceneAssets` bake (`venue_floor`). Both venues
+    // share the `other1` map, so without the box the Vidna view showed
+    // Buma's mountains.
+    use legaia_engine_minigame_scenes::venue_floor;
+    let (tile_x, tile_z) =
+        legaia_engine_minigame_scenes::fishing_venue::PARTY_ANCHOR_TILE[venue.min(1)];
+    let block = scene.field_map_region_block(index).ok().flatten();
+    let region_box =
+        venue_floor::latched_region_box(block.as_deref(), (i32::from(tile_x), i32::from(tile_z)));
+    let map = scene
+        .field_map_bytes(index)
         .ok()
         .flatten()
         .unwrap_or_default();
+    let placement_records = venue_floor::keep_spawned(
+        scene
+            .field_object_placements(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        &venue_floor::floor_pass_cells(&map, region_box),
+    );
     let terrain_records: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()
@@ -392,10 +416,11 @@ impl LegaiaMinigames {
         // one - optional, unlike the dance's choreography bank.
         let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
 
-        let (env, ground) = bake_env(&index, &scene, &res, anm.as_ref());
+        let (env, ground) = bake_env(&index, &scene, &res, anm.as_ref(), 0);
         if env.is_empty() {
             return None;
         }
+        let (vidna, _) = bake_env(&index, &scene, &res, anm.as_ref(), 1);
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];
         for v in env.positions.as_chunks::<3>().0 {
@@ -483,13 +508,12 @@ impl LegaiaMinigames {
         let region_block = scene.field_map_region_block(&index).ok().flatten();
         let rod_mesh = legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene);
 
-        let ground_base = (env.positions.len() / 3)
-            .saturating_sub(ground.as_ref().map_or(0, |g| g.positions.len()));
         Some(FishingScene {
+            venue_envs: [env.clone(), vidna],
+            venue: 0,
             env,
             aabb: (lo, hi),
             ground,
-            ground_base,
             party,
             vram: vram.as_bytes().to_vec(),
             map,
@@ -500,6 +524,13 @@ impl LegaiaMinigames {
 }
 
 impl FishingScene {
+    /// First vertex of the walk ground inside [`FishingScene::env`]: the
+    /// bake appends it last.
+    fn ground_base(&self) -> usize {
+        (self.env.positions.len() / 3)
+            .saturating_sub(self.ground.as_ref().map_or(0, |g| g.positions.len()))
+    }
+
     /// The pond's VRAM as 16-bit words, the shape the screen-primitive
     /// rasteriser samples.
     pub(crate) fn vram_words(&self) -> Vec<u16> {
@@ -521,7 +552,24 @@ impl LegaiaMinigames {
         self.fishing_scene
             .as_ref()
             .filter(|s| s.ground.is_some())
-            .map_or(-1, |s| s.ground_base as i32)
+            .map_or(-1, |s| s.ground_base() as i32)
+    }
+
+    /// Hold `venue`'s bake (`0` Buma, `1` Vidna) in the `fishing_scene_*`
+    /// buffers. Returns `true` when the buffers changed - the page then
+    /// re-reads them - and `false` when the venue was already held or no
+    /// scene decoded.
+    pub fn fishing_scene_select_venue(&mut self, venue: u32) -> bool {
+        let Some(s) = self.fishing_scene.as_mut() else {
+            return false;
+        };
+        let v = (venue as usize).min(1);
+        if s.venue == v {
+            return false;
+        }
+        s.env = s.venue_envs[v].clone();
+        s.venue = v;
+        true
     }
 
     /// The walk ground's drawn positions this frame (`[x, y, z, ...]`, the
