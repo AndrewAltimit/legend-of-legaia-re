@@ -564,6 +564,11 @@ the port's battle step is its cost model's, `2` through Big Wave's reactions whe
 `4`, and `4` through Zenoir's kill phase where retail alternates `3` and `4`, so a lag on the
 port's step moves half the cues the wrong way. It is not ported. What closes it: the battle
 frame step itself on those arms (the cost ring's table), after which the lag is the step.
+The step byte is not always the frame's length either: on the PCSX-Redux film of Gaza's Neo
+Star Slash (`gaza2_card_pre_neo_star_slash`) capture phase 3 holds the step byte `4` and the
+cost at its `700` clamp while the frames take `6` vsyncs rising to `15` (`48` frames in
+`583` vsyncs, the frame counter `gp+0x480`), so a frame that overruns its step delays its
+cues by the overrun as well; the engine runs the same phase in `240` ticks.
 Held on the port's own step from the arms' current cost rows, the same run reads Big Wave's
 tenth percentile `0.478` to `0.522`, Zenoir's `0.682` to `0.329`, Swordie's `0.774` to
 `0.332` and Theeder's `0.342` to `0.308`, the medians unmoved: the table still names a step
