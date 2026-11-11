@@ -5,8 +5,13 @@
 //! through is the body's own countdown's call. What a retail arm does on its
 //! **pass** - the `FUN_801D829C` call after its gate, a caption - therefore
 //! lands on the first tick of the arm the pass moved to, one engine tick (half
-//! a retail battle frame) after retail's. Since retail's tween only starts
-//! stepping on the frame after the arm armed it, the shot is not visibly late.
+//! a retail battle frame) after retail's. Retail's walker steps the shot on the
+//! pass that armed it, after the module call: Nova's arm 2 arms a `0x40`-frame
+//! pull from pitch `0x400` to `0x80`, and the rows of the pass that stores
+//! phase 3 already read pitch `1010` (one step-`1` frame of `-14`), where the
+//! engine's first step lands a pass later. The arm then stands `14` in pitch and
+//! `12` in TR y off retail's for its whole length (the `0x8B` film's camera
+//! channel), which a director that saw the pass would close.
 //!
 //! What an arm does on **every** pass - the drifts it adds to the camera
 //! globals ahead of its gate, a shot it re-arms before the gate - runs on
