@@ -2720,10 +2720,16 @@ same state byte. Three refinements:
   agrees with its endpoints. The capture takes the live pose outright
   (`RetailBattle::camera_behind_commit`, `LEGAIA_SEAT_CAM_BEHIND_COMMIT`,
   `BattleCamera::align_commit_pass`): `image` `.678` to `.706`, `camera`
-  `.986` to `1.0`. What remains is mostly the rays' own `rand()` stream:
-  retail's two framebuffers score `.860` against each other, the engine's
-  frame `.848` against the displayed one. Vahn's pose is the smaller part,
-  and the display lag cannot move it: the SpecialStarter's event-path cut
+  `.986` to `1.0`.
+- **Speed lines.** The rays behind the banner are a static part, the
+  effect-script table arm's code `45` (record `0x801F5628`, library mesh
+  `13`; codes `10`, `46` and `47` seat the same fan). Its program never
+  moves it, so the RAM's position and banks are every frame's since the
+  seat, and the capture seats them (`SPEED_LINE_RECORDS`): the replay had
+  seated its fan on its own ground, about eight units and `19` angle units
+  off, and every ray stood a few pixels wide of retail's (`image` `.874` to
+  `.980`). Vahn's pose is what is left, and the display lag cannot move it:
+  the SpecialStarter's event-path cut
   freezes every slot until the art commits
   ([battle-actor-rendering](../subsystems/battle-actor-rendering.md)), so
   the child's frames from tick `460` to `536` of the drive draw one pose, and
