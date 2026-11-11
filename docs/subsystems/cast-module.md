@@ -2864,9 +2864,16 @@ Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the heading on its target and the soft-red word
 (arm 9's pass), the parked-red word with the additive mode word `+0x08 = 0x81000000`
 (arm `0xA`, cleared on arm `0xB`'s pass) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
-quartered roll and the creature closes on a target at eight units a tick, trading it
+quartered roll and the creature closes on a target, trading it
 for another once in reach: `do t = rand() % 4 + 3 while t == old` (`0x801F7ABC..0x801F7AE8`),
-over the four monster seats whether a monster stands there or not. Those hits clamp to live HP and are what kills: the module
+over the four monster seats whether a monster stands there or not. The turn is a pass's
+law: the bearing reads the target's body pair `+0x3C` / `+0x40` (`0x801F7B18`), the
+facing moves `(step * scalar) << 3` and holds inside that of the bearing rather than
+snapping (`0x801F7B8C..0x801F7C24`), and the creature banks `+0x48` by `step * scalar`
+toward the turn, clamped at `-0x100` / `0x100` and levelled on the bearing
+(`0x801F7BC4..0x801F7D10`); arm `0xD` levels it (`0x801F7DBC..0x801F7E64`). The fall
+of arms 7 and 8 banks it too, `-sin(word * 32) / 8` (`0x801F70A8..0x801F70D4`), level
+on arm 8's pass. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
@@ -3222,7 +3229,11 @@ living seat's parked trio and facing back, turns it away from the creature
 (`FUN_80019B28` plus `0x800`) and shows it lit `0x3C0`
 (`0x801F892C..0x801F8B40`). Not carried: the render node's colour word
 `+0x74 = 0x00F00000`, the `+0x1F6` cue cursor arm `0xF` stores, and the
-node halfwords `+0x26` / `+0x68` arms `0xE` and `0x10` write.
+node yaw `+0x26` arm `0xE` zeroes, which the anim tick's copy of `+0x46`
+overwrites. Arm `0x10`'s node cursor store is carried: every pass pins each standing
+monster at `+0x68 = 0x10` (`0x801F8474`). Arms `0xB` and `0xC` tip the creature
+nose-up every pass, pitch `+0x44 += (scalar * step) >> 1` (`0x801F7C60`,
+`0x801F7D0C`).
 Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
 pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
 flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
