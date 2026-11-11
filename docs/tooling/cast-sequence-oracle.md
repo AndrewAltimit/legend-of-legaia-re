@@ -1056,6 +1056,14 @@ adds its reaction-channel entry). What the recordings on
 - **A deal is not a cue defect.** Void Accessories' three engine-only cues are its
   strip landing where retail's roll said "Nothing happened": `--rand-at 0x70:3` scores
   it `1.000`.
+- **A block is a roll as well.** A cast whose hits run the melee kernel rolls the victim's
+  block per hit, and the block clip and the flinch ring different cues: on Lu's Plasma
+  Strike (`nivora_duel_pre_plasma_strike`) retail's Noa blocks all seven beats (`0x0C` and
+  `0x249` each) where the engine's stream flinched on three (`0x60` / `0x61` and `0x4A`);
+  on Gaza's Astral Slash (`battle_kor_gaza_165_astral_slash_mid_cast`) the reverse, Vahn
+  flinching in retail (`0x54`, `0x27F`) and blocking in the engine (`0x51`, `0x0C`). The
+  draw counts per frame match retail's up to the first roll, and `--rand-track` scores both
+  `1.000`.
 - **A flinch with its cues skipped.** Palma's three engine-only cues were its pre-hit's
   flinch: arm `0xF`'s pass stores `8` into each row's `+0x1F6` (`0x801F8360`), one past the
   track, and `seats.csv` reads the jump with no cue behind it.
