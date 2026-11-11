@@ -195,6 +195,7 @@ impl BattleState {
     /// which the round reset seeds to [`Self::GLIDE_BLOCKING_FLAG`].
     ///
     /// PORT: FUN_801D9BBC (the return value)
+    /// REF: FUN_801D8DE8, FUN_801DB7B0
     pub fn step_action_plate_glides(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
         let mut ret = 0u8;
