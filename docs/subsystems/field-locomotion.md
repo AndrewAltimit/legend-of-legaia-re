@@ -1168,6 +1168,7 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
   | Objects | Touch | Walk-through (`31 00`) when |
   |---|---|---|
   | `bylon` P0[3, 4, 22, 24..27], `edbylon` P0[3, 22, 24..27] | walk | `0x2A1` set and `0x2AC` clear |
+  | `bylon` P0[16], P0[18] (the wing rooms' south doors) | walk | `0x180` (P0[16]) / `0x181` (P0[18]) clear, or `0x2A1` set |
   | `cave01` P0[0] | walk | `0x15E` set |
   | `dolk` P0[15..18] (Sunrise and sister gates) | press | `0x270..0x273` set (the touch inserts the key) |
   | `jiji` P0[1] | walk | `0x206` set |
@@ -1178,6 +1179,8 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
   | `taiku` P0[5] | walk | `0x519` set (and it parks off-map) |
   | `tower` P0[0] | press | `0x1C6` set |
   | `vell` P0[1] | press | `0x2AE` set |
+
+  Another script can open an object too: a switch's body runs `B1 <object> 00`, the `31 00` aimed at that object's channel. `bylon`'s wing switches P0[12] / P0[13] open P0[16] / P0[18], the north entrance (`map01` P2[11]) having raised `0x180` / `0x181` and shut them; `jiji` P0[3] opens P0[1]; `cave01` P2[13] opens the rock P0[0]; `taiku` P2[12] opens P0[5]. The write lands on the object's channel word, and the port carries it to that placement's prop (`prop_interact::poke_object_prop_cflags`), from a field-VM run and from a cutscene timeline alike, so the opened object stops blocking at once.
 
 - **Touch.** Resumed when the player's body hits the prop (`FUN_801cfc40` links the pair, `FUN_801d5b5c` posts the engagement, the dialog SM `FUN_80039b7c` runs the parked script). A house door's pass is a creak (`0x36` sub-`0x8000` -> the SFX cue player `FUN_80035b50`), then `2C 07` / `2C 01` / `2B 03` (clear reverse, **clear hold**, set clamp), then **`31 00`** (the door leaves the collision candidate list as the swing starts), then `2C 08` / `2D 08`, which spins until the tick latches the end. The clip plays forward and clamps open; the opened door neither blocks nor re-fires.
 - **Search body.** Rim Elm's cupboard continues past that spin: a `70 xx` searched-flag guard, `50 xx` flag SET + `39 xx` GIVE_ITEM, the `0x1F` message segments (found / empty, with the `C2` item-name escape), and only then the closing segment (`2B 07` / `2C 01` / `2B 03`, set reverse and play again). Because the script resumes only when the pager returns, the doors swing shut **after the message is dismissed**.
