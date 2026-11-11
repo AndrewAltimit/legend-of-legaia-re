@@ -181,6 +181,7 @@ impl WorldSaveState for World {
                     fishing_casts: self.minigames.fishing_casts,
                     fishing_prizes_purchased: self.minigames.fishing_prizes_purchased,
                     dance_best: self.minigames.dance_best,
+                    dance_free_play_song: self.minigames.dance_free_play_song,
                 },
             },
             ext_v2: legaia_save::SaveExtV2 {
@@ -362,6 +363,7 @@ impl LoadFullTail for World {
         self.minigames.fishing_casts = m.fishing_casts;
         self.minigames.fishing_prizes_purchased = m.fishing_prizes_purchased;
         self.minigames.dance_best = m.dance_best;
+        self.minigames.dance_free_play_song = m.dance_free_play_song;
         // Prefer the physical array: it is the only form that carries slot
         // order and the holes a played-through bag has, and PROT 0941's Steal
         // samples both. A file written before the `LGX6` block - or an

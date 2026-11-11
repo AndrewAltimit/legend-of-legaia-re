@@ -74,7 +74,8 @@ slot-machine cash-out global).
 The [`minigame_save`](src/minigame_save.rs) module (`MinigameSave`) carries the
 minigame purses and records as one unit: the coin bank, the Point Card bank
 (SC `+0x474`) and the fishing point record (pool, lure, rod, best catch, cast
-counter, one-time prize mask at SC `+0x30C..+0x32C`). It lifts from and writes
+counter, one-time prize mask at SC `+0x30C..+0x32C`), the dance best and free
+play's song counter (SC `+0x324` / `+0x328`). It lifts from and writes
 back into the SC block, and rides in an LGSF file as the optional `LGX7` block,
 emitted only when non-zero.
 

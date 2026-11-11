@@ -16,15 +16,17 @@
 //! | `0x8008445C` | `0x31C` | species of the best catch |
 //! | `0x80084460` | `0x320` | lifetime cast counter |
 //! | `0x80084464` | `0x324` | dance hall best score |
+//! | `0x80084468` | `0x328` | dance free play's song counter |
 //! | `0x8008446C` | `0x32C` | one-time prize purchased bitmask |
 //! | `0x800845A4` | `0x464` | casino coin bank ([`crate::card::RETAIL_COINS_OFFSET`]) |
 //! | `0x800845B4` | `0x474` | Point Card bank |
 //!
-//! An engine `LGSF` file carries the same ten words in the optional `LGX7`
+//! An engine `LGSF` file carries the same eleven words in the optional `LGX7`
 //! block (see `crate::ext`), emitted only when one of them is non-zero so a
 //! save without minigame progress stays byte-identical to an older file. The
-//! dance best is the tenth word, appended after the block first shipped with
-//! nine: a nine-word body reads it as `0`.
+//! dance best and the free-play song counter are the tenth and eleventh
+//! words, appended after the block first shipped with nine: a shorter body
+//! reads each missing word as `0`.
 
 use anyhow::{Result, bail};
 
@@ -46,6 +48,12 @@ pub const RETAIL_FISHING_CASTS_OFFSET: usize = 0x320;
 /// `0` outside the how-to, and free play draws it on its personal-best panel
 /// (`0x801CF5DC`).
 pub const RETAIL_DANCE_BEST_OFFSET: usize = 0x324;
+/// SC offset of dance free play's song counter (`0x80084468`): free play
+/// streams song `[0x81D, 0x80C, 0x812][counter]` (less `0x3F2`), then bumps
+/// the counter and wraps it to `0` at `3` (`lw`/`sw 0x328(0x80084140)`,
+/// `0x801CFB48..0x801CFBA0` in PROT 0980), so the rotation carries across
+/// visits and saves.
+pub const RETAIL_DANCE_FREE_PLAY_SONG_OFFSET: usize = 0x328;
 /// SC offset of the one-time prize bitmask (`0x8008446C`).
 pub const RETAIL_FISHING_PRIZES_OFFSET: usize = 0x32C;
 /// SC offset of the Point Card bank (`0x800845B4`).
@@ -56,8 +64,8 @@ pub const RETAIL_POINT_CARD_OFFSET: usize = 0x474;
 /// Muscle Dome contest tally - saturates here.
 pub const COIN_BANK_MAX: i32 = 0x0098_967F;
 
-/// Bytes of the `LGX7` body: ten little-endian words.
-pub const MINIGAME_SAVE_BODY_LEN: usize = 10 * 4;
+/// Bytes of the `LGX7` body: eleven little-endian words.
+pub const MINIGAME_SAVE_BODY_LEN: usize = 11 * 4;
 /// Bytes of the shortest `LGX7` body a reader accepts: the nine words the
 /// block carried before the dance best.
 pub const MINIGAME_SAVE_BODY_MIN_LEN: usize = 9 * 4;
@@ -85,11 +93,14 @@ pub struct MinigameSave {
     pub fishing_prizes_purchased: u32,
     /// Dance hall best score (`0x80084464`, [`RETAIL_DANCE_BEST_OFFSET`]).
     pub dance_best: u32,
+    /// Dance free play's song counter (`0x80084468`,
+    /// [`RETAIL_DANCE_FREE_PLAY_SONG_OFFSET`]).
+    pub dance_free_play_song: u32,
 }
 
 impl MinigameSave {
-    /// The ten words in `LGX7` / table order, each with its SC offset.
-    fn fields(&self) -> [(usize, u32); 10] {
+    /// The eleven words in `LGX7` / table order, each with its SC offset.
+    fn fields(&self) -> [(usize, u32); 11] {
         [
             (RETAIL_FISHING_POINTS_OFFSET, self.fishing_points as u32),
             (RETAIL_FISHING_LURE_OFFSET, self.fishing_lure),
@@ -104,10 +115,14 @@ impl MinigameSave {
             (crate::card::RETAIL_COINS_OFFSET, self.casino_coins),
             (RETAIL_POINT_CARD_OFFSET, self.point_card as u32),
             (RETAIL_DANCE_BEST_OFFSET, self.dance_best),
+            (
+                RETAIL_DANCE_FREE_PLAY_SONG_OFFSET,
+                self.dance_free_play_song,
+            ),
         ]
     }
 
-    fn from_words(w: [u32; 10]) -> Self {
+    fn from_words(w: [u32; 11]) -> Self {
         Self {
             fishing_points: w[0] as i32,
             fishing_lure: w[1],
@@ -119,6 +134,7 @@ impl MinigameSave {
             casino_coins: w[7],
             point_card: w[8] as i32,
             dance_best: w[9],
+            dance_free_play_song: w[10],
         }
     }
 
@@ -137,14 +153,15 @@ impl MinigameSave {
         out
     }
 
-    /// Decode an `LGX7` body. A nine-word body (written before the dance
-    /// best) reads the tenth word as `0`; bytes past the ten words are
-    /// ignored, so a later writer can grow the block.
+    /// Decode an `LGX7` body. A nine- or ten-word body (written before the
+    /// dance best or the song counter) reads each missing word as `0`; bytes
+    /// past the eleven words are ignored, so a later writer can grow the
+    /// block.
     pub fn parse_body(buf: &[u8]) -> Result<Self> {
         if buf.len() < MINIGAME_SAVE_BODY_MIN_LEN {
             bail!("LGX7: block too short ({} bytes)", buf.len());
         }
-        let mut w = [0u32; 10];
+        let mut w = [0u32; 11];
         for (i, word) in w.iter_mut().enumerate() {
             if let Some(b) = buf.get(i * 4..i * 4 + 4) {
                 *word = u32::from_le_bytes(b.try_into().unwrap());
@@ -153,9 +170,9 @@ impl MinigameSave {
         Ok(Self::from_words(w))
     }
 
-    /// Read the ten words off a retail SC block. `None` if it is too small.
+    /// Read the eleven words off a retail SC block. `None` if it is too small.
     pub fn from_retail_sc_block(sc_block: &[u8]) -> Option<Self> {
-        let mut w = [0u32; 10];
+        let mut w = [0u32; 11];
         for (i, (off, _)) in Self::default().fields().iter().enumerate() {
             let b = sc_block.get(*off..*off + 4)?;
             w[i] = u32::from_le_bytes(b.try_into().unwrap());
@@ -163,7 +180,7 @@ impl MinigameSave {
         Some(Self::from_words(w))
     }
 
-    /// Write the ten words into a retail SC block in place and restamp the
+    /// Write the eleven words into a retail SC block in place and restamp the
     /// block checksum.
     pub fn write_into_retail_sc_block(&self, sc_block: &mut [u8]) -> Result<()> {
         let end = RETAIL_POINT_CARD_OFFSET + 4;
@@ -194,6 +211,7 @@ mod tests {
             fishing_casts: 31,
             fishing_prizes_purchased: 0x0102,
             dance_best: 568,
+            dance_free_play_song: 2,
         }
     }
 
@@ -213,7 +231,23 @@ mod tests {
         let old = &m.body()[..MINIGAME_SAVE_BODY_MIN_LEN];
         let parsed = MinigameSave::parse_body(old).unwrap();
         assert_eq!(parsed.dance_best, 0);
-        assert_eq!(parsed, MinigameSave { dance_best: 0, ..m });
+        assert_eq!(
+            parsed,
+            MinigameSave {
+                dance_best: 0,
+                dance_free_play_song: 0,
+                ..m
+            }
+        );
+        // A ten-word body (written before the song counter) keeps the best.
+        let ten = MinigameSave::parse_body(&m.body()[..40]).unwrap();
+        assert_eq!(
+            ten,
+            MinigameSave {
+                dance_free_play_song: 0,
+                ..m
+            }
+        );
     }
 
     #[test]
@@ -226,6 +260,7 @@ mod tests {
         assert_eq!(at(RETAIL_FISHING_POINTS_OFFSET), 9_000);
         assert_eq!(at(RETAIL_POINT_CARD_OFFSET), 678);
         assert_eq!(at(RETAIL_DANCE_BEST_OFFSET), 568);
+        assert_eq!(at(RETAIL_DANCE_FREE_PLAY_SONG_OFFSET), 2);
         assert!(crate::card::sc_block_checksum_valid(&block));
     }
 }

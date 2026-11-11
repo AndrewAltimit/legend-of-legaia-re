@@ -67,7 +67,7 @@ fn save_full_round_trips_globals() {
 
 /// Casino coins, the Point Card bank and the fishing point record survive a
 /// save / load - through the LGSF `LGX7` block and through a retail SC block,
-/// where retail keeps all ten words in its live-state window.
+/// where retail keeps all eleven words in its live-state window.
 #[test]
 fn save_full_round_trips_the_minigame_purses() {
     let mut world = World::new();
@@ -82,6 +82,7 @@ fn save_full_round_trips_the_minigame_purses() {
     world.minigames.fishing_casts = 55;
     world.minigames.fishing_prizes_purchased = 0x81;
     world.minigames.dance_best = 568;
+    world.minigames.dance_free_play_song = 2;
     let check = |w: &World| {
         assert_eq!(w.minigames.casino_coins, 4321);
         assert_eq!(w.minigames.point_card, 765);
@@ -93,6 +94,7 @@ fn save_full_round_trips_the_minigame_purses() {
         assert_eq!(w.minigames.fishing_casts, 55);
         assert_eq!(w.minigames.fishing_prizes_purchased, 0x81);
         assert_eq!(w.minigames.dance_best, 568);
+        assert_eq!(w.minigames.dance_free_play_song, 2);
     };
     let sf = world.save_full();
 

@@ -575,7 +575,7 @@ PROT 1230 / 1231 sit against the PROT TOC's zeroed tail, where the indexed size 
 | `1` hosenn | `0x420` (`0x801CFB14`) | 1054 |
 | `3` asobi | rotation over `_DAT_80084468` | 1065 / 1048 / 1054 |
 
-Free play reads the counter at `0x80084140 + 0x328`: `0x81D`, `0x80C` or `0x812` for counter `0`, `1`, `2`, less `0x3F2` (`addiu a0,a0,-0x3f2` at `0x801CFB6C`), giving `0x42B`, `0x41A`, `0x420`. It then bumps the counter and wraps it to `0` at `3` (`0x801CFB84..0x801CFBA0`). The counter sits in the game-state window the save block is composed from, so the rotation carries across visits and saves.
+Free play reads the counter at `0x80084140 + 0x328`: `0x81D`, `0x80C` or `0x812` for counter `0`, `1`, `2`, less `0x3F2` (`addiu a0,a0,-0x3f2` at `0x801CFB6C`), giving `0x42B`, `0x41A`, `0x420`. It then bumps the counter and wraps it to `0` at `3` (`0x801CFB84..0x801CFBA0`). The counter sits in the game-state window the save block is composed from, so the rotation carries across visits and saves. The port keeps it as `MinigameState::dance_free_play_song`; saves carry it as the eleventh word of the `LGX7` block and at `0x328` of a retail block (`legaia_save::minigame_save::RETAIL_DANCE_FREE_PLAY_SONG_OFFSET`).
 
 Extraction 1065 is chart-sized like the other two: its SEQ (at `+0x1828`) runs 15 840 ticks. The piecewise map labels it sound-test #75, `M47B`; the bytes measured here do not test that label.
 
