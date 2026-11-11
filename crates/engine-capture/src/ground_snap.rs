@@ -92,6 +92,11 @@ pub fn snap_battle_ground(world: &mut World, snaps: &[GroundSnap]) -> Option<Bat
         a.move_state.world_z = s.z;
         if let Some(f) = s.facing {
             a.battle.facing_angle = f & 0xFFF;
+            // The capture holds one heading, the one its pass stored; the
+            // heading the pass's framing arm read is not in RAM, so the arm
+            // reads this one and [`strike_heading_target`] takes the pass's
+            // turn back off the endpoint where retail's own says how far.
+            a.battle.strike_arm_facing = Some(f & 0xFFF);
         }
     }
     world.refresh_battle_body_pairs_now();

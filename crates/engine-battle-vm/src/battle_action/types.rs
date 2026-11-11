@@ -551,6 +551,14 @@ pub struct BattleActor {
     /// `+0x46` - facing angle (i12 in `0xFFF` range; written from bearing
     /// checks).
     pub facing_angle: u16,
+    /// The heading `+0x46` held before the strike band's latest re-face:
+    /// what this pass's framing arm read. States `0x1E` / `0x1F` arm the
+    /// camera (`jal 0x801D5854` at `0x801E36E8` / `0x801E3AC8`) before they
+    /// store the new heading (`sh v0,0x46(s3)` at `0x801E371C` /
+    /// `0x801E3AFC`), so the case-7 / case-8 yaw and the per-art attack
+    /// camera's seed subtract the heading the pass before stored. `None`
+    /// until the strike band first runs for this actor.
+    pub strike_arm_facing: Option<u16>,
     /// `+0x3C` / `+0x40` - the actor's **body** position pair. The battle
     /// setup stamps the authored formation seat here and copies it into the
     /// live pair `+0x34`/`+0x38` (`FUN_800513F0`; see
