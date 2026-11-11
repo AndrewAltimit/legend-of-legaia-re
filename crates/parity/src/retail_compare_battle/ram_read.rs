@@ -1033,7 +1033,7 @@ impl RetailBattle {
                             shift[1] = walk_heading(ram, ctx)
                                 .map(|h| h.end_shift)
                                 .or_else(|| clip_clock_end_shift(ram, ctx))
-                                .unwrap_or(0);
+                                .unwrap_or(shift[1]);
                             shift
                         },
                         walk_arm.is_some(),

@@ -2424,7 +2424,7 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
 }
 
 #[test]
-fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
+fn a_strike_loop_capture_stands_on_the_walked_back_pose() {
     let mut ram = vec![0u8; 0x20_0000];
     let ctx = 0x800E_B654;
     put32(&mut ram, BATTLE_CTX, ctx);
@@ -2444,7 +2444,7 @@ fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
     b.span_gate = SpanGate::Age { accum: 0 };
     assert!(b.stand_on_displayed_pose());
     b.active_actor = 0;
-    assert!(!b.stand_on_displayed_pose(), "a party seat");
+    assert!(b.stand_on_displayed_pose(), "a party seat's strike");
     b.active_actor = 4;
     b.action_state = 0x2B;
     assert!(!b.stand_on_displayed_pose(), "a cast");
@@ -2954,4 +2954,38 @@ fn a_party_strike_on_its_first_swing_stands_on_the_walks_start() {
         "a committed swing keeps the captured pair"
     );
     assert_eq!(b.seeded_ground()[0], Some([-128, -258]));
+}
+
+/// Case 7's endpoint names the heading the strike pass's arm read
+/// (`ctx[+0x6DA] + 0x900 - heading`, half a turn on for an odd style): the
+/// two retail films' passes, `battle_jou_party_gala_chain_mid` (`129` under a
+/// stored `157`) and `battle_garmel_party_noa_lizard_tail_mid` (style `3`,
+/// `3114` under `3105`).
+#[test]
+fn a_strike_capture_names_the_turn_its_arm_did_not_see() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.action_state = 0x1E;
+    b.active_actor = 2;
+    b.facing = vec![None, None, Some(157)];
+    b.walk_yaw_base = 646;
+    b.cam_style = 2;
+    b.cam_tween.1.yaw = 2821.0;
+    assert_eq!(b.strike_arm_turn(), Some(28.0));
+    b.facing = vec![None, Some(3105)];
+    b.active_actor = 1;
+    b.walk_yaw_base = 604;
+    b.cam_style = 3;
+    b.cam_tween.1.yaw = 1842.0;
+    assert_eq!(b.strike_arm_turn(), Some(-9.0));
+    b.action_state = 0x1F;
+    assert_eq!(b.strike_arm_turn(), None, "case 8 can own 0x1F's table");
+    b.action_state = 0x1E;
+    b.cam_tween.1.yaw = 1000.0;
+    assert_eq!(b.strike_arm_turn(), None, "another framing's endpoint");
 }

@@ -477,8 +477,10 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps)
-                .map(|t| legaia_engine_capture::ground_snap::strike_heading_target(world, t, end));
+            let armed =
+                legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps).map(|t| {
+                    legaia_engine_capture::ground_snap::strike_heading_target(world, t, end, None)
+                });
             // On a display-lag retake the frame is two game frames older than
             // the RAM the endpoints were read from, and the framing armed
             // here may stand a step of yaw drift or depth ramp short of them;
@@ -561,7 +563,7 @@ impl PlayWindowApp {
             } else {
                 mask
             };
-            // A monster's strike: case 7 re-arms every pass, so the RAM's pose
+            // A strike loop: case 7 re-arms every pass, so the RAM's pose
             // walked back is the displayed frame's on every component, whatever
             // the replay's body pairs put the framing on
             // (`RetailBattle::stand_on_displayed_pose`).

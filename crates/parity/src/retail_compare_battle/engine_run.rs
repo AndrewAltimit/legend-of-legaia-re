@@ -1073,7 +1073,12 @@ pub fn run_engine_battle(
         )
         .map(|t| arm_target.unwrap_or(t))
         .map(|t| {
-            legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
+            legaia_engine_capture::ground_snap::strike_heading_target(
+                world,
+                t,
+                battle.cam_tween.1,
+                battle.strike_arm_turn(),
+            )
         });
         let mask = match (world.battle.camera.as_mut(), target) {
             // A capture-band module's own shot still walking, whose

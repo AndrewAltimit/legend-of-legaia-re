@@ -173,10 +173,19 @@ pub fn snap_battle_ground(world: &mut World, snaps: &[GroundSnap]) -> Option<Bat
 /// (`battle_garmel_songi_hyper_wave_mid_cast`: endpoint `3121`, probe `3124`
 /// at counter `2080`, three passes in). Every other framing, and every other
 /// component, is the probe's.
+///
+/// `arm_turn` is the strike's turn as the capture's RAM states it: the
+/// heading the RAM's pass stored less the one its arm read, which case 7's
+/// own endpoint names (`RetailBattle::strike_arm_turn` in `legaia-parity`).
+/// Given, the probe's yaw takes exactly that turn back, so what is left
+/// against retail's endpoint is the counter and the law, not the slack
+/// (`battle_jou_party_gala_chain_mid`: a `28`-unit turn, the heading `129`
+/// then `157`).
 pub fn strike_heading_target(
     world: &World,
     target: BattleCamPose,
     end: BattleCamPose,
+    arm_turn: Option<f32>,
 ) -> BattleCamPose {
     let recover = world.battle.camera.as_ref().is_some_and(|c| {
         c.phase() == legaia_engine_battle_vm::battle_cam_script::BattleCamPhase::Recover
@@ -184,6 +193,17 @@ pub fn strike_heading_target(
     let turn = (target.yaw - end.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
     let state = world.battle_ctx.action_state;
     let armed_once = legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES.contains(&state);
+    if state == 0x1E
+        && recover
+        && let Some(arm) = arm_turn
+    {
+        // The probe subtracted the stored heading; the arm subtracted the
+        // one before it.
+        return BattleCamPose {
+            yaw: target.yaw + arm,
+            ..target
+        };
+    }
     if (state == 0x1E && recover || armed_once) && turn.abs() <= STRIKE_HEADING_SLACK {
         BattleCamPose {
             yaw: target.yaw - turn,
