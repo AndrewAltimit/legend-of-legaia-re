@@ -2331,8 +2331,8 @@ impl LauncherApp {
         match self.focus {
             Item::Play => {
                 if self.disc.is_some() {
-                    "Start the game at the title screen. Saves and settings are kept in \
-                     your own folder. Option values in green differ from the original game."
+                    "Start the game at the title screen. In game, F12 or Select+Start \
+                     opens these options. Values in green differ from the original game."
                         .into()
                 } else {
                     "Choose your disc image first.".into()
