@@ -533,6 +533,14 @@ pub struct ScreenshotConfig {
     /// `scripts/ci/cast-sequence.py`; taken once.
     pub cast_seq_seat_pose:
         std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
+    /// `LEGAIA_SEAT_MODULE_SHOT=pitch,yaw,x,y,z,fx,fy,fz,left`: retail's module
+    /// shot still walking at a `0x70` capture, its endpoints and the vsyncs
+    /// its table has left (`RetailBattle::module_shot_seat` in
+    /// `legaia-parity`). Re-armed from the pose a cast film seats
+    /// ([`Self::cast_seq_seat_pose`]); the replay built its own shot from
+    /// another pose. Taken once, with the pose.
+    pub seat_module_shot:
+        std::cell::Cell<Option<(legaia_engine_camera::projection::BattleCamPose, u16)>>,
     /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR=clip,cursor`: the caster's clip and
     /// cursor on the recording's cast begin, seated with the pose. A heal's
     /// `0x3D` waits out the idle the caster stands on, and the child's idle
@@ -1333,6 +1341,15 @@ impl ScreenshotConfig {
                         let (c, k) = v.split_once(',')?;
                         Some((c.trim().parse().ok()?, k.trim().parse().ok()?))
                     }),
+            ),
+            seat_module_shot: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_MODULE_SHOT").ok().and_then(|v| {
+                    let (pose, left) = v.rsplit_once(',')?;
+                    Some((
+                        legaia_engine_capture::camera_align::cam_pose_from_env(pose)?,
+                        left.trim().parse().ok()?,
+                    ))
+                }),
             ),
             cast_seq_seat_pose: std::cell::Cell::new(
                 std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_POSE")

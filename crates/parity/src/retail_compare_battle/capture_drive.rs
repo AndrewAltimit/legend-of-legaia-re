@@ -702,6 +702,45 @@ impl RetailBattle {
         matches!(self.seed_plan(), SeedPlan::Cast) && self.action_state == 0x32
     }
 
+    /// A capture-band `0x70` capture inside a module shot still walking:
+    /// retail's endpoints and the vsyncs its table has left
+    /// (`ceil(gap / increment)` on the slowest component). A `--physical`
+    /// cast film opens on the state's own instant and stands the camera on
+    /// the state's live pose; its module shot was built by the replay's own
+    /// earlier pass, from wherever the replay's camera stood, so the film
+    /// re-arms it onto retail's table from the seated pose
+    /// (`LEGAIA_SEAT_MODULE_SHOT`). Harness seat: a still takes its frame on
+    /// the gate, before the table walks.
+    pub fn module_shot_seat(
+        &self,
+    ) -> Option<(legaia_engine_camera::projection::BattleCamPose, u16)> {
+        if self.action_state != 0x70 || self.module_phase == 0 || self.cam_landed {
+            return None;
+        }
+        let (live, end) = self.cam_tween;
+        let wrap = |d: f32| (d + 2048.0).rem_euclid(4096.0) - 2048.0;
+        let gaps = [
+            wrap(end.pitch - live.pitch),
+            wrap(end.yaw - live.yaw),
+            0.0,
+            end.tr[0] - live.tr[0],
+            end.tr[1] - live.tr[1],
+            end.tr[2] - live.tr[2],
+            end.focus[0] - live.focus[0],
+            end.focus[1] - live.focus[1],
+            end.focus[2] - live.focus[2],
+        ];
+        let left = (0..9)
+            .filter(|&k| k != 2 && self.cam_tween_steps[k] > 0)
+            .map(|k| {
+                let inc = f32::from(self.cam_tween_steps[k]);
+                (gaps[k].abs() / inc).ceil() as u16
+            })
+            .max()
+            .filter(|&n| n > 0)?;
+        Some((end, left))
+    }
+
     /// Whether a replayed cast's **module shot** takes retail's pose
     /// (`BattleCamera::align_module_shot`): a capture in the summon band's
     /// sustain / return (`0x35` / `0x36`), standing on an arm that polls the

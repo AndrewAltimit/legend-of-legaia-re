@@ -354,13 +354,18 @@ def engine_guard(a, out: Path, done: dict) -> str:
     return seats or ""
 
 
-def retail_opening_cursor(out: Path) -> str | None:
+def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
-    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose."""
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
+    `--physical` film (`first_row`) takes the recording's first row, seated on
+    the gate: the replay reached the state's instant on its own clip clock,
+    and a module that gates on its countdown leaves the caster's clip free to
+    run anywhere (Kiss of Death's lips opened `128` cursor units early)."""
     begin = (0x28, 0x3C)
+    keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
         with open(out / "retail" / "body.csv") as f:
-            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+            body = next((r for r in csv.DictReader(f) if keep(r)), None)
     except OSError:
         return None
     return None if body is None else f"{body['clip']},{body['cursor']}"
@@ -602,7 +607,7 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
-    if not a.physical and (cursor := retail_opening_cursor(out)):
+    if (cursor := retail_opening_cursor(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     edir = out / "engine"
     env.update({

@@ -278,6 +278,20 @@ shot again from `3943`, on an increment of `197`. Seated on the state, it builds
 `.885` to `.905` (arm 1's pull-in `.689` to `.762`) and the Lip Kid film's arm 0 from `.677`
 to `.716`; a recording older than the report falls back on the first row.
 
+A state saved past a module arm's shot carries two more seats on the gate. The replay's arm
+built its shot from wherever its own camera stood, and the pose seat moves the live words but
+not the table: `battle_map01_lippian_kiss_of_death_mid_cast`'s arm-0 shot walked TR z by `265`
+a vsync and never moved the yaw (the replay's caster had faced elsewhere when arm 0 ran),
+where retail's table walks `301` and `14`. The still's child names retail's endpoints and the
+vsyncs its table has left (`LEGAIA_SEAT_MODULE_SHOT`, `RetailBattle::module_shot_seat`), and the
+film re-arms the shot onto them from the seated pose; the film's camera then tracks retail's to
+a unit or two through arm 2. The caster's clip cursor is the other: a module that gates on its
+countdown leaves the clip free-running, and the replay reached the gate `128` cursor units
+ahead of retail's, so the lips stood shut where retail's frame has them open. A `--physical`
+film seats the recording's first-row cursor on the gate (`retail_opening_cursor`'s `first_row`).
+The Kiss of Death film reads `.882` to `.916` with both (arm 2 `.774` to `.855`). Both are
+harness seats.
+
 **The ground carries the facing.** An earlier actor of retail's round leaves its seat
 turned, and the range law measures a target by its body pair, the pose centroid turned by
 that facing. The engine child stands each slot on the recorded facing beside its pair

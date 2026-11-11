@@ -852,9 +852,17 @@ impl PlayWindowApp {
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.stand_on_pose(pose);
+                // A film opening mid shot walks on retail's table.
+                if let Some((end, left)) = sc.seat_module_shot.take() {
+                    let raw_z = (end.tr[2] * 160.0 / 256.0).ceil() as i32;
+                    cam.arm_module_shot(end, raw_z, u32::from(left));
+                }
             }
-            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
-                && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take()
+            if (if on_gate {
+                seat_now
+            } else {
+                matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+            }) && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take()
             {
                 let slot = usize::from(world.battle_ctx.active_actor);
                 world.seat_battle_clip_cursor(slot, clip, cursor);

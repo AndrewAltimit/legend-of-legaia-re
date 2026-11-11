@@ -826,6 +826,17 @@ pub(super) fn battle_image(
             )),
         ));
     }
+    // A module shot still walking, for a cast film that opens on the state
+    // (`RetailBattle::module_shot_seat`).
+    if let Some((end, left)) = battle.module_shot_seat() {
+        env.push((
+            "LEGAIA_SEAT_MODULE_SHOT",
+            format!(
+                "{},{left}",
+                legaia_engine_capture::camera_align::cam_pose_to_env(&end)
+            ),
+        ));
+    }
     // A summon close-up re-framed on the caster's body pair every pass: the
     // frame on screen stood on the pair of the pose three passes behind the
     // RAM's cursor, not the live pair (`RetailBattle::summon_focus`).
