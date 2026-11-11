@@ -149,14 +149,33 @@ pub(crate) struct BattleFxFrame {
     /// The baked nodes and parts whose primitives link at their farthest
     /// corner (`FxMeshModel::far_corner` / `FxPartModel::far_corner`), a
     /// stream of their own so the page draws them with that order word
-    /// (`meanDepth` `2`). Its own `far` and `models` stay empty.
-    pub far: Box<BattleFxFrame>,
+    /// (`meanDepth` `2`), built on the first such draw. Its own `far` and
+    /// `models` stay empty.
+    pub far: Option<Box<BattleFxFrame>>,
 }
 
 impl BattleFxFrame {
     /// Where a baked draw goes: the far-corner stream or the main one.
     fn bake_target(&mut self, far_corner: bool) -> &mut BattleFxFrame {
-        if far_corner { &mut self.far } else { self }
+        if far_corner {
+            self.far.get_or_insert_with(Default::default)
+        } else {
+            self
+        }
+    }
+
+    /// The far-corner stream, empty when no draw went there.
+    fn far_stream(&self) -> &BattleFxFrame {
+        static EMPTY: BattleFxFrame = BattleFxFrame {
+            positions: Vec::new(),
+            uvs: Vec::new(),
+            cba_tsb: Vec::new(),
+            indices: Vec::new(),
+            flat: Vec::new(),
+            models: Vec::new(),
+            far: None,
+        };
+        self.far.as_deref().unwrap_or(&EMPTY)
     }
 }
 
@@ -818,29 +837,29 @@ impl LegaiaRuntime {
     /// `meanDepth` `2`. Read after [`Self::play_battle_fx_sync`] /
     /// [`Self::play_field_fx_sync`].
     pub fn play_battle_fx_far_vertex_count(&self) -> u32 {
-        (self.battle_fx.far.positions.len() / 3) as u32
+        (self.battle_fx.far_stream().positions.len() / 3) as u32
     }
 
     /// The far-corner stream's positions (the layout of
     /// [`Self::play_battle_fx_positions`]).
     pub fn play_battle_fx_far_positions(&self) -> Vec<f32> {
-        self.battle_fx.far.positions.clone()
+        self.battle_fx.far_stream().positions.clone()
     }
 
     pub fn play_battle_fx_far_uvs(&self) -> Vec<u8> {
-        self.battle_fx.far.uvs.clone()
+        self.battle_fx.far_stream().uvs.clone()
     }
 
     pub fn play_battle_fx_far_cba_tsb(&self) -> Vec<u16> {
-        self.battle_fx.far.cba_tsb.clone()
+        self.battle_fx.far_stream().cba_tsb.clone()
     }
 
     pub fn play_battle_fx_far_indices(&self) -> Vec<u32> {
-        self.battle_fx.far.indices.clone()
+        self.battle_fx.far_stream().indices.clone()
     }
 
     pub fn play_battle_fx_far_flat_rgba(&self) -> Vec<u8> {
-        self.battle_fx.far.flat.clone()
+        self.battle_fx.far_stream().flat.clone()
     }
 
     /// Whether FX model draw `i` links its primitives at their farthest
