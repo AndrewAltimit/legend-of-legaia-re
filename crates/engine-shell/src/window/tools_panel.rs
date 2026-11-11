@@ -502,8 +502,38 @@ fn bgm_pick_label(i: usize) -> String {
         None => "Standard theme".into(),
         Some(0) => "Field track plays on".into(),
         Some(id) => legaia_engine_system::music_labels::label_for_bgm_id(id)
+            .map(|l| shorten_label(&l, BGM_LABEL_CHARS))
             .unwrap_or_else(|| format!("Track {id}")),
     }
+}
+
+/// The most characters a battle-music pick shows beside its row name on
+/// the plate; a longer track label is cut at a word and marked `...`.
+const BGM_LABEL_CHARS: usize = 26;
+
+/// `label` cut to at most `max` characters at a word boundary, with `...`
+/// standing for the rest; a label that fits is returned whole.
+fn shorten_label(label: &str, max: usize) -> String {
+    if label.chars().count() <= max {
+        return label.to_string();
+    }
+    let budget = max.saturating_sub(3);
+    let mut out = String::new();
+    for word in label.split(' ') {
+        let next = if out.is_empty() {
+            word.to_string()
+        } else {
+            format!("{out} {word}")
+        };
+        if next.chars().count() > budget {
+            break;
+        }
+        out = next;
+    }
+    if out.is_empty() {
+        out = label.chars().take(budget).collect();
+    }
+    format!("{out}...")
 }
 
 /// A spell pick's name off the disc's table, else its id.
@@ -585,6 +615,22 @@ mod tests {
             assert!(p.cursor >= first && p.cursor < first + SHOWN);
             p.move_cursor(1);
         }
+    }
+
+    /// A track label too long for the plate is cut at a word, with `...`.
+    #[test]
+    fn a_long_track_label_is_cut_at_a_word() {
+        assert_eq!(shorten_label("M12 - Short", 26), "M12 - Short");
+        assert_eq!(
+            shorten_label("M47B - Another flying castle escape", 26),
+            "M47B - Another flying..."
+        );
+        assert!(
+            shorten_label("M47B - Another flying castle escape", 26)
+                .chars()
+                .count()
+                <= 26
+        );
     }
 
     /// Every help line and the controls line fit the plate, in the disc's
