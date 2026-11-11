@@ -1390,3 +1390,10 @@ changes = [
   ["states/shiny_refactor_gimard_levelup/image", 0.835, 0.796],
   ["states/vera_summon_mid_cast/image", 0.987, 0.986],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 38: play_gzip_bytes grows by code (+0.54%): the controller layer (the rebindable [gamepad] table, raw-table and hat folds for non-standard pads, hot-plug notices, the dead-zone row, controller prompts), the fishing catch's lift and result-plate fish, the 5-bit PSX blend arithmetic, the flat bank-2 ghost colours, the rockfall part morph, the occlusion gate on windows and objects, and the battle cast fixes. No data is added to the bundle. The native battle and summon_cast allocation rise the first gate run measured (+3.5..4% kilobytes, bisected to 40da26bf7) is fixed at 7c1611389 and the town01 enhanced allocation rise (+5 per frame, bisected to fc133d4b0) at f6827d645; neither is in this entry."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5003370, 5030469],
+]
