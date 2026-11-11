@@ -133,6 +133,18 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 
 A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second; Gaza's second fight is that stretch's risk.
 
+West Voz Forest and Voz Forest are another: `bylon` is a waypoint of both
+stretches in part C, before and after the West Voz Genesis Tree. Biron's
+first-visit talks (P1[36], P1[18], P1[5], P1[32], P1[33], P1[28]:
+`0x297`..`0x2A0`) each branch to the mist once `vell` P1[3] has raised
+`0x2A1`, so they play on the way to `vell`; on the way back the mist chain
+plays (`0x2A2`..`0x2A7`: the mist arrives, Gala goes ahead into it and
+rejoins). The seeded segment starts at Drake and crosses `bylon` before the
+tree, and the cheapest route only crosses it. The `vell_fog_field` anchor is
+a poke that seeds nothing (`seeds_next = false`), so the stretch that ends
+at it steers its beats by the anchor after it as well: the poke names the
+scene, not what the retail run had played on the way there.
+
 Zora Castle is another case: its seeded segment starts from an anchor whose flags the save bridge carries forward, but a run of its own has to raise the chain that opens `deene`'s dock (`nilboa`, `bubu1`, `koin1b`, `bubu1`, `deene`, `son`; [route notes](#overworld-and-dungeon-joins)), and Conkram's Past takes `son` for the crossing to `concnow`.
 
 A waypoint whose own arrival script carries the party on counts as visited: `concend`'s P2[0] is its beat, and it ends in the hop to `town0d`. One that carries it straight back to the scene it came from was a stay, not a visit: `jiji`'s inn sleeps the party over in `ropeway`, whose arrival cutscene returns it to `jiji`. Part A checks every waypoint is a disc scene.
@@ -1280,6 +1292,15 @@ while a round still gains flags, since each unlocks the other:
   `0x1E4..0x1E7`), and the way to `tunnela` opens on one combination;
   touched once a round, all four turned in step and the pass ran out of
   fresh flags short of it on half the dealt streams.
+  A prop whose touch raised a flag its own record tests and never lowers,
+  and lowered none, is **staged**: it is touched again while it still sets a
+  wanted flag, even when every flag it moved agrees with the anchor. `vell`
+  P0[1], the Bridge Grass, raises the first-visit `0x460` on the first
+  examine and asks for the Fertilizer (`0x2AE`) only on the next. A dial
+  lowers the old facing as it raises the new one, and a switch lowers on its
+  next press what it raised (`taiku`'s switch at (69, 46), `0x386`), so
+  neither is staged: pressed six times, that switch left the way out of
+  Zora's castle shut and the escape clock ran out.
 
 ### Beats the ladder skips: latches
 

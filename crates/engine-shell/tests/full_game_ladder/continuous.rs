@@ -528,7 +528,22 @@ fn part_c_continuous_run() {
             Some((m.scene.clone(), flags))
         });
         PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
-        NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        // An anchor that seeds nothing is a poke: it names the scene, not
+        // what the retail run had played on the way there, so the beats of
+        // its stretch steer by the save after it as well. `vell_fog_field`
+        // is a Rim Elm-era state; Biron's first-visit chain (`bylon`
+        // 0x297..0x2A0, every talk of which branches to the mist once the
+        // West Voz tree's 0x2A1 is up) is in PRO-01 and must play before
+        // the tree.
+        let next_flags = if spine[i + 1].seeds_next {
+            anchor_flags[i + 1].clone()
+        } else {
+            anchor_flags[i + 1].clone().map(|mut f| {
+                f.extend(anchor_flags.get(i + 2).into_iter().flatten().flatten());
+                f
+            })
+        };
+        NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = next_flags);
         CHESTS_AHEAD.with(|c| {
             let mut c = c.borrow_mut();
             c.clear();

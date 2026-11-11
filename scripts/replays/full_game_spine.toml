@@ -130,12 +130,24 @@ reach = "scene"
 # and the segment after it seeds from drake_castle_revisited's save.
 order_check = false
 seeds_next = false
+# Biron's first-visit chain (bylon P1[36], P1[18], P1[5], P1[32]: 0x297..0x2A0)
+# is in PRO-01 and every talk of it branches to the mist once vell's tree has
+# raised 0x2A1, so a run plays it before the tree. Continuous run only; the
+# beats steer by PRO-01, since this anchor is a poke.
+continuous_via = ["bylon"]
 anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
 
 [[milestone]]
 id = "voz_forest"
 scene = "vozz"
 reach = "scene"
+# The anchor carries the West Voz Genesis Tree's revival and the Mist in
+# Biron: vell's Bridge Grass takes the Fertilizer (P0[1], 0x2AE), the tree
+# (P1[3]) revives and the Ra-Seru Egg flies (0x2A1, 0x2B0), and in bylon the
+# mist arrives (P2[6], 0x2A2), Gala goes ahead into it (P2[5] / P2[7],
+# 0x2A6) and rejoins (P2[14], 0x2A7). The cheapest route only crosses bylon.
+# Continuous run only: the seeded segment starts at Drake, before the tree.
+continuous_via = ["bylon"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-01" }
 
 [[milestone]]
