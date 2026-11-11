@@ -332,6 +332,15 @@ pub const XA_STREAM_FRAME_COST: u16 = 1063;
 /// exactly; a Spirit's run longer (`6` and `7`), and this is a floor there.
 pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
 
+/// The passes after a clip's cue before its stream loads the frame: the drive
+/// seeks to the clip's file first. A monster's Heal on a lone Vahn
+/// (`battle_nilboa_amethyst_heal_mid_cast`, its PCSX-Redux recording) costs
+/// `392` on the cue's pass and `507` on the next, under `0x1FF`, and the clamp
+/// from the third; the state saves two step-`2` passes into `0x3E` (close-up
+/// accumulator `32`). `battle_bubu2_spoon_heal_mid_cast` saves at the same
+/// point with both passes near `390`.
+pub const XA_STREAM_LOAD_ONSET_PASSES: u64 = 2;
+
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
 /// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
 /// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two

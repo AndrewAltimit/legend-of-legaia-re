@@ -47,7 +47,7 @@ impl World {
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
-        let xa_streaming = self.audio.battle_xa_busy_frames > 0 && self.audio.battle_xa_frame_load;
+        let xa_streaming = self.battle_xa_loads_frame();
         let cost = arm_step.map_or_else(
             || {
                 let cost = measured_frame_cost_at(self.party.party_count, state, passes)
@@ -63,6 +63,20 @@ impl World {
             cost_of_step,
         );
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+    }
+
+    /// Whether a battle CD-XA clip's stream loads this pass's frame: a loading
+    /// clip is playing and its cue lies
+    /// [`XA_STREAM_LOAD_ONSET_PASSES`](legaia_engine_battle_loop::frame_clock::XA_STREAM_LOAD_ONSET_PASSES)
+    /// passes back, the drive's seek to its file done.
+    fn battle_xa_loads_frame(&self) -> bool {
+        use legaia_engine_battle_loop::frame_clock::XA_STREAM_LOAD_ONSET_PASSES;
+        self.audio.battle_xa_busy_frames > 0
+            && self.audio.battle_xa_frame_load
+            && self
+                .audio
+                .battle_xa_cue_frame
+                .is_none_or(|f| self.battle_frame_id() >= f + XA_STREAM_LOAD_ONSET_PASSES)
     }
 
     /// What a battle frame draws past its state's base: the live move-VM
@@ -339,8 +353,7 @@ impl World {
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
             && self.toggles.battle_party_cost_step
-            && self.audio.battle_xa_busy_frames > 0
-            && self.audio.battle_xa_frame_load
+            && self.battle_xa_loads_frame()
         {
             legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
@@ -1443,6 +1456,27 @@ mod tests {
         w.audio.battle_xa_busy_frames = 0;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    /// A clip's stream loads the frame from the second pass after its cue:
+    /// the Amethyst Heal recording costs `392`, `507`, then the clamp.
+    #[test]
+    fn a_clips_stream_loads_the_frame_two_passes_after_its_cue() {
+        use legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
+        let mut w = World::new();
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x3E;
+        w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+        let mut costs = Vec::new();
+        for _ in 0..3 {
+            w.push_frame_cost(None);
+            costs.push(w.battle.frame_cost_ring.newest());
+            w.clock.display_frames += w.battle.frame_clock.span();
+        }
+        assert!(costs[0] < 0x1FF && costs[1] < 0x1FF, "{costs:?}");
+        assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
     }
 
     #[test]

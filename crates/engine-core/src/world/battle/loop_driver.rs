@@ -991,6 +991,7 @@ impl World {
     ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
         self.audio.battle_xa_frame_load = true;
+        self.audio.battle_xa_cue_frame = Some(self.battle_frame_id());
         self.audio.battle_xa_cues.push(cue);
     }
 
