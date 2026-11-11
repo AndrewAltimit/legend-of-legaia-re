@@ -642,7 +642,7 @@ Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_da
 
 The stage's front riser is two coplanar layers of one mesh: an opaque base (`0x7EC0`) and an additive lamp sheet (`0x7E84`, ABR `1`, a `(64, 506)` cycler cell). The sheet comes first in the mesh, and a later prim links ahead of an earlier one in its ordering-table bucket, so the base draws first and the sheet lands on it. `legaia_tmd::mesh::separate_coplanar_prims` follows that order between equal areas.
 
-The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners, and the hall's floor currently hides them ([open threads](../reference/open-rev-eng-threads.md)).
+The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners. Retail links each blob into the same ordering-table slot as the stage-floor quad under it and draws the floor first; the port takes the blob's depth six units nearer the eye, which wins that tie under the hall's level camera. What the blob does to the pixels is the GPU's truncating half-and-half blend ([renderer](renderer.md#the-field-drop-shadow-fun_8001c394)), which the hosts' floating-point blend does not reproduce.
 
 ## HUD
 

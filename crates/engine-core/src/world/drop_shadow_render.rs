@@ -20,14 +20,16 @@ use legaia_render_kernels::drop_shadow::{
 /// `legaia_render_kernels::move_strip::FIELD_OT_SHIFT`, the same choice).
 pub const DROP_SHADOW_OT_SHIFT: u8 = 0;
 
-/// How far above the actor's floor (retail units, `-Y`) the blob's **depth**
-/// is taken from. The projected corners stay on the floor; only the depth a
-/// host tests against its scene moves, so the blob wins the tie with the
-/// ground it lies on (retail sorts the ground into the far bucket, so the
-/// blob always draws over it) without pulling in front of the actor. Clear
-/// of the port's own coplanar lifts (under one unit) and the walk-ground
-/// sink.
-pub const DROP_SHADOW_DEPTH_LIFT: i32 = 6;
+/// How far nearer the eye (world units, along the view axis) the blob's
+/// **depth** is taken. The projected corners stay on the floor; only the
+/// depth a host tests against its scene moves, so the blob wins the tie with
+/// the ground it lies on (retail sorts the ground into the far bucket, and
+/// the dance hall links the stage floor under a dancer into the blob's own
+/// ordering-table slot, drawn first) without pulling in front of the actor.
+/// The pull is along the eye ray, not up the world `Y` axis: under the dance
+/// hall's nearly level camera (pitch `0x3C`) a height lift moves the depth
+/// by under a unit and the floor kept the tie.
+pub const DROP_SHADOW_DEPTH_LIFT: f32 = 6.0;
 
 /// The party class bit (`0x01000000`), which retail's player actor carries
 /// and the port's player move state does not model.
@@ -65,7 +67,7 @@ impl World {
     /// `+0x72 == 0` test branches straight to the shadow gate.
     ///
     /// Each cell carries per-corner scene depth taken
-    /// [`DROP_SHADOW_DEPTH_LIFT`] above the floor, so both hosts draw it
+    /// [`DROP_SHADOW_DEPTH_LIFT`] nearer the eye, so both hosts draw it
     /// depth-tested against the scene they already drew.
     ///
     /// REF: FUN_8001B964 (the gate at `0x8001BE20..0x8001BE48`)
@@ -101,7 +103,7 @@ impl World {
             if r.mac[2] <= 0 {
                 return None;
             }
-            let depth = proj.ndc_depth([p[0], p[1] - DROP_SHADOW_DEPTH_LIFT, p[2]]);
+            let depth = proj.ndc_depth_toward_eye(p, DROP_SHADOW_DEPTH_LIFT);
             Some(ShadowVertex {
                 sx: r.sxy.0,
                 sy: r.sxy.1,

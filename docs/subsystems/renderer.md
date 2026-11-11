@@ -1301,8 +1301,21 @@ Port: `legaia_render_kernels::drop_shadow` (the grid and the packet) under
 channel whose clip id `+0x5C` is non-zero - the port's stand-in for draw kind
 `1`, which an actor with no clip never reaches. Both hosts wrap the cells
 through `screen_prim::drop_shadow_prim` into their field screen-prim pass
-with each corner's scene depth taken six units above the floor, so the depth
-test does the job retail's ordering does: under the actor, over the ground.
+with each corner's scene depth taken six units nearer the eye along the view
+axis, so the depth test does the job retail's ordering does: under the actor,
+over the ground. The pull is along the eye ray because a height lift fails
+under a level camera: the dance hall's (pitch `0x3C`) turned six units of
+height into under a unit of depth, and the stage floor kept every blob. Retail
+links that floor's quad under a dancer into the blob's own slot and draws the
+floor first (`minigame_dance_retail_go_in`: CLUT `0x7E80` quads and the blob's
+cells both in slot `2220`), so the blob lands on it.
+
+The blob's darkening is the GPU's blend arithmetic, not its texel: ABR `0`
+halves each term in 5-bit before the sum, `(B >> 1) + (F >> 1)`, and the blob
+texel is grey `3` (`0x8C63`), so a floor at `3` reads `2` and one at `4` reads
+`3` - one step darker, `24` to `16` and `33` to `24` on the hall's dark
+floor. A blend in floating point leaves that floor where it was, which is what
+both hosts draw: the dance's blobs stand where retail's do and barely show.
 
 The blob and the body share one camera: the matrix `FUN_800460AC` projects
 through is the frame's, the one the actor's mesh just drew with, scripted
