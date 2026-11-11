@@ -279,6 +279,30 @@ on the standard mapping walks by D-pad and by stick and opens and closes the
 menu on Start; the Fullscreen button presents the 4:3 picture at the screen's
 height with the keyboard still on the canvas.
 
+## Controllers (`pad_bindings` + `pad-bindings.js`)
+
+`pad-bindings.js` is the one reader of `navigator.getGamepads()`. Once a frame it
+hands each connected pad's button values and axes to `gamepad_fold`, the engine's
+`GamepadMapping::fold_pad` over the live binding table's `[gamepad]` half, at the
+stick dead zone the runtime stores (`stick_dead_zone`). A pad whose
+`Gamepad.mapping` is not `"standard"` folds through the table's raw half; the axes
+the page saw when the pad first appeared are its resting values, from which the
+engine finds a hat (`RawHat::detect`: a DirectInput POV axis resting past `1`, or
+a last pair of axes resting at `0` on a pad with six or more). Every connected
+pad's word is ORed into the one player.
+
+A fresh press is also handed to `play_menu_pad_button`, which only the Options
+screen's Key Config consumes while a row waits; the bind lands in the same table
+and storage key (`legaia.bindings`) as a key bind. When the binding revision moves
+the page keeps every held button out of the fold until it is let go
+(`swallowHeldPads`), since the button that made the bind is a different PSX
+button through the new table. `gamepadconnected` / `gamepaddisconnected` are said
+on the notice line and listed in `#play-pad-status`. The last device pressed
+drives the prompts: a fold that holds anything notes the pad (its maker's labels
+from `Gamepad.id`), a keydown notes the keyboard, and `pad_prompt_label` answers
+for either. A bundle without `gamepad_fold` falls back to the fixed default
+layout (`gamepad_layout_json`) for every pad.
+
 ## FMV beats (`play_fmv`)
 
 An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)

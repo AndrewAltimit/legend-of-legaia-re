@@ -488,10 +488,12 @@ window read no controller at all, so no file held both columns. Two more rules
 hold it:
 
 - An array literal of four or more quoted PSX button names is a controller
-  table. The layout is served by the engine
-  ([`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs)
-  through `gamepad_layout_json`), the table the native window folds gilrs
-  through.
+  table. The table is the engine's
+  ([`legaia_engine_system::gamepad::GamepadMapping`](../../crates/engine-system/src/gamepad.rs),
+  the player's rebindable `[gamepad]` half of the binding table): a page
+  hands each pad's button values and axes to `gamepad_fold`, the fold the
+  native window runs gilrs through (a bundle without it falls back to
+  `gamepad_layout_json`, the fixed default).
 - `navigator.getGamepads` is read only by `site/js/pad-bindings.js`
   (`GAMEPAD_ADOPTER`); every page reads controllers through its
   `legaiaPollGamepad` (a key-set host) or `legaiaGamepadEdges` (a page whose
@@ -2008,16 +2010,31 @@ and the `engine-netplay` `keys` test.
 
 ### Controllers
 
-A gamepad binds buttons to buttons by position, so the Key Config table never
-reaches it. One layout, the W3C standard mapping, lives in
-[`legaia_engine_system::gamepad`](../../crates/engine-system/src/gamepad.rs).
+A gamepad binds physical buttons to PSX buttons through its own table,
+[`GamepadMapping`](../../crates/engine-system/src/gamepad.rs), stored beside the
+keys in `Mapping::gamepad` (`legaia-input.toml` natively, `legaia.bindings` on
+the page) and rebound on the same Key Config screen. Its default is the W3C
+standard mapping; a browser pad without that mapping folds through the table's
+raw half.
 
 | Decision | Kernel | Native | Pages |
 |---|---|---|---|
-| button order, stick dead zone, trigger threshold | `gamepad::STANDARD_BUTTONS`, `STICK_DEAD_ZONE`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`) | `gamepad_layout_json`, adopted by `pad-bindings.js` |
+| the fold: table, raw half, hat, trigger threshold | `GamepadMapping::fold` / `fold_pad`, `RawHat::detect`, `BUTTON_PRESS_THRESHOLD` | gilrs buttons renamed to standard indices (`window::gamepad::standard_index`), folded through `GamepadHost::set_mapping`'s table | `gamepad_fold` per pad with its resting axes (`pad-bindings.js`); fallback `gamepad_layout_json` |
+| stick dead zone | `OptionsState::stick_dead_zone` | `GamepadHost::set_dead_zone`; the launcher's and `F12` panel's *Stick dead zone* row | `#play-stick-dead-zone` (`every_launcher_row_has_a_play_page_twin`) |
+| rebinding a controller button | capture names (`gamepad::capture_name`), `KeyRebindSession`'s wait, the keys' swap rule (`GamepadMapping::bind`) | `GamepadPoll::capture` into `pending_key_name`; the launcher's `bind_capture` | `play_menu_pad_button` from `pad-bindings.js`'s capture flush |
+| the button that made a bind | held through the table change it reads as its new button | `GamepadHost::swallow_held` until released | `swallowHeldPads` on the rebind revision |
+| several pads, hot-plug | every connected pad's word ORed into the one player | `GamepadPoll::connected` / `disconnected` on the notice line | `gamepadconnected` / `gamepaddisconnected` on the notice line and `#play-pad-status` |
+| prompts naming a button | `Mapping::prompt_label` over the last pressed pad's `PadStyle` (`GlyphSet` by maker) | `last_pad`: start-up hint, fishing caption | `pad_prompt_label`: fishing caption, the minigames page's hints |
 | press / release edges, focus-loss reset | `StandardGamepad::update`, `reset` | `poll_gamepad` once per redraw, ahead of the ticks; `Focused(false)` | `legaiaPollGamepad` (play page, title card), `legaiaGamepadEdges` (minigames page) |
 | where the word lands | the tick's pad word | `gamepad_held`, ORed with the keyboard's held word each tick; a press since the last poll goes through `PadTapLatch` | `Gamepad:<Button>` entries in the `held` / `pulse` sets; on the minigames page an edge event naming its button through the key handlers |
 | rumble | `legaia_engine_system::rumble` over `World::rumble`, read through `BootSession::rumble_frame` (a `SIM_PAIRS` row) | `GamepadHost::set_rumble`: two endless gilrs force-feedback effects whose gains are the levels, once per redraw after its ticks | `legaiaSetRumble` (`pad-bindings.js`): a `dual-rumble` effect on every pad with a `vibrationActuator`, re-sent while a level holds |
+
+Pinned by `controller_input::a_rebound_button_and_the_stick_walk_like_the_keys`
+(disc-gated, the window's real frame path), `window::gamepad::table_tests`,
+`pad_bindings::tests::the_page_fold_is_the_shared_fold`, and the `controls`
+section of [`check-pages.mjs`](../../scripts/ci/check-pages.mjs), which drives
+a stubbed `navigator.getGamepads` through a non-standard pad's hat, a second
+pad, the plug notices and a controller-made Key Config bind.
 
 Scripted and headless native runs open no controller: the pad word there is
 the script's. Two native surfaces read the pad outside the tick's word and
