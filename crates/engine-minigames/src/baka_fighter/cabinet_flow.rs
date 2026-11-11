@@ -53,6 +53,7 @@ impl BakaFight {
     /// the HUD pass), so the port feeds them across rather than duplicating
     /// them inside the cabinet.
     pub(super) fn tick_cabinet(&mut self, frame_step: i32) {
+        let camera_hold = self.round_start_camera_beat(frame_step);
         let input = crate::baka_cabinet::CabinetInput {
             frame_step,
             // The host's packed edge. In the duel state its one read is the
@@ -86,6 +87,7 @@ impl BakaFight {
             // decided (a finisher flag or both HPs at zero) - in the port,
             // once the exchange that decided it has left the fight phase.
             round_clock: !matches!(self.phase, MatchPhase::Fighting),
+            camera_hold,
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
@@ -121,6 +123,33 @@ impl BakaFight {
         // so the chrome takes exactly what this frame called.
         if self.cabinet.front_end() || self.cabinet_frame.title_card.is_some() {
             self.chrome.set_intro_clock(self.cabinet_frame.title_card);
+        }
+    }
+
+    /// The camera half of the round banner arms `0x33..0x35`, run ahead of
+    /// the cabinet's own step because each arm's exit tests what its camera
+    /// write left: `0x33` snaps a secret opponent's first-round pose, `0x34`
+    /// raises it, `0x35` spins. Returns whether the arm holds this frame
+    /// ([`crate::baka_cabinet::CabinetInput::camera_hold`]).
+    ///
+    /// REF: FUN_801CF388 (`0x801D01D0..0x801D0454`)
+    fn round_start_camera_beat(&mut self, frame_step: i32) -> bool {
+        use crate::baka_cabinet::{
+            ST_ROUND_BANNER_A, ST_ROUND_BANNER_B, ST_ROUND_BANNER_C, SecretOpponent,
+        };
+        // `DAT_801DBF06` set and `DAT_801DBF8C` still `0`.
+        let secret = self.cabinet.secret_opponent();
+        let secret_first_round = secret != SecretOpponent::None && self.cabinet.round() == 0;
+        match self.cabinet.state() {
+            ST_ROUND_BANNER_A => {
+                if secret_first_round {
+                    self.camera.secret_intro(secret.raw());
+                }
+                false
+            }
+            ST_ROUND_BANNER_B => secret_first_round && self.camera.secret_rise(frame_step),
+            ST_ROUND_BANNER_C => self.camera.spin(frame_step),
+            _ => false,
         }
     }
 

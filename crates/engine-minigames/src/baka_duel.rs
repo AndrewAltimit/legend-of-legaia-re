@@ -56,6 +56,17 @@ pub const ROUND_SETUP_CAMERA: RetailCamGlobals =
 /// (`slti a0,a0,0x1001` at `0x801D03A0`).
 pub const SWEEP_END_YAW: i32 = 0x1001;
 
+/// State `0x33`'s angles on a secret opponent's first round: pitch `0`,
+/// yaw `0xC08`, roll `0` (`0x801D0210..0x801D0224`).
+pub const SECRET_INTRO_ANGLES: [i32; 3] = [0, 0xC08, 0];
+/// The same snap's eye X / Y (`0x801D0240..0x801D0254`).
+pub const SECRET_INTRO_EYE: [i32; 2] = [0x28, 0x2D0];
+/// The same snap's eye Z for override `1` / `2` (`0x801D0258`, `0x801D026C`).
+pub const SECRET_INTRO_EYE_Z: [i32; 2] = [0xBF4, 0x6E0];
+/// State `0x34` holds that first round while eye Y is below this
+/// (`slti v1,v1,0xBB9` at `0x801D02F4`).
+pub const SECRET_RISE_END_Y: i32 = 0xBB9;
+
 /// The glide state `0x35` arms once the spin ends (`0x801D03D0..0x801D0454`):
 /// the angles and the eye X parked (step `0`), eye Y to `0x898` at `0x1E`,
 /// eye Z to `0x3520` at `0xC8`, focus and `H` parked. `(step, target)` pairs
@@ -163,7 +174,8 @@ pub fn parse_special_cameras(overlay: &[u8]) -> Vec<[i16; 20]> {
 pub struct DuelCamera {
     globals: RetailCamGlobals,
     glide: Option<CameraRelGlide>,
-    /// Cabinet state `0x35`'s spin is running.
+    /// The round setup armed the spin and cabinet state `0x35` has not yet
+    /// turned it past a full turn.
     sweeping: bool,
 }
 
@@ -180,13 +192,72 @@ impl Default for DuelCamera {
 }
 
 impl DuelCamera {
-    /// The round setup's snap, which also starts the round-start spin.
+    /// The round setup's snap. It arms the round-start spin, which turns
+    /// only on the frames the cabinet runs state `0x35` ([`Self::spin`]).
     ///
     /// REF: FUN_801CF388 (state `0x32`, `0x801CFF34..0x801CFF7C`)
     pub fn round_setup(&mut self) {
         self.globals = ROUND_SETUP_CAMERA;
         self.glide = None;
         self.sweeping = true;
+    }
+
+    /// State `0x33`'s snap for a secret opponent's first round
+    /// (`0x801D01FC..0x801D0284`, taken only while `DAT_801DBF06` is set and
+    /// the round index `DAT_801DBF8C` is `0`): pitch / yaw / roll
+    /// `0` / `0xC08` / `0`, focus zero, eye `(0x28, 0x2D0, _)` with Z
+    /// `0xBF4` for override `1` and `0x6E0` for override `2`.
+    ///
+    /// REF: FUN_801CF388 (state `0x33`)
+    pub fn secret_intro(&mut self, override_raw: i16) {
+        let g = &mut self.globals.0;
+        g[..3].copy_from_slice(&SECRET_INTRO_ANGLES);
+        g[6..9].fill(0);
+        g[3] = SECRET_INTRO_EYE[0];
+        g[4] = SECRET_INTRO_EYE[1];
+        match override_raw {
+            1 => g[5] = SECRET_INTRO_EYE_Z[0],
+            2 => g[5] = SECRET_INTRO_EYE_Z[1],
+            _ => {}
+        }
+    }
+
+    /// One frame of state `0x34`'s rise on that same first round
+    /// (`0x801D02D0..0x801D02F8`): eye Y climbs `(15 * dt) << 1`. Returns
+    /// whether the state holds - the eye is still at or below
+    /// [`SECRET_RISE_END_Y`] - 1.
+    ///
+    /// REF: FUN_801CF388 (state `0x34`)
+    pub fn secret_rise(&mut self, frame_step: i32) -> bool {
+        let dt = frame_step.max(0);
+        let g = &mut self.globals.0;
+        g[4] = g[4].wrapping_add((dt * 15) << 1);
+        g[4] < SECRET_RISE_END_Y
+    }
+
+    /// One frame of state `0x35`'s spin: yaw `+= dt << 6`, eye Y `+= dt << 2`,
+    /// eye Z `+= dt << 5`. Once the yaw passes `0x1000` it zeroes the yaw,
+    /// hands the eye to [`SWEEP_GLIDE`] and returns `false` - the frame the
+    /// state moves on; `true` while the spin still holds the state. A camera
+    /// with no spin armed returns `false` untouched.
+    ///
+    /// REF: FUN_801CF388 (state `0x35`, `0x801D0324..0x801D0454`)
+    pub fn spin(&mut self, frame_step: i32) -> bool {
+        if !self.sweeping {
+            return false;
+        }
+        let dt = frame_step.max(0);
+        let g = &mut self.globals.0;
+        g[1] = i32::from((g[1] as i16).wrapping_add((dt << 6) as i16));
+        g[4] = g[4].wrapping_add(dt << 2);
+        g[5] = g[5].wrapping_add(dt << 5);
+        if g[1] < SWEEP_END_YAW {
+            return true;
+        }
+        g[1] = 0;
+        self.sweeping = false;
+        self.arm_glide(&SWEEP_GLIDE);
+        false
     }
 
     /// The player-select camera ([`SELECT_CAMERA`]), held still.
@@ -220,22 +291,11 @@ impl DuelCamera {
         self.glide = Some(CameraRelGlide::from_normalized(&n));
     }
 
-    /// One frame: the spin while it runs, then the live glide.
-    ///
-    /// REF: FUN_801CF388 (state `0x35`, `0x801D0324..0x801D0454`)
+    /// One frame of the live glide. The spin is not here: it is state
+    /// `0x35`'s body ([`Self::spin`]), so it turns only while the cabinet
+    /// holds that state.
     pub fn tick(&mut self, frame_step: i32) {
         let dt = frame_step.max(0);
-        if self.sweeping {
-            let g = &mut self.globals.0;
-            g[1] = i32::from((g[1] as i16).wrapping_add((dt << 6) as i16));
-            g[4] = g[4].wrapping_add(dt << 2);
-            g[5] = g[5].wrapping_add(dt << 5);
-            if g[1] >= SWEEP_END_YAW {
-                g[1] = 0;
-                self.sweeping = false;
-                self.arm_glide(&SWEEP_GLIDE);
-            }
-        }
         if let Some(glide) = self.glide.as_mut() {
             let done = glide.tick(&mut self.globals, dt.min(255) as u8).finished;
             if done {
@@ -391,6 +451,9 @@ mod tests {
     fn the_round_spin_settles_on_the_duel_camera() {
         let mut c = DuelCamera::default();
         assert_eq!(c.globals(), ROUND_SETUP_CAMERA);
+        while c.spin(1) {
+            c.tick(1);
+        }
         for _ in 0..400 {
             c.tick(1);
         }
@@ -402,13 +465,46 @@ mod tests {
     fn the_spin_stops_past_a_full_turn() {
         let mut c = DuelCamera::default();
         let mut frames = 0;
-        while c.sweeping {
-            c.tick(1);
+        while c.spin(1) {
             frames += 1;
         }
+        // The frame the yaw passes the turn is the state's last.
+        frames += 1;
         // (0x1001 - 0x2F8) / 0x40 rounded up.
         assert_eq!(frames, (SWEEP_END_YAW - 0x2F8 + 0x3F) / 0x40);
         assert_eq!(c.globals().0[1], 0);
+    }
+
+    /// Nothing turns the camera off state `0x35`: the glide tick alone leaves
+    /// the round setup's pose standing.
+    #[test]
+    fn the_spin_turns_only_when_the_spin_state_runs_it() {
+        let mut c = DuelCamera::default();
+        for _ in 0..50 {
+            c.tick(1);
+        }
+        assert_eq!(c.globals(), ROUND_SETUP_CAMERA);
+        assert!(c.moving(), "the spin stays armed");
+    }
+
+    /// A secret opponent's first round opens on its own snap and rise, and
+    /// the spin then turns from yaw `0xC08`.
+    #[test]
+    fn the_secret_intro_rises_then_spins_from_its_own_yaw() {
+        let mut c = DuelCamera::default();
+        c.secret_intro(2);
+        let g = c.globals().0;
+        assert_eq!((g[1], g[3], g[4], g[5]), (0xC08, 0x28, 0x2D0, 0x6E0));
+        let mut rise = 1;
+        while c.secret_rise(1) {
+            rise += 1;
+        }
+        assert_eq!(rise, (SECRET_RISE_END_Y - 0x2D0 + 29) / 30);
+        let mut spin = 1;
+        while c.spin(1) {
+            spin += 1;
+        }
+        assert_eq!(spin, (SWEEP_END_YAW - 0xC08 + 0x3F) / 0x40);
     }
 
     #[test]
