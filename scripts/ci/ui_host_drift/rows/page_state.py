@@ -119,4 +119,23 @@ PAGE_STATE_RULES = [
         "the window's `psx_snap_params` clears; staged and never read, the "
         "page would dither every PSX-mode frame",
     },
+    {
+        "what": "PSX mode's frame is read out as the 15-bit framebuffer",
+        "path": REPO / "site/js/play-app.js",
+        "kind": "contains",
+        "source": "this._psxTarget.present(!this.ssao && !this.bloom && !this._fogDrew);",
+        "why": "the window presents and captures PSX mode through `fs_scanout15` "
+        "unless SSAO, bloom or a drawn fog lays a smooth term over it "
+        "(`Renderer::scanout_15bit`); a page copying the raw frame shows a "
+        "blended pixel's low bits, up to seven levels off the window's",
+    },
+    {
+        "what": "a drawn fog stands the 15-bit readout down",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "contains",
+        "source": "this._fogDrew = this._fogPass.draw(",
+        "why": "the window keys its readout on the fog having drawn "
+        "(`fog_volume_active`), not on its option; a page that never learns "
+        "the fog drew truncates the fog's smooth term to 5 bits",
+    },
 ]

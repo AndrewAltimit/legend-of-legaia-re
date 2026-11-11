@@ -156,7 +156,13 @@ which is how the GPU hands the modulated texel to the blend
 ([shading](shading.md#step-6-semi-transparency)). In PSX mode the blend
 itself is the GPU's 5-bit arithmetic too, on the console's rule or the
 PCSX-Redux instrument's, and the native target presents and captures the
-frame as the 15-bit framebuffer it models (`fs_scanout15`).
+frame as the 15-bit framebuffer it models (`fs_scanout15`). The play page's PSX
+target copies its frame to the canvas through the same readout, on the same gate:
+no SSAO, no bloom, no fog drawn over the frame. Read raw, a blended pixel kept the
+background's low bits and stood up to seven levels off the window's; on the host
+pair's `cast` scene at a 4-level threshold the share of pixels apart fell from
+about 17% to under 3%. The instrument stays the window's alone: the page scores
+no PCSX-Redux capture.
 
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),

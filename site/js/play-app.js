@@ -486,8 +486,9 @@ void main() { o_color = texture(u_layer, v_uv); }
            * own; bloom reads the frame it adds to, so it stands the frames
            * down, as the native renderer's bloom target does. */
           const rt = this.rt;
+          this._fogDrew = false;
           this._psxTarget.begin(typeof rt.play_cast_module_resident === 'function'
-            && rt.play_cast_module_resident());
+            && rt.play_cast_module_resident(), !this.ssao && !this.bloom);
           this.renderer.loadFrameHook = () => !this.bloom
             && typeof rt.play_cast_frame_persists === 'function'
             && rt.play_cast_frame_persists()
@@ -496,7 +497,10 @@ void main() { o_color = texture(u_layer, v_uv); }
         const r = drawFrame.call(this, skipDraw);
         if (psx) {
           this.renderer.loadFrameHook = null;
-          this._psxTarget.present();
+          /* The 15-bit readout, on the native gate (`Renderer::scanout_15bit`):
+           * off under SSAO and bloom, which the window keys on their options,
+           * and under a frame the volumetric fog drew over. */
+          this._psxTarget.present(!this.ssao && !this.bloom && !this._fogDrew);
         }
         return r;
       };

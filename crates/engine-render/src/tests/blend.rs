@@ -809,3 +809,83 @@ fn the_page_screen_primitive_shader_parses() {
     .validate(&module)
     .unwrap_or_else(|e| panic!("FS_SCREEN_PRIM does not validate: {e:?}"));
 }
+
+/// Both hosts read PSX mode's frame out as the same 15-bit framebuffer: the
+/// native window's `fs_scanout15` (the blit shader) and the play page's PSX
+/// target copy (`FS` in `webgl-psx-target.js`, `u_scanout15` set), each
+/// evaluated on every byte of every channel, against
+/// [`psx_blend::scanout15`]. With the flag clear the page copies the byte
+/// as it stands.
+#[test]
+fn both_hosts_scan_out_the_15_bit_frame_alike() {
+    use super::page_glsl::{es300_to_450, js_consts, parse_glsl, parse_wgsl, site_js, template};
+    use super::shader_eval::{Machine, Val};
+    let native = parse_wgsl(crate::shaders::SHADER_SRC);
+    let consts = js_consts(&site_js("webgl-psx-target.js"));
+    let page = parse_glsl(
+        &es300_to_450(&template(&consts, "FS")),
+        naga::ShaderStage::Fragment,
+    );
+    let level = |v: u8| f32::from(v) / 255.0;
+    for v in 0u8..=255 {
+        // One channel at `v`, the other two at neighbours, so a lane mix-up shows.
+        let px = [
+            level(v),
+            level(v.wrapping_add(85)),
+            level(v.wrapping_add(170)),
+        ];
+        let want: Vec<f32> = px
+            .iter()
+            .map(|&c| level(psx_blend::scanout15((c * 255.0).round() as u8)))
+            .collect();
+
+        let mut m = Machine::new(&native, Box::new(|_, _, _| [0; 4]));
+        m.sample = Some(Box::new(move |name, _, _, _| {
+            assert_eq!(name, "t_diffuse");
+            [px[0], px[1], px[2], 1.0]
+        }));
+        let f = m.function("fs_scanout15");
+        let names = m.struct_member_names(f.arguments[0].ty);
+        let arg = Val::Struct(
+            names
+                .iter()
+                .map(|n| match n.as_str() {
+                    "position" => Val::f(&[0.5, 0.5, 0.0, 1.0]),
+                    "uv" => Val::f(&[0.5, 0.5]),
+                    other => panic!("unstaged blit input {other}"),
+                })
+                .collect(),
+        );
+        let out = m.call(f, vec![arg]).expect("no discard").expect("colour");
+        let got = &out.floats()[..3];
+        for k in 0..3 {
+            assert!(
+                (got[k] - want[k]).abs() < 1e-5,
+                "native scanout of {v} lane {k}: {} != {}",
+                got[k],
+                want[k]
+            );
+        }
+
+        for scanout in [1, 0] {
+            let mut m = Machine::new(&page, Box::new(|_, _, _| [0; 4]));
+            m.fetch_f = Some(Box::new(move |name, _, _| {
+                assert_eq!(name, "u_frame");
+                [px[0], px[1], px[2], 1.0]
+            }));
+            m.set_uniform("u_scanout15", Val::I(vec![scanout]));
+            m.set_global("gl_FragCoord", Val::f(&[0.5, 0.5, 0.5, 1.0]));
+            let main = m.function("main");
+            m.call(main, Vec::new()).expect("no discard");
+            let got = &m.global("o").floats()[..3];
+            for k in 0..3 {
+                let w = if scanout == 1 { want[k] } else { px[k] };
+                assert!(
+                    (got[k] - w).abs() < 1e-5,
+                    "page copy (scanout {scanout}) of {v} lane {k}: {} != {w}",
+                    got[k]
+                );
+            }
+        }
+    }
+}

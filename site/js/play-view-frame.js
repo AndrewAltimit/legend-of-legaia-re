@@ -1085,8 +1085,10 @@
           : null;
         if (!vp) return;
         if (!this._fogPass) this._fogPass = new window.LegaiaFogVolumePass(this.renderer.gl);
-        this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0,
-          !!this.renderer.lastLogDepth);
+        /* A drawn fog lays a smooth term over the frame: PSX mode's 15-bit
+         * readout stands down for it, as the window's does. */
+        this._fogDrew = this._fogPass.draw(rt, vp, this._battle ? this._battle.scale : 4.0,
+          !!this.renderer.lastLogDepth) === true;
       } catch (e) {
         this._fogBroken = true;
         try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
