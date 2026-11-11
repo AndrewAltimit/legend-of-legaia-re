@@ -394,8 +394,14 @@ impl World {
         // claims of that same frame (`World::summon_fx_pass_vsyncs`,
         // `World::action_fx_pass_vsyncs`, run in the frame tail after the
         // pass) leave it for the next one.
+        // A replay's stretched frame (`Self::stretch_battle_frame`) runs the
+        // pass after it on the stretched step and settles back to its own:
+        // the ring's step waits for the stretch to settle, or it would
+        // overwrite the step the stretch exists to give that pass and the
+        // replay's countdown would never reach retail's lattice.
         if self.battle.pending_frame_step.is_none()
             || self.battle_frame_id() == self.battle.pending_frame_step_from
+            || self.battle.frame_stretch.is_some()
         {
             return;
         }
@@ -1456,6 +1462,27 @@ mod tests {
         w.audio.battle_xa_busy_frames = 0;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    /// A replay's stretched frame keeps its step for the pass after it: the
+    /// ring's pending step waits for the stretch to settle.
+    #[test]
+    fn a_pending_step_waits_out_a_replay_stretch() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.clock.display_frames = 10;
+        assert!(w.battle_sm_pass_due());
+        w.battle.pending_frame_step = Some(4);
+        w.battle.pending_frame_step_from = w.battle_frame_id();
+        w.stretch_battle_frame(3);
+        w.clock.display_frames = 13;
+        assert!(w.battle_sm_pass_due());
+        assert_eq!(
+            w.battle.frame_clock.step, 3,
+            "the stretched step runs the next pass"
+        );
+        assert_eq!(w.battle.pending_frame_step, Some(4));
     }
 
     /// A clip's stream loads the frame from the second pass after its cue:
