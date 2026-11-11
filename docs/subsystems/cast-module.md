@@ -991,8 +991,39 @@ fire comes off Gala's body on the anim tick's accumulator.
 The table is `legaia_engine_cast::cast_module_impact`, applied by
 `World::apply_module_impacts` after the views' fold-back; PROT 0962 stores
 through its chain (`BladeBreathShape::strike_sub_flag`), and PROT 0903 and 0904
-through their tick ports. PROT 0964's five stores (the Element Strike body) are
-not carried: their seats are read off a computed row this table cannot name.
+through their tick ports.
+
+**The selector burns only a red body.** A selector-`1` body sheds fire once its red
+lane reaches `0xB0`, and a store of the selector alone leaves a body's colour where it
+stood. Rolling Flare's arm 3 also stores the tint state `+0x21C = 7`, the soft red,
+through the last `0x60` scalars of its countdown (`0x801F7F00..0x801F7F28`), ahead of
+the selector's last `0x40`, and its pass puts the state back to `0`
+(`0x801F800C` / `0x801F8010`) while the selector stands: the red ramps down and the
+fire stops with it. The table carries a tint-state store beside the selector. Without
+the red the Gola Gola recording's two bodies shed nothing and its `rand()` stream ran
+four draws a body a battle frame short; with it the draws match retail frame for frame
+and the film reads `.893` against `.878`. Grade `disassembly` + `capture`.
+
+**PROT 0964's Element Strike body** writes through the standing-in creature (seat 7)
+and its hit loops. Its arm 1 forks into Flame (phases `2..=7`), Wind (`0x32..=0x37`)
+and Thunder (`0x64..=0x69`), and the stores sit on each run's `k = 3` and `k = 4`:
+
+| Run, arm | Edge | Seat | `+0x04` | `+0x21C` | `+0x21F` |
+|---|---|---|---|---|---|
+| Flame `k = 3` (`0x801F828C..0x801F829C`) | pass | creature | - | `3` | `1` |
+| Flame `k = 4` (`0x801F82D0`) | every pass | creature | - | - | `1` |
+| Flame `k = 4` (`0x801F8608..0x801F8618`) | pass, the hit loop | party seats with HP | `0x3FF` | - | `1` |
+| Wind `k = 3` (`0x801F7AD0`) | pass | creature | - | `8` | - |
+| Thunder `k = 3` (`0x801F7208..0x801F7218`) | pass | creature | - | `4` | `2` |
+| Thunder `k = 4` (`0x801F7238`) | every pass | creature | - | - | `1` |
+| Thunder `k = 4` (`0x801F7598..0x801F75A8`) | pass, the hit loop | party seats with HP | `0x3FF00000` | - | `2` |
+
+`k = 4`'s every-pass store reads the prologue's stack word `1` (`lbu t3,0x28(sp)`),
+on Thunder too. The hit loops skip a seat with no HP or with `+0x16E & 4` ahead of the
+hit (`0x801F850C..0x801F8528`); the host reads the HP after the tick's hits and does
+not read the status bit. With these the Rogue Flame recording's arm-6 `rand()` draws
+read `293` against retail's `645` (`27` before), arm 7 `791` against `1590`; what
+sheds the rest is open. Grade `disassembly`.
 
 ### A bare stage byte waits for the clip's end
 
@@ -3489,6 +3520,15 @@ point off two `rand() % 1023 + 0x100` draws, the quadrant walking with the same 
 Arms 3 and 4 re-arm their countdown by `step << 8`, not `scalar << 8`, so the rock
 arms last as long as retail's frame step says.
 
+Each rock pass ends on a dust puff at the rocks' point and yaw:
+`FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`, arm 5's at `0x801F7A40`).
+The puff's particles draw two `rand()` words each as they spawn (`0x801DFF64` /
+`0x801DFFCC`) and the pool walker more each frame (`0x801E01CC`). The module tick runs
+ahead of the frame's pool walk, so the port's puff takes the sweeps the tick's walker
+already gave the rest. A `rand()` watch of the Rock Lizard recording reads `24, 26, 28,
+28, ..` draws a battle frame through arm 4; the port drew `4` without the puff and
+reads the same series with it. Grade `disassembly` + `capture`.
+
 ### PROT 0964 (Element Change, Rogue Wind / Thunder / Flame)
 
 `0xAF` cuts to the caster, then hides every party seat each pass while TR z creeps.
@@ -4288,6 +4328,15 @@ with HP and no Stone, turned on the caster). Arms 5 and 6 draw six streak ribbon
 is the stack word its scatter loop left, arm 6 draws ahead of its scatter and reads
 zero. Arm 6 climbs a fade word `16` a vsync into every part's level `+0x78`, then
 flushes and leaves for `0xFF`.
+
+Arm 6 seats its scatter pairs (`jal 0x80050ED4` at `0x801F7834` / `0x801F784C`) ahead
+of the loop that stores the fade word into every pooled part (`sh a0,0x78(v0)` at
+`0x801F78D4`), so a pair seated on the pass takes the fade over the level its own
+`CTRL_74` set. The two sides' `parts.csv` agree: every retail spark reads the fade plus
+one ramp step. Seated after the store, the port's fresh sparks stood at full brightness
+through the fade-out, a ring of blue discs retail's frames lack; seated before it, arm 6
+reads `.855` against `.772` on `chitei2_gilium_thunder_storm`. Grade `disassembly` +
+`capture`.
 
 The scatter's density follows the frame step: retail reads step `4` through arms 4
 to 6 and the engine's default is `2`, so the engine seats twice retail's sparks a

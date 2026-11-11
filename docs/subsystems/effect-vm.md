@@ -469,6 +469,13 @@ stream past its draws; the draw replays each ribbon from its seed
 (`streak_pass::ribbon_quads_seeded`). Per frame the engine's counts through
 arms 5..9 are retail's.
 
+A homing flight's bolts are the same calls from the flight's slot loop
+(`0x801E1284..0x801E12D8` in flight, `0x801E17EC..0x801E1834` once landed), and
+the port deals them the same way (`World::deal_flight_ribbon_rands`,
+`BattleState::flight_ribbon_seeds`). Drawn off a per-frame seed instead, every bolt
+pass left the stream short: Thunder Break's state `0x2B` read `312` draws against
+retail's `3000`.
+
 The dispatcher hands the emitter `src = actor + 0x9C`, so the emitter's
 "record" is the actor. The selector and the draw kind are written by the
 **move VM**: op `0x42` sets `actor[+0x56] = 4`, `+0x5A = 2` and
