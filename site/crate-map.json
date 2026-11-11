@@ -3610,6 +3610,7 @@
    "dev_deps": [
     "actor-formats",
     "game-tables",
+    "gamedata",
     "overlay-images"
    ],
    "bins": [],
