@@ -344,7 +344,7 @@ fn the_session_machine_sweeps_and_locks_the_meter() {
             cpu.mem
                 .wr32(PRESSED, if press { 0x40 << rng.below(2) } else { 0 });
             assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "frame {frame}");
-            port.advance(CAST_POWER_STEP * step as i32);
+            port.advance(CAST_POWER_STEP * step);
             let at = format!("round {round} step {step} frame {frame}");
             assert_eq!(cpu.mem.rd32(METER) as i32, port.value(), "meter, {at}");
             if press {
