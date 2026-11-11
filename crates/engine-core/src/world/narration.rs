@@ -843,6 +843,13 @@ impl World {
             op: tl.bytecode.get(tl.pc).copied().unwrap_or(0),
         };
         log::warn!("timeline cap ended a record: {cap:?}");
+        if cap.op == 0x49 {
+            self.drop_capped_op49_screen(if modal {
+                crate::field_submode_screen::Op49ParkOwner::CutsceneTimeline
+            } else {
+                crate::field_submode_screen::Op49ParkOwner::HelperContext
+            });
+        }
         self.cutscene.capped.push(cap);
     }
 
@@ -1463,6 +1470,11 @@ impl World {
                     op: tl.bytecode.get(tl.pc).copied().unwrap_or(0),
                 };
                 log::warn!("timeline cap ended a helper record: {cap:?}");
+                if cap.op == 0x49 {
+                    self.drop_capped_op49_screen(
+                        crate::field_submode_screen::Op49ParkOwner::HelperContext,
+                    );
+                }
                 self.cutscene.capped.push(cap);
             }
         }

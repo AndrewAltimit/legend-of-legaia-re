@@ -159,6 +159,23 @@ impl World {
         self.field_vm.submode_screen.op49_operand = op;
     }
 
+    /// The anti-hang cap ended a record parked on its own op `0x49`: the
+    /// screen that record opened goes with it. Retail has no cap, so nothing
+    /// there strands a screen; here a record cut short left its screen up
+    /// with no context to take its Done, and the next record of the same
+    /// kind to reach an op `0x49` - in this scene or the next - read that
+    /// stale screen as its own and parked on it for good (`other7`'s capped
+    /// `49 0A` held `kor3`'s Sol Tower warp pad, `49 04`, on its arm).
+    pub(crate) fn drop_capped_op49_screen(&mut self, owner: Op49ParkOwner) {
+        let s = &mut self.field_vm.submode_screen;
+        if s.owner != owner || !(s.open || s.done || s.park_sub_op.is_some()) {
+            return;
+        }
+        s.done = false;
+        s.park_sub_op = None;
+        self.close_field_submode_screen();
+    }
+
     /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
     /// `0x801e08d8`, which runs on the Done edge before the PC advances.
     ///

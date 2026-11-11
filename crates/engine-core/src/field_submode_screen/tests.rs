@@ -245,3 +245,23 @@ fn dedicated_sub_ops_keep_their_own_paths() {
     assert_eq!(slot_for_op49_sub_op(1), None);
     assert_eq!(slot_for_op49_sub_op(0x0D), None);
 }
+
+/// A record the anti-hang cap ends takes the screen it opened with it, and
+/// only its own: the next record to reach an op `0x49` finds Idle and opens
+/// a fresh screen instead of parking on the stale one.
+#[test]
+fn a_capped_record_takes_its_op49_screen_with_it() {
+    let mut w = world_with_driver();
+    w.open_coin_counter();
+    w.field_vm.submode_screen.owner = Op49ParkOwner::CutsceneTimeline;
+    w.field_vm.submode_screen.park_sub_op = Some(6);
+    w.drop_capped_op49_screen(Op49ParkOwner::HelperContext);
+    assert!(
+        w.field_vm.submode_screen.is_open(),
+        "another owner's screen stays"
+    );
+    w.drop_capped_op49_screen(Op49ParkOwner::CutsceneTimeline);
+    let s = &w.field_vm.submode_screen;
+    assert!(!s.is_open() && !s.is_done() && s.park_sub_op.is_none());
+    assert!(!s.is_open_for(Op49ParkOwner::CutsceneTimeline));
+}
