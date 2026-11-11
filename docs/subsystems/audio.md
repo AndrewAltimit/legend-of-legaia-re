@@ -3667,9 +3667,28 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
 frame and charges a loading CD-XA clip from the pass after its cue, both fitted to PCSX-Redux recordings
 with cue-caller logs, where Guilty Cross ramps its arm step `3` then `4` and Zenoir `1`, `3` then `4`.
-These recordings are mednafen's, which prices those arms at other steps, and the channel holds one
-offset per cast: the Guilty Cross and Zenoir rows read low with the level within
-`0.06` dB and the per-second loss in timing, not level. It is the two emulators' frame costs, not a cue.
+These recordings are mednafen's, which prices those arms at other steps. Stepped frame by frame
+(`scripts/mednafen/drive-timeline.py`, the step byte `0x1F800393` beside the frame counter `gp+0x480`),
+mednafen runs Guilty Cross's arms `1` and `2` at `3` and arms `3` to `5` at `2` or `3`, and Zenoir's
+arms `5` to `12` at `2` or `3`, where the arm tables say `4` throughout. The frames run at their step
+in both recordings, so this is the emulator's cost, not an overrun.
+
+The sixth channel, **`cast_steps`**, runs the engine's cast on those steps: `--steps-out` writes them as
+a step track (`<label>.steps` beside the WAV), and the child takes it as the cast-sequence oracle's
+`--retail-steps` does (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`). It is harness-only and scores the
+cast's sound with the two emulators' frame costs taken out; `cast` stays the engine's own clock.
+
+| State | `cast` (the engine's steps) | `cast_steps` (mednafen's steps) |
+|---|---|---|
+| `cort_guilty_cross_mid_cast` | `0.859` | `0.981` |
+| `zenoir_summon_mid_cast` | `0.855` | `0.893` |
+
+Guilty Cross's whole loss is the step. Zenoir keeps part of it: its offset comes off
+[the duck](#the-duck-names-the-states-tick), whose ramp the step moves, and the track keys a pass by its
+ordinal under each arm, so an arm the engine runs for a different number of passes takes later steps
+on the wrong passes. Which emulator a console agrees with is
+[open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
+a GPU wait on a CPU that costs less.
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 

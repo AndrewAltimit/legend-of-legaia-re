@@ -5,12 +5,19 @@ One CSV row per emulated frame: libetc's VSync counter, the battle context's mod
 `ctx[+0x279]` and side-band stage `ctx[+0x276]`, the XA drive-state word `0x8007BC20`, the
 action state `ctx[+0x07]`, the audio level `_DAT_8007B910`, and
 mednafen's own CD controller state (`DriveStatus`, `CurSector`, `SeekTarget`, `PSRCounter`,
-`PendingCommand`), the frame step and the cue ring's ids and countdowns. It is how long a summon module's seek-then-wait arms hold in retail, and
+`PendingCommand`), the frame step, the main loop's frame counter and the cue ring's ids and
+countdowns. It is how long a summon module's seek-then-wait arms hold in retail, and
 where the head stood before the seek. Numbers only: it changes nothing and gates nothing.
 Steps the emulator with mednafen's advance-frame and save-state keys through xdotool, as
 `scripts/mednafen/xa-start.py` does. See `docs/subsystems/audio.md`, "The cast channel".
 
     scripts/mednafen/drive-timeline.py orb_summon_mid_cast --frames 120 --out orb.csv
+    scripts/mednafen/drive-timeline.py zenoir_summon_mid_cast --frames 1650 --settle 0.15 \
+        --out zenoir.csv --steps-out captures/audio-pcm/zenoir_summon_mid_cast.steps
+
+`--steps-out` also writes the recording's own frame steps as a `LEGAIA_CAST_STEP_TRACK`
+(`state phase step`, one line per game frame, keyed off the frame counter `gp+0x480`):
+the `cast_steps` channel of `scripts/ci/audio-pcm.py` runs the engine's cast on them.
 """
 
 import argparse
@@ -34,6 +41,7 @@ DUCK_CELL = 0x7B910  # _DAT_8007B910, the audio level the action SM steps
 RING_IDS = 0x7B6D8  # DAT_8007B6D8[4], the cue ring's ids (i16)
 RING_TIMERS = 0x7C338  # DAT_8007C338[4], their countdowns (u32)
 FRAME_STEP = 0x393  # 0x1F800393 in the scratchpad, the frame step
+FRAME_COUNT = 0x7B798  # gp+0x480, the main loop's frame counter
 CDC_VARS = ["DriveStatus", "CurSector", "SeekTarget", "PSRCounter", "PendingCommand",
             "PendingCommandCounter", "StatusAfterSeek"]
 
@@ -84,7 +92,32 @@ def row(path: Path) -> list | None:
     return [struct.unpack_from("<I", ram, VCOUNT)[0], ram[ctx + 0x279], ram[ctx + 0x276],
             struct.unpack_from("<I", ram, DRIVE_STATE)[0], ram[ctx + 7],
             struct.unpack_from("<i", ram, DUCK_CELL)[0]] + [var(b, v, max(cdc, 0)) for v in CDC_VARS] + \
-        [moved, step] + ring
+        [moved, step, struct.unpack_from("<I", ram, FRAME_COUNT)[0]] + ring
+
+
+ACTION_BANDS = (0x35, 0x36, 0x70)  # the module bands, where a step track keys the phase
+
+
+def step_track(rows: list[list]) -> str:
+    """`state phase step` per game frame, in order: the frame's last row, as
+    `scripts/ci/cast-sequence.py`'s `retail_step_track` writes it. A row that repeats a
+    vsync is a frame-advance key the emulator dropped, and is skipped."""
+    seen, frames = set(), []
+    for r in rows:
+        vsync, frame = r[0], r[-9]
+        if vsync in seen:
+            continue
+        seen.add(vsync)
+        if frames and frames[-1][0] == frame:
+            frames[-1][1] = r
+        else:
+            frames.append([frame, r])
+    out = []
+    for _, r in frames:
+        state, step = r[4], r[-10]
+        phase = r[1] if state in ACTION_BANDS else 0
+        out.append(f"{state} {phase} {step}\n")
+    return "".join(out)
 
 
 def main() -> int:
@@ -92,6 +125,7 @@ def main() -> int:
     ap.add_argument("state", help="scenarios.toml label of a mednafen library state")
     ap.add_argument("--frames", type=int, default=120)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--steps-out", help="also write the recording's frame steps here")
     ap.add_argument("--display", type=int, default=278)
     ap.add_argument("--settle", type=float, default=0.6,
                     help="seconds between launch and pausing; the game runs meanwhile, so a "
@@ -103,7 +137,7 @@ def main() -> int:
     if state is None:
         print(f"no mednafen library state {a.state}")
         return 1
-    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved", "step"] + \
+    rows = [["vsync", "phase", "sideband", "drive_word", "action_state", "duck"] + CDC_VARS + ["ram_words_moved", "step", "frame"] + \
         [f"id{n}" for n in range(4)] + [f"timer{n}" for n in range(4)]]
     with tempfile.TemporaryDirectory(prefix="drive-timeline-") as t:
         tmp = Path(t)
@@ -154,6 +188,9 @@ def main() -> int:
             server.terminate()
     Path(a.out).write_text("\n".join(",".join(str(v) for v in r) for r in rows) + "\n")
     print(f"{a.state}: {len(rows) - 1} frames -> {a.out}")
+    if a.steps_out:
+        Path(a.steps_out).write_text(step_track(rows[1:]))
+        print(f"{a.state}: frame steps -> {a.steps_out}")
     return 0
 
 
