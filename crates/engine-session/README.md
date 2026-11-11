@@ -99,6 +99,11 @@ makes, which the native window's keyboard handler and the browser page's
 pushes the persisted options onto the world and the camera; both play hosts
 run it ahead of every session tick.
 
+[`look_and_feel`](src/look_and_feel.rs) is the *Look and feel* preset over the
+stored options and launch switches (Enhanced, Original, Custom): the native
+launcher's and `F12` panel's first row and the play page's selector all read
+and step it here.
+
 `BootSession::claim_tick` (`session/tick_owner.rs`) is the one order both play
 hosts hand each sim tick through: a host-held screen, the naming prompt, the
 prologue skip, the pause menu's spawn and press, a menu-overlay screen that

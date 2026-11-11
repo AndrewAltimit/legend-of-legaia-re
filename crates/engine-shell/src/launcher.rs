@@ -1368,26 +1368,15 @@ fn capitalise(s: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The [`OptionRow::Preset`] row's values.
-const PRESET_ENHANCED: &str = "Enhanced";
-const PRESET_ORIGINAL: &str = "Original";
-const PRESET_CUSTOM: &str = "Custom";
-
-/// Which preset the rows add up to.
+/// Which preset the rows add up to: the shared answer both play hosts give
+/// (`legaia_engine_session::look_and_feel`, the play page's *Look and feel*
+/// selector), which `preset_is_the_shared_look_and_feel` holds to the rows'
+/// own [`OptionRow::in_preset`].
 fn preset_of(
     opts: &legaia_engine_menus::options::OptionsState,
     s: &LauncherSettings,
 ) -> &'static str {
-    if s.switches.retail {
-        PRESET_ORIGINAL
-    } else if OPTION_ROWS
-        .iter()
-        .all(|(_, r)| !r.in_preset() || r.is_default(opts, s))
-    {
-        PRESET_ENHANCED
-    } else {
-        PRESET_CUSTOM
-    }
+    legaia_engine_session::look_and_feel::look_and_feel(opts, &s.switches).label()
 }
 
 impl OptionRow {
@@ -1810,11 +1799,7 @@ impl OptionRow {
         let w = &mut s.switches;
         match self {
             Self::Preset => {
-                for (_, row) in OPTION_ROWS {
-                    if row.in_preset() {
-                        row.reset(opts, s);
-                    }
-                }
+                legaia_engine_session::look_and_feel::reset_to_enhanced(opts, &mut s.switches)
             }
             Self::Fullscreen => opts.fullscreen = o.fullscreen,
             Self::Theme => opts.ui_theme = o.ui_theme,
@@ -1879,9 +1864,7 @@ impl OptionRow {
             // Original is the session switch, so the rows under it keep their
             // values: stepping away finds a Custom mix where it was left.
             Self::Preset => {
-                let on = !s.switches.retail;
-                s.switches.retail = on;
-                s.switches.psx_render = on;
+                legaia_engine_session::look_and_feel::toggle_original(&mut s.switches);
             }
             Self::Fullscreen => opts.fullscreen ^= true,
             Self::WholeStepScale => opts.integer_scale ^= true,
@@ -2150,6 +2133,40 @@ mod tests {
         assert_eq!(value(&o, &s), "Enhanced");
         assert_eq!((o.bgm_volume, o.window_scale), (3, 4));
         assert!(!s.switches.smart_monsters);
+    }
+
+    /// The shared preset speaks for exactly the rows [`OptionRow::in_preset`]
+    /// names: each such row moved alone reads Custom, every other row moved
+    /// alone leaves Enhanced, and the shared reset puts each preset row back
+    /// on its own default.
+    #[test]
+    fn preset_is_the_shared_look_and_feel() {
+        use legaia_engine_menus::options::OptionsState;
+        for (_, row) in OPTION_ROWS {
+            if matches!(row, OptionRow::Preset | OptionRow::Retail) {
+                continue;
+            }
+            let mut o = OptionsState::default();
+            let mut s = LauncherSettings::default();
+            row.adjust(&mut o, &mut s, 1);
+            if row.is_default(&o, &s) {
+                row.adjust(&mut o, &mut s, -1);
+            }
+            let want = if row.in_preset() {
+                "Custom"
+            } else {
+                "Enhanced"
+            };
+            assert_eq!(OptionRow::Preset.value(&o, &s), want, "{}", row.label());
+            OptionRow::Preset.reset(&mut o, &mut s);
+            if row.in_preset() {
+                assert!(
+                    row.is_default(&o, &s),
+                    "{}: the reset restores it",
+                    row.label()
+                );
+            }
+        }
     }
 
     fn ok_info(p: &Path) -> DiscInfo {
@@ -2868,9 +2885,8 @@ mod tests {
         Some(match row {
             // The page's canvas takes the size its layout gives it.
             WindowSize | WholeStepScale | Theme => return None,
-            // The page says the same two things with its Retail-faithful switch
-            // and its Reset to defaults button.
-            Preset => "play-retail-mode",
+            // The page's Look and feel selector, over the same shared preset.
+            Preset => "play-look-and-feel",
             Fullscreen => "play-fullscreen",
             EnhancedLighting => "play-dyn-light",
             TimeOfDay => "play-time-of-day",

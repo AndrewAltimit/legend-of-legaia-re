@@ -602,6 +602,14 @@ div.play-vis-head { cursor: default; }
             switch a piece of the PS1&rsquo;s own drawing. The key beside a row toggles it from the
             game window, here and in the desktop build.</p>
           <div class="play-vis-actions">
+            <label class="play-dev-menu" title="Look and feel - the desktop launcher's and the game window's F12 first row, over the same preset (legaia_engine_session::look_and_feel). Enhanced: every setting on this page that changes how the game looks or plays back on the port's choices (the sound levels stay yours). Original: as on a PlayStation - Retail-faithful plus PSX rasterisation. Custom: any other mix; picking it from Original goes back to the mix you left.">
+              Look and feel
+              <select id="play-look-and-feel">
+                <option value="Enhanced">Enhanced</option>
+                <option value="Original">Original</option>
+                <option value="Custom">Custom</option>
+              </select>
+            </label>
             <label class="play-dev-menu" title="Retail-faithful (the native --retail): every enhancement off - the scene-entry pulse, smart monsters, overworld markers, the saved-chain Arts list and the ledge-hop landing guard off, the battle kernels on retail's own, and every engine-only option pinned to retail (enhanced lighting and its shadows, ground fog, see-through walls, bloom, camera distance, 4/8-way movement, no flash slew, retail tile windows). Your own settings are not overwritten, and the box is remembered for your next visit, as the launcher remembers its Retail row; untick to get your settings back.">
               <input type="checkbox" id="play-retail-mode"> Retail-faithful (all enhancements off, this session)
             </label>
@@ -3639,6 +3647,7 @@ div.play-vis-head { cursor: default; }
       applySeeThrough();
       applyRenderToggles();
     }
+    if (window.__playSyncLookAndFeel) window.__playSyncLookAndFeel();
   }
   window.__playSyncAfterRuntime = syncAfterRuntime;
 
@@ -3686,6 +3695,46 @@ div.play-vis-head { cursor: default; }
   });
   window.__playSyncCameraDistance = syncCameraDistance;
 
+  /* Look and feel - the launcher's / F12 panel's first row
+   * (legaia_engine_session::look_and_feel). The engine moves the rows; the
+   * boxes then read every row back, including the switches the once-only
+   * syncs above seated at startup. */
+  const lookEl = document.getElementById('play-look-and-feel');
+  function syncLookAndFeel() {
+    const v = rtCall('look_and_feel');
+    if (v !== undefined) lookEl.value = v;
+  }
+  function resyncAllBoxes() {
+    retailModeEl.dataset.synced = '';
+    shinyEl.dataset.synced = '';
+    syncPersistedSwitches();
+    syncTweakDefaults();
+    syncRenderToggles();
+    syncGroundFog();
+    syncPreciseMove();
+    syncAudioOptions();
+    syncCameraDistance();
+    syncPageToggles();
+    applySeeThrough();
+    applyRenderToggles();
+    syncLookAndFeel();
+  }
+  lookEl.addEventListener('change', () => {
+    if (view) view.restoreQuality();
+    rtCall('set_look_and_feel', lookEl.value);
+    resyncAllBoxes();
+    canvas.focus();
+  });
+  lookEl.addEventListener('focus', syncLookAndFeel);
+  /* Any other setting box moved: the preset may now read Custom. */
+  document.addEventListener('change', (e) => {
+    if (e.target !== lookEl && e.target.closest &&
+        e.target.closest('#play-visuals, #play-gameplay-tweaks, #play-battle-tuning, #play-battle-tools, #play-precise-move, #play-reduce-flashing')) {
+      setTimeout(syncLookAndFeel, 0);
+    }
+  });
+  window.__playSyncLookAndFeel = syncLookAndFeel;
+
   /* Visual enhancements panel: Reset to defaults. Retail-faithful is a
    * session pin over the stored options, so it is released first - the
    * reset then lands on the player's own settings
@@ -3710,6 +3759,7 @@ div.play-vis-head { cursor: default; }
     syncPageToggles();
     applySeeThrough();
     applyRenderToggles();
+    syncLookAndFeel();
     canvas.focus();
   });
 

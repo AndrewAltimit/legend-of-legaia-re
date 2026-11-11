@@ -533,8 +533,10 @@ canvas focused: each moves the matching control under the canvas, and `F1`
 hides the readout bar above it. Every presentation toggle sits in one
 **Visual enhancements** panel there, each row naming its key, a one-line
 description and whether it is a port enhancement or a piece of retail's own
-drawing; the panel also carries the Retail-faithful switch and a **Reset to
-defaults** button for the panel's settings.
+drawing; the panel opens with the same *Look and feel* choice as the
+desktop's first row (Enhanced, Original, Custom), and also carries the
+Retail-faithful switch and a **Reset to defaults** button for the panel's
+settings.
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,

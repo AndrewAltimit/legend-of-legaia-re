@@ -38,6 +38,7 @@ pub mod battle_vram;
 pub mod front_end;
 pub mod host_trace;
 pub mod hotkeys;
+pub mod look_and_feel;
 pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
