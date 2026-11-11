@@ -332,14 +332,32 @@ pub const XA_STREAM_FRAME_COST: u16 = 1063;
 /// exactly; a Spirit's run longer (`6` and `7`), and this is a floor there.
 pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
 
-/// The passes after a clip's cue before its stream loads the frame: the drive
-/// seeks to the clip's file first. A monster's Heal on a lone Vahn
-/// (`battle_nilboa_amethyst_heal_mid_cast`, its PCSX-Redux recording) costs
-/// `392` on the cue's pass and `507` on the next, under `0x1FF`, and the clamp
-/// from the third; the state saves two step-`2` passes into `0x3E` (close-up
-/// accumulator `32`). `battle_bubu2_spoon_heal_mid_cast` saves at the same
-/// point with both passes near `390`.
-pub const XA_STREAM_LOAD_ONSET_PASSES: u64 = 2;
+/// What a battle CD-XA clip adds to the frames after its cue. The cue's own
+/// pass carries none: the cue is issued inside it and the drive has yet to
+/// stream. The pass after it carries [`XA_STREAM_ONSET_COST`] over its base,
+/// and every pass from the second on runs at [`XA_STREAM_FRAME_COST`]. Two
+/// PCSX-Redux recordings of a monster's Heal read it: Orb's on a full party
+/// (`ropeway_orb_pre_heal`) dispatches the clip `0x20C` on the last `0x3D` pass
+/// (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp;
+/// Amethyst's on a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`) costs
+/// `392` on the cue's pass, `507` on the next, then the clamp.
+pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16) -> u16 {
+    match passes_since_cue {
+        0 => base,
+        1 => base.saturating_add(XA_STREAM_ONSET_COST),
+        _ => {
+            if base > XA_STREAM_FRAME_COST {
+                base
+            } else {
+                XA_STREAM_FRAME_COST
+            }
+        }
+    }
+}
+
+/// What the pass after a clip's cue costs over its base: Amethyst's Heal's
+/// `507` against the lone member's `0x3E` frames near `385`.
+pub const XA_STREAM_ONSET_COST: u16 = 122;
 
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
 /// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per

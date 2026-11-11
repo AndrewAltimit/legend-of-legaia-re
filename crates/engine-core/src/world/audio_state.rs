@@ -88,8 +88,7 @@ pub struct AudioState {
     pub battle_xa_frame_load: bool,
     /// The battle frame the newest loading clip was started on
     /// ([`Self::battle_xa_frame_load`]): its sectors reach the frame's cost
-    /// only from the pass [`legaia_engine_battle_loop::frame_clock::XA_STREAM_LOAD_ONSET_PASSES`]
-    /// after it.
+    /// only after it ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
     pub battle_xa_cue_frame: Option<u64>,
     /// The battle's runtime SFX descriptor bank - `bse.dat` (PROT 888), the
     /// rows behind ring ids `>= 0x200` while a battle is on screen

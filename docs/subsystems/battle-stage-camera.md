@@ -1423,14 +1423,18 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_COST`
 and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
-run short of retail. The load does not start on the cue's own frame: the drive seeks to
-the clip's file first. A monster's Heal on a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`
-and a PCSX-Redux recording from it) costs `392` on the cue's pass and `507` on the next, then
-reads the clamp, so its first two `0x3E` passes run step `2` and the state saves at close-up
-accumulator `32`; `battle_bubu2_spoon_heal_mid_cast` saves at the same point with both
-passes near `390`. The port loads the frame from the second pass after the cue
-(`XA_STREAM_LOAD_ONSET_PASSES`). Charged from the cue's pass, both stills reached their gate
-a step-`4` pass early, at accumulator `48`, with the camera's yaw `206` and `9` off.
+run short of retail. The load does not start on the cue's own frame: the cue is issued inside it and the
+drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
+(`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
+(from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
+a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`) costs `392` on the cue's pass, `507` on
+the next, then the clamp. The port charges nothing on the cue's pass, `XA_STREAM_ONSET_COST`
+(`122`) over the base on the next, and the stream's cost from the second
+(`frame_clock::xa_stream_pass_cost`). Charged from the cue's pass, the two heal stills reached
+their gate a step-`4` pass early, at accumulator `48`, with the camera's yaw `206` and `9` off;
+with no charge on the pass after it, a full party's Spirit rounds ran a pass at step `3` where
+retail's run `4`, and five stills that replay Spirit rounds reached their gates three ticks
+early.
 
 A summon module's own voice clip does not. The module seeks the drive to the
 clip's file on an arm ahead of its cue ([CD-seek waits](../tooling/cast-sequence-oracle.md#cd-seek-waits)),

@@ -38,26 +38,23 @@ impl World {
     /// draw load the frame carries ([`Self::battle_frame_load`],
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
-        use legaia_engine_battle_loop::frame_clock::{
-            XA_STREAM_FRAME_COST, cost_of_step, measured_frame_cost_at,
-        };
+        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost_at};
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
             Some((s, n)) if s == state => n.saturating_add(1),
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
-        let xa_streaming = self.battle_xa_loads_frame();
+        let xa_passes = self.battle_xa_passes_since_cue();
         let cost = arm_step.map_or_else(
             || {
                 let cost = measured_frame_cost_at(self.party.party_count, state, passes)
                     .saturating_add(self.battle_frame_load_cost());
-                // An XA clip's read span: the whole frame runs on the CD
-                // interrupt path (`FUN_8005DAB0`).
-                if xa_streaming {
-                    cost.max(XA_STREAM_FRAME_COST)
-                } else {
-                    cost
+                // An XA clip's read span: the frame runs on the CD interrupt
+                // path (`FUN_8005DAB0`) once the stream is up.
+                match xa_passes {
+                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(n, cost),
+                    None => cost,
                 }
             },
             cost_of_step,
@@ -65,18 +62,23 @@ impl World {
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
     }
 
-    /// Whether a battle CD-XA clip's stream loads this pass's frame: a loading
-    /// clip is playing and its cue lies
-    /// [`XA_STREAM_LOAD_ONSET_PASSES`](legaia_engine_battle_loop::frame_clock::XA_STREAM_LOAD_ONSET_PASSES)
-    /// passes back, the drive's seek to its file done.
-    fn battle_xa_loads_frame(&self) -> bool {
-        use legaia_engine_battle_loop::frame_clock::XA_STREAM_LOAD_ONSET_PASSES;
-        self.audio.battle_xa_busy_frames > 0
-            && self.audio.battle_xa_frame_load
-            && self
-                .audio
+    /// The passes since a loading battle CD-XA clip's cue, `None` while none
+    /// plays ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
+    fn battle_xa_passes_since_cue(&self) -> Option<u64> {
+        if self.audio.battle_xa_busy_frames == 0 || !self.audio.battle_xa_frame_load {
+            return None;
+        }
+        Some(
+            self.audio
                 .battle_xa_cue_frame
-                .is_none_or(|f| self.battle_frame_id() >= f + XA_STREAM_LOAD_ONSET_PASSES)
+                .map_or(u64::MAX, |f| self.battle_frame_id().saturating_sub(f)),
+        )
+    }
+
+    /// Whether the clip's stream has reached the frame's full load
+    /// ([`Self::battle_xa_passes_since_cue`] two or more).
+    fn battle_xa_loads_frame(&self) -> bool {
+        self.battle_xa_passes_since_cue().is_some_and(|n| n >= 2)
     }
 
     /// What a battle frame draws past its state's base: the live move-VM
