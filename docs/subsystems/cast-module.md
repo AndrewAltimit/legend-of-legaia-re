@@ -993,6 +993,16 @@ The table is `legaia_engine_cast::cast_module_impact`, applied by
 through its chain (`BladeBreathShape::strike_sub_flag`), and PROT 0903 and 0904
 through their tick ports.
 
+**A selector outlives its colour only under a full blend.** The tint pass retires
+`+0x21F` once `+0x0C` has drained to zero, so a hit arm that stamps the selector
+without the blend leaves the fire a few frames. Blade Breath's `0xA2` and `0xA3` hit
+arms stamp `+0x04` and `+0x0C = 0x1000` beside it (`0x801F7F50..0x801F7F68`,
+`0x801F78CC..0x801F78E8`): a write watch of the victim reads the blend draining `0x80`
+a battle frame from the fourteenth frame on, the fire burning some forty. Plasma
+Strike's arms 5 and `0x10` clear the victim's selector with its colour and state as
+they pass (`0x801F7C0C..0x801F7C18`, `0x801F85CC..0x801F85D4`). Grade `disassembly` +
+`capture`.
+
 **The selector burns only a red body.** A selector-`1` body sheds fire once its red
 lane reaches `0xB0`, and a store of the selector alone leaves a body's colour where it
 stood. Rolling Flare's arm 3 also stores the tint state `+0x21C = 7`, the soft red,
@@ -1248,7 +1258,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F7740` | 906 (`summon_gizam`) | spawn stager, `sltiu a1, 7`, 4 spawn arms; writes `+0x0C`, `ctx+0x279` | PORT |
 | `801F776C` | 945 (`cast_water_column`) | spawn stager, 2 spawn calls | DATA |
 | `801F7820` | 924 (`stager_ultimate_rave`) | spawn stager, 1 spawn call | PORT (spawn-only) |
-| `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls | DATA |
+| `801F7850` | 937 (`cast_hyper_lightning`) | spawn stager, 5 spawn calls; each ray's spin, roll and height on `rand()` draws | PORT |
 | `801F78A4` | 961 (`cast_dead_end_crisis`) | spawn stager, 6 spawn calls | PORT (spawn-only) |
 | `801F78F8` | 947 (`cast_v_windhash`) | null stager | SCOPE-IGNORE |
 | `801F7948` | 909 (`summon_viguro`) | framed routine no table names and nothing references | SCOPE-IGNORE |
@@ -1258,7 +1268,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F7AF4` | 909 (`summon_viguro`) | spawn stager, `sltiu a1, 7`, 2 spawn calls; writes `+0x0C`, `+0x1DA`, target `+0x1DD`, `ctx+0x279` | PORT |
 | `801F7B74` | 965 (`cast_doomsday`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F7BA0` | 952 (`cast_bloody_horns`) | null stager | SCOPE-IGNORE |
-| `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls | DATA |
+| `801F7BD0` | 936 (`cast_hyper_crush`) | spawn stager, 4 spawn calls; each ray's spin and roll on `rand()` draws | PORT |
 | `801F7DB0` | 941 (`cast_steal`) | spawn stager, `sltiu a1, 5`, 2 spawn calls | DATA |
 | `801F7EA4` | 930 (`summon_horn`) | spawn stager, `sltiu a1, 7`, 8 spawn calls | PORT (spawn-only) |
 | `801F7EC4` | 956 (`cast_water_hazard`) | spawn stager, 5 spawn calls | DATA |
@@ -4034,7 +4044,7 @@ cell's other bodies' records off the screen:
 | 0966 Evil Seru Magic, `0x801F6A74` | 46 calls at literal points over arms 2, 4, 10, 23, 26 | not ported: the records only it seats go in as the body first ticks |
 | 0938 Mystic Circle (`0xB7`), `0x801F69EC` | arm 0 the circle `0x801F7D5C` and the ray caller `0x801F7DC4`; arm 1 `0x801F7FE8` on the countdown's expiry; arms 2 and 3 on the caster, each pass flushing the part pool first (`jal 0x80050E74`) | `FUN_801F7AB8`: arm 2 seats a ray `0x801F7DF4` on the caller, which `0x801F7DC4` calls every eleven frames |
 | 0962 Ultra Charge (`0xA5`), `0x801F69D8` | arm 0 the ring caller `0x801F86B8` on the caster and three camera-locked discs; arm 1 one ray `0x801F876C` on **every** pass, rolled `rand() % 0x1000` about Z (`capture_arm_spawns_every`) | `FUN_801F813C`: arm 2 seats three rings on the caller, which `0x801F86B8` calls every fifteen frames |
-| 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
+| 0940 Mystic Shield (`0xAC`), `0x801F7240` | arm 1 `0x801F82D4` and arm 3 four records on the caster as each passes; arm 2 every eighth pass `0x801F8370` and every fourth an `efect.dat` effect `3`, arms 4 and 5 every eighth pass `0x801F84EC`, off the body's pass counter `0x801F8650` (`capture_arm_counted`, keyed on the action: Glare runs arms of the same numbers and makes none of them); arm 4 the [sphere](#the-mystic-shield-effect); arm 7 flushes the pool | `FUN_801F82CC` is a bare `jr ra` |
 | 0940 Glare (`0x3C`), `0x801F69F8` | arm 0 the sphere `0x801F858C` on the shot it built (the negated caster focus and the shot angles, scale `0x1000`, `0x801F6C58..0x801F6C6C`); arm 1's pass flushes the pool (`0x801F6DE4`), which ends the sphere and the two held fades arm 0 parked in the pool's tail words `0x801C92E8` / `0x801C92EC` (`capture_arm_spawns_for`, `capture_arm_flushes_pool_for` key both on the action) | shares Mystic Shield's |
 | 0944 Guilty Cross (`0x37`), `0x801F6A04` | arm 1 two camera-locked records on the zeroed stack trios; arm 2, after flushing the pool, three on the victim, the third `0x801F81E8` then stored `+0x16 = -0x1200`, `+0x42 = 1` (`capture_spawn_pokes`); arm 3 three on the victim as the hit lands; arm 4 flushes the pool | `FUN_801F7F2C`: arm 0 `0x801F7FE8`, arm 1 `0x801F8244` and `0x801F8290`, arm 2 `0x801F8290`, each at the caller's scale; the arm-3 record `0x801F8210` calls arms 1 and 2 |
 | 0946 Call Wave (`0x55`) / Big Wave (`0x56`), `0x801F69FC` | Call Wave's arm 0 the ray caller `0x801F78CC` on the caster's `+0x3C`; Big Wave's arm 4 the wave caller `0x801F7C44`, arm 5 nine records, arm 6 four, after halting every handle it keeps (`capture_arm_spawns_for` keys arm 0 on the action) | `FUN_801F76C4`: arm 0 three rings and eight rays `0x801F7970` with per-ray `rand()` waits, leans, lengths and rolls; arm 1 one wave `0x801F7BF8` into a sixteen-slot handle table while the phase is below `7` |
