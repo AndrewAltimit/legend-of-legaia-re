@@ -911,6 +911,10 @@ pub struct BattleState {
     /// accumulator's per-pass gains (`8 * step`) count them. Not a retail
     /// field.
     pub frame_step_seed_after_accum: Option<u32>,
+    /// Whether the last pass ran inside the seeded step's state, so the pass
+    /// that leaves it hands the frame back to the ordinary step once and the
+    /// passes after it to the arm tables and the ring. Not a retail field.
+    pub frame_step_seed_in_state: bool,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// (`World::battle_camera_state`).
@@ -1572,6 +1576,7 @@ impl BattleState {
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             frame_step_seed_after_accum: None,
+            frame_step_seed_in_state: false,
             sm_ran_state: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,

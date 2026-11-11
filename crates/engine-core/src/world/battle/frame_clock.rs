@@ -244,8 +244,18 @@ impl World {
         }
     }
 
-    /// Install a seeded step while the action SM sits in its state, and the
-    /// default outside it. Called after every action-SM step.
+    /// Whether the action state is the one a replay's seeded step speaks for.
+    /// A seed on the magic band's sustained state `0x2B` also opens on `0x2A`:
+    /// the pass after the clip commit is the `0x2A` pass storing `0x2B`, and it
+    /// runs on the step the capture's ring holds for it.
+    fn battle_frame_step_seed_holds(&self, state: u8) -> bool {
+        self.battle_ctx.action_state == state
+            || (state == 0x2B && self.battle_ctx.action_state == 0x2A)
+    }
+
+    /// Install a seeded step while the action SM sits in its state, and hand
+    /// the frame back to the ordinary step on the pass that leaves it. Called
+    /// after every action-SM step.
     pub(in crate::world) fn apply_battle_frame_step_seed(&mut self) {
         let Some((step, state)) = self.clock.battle_frame_step_seed else {
             return;
@@ -271,11 +281,17 @@ impl World {
                     .as_ref()
                     .is_some_and(|c| c.close_up_accum() >= hold)
             });
-        // A seed on the magic band's sustained state `0x2B` also opens on
-        // `0x2A`: the pass after the clip commit is the `0x2A` pass storing
-        // `0x2B`, and it runs on the step the capture's ring holds for it.
-        let in_state = self.battle_ctx.action_state == state
-            || (state == 0x2B && self.battle_ctx.action_state == 0x2A);
+        let in_state = self.battle_frame_step_seed_holds(state);
+        // Outside its state the seed hands the frame back once, on the pass
+        // that leaves it; from there the arm tables and the ring own the
+        // step (`Self::apply_cast_arm_frame_step`). Taking the ordinary step
+        // on every pass outside it overrode a summon band's arm steps for
+        // the whole cast (`theeder_summon_mid_cast`, seeded on `0x33`).
+        let left = !in_state && std::mem::take(&mut self.battle.frame_step_seed_in_state);
+        self.battle.frame_step_seed_in_state = in_state;
+        if !in_state && !left {
+            return;
+        }
         let want = if in_state && reached {
             step
         } else {
@@ -305,13 +321,23 @@ impl World {
     /// frames to stretch.
     pub(in crate::world) fn apply_cast_arm_frame_step(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
-        if !self.toggles.battle_sm_frame_cadence || self.clock.battle_frame_step_seed.is_some() {
+        if !self.toggles.battle_sm_frame_cadence {
             self.battle.pending_frame_step = None;
             return;
         }
+        // A recording's own steps outrank a capture's seeded one: the track
+        // holds every frame the seed's one state does.
         if self.battle.retail_step_track.is_some() {
             self.battle.pending_frame_step = None;
             self.apply_retail_step_track();
+            return;
+        }
+        if self
+            .clock
+            .battle_frame_step_seed
+            .is_some_and(|(_, state)| self.battle_frame_step_seed_holds(state))
+        {
+            self.battle.pending_frame_step = None;
             return;
         }
         let state = self.battle_ctx.action_state;

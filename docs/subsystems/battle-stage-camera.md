@@ -1508,7 +1508,9 @@ The enemy cast films add the casts the harvest states never reached, and a cast 
 recording names runs its arms past the setup at `4`
 ([the capture band against the films](#the-capture-band-against-the-films)).
 A replay that knows retail's step installs it
-while the action SM sits in one state (`World::seed_battle_frame_step`). The
+while the action SM sits in one state (`World::seed_battle_frame_step`). The pass that leaves
+that state hands the frame back to the ordinary step, and the arm tables and the ring own it from
+there: a seed on `0x33` once held a summon's whole band on the ordinary step. The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
 step `3` the walker lands it every pass, at `2` it trails

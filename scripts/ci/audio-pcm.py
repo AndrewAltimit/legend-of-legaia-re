@@ -111,7 +111,11 @@ CAST_STATES = [
 # the `cast_steps` channel, and how many mednafen frames the stepping logs: a
 # frame-advance key the emulator drops repeats a vsync, so this runs past the
 # cast's own length.
-CAST_STEP_STATES = {"cort_guilty_cross_mid_cast": 1350, "zenoir_summon_mid_cast": 1650}
+CAST_STEP_STATES = {
+    "cort_guilty_cross_mid_cast": 1350,
+    "zenoir_summon_mid_cast": 1650,
+    "theeder_summon_mid_cast": 1900,
+}
 CAST_DONE_TAIL = 20
 CAST_RECORD_SECONDS = 40
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
