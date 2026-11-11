@@ -12,7 +12,7 @@
     <dt>Input</dt><dd>A PCSX-Redux <code>.sstate</code> named by scenario label in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/scenarios.toml"><code>scripts/scenarios.toml</code></a>, or a cold boot; the disc image and BIOS stay local</dd>
     <dt>Output</dt><dd><code>captures/&lt;probe&gt;/&lt;timestamp&gt;/</code>: CSV rows, call-context dumps, RAM / screen snapshots. Gitignored - never Sony bytes in the repo</dd>
     <dt>Needs</dt><dd><code>-interpreter -debugger</code> for breakpoints; the recompiler (<code>--fast</code>) runs them past silently</dd>
-    <dt>Used by</dt><dd><a href="overlay-capture.html">overlay capture</a>, <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/playthrough-coverage.md">playthrough coverage</a>, <a href="spine-flag-writers-capture.html">spine flag-writers capture</a>, the engine's audio / VRAM parity oracles</dd>
+    <dt>Used by</dt><dd><a href="overlay-capture.html">overlay capture</a>, <a href="playthrough-coverage.html">playthrough coverage</a>, <a href="spine-flag-writers-capture.html">spine flag-writers capture</a>, the engine's audio / VRAM parity oracles</dd>
     <dt>Sibling</dt><dd><a href="mednafen-automation.html">Mednafen automation</a> answers "what changed" offline from save states; this page answers "who did it" live</dd>
   </dl>
 </section>
@@ -407,7 +407,7 @@ name_fmt = "xp+0x%03X"</code></pre>
     <span class="see-also-label">Tooling</span>
     <a href="mednafen-automation.html">Mednafen automation</a>
     <a href="overlay-capture.html">Overlay capture</a>
-    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/playthrough-coverage.md">Playthrough coverage</a>
+    <a href="playthrough-coverage.html">Playthrough coverage</a>
     <a href="spine-flag-writers-capture.html">Spine flag-writers capture</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/super-art-queue-capture.md">Super-Art queue capture</a>
     <a href="recomp-differential.html">Recomp differential oracle</a>

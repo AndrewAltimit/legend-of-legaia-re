@@ -202,13 +202,16 @@
 /tooling/overlay-capture.html
 /tooling/pal-localizations.html
 /tooling/pcsx-redux-automation.html
+/tooling/playthrough-coverage.html
 /tooling/port-catalog.html
+/tooling/port-provenance.html
 /tooling/porting-by-reimplementation.html
 /tooling/randomizer-delilas.html
 /tooling/randomizer-internals.html
 /tooling/randomizer.html
 /tooling/ratchet-integrity.html
 /tooling/recomp-differential.html
+/tooling/releases.html
 /tooling/retail-compare.html
 /tooling/retail-kernel-differential.html
 /tooling/retail-oracle-method.html

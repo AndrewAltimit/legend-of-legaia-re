@@ -1,0 +1,139 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; playthrough coverage</div>
+  <h1>Playthrough coverage</h1>
+  <p class="lede">Turn <em>what the game executes</em> into a documentation worklist. A scripted segment of the opening is played under PCSX-Redux with a breakpoint on every function that has a disassembly dump but no explanation in <code>docs/</code>. The functions that fire are reachable by construction, and they are what to document next.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="contents">
+  <h2>At a glance</h2>
+  <p>Static analysis cannot tell a dead function from a hot one nobody has written up; a trace can. Early segments (boot, the first field frame, dialogue) mostly hit code that is already documented, and the unexplained hits concentrate in battle internals, story scripting and NPC interaction - so success is measured as the gap-set shrinking per segment, not as raw coverage.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The capture and triage loop. The port catalog gives the gap-set: functions that are dumped, not documented and not ignored, written to gap_worklist.txt. A catalogued save state anchors a segment. The trace probe arms one execution breakpoint per gap-set address, plays the segment and writes a CSV of hits plus a game-mode timeline. Overlay hits are attributed to the resident overlay by containment. A person reads the dump, documents the function and tags it; once the address is cited under docs it leaves the gap-set on the next regenerate, and the segment's end state is catalogued as the next segment's anchor.">
+      <defs>
+        <marker id="pc-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="dg-node" x="14" y="20" width="170" height="60" rx="5"/>
+      <text class="dg-label" x="99" y="44">gap-set</text><text class="dg-sub" x="99" y="62">dumped, undocumented</text>
+      <rect class="dg-node" x="14" y="140" width="170" height="60" rx="5"/>
+      <text class="dg-label" x="99" y="164">save-state anchor</text><text class="dg-sub" x="99" y="182">catalogued, fingerprinted</text>
+
+      <rect class="dg-node-accent" x="240" y="80" width="170" height="60" rx="5"/>
+      <text class="dg-label" x="325" y="104">trace probe</text><text class="dg-sub" x="325" y="122">1 exec breakpoint each</text>
+      <path class="dg-edge" d="M184 50 L212 50 L212 100 L236 100" marker-end="url(#pc-ah)"/>
+      <path class="dg-edge" d="M184 170 L212 170 L212 120 L236 120" marker-end="url(#pc-ah)"/>
+
+      <rect class="dg-node" x="460" y="80" width="170" height="60" rx="5"/>
+      <text class="dg-label" x="545" y="104">hits CSV + modes</text><text class="dg-sub" x="545" y="122">attribute by containment</text>
+      <path class="dg-edge" d="M410 110 L456 110" marker-end="url(#pc-ah)"/>
+
+      <rect class="dg-node-ok" x="680" y="80" width="186" height="60" rx="5"/>
+      <text class="dg-label" x="773" y="104">read, document, tag</text><text class="dg-sub" x="773" y="122">cite the address in docs/</text>
+      <path class="dg-edge" d="M630 110 L676 110" marker-end="url(#pc-ah)"/>
+
+      <path class="dg-edge-dim" d="M773 80 L773 50 L188 50" marker-end="url(#pc-ah)"/>
+      <text class="dg-edge-label" x="420" y="42">leaves the gap-set on regenerate</text>
+      <path class="dg-edge-dim" d="M773 140 L773 170 L188 170" marker-end="url(#pc-ah)"/>
+      <text class="dg-edge-label" x="420" y="190">end state becomes the next segment's anchor</text>
+    </svg>
+    <figcaption>One turn of the loop per segment. The only input that cannot be synthesized is a save state at a new place in the story, which is where a human at the pad helps.</figcaption>
+  </figure>
+  <p>The harness under it is <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>; the gap-set is defined off the <a href="port-catalog.html">port catalog</a>, whose dashboard prints its live size.</p>
+</section>
+
+<section class="doc-section" id="gap-set" data-doc="the-gap-set">
+  <h2>The gap-set</h2>
+  <div class="cli"><code>GAP-SET = dumped AND NOT documented AND NOT ignored</code></div>
+  <ul class="bullets">
+    <li><strong>dumped</strong> - a Ghidra dump exists, so the address is a function entry that can be broken on.</li>
+    <li><strong>not documented</strong> - no file under <code>docs/</code> cites the address, so breakpoints go only to the unexplained residue.</li>
+    <li><strong>not ignored</strong> - not host-replaced PsyQ / BIOS / libgte / libspu code from the catalog's ignore list, which is out of the port's scope and hot every frame.</li>
+  </ul>
+  <p><code>scripts/pcsx-redux/build_gap_worklist.py</code> regenerates <code>gap_worklist.txt</code> (add <code>--bucket scus</code> for the executable alone) after any new dump or doc lands.</p>
+  <div class="callout callout-trap"><p class="callout-title">Naming a pending target documents it</p><p>"Documented" means the address hex appears in any file under <code>docs/</code>. Naming a still-open target in prose silently drops it from the gap-set, so refer to a pending target by cluster or mode and cite the hex only once the function is characterized.</p></div>
+</section>
+
+<section class="doc-section" id="harness" data-doc="the-harness">
+  <h2>The harness</h2>
+  <p><code>autorun_trace_segment.lua</code> arms one non-pausing exec breakpoint per gap-set address, plays a segment, and writes <code>trace_segment.csv</code> (<code>addr, hits, first_frame, first_mode, first_ra, stem</code>) plus a game-mode timeline. It is passive - it records whatever runs - so an input timeline is optional.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Environment</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>LEGAIA_NO_SSTATE=1</code></td><td>Cold boot from BIOS (segment S1)</td></tr>
+      <tr><td><code>LEGAIA_WORKLIST</code></td><td>Gap-set file (default <code>gap_worklist.txt</code>)</td></tr>
+      <tr><td><code>LEGAIA_ADDR_LO</code> / <code>_HI</code></td><td>Address window, e.g. executable-only with <code>HI=0x801C0000</code></td></tr>
+      <tr><td><code>LEGAIA_MAX_BPS</code></td><td>Cap breakpoints (0 = all) for a smoke run</td></tr>
+      <tr><td><code>LEGAIA_INPUTS</code> / <code>LEGAIA_MASH</code></td><td>A pad timeline, or a button pulse that advances titles and dialogue</td></tr>
+      <tr><td><code>LEGAIA_FRAMES</code></td><td>Capture budget in vsyncs</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>Running it headless.</strong> Run under <code>xvfb-run -a</code> (a real display throttles an unfocused window) with <code>LEGAIA_BOOT_DELAY=2</code>, and anchor on a catalogued, fingerprinted save from the immutable library through <code>run_probe.sh --scenario &lt;label&gt;</code> - never a live quicksave slot, which the next save overwrites. About 150 breakpoints arm at once; more stalls the emulator, so <code>trace_scenario.sh</code> captures the gap-set as a union of windowed passes. The probe writes its CSV incrementally, so a late emulator abort still leaves the hits on disk.</p>
+  <p><strong>Driving from boot.</strong> <code>autorun_play_from_boot.lua</code> builds the checkpoint corpus: it skips logos and the intro, confirms NEW GAME, advances the opening dialogue and saves a checkpoint at a target game mode, then resumes from a checkpoint to drive the next segment. Launch with <code>-fastboot</code> (the default boot path stalls on an early CD read headless). It ticks on two per-frame exec breakpoints rather than on vsync, because the title's streamed music stops vsync delivery to the script while the game keeps running. Checkpoint at field run, not field init.</p>
+</section>
+
+<section class="doc-section" id="attribution" data-doc="attribution-scus-vs-overlay">
+  <h2>Attribution: executable vs overlay</h2>
+  <p>An executable address (<code>0x800xxxxx</code>) is always resident, so a hit there means that function ran. An overlay address (<code>0x801C0000</code> and up) is <strong>VA-aliased</strong>: several overlays occupy the same window, so a hit only means "the resident overlay executed this address".</p>
+  <p><strong>Attribute by containment, not by stem.</strong> The CSV's <code>stem</code> is whichever overlay the dump of that VA came from, usually not the resident one. The right identity is the function of the <em>resident</em> overlay whose range contains the hit; the hit's game mode picks the overlay. <code>attribute_overlay_hits.py</code> does this and flags each function as documented or new.</p>
+  <ul class="bullets">
+    <li>Several hot addresses inside one range are interior PCs of one function, not several functions.</li>
+    <li>A co-resident overlay slot is identified by comparing live RAM with the static image, and its occupant varies by context: the slot at <code>0x801F69D8</code> holds the sparring-tutorial overlay in the first fight and the effect-render overlay in a normal one.</li>
+    <li>Matching bytes in RAM prove the bytes are resident, never that they <em>executed</em> there: the same VA can be a data table in one overlay and code in another.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="loop" data-doc="the-capture--triage-loop">
+  <h2>The capture and triage loop</h2>
+  <ol class="steps steps-vertical">
+    <li><b>Author</b><span>Pick the start save, the gap-set window and any pad timeline.</span></li>
+    <li><b>Run</b><span>Probe headless, retrying past the boot race; produce the CSV and the mode timeline.</span></li>
+    <li><b>Triage</b><span>In hit-count order: read the dump, understand the function, document it on its subsystem or format page with a <a href="../reference/functions.html">key functions</a> row, and tag the crate that consumes it.</span></li>
+    <li><b>Catalogue</b><span>Back up the end state as the next segment's start and cite its fingerprint in the ledger.</span></li>
+  </ol>
+</section>
+
+<section class="doc-section" id="ledger" data-doc="segment-ledger">
+  <h2>Segment ledger</h2>
+  <p>The segments chain: each one's end state is the next one's anchor. Every anchor is a retail capture shot on an unpatched image, catalogued by fingerprint (save states are gitignored; only fingerprints are cited).</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Seg</th><th>Span</th><th>Chains from the last by</th><th>What it settled</th></tr></thead>
+    <tbody>
+      <tr><td>S1</td><td>Cold boot, title, NEW GAME, the opening prologue</td><td>The boot-onward driver</td><td>How to drive the game from boot headless</td></tr>
+      <tr><td>S2</td><td>Prologue to Rim Elm</td><td>Mashing on the field tick</td><td>The town scene-load callees</td></tr>
+      <tr><td>S3</td><td>First free walk in Rim Elm</td><td>A targeted name-entry driver</td><td>The opening parks on the name-entry screen</td></tr>
+      <tr><td>S4</td><td>First door warp, out of Vahn's house</td><td>A grid-BFS door navigator</td><td>Real collision, no position pokes</td></tr>
+      <tr><td>S5</td><td>First battle</td><td>Replaying a recorded human pad timeline</td><td>It is the scripted Tetsu spar, not a random encounter</td></tr>
+      <tr><td>S6</td><td>First real fight (the Queen Bee ambush)</td><td>Its own field-mode anchor</td><td>Command-menu persistence and the field-to-battle transition</td></tr>
+    </tbody>
+  </table></div>
+  <dl class="kv">
+    <dt>S3: name entry</dt><dd>The opening script suspends on a <code>STATE_RESUME</code> op that hands off to the name-entry state machine, which holds the player with no dialog box until a name is confirmed. Mashing Cross only appends letters; the driver holds the accept option and pulses Cross. The port's mirror of the screen is <code>legaia_engine_menus::name_entry</code>.</dd>
+    <dt>S4: door navigation</dt><dd>The controller reads the scene's walkability grid, runs a BFS from the player's tile, visits the boundary tiles where door triggers live nearest first, and learns the pad-to-world mapping online. Read struct fields at their real width: the player's X and Z are 16-bit, and a 32-bit read folds the facing word into the coordinate.</dd>
+    <dt>S5: the first battle</dt><dd>Rim Elm has no random encounters at that point in the story. The first fight is the sparring tutorial, started by choosing the third entry of Tetsu's four-item list - which a mash-only driver never selects - so it was captured by recording a person's pad input and replaying it.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="guarding" data-doc="guarding-an-oracle-that-reads-the-library">
+  <h2>Guarding an oracle that reads the library</h2>
+  <p>A test that consumes these anchors has <strong>three</strong> gitignored inputs: the disc image, <code>extracted/</code> and the save-state library. The repo's rule is that a disc-gated test skips and passes when its data is missing, and that means every input it reads. A per-anchor skip inside the loop looks guarded, but with no library at all every anchor skips, the count of checked anchors stays zero, and the non-vacuity assertion fails. The fix is a directory-level skip before the loop, which keeps the assertion meaningful for a library that lost one anchor.</p>
+  <p>Detect it by removing the root rather than reading the source: hide <code>saves/</code>, run every test that reads it, and anything that fails rather than skips has a guard narrower than its inputs.</p>
+</section>
+
+<section class="doc-section" id="resolved" data-doc="what-the-traces-resolve">
+  <h2>What the traces resolve</h2>
+  <p>A documented function leaves the gap-set on the next regenerate, so the burndown shows in the worklist. What follows is what the traces settled.</p>
+  <ul class="bullets">
+    <li><strong>Always-resident executable hits are mostly infrastructure</strong>: library code the host replaces (libgte, libcd, libgpu, the heap), a developer profiler HUD, no-op stubs. The game logic concentrates in the overlays.</li>
+    <li><strong>Field hits land on the per-actor tick path</strong> - the loop that runs each actor's inline-dialogue machine, motion VM and move-table VM - and its hottest function is the per-actor visibility cull. That the trace lands on the central per-frame loop is evidence the harness reaches the main path.</li>
+    <li><strong>Mode 24 hits are the Noa dance overlay</strong>, its dance-floor render group (<a href="../subsystems/minigame-dance.html">dance minigame</a>).</li>
+    <li><strong>The first battle</strong> surfaced the always-resident on-screen-element family (party status HUD, the floating damage-number list, per-actor markers) and new battle-overlay draw functions, among them the Arts announcement banner and an arena scatter routine Ghidra had never made a function.</li>
+    <li><strong>The first real fight</strong> surfaced the Arts command-block persistence pair and the enemy target menu builder, showed the <code>0x801F69D8</code> slot holding the effect-render overlay, and caught the field-to-battle transition state machine running in the field overlay's battle-intro image.</li>
+  </ul>
+  <p>The functions are catalogued on <a href="../reference/functions.html">key functions</a>; the per-hit tables are on the full page.</p>
+  <div class="see-also">
+    <span class="see-also-label">Related</span>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="overlay-capture.html">Overlay capture</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/playthrough-coverage.md" target="_blank" rel="noopener">Full page on GitHub</a>
+  </div>
+</section>
