@@ -1331,3 +1331,18 @@ retail fills them from the right (one round owed lights the pip at column `0x40`
 dropping its units digit, which retail places unconditionally. Its init `FUN_801CEC94` expands the message bank
 as `parse_messages` reads it, each texel the nibble times four. The dance overlay's entry `FUN_801CEF54` stages
 what `dance_scene_entry` records.
+
+The publisher-logo sequencer `FUN_801CEFD4`, run frame by frame from its state `0`, shows 35 black frames
+before SCEA, 17 between SCEA and Contrail, two before PROKION and 18 after it. The port's session skipped
+every settle, so its pass ran 504 frames where retail's runs 575, Contrail cut in as SCEA faded, and the title
+opened early. The world-map controller `FUN_801E76D4` steps the focus Z word on Up / Down and X on Right /
+Left; the port had the banks the other way round and panned the stored, negated words as world units, so the
+top-view debug camera moved across the axis retail moves along.
+
+The fishing result actor's draw `FUN_801D67BC`, run to its part loop, found the scale step keeping the low
+halfword of each product, where the port grew past `i16`; no hook strength reaches a scale that wraps. Baka
+Fighter's developer dump `FUN_801D553C` prints every action record's eight leading words and each live
+sub-keyframe, where the port printed two columns; the port now prints the routine's numbers line for line.
+The ground emitter's cell loop `FUN_801F6D48`, the stage placement `FUN_801D6D60`, the tile board's install
+state of `FUN_801EF2B0`, the fishing session machine's power meter entered at `FUN_801CF3BC` and the Hyper
+Crush and Hyper Lightning stagers match.
