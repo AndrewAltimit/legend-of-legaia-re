@@ -365,8 +365,6 @@ const fn element(
     }
 }
 
-/// The stores `entry`'s `body` makes on `arm` this tick];
-
 /// The stores `entry`'s `body` makes on `arm` this tick: `passed` is whether
 /// the arm's gate let it through, `countdown` the module countdown before
 /// this tick's drain.
