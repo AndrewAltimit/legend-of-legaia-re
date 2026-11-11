@@ -11,8 +11,9 @@
 // enters town01 and draws frames that are not blank (a screenshot lands in --out; it holds
 // disc-derived pixels, so keep --out under target/). `controls` is what only a browser has: a
 // file that is not the game refused in words (no disc needed), then with a disc the on-screen
-// pad of a touch-only device, a controller on the standard mapping, fullscreen, and sound
-// after the first gesture.
+// pad of a touch-only device, a controller on the standard mapping, fullscreen, sound after
+// the first gesture, and controllers plugged in mid-game (a non-standard pad's hat, a second
+// pad, the unplug notice, a Key Config rebind made with a controller).
 //
 // Needs a built bundle (scripts/ci/build-wasm.sh) and playwright-core; PLAYWRIGHT_CORE names
 // its directory when `~/.npm/_npx` does not hold one. Exit 1 with every failure listed; a
@@ -361,6 +362,79 @@ async function main() {
         if (!/play-screen/.test(fsq.el)) failures.push(`play.html: the Fullscreen button presented "${fsq.el}"`);
         else if (fsq.h < fsq.vh * 0.9 || Math.abs(fsq.w / fsq.h - 4 / 3) > 0.02) failures.push(`play.html: fullscreen picture is ${fsq.w | 0}x${fsq.h | 0} in a ${fsq.vh}px-high screen`);
         else if (!/play-canvas/.test(fsq.focus)) failures.push(`play.html: fullscreen left the keyboard on "${fsq.focus}"`);
+        await context.close();
+      }
+      // Controllers plugged in mid-game: a pad without the standard mapping walks on its
+      // hat (the engine's raw table and hat finder), a second pad drives too, unplugging is
+      // said, and Key Config takes a controller button into the stored table.
+      {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+        await context.addInitScript(() => {
+          window.__pads = [null, null, null, null];
+          navigator.getGamepads = () => window.__pads;
+          window.__mkPad = (index, id, mapping, nAxes, nButtons) => ({ id, index, connected: true, mapping, timestamp: 0,
+            axes: Array.from({ length: nAxes }, () => 0),
+            buttons: Array.from({ length: nButtons }, () => ({ pressed: false, touched: false, value: 0 })) });
+          window.__plug = (pad, on) => {
+            if (on) window.__pads[pad.index] = pad; else window.__pads[pad.index] = null;
+            const e = new Event(on ? 'gamepadconnected' : 'gamepaddisconnected');
+            e.gamepad = pad;
+            window.dispatchEvent(e);
+          };
+        });
+        const page = await enter(context, 'play.html (hot-plug)');
+        const notice = () => page.evaluate(() => document.getElementById('play-notice').textContent);
+        await page.evaluate(() => { window.__raw = window.__mkPad(0, 'check-pages raw pad', '', 6, 12); window.__plug(window.__raw, true); });
+        await page.waitForTimeout(300);
+        if (!/Controller connected.*guessed/.test(await notice())) failures.push(`play.html: plugging a non-standard pad said "${await notice()}"`);
+        const status = await page.evaluate(() => document.getElementById('play-pad-status').textContent);
+        if (!/buttons guessed/.test(status)) failures.push(`play.html: the controller line reads "${status}" with a non-standard pad in`);
+        let at = await lead(page);
+        await page.evaluate(() => { window.__raw.axes[5] = 1; }); /* hat down */
+        await page.waitForTimeout(1200);
+        await page.evaluate(() => { window.__raw.axes[5] = 0; });
+        await page.waitForTimeout(300);
+        if (!moved(at, await lead(page))) failures.push('play.html: a non-standard pad\'s hat did not walk the lead');
+        await page.evaluate(() => { window.__std = window.__mkPad(1, 'check-pages second pad (STANDARD GAMEPAD)', 'standard', 4, 17); window.__plug(window.__std, true); });
+        const press = async (pad, i, ms = 150) => {
+          await page.evaluate(([pad, i]) => { const b = window[pad].buttons[i]; b.pressed = true; b.value = 1; }, [pad, i]);
+          await page.waitForTimeout(ms);
+          await page.evaluate(([pad, i]) => { const b = window[pad].buttons[i]; b.pressed = false; b.value = 0; }, [pad, i]);
+          await page.waitForTimeout(250);
+        };
+        at = await lead(page);
+        await press('__std', 12, 1200); /* the second pad's D-pad up: back the way the hat came */
+        if (!moved(at, await lead(page))) failures.push('play.html: a second controller did not walk the lead');
+        await page.evaluate(() => window.__plug(window.__raw, false));
+        await page.waitForTimeout(200);
+        if (!/Controller disconnected/.test(await notice())) failures.push(`play.html: unplugging a pad said "${await notice()}"`);
+        // Options opened (the root ring's own walk is not under test), then Select (Key
+        // Config), Cross on its first row (Cross) and the top face button, all on the
+        // controller: Cross moves onto standard index 3, into the stored table.
+        const keyConfig = () => page.evaluate(() => JSON.parse(window.__playRuntime.play_menu_key_config_json()));
+        const until = (want) => page.waitForFunction((w) => {
+          const k = JSON.parse(window.__playRuntime.play_menu_key_config_json());
+          return k.open === w.open && k.awaiting === w.awaiting;
+        }, want, { timeout: 4000 }).then(() => true, () => false);
+        await page.waitForTimeout(800);
+        if (!(await page.evaluate(() => window.__playRuntime.play_menu_open_row('Options')))) {
+          failures.push('play.html: the pause menu\'s Options row did not open');
+        }
+        await page.waitForTimeout(800);
+        await press('__std', 8);
+        if (!(await until({ open: true, awaiting: false }))) failures.push(`play.html: a controller's Select did not open Key Config (${JSON.stringify(await keyConfig())})`);
+        await press('__std', 0);
+        if (!(await until({ open: true, awaiting: true }))) failures.push(`play.html: a controller's Cross did not start a Key Config wait (${JSON.stringify(await keyConfig())})`);
+        await page.evaluate(() => { const b = window.__std.buttons[3]; b.pressed = true; b.value = 1; });
+        await page.waitForTimeout(500);
+        /* Still held: through the new table it is Cross, which must not re-open the wait. */
+        const held = await keyConfig();
+        await page.evaluate(() => { const b = window.__std.buttons[3]; b.pressed = false; b.value = 0; });
+        await page.waitForTimeout(300);
+        if (held.awaiting) failures.push('play.html: the controller button that made a Key Config bind re-opened the row\'s wait');
+        const stored = await page.evaluate(() => { try { return JSON.parse(localStorage.getItem('legaia.bindings') || 'null'); } catch (e) { return null; } });
+        const slot = stored && stored.gamepad && stored.gamepad.buttons && stored.gamepad.buttons[3];
+        if (slot !== 'Cross') failures.push(`play.html: Key Config with a controller left standard button 3 on "${slot}" (stored: ${JSON.stringify(stored && stored.gamepad)})`);
         await context.close();
       }
       console.log('[check-pages] play page: touch pad, controller, fullscreen and sound driven');

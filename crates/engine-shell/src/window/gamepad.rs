@@ -99,6 +99,8 @@ pub struct GamepadPoll {
 #[derive(Default)]
 struct RawPoll {
     word: u16,
+    /// Standard indices held now, on any controller.
+    phys: u32,
     taps: u16,
     capture: Option<(&'static str, GlyphSet)>,
     connected: Vec<String>,
@@ -131,6 +133,10 @@ pub struct GamepadHost {
     /// The table the poll folds through, and the stick's dead zone.
     mapping: GamepadMapping,
     dead_zone: f32,
+    /// Standard indices held at the last poll, and those a rebind swallowed
+    /// until they are let go ([`Self::swallow_held`]).
+    phys_held: u32,
+    swallow: u32,
     /// The two force-feedback effects (`[strong, weak]`) playing at full
     /// magnitude on every rumble-capable controller, their gains the motors'
     /// levels (`Self::set_rumble`). Built on the first rumble.
@@ -157,6 +163,8 @@ impl GamepadHost {
                         tracker: StandardGamepad::default(),
                         mapping: GamepadMapping::default(),
                         dead_zone: STICK_DEAD_ZONE,
+                        phys_held: 0,
+                        swallow: 0,
                         rumble: None,
                         rumble_last: Default::default(),
                     })
@@ -181,6 +189,8 @@ impl GamepadHost {
             tracker: StandardGamepad::default(),
             mapping: GamepadMapping::default(),
             dead_zone: STICK_DEAD_ZONE,
+            phys_held: 0,
+            swallow: 0,
             #[cfg(feature = "gamepad")]
             rumble: None,
             rumble_last: Default::default(),
@@ -231,19 +241,30 @@ impl GamepadHost {
         self.dead_zone = fraction;
     }
 
+    /// A Key Config bind just landed: every controller button held now is
+    /// left out of the fold until it is let go. The button that made the bind
+    /// is still down, and through the new table it is a different PSX
+    /// button - without this its first poll reads as a fresh press of that
+    /// button (a bind onto Cross re-opened the row's wait at once).
+    pub fn swallow_held(&mut self) {
+        self.swallow = self.phys_held;
+    }
+
     /// Drain the backend's events and fold every connected controller's
     /// state through the live table.
     pub fn poll(&mut self) -> GamepadPoll {
+        let swallow = self.swallow;
         let raw = match &mut self.source {
             #[cfg(feature = "gamepad")]
-            Source::Gilrs(gilrs) => poll_gilrs(gilrs, &self.mapping, self.dead_zone),
+            Source::Gilrs(gilrs) => poll_gilrs(gilrs, &self.mapping, self.dead_zone, swallow),
             Source::Scripted(word) => RawPoll {
                 word: *word,
                 ..Default::default()
             },
             Source::ScriptedButtons { held, stick, prev } => {
+                let folded = *held & !swallow;
                 let buttons = (0..32usize)
-                    .filter(|i| *held & (1 << i) != 0)
+                    .filter(|i| folded & (1 << i) != 0)
                     .map(|i| (i, 1.0));
                 let word = self.mapping.fold(buttons, [*stick], self.dead_zone);
                 let new = *held & !*prev;
@@ -254,11 +275,14 @@ impl GamepadHost {
                     .map(|n| (n, GlyphSet::default()));
                 RawPoll {
                     word,
+                    phys: *held,
                     capture,
                     ..Default::default()
                 }
             }
         };
+        self.phys_held = raw.phys;
+        self.swallow &= raw.phys;
         GamepadPoll {
             edges: self.tracker.update(raw.word),
             taps: raw.taps,
@@ -350,13 +374,21 @@ fn rumble_effects(gilrs: &mut gilrs::Gilrs) -> Option<[gilrs::ff::Effect; 2]> {
 /// frame), the first such press as a capture name, and the controllers that
 /// came and went.
 #[cfg(feature = "gamepad")]
-fn poll_gilrs(gilrs: &mut gilrs::Gilrs, mapping: &GamepadMapping, dead_zone: f32) -> RawPoll {
+fn poll_gilrs(
+    gilrs: &mut gilrs::Gilrs,
+    mapping: &GamepadMapping,
+    dead_zone: f32,
+    swallow: u32,
+) -> RawPoll {
     let mut out = RawPoll::default();
     while let Some(ev) = gilrs.next_event() {
         match ev.event {
             gilrs::EventType::ButtonPressed(b, _) => {
                 if let Some(index) = standard_index(b) {
-                    if let Some(btn) = mapping.button_for(ButtonSpace::Standard, index) {
+                    if let Some(btn) = mapping
+                        .button_for(ButtonSpace::Standard, index)
+                        .filter(|_| swallow & (1 << index) == 0)
+                    {
                         out.taps |= btn.mask();
                     }
                     if out.capture.is_none() {
@@ -391,7 +423,12 @@ fn poll_gilrs(gilrs: &mut gilrs::Gilrs, mapping: &GamepadMapping, dead_zone: f32
             } else {
                 gp.button_data(*b).map_or(0.0, |d| d.value())
             };
-            buttons.push((i, value));
+            if value > legaia_engine_system::gamepad::BUTTON_PRESS_THRESHOLD {
+                out.phys |= 1 << i;
+            }
+            if swallow & (1 << i) == 0 {
+                buttons.push((i, value));
+            }
         }
         // gilrs' stick Y is up-positive; the layout reads the W3C
         // down-positive axis.
@@ -424,6 +461,46 @@ mod tests {
         assert_eq!(psx(gilrs::Button::West), Some(PadButton::Square));
         assert_eq!(psx(gilrs::Button::North), Some(PadButton::Triangle));
         assert_eq!(psx(gilrs::Button::Mode), None);
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+    use legaia_engine_system::input::PadButton;
+
+    /// Scripted physical buttons fold through the live table, a fresh press
+    /// is a capture, and a bind swallows the button that made it until it
+    /// is let go.
+    #[test]
+    fn the_host_folds_through_the_table_and_a_bind_swallows_the_held_button() {
+        let mut gp = GamepadHost::scripted();
+        gp.set_scripted_buttons(1 << 3, (0.0, 0.0));
+        let p = gp.poll();
+        assert_eq!(p.edges.held, PadButton::Triangle.mask());
+        assert_eq!(p.capture.map(|c| c.0), Some("Pad3"));
+        let mut m = GamepadMapping::default();
+        m.bind(ButtonSpace::Standard, 3, PadButton::Cross);
+        gp.set_mapping(&m);
+        gp.swallow_held();
+        let p = gp.poll();
+        assert_eq!(p.edges.held, 0, "the binding button is swallowed");
+        assert_eq!(p.capture, None, "and is no fresh capture");
+        gp.set_scripted_buttons(0, (0.0, 0.0));
+        let _ = gp.poll();
+        gp.set_scripted_buttons(1 << 3, (0.0, 0.0));
+        let p = gp.poll();
+        assert_eq!(
+            p.edges.pressed,
+            PadButton::Cross.mask(),
+            "pressed again: its new button"
+        );
+        // The dead zone reaches the stick.
+        gp.set_scripted_buttons(0, (0.4, 0.0));
+        gp.set_dead_zone(0.5);
+        assert_eq!(gp.poll().edges.held, 0);
+        gp.set_dead_zone(0.3);
+        assert_eq!(gp.poll().edges.held, PadButton::Right.mask());
     }
 }
 

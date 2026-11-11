@@ -269,6 +269,30 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The Options screen's Key Config state, for a page check:
+    /// `{"open":bool,"awaiting":bool,"cursor":n}` (`open` false when no Key
+    /// Config screen is up).
+    pub fn play_menu_key_config_json(&self) -> String {
+        let rebind = self.play_menu.as_ref().and_then(|m| match m.sub.as_ref() {
+            Some(PlaySub::Session(s)) => match s.as_ref() {
+                FieldMenuSubsession::Config(o) => o.key_rebind(),
+                _ => None,
+            },
+            _ => None,
+        });
+        match rebind {
+            Some(r) => format!(
+                "{{\"open\":true,\"awaiting\":{},\"cursor\":{}}}",
+                matches!(
+                    r.phase(),
+                    legaia_engine_menus::key_rebind::KeyRebindPhase::AwaitingKey { .. }
+                ),
+                r.cursor()
+            ),
+            None => "{\"open\":false,\"awaiting\":false,\"cursor\":0}".into(),
+        }
+    }
+
     /// Hand the menu one controller press: button `index` of a pad whose
     /// `Gamepad.mapping` is `"standard"` (`standard`) or not, `id` its
     /// `Gamepad.id`. The controller twin of [`Self::play_menu_key`]: only

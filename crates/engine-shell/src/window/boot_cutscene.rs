@@ -665,6 +665,13 @@ impl PlayWindowApp {
                     // key event resolves through, and the file is the same
                     // `legaia-input.toml` the CLI editor writes.
                     if let Some(mapping) = rebound_in_menu {
+                        // A controller bind's button is still down: keep it out
+                        // of the fold until it is let go (`swallow_held`).
+                        if mapping.gamepad != self.mapping.gamepad
+                            && let Some(gp) = self.gamepad.as_mut()
+                        {
+                            gp.swallow_held();
+                        }
                         self.mapping = mapping;
                         self.persist_bindings();
                     }

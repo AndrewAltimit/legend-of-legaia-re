@@ -1509,6 +1509,10 @@ impl LauncherApp {
                     done.push_str(&format!(" The button that was there moved to {old}."));
                 }
                 self.save_bindings(done);
+                // The button that bound is still down (`swallow_held`).
+                if let Some(pad) = self.pad.as_mut() {
+                    pad.swallow_held();
+                }
             }
         }
     }

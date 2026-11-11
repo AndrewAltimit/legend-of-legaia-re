@@ -49,6 +49,11 @@
    * LegaiaMinigames or the wasm module namespace - all three export the same
    * two calls. Idempotent unless `force` is set. */
   function adoptPadBindings(src, force) {
+    /* The controller fold's sources follow the newest holder even when the
+     * table is already adopted: the title loop adopts the module namespace,
+     * the runtime that arrives later is the one with the dead zone and the
+     * Key Config capture. */
+    adoptPadSources(src);
     if (PAD && !force) return PAD;
     let table = null, buttons = null;
     try {
@@ -112,9 +117,14 @@
    * Config capture) this page calls: the runtime, or the module namespace. */
   let FOLD_SRC = null;
   let CAPTURE_SRC = null;
+  function adoptPadSources(src) {
+    if (!src) return;
+    if (typeof src.play_menu_pad_button === 'function') CAPTURE_SRC = src;
+    /* A runtime outranks the module namespace: it also serves the dead zone. */
+    if (typeof src.gamepad_fold === 'function'
+        && (!FOLD_SRC || typeof src.stick_dead_zone === 'function')) FOLD_SRC = src;
+  }
   function adoptGamepadLayout(src) {
-    if (src && typeof src.gamepad_fold === 'function') FOLD_SRC = src;
-    if (src && typeof src.play_menu_pad_button === 'function') CAPTURE_SRC = src;
     let layout = null;
     try {
       if (src && typeof src.gamepad_layout_json === 'function') {
@@ -186,6 +196,13 @@
         const vals = gp.buttons.map((b) => (b.pressed ? 1 : (b.value || 0)));
         const held = new Set();
         vals.forEach((v, i) => { if (v > 0.5) held.add(i); });
+        /* A button held through a rebind stays out until let go
+         * (`swallowHeldPads`). */
+        if (st.swallow) {
+          for (const i of Array.from(st.swallow)) {
+            if (held.has(i)) vals[i] = 0; else st.swallow.delete(i);
+          }
+        }
         for (const i of held) {
           if (!st.held.has(i)) captures.push({ standard: st.standard, index: i, id: gp.id });
         }
@@ -231,6 +248,14 @@
     for (const name of gamepadHeld) if (!now.has(name)) released.push(name);
     gamepadHeld = now;
     return { now, pressed, released };
+  }
+  /* A rebind just landed: every controller button held now stays out of
+   * the fold until it is let go. The button that made a Key Config bind is
+   * still down, and through the new table it is another PSX button - read
+   * as a fresh press of it, a bind onto Cross re-opened the row's wait
+   * (the native window's `GamepadHost::swallow_held`). */
+  function swallowHeldPads() {
+    for (const st of padState.values()) st.swallow = new Set(st.held);
   }
   /* Hand this poll's controller presses to Key Config
    * (`play_menu_pad_button`, which only a waiting rebind row consumes). */
@@ -379,6 +404,7 @@
     padRev = rev;
     if (first) return false;       /* the load-time read is not a rebind */
     adoptPadBindings(src, true);
+    swallowHeldPads();
     return true;
   };
   window.legaiaPadTable = () => PAD;
