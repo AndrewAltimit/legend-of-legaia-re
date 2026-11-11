@@ -1063,6 +1063,11 @@ impl World {
                     let a = &mut self.actors[s];
                     if a.battle.facing_angle == 0 {
                         a.move_state.world_z = stand(a.move_state.world_x);
+                        // ... and pins its pose: node cursor `+0x68 = 0x10`
+                        // every pass (`0x801F8418`, `0x801F8474`).
+                        if let Some(p) = a.battle_animation.as_mut() {
+                            p.seek_sixteenths(0x10);
+                        }
                     }
                 }
             }
