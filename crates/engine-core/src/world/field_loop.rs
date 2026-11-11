@@ -673,6 +673,7 @@ impl World {
             a.battle_reaction = None;
             a.battle_reaction_entry = None;
             a.battle_reaction_next = None;
+            a.battle_reaction_stage = None;
             a.battle_pose = None;
             // Party members are not monsters - clear any id left from a
             // previous battle that placed an enemy in this slot.

@@ -142,7 +142,13 @@ fn an_absorbing_kill_flinches_a_monster_without_a_get_up() {
     seat_reaction_clips(&mut w, false);
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
     assert_eq!(w.battle_ctx.absorbed_seru, 1, "Seru 1 staged");
-    assert_eq!(w.actors[1].battle_reaction_entry, Some(1), "flinch");
+    // Staged for the defender's next node tick on retail's cadence.
+    let staged = w.actors[1].battle_reaction_stage.map(|(e, _)| e);
+    assert_eq!(
+        w.actors[1].battle_reaction_entry.or(staged),
+        Some(1),
+        "flinch"
+    );
 }
 
 /// The War God Icon carry (apply mode `0xFF`) branches from `0x801EE12C`

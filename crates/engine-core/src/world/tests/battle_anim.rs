@@ -216,7 +216,13 @@ fn a_reaction_ends_on_the_pass_its_cursor_crosses_the_end() {
     world.mode = SceneMode::Battle;
     world.toggles.battle_sm_frame_cadence = true;
     world.queue_battle_reaction(0, true);
+    // The primitive only stages; the seat's next node tick commits.
+    assert_eq!(world.actors[0].battle_reaction_stage, Some((2, 5)));
+    assert_eq!(world.actors[0].battle_reaction, None);
+    world.battle.anim_pass_vsyncs = 1;
+    world.tick_battle_anim_pass();
     assert_eq!(world.actors[0].battle_reaction, Some(2));
+    assert_eq!(world.actors[0].battle_reaction_stage, None);
     world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
     world.battle.anim_pass_vsyncs = 2;
     world.tick_battle_anim_pass();
@@ -225,6 +231,47 @@ fn a_reaction_ends_on_the_pass_its_cursor_crosses_the_end() {
         world.actors[0].battle_pose,
         Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
     );
+}
+
+/// A staged reaction over a clip whose entry carries the `+0x76` lock: the
+/// bit-0 cut refuses it, the clip plays on, and its natural end commits the
+/// staged byte - or idle, when the stage raised bit 2. The damage primitive
+/// raises bit 2 on the flinch arm only (`0x80042124..0x80042144`), so a
+/// flinch is dropped and a knockdown lands at the end.
+#[test]
+fn a_locked_clip_holds_a_staged_reaction_to_its_natural_end() {
+    for (with_getup, want) in [(false, None), (true, Some(4))] {
+        let mut world = reaction_test_world(with_getup);
+        world.mode = SceneMode::Battle;
+        world.toggles.battle_sm_frame_cadence = true;
+        let mut swing = pose_test_clip(0x0C, 4, 70);
+        swing.effect_script = vec![0; 0x80];
+        swing.effect_script[0] = 0x0C;
+        swing.effect_script[0x10] = 2;
+        swing.effect_script[0x76] = 1;
+        world.actors[0].battle_animation =
+            legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(&swing);
+        world.queue_battle_reaction(0, true);
+        assert!(world.actors[0].battle_reaction_stage.is_some());
+        world.battle.anim_pass_vsyncs = 1;
+        world.tick_battle_anim_pass();
+        assert_eq!(
+            world.actors[0].battle_reaction, None,
+            "the lock refuses the cut"
+        );
+        assert!(
+            world.actors[0].battle_reaction_stage.is_some(),
+            "still staged"
+        );
+        world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+        world.battle.anim_pass_frame = None;
+        world.tick_battle_anim_pass();
+        assert_eq!(
+            world.actors[0].battle_reaction_stage, None,
+            "the end takes it"
+        );
+        assert_eq!(world.actors[0].battle_reaction, want, "getup {with_getup}");
+    }
 }
 
 #[test]

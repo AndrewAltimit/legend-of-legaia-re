@@ -186,6 +186,167 @@ impl World {
         true
     }
 
+    /// Whether a staged reaction waits for the struck seat's own node tick
+    /// ([`Self::stage_battle_reaction_entry`]): in battle, on retail's
+    /// cadence, where the anim pass runs each seat's tick after the action
+    /// SM. Per vsync the anim walk runs ahead of the SM, and the reaction
+    /// installs at the hit as it always has.
+    pub(in crate::world) fn battle_reaction_waits_for_node_tick(&self) -> bool {
+        self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.toggles.battle_sm_frame_cadence
+    }
+
+    /// Stage reaction entry `entry` on actor `slot` the way the damage
+    /// primitive and the melee kernel do: `+0x1DA = entry` with `bits` ORed
+    /// into `+0x1DC` (`FUN_800402F4` `0x80042118..0x80042170`: `1`, and `4`
+    /// on the flinch arm; `FUN_801EC3E4`: `5`). Neither calls the commit; the
+    /// seat's own next node tick does, after its advance
+    /// ([`Self::commit_staged_battle_reaction`]). A later stage overwrites an
+    /// earlier one, as the store does. Returns `false` when the entry holds
+    /// no playable clip (nothing is staged).
+    ///
+    /// Off retail's cadence the commit runs here
+    /// ([`Self::battle_reaction_waits_for_node_tick`]).
+    // PORT: FUN_800402F4 (`0x80042118..0x80042170`, the reaction stage)
+    pub(in crate::world) fn stage_battle_reaction_entry(
+        &mut self,
+        slot: usize,
+        entry: u8,
+        bits: u8,
+    ) -> bool {
+        if !self.battle_reaction_waits_for_node_tick() {
+            return self.commit_battle_reaction_entry(slot, entry);
+        }
+        let playable = self
+            .actors
+            .get(slot)
+            .and_then(|a| a.battle_action_clips.as_ref())
+            .and_then(|c| c.get(usize::from(entry)))
+            .and_then(|c| c.as_ref())
+            .is_some_and(|c| {
+                legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(c).is_some()
+            });
+        if !playable {
+            return false;
+        }
+        self.actors[slot].battle_reaction_stage = Some((entry, bits));
+        true
+    }
+
+    /// Seat `i`'s own node tick deciding what becomes of the reaction staged
+    /// on it, after the tick's advance and the old clip's hit / effect / cue
+    /// walks (`FUN_80047430` `0x800478EC..0x80047B58`, through
+    /// [`legaia_engine_battle_vm::battle_action::tick_commits`]):
+    ///
+    /// * bit 0 cuts the playing clip now unless its entry carries the
+    ///   `+0x76` lock, and the cut first carries the body along its facing by
+    ///   the outgoing entry's `+0x0E`, pro-rated by the advanced cursor frame
+    ///   (`0x80047950..0x80047A28`);
+    /// * a locked clip plays on, and its natural end commits the staged
+    ///   entry - or idle, when bit 2 is up, which drops the reaction;
+    /// * otherwise the stage waits for the next tick.
+    ///
+    /// `natural_end` says the playing clip crossed its end on this tick's
+    /// advance (a looping clip's wrap included). `prev_juggle` is the
+    /// `+0x1F7` byte the last tick left, which the commit's cue-cursor seed
+    /// reads; the byte is then rewritten on the clip the commit installed,
+    /// as the tick writes it after its commits (`0x80047E28..0x80047E54`).
+    /// Returns whether a reaction was committed.
+    ///
+    /// PORT: FUN_80047430 (`0x800478EC..0x80047B58`, the commit sites, for a
+    /// staged reaction)
+    pub(in crate::world) fn commit_staged_battle_reaction(
+        &mut self,
+        i: usize,
+        natural_end: bool,
+        prev_juggle: bool,
+    ) -> bool {
+        let Some((entry, bits)) = self.actors.get(i).and_then(|a| a.battle_reaction_stage) else {
+            return false;
+        };
+        let new_frames = self
+            .actors
+            .get(i)
+            .and_then(|a| a.battle_action_clips.as_ref())
+            .and_then(|c| c.get(usize::from(entry)))
+            .and_then(|c| c.as_ref())
+            .map_or(0, |c| c.frame_count.min(255) as u8);
+        // What the playing clip gives the commit sites: its event list and
+        // lock, its advanced cursor frame and frame count, and the cut's
+        // `+0x0E` step. A one-shot the engine holds past its natural end is
+        // one retail had already replaced at that end (`FUN_8004AD80` from
+        // `0x80047B54`), and the clip it committed is what this cut would
+        // read: an unlocked entry with nothing left to carry.
+        let playing = self.actors[i].battle_animation.as_ref().map(|p| {
+            let (frames, lock) = p
+                .hit_source()
+                .map_or(([0; 4], 0), |s| (s.event_frames, s.event_lock));
+            let count = p.frame_count().min(255) as u8;
+            let frame = p.current_frame();
+            let held = p.finished() && !natural_end;
+            // The natural-end test reads the cursor against the frame
+            // count, where the player holds a finished one-shot on its last
+            // keyframe and wraps a looping clip: this tick's crossing is the
+            // natural end either way.
+            let tested = if natural_end { i16::from(count) } else { frame };
+            if held {
+                ([0; 4], 0, 0, 0, count, 0)
+            } else {
+                (frames, lock, frame, tested, count, p.end_root_step())
+            }
+        });
+        let Some((frames, lock, frame, tested, count, step)) = playing else {
+            self.actors[i].battle_reaction_stage = None;
+            return self.commit_staged_reaction_now(i, entry, prev_juggle);
+        };
+        let out = legaia_engine_battle_vm::battle_action::tick_commits(
+            bits,
+            entry,
+            &frames,
+            None,
+            lock,
+            tested,
+            count,
+            (0, new_frames),
+        );
+        if out.cut.is_some() {
+            self.actors[i].battle_reaction_stage = None;
+            // The cut's displacement, along the heading the stage turned the
+            // body onto (`0x80047950..0x80047A28`; `+0x228` taken as clear).
+            if step != 0 {
+                let a = &mut self.actors[i];
+                let (sin, cos) = legaia_engine_system::trig::trig12(a.battle.facing_angle);
+                let (dx, dz) = legaia_engine_battle_vm::battle_action::motion::event_cut_root_step(
+                    sin, cos, step, frame, count,
+                );
+                a.move_state.world_x = a.move_state.world_x.wrapping_add(dx as i16);
+                a.move_state.world_z = a.move_state.world_z.wrapping_add(dz as i16);
+            }
+            return self.commit_staged_reaction_now(i, entry, prev_juggle);
+        }
+        match out.natural_end {
+            Some((_, staged)) => {
+                self.actors[i].battle_reaction_stage = None;
+                staged != 0 && self.commit_staged_reaction_now(i, staged, prev_juggle)
+            }
+            None => false,
+        }
+    }
+
+    /// The commit of a staged reaction inside the seat's tick, with the
+    /// `+0x1F7` byte as the commit reads it and as the tick rewrites it.
+    fn commit_staged_reaction_now(&mut self, i: usize, entry: u8, prev_juggle: bool) -> bool {
+        let now = self.actors[i].battle_juggle_window;
+        self.actors[i].battle_juggle_window = prev_juggle;
+        let committed = self.commit_battle_reaction_entry(i, entry);
+        self.actors[i].battle_juggle_window = if committed {
+            Self::juggle_window_open(&self.actors[i])
+        } else {
+            now
+        };
+        committed
+    }
+
     /// Actor `slot`'s reaction clip reached its natural end: the
     /// `FUN_80047430` natural-end path followed by the next commit's two
     /// reaction-relevant arms (the monster-death arm and the tag ladder's

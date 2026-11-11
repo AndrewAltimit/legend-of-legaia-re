@@ -1491,8 +1491,11 @@ his live pair steps `(-39, -134)` three times. Theeder's walk, which measures hi
 body pair, follows him down the stage, and the strike camera's yaw climbs with
 it. Without the cut the block's pose snapped back over the guard's feet, the
 range law read Theeder in reach, and the back-off and reach snap walked him back
-each swing. Port: `World::commit_melee_reaction`, which installs the reaction
-on the hit itself and so takes the cut on the frame one advance ahead
+each swing. Port: `World::commit_melee_reaction` stages the reaction
+(`Actor::battle_reaction_stage`) and turns the defender; the defender's own
+slice of the anim walk makes the cut after its advance
+(`World::commit_staged_battle_reaction`). Off retail's frame cadence the
+reaction installs on the hit and takes the cut one advance ahead
 (`MonsterAnimPlayer::frame_after_vsyncs`).
 
 **The reaction slides from the defender's own next tick.** The root-motion term

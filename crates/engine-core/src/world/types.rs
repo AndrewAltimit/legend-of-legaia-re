@@ -640,6 +640,17 @@ pub struct Actor {
     /// reaction's natural end (`world::battle::clip_ladder`).
     pub battle_reaction_next: Option<u8>,
 
+    /// A reaction a hit **staged** on this seat and its own anim tick has not
+    /// committed yet: `(entry, +0x1DC bits)`, the `+0x1DA` store with the
+    /// bits the stager ORs in (`1` commit-now, `4` idle at the end). The
+    /// damage primitive (`FUN_800402F4` `0x80042118..0x80042170`) and the
+    /// melee kernel (`FUN_801EC3E4` `0x801EEC34..0x801EECBC`) only stage;
+    /// the seat's next node tick (`FUN_80047430` `0x800478EC..0x80047B58`)
+    /// commits it after that tick's advance
+    /// ([`crate::world::World::commit_staged_battle_reaction`]). Only on
+    /// retail's battle cadence; per vsync the reaction installs at the hit.
+    pub battle_reaction_stage: Option<(u8, u8)>,
+
     /// The `+0x1F7` **juggle window** byte as the anim tick last wrote it
     /// (`FUN_80047430` `0x80047E28..0x80047E54`, once per tick for every
     /// node, after the cursor advance): up while the playing clip is before

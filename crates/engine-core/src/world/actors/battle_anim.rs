@@ -423,6 +423,7 @@ impl World {
                 player.set_tween_target(tween);
             }
             let mut looped_recommit = false;
+            let mut slice_natural_end = false;
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
                 // Retail rate law (`FUN_80047430`): the cursor advance
@@ -496,6 +497,7 @@ impl World {
                 // as clear).
                 // PORT: FUN_80047430 (`0x80047A68..0x80047B2C`)
                 let natural_end = player.take_natural_end();
+                slice_natural_end = natural_end;
                 if natural_end {
                     let step = player.end_root_step();
                     let latched = actor
@@ -686,6 +688,7 @@ impl World {
             // `+0x1F7`, written for every node right after its cursor
             // advance (`0x80047E28..0x80047E54`).
             // PORT: FUN_80047430 (`0x80047E1C..0x80047E54`, the juggle window)
+            let prev_juggle = self.actors[i].battle_juggle_window;
             self.actors[i].battle_juggle_window = Self::juggle_window_open(&self.actors[i]);
             // Per-frame effect-script walk for the committed record - the
             // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
@@ -711,6 +714,12 @@ impl World {
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
                 self.step_actor_anim_cues(i, frame);
+            }
+            // A reaction a hit staged on this seat commits here, behind the
+            // advance and the old clip's walks
+            // (`World::commit_staged_battle_reaction`).
+            if commit_after {
+                self.commit_staged_battle_reaction(i, slice_natural_end, prev_juggle);
             }
             self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
         }
@@ -1441,6 +1450,9 @@ impl World {
         a.battle_reaction = None;
         a.battle_reaction_entry = None;
         a.battle_reaction_next = None;
+        // A reaction staged ahead of this commit shared its `+0x1DA` with
+        // the byte this commit installs, and this one was written last.
+        a.battle_reaction_stage = None;
         // The walk (action tag 1) loops until the SM stages something else
         // (AttackShortStep clears it to 0 on arrival). Keyed on the clip's
         // own tag, not its id: a party file's walk is entry 1, but a
@@ -1519,9 +1531,18 @@ impl World {
     // PORT: FUN_800402F4 (damage-arm reaction staging: `+0x1DA = +0x1EF` for
     // a surviving no-get-up target, else `+0x1DA = +0x1F1`; the `+0x1EF..
     // +0x1F3` tag->entry map is built by FUN_80054CB0 / FUN_80053CB8).
+    ///
+    /// The primitive stages and never commits: `+0x1DC |= 1` on both arms,
+    /// and `|= 4` (idle at the end) on the flinch arm
+    /// (`0x80042124..0x80042170`); the seat's next node tick commits it
+    /// ([`Self::stage_battle_reaction_entry`]).
     pub fn queue_battle_reaction(&mut self, slot: usize, survives: bool) {
         if let Some(entry) = self.battle_reaction_entry_for(slot, survives) {
-            self.commit_battle_reaction_entry(slot, entry);
+            let flinch = self
+                .battle_reaction_map(slot)
+                .is_some_and(|m| m[0] == entry && m[2] != entry);
+            let bits = if flinch { 5 } else { 1 };
+            self.stage_battle_reaction_entry(slot, entry, bits);
         }
     }
 

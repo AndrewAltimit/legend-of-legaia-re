@@ -991,6 +991,17 @@ impl World {
         {
             return;
         }
+        // On retail's cadence the kernel only stages: `+0x1DA = s7`,
+        // `+0x1DC |= 5`, and the turn onto the attacker. The defender's own
+        // next node tick makes the cut (its lock, its `+0x0E` carry) after
+        // its advance (`World::commit_staged_battle_reaction`), which is a
+        // pass on for a seat the anim walk has already passed.
+        // PORT: FUN_801EC3E4 (`0x801EEC34..0x801EEC8C`, the defender's stage)
+        if self.battle_reaction_waits_for_node_tick() {
+            self.stage_battle_reaction_entry(target_i, entry, 5);
+            self.turn_defender_to_attacker(target_i, attacker_i);
+            return;
+        }
         // The stage ORs `5` into the defender's `+0x1DC` and its next tick
         // takes bit 0 to the cut, which an entry carrying the `+0x76` lock
         // refuses (`lbu v0,0x76(s3); bne v0,zero,0x80047a48` at
