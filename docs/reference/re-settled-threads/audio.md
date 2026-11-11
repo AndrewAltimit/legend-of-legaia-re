@@ -504,7 +504,13 @@ A PCSX-Redux Theeder cast (spell `0x82` from `party_basic_attack_vs_gobu_gobu`,
 selector's seeks (`0x8003EB78` then `0x8004DBA8`, vsyncs `278` and `428`), the
 module's arm-1 seek (`0x801F6C5C`, `433`), the voice (`0x8003D65C`, `553`), and the
 callback's stop (`0x8003EE2C`, `1386`): `833` vsyncs for the clip's `dur` of `807`,
-with no store between. Grade `disassembly` + `capture`. Port:
+with no store between. Mednafen shows the applier's hold itself: stepped frame by frame
+from `theeder_summon_mid_cast` (`drive-timeline.py`), the word goes to `2` at `+229` and the cast
+reaches `0x51` at `+1001` with the voice still sounding; the next turn's side-band stage stands at
+`1` from there until the word drops at `+1060`, `831` vsyncs after it rose, and only then steps
+(`2` a vsync later, through `6`). Both emulators hold the word about `25` vsyncs past the clip's
+`dur`; with one clip measured, whether that is a constant start cost or proportional is not
+separated, and the port holds `dur`. Grade `disassembly` + `capture`. Port:
 `AudioState::battle_xa_busy_frames` (the word, `dur` vsyncs), the applier hold in
 `World::tick_sideband_token`.
 
