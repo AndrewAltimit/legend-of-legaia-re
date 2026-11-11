@@ -357,12 +357,11 @@ fn run_native(m: &mut Machine<'_>, scene: &SceneState, frag: &Fragment) -> Out {
     // width; these fragments run the console's rule, where it never decides.
     m.gradients
         .insert("prim_color".into(), (vec![0.0; 3], vec![0.0; 3]));
-    // The renderer's per-ABR blend pipelines pick the entry by the mode's
-    // foreground pre-scale (`psx_blend::src_shader_scale`).
+    // The renderer's per-ABR blend pipelines pick the mode's own entry
+    // (`psx_blend::blend_entry`).
     let entry = match frag.blend {
         None => "fs_main",
-        Some(abr) if crate::psx_blend::src_shader_scale(abr) == 1.0 => "fs_blend",
-        Some(_) => "fs_blend_quarter",
+        Some(abr) => crate::psx_blend::blend_entry(abr),
     };
     let f = m.function(entry);
     let ty = f.arguments[0].ty;
@@ -746,18 +745,24 @@ fn native_composite(abr: u8, f: f32, b: f32) -> f32 {
     r.clamp(0.0, 1.0)
 }
 
-/// The play page's `_setSemiBlend(mode)` (webgl-tmd-assembled-scene.js),
+/// The play page's `_setSemiBlend(mode, modeLoc)` (webgl-tmd.js),
 /// whitespace collapsed. [`page_composite`] is this body's arithmetic; the
 /// text is pinned so an edit to the page's blend table fails here rather
 /// than going unevaluated.
-const PAGE_SEMI_BLEND_BODY: &str = "const gl = this.gl; \
+const PAGE_SEMI_BLEND_BODY: &str = "const gl = this.gl; const psx = !!this.psxMode; \
      gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD); \
-     if (mode === 0) { gl.blendColor(0, 0, 0, 0.5); \
+     if (psx && mode === 0) { gl.blendColor(0, 0, 0, 0.4985); \
+     gl.blendFunc(gl.ONE, gl.CONSTANT_ALPHA); } \
+     else if (psx) { gl.blendFunc(gl.ONE, gl.ONE); } \
+     else if (mode === 0) { gl.blendColor(0, 0, 0, 0.5); \
      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA); } \
      else if (mode === 3) { gl.blendColor(0, 0, 0, 0.25); \
      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE); } \
-     else { gl.blendFunc(gl.ONE, gl.ONE); }";
+     else { gl.blendFunc(gl.ONE, gl.ONE); } \
+     if (modeLoc) gl.uniform1i(modeLoc, psx ? mode : -1);";
 
+/// The page's blend state off PSX mode, the arm the grid's fragments run
+/// (their `psx_params.z` is `0`).
 fn page_composite(abr: u8, f: f32, b: f32) -> f32 {
     let r = match abr {
         0 => 0.5 * f + (1.0 - 0.5) * b,
@@ -772,7 +777,9 @@ fn page_composite(abr: u8, f: f32, b: f32) -> f32 {
 fn the_page_blend_table_is_the_one_evaluated() {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../site/js/webgl-tmd.js");
     let js = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-    let start = js.find("_setSemiBlend(mode) {").expect("_setSemiBlend");
+    let start = js
+        .find("_setSemiBlend(mode, modeLoc) {")
+        .expect("_setSemiBlend");
     let open = start + js[start..].find('{').unwrap();
     let mut depth = 0;
     let mut end = open;

@@ -794,6 +794,10 @@ uniform int u_use_flat_colors;
  * bit is set: STP=0 texels draw opaque even inside a semi-transparent prim.
  * Untextured (flat-colour) prims have no STP; the whole prim blends. */
 uniform int u_semi_pass;
+/* The blend pass's ABR mode when PSX mode runs the GPU's 5-bit arithmetic
+ * (TmdRenderer._setSemiBlend stages it with that mode's blend state), -1
+ * otherwise: the pass then writes F and the blend state its factor. */
+uniform int u_semi_mode;
 /* 1 = the draw's colour word forces ABE on every prim (FUN_80043390's
  * primitive-flag byte, field-VM 4C D6); the blend mode is the pass's. */
 uniform int u_force_semi;
@@ -1011,6 +1015,32 @@ vec3 psx_dither(vec3 rgb) {
  * where a full-precision sum would wash the frame. */
 vec3 psx_blend_foreground(vec3 rgb) {
   return floor(clamp(rgb, 0.0, 1.0) * 31.0 + 0.001) / 31.0;
+}
+
+/* The foreground term of the GPU's 5-bit semi-transparency result for a
+ * 5-bit foreground: twin of engine-render's psx_blend_term_gpu (see
+ * psx_blend, "The GPU's 5-bit arithmetic"). Mode 0 writes half a bin per
+ * step over the background's 0.4985 * B, modes 1 / 2 a bin per step, mode
+ * 3 a bin per F >> 2. */
+vec3 psx_blend_term_gpu(vec3 f5, int mode) {
+  vec3 f = clamp(f5, 0.0, 31.0);
+  if (mode == 0) return f * (4.0 / 255.0);
+  if (mode == 3) return floor(f / 4.0) * (8.0 / 255.0);
+  return f * (8.0 / 255.0);
+}
+
+/* A colour's 5-bit channel as the framebuffer holds it (psx_bin5). */
+vec3 psx_bin5(vec3 rgb) {
+  return min(floor(clamp(rgb, 0.0, 1.0) * 255.0 / 8.0 + 0.001), vec3(31.0));
+}
+
+/* What a fragment of the blend pass writes: in PSX mode its mode's 5-bit
+ * term from the dithered colour, otherwise the colour itself. */
+vec3 semi_out(vec3 rgb) {
+  if (u_semi_pass == 1 && u_semi_mode >= 0 && u_psx.z >= 0.5) {
+    return psx_blend_term_gpu(psx_bin5(rgb), u_semi_mode);
+  }
+  return rgb;
 }
 
 /* Enhanced-lighting tunables, from the JS constants above the shader. */
@@ -1398,7 +1428,7 @@ void main() {
     flat_base = dyn_light(flat_base, vec3(0.0), geo_n, (tsb & 0x2000u) != 0u);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
-      emit(vec4(psx_dither(flat_lit * u_palette.rgb), 1.0));
+      emit(vec4(semi_out(psx_dither(flat_lit * u_palette.rgb)), 1.0));
       return;
     }
     flat_lit = grade_near(flat_lit);
@@ -1414,7 +1444,7 @@ void main() {
       vec3 inner = floor((f - c) * 16.0 * w / 4096.0);
       flat_cued = clamp(floor((c * 16.0 + inner) / 16.0) / 255.0, 0.0, 1.0);
     }
-    emit(vec4(psx_dither(flat_cued), 1.0));
+    emit(vec4(semi_out(psx_dither(flat_cued)), 1.0));
     return;
   }
 
@@ -1559,7 +1589,7 @@ void main() {
   /* 15-bit dither on the opaque pass only: the textured blend pass's
    * foreground is a raw texel, which retail never dithers, read by the
    * blend equation as a truncated 5-bit channel. */
-  emit(vec4(u_semi_pass == 1 ? psx_blend_foreground(lit) : psx_dither(lit), 1.0));
+  emit(vec4(u_semi_pass == 1 ? semi_out(psx_blend_foreground(lit)) : psx_dither(lit), 1.0));
 }
 `;
 

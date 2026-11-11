@@ -1017,7 +1017,7 @@ pub fn flat_gpu_color(c: [u8; 4]) -> [f32; 4] {
 /// (`(t5 * c8) >> 7`, saturated at `31`). A neutral `0x80` colour is exact;
 /// a dim one rounds every faint texel to zero. Both hosts' screen-primitive
 /// shaders run this per channel on a textured quad (`psx_texture_blend` in
-/// `engine-render`'s `SCREEN_OVERLAY_SHADER_SRC`, `psxTextureBlend` in the
+/// `engine-render`'s `screen_overlay_shader_src`, `psxTextureBlend` in the
 /// play page's `FS_SCREEN_PRIM`).
 ///
 /// It is what keeps retail's overworld fog sparse: the sheets are additive

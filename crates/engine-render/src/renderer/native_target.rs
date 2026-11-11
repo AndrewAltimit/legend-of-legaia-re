@@ -323,7 +323,11 @@ impl Renderer {
                 timestamp_writes: None,
             });
             rp.set_viewport(x, y, w, h, 0.0, 1.0);
-            rp.set_pipeline(&self.pipeline);
+            rp.set_pipeline(if self.scanout_15bit() {
+                &self.scanout_pipeline
+            } else {
+                &self.pipeline
+            });
             rp.set_bind_group(0, &native.blit_bg, &[]);
             rp.set_bind_group(1, &self.uniforms_bg, &[]);
             rp.draw(0..4, 0..1);

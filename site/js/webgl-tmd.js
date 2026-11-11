@@ -159,6 +159,7 @@ class TmdRenderer {
     this.locVram    = gl.getUniformLocation(this.program, 'u_vram');
     this.locNoDisc  = gl.getUniformLocation(this.program, 'u_no_discard');
     this.locSemiPass = gl.getUniformLocation(this.program, 'u_semi_pass');
+    this.locSemiMode = gl.getUniformLocation(this.program, 'u_semi_mode');
     this.locForceSemi = gl.getUniformLocation(this.program, 'u_force_semi');
     this.locFogEnable   = gl.getUniformLocation(this.program, 'u_fog_enable');
     this.locFogOrigin   = gl.getUniformLocation(this.program, 'u_fog_origin');
@@ -642,12 +643,24 @@ class TmdRenderer {
   /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,
    * F = fragment): 0 = 0.5B + 0.5F, 1 = B + F, 2 = B - F, 3 = B + 0.25F.
    * Constant-alpha factors carry the 0.5 / 0.25 weights, so no shader
-   * pre-scale is needed. Same table as engine-render's psx_blend. Shared
-   * by the single-mesh two-pass draw and `renderAssembled`'s blend pass. */
-  _setSemiBlend(mode) {
+   * pre-scale is needed. In PSX mode the blend pass writes its mode's term
+   * of the GPU's 5-bit result instead (engine-render's psx_blend, "The
+   * GPU's 5-bit arithmetic"): the foreground adds at one and mode 0's
+   * background takes 0.4985. `modeLoc` is the bound program's u_semi_mode,
+   * which learns the mode (-1 off PSX mode); a caller drawing through
+   * another program passes its own. Same table as engine-render's
+   * psx_blend. Shared by the single-mesh two-pass draw, `renderAssembled`'s
+   * blend pass and the screen-primitive pass. */
+  _setSemiBlend(mode, modeLoc) {
     const gl = this.gl;
+    const psx = !!this.psxMode;
     gl.blendEquation(mode === 2 ? gl.FUNC_REVERSE_SUBTRACT : gl.FUNC_ADD);
-    if (mode === 0) {
+    if (psx && mode === 0) {
+      gl.blendColor(0, 0, 0, 0.4985);
+      gl.blendFunc(gl.ONE, gl.CONSTANT_ALPHA);
+    } else if (psx) {
+      gl.blendFunc(gl.ONE, gl.ONE);
+    } else if (mode === 0) {
       gl.blendColor(0, 0, 0, 0.5);
       gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
     } else if (mode === 3) {
@@ -656,6 +669,7 @@ class TmdRenderer {
     } else {
       gl.blendFunc(gl.ONE, gl.ONE);
     }
+    if (modeLoc) gl.uniform1i(modeLoc, psx ? mode : -1);
   }
 
   /* Replace just the position buffer in-place (DYNAMIC_DRAW). For animation:
@@ -788,7 +802,7 @@ class TmdRenderer {
         gl.enable(gl.BLEND);
         gl.depthMask(false);
         for (const r of this.singleSemiRanges) {
-          this._setSemiBlend(r.mode);
+          this._setSemiBlend(r.mode, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
         }
         gl.blendEquation(gl.FUNC_ADD);

@@ -87,7 +87,7 @@ fn psx_shaders_parse_and_validate() {
         ("glow", GLOW_SHADER_SRC.to_string()),
         // Screen-space 2D overlay pass (POLY_FT4 + flat quads). No dither
         // helper - it samples raw VRAM texels and modulates in NDC.
-        ("screen_overlay", SCREEN_OVERLAY_SHADER_SRC.to_string()),
+        ("screen_overlay", screen_overlay_shader_src()),
     ];
     for (name, src) in sources {
         let module = naga::front::wgsl::parse_str(&src)
@@ -106,7 +106,13 @@ fn psx_shaders_parse_and_validate() {
 /// entry points the semi-transparency pipelines compile against.
 #[test]
 fn vram_shader_has_blend_entry_points() {
-    for entry in ["fs_main", "fs_blend", "fs_blend_quarter"] {
+    for entry in [
+        "fs_main",
+        "fs_blend_half",
+        "fs_blend",
+        "fs_blend_sub",
+        "fs_blend_quarter",
+    ] {
         assert!(
             VRAM_MESH_SHADER_SRC.contains(&format!("fn {entry}(")),
             "vram shader missing entry point {entry}"
@@ -178,8 +184,8 @@ fn psx_blend_abr_mode_extracts_tsb_bits_5_6() {
 }
 
 #[test]
-fn psx_blend_src_scale_only_quarters_mode_3() {
-    assert_eq!(psx_blend::src_shader_scale(0), 1.0);
+fn psx_blend_src_scale_halves_mode_0_and_quarters_mode_3() {
+    assert_eq!(psx_blend::src_shader_scale(0), 0.5);
     assert_eq!(psx_blend::src_shader_scale(1), 1.0);
     assert_eq!(psx_blend::src_shader_scale(2), 1.0);
     assert_eq!(psx_blend::src_shader_scale(3), 0.25);
@@ -670,4 +676,117 @@ fn a_forced_draw_blends_its_whole_range_in_one_run() {
         runs.push((head.draw_index, head.mode, start, count));
     });
     assert_eq!(runs, vec![(2, 3, 0, 36)]);
+}
+
+/// One channel through [`psx_blend::blend_state`] on an 8-bit UNORM target in
+/// PSX mode: the blender's float sum rounded to the nearest level, the way
+/// the target stores it. `term` is the shader's foreground term in levels.
+fn psx_target_blend(mode: u8, b8: u8, term: f32) -> u8 {
+    let c = psx_blend::blend_state(mode).color;
+    let k = psx_blend::MODE0_PSX_BLEND_CONSTANT as f32;
+    let fac = |x: wgpu::BlendFactor| match x {
+        wgpu::BlendFactor::One => 1.0,
+        wgpu::BlendFactor::Constant => k,
+        other => panic!("unexpected blend factor {other:?}"),
+    };
+    let (b, f) = (f32::from(b8) / 255.0, term / 255.0);
+    let v = match c.operation {
+        wgpu::BlendOperation::Add => b * fac(c.dst_factor) + f * fac(c.src_factor),
+        wgpu::BlendOperation::ReverseSubtract => b * fac(c.dst_factor) - f * fac(c.src_factor),
+        other => panic!("unexpected blend op {other:?}"),
+    };
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+/// Every 8-bit level a PSX-mode framebuffer channel can hold for a 5-bit
+/// value `b5`: the dither's `(b5 << 3) | (b5 >> 2)` and every low-bits
+/// remainder a blend leaves, `8 * b5 ..= 8 * b5 + 7`.
+fn bin_levels(b5: u8) -> impl Iterator<Item = u8> {
+    (0u8..8).map(move |x| b5 * 8 + x)
+}
+
+/// The console rule: each mode's term over every background level of every
+/// 5-bit bin lands in the bin of the GPU's own 5-bit result, and stays a
+/// level the next blend can read as that bin.
+#[test]
+fn psx_mode_blend_terms_land_the_gpus_5_bit_result() {
+    for mode in 0u8..4 {
+        for b5 in 0u8..32 {
+            for b8 in bin_levels(b5) {
+                for f5 in 0u8..32 {
+                    let out = psx_target_blend(mode, b8, psx_blend::gpu_term(mode, f5));
+                    let want = psx_blend::gpu_blend5(mode, b5, f5);
+                    assert_eq!(
+                        out >> 3,
+                        want,
+                        "mode {mode} B={b8} (b5 {b5}) F5={f5}: target holds {out}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The PCSX-Redux rule: the flat term halves (mode 0) or quarters (mode 3)
+/// each side before the sum, and the dithered term reproduces that
+/// emulator's 8-bit sum and its round-up dither, at every offset.
+#[test]
+fn psx_mode_blend_terms_land_the_pcsx_redux_result() {
+    for mode in 0u8..4 {
+        for b5 in 0u8..32 {
+            for b8 in bin_levels(b5) {
+                for f5 in 0u8..32 {
+                    let out = psx_target_blend(mode, b8, psx_blend::pcsx_flat_term(mode, f5));
+                    assert_eq!(
+                        out >> 3,
+                        psx_blend::pcsx_blend5(mode, b5, f5),
+                        "flat mode {mode} B={b8} F5={f5}"
+                    );
+                }
+                for m8 in 0u8..=255 {
+                    for d in 0u8..8 {
+                        let term = psx_blend::pcsx_dithered_term(mode, m8, d);
+                        let out = psx_target_blend(mode, b8, term);
+                        assert_eq!(
+                            out >> 3,
+                            psx_blend::pcsx_dithered5(mode, b5, m8, d),
+                            "dithered mode {mode} B={b8} m8={m8} d={d}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The dance hall's drop shadow (renderer.md, the field drop shadow): grey
+/// `3` over a floor at `3`, ABR `0`. The PCSX-Redux software GPU halves each
+/// term (`2`), the console averages (`3`).
+#[test]
+fn the_drop_shadow_blob_darkens_the_floor_by_the_emulators_rule() {
+    assert_eq!(psx_blend::pcsx_blend5(0, 3, 3), 2);
+    assert_eq!(psx_blend::gpu_blend5(0, 3, 3), 3);
+    // Grey 3 as the dither writes it, `(3 << 3) | (3 >> 2)`.
+    let floor = 24;
+    assert_eq!(
+        psx_target_blend(0, floor, psx_blend::pcsx_flat_term(0, 3)) >> 3,
+        2
+    );
+    assert_eq!(
+        psx_target_blend(0, floor, psx_blend::gpu_term(0, 3)) >> 3,
+        3
+    );
+}
+
+/// The 15-bit scanout reads every level of a 5-bit bin as the dither's
+/// expansion of that bin, so a blended channel and an opaque one holding the
+/// same 5-bit value present alike.
+#[test]
+fn the_15_bit_scanout_reads_a_bin_as_its_expansion() {
+    for b5 in 0u8..32 {
+        let e8 = (b5 << 3) | (b5 >> 2);
+        for v in bin_levels(b5) {
+            assert_eq!(psx_blend::scanout15(v), e8);
+        }
+    }
 }

@@ -71,6 +71,8 @@ pub struct Renderer {
     pub(super) view_format: wgpu::TextureFormat,
     /// Quad pipeline (Phase 1 TIM viewer).
     pub(super) pipeline: wgpu::RenderPipeline,
+    /// The blit's 15-bit scanout twin (`fs_scanout15`).
+    pub(super) scanout_pipeline: wgpu::RenderPipeline,
     pub(super) sampler: wgpu::Sampler,
     pub(super) bind_group_layout: wgpu::BindGroupLayout,
     pub(super) uniforms_buf: wgpu::Buffer,
@@ -129,7 +131,7 @@ pub struct Renderer {
     pub(super) text_pipeline: [wgpu::RenderPipeline; 2],
     /// The text pipeline's quads through each PSX ABR equation, indexed by
     /// [`Self::ui_psx_tint`] then mode (`OverlayBlendSpan`).
-    pub(super) text_blend_pipelines: [[wgpu::RenderPipeline; 4]; 2],
+    pub(super) text_blend_pipelines: [[[wgpu::RenderPipeline; 4]; 3]; 2],
     /// Bind-group layout for the font-atlas texture binding (group 0 of
     /// [`Self::text_pipeline`]). Reused when uploading new atlases.
     pub(super) text_atlas_bgl: wgpu::BindGroupLayout,
@@ -435,6 +437,44 @@ impl Renderer {
                 // (`psx_dither`, `dither_on >= 1.5`).
                 PsxTexelRule::PcsxRedux => (3.0, dither * 2.0),
             },
+        }
+    }
+
+    /// The semi-transparency rule PSX mode's blend passes run
+    /// (`psx_blend`, "The GPU's 5-bit arithmetic"): `0` off PSX mode, `1`
+    /// the console's 5-bit arithmetic, `2` the PCSX-Redux software GPU's
+    /// (the [`PsxTexelRule::PcsxRedux`] instrument on the native target).
+    /// The mesh passes read the same rule off `psx_params.z`.
+    pub(super) fn psx_blend_rule(&self) -> usize {
+        match self.psx_snap_params().0 {
+            z if z > 2.5 => 2,
+            z if z >= 0.5 => 1,
+            _ => 0,
+        }
+    }
+
+    /// Whether the frame is read out as the 15-bit framebuffer PSX mode
+    /// models (`psx_blend::scanout15`): PSX mode on the native target with
+    /// none of the enhancement passes that lay a smooth term over that frame
+    /// (SSAO, bloom, the volumetric fog). The native present and the capture
+    /// both read it so.
+    pub(super) fn scanout_15bit(&self) -> bool {
+        self.psx_blend_rule() != 0
+            && self.native.is_some()
+            && !self.ssao_on.get()
+            && !self.bloom_on.get()
+            && !self.fog_volume_active.get()
+    }
+
+    /// The mode-0 blend constant every blend pass binds
+    /// ([`psx_blend::mode0_blend_constant`]).
+    pub(super) fn mode0_blend_color(&self) -> wgpu::Color {
+        let c = psx_blend::mode0_blend_constant(self.psx_blend_rule() != 0);
+        wgpu::Color {
+            r: c,
+            g: c,
+            b: c,
+            a: c,
         }
     }
 

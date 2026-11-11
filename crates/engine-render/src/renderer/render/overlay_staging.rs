@@ -191,7 +191,24 @@ impl Renderer {
         // fog sheet - reads its emulator's. The [`PCSX_TEXEL_NUDGE`] keeps an
         // exact texel boundary from rounding down through the host's
         // interpolation.
-        let snap = self.psx_snap_params().0;
+        let (snap, dither) = self.psx_snap_params();
+        // PSX mode's blend rule rides each vertex's flags (the overlay shader
+        // has no uniforms): bit 8 the GPU's 5-bit arithmetic, bit 9 the
+        // PCSX-Redux instrument's, bit 10 that emulator's dither
+        // (`blend_out` in the overlay shader).
+        let rule_bits = match self.psx_blend_rule() {
+            0 => 0,
+            1 => SCREEN_FLAG_PSX_BLEND,
+            _ if dither >= 1.5 => {
+                SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_PCSX_BLEND | SCREEN_FLAG_PCSX_DITHER
+            }
+            _ => SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_PCSX_BLEND,
+        };
+        if rule_bits != 0 {
+            for v in geo.vertices.iter_mut() {
+                v.flags |= rule_bits;
+            }
+        }
         if snap >= 1.5 {
             let (dx, dy) = (1.0 / w as f32, 1.0 / h as f32);
             let pcsx = snap >= 2.5;
@@ -334,16 +351,10 @@ impl Renderer {
             match abr {
                 None => rp.set_pipeline(&self.text_pipeline[usize::from(self.ui_psx_tint.get())]),
                 Some(mode) => {
-                    let c = psx_blend::MODE0_BLEND_CONSTANT;
-                    rp.set_blend_constant(wgpu::Color {
-                        r: c,
-                        g: c,
-                        b: c,
-                        a: c,
-                    });
+                    rp.set_blend_constant(self.mode0_blend_color());
                     rp.set_pipeline(
                         &self.text_blend_pipelines[usize::from(self.ui_psx_tint.get())]
-                            [mode as usize],
+                            [self.psx_blend_rule()][mode as usize],
                     );
                 }
             }
@@ -400,14 +411,8 @@ impl Renderer {
         if runs.is_empty() {
             return;
         }
-        // Mode-0 (`0.5*B + 0.5*F`) uses BlendFactor::Constant on both sides.
-        let c = psx_blend::MODE0_BLEND_CONSTANT;
-        rp.set_blend_constant(wgpu::Color {
-            r: c,
-            g: c,
-            b: c,
-            a: c,
-        });
+        // Mode 0's background factor (`psx_blend::blend_state`).
+        rp.set_blend_constant(self.mode0_blend_color());
         rp.set_bind_group(0, &vram.bind_group, &[]);
         let vbuf_borrow = self.screen_overlay_vbuf.borrow();
         let ibuf_borrow = self.screen_overlay_ibuf.borrow();
@@ -438,6 +443,14 @@ impl Renderer {
         }
     }
 }
+
+/// Screen-vertex flag bits the renderer adds at staging for its overlay
+/// shader's blend entries, clear of `legaia_render_kernels::screen_prim`'s
+/// own bits: PSX mode's 5-bit blend, the PCSX-Redux rule, that emulator's
+/// dither.
+const SCREEN_FLAG_PSX_BLEND: u32 = 0x100;
+const SCREEN_FLAG_PCSX_BLEND: u32 = 0x200;
+const SCREEN_FLAG_PCSX_DITHER: u32 = 0x400;
 
 /// The texel offset a composited screen quad samples with under the
 /// PCSX-Redux texel rule: that emulator takes none, and this sliver only

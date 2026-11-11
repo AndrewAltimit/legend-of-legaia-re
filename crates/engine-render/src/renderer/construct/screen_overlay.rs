@@ -30,7 +30,7 @@ pub(super) fn build_screen_overlay(
 ) -> ScreenOverlayParts {
     let screen_overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("legaia screen overlay shader"),
-        source: wgpu::ShaderSource::Wgsl(SCREEN_OVERLAY_SHADER_SRC.into()),
+        source: wgpu::ShaderSource::Wgsl(screen_overlay_shader_src().into()),
     });
     let screen_overlay_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

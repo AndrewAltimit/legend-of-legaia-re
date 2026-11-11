@@ -861,15 +861,15 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 
 // PSX semi-transparency blend pass: re-draws the semi-transparent prims
 // (the per-ABR-mode index tail) keeping ONLY texels whose STP bit is set -
-// the exact complement of the opaque pass's deferral. `f_scale` pre-scales
-// the foreground for ABR mode 3 (`B + 0.25*F`); the rest of the equation is
-// fixed-function blend state. Runs only in PSX-faithful mode, so the colour
+// the exact complement of the opaque pass's deferral. `mode` is the ABR
+// mode: the fragment writes that mode's foreground term and the rest of the
+// equation is fixed-function blend state (`psx_blend`). Runs only in PSX-faithful mode, so the colour
 // is unlit (matching the opaque pass's faithful branch). No dither here:
 // this pass's foreground is a raw 15bpp texel - retail dithers only
 // shading-arithmetic results (gouraud / texture blending), never raw
 // texels, and the 5-bit blend math itself is not dithered (PSX-SPX
 // "GPU - Dithering/Color-Depth").
-fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+fn blend_pass_color(in: VsOut, front_facing: bool, mode: u32) -> vec4<f32> {
     let uv_dy = dpdy(in.uv_affine);
     let bary_dy = dpdy(in.prim_bary);
     let uv_dx = dpdx(in.uv_affine);
@@ -953,25 +953,58 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         cued = apply_grade(enhanced, u.grade);
     }
     // The GPU reads the foreground as a saturated 5-bit channel
-    // (`psx_blend_foreground`), and the mode-3 quarter applies to that value
-    // (`B + 0.25 * F`), as it does on the browser play page where the 0.25 is
-    // a blend factor. Retail's quarter is `F >> 2`; the unfloored quarter
-    // keeps the two hosts on one law.
+    // (`psx_blend_foreground`). Off PSX mode the blend state finishes the
+    // equation with the mode's factor (`psx_blend::src_shader_scale`), as it
+    // does on the browser play page.
     let flat = pcsx_flat_shaded(fwidth(in.prim_color)) && (tsb & 0x4000u) == 0u;
-    var fg = psx_blend_foreground(cued);
-    if u.psx_params.w >= 1.5 && !flat {
-        fg = psx_blend_foreground_pcsx(cued, in.clip_pos.xy);
+    let pcsx_dithered = u.psx_params.w >= 1.5 && !flat;
+    if u.psx_params.z < 0.5 {
+        var fg = psx_blend_foreground(cued);
+        if pcsx_dithered {
+            fg = psx_blend_foreground_pcsx(cued, in.clip_pos.xy);
+        }
+        return vec4<f32>(fg * psx_blend_scale(mode), 1.0);
     }
-    return vec4<f32>(fg * f_scale, 1.0);
+    // PSX mode: the foreground term of the GPU's 5-bit result
+    // (`psx_blend`, "The GPU's 5-bit arithmetic"). The PCSX-Redux instrument
+    // blends a Gouraud foreground in 8 bits, `(t5 * c8) >> 4`, before its
+    // dither, and a flat one at 5 bits with mode 0 / 3's halving or
+    // quartering on the texel before the modulate (`getTextureTransColShade`).
+    if pcsx_dithered {
+        let m8 = floor(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * 248.0 + 0.001);
+        return vec4<f32>(psx_blend_term_pcsx_dithered(m8, psx_pcsx_dither_offset(in.clip_pos.xy), mode), 1.0);
+    }
+    let f5 = floor(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0 + 0.001);
+    if u.psx_params.z > 2.5 && (mode == 0u || mode == 3u) {
+        // `(t5 >> k) * c8 >> 7`: the texel's share of the modulate, `cued`
+        // over the texel, carried onto the shifted texel.
+        let t5 = round(clamp(color.rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 31.0);
+        let ts = floor(t5 / select(4.0, 2.0, mode == 0u));
+        let gain = select(vec3<f32>(0.0), cued * 31.0 / max(t5, vec3<f32>(1.0)), t5 > vec3<f32>(0.0));
+        let fk = min(floor(ts * gain + 0.001), vec3<f32>(31.0));
+        return vec4<f32>(fk * (8.0 / 255.0), 1.0);
+    }
+    return vec4<f32>(psx_blend_term_gpu(f5, mode), 1.0);
+}
+
+// The blend pass's per-ABR entries (`psx_blend::blend_entry`).
+@fragment
+fn fs_blend_half(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 0u);
 }
 
 @fragment
 fn fs_blend(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, front_facing, 1.0);
+    return blend_pass_color(in, front_facing, 1u);
+}
+
+@fragment
+fn fs_blend_sub(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 2u);
 }
 
 @fragment
 fn fs_blend_quarter(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, front_facing, 0.25);
+    return blend_pass_color(in, front_facing, 3u);
 }
 "#;

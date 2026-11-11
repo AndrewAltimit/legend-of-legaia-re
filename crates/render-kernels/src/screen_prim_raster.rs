@@ -2,7 +2,7 @@
 //! pass's twin for a surface that has no GPU pass: a 2D canvas.
 //!
 //! It runs the same per-pixel rules both hosts' screen-prim shaders run
-//! (`SCREEN_OVERLAY_SHADER_SRC` in `engine-render`, `FS_SCREEN_PRIM` on the
+//! (`screen_overlay_shader_src` in `engine-render`, `FS_SCREEN_PRIM` on the
 //! play page): the [`order_primitives`] ordering-table walk, two triangles
 //! per quad (`v0 v1 v2` + `v1 v2 v3`), affine UV and colour interpolation,
 //! the VRAM texel fetch through the texpage's colour depth and the CLUT, a

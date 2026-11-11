@@ -533,3 +533,75 @@ fn dyn_light(
     return clamp(rgb * gain, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 "#;
+
+/// The GPU's 5-bit semi-transparency arithmetic as the foreground term a
+/// blend-pass fragment hands its fixed-function blend state
+/// (`crate::psx_blend`, "The GPU's 5-bit arithmetic"). Every shader with a
+/// blend pass is composed with it: the VRAM-mesh and colour-mesh shaders
+/// through [`compose_psx_shader`] / [`compose_scene_lit_shader`], the screen
+/// overlay and the text shader on their own. The CPU twins are
+/// `psx_blend::gpu_term` and `psx_blend::pcsx_dithered_term`.
+pub(crate) const PSX_BLEND_WGSL: &str = r#"
+// Off PSX mode the foreground's factor (`psx_blend::src_shader_scale`): the
+// blend state adds it at one over the background's own factor.
+fn psx_blend_scale(mode: u32) -> f32 {
+    if mode == 0u {
+        return 0.5;
+    }
+    if mode == 3u {
+        return 0.25;
+    }
+    return 1.0;
+}
+
+// The console's term for a 5-bit foreground `f5` (`psx_blend::gpu_term`):
+// mode 0 writes half a bin per step over the background's `K * B`, modes 1
+// and 2 a bin per step, mode 3 a bin per `F >> 2`. In 0..1 target units.
+fn psx_blend_term_gpu(f5: vec3<f32>, mode: u32) -> vec3<f32> {
+    let f = clamp(f5, vec3<f32>(0.0), vec3<f32>(31.0));
+    if mode == 0u {
+        return f * (4.0 / 255.0);
+    }
+    if mode == 3u {
+        return floor(f / 4.0) * (8.0 / 255.0);
+    }
+    return f * (8.0 / 255.0);
+}
+
+// The PCSX-Redux software GPU's term for an 8-bit foreground `m8` that it
+// blends before its dither (`getShadeTransColDither`,
+// `getTextureTransColShadeXDither`): `d` is its offset `0..7` at the pixel
+// (`7 - s_dithertable`). Twin of `psx_blend::pcsx_dithered_term`.
+fn psx_blend_term_pcsx_dithered(m8: vec3<f32>, d: f32, mode: u32) -> vec3<f32> {
+    let m = floor(clamp(m8, vec3<f32>(0.0), vec3<f32>(255.0)) + 0.001);
+    if mode == 0u {
+        return 4.0 * floor((floor(m / 2.0) + d) / 4.0) / 255.0;
+    }
+    if mode == 2u {
+        return 8.0 * floor(max(m - d + 7.0, vec3<f32>(0.0)) / 8.0) / 255.0;
+    }
+    if mode == 3u {
+        return 8.0 * floor((floor(m / 4.0) + d) / 8.0) / 255.0;
+    }
+    return 8.0 * floor((m + d) / 8.0) / 255.0;
+}
+
+// That emulator's offset at a fragment: its `applyDither` rounds a channel's
+// low three bits up past `{7,0,6,1, 2,5,3,4, 1,6,0,7, 4,3,5,2}`, which is
+// adding `7 - coeff` and flooring.
+fn psx_pcsx_dither_offset(frag: vec2<f32>) -> f32 {
+    var dm = array<f32, 16>(
+        0.0, 7.0, 1.0, 6.0,
+        5.0, 2.0, 4.0, 3.0,
+        6.0, 1.0, 7.0, 0.0,
+        3.0, 4.0, 2.0, 5.0,
+    );
+    return dm[(u32(frag.y) & 3u) * 4u + (u32(frag.x) & 3u)];
+}
+
+// A colour's 5-bit channel as the framebuffer holds it: every PSX-mode write
+// keeps a 5-bit value `c5` inside `8 * c5 ..= 8 * c5 + 7`.
+fn psx_bin5(rgb: vec3<f32>) -> vec3<f32> {
+    return min(floor(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0 / 8.0 + 0.001), vec3<f32>(31.0));
+}
+"#;

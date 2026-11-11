@@ -11,6 +11,9 @@ pub(super) struct QuadParts {
     pub(super) uniforms_buf: wgpu::Buffer,
     pub(super) uniforms_bg: wgpu::BindGroup,
     pub(super) pipeline: wgpu::RenderPipeline,
+    /// The same blit reading the frame as a 15-bit framebuffer
+    /// (`fs_scanout15`), for the native target's PSX-mode present.
+    pub(super) scanout_pipeline: wgpu::RenderPipeline,
     pub(super) sampler: wgpu::Sampler,
 }
 
@@ -58,34 +61,38 @@ pub(super) fn build_quad(device: &wgpu::Device, view_format: wgpu::TextureFormat
         immediate_size: 0,
     });
 
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("legaia textured quad pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: Default::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: view_format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: Default::default(),
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview_mask: None,
-        cache: None,
-    });
+    let blit = |label: &str, entry: &str| {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(label),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some(entry),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: view_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipeline = blit("legaia textured quad pipeline", "fs_main");
+    let scanout_pipeline = blit("legaia native scanout pipeline", "fs_scanout15");
 
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("texture sampler"),
@@ -98,6 +105,7 @@ pub(super) fn build_quad(device: &wgpu::Device, view_format: wgpu::TextureFormat
         uniforms_buf,
         uniforms_bg,
         pipeline,
+        scanout_pipeline,
         sampler,
     }
 }

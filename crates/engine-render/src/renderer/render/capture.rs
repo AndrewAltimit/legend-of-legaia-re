@@ -268,6 +268,14 @@ impl Renderer {
         }
         drop(data);
         buf.unmap();
+        // The frame as the window presents it (`fs_scanout15`).
+        if self.scanout_15bit() {
+            for px in rgba.as_chunks_mut::<4>().0 {
+                for c in &mut px[..3] {
+                    *c = psx_blend::scanout15(*c);
+                }
+            }
+        }
         Ok(CaptureImage {
             rgba,
             width,

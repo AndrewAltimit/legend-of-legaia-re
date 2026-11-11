@@ -10,8 +10,8 @@
 ///
 /// PSX semi-transparency (`psx_params.z >= 0.5`): an untextured ABE prim
 /// blends **all** its pixels on retail hardware (no per-texel STP gate), so
-/// the opaque entry discards those prims entirely and the `fs_blend` /
-/// `fs_blend_quarter` entries re-draw them through the per-ABR-mode
+/// the opaque entry discards those prims entirely and the per-ABR blend
+/// entries (`psx_blend::blend_entry`) re-draw them through the per-mode
 /// fixed-function blend pipelines.
 pub(crate) const COLOR_MESH_SHADER_SRC: &str = r#"
 struct MeshUniforms {
@@ -185,7 +185,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
 // arithmetic output, which retail dithers down to 15-bit before the blend
 // math - so the dither stage applies to F here, before mode 3's 0.25
 // pre-scale (retail folds that scale into the blend itself).
-fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
+fn blend_pass_color(in: VsOut, front_facing: bool, mode: u32) -> vec4<f32> {
     if effect_clipped(in.world_pos) {
         discard;
     }
@@ -238,18 +238,51 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if u.psx_params.w >= 0.5 && ir0 > 0.0 && !palette_on {
         cued = psx_fill_cue_gte(graded, dyn_far(u.depth_cue.rgb, u.light_dir, u.light_color), ir0);
     }
+    // Off PSX mode the blend state finishes the equation with the mode's
+    // factor (`psx_blend::src_shader_scale`), saturated first (see the
+    // VRAM-mesh blend pass).
+    if u.psx_params.z < 0.5 {
+        let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
+        return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * psx_blend_scale(mode), 1.0);
+    }
+    // PSX mode: the foreground term of the GPU's 5-bit result (`psx_blend`).
+    // The console dithers the fill to 5 bits and blends that; the PCSX-Redux
+    // instrument blends a Gouraud fill in 8 bits before its dither
+    // (`getShadeTransColDither`) and a flat one at `colour >> 3`, halving or
+    // quartering it for mode 0 / 3 (`getShadeTransCol`).
+    if u.psx_params.z > 2.5 {
+        if u.psx_params.w >= 1.5 && !pcsx_flat_shaded(fwidth(in.color.rgb)) {
+            let m8 = floor(clamp(cued, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0 + 0.001);
+            return vec4<f32>(psx_blend_term_pcsx_dithered(m8, psx_pcsx_dither_offset(in.clip_pos.xy), mode), 1.0);
+        }
+        let f5 = psx_bin5(cued);
+        if mode == 0u {
+            return vec4<f32>(floor(f5 / 2.0) * (8.0 / 255.0), 1.0);
+        }
+        return vec4<f32>(psx_blend_term_gpu(f5, mode), 1.0);
+    }
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
-    // Saturate before the mode-3 pre-scale (see the VRAM-mesh blend pass).
-    return vec4<f32>(clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * f_scale, 1.0);
+    return vec4<f32>(psx_blend_term_gpu(psx_bin5(rgb), mode), 1.0);
+}
+
+// The blend pass's per-ABR entries (`psx_blend::blend_entry`).
+@fragment
+fn fs_blend_half(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 0u);
 }
 
 @fragment
 fn fs_blend(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, front_facing, 1.0);
+    return blend_pass_color(in, front_facing, 1u);
+}
+
+@fragment
+fn fs_blend_sub(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
+    return blend_pass_color(in, front_facing, 2u);
 }
 
 @fragment
 fn fs_blend_quarter(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
-    return blend_pass_color(in, front_facing, 0.25);
+    return blend_pass_color(in, front_facing, 3u);
 }
 "#;

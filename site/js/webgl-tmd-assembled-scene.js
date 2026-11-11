@@ -822,14 +822,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
          * those prims twice. */
         if (p.forceSemi !== undefined) {
           if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 1);
-          this._setSemiBlend(p.forceSemi);
+          this._setSemiBlend(p.forceSemi, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
           if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 0);
           continue;
         }
         if (!m.semiRanges) continue;
         for (const r of m.semiRanges) {
-          this._setSemiBlend(r.mode);
+          this._setSemiBlend(r.mode, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
         }
       }

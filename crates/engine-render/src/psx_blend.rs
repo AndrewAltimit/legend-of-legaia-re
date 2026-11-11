@@ -9,14 +9,44 @@
 //!
 //! | ABR | equation            | wgpu mapping                                  |
 //! |-----|---------------------|-----------------------------------------------|
-//! | 0   | `0.5*B + 0.5*F`     | src=Constant, dst=Constant, Add (constant 0.5)|
+//! | 0   | `0.5*B + 0.5*F`     | src=One, dst=Constant, Add; F pre-scaled 0.5  |
 //! | 1   | `B + F`             | src=One, dst=One, Add                         |
 //! | 2   | `B - F`             | src=One, dst=One, ReverseSubtract             |
 //! | 3   | `B + 0.25*F`        | src=One, dst=One, Add; F pre-scaled 0.25      |
 //!
-//! (`B` = destination/background, `F` = source/foreground.) Mode 3's `0.25*F`
-//! has no fixed-function factor, so the blend-pass fragment shader pre-scales
-//! the output by [`src_shader_scale`] and the pipeline stays plain-additive.
+//! (`B` = destination/background, `F` = source/foreground.) The foreground's
+//! factor is the fragment shader's ([`src_shader_scale`]), so the shader can
+//! hand the blender a foreground term it has already reduced itself, which is
+//! how PSX mode reaches the GPU's 5-bit arithmetic (below).
+//!
+//! ## The GPU's 5-bit arithmetic
+//!
+//! The PSX GPU blends on 5-bit channels, and it truncates. A fixed-function
+//! blend on an 8-bit target cannot floor, but it does not need to: every
+//! PSX-mode draw leaves a channel `v` whose 5-bit value is `v >> 3` (the
+//! dither's `(c5 << 3) | (c5 >> 2)`, or a foreground written as `8 * f5`,
+//! both inside `8 * c5 ..= 8 * c5 + 7`), so the blend only has to land its
+//! result inside the right 8-wide bin. The shader writes the foreground term
+//! as a whole number of bins (or half bins for mode 0) and the background
+//! carries its own low bits:
+//!
+//! | ABR | console (Mednafen, DuckStation) | foreground term written       |
+//! |-----|---------------------------------|-------------------------------|
+//! | 0   | `(B + F) >> 1`                  | `4 * F` over `K * B`          |
+//! | 1   | `min(B + F, 31)`                | `8 * F`                       |
+//! | 2   | `max(B - F, 0)`                 | `8 * F`                       |
+//! | 3   | `min(B + (F >> 2), 31)`         | `8 * (F >> 2)`                |
+//!
+//! Mode 0's background factor `K` is [`MODE0_PSX_BLEND_CONSTANT`], a hair
+//! under one half: at exactly `0.5` a background at `8 * c5 + 7` with `c5`
+//! odd lands on a half level that rounds into the next bin. The PCSX-Redux
+//! software GPU (`src/gpu/soft/soft.cc`) halves each term before the sum
+//! instead, `(B >> 1) + (F >> 1)`, and blends a Gouraud foreground in 8 bits
+//! before its own dither (`getShadeTransColDither`,
+//! `getTextureTransColShadeXDither`); its terms are in [`pcsx_flat_term`] and
+//! [`pcsx_dithered_term`]. [`gpu_blend5`] / [`pcsx_blend5`] are the
+//! reference results, and the unit tests run every background bin through
+//! the blend state with an 8-bit target's rounding against them.
 //!
 //! The mesh builders (`legaia_tmd::mesh`) pack the per-prim ABE bit into bit
 //! 15 of the per-vertex TSB attribute ([`TSB_SEMI_TRANSPARENT_BIT`]), which
@@ -51,9 +81,122 @@ pub const TSB_FLAT_QUAD_BIT: u16 = 0x0400;
 /// PCSX-Redux instrument where its colour derivative alone reads flat.
 pub const TSB_GOURAUD_BIT: u16 = 0x4000;
 
-/// Blend constant bound while drawing ABR mode 0 (`0.5*B + 0.5*F`):
-/// both factors are `BlendFactor::Constant`.
+/// Blend constant bound while drawing ABR mode 0 (`0.5*B + 0.5*F`) off PSX
+/// mode: the background's factor (`BlendFactor::Constant`); the foreground's
+/// half is the shader's ([`src_shader_scale`]).
 pub const MODE0_BLEND_CONSTANT: f64 = 0.5;
+
+/// Mode 0's background factor in PSX mode, where the shader writes the
+/// foreground term of the GPU's 5-bit result (module docs). Just under one
+/// half, so the background's own low bits never round its half into the
+/// next 5-bit bin.
+pub const MODE0_PSX_BLEND_CONSTANT: f64 = 0.4985;
+
+/// The mode-0 blend constant a pass binds: [`MODE0_PSX_BLEND_CONSTANT`] when
+/// its shaders run the GPU's 5-bit arithmetic, [`MODE0_BLEND_CONSTANT`]
+/// otherwise.
+pub fn mode0_blend_constant(psx: bool) -> f64 {
+    if psx {
+        MODE0_PSX_BLEND_CONSTANT
+    } else {
+        MODE0_BLEND_CONSTANT
+    }
+}
+
+/// The blend-pass fragment entry for an ABR mode. Every shader with a blend
+/// pass (VRAM mesh, colour mesh, screen overlay, text) names its four entries
+/// this way; each hands the blender its mode's foreground term.
+pub fn blend_entry(mode: u8) -> &'static str {
+    match mode & 3 {
+        0 => "fs_blend_half",
+        1 => "fs_blend",
+        2 => "fs_blend_sub",
+        _ => "fs_blend_quarter",
+    }
+}
+
+/// The console GPU's semi-transparency result on one 5-bit channel
+/// (background `b`, foreground `f`, both `0..=31`), as Mednafen and
+/// DuckStation compute it.
+pub fn gpu_blend5(mode: u8, b: u8, f: u8) -> u8 {
+    let (b, f) = (i32::from(b), i32::from(f));
+    let r = match mode & 3 {
+        0 => (b + f) >> 1,
+        1 => b + f,
+        2 => b - f,
+        _ => b + (f >> 2),
+    };
+    r.clamp(0, 31) as u8
+}
+
+/// The PCSX-Redux software GPU's result for a flat (undithered) primitive:
+/// mode 0 halves each term, `(B >> 1) + (F >> 1)` (`getShadeTransCol`).
+/// For a textured primitive the halving is the texel's, before the modulate
+/// (`getTextureTransColShade`); [`pcsx_flat_term`] takes that foreground.
+pub fn pcsx_blend5(mode: u8, b: u8, f: u8) -> u8 {
+    let (b, f) = (i32::from(b), i32::from(f));
+    let r = match mode & 3 {
+        0 => (b >> 1) + (f >> 1),
+        1 => b + f,
+        2 => b - f,
+        _ => b + (f >> 2),
+    };
+    r.clamp(0, 31) as u8
+}
+
+/// The foreground term (8-bit units) a PSX-mode blend pass writes for the
+/// console rule, from the 5-bit foreground `f5` (module docs).
+pub fn gpu_term(mode: u8, f5: u8) -> f32 {
+    let f = f32::from(f5);
+    match mode & 3 {
+        0 => 4.0 * f,
+        3 => 8.0 * (f5 >> 2) as f32,
+        _ => 8.0 * f,
+    }
+}
+
+/// The PCSX-Redux flat term (8-bit units) for a 5-bit foreground `f5`:
+/// mode 0 adds `F >> 1` over the background's `K * B` (which lands on
+/// `B >> 1`), mode 3 `F >> 2`. A textured primitive's halving is the
+/// texel's, before the modulate, so its shader takes `f5` from there.
+pub fn pcsx_flat_term(mode: u8, f5: u8) -> f32 {
+    8.0 * f32::from(match mode & 3 {
+        0 => f5 >> 1,
+        3 => f5 >> 2,
+        _ => f5,
+    })
+}
+
+/// The PCSX-Redux dithered term (8-bit units) for an 8-bit foreground `m8`
+/// at a pixel whose dither offset is `d` (`0..=7`, that emulator's table read
+/// as `7 - coeff`): the emulator sums `B8 = b5 << 3` with the foreground and
+/// rounds the sum's low bits up against the table (`applyDither`).
+pub fn pcsx_dithered_term(mode: u8, m8: u8, d: u8) -> f32 {
+    let (m, d) = (i32::from(m8), i32::from(d));
+    let t = match mode & 3 {
+        // (4 * b5 + (m >> 1) + d) >> 3 = (4 * b5 + 4 * ((m >> 1) + d) / 4) >> 3.
+        0 => 4 * (((m >> 1) + d) >> 2),
+        1 => 8 * ((m + d) >> 3),
+        // (8 * b5 - m + d) >> 3 = b5 - ceil((m - d) / 8).
+        2 => 8 * ((m - d + 7).max(0) >> 3),
+        _ => 8 * (((m >> 2) + d) >> 3),
+    };
+    t as f32
+}
+
+/// The PCSX-Redux dithered result on one channel: background `b5`, 8-bit
+/// foreground `m8`, dither offset `d`.
+pub fn pcsx_dithered5(mode: u8, b5: u8, m8: u8, d: u8) -> u8 {
+    let (b8, m, d) = (i32::from(b5) << 3, i32::from(m8), i32::from(d));
+    let r = match mode & 3 {
+        0 => (b8 >> 1) + (m >> 1),
+        1 => b8 + m,
+        2 => (b8 - m).max(0),
+        _ => b8 + (m >> 2),
+    }
+    .min(255);
+    ((r + d) >> 3).min(31) as u8
+}
 
 /// True when the prim that produced this TSB attribute had its ABE
 /// (semi-transparency) bit set.
@@ -281,10 +424,14 @@ pub fn coalesce_sorted(list: &[BlendListEntry], mut emit: impl FnMut(&BlendListE
 }
 
 /// Foreground pre-scale applied in the blend-pass fragment shader for
-/// the given ABR mode. Only mode 3 (`B + 0.25*F`) scales; the other
-/// modes get their factors from the fixed-function blend state.
+/// the given ABR mode off PSX mode: mode 0 (`0.5*B + 0.5*F`) halves and mode
+/// 3 (`B + 0.25*F`) quarters; the blend state adds the foreground at one.
 pub fn src_shader_scale(mode: u8) -> f32 {
-    if mode == 3 { 0.25 } else { 1.0 }
+    match mode & 3 {
+        0 => 0.5,
+        3 => 0.25,
+        _ => 1.0,
+    }
 }
 
 /// wgpu blend state for one ABR mode (see the module table). The alpha
@@ -293,7 +440,9 @@ pub fn blend_state(mode: u8) -> wgpu::BlendState {
     use wgpu::{BlendComponent, BlendFactor, BlendOperation};
     let color = match mode {
         0 => BlendComponent {
-            src_factor: BlendFactor::Constant,
+            // The foreground's half is the shader's (`src_shader_scale`, or
+            // the 5-bit term in PSX mode); the background's is the constant.
+            src_factor: BlendFactor::One,
             dst_factor: BlendFactor::Constant,
             operation: BlendOperation::Add,
         },
@@ -304,7 +453,7 @@ pub fn blend_state(mode: u8) -> wgpu::BlendState {
             operation: BlendOperation::ReverseSubtract,
         },
         // Modes 1 and 3 are both plain additive; mode 3's 0.25 factor
-        // is pre-applied in the shader (`src_shader_scale`).
+        // is the shader's (`src_shader_scale`).
         _ => BlendComponent {
             src_factor: BlendFactor::One,
             dst_factor: BlendFactor::One,
@@ -334,6 +483,15 @@ pub fn blend_apply(mode: u8, b: f32, f: f32) -> f32 {
         _ => b + 0.25 * f,
     };
     v.clamp(0.0, 1.0)
+}
+
+/// One channel of a PSX-mode frame read as the 15-bit framebuffer it models:
+/// the level's 5-bit bin `v >> 3`, expanded `(c5 << 3) | (c5 >> 2)` as the
+/// dither writes it. The native target's present (`fs_scanout15`) and its
+/// capture read the frame this way.
+pub fn scanout15(v: u8) -> u8 {
+    let c5 = v >> 3;
+    (c5 << 3) | (c5 >> 2)
 }
 
 /// Append a per-ABR-mode "semi tail" to a triangle index list: the
