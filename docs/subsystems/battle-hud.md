@@ -757,10 +757,11 @@ skips it and `0x14` dispatches a pass later.
 |---|---|---|
 | `party_basic_attack_vs_gobu_gobu` | `2` throughout | the glides snap on the `0xFF` pass (return `1`); `0x14` dispatches on its first pass, six vsyncs after the exit |
 | `chitei2_kemaro_v2_pre_lava_breath` | `3` from the launch, `2` from the exit | the glides snap on `0x14`'s first pass (return `1`), which the gate skips; `0x14` dispatches a pass later |
+| `battle_kor_spoon_strike` (a full party) | `3` throughout | `0x14` dispatches on its first pass (`autorun_cast_sequence.lua`'s flow log: `0x5A`, `0xFF`, `0x14`, `0x1E` three vsyncs apart) |
 
-Both read off `autorun_round_boundary_hold.lua` (one row per pass at
-`0x801D0B34`, the dispatch at `0x801D0C84` and the action SM's entry), in
-battles with no stage module. The level-up banner's press skip
+The first two read off `autorun_round_boundary_hold.lua` (one row per pass
+at `0x801D0B34`, the dispatch at `0x801D0C84` and the action SM's entry);
+all three are battles with no stage module. The level-up banner's press skip
 (`0x801E6078..0x801E60B4`, the countdown snapped to `-1`) exits on the
 launching pass itself, so a press there holds the next round's `0x14` for
 the glides' remaining passes: `ceil(16 / step) - 2` of them.
