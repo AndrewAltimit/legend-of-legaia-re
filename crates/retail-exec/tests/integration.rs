@@ -51,6 +51,7 @@ mod baka_hud;
 mod baka_leaves;
 mod baka_stage;
 mod battle_burst;
+mod battle_char_build;
 mod battle_char_splice;
 mod battle_framing;
 mod battle_gauge;
