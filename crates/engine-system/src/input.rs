@@ -381,6 +381,12 @@ impl<'a> FieldActions<'a> {
 pub struct Mapping {
     /// `key_name → button_name`.
     pub bindings: HashMap<String, String>,
+    /// The controller's table ([`crate::gamepad::GamepadMapping`]), saved
+    /// in the same file so one *Key Config* screen and one reset cover both.
+    /// A file written before controllers were rebindable has no
+    /// `[gamepad]` table and loads the default layout.
+    #[serde(default)]
+    pub gamepad: crate::gamepad::GamepadMapping,
 }
 
 impl Default for Mapping {
@@ -408,7 +414,10 @@ impl Default for Mapping {
         ] {
             b.insert(key.to_string(), btn.to_string());
         }
-        Self { bindings: b }
+        Self {
+            bindings: b,
+            gamepad: Default::default(),
+        }
     }
 }
 
@@ -528,7 +537,10 @@ impl Mapping {
         ] {
             b.insert(key.to_string(), btn.to_string());
         }
-        Self { bindings: b }
+        Self {
+            bindings: b,
+            gamepad: Default::default(),
+        }
     }
 
     /// Look up which [`PadButton`] `key_name` is bound to, if any.
@@ -550,6 +562,25 @@ impl Mapping {
             .filter(|(_, btn)| btn.as_str() == button_name)
             .map(|(key, _)| key.as_str())
             .min()
+    }
+
+    /// What a prompt names for pad button `button` (`"Cross"`): the key
+    /// [`Self::key_label_for_button`] gives, or - while a controller was the
+    /// last thing pressed (`pad`) - the button on it that drives `button`,
+    /// in its maker's labels (`"A"`, `"Cross"`, `"Btn 3"`). `None` when
+    /// nothing is bound to it on that device.
+    pub fn prompt_label(
+        &self,
+        button: &str,
+        pad: Option<crate::gamepad::PadStyle>,
+    ) -> Option<String> {
+        match pad {
+            None => self.key_label_for_button(button).map(str::to_string),
+            Some(style) => {
+                self.gamepad
+                    .label_for(style.space, PadButton::from_name(button)?, style.glyphs)
+            }
+        }
     }
 
     /// This mapping as `(KeyboardEvent.code, pad bit)` pairs, sorted by code.
@@ -600,6 +631,43 @@ impl Mapping {
 
 #[cfg(test)]
 mod tests {
+    /// The controller table rides in the same file as the keys: a rebind
+    /// round-trips, and a file written before it existed loads the default
+    /// controller layout under its own keys.
+    #[test]
+    fn the_controller_table_is_saved_with_the_keys() {
+        use crate::gamepad::{ButtonSpace, GamepadMapping};
+        let mut m = super::Mapping::default();
+        m.gamepad.bind(ButtonSpace::Standard, 2, PadButton::Cross);
+        m.gamepad.stick_dpad = false;
+        let text = toml::to_string(&m).unwrap();
+        let back: super::Mapping = toml::from_str(&text).unwrap();
+        assert_eq!(back.gamepad, m.gamepad);
+        assert_eq!(back.bindings, m.bindings);
+        let old: super::Mapping = toml::from_str("[bindings]\nZ = \"Circle\"\n").unwrap();
+        assert_eq!(old.gamepad, GamepadMapping::default());
+        assert_eq!(old.pad_button_for_key("Z"), Some(PadButton::Circle));
+    }
+
+    /// A prompt names the key, or - after a controller press - the button on
+    /// that controller, following a rebind of either.
+    #[test]
+    fn a_prompt_names_the_device_pressed_last() {
+        use crate::gamepad::{ButtonSpace, GlyphSet, PadStyle};
+        let mut m = super::Mapping::default();
+        assert_eq!(m.prompt_label("Cross", None).as_deref(), Some("Z"));
+        let ps = PadStyle {
+            glyphs: GlyphSet::PlayStation,
+            space: ButtonSpace::Standard,
+        };
+        assert_eq!(m.prompt_label("Cross", Some(ps)).as_deref(), Some("Cross"));
+        let xbox = PadStyle::default();
+        assert_eq!(m.prompt_label("Circle", Some(xbox)).as_deref(), Some("B"));
+        m.gamepad.bind(ButtonSpace::Standard, 3, PadButton::Circle);
+        assert_eq!(m.prompt_label("Circle", Some(xbox)).as_deref(), Some("Y"));
+        assert_eq!(m.prompt_label("Nope", Some(xbox)), None);
+    }
+
     /// A key hint names the key the layout really binds: the web layout's
     /// Triangle is `C`, its Start the first of Enter / Space, and an unbound
     /// button has no label.

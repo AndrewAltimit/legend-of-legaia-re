@@ -299,6 +299,42 @@ pub struct OptionsState {
     /// window, and PSX mode's native target, is whole-step either way.
     /// Window chrome like [`Self::fullscreen`].
     pub integer_scale: bool,
+    /// How far, in percent of full deflection, a controller's left stick
+    /// travels before it holds a d-pad direction (engine-only input choice,
+    /// [`STICK_DEAD_ZONE_STEPS`]; default [`STICK_DEAD_ZONE_DEFAULT`], the
+    /// shared layout's `gamepad::STICK_DEAD_ZONE`). Both hosts fold the stick
+    /// through it; the original-game switch leaves it alone, as it does the
+    /// volumes.
+    pub stick_dead_zone: u8,
+}
+
+/// The stick dead zone's default, in percent.
+pub const STICK_DEAD_ZONE_DEFAULT: u8 = 50;
+
+/// The dead zones a settings row steps through, in percent.
+pub const STICK_DEAD_ZONE_STEPS: [u8; 7] = [20, 30, 40, 50, 60, 70, 80];
+
+impl OptionsState {
+    /// [`Self::stick_dead_zone`] as the fraction the controller fold takes,
+    /// clamped to the stepped range (a hand-edited file cannot stall the
+    /// stick at `0` or `100`).
+    pub fn stick_dead_zone_fraction(&self) -> f32 {
+        let lo = STICK_DEAD_ZONE_STEPS[0];
+        let hi = STICK_DEAD_ZONE_STEPS[STICK_DEAD_ZONE_STEPS.len() - 1];
+        f32::from(self.stick_dead_zone.clamp(lo, hi)) / 100.0
+    }
+
+    /// Step [`Self::stick_dead_zone`] one notch (`dir` `< 0` smaller),
+    /// clamped at the ends.
+    pub fn step_stick_dead_zone(&mut self, dir: i8) {
+        let steps = STICK_DEAD_ZONE_STEPS;
+        let at = steps
+            .iter()
+            .position(|&v| v >= self.stick_dead_zone)
+            .unwrap_or(steps.len() - 1);
+        let next = (at as i32 + i32::from(dir.signum())).clamp(0, steps.len() as i32 - 1);
+        self.stick_dead_zone = steps[next as usize];
+    }
 }
 
 impl Default for OptionsState {
@@ -328,6 +364,7 @@ impl Default for OptionsState {
             enhanced_lighting: true,
             lighting_time_of_day: "auto".to_string(),
             light_shadows: true,
+            stick_dead_zone: STICK_DEAD_ZONE_DEFAULT,
             occlusion_fade: true,
             bloom: false,
             ssao: true,
@@ -896,8 +933,9 @@ pub fn options_popup_content_rect(
     (popup_x, y, popup_w, h)
 }
 
-/// The Key Config sub-screen's model: one `(button label, bound key)` per
-/// row, the cursor, and whether the session waits for a keypress.
+/// The Key Config sub-screen's model: one `(button label, bound key and
+/// controller button)` per row (`"Z A"`: key `Z`, the pad's `A`), the cursor,
+/// and whether the session waits for a keypress or a controller press.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyRebindModel {
     pub rows: Vec<(String, String)>,
@@ -930,6 +968,9 @@ pub struct OptionsSession {
     /// `legaia-input.toml` natively, the page's binding key in
     /// `localStorage` in the browser.
     bindings_dirty: bool,
+    /// How the Key Config screen labels controller buttons
+    /// ([`Self::set_pad_style`]).
+    pad_style: legaia_engine_system::gamepad::PadStyle,
 }
 
 impl OptionsSession {
@@ -940,6 +981,16 @@ impl OptionsSession {
             mapping: None,
             rebind: None,
             bindings_dirty: false,
+            pad_style: Default::default(),
+        }
+    }
+
+    /// Label the Key Config screen's controller column for `style` (the
+    /// host's last pressed controller), now and for a screen opened later.
+    pub fn set_pad_style(&mut self, style: legaia_engine_system::gamepad::PadStyle) {
+        self.pad_style = style;
+        if let Some(r) = self.rebind.as_mut() {
+            r.set_pad_style(style.glyphs, style.space);
         }
     }
 
@@ -1045,7 +1096,14 @@ impl OptionsSession {
             rows: k
                 .rows()
                 .iter()
-                .map(|r| (r.button.name().to_string(), r.key.clone()))
+                .map(|r| {
+                    let value = match (r.key.is_empty(), r.pad.is_empty()) {
+                        (_, true) => r.key.clone(),
+                        (true, false) => format!("- {}", r.pad),
+                        (false, false) => format!("{} {}", r.key, r.pad),
+                    };
+                    (r.button.name().to_string(), value)
+                })
                 .collect(),
             cursor: k.cursor(),
             awaiting: matches!(
@@ -1110,7 +1168,9 @@ impl OptionsSession {
                 if input.select
                     && let Some(mapping) = self.mapping.clone()
                 {
-                    self.rebind = Some(KeyRebindSession::new(mapping));
+                    let mut sub = KeyRebindSession::new(mapping);
+                    sub.set_pad_style(self.pad_style.glyphs, self.pad_style.space);
+                    self.rebind = Some(sub);
                     self.phase = OptionsPhase::Rebinding { cursor };
                     events.push(OptionsEvent::KeyRebindOpened { row: cursor });
                     return events;

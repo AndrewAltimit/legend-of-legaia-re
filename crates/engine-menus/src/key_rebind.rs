@@ -7,10 +7,20 @@
 //! cleared, and a key another button was on hands that button the old key, so
 //! a rebind never leaves a button no key can press.
 //!
+//! The same wait takes a **controller** press: a host hands the session a
+//! capture name ([`legaia_engine_system::gamepad::capture_name`], `"Pad3"`)
+//! in place of a key name, and the bind lands in the mapping's controller
+//! table ([`legaia_engine_system::gamepad::GamepadMapping::bind`]) under the
+//! same swap rule. Every controller button is a candidate, Circle included,
+//! so a controller press never cancels the wait: pressing the button a row
+//! already has keeps it, and the keyboard's Circle key (or `Esc` where the
+//! host has one) cancels.
+//!
 //! Renderer-agnostic. Engines drive [`KeyRebindSession::tick`] each frame
 //! with a [`KeyRebindInput`] bundle (cursor moves + the most-recent key
 //! press as a string) and consume the [`KeyRebindEvent`] stream.
 
+use legaia_engine_system::gamepad::{ButtonSpace, GlyphSet, parse_capture_name};
 use legaia_engine_system::input::{Mapping, PadButton};
 
 /// One row in the rebind list.
@@ -19,6 +29,9 @@ pub struct RebindRow {
     pub button: PadButton,
     /// Currently-bound key name (e.g. `"Z"`). Empty if unbound.
     pub key: String,
+    /// The controller button bound to it, as the pad's maker labels it
+    /// (`"A"`, `"Cross"`, `"Btn 3"`). Empty if unbound.
+    pub pad: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +60,8 @@ pub struct KeyRebindInput {
     pub circle: bool,
     pub start: bool,
     /// Most-recent key event from the host, encoded as the key name. The
-    /// host shell translates winit `KeyCode` values to these strings.
+    /// host shell translates winit `KeyCode` values to these strings. A
+    /// controller press arrives here too, as its capture name (`"Pad3"`).
     /// Only consumed in [`KeyRebindPhase::AwaitingKey`].
     pub key_pressed: Option<String>,
 }
@@ -74,6 +88,10 @@ pub struct KeyRebindSession {
     rows: Vec<RebindRow>,
     mapping: Mapping,
     phase: KeyRebindPhase,
+    /// How the rows label controller buttons: the maker of the pad last
+    /// pressed, and its index space ([`Self::set_pad_style`]).
+    glyphs: GlyphSet,
+    space: ButtonSpace,
 }
 
 impl KeyRebindSession {
@@ -101,20 +119,36 @@ impl KeyRebindSession {
         ];
         let rows = ORDER
             .iter()
-            .map(|btn| {
-                let key = mapping
-                    .bindings
-                    .iter()
-                    .find(|(_, v)| PadButton::from_name(v) == Some(*btn))
-                    .map(|(k, _)| k.clone())
-                    .unwrap_or_default();
-                RebindRow { button: *btn, key }
+            .map(|btn| RebindRow {
+                button: *btn,
+                key: String::new(),
+                pad: String::new(),
             })
             .collect();
-        Self {
+        let mut s = Self {
             rows,
             mapping,
             phase: KeyRebindPhase::Browsing { cursor: 0 },
+            glyphs: GlyphSet::default(),
+            space: ButtonSpace::Standard,
+        };
+        s.rebuild_rows();
+        s
+    }
+
+    /// Label the controller column for a pad of `glyphs` reporting in
+    /// `space` - the host's last pressed controller.
+    pub fn set_pad_style(&mut self, glyphs: GlyphSet, space: ButtonSpace) {
+        if (self.glyphs, self.space) != (glyphs, space) {
+            self.glyphs = glyphs;
+            self.space = space;
+            self.rebuild_rows();
+        }
+    }
+
+    fn rebuild_rows(&mut self) {
+        for btn in self.rows.iter().map(|r| r.button).collect::<Vec<_>>() {
+            self.rebuild_row(btn);
         }
     }
 
@@ -164,8 +198,14 @@ impl KeyRebindSession {
             .find(|(_, v)| PadButton::from_name(v) == Some(button))
             .map(|(k, _)| k.clone())
             .unwrap_or_default();
+        let pad = self
+            .mapping
+            .gamepad
+            .label_for(self.space, button, self.glyphs)
+            .unwrap_or_default();
         if let Some(row) = self.rows.iter_mut().find(|r| r.button == button) {
             row.key = key;
+            row.pad = pad;
         }
     }
 
@@ -214,13 +254,9 @@ impl KeyRebindSession {
                 self.mapping.bindings.insert(old.clone(), other);
             }
         }
-        // Refresh the row that just got rebound, plus any row whose key
-        // matched and got shadowed.
         // The key may have been another button's: refresh every row; the
         // cost is trivial (16 rows).
-        for btn in self.rows.iter().map(|r| r.button).collect::<Vec<_>>() {
-            self.rebuild_row(btn);
-        }
+        self.rebuild_rows();
         evicted
     }
 
@@ -257,6 +293,24 @@ impl KeyRebindSession {
                 }
             }
             KeyRebindPhase::AwaitingKey { cursor } => {
+                // A controller press binds whatever it is, Circle included.
+                if let Some((space, index)) =
+                    input.key_pressed.as_deref().and_then(parse_capture_name)
+                {
+                    let Some(row) = self.rows.get(cursor as usize).cloned() else {
+                        self.phase = KeyRebindPhase::Browsing { cursor };
+                        return events;
+                    };
+                    let handed = self.mapping.gamepad.bind(space, index, row.button);
+                    self.rebuild_rows();
+                    self.phase = KeyRebindPhase::Browsing { cursor };
+                    events.push(KeyRebindEvent::Bound {
+                        button: row.button,
+                        key: self.glyphs.label(space, index),
+                        evicted: handed.map(|i| self.glyphs.label(space, i)),
+                    });
+                    return events;
+                }
                 if input.circle {
                     // Cancel the rebind, drop back to Browsing.
                     self.phase = KeyRebindPhase::Browsing { cursor };
@@ -437,5 +491,94 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(s.outcome(), Some(KeyRebindOutcome::Cancelled));
+    }
+    /// A controller press in the wait binds the controller table, under the
+    /// key table's swap rule, and leaves the keys alone. The pad's Circle
+    /// binds rather than cancels.
+    #[test]
+    fn a_controller_press_binds_the_controller_table() {
+        let mut s = KeyRebindSession::new(Mapping::default());
+        let cross = s
+            .rows()
+            .iter()
+            .position(|r| r.button == PadButton::Cross)
+            .unwrap() as u8;
+        assert_eq!(s.rows()[cross as usize].pad, "A");
+        s.begin_bind(cross);
+        let evs = s.tick(KeyRebindInput {
+            circle: true,
+            key_pressed: Some("Pad1".into()),
+            ..Default::default()
+        });
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                KeyRebindEvent::Bound { button: PadButton::Cross, key, evicted }
+                    if key == "B" && evicted.as_deref() == Some("A")
+            )),
+            "{evs:?}"
+        );
+        let g = &s.mapping().gamepad;
+        assert_eq!(
+            g.button_for(ButtonSpace::Standard, 1),
+            Some(PadButton::Cross)
+        );
+        assert_eq!(
+            g.button_for(ButtonSpace::Standard, 0),
+            Some(PadButton::Circle)
+        );
+        assert_eq!(s.mapping().pad_button_for_key("Z"), Some(PadButton::Cross));
+        assert_eq!(s.mapping().pad_button_for_key("Pad1"), None, "no key entry");
+        let circle = s
+            .rows()
+            .iter()
+            .find(|r| r.button == PadButton::Circle)
+            .unwrap();
+        assert_eq!(circle.pad, "A");
+        assert!(matches!(s.phase(), KeyRebindPhase::Browsing { .. }));
+    }
+
+    /// The controller column names the last pad's own labels, and a raw pad
+    /// shows (and binds) its raw table.
+    #[test]
+    fn the_controller_column_follows_the_pad() {
+        let mut s = KeyRebindSession::new(Mapping::default());
+        s.set_pad_style(GlyphSet::PlayStation, ButtonSpace::Standard);
+        let tri = s
+            .rows()
+            .iter()
+            .position(|r| r.button == PadButton::Triangle)
+            .unwrap();
+        assert_eq!(s.rows()[tri].pad, "Triangle");
+        s.set_pad_style(GlyphSet::Xbox, ButtonSpace::Raw);
+        assert_eq!(s.rows()[tri].pad, "Btn 4");
+        s.begin_bind(tri as u8);
+        let _ = s.tick(KeyRebindInput {
+            key_pressed: Some("Raw9".into()),
+            ..Default::default()
+        });
+        assert_eq!(s.rows()[tri].pad, "Btn 10");
+        let g = &s.mapping().gamepad;
+        assert_eq!(g.button_for(ButtonSpace::Raw, 9), Some(PadButton::Triangle));
+        assert_eq!(
+            g.button_for(ButtonSpace::Standard, 3),
+            Some(PadButton::Triangle)
+        );
+    }
+
+    /// The keyboard's Circle still cancels a wait, with no controller press.
+    #[test]
+    fn the_circle_key_still_cancels_a_wait() {
+        let mut s = KeyRebindSession::new(Mapping::default());
+        s.begin_bind(0);
+        let before = s.mapping().gamepad.clone();
+        let _ = s.tick(KeyRebindInput {
+            circle: true,
+            key_pressed: Some("S".into()),
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), KeyRebindPhase::Browsing { cursor: 0 }));
+        assert_eq!(s.mapping().gamepad, before);
+        assert_eq!(s.mapping().pad_button_for_key("Z"), Some(PadButton::Cross));
     }
 }
