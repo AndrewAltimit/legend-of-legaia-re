@@ -257,6 +257,34 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         selector: Some(2),
         tint_state: None,
     },
+    // Arm 5's pass shows the victim again and clears its tint state and
+    // selector (`sb zero,0x21c(s3)`, `sw 0x20080200,4(s3)`,
+    // `sb zero,0x21f(s3)` at `0x801F7C0C..0x801F7C18`), and arm `0x10`'s
+    // pass does the same after the burst (`0x801F85CC..0x801F85D4`): a
+    // selector the victim brought into the cast burns no further. The
+    // colour and state are the director's (`plasma_strike_camera`).
+    ModuleImpact {
+        entry: 960,
+        body: crate::cast_module_ticks::PLASMA_STRIKE_TICK,
+        arm: 5,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: Some(0),
+        tint_state: None,
+    },
+    ModuleImpact {
+        entry: 960,
+        body: crate::cast_module_ticks::PLASMA_STRIKE_TICK,
+        arm: 0x10,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: Some(0),
+        tint_state: None,
+    },
     // PROT 0963 Genocidal Cannon: arm 14's party row (`0x801F7D10..0x801F7D20`).
     ModuleImpact {
         entry: 963,
