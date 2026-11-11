@@ -1742,12 +1742,23 @@ globals are the spin's: yaw `2808`, `3192`, `3576` (`64` a vsync) and the eye tr
 hundreds of units in front of the eye. Retail's draw there is the unclipped quad under
 screen-linear Gouraud, which both hosts' formulas give while every corner is in front.
 
-On the frames whose pose matches retail's (`221..241` against retail's `213..234`),
-both hosts read about `25` levels brighter than retail over the bottom rows, and the
-page `1` to `2` levels nearer it: that difference is the pose and the fan's level, not
-the clip. The same frames show a second gap: retail draws no round HUD while the spin
-turns (none at vsync `225`, the bars up by `234`), where the port's bars are up mid-spin
-(tick `201` on).
+The frame retail shows is `320 x 224` inside a `228`-line display: its last four
+lines are black, and a shot is not a `240`-row frame to be scaled onto the port's.
+Set row for row against the window at the matching pose (the window's tick `230`
+against retail's vsync `216`, the spin's yaw `3576`), the bottom rows `200..223` read
+`2.9` levels **darker** in the window, not brighter; resampling the `228`-line shot
+to `240` rows reads `31` levels brighter over rows `200..236`, which is where a
+brighter floor came from. At the same camera globals the window's glow disc has
+retail's packets to the pixel: centre `(170, 220)`, the near rim at `(605, 286)`,
+`(592, 327)` and `(575, 253)`, centre colour red `191`, green `159`, blue `127` and rim `6`
+on both sides. Rows `224..239` are frame the
+hardware never shows ([renderer](../subsystems/renderer.md#the-screen-the-gte-projects-onto-is-320x224-not-320x240)).
+
+The round HUD now waits for the spin as retail's does: the spin is cabinet state
+`0x35`'s body, which holds until the yaw passes a full turn, and the HUD is drawn
+from `0x36` on ([Baka Fighter](../subsystems/minigame-baka-fighter.md#duel-hud-fun_801d2afc)).
+The window's bars rise at tick `244`, `14` ticks after the pose that matches retail's
+vsync `216`; retail's are absent at vsync `231` and up at `234` of the same film.
 
 ### The minigames page has no `World`
 

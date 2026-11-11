@@ -200,7 +200,7 @@ flowchart TD
 | `0x0C` / `0x0D` / `0x0E` | wipe start / hold (`0x1F`) / preview pose | timer, then immediately |
 | `0x1E` | **opponent install**: resolve the rung, load its mesh + roster record | immediately |
 | `0x32` | round setup: seat both fighters, HP to `0xC80` | immediately |
-| `0x33`..`0x36` | round-banner beats (`FUN_801D5C7C`); the last holds `0x79` | timers |
+| `0x33`..`0x36` | round-banner beats (`FUN_801D5C7C`); `0x35` spins the camera, `0x36` holds to `0x79` | the camera's yaw, then the banner clock |
 | `0x37` / `0x38` | scene-ready wait / "FIGHT!" flash | flag, then `0x31` |
 | `0x64` | **the duel** - the round bracket + the pause-menu edge | round-over hold `0xB5` |
 | `0x65` / `0x66` / `0x67` | victory flourish / score tally / wind-down | timers |
@@ -563,11 +563,15 @@ The world goes through the field view build `FUN_800172C0`, called once a frame 
 | Writer | Pitch / yaw / roll | Eye trio `0x800840B8` | Focus |
 |---|---|---|---|
 | round setup `0x32` (`0x801CFF34..0x801CFF7C`) | `0` / `0x2F8` / `0` | `(0xC8, 0x708, 0x1FE0)` | zero |
+| state `0x33`, a secret opponent's first round (`0x801D01FC..0x801D0284`) | `0` / `0xC08` / `0` | `(0x28, 0x2D0, Z)`, `Z` `0xBF4` / `0x6E0` for override `1` / `2` | zero |
+| state `0x34`, the same round (`0x801D02D0..0x801D02F8`) | - | Y `+= (15 dt) << 1` until it passes `0xBB8` | - |
 | state `0x35` spin (`0x801D0324..0x801D03C8`) | yaw `+= dt << 6` until it passes `0x1000`, then `0` | Y `+= dt << 2`, Z `+= dt << 5` | - |
 | the spin's glide (`0x801D03D0..0x801D0454`) | parked | Y to `0x898` at `0x1E`, Z to `0x3520` at `0xC8` | parked |
 | tally exit `0x66` / `0x6D` (`0x801D0A38`, `0x801D0FBC`) | `0` (`0x64` on `0x6D`) / `0x3D4` / `0` | `(0, 0x8FC, 0x1900)` | - |
 
-Every round opens on an oblique shot that swings a full turn while backing off, and settles side-on: yaw `0`, eye `(0xC8, 0x898, 0x3520)`. The duel state `0x64` writes no camera global. The only thing that moves the camera during a round is a **special commit** (`0x801D4644..0x801D4740`): the player's special glides to its row of the table at `0x801D7DC8` (three `0x20`-byte rows, one per party fighter, indexed by the actor's `+0x5A`), the opponent's to a fixed record - pitch `-0x14`, yaw `0xA8C`, eye `(-0x3C, 0x80C, 0x2120)`.
+Every round opens on an oblique shot that swings a full turn while backing off, and settles side-on: yaw `0`, eye `(0xC8, 0x898, 0x3520)`.
+
+The spin is state `0x35`'s own body, and the state holds until the yaw passes `0x1000` (`slti a0,a0,0x1001` / `bnez` at `0x801D03A0..0x801D03C8`); `0x34` holds the same way on its rise. `0x33` and `0x34` step straight on unless the override `DAT_801DBF06` is set and the round index `DAT_801DBF8C` is `0`: an ordinary round runs one frame of each, then the spin. The duel state `0x64` writes no camera global. The only thing that moves the camera during a round is a **special commit** (`0x801D4644..0x801D4740`): the player's special glides to its row of the table at `0x801D7DC8` (three `0x20`-byte rows, one per party fighter, indexed by the actor's `+0x5A`), the opponent's to a fixed record - pitch `-0x14`, yaw `0xA8C`, eye `(-0x3C, 0x80C, 0x2120)`.
 
 Both glides use the SCUS camera-relative glide family. `FUN_801D6910` / `FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` fill the ten `(step, target)` halfword pairs of the record at `0x80070764` (the angles, the eye trio, the focus, `H`). `FUN_80021248` normalizes it against the live globals and spawns the actor whose tick `FUN_8002149C` walks them there. The record is handed to `FUN_80021248` two instructions after the setters at both call sites (`0x801D044C`, `0x801D4738`).
 
@@ -604,7 +608,7 @@ Paired with `minigame_baka_fighter_retail_fight` (the host pair's `baka` scene a
 
 `engine-minigame-scenes::baka_duel_scene` is the whole 3D surface, and every duel host draws through it:
 
-- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-camera::camera_rel_actor` and `engine-camera::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
+- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the secret opponent's opening snap and rise, the spin (`DuelCamera::spin`, run by the cabinet's `0x35` arm, whose hold reaches the cabinet as `CabinetInput::camera_hold`), the glides (through `engine-camera::camera_rel_actor` and `engine-camera::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
 - `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_scene_formats::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when a rung seats a new opponent, and poses them.
 
@@ -740,7 +744,11 @@ Parser `legaia_minigame_formats::baka_opponents::parse_baka_hud`. Ports in `engi
 
 ### Duel HUD (`FUN_801D2AFC`)
 
-Drawn per frame on the retail 320x240 frame, from the per-fighter block `&DAT_801DBFBC[slot * 0xA8]`. The renderer builds its own packets and links them at `*(0x1F8003F4) + 0x14` (bucket 5); its four widget calls go through the emitter's bucket 3, so the round chrome draws over the whole HUD. In link order:
+Drawn per frame on the retail 320x240 frame, from the per-fighter block `&DAT_801DBFBC[slot * 0xA8]`.
+
+The epilogue calls it (`jal 0x801D2AFC` at `0x801D21A4`) only while `s7` is up and the flag `DAT_801DBED4` is clear (`0x801D218C..0x801D219C`). Every cabinet arm starts the frame with `s7` at `0`, and the arms that raise it are `0x36`, `0x37`, `0x38`, the duel and the round-end states: the spin arm `0x35` does not, so no round HUD stands while the camera turns. A retail film from `minigame_baka_fighter_retail_attract` shows the bars absent through the spin and up a few vsyncs after the yaw passes the turn.
+
+The renderer builds its own packets and links them at `*(0x1F8003F4) + 0x14` (bucket 5); its four widget calls go through the emitter's bucket 3, so the round chrome draws over the whole HUD. In link order:
 
 - **VITAL fill bars** - one `POLY_GT4` per side, y `0x26..0x2B`, one pixel per 32 HP (block `+0x08`). The player's is right-anchored at x `0x89` and fills leftward; the opponent's is left-anchored at `0xB8` and fills rightward. The gouraud runs `(0xBC, hp >> 5, 0)` at the far end to `(0xBC, 0, 0)` at the anchor. The packet is textured: it samples the resident system patch at texpage `0x1F`, `uv (0, 0xF0)..(2, 0xF2)`, CLUT `0x7F84` (BGR555 grey `14`, the patch the effect ribbon and the save screen's progress fill also sample), so the drawn red is `(14 * 0xBC) >> 7` = `160`, the value a retail duel capture measures.
 - **Bar frames** - 3 `POLY_FT4` cells per side (texpage 5 = `(320, 0)`, CLUT `0x7D80`, colour `0x808080`), laid left to right from x `0x1C` / `0xB0`, y `0x20..0x30`. The cells come from a 16-byte-stride table at `0x801DBC34` (`+0` screen width, `+8..+0xF` the four corner UVs), initialised data that only the HUD renderer reads. It holds an 8-wide cap, a 100-wide body stretched from 8 texels, and an 8-wide cap: a 116-pixel frame round the 100-pixel bar. The frames are linked after the bars into the same bucket, so the bars draw over them. Parser `legaia_minigame_formats::baka_opponents::parse_baka_bar_frame`, layout `baka_cabinet::vital_frame_cells`.
