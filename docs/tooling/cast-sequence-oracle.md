@@ -324,6 +324,22 @@ run closes is the frame step's, what it leaves is the framing law's or the seat'
 `balden_swordie_v2_pre_vacuum_slicer` the seated run leaves `.3` px of the plain run's
 `4`, and the whole of that gap is the step ([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
 
+The party Tactical Arts chains in `jou` are the same shape. Retail's frame cost (`cost`,
+the ring's newest entry) climbs over the strike loop from `551` to `699` hblanks and
+reaches the clamp a frame ahead of the arts shout's commit, so the commit pass already
+runs at step `4`; the engine's costs sit at `630..656` and reach the clamp on the pass
+after the cue. Mid-stream, retail has one frame at `652` (step `3`) between clamped ones.
+A frame within a few hblanks of the `0x2D0` boundary is the emulator's cost, not a game
+rule, so the port does not fit it. Seated on the recording's steps (`--retail-steps`),
+`battle_jou_party_vahn_chain_open` reads `.915` against `.890` on the engine's own, and
+`battle_jou_party_gala_chain_open` `.935` against `.860`.
+
+`body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
+commit vsync the clip column can still name the outgoing clip while the cursor is already
+`0` and the rate the new clip's. `battle_jou_party_vahn_chain_open` shows clip `0x10` at
+cursor `0` on the vsync before `0x11` appears. This is the commit of `0x11` read early,
+not a re-commit of `0x10`.
+
 A `--physical` film has three traps of its own, each closed in the driver or the
 recorder. It keeps the capture's re-seat (`PHYSICAL_KEEP_ENV`), which stands the round
 on the capture's ground; it lets go of the drive at its gate
