@@ -255,7 +255,35 @@ impl LegaiaRuntime {
     /// The page must skip auto-repeat (`KeyboardEvent.repeat`); the native
     /// window collapses its own repeat stream in `handle_key`.
     pub fn play_menu_key(&mut self, code: &str) -> bool {
+        // A key press hands the prompts back to the keyboard.
+        crate::pad_bindings::note_keyboard();
         let Some(name) = legaia_engine_system::input::key_name_for_dom_code(code) else {
+            return false;
+        };
+        match self.play_menu.as_mut() {
+            Some(m) => {
+                m.pending_key = Some(name.to_string());
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Hand the menu one controller press: button `index` of a pad whose
+    /// `Gamepad.mapping` is `"standard"` (`standard`) or not, `id` its
+    /// `Gamepad.id`. The controller twin of [`Self::play_menu_key`]: only
+    /// the Key Config screen consumes it, while it waits, binding the row's
+    /// controller button (`legaia_engine_system::gamepad::capture_name`).
+    /// Returns `true` when latched (a menu is open and the index has a slot).
+    pub fn play_menu_pad_button(&mut self, standard: bool, index: u32, id: &str) -> bool {
+        use legaia_engine_system::gamepad::{ButtonSpace, capture_name};
+        let space = if standard {
+            ButtonSpace::Standard
+        } else {
+            ButtonSpace::Raw
+        };
+        crate::pad_bindings::note_pad(space, id);
+        let Some(name) = capture_name(space, index as usize) else {
             return false;
         };
         match self.play_menu.as_mut() {

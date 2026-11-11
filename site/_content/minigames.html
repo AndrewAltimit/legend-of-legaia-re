@@ -2464,7 +2464,14 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   /* The key a named button is bound to, for a runtime message that has to say
    * one ("X to cast again"). Falls back to the button's own name rather than
    * to a literal, so a stale bundle prints something true. */
+  /* While a controller was pressed last, a hint names its button instead
+   * (`legaiaPadPromptFor`, the engine's `Mapping::prompt_label`). */
+  const padPrompt = (button) => (window.legaiaLastInputDevice
+    && window.legaiaLastInputDevice() === 'pad' && window.legaiaPadPromptFor
+    ? window.legaiaPadPromptFor(button) : '');
   function keyLabel(button) {
+    const pad = padPrompt(button);
+    if (pad) return pad;
     const keys = window.legaiaPadKeysFor ? window.legaiaPadKeysFor(button) : [];
     return keys.length ? PRETTY_KEY(keys[0]) : button;
   }
@@ -2473,14 +2480,20 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (!window.legaiaPadKeysFor) return;
     const pretty = PRETTY_KEY;
     for (const el of document.querySelectorAll('[data-pad-key]')) {
+      const pad = padPrompt(el.dataset.padKey);
       const keys = window.legaiaPadKeysFor(el.dataset.padKey).map(pretty);
-      if (keys.length) el.textContent = keys[0];
+      if (pad) el.textContent = pad;
+      else if (keys.length) el.textContent = keys[0];
     }
     for (const el of document.querySelectorAll('[data-pad-keys]')) {
+      const pad = padPrompt(el.dataset.padKeys);
       const keys = window.legaiaPadKeysFor(el.dataset.padKeys).map(pretty);
-      if (keys.length) el.textContent = keys.join(' / ');
+      if (pad) el.textContent = pad;
+      else if (keys.length) el.textContent = keys.join(' / ');
     }
   }
+  /* The hints follow the device pressed last. */
+  window.addEventListener('legaia-input-device', relabelControls);
 
   /* ================= fishing ================= */
 

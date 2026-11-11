@@ -94,19 +94,27 @@
     return mask;
   }
 
-  /* Gamepad API, `standard` mapping -> the PSX pad. A gamepad is a
-   * *controller*, not a key layout, so it binds buttons to buttons by
-   * physical position and the Key Config table (which maps keys) never
-   * reaches it.
+  /* Gamepad API -> the PSX pad. Not a table here either: each pad's button
+   * values and axes go to the engine's fold (`gamepad_fold`,
+   * `GamepadMapping::fold_pad`), the one the native window runs gilrs
+   * through, over the player's controller table (rebound in Options > Key
+   * Config, stored with the keys) at the player's stick dead zone. A pad that
+   * does not report the `standard` mapping folds through the table's raw half,
+   * with its d-pad read off a hat the engine finds from the axes' resting
+   * values (taken the first time the pad is seen).
    *
-   * Not a table either: the engine serves the layout
-   * (`legaia_engine_system::gamepad` through `gamepad_layout_json`), and the
-   * native window folds gilrs through the same one, so the button order,
-   * stick dead zone and trigger threshold cannot drift between hosts. Against
-   * a bundle that predates the export no controller is read - a degraded
-   * mode, said so on the console, rather than a second layout here. */
+   * Against a bundle that predates `gamepad_fold` the page falls back to the
+   * fixed layout (`gamepad_layout_json`), standard order, every pad; against
+   * one that predates that too no controller is read - a degraded mode, said
+   * so on the console, rather than a second layout here. */
   let GP_LAYOUT = null;
+  /* The object whose `gamepad_fold` (and `play_menu_pad_button`, for a Key
+   * Config capture) this page calls: the runtime, or the module namespace. */
+  let FOLD_SRC = null;
+  let CAPTURE_SRC = null;
   function adoptGamepadLayout(src) {
+    if (src && typeof src.gamepad_fold === 'function') FOLD_SRC = src;
+    if (src && typeof src.play_menu_pad_button === 'function') CAPTURE_SRC = src;
     let layout = null;
     try {
       if (src && typeof src.gamepad_layout_json === 'function') {
@@ -136,10 +144,62 @@
     held() { return Array.from(virtualHeld); },
   };
 
-  /* The pad buttons every connected standard-mapped gamepad holds now, and
-   * the on-screen control's. */
+  /* Per connected pad (keyed by index and id): the axes as first seen, the
+   * raw buttons held at the last poll, and whether it reports `standard`. */
+  const padState = new Map();
+  const padKey = (gp) => gp.index + '|' + gp.id;
+  /* Controller presses since the last flush, for Key Config. */
+  let captures = [];
+  /* Which device the prompts follow: the engine decides the label
+   * (`pad_prompt_label`), the page only notices the switch to re-label. */
+  let lastDevice = 'keyboard';
+  function noteDevice(dev) {
+    if (dev === lastDevice) return;
+    lastDevice = dev;
+    try { window.dispatchEvent(new CustomEvent('legaia-input-device', { detail: dev })); } catch (e) {}
+  }
+
+  function bitNames(mask, out) {
+    const table = PAD_BTN || PAD_BITS;
+    for (const name of Object.keys(table)) if (mask & table[name]) out.add(name);
+  }
+
+  /* The pad buttons every connected gamepad holds now, through the engine's
+   * fold, and the on-screen control's. */
   function gamepadButtons() {
     const out = new Set(virtualHeld);
+    if (FOLD_SRC) {
+      let pads = [];
+      try { pads = (navigator.getGamepads && navigator.getGamepads()) || []; } catch (e) { pads = []; }
+      let dz = 50;
+      try { if (typeof FOLD_SRC.stick_dead_zone === 'function') dz = FOLD_SRC.stick_dead_zone() | 0; } catch (e) {}
+      const seen = new Set();
+      for (const gp of pads) {
+        if (!gp || !gp.connected) continue;
+        const key = padKey(gp);
+        seen.add(key);
+        let st = padState.get(key);
+        if (!st) {
+          st = { rest: Array.from(gp.axes), held: new Set(), standard: gp.mapping === 'standard' };
+          padState.set(key, st);
+        }
+        const vals = gp.buttons.map((b) => (b.pressed ? 1 : (b.value || 0)));
+        const held = new Set();
+        vals.forEach((v, i) => { if (v > 0.5) held.add(i); });
+        for (const i of held) {
+          if (!st.held.has(i)) captures.push({ standard: st.standard, index: i, id: gp.id });
+        }
+        st.held = held;
+        let mask = 0;
+        try {
+          mask = FOLD_SRC.gamepad_fold(st.standard, vals, Array.from(gp.axes), st.rest, gp.id, dz);
+        } catch (e) { mask = 0; }
+        if (mask) noteDevice('pad');
+        bitNames(mask, out);
+      }
+      for (const key of Array.from(padState.keys())) if (!seen.has(key)) padState.delete(key);
+      return out;
+    }
     if (!GP_LAYOUT) return out;
     const names = GP_LAYOUT.buttons;
     const dead = GP_LAYOUT.stick_dead_zone;
@@ -172,10 +232,21 @@
     gamepadHeld = now;
     return { now, pressed, released };
   }
+  /* Hand this poll's controller presses to Key Config
+   * (`play_menu_pad_button`, which only a waiting rebind row consumes). */
+  function flushCaptures() {
+    const list = captures;
+    captures = [];
+    if (!CAPTURE_SRC) return;
+    for (const c of list) {
+      try { CAPTURE_SRC.play_menu_pad_button(c.standard, c.index, c.id); } catch (e) { return; }
+    }
+  }
   /* For a page whose controls are named buttons (the minigames page): it
    * dispatches each edge through the same handler a key's button takes. */
   window.legaiaGamepadEdges = () => {
     const { pressed, released } = pollGamepadEdges();
+    captures = [];
     return { pressed, released };
   };
 
@@ -189,6 +260,7 @@
      * control still names its buttons directly. */
     if (!GP_LAYOUT && !virtualHeld.size && !gamepadHeld.size) return false;
     const { now, pressed, released } = pollGamepadEdges();
+    flushCaptures();
     let changed = false;
     for (const name of now) {
       /* Re-asserted every frame, not only on the edge: a page clears its
@@ -238,6 +310,56 @@
       } catch (e) { /* a pad that refuses the effect keeps playing silently */ }
     }
   };
+
+  /* What a prompt names for a pad button: the key, or the last pressed
+   * controller's button in its maker's labels (`pad_prompt_label`,
+   * `Mapping::prompt_label`); `''` against a bundle without it. */
+  window.legaiaPadPromptFor = (name) => {
+    if (!FOLD_SRC || typeof FOLD_SRC.pad_prompt_label !== 'function') return '';
+    try { return FOLD_SRC.pad_prompt_label(name) || ''; } catch (e) { return ''; }
+  };
+  window.legaiaLastInputDevice = () => lastDevice;
+  /* A key press hands the prompts back to the keyboard. */
+  window.addEventListener('keydown', () => {
+    if (lastDevice === 'keyboard') return;
+    try { if (FOLD_SRC && typeof FOLD_SRC.pad_note_keyboard === 'function') FOLD_SRC.pad_note_keyboard(); } catch (e) {}
+    noteDevice('keyboard');
+  }, true);
+
+  /* Hot-plug. Every connected controller drives the one player (their words
+   * are ORed, as natively), so a pad picked up mid-game works at once; the
+   * page says which came and went on its notice line, and a pad with no
+   * `standard` mapping is told its buttons are a guess. `#play-pad-status`,
+   * where a page has one, lists what is connected. A browser only reports a
+   * controller after its first button press. */
+  const shortId = (id) => String(id || 'controller').replace(/\s*\(.*$/, '').slice(0, 48);
+  function padNotice(text) {
+    if (typeof window.__playShowNotice === 'function') window.__playShowNotice(text);
+    else console.info('[legaia] ' + text);
+  }
+  function padStatus() {
+    const el = document.getElementById('play-pad-status');
+    if (!el) return;
+    let pads = [];
+    try { pads = Array.from((navigator.getGamepads && navigator.getGamepads()) || []); } catch (e) {}
+    const live = pads.filter((gp) => gp && gp.connected);
+    el.textContent = live.length
+      ? live.map((gp) => shortId(gp.id) + (gp.mapping === 'standard' ? '' : ' (buttons guessed)')).join(', ')
+      : 'No controller (press a button on one)';
+  }
+  window.legaiaPadStatus = padStatus;
+  window.addEventListener('gamepadconnected', (e) => {
+    const gp = e.gamepad;
+    padNotice('Controller connected: ' + shortId(gp.id)
+      + (gp.mapping === 'standard' ? '' : ' - no standard layout, buttons guessed; set them in Options > Key Config'));
+    padStatus();
+  });
+  window.addEventListener('gamepaddisconnected', (e) => {
+    const gp = e.gamepad;
+    padState.delete(padKey(gp));
+    padNotice('Controller disconnected: ' + shortId(gp.id));
+    padStatus();
+  });
 
   window.legaiaAdoptPadBindings = adoptPadBindings;
   /* Re-read the engine's table after the options screen's Key Config screen

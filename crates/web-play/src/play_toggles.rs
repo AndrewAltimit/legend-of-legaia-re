@@ -516,6 +516,28 @@ impl LegaiaRuntime {
         self.options_state.downmix_mono
     }
 
+    /// The controller stick's dead zone in percent
+    /// (`OptionsState::stick_dead_zone`), the native launcher's *Stick dead
+    /// zone* row: snapped to its steps, persisted with the other options.
+    /// The page hands it to [`crate::pad_bindings::gamepad_fold`].
+    pub fn set_stick_dead_zone(&mut self, percent: u8) {
+        use legaia_engine_menus::options::STICK_DEAD_ZONE_STEPS;
+        let snapped = STICK_DEAD_ZONE_STEPS
+            .iter()
+            .copied()
+            .min_by_key(|v| v.abs_diff(percent))
+            .unwrap_or(percent);
+        if self.options_state.stick_dead_zone != snapped {
+            self.options_state.stick_dead_zone = snapped;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// The dead zone [`Self::set_stick_dead_zone`] set.
+    pub fn stick_dead_zone(&self) -> u8 {
+        self.options_state.stick_dead_zone
+    }
+
     /// Retail-faithful mode, the native `--retail`: pin every persisted
     /// engine-only option to its retail value (`OptionsState::pin_retail`:
     /// retail camera distance, 8-way movement, no photosensitivity slew,
