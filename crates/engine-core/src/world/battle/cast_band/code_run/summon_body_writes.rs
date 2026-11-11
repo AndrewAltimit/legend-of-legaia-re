@@ -961,6 +961,18 @@ impl World {
             .collect();
         let living = |w: &Self, s: usize| w.actors.get(s).is_some_and(|a| a.battle.hp != 0);
         let stand = |x: i16| ((i32::from(x).abs() >> 2) - 0x400) as i16;
+        // Arms `0xB` and `0xC` tip the creature nose-up every pass, held or
+        // not: pitch `+0x44 += (scalar * step) >> 1` (`0x801F7C54..0x801F7C60`,
+        // `0x801F7D00..0x801F7D0C`); no later arm sets it back.
+        if matches!(phase_in, 0xB | 0xC)
+            && let Some(a) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|c| self.actors.get_mut(usize::from(c)))
+        {
+            let d = (legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK >> 1) as u16;
+            a.battle.render_pitch = a.battle.render_pitch.wrapping_add(d) & 0xFFF;
+        }
         match (phase_in, passed) {
             (0, true) => {
                 self.casting.module_saved_poses.clear();
