@@ -21,25 +21,30 @@ pub const DUMP_FIGHTERS: usize = 0x11;
 /// L1 edge (`_DAT_8007B874 & 4`, `0x801D1E90`).
 ///
 /// The port builds the same text and hands it back instead of touching a
-/// filesystem. Two columns are narrower than retail's: retail prints all eight
-/// leading words of the action record and the four halfwords of every
-/// sub-keyframe, while `legaia_minigame_formats::baka_opponents::parse_actions` decodes
-/// only the record's power (`+0x18`) and sub-keyframe count (`+0x1C`) - so the
-/// per-keyframe TRS rows are absent until that parser widens. Retail's own
-/// format strings are overlay rodata and are not reproduced; the labels here
-/// are the port's.
+/// filesystem, line for line: per table a header, per action record one line
+/// of its eight leading words (`+0x00..+0x1C`, [`BakaActionSet::head`]), one
+/// line of the four halfwords of each live sub-keyframe (as many as the
+/// record's `+0x1C` count), and a closing line, then the table's closing line
+/// (`0x801D55A0..0x801D5744`). The numbers and the commas between them are
+/// retail's; retail's labels are overlay rodata and are not reproduced, so the
+/// header names the table by its index where retail prints its name.
 pub fn action_table_dump(tables: &[BakaActionSet]) -> String {
     let mut out = String::new();
     for (i, set) in tables.iter().take(DUMP_FIGHTERS).enumerate() {
         out.push_str(&format!("ACT_TBL {i}\n"));
         for action in 0..DUMP_ACTIONS_PER_FIGHTER {
-            let power = set.power.get(action).copied().unwrap_or(0);
-            let keyframes = set.keyframes.get(action).copied().unwrap_or(0);
-            out.push_str(&format!(
-                "  act {action} power {power} keyframes {keyframes}\n"
-            ));
+            let words = set.head.get(action).copied().unwrap_or_default();
+            let words: Vec<String> = words.iter().map(i32::to_string).collect();
+            out.push_str(&format!("  {{{}\n", words.join(",")));
+            for k in set.sub_keyframes.get(action).into_iter().flatten() {
+                out.push_str(&format!(
+                    "  ,{},{},{},{}\n",
+                    k.offset[0], k.offset[1], k.offset[2], k.frame
+                ));
+            }
+            out.push_str("  },\n");
         }
-        out.push('\n');
+        out.push_str("};\n");
     }
     out
 }

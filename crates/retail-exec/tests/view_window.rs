@@ -250,8 +250,8 @@ fn the_ground_emitter_visits_the_cells_the_gate_names() {
             let (c0, r0) = (-(rng.below(10) as i8), -(rng.below(10) as i8));
             [c0, r0, c0 + rng.below(20) as i8, r0 + rng.below(22) as i8]
         };
-        for k in 0..4 {
-            cpu.mem.wr8(WINDOW + k as u32, window[k] as u8);
+        for (k, &w) in window.iter().enumerate() {
+            cpu.mem.wr8(WINDOW + k as u32, w as u8);
         }
         let first = [rng.below(0x80) as i32, rng.below(0x81) as i32];
         let sub = [rng.below(0x80), rng.below(0x80)];

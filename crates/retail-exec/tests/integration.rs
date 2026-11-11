@@ -45,6 +45,7 @@ mod auto_combo;
 mod auto_command;
 mod baka_cameo;
 mod baka_chrome;
+mod baka_dump;
 mod baka_fight;
 mod baka_hud;
 mod baka_leaves;

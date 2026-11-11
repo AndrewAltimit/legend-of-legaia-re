@@ -986,7 +986,7 @@ So `FUN_801D6E5C` has two callers: this editor and the combat tick. Only the sec
 
 **Slot helpers.** `FUN_801D57BC` ("add frame") rounds the incoming key toward zero by `>> 4`, scans the fighter's live slots (count at `+0x1C`, key at slot `+0x26`, `8` stride) for a match, rewrites that slot or appends a new one, zeroes the slot's three accumulators either way, and refuses once the block already holds 8 slots. It always returns `-1`. `FUN_801D58E0` is "delete frame".
 
-**Action-table dump.** `FUN_801D553C` writes a human-readable dump of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`), looping the `0x11` tables of 9 actions. It is reached from cabinet state `0x191` on the L1 edge. Port: `baka_cabinet::action_table_dump`.
+**Action-table dump.** `FUN_801D553C` writes a human-readable dump of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`), looping the `0x11` tables of 9 actions. It is reached from cabinet state `0x191` on the L1 edge. Per action it prints the record's eight leading words and the four halfwords of each live sub-keyframe. Port: `baka_cabinet::action_table_dump`, which prints the same numbers line for line under its own labels; the retail kernel differential holds it to the routine's buffer.
 
 ## RAM state
 

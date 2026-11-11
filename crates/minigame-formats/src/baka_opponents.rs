@@ -373,6 +373,10 @@ pub struct BakaActionSet {
     /// of the record's [`ACTION_SUB_KEYFRAME_SLOTS`] slots (a count outside
     /// `0..=8` is clamped - no record on the disc carries one).
     pub sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER],
+    /// The eight leading words `+0x00..+0x1C` of each action record, as the
+    /// developer dump prints them (`speed`, `power` and `keyframes` are three
+    /// of them).
+    pub head: [[i32; 8]; ACTIONS_PER_FIGHTER],
 }
 
 impl BakaActionSet {
@@ -488,8 +492,10 @@ pub fn parse_actions(overlay: &[u8]) -> Option<Vec<BakaActionSet>> {
         let mut keyframes = [0i32; ACTIONS_PER_FIGHTER];
         let mut speed = [0i32; ACTIONS_PER_FIGHTER];
         let mut sub_keyframes: [Vec<BakaSubKeyframe>; ACTIONS_PER_FIGHTER] = Default::default();
+        let mut head = [[0i32; 8]; ACTIONS_PER_FIGHTER];
         for a in 0..ACTIONS_PER_FIGHTER {
             let r = table + a * ACTION_RECORD_STRIDE;
+            head[a] = std::array::from_fn(|w| read_i32(overlay, r + 4 * w));
             power[a] = read_i32(overlay, r + ACTION_POWER_OFFSET);
             keyframes[a] = read_i32(overlay, r + ACTION_KEYFRAME_COUNT_OFFSET);
             speed[a] = read_i32(overlay, r + ACTION_SPEED_OFFSET);
@@ -514,6 +520,7 @@ pub fn parse_actions(overlay: &[u8]) -> Option<Vec<BakaActionSet>> {
             keyframes,
             speed,
             sub_keyframes,
+            head,
         });
     }
     Some(out)
