@@ -126,6 +126,8 @@ const HELP_H: i32 = 12;
 /// The note line budget under the rows.
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Left/Right page  Cross go";
+/// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
+const PAD_CONTROLS: &str = "D-pad pick, page  {cross} go";
 const FLIP_HINT: &str = "L1/R1 or Tab: tools";
 
 impl PlayWindowApp {
@@ -313,7 +315,12 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        put(&mut out, CONTROLS, (left, Y0 + height - HELP_H), heading);
+        put(
+            &mut out,
+            &self.panel_controls(CONTROLS, PAD_CONTROLS),
+            (left, Y0 + height - HELP_H),
+            heading,
+        );
         out
     }
 }
@@ -375,6 +382,9 @@ mod tests {
         if let Some(font) = font {
             let width = |s: &str| font.layout_ascii(s).advance_x as i32;
             assert!(width(CONTROLS) <= WIDTH - 12);
+            let [a, b] = super::super::settings_panel::WIDEST_PAD_LABELS;
+            let pad = super::super::settings_panel::pad_controls(PAD_CONTROLS, a, b);
+            assert!(width(&pad) <= WIDTH - 12, "{pad}: {}", width(&pad));
             for row in scene_rows() {
                 let note = format!(
                     "Cross: go to {}. Your party and items come along.",

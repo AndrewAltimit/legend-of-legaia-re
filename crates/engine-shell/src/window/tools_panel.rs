@@ -221,6 +221,8 @@ const ROW_H: i32 = 11;
 const HELP_H: i32 = 12;
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Cross use  Esc close";
+/// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
+const PAD_CONTROLS: &str = "D-pad pick  {cross} use  {circle} close";
 const FLIP_HINT: &str = "L1/R1 or Tab: keys";
 /// What a refused minigame press says.
 const REFUSED: &str = "Not from here: stand in a town, a field or on the world map.";
@@ -478,7 +480,12 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        put(&mut out, CONTROLS, (left, Y0 + height - HELP_H), heading);
+        put(
+            &mut out,
+            &self.panel_controls(CONTROLS, PAD_CONTROLS),
+            (left, Y0 + height - HELP_H),
+            heading,
+        );
         out
     }
 }
@@ -663,6 +670,9 @@ mod tests {
             let lines = super::super::settings_panel::wrap_lines(REFUSED, WIDTH - 12, &width);
             assert!(lines.len() <= NOTE_LINES, "{lines:?}");
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
+            let [a, b] = super::super::settings_panel::WIDEST_PAD_LABELS;
+            let pad = super::super::settings_panel::pad_controls(PAD_CONTROLS, a, b);
+            assert!(width(&pad) <= WIDTH - 12, "{pad}: {}", width(&pad));
         }
     }
 }

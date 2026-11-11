@@ -220,6 +220,21 @@ const ROW_H: i32 = 11;
 const HELP_LINES: usize = 3;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Arrows pick, change  Del default  Esc close";
+/// [`CONTROLS`] while a controller was pressed last ([`pad_controls`]).
+const PAD_CONTROLS: &str = "D-pad pick, change  {circle} close";
+/// The longest button labels a page's controller line names: what the
+/// tests fit each line with (a PlayStation pad, or Cross rebound to
+/// Triangle).
+#[cfg(test)]
+pub(super) const WIDEST_PAD_LABELS: [&str; 2] = ["Triangle", "Circle"];
+
+/// A page's controller line: `template` with `{cross}` and `{circle}` put
+/// as the labels printed on the buttons the game's Cross and Circle are on.
+pub(super) fn pad_controls(template: &str, cross: &str, circle: &str) -> String {
+    template
+        .replace("{cross}", cross)
+        .replace("{circle}", circle)
+}
 /// The gap between a row's label and the window key lettered after it.
 const KEY_GAP: i32 = 6;
 const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
@@ -258,6 +273,23 @@ impl PlayWindowApp {
             PanelPage::Keys
         } else {
             self.panel_page
+        }
+    }
+
+    /// A page's controls line: `keys` while the keyboard was used last, or
+    /// `pad` ([`pad_controls`]) in the labels of the controller pressed last
+    /// - the start-up hint's rule (`last_pad`).
+    pub(super) fn panel_controls(&self, keys: &str, pad: &str) -> String {
+        match self.last_pad {
+            None => keys.to_string(),
+            Some(style) => {
+                let label = |b: &str| {
+                    self.mapping
+                        .prompt_label(b, Some(style))
+                        .unwrap_or_else(|| b.to_string())
+                };
+                pad_controls(pad, &label("Cross"), &label("Circle"))
+            }
         }
     }
 
@@ -720,7 +752,12 @@ impl PlayWindowApp {
         y = Y0 + height - HELP_H;
         match self.options_save_error.borrow().as_deref() {
             Some(e) => put(&mut out, e, (left, y), heading),
-            None => put(&mut out, CONTROLS, (left, y), heading),
+            None => put(
+                &mut out,
+                &self.panel_controls(CONTROLS, PAD_CONTROLS),
+                (left, y),
+                heading,
+            ),
         }
         out
     }
@@ -789,6 +826,19 @@ pub(super) fn copy_changed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A controller line names the buttons the game's Cross and Circle are on.
+    #[test]
+    fn pad_controls_names_the_controllers_buttons() {
+        assert_eq!(
+            pad_controls(PAD_CONTROLS, "A", "B"),
+            "D-pad pick, change  B close"
+        );
+        assert_eq!(
+            pad_controls("{cross} use  {circle} close", "Cross", "Circle"),
+            "Cross use  Circle close"
+        );
+    }
     use crate::window::app_state::startup_hint_line;
 
     #[test]
@@ -943,6 +993,9 @@ mod tests {
                 assert!(lines.len() <= HELP_LINES, "{row:?}: {lines:?}");
             }
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
+            let [a, b] = WIDEST_PAD_LABELS;
+            let pad = pad_controls(PAD_CONTROLS, a, b);
+            assert!(width(&pad) <= WIDTH - 12, "{pad}: {}", width(&pad));
             // A row's label, its key and the widest focused value share one
             // line without touching.
             for row in SETTINGS_ROWS {

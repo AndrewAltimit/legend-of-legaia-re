@@ -562,7 +562,9 @@ boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
 Config table, and the mouse's camera controls.
-`Esc`, `F12`, Circle or Start close the panel. A state the original game does
+`Esc`, `F12`, Circle or Start close the panel. Each page's last line names its
+keys, or, while a controller was the last thing pressed, that controller's
+buttons by the labels its maker prints (*D-pad pick, change  B close*). A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
 stays hidden while the panel is up. In a multiplayer session, whose other
