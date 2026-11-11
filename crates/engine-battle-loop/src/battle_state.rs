@@ -1141,6 +1141,10 @@ pub struct BattleState {
     /// the landing to the hit. Rewritten by every pass of the flight
     /// (`World::tick_homing_slots`), drawn beside [`Self::cast_ribbons`].
     pub flight_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
+    /// The `rand()` word each of [`Self::flight_ribbons`] starts from, dealt
+    /// on the pass that made them (`World::deal_flight_ribbon_rands`), as
+    /// [`Self::cast_ribbon_seeds`] is for a module arm's ring.
+    pub flight_ribbon_seeds: Option<[u32; 16]>,
     /// The part-emit accumulator `ctx[+0x328]`: the frame driver keeps its
     /// low nibble and adds `DAT_1F800393 << 3` every battle frame
     /// (`FUN_80046A20`, `0x8004713C..0x80047160`), and every body the anim
@@ -1599,6 +1603,7 @@ impl BattleState {
             cast_ribbons: None,
             cast_ribbon_seeds: None,
             flight_ribbons: None,
+            flight_ribbon_seeds: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
             backdrop_cue: 0,

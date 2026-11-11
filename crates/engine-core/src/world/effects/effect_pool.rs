@@ -310,6 +310,27 @@ impl World {
         &mut self,
         ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
     ) {
+        let seeds = self.deal_ribbon_rands(ring);
+        self.battle.cast_ribbon_seeds = Some(seeds);
+    }
+
+    /// [`Self::deal_cast_ribbon_rands`] for a homing flight's bolts: the
+    /// same `FUN_801E1D98` calls from the flight's slot loop
+    /// (`0x801E1284..0x801E12D8`, `0x801E17EC..0x801E1834`), dealt on the
+    /// pass that makes them.
+    pub(in crate::world) fn deal_flight_ribbon_rands(
+        &mut self,
+        ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
+    ) {
+        let seeds = self.deal_ribbon_rands(ring);
+        self.battle.flight_ribbon_seeds = Some(seeds);
+    }
+
+    /// Each ribbon's start word, the stream stepped past its draws.
+    fn deal_ribbon_rands(
+        &mut self,
+        ring: &legaia_engine_cast::cast_module_camera::CastRibbonRing,
+    ) -> [u32; 16] {
         let view =
             legaia_render_kernels::gte::FieldGteView::from_battle_pose(&self.battle_cam_pose());
         let mut seeds = [0u32; 16];
@@ -326,7 +347,7 @@ impl World {
             );
             self.rng_state = state;
         }
-        self.battle.cast_ribbon_seeds = Some(seeds);
+        seeds
     }
 
     /// This frame's draw-kind-4 geometry - every live node whose model is

@@ -390,12 +390,14 @@ pub fn cast_ribbon_prims(
     let mut out = Vec::new();
     // A landed move projectile's bolts (`BattleState::flight_ribbons`) are the
     // same call on the slot's position, numbered on after the arm's points.
-    // A module arm's ring replays the words its pass dealt it
-    // (`World::deal_cast_ribbon_rands`); a flight ring has no dealt seed and
-    // takes one off the frame.
+    // Each ring replays the words its pass dealt it
+    // (`World::deal_cast_ribbon_rands`, `World::deal_flight_ribbon_rands`).
     let rings = [
         (world.battle.cast_ribbons, world.battle.cast_ribbon_seeds),
-        (world.battle.flight_ribbons, None),
+        (
+            world.battle.flight_ribbons,
+            world.battle.flight_ribbon_seeds,
+        ),
     ];
     let points = rings.iter().flat_map(|(ring, seeds)| {
         ring.iter().flat_map(move |ring| {

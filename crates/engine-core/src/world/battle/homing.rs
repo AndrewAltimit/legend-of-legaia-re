@@ -182,6 +182,7 @@ impl World {
     fn tick_homing_slots_with(&mut self, pass_step: Option<u8>, counter: u16) {
         // The landed bolts are this pass's calls, or none.
         self.battle.flight_ribbons = None;
+        self.battle.flight_ribbon_seeds = None;
         let Some(idx) = self.casting.homing.record else {
             return;
         };
@@ -266,6 +267,7 @@ impl World {
         }
         if ring.count > 0 {
             self.battle.flight_ribbons = Some(ring);
+            self.deal_flight_ribbon_rands(&ring);
         }
         // A landed slot's hit opens on the record's impact cue
         // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).
