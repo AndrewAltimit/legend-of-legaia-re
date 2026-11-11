@@ -1441,13 +1441,17 @@ impl World {
     /// while its own box is still on screen.
     /// Hand a reading box opening now the window format the field VM set
     /// (op `4C E0`) and reset it, as the pager's reset stores `3` when the
-    /// box closes: a format lasts one box.
+    /// box closes: a format lasts one box. The line load also seats the
+    /// option cursor on the preset (`4C E0 <n>`, `n >= 100`) and spends it,
+    /// as the script runner does (`0x80039F88..0x80039F98`).
     ///
-    /// REF: FUN_801D84D0 (`0x801D8798`, `0x801D90EC`)
+    /// REF: FUN_801D84D0 (`0x801D8798`, `0x801D90EC`), FUN_80039B7C
     pub(crate) fn apply_dialog_window_format(
         &mut self,
         panel: &mut legaia_engine_dialog::dialog::OwnedDialogPanel,
     ) {
+        let preset = std::mem::take(&mut self.dialog.picker_cursor_preset);
+        panel.seat_picker_cursor(usize::from(preset));
         let rows = std::mem::replace(
             &mut self.dialog.window_rows,
             legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,

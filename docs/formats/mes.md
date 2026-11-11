@@ -380,6 +380,14 @@ new_pc = (O + 1 + index*2) + i16_LE(entry[index])
 
 i.e. the displacement is relative to the **start of that option's own 2-byte entry**. Pinned empirically: across the four story-branch re-emissions of the `izumi` book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549) - the signature of relative addressing to a moving site - and every decoded option across the field corpus jumps to a byte inside its own script. Parser `legaia_mes::picker` (`scan_pickers` / `parse_picker_at` + `Picker::jump_target`); disc-gated regression `field_dialog_pickers_disc`.
 
+### The option cursor
+
+There is one cursor word for every box, `*(DAT_801C6EA4 + 0xC)`; the pager's Up / Down handler at `0x801D941C` is its only stepper and never resets it. The reset is the script runner's: each time `FUN_80039B7C` hands a line to the pager it copies the preset word `+0xE` into the cursor and zeroes the preset (`lhu v1,0xe(v0)` / `sh zero,0xe(v0)` / `sh v1,0xc(v0)` at `0x80039F90..0x80039F98`).
+
+So every picker opens on row 0, unless op `4C E0 <n>` with `n >= 100` set the preset to `n - 100` ahead of it - `izumi`'s statue pages do (`4C E0 65` .. `67`), the only carriers on the disc.
+
+A box carried on over a `0x24` continuation keeps its rows but not its cursor: `teien`'s "You're the ones who got rid of the Mist, right?" loops back to itself on No, and the second ask opens on Yes. Port: `OwnedDialogPanel::seat_picker_cursor`, called with the spent preset from `World::apply_dialog_window_format` on every line load.
+
 The engine consumes this directly: `engine_dialog::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` - the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
 
 For the **faithful** path, `engine_field::inline_dialogue` (`World::step_inline_dialogue`, the port of the dialog SM `FUN_80039B7C`) drives the whole inline interaction script through the real field VM: it executes the control bytecode between text segments (story-flag tests, `SET`/`CLEAR` flag ops, scene changes) and only pauses at each `0x1F` segment to show a box, so a chosen option's branch handler runs its side effects before the reply. It is gated by `World::toggles.use_vm_dialogue` (default `false` at the engine-core level; `legaia-engine play-window` enables it **by default**, with `--simple-dialogue` opting back into the simplified typewriter).

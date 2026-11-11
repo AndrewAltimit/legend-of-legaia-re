@@ -80,6 +80,11 @@ pub struct DialogState {
     /// The instant-page latch `_DAT_801F2744` (op `4C E0 00`): the next box
     /// loads its page whole.
     pub window_instant: bool,
+    /// The option-cursor preset `*(DAT_801C6EA4 + 0xE)`: op `4C E0 <n>` with
+    /// `n >= 100` stores `n - 100`. Every line load copies it into the
+    /// cursor `+0xC` and zeroes it (`FUN_80039B7C`, `0x80039F88..0x80039F98`),
+    /// so a picker opens on the preset row once and on row 0 after that.
+    pub picker_cursor_preset: u16,
     /// `DAT_80073F02`, the script runner's **yielded** latch: `FUN_80039B7C`
     /// stores `1` when a context it steps parks on a yield (state 1 -> 2,
     /// `0x80039FE4`), and the release at modal depth `0` turns it into the
@@ -112,6 +117,7 @@ impl DialogState {
             page_mark_seat: None,
             window_rows: legaia_engine_dialog::dialog_window::WINDOW_ROWS as u8,
             window_instant: false,
+            picker_cursor_preset: 0,
             script_yield_latch: false,
             script_engaged_prev: false,
         }

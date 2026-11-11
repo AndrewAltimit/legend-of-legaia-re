@@ -158,6 +158,17 @@ impl OwnedDialogPanel {
         self.picker_cursor
     }
 
+    /// Seat the option cursor a line load leaves. Retail keeps one cursor
+    /// word (`*(DAT_801C6EA4 + 0xC)`) for every box, and the script runner
+    /// overwrites it with the preset word `+0xE` each time it loads a line
+    /// (`lhu v1,0xe(v0)` / `sh zero,0xe(v0)` / `sh v1,0xc(v0)` at
+    /// `0x80039F90..0x80039F98` in `FUN_80039B7C`). A box carried on over a
+    /// `0x24` keeps its rows, not its cursor: a question asked again after
+    /// a wrong answer opens on row 0, not on the answer just given.
+    pub fn seat_picker_cursor(&mut self, row: usize) {
+        self.picker_cursor = row;
+    }
+
     /// The open menu's slide state, if a menu is open.
     pub fn picker_slide(&self) -> Option<&crate::dialog_picker_slide::PickerSlide> {
         self.picker_slide.as_ref().filter(|_| self.menu_active)
