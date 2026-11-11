@@ -300,6 +300,65 @@ fn the_power_meter_sweeps_as_retails_does() {
     }
 }
 
+/// The session machine `FUN_801CF3BC`, its body `0x801CF3BC..0x801D03B0`.
+const SESSION: u32 = 0x801C_F3BC;
+const SESSION_END: u32 = 0x801D_03B0;
+/// Its state word (`-0x6d94` off `0x801E0000`).
+const SESSION_STATE: u32 = 0x801D_926C;
+
+/// The same meter, the machine entered at its head in state `0x14` once a
+/// frame, every call out of its body stubbed: the head's pad latch and the
+/// dispatch, the meter, the press that locks it and steps the state, and the
+/// tail's fades left at rest.
+#[test]
+fn the_session_machine_sweeps_and_locks_the_meter() {
+    differential!(prot(972, SESSION));
+    use legaia_engine_fishing::fishing::{CAST_POWER_STEP, CastPower};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    const METER: u32 = 0x801D_9274;
+    const DIR: u32 = 0x801D_9278;
+    const ROD_PTR: u32 = 0x801D_9284;
+    cpu.stub_outside = Some((SESSION, SESSION_END));
+    let mut rng = Rng(0x4D45_5452);
+    let mut locks = 0;
+    for round in 0..90 {
+        cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+        // The rod actor the lock reads its facing off.
+        cpu.mem.wr32(ROD_PTR, ROD_ACTOR);
+        cpu.mem.wr32(SESSION_STATE, 0x14);
+        cpu.mem.wr32(METER, 0);
+        cpu.mem.wr32(DIR, 1);
+        let step = 1 + round % 3;
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        let lock_at = rng.below(400);
+        let mut port = CastPower::new();
+        port.zero();
+        for frame in 0..400u32 {
+            let press = frame == lock_at;
+            cpu.mem
+                .wr32(PRESSED, if press { 0x40 << rng.below(2) } else { 0 });
+            assert_eq!(cpu.call(SESSION, &[]), Stop::Returned, "frame {frame}");
+            port.advance(CAST_POWER_STEP * step as i32);
+            let at = format!("round {round} step {step} frame {frame}");
+            assert_eq!(cpu.mem.rd32(METER) as i32, port.value(), "meter, {at}");
+            if press {
+                assert_eq!(cpu.mem.rd32(SESSION_STATE), 0x15, "the press locks, {at}");
+                assert_eq!(cpu.mem.rd32(METER) as i32, port.lock(), "{at}");
+                locks += 1;
+                break;
+            }
+            assert_eq!(cpu.mem.rd32(SESSION_STATE), 0x14, "{at}");
+        }
+    }
+    assert!(locks > 60, "locks {locks}");
+}
+
 const ANGLER: u32 = 0x8014_2000;
 const ROD_ACTOR: u32 = 0x8014_3000;
 const ACC_X: u32 = 0x801D_9174;
