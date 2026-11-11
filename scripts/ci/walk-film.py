@@ -49,6 +49,7 @@ def main():
     ap.add_argument("--iso", default=os.environ.get("LEGAIA_DISC_BIN"))
     ap.add_argument("--no-retail", action="store_true", help="reuse the retail film")
     ap.add_argument("--no-engine", action="store_true", help="reuse the engine film")
+    ap.add_argument("--window", action="store_true", help="show the PCSX-Redux window (default: --headless)")
     ap.add_argument("--run", action="store_true", help="the engine's Field Move option on Run (retail reads it off the state)")
     ap.add_argument("--show", type=int, default=40, help="pass rows printed")
     a = ap.parse_args()
@@ -57,8 +58,10 @@ def main():
     if not a.no_retail:
         env = dict(os.environ, LEGAIA_PAD_SCRIPT=a.pad)
         subprocess.run(
-            ["timeout", str(max(a.frames, 300)), "bash", str(REPO / "scripts/pcsx-redux/run_probe.sh"),
-             "--fast", "--iso", a.iso, "--scenario", a.label,
+            ["timeout", "--kill-after=5", str(max(a.frames, 300)), "bash",
+             str(REPO / "scripts/pcsx-redux/run_probe.sh"),
+             # No window: a windowed probe in an agent or CI shell never quits.
+             "--fast", *([] if a.window else ["--headless"]), "--iso", a.iso, "--scenario", a.label,
              "--lua", str(REPO / "scripts/pcsx-redux/autorun_field_walk_film.lua"),
              "--frames", str(a.frames), "--out-dir", str(out)],
             cwd=REPO, env=env, check=False,
