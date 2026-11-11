@@ -46,7 +46,12 @@ impl World {
                     a.battle.render_blend =
                         legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
                 }
-                a.battle.impact_state = m.selector;
+                if let Some(state) = m.tint_state {
+                    a.battle.render_flag = state;
+                }
+                if let Some(selector) = m.selector {
+                    a.battle.impact_state = selector;
+                }
             }
         }
     }
