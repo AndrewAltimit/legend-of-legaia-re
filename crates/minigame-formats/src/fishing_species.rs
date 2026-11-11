@@ -320,9 +320,87 @@ pub fn parse_cadence_templates(overlay: &[u8]) -> Option<Vec<CadenceTemplate>> {
     Some(out)
 }
 
+// --- The catch showcase's per-species pose (`DAT_801D8534`, `DAT_801D7E30`) ---
+//
+// The result actor `FUN_801D5298` draws the landed fish itself, hanging from
+// a line in the middle of the plate. Two static tables, both indexed by the
+// species id `DAT_801D91CC`, set it up:
+//
+// - `0x801D8534 + species * 8`: three halfword Euler angles (`+0`, `+2`,
+//   `+4` into the actor's `+0x24` / `+0x26` / `+0x28`, `0x801D5414..0x801D5450`)
+//   and a hang offset `+6` - the actor's height starts at `0x7D0 - hang`
+//   (`0x801D52CC..0x801D52F0`) and is held at `-hang` (`0x801D5360..0x801D5388`).
+// - `0x801D7E30 + species * 4`: the index of the vertex of the model's object
+//   0 the line ties to - the render `FUN_801D67BC` projects it into the line's
+//   end `DAT_801D9154` (`0x801D6AD4..0x801D6AF4`).
+
+/// Runtime VA of the showcase pose table (`DAT_801D8534`, 8-byte stride).
+pub const CATCH_POSE_TABLE_VA: u32 = 0x801D_8534;
+
+/// Runtime VA of the line-tie vertex table (`DAT_801D7E30`, `u32` stride).
+pub const CATCH_TIE_VERTEX_TABLE_VA: u32 = 0x801D_7E30;
+
+/// One species' showcase pose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CatchPose {
+    /// Euler angles `(+0x24, +0x26, +0x28)` - the order `FUN_801D67BC`
+    /// applies them in is `+0x26`, `+0x24`, `+0x28` (Y, X, Z).
+    pub rot: [i16; 3],
+    /// The hang offset (`+6`): the fish settles at height `-hang`.
+    pub hang: i16,
+    /// The object-0 vertex the line ties to.
+    pub tie_vertex: u32,
+}
+
+/// Parse the [`SPECIES_COUNT`] showcase poses out of the as-loaded fishing
+/// overlay image. `None` on a short image, or a tie vertex past any plausible
+/// object (`>= 0x400`), which marks a wrong base.
+pub fn parse_catch_poses(overlay: &[u8]) -> Option<Vec<CatchPose>> {
+    let pose = CATCH_POSE_TABLE_VA.checked_sub(FISHING_OVERLAY_BASE_VA)? as usize;
+    let tie = CATCH_TIE_VERTEX_TABLE_VA.checked_sub(FISHING_OVERLAY_BASE_VA)? as usize;
+    let h = |p: usize| -> Option<i16> {
+        Some(i16::from_le_bytes([*overlay.get(p)?, *overlay.get(p + 1)?]))
+    };
+    (0..SPECIES_COUNT)
+        .map(|s| {
+            let p = pose + s * 8;
+            let t = tie + s * 4;
+            let tie_vertex = u32::from_le_bytes(overlay.get(t..t + 4)?.try_into().ok()?);
+            (tie_vertex < 0x400).then_some(())?;
+            Some(CatchPose {
+                rot: [h(p)?, h(p + 2)?, h(p + 4)?],
+                hang: h(p + 6)?,
+                tie_vertex,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catch_poses_parse_and_reject_a_wrong_base() {
+        let ov_len = (CATCH_POSE_TABLE_VA - FISHING_OVERLAY_BASE_VA) as usize + SPECIES_COUNT * 8;
+        let mut ov = vec![0u8; ov_len];
+        let pose = (CATCH_POSE_TABLE_VA - FISHING_OVERLAY_BASE_VA) as usize;
+        let tie = (CATCH_TIE_VERTEX_TABLE_VA - FISHING_OVERLAY_BASE_VA) as usize;
+        ov[pose + 8..pose + 10].copy_from_slice(&0x400i16.to_le_bytes());
+        ov[pose + 14..pose + 16].copy_from_slice(&(-100i16).to_le_bytes());
+        ov[tie + 4..tie + 8].copy_from_slice(&20u32.to_le_bytes());
+        let p = parse_catch_poses(&ov).expect("parses");
+        assert_eq!(p.len(), SPECIES_COUNT);
+        assert_eq!(p[1].rot, [0x400, 0, 0]);
+        assert_eq!(p[1].hang, -100);
+        assert_eq!(p[1].tie_vertex, 20);
+        ov[tie..tie + 4].copy_from_slice(&0x1234u32.to_le_bytes());
+        assert!(
+            parse_catch_poses(&ov).is_none(),
+            "a wild tie vertex is a wrong base"
+        );
+        assert!(parse_catch_poses(&ov[..pose]).is_none(), "short image");
+    }
 
     #[test]
     fn cadence_templates_parse_and_reject_garbage() {
