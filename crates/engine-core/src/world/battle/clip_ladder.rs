@@ -344,6 +344,34 @@ impl World {
         let now = self.actors[i].battle_juggle_window;
         self.actors[i].battle_juggle_window = prev_juggle;
         let committed = self.commit_battle_reaction_entry(i, entry);
+        // The draw that follows the tick decodes the node's clip at its
+        // cursor (`FUN_8004998C` from the draw tick), so the pass shows the
+        // committed entry on its first keyframe, not the pose this slice's
+        // advance decoded off the clip it left. That pose is what the body
+        // pair the next pass's range law and separation read is built from
+        // (`kor_shade_strike`: the struck Vahn's body pair on the commit pass
+        // reads `(-16, -144)`, the reaction's keyframe 0).
+        // PORT: FUN_80047430 (`0x80047E58..0x80048060`, the history push after the commits)
+        if committed {
+            let a = &mut self.actors[i];
+            if let Some(p) = a.battle_animation.as_ref() {
+                let mut pose = p.pose_at_sixteenths(0);
+                if let Some(prev) = a.pose_frame.as_ref() {
+                    let n = pose.bone_outputs.len();
+                    if let Some(rest) = prev.bone_outputs.get(n..) {
+                        pose.bone_outputs.extend_from_slice(rest);
+                    }
+                }
+                let (key, variant) = (p.attach_key(), p.variant_track());
+                if let Some(front) = a.battle_pose_history.front_mut() {
+                    front.pose = pose.clone();
+                    front.clip_key = key;
+                    front.variant_track = variant;
+                    front.frame = 0;
+                }
+                a.pose_frame = Some(pose);
+            }
+        }
         self.actors[i].battle_juggle_window = if committed {
             Self::juggle_window_open(&self.actors[i])
         } else {
