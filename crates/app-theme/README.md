@@ -49,9 +49,9 @@ screen has, and `good` / `warn` / `error` / `info` for status lines.
 
 `DARK` is the launcher's palette, each of its original float colours rounded
 to the nearest 8-bit step. `LIGHT` carries the same hues on white, with the
-accent darkened until it reads there. Explorer's light theme applies only the
-surface, accent, selection, error and outline roles over egui's own light
-widgets; in both themes a control at rest carries the `outline` edge, without
+accent darkened until it reads there. Explorer's light theme applies the
+surface, button (`raised` / `hover` / `pressed` / `open`), accent, selection,
+error and outline roles over egui's own light text; in both themes a control at rest carries the `outline` edge, without
 which an unticked check box all but vanishes into the panel, and weak text
 (hints such as the start page's drop line) is `ink_faint`, where egui's own
 alpha-faded grey fell under 3:1. A hint is text a player is meant to read

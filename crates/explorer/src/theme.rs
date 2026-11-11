@@ -20,17 +20,11 @@ pub fn install(ctx: &egui::Context) {
         v.extreme_bg_color = c(p.ground);
         v.code_bg_color = c(p.raised);
         v.widgets.noninteractive.bg_fill = c(p.card);
-        v.widgets.inactive.weak_bg_fill = c(p.raised);
-        v.widgets.inactive.bg_fill = c(p.raised);
-        v.widgets.hovered.weak_bg_fill = c(p.hover);
-        v.widgets.hovered.bg_fill = c(p.hover);
-        v.widgets.active.weak_bg_fill = c(p.pressed);
-        v.widgets.active.bg_fill = c(p.pressed);
-        v.widgets.open.weak_bg_fill = c(p.open);
-        v.warn_fg_color = c(p.warn);
     });
-    // The light theme keeps egui's own widget greys; only the surfaces, the
-    // accent, the selection and the control edges take the palette.
+    // The light theme keeps egui's own text and code greys; the surfaces,
+    // the buttons' states, the accent, the selection and the control edges
+    // take the palette, so a button reads as the launcher's in either theme
+    // (a pressed one goes gold, not egui's mid grey).
     ctx.style_mut_of(egui::Theme::Light, |s| surfaces(&mut s.visuals, &LIGHT));
     for theme in [egui::Theme::Dark, egui::Theme::Light] {
         ctx.style_mut_of(theme, |s| {
@@ -61,6 +55,14 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     // body grey at 60% alpha: 2.7:1 on the dark panel and 2.8:1 on the
     // light one, under the WCAG AA 4.5:1 the palette holds its hints to.
     v.weak_text_color = Some(c(p.ink_faint));
+    v.widgets.inactive.weak_bg_fill = c(p.raised);
+    v.widgets.inactive.bg_fill = c(p.raised);
+    v.widgets.hovered.weak_bg_fill = c(p.hover);
+    v.widgets.hovered.bg_fill = c(p.hover);
+    v.widgets.active.weak_bg_fill = c(p.pressed);
+    v.widgets.active.bg_fill = c(p.pressed);
+    v.widgets.open.weak_bg_fill = c(p.open);
+    v.warn_fg_color = c(p.warn);
 }
 
 /// The palette for the current visuals.
@@ -96,6 +98,32 @@ pub fn good(ui: &egui::Ui) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A button's states are the palette's in both themes, as the
+    /// launcher draws its buttons, and its text holds AA on each.
+    #[test]
+    fn buttons_take_the_palette_in_both_themes() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        for (theme, p) in [(egui::Theme::Dark, &DARK), (egui::Theme::Light, &LIGHT)] {
+            let w = ctx.style_of(theme).visuals.widgets.clone();
+            for (what, fill, want) in [
+                ("rest", w.inactive.weak_bg_fill, p.raised),
+                ("hover", w.hovered.weak_bg_fill, p.hover),
+                ("pressed", w.active.weak_bg_fill, p.pressed),
+            ] {
+                let got = Rgb(fill.r(), fill.g(), fill.b());
+                assert_eq!(got, want, "{theme:?}: a button at {what}");
+                let text = w.inactive.fg_stroke.color;
+                let text = Rgb(text.r(), text.g(), text.b());
+                assert!(
+                    text.contrast(got) >= 4.5,
+                    "{theme:?}: button text at {what} is {:.2}:1",
+                    text.contrast(got)
+                );
+            }
+        }
+    }
 
     /// Weak text reads on every surface Explorer draws it over, in both
     /// themes: WCAG AA (4.5:1), the floor `legaia_app_theme` holds its hint
