@@ -17,4 +17,5 @@ mod item_prices_vs_disc;
 mod magic_vs_disc;
 mod muscle_dome_vs_disc;
 mod music_vs_disc;
+mod scenes_vs_disc;
 mod shop_inventory_vs_disc;

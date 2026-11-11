@@ -519,7 +519,9 @@ effect_class = "ambush_off_pct"
 key = "good_luck_bell"
 name = "Good Luck Bell"
 price = 12000
-effect = "Lowers random-encounter rate."
+# Low Encounter (passive 0x3C) shifts the step's encounter rate right by
+# one in FUN_801D9E1C (docs/formats/encounter.md): half the rate.
+effect = "Halves the random-encounter rate."
 effect_class = "encounter_pct"
 effect_value = -50
 
@@ -527,16 +529,19 @@ effect_value = -50
 key = "bad_luck_bell"
 name = "Bad Luck Bell"
 price = 13000
-effect = "Increases random-encounter rate."
+# High Encounter (passive 0x3B) shifts the rate left by two in FUN_801D9E1C:
+# four times the rate, not the walkthrough's +50%.
+effect = "Quadruples the random-encounter rate."
 effect_class = "encounter_pct"
-effect_value = 50
+effect_value = 300
 
 [[accessory]]
 key = "nemesis_gem"
 name = "Nemesis Gem"
-effect = "Increases random-encounter rate."
+# The same High Encounter passive as the Bad Luck Bell: four times the rate.
+effect = "Quadruples the random-encounter rate."
 effect_class = "encounter_pct"
-effect_value = 50
+effect_value = 300
 
 [[accessory]]
 key = "war_god_icon"
