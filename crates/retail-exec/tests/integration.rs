@@ -390,6 +390,7 @@ mod text_width;
 mod text_writer;
 mod throw_out_confirm;
 mod tick_commits;
+mod tile_board_install;
 mod tile_lookups;
 mod timer_spawns;
 mod tint_ease;
