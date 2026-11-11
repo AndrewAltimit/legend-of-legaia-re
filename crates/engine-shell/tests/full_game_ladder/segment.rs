@@ -486,9 +486,16 @@ pub(super) fn traverse(
         // its expiry flag still clear: the story is waiting
         // on the clock, not on a door. Wait it out where the party stands,
         // then look at the scene again.
+        // Only once the scene's full pass has been played: a countdown the
+        // arrival pass's own last beat armed can be the one to beat, not to
+        // wait out. `taiku`'s escape clock starts with Zora's aftermath
+        // (P1[2]); its expiry routes the party to the cruise that ends the
+        // game, and the way out is the walk-on P2[15], which the arrival
+        // pass (story bands only) leaves to the full one.
         if hop.is_err()
             && pad
             && continuous::PLAYS_ON.with(std::cell::Cell::get)
+            && !proactive_only.contains(&cur)
             && wait_out_story_timer(session)?
         {
             beaten.remove(&cur);
@@ -570,7 +577,19 @@ pub(super) fn traverse(
                     // a fight it committed (see [`fight_committed`]).
                     let aim = (via >= vias.len()).then(|| target.clone());
                     BEAT_TARGET.with(|t| *t.borrow_mut() = aim);
+                    // Standing early in the milestone after next's scene,
+                    // the pass plays toward that anchor too (see the
+                    // arrival pass above): `cave01`'s exit on the way to
+                    // the `ravine` stays shut until Terra's training.
+                    let ahead = continuous::PLAYED_AHEAD
+                        .with(|a| a.borrow().clone())
+                        .filter(|(scene, _)| *scene == cur && cur != target.scene)
+                        .map(|(_, flags)| flags);
+                    let near = ahead.map(|a| NEXT_ANCHOR_FLAGS.with(|n| n.replace(Some(a))));
                     let left = play_beats(session, &mut log);
+                    if let Some(near) = near {
+                        NEXT_ANCHOR_FLAGS.with(|n| *n.borrow_mut() = near);
+                    }
                     BEAT_TARGET.with(|t| *t.borrow_mut() = None);
                     let left =
                         left.map_err(|b| format!("in {cur}, playing beats (after {e}): {b}"))?;

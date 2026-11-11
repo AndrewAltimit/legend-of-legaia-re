@@ -82,6 +82,8 @@ pub(super) fn play_beats(
     let mut walked: BTreeSet<u8> = BTreeSet::new();
     let mut touched: BTreeSet<u8> = BTreeSet::new();
     let mut examined: BTreeSet<(u8, u8)> = BTreeSet::new();
+    // Props examined to no effect, with the flags they were examined under.
+    let mut dry_props: BTreeMap<(u8, u8), BTreeSet<u16>> = BTreeMap::new();
     let overreach = overreaching_records(session, &mf, &man, 2);
     // A stager's record is often a staged conversation (`tunnelc` P1[4],
     // Xain: `0x323`, `0x324`, `0x325`, then the fight), each contact
@@ -183,6 +185,74 @@ pub(super) fn play_beats(
             idle.remove(&rec);
             walked.remove(&rec);
             rearmed.insert(rec);
+        }
+        // A prop examined to no effect is examined again once a flag its
+        // record tests has moved (the gate whose key a later prop gave).
+        let dry_stale: Vec<(u8, u8)> = dry_props
+            .iter()
+            .filter(|(a, f)| {
+                prop_tested_flags(session, &mf, &man, **a)
+                    .iter()
+                    .any(|flag| f.contains(flag) != round_start.contains(flag))
+            })
+            .map(|(&a, _)| a)
+            .collect();
+        for a in dry_stale {
+            dry_props.remove(&a);
+            examined.remove(&a);
+        }
+        // A switch that opens a door standing shut comes first: the way on
+        // may be behind it (`jiji` P0[3] opens P0[1] on the way to the
+        // `map02` mouth; `bylon` P0[12] opens the West Voz exit's door
+        // P0[16]). Pad hand only, and not on the continuous hand's own
+        // arrival pass: a switch is pressed when a way has been refused.
+        if pad_hand() && !PROACTIVE.with(std::cell::Cell::get) {
+            for (anchor, at, gated) in opener_beats(session, &mf, &man) {
+                if ran >= MAX_BEATS || !examined.insert(anchor) {
+                    continue;
+                }
+                ran += 1;
+                let f0 = flags_of_world(session);
+                let r = if gated {
+                    examine_prop(session, anchor, at, false)
+                } else {
+                    touch_prop(session, anchor, at)
+                };
+                let r = fight_committed(session, r);
+                trace_beat(session, &f0, || {
+                    format!("{name} switch {anchor:?} -> {r:?}")
+                });
+                match r {
+                    Run::Entered(s) => {
+                        finish(session, log, ran);
+                        return Ok(Some(s));
+                    }
+                    Run::Battle(b) => return Err(format!("switch {anchor:?}: {b}")),
+                    Run::Error(e) => return Err(e),
+                    Run::Parked(_) | Run::Released => {}
+                }
+            }
+        }
+        if CROSSING_BEATS.with(std::cell::Cell::get) {
+            let props_start = flags_of_world(session);
+            if let Some(s) = play_prop_beats(
+                session,
+                &mf,
+                &man,
+                &name,
+                &mut examined,
+                &mut dry_props,
+                &mut ran,
+                false,
+                false,
+            )? {
+                finish(session, log, ran);
+                return Ok(Some(s));
+            }
+            if flags_of_world(session) != props_start {
+                finish(session, log, ran);
+                return Ok(None);
+            }
         }
         // A live walk-on band that changes the party plays before a
         // stager's fight: the party that fights is the one the story seats
@@ -508,8 +578,17 @@ pub(super) fn play_beats(
         // tunnel end, neither is reached again.
         if continuous::PLAYS_ON.with(std::cell::Cell::get)
             && session.host.world.dialog.three_actor_talk.is_some()
-            && let Some(s) =
-                play_prop_beats(session, &mf, &man, &name, &mut examined, &mut ran, true)?
+            && let Some(s) = play_prop_beats(
+                session,
+                &mf,
+                &man,
+                &name,
+                &mut examined,
+                &mut dry_props,
+                &mut ran,
+                true,
+                false,
+            )?
         {
             finish(session, log, ran);
             return Ok(Some(s));
@@ -846,12 +925,40 @@ pub(super) fn play_beats(
         // one (a switch) is examined with Cross, never by contact (`chitei2`
         // P0[33] raises the `0x4F0` that opens the P2[11] walk-on setting
         // `0x470`); a touch-class one (a door) is walked into.
-        if let Some(s) = play_prop_beats(session, &mf, &man, &name, &mut examined, &mut ran, false)?
-        {
+        if let Some(s) = play_prop_beats(
+            session,
+            &mf,
+            &man,
+            &name,
+            &mut examined,
+            &mut dry_props,
+            &mut ran,
+            false,
+            true,
+        )? {
             finish(session, log, ran);
             return Ok(Some(s));
         }
-        let now = flags_of_world(session);
+        let mut now = flags_of_world(session);
+        // A round that gained nothing plays the props that carry the
+        // party away ([`carries_away`]) before it gives up.
+        if now == round_start {
+            if let Some(s) = play_prop_beats(
+                session,
+                &mf,
+                &man,
+                &name,
+                &mut examined,
+                &mut dry_props,
+                &mut ran,
+                false,
+                false,
+            )? {
+                finish(session, log, ran);
+                return Ok(Some(s));
+            }
+            now = flags_of_world(session);
+        }
         let fresh = now.difference(&seen).next().is_some();
         seen.extend(now.iter().copied());
         if now == round_start || (round + 1 >= BEAT_ROUNDS && !fresh) {
@@ -867,16 +974,22 @@ pub(super) fn play_beats(
 /// walls, `4C 70`) the continuous hand walks to: the pass a split party
 /// takes ahead of its walk-on bands ([`play_beats`]). Returns the scene a
 /// prop carried the party into.
+#[allow(clippy::too_many_arguments)]
 fn play_prop_beats(
     session: &mut NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     name: &str,
     examined: &mut BTreeSet<(u8, u8)>,
+    dry: &mut BTreeMap<(u8, u8), BTreeSet<u16>>,
     ran: &mut usize,
     stones_only: bool,
+    defer_carriers: bool,
 ) -> Result<Option<String>, String> {
     for (anchor, at, gated) in prop_beats(session, mf, man) {
+        if defer_carriers && carries_away(session, anchor) {
+            continue;
+        }
         // The continuous hand examines only what it can walk to, and
         // leaves the rest for a round that stands somewhere else.
         // A gate stone (its touch clears walls) is examined only from
@@ -923,6 +1036,7 @@ fn play_prop_beats(
         // in step and the pass ran out of fresh flags short of it.
         let mut dial: BTreeSet<u16> = BTreeSet::new();
         let mut stuck = false;
+        let before = flags_of_world(session);
         for turn in 0..DIAL_TURNS {
             if turn > 0 {
                 // A statue still turning from the last touch takes no
@@ -973,6 +1087,9 @@ fn play_prop_beats(
             {
                 break;
             }
+        }
+        if flags_of_world(session) == before {
+            dry.insert(anchor, before);
         }
     }
     Ok(None)
@@ -1099,7 +1216,8 @@ pub(super) fn prop_beats(
                     .iter()
                     .any(|r| setters2.contains(r)))
     };
-    w.props
+    let beats = w
+        .props
         .bank
         .props
         .iter()
@@ -1109,6 +1227,216 @@ pub(super) fn prop_beats(
             let at = if p.moving_box() { p.world } else { p.collider };
             (a, at, p.interact_gated())
         })
+        .collect::<Vec<_>>();
+    // A lock comes after its key: a prop whose record tests a flag another
+    // listed prop raises plays after that one. `dolk`'s Sunrise Gate
+    // (P0[15]) inserts the key only once the case P0[19] has given it
+    // (`0x26B`); in anchor order the gate came first and turned the party
+    // away.
+    let raises = |rec: usize| -> BTreeSet<u16> {
+        walk_partition_gflag_sites(mf, man, 0)
+            .iter()
+            .filter(|s| {
+                s.record == rec
+                    && s.bank == FlagBank::System
+                    && s.kind == FlagKind::Set
+                    && s.clean
+                    && !s.text_alias
+                    && !s.debug_menu
+                    && !w.system_flag_test(s.flag)
+            })
+            .map(|s| s.flag)
+            .collect()
+    };
+    let record_of = |a: (u8, u8)| w.props.bank.props.get(&a).map_or(usize::MAX, |p| p.record);
+    let given: BTreeSet<u16> = beats
+        .iter()
+        .flat_map(|(a, _, _)| raises(record_of(*a)))
+        .collect();
+    let (locks, keys): (Vec<_>, Vec<_>) = beats.into_iter().partition(|(a, _, _)| {
+        let own = raises(record_of(*a));
+        prop_tested_flags(session, mf, man, *a)
+            .iter()
+            .any(|f| given.contains(f) && !own.contains(f))
+    });
+    keys.into_iter().chain(locks).collect()
+}
+
+/// Whether a prop stands on (or beside) a teleport's source tile: touched,
+/// it carries the party to the warp's far end. The main beat round leaves
+/// such a prop for the end of a round that gained nothing else. `taiku`
+/// P0[5], the Mist Generator door over the warp at (54, 29), plays its
+/// one-shot "locked" scene (P2[25], latch `0x518`) and leaves the party
+/// north of the lift lever P0[7]; the talks that start the escape then
+/// begin with the party where no walk reaches the lift before the clock
+/// (`0x396`) runs out.
+fn carries_away(session: &NativeSession, anchor: (u8, u8)) -> bool {
+    let (x, z) = (i32::from(anchor.0), i32::from(anchor.1));
+    walk_links::teleports(session)
+        .keys()
+        .any(|&(wx, wz)| (wx - x).abs() <= 1 && (wz - z).abs() <= 1)
+}
+
+/// The props of the loaded field scene whose script, run under the live
+/// flags from its resume point, opens another placed object that stands
+/// solid now: a `B1 <object> 00` (`31 00` on that object's channel, the
+/// object being the partition-0 record of that index). These are the
+/// scene's switches. `jiji` P0[3] opens the corridor door P0[1] (and
+/// raises `0x206`); `bylon` P0[12], the west room's switch, opens its
+/// south door P0[16] while `0x180` (raised by `map01` P2[11], the north
+/// entrance) holds it shut, the way out to West Voz. Each object is
+/// examined (or walked into) the way a prop beat is.
+pub(super) fn opener_beats(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+) -> Vec<PropBeat> {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let w = &session.host.world;
+    // A door leaf whose own touch opens it is no switch, and a door the
+    // player opens by walking into it needs none: `suimon`'s double doors
+    // (P0[0] / P0[1]) each open themselves and their partner.
+    let self_opening = self_opening_doors(session);
+    let solid: BTreeSet<usize> = w
+        .props
+        .bank
+        .props
+        .iter()
+        .filter(|(a, p)| !p.collision_exempt() && !self_opening.contains(a))
+        .map(|(_, p)| p.record)
+        .collect();
+    let live = |f: u16| w.system_flag_test(f);
+    w.props
+        .bank
+        .props
+        .iter()
+        .filter(|(_, p)| !p.collision_exempt())
+        .filter(|(_, p)| {
+            let Some((start, pc0, len)) = partition_record_span(mf, man, 0, p.record) else {
+                return false;
+            };
+            let body = &man[start..start + len];
+            // The touch resumes past the spawn prologue's first `21`.
+            let resume = if matches!(body.get(pc0), Some(0x24 | 0x25)) {
+                match LinearWalker::new(body, pc0)
+                    .map_while(Result::ok)
+                    .find(|i| i.opcode == 0x21)
+                {
+                    Some(i) => i.pc + i.size,
+                    None => return false,
+                }
+            } else {
+                pc0
+            };
+            let flow = flow_reachable(body, resume, Some(&live));
+            let opens_itself = flow.iter().any(|i| {
+                i.extended.is_none()
+                    && matches!(
+                        i.info,
+                        InsnInfo::CFlag {
+                            kind: FlagKind::Set,
+                            bit: 0
+                        }
+                    )
+            });
+            !opens_itself
+                && flow.iter().any(|i| {
+                    matches!(
+                        i.info,
+                        InsnInfo::CFlag {
+                            kind: FlagKind::Set,
+                            bit: 0
+                        }
+                    ) && i.extended.is_some_and(|o| {
+                        o != 0xF8 && usize::from(o) != p.record && solid.contains(&usize::from(o))
+                    })
+                })
+        })
+        .map(|(&a, p)| {
+            let at = if p.moving_box() { p.world } else { p.collider };
+            (a, at, p.interact_gated())
+        })
+        .collect()
+}
+
+/// [`opener_beats`] for the loaded field scene.
+pub(super) fn opener_beats_here(session: &NativeSession) -> Vec<PropBeat> {
+    match scene_man_and_triggers(session) {
+        Some((mf, man, _)) if session.host.world.mode == SceneMode::Field => {
+            opener_beats(session, &mf, &man)
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Press each switch of the loaded scene ([`opener_beats`]) once, as a
+/// player who finds the way on shut tries the levers in reach: `bylon`'s
+/// north entrance raises `0x180` / `0x181`, shutting both wing rooms'
+/// south doors (P0[16], P0[18]), and the walk to the East Voz exit stalls
+/// until the east room's switch (P0[13]) has opened P0[18].
+/// `Ok(Some(scene))` when a switch carried the party to another scene.
+pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<String>, String> {
+    if session.host.world.mode != SceneMode::Field {
+        return Ok(None);
+    }
+    let name = scene_name(session);
+    let Some((mf, man, _)) = scene_man_and_triggers(session) else {
+        return Ok(None);
+    };
+    for (anchor, at, gated) in opener_beats(session, &mf, &man) {
+        let f0 = flags_of_world(session);
+        let r = if gated {
+            examine_prop(session, anchor, at, false)
+        } else {
+            touch_prop(session, anchor, at)
+        };
+        let r = fight_committed(session, r);
+        trace_beat(session, &f0, || {
+            format!("{name} switch {anchor:?} -> {r:?}")
+        });
+        match r {
+            Run::Entered(s) => return Ok(Some(s)),
+            Run::Battle(b) => return Err(format!("switch {anchor:?}: {b}")),
+            Run::Error(e) => return Err(e),
+            Run::Parked(_) | Run::Released => {}
+        }
+    }
+    Ok(None)
+}
+
+/// The system flags a placed object's record tests, by anchor: a prop
+/// examined to no effect is tried again once one of them has moved (the
+/// `dolk` Sunrise Gate, P0[15], turns the party away until the case
+/// P0[19] has handed over the key, `0x26B`).
+fn prop_tested_flags(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    anchor: (u8, u8),
+) -> BTreeSet<u16> {
+    use legaia_engine_field::man_field_scripts::FlagBank;
+    let Some(rec) = session
+        .host
+        .world
+        .props
+        .bank
+        .props
+        .get(&anchor)
+        .map(|p| p.record)
+    else {
+        return BTreeSet::new();
+    };
+    walk_partition_gflag_sites(mf, man, 0)
+        .iter()
+        .filter(|s| {
+            s.record == rec
+                && s.bank == FlagBank::System
+                && s.kind == FlagKind::Test
+                && s.clean
+                && !s.debug_menu
+        })
+        .map(|s| s.flag)
         .collect()
 }
 
@@ -1127,6 +1455,7 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
             .as_ref()
             .is_some_and(|id| id.prop_anchor == Some(anchor))
     };
+    let back = player_xz(session);
     for (dx, dz) in [(-1i16, 0i16), (1, 0), (0, -1), (0, 1)] {
         let (sx, sz) = (tx + dx, tz + dz);
         if !(0..128).contains(&sx) || !(0..128).contains(&sz) {
@@ -1153,7 +1482,19 @@ pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32
         }
         session.host.world.set_pad(0);
         if started {
-            return run_while_moving(session, DEEP_EXIT_TICKS);
+            let r = run_while_moving(session, DEEP_EXIT_TICKS);
+            // A touch that left the player on its seat gives the seat back:
+            // the seat beside an object can be a pocket the object walls
+            // in (`dolk` P0[7], the possessed sleeper at (110, 117),
+            // touched from (109, 117)), and the walk on starts where the
+            // walk to it ended.
+            if matches!(r, Run::Released)
+                && walking(session)
+                && tile_of(player_xz(session).0, player_xz(session).1) == (sx, sz)
+            {
+                restore_player_xz(session, back);
+            }
+            return r;
         }
     }
     Run::Released
@@ -1189,6 +1530,14 @@ thread_local! {
     /// door has refused: the pass then walks only the bands that carry the
     /// story.
     pub(super) static PROACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Set while a crossing scene's beats are played on its second visit:
+    /// the props (keys, locks, switches) go first, and a round whose props
+    /// moved a flag hands back to the crossing before the scene's talks.
+    /// `dolk`'s Sunrise Gate is the way across the castle once the case
+    /// gave its key; the talks around the castle are a long walk through
+    /// mist-era encounters for the lone Vahn the `rim_elm_restored` anchor
+    /// seats there.
+    pub(super) static CROSSING_BEATS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 thread_local! {

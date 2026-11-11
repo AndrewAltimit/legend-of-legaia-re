@@ -1081,6 +1081,54 @@ pub(super) fn self_opening_doors(session: &NativeSession) -> HashSet<(u8, u8)> {
         .collect()
 }
 
+/// The bank props whose touch runs nothing: from the resume point their
+/// record is an idle loop (`21` and jumps only). Such a leaf is not opened
+/// by pressing into it, wherever it stands: `cave01` P0[0], the rock over
+/// the camp's (7, 89) teleport, raises its `31 00` only in the spawn arm
+/// that tests `0x15E` (Terra's training), so it stands shut until the
+/// scene is entered again with the flag up, and the camp's way out is the
+/// (19, 90) teleport. A leaf whose touch does anything is counted open as
+/// before: the doors on Rim Elm's way out open through bodies the static
+/// read cannot follow to their `31 00`.
+pub(super) fn idle_touch_props(session: &NativeSession) -> HashSet<(u8, u8)> {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let w = &session.host.world;
+    let Some(man) = w.field_vm.channels_man.as_ref() else {
+        return HashSet::new();
+    };
+    let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
+        return HashSet::new();
+    };
+    w.props
+        .bank
+        .props
+        .iter()
+        .filter(|(_, p)| {
+            let Some((start, pc0, len)) = partition_record_span(&mf, man, 0, p.record) else {
+                return false;
+            };
+            let body = &man[start..start + len];
+            if !matches!(body.get(pc0), Some(0x24 | 0x25)) {
+                return false;
+            }
+            let Some(resume) = LinearWalker::new(body, pc0)
+                .map_while(Result::ok)
+                .find(|i| i.opcode == 0x21)
+                .map(|i| i.pc + i.size)
+            else {
+                return false;
+            };
+            let flow = flow_reachable(body, resume, None);
+            !flow.is_empty()
+                && flow
+                    .iter()
+                    .all(|i| i.opcode == 0x21 || matches!(i.info, InsnInfo::JmpRel { .. }))
+        })
+        .map(|(&a, _)| a)
+        .collect()
+}
+
 /// A door that opens only for a player standing in a tile box (the
 /// `BBoxTest` on the player channel ahead of its `31 00`): the box, with
 /// the collider centres of the door's leaves. `ropeway` P0[2], the station

@@ -591,6 +591,18 @@ fn part_b_full_game_ladder() {
         let seed_at = (0..=i).rev().find(|&j| spine[j].seeds_next).unwrap_or(i);
         let from = &spine[seed_at];
         let t0 = std::time::Instant::now();
+        // The pad pass plays toward the milestone after next as well when
+        // it stands early in that milestone's scene, as the continuous run
+        // does: the `ravine` anchor is another session's, and the way there
+        // from Drake runs through Snowdrift Cave, whose exit (`cave01`
+        // P0[0]) stays shut until Terra's training raises `0x15E` - flags
+        // only the `snowdrift_cave` anchor carries.
+        let played = spine.get(i + 2).and_then(|m| {
+            let mut flags = anchors[i + 1].as_ref()?.flags.clone();
+            flags.extend(&anchors[i + 2].as_ref()?.flags);
+            Some((m.scene.clone(), flags))
+        });
+        continuous::PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
         let rep = run_segment(
             &inp,
             &graph,
@@ -600,6 +612,7 @@ fn part_b_full_game_ladder() {
             anchors[i + 1].as_ref(),
             with_pad,
         );
+        continuous::PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
         eprintln!(
             "[seg {i:2}] {:24} -> {:24} {:10} ({:.1}s){}",
             rep.from,

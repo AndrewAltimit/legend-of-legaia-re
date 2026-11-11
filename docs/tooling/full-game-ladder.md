@@ -541,6 +541,29 @@ to Nivora set four rules the continuous hand plays by:
   east from. The planner therefore enters a cell only when the probes from
   its own centre clear the bodies ahead in the direction it is entered
   from, the goal cell excepted.
+- **A switch plays before the rest of the round.** A prop whose script,
+  under the live flags, runs `B1 <object> 00` at a placed object that
+  stands solid is a switch, and each beat round examines the switches
+  first, so the doors they open are open for the walks that follow:
+  `jiji` P0[3] opens the corridor door P0[1], and `bylon`'s wing switches
+  P0[12] / P0[13] open the south doors P0[16] / P0[18] the north entrance
+  shut (the way out to West and East Voz). A crossing that a far door's
+  hop cannot finish presses the scene's switches and tries the hop again.
+- **A key before its lock.** A prop whose record tests a flag another
+  listed prop raises plays after that prop: `dolk`'s Sunrise Gate P0[15]
+  inserts the key only once the case P0[19] has given it (`0x26B`). A
+  flag write in a partition-0 record counts as script, not as a text
+  byte that happens to spell the op, when the record's control flow
+  reaches it (`dolk` P0[19]'s `52 6B`).
+- **A prop that carries the party away waits.** A prop on a teleport's
+  source tile is played only at the end of a round that gained nothing
+  else. `taiku`'s Mist Generator door P0[5] plays its one-shot "locked"
+  scene (P2[25], latch `0x518`) and leaves the party north of the lift
+  lever P0[7]; played first, the escape that the talks then start began
+  where no walk reaches the lift before its clock (`0x396`) ran out.
+- **A leaf with an idle touch opens nothing.** A prop whose touch body is
+  only `21` and jumps is not counted open over the teleport it stands on:
+  `cave01`'s rock P0[0] opens from P2[13] (`B1 00 00`), not from contact.
 - **NPC bodies never seal a pocket on their own.** The same probe test
   around a standing NPC is coarser than the locomotion, which slides past
   a body at sub-cell offsets the lattice does not hold. `deene`'s entry

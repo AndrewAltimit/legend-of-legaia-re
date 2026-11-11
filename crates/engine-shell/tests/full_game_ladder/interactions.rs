@@ -102,6 +102,7 @@ pub(super) fn interact_at(
             continue;
         };
         let before = flags_of_world(session);
+        let seat_xz = player_xz(session);
         session.host.world.set_pad(PadButton::Cross.mask());
         match session.tick() {
             Ok(SceneTickEvent::SceneEntered { name }) => return Run::Entered(name),
@@ -151,6 +152,18 @@ pub(super) fn interact_at(
             restore_player_xz(session, (bx, bz));
         }
         let r = run_while_moving(session, DEEP_EXIT_TICKS);
+        // A beat that followed the talk and left the player on the seat
+        // moved nobody: the seat is given back. The seat beside an object
+        // can be a pocket the object itself walls in (`dolk` P0[7], the
+        // possessed sleeper at (110, 117), examined from (109, 117); its
+        // talk walks another actor, which counts as a beat following).
+        if beat_follows
+            && matches!(r, Run::Released)
+            && walking(session)
+            && player_xz(session) == seat_xz
+        {
+            restore_player_xz(session, (bx, bz));
+        }
         if !matches!(r, Run::Released) || !walking(session) {
             return r;
         }
