@@ -323,9 +323,11 @@
           }
           a.morphed = src !== a.base || !!(hidden && hidden.length && !pose.length);
         }
-        /* Rot limb dimming (FUN_80048A08's per-object colour rule): re-send
-         * the actor's packet colours only when the engine's dimmed set
-         * changes. Guarded against a cached WASM without the export. */
+        /* Rot limb dimming (FUN_80048A08's per-object colour rule) and the
+         * near-camera ghost's flat packets (handler bank 2, one colour per
+         * primitive): re-send the actor's packet colours only when the
+         * engine's stream changes. Guarded against a cached WASM without the
+         * export. */
         if (typeof rt.play_battle_actor_limb_key === 'function') {
           const limbKey = rt.play_battle_actor_limb_key(i);
           if (limbKey !== (a.limbKey || 0)) {

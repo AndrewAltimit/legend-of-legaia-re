@@ -14,6 +14,10 @@
 use crate::runtime::LegaiaRuntime;
 use wasm_bindgen::prelude::*;
 
+/// The key bit a bank-2 body's flattened colour stream rides
+/// ([`LegaiaRuntime::play_battle_actor_limb_key`]).
+const FLAT_BANK_KEY: f64 = (1u64 << 52) as f64;
+
 impl LegaiaRuntime {
     fn limb_dim_plan(
         &self,
@@ -42,8 +46,11 @@ impl LegaiaRuntime {
     /// dims, otherwise a hash that changes whenever the dimmed stream does.
     /// Returned as `f64` so the full 53-bit value survives the JS boundary.
     pub fn play_battle_actor_limb_key(&self, i: u32) -> f64 {
+        // A body on handler bank 2 (the near-camera ghost) draws flat
+        // packets, so its colour stream moves with the bank too.
+        let flat = self.body_blend_plan(i).is_some_and(|p| p.flat_bank());
         let Some(plan) = self.limb_dim_plan(i) else {
-            return 0.0;
+            return if flat { FLAT_BANK_KEY } else { 0.0 };
         };
         // The channel map rides the key: a variant swapped into a dimmed
         // channel changes the stream without changing the plan.
@@ -55,12 +62,18 @@ impl LegaiaRuntime {
                 }
             }
         }
+        if flat {
+            key = key.rotate_left(11) ^ FLAT_BANK_KEY as u64;
+        }
         (key & ((1u64 << 53) - 1)).max(1) as f64
     }
 
     /// Battle mesh `i`'s packet-colour stream with the limb dimming applied
-    /// (the rest stream when nothing dims) - same layout as
-    /// `play_battle_actor_flat_rgba`. Empty when the mesh has no stream.
+    /// (the rest stream when nothing dims), then flattened to each
+    /// primitive's first corner when the body draws on handler bank 2
+    /// (`BattleActorDrawPlan::apply_flat_bank_colours`, as the native window
+    /// does) - same layout as `play_battle_actor_flat_rgba`. Empty when the
+    /// mesh has no stream.
     pub fn play_battle_actor_limb_rgba(&self, i: u32) -> Vec<u8> {
         let Some((_, flat, ids)) = self
             .battle_render
@@ -81,6 +94,14 @@ impl LegaiaRuntime {
                 }
                 None => plan.apply_rgba(&mut out, ids),
             }
+        }
+        if let Some(blend) = self.body_blend_plan(i)
+            && let Some(indices) = self
+                .battle_render
+                .as_ref()
+                .and_then(|b| b.actor_indices(i as usize))
+        {
+            blend.apply_flat_bank_colours(out.as_chunks_mut::<4>().0, indices);
         }
         out
     }

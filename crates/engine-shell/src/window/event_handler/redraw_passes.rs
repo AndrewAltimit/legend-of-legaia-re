@@ -403,12 +403,14 @@ impl PlayWindowApp {
                 {
                     let mut cba_tsb = rest.cba_tsb.clone();
                     plan.apply_body_blend(&mut cba_tsb);
+                    let mut colors = rest.colors.clone();
+                    plan.apply_flat_bank_colours(&mut colors, &rest.indices);
                     match r.upload_vram_mesh(
                         &rest.positions,
                         &rest.uvs,
                         &cba_tsb,
                         &rest.normals,
-                        &rest.colors,
+                        &colors,
                         &rest.indices,
                     ) {
                         Ok(m) => posed_overrides[ai] = Some(m),
@@ -519,6 +521,7 @@ impl PlayWindowApp {
             // `web-play::play_battle_body_blend`.
             if let Some(plan) = self.body_draw_plan(ai) {
                 plan.apply_body_blend(&mut vmesh.cba_tsb);
+                plan.apply_flat_bank_colours(&mut vmesh.colors, &vmesh.indices);
             }
             if std::env::var_os("LEGAIA_DIAG_POSE").is_some() {
                 let (lo, hi) = vmesh.aabb();
