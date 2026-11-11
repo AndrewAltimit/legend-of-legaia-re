@@ -61,6 +61,7 @@ mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod town01_opening_view_window_disc;
 mod training_battle;
+mod vell_bridge_grass_disc;
 mod world_map_battle_return_camera;
 mod world_map_camera_offset_oracle;
 mod world_map_door_encounter_disc;

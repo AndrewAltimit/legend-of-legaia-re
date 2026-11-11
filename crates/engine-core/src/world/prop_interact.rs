@@ -530,8 +530,12 @@ impl World {
         if let Some(prop) = self.props.bank.props.get(&anchor) {
             id.ctx.local_flags = prop.anim.flags;
         }
-        let mut parked = false;
         let own_record = self.object_key_at_anchor(anchor);
+        // A morphing object's envelope words live on its channel.
+        if let Some(key) = own_record {
+            self.load_object_morph_words(key, &mut id.ctx);
+        }
+        let mut parked = false;
         // Where the record's own `23 <x> <z>` seated the prop this slice.
         let mut own_seat: Option<(i32, i32)> = None;
         {
@@ -985,6 +989,9 @@ impl World {
     /// as `FUN_801CF754` / `FUN_801CF9F4` skip `flags & 3` actors from then
     /// on.
     fn sync_prop_from_ctx(&mut self, anchor: (u8, u8), ctx: &FieldCtx) {
+        if let Some(key) = self.object_key_at_anchor(anchor) {
+            self.store_object_morph_words(key, ctx);
+        }
         let Some(prop) = self.props.bank.props.get_mut(&anchor) else {
             return;
         };

@@ -581,6 +581,27 @@ Two worked examples on this side:
   engine lands the system context's `B1` / `B2` on a placed object's context
   as on a placement's (`World::step_field_cross_context_cflag`).
 
+#### A record that drives its own object's morph
+
+`vell`'s Bridge Grass is a placed object bound to `P0[1]` whose bind-time
+prologue arms a swaying pulse (`+0x62 = 0x5000`: recycle `0x1000` plus
+reset-on-complete `0x4000`). Its examine body, after Yes to "Do you wish to use
+the Fertilizer?", re-arms the lanes (`4B 07 00 ..`), raises the gate on its own
+actor (`B1 01 0C`), drops the recycle and hold bits (`AC 01 0C`, `AC 01 0A`),
+primes the envelope (`AB 01 0D`) and waits on ADVANCE (`AC 01 0B` / `AD 01
+0B`). With recycle clear the envelope latches `0x800` when lane 0 drains
+(`0x80020A78`), about 160 frames on, and the grass stands grown across the
+river.
+
+Retail has one actor, so the words the script writes are the words
+`FUN_80020740` steps. The port keeps the object's clip-control word on its
+prop and its envelope on its object-bind channel, and a prop record runs on a
+context of its own. The prop runner therefore loads the envelope bits
+(`+0x62 & 0xFC00`) and the gate (`+0x10 & 0x1000`) from the object's channel
+before each slice and stores them back after it
+(`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
+`engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
+
 #### town0e's installer is a placed actor, not an effect actor
 
 The install op is the same one every other ambience uses - `0x34` sub-3
