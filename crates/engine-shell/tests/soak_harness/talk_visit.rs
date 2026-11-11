@@ -237,7 +237,16 @@ pub(super) fn seat_at_talk_target(session: &mut NativeSession, n: usize) -> Opti
             Some(slot) => Some(TalkTarget::Actor(slot)),
             None => w.field_interact_prop_anchor().map(TalkTarget::Prop),
         };
-        if hit == Some(target) && seat_walks_out(w, sx, sz) && seat_walks_in(w, sx, sz) {
+        // The floods judge the seat with every placement a candidate. The
+        // visibility cull is the camera's (`FUN_801D79E8`), and the camera
+        // is still where the player stood before the seat: `son`'s nook
+        // seat at (9680, 8832) flooded out northwards through slot 25, culled
+        // from the old view, and once the camera followed, slot 25 shut the
+        // nook's only way out.
+        let view = w.npcs.cull_view.take();
+        let walks = seat_walks_out(w, sx, sz) && seat_walks_in(w, sx, sz);
+        w.npcs.cull_view = view;
+        if hit == Some(target) && walks {
             return Some(target);
         }
         // Something else answers from this side: put the player back.

@@ -110,7 +110,7 @@ opens the Incense notice (handler slot `0x32`), whose close stores
 `_DAT_8007B450 = 0` (`0x801F1F20`), so the op's next pass finds the park Idle
 and opens the notice again. A `49 0E` is past the op's sub-op bound
 (`sltiu v0,v0,0xe` at `0x801E098C`), and the Idle arm returns the same PC
-(`0x801E0990`).
+(`0x801E0990`); a modal record's `49 48` parks the same way.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
@@ -154,6 +154,11 @@ the player:
 - where the locomotion's own wall and body probes let the player walk a whole
   tile away. `son`'s camp has a wall nook at (74..75, 68) shut by two NPCs who
   never move, and a seat there read as `confined`.
+- where that walk still gets out with every placement solid. The visibility
+  cull is the camera's, and at the seat the camera still frames where the
+  player stood: `son`'s nook seat flooded out north through slot 25, culled
+  from the old view, and once the camera followed, slot 25 shut the nook's one
+  way out.
 - where a walk could also come back in from a tile away. The body probes test
   points 64 ahead of the player, so a pocket can let the player out and never
   back in: `dolk`'s monk formation stands its rows 128 apart, and a seat in the
@@ -554,6 +559,7 @@ regression.
 | `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |
 | `teien_mist_question_cursor_carried` | `teien+rt`: after a No, the Mist question (`P2[5]`) asked again with the cursor still on No, so a confirm with no Down took No again and the question never let go | every line load seats the option cursor on the `4C E0` preset, else row 0 (`FUN_80039B7C` `0x80039F88..0x80039F98`); a box carried over a `0x24` had kept its old cursor - see [mes.md](../formats/mes.md#the-option-cursor) |
 | `vell_bridge_grass_envelope_never_latches` | `vell+talk`: Yes to the Fertilizer on the Bridge Grass (`P0[1]`) parked the examine on `AD 01 0B` for good | the record's own context and the object's channel share the envelope words (`+0x62 & 0xFC00`, `+0x10 & 0x1000`), so the spin sees the ADVANCE latch `FUN_80020740` raises when the lanes drain (`0x80020A78`) - see [field-ambient-fx.md](../subsystems/field-ambient-fx.md#a-record-that-drives-its-own-objects-morph) |
+| `son_nook_seat_through_culled_npc` | `son+talk`: a talk seat in the camp's wall nook left the player `confined` | harness: the seat floods count culled placements as solid (the camera had not yet followed the seat) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

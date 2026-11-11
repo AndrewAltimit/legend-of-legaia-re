@@ -43,6 +43,10 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "other7's field MAN is a draft no retail path runs; its `49 0E` parks for good in retail too, and the anti-hang cap ends it before the softlock window does when the window is longer",
     ),
     (
+        "timeline_cap|other7|timeline@0xa2:49",
+        "other7's field MAN is a draft no retail path runs; a modal record's `49 48` is past op 0x49's sub-op bound (sltiu at 0x801E098C), so the Idle arm returns the same PC for good in retail too, and the anti-hang cap ends it",
+    ),
+    (
         "softlock|other7|helper@0x0389:op49",
         "other7's field MAN is a draft no retail path runs; its `49 0E` is past op 0x49's sub-op bound, and the Idle arm returns the same PC (0x801E0990), as in retail",
     ),
