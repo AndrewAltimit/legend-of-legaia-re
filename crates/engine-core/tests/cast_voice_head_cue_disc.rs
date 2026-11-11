@@ -278,14 +278,17 @@ fn arming_a_seru_cast_raises_the_captured_starter_triple() {
     );
     eprintln!("[ok] PROT 0903 -> FUN_8003D53C(6, 4, 686)");
 
-    // A second cast inside that span: `FUN_8003DE7C(1) != 0` declines it.
+    // A second cast with a data stream read in flight: `FUN_8003DE7C(1) != 0`
+    // declines it. A sounding clip alone does not (the poll reads the stream
+    // queue, `0x8003DF70`).
     w.arm_summon_stager(0, 0x83);
+    w.casting.sideband_read_left = Some(8);
     w.raise_cast_voice_on_arm(MAX_ARM);
     assert!(
         w.drain_battle_xa_cues().is_empty(),
-        "a cast inside the previous clip's read span plays no voice"
+        "a cast while a stream read is in flight plays no voice"
     );
-    // The span drains (the loop steps it once per tick); the next cast plays.
+    w.casting.sideband_read_left = None;
     w.audio.battle_xa_busy_frames = 0;
     // Vera is action id 0x83 -> PROT 0905 -> cue 0x131 -> (6, 1, 568).
     w.arm_summon_stager(0, 0x83);
@@ -385,7 +388,7 @@ fn ultimate_rave_cues_its_kill_roll() {
             .and_then(|t| t.get(usize::from(id) - 0x100).copied());
         let gates = VoiceCueGates {
             side_band_stage: 0,
-            clip_span_left: 0,
+            stream_read: false,
         };
         let VoiceCueVerdict::Play(want) = admit_voice_cue(id, gates, raw) else {
             panic!("cue {id:#x} plays");

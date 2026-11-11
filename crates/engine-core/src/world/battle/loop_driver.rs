@@ -982,6 +982,20 @@ impl World {
         }
     }
 
+    /// `FUN_8003DE7C(1) != 0` on the retail path: a **data** stream read is
+    /// in flight (the stream queue's `gp+0x988`, `0x8003DF70..0x8003DF78`).
+    /// The battle's stream reads are the side-band applier's, which the port
+    /// stands in for with [`legaia_engine_battle_loop::cast_fx_state::CastFxState::sideband_read_left`].
+    /// A CD-XA one-shot is not a data read and does not hold the poll: the
+    /// poll's `gp+0x91C` countdown is read only behind `0x8007BA70 != 0`,
+    /// which every retail capture holds at `0`. The clip's own lifetime is
+    /// the drive word `0x8007BC20` ([`crate::world::AudioState::battle_xa_busy_frames`]).
+    ///
+    /// REF: FUN_8003DE7C
+    pub(in crate::world) fn battle_stream_read_in_flight(&self) -> bool {
+        self.casting.sideband_read_left.is_some()
+    }
+
     /// Queue one CD-XA clip start and hold the modelled drive busy for its
     /// read span (`dur` vsyncs - see [`crate::world::AudioState::battle_xa_busy_frames`]).
     /// REF: FUN_8003D53C

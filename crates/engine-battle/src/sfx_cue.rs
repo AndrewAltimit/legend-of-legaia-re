@@ -82,7 +82,9 @@ pub struct SfxCueSources<'a> {
     /// byte, and the engine's side-band is resident rather than streamed, so
     /// a host passes `false` (a zero-frame window).
     pub side_band_streaming: bool,
-    /// `FUN_8003DE7C(1) != 0`: a CD read is in flight, voice clip skipped.
+    /// `FUN_8003DE7C(1) != 0`: a data stream read is in flight, voice clip
+    /// skipped. A sounding CD-XA clip is not one: the starter stops a data
+    /// read and a new clip replaces the old (`battle_cast_cue::VoiceCueGates`).
     pub cd_read_busy: bool,
 }
 
@@ -115,6 +117,7 @@ impl SfxCueRing {
 /// Route one battle cue. Mirrors `FUN_8004FE5C(id, category)`.
 ///
 /// PORT: FUN_8004FE5C
+// REF: FUN_8003DE7C (the voice leg's stream-read gate)
 pub fn route_sfx_cue(
     ring: &mut SfxCueRing,
     id: u32,

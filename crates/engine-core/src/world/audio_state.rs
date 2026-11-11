@@ -68,12 +68,19 @@ pub struct AudioState {
     /// plays from this list; the cast still raises its clip on
     /// [`Self::battle_xa_cues`].
     pub battle_xa_prestage: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
-    /// Frames the modelled CD drive stays busy after a clip start - the
-    /// read span in vsyncs (`dur * 2.5` sectors at 150/s = `dur / 60` s). The
-    /// funnel's voice leg drops a request while it is non-zero
-    /// (`FUN_8003DE7C(1) != 0` at `0x8004FE9C`), so two `0x10C` stings
-    /// inside one read span collapse to the first. Counted down once per
-    /// battle tick.
+    /// Vsyncs the drive word `0x8007BC20` (`gp+0x908`, the `xa_flag` debug
+    /// counter) holds `2` after a clip start: the starter `FUN_8003D53C` stores
+    /// it (`0x8003D658..0x8003D65C`) and sets the read's end sector `dur * 2.5`
+    /// on (`(dur * 150 + 0x95) / 60` at `0x8003D698..0x8003D6D8`), so at double
+    /// speed the clip reads for `dur` vsyncs, after which the read callback's
+    /// stop `FUN_8003EE00` zeroes the word (`0x8003DA90`). Its readers are the
+    /// shout's CD-busy fallback (`FUN_800508DC`, `0x80050A28..0x80050A34`) and
+    /// the melee grunt's `< 2` gate (`0x801EEAA8..0x801EEAB8`). It is **not**
+    /// the funnel's `FUN_8003DE7C(1)` poll, which asks for a data stream read
+    /// (`World::battle_stream_read_in_flight`): a voice request while a clip
+    /// sounds replaces it. Counted down once per battle tick. Not modelled:
+    /// the word's other clears, a seek (`FUN_8003EAE4` -> `FUN_8003ED04`) or
+    /// a stream-queue load (`FUN_8003DDA0`) ahead of the clip's end.
     pub battle_xa_busy_frames: u16,
     /// Whether the clip [`Self::battle_xa_busy_frames`] counts down loads
     /// the battle frame (`frame_clock::XA_STREAM_FRAME_COST`). A clip the

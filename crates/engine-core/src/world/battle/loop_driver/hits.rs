@@ -1742,13 +1742,15 @@ impl World {
     /// `+0x1EF` flinch or the `+0x1F1` knockdown and is silent here (a
     /// capture of four party swings took the skip every time, see
     /// `docs/subsystems/battle-action.md`). Firing it on every strike was the
-    /// port's repeated "block" sound. The voice pass's in-flight counter
-    /// `_DAT_8007BC20 < 2` (`0x801EEAB4`, the `xa_flag` debug counter) is
-    /// not modelled. The cue arm keeps its retail gates: the
-    /// attacker playing a plain action-table clip (`+0x1D9 < 0x10`,
-    /// `0x801EEB88`) and, inside the funnel, the drive being idle
-    /// (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`, modelled as
-    /// [`crate::world::AudioState::battle_xa_busy_frames`]).
+    /// port's repeated "block" sound. The grunt also waits for no one-shot
+    /// to be sounding: the drive word `_DAT_8007BC20 < 2` (`0x801EEAA8..
+    /// 0x801EEAB8`, the `xa_flag` debug counter,
+    /// [`crate::world::AudioState::battle_xa_busy_frames`]); a blocked hit
+    /// inside the last clip falls through to the cue arm's test. The cue arm
+    /// keeps its retail gates: the attacker playing a plain action-table clip
+    /// (`+0x1D9 < 0x10`, `0x801EEB88`) and, inside the funnel, no data
+    /// stream read in flight (`FUN_8003DE7C(1) == 0` at `0x8004FE9C`,
+    /// [`Self::battle_stream_read_in_flight`]).
     ///
     /// The ring is transient by design. Its slots are drained in retail by
     /// `FUN_80016B6C`, which the port does not model (the hosts' own SFX
@@ -1757,6 +1759,7 @@ impl World {
     /// maintains - so a stored ring would sit at zero and dedupe nothing.
     ///
     /// PORT: FUN_801EC3E4 (`0x801EEA80..0x801EEBEC`, the two sound sites)
+    // REF: FUN_8003DE7C (the funnel's stream-read gate)
     pub(super) fn fire_melee_impact_cue(
         &mut self,
         attacker: u8,
@@ -1775,7 +1778,8 @@ impl World {
                 .map(|m| m[4])
                 .unwrap_or(0);
             let blocked = committed_reaction.is_some_and(|r| r != 0 && r == block_entry);
-            if category < 3 && blocked {
+            let clip_sounding = self.audio.battle_xa_busy_frames != 0;
+            if category < 3 && blocked && !clip_sounding {
                 let char_id = self.party_roster_slot(attacker as usize) as u8 + 1;
                 let grunt = match char_id {
                     1 => Some((0u32, 0x26u32)),

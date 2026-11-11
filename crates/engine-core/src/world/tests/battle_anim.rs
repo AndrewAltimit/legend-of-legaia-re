@@ -1156,8 +1156,9 @@ fn special_starter_commit_raises_the_arts_banner_and_the_ramp_emits_quads() {
 /// with no seat flag and no starter mark, the constant behind the starter
 /// names a Hyper Art and the commit dispatches its fanfare - Vahn's Burning
 /// Flare `0x1C` is id `0x104` or `0x107` (`XA1.XA` channel 4 or 7) on one
-/// `rand()` coin. The dispatcher's read-span gate drops a second request
-/// inside the first clip's span. The known-art starter (`0x19`) commit asks
+/// `rand()` coin. A second request inside the first clip's span plays over
+/// it (the dispatcher's gate is a data stream read, not the clip). The
+/// known-art starter (`0x19`) commit asks
 /// the arts-voice selector instead, which a staged table resolves onto
 /// `XA2.XA`.
 #[test]
@@ -1182,11 +1183,15 @@ fn starter_commits_voice_the_hyper_fanfare_and_the_arts_shout() {
     assert!(matches!(cues[0].channel, 4 | 7), "{cues:?}");
     assert_eq!(cues[0].duration_sectors, (10u32 * 60).div_ceil(100));
 
-    // Inside that clip's read span the dispatcher declines the next one.
+    // Inside that clip's read span the next one still starts.
     world.battle_ctx.arts_banner_stage = 0;
     stage(&mut world, &[0x1A, 0x1C], 1, 0x1A);
     world.commit_staged_battle_anim_at_boundary(0);
-    assert!(world.drain_battle_xa_cues().is_empty(), "the drive is busy");
+    assert_eq!(
+        world.drain_battle_xa_cues().len(),
+        1,
+        "a sounding clip does not hold the dispatcher"
+    );
     world.audio.battle_xa_busy_frames = 0;
 
     // A non-Hyper constant behind the starter plays nothing.

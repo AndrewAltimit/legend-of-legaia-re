@@ -294,7 +294,7 @@ impl World {
                 .and_then(|t| t.get(usize::from(id - 0x100)).copied());
             let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
                 side_band_stage: 0,
-                clip_span_left: self.audio.battle_xa_busy_frames,
+                stream_read: self.battle_stream_read_in_flight(),
             };
             if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
                 legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
@@ -341,7 +341,7 @@ impl World {
             element_of: &element_of,
             xa_duration_raw: &xa_duration_raw,
             side_band_streaming: false,
-            cd_read_busy: self.audio.battle_xa_busy_frames > 0,
+            cd_read_busy: self.battle_stream_read_in_flight(),
         };
         // The last-played word lives with the drainer on the host: the ring op
         // below carries the key, and the router's own compare never matches.

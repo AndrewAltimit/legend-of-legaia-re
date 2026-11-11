@@ -353,7 +353,7 @@ impl World {
             .and_then(|t| t.get(usize::from(id).wrapping_sub(0x100)).copied());
         let gates = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
             side_band_stage: 0,
-            clip_span_left: self.audio.battle_xa_busy_frames,
+            stream_read: self.battle_stream_read_in_flight(),
         };
         if let legaia_engine_battle_vm::battle_cast_cue::VoiceCueVerdict::Play(req) =
             legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue(id, gates, raw)
@@ -427,7 +427,7 @@ impl World {
         };
         let open = legaia_engine_battle_vm::battle_cast_cue::VoiceCueGates {
             side_band_stage: 0,
-            clip_span_left: 0,
+            stream_read: false,
         };
         ids.into_iter()
             .filter_map(|id| {
