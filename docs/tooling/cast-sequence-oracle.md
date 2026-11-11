@@ -289,9 +289,13 @@ film re-arms the shot onto them from the seated pose; the film's camera then tra
 a unit or two through arm 2. The caster's clip cursor is the other: a module that gates on its
 countdown leaves the clip free-running, and the replay reached the gate `128` cursor units
 ahead of retail's, so the lips stood shut where retail's frame has them open. A `--physical`
-film seats the recording's first-row cursor on the gate (`retail_opening_cursor`'s `first_row`).
-The Kiss of Death film reads `.882` to `.916` with both (arm 2 `.774` to `.855`). Both are
-harness seats.
+film seats the state's own RAM cursor on the gate (`state_opening_cursor`), falling back on the
+recording's first row (`retail_opening_cursor`'s `first_row`) when the state cannot be read. The
+first row is a pass late: the probe writes it after the first vsync has run, so seated on it the
+caster stands a pass ahead. Over the films both seats were measured on, the RAM's cursor reads
+higher or equal on every one: Kiss of Death `.915` against `.907` (arm 2 `.901` against `.857`),
+Lip King `.981` / `.959`, White Shield `.967` / `.960`, Bull Charge `.968` / `.950`,
+`battle_geremi_ogre_strike` `.985` / `.973`. Both seats are harness seats.
 
 **The ground carries the facing.** An earlier actor of retail's round leaves its seat
 turned, and the range law measures a target by its body pair, the pose centroid turned by

@@ -422,7 +422,10 @@ def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     `--physical` film (`first_row`) takes the recording's first row, seated on
     the gate: the replay reached the state's instant on its own clip clock,
     and a module that gates on its countdown leaves the caster's clip free to
-    run anywhere (Kiss of Death's lips opened `128` cursor units early)."""
+    run anywhere (Kiss of Death's lips opened `128` cursor units early).
+    The first row is a pass past the state's instant, so a physical film
+    takes `state_opening_cursor` first and this only when the state's RAM
+    cannot be read."""
     begin = (0x28, 0x3C)
     keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
