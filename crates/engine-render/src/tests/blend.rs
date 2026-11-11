@@ -790,3 +790,20 @@ fn the_15_bit_scanout_reads_a_bin_as_its_expansion() {
         }
     }
 }
+
+/// The play page's screen-primitive fragment shader (`FS_SCREEN_PRIM` in
+/// `play-app.js`), which carries the blend half's 5-bit terms, compiles: the
+/// page has no other gate on it before a browser runs it.
+#[test]
+fn the_page_screen_primitive_shader_parses() {
+    use super::page_glsl::{es300_to_450, js_consts, parse_glsl, site_js, template};
+    let consts = js_consts(&site_js("play-app.js"));
+    let src = es300_to_450(&template(&consts, "FS_SCREEN_PRIM"));
+    let module = parse_glsl(&src, naga::ShaderStage::Fragment);
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    )
+    .validate(&module)
+    .unwrap_or_else(|e| panic!("FS_SCREEN_PRIM does not validate: {e:?}"));
+}
