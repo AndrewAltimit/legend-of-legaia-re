@@ -16,8 +16,9 @@ const HALF_TURN: i32 = 0x800;
 /// A full circle.
 const FULL_TURN: i32 = 0x1000;
 /// The frame step arms 7 and 8 run at. Their term `word / 4` comes off once a
-/// frame where the frame product comes off per vsync, so a pass a vsync takes a
-/// quarter of it: retail's stand reads `-552` entering arm 8 and `-140` leaving.
+/// frame where the frame product comes off per vsync, so the engine takes it
+/// whole on every fourth tick: retail's stand reads `-552` entering arm 8 and
+/// `-140` leaving.
 const ARM_FRAME_STEP: i32 = 4;
 
 /// The chase target an empty retail seat leaves (`0x801F8154` naming a
@@ -84,10 +85,14 @@ impl World {
             (7 | 8, _) => {
                 *spin += step >> 3;
                 let k = if phase == 7 { 3 } else { 2 };
-                a.move_state.world_z = a
-                    .move_state
-                    .world_z
-                    .wrapping_add((k * step - *spin / (4 * ARM_FRAME_STEP)) as i16);
+                // The frame product runs a vsync a tick; the word's quarter
+                // comes off once a pass, on the tick that closes it (the word
+                // has grown a pass's `(step * scalar) >> 3`), whole: shared
+                // out a tick at a time it truncated away and stood the
+                // creature `36` units short of retail's `-140`.
+                let pass_ends = *spin % ARM_FRAME_STEP == 0;
+                let back = if pass_ends { *spin / 4 } else { 0 };
+                a.move_state.world_z = a.move_state.world_z.wrapping_add((k * step - back) as i16);
                 a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;
             }
             (9, true) => {
