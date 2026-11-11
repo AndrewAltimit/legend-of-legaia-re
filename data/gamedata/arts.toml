@@ -20,8 +20,10 @@ character = "Vahn"
 name = "Hyper Elbow"
 kind = "regular"
 ap = 18
-command = ["Arms", "Ra-Seru", "High"]
-directions = [1, 2, 4]
+# The walkthrough this table was mined from lists "High" third; the
+# executable's command glyph string (DAT_80075EC4) is Left, Right, Left.
+command = ["Arms", "Ra-Seru", "Arms"]
+directions = [1, 2, 1]
 action_constant = 0x29
 
 [[arts]]

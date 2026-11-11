@@ -28,10 +28,9 @@ fn scus_path() -> Option<PathBuf> {
 /// the gamedata tables were mined from disagrees. The test fails if a *new*
 /// undocumented divergence appears, or if a documented one silently changes.
 const KNOWN_DIVERGENCES: &[(&str, &[u8], &[u8])] = &[
-    // Vahn's Hyper Elbow: walkthrough lists the third input as "High" (Up=4),
-    // but the executable's command glyph is Left (1). See
-    // docs/formats/art-data.md#command-glyph-string.
-    ("Hyper Elbow", &[1, 2, 4], &[1, 2, 1]),
+    // Empty: the one walkthrough error found (Vahn's Hyper Elbow, listed as
+    // "High" third where the executable has Left) is corrected in arts.toml.
+    // See docs/formats/art-data.md#command-glyph-string.
 ];
 
 fn divergence_for(name: &str) -> Option<&'static (&'static str, &'static [u8], &'static [u8])> {

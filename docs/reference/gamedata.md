@@ -317,7 +317,7 @@ for art in db.arts_for(Character::Vahn) {
 }
 
 // Look up an art by direction-byte sequence
-let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 4]).unwrap();
+let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 1]).unwrap();
 assert_eq!(art.name, "Hyper Elbow");
 
 // Map an action constant to AP cost (for runtime damage tooling)

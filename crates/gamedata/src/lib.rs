@@ -1169,7 +1169,7 @@ mod tests {
     fn vahn_hyper_elbow_lookup() {
         let db = Database::load();
         let art = db
-            .find_art_by_directions(Character::Vahn, &[1, 2, 4])
+            .find_art_by_directions(Character::Vahn, &[1, 2, 1])
             .expect("Hyper Elbow");
         assert_eq!(art.name, "Hyper Elbow");
         assert_eq!(art.ap, 18);

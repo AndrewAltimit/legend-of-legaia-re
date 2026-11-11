@@ -48,7 +48,7 @@ use legaia_gamedata::{Database, Character, ArtKind};
 let db = Database::load();
 
 // Look up an art by exact command sequence
-let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 4]).unwrap();
+let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 1]).unwrap();
 assert_eq!(art.name, "Hyper Elbow");
 assert_eq!(art.ap, 18);
 assert_eq!(art.kind, ArtKind::Regular);
