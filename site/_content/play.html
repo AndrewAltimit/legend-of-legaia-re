@@ -3163,11 +3163,12 @@ div.play-vis-head { cursor: default; }
 
   /* ---------------- focus + buttons ---------------- */
 
-  const showVeil = () => veil.classList.remove('is-hidden');
+  /* The veil asks for the first click only. Once the player has taken the
+   * controls, clicking another window leaves the picture undimmed; a click on
+   * the canvas takes the controls back, and its accent border shows which. */
   const hideVeil = () => veil.classList.add('is-hidden');
   veil.addEventListener('click', () => { canvas.focus(); });
   canvas.addEventListener('focus', hideVeil);
-  canvas.addEventListener('blur', showVeil);
 
   /* Reset camera: the view's shared reset (`resetCamera`, which drives the
    * engine's `Camera::recenter_follow` - the native double-click's kernel). */
