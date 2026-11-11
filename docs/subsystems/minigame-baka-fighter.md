@@ -797,6 +797,8 @@ Three chrome bodies are pure frame-counter timelines over `FUN_801D5ED0`: given 
 
 The Ghidra dump at this address is truncated (80 bytes / 20 instructions, no `jr ra`); the overlay image holds 680 bytes / 170 instructions. Disassemble PROT 0976 at base `0x801CE818` instead.
 
+Both tints are `FUN_80024EE4(1, 1, colour)` (`0x801D5ACC`, `0x801D5BE0`): an additive full-screen quad on ordering-table layer `1`, in front of the HUD renderer's and the widget emitter's buckets, so the flash adds pure red and the fade-in starts the card washed white. The port carries the colour as `ChromeFrame::tint`, and both play hosts draw it through the one screen-layer builder `minigame_hud::baka_screen_prims` (`baka_strips::baka_screen_tint`).
+
 The card belongs to the cabinet, not the duel: its only two `jal` sites (`0x801CF784`, `0x801CF840`) are inside the attract arms, the only arms that advance its counter `DAT_801DBE94`. The port draws it on exactly those frames (`CabinetFrame::title_card`).
 
 **Round banner (`FUN_801D5C7C`).** Two mirrored halves (widget 3, drawn through `FUN_801D5ED0` / `FUN_801D69A8`) converging on `x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then `6 * (t - 90)` on the way out. The level ramps `0x80 + (t - 30) * 127 / 30` in (reaching `0xFF` at `t = 60`) and `0xC8 - (t - 90) * 127 / 30` out, clamped to `0..=0xFF`. The parted poses draw at half level and set the two banner sprite flags; the joined pose clears them. Frame `0` fires the round-announce voice line, and **its channel is the round index itself** - `FUN_8003D53C(0x1F, DAT_801DBF8C, 0x48)` - while the digit drawn beside the caption is that index plus one.

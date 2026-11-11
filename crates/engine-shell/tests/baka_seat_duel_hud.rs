@@ -210,3 +210,57 @@ fn select_in_a_seated_duel_opens_the_pause_menu() {
     host.world.set_pad(0);
     assert_eq!(state(&host), Some(ST_DUEL), "Circle backs out");
 }
+
+/// The attract title card's red flash reaches the screen layer both hosts
+/// draw: the chrome produced its tint (`FUN_80024EE4(1, 1, 0xFF)`) and
+/// neither host read it, so the card never flashed.
+#[test]
+fn the_title_card_red_flash_is_drawn() {
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene("koin1", 0).expect("enter koin1");
+    for _ in 0..90 {
+        let _ = host.tick();
+    }
+    host.world.minigames.casino_coins = 100;
+    host.world.toggles.use_vm_dialogue = true;
+    host.world.trigger_field_interact(0, 51);
+    host.world.set_pad(0);
+    for _ in 0..2000 {
+        if host.world.mode == SceneMode::BakaFighter {
+            break;
+        }
+        let _ = host.tick();
+    }
+    assert_eq!(host.world.mode, SceneMode::BakaFighter, "the seat's warp");
+    // No pad: the attract card runs its own clock.
+    let mut red = None;
+    for _ in 0..1200 {
+        let _ = host.tick();
+        let fight = host.world.minigames.baka_fighter.as_ref().expect("duel");
+        if fight
+            .chrome_frame()
+            .tint
+            .is_some_and(|t| t.rgb() == [0xFF, 0, 0])
+        {
+            red = Some(());
+            break;
+        }
+    }
+    assert!(red.is_some(), "the title card's flash frame");
+    let fight = host.world.minigames.baka_fighter.as_ref().expect("duel");
+    let index = host.index.clone();
+    let mut surface = BakaDuelSurface::default();
+    let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+    assert!(surface.frame(read, Some(fight)).is_some(), "duel surface");
+    assert!(surface.hud_art_resident(), "the HUD art decodes");
+    let prims = legaia_engine_screens::minigame_hud::baka_screen_prims(&surface, fight);
+    assert!(
+        prims.iter().any(|p| matches!(p, ScreenPrim::Flat(q)
+            if q.semi_transparent && q.abr_mode == 1 && q.color[..3] == [0xFF, 0, 0]
+                && q.ot_index == u32::from(legaia_engine_ui::baka_strips::BAKA_TINT_OT))),
+        "the additive red quad"
+    );
+}
