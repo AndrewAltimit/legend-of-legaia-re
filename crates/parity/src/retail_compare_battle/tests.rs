@@ -1894,6 +1894,31 @@ fn numeral_cells_come_off_the_arenas_and_step_back_a_pass() {
     );
 }
 
+/// Two numerals in the arenas: `battle_jou_party_vahn_chain_late`'s `346`
+/// resting on row `32` (`93` at 24 px older, `89` at 23 px newer) beside
+/// its `464` still rising (`(112, 83)` 13 px older, `(103, 60)` 16 px
+/// newer). The resting numeral does not make the rising one's step
+/// unknown, and each cell steps back by its own move.
+#[test]
+fn a_resting_numeral_beside_a_rising_one_steps_back_cell_by_cell() {
+    let q = |x: i16, y: i16, w: i16, digit: u8| popup_cells::DigitQuad {
+        x,
+        y,
+        w,
+        digit,
+        addr: 0,
+    };
+    let older = [q(93, 32, 24, 3), q(112, 83, 13, 4)];
+    let newer = [q(89, 32, 23, 3), q(103, 60, 16, 4)];
+    assert!(!popup_cells::rest_row_unknown(&older, &newer));
+    let back = popup_cells::step_back(&older, &newer);
+    assert_eq!((back[0].x, back[0].y, back[0].w), (97, 32, 24));
+    assert_eq!((back[1].x, back[1].y, back[1].w), (121, 106, 10));
+    // A rising cell the newer pass already put on the row is still unknown.
+    let newer = [q(89, 32, 23, 3), q(103, 32, 16, 4)];
+    assert!(popup_cells::rest_row_unknown(&older, &newer));
+}
+
 /// A strike-loop swing committed between the displayed frame and the RAM's:
 /// the ring ids and the cursor ring say so, and the image child stands the
 /// acting seat on the ring's displayed pair (`rim_elm_gimard_victory`'s

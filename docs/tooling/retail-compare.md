@@ -4716,6 +4716,19 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   `y = 4`), and the displayed frame two passes older (`y = 244`) does not
   have it in view yet. A sweep of a leg past the frame edge in two passes
   is the residual, not the ghost's colour.
+- `battle_map01_lippian_kiss_of_death_mid_cast`: the near Lippian ghosts
+  whole on retail too. A PCSX-Redux film of the state shows the frame one
+  pass newer than the displayed one, and that frame is the state's older
+  ordering table rasterised (mean error `4.3`): every packet of the body is
+  there, its green stem included. The stem is faint on the film where the
+  raster draws it: over the stem the film adds `(2, 3.5)` to red / green
+  where the raster adds `(4, 8)`, and over the lips `(12, 0)` against
+  `(18, 6)`. That emulator's software GPU quarters the 5-bit texel before
+  modulating it on its `B + F/4` path (`((t >> 2) * m) >> 7`,
+  `getTextureTransColShade` in `gpu/soft/soft.cc`), so a texel channel
+  under `4` adds nothing whatever its colour. The dark stem drops out and
+  the red lips keep a trace, which is the open faintness above: the residual
+  is the blend's arithmetic, not the ghost's pose or facing.
 
 ### Which pose names a strike capture's ghost bits
 
@@ -6222,6 +6235,20 @@ every pass, so it moves with the phase of both clips):
   keeps the age seat. `battle_gimard_tail_fire_a` `.966` to `.973`,
   `battle_gimard_tail_fire_b` `.961` to `.972`, `rim_elm_gimard_victory`
   level.
+- **Every live numeral, cell by cell.** The arenas carry each numeral the
+  ring still draws, so a chain's earlier hit resting on the row sits beside
+  the newest one still rising. The rest-row test reads each cell against its
+  own older cell, not the run against the run:
+  `battle_jou_party_vahn_chain_late` draws `346` on row `32` beside `464` at
+  `y = 60` / `83`, and a run-wide test read the resting `346` as the rising
+  numeral's unknown, dropped both and drew `464` alone off the age seat
+  (`.938` to `.944`). What is left there is the resting `346`'s column: the
+  step back puts it at `x = 97`, four pixels right of the older pass's `93`,
+  and seated at `93` the state reads `.961`, but `battle_gimard_tail_fire_a`
+  loses `.007` the same way. A cell at the cap moves with the anchor's
+  projection alone and its width with the cut's parity
+  (`0x801DF930..0x801DF9C8` trims to `23` or `24` px), so two passes do not
+  say how it moved before them.
 - **A frame step the replay does not run.** `battle_melee_hit_spark`'s
   passes ran step `3` and an action plan runs the default `2`, so the
   step seed (`RetailBattle::frame_step_seed`) also covers an action in
