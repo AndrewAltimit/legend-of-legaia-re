@@ -408,10 +408,12 @@ pub fn resolve_field_camera(
             return frame;
         }
         if top_view {
+            // The controller's scroll words are the focus as retail stores
+            // it, X and Z negated; the pan is world units.
             return FieldCameraFrame::WorldMapTopView {
                 azimuth: az,
                 zoom,
-                pan: [px, pz],
+                pan: [-px, -pz],
             };
         }
         // The retail walk camera is the field zone camera (see

@@ -419,6 +419,7 @@ mod world_leaves;
 mod world_map_entity;
 mod world_map_horizon;
 mod world_map_sky;
+mod world_map_top_view;
 mod zone_ramp;
 mod zone_record;
 mod zone_requery;
