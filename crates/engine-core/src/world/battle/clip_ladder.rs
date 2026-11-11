@@ -289,10 +289,15 @@ impl World {
             // keyframe and wraps a looping clip: this tick's crossing is the
             // natural end either way.
             let tested = if natural_end { i16::from(count) } else { frame };
+            // The advance that crossed the end has already carried the body
+            // the whole `+0x0E` (the natural-end step of
+            // `World::tick_battle_animations_walk`); the cut's pro-rated share
+            // at the end frame is that same carry, so it is not taken twice.
+            let step = if natural_end { 0 } else { p.end_root_step() };
             if held {
                 ([0; 4], 0, 0, 0, count, 0)
             } else {
-                (frames, lock, frame, tested, count, p.end_root_step())
+                (frames, lock, frame, tested, count, step)
             }
         });
         let Some((frames, lock, frame, tested, count, step)) = playing else {
