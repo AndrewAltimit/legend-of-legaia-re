@@ -26,9 +26,9 @@ impl World {
     /// | 13 (`0x801F7D40..0x801F7D78`, at or under `scalar << 5`; pass `0x801F7DC0..0x801F7DCC`) | the creature walks `scalar / 4` a tick along `z`; on the pass the creature and the victim hidden |
     /// | 14 (`0x801F7E84..0x801F7E90`, pass) | the victim shown |
     /// | 15 (`0x801F8088..0x801F80BC`, pass) | the victim's flinch staged |
-    /// | 16 (`0x801F81E0..0x801F825C`, pass) | the victim on `+0x04 = 0x401004`, `+0x21C = 0xC8`; on the neutral word for ids `0xA8`, `0x53..0x55` |
+    /// | 16 (`0x801F81E0..0x801F825C`, `0x801F8370..0x801F8388`, pass) | the victim on `+0x04 = 0x401004`, `+0x21C = 0xC8`; on the neutral word for ids `0xA8`, `0x53..0x55`; frozen on its flinch (cursor `0x30`, rate `0`, pitch `1`) |
     /// | `0x12` (`0x801F8698..0x801F86E0`, every pass) | the victim at `z = ctx[+0x6D0] / 8 - 0xA00` |
-    /// | `0x13` (`0x801F893C..0x801F89B8`, pass) | the victim's pose restored, clip `0` at rate `8`; shown, or `+0x21C = 2` when it died |
+    /// | `0x13` (`0x801F893C..0x801F89B8`, pass) | the victim's pose restored, clip `0` at rate `8`, pitch `0`; shown, or `+0x21C = 2` when it died |
     ///
     /// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; the victim and creature seat writes of arms 0, 1, 6, 8 (height, pitch), 13, 14, 16, 0x12 and 0x13)
     pub(in crate::world::battle::cast_band) fn apply_kemaro_writes(
@@ -145,6 +145,15 @@ impl World {
                         a.battle.render_color = 0x0040_1004;
                         a.battle.render_flag = 0xC8;
                     }
+                    // ... and the pass freezes it on its flinch: the node's
+                    // cursor `+0x68 = 0x30`, rate `+0x21D = 0`, pitch
+                    // `+0x44 = 1` (`0x801F8370..0x801F8388`), until arm
+                    // `0x13` puts it back (`0x801F8988`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(0);
+                    a.battle.render_pitch = 1;
+                    if let Some(p) = a.battle_animation.as_mut() {
+                        p.seek_sixteenths(0x30);
+                    }
                 }
             }
             14 => {
@@ -166,6 +175,7 @@ impl World {
                     .find(|p| p.0 == v)
                     .copied();
                 if let Some(a) = self.actors.get_mut(v) {
+                    a.battle.render_pitch = 0;
                     if let Some((_, pos, facing)) = saved {
                         [
                             a.move_state.world_x,
