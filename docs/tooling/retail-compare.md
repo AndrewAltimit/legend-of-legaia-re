@@ -4330,6 +4330,57 @@ It is not a general rule: over every other battle state the same stand loses
 `battle_rugi_barra_windcutter_mid_cast` `.861` to `.543`), because a shot armed
 once holds a table that does not describe the passes behind it.
 
+#### A party strike stands on the walked-back pose too
+
+`0x1E` arms case 7 on every pass whoever strikes, so a party seat's strike-loop
+capture stands on the walked-back pose as a monster's does. Aligned onto
+agreeing endpoints instead, the image measured the seat: a party strike's
+attacker turns onto the target as the swing carries it round, and the replay's
+glide set out from its own history, so `battle_jou_party_gala_chain_mid` drew
+its frame at yaw `2897` where retail's frame stood at `2972`. Retail films of
+the strike (`cast-sequence.py --physical --retail-only` from the matching
+`_open` or `_mid` state, which replays to the later capture exactly) put the
+displayed frame two passes back: seated on the film's own pose there,
+`battle_jou_party_gala_chain_mid` reads `image` `.992`,
+`battle_garmel_party_noa_lizard_tail_mid` `.996` and
+`battle_ropeway_party_gala_flying_knee_late` `.985`; seated one pass back,
+`.821`, `.788` and `.818`.
+
+The walk back chases the endpoint each earlier pass armed, and in a party strike
+both halves of it move (`walker_end_shift`'s party arm, `party_strike_end_shift`):
+
+- **Focus.** Case 7 focuses the midpoint of the attacker's and the target's body
+  pairs. The swing's root motion carries the one and the hits knock back the
+  other, so each pass's midpoint comes off both actors' rings (position slot,
+  cursor slot and clip record, decoded as `framing_body` does). Gala's chain
+  endpoint z stood `19`, `-10`, `-36` on the RAM's arm and the two before it.
+- **Yaw.** Case 7's yaw is `ctx[+0x6DA] + 0x900 - heading`, half a turn on for
+  an odd style `ctx[+0xD]`, armed before the pass re-faces the attacker. The
+  heading the RAM's arm read is therefore the table's own (Gala `129` under a
+  stored `157`), and the one before it is rebuilt from the rings as the bearing
+  from the attacker's live pair onto the target's body pair, on whichever slot
+  pairing rebuilds both of those headings. Across a target clip commit inside
+  those slots the rebuild is not trusted (a hit reaction re-faces the target, and
+  the rings keep no heading): the pass takes the counter's drift alone.
+- **A gap that changes side.** An endpoint that turned past the pose (the
+  attacker crossing the yaw it frames) was chased from the other side; the walk
+  back then steps the other way rather than stopping.
+
+The headless camera channel reads the same fact: where the snap stands the
+attacker on the heading its pass stored, the strike's turn as the RAM states it
+(`RetailBattle::strike_arm_turn`) is taken back off the probe's yaw
+(`ground_snap::strike_heading_target`), so the channel reads the counter and the
+law rather than an eight-unit slack (`battle_jou_party_gala_chain_mid` `camera`
+`.979` to `1.000`, `battle_ropeway_party_gala_flying_knee_mid` `.981` to
+`1.000`).
+
+What the walk back cannot recover is the heading on the pass a target's hit
+reaction re-faced it: `battle_ropeway_party_gala_flying_knee_late` walks back to
+yaw `2143` where retail's frame stood at `2152`, and reads `.876` against the
+film pose's `.985`. Nor does it settle the pass steps where the history and the
+floor disagree (`battle_jou_party_vahn_chain_late`: steps read `3, 3`, the film
+ran `4, 3`, yaw `3198` against `3206`).
+
 #### A shot whose endpoint walks with the clip
 
 The magic band's case `0xA` re-arms on the anim cursor, so its yaw endpoint moved
@@ -4343,7 +4394,7 @@ capture and changes no game state.
 The alignment takes only the components whose endpoint the replay's framing agrees
 with, which suits a shot armed once. A shot re-armed every pass reads its inputs on
 its own clock, so it agrees on nothing and the child would keep the replay's pose.
-The monster strike loop and Scythe Wind's arms `3..=5` stand on the walked-back pose
+The strike loop (a monster's or a party seat's) and Scythe Wind's arms `3..=5` stand on the walked-back pose
 outright instead (`RetailBattle::stand_on_displayed_pose`,
 `LEGAIA_BATTLE_CAM_STAND_DISPLAYED`).
 

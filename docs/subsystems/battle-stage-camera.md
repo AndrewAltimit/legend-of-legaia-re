@@ -1209,6 +1209,16 @@ the acting seat while the camera frames `0x1E` / `0x1F`
 (`ropeway_party_gala_flying_knee_mid`: `camera` `.981` to `.985`, `image`
 `.910` to `.952`).
 
+Put together, case 7's yaw endpoint is `ctx[+0x6DA] + 0x900 - heading`, half a
+turn on for an odd style, where `heading` is what the pass before stored. PCSX-Redux
+films of three party strikes read it exactly on every pass: Gala's chain on the
+jou stage arms `2821` on counter `646` over a stored `129` while the pass stores
+`157`, Vahn's on `3185` over `3857`, and the stored heading is the bearing from
+the attacker's live pair onto the target's body pair on that pass. A strike's
+re-face turns the attacker up to `28` units a pass (Gala's swing, the target
+knocked back), so the endpoint moves by the counter's drift plus that turn
+between two arms. Grade `capture`.
+
 The pass on which `0x20` lets go arms nothing: it stores `0x50` (`0x801E5590`)
 and jumps to the state tail at `0x801E5F64` before the fork, so the walker steps
 the increments the last held pass armed, and case 8 is armed by the Done arm a
