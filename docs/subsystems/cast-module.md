@@ -5064,8 +5064,11 @@ ahead of the call (PROT 0905, 0907, 0911, 0915, 0923, 0929, 0932, 0934), or hold
 sweep word reaches its end (PROT 0928, `bne t0,v0` at `0x801F73B0`), the
 creature is seated on the arm's pass rather than as it is entered, and the
 port does so for all of them. So it does where a stream poll (`FUN_8003F2B8(1)`)
-gates the call on the module's CD poll arm (PROT 0910, 0913, 0914): seated on entry,
-Nova stood in the open through the drive's whole modelled wait. PROT 0913's
+gates the call on the module's CD poll arm (PROT 0910, 0913, 0914, 0933): seated on entry,
+Nova stood in the open through the drive's whole modelled wait, and Terra ran its clip
+through it, opening arm 6 four keyframes ahead of retail's (the `0x9F` film `.917`;
+seated on the pass with its hide, `sw zero,0x4` / `sb 0xFF,0x21C` at
+`0x801F6DAC` / `0x801F6DB0`, `.952`). PROT 0913's
 arm then seats its two vortex records and builds its shot on that seat, raises
 the floor clip `+0x42` to the busy word `1` (`0x801F6D70`), and only then steps
 the creature `sin / 24`, `cos / 24` along its facing (`0x801F6DC0..0x801F6E5C`,
