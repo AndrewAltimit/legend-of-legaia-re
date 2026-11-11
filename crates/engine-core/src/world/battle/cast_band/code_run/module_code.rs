@@ -1494,6 +1494,7 @@ impl World {
                             let geom = self.theeder_geom(seat_slot);
                             let mut fx = self.casting.module_theeder;
                             let attack_in = ctx.phase == ticks_a::THEEDER_ATTACK_ARM;
+                            let mut struck = false;
                             let tick = ticks_a::theeder_tick(
                                 &mut ctx,
                                 &mut seats,
@@ -1504,6 +1505,7 @@ impl World {
                                     if !in_cone.contains(&seat) {
                                         return None;
                                     }
+                                    struck = true;
                                     if !party_cast {
                                         return Some(0);
                                     }
@@ -1522,6 +1524,14 @@ impl World {
                                         is_crit: false,
                                     },
                                 );
+                            }
+                            // Each arm-12 hit sets the effect pool's sprite
+                            // scale to `0x800` (`0x801F7DC8..0x801F7DD4`),
+                            // which sizes the sparks its impact selector `2`
+                            // sheds.
+                            if struck {
+                                self.effect_pool.head.sprite_scale =
+                                    legaia_engine_cast::cast_module_ticks::THEEDER_HIT_SPRITE_SCALE;
                             }
                             self.casting.module_theeder = fx;
                             // Arm 7's shot is armed on the pass its clip wait
@@ -2225,6 +2235,11 @@ impl World {
             caster_slot,
             victim_slot,
         );
+        if let Some(scale) =
+            legaia_engine_cast::cast_module_ticks::effect_sprite_scale_store(entry, phase_in)
+        {
+            self.effect_pool.head.sprite_scale = scale;
+        }
         if entry == 908 {
             self.apply_summon_pre_hits(
                 entry,

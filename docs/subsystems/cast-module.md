@@ -2012,10 +2012,12 @@ Stager arm 0 also zeroes the creature's colour word and gives it impact
 selector `2`, which arm 1 clears (`viguro_stager`): the burning-body emitter
 sheds effect-`0x10` sparks off the creature through arms 4..7, the blue crackle
 round it in the close-ups. A `--retail-parts` film holds the same number of live
-effect-pool children on both sides at every sampled pair (fifteen through arm 5),
-but the port's sparks cover about three times retail's pixel area in arm 5's
-close-up, so that arm reads `.933` without them and `.898` with them; the
-sprites' size there is not traced.
+effect-pool children on both sides at every sampled pair (fifteen through arm 5).
+They draw at 0.6 of the default size: the tick's arm 0 stores the effect pool's
+sprite scale `0x600` (`0x801F6BC4..0x801F6BCC`) and arm `0xFF` restores `0xA00`
+(`0x801F7908..0x801F7910`) ([effect VM](effect-vm.md#pass-2---render)). At the
+default scale the port's sparks covered about three times retail's pixel area;
+at the module's, the `0x87` film's arm 5 reads `.946` and arm 8 `.948`.
 
 Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
 over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
