@@ -1364,6 +1364,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     const modeSel = $('dance-mode');
     const mode = modeSel ? parseInt(modeSel.value, 10) || 0 : 0;
     danceTutBits = 0;
+    dancePending = 0;
+    danceLatched = 0;
+    danceLatchedSt = null;
     const ok = api && (typeof api.dance_start_mode === 'function'
       ? api.dance_start_mode(mode, false)
       : api.dance_start(false));
@@ -1395,26 +1398,46 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
   }
 
   /* Presses are judged on the game frame, not on the key event: the play
-   * hosts' `World::tick_dance` advances the beat clock first, then judges at
-   * most ONE press from that frame's edges, Triangle before Square before
-   * Circle (retail's scan order). The page used to judge every key event the
-   * moment it arrived - before the frame's advance, and as many per frame as
-   * the keyboard delivered - so the same input could score differently here.
-   * `dancePress` latches the press; `danceFrame` judges it after its tick. */
-  let dancePending = 0;   /* bit (1 << sym) per pressed symbol this frame */
+   * hosts' `World::tick_dance` hands the frame's edge to the run, which
+   * latches it and judges at most ONE press on the next game frame (one
+   * every third vsync), after that frame's beat-clock advance, Triangle
+   * before Square before Circle (retail's scan order). `dancePress` latches
+   * the key; `danceFrame` hands it to `dance_tick_pressing` with its tick,
+   * which answers the event on the game frame that judged it. The page used
+   * to judge through `dance_press` right after its vsync tick, ahead of the
+   * game frame's advance, so the same input judged up to a frame early. */
+  let dancePending = 0;   /* bit (1 << sym) per symbol pressed this frame */
+  let danceLatched = 0;   /* the bits handed over and not judged yet */
+  let danceLatchedSt = null;
   function dancePress(sym) {
     if (!api || !danceLive) return;
     if (danceR && danceR.introGate) return;   /* count-in: not judging yet */
     if (sym >= 1 && sym <= 3) dancePending |= 1 << sym;
   }
-  function danceJudgePending() {
+  const danceSymOf = bits => (bits & (1 << 3)) ? 3 : (bits & (1 << 1)) ? 1 : (bits & (1 << 2)) ? 2 : 0;
+  function danceTickPressing(stBefore) {
     const bits = dancePending;
     dancePending = 0;
-    if (!bits || !api || !danceLive) return;
-    if (danceR && danceR.introGate) return;
-    const sym = (bits & (1 << 3)) ? 3 : (bits & (1 << 1)) ? 1 : 2;
-    const stBefore = JSON.parse(api.dance_state_json());
-    const r = api.dance_press(sym);
+    const sym = danceSymOf(bits);
+    if (sym) {
+      if (!danceLatched) danceLatchedSt = stBefore;
+      danceLatched |= bits;
+    }
+    let r = '';
+    if (typeof api.dance_tick_pressing === 'function') {
+      r = api.dance_tick_pressing(1, sym);
+    } else {
+      api.dance_tick(1);
+      if (sym) r = api.dance_press(sym);
+    }
+    if (!r) return;
+    const judged = danceSymOf(danceLatched) || sym;
+    const st = danceLatchedSt || stBefore;
+    danceLatched = 0;
+    danceLatchedSt = null;
+    danceReport(r, st, judged);
+  }
+  function danceReport(r, stBefore, sym) {
     if (danceR) danceR.onPress(r, stBefore, sym);
     if (r === 'sequence')        verdict($('dance-verdict'), 'PERFECT', 'good');
     else if (r === 'hit')        verdict($('dance-verdict'), 'HIT', 'good');
@@ -1433,8 +1456,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       if (typeof api.dance_body_clips_tick === 'function') api.dance_body_clips_tick(1);
       /* Hold the beat clock through the engine's READY / GO! count-in. */
       if (!st.over && !(danceR && danceR.introGate)) {
-        api.dance_tick(1);
-        danceJudgePending();
+        danceTickPressing(st);
       } else if (st.over && danceLive) {
         danceLive = false;
         const rvs = (st.rivals || []).map(r => r.score).join(' and ');

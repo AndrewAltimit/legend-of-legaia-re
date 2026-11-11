@@ -1439,7 +1439,7 @@ Only the BGM is a buffer: an offline render on its own context at the same unity
 so the BGM to cue balance is the SPU's.
 
 Per game: `<g>_start` / a step or input method
-(`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
+(`dance_tick_pressing` / `baka_choose` / `slot_step`, one packed pad word a frame /
 `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
 `muscle_end_selection` + `muscle_resolve` + `muscle_next_turn`) /
 `<g>_state_json`. The dome adds a second tier for the contest above a leg

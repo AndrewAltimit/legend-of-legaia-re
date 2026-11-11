@@ -1738,7 +1738,7 @@ fold the standalone games into the play page.
 
 | Lacks | Because |
 |---|---|
-| a frame path (tier 11) | It exports one tick per game (`dance_tick`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. |
+| a frame path (tier 11) | It exports one tick per game (`dance_tick_pressing`, `baka_tick`, `slot_step`, `fishing_pond_tick`, `muscle_tick_arts_list`). It does share the clock: `LegaiaMinigames::drain_sim_steps`. The dance tick takes the frame's press and judges it through the play hosts' `DanceGame::advance_vsync`, on the next game frame; `dance_press` judges at the call and is kept for the API tests. |
 | the Muscle Dome ringside still | Armed by `World::exit_muscle_dome` writing `MinigameState::muscle_ringside_still` ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)). |
 | fishing venue actors and exchange session | No venue scene; it lays the exchange out from `fishing_exchange_json` and treats every tackle item as held. |
 | the residency-driven slot-2 bank | `stage_sfx_slot` holds PROT 0869 in slot 2 for every game; no cue it plays differs today. |
