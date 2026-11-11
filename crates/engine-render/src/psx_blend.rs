@@ -40,9 +40,10 @@
 //! Mode 0's background factor `K` is [`MODE0_PSX_BLEND_CONSTANT`], a hair
 //! under one half: at exactly `0.5` a background at `8 * c5 + 7` with `c5`
 //! odd lands on a half level that rounds into the next bin. The PCSX-Redux
-//! software GPU (`src/gpu/soft/soft.cc`) halves each term before the sum
-//! instead, `(B >> 1) + (F >> 1)`, and blends a Gouraud foreground in 8 bits
-//! before its own dither (`getShadeTransColDither`,
+//! software GPU (`src/gpu/soft/soft.cc`) averages a flat textured polygon as
+//! the console does, but halves each term before the sum on a sprite or an
+//! untextured flat polygon, `(B >> 1) + (F >> 1)`, and blends a Gouraud
+//! foreground in 8 bits before its own dither (`getShadeTransColDither`,
 //! `getTextureTransColShadeXDither`); its terms are in [`pcsx_flat_term`] and
 //! [`pcsx_dithered_term`]. [`gpu_blend5`] / [`pcsx_blend5`] are the
 //! reference results, and the unit tests run every background bin through
@@ -129,10 +130,12 @@ pub fn gpu_blend5(mode: u8, b: u8, f: u8) -> u8 {
     r.clamp(0, 31) as u8
 }
 
-/// The PCSX-Redux software GPU's result for a flat (undithered) primitive:
-/// mode 0 halves each term, `(B >> 1) + (F >> 1)` (`getShadeTransCol`).
-/// For a textured primitive the halving is the texel's, before the modulate
-/// (`getTextureTransColShade`); [`pcsx_flat_term`] takes that foreground.
+/// The PCSX-Redux software GPU's result for an untextured flat polygon or a
+/// sprite: mode 0 halves each term, `(B >> 1) + (F >> 1)`
+/// (`getShadeTransCol`, `getTextureTransColShadeSemi`, the texel halved
+/// before the modulate on a sprite). A flat textured polygon it walks in
+/// pixel pairs (`getTextureTransColShade32`), whose mode 0 is the console's
+/// average, [`gpu_blend5`].
 pub fn pcsx_blend5(mode: u8, b: u8, f: u8) -> u8 {
     let (b, f) = (i32::from(b), i32::from(f));
     let r = match mode & 3 {
@@ -155,10 +158,11 @@ pub fn gpu_term(mode: u8, f5: u8) -> f32 {
     }
 }
 
-/// The PCSX-Redux flat term (8-bit units) for a 5-bit foreground `f5`:
-/// mode 0 adds `F >> 1` over the background's `K * B` (which lands on
-/// `B >> 1`), mode 3 `F >> 2`. A textured primitive's halving is the
-/// texel's, before the modulate, so its shader takes `f5` from there.
+/// The PCSX-Redux term (8-bit units) for [`pcsx_blend5`]'s primitives and a
+/// 5-bit foreground `f5`: mode 0 adds `F >> 1` over the background's `K * B`
+/// (which lands on `B >> 1`), mode 3 `F >> 2`. A textured primitive's
+/// shift is the texel's, before the modulate, so its shader takes `f5` from
+/// there.
 pub fn pcsx_flat_term(mode: u8, f5: u8) -> f32 {
     8.0 * f32::from(match mode & 3 {
         0 => f5 >> 1,

@@ -759,22 +759,24 @@ fn psx_mode_blend_terms_land_the_pcsx_redux_result() {
     }
 }
 
-/// The dance hall's drop shadow (renderer.md, the field drop shadow): grey
-/// `3` over a floor at `3`, ABR `0`. The PCSX-Redux software GPU halves each
-/// term (`2`), the console averages (`3`).
+/// The dance hall's drop shadow (renderer.md, the field drop shadow): a
+/// `POLY_FT4` of grey `3` over a floor at `3`, ABR `0`. The console averages
+/// (`3`), and so does the PCSX-Redux software GPU on a textured polygon's
+/// pixel pairs (`getTextureTransColShade32`); its halving rule (`2`) is the
+/// sprites' and the untextured polygons'.
 #[test]
-fn the_drop_shadow_blob_darkens_the_floor_by_the_emulators_rule() {
-    assert_eq!(psx_blend::pcsx_blend5(0, 3, 3), 2);
+fn the_drop_shadow_blob_leaves_a_floor_at_3_where_it_was() {
     assert_eq!(psx_blend::gpu_blend5(0, 3, 3), 3);
+    assert_eq!(psx_blend::pcsx_blend5(0, 3, 3), 2);
     // Grey 3 as the dither writes it, `(3 << 3) | (3 >> 2)`.
     let floor = 24;
     assert_eq!(
-        psx_target_blend(0, floor, psx_blend::pcsx_flat_term(0, 3)) >> 3,
-        2
-    );
-    assert_eq!(
         psx_target_blend(0, floor, psx_blend::gpu_term(0, 3)) >> 3,
         3
+    );
+    assert_eq!(
+        psx_target_blend(0, floor, psx_blend::pcsx_flat_term(0, 3)) >> 3,
+        2
     );
 }
 

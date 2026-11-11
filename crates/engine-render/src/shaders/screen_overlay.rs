@@ -156,9 +156,12 @@ fn fs_semi_opaque(in: VsOut) -> @location(0) vec4<f32> {
 // of the GPU's 5-bit result; bit 9 takes the PCSX-Redux software GPU's
 // rule and bit 10 that emulator's dither, which it applies to a Gouraud
 // quad's 8-bit sum (`getTextureTransColShadeXDither`,
-// `getShadeTransColDither`) and not to a flat one, whose mode 0 / 3 halve or
-// quarter the texel before the modulate (`getTextureTransColShade`). A
-// textured prim's STP-clear texels were drawn by `fs_semi_opaque`.
+// `getShadeTransColDither`) and not to a flat one. A flat textured quad is
+// taken for a polygon, which it walks in pixel pairs
+// (`getTextureTransColShade32`: mode 0 the console's average, mode 3 the
+// texel quartered before the modulate); an untextured flat one halves each
+// term for mode 0 (`getShadeTransCol`). A textured prim's STP-clear texels
+// were drawn by `fs_semi_opaque`.
 fn blend_out(in: VsOut, mode: u32) -> vec4<f32> {
     let textured = (in.flags & 1u) != 0u;
     if textured && !texel_stp(in) {
@@ -180,13 +183,10 @@ fn blend_out(in: VsOut, mode: u32) -> vec4<f32> {
             return vec4<f32>(psx_blend_term_pcsx_dithered(
                 floor(t5 * c8 / 16.0), psx_pcsx_dither_offset(in.clip_pos.xy), mode), 1.0);
         }
-        var ts = t5;
-        if mode == 0u {
-            ts = floor(t5 / 2.0);
-        } else if mode == 3u {
-            ts = floor(t5 / 4.0);
+        if mode != 3u {
+            return vec4<f32>(psx_blend_term_gpu(min(floor(t5 * c8 / 128.0), vec3<f32>(31.0)), mode), 1.0);
         }
-        let fk = min(floor(ts * c8 / 128.0), vec3<f32>(31.0));
+        let fk = min(floor(floor(t5 / 4.0) * c8 / 128.0), vec3<f32>(31.0));
         return vec4<f32>(fk * (8.0 / 255.0), 1.0);
     }
     if dithered && !pcsx_flat_colour(in.color.rgb) {
