@@ -3694,10 +3694,13 @@ cast's sound with the two emulators' frame costs taken out; `cast` stays the eng
 | `theeder_summon_mid_cast` | `0.712` | `0.715` |
 
 Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
-or `2` against the table's `3` and `4`, and the score holds either way. Zenoir keeps part of it: its offset comes off
-[the duck](#the-duck-names-the-states-tick), whose ramp the step moves, and the track keys a pass by its
-ordinal under each arm, so an arm the engine runs for a different number of passes takes later steps
-on the wrong passes. Which emulator a console agrees with is
+or `2` against the table's `3` and `4`, and the score holds either way. Zenoir's row is not a clean reading. On the engine's own steps its band
+holds `0x35` to arm 11, as retail's does, but on mednafen's the action SM leaves `0x35` for `0x36`
+after one arm-4 pass: the band word (`ctx[+0x6D8]`, shared with PROT 0908's countdown) goes negative
+at the hand-over. Mednafen's arm 3 opens on eleven step-`3` frames and the engine's on the module's
+`1`, so the countdown the arm re-seeds stands elsewhere when arm 4 reads it. The track keys a frame by
+action state and arm, so arms 5 to 10 then run under keys mednafen never recorded and keep the step
+they had. Why the shared word ends the band under those steps and not under retail's is open. Which emulator a console agrees with is
 [open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
 a GPU wait on a CPU that costs less.
 
