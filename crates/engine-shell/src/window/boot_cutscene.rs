@@ -363,6 +363,7 @@ impl PlayWindowApp {
         // screen is open is stale by the next frame and must not survive to
         // be bound later.
         let pending_key = self.pending_key_name.take();
+        let last_pad = self.last_pad;
         let mut start_attract: Option<i16> = None;
         // The player aborted the attract movie this tick; the decoder is torn
         // down below, once the match has released `self.boot_ui`.
@@ -595,6 +596,16 @@ impl PlayWindowApp {
                 // `self.boot_ui`.
                 let rebound_in_menu;
                 if let Some(active_sub) = sub.as_mut() {
+                    // Key Config labels the controller pressed last.
+                    if let (
+                        Some(style),
+                        legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession::Config(
+                            s,
+                        ),
+                    ) = (last_pad, &mut *active_sub)
+                    {
+                        s.set_pad_style(style);
+                    }
                     // A sub-session is open: the shared step (with the
                     // Status screen's Triangle -> Arts editor extension)
                     // routes the edge and hands back a committed rebind.

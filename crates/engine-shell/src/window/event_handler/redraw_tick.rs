@@ -67,7 +67,26 @@ impl PlayWindowApp {
         let Some(gp) = self.gamepad.as_mut() else {
             return;
         };
+        // The live table and dead zone: a Key Config bind or an options
+        // change reaches the next poll (both are compares when unchanged).
+        gp.set_mapping(&self.mapping.gamepad);
+        gp.set_dead_zone(self.options_state.stick_dead_zone_fraction());
         let poll = gp.poll();
+        // A press is a Key Config capture (taken by the screen only while it
+        // waits) and makes the controller the input prompts name.
+        if let Some((name, glyphs)) = poll.capture {
+            self.pending_key_name = Some(name);
+            self.last_pad = Some(legaia_engine_system::gamepad::PadStyle {
+                glyphs,
+                space: legaia_engine_system::gamepad::ButtonSpace::Standard,
+            });
+        }
+        for name in &poll.connected {
+            self.show_notice(format!("Controller connected: {name}"));
+        }
+        for name in &poll.disconnected {
+            self.show_notice(format!("Controller disconnected: {name}"));
+        }
         let before = self.pad | self.gamepad_held;
         self.gamepad_held = poll.edges.held;
         self.pad_taps.press(poll.edges.pressed | poll.taps);

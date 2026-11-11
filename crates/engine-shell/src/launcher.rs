@@ -1242,6 +1242,8 @@ pub enum OptionRow {
     MusicVolume,
     SfxVolume,
     MonoDownmix,
+    /// How far the controller's stick goes before it holds a direction.
+    StickDeadZone,
     EntryPulse,
     SmartMonsters,
     ArtsSavedList,
@@ -1266,7 +1268,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 41] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 42] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1287,6 +1289,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 41] = [
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
+    (None, OptionRow::StickDeadZone),
     (Some("Gameplay tweaks"), OptionRow::ShinySeru),
     (None, OptionRow::FleeExp),
     (None, OptionRow::BonusDrop),
@@ -1411,6 +1414,7 @@ impl OptionRow {
             Self::MusicVolume => "Music volume",
             Self::SfxVolume => "Sound effects volume",
             Self::MonoDownmix => "Mono output",
+            Self::StickDeadZone => "Stick dead zone",
             Self::EntryPulse => "Living ground pulse",
             Self::SmartMonsters => "Smarter monsters",
             Self::ArtsSavedList => "Saved-chain Arts list",
@@ -1492,6 +1496,10 @@ impl OptionRow {
             Self::MasterVolume => "Overall output level, 0 to 100%; 100% is the full mix.",
             Self::MusicVolume => "Music level, 0 to 10; 8 is the original mix.",
             Self::SfxVolume => "Sound effect level, 0 to 10; 8 is the original mix.",
+            Self::StickDeadZone => {
+                "How far a controller's stick moves before it walks or moves a cursor. \
+                 Higher ignores a worn stick's drift; lower answers a lighter push."
+            }
             Self::MonoDownmix => {
                 "Mix everything, voices and movies included, down to one channel for \
                  a single speaker. In-game Monaural is the original's own mono mode."
@@ -1621,6 +1629,7 @@ impl OptionRow {
                 | Self::MusicVolume
                 | Self::SfxVolume
                 | Self::MonoDownmix
+                | Self::StickDeadZone
                 | Self::Fullscreen
                 | Self::WindowSize
                 | Self::WholeStepScale
@@ -1658,6 +1667,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume.to_string(),
             Self::SfxVolume => opts.sfx_volume.to_string(),
             Self::MonoDownmix => on_off(opts.downmix_mono),
+            Self::StickDeadZone => format!("{}%", opts.stick_dead_zone),
             Self::EntryPulse => on_off(!s.switches.no_entry_pulse),
             Self::SmartMonsters => on_off(s.switches.smart_monsters),
             Self::ArtsSavedList => on_off(s.switches.arts_saved_list),
@@ -1708,6 +1718,7 @@ impl OptionRow {
             | Self::MusicVolume
             | Self::SfxVolume
             | Self::MonoDownmix
+            | Self::StickDeadZone
             | Self::Retail => None,
             _ => {
                 let (opts, s) = original_state();
@@ -1820,6 +1831,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = o.bgm_volume,
             Self::SfxVolume => opts.sfx_volume = o.sfx_volume,
             Self::MonoDownmix => opts.downmix_mono = o.downmix_mono,
+            Self::StickDeadZone => opts.stick_dead_zone = o.stick_dead_zone,
             Self::EntryPulse => w.no_entry_pulse = d.no_entry_pulse,
             Self::SmartMonsters => w.smart_monsters = d.smart_monsters,
             Self::ArtsSavedList => w.arts_saved_list = d.arts_saved_list,
@@ -1920,6 +1932,7 @@ impl OptionRow {
             Self::MusicVolume => opts.bgm_volume = step(opts.bgm_volume),
             Self::SfxVolume => opts.sfx_volume = step(opts.sfx_volume),
             Self::MonoDownmix => opts.downmix_mono ^= true,
+            Self::StickDeadZone => opts.step_stick_dead_zone(dir),
             Self::EntryPulse => s.switches.no_entry_pulse ^= true,
             Self::SmartMonsters => s.switches.smart_monsters ^= true,
             Self::ArtsSavedList => s.switches.arts_saved_list ^= true,
@@ -2903,6 +2916,7 @@ mod tests {
             MusicVolume => "play-bgm-volume",
             SfxVolume => "play-sfx-volume",
             MonoDownmix => "play-downmix-mono",
+            StickDeadZone => "play-stick-dead-zone",
             EntryPulse => "play-entry-pulse",
             SmartMonsters => "play-smart-monsters",
             ArtsSavedList => "play-arts-saved-list",

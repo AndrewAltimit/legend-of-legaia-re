@@ -70,8 +70,21 @@ impl PlayWindowApp {
             && (self.boot_ui.title_session().is_some()
                 || self.startup_hint.visible(std::time::Instant::now()))
         {
-            let key = |b| self.mapping.key_label_for_button(b).unwrap_or("-");
-            startup_line = crate::window::app_state::startup_hint_line(key("Cross"), key("Circle"));
+            // The controller's buttons once one was pressed last.
+            let key = |b| {
+                self.mapping
+                    .prompt_label(b, self.last_pad)
+                    .unwrap_or_else(|| "-".into())
+            };
+            startup_line = match self.last_pad {
+                None => crate::window::app_state::startup_hint_line(&key("Cross"), &key("Circle")),
+                Some(_) => crate::window::app_state::startup_hint_line_pad(
+                    &key("Cross"),
+                    &key("Circle"),
+                    &key("Select"),
+                    &key("Start"),
+                ),
+            };
             rows.push((startup_line.as_str(), ink.heading));
         }
         // Bottom-left of the stage, stacking upward: the top-left is the

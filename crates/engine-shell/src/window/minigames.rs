@@ -219,21 +219,30 @@ impl PlayWindowApp {
     /// `play_mg_caption_json`. `None` outside a minigame.
     ///
     /// This host's two answers: the slot machine draws itself once its art
-    /// is uploaded, and the fishing rows name pad buttons (the window's key
-    /// map is fixed) plus `P`, the key that opens the point exchange.
+    /// is uploaded, and the fishing rows name the keys of the live binding
+    /// table - or, while a controller was pressed last, that controller's
+    /// buttons (`Mapping::prompt_label`, the play page's rule too) - plus
+    /// `P`, the key that opens the point exchange.
     pub(super) fn minigame_caption(
         &self,
     ) -> Option<legaia_engine_minigame_scenes::minigame_status::MinigameCaption> {
         use legaia_engine_minigame_scenes::minigame_status as ms;
+        let label = |b: &str| {
+            self.mapping
+                .prompt_label(b, self.last_pad)
+                .unwrap_or_else(|| b.to_string())
+        };
+        let [cross, circle, square, triangle, start] =
+            ["Cross", "Circle", "Square", "Triangle", "Start"].map(label);
         self.session.host.world.minigame_caption(&ms::StatusHost {
             slot_machine_drawn: self.slot_gpu.is_some(),
             fishing_keys: ms::FishingKeys {
-                cast: "Cross",
-                back: "Circle",
-                reel_a: "Cross",
-                reel_b: "Square",
-                menu: "Triangle",
-                quit: "Start",
+                cast: &cross,
+                back: &circle,
+                reel_a: &cross,
+                reel_b: &square,
+                menu: &triangle,
+                quit: &start,
                 prizes: "P",
             },
         })

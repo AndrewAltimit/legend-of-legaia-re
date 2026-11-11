@@ -30,7 +30,7 @@ use legaia_engine_system::input::PadButton;
 /// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
 /// tuning) and *Original game only*, as the play page's boxes take them
 /// live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 40] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
     OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
@@ -50,6 +50,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 40] = [
     OptionRow::SmartMonsters,
     OptionRow::ArtsSavedList,
     OptionRow::ReduceFlashing,
+    OptionRow::StickDeadZone,
     OptionRow::ShinySeru,
     OptionRow::FleeExp,
     OptionRow::BonusDrop,

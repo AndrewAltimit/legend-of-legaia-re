@@ -2,9 +2,16 @@
 //! moves its focus with the same folded word).
 //!
 //! gilrs reports every connected gamepad; this module renames its buttons to
-//! the W3C standard-mapping indices and folds them through the shared layout
-//! ([`legaia_engine_system::gamepad`]), the one the browser pages fold the
-//! Gamepad API through. The window keeps the folded word beside its keyboard
+//! the W3C standard-mapping indices and folds them through the player's
+//! controller table ([`legaia_engine_system::gamepad::GamepadMapping`], the
+//! `[gamepad]` half of `legaia-input.toml`, [`GamepadHost::set_mapping`]) at
+//! the player's stick dead zone ([`GamepadHost::set_dead_zone`]) - the fold
+//! the browser pages run the Gamepad API through. Every connected controller
+//! drives the one player: their words are ORed, so a second pad picked up
+//! mid-game works at once, and a pad that leaves takes only its own buttons
+//! with it. Each poll also reports which controllers came and went (the
+//! window's notice line names them) and the first standard index pressed,
+//! as a Key Config capture name. The window keeps the folded word beside its keyboard
 //! word and ORs the two into each tick's pad (`run_sim_ticks`), so a
 //! controller reaches every arm a bound key reaches - the boot title, the
 //! pause menu, a shop, the field, a battle, a minigame - with no arm of its
@@ -18,7 +25,10 @@
 //! Scripted and headless runs open no controller: the pad word there belongs
 //! to the script.
 
-use legaia_engine_system::gamepad::{GamepadEdges, StandardGamepad};
+use legaia_engine_system::gamepad::{
+    ButtonSpace, GamepadEdges, GamepadMapping, GlyphSet, STICK_DEAD_ZONE, StandardGamepad,
+    capture_name,
+};
 
 /// The W3C standard-mapping index of a gilrs button, or `None` for one the
 /// standard layout has no slot for (`Mode`, `C`, `Z`, `Unknown`).
@@ -72,10 +82,27 @@ const MAPPED_BUTTONS: [gilrs::Button; 16] = {
 
 /// One poll's result: the edges against the last poll, plus every button
 /// pressed since it (including one already released again).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GamepadPoll {
     pub edges: GamepadEdges,
     pub taps: u16,
+    /// The first physical button pressed since the last poll, as a Key
+    /// Config capture name (`"Pad3"`), and the maker's labels of the pad it
+    /// was on.
+    pub capture: Option<(&'static str, GlyphSet)>,
+    /// Controllers that appeared / left since the last poll, by name.
+    pub connected: Vec<String>,
+    pub disconnected: Vec<String>,
+}
+
+/// What one backend poll read, before the edge tracker.
+#[derive(Default)]
+struct RawPoll {
+    word: u16,
+    taps: u16,
+    capture: Option<(&'static str, GlyphSet)>,
+    connected: Vec<String>,
+    disconnected: Vec<String>,
 }
 
 /// Where a [`GamepadHost`] reads its controllers from.
@@ -87,12 +114,23 @@ enum Source {
     /// `HeadlessPlayWindow::set_controller`): the poll, the edges and the
     /// tick composition all run as for a real controller.
     Scripted(u16),
+    /// Physical buttons the caller holds, as a bit per standard index, and a
+    /// left stick: folded through the live table like a real controller's,
+    /// so a rebind and the dead zone reach it.
+    ScriptedButtons {
+        held: u32,
+        stick: (f32, f32),
+        prev: u32,
+    },
 }
 
 /// The window's controller reader.
 pub struct GamepadHost {
     source: Source,
     tracker: StandardGamepad,
+    /// The table the poll folds through, and the stick's dead zone.
+    mapping: GamepadMapping,
+    dead_zone: f32,
     /// The two force-feedback effects (`[strong, weak]`) playing at full
     /// magnitude on every rumble-capable controller, their gains the motors'
     /// levels (`Self::set_rumble`). Built on the first rumble.
@@ -117,6 +155,8 @@ impl GamepadHost {
                     Some(Self {
                         source: Source::Gilrs(Box::new(gilrs)),
                         tracker: StandardGamepad::default(),
+                        mapping: GamepadMapping::default(),
+                        dead_zone: STICK_DEAD_ZONE,
                         rumble: None,
                         rumble_last: Default::default(),
                     })
@@ -139,6 +179,8 @@ impl GamepadHost {
         Self {
             source: Source::Scripted(0),
             tracker: StandardGamepad::default(),
+            mapping: GamepadMapping::default(),
+            dead_zone: STICK_DEAD_ZONE,
             #[cfg(feature = "gamepad")]
             rumble: None,
             rumble_last: Default::default(),
@@ -154,17 +196,75 @@ impl GamepadHost {
         }
     }
 
+    /// Hold `held` (a bit per W3C standard index) and `stick` on a
+    /// [`Self::scripted`] controller from the next poll, as physical
+    /// buttons: the poll folds them through the live table.
+    pub(crate) fn set_scripted_buttons(&mut self, held: u32, stick: (f32, f32)) {
+        match &mut self.source {
+            Source::ScriptedButtons {
+                held: h, stick: s, ..
+            } => {
+                *h = held;
+                *s = stick;
+            }
+            other => {
+                *other = Source::ScriptedButtons {
+                    held,
+                    stick,
+                    prev: 0,
+                }
+            }
+        }
+    }
+
+    /// Fold through `mapping` from the next poll (the window's live table,
+    /// re-sent after a Key Config bind).
+    pub fn set_mapping(&mut self, mapping: &GamepadMapping) {
+        if self.mapping != *mapping {
+            self.mapping = mapping.clone();
+        }
+    }
+
+    /// The left stick holds a d-pad direction past `fraction` of full
+    /// deflection (`OptionsState::stick_dead_zone_fraction`).
+    pub fn set_dead_zone(&mut self, fraction: f32) {
+        self.dead_zone = fraction;
+    }
+
     /// Drain the backend's events and fold every connected controller's
-    /// state through the shared layout.
+    /// state through the live table.
     pub fn poll(&mut self) -> GamepadPoll {
-        let (word, taps) = match &mut self.source {
+        let raw = match &mut self.source {
             #[cfg(feature = "gamepad")]
-            Source::Gilrs(gilrs) => poll_gilrs(gilrs),
-            Source::Scripted(word) => (*word, 0),
+            Source::Gilrs(gilrs) => poll_gilrs(gilrs, &self.mapping, self.dead_zone),
+            Source::Scripted(word) => RawPoll {
+                word: *word,
+                ..Default::default()
+            },
+            Source::ScriptedButtons { held, stick, prev } => {
+                let buttons = (0..32usize)
+                    .filter(|i| *held & (1 << i) != 0)
+                    .map(|i| (i, 1.0));
+                let word = self.mapping.fold(buttons, [*stick], self.dead_zone);
+                let new = *held & !*prev;
+                *prev = *held;
+                let capture = (new != 0)
+                    .then(|| capture_name(ButtonSpace::Standard, new.trailing_zeros() as usize))
+                    .flatten()
+                    .map(|n| (n, GlyphSet::default()));
+                RawPoll {
+                    word,
+                    capture,
+                    ..Default::default()
+                }
+            }
         };
         GamepadPoll {
-            edges: self.tracker.update(word),
-            taps,
+            edges: self.tracker.update(raw.word),
+            taps: raw.taps,
+            capture: raw.capture,
+            connected: raw.connected,
+            disconnected: raw.disconnected,
         }
     }
 
@@ -245,25 +345,36 @@ fn rumble_effects(gilrs: &mut gilrs::Gilrs) -> Option<[gilrs::ff::Effect; 2]> {
     Some([strong, weak])
 }
 
-/// One gilrs poll: the folded word every connected controller holds, and
-/// every button pressed since the last poll (a tap shorter than a frame).
+/// One gilrs poll: the word every connected controller holds through
+/// `mapping`, every button pressed since the last poll (a tap shorter than a
+/// frame), the first such press as a capture name, and the controllers that
+/// came and went.
 #[cfg(feature = "gamepad")]
-fn poll_gilrs(gilrs: &mut gilrs::Gilrs) -> (u16, u16) {
-    use legaia_engine_system::gamepad::standard_button;
-    let mut taps = 0u16;
+fn poll_gilrs(gilrs: &mut gilrs::Gilrs, mapping: &GamepadMapping, dead_zone: f32) -> RawPoll {
+    let mut out = RawPoll::default();
     while let Some(ev) = gilrs.next_event() {
         match ev.event {
             gilrs::EventType::ButtonPressed(b, _) => {
-                if let Some(btn) = standard_index(b).and_then(standard_button) {
-                    taps |= btn.mask();
+                if let Some(index) = standard_index(b) {
+                    if let Some(btn) = mapping.button_for(ButtonSpace::Standard, index) {
+                        out.taps |= btn.mask();
+                    }
+                    if out.capture.is_none() {
+                        let glyphs = GlyphSet::from_name(gilrs.gamepad(ev.id).name());
+                        out.capture =
+                            capture_name(ButtonSpace::Standard, index).map(|n| (n, glyphs));
+                    }
                 }
             }
             gilrs::EventType::Connected => {
-                let gp = gilrs.gamepad(ev.id);
-                log::info!("gamepad: {} connected", gp.name());
+                let name = gilrs.gamepad(ev.id).name().to_string();
+                log::info!("gamepad: {name} connected");
+                out.connected.push(name);
             }
             gilrs::EventType::Disconnected => {
-                log::info!("gamepad: controller {} disconnected", ev.id);
+                let name = gilrs.gamepad(ev.id).name().to_string();
+                log::info!("gamepad: {name} disconnected");
+                out.disconnected.push(name);
             }
             _ => {}
         }
@@ -289,7 +400,8 @@ fn poll_gilrs(gilrs: &mut gilrs::Gilrs) -> (u16, u16) {
             -gp.value(gilrs::Axis::LeftStickY),
         ));
     }
-    (StandardGamepad::fold(buttons, sticks), taps)
+    out.word = mapping.fold(buttons, sticks, dead_zone);
+    out
 }
 
 #[cfg(all(test, feature = "gamepad"))]

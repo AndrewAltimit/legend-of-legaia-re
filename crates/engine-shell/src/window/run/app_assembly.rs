@@ -178,6 +178,7 @@ impl PlayWindowApp {
             prev_pad: 0,
             pad_taps: Default::default(),
             gamepad: None,
+            last_pad: None,
             gamepad_held: 0,
             picker_swallow: 0,
             tick_no: 0,
