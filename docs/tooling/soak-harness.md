@@ -187,6 +187,20 @@ the command ring refuses every member, and the round must still open, take
 `Begin` and play out. It is re-applied each frame because an equipment change
 rebuilds the ability bits from what is worn.
 
+A run-rules run is a label ending in `+rules=<preset>` (before any
+`@<save>`): the New Game slate starts under the port's run rules
+([`run-rules.md`](../subsystems/run-rules.md)), staged as the New Game rules
+screen stages them (`BootSession::stage_run_rules`). The presets are `easy`,
+`hard`, `nightmare`, `rando` (every randomizer part, seeded from the run
+seed), `ironman`, `hardcore`, `ngplus` (cycle 1; with an `@<save>` the save is
+the carry source, not the starting state) and `bossrush`, which starts through
+the rules screen's Start (`BootSession::start_run`). Every frame the run does
+what both hosts' `poll_run_rules` does: a due Boss Rush stage is entered and
+armed, its intermission or result screen takes the frame's pad edge in place
+of the field tick, and ironman's autosave and erase land on the soak card. A
+dismissed Boss Rush result ends the run. The scene set carries each story
+preset in `town01`, `map01` and `keikoku`, and the Boss Rush from `town01`.
+
 ### Front-end runs
 
 Every other run enters its scene by name. Two labels enter through the boot
@@ -261,8 +275,8 @@ Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
 a scene whose field MAN resolves), unioned with the decoded `0x3F`
 destinations of those scenes, plus the five minigame pseudo-scenes, a `+rt`
 round-trip twin of every scene, a `+talk` twin of every field scene, a
-`+shop` twin of every scene with a shop, and the two front-end runs. Nothing
-else is hand-listed.
+`+shop` twin of every scene with a shop, the two front-end runs and the run-rules runs.
+Nothing else is hand-listed.
 
 ## Policies
 
@@ -563,6 +577,7 @@ regression.
 | `vell_bridge_grass_envelope_never_latches` | `vell+talk`: Yes to the Fertilizer on the Bridge Grass (`P0[1]`) parked the examine on `AD 01 0B` for good | the record's own context and the object's channel share the envelope words (`+0x62 & 0xFC00`, `+0x10 & 0x1000`), so the spin sees the ADVANCE latch `FUN_80020740` raises when the lanes drain (`0x80020A78`) - see [field-ambient-fx.md](../subsystems/field-ambient-fx.md#a-record-that-drives-its-own-objects-morph) |
 | `son_nook_seat_through_culled_npc` | `son+talk`: a talk seat in the camp's wall nook left the player `confined` | harness: the seat floods count culled placements as solid (the camera had not yet followed the seat) |
 | `kor3_warp_pad_parks_on_capped_screen` | `other7+rt@...:PRO-09`: the anti-hang cap ended `other7`'s modal `49 0A` with its screen up, and in `kor3` the Sol Tower warp pad's `49 04` read that stale screen as its own and parked for good | a record the cap ends takes the op-`0x49` screen it opened with it (`World::drop_capped_op49_screen`); retail has no cap |
+| `town01_hardcore_spar_item_lesson` | `town01+rules=hardcore`: Tetsu's sparring tutorial held its Item lesson for good, the Item chip refused by the hardcore rule | hardcore leaves the tutorial's Item lesson its window (`command_ring.rs`) |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

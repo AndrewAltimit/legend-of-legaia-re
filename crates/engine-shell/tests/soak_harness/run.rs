@@ -422,6 +422,45 @@ pub(super) fn run_one(
     status: Option<(&StatusBoard, usize)>,
 ) -> RunOutcome {
     let mut session = open_session_armed(src, t.arming);
+    // `<label>+rules=<preset>`: the New Game slate runs under the port's run
+    // rules, staged as the rules screen stages them. A New Game+ run takes
+    // its carry from the label's `@<save>` instead of playing that save.
+    let rules = {
+        let (label, _) = split_save(&spec.scene);
+        split_rules(label)
+            .1
+            .map(|name| (name, rules_preset(name, run_seed(&spec.scene, spec.seed))))
+    };
+    if let Some((name, None)) = rules {
+        return RunOutcome {
+            spec: spec.clone(),
+            findings: vec![Finding {
+                detector: "unknown_scene",
+                start_scene: spec.scene.clone(),
+                scene: String::new(),
+                mode: String::new(),
+                frame: 0,
+                location: "enter".into(),
+                detail: format!("{name:?} is not a run-rules preset ({RULES_PRESETS:?})"),
+            }],
+            pads: Vec::new(),
+            stats: RunStats::default(),
+            enter_ok: false,
+            arming: t.arming,
+        };
+    }
+    let rules = rules.and_then(|(_, r)| r);
+    let ng_plus = rules.as_ref().is_some_and(|r| r.ng_plus.is_some());
+    let boss_rush = rules
+        .as_ref()
+        .is_some_and(|r| r.mode == legaia_engine_run_rules::rules::RunMode::BossRush);
+    if let Some(r) = rules.clone().filter(|_| !boss_rush) {
+        let source = split_save(&spec.scene)
+            .1
+            .filter(|_| ng_plus)
+            .and_then(|s| card_save(s).ok());
+        session.stage_run_rules(r, source);
+    }
     session.begin_new_game();
     // `<label>@<save>`: the run plays the scene with a library card save's
     // party, bag and story flags instead of the New Game party's.
@@ -430,6 +469,9 @@ pub(super) fn run_one(
     // loaded off the card by the save-select, not seeded here.
     let front_end = split_front_end(&spec.scene);
     let (label, save) = split_save(&spec.scene);
+    let (label, _) = split_rules(label);
+    // A New Game+ run's save was its carry, not its starting state.
+    let save = save.filter(|_| !ng_plus);
     if let Some(save) = save.filter(|_| front_end.is_none()) {
         match card_save(save) {
             Ok(sf) => session.host.world.load_full(sf),
@@ -530,6 +572,14 @@ pub(super) fn run_one(
         }
         if let Some(run) = &expansion {
             return enter_expansion_run(&mut session, run, &opts);
+        }
+        // A Boss Rush starts through the rules screen's Start: the slate,
+        // the Boss Rush party, the first stage's scene and fight.
+        if let Some(r) = rules.clone().filter(|_| boss_rush) {
+            return session
+                .start_run(r, None, &opts)
+                .map(|_| ())
+                .ok_or_else(|| "the Boss Rush's first stage would not start".to_string());
         }
         let r = session
             .enter_scene_live(scene, &opts)
@@ -676,8 +726,41 @@ pub(super) fn run_one(
         // does not do this, so the harness does it for it.
         let edge = pad & !prev_pad;
         prev_pad = pad;
+        // The run rules' host step (the play window's `poll_run_rules`): a
+        // Boss Rush stage entered, its intermission or result screen handed
+        // the frame, ironman's card rules on the soak card.
+        let (rules_screen, rules_over) = if rules.is_some() {
+            match catch_unwind(AssertUnwindSafe(|| {
+                step_run_rules(&mut session, &opts, edge, &mut card)
+            })) {
+                Ok(v) => v,
+                Err(_) => {
+                    let (loc, msg, frames) = LAST_PANIC
+                        .with(|p| p.borrow_mut().take())
+                        .unwrap_or_default();
+                    findings.push(mk(
+                        &session,
+                        "panic",
+                        frame,
+                        loc,
+                        format!("[run rules] {msg} | {frames}"),
+                    ));
+                    break;
+                }
+            }
+        } else {
+            (false, false)
+        };
+        if rules_over {
+            break;
+        }
         let r = catch_unwind(AssertUnwindSafe(|| {
-            if menu_suspended {
+            if rules_screen {
+                // The Boss Rush screen owns the frame, as both hosts' boot
+                // UI does: the field does not tick.
+                session.host.world.frame = session.host.world.frame.wrapping_add(1);
+                Ok(SceneTickEvent::Stepped)
+            } else if menu_suspended {
                 // A shop / prize exchange freezes the field whole; only the
                 // menu session steps (the play window's suspended arm).
                 tick_menu_session(&mut menu_rt, &mut session.host.world, edge);

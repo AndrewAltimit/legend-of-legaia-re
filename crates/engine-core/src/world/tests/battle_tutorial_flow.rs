@@ -286,6 +286,28 @@ fn the_item_window_is_allowed_once_the_item_lesson_is_running() {
     );
 }
 
+/// A hardcore ironman run refuses battle items, but not the sparring
+/// tutorial's Item lesson: the lesson rewinds on every other pick, so a
+/// refused chip held the spar on it for good.
+#[test]
+fn hardcore_leaves_the_item_lesson_its_window() {
+    use legaia_engine_run_rules::rules::Ironman;
+    let mut world = tutorial_battle_world();
+    world.run_rules.rules.ironman = Some(Ironman { hardcore: true });
+    assert!(!world.run_battle_items_allowed());
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::Items.raw();
+    world.open_battle_command(0);
+    world.battle.tutorial_boxes.clear();
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::OpenItemMenu,
+    });
+    world.tick_battle_command();
+    assert!(world.battle.item_menu.is_some(), "item window opens");
+}
+
 #[test]
 fn run_is_rejected_for_the_whole_sparring_fight() {
     let mut world = tutorial_battle_world();

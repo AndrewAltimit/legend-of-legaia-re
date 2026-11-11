@@ -297,11 +297,15 @@ impl World {
                 self.open_battle_command(session.actor);
             }
             Some(Resolution::OpenItemMenu)
-                if !self.expansion_item_use_allowed() || !self.run_battle_items_allowed() =>
+                if !self.expansion_item_use_allowed()
+                    || (!self.run_battle_items_allowed() && self.battle.tutorial.is_none()) =>
             {
                 // An armed expansion challenge's `no_items` rule, or a
                 // hardcore ironman run: the ring stays up. Always open with
-                // no pack and no run rule.
+                // no pack and no run rule. Hardcore leaves the sparring
+                // tutorial its Item lesson: the lesson rewinds on any other
+                // pick, so refusing the chip there held Tetsu's spar on its
+                // first lesson for good.
                 self.open_battle_command(session.actor);
             }
             Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {
