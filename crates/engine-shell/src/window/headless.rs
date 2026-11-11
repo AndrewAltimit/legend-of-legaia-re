@@ -191,6 +191,29 @@ impl HeadlessPlayWindow {
         true
     }
 
+    /// Activate the expansion pack in directory `pack` and enter its map
+    /// `map` over the running scene through the session's entry
+    /// (`BootSession::enter_expansion_map_live`, what `--expansion --map`
+    /// runs at launch), then rebuild the scene render state as a pack
+    /// reload does.
+    pub fn enter_expansion_map(&mut self, pack: &Path, map: &str) -> Result<()> {
+        let pack = legaia_expansion_format::ExpansionPack::from_dir(pack)?;
+        self.app
+            .session
+            .host
+            .activate_expansion_pack(std::sync::Arc::new(pack))?;
+        let opts = self.app.field_live_opts.clone();
+        self.app.session.enter_expansion_map_live(map, "", &opts)?;
+        self.app.rebuild_scene_render_state();
+        Ok(())
+    }
+
+    /// The field VRAM the window's draws sample (`cpu_vram_base`): the
+    /// scene build with what the window layers on it.
+    pub fn field_vram(&self) -> Option<&psx_tim::Vram> {
+        self.app.cpu_vram_base.as_ref()
+    }
+
     /// The session the window runs.
     pub fn session(&self) -> &NativeSession {
         &self.app.session

@@ -37,6 +37,7 @@ mod native_front_end;
 mod native_minigame_ladder;
 mod native_new_game_save_continue;
 mod ocean_anim_real;
+mod pack_map_host_vram;
 mod pause_learned_content_ladder;
 mod retail_compare_corpus;
 mod rim_elm_opening_issues;

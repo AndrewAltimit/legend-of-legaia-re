@@ -161,6 +161,13 @@ SCENES.monkey_map = { scene: 'map01', ticks: 1800, every: 30, taps: monkey(2, 30
 SCENES.monkey_shop = { scene: 'bylon', ticks: 1200, every: 30, shop: { tick: 30, idx: 0 }, taps: monkey(3, 60, 1190, 17) };
 SCENES.monkey_fight = { card: CARD.late, block: 1, ticks: 1800, every: 30, battle: 30, taps: monkey(4, 240, 1790, 19) };
 SCENES.monkey_menu = { card: CARD.late, block: 4, ticks: 1800, every: 30, taps: [[MENU_AT, 'Start'], ...monkey(5, 120, 1790, 23)] };
+/* An expansion pack's map (`packs/sample`): the native `--expansion DIR --map ID` against the
+ * page's library load (`load_expansion` on the `.lxpack` the asset CLI bundles) and its map entry.
+ * The pack's own maps, props, NPCs and walls; a walk, then a pause menu over the pack's scene. */
+const PACK = path.join(REPO, 'packs/sample');
+SCENES.pack_village = { pack: { dir: PACK, map: 'isles_village' }, ticks: 300, every: 30, hold: walk };
+SCENES.pack_tower = { pack: { dir: PACK, map: 'genesis_1f' }, ticks: 300, every: 30, hold: walk };
+SCENES.pack_menu = { pack: { dir: PACK, map: 'isles_village' }, ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU };
 /* A save the window wrote, resumed on both. */
 SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'native', ticks: 300, every: 30, hold: walk };
 
@@ -186,7 +193,8 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
     ...(sc.hold || []).map(([a, b, k]) => `${a}-${b}:${k}`),
     ...(sc.taps || []).map(([t, k]) => `${t}:${k}`),
   ].join(',');
-  const a = ['play-window', '--disc', process.env.LEGAIA_DISC_BIN, '--scene', sc.scene || sc.landed,
+  const a = ['play-window', '--disc', process.env.LEGAIA_DISC_BIN,
+    ...(sc.pack ? ['--expansion', sc.pack.dir, '--map', sc.pack.map, ...(sc.pack.spawn ? ['--spawn', sc.pack.spawn] : [])] : ['--scene', sc.scene || sc.landed]),
     ...MODES[mode].native,
     '--screenshot-every', String(opts.every || sc.every), '--screenshot-dir', dir,
     '--screenshot-last-tick', String(opts.ticks || sc.ticks)];
@@ -201,7 +209,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
   if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
   if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
-  if (sc.lgsfPath || sc.viaTown) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
+  if (sc.lgsfPath || sc.viaTown || sc.pack) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
   const r = spawnSync(engine, a, { env, cwd, encoding: 'utf8', timeout: 1200000 });
@@ -225,7 +233,7 @@ async function pageRun(cfg) {
   P.vt = 1e6; P.virtual = true;
   /* The window seeds ahead of its scene entry and again after its seeds: this page seeds ahead of
    * the entry that lands where the window does, and again after it. */
-  const seedRng = () => { if (sc.lgsfPath || sc.viaTown) { if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused'); } };
+  const seedRng = () => { if (sc.lgsfPath || sc.viaTown || sc.pack) { if (!rt.debug_seed_rng(cfg.rngSeed)) throw new Error('rng seed refused'); } };
   if (pick) seedRng();
   /* The window raises `--set-flag` ahead of its scene entry, so this page does too. */
   for (const f of sc.flags || []) { if (!rt.set_system_flag(f, true)) throw new Error('flag refused ' + f); }
@@ -233,8 +241,16 @@ async function pageRun(cfg) {
   const view = window.__playView;
   view.stop();
   view.setPaused(true);
-  if (!pick) { seedRng(); view.enter(sc.scene); }
-  if (sc.viaTown) seedRng();
+  if (cfg.lxpack) {
+    const bin = atob(cfg.lxpack);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const info = JSON.parse(rt.load_expansion(bytes));
+    if (info.errors && info.errors.length) throw new Error('pack refused: ' + info.errors.join('; '));
+    seedRng();
+    view.enterExpansionMap(sc.pack.map, sc.pack.spawn || '');
+  } else if (!pick) { seedRng(); view.enter(sc.scene); }
+  if (sc.viaTown || sc.pack) seedRng();
   if (sc.seat && !rt.play_debug_seat(sc.seat[0], sc.seat[1])) throw new Error('seat refused');
   /* The native side's LEGAIA_DIAG_FOLLOW_KNOBS: the knobs written raw, every frame. */
   const holdKnobs = () => {
@@ -437,7 +453,15 @@ async function main() {
     await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
     await page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 120000 });
     const lgsf = sc.lgsfPath ? fs.readFileSync(sc.lgsfPath).toString('base64') : null;
-    const r = await page.evaluate(pageRun, { lgsf, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
+    let lxpack = null;
+    if (sc.pack) {
+      const bundle = path.join(dir, 'pack.lxpack');
+      const asset = path.join(path.dirname(engine), 'asset');
+      const b = spawnSync(asset, ['expansion', 'bundle', '--out', bundle, sc.pack.dir], { encoding: 'utf8' });
+      if (b.status !== 0) throw new Error(`asset expansion bundle: ${b.stderr}`);
+      lxpack = fs.readFileSync(bundle).toString('base64');
+    }
+    const r = await page.evaluate(pageRun, { lgsf, lxpack, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
     await context.close();
     let worst = null, sum = 0, offFrames = 0, firstTrace = null, traceOff = 0;
     let reached = [!sc.reach, !sc.reach];
@@ -448,7 +472,7 @@ async function main() {
       /* A card landing, or a scene the picker does not list, enters from the page's
        * running scene first, so the audio record starts a command apart; both fields
        * say only that. */
-      const d = traceDiff(nt, f.trace).filter((l) => !(sc.card || sc.viaTown) || !/^audio_recent|^\d+,\s+\|\s+\d+,$|^\d{10,},\s+\|\s+\d{10,},$/.test(l));
+      const d = traceDiff(nt, f.trace).filter((l) => !(sc.card || sc.viaTown || sc.pack) || !/^audio_recent|^\d+,\s+\|\s+\d+,$|^\d{10,},\s+\|\s+\d{10,},$/.test(l));
       fs.writeFileSync(path.join(dir, `${String(f.tick).padStart(5, '0')}-page.trace`), f.trace);
       if (d.length) { traceOff++; if (!firstTrace) firstTrace = { tick: f.tick, d }; }
       sum += f.score;
