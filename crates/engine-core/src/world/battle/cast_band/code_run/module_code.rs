@@ -466,6 +466,7 @@ impl World {
             self.casting.module_spray = arm.spray;
             self.casting.module_ring = arm.ring;
             self.casting.module_scatter_pairs = arm.scatter_pairs;
+            self.casting.module_scatter_level = arm.parts_level;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
         }

@@ -305,7 +305,24 @@ impl World {
                         });
                     }
                 }
+                let first = self
+                    .casting
+                    .active_summon
+                    .as_ref()
+                    .map_or(0, |s| s.parts.len());
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+                // Arm 6 seats its pairs (`jal 0x80050ED4` at `0x801F7834` /
+                // `0x801F784C`) ahead of its store of the fade word into every
+                // pooled part's level (`sh a0,0x78(v0)` at `0x801F78D4`), so a
+                // pair seated on the pass takes the fade over the level its
+                // own seat run set (`CTRL_74`'s `+0x78 = 0`).
+                if let Some(level) = self.casting.module_scatter_level.take()
+                    && let Some(scene) = self.casting.active_summon.as_mut()
+                {
+                    for part in scene.parts.iter_mut().skip(first) {
+                        part.seat_pokes.push((0x78, level));
+                    }
+                }
             }
             if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y)
                 && let Some(ring) = self.battle.cast_ribbons.as_mut()
