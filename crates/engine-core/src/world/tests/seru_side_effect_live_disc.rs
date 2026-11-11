@@ -407,6 +407,12 @@ fn a_live_vera_cast_restores_the_module_amount() {
             restored, want,
             "spell {spell_id:#04X} at level {level} must restore the module's own amount"
         );
+        // The module's restore is a bare HP store: neither image calls the
+        // popup push `FUN_801F44A0`, so no number rises over the target.
+        assert!(
+            w.drain_battle_hit_fx().is_empty(),
+            "spell {spell_id:#04X}'s module restore pushes no popup"
+        );
         eprintln!("[ok] {spell_id:#04X} level {level} restored {restored}");
     }
 }

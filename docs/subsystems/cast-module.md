@@ -1318,6 +1318,13 @@ damage folds once at `World::cast_spell_on_slots_prepaid` with the module's
 magnitudes routed in (Vera's `level * 0x20 + 0xE0`, Orb's
 `(level << 6) + 0x1C0`), so no body applies HP twice.
 
+A module restore raises no number over its target. Vera's arm 9 stores
+`+0x14C += heal` and `+0x10 = -heal` (`0x801F7CFC` / `0x801F7D0C`) and the
+readout rolls up on its own; none of the three healing images (PROT 0905, 0911,
+0919) calls the popup push `FUN_801F44A0`, which every damaging module calls
+beside its HP write. The `0x83` and `0x89` recordings show the readout roll and
+no number. The fold drops its heal popup for these casts.
+
 #### Other directly-called ticks
 
 | Tick | Owner | Reached from | Phase arms | Damage |
