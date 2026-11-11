@@ -338,39 +338,50 @@ impl World {
         }
     }
 
+    /// The pose the draw after a node's tick decodes when that tick committed
+    /// a clip: the committed entry on its first keyframe, not the pose the
+    /// slice's advance decoded off the clip it left. `FUN_8004AD80` zeroes the
+    /// node cursor (`sh zero,0x68` at `0x8004B068`) and the draw tick's
+    /// decoder `FUN_8004998C` reads the node's entry at that cursor, so the
+    /// pass shows keyframe 0 and stores the body pair `+0x3C` / `+0x40` the
+    /// next pass's range law and separation read off it. `kor_shade_strike`:
+    /// the struck Vahn's body pair on the commit pass reads `(-16, -144)`, the
+    /// reaction's keyframe 0. The same holds for an attacker's own strike
+    /// clip: `battle_ropeway_party_gala_flying_knee_mid`'s retail film holds
+    /// Gala's body pair on clip `0x0F` at cursor `0` at `(-260, -133)`, its
+    /// first keyframe, the vsync after the commit. Objects past the new
+    /// clip's stream keep the pose the body held.
+    // PORT: FUN_80047430 (`0x80047E58..0x80048060`, the history push after the commits)
+    // REF: FUN_8004998C (the draw's decode at the zeroed cursor)
+    pub(in crate::world) fn show_committed_first_keyframe(&mut self, i: usize) {
+        let a = &mut self.actors[i];
+        if let Some(p) = a.battle_animation.as_ref() {
+            let mut pose = p.pose_at_sixteenths(0);
+            if let Some(prev) = a.pose_frame.as_ref() {
+                let n = pose.bone_outputs.len();
+                if let Some(rest) = prev.bone_outputs.get(n..) {
+                    pose.bone_outputs.extend_from_slice(rest);
+                }
+            }
+            let (key, variant) = (p.attach_key(), p.variant_track());
+            if let Some(front) = a.battle_pose_history.front_mut() {
+                front.pose = pose.clone();
+                front.clip_key = key;
+                front.variant_track = variant;
+                front.frame = 0;
+            }
+            a.pose_frame = Some(pose);
+        }
+    }
+
     /// The commit of a staged reaction inside the seat's tick, with the
     /// `+0x1F7` byte as the commit reads it and as the tick rewrites it.
     fn commit_staged_reaction_now(&mut self, i: usize, entry: u8, prev_juggle: bool) -> bool {
         let now = self.actors[i].battle_juggle_window;
         self.actors[i].battle_juggle_window = prev_juggle;
         let committed = self.commit_battle_reaction_entry(i, entry);
-        // The draw that follows the tick decodes the node's clip at its
-        // cursor (`FUN_8004998C` from the draw tick), so the pass shows the
-        // committed entry on its first keyframe, not the pose this slice's
-        // advance decoded off the clip it left. That pose is what the body
-        // pair the next pass's range law and separation read is built from
-        // (`kor_shade_strike`: the struck Vahn's body pair on the commit pass
-        // reads `(-16, -144)`, the reaction's keyframe 0).
-        // PORT: FUN_80047430 (`0x80047E58..0x80048060`, the history push after the commits)
         if committed {
-            let a = &mut self.actors[i];
-            if let Some(p) = a.battle_animation.as_ref() {
-                let mut pose = p.pose_at_sixteenths(0);
-                if let Some(prev) = a.pose_frame.as_ref() {
-                    let n = pose.bone_outputs.len();
-                    if let Some(rest) = prev.bone_outputs.get(n..) {
-                        pose.bone_outputs.extend_from_slice(rest);
-                    }
-                }
-                let (key, variant) = (p.attach_key(), p.variant_track());
-                if let Some(front) = a.battle_pose_history.front_mut() {
-                    front.pose = pose.clone();
-                    front.clip_key = key;
-                    front.variant_track = variant;
-                    front.frame = 0;
-                }
-                a.pose_frame = Some(pose);
-            }
+            self.show_committed_first_keyframe(i);
         }
         self.actors[i].battle_juggle_window = if committed {
             Self::juggle_window_open(&self.actors[i])

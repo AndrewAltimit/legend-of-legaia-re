@@ -418,6 +418,7 @@ impl World {
                 & legaia_engine_battle_vm::battle_anim_rate::SLOW_STATUS_BIT
                 != 0;
             let creature_seat = self.casting.summon_actor_slot == Some(i as u8);
+            let commits_at_advance = self.actors[i].battle_clip_commits;
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 player.set_tween_target(tween);
@@ -722,6 +723,12 @@ impl World {
                 self.commit_staged_battle_reaction(i, slice_natural_end, prev_juggle);
             }
             self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
+            // A clip this seat's own slice committed behind its advance (the
+            // natural end, the event cut, the staged commit) is what the
+            // pass's draw decodes, on its first keyframe.
+            if commit_after && self.actors[i].battle_clip_commits != commits_at_advance {
+                self.show_committed_first_keyframe(i);
+            }
         }
         // The cast tick's effect-child drive. On retail's cadence it runs
         // with the pass's draw instead (`World::tick_battle_anim_pass`).
