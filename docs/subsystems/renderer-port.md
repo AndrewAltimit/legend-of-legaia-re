@@ -86,9 +86,12 @@ the opaque pass draws everything but discards the STP texels of
 semi-transparent prims, then a blend pass re-draws only the
 semi-transparent triangles keeping only STP texels - a per-ABR-mode index
 tail appended at upload time by `psx_blend::append_semi_tail`. The blend pass uses
-one fixed-function pipeline per mode (mode 0 uses a 0.5 blend constant,
-mode 2 is reverse-subtract, mode 3 pre-scales F by 0.25 in its fragment
-entry point). Blend draws depth-test (`LessEqual`) but don't write
+one fixed-function pipeline per mode, each with its own fragment entry
+(`psx_blend::blend_entry`) that writes the mode's foreground term: off PSX
+mode `F` times the mode's factor (`0.5` over a `0.5` background constant for
+mode 0, `0.25` for mode 3; mode 2 is reverse-subtract), in PSX mode the term
+that lands the GPU's truncating 5-bit result
+([renderer](renderer.md#psx-mode-blends-at-the-gpus-5-bit-precision)). Blend draws depth-test (`LessEqual`) but don't write
 depth, and run after all opaque scene draws. `blend_apply` is the CPU
 mirror the blend-state mapping is unit-tested against.
 
@@ -150,7 +153,10 @@ before the blend; the textured blend pass draws raw texels and stays
 undithered. Its foreground is truncated to a 5-bit channel before the blend
 equation reads it (`psx_blend_foreground`, both hosts, every render mode),
 which is how the GPU hands the modulated texel to the blend
-([shading](shading.md#step-6-semi-transparency)).
+([shading](shading.md#step-6-semi-transparency)). In PSX mode the blend
+itself is the GPU's 5-bit arithmetic too, on the console's rule or the
+PCSX-Redux instrument's, and the native target presents and captures the
+frame as the 15-bit framebuffer it models (`fs_scanout15`).
 
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),

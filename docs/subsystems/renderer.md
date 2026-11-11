@@ -24,7 +24,7 @@ culling, the port's render passes and knobs. How a pixel gets its colour is
   through the GTE light. The port does both by default on both hosts
   ([Lighting](#lighting)).
 - **Rasterisation defaults to clean.** `Renderer::set_psx_mode` is opt-in and
-  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row), the GTE register limits on field corners, each field and battle primitive's draw at its ordering-table link and 15-bit dither only. Affine UVs are unconditional, and
+  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row), the GTE register limits on field corners, each field and battle primitive's draw at its ordering-table link, 15-bit dither and the GPU's 5-bit blend arithmetic only. Affine UVs are unconditional, and
   they are the faithful behaviour
   ([knobs](#rendering-knobs-what-is-faithful-what-is-a-choice)).
 - **Simulation is faithful with no opt-out.**
@@ -1310,12 +1310,15 @@ links that floor's quad under a dancer into the blob's own slot and draws the
 floor first (`minigame_dance_retail_go_in`: CLUT `0x7E80` quads and the blob's
 cells both in slot `2220`), so the blob lands on it.
 
-The blob's darkening is the GPU's blend arithmetic, not its texel: ABR `0`
-halves each term in 5-bit before the sum, `(B >> 1) + (F >> 1)`, and the blob
-texel is grey `3` (`0x8C63`), so a floor at `3` reads `2` and one at `4` reads
-`3` - one step darker, `24` to `16` and `33` to `24` on the hall's dark
-floor. A blend in floating point leaves that floor where it was, which is what
-both hosts draw: the dance's blobs stand where retail's do and barely show.
+The blob's darkening is the blend arithmetic, not its texel: the blob texel
+is grey `3` (`0x8C63`) under ABR `0`, and the GPU averages in 5-bit,
+`(B + F) >> 1`, so a floor at `3` stays `3` and one at `4` reads `3`. The
+PCSX-Redux software GPU the dance states were captured on does the same on a
+`POLY_FT4`'s pixel pairs (`getTextureTransColShade32`); its halving rule,
+`(B >> 1) + (F >> 1)`, which would take the floor at `3` to `2`, reaches only
+a span's last odd pixel. On the hall's dark floor the blob is all but
+invisible on both. PSX mode blends by the capture's rule
+([below](#psx-mode-blends-at-the-gpus-5-bit-precision)).
 
 The blob and the body share one camera: the matrix `FUN_800460AC` projects
 through is the frame's, the one the actor's mesh just drew with, scripted
@@ -3573,12 +3576,57 @@ pass discards ABE prims and a per-ABR-mode blend pass
 state the caller resolves - mode 0 is the PSX default. `upload_color_mesh`
 without blend words keeps every prim opaque.
 
-**Pipelines.** One blend pipeline per mode, per path: mode 0 via blend
-constant 0.5, mode 2 via reverse-subtract, mode 3 pre-scales `F` by 0.25 in
-its fragment entry point. Blend draws depth-test `LessEqual` without writing
-depth and run after all opaque scene draws. The blend pass skips the dither
-stage: retail dithers the post-blend value during the VRAM write, which a
-fixed-function blend cannot reproduce without a destination read-back.
+**Pipelines.** One blend pipeline per mode, per path, each with its own
+fragment entry (`psx_blend::blend_entry`): the foreground adds at one and the
+entry writes the foreground term - off PSX mode `F` scaled by the mode's
+factor (`0.5` for mode 0, over a background factor of `0.5` from the blend
+constant; `0.25` for mode 3), mode 2 via reverse-subtract. Blend draws
+depth-test `LessEqual` without writing depth and run after all opaque scene
+draws.
+
+#### PSX mode blends at the GPU's 5-bit precision
+
+The GPU blends on 5-bit channels and truncates
+([shading](shading.md#step-6-semi-transparency)); a float blend over the same
+two pixels keeps the half step mode 0 drops and the fraction mode 3's `F / 4`
+drops. A fixed-function blend cannot floor, and it does not have to: every
+PSX-mode write leaves a channel `v` whose 5-bit value is `v >> 3` (the
+dither's `(c5 << 3) | (c5 >> 2)`, a texel's `c5 * 255 / 31`), so a blend only
+has to land its result in the right 8-wide bin. In PSX mode each blend entry
+writes the term that does that, and the background brings its own low bits:
+
+| ABR | console | term written | PCSX-Redux instrument |
+|---|---|---|---|
+| 0 | `(B + F) >> 1` | `4 * F` over `0.4985 * B` | untextured flat `8 * (F >> 1)`; Gouraud `4 * ((m >> 1) + d) / 4` |
+| 1 | `min(B + F, 31)` | `8 * F` | Gouraud `8 * ((m + d) >> 3)` |
+| 2 | `max(B - F, 0)` | `8 * F` | Gouraud `8 * ceil((m - d) / 8)` |
+| 3 | `min(B + (F >> 2), 31)` | `8 * (F >> 2)` | Gouraud `8 * (((m >> 2) + d) >> 3)` |
+
+`m` is the 8-bit foreground and `d` the dither offset `0..7` of the
+PCSX-Redux software GPU, which sums a Gouraud foreground with the background
+in 8 bits before its dither. A flat textured polygon it walks in pixel pairs
+(`getTextureTransColShade32`): mode 0 is then the console's average,
+`(128 * B + t5 * c8) >> 8`, and mode 3 quarters the texel before the
+modulate, `((t5 >> 2) * c8) >> 7`. Its halving `(B >> 1) + (F >> 1)` is the
+untextured flat polygon's (`getShadeTransCol`) and the sprite's
+(`getTextureTransColShadeSemi`); the text pass takes it, the 3D and
+screen-primitive passes take the polygon's. Mode 0's background factor
+sits a hair under one half (`psx_blend::MODE0_PSX_BLEND_CONSTANT`) so a
+background at the top of an odd bin does not round into the next one. The
+unit tests run every level of every bin through each mode's blend state with
+an 8-bit target's rounding against `psx_blend::gpu_blend5`,
+`psx_blend::pcsx_blend5` and `psx_blend::pcsx_dithered5`.
+
+The rule rides `psx_params.z` on the mesh passes (`2` the console, `3` the
+PCSX-Redux texel rule), a flag bit the renderer adds to each screen-overlay
+vertex at staging, and a pipeline constant on the text pass
+(`Renderer::psx_blend_rule`). A blended channel sits anywhere in its bin, so
+the native target's present and capture read the frame as the 15-bit
+framebuffer it models (`fs_scanout15`, `psx_blend::scanout15`) unless an
+enhancement pass (SSAO, bloom, the volumetric fog) has laid a smooth term
+over it. The play page's blend passes write the console's terms
+(`semi_out` in `webgl-shaders.js`, the screen-primitive pass in `play-app.js`,
+`TmdRenderer._setSemiBlend`); it presents its blended bins as they are.
 
 **Ordering is per primitive, mirroring the ordering table.** Each semi
 prim's depth key is its model-space centroid's clip-space `w` under the draw

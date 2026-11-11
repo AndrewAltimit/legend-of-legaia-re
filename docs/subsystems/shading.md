@@ -295,7 +295,21 @@ bits (`B` = framebuffer, `F` = the new pixel):
 | 2 | `B - F` |
 | 3 | `B + 0.25*F` |
 
-The GPU computes the equation on 5-bit channels. `F` for a textured
+The GPU computes the equation on 5-bit channels, and it truncates: mode 0 is
+`(B + F) >> 1`, mode 3 adds `F >> 2`, modes 1 and 2 saturate at `31` and `0`
+(Mednafen and DuckStation compute the console's this way). The PCSX-Redux
+software GPU agrees on a flat textured polygon, but halves each term before
+the sum on a sprite or an untextured flat polygon, `(B >> 1) + (F >> 1)`
+(`src/gpu/soft/soft.cc`, `getShadeTransCol`), and for a Gouraud primitive it
+adds the 8-bit foreground to the background before its dither
+(`getShadeTransColDither`, `getTextureTransColShadeXDither`). A blend in
+floating point keeps the half step mode 0 drops and the fraction mode 3's
+`F / 4` drops; in PSX mode both hosts' blend passes
+write the term that lands the GPU's 5-bit result in the framebuffer, under
+the console's rule or, for a PCSX-Redux capture, that emulator's
+([renderer](renderer.md#psx-mode-blends-at-the-gpus-5-bit-precision)).
+
+`F` for a textured
 primitive is the step-4 modulate truncated to 5 bits, `texel5 * colour / 128`
 floored, so a faint additive layer loses up to one step per channel and a
 large dim one adds nothing at all. The port's textured blend pass reads `F`
