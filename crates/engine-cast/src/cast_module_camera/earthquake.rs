@@ -60,7 +60,8 @@ fn off(x: i16, z: i16, facing: u16, along: i32, across: i32) -> (i16, i16) {
 /// `k` is `scalar * step`, `scalar` per engine tick. The phase chain - clips,
 /// the hit of arm 5 - is `EARTHQUAKE_CHAIN`. Not ported: the record-table words
 /// `+0x85` / `+0x86` the arms write through the caster's monster record, the
-/// pad rumble words and the 2D puff `FUN_801DFDF0(2, ..)` beside each rock pair.
+/// pad rumble words. The 2D puff `FUN_801DFDF0(2, ..)` beside each rock pair is
+/// the host's (`World::capture_stager_tick`, beside the rocks).
 ///
 /// PORT: overlay_cast_earthquake_0935_801f69d8 (PROT 0935; the camera arms and the records)
 pub fn earthquake_camera(

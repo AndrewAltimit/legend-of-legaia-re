@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// The `efect.dat` pool id PROT 0935's rock passes puff on (`li a0,0x2` at
+/// `0x801F7698` / `0x801F7A38`).
+const ROCK_PUFF_EFFECT: u8 = 2;
+
 impl World {
     /// The capture-class module a cast of `spell_id` pages, when the body
     /// its trampoline picks has its spawns seated per arm
@@ -190,6 +194,14 @@ impl World {
                     })
                     .collect();
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+                // Then the dust puff on the same point and yaw:
+                // `FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`,
+                // arm 5's at `0x801F7A40`), whose particles draw their own
+                // jitter off the stream. The module tick runs ahead of the
+                // frame's pool walker, so the puff takes the sweeps this
+                // tick's walker already gave the rest.
+                let owed = self.battle.anim_pass_vsyncs;
+                self.spawn_effect_caught_up(ROCK_PUFF_EFFECT, [x, 0, z], yaw as u16, owed);
             }
             if let Some((records, rot)) = self.casting.module_ring.take() {
                 let mut used = [false; 8];
