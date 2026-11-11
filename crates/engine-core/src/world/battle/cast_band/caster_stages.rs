@@ -132,6 +132,16 @@ impl World {
             // held 127 live rays against retail's 33.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm, spell_id);
             let opens_pass = self.module_tick_opens_pass();
+            // An arm's dead-store draws, one battle frame at a time.
+            if opens_pass {
+                let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
+                    run.prot_entry,
+                    spell_id,
+                );
+                for _ in 0..cmc::capture_arm_pass_rands(run.prot_entry, body, arm) {
+                    self.next_rand();
+                }
+            }
             if !every.is_empty() && opens_pass {
                 let roll = (self.next_rand() % 0x1000) as i16;
                 self.stage_module_arm_spawns(

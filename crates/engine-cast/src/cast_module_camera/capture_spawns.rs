@@ -886,6 +886,19 @@ pub fn capture_arm_counted(prot_entry: u32, spell: u8, phase: u8) -> Option<Coun
     }
 }
 
+/// The `rand()` words capture-class module `prot_entry`'s arm `phase` draws
+/// on every pass, held or not, whose results the arm stores nowhere it later
+/// reads: PROT 0961's arm 2 draws one ahead of its countdown test
+/// (`jal 0x80056798` at `0x801F6ED8`) into the cut's roll `sp+0x14`, which
+/// the passing cut then stores `0` over (`sh zero,0x14(sp)` at
+/// `0x801F7074`). Only the stream's cursor moves.
+pub fn capture_arm_pass_rands(prot_entry: u32, body: Option<u32>, phase: u8) -> u8 {
+    match (prot_entry, body, phase) {
+        (961, Some(super::DEAD_END_CRISIS_BODY), 2) => 1,
+        _ => 0,
+    }
+}
+
 /// Whether capture-class module `prot_entry`'s arm `phase` zeroes the body's
 /// frame counter as it passes: PROT 0940's arms 1 and 3
 /// (`sw zero,-0x79B0` at `0x801F73A8` / `0x801F7568`).
