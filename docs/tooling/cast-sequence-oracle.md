@@ -1250,7 +1250,8 @@ A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
   finisher halves the hit, so an engine child standing the party out of the stance
   takes about twice retail's damage: the Rogue casts read `1591` against `751` on Vahn.
   The driver stands the probe's `guard=` seats (the state's stance for an older
-  recording); `--guard` overrides it. A `--monster-pick` run several rounds on from a
+  recording, read with `pcsxr-state`, which the driver's build step builds; it warns when
+  the state cannot be read rather than standing no seat); `--guard` overrides it. A `--monster-pick` run several rounds on from a
   `*_strike` state has tapped Attack since: its `guard=` reads the stance at the cast,
   and a recording without the field stands no seat.
 - A monster-pick run from a `*_strike` state wants `LEGAIA_PRESS_UNTIL=7000` and

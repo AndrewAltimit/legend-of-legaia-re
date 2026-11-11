@@ -76,8 +76,10 @@ def main() -> int:
     print(f"[retail] {len(casts)} casts in {time.monotonic() - t0:.0f}s at --jobs {a.jobs}")
     if not a.retail_only:
         if not a.no_build:
-            subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "--profile", "release-test",
-                            "--features", "oracles", "--bin", "legaia-engine"], cwd=REPO, check=True)
+            # pcsxr-state reads an older recording's guard stance off its state.
+            subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "-p", "psx-pcsx-redux",
+                            "--profile", "release-test", "--features", "legaia-engine-shell/oracles",
+                            "--bin", "legaia-engine", "--bin", "pcsxr-state"], cwd=REPO, check=True)
         for name, args in casts:
             if name in failed:
                 continue

@@ -344,7 +344,12 @@ def engine_guard(a, out: Path, done: dict) -> str:
     if a.physical or int(manifest.get("monster_pick", "0") or 0):
         return ""
     seats = state_guard_seats(manifest.get("sstate", ""))
-    if seats:
+    if seats is None:
+        # Silently standing no seat here doubles every hit on a guarded party
+        # (the Rogue casts' films read so while `pcsxr-state` was unbuilt).
+        print("[engine] WARNING: cannot read the state's +0x1DE (pcsxr-state unbuilt or state missing); "
+              "the party stands out of the Spirit stance - pass --guard to seat it")
+    elif seats:
         print(f"[engine] guard {seats} from the state's +0x1DE (recording predates guard=)")
     return seats or ""
 
@@ -873,8 +878,9 @@ def main() -> int:
     out = out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if not a.no_build and not a.retail_only:
-        subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "--profile", PROFILE,
-                        "--features", "oracles", "--bin", "legaia-engine"], cwd=REPO, check=True)
+        subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "-p", "psx-pcsx-redux", "--profile", PROFILE,
+                        "--features", "legaia-engine-shell/oracles", "--bin", "legaia-engine",
+                        "--bin", "pcsxr-state"], cwd=REPO, check=True)
     if not a.score_only and not a.engine_only:
         if not run_retail(a, out):
             return 0 if not os.environ.get("LEGAIA_DISC_BIN") else 1
