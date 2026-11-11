@@ -3014,3 +3014,39 @@ fn a_strike_capture_names_the_turn_its_arm_did_not_see() {
     b.cam_tween.1.yaw = 1000.0;
     assert_eq!(b.strike_arm_turn(), None, "another framing's endpoint");
 }
+
+/// A floor ring (record `0x801F5EB0`, the effect script's stomp ring) is
+/// seeded with its ground point and its scale `+0x72` beside its banks,
+/// radii and level, so the snapshot can seat a ring the replay never
+/// stomped: `koru_gigaton_press_mid_cast`'s youngest ring stands at
+/// `(-214, 0, 75)`, scale `3072`, radii `224 / 320`, not yet fading.
+#[test]
+fn a_floor_ring_is_seeded_with_its_ground_point_and_scale() {
+    let mut ram = vec![0u8; 0x20_0000];
+    put32(&mut ram, frame_step::FORCED_STEP, 2);
+    let n = 0x8008_2D74;
+    put32(&mut ram, 0x8007_C34C + 4, n);
+    put32(&mut ram, n + 0x0C, 0x8002_1DF4);
+    put32(&mut ram, n + 0x10, 0x0004_4880);
+    put32(&mut ram, n + 0x48, 0x801F_5EB0);
+    put16(&mut ram, n + 0x14, (-214i16) as u16);
+    put16(&mut ram, n + 0x18, 75);
+    put16(&mut ram, n + 0x56, 4);
+    put16(&mut ram, n + 0x5A, 2);
+    put16(&mut ram, n + 0x72, 3072);
+    put16(&mut ram, n + 0x9E, 1);
+    let seeds = ram_read::retail_action_fx_parts(&ram);
+    assert_eq!(seeds.len(), 1);
+    assert_eq!(seeds[0].tag, 0x801F_5EB0);
+    let poke = |o: u16| {
+        seeds[0]
+            .pokes
+            .iter()
+            .find(|&&(k, _)| k == o)
+            .map(|&(_, v)| v)
+    };
+    assert_eq!(poke(0x14), Some((-214i16) as u16));
+    assert_eq!(poke(0x16), Some(0));
+    assert_eq!(poke(0x18), Some(75));
+    assert_eq!(poke(0x72), Some(3072));
+}

@@ -251,13 +251,54 @@ impl World {
     /// [`legaia_engine_effects::summon::SummonScene::install_part_snapshot`]
     /// for the table-form scenes, which are one scene per spawn rather than
     /// one scene per cast. Seeds go onto the live parts of their tag in
-    /// scene order, one each; a seed with no part left is skipped and a
-    /// part with no seed is left alone - the snapshot re-poses parts the
-    /// replay spawned, it neither invents nor retires one.
+    /// scene order, one each; a part with no seed is left alone, and a seed
+    /// with no part left is skipped - the snapshot re-poses parts the
+    /// replay spawned and retires none.
+    ///
+    /// The one exception is the effect script's floor ring
+    /// ([`legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD`]):
+    /// a seed carrying the ring's ground point and scale `+0x72` seats a
+    /// ring the replay holds none of, through the same
+    /// [`Self::spawn_battle_record_posed`] the stomp takes. Those rings are a
+    /// walk's footfalls, and a replay that stands its caster on the
+    /// capture's walked ground never walks: PROT 0962's charge bodies walk
+    /// Koru in on his run clip, whose script stomps a ring every four
+    /// frames (code `0x83` at frames `1`, `5`, `9`, `13`), and the three
+    /// `koru_*_mid_cast` states hold three of them under him.
     pub fn install_action_fx_part_snapshot(
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],
     ) {
+        use legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD;
+        let live_rings = self
+            .casting
+            .active_action_fx
+            .iter()
+            .flat_map(|s| s.parts.iter())
+            .filter(|p| !p.finished && p.tag == Some(FLOOR_PART_RECORD))
+            .count();
+        let mut seated = false;
+        for seed in seeds
+            .iter()
+            .filter(|s| s.tag == FLOOR_PART_RECORD)
+            .skip(live_rings)
+        {
+            let word = |o: u16| seed.pokes.iter().find(|&&(k, _)| k == o).map(|&(_, v)| v);
+            if let (Some(x), Some(z), Some(scale)) = (word(0x14), word(0x18), word(0x72)) {
+                let y = word(0x16).unwrap_or(0);
+                seated |= self.spawn_battle_record_posed(
+                    FLOOR_PART_RECORD,
+                    [x as i16, y as i16, z as i16],
+                    [0; 3],
+                    scale,
+                );
+            }
+        }
+        // The seater runs a new ring's program before it returns (its colour
+        // word and rates); the seed's words then go over that.
+        if seated {
+            self.seat_run_battle_fx();
+        }
         let mut used: std::collections::BTreeMap<u32, usize> = Default::default();
         for seed in seeds {
             let n = used.entry(seed.tag).or_insert(0);

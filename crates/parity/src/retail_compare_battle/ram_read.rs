@@ -447,9 +447,12 @@ pub(super) fn retail_action_fx_parts(
             let level = (fan_level_ramping(ram, n) || is_floor_ring(ram, n))
                 .then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
             // A floor ring stands where the strike's stomp seated it, a point
-            // on a walk the replay runs on its own clock.
+            // on a walk the replay runs on its own clock - or never runs, when
+            // it stands the caster on the walked ground: the scale `+0x72`
+            // lets the snapshot seat such a ring itself.
             let stood: Vec<(u16, u16)> = RAY_BURST_POSITION_OFFSETS
                 .iter()
+                .chain(&[0x72])
                 .filter(|_| is_floor_ring(ram, n))
                 .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
                 .collect();

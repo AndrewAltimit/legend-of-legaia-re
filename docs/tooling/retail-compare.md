@@ -2037,6 +2037,20 @@ position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
 
+A ring the replay never stomped is seated outright. The seed carries the ring's
+scale `+0x72` beside its ground point, and the snapshot seats each ring past the
+replay's own count through `World::spawn_battle_record_posed`, runs the seater's
+program on it and then pokes the seed's words over it. That is the walk-in a
+replay skips: PROT 0962's charge bodies walk Koru in on his run clip, whose
+effect script stomps code `0x83` at frames `1`, `5`, `9` and `13`, and a `0x70`
+capture stands him on the walked ground, so the replay's walk takes no steps.
+The three `koru_*_mid_cast` states hold three of those rings under him, the
+flat gold ellipse of nested bands (radii `224`, `448`, `672`, scale `3072`); the
+replay drew none of them, and seated they read `image` `.974` to `.997` each.
+The engine's own walk stomps the same rings (a cast-sequence film of
+`koru_pre_gigaton_press` shows them from arm 2 on), so the gap was the seat's,
+not the game's.
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
@@ -5967,8 +5981,8 @@ body does not play. And it lands a walked-in charge cast whose image child
 keeps the gate's frame (`RetailBattle::walk_in_shot_aligned`): the three Koru
 mid-casts hold the wind-up entry (`5` / `6` / `7`) at cursor `0` on the live
 slot and the run entry `1` at `136` on the displayed one, the run clip the
-walk-in played, with the gold ground ring around it (`image` `.943` to
-`.976` each). The walk itself is the fourth case
+walk-in played (`image` `.943` to `.976` each; the walk's floor rings
+[seated](#a-turning-effect-parts-banks-are-a-clock) take them to `.997`). The walk itself is the fourth case
 (`RetailBattle::walk_arm_follow_aligned`): arm 0 of a walking body queues the
 walk clip with the `+0x1DC` bump (PROT 0952 at `0x801F72C4..0x801F72D0`), which
 commits it mid-clip on the next anim tick, so a capture one pass into the walk
