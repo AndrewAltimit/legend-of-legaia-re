@@ -923,8 +923,9 @@ cross and the level-up banner.
 The character-parameter editor (`801d6e18`) left this bucket: the play page's
 dev-menu opt-in is itself pad-driven library code, so the composition ladder
 walks its rows and the "not playthrough-shaped" reading no longer holds for
-the browser host. The EVENT FLAG editor (`801dbd04` value edit, `801db8f4`
-list cursor) followed it the same way, once the list had something to walk:
+the browser host. The EVENT FLAG editor (`801ea51c` value edit, `801ea10c`
+list cursor, both printed `0xE818` low by their dumps) followed it the same
+way, once the list had something to walk:
 the cursor kernels walk the field overlay's own flag table (`DAT_801F2E94`,
 72 records ending on an `'X'` name), which neither host loaded, so Up / Down
 fell through to the value editor and the list cursor could not move. Both
@@ -1725,7 +1726,7 @@ to close it. The four this section held before them have verdicts - see the
 table after the next one, and the correction under it.
 
 The same refresh converted four rows: the dev menu's EVENT FLAG pair
-`801dbd04` / `801db8f4` (the flag list now seeded from the field overlay, see
+`801ea51c` / `801ea10c` (the flag list now seeded from the field overlay, see
 [NOT-PLAYTHROUGH](#not-playthrough)), the prize counter's Yes/No confirm
 `801d603c` (`prize_confirm_page`: coins and the clerk's `49 07` arm seeded, the
 pad walks a prize to the confirm), and `8004c650`, whose live anchor
