@@ -27,6 +27,13 @@ impl World {
                 ImpactSeat::Caster => vec![caster],
                 ImpactSeat::Creature => vec![creature],
                 ImpactSeat::Party => (0..party).collect(),
+                ImpactSeat::LiveParty => (0..party)
+                    .filter(|&s| {
+                        self.actors
+                            .get(usize::from(s))
+                            .is_some_and(|a| a.active && a.battle.hp != 0)
+                    })
+                    .collect(),
                 ImpactSeat::LiveMonsters => (party..party + 4)
                     .filter(|&s| {
                         self.actors.get(usize::from(s)).is_some_and(|a| {

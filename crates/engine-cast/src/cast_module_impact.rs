@@ -25,6 +25,11 @@ pub enum ImpactSeat {
     LiveMonsters,
     /// `actor_table[0..ctx[+0]]`: the party row.
     Party,
+    /// The party row's seats with HP `+0x14C`: the loops that skip a fallen
+    /// seat ahead of its hit. The host reads the HP after the tick's hits, so
+    /// a seat this hit felled goes untinted, and it does not read the
+    /// `+0x16E & 4` skip.
+    LiveParty,
 }
 
 /// The edge of its arm a store sits on.
@@ -265,7 +270,102 @@ pub const MODULE_IMPACTS: &[ModuleImpact] = &[
         selector: Some(1),
         tint_state: None,
     },
+    // PROT 0964's Element Strike body (`0xB0..=0xB2`), whose arm 1 forks into
+    // three six-arm runs: Flame on phases `2..=7`, Wind on `0x32..=0x37`,
+    // Thunder on `0x64..=0x69`. The standing-in creature is seat 7
+    // (`lw v1,0x1C(0x801C9370)`). `k = 3`'s pass gives it its element's tint
+    // state and the selector; `k = 4` restores `+0x21F` from the prologue's
+    // stack word `1` every pass (`lbu t3,0x28(sp)`), and its pass tints and
+    // burns each party seat the hit loop reaches.
+    element(
+        2 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        Some(3),
+    ),
+    element(
+        2 + 4,
+        ImpactEdge::EveryPass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        None,
+    ),
+    element(
+        2 + 4,
+        ImpactEdge::Pass,
+        ImpactSeat::LiveParty,
+        Some(RED),
+        Some(1),
+        None,
+    ),
+    element(
+        0x32 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        None,
+        Some(8),
+    ),
+    element(
+        0x64 + 3,
+        ImpactEdge::Pass,
+        ImpactSeat::Creature,
+        None,
+        Some(2),
+        Some(4),
+    ),
+    element(
+        0x64 + 4,
+        ImpactEdge::EveryPass,
+        ImpactSeat::Creature,
+        None,
+        Some(1),
+        None,
+    ),
+    element(
+        0x64 + 4,
+        ImpactEdge::Pass,
+        ImpactSeat::LiveParty,
+        Some(BLUE),
+        Some(2),
+        None,
+    ),
 ];
+
+/// One store of PROT 0964's Element Strike body. Flame's `k = 3` pass:
+/// `+0x21C = 3`, `+0x21F = 1` (`0x801F828C..0x801F829C`); its `k = 4` head
+/// `+0x21F = 1` (`0x801F82D0`) and party loop `+0x04 = 0x3FF`, `+0x21F = 1`
+/// (`0x801F8608..0x801F8618`). Wind's `k = 3` pass: `+0x21C = 8`
+/// (`0x801F7AD0`). Thunder's `k = 3` pass: `+0x21C = 4`, `+0x21F = 2`
+/// (`0x801F7208..0x801F7218`); its `k = 4` head `+0x21F = 1` (`0x801F7238`)
+/// and party loop `+0x04 = 0x3FF00000`, `+0x21F = 2` (`0x801F7598..0x801F75A8`).
+/// Each party loop skips a seat with no HP or with `+0x16E & 4` ahead of its
+/// hit (`0x801F850C..0x801F8528`).
+const fn element(
+    arm: u8,
+    edge: ImpactEdge,
+    seat: ImpactSeat,
+    colour: Option<u32>,
+    selector: Option<u8>,
+    tint_state: Option<u8>,
+) -> ModuleImpact {
+    ModuleImpact {
+        entry: 964,
+        body: crate::cast_module_ticks::ELEMENT_STRIKE_CHAIN.body,
+        arm,
+        edge,
+        seat,
+        colour,
+        full_blend: false,
+        selector,
+        tint_state,
+    }
+}
+
+/// The stores `entry`'s `body` makes on `arm` this tick];
 
 /// The stores `entry`'s `body` makes on `arm` this tick: `passed` is whether
 /// the arm's gate let it through, `countdown` the module countdown before
