@@ -14,6 +14,7 @@ pub mod app;
 pub mod arts;
 pub mod export;
 pub mod extract_job;
+pub mod gamepad;
 pub mod launch;
 pub mod library;
 pub mod media;

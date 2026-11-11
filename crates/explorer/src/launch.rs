@@ -82,6 +82,25 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
         .with_context(|| format!("writing {}", settings.display()))
 }
 
+/// The disc the game itself boots, from its launcher file's text
+/// (`launcher.toml`'s `disc` key, which [`record_disc_for_engine`] and the
+/// game's own disc picker write): what Explorer's start page offers on a
+/// first run, so a disc chosen in the game is not hunted for again.
+/// Anything that does not parse, or names no disc, gives `None`.
+pub fn engine_disc_from_settings(text: &str) -> Option<PathBuf> {
+    let table = text.parse::<toml::Table>().ok()?;
+    let disc = table.get("disc")?.as_str()?.trim();
+    (!disc.is_empty()).then(|| PathBuf::from(disc))
+}
+
+/// The game's disc ([`engine_disc_from_settings`] over
+/// [`engine_launcher_settings`]) when its file is still there and it is not
+/// already one of `recent`.
+pub fn engine_disc_offer(recent: &[PathBuf]) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(engine_launcher_settings()?).ok()?;
+    engine_disc_from_settings(&text).filter(|d| d.is_file() && !recent.contains(d))
+}
+
 /// The log file a Explorer-started game writes into.
 pub const GAME_LOG: &str = "legaia-explorer-game.log";
 
@@ -444,6 +463,19 @@ mod tests {
         assert!(!err.contains(STARTUP_RACE_FAILURE), "{err}");
         let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
         assert_eq!(text.matches("launched").count(), 1, "{text}");
+    }
+
+    /// The game's disc is read off its launcher file; a file without one,
+    /// or that does not parse, offers nothing.
+    #[test]
+    fn reads_the_games_disc_from_its_launcher_file() {
+        assert_eq!(
+            engine_disc_from_settings("disc = \"/g/Legaia.cue\"\nrecent_discs = []\n"),
+            Some(PathBuf::from("/g/Legaia.cue"))
+        );
+        assert_eq!(engine_disc_from_settings("recent_discs = []\n"), None);
+        assert_eq!(engine_disc_from_settings("disc = \"\"\n"), None);
+        assert_eq!(engine_disc_from_settings("not = = toml"), None);
     }
 
     /// The engine's launcher file gains the disc and keeps every other key;

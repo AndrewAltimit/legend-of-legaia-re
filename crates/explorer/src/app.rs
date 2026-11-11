@@ -387,6 +387,12 @@ pub struct App {
     auto_extract_started: bool,
     settle_since: Option<std::time::Instant>,
     screenshot_requested: bool,
+    /// The controllers' input ([`crate::gamepad::spawn`]), turned into key
+    /// presses in `raw_input_hook`; `None` without a controller backend.
+    pad: Option<std::sync::mpsc::Receiver<crate::gamepad::PadInput>>,
+    /// The disc the game itself boots, offered on the start page while it
+    /// is not on the recent list ([`crate::launch::engine_disc_offer`]).
+    game_disc: Option<PathBuf>,
 }
 
 impl App {
@@ -494,7 +500,10 @@ impl App {
             auto_extract_started: false,
             settle_since: None,
             screenshot_requested: false,
+            pad: None,
+            game_disc: None,
         };
+        app.game_disc = crate::launch::engine_disc_offer(&app.explorer.settings.recent);
         if let Some(t) = app.auto.tab.clone() {
             if t.eq_ignore_ascii_case("about") {
                 app.about_open = true;
@@ -3173,7 +3182,43 @@ impl App {
     }
 }
 
+impl App {
+    /// Read the controllers from `rx` ([`crate::gamepad::spawn`]).
+    pub fn with_gamepad(
+        mut self,
+        rx: Option<std::sync::mpsc::Receiver<crate::gamepad::PadInput>>,
+    ) -> Self {
+        self.pad = rx;
+        self
+    }
+}
+
 impl eframe::App for App {
+    /// A controller's presses join the frame's input as the keys a keyboard
+    /// user would press (`crate::gamepad`).
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        use crate::gamepad::PadInput;
+        let Some(rx) = &self.pad else { return };
+        let view = Mode::ALL.iter().position(|m| *m == self.mode).unwrap_or(0);
+        while let Ok(input) = rx.try_recv() {
+            match input {
+                PadInput::Key(k) => raw_input.events.extend(crate::gamepad::key_events(k, view)),
+                PadInput::Scroll(dy) => raw_input.events.push(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -dy),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }),
+                PadInput::Connected(name) => {
+                    self.explorer.status = Some(crate::gamepad::connected_line(&name));
+                }
+                PadInput::Disconnected(name) => {
+                    self.explorer.status = Some(format!("Controller disconnected: {name}"));
+                }
+            }
+        }
+    }
+
     /// Work that goes on whether or not the window is drawn (minimised,
     /// occluded): the background loads, the extraction and the started game
     /// are polled, and their ends announced, here.
@@ -3415,19 +3460,35 @@ impl App {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                egui::Grid::new("keys")
-                    .num_columns(2)
-                    .spacing([16.0, 3.0])
+                // The controller rows make the box taller than the smallest
+                // window: it scrolls there rather than run off the bottom.
+                let room = about_max_height(ctx.content_rect().height()) - ABOUT_CHROME_H;
+                egui::ScrollArea::vertical()
+                    .max_height(room)
                     .show(ui, |ui| {
-                        // Key names in the palette's key ink, as the
-                        // launcher's Controls panel and the play window's
-                        // F12 panel draw them.
-                        let ink = crate::theme::c(crate::theme::palette(ui).info);
-                        for (keys, what) in KEYS {
-                            ui.label(RichText::new(*keys).monospace().color(ink));
-                            ui.label(*what);
-                            ui.end_row();
-                        }
+                        egui::Grid::new("keys")
+                            .num_columns(2)
+                            .spacing([16.0, 3.0])
+                            .show(ui, |ui| {
+                                // Key names in the palette's key ink, as the
+                                // launcher's Controls panel and the play window's
+                                // F12 panel draw them.
+                                let ink = crate::theme::c(crate::theme::palette(ui).info);
+                                for (keys, what) in KEYS {
+                                    ui.label(RichText::new(*keys).monospace().color(ink));
+                                    ui.label(*what);
+                                    ui.end_row();
+                                }
+                                // A controller works the same views; its buttons
+                                // are named by position on a PlayStation pad.
+                                ui.label(RichText::new("Controller").strong());
+                                ui.end_row();
+                                for (keys, what) in crate::gamepad::PAD_ROWS {
+                                    ui.label(RichText::new(*keys).monospace().color(ink));
+                                    ui.label(*what);
+                                    ui.end_row();
+                                }
+                            });
                     });
             });
         self.keys_open = open;
@@ -3571,6 +3632,27 @@ impl App {
                             ui.horizontal(|ui| {
                                 ui.spinner();
                                 ui.label(format!("Opening {} ...", p.display()));
+                            });
+                        }
+                        if let Some(disc) = self.game_disc.clone() {
+                            ui.add_space(gap - 4.0);
+                            let name = disc.file_name().map_or_else(
+                                || disc.display().to_string(),
+                                |n| n.to_string_lossy().into_owned(),
+                            );
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label("The disc the game uses:");
+                                if ui
+                                    .add(egui::Button::new(RichText::new(&name).strong()))
+                                    .on_hover_text(format!(
+                                        "Open {} - the disc image you chose in the game",
+                                        disc.display()
+                                    ))
+                                    .clicked()
+                                {
+                                    self.game_disc = None;
+                                    self.open_path(&disc);
+                                }
                             });
                         }
                         if !self.explorer.settings.recent.is_empty() {

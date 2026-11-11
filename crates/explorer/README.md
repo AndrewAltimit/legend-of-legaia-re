@@ -25,7 +25,7 @@ runtime, and writes only into folders the user chooses.
 | Movies & voice | The STR movies (`MOV/*.STR`), each saying where it plays and which scene the game goes on in (`media::movie_note`, from the FMV table's hand-offs in [`str-fmv-table.md`](../../docs/formats/str-fmv-table.md)): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export, with the same `Space` and `Left` / `Right` keys as the animations; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export, each file and channel naming what plays where a cue table does (`media::xa_file_note`, `xa_channel_note`); a channel plays under the [transport row](#the-audio-transport). Disc images only. |
 | Play | Starts `legaia-engine` (`command-line-tools/` in the archive, or beside a `cargo build`'s binary) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings match a game started directly (`launch`). Its output goes to `legaia-explorer-game.log` there; a failed exit puts the reason on the error banner, whose *Copy report* takes the log's end along (`game_exit::report_text`). `F5` presses it, or says why not; the launcher's switches ride along (below). A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, a missing engine. |
 | Status line | A settings file that will not save says so on the error banner, once. A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window; a game that stopped with an error adds *Copy report* and *Show log* (the folder holding its log). |
-| View | Light, dark or follow-system theme, the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0), both remembered (the zoom is held to what the window has room for, `settings::fit_zoom`, so a small window keeps the layouts of the minimum size and a larger one gets the asked-for zoom back), and the keyboard-shortcuts box (`?`). Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
+| View | Light, dark or follow-system theme, the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0), both remembered (the zoom is held to what the window has room for, `settings::fit_zoom`, so a small window keeps the layouts of the minimum size and a larger one gets the asked-for zoom back), and the keyboard-shortcuts box (`?`). Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels, the palette's button states (a pressed button goes gold, as on the launcher) and the title gold for the selection and the primary buttons. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the program, or beside the macOS `.app`). The box scrolls when the window is shorter than it (`about_max_height`), so its title bar stays on screen. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder* (progress and outcome: [below](#extraction-progress)); the folder defaults to one beside the disc image; *Every texture as PNG*, on unless cleared, is the every-TIM sweep (`--all-textures`: `tim_scan/`), without which a run writes almost no images. |
 
@@ -218,6 +218,22 @@ box, `?` (or *View*) opens the shortcuts box, Esc closes either, Ctrl+= / Ctrl+-
 walk the archive rows the search shows, opening blocks as they go, and the
 same keys walk the party and monster list and the movie and voice list
 (`list_step`).
+
+Controller (`gamepad`): each button is handed to egui as the key a keyboard
+user would press, so a pad reaches every view the keyboard does with no arm
+of its own - the D-pad or left stick is the arrows, Cross `Enter`, Circle
+`Esc`, Triangle `Space`, L1 / R1 `Shift+Tab` / `Tab` (between controls),
+L2 / R2 the preview tabs, Select the next view, Start `F5`, and the right
+stick the mouse wheel. The pads are read on a thread that wakes the window
+only when a button moves, so an idle window with a pad plugged in draws
+nothing; a scripted run opens none. The shortcuts box lists the buttons
+under the keys, and scrolls in a window too short for both. The native file
+dialog stays out of a pad's reach: the start page's recent list and the
+game's own disc (below) are the ways in without one.
+
+The start page also offers the disc the game itself boots - the `disc` of the
+engine's `launcher.toml` (`launch::engine_disc_offer`) - while it is not on the
+recent list, so a disc chosen in the game's launcher opens here in one click.
 
 ### Scripted runs
 

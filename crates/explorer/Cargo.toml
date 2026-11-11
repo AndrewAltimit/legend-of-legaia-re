@@ -17,6 +17,9 @@ path = "src/main.rs"
 anyhow.workspace = true
 dirs.workspace = true
 eframe.workspace = true
+# Controllers (`gamepad`): each button becomes the key a keyboard user
+# presses, so a pad walks every view the keyboard does.
+gilrs.workspace = true
 log.workspace = true
 env_logger.workspace = true
 rayon.workspace = true
