@@ -139,12 +139,16 @@ fn summon_close_up<H: BattleActionHost + ?Sized>(
 
 // --- summon band ------------------------------------------------------------
 
-/// Passes `0x32` holds on the drive. The engine's drive is resident and has no
-/// read in flight, so this stands in for retail's: `14` or `16` vsyncs at step `2`
-/// on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (`capture`,
-/// a constant fitted to those recordings; the read itself is the emulator's CD model).
-/// It keeps the case-6 walk the arm runs on retail's length.
-pub const SUMMON_INVOKE_DRIVE_PASSES: u8 = 8;
+/// Vsyncs `0x32` holds on the drive. The engine's drive is resident and has no
+/// read in flight, so this stands in for retail's read, which runs on the wall
+/// clock and not on passes: `14` or `16` vsyncs at step `2` on every party
+/// summon recorded from `party_basic_attack_vs_gobu_gobu`, and `15` at step `3`
+/// on the full-party recordings from `battle_kor_spoon_strike` and
+/// `battle_tower_swordie_strike` (`capture`, a constant fitted to those
+/// recordings; the read itself is the emulator's CD model). Counted in passes,
+/// the hold ran a step-`3` party eight passes (`24` vsyncs) where retail's ran
+/// five. It keeps the case-6 walk the arm runs on retail's length.
+pub const SUMMON_INVOKE_DRIVE_VSYNCS: u8 = 15;
 
 pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     host: &mut H,
@@ -157,11 +161,13 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     }
     // `bne v0,zero` at `0x801E4994`: the arm holds while `FUN_8003DE7C(1)` reports
     // the drive's read in flight (`gp+0x988`). The framing above keeps walking.
-    ctx.summon_invoke_passes = ctx.summon_invoke_passes.saturating_add(1);
-    if ctx.summon_invoke_passes < SUMMON_INVOKE_DRIVE_PASSES {
+    // Each pass waits out its own step, so the read has had the passes' vsyncs.
+    let dt = host.frame_dt().clamp(1, 0xFF) as u8;
+    ctx.summon_invoke_vsyncs = ctx.summon_invoke_vsyncs.saturating_add(dt);
+    if ctx.summon_invoke_vsyncs < SUMMON_INVOKE_DRIVE_VSYNCS {
         return stay(ctx);
     }
-    ctx.summon_invoke_passes = 0;
+    ctx.summon_invoke_vsyncs = 0;
     let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
     let frame_idx = if param0 < 0x9A {
         // (param0 + 0x7F) * 3 + 0x80
