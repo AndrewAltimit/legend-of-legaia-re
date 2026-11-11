@@ -30,11 +30,12 @@ impl World {
     /// |---|---|---|
     /// | 5 | - | the creature on the slanted clip row |
     /// | 6 | `+0x38 += 3 * step` | the spin word zeroed |
-    /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`) | arm 8: facing `0xB00` |
+    /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`), bank `-sin(word * 32) / 8` | arm 8: facing `0xB00`, bank `0` |
     /// | 9 | - | the creature's facing on its target; the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
     /// | `0xA` | - | the creature parked on word `0x3FF` |
     /// | `0xB` | - | the creature's target `+0x1DD = 9` |
     /// | `0xC` | [`Self::mushura_chase`], ahead of the director ([`Self::mushura_chase_ahead`]) | the creature's fade `+0x21C = 2` |
+    /// | `0xD` | the bank eased level | - |
     ///
     /// Arm `0xC` also banks the creature (`+0x48`, `BattleActor::render_roll`) as it turns.
     #[allow(clippy::too_many_arguments)]
@@ -92,6 +93,31 @@ impl World {
                 let back = if pass_ends { *spin / 4 } else { 0 };
                 a.move_state.world_z = a.move_state.world_z.wrapping_add((k * step - back) as i16);
                 a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;
+                // ... and the fall wobbles: bank `-sin(word * 32) / 8`
+                // (`0x801F70A8..0x801F70D4`, `0x801F72F0..0x801F7320`), level
+                // again on arm 8's pass (`0x801F734C`).
+                let sin = i32::from(legaia_engine_system::trig::sin12((*spin * 32) as u16));
+                a.battle.render_roll = if phase == 8 && passed {
+                    0
+                } else {
+                    ((-sin / 8) & 0xFFF) as u16
+                };
+            }
+            // Arm `0xD` levels the bank the chase left, `step * scalar` a
+            // pass (`0x801F7DBC..0x801F7E64`).
+            (0xD, _) => {
+                let bank = i32::from(a.battle.render_roll & 0xFFF);
+                a.battle.render_roll = if bank == 0 {
+                    0
+                } else if bank < 0x800 {
+                    (bank - step).max(0) as u16
+                } else if 0x1000 - bank < step {
+                    0
+                } else {
+                    ((bank + step) & 0xFFF) as u16
+                };
+                // Arm 0xD frames the anchor arm 0xC left, not the live stand.
+                return;
             }
             (9, true) => {
                 a.battle.render_flag = 7;
