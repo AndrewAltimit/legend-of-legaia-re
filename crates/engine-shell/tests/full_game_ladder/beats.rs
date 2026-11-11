@@ -1078,9 +1078,22 @@ fn play_prop_beats(
                 continue;
             }
             stuck = false;
+            // A staged prop raised a flag its own record tests and never
+            // lowers, and lowered none: the next examine plays the next
+            // stage, as a staged talk does. `vell`'s Bridge Grass (P0[1])
+            // raises the first-visit `0x460` on the first examine and asks
+            // for the Fertilizer (`0x2AE`) only on the next. A dial lowers
+            // the old facing as it raises the new one, and a switch lowers
+            // what it raised on the next press (`taiku` P0 at (69, 46),
+            // `0x386`), so neither is staged.
+            let lowers = prop_lowered_flags(session, mf, man, anchor);
+            let staged = f0.is_subset(&f1)
+                && prop_tested_flags(session, mf, man, anchor)
+                    .iter()
+                    .any(|f| f1.contains(f) && !f0.contains(f) && !lowers.contains(f));
             if turn + 1 >= DIAL_TURNS
                 || !anchored
-                || dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f))
+                || (!staged && dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f)))
                 || !prop_beats(session, mf, man)
                     .iter()
                     .any(|(a, _, _)| *a == anchor)
@@ -1436,6 +1449,32 @@ fn prop_tested_flags(
                 && s.clean
                 && !s.debug_menu
         })
+        .map(|s| s.flag)
+        .collect()
+}
+
+/// The system flags a placed object's record clears, by anchor.
+fn prop_lowered_flags(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    anchor: (u8, u8),
+) -> BTreeSet<u16> {
+    use legaia_engine_field::man_field_scripts::FlagBank;
+    let Some(rec) = session
+        .host
+        .world
+        .props
+        .bank
+        .props
+        .get(&anchor)
+        .map(|p| p.record)
+    else {
+        return BTreeSet::new();
+    };
+    walk_partition_gflag_sites(mf, man, 0)
+        .iter()
+        .filter(|s| s.record == rec && s.bank == FlagBank::System && s.kind == FlagKind::Clear)
         .map(|s| s.flag)
         .collect()
 }
