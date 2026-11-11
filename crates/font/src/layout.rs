@@ -44,7 +44,7 @@ impl Font {
     /// stores [`measure::DIALOG_GLYPH_PAD`] before each row (`0x801D97D8`).
     pub fn layout_padded(&self, text: &[u8], glyph_pad: u32) -> Layout {
         let mut ink = 0;
-        self.layout_padded_inked(text, glyph_pad, &mut ink).0
+        self.layout_walk(text, glyph_pad, &mut ink, None)
     }
 
     /// [`Self::layout_padded`] with the ink each laid glyph draws in, one
@@ -62,6 +62,21 @@ impl Font {
         ink: &mut u8,
     ) -> (Layout, Vec<u8>) {
         let mut inks = Vec::new();
+        let laid = self.layout_walk(text, glyph_pad, ink, Some(&mut inks));
+        (laid, inks)
+    }
+
+    /// The one byte walk behind [`Self::layout_padded`] and
+    /// [`Self::layout_padded_inked`]: `inks`, when present, takes one ink per
+    /// laid glyph. The plain layout passes `None`, so the menu and battle
+    /// text it lays out every frame allocates no ink list it never reads.
+    fn layout_walk(
+        &self,
+        text: &[u8],
+        glyph_pad: u32,
+        ink: &mut u8,
+        mut inks: Option<&mut Vec<u8>>,
+    ) -> Layout {
         let mut glyphs = Vec::new();
         let mut pen_x: i32 = 0;
         let mut pen_y: i32 = 0;
@@ -92,7 +107,9 @@ impl Font {
                     let op = text[i];
                     i += 1;
                     if let Some(c) = self.escape_cell(op) {
-                        inks.push(*ink);
+                        if let Some(inks) = inks.as_deref_mut() {
+                            inks.push(*ink);
+                        }
                         glyphs.push(LaidGlyph {
                             byte: ESCAPE_GLYPH_BYTE,
                             dst_x: pen_x,
@@ -112,7 +129,9 @@ impl Font {
                 0xCE | 0xCF => {}
                 FIRST_CHAR..=0xFF => {
                     if let Some((ax, ay)) = Self::glyph_origin(c) {
-                        inks.push(*ink);
+                        if let Some(inks) = inks.as_deref_mut() {
+                            inks.push(*ink);
+                        }
                         glyphs.push(LaidGlyph {
                             byte: c,
                             dst_x: pen_x,
@@ -134,14 +153,11 @@ impl Font {
         if pen_x > max_x {
             max_x = pen_x;
         }
-        (
-            Layout {
-                glyphs,
-                advance_x: max_x.max(0) as u32,
-                advance_y: (pen_y.max(0) as u32).saturating_add(LINE_HEIGHT),
-            },
-            inks,
-        )
+        Layout {
+            glyphs,
+            advance_x: max_x.max(0) as u32,
+            advance_y: (pen_y.max(0) as u32).saturating_add(LINE_HEIGHT),
+        }
     }
 
     /// Convenience: lay out a string whose `char`s up to `U+00FF` are the
