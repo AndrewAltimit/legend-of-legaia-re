@@ -670,6 +670,13 @@ pub struct BattleState {
     /// `ctx[+0x6B2]`: the last non-zero stepper return, which costs a staged
     /// battle (stage id non-zero) one more undispatched pass.
     pub widget_glide_latch: u8,
+    /// A tracked glide was still in flight as the last battle pass ended,
+    /// so the stepper's return on the next pass is non-zero
+    /// ([`Self::step_pass_glide_gate`]).
+    pub pass_glide_live: bool,
+    /// The last battle pass's menu dispatch was gated by the stepper's
+    /// return: `ctx[+0x6B2]` is set ([`Self::step_pass_glide_gate`]).
+    pub pass_glide_gated: bool,
     /// `ctx[+0x884]`: the press parked while the stepper's return was under
     /// `World::GLIDE_PAD_BUFFER_BELOW`, handed to the first dispatched pass
     /// that reads no press of its own.
@@ -1510,6 +1517,8 @@ impl BattleState {
             round_armed: false,
             widget_glide_return: 0,
             widget_glide_latch: 0,
+            pass_glide_live: false,
+            pass_glide_gated: false,
             command_pad_buffer: None,
             result_windows_glide: None,
             target_plate_cleared: false,

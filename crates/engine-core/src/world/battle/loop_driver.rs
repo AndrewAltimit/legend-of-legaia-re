@@ -648,10 +648,17 @@ impl World {
             && self.battle_ctx.action_state == ActionState::DoneCleanup.as_byte()
             && self.run_boss_transition_arm();
 
+        // The menu SM's gate on the pass grid: every pass runs it, ahead of
+        // the action SM (`FUN_80046A20`, `0x80047014` / `0x80047048`).
+        let menu_gated = sm_pass && self.battle.step_pass_glide_gate();
+
         // A finished round's boundary (`RoundFlow::boundary_hold`): the SM
-        // holds its passes, and the last one opens the next round.
+        // holds its passes, and the last one opens the next round - the
+        // flow byte's `0x14` dispatch, which the menu SM's gate skips while
+        // a glide (the Done band's closing ones, at a round's end) is still
+        // live on the pass.
         if self.battle.round_flow.boundary_hold > 0 {
-            if sm_pass {
+            if sm_pass && !(self.battle.round_flow.boundary_hold == 1 && menu_gated) {
                 self.battle.round_flow.boundary_hold -= 1;
                 if self.battle.round_flow.boundary_hold == 0 {
                     self.end_battle_round();

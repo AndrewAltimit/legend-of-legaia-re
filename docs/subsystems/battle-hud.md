@@ -734,6 +734,45 @@ Differences from retail:
   pass after its hold is not parked for it. Only the ring's surfaces read
   `World::take_command_pad_buffer`.
 
+#### The closing glides and the round boundary
+
+The menu SM runs on every battle pass, ahead of the action SM: the frame
+driver calls `FUN_801D0748` at `0x80047014` and then, while the flow byte
+reads `0xFF`, `FUN_801E295C` at `0x80047048`. So the stepper walks the Done
+band's closing glides through the action phase like any other record, and
+its gate holds the flow byte's dispatch there as well; what that dispatch is
+at a round's end is the next round's `0x14`.
+
+The teardown launches the closing glides on the first `0x51` pass that
+leaves the countdown `ctx[+0x6D8]` under `0xC` (`0x801E6154`), and the band
+exits on the first pass that leaves it negative (`0x801E60F0`). Both counts
+fall by the frame step on the same passes the stepper adds it to the glides'
+`elapsed`, and the hand-off to `0x14` takes two more passes (`0x5A` stores
+`0xFF`, whose arm stores `0x14`). So the sixteen-vsync glides snap within a
+pass of the `0xFF` pass, and the stepper returns non-zero on the pass a
+record snaps on: when that is the flow byte's first pass at `0x14`, the gate
+skips it and `0x14` dispatches a pass later.
+
+| Recording | Cadence over the band | `0x14` |
+|---|---|---|
+| `party_basic_attack_vs_gobu_gobu` | `2` throughout | the glides snap on the `0xFF` pass (return `1`); `0x14` dispatches on its first pass, six vsyncs after the exit |
+| `chitei2_kemaro_v2_pre_lava_breath` | `3` from the launch, `2` from the exit | the glides snap on `0x14`'s first pass (return `1`), which the gate skips; `0x14` dispatches a pass later |
+
+Both read off `autorun_round_boundary_hold.lua` (one row per pass at
+`0x801D0B34`, the dispatch at `0x801D0C84` and the action SM's entry), in
+battles with no stage module. The level-up banner's press skip
+(`0x801E6078..0x801E60B4`, the countdown snapped to `-1`) exits on the
+launching pass itself, so a press there holds the next round's `0x14` for
+the glides' remaining passes: `ceil(16 / step) - 2` of them.
+
+Port: the stepper counts the closing launch in its return
+(`BattleState::step_action_plate_glides`), and
+`BattleState::step_pass_glide_gate` reads the gate on the pass grid - a
+pass is gated when a glide was in flight as the last pass ended, and a
+staged battle spends the next ungated pass on the latch. The round boundary
+(`RoundFlow::boundary_hold`) holds its last pass, the `0x14` dispatch,
+while that gate is shut.
+
 #### Action-phase openers
 
 The action SM raises the bar from three places:

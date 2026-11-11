@@ -177,7 +177,7 @@ Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whol
 
 The engine's turn cycling claims `0x5A` on the pass the state is reached: it dispatches the next pick, which rewrites the state byte to `0x00` (the arm path to `0x0A`). A digest of the engine shows `0x51 -> 0x00 -> 0x0A` where retail shows `0x51 -> 0x5A -> 0x0A` - the same frame count, one state name apart; the engine then shows `0x5A` through the command band where retail shows `0xFF`.
 
-At the round's end the engine holds `4` passes (`0x5A`, `0xFF`, two at flow `0x14`) before the next round's `0x14` pick and prompt ([`RoundFlow::boundary_hold`](../../crates/engine-battle-loop/src/round_flow.rs)). `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
+At the round's end the engine holds `3` passes (`0x5A`, `0xFF`, the flow byte's first pass at `0x14`) before the next round's `0x14` pick and prompt, and the last of them waits while the menu SM's glide gate is shut, which the Done band's closing glides can keep it a pass ([`RoundFlow::boundary_hold`](../../crates/engine-battle-loop/src/round_flow.rs); [the closing glides and the round boundary](battle-hud.md#the-closing-glides-and-the-round-boundary)). `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 

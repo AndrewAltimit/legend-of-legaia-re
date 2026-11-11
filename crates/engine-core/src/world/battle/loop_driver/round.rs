@@ -10,14 +10,19 @@ use super::*;
 /// took the seat (Rage) its turn has no command of its own.
 const NO_COMMAND_STATUS_BITS: u16 = 0x0F84;
 
-/// SM passes from the round's last `0x5A` to the next round's `0x14` pick
-/// and its `0x1E` prompt: the `0x5A` pass, the `0xFF` arm that stores the flow
-/// byte `0x14` (`0x801E67F0..0x801E67F4`), and two passes with the byte at
-/// `0x14`. `4` vsyncs at flow `0x14` on each sparring-fight round, after a
-/// `0x5A` and a `0xFF` pass of two vsyncs each, `capture`.
+/// SM passes from the round's last `0x51` exit to the next round's `0x14`
+/// pick and its `0x1E` prompt, at the least: the `0x5A` pass, the `0xFF` arm
+/// that stores the flow byte `0x14` (`0x801E67F0..0x801E67F4`), and the
+/// first pass with the byte at `0x14`. That pass dispatches only once the
+/// menu SM's glide gate opens (`BattleState::step_pass_glide_gate`): the
+/// Done band's closing glides, launched once `ctx[+0x6D8]` is under `0xC`,
+/// land on or a pass either side of the `0xFF` pass, so at a cadence that
+/// drops from `3` to `2` across the band they hold `0x14` one pass
+/// (`chitei2_kemaro_v2_pre_lava_breath`: `0x5A`, `0xFF`, one gated pass at
+/// `0x14` returning `1`, then the dispatch; `capture`).
 ///
 /// REF: FUN_801E295C (states `0x5A` / `0xFF`), FUN_801D0748 (`0x14`)
-pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 4;
+pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 3;
 
 /// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
 /// grants its caster: the 99 a Miracle Art costs covers every string.

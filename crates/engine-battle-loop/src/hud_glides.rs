@@ -154,6 +154,8 @@ impl BattleState {
         }
         self.widget_glide_return = 0;
         self.widget_glide_latch = 0;
+        self.pass_glide_live = false;
+        self.pass_glide_gated = false;
     }
 
     /// Land the command surfaces' own glides - the round prompt's and the
@@ -175,6 +177,8 @@ impl BattleState {
             g.elapsed = g.total;
         }
         self.widget_glide_latch = 0;
+        self.pass_glide_live = self.tracked_glide_in_flight();
+        self.pass_glide_gated = false;
     }
 
     /// One tick of the tracked widget glides, on the step the commit log's
@@ -194,6 +198,10 @@ impl BattleState {
     pub fn step_action_plate_glides(&mut self) {
         let step = BATTLE_PASS_STEP_PER_TICK;
         let mut ret = 0u8;
+        // The Done band's closing launches are records of the same table
+        // (`FUN_801D8DE8(id, 1)` registers them through `FUN_801DB7B0`), so
+        // the stepper counts them in its return like any other.
+        let closing = self.action_hud_close.as_mut().map(|c| &mut c.glide);
         for g in [
             self.action_plaque_glide.as_mut(),
             self.target_plaque_glide.as_mut(),
@@ -204,6 +212,7 @@ impl BattleState {
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
             self.surface_hold_glide.as_mut(),
+            closing,
         ]
         .into_iter()
         .flatten()
@@ -220,16 +229,52 @@ impl BattleState {
                 ret = g.total - g.elapsed + 1;
             }
         }
-        // The teardown's closing launches walk on the same pass. Retail's
-        // stepper counts them in its return as well; the port leaves them
-        // out of it, so a round prompt that opens under the last action's
-        // closing glides is not held back for them.
-        if let Some(c) = self.action_hud_close.as_mut()
-            && !c.glide.settled()
-        {
-            c.glide.step(step);
-        }
         self.widget_glide_return = ret;
+    }
+
+    /// Whether any tracked widget glide is still in flight: a record
+    /// `FUN_801D9BBC` will step (or snap) on the next battle pass.
+    pub fn tracked_glide_in_flight(&self) -> bool {
+        [
+            self.action_plaque_glide.as_ref(),
+            self.target_plaque_glide.as_ref(),
+            self.readout_bar_glide.as_ref(),
+            self.message_bar_glide.as_ref(),
+            self.spirit_gauge_glide.as_ref(),
+            self.module_panels_glide.as_ref(),
+            self.round_prompt_glide.as_ref(),
+            self.ring_open_glide.as_ref(),
+            self.surface_hold_glide.as_ref(),
+            self.action_hud_close.as_ref().map(|c| &c.glide),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|g| !g.settled())
+    }
+
+    /// One battle pass of the menu SM's pre-dispatch gate, on retail's pass
+    /// grid rather than the tick's: `true` when this pass's state dispatch is
+    /// skipped. The stepper returns non-zero on a pass that finds a record
+    /// still live - in flight, or snapping onto its seat on this very pass -
+    /// so the pass is gated when a glide was in flight as the last pass
+    /// ended, though the port's per-vsync step may have landed it since
+    /// (`0x801D0B2C..0x801D0BA4`). A staged battle (`_DAT_8007B64A != 0`)
+    /// spends the first ungated pass after a gated one clearing the latch
+    /// `ctx[+0x6B2]` (`0x801D0BA8..0x801D0BCC`).
+    ///
+    /// The menu SM runs every battle pass, ahead of the action SM
+    /// (`jal 0x801D0748` at `0x80047014`, `jal 0x801E295C` at `0x80047048`),
+    /// so the gate is read on every pass whichever SM owns the round; what
+    /// it holds there is the flow byte's dispatch - at the round boundary,
+    /// the next round's `0x14`.
+    ///
+    /// PORT: FUN_801D0748 (`0x801D0B2C..0x801D0BCC`, on the pass grid)
+    pub fn step_pass_glide_gate(&mut self) -> bool {
+        let gated = self.pass_glide_live;
+        let latch_pass = !gated && self.stage_id != 0 && self.pass_glide_gated;
+        self.pass_glide_gated = gated;
+        self.pass_glide_live = self.tracked_glide_in_flight();
+        gated || latch_pass
     }
 
     /// Whether the next battle tick's menu pass will leave without reading
@@ -256,6 +301,7 @@ impl BattleState {
             self.round_prompt_glide.as_ref(),
             self.ring_open_glide.as_ref(),
             self.surface_hold_glide.as_ref(),
+            self.action_hud_close.as_ref().map(|c| &c.glide),
         ]
         .into_iter()
         .flatten()
