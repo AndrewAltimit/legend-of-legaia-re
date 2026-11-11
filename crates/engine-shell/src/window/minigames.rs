@@ -227,10 +227,17 @@ impl PlayWindowApp {
         &self,
     ) -> Option<legaia_engine_minigame_scenes::minigame_status::MinigameCaption> {
         use legaia_engine_minigame_scenes::minigame_status as ms;
-        let label = |b: &str| {
-            self.mapping
-                .prompt_label(b, self.last_pad)
-                .unwrap_or_else(|| b.to_string())
+        // Built every frame (the title bar asks), so the keys borrow their
+        // labels; only a controller's are made.
+        let label = |b: &'static str| -> std::borrow::Cow<'_, str> {
+            match self.last_pad {
+                None => self.mapping.key_label_for_button(b).unwrap_or(b).into(),
+                Some(_) => self
+                    .mapping
+                    .prompt_label(b, self.last_pad)
+                    .unwrap_or_else(|| b.to_string())
+                    .into(),
+            }
         };
         let [cross, circle, square, triangle, start] =
             ["Cross", "Circle", "Square", "Triangle", "Start"].map(label);
