@@ -711,6 +711,9 @@ impl World {
                 // A committed battle suspends every field script context
                 // until the fight returns (`Self::field_scripts_held_for_battle`).
                 let scripts_held = self.field_scripts_held_for_battle();
+                // The entry script's install slice precedes a record spawned
+                // at scene entry (`Self::step_install_slice_ahead_of_records`).
+                let install_ran = !scripts_held && self.step_install_slice_ahead_of_records();
                 // Retail-frame paced (see `step_spawned_record_contexts`).
                 if !scripts_held {
                     self.step_spawned_record_contexts();
@@ -725,7 +728,7 @@ impl World {
                 // frame slice, not one instruction: see
                 // [`Self::step_field_frame_slice`] for the three stop
                 // conditions and what one-op-per-tick cost.
-                if !scripts_held {
+                if !scripts_held && !install_ran {
                     self.step_field_frame_slice();
                 }
                 // A placement the system script engaged (`B1 <id> 08`) runs
@@ -857,8 +860,11 @@ impl World {
                 // hands the frame to the cutscene/MDEC overlay - and the host
                 // drives playback, calling [`finish_cutscene`] when it ends.
                 if self.cutscene.active_fmv.is_none() {
+                    let install_ran = self.step_install_slice_ahead_of_records();
                     self.step_spawned_record_contexts();
-                    self.step_field_frame_slice();
+                    if !install_ran {
+                        self.step_field_frame_slice();
+                    }
                     self.tick_field_script_arcs();
                     self.tick_field_attached_lights();
                     self.tick_screen_fx();
@@ -896,6 +902,7 @@ impl World {
                 // script's `0x4C` dialog poll and the talk-to probe in
                 // `tick_world_map` share it.
                 self.dialog.input_consumed = false;
+                let install_ran = self.step_install_slice_ahead_of_records();
                 self.step_spawned_record_contexts();
                 // The scene system script (ctx `0xFB`, MAN `P1[0]`). The
                 // overworld is a mode-3 field-run scene and retail runs its
@@ -904,7 +911,9 @@ impl World {
                 // the window every library `map01` state holds) and raises
                 // the ambient-particle gate (`4C 30`) that puts fog over the
                 // continent. Same frame slice as the field arm.
-                self.step_field_frame_slice();
+                if !install_ran {
+                    self.step_field_frame_slice();
+                }
                 // The op-`0x43` scripted arcs a world-map record starts fly on
                 // the same field-overlay pool actors as the field's (arc
                 // helper `FUN_801D5C08` + release watcher `FUN_801D5D60`).

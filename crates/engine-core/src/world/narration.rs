@@ -789,6 +789,36 @@ impl World {
         self.field_vm.slice_pad = None;
     }
 
+    /// Run the system script's owed install slice ahead of the spawned record
+    /// contexts, when a record is already installed. Returns whether it ran,
+    /// so the arm skips its own system slice on that tick.
+    ///
+    /// Retail runs the install slice inside the MAN load: `FUN_8003AEB0`
+    /// calls `FUN_8003AB2C` (`jal` at `0x8003BAD8`), which drives the
+    /// dispatcher `FUN_801DE840` itself (`jal` at `0x8003AD4C`), before any
+    /// actor-list pass and so before the player tick whose stale last-tile
+    /// compare spawns an arrival record. The engine installs that record at
+    /// scene entry, and stepping it first let the entry script's ops land
+    /// over the record's. In `town01` the opening record `P2[3]` sets the
+    /// visible tile window `46 24 EF F3 0A 1F` (`(-17, -13, 10, 31)`, the
+    /// window `rim_elm_zoom_intro` holds) and `P1[0]`'s `46 24 F6 FA 08 0E`
+    /// then replaced it with the walking window `(-10, -6, 8, 14)`, so the
+    /// crop and the actor cull hid most of Rim Elm through the establishing
+    /// pan.
+    ///
+    /// Only the ordering moves: with no record installed the slice runs where
+    /// it always did.
+    // REF: FUN_8003AB2C, FUN_8003AEB0
+    pub fn step_install_slice_ahead_of_records(&mut self) -> bool {
+        if !self.field_vm.system_install_pass
+            || !(self.cutscene_timeline_active() || !self.field_vm.helper_contexts.is_empty())
+        {
+            return false;
+        }
+        self.step_field_frame_slice();
+        true
+    }
+
     /// Record a context the anti-hang cap ended
     /// ([`crate::world::CutsceneState::capped`]).
     fn note_capped_timeline(
