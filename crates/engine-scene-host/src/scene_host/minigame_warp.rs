@@ -184,6 +184,9 @@ impl SceneHost {
         // from (`FUN_801D63B0`'s records).
         self.world.minigames.fishing_sprites =
             legaia_minigame_formats::fishing_sprites::parse(loaded);
+        // And the landed fish's showcase poses (`DAT_801D8534` / `DAT_801D7E30`).
+        self.world.minigames.fishing_catch_poses =
+            legaia_minigame_formats::fishing_species::parse_catch_poses(loaded).unwrap_or_default();
         // And the lure row's captions, the labels resolved through the
         // same item table the exchange rows use.
         let names = self

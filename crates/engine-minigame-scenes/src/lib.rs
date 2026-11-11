@@ -14,6 +14,7 @@ pub mod baka_duel_scene;
 pub mod dance_cast_scene;
 pub mod dance_hud_art;
 pub mod dance_venue;
+pub mod fishing_catch;
 pub mod fishing_rod;
 pub mod fishing_scene;
 pub mod fishing_venue;

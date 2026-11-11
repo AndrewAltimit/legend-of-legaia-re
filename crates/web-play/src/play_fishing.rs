@@ -110,10 +110,20 @@ impl LegaiaRuntime {
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         let centre = self.field_camera_centre();
+        let catch_line = self
+            .minigame_ui
+            .fishing_surface
+            .scene()
+            .and_then(|s| s.catch_line);
         let Some((host, camera)) = self.scene_host.host_cam_mut() else {
             return Vec::new();
         };
-        legaia_engine_screens::fishing_line_screen_prims(&mut host.world, camera, centre)
+        legaia_engine_screens::fishing_line_screen_prims(
+            &mut host.world,
+            camera,
+            centre,
+            catch_line,
+        )
     }
 
     /// The fishing HUD's sprite half as screen primitives - the native

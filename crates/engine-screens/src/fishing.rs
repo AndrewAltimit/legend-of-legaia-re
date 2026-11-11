@@ -101,10 +101,16 @@ pub fn fishing_hud_items(world: &World, banners: &[HudDraw]) -> Vec<HudDraw> {
 /// camera, else the host's follow camera framed on `scene_center_xz`),
 /// wrapped by the shared `fishing::line` builder. Empty outside the fishing
 /// mode, and with no rod and no line out.
+///
+/// `catch_line` is the result plate's line the pond surface projected
+/// (`FishingScene::catch_line`: from the top of the frame to the landed
+/// fish's tie vertex, retail's `0x50` packet in `FUN_801D5298`), drawn
+/// through the same builder with its packet's two colours.
 pub fn fishing_line_screen_prims(
     world: &mut World,
     camera: &legaia_engine_field::camera::Camera,
     scene_center_xz: [f32; 2],
+    catch_line: Option<((i16, i16), (i16, i16))>,
 ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     if world.mode != legaia_engine_mode::mode::SceneMode::Fishing {
         return Vec::new();
@@ -143,6 +149,16 @@ pub fn fishing_line_screen_prims(
             )
         }),
     );
+    use legaia_engine_fishing::fishing_actors::{PLATE_LINE_TIE_RGB, PLATE_LINE_TOP_RGB};
+    prims.extend(catch_line.and_then(|(top, tie)| {
+        legaia_engine_ui::fishing::line::fishing_line_prim(
+            tie,
+            top,
+            PLATE_LINE_TIE_RGB,
+            PLATE_LINE_TOP_RGB,
+            0,
+        )
+    }));
     prims
 }
 

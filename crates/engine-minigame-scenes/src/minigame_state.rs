@@ -96,6 +96,11 @@ pub struct MinigameState {
     /// table ([`FishingCaptionText`]); `None` leaves a host on its
     /// placeholders.
     pub fishing_captions: Option<FishingCaptionText>,
+    /// The landed fish's showcase poses off PROT 0972
+    /// ([`legaia_minigame_formats::fishing_species::parse_catch_poses`]):
+    /// each species' angles and hang on the result plate and the vertex its
+    /// line ties to. Empty leaves the plate without the fish.
+    pub fishing_catch_poses: Vec<legaia_minigame_formats::fishing_species::CatchPose>,
     /// Slot-machine minigame session. `Some` while
     /// `mode == SceneMode::SlotMachine`; the reel state machine runs each
     /// tick. See [`legaia_engine_minigames::slot_machine::SlotMachine`] and
@@ -366,6 +371,7 @@ impl MinigameState {
             fishing_hub_text: None,
             fishing_sprites: None,
             fishing_captions: None,
+            fishing_catch_poses: Vec::new(),
             slot_machine: None,
             slot_return_mode: SceneMode::Field,
             slot_sfx_bundle: Vec::new(),

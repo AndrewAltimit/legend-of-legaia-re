@@ -66,7 +66,6 @@ window.MgFishing = (function () {
 
     let scene = null;      /* the 3D stage (null = flat fallback) */
     let splashT = 0;       /* splash burst frames left */
-    let jumpT = 0;         /* landed-fish jump arc frames left */
 
     /* ------------- the 3D stage ------------- */
 
@@ -169,7 +168,19 @@ window.MgFishing = (function () {
         idx: api.fishing_sky_indices(),
       } : null;
       const sCount = sky && sky.pos.length ? sky.pos.length / 3 : 0;
-      const total = pCount + eCount + sCount;
+      /* The landed fish: the venue's ten catch bodies (engine
+       * fishing_catch::CatchBodies), re-posed every frame - the landed
+       * species lifted through the close-up or hung on the plate, the rest
+       * collapsed onto one point. */
+      const fish = api.fishing_catch_positions ? {
+        pos: api.fishing_catch_positions(),
+        uvs: api.fishing_catch_uvs(),
+        ct: api.fishing_catch_cba_tsb(),
+        flat: api.fishing_catch_flat_rgba(),
+        idx: api.fishing_catch_indices(),
+      } : null;
+      const fCount = fish && fish.pos.length ? fish.pos.length / 3 : 0;
+      const total = pCount + eCount + sCount + fCount;
       const pos = new Float32Array(total * 3);
       const uvs = new Uint8Array(total * 2);
       const ct = new Uint16Array(total * 2);
@@ -202,6 +213,14 @@ window.MgFishing = (function () {
         flat.set(sky.flat, skyBase * 4);
         for (const ix of sky.idx) idxArr.push(ix + skyBase);
       }
+      const catchBase = fCount ? pCount + eCount + sCount : -1;
+      if (fCount) {
+        pos.set(fish.pos, catchBase * 3);
+        uvs.set(fish.uvs, catchBase * 2);
+        ct.set(fish.ct, catchBase * 2);
+        flat.set(fish.flat, catchBase * 4);
+        for (const ix of fish.idx) idxArr.push(ix + catchBase);
+      }
       const idx = new Uint32Array(idxArr);
 
       const renderer = new window.TmdRenderer(glCanvas);
@@ -220,6 +239,7 @@ window.MgFishing = (function () {
         out: pos,
         members,
         skyBase,
+        catchBase,
         /* The walk ground's first vertex in `out`: the span the pond swell
          * re-heights each frame (engine fishing_scene::swell_ground_positions). */
         groundBase: (api.fishing_scene_ground_base && api.fishing_scene_ground_positions
@@ -293,6 +313,13 @@ window.MgFishing = (function () {
           posed = true;
         }
       }
+      if (b.catchBase >= 0) {
+        const fp = api.fishing_catch_positions();
+        if (fp.length) {
+          b.out.set(fp, b.catchBase * 3);
+          posed = true;
+        }
+      }
       if (posed) b.renderer.updatePositions(b.out);
       b.vp = engineVp();
       b.renderer.mvpOverride = b.vp;
@@ -349,8 +376,6 @@ window.MgFishing = (function () {
           splashT = 40;
         } else if (e.e === 'hooked') {
           splashT = 24;
-        } else if (e.e === 'landed') {
-          jumpT = 50;
         }
       }
     }
@@ -542,6 +567,30 @@ window.MgFishing = (function () {
       }
       fillRod((f) => lineOt < 0 || f.ot <= lineOt);
 
+      /* The result plate's line: from the top of the frame down to the
+       * landed fish's tie vertex (FUN_801D5298's 0x50 packet). */
+      if (api.fishing_catch_line_json) {
+        let pl = null;
+        try { pl = JSON.parse(api.fishing_catch_line_json()); } catch (_) { pl = null; }
+        if (pl) {
+          const sx = canvas.width / 320, sy = canvas.height / 240;
+          const rgb = (c) => 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+          const ax = (pl.top[0] + 0.5) * sx, ay = pl.top[1] * sy;
+          const bx = (pl.tie[0] + 0.5) * sx, by = (pl.tie[1] + 0.5) * sy;
+          const grad = g.createLinearGradient(ax, ay, bx, by);
+          grad.addColorStop(0, rgb(pl.top_rgb));
+          grad.addColorStop(1, rgb(pl.tie_rgb));
+          g.save();
+          g.strokeStyle = grad;
+          g.lineWidth = sx;
+          g.beginPath();
+          g.moveTo(ax, ay);
+          g.lineTo(bx, by);
+          g.stroke();
+          g.restore();
+        }
+      }
+
       if (lp) {
         g.save();
 
@@ -582,24 +631,6 @@ window.MgFishing = (function () {
           }
         }
 
-        /* Landed: the catch arcs out of the water. */
-        if (jumpT > 0) {
-          jumpT--;
-          const t = 1 - jumpT / 50;
-          const jy = lp[1] - Math.sin(t * Math.PI) * 60;
-          g.save();
-          g.translate(lp[0] + t * 30, jy);
-          g.rotate(t * 2.2);
-          g.fillStyle = '#9fd4ef';
-          g.beginPath();
-          g.ellipse(0, 0, 13, 5, 0, 0, Math.PI * 2);
-          g.fill();
-          g.fillStyle = '#7ab7d8';
-          g.beginPath();
-          g.moveTo(11, 0); g.lineTo(19, -5); g.lineTo(19, 5); g.closePath();
-          g.fill();
-          g.restore();
-        }
         g.restore();
       }
     }

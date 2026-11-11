@@ -178,6 +178,15 @@ pub(crate) struct FishingScene {
     /// The venue's three rods and their bend, off the same scene bank - the
     /// geometry the fishing line's rod end is a vertex of.
     pub(crate) rod_mesh: Option<legaia_engine_fishing::fishing_actors::RodMesh>,
+    /// The ten landed-fish bodies (the play hosts' own
+    /// [`legaia_engine_minigame_scenes::fishing_catch::CatchBodies`]), as
+    /// one mesh with each species' span.
+    catch: legaia_engine_minigame_scenes::fishing_catch::CatchBodies,
+    catch_mesh: (
+        VramMesh,
+        Vec<u8>,
+        legaia_engine_minigame_scenes::fishing_catch::CatchSpans,
+    ),
 }
 
 /// Frame-0 rigid transforms of scene-ANM record `anim_id - 1` for a bound
@@ -507,6 +516,9 @@ impl LegaiaMinigames {
             .and_then(|i| index.entry_bytes_extended(i).ok());
         let region_block = scene.field_map_region_block(&index).ok().flatten();
         let rod_mesh = legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene);
+        let catch =
+            legaia_engine_minigame_scenes::fishing_catch::CatchBodies::load(&scene, anm.as_ref());
+        let catch_mesh = catch.combined();
 
         Some(FishingScene {
             venue_envs: [env.clone(), vidna],
@@ -519,6 +531,8 @@ impl LegaiaMinigames {
             map,
             region_block,
             rod_mesh,
+            catch,
+            catch_mesh,
         })
     }
 }
@@ -842,6 +856,128 @@ impl LegaiaMinigames {
     pub fn fishing_sky_indices(&self) -> Vec<u32> {
         self.fishing_sky(0)
             .map(|(m, _)| m.indices)
+            .unwrap_or_default()
+    }
+
+    /// The landed fish this frame and the camera it draws under
+    /// ([`legaia_engine_fishing::fishing_actors::catch_fish`] over the page's
+    /// pond and venue camera, the play hosts' kernel).
+    fn fishing_catch_now(
+        &self,
+    ) -> Option<(
+        legaia_engine_fishing::fishing_actors::CatchFish,
+        Vec<legaia_minigame_formats::fishing_species::CatchPose>,
+    )> {
+        let poses = self
+            .fishing_overlay
+            .as_deref()
+            .and_then(legaia_minigame_formats::fishing_species::parse_catch_poses)
+            .unwrap_or_default();
+        let fish = legaia_engine_fishing::fishing_actors::catch_fish(
+            self.fishing_pond.as_ref()?,
+            &self.fishing_venue_actors.camera,
+            &poses,
+        )?;
+        Some((fish, poses))
+    }
+
+    /// This frame's landed-fish vertex positions (world space, Y down), laid
+    /// out as the static `fishing_catch_*` streams: the landed species' body
+    /// lifted through the close-up or hung on the plate, every other body
+    /// collapsed onto one point. Empty when the scene did not decode.
+    pub fn fishing_catch_positions(&self) -> Vec<f32> {
+        let Some(s) = self.fishing_scene.as_ref() else {
+            return Vec::new();
+        };
+        let Some((view, _)) = self.fishing_camera(s.venue as u32) else {
+            return Vec::new();
+        };
+        let (mesh, _, spans) = &s.catch_mesh;
+        let mut out = vec![view.focus; mesh.positions.len()];
+        let now = self.fishing_catch_now();
+        s.catch.pose_spans(
+            &mut out,
+            spans,
+            now.as_ref().map(|(f, _)| f),
+            now.as_ref().map_or(&[][..], |(_, p)| p),
+            self.fishing_catch_frame,
+            &view,
+        );
+        out.into_iter().flatten().collect()
+    }
+
+    /// The result plate's line this frame in retail 320x240 screen space,
+    /// `{"top":[x,y],"tie":[x,y],"top_rgb":[..],"tie_rgb":[..]}`, or `null`
+    /// unless the landed fish hangs on the plate.
+    pub fn fishing_catch_line_json(&self) -> String {
+        let line = (|| {
+            let s = self.fishing_scene.as_ref()?;
+            let (view, _) = self.fishing_camera(s.venue as u32)?;
+            let (fish, poses) = self.fishing_catch_now()?;
+            let body = s.catch.body(fish.species)?;
+            legaia_engine_minigame_scenes::fishing_catch::plate_line(
+                body,
+                poses.get(fish.species)?,
+                &fish,
+                self.fishing_catch_frame,
+                &view,
+            )
+        })();
+        use legaia_engine_fishing::fishing_actors::{
+            PLATE_LINE_TIE_RGB as T, PLATE_LINE_TOP_RGB as P,
+        };
+        match line {
+            Some(((tx, ty), (bx, by))) => format!(
+                "{{\"top\":[{tx},{ty}],\"tie\":[{bx},{by}],\"top_rgb\":[{},{},{}],\"tie_rgb\":[{},{},{}]}}",
+                P[0], P[1], P[2], T[0], T[1], T[2]
+            ),
+            None => "null".to_string(),
+        }
+    }
+
+    /// Landed-fish `[u, v]` per vertex.
+    pub fn fishing_catch_uvs(&self) -> Vec<i32> {
+        self.fishing_scene
+            .as_ref()
+            .map(|s| {
+                s.catch_mesh
+                    .0
+                    .uvs
+                    .iter()
+                    .flat_map(|uv| [uv[0] as i32, uv[1] as i32])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Landed-fish `[cba, tsb]` per vertex.
+    pub fn fishing_catch_cba_tsb(&self) -> Vec<u32> {
+        self.fishing_scene
+            .as_ref()
+            .map(|s| {
+                s.catch_mesh
+                    .0
+                    .cba_tsb
+                    .iter()
+                    .flat_map(|c| [c[0] as u32, c[1] as u32])
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Landed-fish `[r, g, b, textured]` per vertex.
+    pub fn fishing_catch_flat_rgba(&self) -> Vec<u8> {
+        self.fishing_scene
+            .as_ref()
+            .map(|s| s.catch_mesh.1.clone())
+            .unwrap_or_default()
+    }
+
+    /// Landed-fish triangle indices (local to its own vertices).
+    pub fn fishing_catch_indices(&self) -> Vec<u32> {
+        self.fishing_scene
+            .as_ref()
+            .map(|s| s.catch_mesh.0.indices.clone())
             .unwrap_or_default()
     }
 
