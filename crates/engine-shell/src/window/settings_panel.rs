@@ -22,13 +22,16 @@ use legaia_app_theme::chrome;
 use legaia_engine_system::input::PadButton;
 
 /// The rows on the page, in the launcher's order: every launcher row the
-/// game can take between two frames. That is every game option but the
-/// window size, and every launch switch but the preset: the PlayStation
-/// pixel look, the shared world switch set (entry pulse, action movement,
-/// smarter monsters, the saved-chain Arts list, the gameplay tweaks and the
-/// battle tuning) and *Original game only*, as the play page's boxes take
-/// them live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 39] = [
+/// game can take between two frames. That is the *Look and feel* preset
+/// first, as on the launcher, so the original game is one step from the
+/// panel's opening row ([`PlayWindowApp::edit_preset`]); every game option
+/// but the window size; and every launch switch: the PlayStation pixel look,
+/// the shared world switch set (entry pulse, action movement, smarter
+/// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
+/// tuning) and *Original game only*, as the play page's boxes take them
+/// live ([`LIVE_SWITCH_ROWS`]).
+pub(super) const SETTINGS_ROWS: [OptionRow; 40] = [
+    OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
     OptionRow::Theme,
@@ -216,6 +219,8 @@ const ROW_H: i32 = 11;
 const HELP_LINES: usize = 3;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Arrows pick, change  Del default  Esc close";
+/// The gap between a row's label and the window key lettered after it.
+const KEY_GAP: i32 = 6;
 const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
 
 /// The scrim under every page of the `F12` panel. Near-opaque: the panel
@@ -314,13 +319,51 @@ impl PlayWindowApp {
     /// Step the row under the cursor and push it to everything that reads it,
     /// the same way the row's toggle key does.
     pub(super) fn change_setting(&mut self, dir: i8) {
+        if SETTINGS_ROWS[self.settings_cursor] == OptionRow::Preset {
+            self.edit_preset(false);
+            return;
+        }
         self.edit_setting(|row, opts, s| row.adjust(opts, s, dir));
     }
 
     /// `Delete` / `Backspace`: the row under the cursor back on its default,
     /// as the launcher's `Delete` puts it.
     pub(super) fn reset_setting(&mut self) {
+        if SETTINGS_ROWS[self.settings_cursor] == OptionRow::Preset {
+            self.edit_preset(true);
+            return;
+        }
         self.edit_setting(|row, opts, s| row.reset(opts, s));
+    }
+
+    /// The *Look and feel* row, as the launcher's: a step flips between
+    /// *Original* (the original game only, with the PlayStation pixel look)
+    /// and the mix the rows below hold, which the session switch leaves
+    /// untouched; `reset` (`Delete`) puts every row the preset speaks for
+    /// back on *Enhanced*, the first-start set. Remembered for the next
+    /// Play, as each row it moves is.
+    fn edit_preset(&mut self, reset: bool) {
+        if !reset {
+            let on = !self.retail_session();
+            self.set_retail(on);
+            self.set_psx_render(on);
+            return;
+        }
+        // Out of the session switch first: its option pins would otherwise
+        // put the player's own values back over the reset ones.
+        self.set_retail(false);
+        let mut switches = self.live_switches();
+        let before = switches.switches;
+        OptionRow::Preset.reset(&mut self.options_state, &mut switches);
+        self.set_psx_render(switches.switches.psx_render);
+        self.set_world_switches(&switches.switches);
+        self.remember_switch(|stored| copy_changed(&before, &switches.switches, stored));
+        self.dynamic_lighting = self.options_state.enhanced_lighting;
+        if let Some(r) = self.win.renderer.as_ref() {
+            r.set_dynamic_lighting(self.dynamic_lighting);
+        }
+        self.session.apply_option_knobs(&self.options_state, None);
+        self.persist_and_apply_options();
     }
 
     fn edit_setting(
@@ -629,6 +672,14 @@ impl PlayWindowApp {
             // Under *Original game only* a row it holds reads "Original",
             // faint, as on the launcher, and does not step.
             let muted = retail && row.overridden_by_retail();
+            // The row's window key after its label, in the key ink the
+            // Keys page letters it in, so a toggle is learned where it is;
+            // faint while the original game holds the row, as its value is.
+            if let Some(key) = row.hotkey_label() {
+                let at = (left + width(row.label()) + KEY_GAP, y - 2);
+                let ink = if muted { faint } else { self.chrome().key };
+                put(&mut out, key, at, ink);
+            }
             let value = if muted {
                 "Original".to_string()
             } else if *row == OptionRow::EnhancedLighting {
@@ -743,7 +794,7 @@ mod tests {
     fn page_rows_are_game_options_and_unique() {
         for (i, row) in SETTINGS_ROWS.iter().enumerate() {
             assert!(
-                row.is_game_option() || LIVE_SWITCH_ROWS.contains(row),
+                row.is_game_option() || LIVE_SWITCH_ROWS.contains(row) || *row == OptionRow::Preset,
                 "{row:?} needs a restart"
             );
             assert!(!SETTINGS_ROWS[..i].contains(row), "{row:?} twice");
@@ -751,11 +802,13 @@ mod tests {
     }
 
     /// The page carries every launcher row the game takes live: all but
-    /// the preset and the window size.
+    /// the window size. The preset opens it, as it opens the launcher's
+    /// list, so the original game is one step from where the panel opens.
     #[test]
     fn the_page_lists_every_live_launcher_row() {
+        assert_eq!(SETTINGS_ROWS[0], OptionRow::Preset);
         for (_, row) in crate::launcher::OPTION_ROWS {
-            let live = !matches!(row, OptionRow::Preset | OptionRow::WindowSize);
+            let live = row != OptionRow::WindowSize;
             assert_eq!(SETTINGS_ROWS.contains(&row), live, "{row:?}");
         }
         for row in LIVE_SWITCH_ROWS {
@@ -889,6 +942,17 @@ mod tests {
                 assert!(lines.len() <= HELP_LINES, "{row:?}: {lines:?}");
             }
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
+            // A row's label, its key and the widest focused value share one
+            // line without touching.
+            for row in SETTINGS_ROWS {
+                if let Some(key) = row.hotkey_label() {
+                    let used = width(row.label()) + KEY_GAP + width(key) + 8;
+                    assert!(
+                        used + width("< Original >") <= WIDTH - 12,
+                        "{row:?}: {used}"
+                    );
+                }
+            }
             assert!(width(&startup_hint_line("Z", "S")) <= 310);
             // The longest heading leaves room for the flip hint beside it.
             for row in SETTINGS_ROWS {

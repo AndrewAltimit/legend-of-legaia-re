@@ -1754,6 +1754,20 @@ impl OptionRow {
         })
     }
 
+    /// The play window's key for the row as a player reads it (`I`, `F9`,
+    /// `F11` for the fullscreen row), or `None` for a row no key reaches.
+    /// The `F12` settings page letters it beside the row's label, so the
+    /// key is learned where the setting is.
+    pub fn hotkey_label(self) -> Option<&'static str> {
+        if self == Self::Fullscreen {
+            return Some("F11");
+        }
+        legaia_engine_session::hotkeys::HOST_HOTKEYS
+            .iter()
+            .find(|(h, _)| Self::for_hotkey(*h) == Some(self))
+            .map(|(h, _)| h.key_label())
+    }
+
     /// Whether the row shows a value the original game does not have (an
     /// enhancement, a fix or a tweak switched on). `false` for a row with
     /// no original counterpart.
@@ -2977,6 +2991,23 @@ mod tests {
             legaia_engine_menus::options::MASTER_VOLUME_DEFAULT,
             legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT
         );
+    }
+
+    /// A row's key, as the `F12` page letters it, is the key its help names
+    /// (`In game: I.`), and a row whose help names none has no key.
+    #[test]
+    fn a_rows_key_is_the_key_its_help_names() {
+        for (_, row) in OPTION_ROWS {
+            let named = row
+                .help()
+                .split("In game: ")
+                .nth(1)
+                .map(|t| t.split([' ', '.']).next().unwrap_or(""));
+            assert_eq!(row.hotkey_label(), named, "{row:?}");
+        }
+        assert_eq!(OptionRow::GroundFog.hotkey_label(), Some("F9"));
+        assert_eq!(OptionRow::EnhancedLighting.hotkey_label(), Some("I"));
+        assert_eq!(OptionRow::PsxRender.hotkey_label(), None);
     }
 
     #[test]
