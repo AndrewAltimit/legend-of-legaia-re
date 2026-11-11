@@ -1328,3 +1328,17 @@ changes = [
   ["states/vera_summon_mid_cast/image", 0.998, 0.987],
   ["states/zora_glare_petrify_pre/image", 0.999, 0.997],
 ]
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 37, bisected per count. browser cast/retail bytes rise at b04ea9286: battle setup's per-seat rand() for each body's opening clip phase (FUN_800513F0) moves the scripted cast's stream, which then puts more effect geometry on screen (play_battle_fx_* and prim_corner_plan per call); GL draws fall. world_map/retail draws rise at 9cec84979: the crop and actor cull read the world's region-box latch, not the follow camera's copy. The bundles grow with the wave's features (play +0.47%, tool +0.34%): the differential tests do not ship; the growth is the shipped menu, minigame, battle-draw-order and field-cull ports. The rest are within the measurement's run-to-run spread (under 0.2%). Native town01 enhanced draws fall 306 -> 68 with the widened crop under the Far preset (654169738)."
+changes = [
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 102618, 102751],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 94060, 101549],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 151.66, 152.33],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 161990, 162026],
+  ["counts/bundle/gzip_bytes", 7119074, 7143173],
+  ["counts/bundle/play_gzip_bytes", 4980077, 5003370],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4484.6, 4484.8],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1298.2, 1298.8],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1391.0, 1391.1],
+]
