@@ -365,6 +365,16 @@ The port's ring takes a slot each anim pass - a vsync on the per-vsync cadence, 
 - The ring carries no rotation: the walk swaps the node's position, cursor and clip record and keeps its live rotation trio, so both hosts turn every ghost by the body's live facing `+0x46`, as the body itself turns.
 - Both hosts' additive passes deliberately pass on **equal** depth (coplanar decals), so each carries retail's deeper-bucket ordering explicitly; otherwise a ghost coincident with the live body would wash the whole mesh additive. The native window scales each ghost uniformly about the eye until it sits past the body (`battle_afterimage::ghost_eye_push_scale` in the redraw pass). The play page draws ghost placements with a strictly-nearer depth test (`strictDepth` → `gl.LESS`). Either way the live body hides the overlap and only the separated trail shows.
 
+**The walk keys on the seat, not the actor's kind.** Its depth and colour rule reads
+the node's category (`sltiu v0,s3,0x3` at `0x8004938C`): `3` and up walks as a
+monster, depths doubled (`0x8004941C..0x80049428`) and coloured from `0x80076914`. A
+summoned creature stands in category `7`, so it ghosts as a monster although it is
+none (`World::battle_seat_walks_as_monster`); a `--ghost-trace` of Rogue Flame
+ghosts its standing-in golem on every frame of arms 6 and 7. The ring stamp that
+gates the walk keys on the seat the same way (`sltiu v0,s1,3` at `0x80047F10`): a
+seat `>= 3` stamps the record's `+0x77 + 0x10`, or `0x11` under its `+0x87` solo byte.
+Grade `disassembly` + `capture`.
+
 ## Tint and blend
 
 ### How the tint words reach the pixel

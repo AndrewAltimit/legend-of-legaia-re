@@ -1557,6 +1557,11 @@ Four need more than a descriptor:
   `+0x16E |= 0x400` on a live victim and runs the turn-steal idiom
   (`0x801F6FC4..0x801F70A8`). The record immunity bits
   (`+0x6BC & 0x18000000`) that spare a victim are not visible to the port.
+- **PROT 0961's arm 2 draws a dead word.** Every pass, ahead of its countdown test,
+  it draws one `rand()` into the cut's roll (`0x801F6ED8`) and the passing cut stores
+  `0` over it (`0x801F7074`); only the stream moves. The port draws it once a battle
+  frame (`capture_arm_pass_rands`). Final Crisis (`0xB4`) reads `.738` against `.704`
+  with it.
 - **PROT 0961 is two casts.** In formation `0xB5` (the evolved Cort) it rolls
   `FUN_801DD4B0(0x880)` per party seat. In any other formation (the one other
   caster is Koru, whose round-4 finisher is `0xA1`) arm 3 keeps the `9999` it
