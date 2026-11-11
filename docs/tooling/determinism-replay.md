@@ -58,6 +58,30 @@ Cross = `0x4000`, Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`,
 Left = `0x0080`, Right = `0x0020`, etc. Stored as a plain `u16` so the
 on-disk wire form stays byte-readable.
 
+### Compact pad runs
+
+A replay with many transitions carries them as a `[pad_runs]` table instead
+of `[[event]]` rows. A soak run changes the pad almost every frame, so one
+row per transition costs four lines a frame. Each token is `delta:mask`:
+`delta` is the decimal frame count since the previous transition (the first
+token's is its frame) and `mask` the pad bitmask in hex without a prefix.
+Sixteen tokens make a line:
+
+```toml
+[pad_runs]
+runs = [
+    "0:4000 1:0 1:2000 1:0 40:10 2:0",   # Cross, release, Circle, release, Up from 43, release
+]
+```
+
+The tokens are the `[[event]]` rows one for one, so both forms parse to the
+same `ReplayFile::events` and a file round-trips byte-identically. A file
+carries one form, never both. Writers emit runs above
+`replay::PAD_RUNS_FROM` events and keep rows for a short or hand-written
+replay; `legaia-engine replay-compact <files>` rewrites existing files. It
+keeps each file's leading `#` header, and it checks that each rewrite
+expands to the same per-frame pad stream before writing.
+
 `ReplayFile::validate` rejects schema mismatches, out-of-order events or
 switches, and frame indices past `meta.frames` at parse time. Writers MUST
 emit events and switches in frame-ascending order; readers don't sort.

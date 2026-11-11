@@ -4,6 +4,56 @@
 
 use super::*;
 
+/// `replay-compact`: rewrite each file with more than
+/// [`legaia_engine_shell::replay::PAD_RUNS_FROM`] pad events in the
+/// `[pad_runs]` form, keeping its leading comment header. The rewrite must
+/// parse back to the same [`ReplayFile`] (the same per-frame pad stream,
+/// expected rows and switches) or the file is not touched.
+pub(crate) fn cmd_replay_compact(files: &[std::path::PathBuf], check: bool) -> Result<()> {
+    use legaia_engine_shell::replay::PAD_RUNS_FROM;
+    let (mut rewritten, mut saved) = (0usize, 0usize);
+    for path in files {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("read replay file {}", path.display()))?;
+        let replay = ReplayFile::from_toml_str(&text)
+            .with_context(|| format!("parse replay file {}", path.display()))?;
+        if replay.events.len() <= PAD_RUNS_FROM || text.contains("[pad_runs]") {
+            continue;
+        }
+        let header: String = text
+            .lines()
+            .take_while(|l| l.starts_with('#'))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        let new_text = format!("{header}{}", replay.to_toml_string()?);
+        let back = ReplayFile::from_toml_str(&new_text)?;
+        if back != replay || back.expand_pad_stream() != replay.expand_pad_stream() {
+            anyhow::bail!(
+                "{}: the compact form does not read back the same",
+                path.display()
+            );
+        }
+        eprintln!(
+            "{}: {} events, {} -> {} bytes",
+            path.display(),
+            replay.events.len(),
+            text.len(),
+            new_text.len()
+        );
+        saved += text.len().saturating_sub(new_text.len());
+        rewritten += 1;
+        if !check {
+            std::fs::write(path, new_text)
+                .with_context(|| format!("write replay file {}", path.display()))?;
+        }
+    }
+    eprintln!(
+        "replay-compact: {rewritten} file(s) {}, {saved} bytes smaller",
+        if check { "would change" } else { "rewritten" }
+    );
+    Ok(())
+}
+
 /// Drive a synthetic [`World`] from a [`ReplayFile`] and write the
 /// resulting mode-trace JSONL. This mirrors the J2 determinism-gate
 /// harness verbatim - the gate asserts byte-identity across two runs of

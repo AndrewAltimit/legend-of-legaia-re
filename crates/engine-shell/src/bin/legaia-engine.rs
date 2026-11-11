@@ -35,8 +35,8 @@ use commands::{cmd_audio_trace, cmd_mode_trace, cmd_pcm_trace, cmd_sim_trace, cm
 use commands::{
     cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip, cmd_export_glb,
     cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts,
-    cmd_mesh_catalog, cmd_play, cmd_replay, cmd_save, cmd_save_select, cmd_scenarios,
-    cmd_seru_capture, cmd_target_pick, cmd_title,
+    cmd_mesh_catalog, cmd_play, cmd_replay, cmd_replay_compact, cmd_save, cmd_save_select,
+    cmd_scenarios, cmd_seru_capture, cmd_target_pick, cmd_title,
 };
 use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
 use std::path::{Path, PathBuf};
@@ -418,6 +418,7 @@ fn main() -> Result<()> {
             strict,
             packs,
         } => cmd_replay(&input, &out, strict, &packs),
+        Cmd::ReplayCompact { files, check } => cmd_replay_compact(&files, check),
         Cmd::Record {
             out,
             scene,

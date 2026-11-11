@@ -70,12 +70,20 @@ active_scene = "town01"</code></pre>
     </tbody>
   </table>
   <p>Pad bits match <code>legaia_engine_system::input::PadButton::mask</code>, stored as a plain <code>u16</code> so the on-disk form stays byte-readable. The dense per-frame stream is reconstructed by <code>ReplayFile::expand_pad_stream</code> - the mask in slot N is the mask in force on frame N. <code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code>; writers emit events in frame-ascending order, readers don't sort.</p>
+  <h3>Compact pad runs</h3>
+  <p>A replay with many transitions carries them as a <code>[pad_runs]</code> table instead of <code>[[event]]</code> rows. A soak run changes the pad almost every frame, so one row per transition costs four lines a frame. Each token is <code>delta:mask</code>: the decimal frame count since the previous transition, and the mask in hex without a prefix. Sixteen tokens make a line.</p>
+<pre><code>[pad_runs]
+runs = [
+    "0:4000 1:0 1:2000 1:0 40:10 2:0",   # Cross, release, Circle, release, Up from 43, release
+]</code></pre>
+  <p>The tokens are the rows one for one: both forms parse to the same events, a file round-trips byte-identically, and a file carries one form, never both. Writers switch to runs above <code>replay::PAD_RUNS_FROM</code> events and keep rows for short or hand-written replays. <code>legaia-engine replay-compact &lt;files&gt;</code> rewrites existing files. It keeps each file's leading <code>#</code> header, and it checks that each rewrite expands to the same per-frame pad stream before writing.</p>
 </section>
 
 <section class="doc-section" id="subcommands">
-  <h2>The two subcommands</h2>
+  <h2>The three subcommands</h2>
   <p><strong><code>replay</code></strong> drives a synthetic <code>World</code> from the file and emits the per-frame mode trace as JSONL (same shape as <code>legaia-engine mode-trace</code>). Every argument is a flag - <code>--input</code> is not positional - and <code>--out</code> defaults to stdout. The driver mirrors the determinism-gate harness: <code>World::new</code> + an 8-slot actor pool, RNG seeded from <code>meta.rng_seed</code>, ticked once per replay frame.</p>
   <p><strong><code>record</code></strong> is a thin wrapper over <code>play-window</code>: assets come from <code>--extracted-root</code> (default <code>extracted</code>) unless <code>--disc</code> supersedes it; <code>--no-audio</code>, <code>--world-map</code> and <code>--save-dir</code> behave as on the host it wraps. Every keyboard transition that changes the pad mask is appended to a <code>RecordLog</code>; auto-repeat deduplication collapses identical-mask press streams; <code>meta.frames</code> reflects the actual session duration.</p>
+  <p><strong><code>replay-compact</code></strong> rewrites replay files with many events into the <code>[pad_runs]</code> form (<code>--check</code> reports without writing).</p>
   <p class="hint"><strong>Interactive-toggle caveat.</strong> <code>j-replay-v1</code> captures the pad stream only - the camera distance preset, left-mouse drag-orbit and the precise-movement toggle are not recorded. The defaults are safe: distance and orbit are pure render framing, and replays run with <code>precise_movement</code> off. A session recorded with precise movement ON, or a non-zero drag-orbit compass, is not replay-stable; keep the toggles at their defaults when capturing fixtures.</p>
 </section>
 

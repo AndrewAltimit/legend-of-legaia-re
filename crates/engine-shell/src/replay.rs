@@ -6,6 +6,11 @@
 //! - a sparse `[[event]]` array of `(frame, pad_mask)` rows - only frames
 //!   where the pad bitmask transitions are recorded, so a 600-frame
 //!   replay with two button presses is six lines instead of six hundred;
+//! - or the same transitions as a `[pad_runs]` table ([`PadRuns`]): one
+//!   `delta:mask` token per transition, sixteen to a line, which is what a
+//!   writer emits once a replay has more than [`PAD_RUNS_FROM`] events (a
+//!   soak run changes the pad almost every frame). A reader takes either;
+//!   both parse to the same [`ReplayFile::events`];
 //! - an optional `[[expected]]` block of `(frame, scene_mode,
 //!   active_scene)` rows - the regression fixture against the engine's
 //!   [`ModeTraceFrame`] stream;
@@ -45,24 +50,139 @@ pub const REPLAY_SCHEMA_V1: &str = "j-replay-v1";
 /// Top-level replay file. Mirrors the on-disk TOML shape one-to-one;
 /// every field is named so the file is human-readable and `git diff`-able.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawReplayFile", into = "RawReplayFile")]
 pub struct ReplayFile {
     /// Schema marker, RNG seed, frame count, optional scenario binding.
     pub meta: ReplayMeta,
     /// Sparse list of pad-mask transitions. Frame `N` carries the mask
     /// that becomes effective on that frame and stays in force until the
     /// next event. Frame 0 is implicit `pad = 0` if no event names it.
-    #[serde(default, rename = "event", skip_serializing_if = "Vec::is_empty")]
+    ///
+    /// On disk this is the `[[event]]` rows or the `[pad_runs]` table.
     pub events: Vec<PadEvent>,
     /// Optional expected mode-trace fixture. When present, [`Self::diff`]
     /// compares a recorded trace against this and surfaces the first
     /// diverging row.
-    #[serde(default, rename = "expected", skip_serializing_if = "Vec::is_empty")]
     pub expected: Vec<ExpectedFrame>,
     /// Sparse list of session switches, frame-ascending. A switch at frame
     /// `N` is applied before frame `N` ticks, the same frame its pad event
     /// would take effect on.
-    #[serde(default, rename = "switch", skip_serializing_if = "Vec::is_empty")]
     pub switches: Vec<SessionSwitch>,
+}
+
+/// A writer emits [`PadRuns`] instead of `[[event]]` rows above this many
+/// events; a hand-written or short recorded replay keeps its readable rows.
+pub const PAD_RUNS_FROM: usize = 32;
+
+/// Tokens on one line of [`PadRuns::runs`].
+const PAD_RUNS_PER_LINE: usize = 16;
+
+/// The `[pad_runs]` table: the pad transitions as `delta:mask` tokens,
+/// space-separated, in lines of up to sixteen. `delta` is the decimal frame
+/// count since the previous transition (the first token's is its frame) and
+/// `mask` the pad bitmask in hex without a prefix, so `0:4000 1:0 9:10` is
+/// Cross on frame 0, nothing on frame 1, Up from frame 10. The tokens are the
+/// [`PadEvent`] rows one for one: a run of an unchanged mask is a gap in the
+/// deltas, never a token, and a file round-trips byte-identically.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PadRuns {
+    pub runs: Vec<String>,
+}
+
+impl PadRuns {
+    /// Encode frame-ascending `events`; `None` when they are not ascending
+    /// (a delta cannot go back), which `[[event]]` rows still carry for
+    /// [`ReplayFile::validate`] to reject.
+    pub fn encode(events: &[PadEvent]) -> Option<Self> {
+        let mut prev = 0u64;
+        let mut tokens = Vec::with_capacity(events.len());
+        for ev in events {
+            let delta = ev.frame.checked_sub(prev)?;
+            tokens.push(format!("{delta}:{:x}", ev.pad));
+            prev = ev.frame;
+        }
+        let runs = tokens
+            .chunks(PAD_RUNS_PER_LINE)
+            .map(|line| line.join(" "))
+            .collect();
+        Some(Self { runs })
+    }
+
+    /// The [`PadEvent`] rows the tokens stand for.
+    pub fn decode(&self) -> Result<Vec<PadEvent>> {
+        let mut frame = 0u64;
+        let mut events = Vec::new();
+        for token in self.runs.iter().flat_map(|line| line.split_whitespace()) {
+            let (delta, mask) = token
+                .split_once(':')
+                .with_context(|| format!("pad_runs token {token:?} is not delta:mask"))?;
+            let delta: u64 = delta
+                .parse()
+                .with_context(|| format!("pad_runs token {token:?}: bad frame delta"))?;
+            let pad = u16::from_str_radix(mask, 16)
+                .with_context(|| format!("pad_runs token {token:?}: bad hex mask"))?;
+            frame = frame
+                .checked_add(delta)
+                .with_context(|| format!("pad_runs token {token:?}: frame overflows"))?;
+            events.push(PadEvent { frame, pad });
+        }
+        Ok(events)
+    }
+}
+
+/// [`ReplayFile`] as the TOML spells it: the events as `[[event]]` rows or
+/// as `[pad_runs]`, never both.
+#[derive(Serialize, Deserialize)]
+struct RawReplayFile {
+    meta: ReplayMeta,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pad_runs: Option<PadRuns>,
+    #[serde(default, rename = "event", skip_serializing_if = "Vec::is_empty")]
+    events: Vec<PadEvent>,
+    #[serde(default, rename = "expected", skip_serializing_if = "Vec::is_empty")]
+    expected: Vec<ExpectedFrame>,
+    #[serde(default, rename = "switch", skip_serializing_if = "Vec::is_empty")]
+    switches: Vec<SessionSwitch>,
+}
+
+impl TryFrom<RawReplayFile> for ReplayFile {
+    type Error = anyhow::Error;
+
+    fn try_from(raw: RawReplayFile) -> Result<Self> {
+        let events = match raw.pad_runs {
+            Some(_) if !raw.events.is_empty() => {
+                bail!("replay carries both [pad_runs] and [[event]] rows; keep one")
+            }
+            Some(runs) => runs.decode()?,
+            None => raw.events,
+        };
+        Ok(Self {
+            meta: raw.meta,
+            events,
+            expected: raw.expected,
+            switches: raw.switches,
+        })
+    }
+}
+
+impl From<ReplayFile> for RawReplayFile {
+    fn from(file: ReplayFile) -> Self {
+        let pad_runs = (file.events.len() > PAD_RUNS_FROM)
+            .then(|| PadRuns::encode(&file.events))
+            .flatten();
+        let events = if pad_runs.is_some() {
+            Vec::new()
+        } else {
+            file.events
+        };
+        Self {
+            meta: file.meta,
+            pad_runs,
+            events,
+            expected: file.expected,
+            switches: file.switches,
+        }
+    }
 }
 
 /// One session switch: a host-side change to the running session that
@@ -659,6 +779,89 @@ mod tests {
         let text = file.to_toml_string().unwrap();
         let parsed = ReplayFile::from_toml_str(&text).unwrap();
         assert_eq!(parsed, file);
+    }
+
+    #[test]
+    fn a_long_replay_writes_pad_runs_and_reads_back_the_same_events() {
+        let mut file = ReplayFile::new(ReplayMeta::new(400));
+        for f in 0..(PAD_RUNS_FROM as u64 + 9) {
+            file.push_event(f * 3, if f % 2 == 0 { 0x4000 } else { 0x0010 });
+        }
+        // A repeated mask and a long hold still round-trip one for one.
+        file.push_event(300, 0x0010);
+        file.push_event(399, 0x0000);
+        file.push_expected(0, "Field", Some("town01"));
+        let text = file.to_toml_string().unwrap();
+        assert!(text.contains("[pad_runs]"), "{text}");
+        assert!(!text.contains("[[event]]"), "{text}");
+        assert!(text.contains("\"0:4000 3:10 3:4000"), "{text}");
+        let parsed = ReplayFile::from_toml_str(&text).unwrap();
+        assert_eq!(parsed, file);
+        assert_eq!(parsed.to_toml_string().unwrap(), text);
+    }
+
+    #[test]
+    fn pad_runs_and_event_rows_read_as_the_same_stream() {
+        let runs = r#"
+            [meta]
+            schema = "j-replay-v1"
+            rng_seed = 1
+            frames = 20
+            [pad_runs]
+            runs = ["0:4000 1:0", "9:10"]
+        "#;
+        let rows = r#"
+            [meta]
+            schema = "j-replay-v1"
+            rng_seed = 1
+            frames = 20
+            [[event]]
+            frame = 0
+            pad = 16384
+            [[event]]
+            frame = 1
+            pad = 0
+            [[event]]
+            frame = 10
+            pad = 16
+        "#;
+        let a = ReplayFile::from_toml_str(runs).unwrap();
+        let b = ReplayFile::from_toml_str(rows).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(a.expand_pad_stream()[10], 0x0010);
+    }
+
+    #[test]
+    fn a_file_with_both_event_forms_is_rejected() {
+        let both = r#"
+            [meta]
+            schema = "j-replay-v1"
+            rng_seed = 1
+            frames = 20
+            [pad_runs]
+            runs = ["0:4000"]
+            [[event]]
+            frame = 1
+            pad = 0
+        "#;
+        let msg = format!("{:#}", ReplayFile::from_toml_str(both).unwrap_err());
+        assert!(msg.contains("both [pad_runs] and [[event]]"), "got: {msg}");
+        let bad = both.replace("[[event]]\n            frame = 1\n            pad = 0", "");
+        let bad = bad.replace("0:4000", "0:zz");
+        let msg = format!("{:#}", ReplayFile::from_toml_str(&bad).unwrap_err());
+        assert!(msg.contains("bad hex mask"), "got: {msg}");
+    }
+
+    #[test]
+    fn out_of_order_events_keep_their_rows_for_validate() {
+        let mut file = ReplayFile::new(ReplayMeta::new(100));
+        for f in 0..(PAD_RUNS_FROM as u64 + 1) {
+            file.push_event(f, 0x4000);
+        }
+        file.push_event(3, 0);
+        let text = file.to_toml_string().unwrap();
+        assert!(text.contains("[[event]]") && !text.contains("[pad_runs]"));
+        assert!(ReplayFile::from_toml_str(&text).is_err());
     }
 
     #[test]
