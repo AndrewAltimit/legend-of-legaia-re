@@ -456,6 +456,18 @@ impl World {
         }
     }
 
+    /// Whether the after-image walk treats actor `i` as a monster seat: its
+    /// category `+0x5A` is `3` or more (`sltiu v0,s3,0x3` at `0x8004938C`),
+    /// which doubles the ring depths (`0x8004941C..0x80049428`) and takes the
+    /// monster's ghost colour. The summoned creature stands in category `7`,
+    /// so it walks as a monster although it is none.
+    pub fn battle_seat_walks_as_monster(&self, i: usize) -> bool {
+        self.actors
+            .get(i)
+            .is_some_and(|a| a.battle_monster_id.is_some())
+            || self.casting.summon_actor_slot == Some(i as u8)
+    }
+
     /// Close the ghost walk's slot for `depth` battle frames back (its
     /// ring-id gate fails): the capture's walk drew no ghost there - the art
     /// had not committed that far back on retail's clock - so the replay
@@ -1037,7 +1049,7 @@ impl World {
         }
         let per_frame = self.ghost_ring_slots_per_frame();
         let hist = &actor.battle_pose_history;
-        let monster = actor.battle_monster_id.is_some();
+        let monster = self.battle_seat_walks_as_monster(i);
         ai::plan_ghosts(
             actor.battle.anim_rate.get(),
             monster,
