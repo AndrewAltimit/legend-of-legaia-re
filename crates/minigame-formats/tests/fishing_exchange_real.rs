@@ -152,3 +152,49 @@ fn exchange_tables_reproduce_and_are_well_formed() {
         }
     }
 }
+
+/// The curated `fishing.toml` prize lists are the two venues' exchange rows:
+/// every curated prize is a row of its venue at its price, and every row is a
+/// curated prize. Page 0 is Buma (selector `0x187`), page 1 Vidna (`0xF4`).
+#[test]
+fn curated_fishing_prizes_are_the_exchange_rows() {
+    let Some(overlay) = fishing_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let Some(scus) = extracted_file("SCUS_942.54").map(|p| std::fs::read(p).expect("read SCUS"))
+    else {
+        eprintln!("[skip] extracted/SCUS_942.54 missing");
+        return;
+    };
+    let names = ItemNameTable::from_scus(&scus).expect("item-name table");
+    let ex = exch::parse(&overlay).expect("exchange tables parse");
+    let db = legaia_gamedata::Database::load();
+    let norm = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    };
+    let mut disc: Vec<(String, String, u32)> = Vec::new();
+    for (page, venue) in [(0usize, "Buma"), (1, "Vidna")] {
+        for r in &ex.venues[page] {
+            let name = names.name(r.item_id as u8).unwrap_or("");
+            disc.push((venue.to_string(), norm(name), r.price));
+        }
+    }
+    let mut curated: Vec<(String, String, u32)> = db
+        .fishing_prizes()
+        .iter()
+        .map(|p| {
+            let item = db.resolve_key(&p.item).expect("fishing prize key resolves");
+            (p.location.clone(), norm(item.name), p.cost_points)
+        })
+        .collect();
+    disc.sort();
+    curated.sort();
+    assert_eq!(
+        curated, disc,
+        "curated fishing prizes vs the disc exchange rows (disc is authoritative)"
+    );
+}

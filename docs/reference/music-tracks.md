@@ -45,6 +45,23 @@ Confidence is **Inferred** unless a track has been matched to its OST entry, in
 which case the OST columns are **Confirmed** against the published listing. The
 last three rows (highlighted in the source as uncertain) are flagged inline.
 
+## Where the ID and title columns come from
+
+The debug ID and Japanese title columns are the rows of the music test in
+PROT 0974: 81 records of `0x84` bytes from file offset `0x728`, each a
+Shift-JIS string of a backtick, the ID, full-width padding and the working
+title, in the table's `#` order. `crates/gamedata/tests/music_vs_disc.rs`
+pins every row (full-width forms folded, whitespace ignored). The rows are
+verbatim, typos included: #50 writes its particle in katakana
+(前向きナ), #76 reads `Ｍ１３0` with a half-width zero, and #74 and #80 are a
+bare ID with no title.
+
+The field overlay (PROT 0897, file `0x2467C`) carries a second, shorter
+sound test: 71 records of `[u16 bgm id][8-byte ASCII name]`, `2000..=2071`
+ending on `0xFFFF`. It has no row for `2044` (#44, `M49`), names #57 `KANA`
+rather than `KANASIMI`, and stops at `M123`, so the borrowed and dev
+rows from #72 on exist only in PROT 0974's table.
+
 ## The disc-side join: the `music_01` bank in sound-test order
 
 A field-VM op-`0x35` BGM id `>= 2000` resolves through the global pool
@@ -85,7 +102,7 @@ residency (`engine-system/tests/music_bank_residency_disc.rs`):
 
 - **Pochi alignment**: the four placeholder-filled slots (extraction
   `1066..=1069`) land exactly on the four dev-leftover rows (#76..=79 - the
-  M13 flute, `M117`, `MPIANO` and the `獸衣` row whose romaji is `LEVELUP`),
+  `M130` flute piano, `M117`, `MPIANO` and the `獣衣` `LEVELUP` row),
   still holding their sound-test slots in the retail NA disc.
 - **Battle-bank copies**: the ten `sound_data2` boot/battle-bank SEQ copies
   (extraction `877..886`) resolve, under this map, to exactly the ten
@@ -119,10 +136,9 @@ script census, since these are the played values, not the op operands.
 - **Borrowed placeholder cues.** `ALNDRA` (#72) is *Alundra*'s Zazzan battle
   theme and `JBGM` (#73) is the *Wild Arms* battle theme - both other
   Contrail/Sony titles, present on the Legaia disc as dev placeholders.
-- **Dev test files.** #74 (no debug ID at all; romaji `DAMĪ`, "Dummy"), `MPIANO`
-  (#78, romaji `PIANO`), #79 (ID `獸衣`, romaji `LEVELUP`) and `M26A` (#80,
-  romaji `A`) are test/placeholder entries, not shipping music. Note the last
-  three carry an ID distinct from their romaji - quote the **ID** column when
+- **Dev test files.** #74 (ID `ダミー`, "Dummy", no title), `MPIANO`
+  (#78, title ピアノ), #79 (`獣衣` `LEVELUP`) and `M26A` (#80, no title) are
+  test/placeholder entries, not shipping music. Quote the **ID** column when
   joining against the table below.
 - **Reused themes under different IDs.** Several debug IDs share a title
   (`中ボス` / "medium boss" appears for `M27`, `M108` and `M33`; `ディスコ` /
@@ -143,7 +159,7 @@ Stann0x's proposed English title.
 | 3 | M04 | 森のダンジョンA | MORI NO DANJON A | Forest dungeon A/B | Underground path to Octam | - | - | - | Path of Secrets |
 | 4 | M04B | 森のダンジョンB | MORI NO DANJON B | Forest of mystery | East Voz Forest | 神秘の森 | SHINPI NO MORI | The mysterious forest | Forest of Mystery |
 | 5 | M05 | 霧のダンジョン | KIRI NO DANJON | Misty dungeon | Town/dungeon in mist | - | - | - | The Misty Town |
-| 6 | M06 | リクロア山霧 | RIKUROA YAMA KIRI | Rikuroa mountain fog | Mt. Rikuroa/Mt. Dhini in the mist | - | - | - | The Misty Mountains |
+| 6 | M06 | リクロア山［霧］ | RIKUROA YAMA KIRI | Rikuroa mountain fog | Mt. Rikuroa/Mt. Dhini in the mist | - | - | - | The Misty Mountains |
 | 7 | M07 | ガーメル城 | GĀMERU-JŌ | Garmel Castle | Fire path/Xain's nest | 王国騎士団 | ŌKOKUKISHI-DAN | The royal knights | The Fire Fortress |
 | 8 | M08 | 遺跡ダンジョン | ISEKI DANJON | Ruin dungeon | Uru Mais | 遺跡の呼び声 | ISEKI NO YOBIGOE | The call of the ruins | Call of the Ruins |
 | 9 | M09 | 獣衣界への道 | JŪI-KAI E NO MICHI | The path to the beast-garment world | Field with Juggernaut | 闇の鼓動 | YAMI NO KODŌ | The pulse of darkness | Heartbeat of Darkness |
@@ -163,8 +179,8 @@ Stann0x's proposed English title.
 | 23 | M22 | みんなが踊ってる部屋 | MIN'NA GA ODOTTERU HEYA | The room where everyone dances | Mei's theme | メイ | MEI | Mei | Where Everyone Dances |
 | 24 | M23 | 酒場 | SAKABA | Bar | Sol's bar | - | - | - | Where Everyone Drinks |
 | 25 | M25 | 創世樹周辺の曲 | SŌSEIJU SHŪHEN NO KYOKU | Music about the Genesis Tree | Genesis Tree theme | 静かなる創世樹 | SHIZUKANARU SŌSEIJU | The silent Genesis Tree | The Quiet Genesis Tree |
-| 26 | M26B1 | 雑魚戦闘バージョン1 | ZAKO SENTŌ BĀJON 1 | Minor enemy battle version 1 | Battle theme 1 | - | - | Brand of the Holy Knuckles | Brand of the Holy Knuckles |
-| 27 | M26B2 | 雑魚戦闘バージョン2 | ZAKO SENTŌ BĀJON 2 | Minor enemy battle version 2 | Battle theme 2 | - | - | - | - |
+| 26 | M26B1 | 雑魚戦闘　バージョン1 | ZAKO SENTŌ BĀJON 1 | Minor enemy battle version 1 | Battle theme 1 | - | - | Brand of the Holy Knuckles | Brand of the Holy Knuckles |
+| 27 | M26B2 | 雑魚戦闘　バージョン2 | ZAKO SENTŌ BĀJON 2 | Minor enemy battle version 2 | Battle theme 2 | - | - | - | - |
 | 28 | M27 | 中ボス | CHŪ BOSU | Medium boss | Boss theme 1 | 襲撃 | SHŪGEKI | Assault | Attack! |
 | 29 | M28 | 霧の巣ボス戦 | KIRI NO SU BOSU SEN | Mist nest boss battle | Koru battle theme | - | - | - | The Cold Koru |
 | 30 | M29 | ソンギ戦闘 | SONGI SENTŌ | Battle with Songi | Songi battle | 我が名はソンギ | WAGA NA WA SONGI | My name is Songi | I Am Songi! |
@@ -187,7 +203,7 @@ Stann0x's proposed English title.
 | 47 | M102 | 町の曲 | MACHI NO KYOKU | Town song | Jeremi | 街の灯 | MACHI NO AKARI | The town's light | Light of the Town |
 | 48 | M104 | バイロン寺院で宴の曲 | BAIRON JĪN DE UTAGE NO KYOKU | Music for a banquet at Byron Temple | Party in Byron Monastery | - | - | - | Byron Party |
 | 49 | M106 | 思い出の曲 | OMOIDE NO KYOKU | Music of memories | Nostalgic theme | 思い出のメロディー | OMOIDE NO MERODĪ | Melody of memories | The Melody of Memories |
-| 50 | M107 | 前向きな汎用イベント | MAEMUKI NA HANYŌ IBENTO | Positive generic event | Noa joins the party | - | - | - | Positive Energy! |
+| 50 | M107 | 前向きナ汎用イベント | MAEMUKI NA HANYŌ IBENTO | Positive generic event | Noa joins the party | - | - | - | Positive Energy! |
 | 51 | M108 | 中ボス | CHŪ BOSU | Medium boss | Koru battle theme 2 | - | - | - | The Hot Heat |
 | 52 | M109 | 不気味な気配 | BUKIMI NA KEHAI | Eerie presence | Tense moment | - | - | - | Ominous Presence |
 | 53 | M110 | 中ボス出現序曲 | CHŪ BOSU SHUTSUGEN JOKYOKU | Medium boss appearance overture | Boss overture/Vahn-Saryu | - | - | - | Lords of the Mist |
@@ -211,13 +227,13 @@ Stann0x's proposed English title.
 | 71 | M123 | コート序曲 | KŌTO JOKYOKU | Cort overture | Bio-Castle | - | - | - | The Rise of the Bio-Castle |
 | 72 | ALNDRA | アランドラ | ARANDORA | Alundra | Alundra Zazzan's battle theme | - | - | - | Excitement |
 | 73 | JBGM | ワイルドアームズ | WAIRUDO ĀMUZU | Wild Arms | Wild Arms battle theme | - | - | - | Wild Arms Battle Theme |
-| 74 | - | - | DAMĪ | Dummy | Dummy test music file | - | - | - | "I'm a Dummy-dayo!" |
+| 74 | ダミー | - | DAMĪ | Dummy | Dummy test music file | - | - | - | "I'm a Dummy-dayo!" |
 | 75 | M47B | スーパースペクタクルB | SŪPĀ SUPEKUTAKURU B | Super spectacle B | Another flying castle escape | - | - | - | Hurry Up! Faster! |
-| 76 | M13 | - | - | No name file | Soren flute/Soren theme | - | - | - | The Melody of Memories (Piano) |
+| 76 | M130 | 思い出の曲ピアノ | OMOIDE NO KYOKU PIANO | Song of memories (piano) | Soren flute/Soren theme | - | - | - | The Melody of Memories (Piano) |
 | 77 | M117 | ディスコ | DISUKO | Disco | Sol disco fever 2 | - | - | - | Disco Legend |
 | 78 | MPIANO | ピアノ | PIANO | Piano | Piano? *(uncertain)* | - | - | - | - |
-| 79 | 獸衣 | - | LEVELUP | Levelup | Level up? *(uncertain)* | - | - | - | - |
-| 80 | M26A | A | A | A | A? Another test file maybe? *(uncertain)* | - | - | - | - |
+| 79 | 獣衣 | LEVELUP | LEVELUP | Levelup | Level up? *(uncertain)* | - | - | - | - |
+| 80 | M26A | - | - | - | Another test file maybe? *(uncertain)* | - | - | - | - |
 
 ## See also
 

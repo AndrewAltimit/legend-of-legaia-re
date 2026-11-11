@@ -1,8 +1,14 @@
 # Player characters: elemental affinity + favorite-weapon class.
 #
-# `affinity_strong` and `affinity_weak` partition the 8 elements (fire,
-# wind, thunder, water, earth, light, dark, evil). Source: walkthrough 2
-# character info section.
+# `affinity_strong` / `affinity_weak` are the elements whose attacks the
+# character takes less / more damage from: the battle's element-affinity
+# matrix (`0x801F53E8` in PROT 0898, `legaia_game_tables::element_affinity`,
+# applied by FUN_801DD864 as `atk * matrix[attacker][defender] / 100`) read
+# down the column of the character's element (`0x801F5480`). An element is
+# strong below 100 and weak above it. The walkthrough this was mined from
+# left Vahn's thunder weakness out and gave Gala wind and water, which his
+# column scores at 100; `crates/gamedata/tests/characters_vs_disc.rs` pins
+# the lists. `ra_seru_element` is the character's element in that table.
 #
 # `weapon_classes` lists the favorite-weapon class names; cross-checked
 # against `weapons.toml` `equip_best`. Per docs/formats/art-data.md, a
@@ -15,7 +21,7 @@ name = "Vahn"
 ra_seru = "Meta"
 ra_seru_element = "fire"
 affinity_strong = ["fire"]
-affinity_weak = ["water"]
+affinity_weak = ["water", "thunder"]
 weapon_classes = ["Knives", "Swords", "Knuckles"]
 notes = "Balanced offense and defense; weak at water-element Seru."
 
@@ -36,6 +42,6 @@ name = "Gala"
 ra_seru = "Ozma"
 ra_seru_element = "thunder"
 affinity_strong = ["thunder"]
-affinity_weak = ["wind", "water"]
+affinity_weak = []
 weapon_classes = ["Club", "Mace"]
 notes = "Strongest melee output of the three; slower turn order."

@@ -12,6 +12,10 @@
 # (the source leaves them blank). `uncertain = true` marks the entries the
 # source flags as guesses (the trailing test/placeholder files).
 #
+# The `id` and `debug_title_jp` columns are the music test's own rows (PROT
+# 0974, 81 records of 0x84 bytes from file offset 0x728, Shift-JIS "<id>
+# <title>"), pinned by crates/gamedata/tests/music_vs_disc.rs.
+#
 # Source: Henrique Stanke Scandelari (Stann0x, github.com/Stann0xus). Factual
 # short labels only - transcribed from the game's own debug sound test and the
 # published OST listing - in the same curated-reference spirit as the other
@@ -87,7 +91,7 @@ relocalization = "The Misty Town"
 [[track]]
 index = 6
 id = "M06"
-debug_title_jp = "リクロア山霧"
+debug_title_jp = "リクロア山［霧］"
 debug_romaji = "RIKUROA YAMA KIRI"
 debug_gloss = "Rikuroa mountain fog"
 context = "Mt. Rikuroa/Mt. Dhini in the mist"
@@ -304,7 +308,7 @@ relocalization = "The Quiet Genesis Tree"
 [[track]]
 index = 26
 id = "M26B1"
-debug_title_jp = "雑魚戦闘バージョン1"
+debug_title_jp = "雑魚戦闘　バージョン1"
 debug_romaji = "ZAKO SENTŌ BĀJON 1"
 debug_gloss = "Minor enemy battle version 1"
 context = "Battle theme 1"
@@ -314,7 +318,7 @@ relocalization = "Brand of the Holy Knuckles"
 [[track]]
 index = 27
 id = "M26B2"
-debug_title_jp = "雑魚戦闘バージョン2"
+debug_title_jp = "雑魚戦闘　バージョン2"
 debug_romaji = "ZAKO SENTŌ BĀJON 2"
 debug_gloss = "Minor enemy battle version 2"
 context = "Battle theme 2"
@@ -553,7 +557,8 @@ relocalization = "The Melody of Memories"
 [[track]]
 index = 50
 id = "M107"
-debug_title_jp = "前向きな汎用イベント"
+# The sound test writes the particle in katakana.
+debug_title_jp = "前向きナ汎用イベント"
 debug_romaji = "MAEMUKI NA HANYŌ IBENTO"
 debug_gloss = "Positive generic event"
 context = "Noa joins the party"
@@ -786,6 +791,7 @@ relocalization = "Wild Arms Battle Theme"
 
 [[track]]
 index = 74
+id = "ダミー"
 debug_romaji = "DAMĪ"
 debug_gloss = "Dummy"
 context = "Dummy test music file"
@@ -802,8 +808,11 @@ relocalization = "Hurry Up! Faster!"
 
 [[track]]
 index = 76
-id = "M13"
-debug_gloss = "No name file"
+# The sound test reads "Ｍ１３0" (a half-width zero) with a title.
+id = "M130"
+debug_title_jp = "思い出の曲ピアノ"
+debug_romaji = "OMOIDE NO KYOKU PIANO"
+debug_gloss = "Song of memories (piano)"
 context = "Soren flute/Soren theme"
 relocalization = "The Melody of Memories (Piano)"
 
@@ -827,7 +836,8 @@ uncertain = true
 
 [[track]]
 index = 79
-id = "獸衣"
+id = "獣衣"
+debug_title_jp = "LEVELUP"
 debug_romaji = "LEVELUP"
 debug_gloss = "Levelup"
 context = "Level up?"
@@ -835,9 +845,7 @@ uncertain = true
 
 [[track]]
 index = 80
+# The sound test row is the bare id "Ｍ２６Ａ" with no title.
 id = "M26A"
-debug_title_jp = "A"
-debug_romaji = "A"
-debug_gloss = "A"
-context = "A? Another test file maybe?"
+context = "Another test file maybe?"
 uncertain = true

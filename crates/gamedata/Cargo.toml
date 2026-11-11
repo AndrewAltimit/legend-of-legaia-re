@@ -32,6 +32,7 @@ serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+encoding_rs.workspace = true
 legaia-art.workspace = true
 legaia-actor-formats.workspace = true
 legaia-game-tables.workspace = true

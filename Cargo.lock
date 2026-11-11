@@ -2865,6 +2865,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "encoding_rs",
  "legaia-actor-formats",
  "legaia-art",
  "legaia-game-tables",
@@ -2905,6 +2906,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-container-formats",
  "legaia-game-tables",
+ "legaia-gamedata",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-tmd",

@@ -197,17 +197,20 @@ effect_class = "ap_freeze_100"
 key = "life_source"
 name = "Life Source"
 price = 50000
-effect = "Slowly restores HP while walking (5 HP per step)."
+# The walk-regen tick FUN_801D0B90 adds 8 HP each time the walk counter
+# drains 0x20 (engine-field::walk_regen); the walkthrough had 5 per step.
+effect = "Slowly restores HP while walking (8 HP at a time)."
 effect_class = "hp_per_step"
-effect_value = 5
+effect_value = 8
 
 [[accessory]]
 key = "magic_source"
 name = "Magic Source"
 price = 50000
-effect = "Slowly restores MP while walking (1 MP per step)."
+# The same tick adds 2 MP; the walkthrough had 1 per step.
+effect = "Slowly restores MP while walking (2 MP at a time)."
 effect_class = "mp_per_step"
-effect_value = 1
+effect_value = 2
 
 [[accessory]]
 key = "mettle_source"
@@ -469,9 +472,12 @@ effect_class = "last_attack"
 key = "crimson_book"
 name = "Crimson Book"
 price = 65000
-effect = "Earned XP +25%."
+# The victory spoils routine FUN_8004E568 adds the member's
+# EXP share a second time when record +0xF8 bit 0x8000 (passive 0x2F) is
+# set (0x8004F2E8): double EXP, not the walkthrough's +25%.
+effect = "Earned XP doubled."
 effect_class = "xp_pct"
-effect_value = 25
+effect_value = 100
 
 [[accessory]]
 key = "golden_book"
