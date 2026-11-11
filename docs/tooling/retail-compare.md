@@ -4594,7 +4594,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `view_window` at `0` beside that selector pair | the same pass: each selector arm applies its own op `0x46` window, which the band hold now lands with the bit ([below](#the-region-selector-band-and-the-entry-order)) |
 | a room or selector bit down in the engine only, the system script's PC never moving off its loop head | the system context halted, or a record holding the player from the landing: a pre-fight flag ([below](#a-pre-fight-flag-runs-the-entrys-post-battle-branch)), or a halt nothing clears |
-| `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
+| `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes; the seed lowers what the entry head raised and retail holds down ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
@@ -5097,6 +5097,17 @@ and `P1[0]` spawns it (`44 60` at `+0xF7`) only while system flag `0x2C9` is
 up, which the beat clears as its first op. The gate word `0x8007B854` sits
 outside the save window at `0x80084140`, so a load of the post-beat save has
 the flag down, skips the beat and keeps the raise.
+
+The seed lowers that raise again once its settle has run
+(`hold_undone_entry_raises` in
+[`save_flags.rs`](../../crates/parity/src/retail_compare/save_flags.rs)), as
+it holds the region-selector band ([above](#the-band-is-held)). It walks the
+entry record from its first opcode to its first branch, wait or halt, takes
+the system flags that head sets and whether it issues `4C 30`, and lowers a
+flag only where retail's bitmap holds it down and the scene's bytecode clears
+it outside the head, and the gate only where retail's word is `0` and the
+scene carries a `4C 31`. A raise nothing in the scene undoes stays up, so an
+engine that never lowered a flag retail's script did still scores the miss.
 
 The Genesis tree in `rikuroa_post_caruban` is the same history from the other
 side. The tree's three objects (`P0[2..4]`) arm their withered vertex morph
