@@ -417,6 +417,7 @@ impl World {
             let slowed = self.raw_status_word(i as u8)
                 & legaia_engine_battle_vm::battle_anim_rate::SLOW_STATUS_BIT
                 != 0;
+            let creature_seat = self.casting.summon_actor_slot == Some(i as u8);
             let actor = &mut self.actors[i];
             if let Some(player) = &mut actor.battle_animation {
                 player.set_tween_target(tween);
@@ -527,7 +528,10 @@ impl World {
                 // ghosted every monster on every frame of its approach walk
                 // and its idle loop after it: the permanent yellow halo).
                 let clip_key = player.attach_key();
-                let ring_id = if actor.battle_monster_id.is_none() {
+                // The party rule keys on the seat (`sltiu v0,s1,3` at
+                // `0x80047F10`): a creature standing in seat 7 stamps the
+                // monster rule off its record although it is no monster.
+                let ring_id = if actor.battle_monster_id.is_none() && !creature_seat {
                     legaia_engine_battle::battle_afterimage::party_ring_id(
                         actor.battle.current_anim,
                     )
