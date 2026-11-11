@@ -765,6 +765,92 @@ mod tests {
         assert_eq!(arr[0]["blocks"][0]["name"], "Vahn");
         assert_eq!(arr[1]["inserted"], false);
     }
+
+    /// The port's own save words - the run rules (`LGXF`), a pack's `LXP1`
+    /// progress and dance free play's song counter (SC `+0x328`) - cross
+    /// between the page and the native window both ways and through both
+    /// carriers: a card block (the page's rack and the window's `--card`
+    /// port, `MountedCard::save_at` / `write_save_into_card`) and an `LGSF`
+    /// file (the page's save bar and the window's slot files /
+    /// `legaia-engine load`, `parse_with_resume` / `write_with_resume`). The
+    /// native half is the window's payload layer over a bare `World`; the
+    /// disc-gated `cross_host` test below adds each host's scene entry.
+    #[test]
+    fn the_ports_own_save_words_cross_between_the_hosts() {
+        use legaia_engine_core::world::World;
+        const DORMANT: &[u8] = b"LXP1 progress for a pack this world lacks";
+        const RUN_ID: u64 = 0x5EED_0042;
+        fn stage(w: &mut World) {
+            w.load_party(legaia_save::Party {
+                members: vec![{
+                    let mut r = legaia_save::CharacterRecord::zeroed();
+                    r.set_name("Vahn");
+                    r
+                }],
+            });
+            w.minigames.dance_free_play_song = 2;
+            w.minigames.dance_best = 568;
+            w.run_rules.run_id = RUN_ID;
+            w.expansion.quests.dormant = Some(DORMANT.to_vec());
+        }
+        fn check(tag: &str, w: &mut World, rules: &Option<Vec<u8>>) {
+            assert_eq!(w.minigames.dance_free_play_song, 2, "{tag}: song counter");
+            assert_eq!(w.minigames.dance_best, 568, "{tag}: dance best");
+            assert_eq!(w.run_rules.run_id, RUN_ID, "{tag}: run id");
+            assert_eq!(&w.run_rules_save_block(), rules, "{tag}: run rules");
+            assert_eq!(
+                w.expansion_save_block().as_deref(),
+                Some(DORMANT),
+                "{tag}: expansion block"
+            );
+        }
+        let mut native = World::new();
+        stage(&mut native);
+        let rules = native.run_rules_save_block();
+        assert!(rules.is_some(), "a run id is a run block");
+
+        // Page -> native, card.
+        let mut rt = LegaiaRuntime::new();
+        stage(rt.world_mut());
+        rt.insert_card_core(0, formatted_memory_card(), "blank".into())
+            .unwrap();
+        rt.write_session_into_card(0, 1).expect("page: save");
+        let card = MountedCard::from_bytes(rt.card_bytes(0), "page").unwrap();
+        let (sf, _) = card.save_at(0).expect("native: the page's save");
+        let mut w = World::new();
+        w.load_full(sf);
+        check("native load of the page's card", &mut w, &rules);
+
+        // Native -> page, card.
+        let mut n_card = MountedCard::from_bytes(formatted_memory_card(), "native").unwrap();
+        let sf = native.save_full();
+        legaia_engine_menu_runtime::card_write::write_save_into_card(
+            &mut n_card,
+            1,
+            &sf,
+            &SaveResume::default(),
+            None,
+        )
+        .expect("native: save");
+        let mut back = rt_with_card(0, n_card.bytes.clone());
+        back.load_session_from_card(0, 1).expect("page: load");
+        back.resume_parked_save().expect("page: a parked save");
+        check("page load of the native card", back.world_mut(), &rules);
+
+        // Page -> native, LGSF.
+        let bytes = rt.export_save_core().expect("page: export");
+        let (sf, _) = legaia_save::SaveFile::parse_with_resume(&bytes).expect("native: parse");
+        let mut w = World::new();
+        w.load_full(sf);
+        check("native load of the page's LGSF", &mut w, &rules);
+
+        // Native -> page, LGSF.
+        let bytes = native.save_full().write_with_resume(&SaveResume::default());
+        let mut back = LegaiaRuntime::new();
+        back.import_save_core(&bytes).expect("page: import");
+        back.resume_parked_save().expect("page: a parked save");
+        check("page load of the native LGSF", back.world_mut(), &rules);
+    }
 }
 
 /// A card save crosses between the two play hosts unchanged: the browser
