@@ -2400,7 +2400,10 @@ Arm 15's pass also ends the three arm-14 records through their handles
 rate `1` and the flat `0xC8` tint (the grey silhouette), turned to the creature's facing
 plus `0x800`, and arms `0x12` / `0x13` hold that while its clip is `0`; the damage path
 leaves it on rate `2`, impact `2`, `+0x21C = 0` beside its roll, and arm `0xFF` hides
-the victim (`World::apply_aluru_seat_writes`).
+the victim (`World::apply_aluru_seat_writes`). The victim the summon band hid comes back
+before that: arm 4's pass drops its `+0x21C` (`sb zero,0x21c(s3)` at `0x801F71E0`, `s3`
+the caster's `+0x1DD` seat) and arm 7's pass stores the neutral word
+(`0x801F74C0..0x801F74D0`), so the far shots of arms 13 and 14 hold it in frame.
 
 **The assembly.** Arm 4's pass seats the creature (`jal 0x801F19EC` at
 `0x801F7074`) and then dresses it: colour word `+0x04 = 0x3FFFFFFF`, blend
@@ -2708,6 +2711,12 @@ the cursor reads `0x1C0` or more (`0x801F7070..0x801F7114`); arm 8 walks the
 cursor back a frame product a pass and leaves clip `2` with the bump at rate
 `8` (`0x801F7180..0x801F719C`); arm 9 bumps clip `3`, arm 10 stores `4` bare
 and arm 18 bumps `5` (`0x801F8000`). Port: `cast_module_camera::puera_direct`.
+
+Kemaro's arm 8 lifts and lands the creature as its word drains: height
+`-(6w + sin(4w) / 4)` while the word `w` is at or under `scalar << 6`
+(`0x801F7640..0x801F7674`), then `z = 0x400`, facing `0x800` and pitch
+`+0x44 = (w << 4) & 0xFFF` under `scalar << 5` (`0x801F7690..0x801F76A8`), height
+and pitch `0` on the pass (`World::apply_kemaro_writes`).
 
 Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
 stores on alternate passes), Kemaro's arm-12 absolute pose store and the
