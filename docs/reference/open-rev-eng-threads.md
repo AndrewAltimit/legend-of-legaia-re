@@ -438,19 +438,6 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
-### A new track word during a swap's read
-
-*Status:* open
-
-The poller's stage 6 latches the requested index of its own call, so a word that changes
-after stage 2's read plays the old track and reports the new one loaded
-(`0x800247B4..0x800247C4`, [swap](../subsystems/audio.md#the-swap-takes-a-settle-and-a-read)).
-The port starts the newer word. `asset field-op-census --only 35 --context` holds 282
-sub-op `1` sites, none directly followed by another, and the 78 pairs within `0x28` bytes of
-one record sit on flag branches (a `JmpRel` or a `SysFlag.Test` between them), mostly in entry
-prescripts, whose walk the field init finishes before the first frame. A script timeline that
-holds two across a wait under `66` vsyncs would still reach it.
-
 ### Why does track `2016` score worse under `rimelm_wall_press_left`'s river?
 
 *Status:* open (measured)
@@ -506,6 +493,18 @@ the order and not the length: the module's seek is `FUN_8003EAE4` (`FUN_8005C160
 constant between them. How long the arm holds is the drive's answer, and mednafen's `CalcSeekTime`
 (the law the port's model takes) is that emulator's measured drive.
 
+The two emulators do not disagree as two drive models. PCSX-Redux's `CdlSeekL` / `CdlSeekP`
+(`src/core/cdrom.cc`) schedule the seek's completion at `0x800` CPU cycles when the previous seek has
+finished and `cdReadTime * 4` (four sectors at single speed, `53` ms) otherwise, whatever the distance,
+beside a comment list of per-game timing fixes; it models no seek at all. Mednafen's seek time grows
+with the distance (`CalcSeekTime`). On Theeder the two read: PCSX-Redux (`0x82` cast from
+`party_basic_attack_vs_gobu_gobu`) arm 1 at `433`, arm 2 one vsync later, the voice at `553`; mednafen
+(`theeder_summon_mid_cast`, `drive-timeline.py`) arm 1 at `+86`, the side-band stage dropping `8`
+vsyncs into it, arm 2 at `+118`, the voice at `+229`: arm 1's hold is `1` vsync against `32`, and arm 2,
+which waits on the band word, `119` against `110`. The port keeps mednafen's law, the one model of a
+drive; PCSX-Redux's number is not evidence about a console. What closes it is still a real console's
+seek time, and the band ahead of the module above.
+
 ### Why does Theeder's score not subtract out of its recording?
 
 *Status:* open (measured)
@@ -534,9 +533,13 @@ the keying differential reads no `key` or `voice` row on `2013` and the cast row
 parked KON: the KON path never defers ([a key-on is never deferred](../subsystems/audio.md#a-key-on-is-never-deferred)).
 A skipped calc would put retail's voice ahead, not behind, and the calc runs once a vsync wherever it
 has been watched. What is left is a calc doubled in one vsync, or a voice whose playback stood still
-for one (a re-key or a pitch write on the same voice). What closes it: a state from the battle that
-leads into this cast, run under `autorun_seq_calc_clock.lua` with a watch on that voice's pitch and
-KON bits; the library holds no state of that fight before the cast.
+for one (a re-key or a pitch write on the same voice). A summon cast does not disturb the calc on
+PCSX-Redux: a Theeder cast (`0x82` from `party_basic_attack_vs_gobu_gobu`, `cast-sequence.py
+--calc-clock`) enters `FUN_80062F98` exactly once a vsync across `1451` vsyncs, the module's seek arms
+and the side-band's loads included, and every KON write comes from the flush (`0x80065F7C`). That fight
+plays the battle theme, not `2013`, and mednafen's calc has not been watched over a cast. What closes
+it: a state from the battle that leads into this cast, run under the same clock with a watch on that
+voice's pitch and KON bits; the library holds no state of that fight before the cast.
 
 ### When does a ring cue sound against the frame that pushed it?
 

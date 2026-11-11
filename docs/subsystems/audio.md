@@ -497,8 +497,9 @@ flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
 Stage 6 latches the requested index of that call (`0x800247B4..0x800247C4`), not the one
 stage 2 read. A new word arriving past stage 2 therefore plays the old track with the
 walk reporting the new one loaded; the port's `route_bgm_events` starts the newer word
-instead. No library state catches a walk in that window, so whether a script reaches it
-is unmeasured.
+instead. No script record reaches that window: a walk of every scene MAN finds no second
+sub-op `1` a frame or more behind a first inside the read
+([settled](../reference/re-settled-threads/audio.md#no-script-changes-the-bgm-word-inside-a-swaps-read)).
 
 Stage 4's commit also closes battle source 5 (`0x80024750..0x80024760`) and rests every
 source's volume at `0` until stage 6: the only thing that stops a battle theme is the next

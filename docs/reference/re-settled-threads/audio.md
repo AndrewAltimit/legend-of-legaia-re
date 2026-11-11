@@ -18,6 +18,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 - [Op-`0x35` sub-op `0xA` is the track-swap commit](#op-0x35-sub-op-0xa-is-the-track-swap-commit)
 - [Hyper Arts fanfare selector](#hyper-arts-fanfare-selector)
+- [No script changes the BGM word inside a swap's read](#no-script-changes-the-bgm-word-inside-a-swaps-read)
+- [What clears the drive word before a clip ends](#what-clears-the-drive-word-before-a-clip-ends)
 - [XA clip-table writer + `(clip_id, chan)` cue census](#xa-clip-table-writer--clip_id-chan-cue-census)
 - [SFX cue bank routing - the category byte selects the VAB slot](#sfx-cue-bank-routing---the-category-byte-selects-the-vab-slot)
 - [Which PROT entries fill SFX VAB slots 1 / 3 / 6 / 11](#which-prot-entries-fill-sfx-vab-slots-1--3--6--11)
@@ -34,6 +36,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Does a field script change the BGM word inside a swap's read? | resolved (**no** script record does) | `disassembly` | A walk of every scene MAN record finds no second sub-op `1` a frame or more behind a first inside the `66`-vsync read; the same-frame pairs are harmless. [Write-up](#no-script-changes-the-bgm-word-inside-a-swaps-read). |
+| What clears the drive word `0x8007BC20` before a clip ends? | resolved (the stop `FUN_8003ED04`, which no battle path issues over a sounding clip) | `disassembly` + `capture` | Seeks and stream loads stop a clip, but in battle the selector, the module seeks and the side-band applier all keep off a sounding one. [Write-up](#what-clears-the-drive-word-before-a-clip-ends). |
 | What raises a summon voice's CD volume past the cue level? | resolved | `disassembly` + `capture` | Any change of the audio level cell `_DAT_8007B910` under the clip: `FUN_8001698C` hands it to `FUN_8002614C` (`0x80016A1C..0x80016A34`), which opens on `SsSetSerialVol(0, 0x3FFF, 0x3FFF)` (`0x80026168..0x80026174`). Orb's duck is still ramping when its voice starts (`180` to `161` over its first `21` vsyncs, frame-stepped), and the recording plays the clip `0.74` dB over the cue gain. Port: `StreamResampler::raise_cd_volume_to_full` on every level step. |
 | What renders a cast's cues for the real-PCM channels? | resolved | `capture` | The engine itself: the retail comparison corpus's seed of the battle state, re-run with its director pulled once a tick and recorded from the gate (`LEGAIA_DIAG_AUDIO_WAV`), mixed into the track render at a fitted sub-vsync offset: the [`cast` channel](../../subsystems/audio.md#the-cast-channel). Its first run found Call Wave playing Big Wave's voice and folding as a hit on Zeto; `zeto_call_wave_mid_cast` reads `0.9992` at `+0.01` dB over the cast. |
 | What does PROT 0944's voice follow? | resolved | `disassembly` | The roll arm `0` latches: `FUN_801DD6B4(0x38E, ..)` at `0x801F6AD8`, then `0x1AD` when the victim's HP is below it and `0x1AB` otherwise (`sltu` at `0x801F6B2C`), so Cort announces a kill. The hit lands on arm `3`. No retail recording of the cast has been scored. |
@@ -453,3 +457,54 @@ once, `4..5` dB under the recording. It now runs the show loop
 land a few vsyncs later than retail's because the module's arms run on the port's frame step
 `4` where retail's alternates `3` and `4`. See
 [the cast module page](../../subsystems/cast-module.md#prot-0908-zenoir).
+
+### No script changes the BGM word inside a swap's read
+
+The swap poller's stage 6 latches the requested index of its own call
+(`0x800247B4..0x800247C4`), so a sub-op `1` that changes the word after stage 2's
+read plays the old score and reports the new one loaded, where the port starts
+the newer word. Whether a script reaches that window is a property of the disc's
+bytecode. `scene-formats/tests/bgm_swap_word_census_disc.rs` walks every scene MAN
+record from each sub-op `1` along every control-flow path (both arms of each
+conditional, the picker's table) and adds up the explicit waits, `WAIT_FRAMES`
+targets and one per yield, at one vsync a frame, the shortest a frame can be. Ops
+that block on other state only lengthen a path, so the sum is a lower bound.
+
+Of 201 sites in 81 scenes, 71 reach another word with no wait between: all in a
+scene's entry record, where both stores run in one VM frame, before the poller's
+next call, and stage 2 reads the last one. None reaches a different word a frame
+or more on inside the `66`-vsync read (`autorun_bgm_swap_latency.lua`: stage 6 at
+`+66` / `+67`). Sub-op `9` re-runs its own PC while requested and loaded differ
+(`0x801E0238`), so it waits the walk out. Grade `disassembly` (of the disc's
+scripts). The walk cannot see two records each starting a track as separate
+contexts; no such pair is known.
+
+### What clears the drive word before a clip ends
+
+`0x8007BC20` reads `2` while a one-shot plays: the starter `FUN_8003D53C` stores it
+(`0x8003D65C`) and the read callback's stop `FUN_8003EE00` zeroes it once the read
+passes the clip's end sector (`0x8003DA90`, `0x8003EE2C`). The other way to zero it
+is `FUN_8003ED04`, which mutes the CD input (`FUN_8003EE7C(0)`), zeroes the word
+(`0x8003ED28`) and pauses the stream: the clip stops. Its callers are the starter
+itself, the seek `FUN_8003EAE4` (`0x8003EB18`), the stream queue `FUN_8003DDA0`
+(`0x8003DE28`), the loaders `FUN_8003E104` (`0x8003E234`) and `FUN_8003E800`
+(`0x8003E850`), the mode resets `FUN_80015E90` / `FUN_80017714`, the debug menu and
+PROT 0969.
+
+In battle none of them lands on a sounding clip. The seek-ahead selector
+`FUN_8004DA00` runs only while the word is `0` (`bne` at `0x8004DA14`). A summon
+module seeks on an arm ahead of its head cue. The side-band applier `FUN_801F12D0`,
+the battle's one stream loader, opens with `slti v0,v0,0x2` on the word
+(`0x801F12E4`): while a clip sounds it stores stage `1` and returns, so its read
+starts over from the base slot once the clip ends; its caller `FUN_801F17F8` runs it
+only while the stage is up (`0x801F180C..0x801F181C`).
+
+A PCSX-Redux Theeder cast (spell `0x82` from `party_basic_attack_vs_gobu_gobu`,
+`cast-sequence.py --watch 0x8007BC20`) shows the word's life on that drive: the
+selector's seeks (`0x8003EB78` then `0x8004DBA8`, vsyncs `278` and `428`), the
+module's arm-1 seek (`0x801F6C5C`, `433`), the voice (`0x8003D65C`, `553`), and the
+callback's stop (`0x8003EE2C`, `1386`): `833` vsyncs for the clip's `dur` of `807`,
+with no store between. Grade `disassembly` + `capture`. Port:
+`AudioState::battle_xa_busy_frames` (the word, `dur` vsyncs), the applier hold in
+`World::tick_sideband_token`.
+

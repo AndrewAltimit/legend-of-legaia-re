@@ -993,6 +993,10 @@ number is `2 * matched / (retail cues + engine cues)`, once each id's pairs are 
 in time order (repeats play in order, and the nearest-free pick can cross them); `id score` is the same
 over the id multisets alone, whatever the time.
 
+`--calc-clock` (retail only) writes `calc.csv`: every entry of the libsnd calc `FUN_80062F98` and every
+KON write `FUN_8006B854(1, mask)` with the CPU cycle, the action state and the module phase, so a calc
+skipped or doubled across a cast's blocking arms reads as a cycle gap of `0` or `2` vsyncs.
+
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
 per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
 

@@ -78,9 +78,11 @@ pub struct AudioState {
     /// the melee grunt's `< 2` gate (`0x801EEAA8..0x801EEAB8`). It is **not**
     /// the funnel's `FUN_8003DE7C(1)` poll, which asks for a data stream read
     /// (`World::battle_stream_read_in_flight`): a voice request while a clip
-    /// sounds replaces it. Counted down once per battle tick. Not modelled:
-    /// the word's other clears, a seek (`FUN_8003EAE4` -> `FUN_8003ED04`) or
-    /// a stream-queue load (`FUN_8003DDA0`) ahead of the clip's end.
+    /// sounds replaces it. Counted down once per battle tick. The word's
+    /// other clear, the stop `FUN_8003ED04` a seek or a stream-queue load
+    /// issues, never lands on a sounding battle clip: the selector seeks only
+    /// at `0`, a module seeks ahead of its cue, and the side-band applier
+    /// holds while the word is `2` (`World::tick_sideband_token`).
     pub battle_xa_busy_frames: u16,
     /// Whether the clip [`Self::battle_xa_busy_frames`] counts down loads
     /// the battle frame (`frame_clock::XA_STREAM_FRAME_COST`). A clip the
