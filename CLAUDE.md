@@ -39,7 +39,7 @@ The committed docs are organised topic-first under `docs/` - public-facing techn
 - [`docs/overview.md`](docs/overview.md) - elevator pitch + how the layers stack from disc to sub-asset.
 - [`docs/decomp-recomp-reimplementation.md`](docs/decomp-recomp-reimplementation.md) - the three routes as a case study: this engine and a static recomp of the same game, built over the same months.
 - [`docs/porting-by-reimplementation.md`](docs/porting-by-reimplementation.md) - the general method: reimplementation beside decompilation and static recompilation, the seven steps with their gates, the feedback loops, the traps.
-- [`docs/guides/`](docs/guides/getting-started.md) - task-oriented user guides: getting-started, extracting-assets, playing-and-viewing, modding-and-translation, translating, making-expansion-packs.
+- `docs/guides/` - task-oriented user guides: [getting-started](docs/guides/getting-started.md), [extracting-assets](docs/guides/extracting-assets.md), [playing-and-viewing](docs/guides/playing-and-viewing.md), [modding-and-translation](docs/guides/modding-and-translation.md), [translating](docs/guides/translating.md), [making-expansion-packs](docs/guides/making-expansion-packs.md). The site's guides section carries these plus site-only guides (desktop apps, playing online, expansion packs, VRChat world).
 
 ### Formats - [`docs/formats/`](docs/formats/overview.md)
 
