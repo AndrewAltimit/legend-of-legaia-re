@@ -1726,9 +1726,28 @@ reverse-engineering questions, so they are not on
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
-| packet colour through the near plane | Open. On the Baka duel's intro sweep (`baka`, ticks 195..235) the additive floor fan crosses the near plane, and its colour reads 4 to 8 levels darker on the page over the frame's bottom 25 rows: `2.8%` of a retail-mode frame, `1.7%` enhanced, `0.07%` once the camera settles, with the trace agreeing throughout. The window interpolates a packet colour screen-linearly over the clipped polygon (`@interpolate(linear)`); the page recovers it from varyings premultiplied by clip `w`, and the two agree only while every vertex is in front of the eye. Which of them retail's unclipped projection matches is not measured. `host-pair.mjs --scene baka --mode retail --from 195 --ticks 230 --every 5` shows it. |
+| packet colour through the near plane | Open. On the Baka duel's intro sweep (`baka`, ticks 195..235) the additive floor fan's colour reads 4 to 8 levels darker on the page over the frame's bottom 25 rows: `2.8%` of a retail-mode frame, `1.7%` enhanced, `0.07%` once the camera settles, with the trace agreeing throughout. The window interpolates a packet colour screen-linearly (`@interpolate(linear)`); the page recovers it from varyings premultiplied by clip `w`. Retail's side is measured ([below](#the-baka-floor-fan-against-retail)) and does not decide between them. `host-pair.mjs --scene baka --mode retail --from 195 --ticks 230 --every 5` shows it. |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
+
+### The Baka floor fan against retail
+
+Retail never takes the glow fan through the eye on the intro sweep. RAM dumps of a
+PCSX-Redux film played on from `minigame_baka_fighter_retail_attract` (`START`, then
+`Cross` every 20 vsyncs) at vsyncs `198`, `204`, `210` and `216` hold the glow as its
+`24` `POLY_GT4`s (CLUT `0x7F84`, page `0x3F`), centre near `(170, 220)` and the near
+rim below the screen at `y` up to `442`, none at a saturated coordinate. The camera
+globals are the spin's: yaw `2808`, `3192`, `3576` (`64` a vsync) and the eye trio
+`(200, 1928, 9184)` climbing `4` and `32` a vsync, so the rim's nearest corner stays
+hundreds of units in front of the eye. Retail's draw there is the unclipped quad under
+screen-linear Gouraud, which both hosts' formulas give while every corner is in front.
+
+On the frames whose pose matches retail's (`221..241` against retail's `213..234`),
+both hosts read about `25` levels brighter than retail over the bottom rows, and the
+page `1` to `2` levels nearer it: that difference is the pose and the fan's level, not
+the clip. The same frames show a second gap: retail draws no round HUD while the spin
+turns (none at vsync `225`, the bars up by `234`), where the port's bars are up mid-spin
+(tick `201` on).
 
 ### The minigames page has no `World`
 
