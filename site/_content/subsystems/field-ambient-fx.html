@@ -123,6 +123,7 @@
 <section class="doc-section" id="morphs">
   <h2>Strips and vertex morphs</h2>
   <p>The bundle&rsquo;s type-7 slot is a vertex-delta pack. A morph lane holds an envelope per actor, and the renderer substitutes the blended vertices at draw time - the source mesh is never rewritten. Move-VM op <code>0x0A</code> drives the lanes from the ambient tree; a few scenes install theirs from a placed actor instead.</p>
+  <p>The substitution belongs to the drawn part, not to the mesh: the model draw tests the part&rsquo;s own flag word before each group. Mt. Rikuroa&rsquo;s rockfall rocks depend on it. Each rock&rsquo;s mesh at rest is a stalactite in the cave roof; it falls, and its lanes lay it across the path, where it stays until the Golem fight&rsquo;s collapse flag (<code>0x300</code>) halts it. Drawn from its rest mesh, the rock hung unseen in the roof and the player hopped over a bare path. Both hosts draw each part&rsquo;s own morphed vertices.</p>
 </section>
 
 <section class="doc-section" id="fog">

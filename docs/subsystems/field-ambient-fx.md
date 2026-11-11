@@ -546,6 +546,35 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+The substitution belongs to the part's own draw, not to every mesh of its
+pack slot: `FUN_8001ADA4` copies the drawn actor's `+0x10` to the scratchpad
+(`0x8001ADF4..0x8001ADFC`) and tests that copy per group. So a mesh-bearing
+stager part draws its own staged vertices (`World::part_morphed_tmd`, which
+both hosts' field-FX passes take), whatever the placed objects sharing its
+slot draw.
+
+**rikuroa's rockfall rocks** are the case where that is the whole picture.
+The two rockfall records install effect trees (`P2[44]` and `P2[45]`, both
+`34 30 0D`) whose mesh parts are stager records `54` / `55` (`model_sel` `63`
+/ `64`, pack slots `58` / `59`). Each mesh at rest is a stalactite hanging
+150 to 650 units above the part's origin. The record seats the part `0x400`
+above its spawner, lets it fall for 63 vsyncs, then op `0x0A` arms lanes `9..=0xC` / `0xD..=0x12`, and
+the envelope ramps them to full weight, which lays each rock across the cave
+path: rows `119..120` for the first, rows `109..110` for the second, under
+the walls each record paints. The part then loops on `X_IF_NOT_FLAG 0x300`
+and stays drawn until the Golem record `P2[47]` raises `0x300` ("the cave is
+about to collapse"). A scene entered with `0x281` / `0x282` set reseats both
+rocks from the entry tree (records `69` / `70`: the same lanes, the same
+loop). Drawn from the rest mesh, the rock hung invisibly in the roof while
+Terra said "That was close", and the player hopped over a bare path. A
+retail film of the second rockfall (poked seat from
+`rikuroa_field_card_walk` with `0x282` and `0x300` cleared) shows the rock on
+the path after the beat. A card-loaded state holding `0x300` keeps both
+parts in the pool with `+0x10` bit `0x8` up, and a film walked over the
+rows from it shows the path bare. Pinned by
+`engine-session/tests/rikuroa_rockfall_rock_disc.rs` and
+`web-play/tests/rikuroa_rockfall_rock_page.rs`.
+
 **Field actors arm the same lanes through field-VM op `0x4B`**
 (`0x801E0820..0x801E08C0` in `FUN_801DE840`): `[4B count base (up:u16
 down:u16) x count]` writes sub-entry `base + i` to `+0xB0 + i`, the two
