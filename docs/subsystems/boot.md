@@ -1648,9 +1648,12 @@ extents, with its blend mode set by `FUN_80059010`. The sequencer's tail
 
 **Port.** [`engine-title::publisher_logos`](../../crates/engine-title/src/publisher_logos.rs):
 `LOGO_QUADS` holds the quad table, `RETAIL_SEQUENCE` the order and frame counts,
-`LEVEL_FULL` the `0x80` neutral point. One deviation: state 10 is modelled as a
+`LEVEL_FULL` the `0x80` neutral point, and each step's `before` and `TAIL_FRAMES`
+the settles' black frames, so the pass lasts as many frames as retail's, from
+state 0 to the frame the done bit rises. One deviation: state 10 is modelled as a
 fade-down of the logo over the same 65 frames rather than compositing the white
-blend quad. Both hosts play the pass - the native `play-window --boot-ui` chain
+blend quad. The retail kernel differential runs the sequencer frame by frame
+against the session. Both hosts play the pass - the native `play-window --boot-ui` chain
 and the browser play page, which opens its logo stage ahead of the title card -
 through the shared quad builder
 `legaia_engine_ui::boot_logos::publisher_logo_sprite_draws`.
