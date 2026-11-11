@@ -1360,6 +1360,23 @@ row to its page control through an exhaustive match, so a new row cannot land
 without an answer for the page, and fails a launch-switch row that leaves the
 shared set untouched.
 
+### The Look and feel preset
+
+The launcher's first row, the window's `F12` panel's first row and the page's
+*Look and feel* selector are one switch over the rows above, read back as
+Enhanced, Original or Custom. All three answer through
+`legaia_engine_session::look_and_feel`: which rows the preset speaks for
+(every stored switch but `retail`, and the options `OptionsState::pin_retail`
+pins plus the time of day; never the window, the sound levels or the menu
+colours), what Original raises (Retail-faithful plus PSX rasterisation, the
+rows under it untouched) and what Enhanced resets. The page's selector reads
+the stored options, so a Retail-faithful pin reads Original rather than a
+Custom mix. The page's *Reset to defaults* button stays narrower: it resets
+the Visual enhancements panel alone. Pinned by
+`launcher::tests::preset_is_the_shared_look_and_feel` (the kernel's rows are
+exactly `OptionRow::in_preset`) and
+`play_toggles::tests::look_and_feel_steps_as_the_native_row`.
+
 ## The host pair run
 
 [`scripts/ci/host-pair.mjs`](../../scripts/ci/host-pair.mjs) runs the same scene
@@ -1712,7 +1729,7 @@ reverse-engineering questions, so they are not on
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
 | default key layout | Two named layouts in the engine, on purpose: `Mapping::default` natively (`X` Square, `A` Triangle, `S` Circle, `W` R1) and `Mapping::web_default` on the page (`WASD` walks, `X` Circle, `C` Triangle, `V` Square, `E` R1). A map holds one button per key, so the desktop layout and `WASD` walking cannot share a table; Key Config edits either. |
 | output level | The window's master volume defaults to `25%` of the full mix (`DESKTOP_MASTER_VOLUME_DEFAULT`); the page's `1x` slider is `0.125` of it (`WEB_MASTER_TRIM` times `PLAY_PAGE_GAIN_SCALE`), half the window's default, and reaches `10x`. The site's pages share a level the desktop has no reason to take. |
-| look-and-feel preset | The launcher's Look and feel row sets every row at once: Original is retail-faithful **and** the PlayStation pixel look. The page has the two as separate boxes (Retail-faithful, PSX rasterisation) and a Reset to defaults for Enhanced, so its Retail-faithful alone matches the launcher's Original game only row, not its Original preset. Every row the preset moves has a page box (`every_launcher_row_has_a_play_page_twin`). |
+| look-and-feel preset | Closed: the page's *Look and feel* selector is the launcher's row over the same kernel ([above](#the-look-and-feel-preset)). The page keeps Retail-faithful and PSX rasterisation as boxes too, which the window's `F12` panel also carries live (*Original game only*, *PlayStation pixel look*). |
 | settings panel | Native only by choice: `F12` or `Select` + `Start` is a settings page inside the frame because a window has nowhere else; the page's panel sits beside the canvas. |
 | debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
 | offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
@@ -2101,6 +2118,8 @@ and the page's `menu_parity` / `title_backdrop_parity` Continue runs.
 | coin counter (op `0x49` sub-op 6) | `field_submode_screen::coin_counter_lines` through `engine-ui::text_lines::pen_line_draws_for`: the field overlay's entry panel `FUN_801E6F70` (record 10) and confirm panel (record 11) |
 | place-name banner | `engine-scene-host::place_name_banner` from `SceneHost::load_scene` (a text balloon, not the slot-`0x2E` actor whose script `0x801F32B4` only closes panels) |
 | minigame purses in a save | `World::save_full` / `load_full`, `LGSF` block `LGX7` ([`save-screen.md`](../subsystems/save-screen.md#the-minigame-purses-are-live-state-words-too)) |
+| the port's own save words across hosts | the run rules (`LGXF`), a pack's `LXP1` block and dance free play's song counter (SC `+0x328`) ride the same `save_full` / `load_full` and card kernels on both hosts, so a card or `.lgsf` either host writes loads on the other with all three (`cards::tests::the_ports_own_save_words_cross_between_the_hosts`; the disc-gated `cross_host` test adds the scene entries) |
+| save persistence on the page | `localStorage`, not IndexedDB: the port-1 card under `legaia.card.v1.browser`, up to twelve `.lgsf` sessions under the save bar's keys (`site/js/legaia-saves.js`); a refused store reads "Unable to save." in the save beat (`card_store_handshake`) |
 
 Shop windows 35 and 39 are the tier-1 denominator case
 ([above](#the-tiers-denominator-is-engine-ui-and-a-screen-can-live-outside-it)).
@@ -2454,7 +2473,7 @@ output, and lay SPU RAM out through `legaia_engine_audio::spu_layout`.
 | movies and the score | `legaia_engine_system::movie::movie_audio::MovieScore` ([`audio.md`](../subsystems/audio.md#movies-and-the-score)) |
 | pause latch | the output gate (`AudioOut::sequencer_paused`); the script's bit is mirrored as `AudioState::bgm_script_paused` |
 | direct entry restage | `BootSession::restage_audio_for_direct_entry` |
-| field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage` |
+| field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage`; the scripted-scene voice line is listed at its program's seek-ahead (`FUN_80019794`), at least `0x28` vsyncs before the one-shot (`World::tick_scene_programs`) |
 | battle XA prestage | `World::drain_battle_xa_prestage` -> `AudioDirector::prestage_xa_clip` (inside `route_battle_audio`) |
 | CD-XA clip staging | `AudioDirector::play_xa_clip`: a synchronous `XaChannelSource`, or a deferred `XaStageRequest` the host serves through `install_xa_span` |
 | one-shot voices | `VoiceAttr::from_cue_words`, `key_on_voice_attr` |

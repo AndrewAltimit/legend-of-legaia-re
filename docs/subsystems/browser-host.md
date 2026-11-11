@@ -216,7 +216,9 @@ hand-off runs, as a page with no disc does.
 row per frame, oldest first. A line whose row was served plays on the call that raises it.
 A line nothing listed is deferred: it plays when its row is served, a read and at least
 a frame after the request. Neither path reaches the simulation, which never reads the XA
-lane back.
+lane back. The listed lines are a scene's op-`0x36` clips and its minigame door's
+announcer lines at scene load, a round's at battle entry, and the scripted-scene voice
+line at its program's seek-ahead, the vsyncs before that program starts it.
 
 **A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `psx_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds, and `SYSTEM.CNF` for another region's disc, which the desktop programs also refuse.
 
@@ -818,6 +820,7 @@ gate:
 | Seru-trade shop screens | Closed. Config + name table install at `load_disc`, and both hosts draw the trade screens through the one shared composition (`legaia_engine_screens`). |
 | Options screen | Closed. The page persists `OptionsState` to `localStorage` (`legaia.options`, `runtime/options.rs`) through the same serde impl the native window writes to `legaia-options.toml`, and both save `OptionsPins::persistable` on an Options close. |
 | Remembered launch switches | Closed. PSX rasterisation, retail-faithful, the entry pulse, smart monsters and the gameplay tweaks persist to `localStorage` (`legaia.switches`, `play_toggles`) as `PersistedSwitches`, the type the native launcher flattens into its settings file ([`host-drift.md`](../tooling/host-drift.md#remembered-between-runs)). |
+| Look and feel preset | Closed. The page's *Look and feel* selector is the launcher's and the `F12` panel's first row over one kernel (`legaia_engine_session::look_and_feel`): Original is Retail-faithful plus PSX rasterisation, Enhanced resets every row the preset speaks for ([`host-drift.md`](../tooling/host-drift.md#the-look-and-feel-preset)). |
 | Live launch switches | Closed. The page's boxes act mid-game; the window's `F12` panel carries the same launcher rows live (*PlayStation pixel look*, entry pulse, action movement, smarter monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning, *Original game only*) over the same `SessionSwitches::apply` and option pins, and writes each change to `launcher.toml` as the page writes `legaia.switches`. |
 | Scene picker | Closed. The page's *Scenes* list and the window's `F12` *Scenes* page offer the same rows (the scene-name table's towns, field areas and overworlds) and enter through the same picker rules (`World::stage_picker_entry`, `SceneHost::arm_picker_entry_seat`) and scene entry. The page's list also starts a game from the title; the window's page refuses under a front-end screen, where a New Game or Continue is the way in. |
 | Debug tools | Open, by choice. The page's *Battle tools* (party, force a battle, learn a spell, story flags, GameShark codes) are launch switches on the window (`--party`, `--battle`, `--learn-spell`, `--set-flag`, `--cheat-file`) with no in-game surface. |
