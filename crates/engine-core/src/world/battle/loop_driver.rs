@@ -962,14 +962,30 @@ impl World {
     /// [`Self::live_battle_tick`]): a fresh seed arms the read time off its
     /// base `ctx[+0x277]`, and the byte drops once that has run out.
     ///
-    /// REF: FUN_801F12D0 - a timing model of its stage byte, not its code:
-    /// retail drops `ctx[+0x276]` as each slot's read and `LoadImage` uploads
+    /// A timing model of `FUN_801F12D0`'s stage byte for its reads, not their
+    /// code: retail drops `ctx[+0x276]` as each slot's read and `LoadImage` uploads
     /// finish; this counts down a measured read cost per slot
     /// ([`legaia_engine_battle_vm::battle_action::SIDEBAND_SLOT_READ_VSYNCS`]).
     /// The slot count it reads is the ported slice
     /// (`battle_action::sideband_slot_count`).
+    ///
+    /// The applier opens on the drive word: while a CD-XA one-shot sounds
+    /// (`_DAT_8007BC20 >= 2`, `slti v0,v0,0x2` / `bne` at `0x801F12E4`) it
+    /// stores stage `1` and returns (`0x801F12F0..0x801F1300`), so a read in
+    /// flight restarts from its base slot once the clip ends and no stream
+    /// load starts over a sounding clip. Its caller `FUN_801F17F8` runs it only
+    /// while the stage is up (`0x801F180C..0x801F181C`), so a clip outside a
+    /// read raises nothing. The port's stand-in re-seeds its read time the
+    /// same way ([`crate::world::AudioState::battle_xa_busy_frames`] is the
+    /// word).
+    // PORT: FUN_801F12D0 (`0x801F12D0..0x801F1300`, the drive-word hold)
+    // REF: FUN_801F17F8 (the caller's stage gate)
     fn tick_sideband_token(&mut self) {
         if self.battle_ctx.menu_open == 0 {
+            self.casting.sideband_read_left = None;
+            return;
+        }
+        if self.audio.battle_xa_busy_frames != 0 {
             self.casting.sideband_read_left = None;
             return;
         }
@@ -1222,6 +1238,40 @@ mod power_byte_tests {
 
 #[cfg(test)]
 mod melee_cue_tests;
+
+#[cfg(test)]
+mod sideband_hold_tests {
+    use crate::world::World;
+
+    /// `FUN_801F12D0`'s head: a sounding one-shot (`_DAT_8007BC20 >= 2`)
+    /// puts the stage back to `1`, so the read starts over once the clip ends.
+    #[test]
+    fn a_side_band_read_restarts_behind_a_sounding_clip() {
+        let mut w = World::new();
+        w.battle_ctx.menu_open = 1;
+        w.casting.sideband_read_left = Some(3);
+        w.audio.battle_xa_busy_frames = 10;
+        w.tick_sideband_token();
+        assert_eq!(w.battle_ctx.menu_open, 1, "the stage stays up");
+        assert_eq!(w.casting.sideband_read_left, None, "the read restarts");
+        w.audio.battle_xa_busy_frames = 0;
+        w.tick_sideband_token();
+        let seeded = w.casting.sideband_read_left.expect("re-seeded");
+        assert!(seeded > 3, "the whole read again: {seeded}");
+    }
+
+    /// With no clip sounding the stand-in counts down as before.
+    #[test]
+    fn a_side_band_read_runs_with_the_drive_word_clear() {
+        let mut w = World::new();
+        w.battle_ctx.menu_open = 1;
+        w.casting.sideband_read_left = Some(2);
+        w.tick_sideband_token();
+        assert_eq!(w.casting.sideband_read_left, Some(1));
+        w.tick_sideband_token();
+        assert_eq!(w.battle_ctx.menu_open, 0);
+    }
+}
 
 #[cfg(test)]
 mod melee_inputs_tests;
