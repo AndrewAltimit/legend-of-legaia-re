@@ -453,9 +453,14 @@ around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a 
 which with `L1` and `R1` also held stays the original game's soft reset. The
 game holds still under it, and the field party readout, which the panel's
 plate covers, is not drawn until it closes. Its first page, **Settings**, lists what the game
-reads live: every launcher row but *Look and feel* and the window size, in the
-launcher's order and words - the display and enhancement rows, the play rows,
-the gameplay tweaks, the battle tuning, the volumes and *Original game only*.
+reads live: every launcher row but the window size, in the launcher's order
+and words - *Look and feel* first, then the display and enhancement rows, the
+play rows, the gameplay tweaks, the battle tuning, the volumes and *Original
+game only*. The panel opens on *Look and feel*, so one Right press plays the
+original game (*Original game only* with the PlayStation pixel look) and the
+next gives the mix back; `Delete` on it puts every row it speaks for back on
+*Enhanced*. A row with a window key letters the key after its label (*Ground
+fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
 tuning*). Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
 `Delete` puts it back on its default as on the launcher, with the row's help
