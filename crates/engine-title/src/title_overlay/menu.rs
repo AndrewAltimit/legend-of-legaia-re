@@ -110,10 +110,13 @@ impl TitleMenuState {
     ///    [`TITLE_SFX_CURSOR_MOVE`] (`0x801DDB9C..0x801DDBE0`).
     /// 3. Wrap the counter and store it back (`0x801DDC00`).
     /// 4. `Start | L1 | Cross` confirms the wrapped row, cues
-    ///    [`TITLE_SFX_CONFIRM`], and stashes it (`0x801DDC04..0x801DDC70`).
-    /// 5. Any held pad bit re-arms the countdown (`0x801DDC74`), then the
-    ///    countdown drops by the frame scalar and fires on underflow
-    ///    (`0x801DDCB0..0x801DDCF4`).
+    ///    [`TITLE_SFX_CONFIRM`], and stashes it (`0x801DDC04..0x801DDC70`);
+    ///    row 0 returns there, row 1 runs on.
+    /// 5. Any held pad bit re-arms the countdown (`0x801DDC74`) - inside
+    ///    the input block, so not while frozen - then the countdown drops by
+    ///    the frame scalar and fires on underflow (`0x801DDCB0..0x801DDCF4`).
+    /// 6. The tick's shared tail re-cues: L1 / Cross the confirm, a cursor
+    ///    press with no face or shoulder button held the move, frozen or not.
     ///
     /// `pad_edge` is the just-pressed word the cursor and confirm read;
     /// `pad_held` is the held word retail re-arms the countdown from
@@ -154,11 +157,29 @@ impl TitleMenuState {
                 self.chosen_row = row;
                 self.sfx = Some(TITLE_SFX_CONFIRM);
                 events.push(TitleMenuEvent::Confirmed { row });
-                return events;
+                // Row 0 leaves the tick at once (`j 0x801E0274`); row 1
+                // stashes its pick and runs on through the countdown.
+                if row == 0 {
+                    return events;
+                }
+            }
+            // The re-arm sits inside the input block: once frozen, holding a
+            // button no longer holds the attract movie off.
+            if pad_held != 0 {
+                self.countdown = COUNTDOWN_RESET_VALUE as i32;
             }
         }
-        if pad_held != 0 {
-            self.countdown = COUNTDOWN_RESET_VALUE as i32;
+        // The tick's shared tail (`0x801DFFE8..0x801E007C`), which every
+        // frame that did not leave through row 0 runs, frozen or not: an L1 /
+        // Cross press cues the confirm, then - unless a face or shoulder
+        // button is held - a cursor press cues the move over it.
+        if pad_edge & PADMASK_CONFIRM_L1_CROSS != 0 {
+            self.sfx = Some(TITLE_SFX_CONFIRM);
+        }
+        if pad_held & PADMASK_ANY_FACE_OR_L == 0
+            && pad_edge & (PADMASK_CURSOR_NEXT | PADMASK_CURSOR_PREV) != 0
+        {
+            self.sfx = Some(TITLE_SFX_CURSOR_MOVE);
         }
         self.countdown -= frame_scalar as i32;
         if self.countdown < 0 {

@@ -596,6 +596,12 @@ impl World {
         self.locomotion.pad_octant = 0;
     }
 
+    /// The pad-rotation octant `gp+0x2D8` (`0x8007B5F0`) a scene's script
+    /// authors with field-VM op `4C 2x`.
+    pub fn pad_octant(&self) -> u32 {
+        self.locomotion.pad_octant
+    }
+
     /// Re-spawn any scripted-scene program a scene change interrupted.
     ///
     /// PORT: FUN_8003AEB0 (`0x8003BAF0..0x8003BB3C`), driving
@@ -831,7 +837,7 @@ mod tests {
             .expect("a driver actor was spawned");
         // Second load with the driver still live: retail returns 0 and spawns
         // nothing, but the context reset happens either way.
-        w.field_vm.submode_context = [0; 10];
+        w.field_vm.submode_context = Default::default();
         assert_eq!(w.man_load_actor_reset(), SubmodeOpen::AlreadyOpen);
         assert_eq!(
             w.find_actor_by_handler(ActorHandler::SubmodeDriver),

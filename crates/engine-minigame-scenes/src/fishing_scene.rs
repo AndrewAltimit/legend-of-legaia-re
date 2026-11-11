@@ -469,11 +469,19 @@ pub fn sky_quads(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> [SkyQua
     } else {
         (SKY_OFX as i32, SKY_OFY as i32)
     };
-    let focus_stored = -i32::from(lead_x);
-    let biased = if focus_stored < 0 {
-        focus_stored + 0x3F
+    sky_strip(sx, sy, -i32::from(lead_x), yaw_units)
+}
+
+/// The six strip quads for a horizon point projected to `(sx, sy)`: the
+/// integer half of [`sky_quads`], from the `FUN_8003D368` call on
+/// (`0x801D2588..0x801D2688`). `focus_x_stored` is the camera's stored focus
+/// word `_DAT_80089118`, `yaw_units` the saved yaw global `_DAT_8007B792`.
+// PORT: FUN_801d24ec
+pub fn sky_strip(sx: i32, sy: i32, focus_x_stored: i32, yaw_units: i16) -> [SkyQuad; 6] {
+    let biased = if focus_x_stored < 0 {
+        focus_x_stored + 0x3F
     } else {
-        focus_stored
+        focus_x_stored
     };
     let start = ((sx + (biased >> 6) + i32::from(yaw_units)) & 0xFF) - 0xFF;
     let (top, bottom) = ((sy - 0x74) as f32, (sy + 0x8C) as f32);

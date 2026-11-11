@@ -168,6 +168,11 @@ pub struct FxPartModel {
     /// (`0x801F989C`, word `0xC1000000`, additive) are one: both-sided, each
     /// added its far wall over its near one and drew white, not pink.
     pub single_sided: bool,
+    /// The part's primitives link at their farthest corner
+    /// (`ColourWord::links_at_far_corner`): in PSX mode a host draws it with
+    /// the far-corner order word (`DRAW_ORDER_FAR_CORNER`, the page's
+    /// `meanDepth` `2`).
+    pub far_corner: bool,
 }
 
 /// A node that carries its own per-frame mesh (a draw-kind-4 ribbon or
@@ -187,6 +192,9 @@ pub struct FxMeshModel {
     /// camera-facing sheets that wind away from the eye. Clear on the
     /// overworld and the minigame venues, which draw both sides.
     pub single_sided: bool,
+    /// The node's primitives link at their farthest corner
+    /// ([`legaia_engine_effects::effect_ribbon::RibbonDraw::far_corner`]).
+    pub far_corner: bool,
 }
 
 /// Drop the triangles of `mesh` that retail's `NCLIP` winding test rejects
@@ -333,13 +341,11 @@ pub fn effect_model_draws(
                 let model = node(draw.flags_52, draw.world_pos, draw.rot);
                 FxPartModel {
                     model: match part_cam.filter(|_| draw.colour.split_quads) {
-                        Some(cam) => mat4_mul(
-                            &mat4_translation(cam.tessellated_link_offset(battle)),
-                            &model,
-                        ),
+                        Some(cam) => mat4_mul(&cam.tessellated_link_nearer(battle), &model),
                         None => model,
                     },
                     single_sided: per_word_cull && !draw.colour.double_sided,
+                    far_corner: draw.colour.links_at_far_corner(),
                     draw,
                 }
             })
@@ -357,13 +363,11 @@ pub fn effect_model_draws(
             }
             FxMeshModel {
                 model: match part_cam.filter(|_| rb.tessellated) {
-                    Some(cam) => mat4_mul(
-                        &mat4_translation(cam.tessellated_link_offset(battle)),
-                        &model,
-                    ),
+                    Some(cam) => mat4_mul(&cam.tessellated_link_nearer(battle), &model),
                     None => model,
                 },
                 single_sided: per_word_cull && rb.single_sided,
+                far_corner: rb.far_corner,
                 mesh: rb.mesh,
             }
         })
@@ -379,6 +383,7 @@ pub fn effect_model_draws(
                 &model_flip,
             ),
             single_sided: battle && rb.single_sided,
+            far_corner: rb.far_corner,
             mesh: rb.mesh,
         })
         .collect();
@@ -401,6 +406,7 @@ pub fn effect_model_draws(
                 // part's own double-sided bit (`FxFrame::push_draws`); the
                 // play page bakes them, so it drops the back faces itself.
                 single_sided: per_word_cull && !fp.colour.double_sided,
+                far_corner: fp.colour.links_at_far_corner(),
                 draw: fp,
             }
         })

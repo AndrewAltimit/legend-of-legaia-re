@@ -289,6 +289,17 @@ impl Blockers {
             if !c.solid || pass(c) {
                 continue;
             }
+            // A placed object another script has opened since the scene
+            // spawned (its `+0x10 & 3` raised, the collision list's skip)
+            // blocks nothing: `cave01` P2[13] opens the camp's rock (object
+            // 0) at the end of Terra's training.
+            if !c.moving_box
+                && c.anchor
+                    .and_then(|a| w.props.bank.props.get(&a))
+                    .is_some_and(|p| p.collision_exempt())
+            {
+                continue;
+            }
             boxes.push(if c.moving_box {
                 (c.live.0, c.live.1, NPC_HALF)
             } else {
@@ -1198,10 +1209,15 @@ pub(super) fn plan_search(
     // against it, taps Cross (`chitei2` P0[2], the gate at (41, 122) in
     // front of the kind-0 teleport at (41, 124) into the Jette pocket).
     let self_opening = self_opening_doors(session);
+    // A leaf whose touch runs nothing is not opened by the press, over a
+    // teleport or not ([`walk_links::idle_touch_props`]).
+    let idle = walk_links::idle_touch_props(session);
+    let touch_opens = |a: Option<(u8, u8)>| a.is_none_or(|a| !idle.contains(&a));
     let blockers = Blockers::build(w, Some(goal), |c| {
         !c.moving_box
             && (c.anchor.is_some_and(|a| self_opening.contains(&a))
                 || !c.interact
+                    && touch_opens(c.anchor)
                     && (warps.keys().any(|&(tx, tz)| {
                         let (lx, lz) = (tx * 128 - 64, tz * 128 - 64);
                         (lx..lx + 256).contains(&c.center.0) && (lz..lz + 256).contains(&c.center.1)

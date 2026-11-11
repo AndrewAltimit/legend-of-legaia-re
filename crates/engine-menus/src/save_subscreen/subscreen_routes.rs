@@ -7,7 +7,7 @@
 /// stores. Ids the table fills with screens whose behaviour is not yet
 /// pinned are [`SaveSubScreen::Unpinned`], which keeps the space total.
 ///
-/// PORT: FUN_801E4F40 (the table this indexes)
+/// REF: FUN_801E4F40 (the pointer table this indexes; data, not a routine)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveSubScreen {
     /// `0x00` - terminal screen; exits the save flow with code 3.

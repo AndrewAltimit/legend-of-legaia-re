@@ -34,8 +34,7 @@ pub struct ChromeActorDraw {
 /// `mode` selects the shape of the draw. Whatever the mode, the brightness is
 /// the actor's `+0x78` fade level put through the same three-step conditioning
 /// retail applies: values above `0x4000` are treated as zero, the level is
-/// rounded toward zero by `>> 4` (`+0xF` first when positive), then clamped to
-/// `0..=0xFF`.
+/// shifted down by four, then clamped to `0..=0xFF`.
 ///
 /// - mode `0`: widget `id` at the actor position, size from `+0x72`.
 /// - mode `1`: the same draw, then the retire bit once the match is live.
@@ -46,8 +45,9 @@ pub fn chrome_actor_draw(actor: &ChromeActor, mode: i32, match_phase: i32) -> Ch
     if level >= 0x4001 {
         level = 0;
     }
-    let level = if level >= 0 { level + 0xF } else { level } >> 4;
-    let level = level.clamp(0, 0xFF);
+    // `lhu` reads the level unsigned, so the `+0xF` of the round-toward-zero
+    // idiom (`bgez a3` at `0x801D6818`) never runs: a plain `>> 4`.
+    let level = (level >> 4).clamp(0, 0xFF);
 
     match mode {
         0 => ChromeActorDraw {

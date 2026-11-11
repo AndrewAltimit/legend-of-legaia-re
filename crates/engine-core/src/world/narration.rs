@@ -93,7 +93,15 @@ impl World {
         let Some(entry) = self.party.name_entry.as_mut() else {
             return false;
         };
-        entry.step(input);
+        let cue = entry.step(input);
+        match cue {
+            Some(cue) if cue.pushes() => self.push_sfx_cue(cue.id()),
+            Some(cue) => self.replace_last_sfx_cue(cue.id()),
+            None => {}
+        }
+        let Some(entry) = self.party.name_entry.as_mut() else {
+            return false;
+        };
         if entry.state == legaia_engine_menus::name_entry::NameEntryState::Done {
             let slot = entry.char_index;
             let name = entry.committed_name();
@@ -117,6 +125,18 @@ impl World {
         }
     }
 
+    /// Step the naming prompt from this frame's pad **edge** word, with the
+    /// window kernel's cursor auto-repeat this pump raised folded into the
+    /// d-pad (retail's `_DAT_8007BB84`): a held direction re-fires after
+    /// `0x14` vsyncs and then every three. `true` on the committing frame.
+    /// Every host's naming input comes through here.
+    pub fn step_name_entry_pad(&mut self, edge: u16) -> bool {
+        let repeat = edge | self.input.take_menu_repeat();
+        self.step_name_entry(
+            legaia_engine_menus::name_entry::NameEntryInput::from_pad_words(edge, repeat),
+        )
+    }
+
     /// One frame of the modal naming prompt, from a pad **edge** word (bits
     /// newly pressed this frame, the [`Self::set_pad`] layout).
     ///
@@ -137,7 +157,7 @@ impl World {
         if !self.name_entry_active() {
             return false;
         }
-        self.step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.step_name_entry_pad(edge);
         self.name_entry_display_frames(1);
         true
     }
@@ -505,10 +525,14 @@ impl World {
     /// therefore never spawns - `town01` / `town0c`'s `サウンド外` /
     /// `サウンド内` walk-on records (a bare "Greetings." box) among them.
     ///
-    /// The loader's next writes (flag `0x16` cleared, then raised again when
-    /// the boot latch `DAT_8007B71C` is up, `0x8003AEFC..0x8003AF28`) are not
-    /// modelled: the boot latch is not carried, and only the first scene
-    /// load after boot sees it set.
+    /// The loader's next write is to flag `0x16`: cleared
+    /// (`andi a0,v0,0xfd` on byte `0x8008575A`, `0x8003AEFC..0x8003AF0C`), or
+    /// under the boot latch `DAT_8007B71C` raised, with the latch cleared and
+    /// `0x80` added to the entry X word `0x80073EF4`
+    /// (`0x8003AF10..0x8003AF28`). So the flag reads "this is the first scene
+    /// since boot". The port does not carry it: the latch is boot state the
+    /// world has no seat for, a card save taken in such a scene holds the bit
+    /// set, and no scene script on the disc tests or writes flag `0x16`.
     ///
     /// PORT: FUN_8003AEB0 (`0x8003AEEC..0x8003AEF8`)
     pub fn man_load_entry_flags(&mut self) {

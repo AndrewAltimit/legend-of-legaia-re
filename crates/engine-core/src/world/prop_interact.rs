@@ -168,6 +168,24 @@ impl World {
         }
     }
 
+    /// A cross-context write at a placed object's `+0x10` (`B1 <id> <bit>` /
+    /// `B2 <id> <bit>` from another script), carried onto the prop the
+    /// collision layer reads: retail has one word, `FUN_801CF754` /
+    /// `FUN_801CF9F4` skip `flags & 3` actors whoever raised the bits, so a
+    /// door another record opens stops blocking. Only the bits the op moved
+    /// (`before ^ after`) are carried.
+    ///
+    /// REF: FUN_801DE840 (cases 0x31 / 0x32 with the extended prefix), FUN_8003C83C, FUN_801CF754
+    pub(crate) fn poke_object_prop_cflags(&mut self, key: usize, before: u32, after: u32) {
+        let changed = before ^ after;
+        if changed == 0 {
+            return;
+        }
+        if let Some(p) = self.object_prop_mut(key as u16) {
+            p.cflags = (p.cflags & !changed) | (after & changed);
+        }
+    }
+
     /// Carry the object's clip end latch onto its channel's copy of the
     /// control word before a script op runs on that channel. The clip tick
     /// `FUN_800204F8` latches `+0x62 & 0x100` on the actor's one word; the
@@ -1643,6 +1661,64 @@ mod tests {
         assert_eq!(w.props.bank.props[&anchor].world, (2112 + 384, 2496 + 128));
         assert!(!w.field_actor_point_blocked(2240, 2496));
         assert!(w.field_actor_point_blocked(2240 + 384, 2496 + 128));
+    }
+
+    /// Another script's `B1 <object> 00` opens the placed object for the
+    /// collision layer, and its `B2 <object> 00` shuts it again: the word the
+    /// write lands on is the one the collision list reads. `cave01` P2[13]
+    /// opens the camp's rock (object 0) this way at the end of Terra's
+    /// training.
+    #[test]
+    fn another_scripts_class_write_opens_and_shuts_the_object() {
+        let mut w = World::new();
+        let anchor = (8, 89);
+        w.props.bank.props.insert(
+            anchor,
+            PropAnimState {
+                anim: PropAnim::spawned(1, 4, false, 0),
+                program: PropProgram::default(),
+                world: (1088, 11456),
+                collider: (1088, 11456),
+                record: 0,
+                record_body: std::sync::Arc::new(vec![0x00, 0x00, 0x21]),
+                parked_pc: 2,
+                cflags: 0,
+            },
+        );
+        w.props.colliders.push(crate::world::FieldPropCollider {
+            anchor: Some(anchor),
+            center: (1088, 11456),
+            live: (1088, 11456),
+            moving_box: false,
+            interact: false,
+            solid: true,
+        });
+        w.install_object_binds(&[legaia_engine_field::man_field_scripts::ObjectScriptBind {
+            key_tile: anchor,
+            ..legaia_engine_field::man_field_scripts::ObjectScriptBind::at(0, (1088, 11456))
+        }]);
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 0,
+                ctx: FieldCtx {
+                    script_id: 0,
+                    world_x: 1088,
+                    world_z: 11456,
+                    ..FieldCtx::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: true,
+                object_bind: true,
+            });
+        assert!(w.field_actor_point_blocked(1088, 11456));
+        assert!(w.poke_channel_cflag(0xB1, 0x00, 0));
+        assert!(w.props.bank.props[&anchor].collision_exempt());
+        assert!(!w.field_actor_point_blocked(1088, 11456));
+        assert!(w.poke_channel_cflag(0xB2, 0x00, 0));
+        assert!(!w.props.bank.props[&anchor].collision_exempt());
+        assert!(w.field_actor_point_blocked(1088, 11456));
     }
 
     /// A prop whose record parks itself (`23 7F 7F`) leaves the collision

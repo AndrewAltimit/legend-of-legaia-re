@@ -570,6 +570,7 @@ impl SummonScene {
                     // the prim dispatcher's winding test: both sides.
                     single_sided: false,
                     tessellated: false,
+                    far_corner: false,
                     object_effect_kind: s.field_42,
                     object_effect_scale: f32::from(s.field_72) / 4096.0,
                 })

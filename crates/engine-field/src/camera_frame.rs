@@ -314,6 +314,25 @@ pub fn nclip_cull_mode(cutscene_camera_active: bool, mode: SceneMode) -> u32 {
     u32::from(armed) * 2
 }
 
+/// Whether this frame's mesh primitives draw at their ordering-table link
+/// (`Renderer::set_field_prim_order`, the play page's `meanDepth` word) in
+/// PSX mode rather than per pixel. Retail's GPU has no depth buffer: every
+/// mesh primitive of the field, the overworld and a battle goes through the
+/// per-prim leaves of `FUN_80043390`, which link it at its corners' `AVSZ3` /
+/// `AVSZ4` mean in the one ordering table - the battle bodies through
+/// `FUN_80048A08`, the effect parts and draw-kind-4 nodes through
+/// `FUN_8001ADA4`, the backdrop shell as a background actor - so a battle
+/// body and the additive ring around it sort by link, not by pixel. The
+/// minigame venues keep their own rules.
+///
+/// REF: FUN_80043390, FUN_80048A08, FUN_8001ADA4
+pub fn prim_link_order(mode: SceneMode) -> bool {
+    matches!(
+        mode,
+        SceneMode::Field | SceneMode::WorldMap | SceneMode::Battle
+    )
+}
+
 /// The ordering-table shift byte `0x1F8003A4` on the field: `3` in every
 /// catalogued field state.
 pub const FIELD_OT_SHIFT: u32 = 3;
@@ -516,6 +535,17 @@ mod tests {
         };
         assert_eq!(frame_curve_scale(true, &top), 0.0);
         assert_eq!(frame_curve_scale(false, &F::HostDebugOrbit), 0.0);
+    }
+
+    /// Every mode whose meshes go through the per-prim leaves links them in
+    /// the one ordering table, a battle included; the minigame venues and
+    /// the boot screens keep per-pixel depth.
+    #[test]
+    fn battle_draws_link_per_primitive_as_the_field_does() {
+        assert!(prim_link_order(SceneMode::Field));
+        assert!(prim_link_order(SceneMode::WorldMap));
+        assert!(prim_link_order(SceneMode::Battle));
+        assert!(!prim_link_order(SceneMode::Dance));
     }
 
     /// The zoom slides along the pinned axis: the two pins are the endpoints

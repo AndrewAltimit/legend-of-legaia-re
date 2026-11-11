@@ -493,11 +493,11 @@ pub fn shop_list_draws(ctx: &ShopScreenCtx<'_>, list: &ShopListView<'_>) -> Shop
 
     if list.browsing {
         let sel = list.cursor.min(list.rows.len() - 1) - top;
-        hand(
-            ctx,
-            (wx - 6, row0 + sel as i32 * SHOP_LIST_PITCH - 2),
-            &mut out,
-        );
+        // `FUN_8002B994(0, mode, WX - 6, s5 + (cursor - top) * 0xE)` at
+        // `0x80032F84..0x80032FB4`: `s5` is the pen line the kernel then
+        // writes the rows on (`sw s5,0x10(sp)` at `0x800335CC`), so the hand
+        // opens on its row's own line.
+        hand(ctx, (wx - 6, row0 + sel as i32 * SHOP_LIST_PITCH), &mut out);
     }
     // The page triangles: only while the list has the pad, and blink-gated
     // by the kernel on the frame word (`0x80084570 & 0x18`, drawn while
@@ -554,7 +554,9 @@ pub fn shop_picker_draws(ctx: &ShopScreenCtx<'_>, picker: &ShopPickerView<'_>) -
             shop_ink_color(*ink),
         ));
         if picker.cursor == Some(i) {
-            hand(ctx, (wx, y - 2), &mut out);
+            // `FUN_8002B994(0, mode, WX, y)`: the hand's quad opens on the
+            // row's own pen line (`move a3,s0` at `0x801D490C`).
+            hand(ctx, (wx, y), &mut out);
         }
     }
     out

@@ -72,10 +72,10 @@
      * calls): only the cells the camera's tile window reaches are drawn. The
      * engine answers through the same `field_view_window` kernel the native
      * window asks - a per-terrain-draw mask plus a cropped ground index list -
-     * and the page re-reads both only when the rectangle's stamp moves. It
-     * applies at retail framing only (the camera-distance preset at Retail, no
-     * drag / zoom, and never under `F3`), so the default page draws the map
-     * whole. */
+     * and the page re-reads both only when the rectangle's stamp moves. At
+     * the Retail distance preset it walks retail's window, at Far / Farther
+     * (no drag / tilt / zoom) the window widened to the preset; a dragged,
+     * tilted or zoomed camera and `F3` draw the map whole. */
     /* Upload one lit env copy: slot `rec.slot` shaded at the draw rotation
      * `(rec.rx, rec.ry, rec.rz)` under the world's live field light. */
     _uploadLitEnvMesh(rt, rec) {

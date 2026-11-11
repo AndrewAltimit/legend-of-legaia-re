@@ -42,6 +42,54 @@ impl ChoiceFlags {
     }
 }
 
+/// The idle bob of the hands this frame, by the mode the cursor primitive
+/// `FUN_8002B994` is called in. Mode `0` (a marker variant of `0`) is the
+/// static hand: the cursor word's bit `0x1000`, set while the list is not the
+/// one reading the pad. Mode `1` bobs off the hand's own timer, which starts
+/// over when the hand moves (`0x8002BA00..0x8002BA38`); mode `4`, the
+/// all-rows hand, stores the vsync counter `0x80084570` into that timer first
+/// (`0x8002BAB4..0x8002BAD0`), so every such hand bobs in step.
+///
+/// The offset is `0x80073D78[(timer * 2) & 0x38]`, the table
+/// `engine-dialog`'s `cursor_sprite::CURSOR_BOB` carries; the host looks it
+/// up. A host with no per-hand timer hands the clocked offset for both,
+/// which is mode `1` out of phase by at most a cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HandBob {
+    /// Mode `1`'s offset.
+    pub animated: (i32, i32),
+    /// Mode `4`'s offset.
+    pub clocked: (i32, i32),
+}
+
+impl HandBob {
+    /// The offset a marker of `variant` draws at.
+    pub fn offset(self, variant: u8) -> (i32, i32) {
+        match variant {
+            0 => (0, 0),
+            4 => self.clocked,
+            _ => self.animated,
+        }
+    }
+}
+
+/// The hands a cursor word puts on a list of `rows` rows at `pitch` from
+/// `pen`: `(x, y, variant)` in row order, before the bob.
+pub fn list_hand_marks(
+    flags: ChoiceFlags,
+    rows: u32,
+    pen: (i32, i32),
+    pitch: i32,
+) -> Vec<(i32, i32, u8)> {
+    (0..rows)
+        .filter_map(|n| {
+            flags
+                .marker_variant(n)
+                .map(|v| (pen.0, pen.1 + n as i32 * pitch, v))
+        })
+        .collect()
+}
+
 /// One row of a two-row choice group: its label pen and its marker pen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChoiceRow {

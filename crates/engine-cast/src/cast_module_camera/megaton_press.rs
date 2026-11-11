@@ -60,7 +60,7 @@ pub fn megaton_press_jump_height(w: i32) -> i16 {
 /// | `0x0E` (`0x801F7B04`) | victim height `+60d`, TR y `-208d`, TR z `+4s`, focus z `-s`, yaw `-s` | victim clip cursor `0`, height `0`; the threshold word `+ (s << 8)` |
 /// | `0x0F` (`0x801F7E28`) | TR z `+4s`, yaw `-s` | victim shown, caster height `0`; cut pitch `0x100`, yaw `0xC0 - victim`, TR `(0, 0x100, 0x400)` on the victim's body |
 /// | `0x10` (`0x801F804C`) | TR y `+2s`, TR x `-s/2`, TR z `-s` (net `0` when the lead party member is roster `1`) | - |
-/// | `0x11` (`0x801F8118`) | - | caster z `0x200`, victim z `-0x200` |
+/// | `0x11` (`0x801F8118`) | - | caster z `0x200`, victim z `-0x200` (a living victim's idle stage is the phase chain's, `MEGATON_PRESS_CHAIN`) |
 ///
 /// The anim-rate stores `+0x21D` ride the same seat writes: caster `6` through
 /// arms 5 and 6 and `8` from 6's pass, victim `2` from 7's pass, caster `0` /

@@ -311,11 +311,14 @@ impl PlayWindowApp {
         let scene = host.scene.as_ref();
         let index = &host.index;
         let draws = coplanar_draws::emission_order(&terrain, &placements);
-        let mut all_draws = terrain.clone();
-        all_draws.extend(placements.iter().cloned());
         let (offsets, occ, fog_source) = std::thread::scope(|sc| {
+            // `[terrain, placements]`: the list order the occlusion gate's
+            // per-frame draw test reads (`field_occlusion::OCCLUDER_LIST_*`).
             let occ = sc.spawn(|| {
-                legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&all_draws], res)
+                legaia_engine_scene::field_occlusion::FieldOccluders::build(
+                    &[&terrain, &placements],
+                    res,
+                )
             });
             let fog = sc.spawn(|| {
                 scene.and_then(|scene| {

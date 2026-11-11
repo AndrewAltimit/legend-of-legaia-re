@@ -164,6 +164,10 @@ pub fn sprite_arm_draw_row(
         tessellated: sprite_arm_tessellated(s)
             && crate::part_shatter::part_shatter_word(s) == 0
             && s.field_42 == 0,
+        // A split quad's sixteen pieces link on their own means; an unsplit
+        // one reaches a leaf that tests the word's `0x10000000`.
+        far_corner: legaia_render_kernels::sprite_arm::ColourWord::of(s).far_corner
+            && !sprite_arm_tessellated(s),
         object_effect_kind: s.field_42,
         object_effect_scale: f32::from(s.field_72) / 4096.0,
     })

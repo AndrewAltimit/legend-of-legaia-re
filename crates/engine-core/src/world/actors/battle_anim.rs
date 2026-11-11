@@ -8,6 +8,10 @@ use legaia_engine_mode::mode::SceneMode;
 /// ([`legaia_engine_battle::battle_afterimage::HISTORY_DEPTH`]) at up to
 /// four vsyncs a frame, since the per-vsync cadence pushes a slot a vsync
 /// (`World::ghost_ring_slots_per_frame`).
+/// Display frames past a `+0x87` commit at which the dealt track coin is
+/// read (`World::dealt_track_coin`): a replay's commit lands within a few
+/// frames of retail's, and an art's next `+0x87` commit is tens of frames on.
+const DEALT_COIN_LOOKAHEAD: u64 = 8;
 const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
 
 impl World {
@@ -223,6 +227,19 @@ impl World {
     /// own hit walk), per actor, against the hit walks' commits on other
     /// seats.
     pub(in crate::world) fn tick_battle_animations_walk(&mut self, hits: bool) -> Vec<bool> {
+        self.tick_battle_animations_walk_of(hits, None)
+    }
+
+    /// [`Self::tick_battle_animations_walk`] over one seat alone when `only`
+    /// names it: the slice a node the pass created after the walk had passed
+    /// it still owes (`World::run_seat_pass_node_tick`). The pass-wide work
+    /// around the slices (the impact sweep, the Mystic Shield, the colour
+    /// latch) has run already and is not repeated.
+    pub(in crate::world) fn tick_battle_animations_walk_of(
+        &mut self,
+        hits: bool,
+        only: Option<usize>,
+    ) -> Vec<bool> {
         let start: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
         let mut foreign = vec![0u32; self.actors.len()];
         if self.battle.anim_slice_commits.len() != self.actors.len() {
@@ -250,17 +267,23 @@ impl World {
         // XA-template tick ahead of the anim node advance). Their counters
         // are written in vsyncs, so a pass runs one per vsync it spans.
         for _ in 0..vsyncs {
+            if only.is_some() {
+                break;
+            }
             self.tick_battle_impact_fx();
         }
         // The same pass's Mystic Shield pose and break
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.
-        if self.mode == SceneMode::Battle {
+        if self.mode == SceneMode::Battle && only.is_none() {
             self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
         let mut fresh = vec![false; self.actors.len()];
         for i in 0..self.actors.len() {
+            if only.is_some_and(|o| o != i) {
+                continue;
+            }
             fresh[i] = self.actors[i].battle_clip_commits
                 != self.battle.anim_slice_commits.get(i).copied().unwrap_or(0);
             // Hit-reaction chaining first: a finished reaction clip takes the
@@ -687,12 +710,14 @@ impl World {
             }
             self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
         }
-        // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
-        // driver's pass instead (`World::tick_battle_cast_drive`).
-        if !commit_after {
+        // The cast tick's effect-child drive. On retail's cadence it runs
+        // with the pass's draw instead (`World::tick_battle_anim_pass`).
+        if !commit_after && only.is_none() {
             self.tick_battle_cast_drive(vsyncs);
         }
-        self.latch_battle_node_colours();
+        if only.is_none() {
+            self.latch_battle_node_colours();
+        }
         self.actors
             .iter()
             .enumerate()
@@ -777,6 +802,18 @@ impl World {
         ) {
             *c = a.battle_clip_commits;
         }
+        // The root-motion term this seat's tick steps: the entry it holds
+        // once its own commits are made (`BattleState::anim_slice_roots`).
+        if commit_after {
+            if self.battle.anim_slice_roots.len() != self.actors.len() {
+                self.battle.anim_slice_roots = vec![(None, 0); self.actors.len()];
+            }
+            let root = (
+                self.battle_playing_root_motion(i),
+                self.actors[i].battle.facing_angle,
+            );
+            self.battle.anim_slice_roots[i] = root;
+        }
     }
 
     /// A reaction clip whose cursor crossed its end on this pass takes the
@@ -845,9 +882,10 @@ impl World {
 
     /// The cast tick's effect-child drive (`FUN_801E09F8`, after its census):
     /// the move-FX streak's counter walk and the homing slots, once per
-    /// vsync of `vsyncs`. The cast tick is the frame driver's, so on
-    /// retail's cadence it runs on the pass ahead of the action SM; per
-    /// vsync it stays at the anim tick's tail.
+    /// vsync of `vsyncs`. The cast tick is the draw's (`jal 0x801E09F8` in
+    /// the battle draw tick `FUN_800480D8`), so on retail's cadence it runs
+    /// at the tail of the anim pass (`World::tick_battle_anim_pass`); per
+    /// vsync it stays at the anim tick's tail too.
     pub(in crate::world) fn tick_battle_cast_drive(&mut self, vsyncs: u8) {
         // On retail's cadence the drive is one call a battle frame with the
         // frame step folded into every counter and step
@@ -870,6 +908,21 @@ impl World {
             self.casting.move_fx_streak.tick_counter();
             self.tick_homing_slots();
         }
+    }
+
+    /// The track coin a capture's strike deal holds for a commit now
+    /// (`BattleState::capture_track_coin`): the value retail's recording
+    /// stood on [`DEALT_COIN_LOOKAHEAD`] display frames on, so a commit a
+    /// few frames ahead of retail's still reads retail's draw. `None` outside
+    /// that oracle; the draw on the world stream stands.
+    fn dealt_track_coin(&self) -> Option<u8> {
+        let at = self.clock.display_frames + DEALT_COIN_LOOKAHEAD;
+        self.battle
+            .capture_track_coin
+            .iter()
+            .take_while(|&&(f, _)| f <= at)
+            .last()
+            .map(|&(_, c)| c)
     }
 
     pub fn commit_staged_battle_anims(&mut self) {
@@ -1359,6 +1412,9 @@ impl World {
             // re-seed's own draw.
             self.battle_ctx.track_coin =
                 (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
+            if let Some(coin) = self.dealt_track_coin() {
+                self.battle_ctx.track_coin = coin;
+            }
         }
         let a = &mut self.actors[i];
         // The FUN_8004AD80 rewrite: both id fields hold the committed slot
@@ -1718,10 +1774,20 @@ impl World {
                 legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(clip).map(|p| (p, clip))
             }),
         };
-        if let Some((player, clip)) = selected {
+        if let Some((mut player, clip)) = selected {
             // Anim record swapped: install its effect script and zero the
             // effect-script cursor (retail FUN_8004AD80, `sb zero,0x1f5`).
             let script = Some(clip.effect_script.clone()).filter(|s| !s.is_empty());
+            // The seat's opening phase, drawn at battle setup
+            // (`FUN_800513F0`, `0x80051544..0x80051574` and the monster twin
+            // at `0x800518D0`): `(rand() % frames) << 4`.
+            if let Some(draw) = actor.battle_idle_phase_draw.take()
+                && clip_slot == 0
+                && player.is_looping()
+            {
+                let frames = player.frame_count().max(1);
+                actor.pose_frame = Some(player.seat_cursor(((draw % frames) << 4) as u16));
+            }
             actor.battle_animation = Some(player);
             actor.battle_pose = Some(pose_id);
             actor.battle_effect_script = script;

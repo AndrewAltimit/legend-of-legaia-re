@@ -28,13 +28,14 @@
 //!
 //! # Engine mapping
 //!
-//! The engine does not re-decode poses at rewound cursors; it already keeps
-//! the per-frame pose-history ring the after-image ghosts sample
-//! (`engine-core`'s `BattleGhostFrame`, retail's own `FUN_80047430` ring).
-//! Sweep step `k` = the pose `2k` frames ago, which is exactly the retail
-//! rewind under a constant rate. The ring records each frame's committed
-//! clip identity so the sweep stops at the clip boundary, the engine
-//! equivalent of retail's cursor-underflow stop.
+//! [`sweep_cursors`] is the capture walk: the node cursors the driver
+//! decodes at, newest first. The host side
+//! (`engine-world-views::battle_draws::battle_weapon_trail_draws`) decodes
+//! the playing clip at each of them, as the driver does. The walk is in
+//! clip time, not in frames: under the arts' slow motion the anim tick
+//! moves the cursor less per frame while the rewind stays `2 * record[+0x78]`
+//! a step, so the trail spans the same stretch of the swing at any rate, and
+//! it ends at the clip's first keyframe whatever played before it.
 
 /// Number of control points every retail trigger passes (`a2 = 3` at all
 /// four `FUN_8005112C` call sites). The emitter's scratch fits 4.
@@ -43,10 +44,21 @@ pub const TRAIL_POINTS: usize = 3;
 /// Sweep-step budget (`slti v0,s0,0x10` at `0x80048360`).
 pub const MAX_SWEEP_STEPS: usize = 16;
 
-/// Display frames between consecutive sweep steps: the driver rewinds the
-/// cursor by `2 * rate` per step (`0x800483E4..0x800483FC`) while the anim
-/// tick advances `rate` per frame.
-pub const SWEEP_FRAMES_PER_STEP: usize = 2;
+/// The node cursors (12.4, sixteenths of a keyframe) the sweep driver
+/// decodes the pose at, newest first: the live cursor `+0x68`, then one
+/// `2 * record[+0x78]` rewind a step for as long as the cursor stays above
+/// zero, at most [`MAX_SWEEP_STEPS`] (`0x80048348..0x80048408`). A cursor at
+/// or below zero captures nothing (`blez` at `0x80048350`), so a clip's
+/// first frame draws no trail. The subtraction is the routine's 16-bit one.
+pub fn sweep_cursors(cursor: i16, clip_rate: u8) -> Vec<i16> {
+    let mut out = Vec::new();
+    let mut c = cursor;
+    while c > 0 && out.len() < MAX_SWEEP_STEPS {
+        out.push(c);
+        c = c.wrapping_sub(2 * i16::from(clip_rate));
+    }
+    out
+}
 
 /// One row of the retail trigger table (`FUN_8005112C`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

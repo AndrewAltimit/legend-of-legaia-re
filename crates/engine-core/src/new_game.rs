@@ -320,6 +320,41 @@ mod tests {
         );
     }
 
+    /// A direction held on the naming grid repeats: the d-pad reads the
+    /// auto-repeat word, which re-fires after `0x14` vsyncs and then every
+    /// three, where the buttons read the edge word alone.
+    #[test]
+    fn a_held_direction_walks_the_naming_grid() {
+        use legaia_engine_system::input::PadButton;
+        let mut world = World::new();
+        world.begin_new_game();
+        world.seed_starting_party(&StartingParty::from_members(vec![vahn()]));
+        world.open_name_entry(0);
+        world.party.name_entry.as_mut().unwrap().cursor = 0;
+        let mut prev = 0u16;
+        let mut cursors = Vec::new();
+        for _ in 0..0x14 + 3 * 2 + 1 {
+            let pad = PadButton::Right.mask();
+            world.set_pad(pad);
+            world.step_name_entry_frame(pad & !prev);
+            prev = pad;
+            cursors.push(world.party.name_entry.as_ref().unwrap().cursor);
+        }
+        // The press, then the first repeat `0x14` frames on, then two more.
+        assert_eq!(cursors[0], 1);
+        assert_eq!(cursors[0x13], 1, "{cursors:?}");
+        assert_eq!(*cursors.last().unwrap(), 4, "{cursors:?}");
+        // A held Cross types one glyph.
+        let mut prev = 0u16;
+        for _ in 0..0x30 {
+            let pad = PadButton::Cross.mask();
+            world.set_pad(pad);
+            world.step_name_entry_frame(pad & !prev);
+            prev = pad;
+        }
+        assert_eq!(world.party.name_entry.as_ref().unwrap().name, "VahnE");
+    }
+
     #[test]
     fn name_entry_overwrites_the_seeded_lead_name() {
         use legaia_engine_menus::name_entry::{NameEntryInput, NameEntryState};
@@ -366,6 +401,8 @@ mod tests {
             world.party.name_entry.as_ref().unwrap().state,
             NameEntryState::Confirm
         );
+        // The call after the Select press reads no pad (retail's state 2).
+        world.step_name_entry(NameEntryInput::default());
         // The prompt opens on No (retail); Up moves the hand to Yes.
         world.step_name_entry(NameEntryInput {
             up: true,

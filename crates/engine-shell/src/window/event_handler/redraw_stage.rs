@@ -556,7 +556,7 @@ impl PlayWindowApp {
         // shaders apply per texel / packet colour) - plus the per-render-
         // node DPCS far-colour pull staged as a view-depth IR0 ramp; every
         // other frame stages the identity on all three.
-        r.set_draw_dither(self.session.host.world.toggles.draw_dither);
+        r.set_draw_dither(self.session.host.world.frame_dither());
         let grade = self.session.host.world.frame_grade();
         r.set_color_grade(grade.gold, grade.strength);
         r.set_palette_grade([1.0; 3], grade.palette_collapse);
@@ -579,15 +579,14 @@ impl PlayWindowApp {
             self.session.host.world.mode,
         );
         r.set_backface_cull(nclip_mode);
-        // The field's primitives link at their own corners' depth
-        // (`set_draw_order` per draw), on the field frame alone: the world
-        // map, battle and the minigame venues keep their own rules.
+        // Mesh primitives link at their own corners' depth
+        // (`set_draw_order` per draw) on the field, the world map and in
+        // battle (`camera_frame::prim_link_order`): a battle body and the
+        // effect parts around it sort by link, as retail's one ordering
+        // table does. The minigame venues keep their own rules.
         r.set_field_prim_order(
-            matches!(
-                self.session.host.world.mode,
-                legaia_engine_mode::mode::SceneMode::Field
-                    | legaia_engine_mode::mode::SceneMode::WorldMap
-            ) && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
+            legaia_engine_field::camera_frame::prim_link_order(self.session.host.world.mode)
+                && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
         );
         // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
         // table, applied by retail's overworld prim leaves), scaled for
@@ -679,10 +678,11 @@ impl PlayWindowApp {
                 // bloom stand-in), scaled by the mood's glow.
                 let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
                     &self.session.host.world,
-                    legaia_engine_world_views::field_view_window::retail_framing(
+                    legaia_engine_world_views::field_view_window::crop_framing(
                         &self.session.host.world,
                         &self.session.camera,
-                    ) && !self.field_debug_camera,
+                        self.field_debug_camera,
+                    ),
                 );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
                     &legaia_engine_screens::field_frame::field_glow_lights(
@@ -778,7 +778,25 @@ impl PlayWindowApp {
                             );
                         }
                     }
-                    self.field_occluders.fully_occluded(eye.to_array(), centre)
+                    // Only what this frame draws can hide the player (the
+                    // shared gate the browser page asks too).
+                    let world = &self.session.host.world;
+                    let cells = legaia_engine_world_views::field_view_window::field_view_cells(
+                        world,
+                        legaia_engine_world_views::field_view_window::crop_framing(
+                            world,
+                            &self.session.camera,
+                            self.field_debug_camera,
+                        ),
+                    );
+                    self.field_occluders
+                        .fully_occluded_where(eye.to_array(), centre, |d| {
+                            legaia_engine_world_views::field_view_window::occluder_drawn(
+                                world,
+                                cells.as_ref(),
+                                d,
+                            )
+                        })
                 })
                 .unwrap_or(false);
             let mut ramp = self.occl_fade_strength.get();

@@ -121,11 +121,11 @@
     </figure>
   </div>
   <ul class="bullets">
-    <li><strong>Textures</strong> - a palette slider and zoom. Many textures carry several palettes, and the wrong row looks like static, so try a few before deciding one is broken. Export one image or all of them as PNG.</li>
+    <li><strong>Textures</strong> - a palette slider and zoom (<em>Fit</em> shows the whole image, <kbd>Ctrl</kbd> + scroll zooms, dragging moves it, and the pointer names the texel it is on). Many textures carry several palettes, and the wrong row looks like static, so try a few before deciding one is broken. Export one image or all of them as PNG.</li>
     <li><strong>3D model</strong> - the game's own shading, or untextured under a viewer light. Most scene meshes borrow textures another entry of their scene loads, which the <em>scene</em> option resolves. Export as OBJ or as a textured glTF (<code>.glb</code>) that Blender opens directly.</li>
-    <li><strong>Audio</strong> - play the samples of a sound bank one by one, or a music sequence through a chosen bank; export WAV.</li>
-    <li><strong>Text</strong> - a scene's dialog and other messages, with the accented letters of the French, German and Italian discs; export as text.</li>
-    <li><strong>Hex</strong> and <strong>Overview</strong> - the raw bytes, where the entry sits on the disc, and a raw <code>.BIN</code> export.</li>
+    <li><strong>Audio</strong> - play the samples of a sound bank one by one, or a music sequence through a chosen bank; a bar shows how far the sound is, and <em>Stop</em> ends it; export WAV.</li>
+    <li><strong>Text</strong> - a scene's dialog and other messages, with the accented letters of the French, German and Italian discs; <em>Find</em> keeps the lines holding the words you type; export as text.</li>
+    <li><strong>Hex</strong> and <strong>Overview</strong> - the raw bytes (<em>Go to</em> jumps to an offset), where the entry sits on the disc, and a raw <code>.BIN</code> export.</li>
   </ul>
   <p><kbd>Ctrl</kbd>+<kbd>E</kbd> saves what the view shows without reaching for the button: the selected texture, the model as a textured <code>.glb</code>, the raw entry, the first text block, the character or monster, or the movie frame. After an export, <em>Show folder</em> on the status line opens the folder it went to.</p>
 
@@ -137,7 +137,7 @@
   <p>Pick a party member to see the battle model built from the equipment you choose, or a monster from the list (<code>Gimard Lv2</code>, with its element badge). Every battle animation plays at game speed or steps a frame at a time; for Vahn, Noa and Gala the list includes every Tactical Art by name. <em>Export glTF</em> writes the animated model. On a window too narrow for the five equipment pickers in one row, they fold under one <em>Equipment</em> line, which says how many pieces differ from the default; click it to open them.</p>
 
   <h3 id="explorer-media">Movies &amp; voice</h3>
-  <p>The disc's movies, each naming where in the game it plays and which place the story goes on in, play with their soundtrack, or step frame by frame with PNG export of any frame. The streamed CD-XA audio (voices, some music) is listed file by file and channel by channel, each playable and exportable as WAV. These read raw CD sectors, so they need the disc image rather than an extracted folder.</p>
+  <p>The disc's movies, each naming where in the game it plays and which place the story goes on in, play with their soundtrack, or step frame by frame with PNG export of any frame. The streamed CD-XA audio (voices, some music) is listed file by file and channel by channel, each playable and exportable as WAV; while a channel plays, drag the slider beside <em>Stop</em> to move through it. These read raw CD sectors, so they need the disc image rather than an extracted folder.</p>
 
   <h3 id="explorer-extract">Extract the whole disc</h3>
   <figure class="screenshot">
@@ -190,7 +190,7 @@
     <li><b>Options</b><span>Turn the enhancements on or off before you start, in a scrolling list grouped as Display, Enhancements, Play, Gameplay tweaks, Battle tuning, Sound and Original game; they are the same settings the in-game keys below change.</span></li>
     <li><b>Play</b><span>The game opens on the title screen and the launcher closes.</span></li>
   </ol>
-  <p>If nothing can draw the window at all, a message box says so: the usual fix is the latest driver for your graphics card, and a remote desktop session can cause it too. If the game stops with an error, the launcher comes back and says how it ended; <kbd>Ctrl</kbd>+<kbd>C</kbd> then copies a report to paste into a bug report, with the end of the log and your home folder cut out of it. Explorer's error banner has a <em>Copy report</em> button for the same text.</p>
+  <p>If nothing can draw the window at all, a message box says so: the usual fix is the latest driver for your graphics card, and a remote desktop session can cause it too. If the game stops with an error, the launcher comes back and says how it ended; <kbd>Ctrl</kbd>+<kbd>C</kbd>, or a click on the help box, then copies a report to paste into a bug report, with the end of the log and your home folder cut out of it. Explorer's error banner has a <em>Copy report</em> button for the same text.</p>
   <table class="compact">
     <thead><tr><th>To</th><th>Keyboard or mouse</th><th>Controller</th></tr></thead>
     <tbody>

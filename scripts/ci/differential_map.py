@@ -93,6 +93,18 @@ def _consts(text: str) -> dict[str, int]:
     return out
 
 
+def _ambiguous(text: str) -> set[str]:
+    """Names a file defines as `const` with more than one value. A test that
+    names one without defining it in its own body could mean either, and the
+    file-wide table would silently credit whichever came last."""
+    seen: dict[str, set[int]] = {}
+    for name, value in _CONST_RE.findall(text):
+        v = _int(value)
+        if v is not None:
+            seen.setdefault(name, set()).add(v)
+    return {n for n, vs in seen.items() if len(vs) > 1}
+
+
 def _balanced(text: str, open_at: int, pair: str = "{}") -> int:
     """Index one past the bracket closing the one at `open_at`. Skips string
     literals, char literals of one character, and line comments."""
@@ -155,13 +167,17 @@ def scan(tests_dir: Path = TESTS_DIR) -> Scan:
                 f"{path.relative_to(REPO)}: has tests but integration.rs mounts no "
                 f"`mod {module};`, so they never run"
             )
-        consts = {**common, **_consts(text)}
+        file_consts = {**common, **_consts(text)}
+        ambiguous = _ambiguous(text)
         spans: list[tuple[int, int]] = []
         for m in _TEST_RE.finditer(text):
             brace = text.find("{", m.end())
             end = _balanced(text, brace)
             spans.append((brace, end))
             body = text[brace:end]
+            # A test's own `const`s shadow the file's, as Rust scopes them.
+            local = _consts(body)
+            consts = {**file_consts, **local}
             line = text.count("\n", 0, m.start()) + 1
             t = TestDecl(module, m.group(1), line)
             where = f"{path.relative_to(REPO)}:{line} {t.path}"
@@ -185,6 +201,18 @@ def scan(tests_dir: Path = TESTS_DIR) -> Scan:
                     want = 1 if kind == "scus" else 2
                     if len(parts) != want:
                         errors.append(f"{where}: {kind}({inner}) takes {want} argument(s)")
+                        continue
+                    clash = [
+                        p.strip()
+                        for p in parts
+                        if p.strip() in ambiguous and p.strip() not in local
+                    ]
+                    if clash:
+                        errors.append(
+                            f"{where}: {kind}({inner}) - {', '.join(clash)} is defined "
+                            "with more than one value in this file; define it in the "
+                            "test or rename one"
+                        )
                         continue
                     vals = [_resolve(p, consts) for p in parts]
                     if any(v is None for v in vals):

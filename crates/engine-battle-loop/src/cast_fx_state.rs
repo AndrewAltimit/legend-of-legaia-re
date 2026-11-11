@@ -142,6 +142,12 @@ pub struct CastFxState {
     /// invoke `0x32` seeds it; `None` while no seed is being read
     /// ([`legaia_engine_battle_vm::battle_action::sideband_token_vsyncs`]).
     pub sideband_read_left: Option<u16>,
+    /// A capture harness seat: the first `summon.dat` slot's seek, in vsyncs,
+    /// in place of the modelled drive's
+    /// ([`legaia_engine_battle_vm::battle_action::SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`]).
+    /// A film recorded on another emulator's drive reads its own; no play path
+    /// sets it.
+    pub sideband_first_seek_seat: Option<u16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -366,6 +372,10 @@ pub struct CastFxState {
     /// own, cleared before it runs). An arm that hands over mid-pass owes the
     /// rest of the pass's drift (`World::module_pass`).
     pub module_tick_drift: Option<legaia_engine_cast::cast_module_camera::CaptureDrift>,
+    /// The newest module tick's rate part when its drift lands a stored value
+    /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::rest_drift`]):
+    /// what the rest of a handing-over pass repeats in place of the drift.
+    pub module_tick_rest: Option<Option<legaia_engine_cast::cast_module_camera::CaptureDrift>>,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -538,6 +548,7 @@ impl CastFxState {
             module_ring_angle: 0,
             band_word_live: None,
             sideband_read_left: None,
+            sideband_first_seek_seat: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,
@@ -595,6 +606,7 @@ impl CastFxState {
             module_handover_waits: false,
             module_pass_repeat: false,
             module_tick_drift: None,
+            module_tick_rest: None,
             caster_stages: None,
             caster_size_store: None,
             pending_move_fx_spawn: None,

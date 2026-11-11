@@ -1,10 +1,20 @@
 //! Minimal wgpu renderer for the Phase 1 asset viewer.
 //!
-//! PORT: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002C488, FUN_8002B994, FUN_8003C310
-//! PORT: FUN_80031D00, FUN_800337B0, FUN_80035CB8, FUN_80035DA0, FUN_80035E44, FUN_800349EC, FUN_80035EA8
-//! PORT: FUN_8003C1F8 (per-glyph dialog-font sprite emit; the engine renders
-//! in-game proportional dialog glyphs via the legaia-font atlas + textured-quad
-//! overlay instead of the retail GP0 cell-UV push)
+//! REF: FUN_80031D00, FUN_80035CB8, FUN_80035DA0, FUN_80035E44
+//! The overlay pipelines draw what the retail text-actor draw pump
+//! (`FUN_80031D00` and its three callees) puts on screen, from the hosts' own
+//! draw lists; the pump's dispatch and its callees' rules are ported in
+//! `legaia_engine_menus::menu_list_rows` (`text_actor_arm` and siblings).
+//!
+//! REF: FUN_8002C488, FUN_8003C310 (their cells are cut by
+//! `legaia_engine_menus::save_menu_atlas::{menu_pictogram, command_arrow_page_rect}`)
+//!
+//! REF: FUN_80034b78, FUN_80034e4c, FUN_8002C69C, FUN_8002B994, FUN_800337B0,
+//! FUN_800349EC, FUN_80035EA8, FUN_8003C1F8 - each ported by a kernel in
+//! `engine-ui`, `engine-menus` or `engine-dialog`, whose `PORT:` tag sits
+//! there; the renderer draws what those kernels emit (for `FUN_8003C1F8`, the
+//! per-glyph dialog-font sprite, through the legaia-font atlas and a
+//! textured-quad overlay instead of the retail GP0 cell-UV push).
 //!
 //! Owns a wgpu device + surface, plus two render pipelines:
 //!
@@ -35,12 +45,8 @@ pub const DRAW_ORDER_FAR_CORNER: u8 = 1;
 /// nearer (`actor[+0x10] & 0x80800000`).
 pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
 
-pub mod actor_bind;
-pub mod actor_cull;
 pub mod battle_intro;
-pub mod battle_on_screen;
 pub mod gte_trace;
-pub mod mode_transition;
 pub mod window;
 
 // The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`; its

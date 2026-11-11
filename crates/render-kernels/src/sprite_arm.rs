@@ -38,6 +38,17 @@ pub struct ColourWord {
     /// `NCLIP` area mask to `0x7FFFFFFF` (`0x80043520..0x80043540`), so no
     /// packet is rejected by its winding and the mesh draws both sides.
     pub double_sided: bool,
+    /// Mode bit `0x10` (word bit `0x10000000`), on a word that reaches a
+    /// depth-cued bank. The dispatcher stages the word's top byte at
+    /// `0x1F800043` (`sb s6,-0x2D1(t2)` at `0x800433D8`) and forces the
+    /// level's bit 0 for any non-zero mode byte (`ori a2,a2,1` at
+    /// `0x800433CC`), so such a word always takes bank 1, 2 or 3; the cued
+    /// leaves test the byte's `0x10` (`lb s3,-0x2D1(t2)` / `andi s3,s3,0x10`,
+    /// `0x80045280..0x8004528C` in `FUN_80045194`) and link the primitive at
+    /// its farthest corner's `SZ` instead of the `AVSZ` mean. Bank 3's
+    /// sixteen-way quad leaf `FUN_80045BB4` makes no such test
+    /// ([`Self::links_at_far_corner`]).
+    pub far_corner: bool,
 }
 
 impl ColourWord {
@@ -62,7 +73,16 @@ impl ColourWord {
             ir0: ir0.min(0x1000),
             split_quads: mode & 0x20 != 0,
             double_sided: mode & 0x08 != 0,
+            far_corner: mode & 0x10 != 0,
         }
+    }
+
+    /// Whether the draw's primitives link at their farthest corner
+    /// ([`Self::far_corner`]): every cued leaf tests the bit but bank 3's
+    /// split quad leaf `FUN_80045BB4`, whose sixteen `GT3`s each link on their
+    /// own `AVSZ3`.
+    pub fn links_at_far_corner(&self) -> bool {
+        self.far_corner && !self.split_quads
     }
 
     /// A packet colour after the depth cue: `c + (far - c) * IR0 >> 12`
@@ -235,8 +255,20 @@ mod tests {
             ir0: 0x800,
             split_quads: false,
             double_sided: false,
+            far_corner: false,
         };
         assert_eq!(c.cue([0x80, 0x40, 0xFF]), [0x40, 0x20, 0x7F]);
+    }
+
+    /// Inferno's wall `0x58000000` links at its farthest corner; its floor's
+    /// `0x78000080` takes bank 3's split leaf, which links each piece at its
+    /// own mean; a word without `0x10` (`0xC9000000`) never does.
+    #[test]
+    fn the_far_corner_bit_reaches_the_cued_leaves_only() {
+        assert!(ColourWord::from_words(0x5800_0000, 0).links_at_far_corner());
+        let floor = ColourWord::from_words(0x7800_0080, 0x1000);
+        assert!(floor.far_corner && !floor.links_at_far_corner());
+        assert!(!ColourWord::from_words(0xC900_0000, 0x1000).links_at_far_corner());
     }
 
     fn sv(x: i16, z: i16, g: u8, u: u8, v: u8) -> SplitVertex {

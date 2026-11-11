@@ -805,7 +805,7 @@ fn world_map_render_ladder() {
 /// the hosts convert to, because the browser surface exposes neither the
 /// picker phase nor the draw gate the dispatcher's return feeds.
 #[test]
-fn dev_menu_cancel_runs_the_row_action_dispatcher() {
+fn dev_menu_confirm_runs_the_row_action_dispatcher() {
     use legaia_engine_dev_menu::dev_menu_leaves::ListPickerPhase;
     use legaia_engine_menus::dev_menu_host::{DevMenuSession, DevPage};
     use legaia_engine_system::pad::{PACK_CIRCLE, PACK_DOWN};
@@ -820,24 +820,22 @@ fn dev_menu_cancel_runs_the_row_action_dispatcher() {
         "the list holds the pad, so it runs retail's Active leg"
     );
 
-    // The dispatcher is only consulted on cancel, and every in-range row
-    // answers "no park" - the phase becomes the unwind, not a parked one.
+    // Cancel parks the list in retail's cancel settle; the row-action
+    // dispatcher is the confirm leg's, and is not consulted here.
     s.tick(PACK_CIRCLE, 0, &mut none);
-    assert_eq!(s.list_phase, ListPickerPhase::CancelUnwind);
-    let after_row0 = s.list_gate;
+    assert_eq!(s.list_phase, ListPickerPhase::CancelSettle);
 
-    // The gate factor is the dispatcher's own return and must not depend on
-    // which row the cursor sits over, for every row the engine's list has.
+    // On confirm the gate factor is the dispatcher's own return and must not
+    // depend on which row the cursor sits over, for every row the list has.
+    let mut gates = Vec::new();
     for _ in 0..DevMenuRowCount::ALL {
+        s.page = DevPage::List;
         s.tick(PACK_DOWN, 0, &mut none);
-        s.tick(PACK_CIRCLE, 0, &mut none);
-        assert_eq!(
-            s.list_gate, after_row0,
-            "row {} changed the dispatcher's gate factor",
-            s.row
-        );
-        assert_eq!(s.list_phase, ListPickerPhase::CancelUnwind);
+        s.tick(legaia_engine_system::pad::PACK_CROSS, 0, &mut none);
+        assert_eq!(s.list_phase, ListPickerPhase::RowAction, "row {}", s.row);
+        gates.push(s.list_gate);
     }
+    assert!(gates.iter().all(|&g| g == 1), "{gates:?}");
 }
 
 /// The engine's dev-menu list length, named so the loop above reads as a

@@ -49,9 +49,6 @@ pub const CUE_CURSOR_MOVE: u16 = 0x21;
 /// Cue id a confirmed advance fires (`_DAT_8007B6D8 = 0x20`).
 pub const CUE_CONFIRM: u16 = 0x20;
 
-/// Score the practice steps wait for before moving on (`DAT_801D5150`
-/// compared `< 900` / `899 <`).
-pub const PRACTICE_SCORE_GATE: i32 = 900;
 /// Frames the two hand-off steps park on their countdown
 /// (`DAT_801D6080 = 0x3C`).
 pub const HANDOFF_FRAMES: i32 = 0x3C;
@@ -77,15 +74,15 @@ pub enum TutorialStep {
     /// The pad is ignored.
     Countdown,
     /// The first free-dance step (`7`): the player dances while the script
-    /// clears the groove gauge every frame and captions the run off the
-    /// dancer's level. Advances on the same [`PRACTICE_SCORE_GATE`] as
-    /// [`Practice`](TutorialStep::Practice). Its scold timer **counts up** and
-    /// wraps at [`SCOLD_FRAMES`], where the practice step's counts down.
+    /// clears the score and the groove gauge every frame and calls each
+    /// button as the chart asks for it. Advances once the frames danced reach
+    /// [`PRACTICE_PROGRESS_GATE`]. A missed press puts a scold up instead,
+    /// on a window that **counts up** and wraps past [`SCOLD_FRAMES`].
     Warmup,
-    /// The practice step (`0xD`): the player dances, and the step advances
-    /// once the session score passes [`PRACTICE_SCORE_GATE`]. Draws the praise
-    /// / scold captions off the last triangle spend instead of a fixed line
-    /// list.
+    /// The practice step (`0xD`): the player dances with a fresh triangle
+    /// stock, and the step advances on the same gate. Captions the last
+    /// triangle spend (praise or a timing scold) while its window, which
+    /// this step alone counts down, is open.
     Practice,
     /// A jump-table slot with no body (`0x12`), or a state outside the table -
     /// the handler does nothing but re-enter the actor dispatcher.
@@ -241,84 +238,83 @@ pub fn tutorial_countdown_frame(remaining: i32, frame_step: i32) -> (i32, bool) 
     (next, next < 0)
 }
 
-/// One frame of the practice step (`0xD`).
-///
-/// `feedback` is the praise / scold window `DAT_801D5144`, `combo_hit` the
-/// `DAT_801D570C` latch saying the triangle landed on the combo slot, and
-/// `score` the live session score `DAT_801D5150`.
+/// Frames of dancing a free-dance step waits for (`DAT_801D5150`, which the
+/// hall's state `10` raises by the frame step: `slti v0,v0,0x384`).
+pub const PRACTICE_PROGRESS_GATE: i32 = 900;
+/// Third argument of the music fades (`li a2,0x3c` ahead of `FUN_80062004`).
+pub const MUSIC_FADE_ARG: u32 = 0x3C;
+/// The hall state the script parks the dance on (`DAT_801D5334 = 2`): the
+/// load gate's wait, from which the count-in runs again.
+pub const HALL_STATE_RESTART: u32 = 2;
+/// Triangles the practice hand-off restocks (`DAT_801D534C = 3`).
+pub const PRACTICE_STOCK: u32 = 3;
+
+/// Where a caption's text is on the user's disc: the overlay's own rodata,
+/// never read here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PracticeFrame {
-    /// `Some(true)` = the praise line, `Some(false)` = the timing scold,
-    /// `None` = no feedback caption this frame.
-    pub caption_praise: Option<bool>,
-    /// The feedback window after this frame's decay, floored at zero.
+pub enum CaptionSource {
+    /// The VA of a pointer word in the script's line tables.
+    Table(u32),
+    /// The VA of the string itself (the prompt's two option rows).
+    Inline(u32),
+}
+
+/// One `FUN_80036888` call of a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TutorialLine {
+    pub source: CaptionSource,
+    pub x: i16,
+    pub y: i16,
+}
+
+/// What a frame asks of the hall's music.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TutorialMusic {
+    /// `FUN_80062004(seq, volume << shift >> 16, MUSIC_FADE_ARG)`: the song
+    /// down to a half (`shift == 15`) or a quarter (`14`) of the BGM volume.
+    Fade { shift: u8 },
+    /// `FUN_800266E0` on the hall's BGM source: the song stops.
+    Release,
+}
+
+/// The dance hall's words the script reads and writes, by address.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TutorialHall {
+    /// `DAT_801D5138`: holds the song timer still while the lesson runs.
+    pub song_hold: u32,
+    /// `DAT_801D5830`: the load gate. Set, the hall's state `2` waits and the
+    /// award routine takes no press.
+    pub load_gate: u32,
+    /// `DAT_801D5334`: the hall's state.
+    pub hall_state: u32,
+    /// `DAT_801D53CC`: the human's score.
+    pub score: u32,
+    /// `DAT_801D544C`: the human's groove gauge.
+    pub gauge: i32,
+    /// `DAT_801D5150`: frames danced since the last clear.
+    pub progress: i32,
+    /// `DAT_801D5158`: the count-in's clock.
+    pub count_in: u32,
+    /// `DAT_801D5140`: the window the award routine arms on the human's miss.
+    pub miss_window: i32,
+    /// `DAT_801D5144`: the window a spent triangle arms.
     pub feedback: i32,
-    /// `true` once the score passes [`PRACTICE_SCORE_GATE`] and the step
-    /// hands off.
-    pub advance: bool,
-}
-
-// PORT: FUN_801d0750 case 0x0D (the practice step's feedback + score gate)
-// Wired: [`DanceTutorial::step`]'s practice arm, fed the live session's score
-// / feedback window / combo-slot latch on the play window's tutorial path
-// (see [`tutorial_step`]).
-/// Step the practice state.
-///
-/// The feedback window decays by the frame step and is floored at zero; while
-/// it is non-zero the step captions the last triangle spend - the praise line
-/// when `combo_hit`, otherwise the two-line timing scold. The score gate is
-/// `899 < score`, i.e. [`PRACTICE_SCORE_GATE`] or better.
-pub fn practice_frame(
-    feedback: i32,
-    combo_hit: bool,
-    score: i32,
-    frame_step: i32,
-) -> PracticeFrame {
-    let (caption_praise, feedback) = if feedback != 0 {
-        (Some(combo_hit), (feedback - frame_step).max(0))
-    } else {
-        (None, feedback)
-    };
-    PracticeFrame {
-        caption_praise,
-        feedback,
-        advance: score >= PRACTICE_SCORE_GATE,
-    }
-}
-
-/// One frame of the warm-up step (`7`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WarmupFrame {
-    /// `true` while the scold caption pair is up (the window is non-zero).
-    pub caption_scold: bool,
-    /// The scold window after this frame. It **counts up** by the frame step
-    /// and snaps back to zero once it passes [`SCOLD_FRAMES`], so the scold
-    /// blinks rather than fading.
-    pub scold: i32,
-    /// `true` once the score passes [`PRACTICE_SCORE_GATE`].
-    pub advance: bool,
-}
-
-// PORT: FUN_801d0750 case 0x07 (the warm-up step's scold blink + score gate)
-// Wired: [`DanceTutorial::step`]'s warm-up arm, on the play window's tutorial
-// path (see [`tutorial_step`]).
-/// Step the warm-up state. `scold` is `DAT_801D5140`.
-///
-/// With the window at zero the script instead captions the run off the
-/// dancer's level (`DAT_801D544C / 1000`, sampled **before** the same frame
-/// clears the gauge), which is a string lookup the port does not model.
-pub fn warmup_frame(scold: i32, score: i32, frame_step: i32) -> WarmupFrame {
-    let (caption_scold, scold) = if scold != 0 {
-        let next = scold + frame_step;
-        (true, if next > SCOLD_FRAMES { 0 } else { next })
-    } else {
-        (false, scold)
-    };
-    WarmupFrame {
-        caption_scold,
-        scold,
-        advance: score >= PRACTICE_SCORE_GATE,
-    }
+    /// `DAT_801D512C`: the beat track's combo flash.
+    pub track_flash: i32,
+    /// `DAT_801D5170`: the bar count.
+    pub bars: u32,
+    /// `DAT_801D5828`: the bar's closing-beat mark.
+    pub bar_tail: u32,
+    /// `DAT_801D581C`: the beat phase.
+    pub phase: u32,
+    /// `DAT_801D5820`: the song timer.
+    pub song: u32,
+    /// `DAT_801D5824`: the bar phase.
+    pub bar_phase: u32,
+    /// `DAT_801D534C`: the human's triangle stock.
+    pub stock: u32,
+    /// `DAT_801D570C`: whether the human's last triangle landed.
+    pub landed: u32,
 }
 
 impl TutorialStep {
@@ -337,41 +333,73 @@ impl TutorialStep {
 }
 
 /// What one tutorial frame asks the host to do (the drawn/audible half of a
-/// [`DanceTutorial::step`] call; the state store already happened).
+/// [`DanceTutorial::step`] call; the stores already happened).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TutorialFrame {
     /// Cue id to fire into the SFX scheduler (`_DAT_8007B6D8`).
     pub cue: Option<u16>,
-    /// Caption line positions to draw this frame. The strings are overlay
-    /// rodata the port does not read; the host draws its own text here.
+    /// Every `FUN_80036888` call of the frame, in call order.
+    pub lines: Vec<TutorialLine>,
+    /// Positions of the frame's table lines on a talk or prompt step. The
+    /// strings are overlay rodata the port does not read; the host draws its
+    /// own text here.
     pub captions: Vec<(i16, i16)>,
     /// The opening prompt's two option rows, when it is up.
     pub options: Option<[(i16, i16); 2]>,
     /// The option cursor's position, when the prompt is up.
     pub cursor_pos: Option<(i16, i16)>,
-    /// Practice / warm-up feedback caption: `Some(true)` = the praise line,
-    /// `Some(false)` = the timing scold.
+    /// A free-dance step's caption: `Some(true)` = the praise line,
+    /// `Some(false)` = a scold.
     pub feedback: Option<bool>,
+    /// What the frame asks of the song.
+    pub music: Option<TutorialMusic>,
+    /// The frame parked the hall on [`HALL_STATE_RESTART`]: the count-in
+    /// runs again once the load gate drops.
+    pub restart: bool,
     /// The script ran off the jump table - the tutorial is over.
     pub done: bool,
 }
 
-/// The Disco King tutorial actor as one advancing object - the host-facing
-/// runner over the per-state kernels ([`tutorial_step`], [`prompt_frame`],
-/// [`talk_advance`], [`tutorial_countdown_frame`], [`warmup_frame`],
-/// [`practice_frame`]). A host drives it one [`DanceTutorial::step`] per frame
-/// beside the live [`crate::dance::DanceGame`] session, exactly as the retail
-/// handler runs beside the dance states.
+/// The line table each talk state reads (`lw a0,N(s0)`), by state.
+const TALK_TABLES: [(i16, u32); 13] = [
+    (1, 0x801D_497C),
+    (2, 0x801D_4988),
+    (3, 0x801D_4990),
+    (4, 0x801D_499C),
+    (5, 0x801D_49A8),
+    (6, 0x801D_4A24),
+    (8, 0x801D_49C0),
+    (9, 0x801D_49CC),
+    (0xA, 0x801D_49D8),
+    (0xB, 0x801D_49E4),
+    (0xE, 0x801D_4A0C),
+    (0xF, 0x801D_4A18),
+    (0x10, 0x801D_4A24),
+];
+/// The prompt's two lines, then its two option strings.
+const PROMPT_TABLE: u32 = 0x801D_4974;
+const PROMPT_OPTIONS: [u32; 2] = [0x801C_EEDC, 0x801C_EEE0];
+/// The warm-up's two button prompts (Square, then Circle) and its scold pair.
+const WARMUP_PROMPTS: [u32; 2] = [0x801D_49B0, 0x801D_49B4];
+const WARMUP_SCOLD: u32 = 0x801D_49B8;
+/// The practice step's combo call, praise line and scold pair.
+const PRACTICE_CALL: u32 = 0x801D_49F4;
+const PRACTICE_PRAISE: u32 = 0x801D_49F8;
+const PRACTICE_SCOLD: u32 = 0x801D_49FC;
+
+/// The Disco King tutorial actor as one advancing object: the actor's own
+/// words, stepped once a frame over the hall's ([`TutorialHall`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DanceTutorial {
     /// The actor's `+0x9C` state word.
     pub state: i16,
-    /// The opening prompt's cursor row.
+    /// The opening prompt's cursor row (`DAT_801D607C`).
     pub cursor: u32,
-    /// The countdown counter (`DAT_801D6080`), seeded on countdown-step entry.
-    countdown: i32,
-    /// The warm-up scold window (`DAT_801D5140`).
-    scold: i32,
+    /// The countdown counter (`DAT_801D6080`).
+    pub countdown: i32,
+    /// The hall's words between frames. [`Self::step_game`] refreshes the
+    /// ones a [`crate::dance::DanceGame`] holds.
+    pub hall: TutorialHall,
 }
 
 impl Default for DanceTutorial {
@@ -386,91 +414,208 @@ impl DanceTutorial {
         DanceTutorial {
             state: 0,
             cursor: 0,
-            countdown: HANDOFF_FRAMES,
-            scold: 0,
+            countdown: 0,
+            hall: TutorialHall::default(),
         }
     }
 
-    /// Store a new state, re-seeding the countdown when the new state is one
-    /// of the two countdown steps (retail's callers park `DAT_801D6080` at
-    /// [`HANDOFF_FRAMES`] before handing off to them).
-    fn enter(&mut self, state: i16) {
-        self.state = state;
-        if matches!(tutorial_step(state), TutorialStep::Countdown) {
-            self.countdown = HANDOFF_FRAMES;
+    /// One frame of the tutorial script over a live run: the hall's words the
+    /// run holds are read off it and stored back, the chart probes are the
+    /// run's, and a restart sends its floor back to the count-in.
+    pub fn step_game(
+        &mut self,
+        game: &mut crate::dance::DanceGame,
+        pad: u16,
+        frame_step: u8,
+    ) -> TutorialFrame {
+        let mut hall = game.tutorial_hall(self.hall);
+        let frame = {
+            let g = &*game;
+            self.step(&mut hall, pad, frame_step, |lane, symbol| {
+                g.probe_cell(lane, symbol)
+            })
+        };
+        game.apply_tutorial_hall(&hall);
+        if frame.restart {
+            game.restart_for_count_in();
         }
+        self.hall = hall;
+        frame
     }
 
     /// One frame of the tutorial script.
     ///
-    /// `pad` is this frame's pad word in the retail `_DAT_8007B874` layout;
-    /// `score` / `feedback_frames` / `combo_hit` are the live session's
-    /// [`crate::dance::DanceGame::score`] /
-    /// [`crate::dance::DanceGame::feedback_frames`] /
-    /// [`crate::dance::DanceGame::triangle_feedback`] reads; `frame_step` is
-    /// the host's frame delta (`DAT_1F800393`). The session owns the feedback
-    /// window's decay - the practice arm only reads it.
+    /// `pad` is this frame's pad word in the retail `_DAT_8007B874` layout,
+    /// `frame_step` the frame delta `DAT_1F800393`, and `probe(lane, symbol)`
+    /// the chart probe `FUN_801D1960(0, lane, 0x100 | (symbol - 1))`.
+    // PORT: FUN_801d0750
     pub fn step(
         &mut self,
+        hall: &mut TutorialHall,
         pad: u16,
-        score: i32,
-        feedback_frames: i32,
-        combo_hit: bool,
-        frame_step: i32,
+        frame_step: u8,
+        mut probe: impl FnMut(i32, u8) -> bool,
     ) -> TutorialFrame {
-        let step = tutorial_step(self.state);
-        let mut out = TutorialFrame {
-            captions: step.captions(),
-            ..TutorialFrame::default()
+        let dt = i32::from(frame_step);
+        let state = self.state;
+        let step = tutorial_step(state);
+        let mut out = TutorialFrame::default();
+        let table = |out: &mut TutorialFrame, va: u32, row: i16| {
+            out.lines.push(TutorialLine {
+                source: CaptionSource::Table(va),
+                x: CAPTION_X,
+                y: CAPTION_Y0 + CAPTION_PITCH * row,
+            });
         };
+        let next = state.wrapping_add(1);
+        let fade = Some(TutorialMusic::Fade { shift: 14 });
         match step {
             TutorialStep::Prompt => {
+                hall.song_hold = 1;
+                table(&mut out, PROMPT_TABLE, 0);
+                table(&mut out, PROMPT_TABLE + 4, 1);
+                for (i, va) in PROMPT_OPTIONS.into_iter().enumerate() {
+                    let (x, y) = option_pos(i as u8);
+                    out.lines.push(TutorialLine {
+                        source: CaptionSource::Inline(va),
+                        x,
+                        y,
+                    });
+                }
                 let f = prompt_frame(self.cursor, pad);
                 self.cursor = f.cursor;
                 out.cue = f.cue;
                 out.options = Some([option_pos(0), option_pos(1)]);
                 out.cursor_pos = Some(cursor_pos(self.cursor));
-                if let Some(next) = f.next_state {
-                    self.enter(next);
+                if let Some(to) = f.next_state {
+                    self.state = if to == 1 { next } else { to };
                 }
             }
-            TutorialStep::Talk { .. } => {
-                if let Some((next, cue)) = talk_advance(self.state, pad) {
+            TutorialStep::Talk { lines, .. } => {
+                // The two pages that park the hall do it every frame they
+                // are up, ahead of their lines.
+                if matches!(state, 8 | 9 | 0xE) {
+                    hall.load_gate = 1;
+                }
+                if matches!(state, 8 | 0xE) {
+                    hall.hall_state = HALL_STATE_RESTART;
+                    out.restart = true;
+                }
+                let va = TALK_TABLES
+                    .iter()
+                    .find(|(s, _)| *s == state)
+                    .map_or(0, |&(_, va)| va);
+                for i in 0..lines {
+                    table(&mut out, va + 4 * u32::from(i), i16::from(i));
+                }
+                if let Some((to, cue)) = talk_advance(state, pad) {
                     out.cue = Some(cue);
-                    self.enter(next);
+                    self.state = to;
+                    match state {
+                        6 => hall.count_in = 0,
+                        0xA => hall.progress = 0,
+                        0xB => {
+                            out.music = Some(TutorialMusic::Fade { shift: 15 });
+                            self.countdown = HANDOFF_FRAMES;
+                        }
+                        0xE => out.music = fade,
+                        0x10 => {
+                            out.music = fade;
+                            self.countdown = HANDOFF_FRAMES;
+                        }
+                        _ => {}
+                    }
                 }
             }
             TutorialStep::Countdown => {
-                let (next, advance) = tutorial_countdown_frame(self.countdown, frame_step);
-                self.countdown = next;
+                if state == 0x11 {
+                    hall.gauge = 0;
+                    hall.score = 0;
+                }
+                let (left, advance) = tutorial_countdown_frame(self.countdown, dt);
+                self.countdown = left;
                 if advance {
-                    self.enter(self.state + 1);
+                    hall.bars = 0;
+                    hall.bar_tail = 0;
+                    hall.phase = 0;
+                    hall.song = 0;
+                    hall.count_in = 0;
+                    hall.bar_phase = 0;
+                    hall.hall_state = HALL_STATE_RESTART;
+                    out.restart = true;
+                    if state == 0xC {
+                        hall.feedback = 0;
+                        hall.track_flash = 0;
+                        hall.stock = PRACTICE_STOCK;
+                        hall.landed = 0;
+                    } else {
+                        hall.song_hold = 0;
+                        hall.load_gate = 0;
+                        out.music = Some(TutorialMusic::Release);
+                    }
+                    self.state = next;
                 }
             }
             TutorialStep::Warmup => {
-                // A mistimed triangle (feedback window open, spend off the
-                // combo slot) arms the scold blink; retail's handler seeds the
-                // same window from the session's spend latch.
-                if self.scold == 0 && feedback_frames > 0 && !combo_hit {
-                    self.scold = 1;
+                // The level is read before the same frame clears the gauge.
+                let level = hall.gauge / 1000;
+                hall.gauge = 0;
+                hall.load_gate = 0;
+                hall.score = 0;
+                if hall.miss_window != 0 {
+                    table(&mut out, WARMUP_SCOLD, 0);
+                    table(&mut out, WARMUP_SCOLD + 4, 1);
+                    out.feedback = Some(false);
+                    hall.miss_window = hall.miss_window.wrapping_add(dt);
+                    if hall.miss_window > SCOLD_FRAMES {
+                        hall.miss_window = 0;
+                    }
+                } else {
+                    for (i, va) in WARMUP_PROMPTS.into_iter().enumerate() {
+                        if probe(level, i as u8 + 1) {
+                            table(&mut out, va, 0);
+                        }
+                    }
                 }
-                let f = warmup_frame(self.scold, score, frame_step);
-                self.scold = f.scold;
-                out.feedback = f.caption_scold.then_some(false);
-                if f.advance {
-                    self.enter(self.state + 1);
+                if hall.progress >= PRACTICE_PROGRESS_GATE {
+                    self.state = next;
+                    out.music = fade;
                 }
             }
             TutorialStep::Practice => {
-                let f = practice_frame(feedback_frames, combo_hit, score, frame_step);
-                out.feedback = f.caption_praise;
-                if f.advance {
-                    self.enter(self.state + 1);
+                hall.load_gate = 0;
+                hall.score = 0;
+                if hall.feedback != 0 {
+                    if hall.landed == 1 {
+                        table(&mut out, PRACTICE_PRAISE, 1);
+                        out.feedback = Some(true);
+                    } else {
+                        table(&mut out, PRACTICE_SCOLD, 1);
+                        table(&mut out, PRACTICE_SCOLD + 4, 2);
+                        out.feedback = Some(false);
+                    }
+                    hall.feedback = hall.feedback.wrapping_sub(dt).max(0);
+                }
+                if hall.progress >= PRACTICE_PROGRESS_GATE {
+                    hall.load_gate = 1;
+                    self.state = next;
+                }
+                if hall.track_flash != 0 {
+                    table(&mut out, PRACTICE_CALL, 0);
+                    hall.track_flash = hall.track_flash.wrapping_sub(2 * dt).max(0);
                 }
             }
             TutorialStep::Idle => {
                 out.done = true;
             }
+        }
+        if matches!(step, TutorialStep::Prompt | TutorialStep::Talk { .. }) {
+            out.captions = out
+                .lines
+                .iter()
+                .filter(|l| matches!(l.source, CaptionSource::Table(_)))
+                .map(|l| (l.x, l.y))
+                .collect();
         }
         out
     }
@@ -492,11 +637,6 @@ mod tests {
     fn the_two_free_dance_steps_are_distinct() {
         assert_eq!(tutorial_step(7), TutorialStep::Warmup);
         assert_eq!(tutorial_step(0xD), TutorialStep::Practice);
-        // The warm-up scold blinks by counting up and wrapping; the practice
-        // scold decays to zero.
-        assert_eq!(warmup_frame(SCOLD_FRAMES, 0, 1).scold, 0);
-        assert_eq!(warmup_frame(1, 0, 1).scold, 2);
-        assert_eq!(practice_frame(1, false, 0, 1).feedback, 0);
     }
 
     #[test]
@@ -558,76 +698,73 @@ mod tests {
         );
     }
 
-    #[test]
-    fn practice_captions_only_while_the_feedback_window_is_open() {
-        let idle = practice_frame(0, true, 0, 1);
-        assert_eq!(idle.caption_praise, None);
-        assert!(!idle.advance);
-
-        let praise = practice_frame(10, true, 0, 3);
-        assert_eq!(praise.caption_praise, Some(true));
-        assert_eq!(praise.feedback, 7);
-
-        let scold = practice_frame(2, false, 0, 5);
-        assert_eq!(scold.caption_praise, Some(false));
-        assert_eq!(scold.feedback, 0);
-    }
-
-    #[test]
-    fn practice_hands_off_at_the_score_gate() {
-        assert!(!practice_frame(0, false, PRACTICE_SCORE_GATE - 1, 1).advance);
-        assert!(practice_frame(0, false, PRACTICE_SCORE_GATE, 1).advance);
+    fn run(t: &mut DanceTutorial, hall: &mut TutorialHall, pad: u16) -> TutorialFrame {
+        t.step(hall, pad, 1, |_, _| false)
     }
 
     #[test]
     fn the_runner_walks_the_script_end_to_end() {
         let mut t = DanceTutorial::new();
+        let mut h = TutorialHall::default();
         // Prompt: yes on row 0 advances to state 1 with the confirm cue.
-        let f = t.step(PAD_ADVANCE, 0, 0, false, 1);
+        let f = run(&mut t, &mut h, PAD_ADVANCE);
         assert_eq!(f.cue, Some(CUE_CONFIRM));
-        assert_eq!(t.state, 1);
+        assert_eq!((t.state, h.song_hold), (1, 1));
         assert!(f.options.is_some() && f.cursor_pos.is_some());
         // A talk step holds without a face button, advances with one.
-        assert_eq!(t.step(0, 0, 0, false, 1).cue, None);
+        assert_eq!(run(&mut t, &mut h, 0).cue, None);
         assert_eq!(t.state, 1);
-        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        run(&mut t, &mut h, PAD_ADVANCE);
         assert_eq!(t.state, 2);
         // The skip arm at 5 hops the acknowledgement.
         t.state = 5;
-        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        run(&mut t, &mut h, PAD_ADVANCE);
         assert_eq!(t.state, 7, "state 5 stores state + 2");
-        // Warm-up: parks until the score gate, then advances.
-        let f = t.step(PAD_ADVANCE, 0, 0, false, 1);
-        assert_eq!(t.state, 7);
-        assert_eq!(f.feedback, None);
-        t.step(0, PRACTICE_SCORE_GATE, 0, false, 1);
+        // Warm-up: clears the score every frame and parks until the frames
+        // danced reach the gate, whatever the pad.
+        h.score = 500;
+        let f = run(&mut t, &mut h, PAD_ADVANCE);
+        assert_eq!((t.state, h.score, f.feedback), (7, 0, None));
+        h.progress = PRACTICE_PROGRESS_GATE;
+        let f = run(&mut t, &mut h, 0);
         assert_eq!(t.state, 8);
-        // Countdown: seeded on entry, advances only past negative.
-        t.enter(0xC);
+        assert_eq!(f.music, Some(TutorialMusic::Fade { shift: 14 }));
+        // The level page parks the hall behind the load gate.
+        let f = run(&mut t, &mut h, 0);
+        assert!(f.restart);
+        assert_eq!((h.load_gate, h.hall_state), (1, HALL_STATE_RESTART));
+        // Countdown: seeded by the page before it, advances only past zero.
+        t.state = 0xB;
+        run(&mut t, &mut h, PAD_ADVANCE);
+        assert_eq!((t.state, t.countdown), (0xC, HANDOFF_FRAMES));
         for _ in 0..HANDOFF_FRAMES {
-            t.step(PAD_ADVANCE, 0, 0, false, 1);
+            run(&mut t, &mut h, PAD_ADVANCE);
             assert_eq!(t.state, 0xC, "the pad is ignored and the seed holds");
         }
-        t.step(0, 0, 0, false, 1);
-        assert_eq!(t.state, 0xD);
-        // Practice: captions the spend while the window is open, gates on
-        // the score.
-        let f = t.step(0, 0, 10, true, 1);
-        assert_eq!(f.feedback, Some(true));
-        assert_eq!(t.state, 0xD);
-        t.step(0, PRACTICE_SCORE_GATE, 0, false, 1);
-        assert_eq!(t.state, 0xE);
+        run(&mut t, &mut h, 0);
+        assert_eq!((t.state, h.stock), (0xD, PRACTICE_STOCK));
+        // Practice: captions the spend while the window is open and steps
+        // the window itself; gates on the frames danced.
+        h.progress = 0;
+        h.feedback = 10;
+        h.landed = 1;
+        let f = run(&mut t, &mut h, 0);
+        assert_eq!((f.feedback, h.feedback, t.state), (Some(true), 9, 0xD));
+        h.progress = PRACTICE_PROGRESS_GATE;
+        run(&mut t, &mut h, 0);
+        assert_eq!((t.state, h.load_gate), (0xE, 1));
         // Running off the table reports done.
         t.state = 0x12;
-        assert!(t.step(0, 0, 0, false, 1).done);
+        assert!(run(&mut t, &mut h, 0).done);
     }
 
     #[test]
     fn the_prompt_no_branch_reaches_the_skip_arm() {
         let mut t = DanceTutorial::new();
-        t.step(PAD_CURSOR_NEXT, 0, 0, false, 1);
+        let mut h = TutorialHall::default();
+        run(&mut t, &mut h, PAD_CURSOR_NEXT);
         assert_eq!(t.cursor, 1);
-        t.step(PAD_ADVANCE, 0, 0, false, 1);
+        run(&mut t, &mut h, PAD_ADVANCE);
         assert_eq!(t.state, 5, "row 1 jumps straight to state 5");
     }
 

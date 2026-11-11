@@ -127,7 +127,9 @@ fn drive_noa_intro(mut each: impl FnMut(Sample) -> bool) -> Option<()> {
             binding = bind_scene_actors(&mut session.host);
         }
         if session.host.world.name_entry_active() {
-            let edge = if f % 8 >= 2 {
+            // One press every eighth frame: the call after the Select press
+            // reads no pad, so presses on consecutive frames would lose the Up.
+            let edge = if f % 8 != 0 {
                 0
             } else {
                 let p = [PadButton::Cross, PadButton::Up, PadButton::Cross]

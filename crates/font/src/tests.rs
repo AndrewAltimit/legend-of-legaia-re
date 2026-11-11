@@ -403,3 +403,16 @@ fn shadow_texel_lands_on_retails_shadow_under_the_tier_7_ink() {
     let drawn = (f32::from(FONT_SHADOW_TEXEL) * ink).round() as u8;
     assert_eq!(drawn, 33);
 }
+
+/// The plain layout and the inked one walk the same bytes: one layout, and
+/// one ink per laid glyph, the `0xCF` pair restaging it for what follows.
+#[test]
+fn inked_layout_lays_out_as_the_plain_one() {
+    let font = synthetic_for_tests();
+    let text = [0xCF, 0x04, b'T', b'e', 0xCF, 0x07, b':', 0x7C, b'x', 0xCF];
+    let mut ink = 7;
+    let (laid, inks) = font.layout_padded_inked(&text, 1, &mut ink);
+    assert_eq!(laid, font.layout_padded(&text, 1));
+    assert_eq!(inks, vec![4, 4, 7, 7]);
+    assert_eq!(ink, 7);
+}

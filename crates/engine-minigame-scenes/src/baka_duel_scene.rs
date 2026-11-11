@@ -760,13 +760,15 @@ impl BakaDuelScene {
     /// player select draws the arena and the three-fighter lineup, the
     /// cursor's fighter lit and the other two at half depth cue.
     ///
-    /// PORT: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
-    /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
-    /// stepped at its record's byte `+0x07`). Partial: the second match
-    /// against `DAT_801DBF74` (`0x801D33DC..0x801D33E8`) and the retire arm
-    /// on a non-zero match phase `DAT_801DBF78` (`0x801D33A8..0x801D33B8`)
-    /// are not carried (`DAT_801DBF74` has writers at `0x801CF954`,
-    /// `0x801CFD2C` and `0x801CFD4C` that the select pose does not model).
+    /// The cue each fighter draws at is the lineup tick's
+    /// ([`legaia_engine_minigames::baka_cabinet::lineup_tick`], the port of
+    /// `FUN_801D3390`), its idle clip `+0x5C` = `1 + 9 * roster` stepped at
+    /// its record's byte `+0x07`. The pose passes no second match: the
+    /// cabinet port carries no `DAT_801DBF74` (its writers at `0x801CF954`,
+    /// `0x801CFD2C` and `0x801CFD4C` are not modelled), and the retire arm is
+    /// the front-end gate's ([`legaia_engine_minigames::baka_cabinet::lineup_live`]).
+    ///
+    /// REF: FUN_801D3390
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
         // The drop shadows are the combat tick's (`FUN_801D3F44` calls
@@ -827,11 +829,14 @@ impl BakaDuelScene {
                 origin,
                 SELECT_YAW,
             );
-            let keep = if roster == cursor {
-                1.0
-            } else {
-                SELECT_DIM_KEEP
-            };
+            let tick = legaia_engine_minigames::baka_cabinet::lineup_tick(
+                roster as i32,
+                cursor as i32,
+                None,
+                0,
+                0,
+            );
+            let keep = if tick.cue == 0 { 1.0 } else { SELECT_DIM_KEEP };
             let scale = |c: u8| (f32::from(c) * keep).round().clamp(0.0, 255.0) as u8;
             for i in range {
                 let b = self.base_colors[i];

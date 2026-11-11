@@ -135,6 +135,11 @@ pub struct Row {
     /// (`BattleFrameClock::span_extra`). No game time passes on it
     /// ([`Side::live_clock`]). `false` on retail rows and older recordings.
     pub over: bool,
+    /// Retail's BIOS `rand()` seed word `0x80009010` (`rand` column). The
+    /// battle frame driver draws once at the head of every pass, so a row
+    /// whose word differs from the row before it is one a pass has started
+    /// ahead of ([`Side::wait_ends`]).
+    pub rand: Option<u32>,
 }
 
 /// The engine recorder's drive columns (`drive_seek_arm`, `drive_poll_arm`,
@@ -225,6 +230,7 @@ impl Side {
                 display_frames: field(r, "frames"),
                 fade_back: field::<u8>(r, "fade_back").filter(|&b| b > 0),
                 over: field::<u8>(r, "over").is_some_and(|o| o > 0),
+                rand: field::<u32>(r, "rand"),
                 fade: match field::<i32>(r, "fade_white") {
                     Some(w) if w >= 0 => Some(field(r, "fade_level").unwrap_or(255)),
                     _ => None,
@@ -351,18 +357,91 @@ impl Side {
     /// costs no game time. The engine's clock is its tick less the ticks its
     /// frames overran ([`Side::live_clock`]).
     ///
+    /// The frames it counts are the passes, not the counter's runs: a pass's
+    /// state stands on the rows from the vsync after its wait ended to the
+    /// next wait's end ([`Side::wait_ends`]), and it drains by the step its
+    /// own counter run reads.
+    ///
     /// `None` without the `frame` column (the engine, or an older capture).
     pub fn game_clock(&self) -> Option<Vec<u64>> {
-        let runs = self.frame_runs()?;
-        let mut out = Vec::with_capacity(self.rows.len());
-        let mut base = 0u64;
-        for (i, j, step) in runs {
-            let len = (j - i) as u64;
-            let step = u64::from(step);
-            for k in 0..len {
-                out.push(base + k * step / len);
+        let ws = self.wait_ends()?;
+        let n = self.rows.len();
+        let mut out = vec![0u64; n];
+        // The rows up to the first wait end hold the pass before the
+        // recording's first counter run, on the step that run was paced by.
+        let (first, _) = *ws.first()?;
+        let lead = u64::from(self.frame_runs()?.first()?.2);
+        // That pass ends on the first wait end, a vsync a game vsync on its
+        // step: counted forward from row 0 instead, a lead of one row took
+        // the whole step in one row.
+        for (k, o) in out.iter_mut().enumerate().take(first + 1) {
+            *o = (k as u64 + lead).saturating_sub(first as u64 + 1);
+        }
+        let mut base = lead;
+        for (k, &(w, own)) in ws.iter().enumerate() {
+            let end = ws.get(k + 1).map_or(n - 1, |&(e, _)| e);
+            let len = (end - w) as u64;
+            let own = u64::from(own);
+            for j in 0..len {
+                out[w + 1 + j as usize] = base + j * own / len;
             }
-            base += step;
+            base += own;
+        }
+        Some(out)
+    }
+
+    /// Per counter run, the row its `VSync` wait ended on and the step the
+    /// pass after it drains by.
+    ///
+    /// The flip routine `FUN_80016B6C` runs once a frame's pass has built its
+    /// table: it bumps the counter (`0x80016BA8`), waits out `VSync` on the
+    /// step that pass drained by (`0x800171C0`), then flips and draws the
+    /// table ([`Self::frame_runs`]). The next pass starts on the wait's end,
+    /// so its state stands from the following vsync to the next wait end,
+    /// whether or not its own bump has come yet: a pass that takes longer
+    /// than a vsync shows its state a row or more ahead of its bump. The
+    /// wait ends on the bump's own row when the pass ran past its step,
+    /// otherwise that step after the wait before it; the `rand` column says
+    /// which, since the battle frame driver draws at the head of the pass
+    /// the wait lets go. A RAM image per vsync
+    /// of PROT 0904's arm 4 reads it directly: the held rise's block stands
+    /// at `3 / 10` on the row the counter turns `1598`, at `4 / 10` on the
+    /// row after with the counter unchanged, and the counter turns `1599` a
+    /// row later with the block still at `4 / 10`.
+    fn wait_ends(&self) -> Option<Vec<(usize, u8)>> {
+        let runs = self.frame_runs()?;
+        let mut out: Vec<(usize, u8)> = Vec::with_capacity(runs.len());
+        for (i, j, paced) in runs {
+            let own = self.rows[j - 1].step.max(1);
+            // The next pass draws `rand()` at its head, on the vsync after the
+            // wait: the first row past the bump whose word moved, up to the
+            // next bump's row, places the wait end outright. The passes
+            // before the bump drew theirs ahead of it.
+            let drawn = (i + 1..=j.min(self.rows.len() - 1)).find(|&r| {
+                matches!((self.rows[r].rand, self.rows[r - 1].rand), (Some(a), Some(b)) if a != b)
+            });
+            let w = match (drawn, out.last()) {
+                (Some(r), _) => r - 1,
+                // No word to read: the wait ends on the bump's row when the
+                // pass ran past its step, otherwise that step after the wait
+                // end before it.
+                (None, Some(&(p, _))) => (p + usize::from(paced)).max(i).min(j - 1),
+                // The recording's first run is cut by its start: its bump is
+                // not row `i` but fell before it, a step ahead of the next
+                // bump `j` on time. Counted from `i` instead, a recording that
+                // opens mid-run gave the pass before it a whole step of game
+                // time in a row or two and every pair of a `--physical`
+                // film's opening segment, which starts on the state's own
+                // first vsync, sat a pass late
+                // (`battle_jouind_gilium_lv3_strike` `.970` to `.875`). A wait
+                // end ahead of the first row is not in the recording; the
+                // game clock's lead then covers the rows up to the next one.
+                (None, None) => match j.checked_sub(usize::from(paced)) {
+                    Some(w) => w.max(i),
+                    None => continue,
+                },
+            };
+            out.push((w, own));
         }
         Some(out)
     }
@@ -418,50 +497,37 @@ impl Side {
     }
 
     /// The row whose state a frame grabbed on `row` displays, off the frame
-    /// counter: the last row of the frame two counter bumps back. A frame
-    /// that follows one which ran past its step flips a vsync after its
-    /// bump, so on that bump's own vsync the screen still holds the frame
-    /// before; an on-time frame flips on its bump (step `1`: every shot is
-    /// a new image, two rows back). A frame's pass leaves its
-    /// state on its last row, and the double buffer shows what the frame
-    /// before last drew ([`Lag::Auto`]). On an ordinary step-`2` frame this
-    /// is the `2 * step` rule; counted in frames, a slow frame keeps its
-    /// image up for every vsync it ran over. `horn_summon` enters module
-    /// phase 9 on frame `1725` (vsync 2099) with frames of seven vsyncs at
-    /// step `4`, and the close-up reaches the screen at vsync 2113, the
-    /// vsync after frame `1727`'s bump, where `2 * step` paired the phase-8
-    /// shot at 2109 with the phase-9 row at 2101; in its phase 7 the image
-    /// at 1121 (frame `1600`'s bump) is still the one 1113..1119 show.
+    /// counter: the last row of the pass two wait ends back.
+    ///
+    /// The flip routine flips when its wait ends and then draws the table
+    /// the pass before it built, so the image up between wait ends `k` and
+    /// `k + 1` is the one built by the pass whose state stands on the rows up
+    /// to wait end `k - 1` ([`Self::wait_ends`]). On frames that keep to a
+    /// step of `1` or `2` this is the `2 * step` rule. A frame that ran past
+    /// its step ends its wait on its bump's row, so the grab on that row
+    /// still shows the image before and the next one the new image: on
+    /// `horn_summon`'s phase 9, entered on a seven-vsync step-`4` frame, the
+    /// close-up reaches the screen the vsync after the bump two frames on.
+    /// PROT 0904's arm 4 is the case that separates this from a count of
+    /// counter runs: its frames go from one vsync to three as the rise
+    /// lands, and its grabs show the rise at `2`, `3`, `3`, `4`, `6`, `6`,
+    /// `6`, `9` tenths, the block's value on exactly these rows.
     /// `None` without the `frame` column or before the recording holds that
-    /// frame.
+    /// pass.
     fn shown_by_frame(&self, row: &Row) -> Option<u64> {
         self.shown_frames_back(row, 2)
     }
 
-    /// The row `back` game frames before the one `row`'s grab displays the
-    /// newest of: [`Self::shown_by_frame`] at `back = 2`, the screen fade's
-    /// own table at `back = 1` ([`FADE_FRAMES_BACK`]).
+    /// The last row of the pass `back` wait ends behind the newest wait end
+    /// ahead of `row`: [`Self::shown_by_frame`] at `back = 2`, the screen
+    /// fade's own table at `back = 1` ([`FADE_FRAMES_BACK`]).
     fn shown_frames_back(&self, row: &Row, back: u32) -> Option<u64> {
-        let f = row.frame?;
+        row.frame?;
+        let ws = self.wait_ends()?;
         let i = self.rows.binary_search_by_key(&row.t, |r| r.t).ok()?;
-        // The frame before this one ran past its step: its flip lands a
-        // vsync after this frame's bump.
-        let late_flip = i > 0 && self.rows[i - 1].frame != Some(f) && {
-            let prev = &self.rows[i - 1];
-            let len = self.rows[..i]
-                .iter()
-                .rev()
-                .take_while(|r| r.frame == prev.frame)
-                .count();
-            len > usize::from(prev.step.max(1))
-        };
-        let want = f.checked_sub(if late_flip { back + 1 } else { back })?;
-        self.rows[..=i]
-            .iter()
-            .rev()
-            .find(|r| r.frame.is_some_and(|g| g <= want))
-            .filter(|r| r.frame == Some(want))
-            .map(|r| r.t)
+        let k = ws.partition_point(|&(w, _)| w < i).checked_sub(1)?;
+        let j = (k + 1).checked_sub(back as usize)?;
+        Some(self.rows[ws[j].0].t)
     }
 
     fn row_at(&self, t: u64) -> Option<&Row> {
@@ -1521,6 +1587,7 @@ mod tests {
             fade: None,
             fade_back: None,
             over: false,
+            rand: None,
         };
         let side = Side {
             dir: PathBuf::new(),
@@ -1619,6 +1686,7 @@ mod tests {
                     fade: None,
                     fade_back: None,
                     over: false,
+                    rand: None,
                 });
                 t += 1;
             }
@@ -1629,21 +1697,61 @@ mod tests {
         }
     }
 
-    /// A frame that ran past its step adds its step, not its length, to the
-    /// game clock; one that kept to its step adds what it took.
+    /// PROT 0904's arm 4 as a retail recording holds it: the counter, the step
+    /// byte and the vsyncs each counter value stood for, from vsync 552.
+    fn theeder_rise() -> Side {
+        side(&[
+            (1594, 1, 1),
+            (1595, 1, 1),
+            (1596, 1, 1),
+            (1597, 1, 1),
+            (1598, 1, 2),
+            (1599, 2, 3),
+            (1600, 3, 3),
+            (1601, 3, 5),
+            (1602, 4, 4),
+        ])
+    }
+
+    /// A pass adds the step it drains by to the game clock, on the rows its
+    /// state stands on: from the vsync after its wait ended to the next wait
+    /// end, which on a frame that ran past its step is its bump's own row.
     #[test]
-    fn game_clock_counts_the_step_not_the_overrun() {
-        // Each run is paced on the step the run before it reads.
-        let s = side(&[(1, 2, 2), (2, 4, 4), (3, 4, 5), (4, 4, 3), (5, 1, 4)]);
+    fn game_clock_counts_passes_not_counter_runs() {
+        let s = theeder_rise();
+        assert_eq!(
+            s.wait_ends()
+                .unwrap()
+                .iter()
+                .map(|w| w.0)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 6, 9, 12, 17]
+        );
         let c = s.game_clock().unwrap();
-        // run 1: own step 2 over 2; run 2: paced 2 over 4; run 3: 4 over 5;
-        // run 4: 4 over 3 (the catch-up after an overrun); run 5: 4 over 4.
+        // The rise's block reads 1, 2, 3 tenths on rows 2..=4, then 4 on the
+        // two rows 5 and 6 (the counter turns between them), 6 on rows
+        // 7..=9 and 9 on rows 10..=12: each pass's rows share its span.
         assert_eq!(
             c,
-            vec![0, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15]
+            vec![
+                0, 1, 2, 3, 4, 5, 5, 6, 6, 7, 8, 9, 10, 11, 11, 12, 12, 13, 14, 15, 16
+            ]
         );
-        // The whole frames between the cut ends, with the step they ran on.
-        assert_eq!(s.frames(), vec![(102, 4, 2), (106, 5, 4), (111, 3, 4)]);
+        // The whole counter runs between the cut ends, with the step each
+        // was paced on.
+        assert_eq!(s.frames().len(), 7);
+        assert_eq!(s.frames()[5], (109, 3, 2));
+    }
+
+    /// A frame that ran past its step adds its step, not its length.
+    #[test]
+    fn game_clock_counts_the_step_not_the_overrun() {
+        let s = side(&[(1, 4, 4), (2, 4, 7), (3, 4, 7), (4, 4, 7), (5, 4, 7)]);
+        let c = s.game_clock().unwrap();
+        // Seven-vsync frames on step 4: the passes stand on rows 12..=18 and
+        // 19..=25, four vsyncs of game time each.
+        assert_eq!((c[12], c[18]), (12, 15));
+        assert_eq!((c[19], c[25]), (16, 19));
     }
 
     /// No frame counter, no game clock: the pairing stays on wall vsyncs.
@@ -1668,32 +1776,65 @@ mod tests {
         assert_eq!(got, [0, 1, 2, 3, 4, 4, 5, 6, 7, 8]);
     }
 
-    /// A shot shows the last row of the frame two counter bumps back, so a
-    /// slow frame holds the image for all its vsyncs.
+    /// A shot shows the pass two wait ends back, so a slow frame holds the
+    /// image for all its vsyncs and the grab on a late bump's row still shows
+    /// the image before.
     #[test]
-    fn auto_lag_counts_frames_not_vsyncs() {
-        let s = side(&[(1, 2, 2), (2, 4, 7), (3, 4, 7), (4, 4, 7)]);
-        let rows_of = |f: u32| s.rows.iter().filter(move |r| r.frame == Some(f));
-        let last_of = |f: u32| rows_of(f).next_back().unwrap().t;
-        // Frame 3 past its bump shows frame 1's last row, all seven vsyncs.
-        for r in rows_of(3).skip(1) {
-            assert_eq!(s.shown_by_frame(r), Some(last_of(1)));
+    fn auto_lag_counts_wait_ends_not_vsyncs() {
+        // The rise's grabs, by the row whose block value each one shows.
+        let s = theeder_rise();
+        let shown = |t: u64| s.shown_by_frame(s.row_at(t).unwrap());
+        for (grab, state) in [
+            (105, 103),
+            (107, 104),
+            (109, 104),
+            (111, 106),
+            (113, 109),
+            (115, 109),
+            (117, 109),
+            (119, 112),
+        ] {
+            assert_eq!(shown(grab), Some(state), "grab {grab}");
         }
-        // Frame 4 follows a slow frame: its bump vsync still shows frame 1,
-        // the vsync after shows frame 2.
-        let mut f4 = rows_of(4);
-        assert_eq!(s.shown_by_frame(f4.next().unwrap()), Some(last_of(1)));
-        assert_eq!(s.shown_by_frame(f4.next().unwrap()), Some(last_of(2)));
-        // Frame 2 has no frame two back in the recording.
-        assert_eq!(s.shown_by_frame(&s.rows[3]), None);
-        // On-time frames flip on their bump.
-        let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1)]);
-        assert_eq!(t.shown_by_frame(&t.rows[2]), Some(t.rows[0].t));
-        // The fade's own table stands one frame back: frame 3 past its bump
-        // shows frame 2's fade.
-        for r in rows_of(3).skip(1) {
-            assert_eq!(s.shown_frames_back(r, FADE_FRAMES_BACK), Some(last_of(2)));
+        // No pass two wait ends back in the recording.
+        assert_eq!(shown(101), None);
+        // On-time step-1 frames: every shot is a new image, two rows back.
+        let t = side(&[(1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1)]);
+        assert_eq!(t.shown_by_frame(&t.rows[3]), Some(t.rows[1].t));
+        // On-time step-2 frames: each wait ends on its bump's row (the next
+        // pass draws on the row after, as `battle_jouind_gilium_lv3_strike`'s
+        // on-time step-3 frames read), so the grab on a bump's row shows the
+        // pass before the one the next row shows.
+        let u = side(&[(1, 2, 2), (2, 2, 2), (3, 2, 2), (4, 2, 2)]);
+        assert_eq!(u.shown_by_frame(&u.rows[6]), Some(u.rows[2].t));
+        assert_eq!(u.shown_by_frame(&u.rows[7]), Some(u.rows[4].t));
+        // Step-2 frames that each run a little past one vsync: the pass's
+        // bump lands on the row its wait ends, the next pass draws `rand()`
+        // on the row after, and the grab shows the state up to the bump two
+        // back. The counter alone reads the same rows as on-time frames.
+        let mut x = side(&[(1, 2, 2), (2, 2, 2), (3, 2, 2), (4, 2, 2)]);
+        for (k, r) in x.rows.iter_mut().enumerate() {
+            r.rand = Some((k as u32).div_ceil(2));
         }
+        assert_eq!(
+            x.wait_ends()
+                .unwrap()
+                .iter()
+                .map(|w| w.0)
+                .collect::<Vec<_>>(),
+            [0, 2, 4, 6]
+        );
+        assert_eq!(x.shown_by_frame(&x.rows[7]), Some(x.rows[4].t));
+        // Seven-vsync frames on step 4: the grab on a bump's row still shows
+        // the image before, the next one the new image.
+        let v = side(&[(1, 4, 4), (2, 4, 7), (3, 4, 7), (4, 4, 7), (5, 4, 7)]);
+        assert_eq!(v.shown_by_frame(&v.rows[18]), Some(v.rows[4].t));
+        assert_eq!(v.shown_by_frame(&v.rows[19]), Some(v.rows[11].t));
+        // The fade's own table stands one pass nearer.
+        assert_eq!(
+            v.shown_frames_back(&v.rows[19], FADE_FRAMES_BACK),
+            Some(v.rows[18].t)
+        );
     }
 
     #[test]

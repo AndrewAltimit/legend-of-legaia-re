@@ -28,8 +28,9 @@ pub struct PanelGlyph {
     /// [`legaia_mes::PlayerState::WideGlyph`] - those are folded to their
     /// `arg` byte for now, since the wide-glyph table isn't decoded).
     pub byte: u8,
-    /// CLUT additive index 0..15. `0` = default white; non-zero values come
-    /// from inline `0xCF` color-change escapes in the bytecode.
+    /// CLUT additive index 0..15, the ink staging id the glyph draws under.
+    /// [`DialogPanel`] tracks inline `0xCF` colour pairs into it; the owned
+    /// panel keeps the pairs in its page instead, for the draw to restage.
     pub clut: u8,
 }
 
@@ -87,17 +88,11 @@ impl<'a> DialogPanel<'a> {
             }
             PlayerState::PageBreak => self.state = PanelState::PageBreak,
             PlayerState::WaitingForInput => self.state = PanelState::PageBreak,
-            PlayerState::Control(MesEvent::SkipTwo(arg)) => {
-                // `0xCF XX` in MES bytecode renders XX alone (the `0xCF`
-                // prefix is a "skip me" marker per FUN_80036888). The
-                // post-substitution color-change escape with the same
-                // first byte is a separate byte stream the renderer sees
-                // *after* MES interpretation; it isn't carried in the
-                // bytecode and so doesn't drive `current_clut` here.
-                self.page.push(PanelGlyph {
-                    byte: arg,
-                    clut: self.current_clut,
-                });
+            PlayerState::Control(MesEvent::SkipTwo(ink)) => {
+                // `0xCF n` restages the text ink (`FUN_80036888`,
+                // `0x80036944..0x8003695C`) and draws nothing: the glyphs
+                // after it take the new CLUT.
+                self.current_clut = ink;
             }
             PlayerState::Control(_) => {}
             PlayerState::Done => self.state = PanelState::Done,

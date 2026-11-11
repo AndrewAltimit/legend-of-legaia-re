@@ -23,6 +23,9 @@ use legaia_engine_core::world::World;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StrikeDeal {
     pub hit_words: Vec<(u32, Option<u32>)>,
+    /// The attack camera's track coin `ctx[+0x26D]` through the recording,
+    /// `(coin, vsync)` change points (`LEGAIA_STRIKE_DEAL_COIN`).
+    pub track_coins: Vec<(u8, u32)>,
 }
 
 /// `w1,w2,..`, each decimal, or `w@vsync` with the recording's vsync of the
@@ -41,7 +44,23 @@ pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
             Some((w, at))
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(StrikeDeal { hit_words })
+    Some(StrikeDeal {
+        hit_words,
+        track_coins: Vec::new(),
+    })
+}
+
+/// `coin@vsync,..`: the recording's track-coin change points. A malformed
+/// list deals no coin.
+pub fn track_coins_from_env(v: &str) -> Vec<(u8, u32)> {
+    v.split(',')
+        .filter(|f| !f.trim().is_empty())
+        .map(|f| {
+            let (c, at) = f.trim().split_once('@')?;
+            Some((c.parse::<u8>().ok()? & 1, at.parse().ok()?))
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 /// Stand the striker on the capture's queue, the fight on its approach terms,
@@ -60,6 +79,14 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
+    deal_hit_words(world, deal);
+}
+
+/// Arm the hit words alone: the deal of a cast whose hits are the melee
+/// kernel's (PROT 0952's Astral Slash lands Gaza's clip `0x0A` through
+/// `FUN_801EC3E4`), where the capture's drive holds no strike hand to stand
+/// the queue or the approach terms on.
+pub fn deal_hit_words(world: &mut World, deal: &StrikeDeal) {
     // A timed word lands on the hit nearest its vsync: the gate stands on the
     // recording's first row, so the recording's vsync counts from it.
     let gate = world.clock.display_frames;
@@ -68,6 +95,15 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
         .iter()
         .map(|&(w, at)| (w, at.map(|v| gate + u64::from(v.saturating_sub(1)))))
         .collect::<VecDeque<_>>();
+    // The track coin: retail draws `ctx[+0x26D] = rand() % 2` at each commit
+    // of a `+0x87` clip (`FUN_8004E13C`), a draw the replay's own stream
+    // makes on another word. It picks the per-art camera's column, so a
+    // Super Art's shots fork on it.
+    world.battle.capture_track_coin = deal
+        .track_coins
+        .iter()
+        .map(|&(c, v)| (gate + u64::from(v.saturating_sub(1)), c))
+        .collect();
 }
 
 /// The byte the replay's strike loop already staged from its own stream,
@@ -95,6 +131,17 @@ fn restage_dealt_byte(b: &mut legaia_engine_battle_vm::battle_action::BattleActo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn track_coins_parse_as_change_points() {
+        assert_eq!(
+            track_coins_from_env("0@1,1@140,0@388"),
+            vec![(0, 1), (1, 140), (0, 388)]
+        );
+        assert_eq!(track_coins_from_env(""), vec![]);
+        assert_eq!(track_coins_from_env("1@x"), vec![]);
+        assert_eq!(strike_deal_from_env("5").unwrap().track_coins, vec![]);
+    }
 
     #[test]
     fn a_staged_byte_the_replay_picked_takes_the_dealt_one() {

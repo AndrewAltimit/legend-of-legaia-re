@@ -94,6 +94,11 @@ pub const LEVEL_UP_STAT_CAP: u16 = 0x3E7;
 /// The cumulative EXP a record can hold (`0x8004F2C4`).
 pub const RECORD_XP_CAP: u32 = 9_999_999;
 
+/// Roster record the level-up applier `FUN_801E9504` never grows: index `3`,
+/// Terra (character id `4`). [`LevelUpTracker::grant_xp`] credits her EXP and
+/// stops there, so her level, maxima and stats stay the New Game template's.
+pub const NO_LEVEL_SLOT: usize = 3;
+
 impl LevelUpTracker {
     pub fn new() -> Self {
         Self::default()
@@ -333,6 +338,14 @@ impl LevelUpTracker {
         // `FUN_801E9504` looks at the level), up to the cap at `0x8004F2C4`.
         self.xp[slot] = self.xp[slot].saturating_add(xp).min(RECORD_XP_CAP);
         if old_level >= MAX_LEVEL {
+            return None;
+        }
+        // The fourth roster record (Terra) banks the EXP and never levels:
+        // the applier returns before it reads a threshold
+        // (`andi a0,s6,0xff` / `li v0,0x3` / `beq a0,v0,0x801E9FA4` at
+        // `0x801E9510..0x801E9538`), while `FUN_8004E568` has already added
+        // the share to her record's `+0x0` like any member's.
+        if slot == NO_LEVEL_SLOT {
             return None;
         }
 

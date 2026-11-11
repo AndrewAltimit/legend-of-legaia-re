@@ -418,6 +418,24 @@ pub(super) fn watch_clocks(session: &NativeSession) {
             // count: the flag may have flipped and back unseen.
             if now.saturating_sub(e.looked) > 2 {
                 e.held_since = now;
+                // And the phase it is seen in after the gap may be a later
+                // one than the phase it was in before: its start stands only
+                // while less than a lap (both phases timed) has gone by
+                // since. Every pad ride is such a gap, three hundred frames
+                // of script, and `rugi`'s `0x462` is up for 174 of each 872:
+                // a walk that rode a pad a lap, never seeing a whole one,
+                // timed the clear phase across the rise it missed (2442
+                // frames, then 1570, for a phase of 698), stepped onto
+                // P2[44] as that phase was ending, and was sent round the
+                // hub's loop instead of on to (82, 48).
+                let lap = e.shortest[0].zip(e.shortest[1]).map(|(a, b)| a + b);
+                if !e
+                    .flipped_at
+                    .zip(lap)
+                    .is_some_and(|(t, lap)| now - t < lap)
+                {
+                    e.flipped_at = None;
+                }
             }
             if e.value != v {
                 // A flip seen within a frame or two of the last look is
@@ -475,7 +493,7 @@ pub(super) fn phase_ready(session: &NativeSession, flag: u16, on: bool) -> bool 
 
 /// Can a step ever be timed into phase `on` of `flag`? Not when the phase
 /// has been seen to run shorter than the pad takes to test it: `rugi`'s
-/// `0x462` is up for under a hundred frames a lap, and a step taken as it
+/// `0x462` is up for 174 frames of every 872, and a step taken as it
 /// rises is tested after it has dropped. A phase not yet timed is assumed
 /// usable.
 pub(super) fn phase_usable(session: &NativeSession, flag: u16, on: bool) -> bool {
@@ -765,7 +783,77 @@ pub(super) fn object_doors(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
         }
     }
     out.extend(prop_rides(session));
+    let dead = dead_contacts_here(session);
+    out.retain(|d| !dead.contains(d));
     out
+}
+
+/// A contact that carried nobody: scene, story-flag hash, contact centre
+/// and landing cell.
+type DeadContact = (String, u64, (i16, i16), Cell);
+
+thread_local! {
+    /// Contacts a stalled walk pressed at for a whole stall without being
+    /// carried ([`note_dead_contact`]), by scene and story flags.
+    static DEAD_CONTACTS: std::cell::RefCell<HashSet<DeadContact>> =
+        std::cell::RefCell::new(HashSet::new());
+}
+
+fn flags_hash(session: &NativeSession) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    session.host.world.flags.system_flags.hash(&mut h);
+    h.finish()
+}
+
+fn dead_contacts_here(session: &NativeSession) -> HashSet<((i16, i16), Cell)> {
+    let name = scene_name(session);
+    let flags = flags_hash(session);
+    DEAD_CONTACTS.with(|d| {
+        d.borrow()
+            .iter()
+            .filter(|(s, f, _, _)| *s == name && *f == flags)
+            .map(|&(_, _, c, l)| (c, l))
+            .collect()
+    })
+}
+
+/// A walk stalled pressing for a contact's ride to `landing` that never
+/// came: with bodies solid, the contacts within a tile and a half of the
+/// player that land there are no route until a story flag moves. `doman`'s
+/// P1[15] carries a contact at (13312, 12992) that lands on (103, 100); a
+/// party the talk's side-steps left at (13232, 13008), south of it, read
+/// that ride as its only way out of the corner the bodies close on the
+/// lattice, and pressed at it for the rest of the stretch while the step
+/// north stood open.
+pub(super) fn note_dead_contact(session: &NativeSession, landing: Cell) {
+    if !session.host.world.npcs.solid {
+        return;
+    }
+    let (px, pz) = player_xz(session);
+    let name = scene_name(session);
+    let flags = flags_hash(session);
+    let near: Vec<((i16, i16), Cell)> = object_doors(session)
+        .into_iter()
+        .filter(|&((cx, cz), land)| {
+            // The route lands on one of the cells around the contact's own
+            // landing, not always on it.
+            (land.0 - landing.0).abs() + (land.1 - landing.1).abs() <= 8
+                && (i32::from(cx) - i32::from(px)).abs() <= 192
+                && (i32::from(cz) - i32::from(pz)).abs() <= 192
+        })
+        .collect();
+    if !near.is_empty() && std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "      [contact] {name}: no ride from ({px},{pz}) to {landing:?}; dropping {near:?}"
+        );
+    }
+    DEAD_CONTACTS.with(|d| {
+        let mut d = d.borrow_mut();
+        for (c, l) in near {
+            d.insert((name.clone(), flags, c, l));
+        }
+    });
 }
 
 /// The loaded field scene's **rides** under the live flags: each solid
@@ -990,6 +1078,54 @@ pub(super) fn self_opening_doors(session: &NativeSession) -> HashSet<(u8, u8)> {
         .into_iter()
         .filter(|(_, b)| b.is_none())
         .map(|(a, _)| a)
+        .collect()
+}
+
+/// The bank props whose touch runs nothing: from the resume point their
+/// record is an idle loop (`21` and jumps only). Such a leaf is not opened
+/// by pressing into it, wherever it stands: `cave01` P0[0], the rock over
+/// the camp's (7, 89) teleport, raises its `31 00` only in the spawn arm
+/// that tests `0x15E` (Terra's training), so it stands shut until the
+/// scene is entered again with the flag up, and the camp's way out is the
+/// (19, 90) teleport. A leaf whose touch does anything is counted open as
+/// before: the doors on Rim Elm's way out open through bodies the static
+/// read cannot follow to their `31 00`.
+pub(super) fn idle_touch_props(session: &NativeSession) -> HashSet<(u8, u8)> {
+    use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
+    let w = &session.host.world;
+    let Some(man) = w.field_vm.channels_man.as_ref() else {
+        return HashSet::new();
+    };
+    let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
+        return HashSet::new();
+    };
+    w.props
+        .bank
+        .props
+        .iter()
+        .filter(|(_, p)| {
+            let Some((start, pc0, len)) = partition_record_span(&mf, man, 0, p.record) else {
+                return false;
+            };
+            let body = &man[start..start + len];
+            if !matches!(body.get(pc0), Some(0x24 | 0x25)) {
+                return false;
+            }
+            let Some(resume) = LinearWalker::new(body, pc0)
+                .map_while(Result::ok)
+                .find(|i| i.opcode == 0x21)
+                .map(|i| i.pc + i.size)
+            else {
+                return false;
+            };
+            let flow = flow_reachable(body, resume, None);
+            !flow.is_empty()
+                && flow
+                    .iter()
+                    .all(|i| i.opcode == 0x21 || matches!(i.info, InsnInfo::JmpRel { .. }))
+        })
+        .map(|(&a, _)| a)
         .collect()
 }
 

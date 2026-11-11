@@ -60,6 +60,17 @@ struct's own q19.12 scale and its colour ops do not follow the hardware's MAC,
 IR and FIFO steps, which the test reports. Only the `gte-replay` tool runs
 that struct.
 
+### Leaves reached by a jump
+
+A dispatcher's table-driven leaf (`FUN_80043390`'s handler banks, entered by
+`jr`) is never a `Cpu::call` entry. `Cpu::watched` names such entries: the run
+notes each landing on one in the ledger, so a test that drives the dispatcher
+can declare the leaf it reaches and the declaration is checked like any other.
+`Cpu::probe` observes any instruction without replacing it: the probe sees the
+registers, memory and GTE as they stand before it runs, which is how a test reads
+what a routine hands the projector (`shatter_draw` reads the vertices at the
+shatter renderer's `RTPT`).
+
 ## How to add a routine
 
 1. Read the disassembly and find what it reads and writes. Seed those bytes with
@@ -96,7 +107,9 @@ fn the_port_arctan_table_is_the_retail_one() {
 `scus(VA)` names a routine of `SCUS_942.54`, `prot(ENTRY, VA)` one of PROT entry
 `ENTRY` (extraction index); several go in one call. Each argument is an integer
 literal or a `const` of the test's file (or of `common.rs`), so the declaration
-can be read without compiling anything.
+can be read without compiling anything. A `const` in the test's own body shadows
+the file's, as in Rust; a name the file defines with two values and the test does
+not define itself fails the gate, since the scan cannot tell which one it means.
 
 **The run checks the declaration.** `Cpu::call` notes every entry it is asked
 to run in a thread-local ledger (`psx_retail_exec::ledger`), with the bytes at
@@ -319,9 +332,17 @@ the disc's scene scripts with its calls stubbed, finds the operand widths of the
 PC on the child records, where retail walks past them. A call that lands on an empty
 function pointer is why `Cpu::stub_outside` counts toward the step budget.
 
+The slot machine's state machine `FUN_801CF0D8`, whole sessions frame by frame from its state `0` on a generated pad script (`slot_machine`), found the port betting on Cross alone, where state `1` takes Square, Cross or Circle (`andi 0xe0`), and with no entry fade: retail holds state `1` off the pad and off the coin gate for thirty-two frames while `DAT_801D3794` runs down.
+
+The routine's discarded `rand()` at its head had no port, so a feature roll never depended on when the bet was placed; state `0`'s own frame draws the LCG and steps the frame counter, and without it every landing sat one draw early and the tally paid on the other frame parity. The frame that dropped state `4` back to idle read the submenu edge and the coin gate a frame early.
+
 Baka Fighter's combat tick `FUN_801D3F44` and round SM `FUN_801D3468`, run whole rounds at a time in the pool walk's order, found the opponent committing on a cooldown of its own, with the player free to read its clip and counter it, where retail's opponent throws only in answer to the player's commit and blind to it. The "cooldowns" those arms store are the rumble levels and pace nothing. Exchanges ended at the booking, so an attack's second strike never landed, a struck fighter's pad was never masked, and the hit streak never cleared when a reaction clip ended; it climbed across whole rounds, and every later hit paid the streak's bonus. The player could throw during the round banners, the push-back and the camera's follow had no port, and neither did the rumble.
 
 The dance floor's handler `FUN_801D1358` with its award routine, run over whole songs for every dancer, found the port holding each dancer to one press a beat, where only the latch and the move clip hold one, and rivals scored about a fifth low for it (a hands-off qualifier's two rivals `245` / `208` against `295` / `253`). It also found a Circle miss counting one, the feed's schedule running on through move clips and refusing to move with no stock, free play's rivals never riding the lead's gauge, the free-play Disco King's schedule cut off at the table's end, and his loop-named moves locking him.
+
+The dance state machine `FUN_801CF470`, whole songs from the clocks' reset to the results with the dancers ticked behind it (`dance_floor`), matches the port's clock and found what the hosts did around it. The door entry opened every mode on the short song, where the song-end test reads the mode alone (`0x801D00D4..0x801D00FC`) and only the how-to is short, so a contest ended fifteen seconds early.
+
+The hosts ran a game frame every vsync on a delta of one, where the hall runs one every third vsync on a delta of three: the judge read the phase three times as finely, and a rival's feed took three turns for retail's one, so rivals closed on different totals. The finale started two game frames early, the frame that reached the song limit running state `0xB`'s spawn and state `0xC`'s first add at once, and the wipe's pause flag `DAT_801D5130` had no port, so rivals went on scoring to the results where retail stops judging at `0x349`. The song each mode streams was picked by length; it is the mode's (`0x801CFAC0..0x801CFB80`), free play rotating three by a counter in the save.
 
 The field VM's state arms close with the host answering what clear RAM answers: `4C 53` holds on the staged mode switch `FUN_801D65D8` where the port stepped past it on one frame, and `4C EA` runs once and advances where the port re-ran it at its own PC. Every other arm the first sweep could not compare agrees on both polarities of its test. Its write-up above is the sweep's stub world; a test seeded with no actor and no item holds the skip paths.
 
@@ -342,6 +363,12 @@ The Muscle Dome's arena re-entry `FUN_801CEA6C`, the leg's rows `FUN_801D1184` a
 The dialog pager `FUN_801D84D0`, call by call over generated pages at every frame step and window size, confirms the row window's pacing, scrolls and taps, and found a page turn on `0x48` typing the next box on the second call. Retail's state `9` puts the row count back to three, state `0xA` collapses the box over `0x1000`, and `0x801F273C` keeps it gone for `0x18` frame-steps, about two thirds of a second at the field's step. A press on a box's opening call does nothing there, where the port took it as a skip.
 
 The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, replaced what the port had reconstructed: the record is the lure's distance from its spawn point, and line comes in by the press, not by holding. An inn's `4C 82` and `3A` match.
+
+Baka Fighter's damage kernel `FUN_801D3B18`, called on its own over every attack type and streak (`baka_leaves`), found the port zeroing a special's damage, where the kernel runs the same arithmetic for it: a power of `0` leaves the streak term `(streak - 1) * 0x40`, taken off a struck seat with HP left. No duel reaches it, since the special is thrown at a seat already at `0`.
+
+Baka Fighter's chrome timelines, each called as its caller calls it with the widget emitter, the announcer and the tint hooked (`baka_chrome`): the round banner `FUN_801D5C7C` and the all-clear announcer `FUN_801D21FC` match, and the intro title card `FUN_801D59D4` found the subtitle's four-frame flash carried as white where the routine pushes the colour word `0xFF`, red alone. The sprite-actor draw callback `FUN_801D67F0` found the port rounding the fade level up before its shift, where the level is read unsigned and takes a plain `>> 4`, a brightness one step high on most frames. The impact pair `FUN_801D4DF8` and the all-clear fighter's tick `FUN_801D6F18` match.
+
+The slot machine's payline pass `FUN_801D3380` and the Muscle Dome's contest-start restore `FUN_801D0ED8` and leg staging `FUN_801D1510` match.
 
 Baka Fighter's round score `FUN_801D2A28` matches, and tracing what feeds it found the channel unwired: no host installed the two bonus tables, the match bonus row was never seeded, and the running total never reached the cabinet, so neither secret opponent could ever appear. Retail also scores only the player's round win, off the player's HP.
 
@@ -1041,3 +1068,266 @@ The battle-stage stream walker `FUN_8001FE70` (`container_walkers`) copies its
 lead chunk whole and type-tests only the headers after it, so a lead chunk of
 type `0x02` does not end the walk, where the port's type-`0x02`-terminated walk
 stopped on it.
+
+The pause menu's remaining painters, on the same rig (PROT 0899). The Status page's Condition panel
+`FUN_801D33D8` (`status_page`) found the parenthesised HP and MP printing the live maxima, where the
+bytes read the record-side pair `+0x11C` / `+0x11E`: a member wearing an HP or MP percent accessory
+showed the boosted figure twice. The Equip screen's main window `FUN_801D21C0` (`equip_main`) found
+the slot browse's item panel with no port: with the hand on a filled slot row the renderer moves its
+own window record by `(+0x94, +0xC)`, runs the shared item panel on the worn id and frames two shade
+boxes, so the port showed nothing about a worn piece until its candidate list was open. The Best
+Equipment change arrow is the command-arrow cell under ink `0`, where the port drew an ASCII pair.
+The target panel `FUN_801D0520` (`target_panel`) found three: the Life / Magic Water preview draws
+a `MAX` tag (icons `0x64` / `0x65`) ahead of the HP / MP label, which sits twenty pixels further
+right than the port had it alone; a stat preview's left value is the menu block's word, equipment
+included, where the model handed over the bare record stat; and the plain HP row's ink follows the
+status word. The Equip compare panel's HP / MP rows never drew their icon pairs on either host. The
+top level's three windows (`pause_root`: command list, money and play-time box, party panel) match.
+
+The naming screen (PROT 0897, `name_entry`), its machine `FUN_801F03F0` stepped call by call over
+generated pad words with the renderer `FUN_801E6B34` drawn after every call, found the port's cursor
+a different walk. A horizontal step wraps inside its own row, where the port ran on into the next;
+a vertical step onto the control row keeps its column, where the port snapped to the button's first
+cell and so came back up in another column. The arms are exclusive and ordered (cancel, Start alone,
+confirm, d-pad): Start jumps to Select and confirms there, which the port had no arm for, and the
+confirm prompt has no cancel arm, where the port's cancel left it. The call after the Select press
+reads no pad. Select passes a name of blanks, the name is kept untrimmed, the screen queues four
+cues the port never played, the prompt is the named character's own line, and the caret needs room
+for a tenth byte. Up from columns 5 or 11 of the control row never leaves retail's loop; no walk
+reaches those cells.
+
+The Magic screen's caster picker reads no Start: the spell screens' differential now presses it, and
+the port's Start-cancel arm is gone. The save UI's dimmed backdrop `FUN_801E02A4` (`save_backdrop`)
+links two sprites of `192 x 192` and `128 x 255`; the port drew both at the art's full height. The
+stat seeder `FUN_801CF5D0` and the developer menu's flag-number arm `0x801EA51C` match.
+
+The field overlay's op-`0x49` hub family (`hub_actors`), the dispatcher `FUN_801F159C` with the six
+panel machines it indexes and the seven window painters, every draw and call logged, found the
+dispatcher's release arm reading the board flag `_DAT_8007B450` after the handler ran
+(`0x801F1678`), where the port read the frame's snapshot: a handler that zeroes the cell and
+finds the completion gate already down takes the busy-bit arm, not the flag store. The panel-script
+interpreter `FUN_801E9B3C` and the shared list cursor `FUN_801E9DC8` (`panel_script`), and the
+brightness flash, sub-list, records slide and fill fade actors (`panel_actors`), match. The flash's
+phase 0 also clears a byte at `0x801F2AA8` that nothing in the field overlay or the executable
+reads.
+
+The geometry colour grade behind `4C E6` (`colour_grade`), the object walk `FUN_801D5E20` and the
+resident-table walk `FUN_801D8280` over TMDs off the disc, replaced a port that took a flat list
+of colour words: a record's colours are its leading words, and the stride add the port's notes
+called an over-run is the group's footer slot. The count table at `0x801F26F0` covers selectors
+`0xC..=0x13`.
+
+Three spawners return to the worklist's covered side (`timer_spawns`): the shutter `FUN_801DE754`,
+the screen frame `FUN_801DE7BC` and the countdown HUD's install / remove `FUN_801D596C`, each a
+whole-record compare against the allocator's answer.
+
+The player tick `FUN_801D1344`, run whole with its callees logged (`player_tick`), holds the
+pad-hold drain, the walk gate and [the order of the frame's legs](../subsystems/field-locomotion.md#the-player-ticks-legs).
+The World ran the walk-regen tick after the step on every field frame; the tick runs it ahead of
+the pad controller and only past the walk gate, and tests the system lock `0x1F800394 & 0x400`
+there, which the step did not. The scene-transition actor `FUN_80021934` (`scene_transition`)
+matches over whole transitions, both stream arms and the name-buffer rotation.
+
+The flag-window picker `FUN_801EF014` behind `49 04`, the Uru Mais lift's floor list, with the list
+cursor live beneath it, and its painter `FUN_801E6984` (`flag_window`) match the port's tick, row
+loop and legend pens over the disc's two descriptors and generated ones. The submode open
+`FUN_801D9C3C` seeds twelve words of the context block one by one, `0x801F3530` and `0x801F3534`
+among them after the tail clear, where the port listed ten; the scene actor spawn `FUN_801DE478`
+matches.
+
+Feeding the naming screen's d-pad the auto-repeat word it reads (`_DAT_8007BB84`) showed the word
+had never reached a host right. `InputState::set_pad`, the entry every host takes, hands the pump
+the raw pad word, and the cursor auto-repeat `FUN_80035C24` masked it with the packed layout's chord
+(`0xF00F`: the d-pad and the shoulders once byte-swapped). So a held direction never repeated in any
+menu, and a held face button, Start or Select re-fired as a direction: a Cross held for a third of a
+second walked a list down. The mask entry now runs the repeat on the packed form.
+
+The top-level command list and the Equip main window draw each hand in the mode the cursor word
+names: `FUN_8002B994` mode `0` (static) under bit `0x1000`, mode `1` (the idle bob) otherwise, and
+under bit `0x2000` a hand on every row in mode `4`, which bobs off the vsync counter. The port drew
+one static hand; `pause_root` and `equip_main` now hold every hand's row and mode. The Status
+screen's Skills page (`status_page`) matches: the Goods rows that grant a passive under `0x40`,
+their pictograms, the three strings a row and their inks, and the "no skills" line.
+
+Battle init `FUN_80055B6C` and the setup `FUN_800513F0`, each run whole with its loaders stubbed
+(`battle_init`, `battle_setup`), found two things the port's battle entry did not do. The
+[species-order rebuild](../subsystems/battle.md#the-species-order-rebuild) had no port: a formation
+of two species draws one `rand()` and, on an odd draw, opens with the other species in front, where
+the port seated every formation as authored and drew nothing. And the setup draws one `rand()` a
+seated body for its [opening clip phase](../subsystems/battle.md#the-opening-clip-phase), where the
+port started every idle on frame `0`, so like monsters idled in step. Both move the battle's
+`rand()` stream from its first draw. The seat tables, both family addends, the scripted-fight byte,
+the special-word arms, the battle tally, the rumble seed and both entry fades match.
+
+The MAN installer `FUN_8003AEB0` (`man_install`), run whole over a generated MAN with the scene
+control block reset and the map-install tail live beneath it, matches the port's pieces in the order
+it runs them: the entry flag, the save permission, the back-from-battle flag stores with the
+game-over hand-off and the escape clock's penalty, and the place-name banner with the flag it
+consumes. One write has no port: system flag `0x16` is cleared on every scene load and raised only
+under the boot latch `DAT_8007B71C`, so it reads "the first scene since boot". A card save taken in
+such a scene holds it set, and no scene script on the disc reads it; the test holds retail to that
+rule and leaves the bit out of the comparison.
+
+The pad pump `FUN_8001822C` (`pad_pump`), as one stream of calls over digital and analog reports,
+missing pads, the stick fold-ins on both sides of their dead zone, opposed directions and every
+frame step, matches on the held, changed and pressed words, the 32-vsync word and the repeat pulse.
+The frame-begin pass `FUN_8001698C` (`frame_begin`) matches on the SFX ring's aging, the audio
+level's apply and the debug frame skip. The battle cue dispatcher `FUN_8004FCC8` (`cue_dispatch`)
+matches over every id: the voice arm's two gates, clip slot, channel and read span, and the ring
+arm's value, de-dup and cursor wrap; the port declines a voice id whose span is zero, where retail
+starts a clip of nothing. The per-actor draw tick `FUN_800480D8` (`actor_draw_tick`), the party cast
+trigger `FUN_801DBF9C` (`spell_trigger`), the side-band applier `FUN_801F12D0`
+(`sideband_applier`, pass by pass from a turn's seed to the pass that drops its stage byte), the
+action SM `FUN_801E295C` entered at its own entry on the Done band (`spirit_cleanup`), the map
+install tail `FUN_8003ADAC` with the fade spawner `FUN_80024E80` and the positioned spawn
+`FUN_80024C88` (`map_install`), the status element `FUN_8002C2E4` (`status_icon`) and the scene and
+sound leaves in `scus_core_leaves` and `field_scus_hosts` match. The script target resolver
+`FUN_8003C83C` is ported beside them as a kernel.
+
+The asset dispatcher `FUN_8001F05C` with its registrars live beneath it (`asset_dispatch`), over
+generated chunks of every type byte in both storage modes, installs what `decode` returns and
+registers the members `parse_pack` and `vdf_entry` find; the flag types and the unknown ones touch
+nothing. Run under the two walkers over every scene block, it registers each scene's models in
+`SceneModelBank`'s order. The VDF record table at `0x80083E58` runs on across installs: `edbalden`
+stages a bundle slot and a stream chunk, and a reader's buffer is the last one.
+
+The streaming-chunk installer `FUN_8001E54C` (`chunk_install`) found the port stopping the walk at a
+chunk shorter than a word, where retail reads the next word as the next header, and saturating the
+type-3 budget arithmetic, which is plain wrapping subtraction. No disc stream carries either shape.
+
+The CD plumbing runs with the drive stood in for (`cd_plumbing`): the libcd calls answer "done" and
+the VSync a blocking wait spins on delivers the sectors the kick computed. The stream-file shims
+and the cursor seek match `StreamFileHost` on the cursor, the deferred-op park and the bytes read.
+The DMA primitives found the offline host reading from the last lookup's start, where the kick
+reads from the cursor a completed wait advances (`0x8003E030..0x8003E050`), so a second read
+repeated the first; the lookup not draining a read in flight; and the blocking wait answering `0`
+where the bytes answer `2`. Only tests build that host. The stream load queue `FUN_8003DDA0`, the
+overlay loaders `FUN_8003EBE4` / `FUN_8003EC70` and the read sync `FUN_8005EA84` match.
+
+A large routine whose port is a slice of it runs whole with `Cpu::stub_outside` and its few live
+callees hooked. The field initialiser `FUN_801D6704` (`field_init`) matches `field_spawn`,
+`field_bgm_plan` and `field_prim_buffer_bytes` over every entry mode, and showed the two-part
+one-shot `_DAT_8007B9B8` gating the BGM wait barrier as well as the read. The boot init
+`FUN_8001D424` matches the initmap sanitiser, the duel arena initialiser `FUN_801CF00C` its record
+of seeds (`duel_init`), the battle loader `FUN_800520F0` the stage overlay it names, the mode-entry
+prologue `FUN_80016230` its verdicts (`mode_transition`), and the part tick `FUN_80021DF4` the
+mode-4 VRAM scroll, with StoreImage / MoveImage / LoadImage applied to a stand-in VRAM.
+
+The actor render bind `FUN_80020F88` (`actor_bind`) found a failed node allocation leaving the node
+bit `0x800` set in the port, where the failure returns ahead of the store. The contact broad phase
+`FUN_801CF754` (`contact_candidates`), the list walk's emitter release `FUN_8002519C`, the pool
+flush `FUN_80050E74`, the rect-copy enqueue `FUN_800468A4`, the on-screen test `FUN_8005126C`, the
+MoveImage wrapper `FUN_80058490`, the record copy `FUN_800557B8` and the St frame latch
+`FUN_8005ECD4` match.
+
+The Throw Out confirm window `FUN_801D1B20` (`items_panels`) showed the port drawing the bag count
+and the window's first prompt line after the item name, where retail seats both at
+`WX + 8 + name[0] * 12` - the name's first byte read as a glyph count - which on this disc is
+hundreds of pixels right of the screen ([the window](../subsystems/field-menu.md)). The port keeps
+its visible layout on purpose and carries retail's seat as the kernel the differential drives. The shop's root
+window `FUN_801D4868` (`shop_panels`) showed the composed picker's hand two pixels above the pen
+line retail opens it on. The save info panel `FUN_801E08D8` (`save_info`) matches once its numeral
+fields walk the retail cell rule and its `Time ` label keeps the literal's trailing space.
+
+The text expander `FUN_80036514` (`text_width`) showed the port folding retail's two passes into
+one: a `0xC8..=0xCD` lead is copied alone and its operand read as the next token, and the
+measurer's colour drop is the routine's own flag. The line renderer `FUN_80036888` and its two
+wrappers (`text_writer`) match glyph for glyph, and settle where a label's `0x0E` line pitch comes
+from: the renderer's own `0x7C` step, not the wrapper's `0x0D`. The cursor sprite `FUN_8002B994`
+(`cursor_sprite`) matches over frame and bob; a still (mode `0`) call draws frame zero.
+
+The memory-card layer (`card_bu`, `card_flow`) runs with the BIOS calls hooked and scripted. It
+showed the session reset `FUN_801E0598` leaving the transfer phase and the open descriptor alone,
+which the port cleared; the I/O machine `FUN_801E3294`, the poll fold `FUN_801E16E0`, the write /
+format machine `FUN_801E13B8`, the directory classifier `FUN_801E1208` and the frame ticker
+`FUN_801E1114` match. The developer menu's adjuster `FUN_801E9F64` (`dev_menu_adjust`) showed the
+12-bit ring arm testing its two pad bits independently, and the row-action dispatcher
+`FUN_801EA9B0` storing a phase on every one of its arms, not only the out-of-range one.
+
+The dance lesson `FUN_801D0750` (`dance_tutorial`), run whole over the hall's data window, showed the
+port's script was a caption walker and not the mode's controller. Its two free-dance steps wait on
+`900` units of the frames-danced word `DAT_801D5150`, which the hall's state `10` raises; the port
+waited on `900` points of score, which both steps clear on every frame. The lesson also holds the
+song timer, raises the load gate that turns presses away while the Disco King talks, restocks the
+triangles and sends the hall back to its count-in, none of which the port did. The triangle window
+`DAT_801D5144` is stepped by the lesson's practice step alone; the port decayed it every frame of
+every mode, and the whole-song differential had been patching retail's word to agree. The same
+window now reads retail's own word in `dance_floor`, with the miss window and the frames danced.
+
+The beat track `FUN_801D2524` (`dance_hud`) opens its draw area through column `x + 0x50` (the
+`E4` corner is the last column drawn) where the port cropped one column short, and lights its second
+note while the human's closed chain flashes (`DAT_801D558C`), which the port had no writer for. The
+HUD driver `FUN_801D231C`, the count-in banner `FUN_801D2D98`, the hit sting `FUN_801D3D78`, the
+floor spawner `FUN_801D0190` (`dance_spawn`), the sprite-part emit `FUN_801D387C`, the face stamp
+`FUN_801D03C4` (`dance_parts`) and the teardown `FUN_801D414C` match.
+
+The contest hub `FUN_801CF870` (`muscle_hub`) matches `FirstVisitHub::tick` frame for frame through
+a first visit, and shows a retail fault the port does not carry: arm `0x15` steps the state once
+for its hold running out and once more for a skip press on that same frame, which leaves the hub on
+an arm it does not have ([the hub's arms](../subsystems/minigame-muscle-dome.md)).
+
+The fishing tackle screen `FUN_801D0F5C` (`fishing_tackle`) draws an equipped lure's count in the
+row's highlight ink, since the numeral draw reads the ink word the name left; the port drew it
+plain. The bring-up `FUN_801CF070`, the help panel `FUN_801D72A0`, the centred caption
+`FUN_801D73B8` (`minigame_panels`), the sky strip `FUN_801D24EC` (`fishing_sky`), the Baka Fighter
+help panel `FUN_801D6CBC`, the cameo animator `FUN_801D6310` (`baka_cameo`) and the back-read loader
+tick `FUN_801F6B24` (`panel_backread`) match.
+
+The Status page's Magic list (`status_page`) showed the port drawing every row white while a spell
+is latched for an exchange; retail writes the other rows in the grey ink (`0x801D42B4`). Both list
+pages' empty-list line sat `0x13` px low: retail places it off the window record, not the page
+body. The Moves page, the shop's buy / sell list hand (on its row's pen line, as the list kernel
+seats it at `0x80032F84`), the sell panel `FUN_801D5AE8` and the game-over letter stager
+`FUN_801CE844` (its GPU and CD calls stubbed) match. The dev menu's list picker `FUN_801ECA08`
+showed the port running the row-action dispatcher on cancel; retail runs it on confirm and parks a
+cancel in phase `2`. The command arrow `FUN_8003C310` and the pictogram emitter `FUN_8002C488`
+are held to the cells the menu atlas bakes.
+
+
+The lure tick `FUN_801D26CC` run whole from its entry, cast by cast through its `+0x22` states with the rod actor `FUN_801D1C5C`
+ahead of it and the hooked fish, the cadence recogniser and the record live beneath it (`fishing_lure_tick`), against
+`PondSession::tick` on one pad script, found three. The fish did not tick on its strike frame, where the hook arm's word opens
+the tick's gate the same pass, so every fight ran a frame behind retail's `rand()` stream. A hooked frame still takes the
+band segment's strike draw and throws it away, and the port drew none. The rod's bend clamp is the bound less twice the fish's
+surge, where the port stored the bare bound on a note that the surge word stayed zero. A cast that lands inside `0x136` is also
+an empty line on its landing frame, where the port waited a frame in the water.
+
+The positional emitter's release `FUN_800250D4` (`sfx_emitter_release`) walks the row's own count and skips a negative first
+voice. The session's emitter ops clamped the count to one and filtered per voice, so a runtime-bank row of count `0` keyed and
+released a voice retail never touches.
+
+The dance hall's floor pass `FUN_801D2A10` found the step-marker lookup keyed on
+the wrong cell: retail asks the kind-1 tile table about the neighbour cell the
+tile record's `+6` / `+7` delta points at, and the port asked about the spawn
+cell. The shipped hall's marker tiles carry zero deltas, so its ten markers are
+unchanged. The same differential split the floor's other pass
+`FUN_801D3A2C` / `FUN_801D6BBC` off it: that walk runs the columns outer over end
+coordinates, tests the neighbour's block bit and raises the actor's `+0x10` bit,
+so it has its own kernel.
+
+The player-file streamer's equipment selector (`FUN_80052770` case 4) found the
+port keeping the first entry that matched an equipped id, where retail stores on
+every match and so keeps the last; retail also takes the section default when the
+stored size is still zero. No shipped player file repeats an id inside a section.
+
+The world-map text box `FUN_801EE90C` found a negative phase skipping the
+text-actor tick: the bound test sends an out-of-range phase to the epilogue, not
+past it. The horizon emitter `FUN_801D7EA0`, compared packet by packet, matches; its
+multiplies now wrap as `mflo` does, so a large staged scale cannot overflow a debug
+build.
+
+The BGM swap poller `FUN_800243F0`, run from a changed track word through its first three stages to the payload
+read (`bgm_resolver`), found the port's id-to-entry map two entries off from `2069` on. Retail loads
+`_DAT_8007BC64 + id - 2000`, one linear run from extraction `988`; the port had routed an id through the
+curated sound-test row's entry, a map that steps two entries past `1055`. So `jouine`'s `2071` played
+extraction `1061` where a retail state shows `1059` loaded, and `town0e`'s `2070` played `1060` where retail
+plays `1058`. The battle bank's tenth copy keeps its bytes under its linear id `2075`.
+The fishing segment projector `FUN_801D5C2C`, the slot reel renderer `FUN_801D0FA8`'s faces and shades, the
+warp fade repack `FUN_801D58F0`, the fishing pre-hook readout `FUN_801D2050` and Baka Fighter's pack walk
+`FUN_801D4C50` match.
+
+The slot overlay's per-frame marquee `FUN_801CFFF0` found the round pips lit from the left in the port, where
+retail fills them from the right (one round owed lights the pip at column `0x40`), and a negative payout figure
+dropping its units digit, which retail places unconditionally. Its init `FUN_801CEC94` expands the message bank
+as `parse_messages` reads it, each texel the nibble times four. The dance overlay's entry `FUN_801CEF54` stages
+what `dance_scene_entry` records.

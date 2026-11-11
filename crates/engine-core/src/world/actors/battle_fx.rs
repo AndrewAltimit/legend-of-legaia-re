@@ -726,6 +726,38 @@ impl World {
         self.battle.ground_grid_drawn
     }
 
+    /// Whether the GPU dithers this frame's draws.
+    ///
+    /// The dither enable is a bit of the GPU's draw mode. The frame opens on
+    /// the game's dither word (`_DAT_8007BA66`, `World::toggles.draw_dither`,
+    /// which the frame driver copies into the draw environment), and two
+    /// draws of a battle frame link draw-mode packets that move it:
+    ///
+    /// - **The armed wash.** The drain `FUN_80046978` draws it through the
+    ///   fade quad `FUN_80024EE4` in the farthest bucket (`jal` at
+    ///   `0x80046A08`, layer `ctx[+0x92] - 1`, ABR `2`), and that routine
+    ///   links `SetDrawMode(dfe 0, dtd 0, (abr << 5) | 0xE)` ahead of its
+    ///   quad (`clear a1` / `move a2,a1` / `jal 0x80059010` at
+    ///   `0x80024FAC..0x80024FCC`). Everything the frame draws after it is
+    ///   undithered.
+    /// - **The ground grid.** `FUN_80026CE4` brackets the grid in mode `0x15`
+    ///   with two more (`0x80026DB8`, `0x80026E04`, bucket `0x3FEC >> shift`):
+    ///   `dtd = 1` ahead of the grid, the game's word behind it for the rest
+    ///   of the frame. `FUN_8001D058` skips the whole routine while bit 3 of
+    ///   `0x1F800394` is clear ([`Self::battle_ground_grid_drawn`]).
+    ///
+    /// So a frame that arms the wash with the grid's gate closed is drawn
+    /// with no dither at all: Ozma's arms 16 on, the additive fans over the
+    /// black stage. Outside a battle the game's word decides alone.
+    ///
+    /// REF: FUN_80046978, FUN_80024EE4, FUN_80026CE4, FUN_8001D058
+    pub fn frame_dither(&self) -> bool {
+        self.toggles.draw_dither
+            && (self.mode != SceneMode::Battle
+                || self.battle.ground_grid_drawn
+                || self.cast_armed_wash().is_none())
+    }
+
     /// The backdrop pair's depth-cue weight this frame, `1.0 = 0x1000`, or
     /// `None` when `FUN_80050120` has taken the pair off the draw (a weight
     /// of exactly `0x1000` switches `+0x56` to `0`, `0x80050850..0x80050880`).
@@ -895,6 +927,8 @@ impl World {
         if emits == 0 {
             return;
         }
+        let pose = (self.battle.camera.is_some() || self.battle.stage_camera.is_some())
+            .then(|| self.battle_cam_pose());
         for i in 0..self.actors.len() {
             let a = &self.actors[i];
             let selector = a.battle.impact_state;
@@ -918,9 +952,19 @@ impl World {
             // gate returns at `0x800481E4` / `0x80048234` with no decode. So a
             // body a module hid (`+0x04 = 0`, `+0x21C = 0xFF`) sheds nothing,
             // whatever selector it still holds - Aluru's victim keeps its `2`
-            // from arm `0x12` through the Done band.
+            // from arm `0x12` through the Done band. Nor does a body the
+            // render dispatcher rejects for standing at the lens
+            // (`FUN_8001ADA4`'s near reject, `0x8001AE94..0x8001AEF4`): the
+            // draw tick is never reached, so PROT 0958's victim, which the
+            // arm-22 cut leaves at the eye with its `+0x21F` still `1`, sheds
+            // no fire across the close-up of the caster.
             let Some(plan) = self
-                .battle_actor_draw_plan(i, None, 4.0, false)
+                .battle_actor_draw_plan(
+                    i,
+                    pose.as_ref(),
+                    legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                    false,
+                )
                 .filter(|p| p.drawn)
             else {
                 continue;

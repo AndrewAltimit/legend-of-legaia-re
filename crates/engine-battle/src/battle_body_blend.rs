@@ -38,9 +38,40 @@ pub fn apply_body_blend(cba_tsb: &mut [[u16; 2]], mode: Option<u8>) {
     }
 }
 
+/// Whether the colour word selects handler bank 2 (bit `0x04000000`,
+/// `FUN_80043390`): the near-camera ghost pass and the after-image walk both
+/// raise it, and the bank's textured leaves write flat packets, one colour
+/// for the primitive (`POLY_FT3` / `POLY_FT4`, codes `0x24` / `0x2C`, at
+/// `0x800457C4` / `0x80045988`).
+pub fn draw_colour_flat_bank(word: u32) -> bool {
+    word & 0x0400_0000 != 0
+}
+
+/// Take a bank-2 body's packets for flat ones: drop the Gouraud packet-kind
+/// tag its TMD groups carry ([`legaia_tmd::mesh::TSB_GOURAUD_BIT`]), which
+/// the PCSX-Redux instrument dithers by.
+pub fn apply_flat_bank(cba_tsb: &mut [[u16; 2]]) {
+    for ct in cba_tsb {
+        ct[1] &= !legaia_tmd::mesh::TSB_GOURAUD_BIT;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bank_2_word_draws_flat_packets() {
+        // The near-camera ghost's `0x87FF2020` and the after-image walk's
+        // `0x85..` carry the bank bit; the capture fade's word does not.
+        assert!(draw_colour_flat_bank(0x87FF_2020));
+        assert!(draw_colour_flat_bank(0x8500_0000));
+        assert!(!draw_colour_flat_bank(0x8100_4020));
+        let g = legaia_tmd::mesh::TSB_GOURAUD_BIT;
+        let mut ct = [[0x7980, 0x8035 | g], [0x7980, 0x0015]];
+        apply_flat_bank(&mut ct);
+        assert_eq!(ct, [[0x7980, 0x8035], [0x7980, 0x0015]]);
+    }
 
     #[test]
     fn the_ghost_and_fade_words_raise_their_equations() {

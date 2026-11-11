@@ -333,9 +333,7 @@ impl<S: AudioSink> BootSession<S> {
         if !self.host.world.name_entry_active() {
             return false;
         }
-        self.host
-            .world
-            .step_name_entry(legaia_engine_menus::name_entry::NameEntryInput::from_pad_edge(edge));
+        self.host.world.step_name_entry_pad(edge);
         self.pass_name_entry_frame();
         true
     }

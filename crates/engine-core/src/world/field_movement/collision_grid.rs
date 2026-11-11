@@ -46,8 +46,10 @@ impl World {
     /// it copies verbatim. The field-VM `0x4C` nibble-7 ops then layer
     /// story-conditional deltas on top as the prescript runs.
     ///
-    /// PORT: the `+0x4000` sub-region streamed by `FUN_8001f7c0` into the
-    /// field buffer at `*(_DAT_1f8003ec)`. Byte-exact vs live RAM (town01).
+    /// The `+0x4000` sub-region `FUN_8001F7C0` streams into the field buffer
+    /// at `*(_DAT_1f8003ec)`; byte-exact against live RAM (town01).
+    ///
+    /// REF: FUN_8001F7C0
     pub fn load_field_collision_grid(&mut self, grid: &[u8]) {
         let n = grid.len().min(FIELD_GRID_LEN);
         self.terrain.collision_grid.clear();

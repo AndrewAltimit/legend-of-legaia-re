@@ -101,8 +101,10 @@ pub struct FieldActorInputs {
     pub path_target_present: bool,
     /// `+0x80 != 0` - scripted-motion bytecode present.
     pub scripted_present: bool,
-    /// `_DAT_8007B6A8 != 0` - the ambient-facing enable that lets a
-    /// non-target actor still face-update.
+    /// `_DAT_8007B6A8 != 0` - the scene's overworld byte (`MAN[1] & 1`, the
+    /// same byte the pause menu's save gate and the forced-slow step read).
+    /// On a kingdom map it sends every live actor down the floor arms,
+    /// whatever its class bits (`0x8003BC80`).
     pub ambient_gate: bool,
     /// `_DAT_1F800393` - the frame-step scalar (vsyncs per game tick); the
     /// glide rate is this times six (`0x8003BCA8..0x8003BCC0`).

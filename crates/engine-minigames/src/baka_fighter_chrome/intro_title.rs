@@ -31,7 +31,7 @@ impl IntroTitle {
     ///   by [`IntroTitle::announced`].
     /// - `100 <= t < 140`: the logo holds at brightness `0x80`; the second
     ///   line (`XA33` channel `0x0F`) fires once; the first four frames push a
-    ///   white screen tint; the subtitle (widget `0x22`) shrinks in from
+    ///   red screen tint (colour word `0xFF`); the subtitle (widget `0x22`) shrinks in from
     ///   `size = 0x1000 + (0x10 - k) << 11` where `k = min(t - 100, 0x10)`,
     ///   and the banner CLUT flips to [`BANNER_CLUT_FLASH`] until `k` reaches
     ///   its clamp.
@@ -72,7 +72,9 @@ impl IntroTitle {
             out.draws
                 .push(ChromeDraw::plain(0x28, 0xA0, 0x80, 0x80, 0x1000));
             if e < 4 {
-                out.tint = Some(ScreenTint { grey: 0xFF });
+                // `li a2,0xff` in the call's delay slot (`0x801D5AD0`): the
+                // red byte alone, so the flash is red.
+                out.tint = Some(ScreenTint { colour: 0xFF });
             }
             let k = 0x10 - if e >= 0x11 { 0x10 } else { e };
             out.banner_clut = Some(if k != 0 {
@@ -121,9 +123,7 @@ impl IntroTitle {
             }
             out.draws
                 .push(ChromeDraw::plain(0x32, 0xA0, 0xB8, sweep, 0x1000));
-            out.tint = Some(ScreenTint {
-                grey: (0xFF - ramp) as u8,
-            });
+            out.tint = Some(ScreenTint::grey((0xFF - ramp) as u8));
             out.draws
                 .push(ChromeDraw::plain(0x28, 0xA0, 0x80, 0x80, 0x1000));
             out.draws

@@ -31,10 +31,17 @@
 //! The interactive handler moves a linear cursor over a 7-row x 17-column
 //! navigation space (`0x77` = 119 cells, wrapped modulo 119): rows 0..5 hold
 //! the 102 selectable glyph cells, and row 6 is the control bar. The d-pad
-//! deltas are `-17` (up), `+17` (down), `+1` (right), `-1` (left); after each
-//! move the cursor skips any non-selectable cell in the same direction, and a
-//! move that lands in the control row snaps to the action group's anchor
-//! cell. A typed glyph is kept only under two bounds, both in the append arm
+//! deltas are `-17` (up), `+17` (down), `+1` (right), `-1` (left), read off
+//! the menu's auto-repeat word; a horizontal step wraps inside its own row.
+//! The walk repeats while it stands on a separator and, from the control
+//! row, while it stands on a cell of the button it left; a step left then
+//! slides to the first cell of the button reached. A vertical step into the
+//! control row keeps its column. The arms of a call are exclusive, in the
+//! order cancel (takes the last glyph), Start alone (jumps to Select, and on
+//! Select confirms), confirm, d-pad. The Select press leads to the confirm
+//! prompt through one call that reads no pad, and the prompt has no cancel
+//! arm. `crates/retail-exec/tests/name_entry.rs` holds the machine and the
+//! renderer to the port call by call. A typed glyph is kept only under two bounds, both in the append arm
 //! of `FUN_801F03F0`: the name before it holds fewer than nine glyphs
 //! (`slti v0,s1,0x9` at `0x801F05F8`, [`NAME_MAX`]), and the name with it
 //! measures under `0x39` px (`FUN_80035F04` then `slti v0,v0,0x39` at
@@ -133,9 +140,62 @@ pub struct NameEntryInput {
     pub right: bool,
     /// Cross / Circle - select the cell under the cursor (or confirm Yes/No).
     pub confirm: bool,
-    /// Triangle - backspace shortcut while editing; cancel while confirming.
+    /// The cancel button - takes the last glyph while editing; the confirm
+    /// prompt has no arm for it.
     pub cancel: bool,
+    /// Start pressed **alone** (the arm compares the whole edge word with
+    /// `0x800`, `0x801F0588`): jumps to Select, and on Select confirms.
+    pub start: bool,
 }
+
+/// A cue one frame of the screen queues.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NameEntryCue {
+    /// `FUN_80035BD0(0x20)`: a glyph typed or taken, a button pressed, the
+    /// name accepted.
+    Accept,
+    /// `FUN_80035B50(0x21)`: the hand moved.
+    Move,
+    /// `FUN_80035BD0(0x23)`: Select on an empty name.
+    Buzz,
+    /// `FUN_80035B50(0x37)`: No, back to the grid.
+    Back,
+}
+
+impl NameEntryCue {
+    /// Whether the cue goes through the push producer `FUN_80035B50`; the
+    /// rest overwrite the last slot through `FUN_80035BD0`.
+    pub fn pushes(self) -> bool {
+        matches!(self, Self::Move | Self::Back)
+    }
+
+    /// The cue id handed to the ring.
+    pub fn id(self) -> i16 {
+        match self {
+            Self::Accept => 0x20,
+            Self::Move => 0x21,
+            Self::Buzz => 0x23,
+            Self::Back => 0x37,
+        }
+    }
+}
+
+/// What the machine draws above the grid on one call. The editing prompt is
+/// drawn ahead of the arms of state `1`, so the frame of the Select press
+/// still shows it; state `2` draws nothing; state `4` draws the question,
+/// the two choices and their hand unless the call leaves the state.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum NameEntryLine {
+    #[default]
+    Editing,
+    Hidden,
+    Confirm,
+}
+
+/// First cell of the Select button (`slti v0,v0,0x72`, `0x801F059C`).
+pub const SELECT_FIRST_CELL: usize = 0x72;
+/// The cell the screen opens on and Start jumps to (`li v0,0x74`).
+pub const SELECT_OPEN_CELL: usize = 0x74;
 
 /// Whether the entry caret shows on frame `frame`: retail blinks it at 75%
 /// duty off the frame counter's `& 0x18` bits.
@@ -150,15 +210,25 @@ impl NameEntryInput {
     /// Triangle to cancel. Both hosts route their naming-prompt edges through
     /// this one decode; each used to spell the six masks out locally.
     pub fn from_pad_edge(edge: u16) -> Self {
+        Self::from_pad_words(edge, edge)
+    }
+
+    /// Decode the two words the machine reads: the buttons off the edge word
+    /// `_DAT_8007B874`, the d-pad off the auto-repeat word `_DAT_8007BB84`
+    /// (`0x801F0754`, `0x801F0A0C`) - the edge word with the window kernel's
+    /// cursor repeat folded in, so a held direction walks the grid.
+    pub fn from_pad_words(edge: u16, repeat: u16) -> Self {
         use legaia_engine_system::input::PadButton;
         let pressed = |b: PadButton| edge & b.mask() != 0;
+        let stepped = |b: PadButton| repeat & b.mask() != 0;
         Self {
-            up: pressed(PadButton::Up),
-            down: pressed(PadButton::Down),
-            left: pressed(PadButton::Left),
-            right: pressed(PadButton::Right),
+            up: stepped(PadButton::Up),
+            down: stepped(PadButton::Down),
+            left: stepped(PadButton::Left),
+            right: stepped(PadButton::Right),
             confirm: pressed(PadButton::Cross),
             cancel: pressed(PadButton::Triangle),
+            start: edge == PadButton::Start.mask(),
         }
     }
 }
@@ -182,6 +252,15 @@ pub struct NameEntry {
     /// Yes/No selection while in [`NameEntryState::Confirm`]. Retail opens
     /// the prompt with the hand on **No** (`false`); up/down moves it.
     pub confirm_yes: bool,
+    /// Retail's state `2`: the one call between the Select press and the
+    /// prompt, which reads no pad ([`NameEntryState::Confirm`] covers it).
+    pub arming: bool,
+    /// The line the machine drew on its last call ([`NameEntryLine`]).
+    pub line: NameEntryLine,
+    /// The screen's shape word `DAT_8007BB94` reads `4`: state `2` sets it
+    /// and a No puts it back to `1`. The renderer draws neither the grid
+    /// hand nor the caret under it (`0x801E6C34`, `0x801E6E48`).
+    pub confirm_shape: bool,
     /// The frame-step floor (`DAT_8007B9D8`) the screen found on open. Retail
     /// state 0 saves it to `0x801F2A84` (`0x801F0468..0x801F0474`), state 1
     /// holds the floor at `1` every frame (`0x801F0488`) and the close arm
@@ -197,8 +276,8 @@ pub struct NameEntry {
 impl NameEntry {
     /// Open a fresh entry for `char_index`, seeded with `initial` (typically
     /// the template's default name, e.g. `Vahn`). The cursor starts on the
-    /// Select button (retail initial cell `0x74`, normalised to the Select
-    /// anchor), so a bare confirm keeps the default name.
+    /// Select button (retail initial cell `0x74`), so a bare confirm keeps
+    /// the default name.
     ///
     /// PORT: FUN_801F03F0
     /// REF: FUN_801E6B34
@@ -208,9 +287,12 @@ impl NameEntry {
             char_index,
             default_name: name.clone(),
             name,
-            cursor: CONTROL_ANCHORS[2],
+            cursor: SELECT_OPEN_CELL,
             state: NameEntryState::Editing,
             confirm_yes: false,
+            arming: false,
+            line: NameEntryLine::Editing,
+            confirm_shape: false,
             saved_frame_step_floor: None,
             glyph_widths: None,
         }
@@ -255,20 +337,6 @@ impl NameEntry {
         } else {
             true
         }
-    }
-
-    /// Walk from `cell` in `step` direction (+1 / -1), wrapping modulo
-    /// [`NAV_CELLS`], until a selectable cell is found. Bounded by the grid
-    /// size so a degenerate all-blank row can't loop forever.
-    fn skip_to_selectable(&self, cell: usize, step: isize) -> usize {
-        let mut c = cell;
-        for _ in 0..NAV_CELLS {
-            if self.is_selectable(c) {
-                return c;
-            }
-            c = (c as isize + step).rem_euclid(NAV_CELLS as isize) as usize;
-        }
-        cell
     }
 
     /// The glyph under a char-row cell (`None` for separators / control rows).
@@ -318,114 +386,179 @@ impl NameEntry {
         (None, idx)
     }
 
-    /// Advance the SM by one input frame.
-    pub fn step(&mut self, input: NameEntryInput) {
+    /// Advance the SM by one input frame; the cue the frame queues, if any.
+    pub fn step(&mut self, input: NameEntryInput) -> Option<NameEntryCue> {
         match self.state {
             NameEntryState::Editing => self.step_editing(input),
             NameEntryState::Confirm => self.step_confirm(input),
-            NameEntryState::Done => {}
+            NameEntryState::Done => None,
         }
     }
 
-    /// Move the cursor by `delta`, wrap, then skip to the next selectable cell
-    /// in the direction of travel. A landing in the control row snaps to the
-    /// action group's anchor cell (the retail cursor cells 102 / 108 / 114).
+    /// The grid byte under a glyph-row cell (`0x801F29F0 + cell`).
+    fn grid_byte(cell: usize) -> u8 {
+        GRID[cell / GRID_COLS].as_bytes()[cell % GRID_COLS]
+    }
+
+    /// Move the cursor one step of `delta` (`-17` up, `+17` down, `+1` right,
+    /// `-1` left), the walk at `0x801F07AC..0x801F0958`.
+    ///
+    /// A horizontal step wraps inside its own row. The walk repeats while it
+    /// stands on a `|` separator, and from the control row while it stands on
+    /// a cell of the button it left. A step left then slides to the first
+    /// cell of the button it reached. A vertical step into the control row
+    /// keeps its column: the button is whichever one owns that column.
     fn move_cursor(&mut self, delta: isize) {
-        let step = if delta < 0 { -1 } else { 1 };
-        // Horizontal movement that starts in the control row cycles the
-        // three buttons, wrapping (retail-observed: Left steps Select ->
-        // default -> BS; Right from Select wraps to BS). It never leaves
-        // the row - only up/down do.
-        if delta.abs() == 1 && self.cursor >= CHAR_CELLS {
-            let from = match self.control_at(self.cursor) {
-                Some(Control::Backspace) => 0isize,
-                Some(Control::Default) => 1,
-                _ => 2,
-            };
-            let next = (from + step).rem_euclid(3) as usize;
-            self.cursor = CONTROL_ANCHORS[next];
-            return;
+        let (n, cols) = (NAV_CELLS as isize, GRID_COLS as isize);
+        let old = self.cursor;
+        let old_button = self.control_at(old);
+        let mut c = old as isize;
+        // Retail's loop has no bound; no reachable cell spins it, and the
+        // bound here only keeps a hand-set cursor from hanging the port.
+        for _ in 0..2 * NAV_CELLS {
+            if delta == 1 && c % cols == cols - 1 {
+                c -= cols - 1;
+            } else if delta == -1 && c % cols == 0 {
+                c += cols - 1;
+            } else {
+                c += delta;
+            }
+            if c < 0 {
+                c += n;
+            }
+            if c >= n {
+                c -= n;
+            }
+            let cell = c as usize;
+            if cell >= CHAR_CELLS {
+                if old >= CHAR_CELLS && self.control_at(cell) == old_button {
+                    continue;
+                }
+                break;
+            }
+            if Self::grid_byte(cell) != b'|' {
+                break;
+            }
         }
-        let landed = (self.cursor as isize + delta).rem_euclid(NAV_CELLS as isize) as usize;
-        let mut cell = self.skip_to_selectable(landed, step);
-        if cell >= CHAR_CELLS {
-            // A vertical landing in the control row snaps to the action
-            // group's anchor (the retail cursor cells 102 / 108 / 114).
-            cell = match self.control_at(cell) {
-                Some(Control::Backspace) => CONTROL_ANCHORS[0],
-                Some(Control::Default) => CONTROL_ANCHORS[1],
-                _ => CONTROL_ANCHORS[2],
-            };
+        let mut cell = c as usize;
+        if delta == -1 {
+            let button = self.control_at(cell);
+            while cell > CHAR_CELLS && self.control_at(cell - 1) == button {
+                cell -= 1;
+            }
         }
         self.cursor = cell;
     }
 
-    fn step_editing(&mut self, input: NameEntryInput) {
-        // Retail d-pad deltas: up = -17, down = +17, right = +1, left = -1.
-        if input.up {
-            self.move_cursor(-(GRID_COLS as isize));
-        } else if input.down {
-            self.move_cursor(GRID_COLS as isize);
-        } else if input.left {
-            self.move_cursor(-1);
-        } else if input.right {
-            self.move_cursor(1);
+    /// One call of state `1` (`0x801F0480..0x801F0958`). The arms are
+    /// exclusive and tested in this order: cancel, Start, confirm, d-pad.
+    fn step_editing(&mut self, input: NameEntryInput) -> Option<NameEntryCue> {
+        self.line = NameEntryLine::Editing;
+        // A cursor on a separator backs up a row (`0x801F0494..0x801F04D4`).
+        while self.cursor < CHAR_CELLS
+            && self.cursor >= GRID_COLS
+            && Self::grid_byte(self.cursor) == b'|'
+        {
+            self.cursor -= GRID_COLS;
         }
-
-        // Triangle is a backspace shortcut while editing.
         if input.cancel {
-            self.name.pop();
+            // The cancel button takes the last glyph (`0x801F0570..0x801F0580`).
+            return self.name.pop().map(|_| NameEntryCue::Accept);
         }
-
-        if input.confirm {
-            if let Some(g) = self.glyph_at(self.cursor) {
+        let mut confirm = input.confirm;
+        if input.start {
+            // Start alone jumps to Select, and on Select is a confirm
+            // (`0x801F0588..0x801F05C4`).
+            if self.cursor < SELECT_FIRST_CELL {
+                self.cursor = SELECT_OPEN_CELL;
+                return Some(NameEntryCue::Accept);
+            }
+            confirm = true;
+        }
+        if confirm {
+            if self.cursor < CHAR_CELLS {
+                let g = Self::grid_byte(self.cursor) as char;
                 if self.accepts(g) {
                     self.name.push(g);
+                    return Some(NameEntryCue::Accept);
                 }
-            } else if let Some(c) = self.control_at(self.cursor) {
-                match c {
-                    Control::Backspace => {
-                        self.name.pop();
-                    }
-                    Control::Default => {
-                        self.name = self.default_name.clone();
-                    }
-                    Control::End => {
-                        // Retail gates End on a non-empty name (the `blez`
-                        // check); an empty name keeps editing.
-                        if !self.name.trim().is_empty() {
-                            // Retail opens the prompt with the hand on No.
-                            self.confirm_yes = false;
-                            self.state = NameEntryState::Confirm;
-                        }
-                    }
-                }
+                return None;
             }
+            return match self.control_at(self.cursor) {
+                Some(Control::End) => {
+                    // The gate is the name's length (`blez s1`,
+                    // `0x801F0694`): a name of blanks passes.
+                    if self.name.is_empty() {
+                        Some(NameEntryCue::Buzz)
+                    } else {
+                        self.state = NameEntryState::Confirm;
+                        self.arming = true;
+                        self.confirm_yes = false;
+                        Some(NameEntryCue::Accept)
+                    }
+                }
+                Some(Control::Default) => {
+                    self.name = self.default_name.clone();
+                    Some(NameEntryCue::Accept)
+                }
+                _ => self.name.pop().map(|_| NameEntryCue::Accept),
+            };
         }
+        // Up, down, right, left, in the order the arm tests the repeat word
+        // (`0x801F0778..0x801F07A8`).
+        let delta = if input.up {
+            -(GRID_COLS as isize)
+        } else if input.down {
+            GRID_COLS as isize
+        } else if input.right {
+            1
+        } else if input.left {
+            -1
+        } else {
+            return None;
+        };
+        self.move_cursor(delta);
+        Some(NameEntryCue::Move)
     }
 
-    fn step_confirm(&mut self, input: NameEntryInput) {
-        // Yes sits above No; up/down moves the hand between the two rows.
-        if input.up || input.down {
-            self.confirm_yes = !self.confirm_yes;
+    /// One call of states `2` and `4` (`0x801F095C..0x801F0A3C`).
+    fn step_confirm(&mut self, input: NameEntryInput) -> Option<NameEntryCue> {
+        if self.arming {
+            // State 2: the call after the press seats the hand on No and
+            // reads no pad.
+            self.arming = false;
+            self.confirm_yes = false;
+            self.confirm_shape = true;
+            self.line = NameEntryLine::Hidden;
+            return None;
         }
-        if input.cancel {
-            self.state = NameEntryState::Editing;
-            return;
-        }
+        self.line = NameEntryLine::Confirm;
         if input.confirm {
-            if self.confirm_yes {
+            // Either way out skips the prompt's draws (`0x801F09E4`,
+            // `0x801F0A00`).
+            self.line = NameEntryLine::Hidden;
+            return if self.confirm_yes {
                 self.state = NameEntryState::Done;
+                Some(NameEntryCue::Accept)
             } else {
                 self.state = NameEntryState::Editing;
-            }
+                self.confirm_shape = false;
+                Some(NameEntryCue::Back)
+            };
         }
+        // Yes sits above No; up or down moves the hand between the two.
+        // There is no cancel arm: the cancel button does nothing here.
+        if input.up || input.down {
+            self.confirm_yes = !self.confirm_yes;
+            return Some(NameEntryCue::Move);
+        }
+        None
     }
 
-    /// The name as it would be written into the record, trimmed of trailing
-    /// whitespace (the retail field is NUL-padded; leading content is kept).
+    /// The name as the record holds it. Retail edits the record's own name
+    /// field in place, so what was typed is what is kept, blanks included.
     pub fn committed_name(&self) -> String {
-        self.name.trim_end().to_string()
+        self.name.clone()
     }
 }
 
@@ -516,8 +649,87 @@ mod tests {
         assert_eq!(e.cursor, CONTROL_ANCHORS[0]);
     }
 
+    /// A vertical step into the control row keeps its column, so the way
+    /// back up lands on the glyph it left; a step left from there slides to
+    /// the button's first cell.
     #[test]
-    fn down_from_grid_snaps_to_group_anchor() {
+    fn a_vertical_step_onto_a_button_keeps_its_column() {
+        let mut e = NameEntry::new(0, "Vahn");
+        e.cursor = 5 * GRID_COLS + 3; // row 5, column 3
+        let press = |e: &mut NameEntry, i: NameEntryInput| e.step(i);
+        press(
+            &mut e,
+            NameEntryInput {
+                down: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(e.cursor, CHAR_CELLS + 3);
+        assert_eq!(e.control_at(e.cursor), Some(Control::Backspace));
+        press(
+            &mut e,
+            NameEntryInput {
+                up: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(e.cursor, 5 * GRID_COLS + 3);
+        e.cursor = CHAR_CELLS + 9;
+        press(
+            &mut e,
+            NameEntryInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(e.cursor, CONTROL_ANCHORS[0]);
+    }
+
+    /// Right off a glyph row's last column wraps to that row's first.
+    #[test]
+    fn a_horizontal_step_wraps_inside_its_row() {
+        let mut e = NameEntry::new(0, "Vahn");
+        e.cursor = 2 * GRID_COLS + 16;
+        e.step(NameEntryInput {
+            right: true,
+            ..Default::default()
+        });
+        assert_eq!(e.cursor, 2 * GRID_COLS);
+        e.step(NameEntryInput {
+            left: true,
+            ..Default::default()
+        });
+        assert_eq!(e.cursor, 2 * GRID_COLS + 16);
+    }
+
+    /// Start alone jumps to Select, and on Select confirms; the confirm
+    /// prompt has no cancel arm.
+    #[test]
+    fn start_jumps_to_select_and_then_confirms() {
+        let mut e = NameEntry::new(0, "Vahn");
+        e.cursor = 0;
+        let start = NameEntryInput {
+            start: true,
+            ..Default::default()
+        };
+        assert_eq!(e.step(start), Some(NameEntryCue::Accept));
+        assert_eq!(
+            (e.cursor, e.state),
+            (SELECT_OPEN_CELL, NameEntryState::Editing)
+        );
+        e.step(start);
+        assert_eq!(e.state, NameEntryState::Confirm);
+        e.step(NameEntryInput::default());
+        e.step(NameEntryInput {
+            cancel: true,
+            ..Default::default()
+        });
+        assert_eq!(e.state, NameEntryState::Confirm);
+        assert!(NameEntryInput::from_pad_edge(0x0008).start);
+    }
+
+    #[test]
+    fn down_from_grid_lands_on_the_button_under_it() {
         let mut e = NameEntry::new(0, "Vahn");
         // Row 5 col 6 ('z', cell 91) + down = cell 108 = the Default anchor
         // (the live-recorded 91 <-> 108 hop).
@@ -606,6 +818,13 @@ mod tests {
             !e.confirm_yes,
             "retail opens the prompt with the hand on No"
         );
+        // The call after the press reads no pad (retail's state 2).
+        assert!(e.arming);
+        e.step(NameEntryInput {
+            up: true,
+            ..Default::default()
+        });
+        assert!(!e.arming && !e.confirm_yes);
         // Up moves the hand to Yes; confirm commits.
         e.step(NameEntryInput {
             up: true,

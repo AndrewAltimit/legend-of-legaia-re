@@ -362,10 +362,10 @@ and then starts `2070`. `2070` is the scene's home track: its cutscene
 records `P2[7]` and `P2[8]` each switch to their own track and back to
 `2070`. The engine requests both starts on the first frame and sounds
 `2070`, on a picker visit and on the FMV 8 hand-off alike. `2070` is
-sound-test track 70, `M122` "Blessed Rim Elm" (extraction `1060`), the
-ending's arrangement, not the town theme `M14B` (`2016`) that `town01`
-plays, so the picked epilogue village does not sound like the one the
-story starts in ([music tracks](../reference/music-tracks.md)).
+sound-test track 70, `M122` "Blessed Rim Elm" (the resolver loads extraction
+`1058`, `988 + id - 2000`), the ending's arrangement, not the town theme
+`M14B` (`2016`) that `town01` plays, so the picked epilogue village does not
+sound like the one the story starts in ([music tracks](../reference/music-tracks.md)).
 
 ### Which track a scene plays
 
@@ -821,7 +821,7 @@ zeroes the set after the fight whose first monster is `0xA6`.
 
 Each bundle of the battle bank (extraction `877 + N`) carries a byte-identical
 copy of one `music_01` score: `0..9` = `2026`, `2027`, `2028`, `2030`, `2032`,
-`2031`, `2051`, `2067`, `2061`, `2073` (`music_labels::BATTLE_BANK_BGM_IDS`,
+`2031`, `2051`, `2067`, `2061`, `2075` (`music_labels::BATTLE_BANK_BGM_IDS`,
 pinned by `engine-scene-host/tests/battle_bank_bgm_disc.rs`); the evolved-Cort fight
 selects `8`. `World::swap_to_battle_bgm` follows the set: no swap and no stash
 for `-1`, the bank's track for `N > 0`, the configured theme for `0`.
@@ -998,7 +998,7 @@ One id does not play from a bank entry at all. The field initialiser `FUN_801D67
 2. `FUN_8001FC00(0x422, ..)` reads raw `0x422` - extraction `1056`, the gap's VAB-only bank (53 programs) - and the same walker opens its head as VAB `10` and sends the first part of the body. The body is larger than the `0x39800`-byte buffer and is a type-3 chunk, which ends the walk, so a second read in append mode and `FUN_8002630C(.., vab 10, 1, size)` send the rest. That split is the "two part".
 3. `FUN_80026478(0x800705BC)` starts the sequence, and `_DAT_8007BA9C` takes `_DAT_8007BAB8`, so the ordinary resolver `FUN_800243F0` treats the track as loaded and never fetches it.
 
-So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` to extraction `1058` instead, and the arm is the only field path that id takes.
+So the slot-10 load is not a sound-effect bank: it is the credits music. Raw `0x422` is also what the resolver's own law gives `2068` (`990 + 68`) - the instruments with no score - which is why the id needs the arm; `music_labels::prot_entry_for_bgm_id` sends `2068` there too, and the arm (`SceneHost::music_bank_entry_bytes` checks it first) is the only field path that id takes.
 
 The mednafen ending states confirm the staging (`ending_banner_mask_closed`, `ending_vignette_fullscreen`, `ending_panel_corner` in `edteien`; `ending_vignette_biron` in `edbylon`): slot 10's sequence record is open (`+8 = 1`, VAB id `+0xC = 10`) while the BGM record is closed, its sequence buffer holds extraction `1062`'s SEQ chunk byte for byte, VAB 10's SPU base is slot 0's (`0x800917B0[10] == 0x1010`), and the sounding voices start inside the region that bank was sent to. Every program change in the score names a program only `1056` defines. The credits then run on the park sentinel `0x1000`, so the track keeps playing across the vignette scenes.
 
@@ -2044,7 +2044,7 @@ sequence voice is paired with the engine (`parity/tests/mednafen_voice_parity.rs
 the track is read off the state itself - the owner key's sequence record holds
 the score's start at `+0x04`, and the `music_01` entry carrying those bytes
 under the VAB header installed in the note's slot names it (`2044` and `2063`
-share a score, as do `2013` / `2069` and `2068` / `2072`) - and so are the
+share a score, as do `2013` / `2071` and `2070` / `2074`) - and so are the
 sequence volume (`+0x58`) and mono (`_DAT_801CE330`). Over 94 states, field,
 town, battle, summon, minigame, menu and ending, every sounding sequence voice's
 pitch, ADSR words, left and right volume and reverb send is one the engine
@@ -3592,18 +3592,28 @@ also lock a voice the drive model misplaces onto a louder stretch (Zenoir's whol
 one alignment parameter, chosen on the score, and printed with the reach it came from.
 
 <a id="a-landings-reaction-cue-keys-a-frame-early"></a>
-**A landing's reaction cue keys a frame early.** Under a homing cast the landing pass rings the
+**A landing's cue and its reaction's cue ring a frame apart.** Under a homing cast the landing pass rings the
 record's cue (`0x49..0x4B`) and lands the hit, and the victim's reaction clip sounds its own cue track
 (Thunder Break on `retona_viguro_v2_pre_thunder_break`: `0x56` on party seat `0`). Retail's probe
 (`seats.csv`) has the reaction staged at `+0x1DA` on the landing vsync and committed at `+0x1D9`, its cue
-cursor `+0x1F6` at `1`, on the next game frame, so the two cues ring a frame apart: `3` vsyncs on
+cursor `+0x1F6` at `1`, on the next game frame: `3` vsyncs on
 Thunder Break, `7` on Gaza's Astral Wave, the [cast-sequence](../tooling/cast-sequence-oracle.md#the-sound-channel)
-films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The port commits the reaction on the landing tick
-(`World::queue_battle_reaction` from the cast fold), and its anim pass walks the new clip's cue track
-in that tick, so both ring together; the ring, the drainer and the voice keying read alike
-([sfx-table](../formats/sfx-table.md), the `libsnd_voices` and `sfx_drain` differentials). The gap is the
-battle frame order, which pass of the frame the cast tick's hit falls in relative to the victim's node
-tick, and the fix belongs there.
+films' `0x4A` / `0x56` and `0x4A` / `0x62` pairs. The cause is the battle frame order: the cast tick
+`FUN_801E09F8` runs from the draw, after every node's tick, so the victim's node commits the reaction
+a pass later ([the order inside the pass](battle-stage-camera.md#the-frame-step)). The port runs the cast tick at the
+tail of its anim pass (`World::tick_battle_anim_pass`), and the next pass's walk sounds the reaction's first cue.
+Over the harvested enemy-cast films (`<scene>_<monster>_pre_<spell>`), the landing cues `0x48..0x4B` pair a median of one
+tick off retail's on that order and all inside the six-tick tolerance, where the head-of-pass seat rang every one late, a
+median of four ticks. What is left follows the flight's own length: Thunder Break's lands five ticks on, behind retail's
+step-`4` frames at the head of `0x2D`.
+
+Over the cast films' cue channel the same order reads from the other side. Their clock pairs the
+two sides state by state, and on it the landing cues (`0x48..0x4B`) never pair at offset `0`: five in six
+sit a game frame late in the port (median `+3` vsyncs, `+8` on Gaza's step), while the reaction cues beside
+them (`0x56`, `0x5C`, `0x62`) pair at `0` in most films. Retail rings the landing cue in the last frame
+of the flight state `0x2B` and leaves it for `0x2C` on the next frame, with the reaction's commit; the
+port lands, leaves the state and commits in one tick (`World::tick_homing_slots_with` into
+`fold_pending_cast_target`). No cue table or key-on rule differs on any of those casts.
 
 <a id="the-duck-names-the-states-tick"></a>
 **The duck names the state's tick.** A state taken while the summon duck ramps carries its own

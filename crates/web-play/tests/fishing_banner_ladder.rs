@@ -196,12 +196,16 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
         seen.peak_tension = seen.peak_tension.max(tension(mg));
         f += 1;
     }
-    // Let the resolution banner run, then recast off the result screen.
+    // Let the resolution banner run, then recast off the result screen. A
+    // snapped line goes back to the shore by itself once its pair has run
+    // (`0xC8` frames, `0x801CFEE4..0x801CFF20`), so the snap is read on the
+    // way rather than at the end.
+    seen.snapped |= phase(mg) == "snapped";
     for _ in 0..0x110 {
         mg.fishing_pond_tick(0, false, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
+        seen.snapped |= phase(mg) == "snapped";
     }
-    seen.snapped |= phase(mg) == "snapped";
     if matches!(phase(mg).as_str(), "landed" | "snapped") {
         // Circle (`0x20`, the leave edge) puts the catch away.
         mg.fishing_pond_tick(0, false, 0x20);

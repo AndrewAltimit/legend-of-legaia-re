@@ -60,6 +60,13 @@ impl LegaiaRuntime {
             self.rebuild_screen_geom();
             return;
         }
+        // The cursor auto-repeat this tick's pump raised, folded into the
+        // edge (`BootSession::pause_menu_edge`, the native window's
+        // `tick_boot_ui` twin): a direction held on a list steps again.
+        let edge = match self.scene_host.session_mut() {
+            Some(session) => session.pause_menu_edge(edge),
+            None => edge,
+        };
         // The pause menu reads nothing while a window slides (retail's
         // `_DAT_8007BB80`): the shared lock, stepped once per menu frame
         // ahead of every pre-empt and blip - the native window's

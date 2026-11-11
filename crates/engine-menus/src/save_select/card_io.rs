@@ -224,6 +224,37 @@ impl CardIoMachine {
         Self::default()
     }
 
+    /// The machine's words in retail order: state `DAT_801EF188`, retry
+    /// `DAT_801E4FC4`, the latch `DAT_801EED20`, pending `DAT_801EF184`,
+    /// result `DAT_801EF180`, the not-card count `_DAT_801F0214` and the
+    /// last non-zero result `_DAT_801F3808`. What a capture or the retail
+    /// routine is diffed against.
+    pub fn retail_words(&self) -> [i32; 7] {
+        [
+            i32::from(self.state),
+            i32::from(self.retry),
+            i32::from(self.both_acked),
+            self.pending,
+            self.result,
+            self.not_card_count,
+            self.last_result,
+        ]
+    }
+
+    /// A machine standing on [`Self::retail_words`]' words.
+    pub fn from_retail_words(w: [i32; 7]) -> Self {
+        Self {
+            state: w[0] as u8,
+            retry: w[1] as u8,
+            both_acked: w[2] != 0,
+            pending: w[3],
+            result: w[4],
+            not_card_count: w[5],
+            aborted_publishes: 0,
+            last_result: w[6],
+        }
+    }
+
     /// Last published result (`0` = busy / none yet).
     pub fn result(&self) -> i32 {
         self.result

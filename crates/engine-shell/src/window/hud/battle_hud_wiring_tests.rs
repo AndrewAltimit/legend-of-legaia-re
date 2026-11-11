@@ -57,6 +57,8 @@ const fn blank_rects() -> legaia_engine_ui::SaveMenuAtlasRects {
         icon_money: Z,
         label_time: Z,
         label_coin: Z,
+        label_max_hp: Z,
+        label_max_mp: Z,
         gauge_cap: Z,
         gauge_trough: Z,
         gauge_box: Z,

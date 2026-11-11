@@ -51,6 +51,16 @@ pub(super) const BAR_MP_MAX_RIGHT: i32 = 274;
 /// Width and horizontal pitch of one HUD numeral cell - retail's, and the
 /// unit every numeral field above is measured in.
 pub(super) const DIGIT_W: i32 = 8;
+/// `FUN_8003C1F8` glyph `0xC`, the 8x12 `?` a hidden readout draws per cell.
+pub(super) const HIDDEN_READOUT_GLYPH: u16 = 0xC;
+/// Cells a hidden HP field draws: `FUN_801D8DE8` registers Terra's HP
+/// records with a cell count of `3` (`li s2,0x3` at `0x801D9684` on a panel, `0x801D98E8` on the bar) where a
+/// member's figure field takes `4`; the right edge is unchanged
+/// (`x = 0x5E` against `0x56` on the bar, `0x1C` against `0x14` on a panel).
+pub(super) const HIDDEN_HP_CELLS: i32 = 3;
+/// Cells a hidden MP field draws: `2` (`0x801D96DC` / `0x801D993C`),
+/// against `3`.
+pub(super) const HIDDEN_MP_CELLS: i32 = 2;
 
 /// Plate top-left of the actor-name plaque on its action seat (placement
 /// record 68: content `(16, 14)`, plate `(8, 8)`).

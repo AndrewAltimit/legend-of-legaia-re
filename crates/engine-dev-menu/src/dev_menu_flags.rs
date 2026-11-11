@@ -102,11 +102,10 @@ pub fn flag_list_tags(field_overlay: &[u8]) -> Vec<u8> {
 /// step size (fine `0x8`, or coarse `0x80` while Triangle is held), Left
 /// nudges by `-1`, Right by `+1`, then the value clamps to `[0, 0xFFF]`.
 ///
-/// The retail slice makes coarse-Down branch straight to a redraw tail
-/// (`j 0x801ea5c4`) instead of also applying the Left/Right `+/-1` in the
-/// same frame; that asymmetry is a slice/redraw-dispatch detail (only one
-/// d-pad edge fires per frame in practice), so the port applies the four
-/// deltas additively - the resulting game state is identical.
+/// The four tests run one after another on the repeat word, so two held
+/// directions both land; the coarse Down's `j 0x801ea5c4` is only the shared
+/// store ahead of the Right / Left pair. `crates/retail-exec/tests/
+/// dev_menu_flags.rs` runs the arm over every combination.
 // PORT: FUN_801EA51C
 pub fn edit_flag_value(value: i32, pad_edge: u16, pad_held: u16) -> i32 {
     let step = if pad_held & PACK_TRIANGLE != 0 {

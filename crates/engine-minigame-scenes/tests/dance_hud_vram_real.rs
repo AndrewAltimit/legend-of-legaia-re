@@ -224,7 +224,7 @@ fn the_countin_record_addresses_the_staged_page() {
         eprintln!("[skip] dance overlay unavailable (disc-gated)");
         return;
     };
-    let game = DanceGame::from_overlay(&overlay, false).expect("real chart loads");
+    let game = DanceGame::from_overlay(&overlay).expect("real chart loads");
     let (w, abr) = game.widget(0).expect("the count-in record is reachable");
 
     // The cell is the banner's, at unit scale: 160x32 stage pixels.

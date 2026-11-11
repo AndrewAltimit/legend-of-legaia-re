@@ -24,8 +24,8 @@ impl SlotMachine {
     /// Order is retail's: the reels tick, then the cash-out flow (submenu,
     /// rules pages, the not-enough-coins prompt, the leave fade) takes the
     /// edge when it owns the frame, otherwise any face-button edge latches the
-    /// spin-up rarity and the phase reads its own button - Cross spins at
-    /// idle, Square / Cross / Circle stop reels 0 / 1 / 2 while they are
+    /// spin-up rarity and the phase reads its own button - Square, Cross or
+    /// Circle spins at idle, Square / Cross / Circle stop reels 0 / 1 / 2 while they are
     /// stoppable, and Cross on a resolved spin finishes its timed tally at
     /// once ([`Self::collect`]); left alone, state 4 counts the win in by
     /// itself and drops back to idle.
@@ -34,6 +34,10 @@ impl SlotMachine {
     pub fn frame(&mut self, packed: u32) -> SlotFrameOutcome {
         use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         let on = |m: u16| packed & u32::from(m) != 0;
+        // The routine opens on a `rand()` it throws away (`jal 0x80056798` at
+        // `0x801CF100`), so the feature roll's draws depend on the frame the
+        // bet went down.
+        self.rand.next_u15();
         let phase = self.phase();
         // State 3 takes the frame's stops ahead of its integrator
         // (`FUN_801D2114` at `0x801CF74C..0x801CF7DC`, then `jal 0x801D0554`),
@@ -51,7 +55,13 @@ impl SlotMachine {
             }
         }
         self.tick();
-        if self.cash_out_input(packed) {
+        // One state arm a frame: the frame state 4 drops back to idle reads no
+        // pad, so the submenu edge and the coin gate wait for the next.
+        let own_arm = !matches!(
+            phase,
+            SlotPhase::Spinning | SlotPhase::Stopping | SlotPhase::Payout
+        );
+        if own_arm && self.cash_out_input(packed) {
             return if self.phase() == SlotPhase::CashedOut {
                 SlotFrameOutcome::CashedOut
             } else {
@@ -63,7 +73,8 @@ impl SlotMachine {
         );
         match phase {
             SlotPhase::Idle => {
-                if on(PACK_CROSS) {
+                // `andi v0,v1,0xe0` at `0x801CF450`: Square, Cross or Circle.
+                if on(PACK_SQUARE) || on(PACK_CROSS) || on(PACK_CIRCLE) {
                     self.spin();
                 }
             }

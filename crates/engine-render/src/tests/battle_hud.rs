@@ -74,6 +74,7 @@ fn slot_view<'a>(
         mp_fill,
         status_sprite: 0,
         level: 0,
+        hidden_readout: false,
     }
 }
 

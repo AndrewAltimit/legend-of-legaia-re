@@ -18,8 +18,14 @@ pub struct StatusPanelView<'a> {
     pub xp_to_next: u32,
     pub hp: u16,
     pub hp_max: u16,
+    /// The record-side maximum (record `+0x11C`), the parenthesised number
+    /// beside the live one (`lhu a0,0x6e4(s6)`, `0x801D3684`): what the
+    /// level curve gave, before an accessory's percent boost.
+    pub hp_base: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// The record-side maximum MP (record `+0x11E`, `0x801D3734`).
+    pub mp_base: u16,
     pub ap: u8,
     pub ap_max: u8,
     pub stat_rows: &'a [StatusStatRow<'a>],
@@ -86,15 +92,24 @@ pub struct StatusListView {
 
 /// Rows a Magic or Moves page shows (`slti v0,t1,0x7`, `0x801D436C` / `0x801D472C`).
 const STATUS_PAGE_ROWS: usize = 7;
-/// The pitch between a string's `|` lines on the Status pages, measured on the
-/// `menu_status_*_conc_retail` frames. `FUN_8003CD00` itself steps `0x0D`
-/// (`0x8003CD84`); what adds the last pixel is not traced.
+/// The pitch between a string's `|` lines: the line renderer `FUN_80036888`
+/// steps its pen `0x0E` down at each `0x7C` (`0x80036934`). `FUN_8003CD00`'s
+/// own `0x0D` step (`0x8003CD84`) is another thing - it is taken only when
+/// the string it was handed opens on a control byte, to resume past it - so
+/// a label's lines are the renderer's.
 const LINE_BREAK_PITCH: i32 = 0x0E;
+/// How far a list page's body (`wy` in the page drawers) sits below the
+/// window's own `WY`. The pages' empty-list line is placed off the window
+/// record, at `WY + 0x50` (`lh v0,0xc(t2); addiu v0,v0,0x50` at
+/// `0x801D43A8` / `0x801D4768`), not off the body.
+const STATUS_PAGE_BODY_DY: i32 = 0x13;
 /// The list pages' preview box, off the window's bottom (`0x801D4830`).
 const PREVIEW_H: i32 = 0x28;
 
 /// `FUN_8003CD00`: a string's `|` lines, one pitch apart, from `pen`.
-fn lines_draws(
+///
+/// PORT: FUN_8003CD00
+pub fn label_lines_draws(
     font: &legaia_font::Font,
     text: &[u8],
     pen: (i32, i32),
@@ -144,14 +159,14 @@ fn status_skills_draws(
             crate::menu_ink_color(6),
         ));
         y += 0x0E;
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.effect_name.as_bytes(),
             (x + 0x20, y),
             crate::menu_ink_color(4),
         ));
         y += 0x0E;
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description.as_bytes(),
             (x + 0x28, y),
@@ -192,7 +207,7 @@ fn status_magic_draws(
     if panel.seru.is_none() || panel.spells.is_empty() {
         out.extend(text_draws_for(
             &font.layout_ascii(pool_label(labels, MenuLabel::NoMagic, "-No magic skills-")),
-            (x, wy + 0x50),
+            (x, wy - STATUS_PAGE_BODY_DY + 0x50),
             white,
         ));
         return out;
@@ -206,19 +221,28 @@ fn status_magic_draws(
         text_draws_for(&font.layout(&bytes), pen, ink)
     };
     let level_text = crate::spell_level_text;
+    // While a row is latched for an exchange, every other row writes in the
+    // grey ink (`sw zero` to `_DAT_8007B454` at `0x801D42B4`, taken when the
+    // latch word `DAT_801E46D0` holds an index and it is not this row's).
+    let latched = panel.list.and_then(|l| l.latched);
+    let grey = crate::menu_ink_color(0);
     for (i, row) in panel
         .spells
         .iter()
+        .enumerate()
         .skip(scroll)
         .take(STATUS_PAGE_ROWS)
-        .enumerate()
     {
-        let y = rows_y + i as i32 * 0x0D;
-        out.extend(spell_name(row, (x, y), white));
+        let y = rows_y + (i - scroll) as i32 * 0x0D;
+        let ink = match latched {
+            Some(l) if l != i => grey,
+            _ => white,
+        };
+        out.extend(spell_name(row, (x, y), ink));
         out.extend(text_draws_for(
             &font.layout_ascii(&level_text(row.level)),
             (x + 0x68, y),
-            white,
+            ink,
         ));
         out.extend(num_field_draws(
             font,
@@ -226,7 +250,7 @@ fn status_magic_draws(
             x + 0x98,
             y,
             3,
-            white,
+            ink,
         ));
     }
     if let Some(row) = panel.list.and_then(|l| panel.spells.get(l.cursor)) {
@@ -237,7 +261,7 @@ fn status_magic_draws(
             (wx + 0x68, py),
             gold,
         ));
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description.as_bytes(),
             (wx + 0x0C, py + 0x0E),
@@ -279,7 +303,7 @@ fn status_moves_draws(
                 MenuLabel::NoMoves,
                 "You have not learned any moves.",
             )),
-            (x, wy + 0x50),
+            (x, wy - STATUS_PAGE_BODY_DY + 0x50),
             white,
         ));
         return out;
@@ -362,7 +386,7 @@ fn status_moves_draws(
             }
             ax += 0x0C;
         }
-        out.extend(lines_draws(
+        out.extend(label_lines_draws(
             font,
             row.description,
             (wx + 0x0C, wy + h - 0x1A),
@@ -500,6 +524,15 @@ pub fn status_screen_draws_for_with(
     if !label_icons {
         str_at(&mut out, "LV", wx + 0x50, wy + 2, gold);
     }
+    // The level, ahead of the Ra-Seru group (`0x801D34E4`).
+    out.extend(num_field_draws(
+        font,
+        panel.level as u64,
+        wx + 0x60,
+        wy,
+        2,
+        white,
+    ));
     // The worn Ra-Seru (`0x801D3524..0x801D35C8`): tag at +0x8A, name at
     // +0x96, "LV" icon at +0xBE and the one-digit level at +0xCE.
     if let Some((name, level)) = panel.seru {
@@ -523,27 +556,11 @@ pub fn status_screen_draws_for_with(
     let (win_w, win_h) = (panel_window_w(), panel_window_h());
     match panel.page {
         1 => {
-            out.extend(num_field_draws(
-                font,
-                panel.level as u64,
-                wx + 0x60,
-                wy,
-                2,
-                white,
-            ));
             out.extend(status_skills_draws(font, labels, panel, (wx, wy)));
             return out;
         }
         2 | 3 => {
-            out.extend(num_field_draws(
-                font,
-                panel.level as u64,
-                wx + 0x60,
-                wy,
-                2,
-                white,
-            ));
-            let body = (wx, wy + 0x13, win_h - 0x13);
+            let body = (wx, wy + STATUS_PAGE_BODY_DY, win_h - STATUS_PAGE_BODY_DY);
             out.extend(if panel.page == 2 {
                 status_magic_draws(font, labels, panel, body)
             } else {
@@ -558,15 +575,6 @@ pub fn status_screen_draws_for_with(
         }
         _ => {}
     }
-    out.extend(num_field_draws(
-        font,
-        panel.level as u64,
-        wx + 0x60,
-        wy,
-        2,
-        white,
-    ));
-
     // HP / MP rows: label tag at +0x20, current at +0x30, "/" at +0x50
     // (white - the field's last cell ends flush against it, retail's
     // "180/ 180" spacing), max at +0x58, then the teal parenthesised
@@ -581,7 +589,7 @@ pub fn status_screen_draws_for_with(
             "HP",
             panel.hp as u64,
             panel.hp_max as u64,
-            panel.hp_max as u64,
+            panel.hp_base as u64,
             menu_hp_ink_with_status(panel.hp, panel.hp_max, panel.status as i16),
         ),
         (
@@ -589,7 +597,7 @@ pub fn status_screen_draws_for_with(
             "MP",
             panel.mp as u64,
             panel.mp_max as u64,
-            panel.mp_max as u64,
+            panel.mp_base as u64,
             menu_mp_ink(panel.mp, panel.mp_max),
         ),
     ] {
@@ -597,8 +605,8 @@ pub fn status_screen_draws_for_with(
             str_at(&mut out, tag, wx + 0x20, row_y, gold);
         }
         out.extend(num_field_draws(font, cur, wx + 0x30, row_y, 4, tier));
-        out.extend(sep(SEPARATOR_GLYPH_SLASH, wx + 0x50, row_y, white));
         out.extend(num_field_draws(font, max, wx + 0x58, row_y, 4, tier));
+        out.extend(sep(SEPARATOR_GLYPH_SLASH, wx + 0x50, row_y, white));
         out.extend(sep(SEPARATOR_GLYPH_LPAREN, wx + 0x7c, row_y, teal));
         out.extend(num_field_draws(font, base, wx + 0x84, row_y, 4, teal));
         out.extend(sep(SEPARATOR_GLYPH_RPAREN, wx + 0xa4, row_y, teal));

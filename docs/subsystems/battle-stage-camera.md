@@ -94,6 +94,14 @@ mirror bits per child billboard.) These tiles are the 619 `POLY_GT4` in the
 live primitive pool of the capture set. The grid is a full plane centred on the
 actors, so it fills the ground at every orbit angle.
 
+The packets are Gouraud ones whose four corners are cued off one `RGBC`, and the
+port's built grid holds that one colour on every corner. A shader that tells a
+flat-shaded draw by the colour's derivative reads such a quad as flat, and the
+PCSX-Redux capture rule does not dither a flat-shaded textured draw: the grid's
+vertices carry the Gouraud tag (`GROUND_PACKET_TSB`) so the instrument dithers
+the floor as that emulator does. It shows under a summon's dark ambient, where
+the floor is smooth enough for the dither table to read off a frame.
+
 The grid is not the world-map continent heightfield: the `prim-trace`
 "3715 hits in `0x80190000`" that suggested one were 3 degenerate `clut=0`
 `POLY_FT4` prims flooding that window. The capture filed under the `0896` label
@@ -609,7 +617,7 @@ quad. `battle_korb2_warhalf_strike`'s older table links a band quad at bucket
 where its pixels stand behind it. In PSX mode both hosts draw the shell and
 the spun slot at each prim's corner mean (`DRAW_WORD_MEAN_DEPTH`,
 `prim_mean_depth`; the page's `meanDepth` placement,
-[renderer-port](renderer-port.md#the-battle-shell-sorts-by-prim-mean)).
+[renderer-port](renderer-port.md#the-battle-sorts-by-each-primitives-link)).
 
 **Which side of the ribbon draws.** The backdrop arm hands the prim
 dispatcher `FUN_80043390` the node's colour word ORed with `0x40000000` for
@@ -1379,11 +1387,26 @@ cost:
    sixteen-entry ring at `0x80084098`, index `gp+0x440`, clamped to `0x2BC` at
    `0x2D0` or more (`0x80017098..0x800170CC`).
 2. The step is the ring's maximum against `0xF1` / `0x1FF` / `0x2D1` - `1` /
-   `2` / `3`, else `4` (`0x80017108..0x8001715C`).
+   `2` / `3`, else `4` (`0x80017108..0x8001715C`). A frame of `0x2D0` hblanks or
+   more is compared **raw**, not as the clamp it stored (`slti v0,a2,0x2d0` /
+   `move s0,a2` at `0x800170F8..0x80017104`): raw `0x2D0` reads step `3`, `0x2D1`
+   and up step `4`.
 3. It is raised to the floor `0x8007B9D8` (`0x80017170..0x80017198`).
+4. The frame then waits on `VSync(n)` with the step the frame **before** stored
+   (`0x1F800392`; `0` for one vsync while that is under `2`), and only then copies
+   the new step there (`0x8001719C..0x800171D8`). A frame therefore spans the step
+   its own logic ran on.
 
-Only mode word `gp+0x4CE == 0x10` measures; a non-zero `gp+0x5D8` forces the
-step instead.
+Only mode word `gp+0x4CE == 0x10` measures: any other value stores step `1`,
+with the cost still pushed. A non-zero `gp+0x5D8` forces the step instead, pushes
+nothing and waits on its own value.
+
+Port: `frame_clock::FrameCostRing::frame_end`, compared with the routine store
+for store by the [kernel differential](../tooling/retail-kernel-differential.md)
+(`frame_pace`). The clamp is why a main-RAM capture cannot always say which step
+its newest pass read: an entry of `0x2BC` is a raw `0x2BC`, a raw `0x2D0` or a
+longer frame, and only the scratchpad byte tells them apart
+(`FrameCostRing::from_entries` takes it as the long frame).
 
 The battle's floor is `1` in every catalogued battle state, so the step is the
 load alone, not a property of the game state. Across the battle captures the
@@ -1400,7 +1423,18 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_COST`
 and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
-run short of retail.
+run short of retail. The load does not start on the cue's own frame: the cue is issued inside it and the
+drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
+(`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
+(from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
+a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`) costs `392` on the cue's pass, `507` on
+the next, then the clamp. The port charges nothing on the cue's pass, `XA_STREAM_ONSET_COST`
+(`122`) over the base on the next, and the stream's cost from the second
+(`frame_clock::xa_stream_pass_cost`). Charged from the cue's pass, the two heal stills reached
+their gate a step-`4` pass early, at accumulator `48`, with the camera's yaw `206` and `9` off;
+with no charge on the pass after it, a full party's Spirit rounds ran a pass at step `3` where
+retail's run `4`, and five stills that replay Spirit rounds reached their gates three ticks
+early.
 
 A summon module's own voice clip does not. The module seeks the drive to the
 clip's file on an arm ahead of its cue ([CD-seek waits](../tooling/cast-sequence-oracle.md#cd-seek-waits)),
@@ -1480,10 +1514,16 @@ Vahn the same breath costs about `505`, under `0x1FF`, and stays at `2`
 this order: it stores a pass's cost and returns the step of the next one, and the
 engine installs that step when the next pass opens its frame
 (`BattleState::pending_frame_step`, taken by `World::battle_sm_pass_due` and the
-per-pass claims beside it), so the pass that raised it is still waited out on the step
-it ran at. An arm table's step is the arm's own frames' cost: a dearer arm raises the
-step on its first pass, and a cheaper arm after a dear one runs the ring's step until the
-dear entries leave it ([below](#what-the-arm-step-table-is)). Spanning a pass's own frame with the step its push returned shortened
+per-pass claims beside it, and only by a claim of a later frame than the one that left
+it), so the pass that raised it is still waited out on the step it ran at. The effect
+scene graphs claim the pass's own frame in the frame tail, after the pass has run
+(`World::summon_fx_pass_vsyncs`, `World::action_fx_pass_vsyncs`); taken there, every new
+step re-timed the pass that raised it. An arm table's step is the arm's own frames'
+cost and goes through the ring the same way, so a dearer arm's first pass runs on the
+step the frames before it left and the arm's own step opens its second pass, as
+retail's ramps read: Nova's arm 3 runs `1` then `4`, Vera's arm 4 `2`, `2`, `2` then
+`4`, Palma's arm 5 `2` then `4`. A cheaper arm after a dear one runs the ring's step
+until the dear entries leave it ([below](#what-the-arm-step-table-is)). Spanning a pass's own frame with the step its push returned shortened
 every ring-driven step change by a pass, and spanning it with the step read before
 the push (with the pass's timers still on the older step) left the pass's drain a
 step behind its frame.
@@ -1611,9 +1651,33 @@ burst at about `+45` over the frames before the ghosts (`605` to `650` on Gel Fr
 burst of fourteen parts already `28` of that), where the mesh says `112` for the ghosts
 alone, so the engine's frames pass `0x2D0` and run `4` where retail's stay at `3`. Their
 HP-bar settle `0x51` also reads `520` to `540` against the table's `595`: those stages
-cost less than the fights the full-party rows came from. Whether a full party's frame hides
-the ghosts' draw or its base is the stage's is what a full-party recording with a counted
-ghost would settle.
+cost less than the fights the full-party rows came from.
+
+Recorded with the ghosts counted (`--ghost-trace`, a row per `jal 0x80048A08` at
+`0x8004950C`), every ghosting frame of the 61 strike states draws two, and what the pair
+adds depends on the party. On a lone member it is the mesh's: Caruban's strike frames with
+no part live read `364` without ghosts and `504` with, `70` a ghost. Seven full-party films
+have a ghosting monster. Two sit on the `0x2BC` clamp with or without (King Frog, Mush Mush).
+The other five read the pair at `626` to `660`, against `582` to `657` on the same film's
+strike frames without ghosts:
+
+| Film (full party) | Strike frames, no ghost | Two ghosts | HP-bar settle `0x51` |
+|---|---:|---:|---:|
+| `battle_tunnelb_gel_frog_strike` | `608` | `626` | `530` |
+| `battle_chitei2_kemaro_lv2_strike` | `621` | `647` | `539` |
+| `battle_nilboa_lava_face_strike` | `634` | `660` | `607` |
+| `battle_taiku_terror_face_strike` | `606` | `630` | `492` |
+| `battle_korb2_kemaro_strike` | `657` | `632` | `544` |
+
+So the pair lifts a full party's frame by about `25`, a quarter of the mesh cost, and on one
+film the ghosting frames are the cheaper. The walk draws both ghosts whole either way; the
+ghosts start with the swing, whose frames differ from the walk-in's in everything else the
+frame draws, so the difference of the two medians is not the ghosts' cost alone. Gel Frog
+shows it frame by frame: the pair's first four frames read `649` to `665` over a `608` base,
+`+45`, and ten frames later, with the same two ghosts up, the frames read `578` to `591`. The
+base moved `70` under them. No count the `World` holds reads that move (the formation term
+above fails the same way), so the table keeps the mesh cost, and these films stay the ones
+it prices a step high.
 
 <a id="the-table-held-out-against-the-films"></a>
 
@@ -1720,7 +1784,7 @@ What differs in those arms is the creature's pose and the burn puffs around it
 
 **A cheap arm runs the ring's step until it empties.** The port reads the arm's table
 step as its frames' cost through the ring (`World::apply_cast_arm_frame_step`): the step a
-pass runs is the larger of its arm's and the one the passes before it left. A clamped
+pass runs is the ring's after the pass before it. A clamped
 frame stores `0x2BC`, which reads `3`, so the sixteen passes after a step-`4` arm run `3`
 under a cheaper table. Kiss of Death's recording (`--retail-parts`,
 `battle_map01_lippian_kiss_of_death_mid_cast`) holds it: arm 5, the victim alone at `2` by
@@ -1747,6 +1811,28 @@ over the 29 Seru films, step agreement goes from `.895` to `.889` and the frames
 `.882` and `.864`, and Odd Dimension falls from `.710` to `.577`. The table stays. The opening arms
 read `1` on a lone caster where the table leaves the ordinary `2`, which moves the summon's CD-seek
 hold, and an arm the cost lowers to `3` re-deals what its passes seat.
+Those runs took an arm's step on its own first pass. With the step opening on the pass
+after ([above](#a-pass-runs-on-the-step-the-frames-before-it-left)) an entry is read as the
+arm's cost, and one entry form differs: an arm one pass long runs on the step the arm
+before it left, so its step column names that arm. Those entries take the cost column
+instead. Iota's arm 4 costs the clamp where its step column read `1`, so arm 5 opens on `4`
+as retail's does, and the film's arm 5 reads `.633` against `.400`.
+
+**The two emulators price an arm differently.** The ramp is the law's, so both emulators run
+it, but how far it reaches depends on what the frames before the arm cost, and that is the
+emulated machine's. On PCSX-Redux Cort's Guilty Cross (`chitei2_cort_pre_guilty_cross`) opens
+arm 1 at step `3` and runs `4` from its second pass on the clamp; the Mednafen state the PCM
+channel replays (`cort_guilty_cross_mid_cast`) holds its arm-1 ring at `626..668`, step `3`.
+Zenoir's arm 5 opens `1`, `3`, then `4` on PCSX-Redux (`party_basic_attack_vs_gobu_gobu`),
+where the Mednafen state already reads step `3` in arm 3, which runs `1` on PCSX-Redux. The arm
+table is the PCSX-Redux reading, so a replay of a Mednafen state takes the ramp from the wrong
+machine's costs, and the PCM channel's cast windows, recorded on Mednafen, part from it by about
+two vsyncs on both casts. Taking an arm's step on its own first pass hid that by accident.
+
+A replay's stretched frame (`World::stretch_battle_frame`) keeps its step for the pass after it:
+the ring's pending step waits for the stretch to settle. Taken on that pass, it undid the
+stretch, the drive stretched again every pass, and Guilty Cross's replay ran frames of `2`, `3`
+and `4` vsyncs in turn until its gate.
 
 Neither Ozma (`.635`) nor Odd Dimension (`.710`) loses its film to the step. On retail's own steps
 (`--retail-steps`) they score `.632` and `.724`. Ozma's arms 6 to 20 already match retail's step on
@@ -1776,13 +1862,25 @@ of each `BattleFrameClock` frame, a frame step of vsyncs at once, and every
 tick between holds:
 
 - **The order inside the pass.** The frame driver's work comes first: the
-  cast tick's census and its effect-child drive (`FUN_801E09F8`, the
-  move-FX streak and the homing slots, `World::tick_battle_cast_drive`), the
   SM with `frame_dt` the step, the separation pass, the stage colour pass
   `FUN_80050120` at `dt` the step, and the camera. The actors' anim tick
   `FUN_80047430` follows (`World::tick_battle_anim_pass`): the cursor advance
   scaled by the step (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`),
   the root motion, the hit walk with its event-path cut, then the commits.
+  The cast tick's census and its effect-child drive (`FUN_801E09F8`, the
+  move-FX streak and the homing slots, `World::tick_battle_cast_drive`) come
+  last, with the draw: the routine's one caller is the battle draw tick
+  `FUN_800480D8` (`jal 0x801E09F8` at `0x80048130`, in the preamble the frame's
+  first drawn body runs behind the latch `ctx+0x272`), and the master frame
+  driver `FUN_80016444` runs every list's tick pass `FUN_8002519C` ahead of its
+  draw passes `FUN_8001D140`. So the SM reads the census the pass before
+  measured, and a projectile that lands stages its victim's reaction after
+  that seat's node tick has run ([when a staged clip commits](battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)).
+  What the cast tick itself draws or stores shows on its own pass (the flight
+  ribbons, the victim's tint, the landing cue). A node it links - the landing
+  flash's fade actor, a list's effect children - first ticks on the next pass's
+  walk and first shows there: Astral Wave's recording brightens one frame after
+  the landing pass (`World::release_draw_spawns`).
   Every commit `FUN_80047430` makes sits after the advance
   (`0x800478EC..0x80047A44`) and `FUN_8004AD80` zeroes the cursor
   (`sh zero,0x68` at `0x8004B068`), so a clip the SM stages starts the next

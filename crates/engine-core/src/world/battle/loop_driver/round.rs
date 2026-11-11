@@ -542,6 +542,13 @@ impl World {
         {
             *g |= forced;
         }
+        // The turn stands for a pick, and a pick spends the seat's key
+        // (`FUN_801DABA4`): left unspent, the Done band's re-pick at `0x50`
+        // lands on the same seat, whose AI then rewrites the category byte
+        // `+0x1DE` the band's own framing fork is reading.
+        if let Some(a) = self.actors.get_mut(usize::from(seat)) {
+            a.battle.init_key = 0;
+        }
         self.take_monster_turn(seat);
     }
 

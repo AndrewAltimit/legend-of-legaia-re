@@ -18,7 +18,7 @@
 //! site.
 //!
 //! REF: FUN_80020DE0 (the allocator every one of the three goes through),
-//!      FUN_801DE754, FUN_801DE698, FUN_801DDE34 (the three spawners, whose
+//!      FUN_801DE698, FUN_801DDE34 (two of the three spawners, whose
 //!      operand decode lives in [`legaia_engine_vm::field`]),
 //!      FUN_8003D2C4 (the OT link the bar emitter ends on)
 //!
@@ -116,8 +116,10 @@ impl ShutterBars {
     /// phase and clock, and write the three operand bytes into
     /// `+0xB8 / +0xBA / +0xBC`.
     ///
-    /// REF: FUN_801DE754 (`0x801DE754..0x801DE7B8`) - the field VM reaches it
-    /// from op `0x43` sub-`0xC`, a 5-byte `[43, 0C, close, hold, open]`.
+    /// PORT: FUN_801DE754 (`0x801DE754..0x801DE7B8`) - the field VM reaches it
+    /// from op `0x43` sub-`0xC`, a 5-byte `[43, 0C, close, hold, open]`. The
+    /// fourth duration `+0xBE` is not among its stores; the allocator hands
+    /// the record over cleared.
     /// `FUN_801CFF3C` is not a second spawner. Its dump
     /// (`ghidra/scripts/funcs/overlay_0897_xxx_dat_801cff3c.txt`) is the same
     /// 26 instructions with the same `addiu a0, a0, 0x2858` immediate, and

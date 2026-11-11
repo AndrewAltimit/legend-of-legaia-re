@@ -123,11 +123,12 @@
       <tr><td><code>0xC5 XX</code></td><td>2</td><td>Tactical Art name (<a href="art-data.html#arts-name-table">arts-name table</a>), key <code>(character = XX &gt;&gt; 6, art = XX &amp; 0x3F)</code></td></tr>
       <tr><td><code>0xC7 XX</code></td><td>2</td><td>Terrain / quest name (8-byte stride table)</td></tr>
       <tr><td><code>0xCE XX</code></td><td>2</td><td>Spacing: <code>XX</code> is a horizontal offset</td></tr>
-      <tr><td><code>0xCF XX</code></td><td>2</td><td>Passthrough: <code>XX</code> renders alone</td></tr>
+      <tr><td><code>0xCF XX</code></td><td>2</td><td>Colour: the text after it draws in ink <code>XX</code>; the pair itself draws nothing</td></tr>
       <tr><td><code>0xFF</code></td><td>1</td><td>Alias, rewritten to <code>0xCF</code></td></tr>
     </tbody>
   </table>
   <p>The substitution gate is the integer test <code>(byte + 0x40) &lt; 8</code>, catching <code>0xC0..0xC7</code>; <code>0xC0</code> and <code>0xC6</code> fall through to "no substitution" at 2-byte stride.</p>
+  <p><strong>Speaker tags are coloured.</strong> When a Ra-Seru speaks, the line opens on its name wrapped in two colour pairs: <code>CF 04 C7 01 CF 07</code> prints <em>Terra</em> in green and switches back to the dialogue white for the colon and the line; Meta takes ink 9 (orange) and Ozma ink 5 (teal), and art names ink 6 (gold). The field pager resets the ink to white once a frame before it draws its rows, so an ink left standing at the end of a row carries into the next one.</p>
   <h3 id="japanese-build">Japanese build: count-led Shift-JIS lines</h3>
   <p>The table above is the Latin builds' encoding (USA and PAL). The Japanese disc frames the same script positions differently, measured from its scene MANs:</p>
   <table>

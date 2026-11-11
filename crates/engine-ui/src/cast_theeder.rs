@@ -40,7 +40,8 @@
 //! - The hosts project the points with their battle camera; the projector
 //!   here returns screen pixels only, so the prong's near-camera widening
 //!   `w` is taken as `0` (the battle camera keeps the beam far beyond
-//!   `z = 0x100`).
+//!   `z = 0x100`). [`prong_prim_widened`] carries it for a caller that has
+//!   the depth.
 //! - A `POLY_G4` carries no texture page, so its blend is the GPU state the
 //!   ordering-table walk left active; every packet here is a black-to-colour
 //!   gradient that only reads under `B + F`, and the port pins ABR 1, as the
@@ -88,11 +89,29 @@ fn off(p: Xy, dx: i16, dy: i16) -> Xy {
 }
 
 /// `FUN_801F815C`: one lightning prong from `a` to `b` on texture cell
-/// `cell` (`0..=3`).
+/// `cell` (`0..=3`), at the hosts' far-camera width (no widening).
 pub fn prong_prim(a: Xy, b: Xy, cell: u8) -> ScreenPrim {
+    prong_prim_widened(a, 0, b, 0, cell)
+}
+
+/// The prong's near-camera widening for an end projected at depth `z`
+/// (`0x801F823C..0x801F8280`): `(0x100 - z) >> 5` when the depth's low
+/// halfword, unsigned, is at most `0x100`, else `0`.
+pub fn prong_widen(z: u32) -> i16 {
+    if (z & 0xFFFF) <= 0x100 {
+        (0x100 - (z & 0xFFFF) as i16) >> 5
+    } else {
+        0
+    }
+}
+
+/// `FUN_801F815C` with each end's widening ([`prong_widen`]): the end's
+/// top edge sits `1 + w` pixels above it and its bottom edge `1 + w` below.
+pub fn prong_prim_widened(a: Xy, wa: i16, b: Xy, wb: i16, cell: u8) -> ScreenPrim {
     let u = (cell & 3) * 0x20;
+    let (ta, tb) = (-1 - wa, -1 - wb);
     ScreenPrim::Textured(ScreenQuad {
-        xy: [off(a, 0, -1), off(b, 0, -1), off(a, 0, 1), off(b, 0, 1)],
+        xy: [off(a, 0, ta), off(b, 0, tb), off(a, 0, -ta), off(b, 0, -tb)],
         uv: [(u, 0), (u, 0x3F), (u + 0x1F, 0), (u + 0x1F, 0x3F)],
         clut: THEEDER_PRONG_CLUT,
         tpage: THEEDER_PRONG_TPAGE,

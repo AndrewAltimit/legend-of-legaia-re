@@ -350,6 +350,16 @@ pub const GRID_CELLS: i32 = 28;
 /// POLY_GT4 UV word).
 pub const GROUND_TSB: u16 = 0x000D;
 
+/// The TSB word the built grid carries on every vertex: [`GROUND_TSB`] with
+/// the Gouraud tag. The emitter's packets are `POLY_GT4`s whose four corners
+/// are cued one by one off the same `RGBC`, and the built mesh holds that one
+/// colour on every corner, so a shader that reads flat shading off the
+/// colour's derivative took the floor for a flat-shaded draw. The PCSX-Redux
+/// capture rule dithers a Gouraud packet whatever its corners hold: under a
+/// summon's dark ambient retail's floor shows the dither table and the
+/// untagged grid showed none.
+pub const GROUND_PACKET_TSB: u16 = GROUND_TSB | legaia_tmd::mesh::TSB_GOURAUD_BIT;
+
 /// CLUT attribute for the ground tile: palette at framebuffer `(0, 479)`
 /// (`lui t5,0x77c0` at `0x801d0304`, the `clut` half of the first UV word).
 pub const GROUND_CBA: u16 = 0x77C0;
@@ -656,7 +666,7 @@ pub fn build_ground_grid_sized(width: i32, height: i32) -> legaia_tmd::mesh::Vra
                     ] {
                         m.positions.push([x, GRID_PLANE_Y, z]);
                         m.uvs.push([u, v]);
-                        m.cba_tsb.push([GROUND_CBA, GROUND_TSB]);
+                        m.cba_tsb.push([GROUND_CBA, GROUND_PACKET_TSB]);
                         m.normals.push([0.0, -1.0, 0.0]); // PSX up = -y
                         // Neutral modulation: the grid quads draw the raw
                         // tile texel. (NB an earlier builder pushed NO
@@ -918,7 +928,12 @@ mod ground_grid_tests {
     #[test]
     fn every_quad_uses_the_pinned_page_and_clut() {
         let m = build_ground_grid();
-        assert!(m.cba_tsb.iter().all(|c| *c == [GROUND_CBA, GROUND_TSB]));
+        assert!(
+            m.cba_tsb
+                .iter()
+                .all(|c| *c == [GROUND_CBA, GROUND_PACKET_TSB])
+        );
+        assert_eq!(GROUND_PACKET_TSB & 0x1F, GROUND_TSB);
     }
 
     /// The tile lives where the retail attribute words say, and the decode

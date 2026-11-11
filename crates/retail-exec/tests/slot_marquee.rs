@@ -133,3 +133,214 @@ fn the_placement_blit_matches_retail() {
         assert_eq!(retail, port, "run {run} id {id} col {col} row {row}");
     }
 }
+
+/// The slot overlay's init `FUN_801CEC94`, whole with its other calls stubbed,
+/// over the shipped record table and generated records: for each of the 21
+/// message records it `StoreImage`s the rect at `(0x340 + u / 4, 0x100 + v)`
+/// out of a generated page-3 VRAM, allocates `h << 8` bytes, stores the
+/// pointer at the record's `+4` and expands the 4bpp row into one byte per
+/// texel. Each expanded texel is the nibble times four (the swatch's `u`), the
+/// rows `0x100` apart; held against `parse_messages` over the same page.
+/// Retail expands `w / 2` byte pairs a row, so an odd width's last column is
+/// never written and is left out of the compare.
+#[test]
+fn the_message_bank_expands_as_retail_expands_it() {
+    use legaia_minigame_formats::minigame_slot_scene::{
+        MESSAGE_COUNT, MESSAGE_STRIDE, MESSAGE_TABLE_OFFSET, parse_messages,
+    };
+    use psx_retail_exec::{A0, A1, V0};
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    const INIT: u32 = 0x801C_EC94;
+    const STORE_IMAGE: u32 = 0x8005_842C;
+    const ALLOC: u32 = 0x8001_7888;
+    const SPAWN_ACTOR: u32 = 0x8002_0DE0;
+    const HEAP: u32 = 0x8015_0000;
+    const PAGE_W: usize = 256;
+    const PAGE_H: usize = 256;
+    differential!(prot(975, INIT));
+    let Some(d) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut overlay = d.read_entry(975).expect("PROT 0975");
+    let mut rng = Rng(0x4241_4E4B);
+    let mut compared = 0usize;
+    for run in 0..40 {
+        // Run 0 keeps the shipped records; the others generate their own,
+        // `u` on a VRAM halfword and the rect inside the page, as every
+        // shipped one is.
+        if run > 0 {
+            for i in 0..MESSAGE_COUNT {
+                let o = MESSAGE_TABLE_OFFSET + i * MESSAGE_STRIDE;
+                let u = rng.below(0x30) * 4;
+                overlay[o] = u as u8;
+                overlay[o + 1] = rng.below(0x80) as u8;
+                overlay[o + 2] = (1 + rng.below(0x80).min(PAGE_W as u32 - u - 1)) as u8;
+                overlay[o + 3] = rng.below(20) as u8;
+            }
+        }
+        let page: Vec<u8> = (0..PAGE_W * PAGE_H).map(|_| rng.below(16) as u8).collect();
+        let mut cpu = scus_cpu().expect("disc present");
+        cpu.mem.load(OVERLAY_BASE, &overlay);
+        cpu.stub_outside = Some((INIT, INIT + 0x444));
+        let page_rc = Rc::new(page.clone());
+        let pg = page_rc.clone();
+        cpu.hook(STORE_IMAGE, move |r, m| {
+            let rect: [u16; 4] = std::array::from_fn(|i| m.rd16(r.r[A0] + 2 * i as u32));
+            let (x0, y0) = ((rect[0] - 0x340) as usize * 4, (rect[1] - 0x100) as usize);
+            let mut out = r.r[A1];
+            for row in 0..rect[3] as usize {
+                for hw in 0..rect[2] as usize {
+                    let at = |k: usize| {
+                        let (x, y) = (x0 + hw * 4 + k, y0 + row);
+                        if x < PAGE_W && y < PAGE_H {
+                            pg[y * PAGE_W + x]
+                        } else {
+                            0
+                        }
+                    };
+                    m.wr8(out, at(0) | (at(1) << 4));
+                    m.wr8(out + 1, at(2) | (at(3) << 4));
+                    out += 2;
+                }
+            }
+        });
+        let next = Rc::new(Cell::new(HEAP));
+        let sizes = Rc::new(RefCell::new(Vec::new()));
+        let (n, s) = (next.clone(), sizes.clone());
+        cpu.hook(ALLOC, move |r, m| {
+            let at = n.get();
+            s.borrow_mut().push(r.r[A1]);
+            m.load(at, &vec![0xEE; r.r[A1] as usize]);
+            n.set(at + ((r.r[A1] + 0xFF) & !0xFF).max(0x100));
+            r.r[V0] = at;
+        });
+        cpu.stub(SPAWN_ACTOR, 0x8014_0000);
+        // Its decompression scratch at `_DAT_8007B85C`.
+        cpu.mem.wr32(0x8007_B85C, 0x8018_0000);
+        cpu.mem.wr16(0x8007_B8C2, 1);
+        assert_eq!(cpu.call(INIT, &[]), Stop::Returned, "run {run}");
+        let port = parse_messages(&overlay, &page, PAGE_W).expect("records");
+        for (i, msg) in port.iter().enumerate() {
+            let rec = RECORDS + (i * MESSAGE_STRIDE) as u32;
+            let buf = cpu.mem.rd32(rec + 4);
+            assert_eq!(
+                sizes.borrow()[i],
+                u32::from(msg.h) << 8,
+                "run {run} msg {i}: size"
+            );
+            let pairs = usize::from(msg.w) / 2 * 2;
+            for row in 0..usize::from(msg.h) {
+                for col in 0..pairs {
+                    let got = cpu.mem.rd8(buf + (row * 0x100 + col) as u32);
+                    let want = msg.bitmap[row * usize::from(msg.w) + col] << 2;
+                    let rect = (msg.u, msg.v, msg.w, msg.h);
+                    assert_eq!(got, want, "run {run} msg {i} {rect:?} row {row} col {col}");
+                    compared += 1;
+                }
+            }
+        }
+    }
+    assert!(compared > 200_000, "only {compared} texels");
+}
+
+/// The per-frame marquee composer `FUN_801CFFF0`, over generated frames
+/// (payout figure and slide clock, feature mode, reel state, rounds owed,
+/// claimed reels, the anticipation latch and the legend counter), with the two
+/// coin counters stubbed: every placement it makes (`FUN_801D3230`) against
+/// `compose_marquee_frame`, and its scroll calls (`FUN_801D069C`) - the
+/// clearing call it opens with, then the legend - against `attract_legend`.
+#[test]
+fn the_marquee_frame_composes_as_retail_composes_it() {
+    use legaia_minigame_formats::minigame_slot_scene::{
+        MarqueeFrame, MarqueePlacement, attract_legend, compose_marquee_frame,
+    };
+    use psx_retail_exec::{A0, A1, A2};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const FRAME: u32 = 0x801C_FFF0;
+    const SCROLL: u32 = 0x801D_069C;
+    differential!(prot(975, FRAME));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x801D_2CC0, 0);
+    cpu.stub(0x801D_2914, 0);
+    let places = Rc::new(RefCell::new(Vec::<MarqueePlacement>::new()));
+    let scrolls = Rc::new(RefCell::new(Vec::<(i32, i32, i32)>::new()));
+    let p = places.clone();
+    cpu.hook(PLACE, move |r, _| {
+        p.borrow_mut().push(MarqueePlacement {
+            msg: r.r[A0] as usize,
+            col: r.r[A1] as i32,
+            row: r.r[A2] as i32,
+        })
+    });
+    let s = scrolls.clone();
+    cpu.hook(SCROLL, move |r, _| {
+        s.borrow_mut()
+            .push((r.r[A0] as i32, r.r[A1] as i32, r.r[A2] as i32))
+    });
+    let mut rng = Rng(0x4652_4D45);
+    let (mut captions, mut tallies, mut legends) = (0, 0, 0);
+    for case in 0..20_000 {
+        let pick = |rng: &mut Rng, xs: &[i32]| xs[rng.below(xs.len() as u32) as usize];
+        let frame = MarqueeFrame {
+            payout: pick(&mut rng, &[0, 0, 7, 42, 999, 1000, 4321, 9999, 12345, -5]).wrapping_add(
+                if rng.below(3) == 0 {
+                    rng.below(3000) as i32
+                } else {
+                    0
+                },
+            ),
+            payout_frame: pick(&mut rng, &[0, 0, 1, 5, 13, 14, 200]),
+            feature_mode: rng.below(9) as u8,
+            reel_state: rng.below(7) as i32 - 1,
+            bonus_rounds: rng.below(5) as i32 - 1,
+            claimed: std::array::from_fn(|_| pick(&mut rng, &[0, 1, 0xF, 0x10, 0x11, 0x19, 0x1A])),
+        };
+        let anticipation = pick(&mut rng, &[0, 0, 0, 1, 2, 3]);
+        let counter = rng.below(0x4000) as i32;
+        cpu.mem.wr32(0x801D_3D3C, frame.payout as u32);
+        cpu.mem.wr32(0x801D_3C94, frame.payout_frame as u32);
+        cpu.mem.wr32(0x801D_3CAC, u32::from(frame.feature_mode));
+        cpu.mem.wr32(0x801D_3C84, frame.reel_state as u32);
+        cpu.mem.wr32(0x801D_3CB0, frame.bonus_rounds as u32);
+        for (i, c) in frame.claimed.iter().enumerate() {
+            cpu.mem.wr32(0x801D_3D20 + 4 * i as u32, *c as u32);
+        }
+        cpu.mem.wr32(0x801D_3CA4, anticipation as u32);
+        cpu.mem.wr32(0x801D_3CA0, counter as u32);
+        places.borrow_mut().clear();
+        scrolls.borrow_mut().clear();
+        assert_eq!(cpu.call(FRAME, &[]), Stop::Returned, "case {case}");
+        let want = compose_marquee_frame(&frame);
+        assert_eq!(*places.borrow(), want, "case {case}: {frame:?}");
+        let scrolls = scrolls.borrow();
+        assert!(scrolls[0].0 < 0, "case {case}: the frame opens on a clear");
+        let caption = frame.payout != 0 && frame.payout_frame != 0;
+        let legend = if caption {
+            None
+        } else {
+            attract_legend(frame.feature_mode, anticipation, counter)
+        };
+        let got: Vec<_> = scrolls[1..].to_vec();
+        let want_scroll: Vec<_> = legend
+            .map(|(id, col)| (id as i32, col, 0))
+            .into_iter()
+            .collect();
+        assert_eq!(
+            got, want_scroll,
+            "case {case}: {frame:?} latch {anticipation} counter {counter}"
+        );
+        captions += usize::from(caption);
+        tallies += usize::from(!caption && !want.is_empty());
+        legends += usize::from(legend.is_some());
+    }
+    assert!(
+        captions > 1000 && tallies > 1000 && legends > 1000,
+        "{captions} {tallies} {legends}"
+    );
+}

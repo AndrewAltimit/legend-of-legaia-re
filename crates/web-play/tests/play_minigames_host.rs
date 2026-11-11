@@ -205,6 +205,9 @@ fn casino_door_warp_draws_the_slot_machine_and_start_leaves() {
     assert_eq!(rt.play_mg_slot_bonus_number_rgba(1).len(), 64 * 64 * 4);
     assert_eq!(rt.play_mg_slot_reel_pos().len(), 3);
     assert_eq!(rt.play_mg_slot_strip(0).len(), 20);
+    // The machine's entry fade holds state 1 off the pad and off the coin
+    // gate for thirty-two frames (`DAT_801D3794`, `8` a frame from `0xFF`).
+    tick(&mut rt, 32);
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_slot_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));

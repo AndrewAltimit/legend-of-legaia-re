@@ -991,6 +991,38 @@ impl World {
         {
             return;
         }
+        // The stage ORs `5` into the defender's `+0x1DC` and its next tick
+        // takes bit 0 to the cut, which an entry carrying the `+0x76` lock
+        // refuses (`lbu v0,0x76(s3); bne v0,zero,0x80047a48` at
+        // `0x80047940..0x80047948`): the locked clip plays on, and its
+        // natural end reads bit 2 and commits idle over the staged byte
+        // (`sb zero,0x1da` at `0x80047B44`), so the reaction never plays.
+        // No reaction entry carries the lock (flinch, block, knockdown and
+        // get-up read `0` on every monster record and party file); the
+        // locked entries are walks and attack clips, so this is a seat
+        // struck inside its own swing. The turn onto the attacker is the
+        // kernel's and stands either way.
+        // PORT: FUN_80047430 (`0x800478EC..0x80047948`, the bit-0 cut's lock)
+        let refused = self.actors.get(target_i).is_some_and(|a| {
+            a.battle_animation.as_ref().is_some_and(|p| {
+                let (frames, lock) = p
+                    .hit_source()
+                    .map_or(([0; 4], 0), |s| (s.event_frames, s.event_lock));
+                !p.finished()
+                    && legaia_engine_battle_vm::battle_action::mid_clip_cut(
+                        a.battle.flag_bits.0 | 5,
+                        &frames,
+                        None,
+                        lock,
+                        p.current_frame(),
+                    )
+                    .is_none()
+            })
+        });
+        if refused {
+            self.turn_defender_to_attacker(target_i, attacker_i);
+            return;
+        }
         // The outgoing clip's cut displacement. The kernel's stage ORs `5`
         // into the defender's `+0x1DC`, and its next anim tick takes bit 0
         // straight to the cut (`0x800478F4..0x800478F8` -> `0x80047940`): the
@@ -1270,7 +1302,24 @@ impl World {
         // it for a defender the total has already reached; the juggle arm
         // below reads the pose regardless.
         let can_roll = t.battle.damage_accum < u32::from(t.battle.hp);
+        let seed = self.rng_state;
+        let accum = t.battle.damage_accum;
         let granted = block_entry != 0 && can_roll && block_roll(&roll, &mut || self.next_rand());
+        // `LEGAIA_DIAG_BLOCKS`: the roll's inputs and verdict, the engine half
+        // of a `--hit-trace` recording's `hits.csv` / `blocks.csv` columns.
+        if std::env::var_os("LEGAIA_DIAG_BLOCKS").is_some() {
+            eprintln!(
+                "block: att {attacker} tgt {target} seed {seed} a {}/{} d {}/{} ramps {}/{} spirit {} entry {block_entry} juggle {reacting} accum {} granted {granted}",
+                roll.attacker.spd,
+                roll.attacker.atk,
+                roll.defender.spd,
+                roll.defender.atk,
+                roll.attack_ramp,
+                roll.guard_ramp,
+                roll.defender_spirit,
+                accum,
+            );
+        }
         let mut blocked = granted;
         // A block the roll grants jolts the controller (`0x801EC890..
         // 0x801EC91C`), as does the juggle-window arm that forces one

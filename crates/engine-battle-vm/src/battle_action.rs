@@ -3,7 +3,11 @@
 //! the layer between "the player picked Attack" and "the actor's body has
 //! finished swinging the sword and HP has been deducted."
 //!
-//! PORT: FUN_801E295C, FUN_8003F2B8, FUN_8004E2F0, FUN_801D8DE8
+//! PORT: FUN_801E295C, FUN_8004E2F0, FUN_801D8DE8
+//! REF: FUN_8003F2B8 (the `CdSync(1)` wrapper the cast arms poll: mode `0`
+//! spins on `VSync` until the drive reports complete, mode `1` answers busy.
+//! The port has no drive to poll; `battle_cd_drive::CdDrive::ready` stands
+//! where the answer is read)
 //! REF: FUN_801D5854 (the battle camera's framing builder; its arms carry their
 //! own tags in `battle_cam_script` and `battle_chrome`)
 //! PORT: FUN_801DABA4, FUN_801DBF9C, FUN_801DC0A0, FUN_801E7320, FUN_801EED1C, FUN_801EFE44 (PROT 0898)
@@ -65,7 +69,8 @@ use summon::*;
 pub use summon::{
     SIDEBAND_SLOT_READ_VSYNCS, SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID, SUMMON_FADE_ID,
     SUMMON_FLASH_CUE, SUMMON_FLASH_IN, SUMMON_FLASH_OUT, SummonFadeTemplate, sideband_slot_count,
-    sideband_token_vsyncs, sideband_turn_seed_vsyncs, summon_fade_template,
+    sideband_token_vsyncs, sideband_token_vsyncs_on, sideband_turn_seed_vsyncs,
+    summon_fade_template,
 };
 
 mod spirit;

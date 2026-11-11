@@ -71,6 +71,11 @@ pub struct MonsterAnimPlayer {
     /// ([`MonsterAnimation::variant_track`]): the stream's own part count and
     /// the `+0xA4` windows.
     variant_track: legaia_actor_formats::monster_archive::VariantTrack,
+    /// The entry's rate byte (`+0x78`, [`MonsterAnimation::rate`]) as the
+    /// disc holds it: the unit the weapon-trail sweep rewinds the cursor by
+    /// (`FUN_80048310`, two of them a step). [`Self::step`] is seeded from
+    /// it and may be re-tuned; this stays the entry's.
+    clip_rate: u8,
     /// 8.8 fixed-point frame cursor (integer part = keyframe index).
     phase: u32,
     /// Phase units added per [`tick`](Self::tick). Seeded from the clip's
@@ -250,6 +255,7 @@ impl MonsterAnimPlayer {
             solo_flag: anim.solo_flag,
             impact_class: anim.impact_class,
             variant_track: anim.variant_track,
+            clip_rate: anim.rate,
             phase: 0,
             step: step_for_rate(anim.rate),
             looping: true,
@@ -612,10 +618,19 @@ impl MonsterAnimPlayer {
         } else {
             self.phase = raw;
         }
-        let f0 = ((self.phase >> PHASE_FRAC_BITS) as usize).min(last);
+        self.decode(self.phase)
+    }
+
+    /// The pose the decoder reads at `phase`, the cursor left where it is:
+    /// the blend half of [`Self::advance`], which the weapon-trail sweep
+    /// re-runs at each rewound cursor ([`Self::pose_at_sixteenths`]).
+    // REF: FUN_8004998C
+    fn decode(&self, phase: u32) -> PoseFrame {
+        let last = self.frames.len() - 1;
+        let f0 = ((phase >> PHASE_FRAC_BITS) as usize).min(last);
         // Retail blends on the 12.4 cursor's low nibble (`+0x68 & 0xF`); this
         // player's phase is 8.8, so the nibble is bits 4..8.
-        let frac16 = ((self.phase >> 4) & 0xF) as u8;
+        let frac16 = ((phase >> 4) & 0xF) as u8;
         // The next-entry rule (`FUN_8004998C` `0x80049A28..0x80049BE4`).
         // First the loop-window arm: on the frame before the window's end,
         // while cycles remain, the blend target is the window's start frame
@@ -652,9 +667,25 @@ impl MonsterAnimPlayer {
 
         PoseFrame {
             bone_outputs,
-            factor: (self.phase & (PHASE_ONE - 1)) as u8,
+            factor: (phase & (PHASE_ONE - 1)) as u8,
             finished: self.finished,
         }
+    }
+
+    /// The entry's rate byte `+0x78`, `0` for a clip built without an entry
+    /// head.
+    pub fn clip_rate(&self) -> u8 {
+        self.clip_rate
+    }
+
+    /// The pose at node cursor `sixteenths` (retail's 12.4 `+0x68` unit) of
+    /// the playing clip, without moving the cursor: what the weapon-trail
+    /// sweep `FUN_80048310` reads when it stores a rewound cursor and calls
+    /// the decoder `FUN_8004998C` again (`0x8004836C`). The loop counter and
+    /// the queued clip's tween target are the live ones, as retail's are.
+    // REF: FUN_80048310 (the sweep's re-decode at a rewound cursor)
+    pub fn pose_at_sixteenths(&self, sixteenths: u16) -> PoseFrame {
+        self.decode(u32::from(sixteenths) << 4)
     }
 
     /// The pose the last frame blends toward: the tween target's frame 0

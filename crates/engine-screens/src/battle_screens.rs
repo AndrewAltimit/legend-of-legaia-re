@@ -78,6 +78,8 @@ pub fn battle_hud_slot_views(hud: &BattleHud) -> Vec<HudSlotView<'_>> {
                 // plus the level its no-ailment arm draws.
                 status_sprite: s.status_sprite(),
                 level: s.level,
+                // Terra's `?` readout (`FUN_801D8DE8`'s type-5 records).
+                hidden_readout: s.hidden_readout,
             };
             let name = if s.active { s.name.as_str() } else { "" };
             HudSlotView::from_plain(meta, name)
@@ -242,7 +244,15 @@ pub fn battle_hud_frame_draws(
     let third_tab = bh::battle_breadcrumb_third_tab(w);
     let target_plaque = bh::battle_target_plaque(w);
     let multi_plates = bh::battle_multi_readout_plates(w, inputs.hud);
-    let target_select = bh::battle_target_select_plaque(w);
+    let target_select = bh::battle_target_select_plate(w);
+    // The plaque's slide is the HUD model's, ticked with the world
+    // (`BattleHud::sync_target_select`); a model that has not seen this
+    // target yet draws it at rest.
+    let target_select_slide = inputs.hud.target_select.as_ref().filter(|s| {
+        target_select
+            .as_ref()
+            .is_some_and(|p| p.key == s.incoming.key)
+    });
     let move_name = bh::battle_move_name(w);
     let message_bar = bh::battle_message_bar(w);
     let commit_log = bh::battle_commit_log(w);
@@ -305,7 +315,11 @@ pub fn battle_hud_frame_draws(
             multi_plates: &multi_plates,
             bar_dy: bh::battle_readout_bar_dy(w),
             panels_dy: bh::battle_round_prompt_panels_dy(w),
-            target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),
+            target_select: target_select.as_ref().map(|p| (p.name.as_str(), p.badge)),
+            target_select_glide: target_select_slide.map(|s| (s.elapsed, s.total)),
+            target_select_outgoing: target_select_slide
+                .and_then(|s| s.outgoing.as_ref())
+                .map(|p| (p.name.as_str(), p.badge)),
             message_bar: message_bar.as_deref(),
             message_bar_dy: bh::battle_message_bar_dy(w),
             ap_plate_value: bh::battle_ring_ap_plate_value(w),

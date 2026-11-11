@@ -524,6 +524,9 @@ impl World {
                 {
                     vm::vdf_morph::envelope_tick_actor(&mut part.state, step);
                 }
+                // And the mode-3 arm, on the rates the seater's run stored,
+                // by the battle pass's own step.
+                self.integrate_battle_part_cycler(part, ratio * fx_pass);
             }
         }
         let mut it = scenes.into_iter();

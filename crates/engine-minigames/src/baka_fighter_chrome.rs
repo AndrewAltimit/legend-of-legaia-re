@@ -84,11 +84,31 @@ impl ChromeDraw {
     }
 }
 
-/// Full-screen tint push (`FUN_80024EE4(1, 1, rgb)`), one 8-bit grey level
-/// replicated across the three channels.
+/// Full-screen tint push (`FUN_80024EE4(1, 1, colour)`): an additive quad
+/// over the whole screen in the packet colour word the routine is handed,
+/// red in the low byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenTint {
-    pub grey: u8,
+    /// The 24-bit colour word (`a2`), `0x00BBGGRR`.
+    pub colour: u32,
+}
+
+impl ScreenTint {
+    /// One grey level on all three channels.
+    pub const fn grey(level: u8) -> Self {
+        Self {
+            colour: level as u32 * 0x01_0101,
+        }
+    }
+
+    /// `[r, g, b]`.
+    pub const fn rgb(self) -> [u8; 3] {
+        [
+            self.colour as u8,
+            (self.colour >> 8) as u8,
+            (self.colour >> 16) as u8,
+        ]
+    }
 }
 
 /// What one chrome frame produces.

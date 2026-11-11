@@ -68,6 +68,10 @@ pub struct MinigameState {
     /// outside the how-to and free play draws it on its personal-best panel
     /// ([`legaia_engine_minigames::dance::DanceGame::best_score`]).
     pub dance_best: u32,
+    /// Free play's song counter `_DAT_80084468` (save block `0x328`): which of
+    /// its three songs the next free-play run streams
+    /// ([`legaia_engine_minigames::dance::song_loader_index`]).
+    pub dance_free_play_song: u32,
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
     /// `World::fishing_exchange_buy`.
@@ -355,6 +359,7 @@ impl MinigameState {
             fishing_best_points: 0,
             fishing_best_fish: 0,
             dance_best: 0,
+            dance_free_play_song: 0,
             fishing_events: Vec::new(),
             fishing_exchange: None,
             fishing_prize_venues: None,

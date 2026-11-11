@@ -1,8 +1,9 @@
 //! The PsyQ `St` streaming library's sector ring off the disc: `StSetRing`
 //! `FUN_8005BBF8`, `StSetStream` `FUN_8005EDC4` with its window installer
 //! `FUN_8005F004`, the per-sector demux `FUN_8005F024` on its memory-source
-//! path with the frame latch `FUN_8005ECD4` beneath it (entered only
-//! through the demux, so not declared), `StGetNext`
+//! path with the frame latch `FUN_8005ECD4` beneath it (the demux's tail
+//! call: on every other movie the test holds it back and enters it itself
+//! once the demux returns), `StGetNext`
 //! `FUN_8005EF40` and `StFreeRing` `FUN_8005EE4C`, driven as one random
 //! stream of operations over generated movies (broken chunk runs, foreign
 //! sectors, seeks, end frames, ring wraps and back-pressure) against
@@ -21,6 +22,7 @@ const SET_MASK: u32 = 0x8005_F004;
 const DEMUX: u32 = 0x8005_F024;
 const GET_NEXT: u32 = 0x8005_EF40;
 const FREE_RING: u32 = 0x8005_EE4C;
+const LATCH: u32 = 0x8005_ECD4;
 /// `CdReady`-shaped status poll the demux opens with; answered "ready".
 const CD_POLL: u32 = 0x8005_BEAC;
 
@@ -107,6 +109,7 @@ fn the_st_ring_matches_the_library() {
         scus(SET_RING),
         scus(SET_STREAM),
         scus(DEMUX),
+        scus(LATCH),
         scus(GET_NEXT),
         scus(FREE_RING)
     );
@@ -116,6 +119,7 @@ fn the_st_ring_matches_the_library() {
     let mut rng = Rng(0x5354_5249);
     let mut traces = [0usize; 11];
     let (mut reads, mut frees, mut payload_bytes) = (0usize, 0usize, 0usize);
+    let mut latched = 0usize;
     for movie in 0..300 {
         let n = 4 + rng.below(0x1D) as usize;
         let start = if movie % 3 == 0 { 2 + rng.below(6) } else { 0 };
@@ -173,7 +177,20 @@ fn the_st_ring_matches_the_library() {
                     cpu.mem.load(SRC, &s);
                     cpu.mem.wr32(TRACE, UNTOUCHED);
                     let seeking = ring.cursors().seek_armed && ring.cursors().start_frame != 0;
+                    // The latch is the last thing the demux does (`jal` at
+                    // `0x8005F97C`, then the epilogue), so holding it back
+                    // and entering it afterwards runs the same instructions.
+                    let held = std::rc::Rc::new(std::cell::Cell::new(false));
+                    if movie % 2 == 1 {
+                        let held = held.clone();
+                        cpu.hook(LATCH, move |_, _| held.set(true));
+                    }
                     assert_eq!(cpu.call(DEMUX, &[]), Stop::Returned, "{ctx}");
+                    cpu.unhook(LATCH);
+                    if held.get() {
+                        assert_eq!(cpu.call(LATCH, &[]), Stop::Returned, "{ctx}");
+                        latched += 1;
+                    }
                     let step = ring.deliver_sector(&s);
                     let trace = cpu.mem.rd32(TRACE);
                     if trace == UNTOUCHED {
@@ -254,6 +271,7 @@ fn the_st_ring_matches_the_library() {
     }
     assert!(
         reads > 1000
+            && latched > 300
             && frees > 500
             && payload_bytes > 0
             && [4, 5, 6, 7, 8, 10].iter().all(|t| traces[*t] > 0),

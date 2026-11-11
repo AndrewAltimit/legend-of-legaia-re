@@ -643,8 +643,10 @@ The three left-column windows of the Status screen:
 **Party list (id 26, `FUN_801D2094`)** - shared with the Equip screen's
 window 21. One row per roster slot (roster byte `< 3` only) at pitch `0x0e`:
 name (`+0x2A7`) at `(WX+6, Yrow)`, always CLUT 7. The focused row draws the
-hand at `(WX-0xc, Yrow)`, gated by the focus word `DAT_801E46C4` (bit `0x4000`
-hides, `0x2000` selects the blink variant, low 12 bits = row).
+hand at `(WX-0xc, Yrow)`, gated by the focus word `DAT_801E46C4`
+(`0x801D2134..0x801D2180`): bit `0x4000` hides it, `0x2000` puts a hand on
+every present row, otherwise the low 12 bits pick the row; bit `0x1000` makes
+the hand static, and without it the hand bobs.
 
 **Pager (id 27, `FUN_801D30A4`)** - the folded submenu id picks the label
 ("Condition" for the status page; Skills / Magic / Moves for ids 1..3) at
@@ -1374,13 +1376,27 @@ selected bag pair - the whole stack, no compaction - then fixes up the scroll
 confirm. An empty rescan restores descriptor 15 and drops to sub-screen 5.
 
 **Throw Out confirm (window 9, rect `(14,38,144,54)`, `FUN_801D1B20`)** -
-drawn from the staged slot (`_DAT_8007BB88`): the item name (CLUT 7; the
-item-table `+4` string, whose leading byte is its glyph count) at `(WX, WY)`;
-the count (min-1-digit `FUN_80034B78`) at `WX + 8 + glyphs*0xC`; "You are
-about to" 8 px past the count (16 px for a 2-digit count); "Throw out?" at
-`(WX+6, WY+0xE)`; then CLUT 5 "Yes" at `(WX+0x3C, WY+0x1C)` and "No" at
-`(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28`. The name renderer honours a
-`0xF1` second-byte escape that substitutes a character name (`+0x2A7`). The
+drawn from the staged slot (`_DAT_8007BB88`): the item name (CLUT 7, the
+item-table `+4` string) at `(WX, WY)`; the count (min-1-digit `FUN_80034B78`)
+at `WX + 8 + name[0]*0xC`; "You are about to" 8 px past the count (16 px for a
+2-digit count); "Throw out?" at `(WX+6, WY+0xE)`; then CLUT 5 "Yes" at
+`(WX+0x3C, WY+0x1C)` and "No" at `(WX+0x3C, WY+0x2A)` with the hand at
+`WX+0x28`.
+
+`name[0]` is the first **byte** of the name (`lbu v1,0x0(a1)` at `0x801D1BB4`,
+off the pointer just handed to the string writer), read as a glyph count. The
+names on this disc carry no count byte - they open on a letter - so the pen
+lands several hundred pixels right of the screen, and neither the count nor
+"You are about to" is seen: the window reads as the item name over "Throw
+out?" ([the oversight](../reference/glitches/items-and-equipment.md#the-throw-out-confirm-loses-its-count)).
+A `0xF1` second byte re-seats the pen off a party member's name (`+0x2A7`); no
+item name carries one.
+
+**The port does not ship that seat.** Both hosts draw the count 8 px past the
+name's own advance and the line after it (`ThrowConfirmSeat::AfterName`), the
+sentence the window was written to show. Retail's rule is kept as a kernel
+(`ThrowConfirmSeat::Retail`, `throw_confirm_count_x`), and the differential
+`crates/retail-exec/tests/items_panels.rs` holds that kernel to the routine. The
 strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
 `@Throw out?` at `0x801CEA74` / `@Yes` / `@No`). Port: the confirm draws them
 from `pause_screens::ThrowConfirmLabels` (installed by
@@ -1499,7 +1515,10 @@ or cancel only, the caster and info windows stay drawn); clear -> the per-member
 
 The caster picker and the target picker both run the list kernel
 `FUN_801D688C` with wrap: confirm and cancel are read before any move, and only
-Up / Down move the hand. The group flow runs it with no rows (confirm first).
+Up / Down move the hand. Confirm and cancel are the edge word against the two
+configured masks (`0x801EF0F0` / `0x801EF0F4`, copied from `0x800846D0` /
+`0x800846D4` when the menu opens) and nothing else: Start is not read, so it
+neither closes the picker nor moves it. The group flow runs it with no rows (confirm first).
 Every way back to the spell list - a cancel from either flow, or a cast that
 leaves the caster short of MP or the spell with nobody to affect - reopens it on
 its first row, because the list's entry step (`FUN_801D9110` at `0x801D9160`)
@@ -1592,7 +1611,12 @@ candidate step swaps in a different set, [below](#what-the-candidate-step-draws-
 Dumps `overlay_menu_801d2094.txt`, `_801d21c0.txt`, `_801dca94.txt`.
 
 **Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094`, the same
-renderer as the Status [party list](#status-satellite-windows).
+renderer as the Status [party list](#status-satellite-windows). Its hand
+bobs while the character picker has the pad (`0x12` masks `DAT_801E46C4` to
+the row, `0x801D9948..0x801D9958`) and stands still once the slot browse does
+(`0x13` raises bit `0x1000` on it, `0x801D9A4C`), where the main window's
+hand bobs. Port: `equip_screen_sprites_for` takes both cursor words; the
+`equip_main` differential runs both painters.
 
 **Main window (id 22, rect `(14,96,292,108)`, `FUN_801D21C0`)** - early-outs
 unless the shown character's roster byte is `< 3`. First pass:
@@ -2458,3 +2482,5 @@ consumables are used and gear is worn with a stat compare
 ## Cursor auto-repeat
 
 The window kernel reads a cursor word of its own, not the plain edge word: `FUN_80035C24` (inlined at the top of `FUN_80031D00`) folds a chord held unchanged back in after `0x14` vsyncs and then every `3`, the chord being the D-pad and the four shoulder buttons (`0xF00F`), or the D-pad alone in battle (`gp+0x854` the chord, `gp+0x864` the count, `gp+0x86C` the word). A list opening zeroes the chord (`FUN_80030628`), so a direction held across its opening waits the whole delay. The kind-4 list kernel `FUN_80032A44` and the shop's quantity steppers read this word. Port: `retail_pad::MenuRepeat`, folded in where the pause menu, the shop session and the battle spell and item lists take their edges.
+
+The repeat counts on the pad pump, and retail pumps every frame whatever owns it. In the port a field tick pumps through `World::set_pad`; a tick a screen holds (the pause menu, a shop, the naming prompt, a host's title) is pumped by the tick claim from the held word the host hands it (`TickClaims::held`, `InputState::pump_held`), with the count started over on the tick the pause menu opens and the tick it spawns. The play hosts hold the pause menu themselves and take its edge word through `BootSession::pause_menu_edge`, the fold the session's own menu step makes. Three host-parity scenarios hold a direction on the naming grid, a shop's stock list and the pause root at 30, 60 and 120 Hz.

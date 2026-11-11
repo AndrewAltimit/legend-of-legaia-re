@@ -194,19 +194,37 @@ impl World {
         }
         let delta = self.move_vm.ramp_ratio.max(1) * vsyncs.max(1);
         for part in parts.iter_mut().filter(|p| !p.finished) {
-            if part.state.move_submode != legaia_engine_effects::summon::RenderMode::Particle.raw()
-            {
-                continue;
-            }
-            if part.state.field_9c == 1 {
-                let d = &part.state.keyframe_desc;
-                self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
-            }
-            if let Some(fx) =
-                legaia_engine_field::clut_cell_fx::mode3_integrate(&mut part.state, delta)
-            {
-                self.battle.cell_fx.push(fx);
-            }
+            self.integrate_battle_part_cycler(part, delta);
+        }
+    }
+
+    /// [`Self::integrate_battle_part_cyclers`] for one part, by `delta` (the
+    /// ramp ratio times the pass's vsyncs). The seat frame's part tick runs
+    /// the arm too: the seater's own VM run has stored the rates and armed
+    /// the gate by then (`FUN_80021B04`, `jal 0x80023070` at `0x80021DC0`),
+    /// so a cycler leaves its seat frame one step of its rates on and with
+    /// its gate at `2`. PROT 0921's two backdrop cyclers read `+0x90 = 4`,
+    /// `+0x9C = 2` on the frame arm 3 seats them, a step-`1` frame.
+    ///
+    /// REF: FUN_80021B04 (the seater, whose VM run precedes the seat frame's tick)
+    pub(crate) fn integrate_battle_part_cycler(
+        &mut self,
+        part: &mut legaia_engine_effects::summon::SummonPartRuntime,
+        delta: u8,
+    ) {
+        if self.mode != SceneMode::Battle
+            || part.finished
+            || part.state.move_submode != legaia_engine_effects::summon::RenderMode::Particle.raw()
+        {
+            return;
+        }
+        if part.state.field_9c == 1 {
+            let d = &part.state.keyframe_desc;
+            self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));
+        }
+        if let Some(fx) = legaia_engine_field::clut_cell_fx::mode3_integrate(&mut part.state, delta)
+        {
+            self.battle.cell_fx.push(fx);
         }
     }
 

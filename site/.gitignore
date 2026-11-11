@@ -102,6 +102,7 @@
 /reference/cheats.html
 /reference/functions.html
 /reference/gamedata.html
+/reference/glossary.html
 /reference/index.html
 /reference/memory-map.html
 /reference/music-tracks.html
@@ -127,6 +128,7 @@
 /subsystems/battle-actor-rendering.html
 /subsystems/battle-command-flow.html
 /subsystems/battle-formulas.html
+/subsystems/battle-frame.html
 /subsystems/battle-hud.html
 /subsystems/battle-internals.html
 /subsystems/battle-round-loop.html
@@ -191,6 +193,7 @@
 /tooling/frame-bench.html
 /tooling/frame-hash.html
 /tooling/full-game-ladder.html
+/tooling/gate-replay.html
 /tooling/ghidra.html
 /tooling/host-drift.html
 /tooling/index.html
@@ -204,6 +207,7 @@
 /tooling/randomizer-delilas.html
 /tooling/randomizer-internals.html
 /tooling/randomizer.html
+/tooling/ratchet-integrity.html
 /tooling/recomp-differential.html
 /tooling/retail-compare.html
 /tooling/retail-kernel-differential.html

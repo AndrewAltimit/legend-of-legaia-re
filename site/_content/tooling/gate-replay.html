@@ -1,0 +1,163 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; gate replay</div>
+  <h1>Gate replay</h1>
+  <p class="lede">A pad recording made on the port cannot be played blind on the original game for long. The two sides reach a door, or close a page of dialogue, a few frames apart; every later press then lands somewhere else, and the two runs part for good. The gate replay plays the port's own pad on retail one <em>beat</em> at a time and lines the two back up at every beat's end, so a disagreement stays inside the beat that caused it and can be measured there.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Question</dt><dd>Given the same hands on the pad, where do the port and retail spend a different number of frames, stand in a different place, or draw a different number of random values?</dd>
+    <dt>Engine side</dt><dd>One line a session tick from <code>LEGAIA_DIAG_TICK_DIGEST</code> (<code>crates/engine-session/src/host_trace.rs</code>), taken from a <a href="full-game-ladder.html">full-game ladder</a> segment's pad pass</dd>
+    <dt>Retail side</dt><dd><code>scripts/pcsx-redux/autorun_gate_replay.lua</code> under PCSX-Redux, started from a retail save state</dd>
+    <dt>Report</dt><dd><code>scripts/ci/gate-replay.py</code> cuts the beats, runs the probe and prints the table. It gates nothing, like the <a href="walk-film.html">walk film</a></dd>
+    <dt>Output</dt><dd><code>captures/gate-replay/</code>. It is read from retail RAM and stays out of the repository</dd>
+  </dl>
+<pre><code>LEGAIA_FGL_ONLY=tetsu_spar LEGAIA_FGL_TRACE=1 LEGAIA_FGL_PIN_RETAIL=1 \
+LEGAIA_FGL_RNG_SEED=0x1a1193df LEGAIA_DIAG_TICK_DIGEST=/path/digest.txt \
+XMODIFIERS=@im=none cargo test -p legaia-engine-shell --profile release-test \
+  --test integration full_game_ladder::part_b_ -- --nocapture --test-threads 1
+
+scripts/ci/gate-replay.py s3_rimelm_freeroam --digest /path/digest.txt --until 3700</code></pre>
+  <ul>
+    <li><strong>Start both on one random stream.</strong> Read the state's seed word at <code>0x80009010</code> and pass it as <code>LEGAIA_FGL_RNG_SEED</code>, or the draw columns compare two different deals.</li>
+    <li><strong>Run the ladder as <code>full_game_ladder::part_b_</code>.</strong> The digest then holds the seated and pad passes of the one segment, and its last session is the pad pass. The unfiltered name also runs part C and leaves gigabytes of sessions ahead of it.</li>
+    <li><strong>A walk through encounter country parts at the first fight only one side rolls.</strong> To measure the field between fights, take the digest with <code>LEGAIA_FGL_NO_ENCOUNTERS=1</code> and pass <code>--no-encounters</code>, which holds retail's setting byte <code>0x8007B5F8</code> at the value where the encounter routine skips its roll.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="beats-and-gates" data-doc="beats-and-gates">
+  <h2>Beats and gates</h2>
+  <p>A <em>gate</em> is a change of state both sides can see in their own memory: a script taking hold of the player, a battle opening, a dialogue page finishing its typing. A <em>beat</em> runs from one gate to the next. The engine's run is cut into beats first; retail then plays each beat's pad and the probe waits for the same gate before the next beat starts.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two timelines. The engine's run is cut into four beats at three gates: engaged, page 1, battle. Retail plays the same beats. Beat one ends on retail a few vsyncs later than on the engine: the gap. Beat two reaches its gate early on retail, so the rest of its pad rows are dropped. Beat three's gate does not come when the pad runs out, so retail waits, and after a while a synthetic Cross is pressed and counted. At every gate the next beat's pad starts from where retail really is, so each beat's gap is its own.">
+      <defs>
+        <marker id="gr-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <text class="dg-sub dg-start" x="20" y="24">engine: the recorded pad, cut wherever a gate changes</text>
+      <rect class="dg-node-accent" x="20" y="36" width="180" height="44" rx="4"/><text class="dg-label" x="110" y="63">beat 1: walk</text>
+      <rect class="dg-node-accent" x="204" y="36" width="200" height="44" rx="4"/><text class="dg-label" x="304" y="63">beat 2: talk, page 1</text>
+      <rect class="dg-node-accent" x="408" y="36" width="170" height="44" rx="4"/><text class="dg-label" x="493" y="63">beat 3: page 2</text>
+      <rect class="dg-node-accent" x="582" y="36" width="230" height="44" rx="4"/><text class="dg-label" x="697" y="63">beat 4: battle prompt</text>
+
+      <text class="dg-sub" x="202" y="104">engaged=1</text>
+      <text class="dg-sub" x="406" y="104">page=1</text>
+      <text class="dg-sub" x="580" y="104">battle=1</text>
+      <path class="dg-edge-dim" d="M202 110 L226 196"/>
+      <path class="dg-edge-dim" d="M406 110 L400 196"/>
+      <path class="dg-edge-dim" d="M580 110 L640 196"/>
+
+      <text class="dg-sub dg-start" x="20" y="186">retail: the same pad</text>
+      <rect class="dg-node" x="20" y="198" width="180" height="44" rx="4"/><text class="dg-label" x="110" y="225">beat 1</text>
+      <rect class="dg-node-warn" x="200" y="198" width="26" height="44" rx="2"/>
+      <rect class="dg-node" x="230" y="198" width="170" height="44" rx="4"/><text class="dg-label" x="315" y="225">beat 2</text>
+      <rect class="dg-node" x="404" y="198" width="170" height="44" rx="4"/><text class="dg-label" x="489" y="225">beat 3</text>
+      <rect class="dg-node-warn" x="574" y="198" width="66" height="44" rx="2"/>
+      <rect class="dg-node" x="644" y="198" width="230" height="44" rx="4"/><text class="dg-label" x="759" y="225">beat 4</text>
+
+      <path class="dg-edge" d="M213 262 L213 246" marker-end="url(#gr-ah)"/>
+      <text class="dg-sub" x="150" y="278">late: the walk's last</text>
+      <text class="dg-sub" x="150" y="294">direction stays held</text>
+      <path class="dg-edge" d="M400 262 L400 246" marker-end="url(#gr-ah)"/>
+      <text class="dg-sub" x="400" y="278">early: the beat ends,</text>
+      <text class="dg-sub" x="400" y="294">its last rows are dropped</text>
+      <path class="dg-edge" d="M607 262 L607 246" marker-end="url(#gr-ah)"/>
+      <text class="dg-sub" x="650" y="278">still waiting: a synthetic Cross,</text>
+      <text class="dg-sub" x="650" y="294">logged and counted as a finding</text>
+      <text class="dg-sub dg-start" x="20" y="320">each beat's pad is timed from its own opening gate, so a gap in one beat is not carried into the next</text>
+    </svg>
+    <figcaption>The engine's session above, retail's replay below. The marked slivers are what the table measures: retail's extra vsyncs, and the input the engine's log did not supply.</figcaption>
+  </figure>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Gate</th><th>On the engine</th><th>On retail</th></tr></thead>
+    <tbody>
+      <tr><td><code>engaged=0/1</code></td><td>A script context holds the player</td><td>Bit <code>0x80000</code> of the player record's flags at <code>+0x10</code></td></tr>
+      <tr><td><code>battle=0/1</code></td><td>The world's mode is battle</td><td>The mode byte <code>0x8007B83C</code> reads <code>0x15</code>. The battle context pointer outlives the fight, so it says nothing</td></tr>
+      <tr><td><code>scene=NAME</code></td><td>The active scene label</td><td>The scene name at <code>0x8007050C</code></td></tr>
+      <tr><td><code>warp</code></td><td>The player moved over 300 units in one tick</td><td>The same, between two vsyncs</td></tr>
+      <tr><td><code>page=N</code></td><td>The open box's window reaches state <code>0x19</code></td><td>The pager state <code>_DAT_801F2734</code> reaches <code>0x19</code>; pages are counted, not timed</td></tr>
+      <tr><td><code>pos=X/Z</code></td><td>A turn in a walk: the d-pad changes to another held direction, settled for 8 ticks, at least 96 units from the last turn</td><td>The player comes within 24 units of the spot, passes it, or is engaged first</td></tr>
+      <tr><td><code>flow=XX:N</code>, <code>act=XX:N</code></td><td>The Nth entry into a battle command surface, or the action start</td><td>The same bytes, <code>ctx[+0x06]</code> and <code>ctx[+0x07]</code></td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>Walks are gated on position, not time.</strong> A retail walk and an engine walk start a pass of position apart, and a door or a ledge fires on where the player stands. Each turn is therefore a gate on the spot, and the next leg's pad starts where retail really is.</li>
+    <li><strong>Levels, not edges.</strong> Where a gate is a level (engaged, battle, scene), retail matches the level, so two gates the sides reach in the other order read as a zero-length beat and not a stall. Pages, prompts and action starts are ordinals, so a page only one side shows costs one beat and not the rest of the run.</li>
+    <li><strong>A door holds retail's engaged bit from its trigger to its landing,</strong> where the engine's word stays clear. A retail engaged interval that contains a warp is that hold and does not satisfy an <code>engaged=1</code> gate.</li>
+    <li><strong>Field gates are not cut inside a battle,</strong> where the field player record says nothing. An engaged run shorter than three ticks is a script pulse and is ignored (<code>--min-dwell</code>).</li>
+    <li><strong>The press that moves a battle surface closes its own beat.</strong> The engine's flow byte changes in the row of the press that caused it, so such a gate ends one tick later and keeps the press: it is what the beat repeats if it does not land.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="replaying-a-beat" data-doc="replaying-a-beat">
+  <h2>Replaying a beat</h2>
+  <p>Each beat's pad rows are timed from its opening gate. A press is held at least two ticks (<code>--min-press</code>), because a one-vsync press can fall between two of retail's game passes and be lost, and a widened press keeps one released tick after it so a run of pulses stays separate edges. What happens at the closing gate depends on who got there first:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Case</th><th>What the probe does</th><th>Where it shows</th></tr></thead>
+    <tbody>
+      <tr><td>Retail reaches the gate first</td><td>Ends the beat and drops its remaining rows</td><td><code>drop</code> counts the Cross presses among them</td></tr>
+      <tr><td>Retail is late</td><td>Waits. A walking player keeps the beat's last direction held; an engaged player and a battle hold nothing</td><td><code>wait</code></td></tr>
+      <tr><td>A walk closed by a door or a talk comes up short</td><td>Steers to where the engine stood when the gate fired, then keeps pressing the last direction</td><td><code>synthetic_seek</code> and <code>synthetic_push</code> rows; <code>synth</code></td></tr>
+      <tr><td>Retail is still waiting on an engaged beat or a battle prompt after <code>--synth-after</code> vsyncs</td><td>Gives a two-vsync Cross every 30 vsyncs until the gate comes. The usual cause is a page the replay's presses did not close</td><td><code>synthetic_cross</code> rows; <code>synth</code>. A finding, not a repair</td></tr>
+      <tr><td>A battle press did not take</td><td>Repeats the beat's last logged press while the command flow sits on a byte that waits for input, at most <code>--repulse-max</code> times</td><td><code>synthetic_repulse</code> rows; <code>synth</code></td></tr>
+      <tr><td>The gate never comes</td><td>Stops after <code>--max-wait</code> vsyncs</td><td>Status <code>timeout</code>; everything after is unmeasured</td></tr>
+    </tbody>
+  </table></div>
+  <p>Synthetic input is input the engine's log did not supply. Every one is a row in <code>gate_events.csv</code> with the press and what it found, so a run that needed help says where. Nothing is pressed while the action state machine owns the frame, or on a flow byte no surface reads the pad on.</p>
+</section>
+
+<section class="doc-section" id="reading-the-table" data-doc="reading-the-table">
+  <h2>Reading the table</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>E</code>, <code>R</code>, <code>gap</code></td><td>The beat's length in engine ticks, in retail vsyncs, and <code>R - E</code></td></tr>
+      <tr><td><code>wait</code>, <code>drop</code>, <code>synth</code></td><td>Vsyncs retail waited past the pad, Cross presses dropped, synthetic inputs</td></tr>
+      <tr><td><code>pos diff</code></td><td>Retail minus engine player <code>x,z</code> at the closing gate; <code>-</code> in a battle</td></tr>
+      <tr><td><code>E rng</code>, <code>R rng</code></td><td>Draws of the <code>rand()</code> generator over the beat. A <code>+Nj</code> suffix counts values the generator cannot reach from the last one, which is a reseed or a stomp</td></tr>
+    </tbody>
+  </table></div>
+  <p>A beat with a small gap and a matching position says the two sides agree <em>there</em>, whatever came before it. That is what the resynchronisation buys. A second table, <code>page waits</code>, has a row per page gate: when each side's pager finished the page, their difference (which carries the drift of the beats before it) and the part this page added.</p>
+</section>
+
+<section class="doc-section" id="what-the-town01-run-shows" data-doc="what-the-town01-run-shows">
+  <h2>What the Rim Elm run shows</h2>
+  <p>The first run replays the walk to Tetsu, the talk and the sparring fight from a Rim Elm free-roam state. With every surface gated, the fight replays to its end.</p>
+  <ul>
+    <li><strong>Engaged holds.</strong> Retail holds the player's engaged bit across a door's whole trigger-to-landing run, and across the talk to Tetsu from its first page to its last.</li>
+    <li><strong>The fight's opening.</strong> Retail's command flow walks <code>0xFD</code>, <code>0x00</code>, <code>0x0A</code>, <code>0x0B</code>, <code>0x14</code>, <code>0x1E</code> before the first round prompt. The action state machine passes through <code>0x5A</code> after every action, between two actors of one round as well as at a round's end, so the prompt is gated on the command flow's <code>0x1E</code>.</li>
+    <li><strong>One-vsync presses get lost.</strong> With one-tick presses two of the talk's page turns wait on a synthetic Cross and the first round prompt ignores six logged pulses; with two-tick presses the same turns close on the logged presses.</li>
+    <li><strong>The ring.</strong> Up in the command ring opens the item window on retail as on the engine. Both sides ignore the ring for about 16 ticks after entering it, and a mash merged into one solid hold gives retail a single edge that lands before the ring shows.</li>
+    <li><strong>Every surface holds the pad for its glide.</strong> The engine dispatches on the eighteenth tick after the flow byte moves and retail about two vsyncs later, on its two-vsync pass:</li>
+  </ul>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Surface entered</th><th>Engine ticks to the next surface</th><th>Retail vsyncs to the next surface</th></tr></thead>
+    <tbody>
+      <tr><td><code>0x1E</code> round prompt, <code>0x28</code> ring</td><td>17, 18</td><td>20, 20</td></tr>
+      <tr><td><code>0x78</code>, <code>0x5A</code>, <code>0x6E</code></td><td>18, 18, 18</td><td>20, 20, 20</td></tr>
+      <tr><td><code>0x3C</code> window, <code>0x64</code> target confirm</td><td>18, 18</td><td>20 to 22, 20</td></tr>
+      <tr><td><code>0x50</code> arts entry</td><td>18</td><td>20</td></tr>
+      <tr><td><code>0xFE</code> armed, to the action start</td><td>18</td><td>20</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>Where the actions differ.</strong> A round's actions run the same states on both sides with the same dwell except at the close of each: <code>0x51</code> holds 62 ticks on the engine against 76 vsyncs on retail, and retail then walks <code>0x5A</code> where the engine walks <code>0x00</code>. The item band and the Spirit band are shorter on the engine.</li>
+    <li><strong>The boxes that close themselves.</strong> Retail's first-round box and its sign-off box wait for a press and otherwise close on their own hold: with no Cross offered, retail spends 364 vsyncs in <code>0x14</code> and 427 in <code>0xC8</code> before the fight closes. A press skips the long hold on both sides.</li>
+    <li><strong>The hits are one kernel.</strong> The thirteen melee hits of this fight, fed through the port's <code>physical_rolls</code> with retail's stats and retail's own <code>rand()</code> draws, give retail's raw and guarded damage on every hit. The two sides' damage differs only where the rolls and swing counts differ, and those follow the random stream, which parts in the first round.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <a href="walk-film.html">Field walk film</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <span class="see-also-label">Game</span>
+    <a href="../subsystems/battle-command-flow.html">Battle command flow</a>
+    <a href="../subsystems/battle-hud.html">Battle HUD</a>
+  </div>
+</section>

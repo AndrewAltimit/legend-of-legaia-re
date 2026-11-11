@@ -24,7 +24,7 @@ culling, the port's render passes and knobs. How a pixel gets its colour is
   through the GTE light. The port does both by default on both hosts
   ([Lighting](#lighting)).
 - **Rasterisation defaults to clean.** `Renderer::set_psx_mode` is opt-in and
-  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row), the GTE register limits on field corners, each field primitive's draw at its ordering-table link and 15-bit dither only. Affine UVs are unconditional, and
+  gates the retail vertex snap (truncated onto the 320×240 grid, with its scanline texel row), the GTE register limits on field corners, each field and battle primitive's draw at its ordering-table link and 15-bit dither only. Affine UVs are unconditional, and
   they are the faithful behaviour
   ([knobs](#rendering-knobs-what-is-faithful-what-is-a-choice)).
 - **Simulation is faithful with no opt-out.**
@@ -358,6 +358,17 @@ Structural facts, read from the raw table:
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
+  The leaf lists each `GT3`'s corners in the reverse of the port's order
+  (staged index bytes `0x50 0x30 0x00` and siblings at `0x80045BB4..0x80045BE0`);
+  the port keeps the parent quad's winding for the host's face cull, and a
+  `GT3` rasterises the same either way. **A back-facing quad derails it.** The
+  winding reject (`bltz` at `0x80045C54`) loops back without the `addiu a1,a1,0x24`
+  the drawn path takes at `0x80045C5C`, so every remaining prim of the group
+  re-reads the culled one and the group walk resumes `0x24` bytes past it, off
+  its next header. Only a single-sided word reaches the reject; every shipped
+  bank-3 word found (`0xE9`, PROT 0903's fire tunnel) carries the double-sided
+  bit `0x08`. The differential `quad_split` runs the leaf through the
+  dispatcher against the port with the GTE seeded.
   Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
   `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
   nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
@@ -366,8 +377,19 @@ Structural facts, read from the raw table:
   in `2046`, and the additive disc paints over the opaque one everywhere. The
   port's depth buffer has no bucket to tie on, and two model matrices round
   apart, so the sheets would cross along a line. A kernel keeps the links' order
-  instead: `effect_draws` brings a node on this bank `TESSELLATED_LINK_NEARER_SZ`
-  nearer along the view axis, on both hosts.
+  instead: `effect_draws` scales a node on this bank about the eye by
+  `1 - TESSELLATED_LINK_NEARER_SHARE`, on both hosts, so each vertex comes a
+  `256`th of its depth nearer along its own view ray and lands on the pixel it
+  had. The share is the port's, not retail's. The port's depth is a 32-bit
+  float `1 - near / z`, whose step grows with the depth, and those two discs
+  stand `0x2000` draw units out, where two model matrices a turn about the view
+  axis apart round further apart than a two-unit offset: on whole passes the
+  additive disc failed the depth test against the opaque disc's texels and
+  showed only through that disc's holes, hard-edged patches where retail's
+  frame holds a smooth sheet. Hiding the opaque record with
+  `LEGAIA_DIAG_CAST_HIDE` is what showed the sheet whole. An offset along the
+  view axis large enough to clear the rounding moves a far sheet across the
+  screen, which the Juggernaut film reads.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is the leaves' off-screen reject: a transform-free read of
   the four projected corners (`SXY0..2` plus the first corner saved in
@@ -419,8 +441,14 @@ fragment discard ([below](#what-a-raised-0x42-draws)).
 - **`FUN_80027F00`** - the vertex clip loop. For each edge with an endpoint
   outside the bound at `[0x1F800314]+0x6C`, it computes the crossing fraction
   `((bound - a) << 12) / (b - a)` and calls the interpolator to synthesise a
-  clipped vertex before handing the group to `FUN_80027C6C`. See
-  `ghidra/scripts/funcs/80027f00.txt`.
+  clipped vertex before handing the group to `FUN_80027C6C`. It is one pass in
+  ring order, not a clip per bound: a corner past a bound gives way to the
+  crossing on the edge from the corner before it, then on the edge to the
+  corner after it, each made only when that neighbour lies strictly inside, so
+  a corner on the bound makes no duplicate. Port:
+  `engine-effects::object_effect::far_arm_mesh`, in that order, in `f32` (its
+  corners arrive scaled); the `far_arm_clip` differential holds it to retail
+  within the integer rounding. See `ghidra/scripts/funcs/80027f00.txt`.
 - **`FUN_80029724`** - the interpolation kernel the clip loop calls. Given an
   output slot, two vertices and a q12 fraction `a3`, it lerps X/Y/Z
   (`out = b + ((a-b)*frac >> 12)`) and, by flag word `a2`, the packed
@@ -1100,7 +1128,7 @@ corner 0 and of corner 1. It rejects only when both are `>= 0x141` or both
 are `< 0`. No Y is read, so an actor a full screen above or below the
 viewport still reads as on-screen.
 
-Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
+Port: [`legaia_render_kernels::battle_on_screen`](../../crates/render-kernels/src/battle_on_screen.rs)
 (`battle_actor_on_screen`), on
 [`billboard::project_billboard`](../../crates/render-kernels/src/billboard.rs).
 It is inert, and so is retail's: `0x8005126C` has no reference of any kind on
@@ -1954,7 +1982,7 @@ textured pack 84, which is what the live battle-scene actor list shows. The
 retail binding pass - both refresh arms, the kind table, the `0x9C`-byte
 render-node allocation and the mesh-chain follow-through - is under
 [`FUN_80020F88`](../reference/functions/renderer.md#80020f88) and ported as
-`legaia_engine_render::actor_bind`, which carries the index rule as a unit
+`legaia_engine_scene::actor_bind`, which carries the index rule as a unit
 test on the obj-114 case.
 
 **Untextured props take the colour pipeline.** A prop whose prims carry no
@@ -2365,10 +2393,11 @@ triangles. What removes geometry is retail's own rules:
 | Per-primitive near reject | Every per-prim handler | [below](#the-per-primitive-near-reject) |
 | GPU polygon-size limit | The GPU itself | [below](#the-gpu-polygon-size-limit) |
 
-**The crop holds only at retail's framing.** The tile window is sized for
-retail's frustum, so under the play-window's default `CameraDistance::Far`,
-the drag / tilt / zoom knobs or `F3`, the map is drawn whole and the actor
-cull goes off with the crop
+**The crop follows the framing.** The tile window is sized for retail's
+frustum. Under the play-window's default `CameraDistance::Far` (a preset
+alone) the crop and the actor cull walk the window widened to the preset's
+scale; under the drag / tilt / zoom knobs or `F3` the map is drawn whole and
+the actor cull goes off with the crop
 ([engine.md](engine.md#the-visible-tile-crop-follows-the-framing)).
 
 **The clip volume holds the whole scene.** Its planes are sized to contain

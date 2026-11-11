@@ -183,6 +183,7 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
         prot(956, WATER_HAZARD),
         prot(957, DEATH_GAME),
         prot(957, THUNDER_STORM),
+        prot(958, BLAZING_SLASH),
         prot(959, MEGATON_PRESS),
         prot(960, PLASMA_STRIKE),
         prot(960, NEO_STAR_SLASH),
@@ -285,6 +286,17 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
             if body.action == 0x7B {
                 cpu.mem.wr8(ca + 0x1D9, 0x0D);
             }
+            // PROT 0958's arm 24 holds while the victim's playing clip
+            // `+0x1D9` is its knockdown slot `+0x1F1` (`0x801F8B0C..0x801F8B18`).
+            // The clip's end is the animation driver's, which is stubbed, so
+            // the rig plays it: on the clip for `round` passes of the arm,
+            // then off it.
+            const KNOCKDOWN: u8 = 5;
+            let blazing = (body.entry, body.va) == (958, BLAZING_SLASH);
+            if blazing {
+                cpu.mem.wr8(va_ + 0x1F1, KNOCKDOWN);
+            }
+            let mut arm_24_passes = 0usize;
             // Every strike-frame wait (PROT 0960's arm 5, PROT 0962's arm 3)
             // finds the caster's node cursor past its mark.
             cpu.mem.wr16(NODES + caster * 0x100 + 0x68, 0x7FFF);
@@ -363,6 +375,12 @@ fn the_capture_cameras_frame_and_gate_as_retail_does() {
                 polls.set(0);
                 st.caster_body = Some(seat_at(&mut cpu.mem, ca, true));
                 st.victim_body = Some(seat_at(&mut cpu.mem, va_, true));
+                if blazing {
+                    let on = phase != 24 || arm_24_passes < round;
+                    arm_24_passes += usize::from(phase == 24);
+                    cpu.mem.wr8(va_ + 0x1D9, if on { KNOCKDOWN } else { 0 });
+                    st.victim_on_knockdown_clip = on;
+                }
                 // Death Game's arms from 9 deal on the cards the host feeds
                 // (`ModuleCamState::death_game`), which this run deals none of.
                 if body.action == 0x76 && phase >= 9 {
@@ -472,6 +490,7 @@ const PARALYZING_WAVE: u32 = 0x801F_69D8;
 const WATER_HAZARD: u32 = 0x801F_7298;
 const DEATH_GAME: u32 = 0x801F_798C;
 const THUNDER_STORM: u32 = 0x801F_6A14;
+const BLAZING_SLASH: u32 = 0x801F_6DD8;
 const MEGATON_PRESS: u32 = 0x801F_69F0;
 const PLASMA_STRIKE: u32 = 0x801F_74E4;
 const NEO_STAR_SLASH: u32 = 0x801F_69D8;

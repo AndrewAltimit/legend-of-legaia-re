@@ -281,9 +281,11 @@ pub fn panel_geometry(row_start: i32, row_end: i32) -> PanelGeometry {
 /// SFX ids the list-picker fires (`FUN_80035B50` argument).
 pub const SFX_CURSOR_MOVE: u32 = 0x21;
 
-pub const SFX_CONFIRM: u32 = 0x37;
+/// The confirm leg's cue (`li a0,0x36` at `0x801ECC28`).
+pub const SFX_CONFIRM: u32 = 0x36;
 
-pub const SFX_CANCEL: u32 = 0x36;
+/// The cancel leg's cue (`li a0,0x37` at `0x801ECBF8`).
+pub const SFX_CANCEL: u32 = 0x37;
 
 /// One step of the vertical cursor over `row_start..=row_end`. The wrap is a
 /// **swap, not a clamp**: stepping below `row_start` jumps to `row_end` and
@@ -336,7 +338,8 @@ pub fn dev_menu_cursor_step(
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_phase`
 /// tracks the engine dev menu's page in this phase space, which is what the
 /// retail draw gate below is asked against.
-/// PORT: FUN_801ECA08 (`switch(ctx[+0x54])`)
+/// REF: FUN_801ECA08 (`switch(ctx[+0x54])`; the legs are ported in the
+/// dev-menu host's `tick`)
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ListPickerPhase {
     /// Seed cursor = row_start, open panel, then falls through into `Active`.
@@ -344,10 +347,15 @@ pub enum ListPickerPhase {
     Open = 0,
     /// Cursor movement + confirm/cancel input.
     Active = 1,
-    /// Confirm settle.
-    ConfirmSettle = 2,
-    /// Cancel unwind (`FUN_801EA9B0`).
-    CancelUnwind = 3,
+    /// Cancel settle: the cancel button's leg (`cfg[+0x594]`, SFX `0x37`,
+    /// `0x801ECBEC..0x801ECC0C`). The frame of the press still draws; the
+    /// leg itself (`0x801ECC38`) only clears the panel's open word.
+    CancelSettle = 2,
+    /// Row action: the confirm button's leg (`cfg[+0x590]`, SFX `0x36`,
+    /// `0x801ECC10..0x801ECC30`). Its frame (`0x801ECC64`) runs the row's
+    /// cheat through `FUN_801EA9B0`, draws, and leaves the phase that arm
+    /// stored.
+    RowAction = 3,
     /// Teardown; restores saved selection, resets phase to 0.
     Teardown = 4,
 }
@@ -357,11 +365,29 @@ impl ListPickerPhase {
         Some(match v {
             0 => ListPickerPhase::Open,
             1 => ListPickerPhase::Active,
-            2 => ListPickerPhase::ConfirmSettle,
-            3 => ListPickerPhase::CancelUnwind,
+            2 => ListPickerPhase::CancelSettle,
+            3 => ListPickerPhase::RowAction,
             4 => ListPickerPhase::Teardown,
             _ => return None,
         })
+    }
+}
+
+/// The phase the list picker's Active leg leaves (`FUN_801ECA08`,
+/// `0x801ECBD0..0x801ECC34`): cancel (`cancel`, the edge word against the
+/// cancel mask `0x800846D4`) parks it in [`ListPickerPhase::CancelSettle`],
+/// tested first; else confirm (the mask `0x800846D0`) hands the row to the
+/// row-action dispatcher in [`ListPickerPhase::RowAction`]; else it stays
+/// [`ListPickerPhase::Active`].
+///
+/// PORT: FUN_801ECA08 (the Active leg's exits)
+pub fn list_picker_active_exit(cancel: bool, confirm: bool) -> ListPickerPhase {
+    if cancel {
+        ListPickerPhase::CancelSettle
+    } else if confirm {
+        ListPickerPhase::RowAction
+    } else {
+        ListPickerPhase::Active
     }
 }
 
@@ -369,18 +395,20 @@ impl ListPickerPhase {
 /// computes `iVar6 = phase * gate` after the phase switch and draws when the
 /// product is `1` or `3`:
 ///
-/// - phase `Active` (1) with `gate = 1` (input allowed) -> draws;
-/// - phase `CancelUnwind` (3) with `gate` = the unwind dispatcher's return
+/// - phase `Active` (1) with `gate = 1` (the panel is not busy) -> draws,
+///   the frame cancel or confirm is pressed included: the product is taken
+///   off the phase the frame **entered** in (`lh s2,0x54(s0)` at
+///   `0x801ECA70`), not the one it leaves;
+/// - phase `RowAction` (3) with `gate` = the row-action dispatcher's return
 ///   -> draws;
-/// - every other product (0, 2, 4, ...) -> no draw.
+/// - every other product (0, 2, 4, ...) -> no draw. `CancelSettle` (2) and
+///   `Teardown` (4) leave `gate` at `0`.
 ///
-/// The unwind dispatcher is `FUN_801EA9B0`, and it returns `1`
+/// The row-action dispatcher is `FUN_801EA9B0`, and it returns `1`
 /// unconditionally - `s1` is loaded with `1` in the delay slot of its bound
 /// check and every arm, including the out-of-range one, exits through
 /// `move v0,s1` (see [`crate::dev_menu_action::dev_menu_action`]). So phase
-/// `CancelUnwind` always draws; that gate never suppresses it. The argument
-/// stays because the phase-1 leg's gate is the caller's own input-allowed
-/// flag, which does vary.
+/// `RowAction` always draws.
 ///
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::list_visible`
 /// is this gate's output, recomputed every frame.
@@ -451,8 +479,9 @@ pub struct RecordsScreen {
     pub treasure_percent: i32,
     /// Treasure fractional part `(found*10000/total) - percent*100`.
     pub treasure_fraction: i32,
-    /// Whether the treasure line is drawn at all (`0 < total`).
-    pub treasure_shown: bool,
+    /// Whether the treasure line's percentage half is drawn (`0 < total`);
+    /// its `found / total` half always is.
+    pub treasure_percent_shown: bool,
 }
 
 /// Decompose a `1/60 s` play-time frame counter (`_DAT_800845DC`) into
@@ -461,8 +490,12 @@ pub struct RecordsScreen {
 /// Wired: reached from [`records_screen`], whose host is the native window's
 /// developer-menu Records page.
 /// PORT: FUN_801ED710 (play-time block)
+///
+/// The counter is divided as a signed word (`mult` by the `0x88888889`
+/// reciprocal, truncating toward zero), so a count past `0x7FFFFFFF` -
+/// some nine thousand hours - reads negative and escapes the clamp.
 pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
-    let secs = (frames / 60) as i32;
+    let secs = frames as i32 / 60;
     let mut seconds = secs % 60;
     let total_minutes = secs / 60;
     let mut hours = total_minutes / 60;
@@ -511,7 +544,7 @@ pub fn records_screen(
         out.magic[i] = c.magic;
     }
     if treasure_total > 0 {
-        out.treasure_shown = true;
+        out.treasure_percent_shown = true;
         let percent = treasure_found * 100 / treasure_total;
         out.treasure_percent = percent;
         out.treasure_fraction = treasure_found * 10_000 / treasure_total - percent * 100;

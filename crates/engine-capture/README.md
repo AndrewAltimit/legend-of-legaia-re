@@ -27,6 +27,9 @@ form in both directions.
 - [`formation_cell`](src/formation_cell.rs) - `FormationCell`, a fight named
   by its formation cell where no scene MAN row carries it
   (`play-window --battle cell:[s:]ids`), registered the same way on both sides.
+- [`seat_pin`](src/seat_pin.rs) - the monster ids in the seat order a capture
+  holds them (`LEGAIA_BATTLE_SEATS`), which the entry seats in place of battle
+  init's species roll and opening-phase draws.
 - [`field_seeds`](src/field_seeds.rs) - the field-side seeds: placed-object
   clips, ambient walkers, morph envelopes, the fog pool, sprite arms,
   CLUT-cell cyclers, scroller rects, the panel widget and the camera block.

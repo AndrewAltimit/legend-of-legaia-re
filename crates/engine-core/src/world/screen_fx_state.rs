@@ -194,3 +194,14 @@ pub struct ScreenFrame {
     pub rgb: [u8; 3],
     pub ot: u8,
 }
+
+impl ScreenFrame {
+    /// The spawn's stores: `(width, r, g, b)` in `a0..a3` and the OT entry as
+    /// the fifth argument, each written as a halfword of the bytes the op
+    /// carries.
+    ///
+    /// PORT: FUN_801DE7BC
+    pub fn spawn(width: u8, rgb: [u8; 3], ot: u8) -> Self {
+        ScreenFrame { width, rgb, ot }
+    }
+}

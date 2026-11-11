@@ -252,6 +252,7 @@ impl PlayWindowApp {
             overlay_open: self.menu_runtime.is_open(),
             overlay_suspends: self.menu_runtime.suspends_field(),
             pause_menu_ready: true,
+            held: self.pad,
         };
         let owner = self.session.claim_tick(claims, pressed_edge);
         if handover && !matches!(owner, TickOwner::PauseMenuSpawned) {
@@ -342,7 +343,13 @@ impl PlayWindowApp {
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
         let field_pad = field_pad & net_pad_filter;
-        self.session.host.world.set_pad(field_pad);
+        // A suspending screen's tick is not the field's: the tick claim has
+        // pumped the pad for the screen's cursor auto-repeat, and a second
+        // pump here (on a neutral word) would clear it. The published pad
+        // stays where the field's last tick left it, as on the page.
+        if !field_suspended {
+            self.session.host.world.set_pad(field_pad);
+        }
         if field_suspended {
             // A shop / prize exchange: the field is frozen, tail included -
             // the world tick, the effect scene-graphs, the ocean and CLUT

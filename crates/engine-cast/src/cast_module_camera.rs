@@ -312,6 +312,9 @@ pub struct ModuleCamState {
     /// The victim's playing clip `+0x1D9` equals its `+0x1F2` slot, fed by
     /// the host (PROT 0959's arms 9 and `0x0B` freeze it there).
     pub victim_on_gate_clip: bool,
+    /// The victim's playing clip `+0x1D9` equals its knockdown slot `+0x1F1`,
+    /// fed by the host (PROT 0958's arm 24 holds on it).
+    pub victim_on_knockdown_clip: bool,
     /// Whether this tick opens a battle frame, fed by the host: an arm whose
     /// state steps once a pass (PROT 0959's shake toggle) steps on it.
     pub opens_pass: bool,
@@ -476,6 +479,12 @@ pub struct ArmDirection {
     /// builder holds its endpoints in halfwords, so a stored word past
     /// `0x7FFF` cannot ride a cut (Barra's `0xFFFF` in arms 3 and 4).
     pub tr_z_store: Option<i32>,
+    /// `Some` when [`Self::drift`] lands a global on a stored value (a drift
+    /// worked out of the live pose, `ModuleCamState::live_pitch_tr`): the
+    /// rest of a pass that hands over on this tick repeats only this rate
+    /// part (`World::module_pass`), since retail's pass stores the value once
+    /// and drifts the rest by `k * delta`. `Some(None)` repeats nothing.
+    pub rest_drift: Option<Option<CaptureDrift>>,
 }
 
 /// A line of text a module arm prints through `FUN_8003541C(0, 0, str, x,
@@ -996,6 +1005,7 @@ impl ArmDirection {
         drift_after_shot: false,
         ribbons: None,
         tr_z_store: None,
+        rest_drift: None,
     };
     pub(super) const PASS: Self = Self {
         hold: false,
@@ -1014,6 +1024,7 @@ impl ArmDirection {
         drift_after_shot: false,
         ribbons: None,
         tr_z_store: None,
+        rest_drift: None,
     };
     pub(super) fn shot(shot: ModuleShot) -> Self {
         Self {
@@ -1059,6 +1070,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 mod aluru;
 mod astral_slash;
 mod blade_breath;
+mod blazing_slash;
 mod bloody_horns;
 mod body_kit;
 mod body_paced;
@@ -1128,6 +1140,10 @@ pub use blade_breath::{
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
     capture_approach_reach, capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
+};
+pub use blazing_slash::{
+    BLAZING_SLASH_BODY, BLAZING_SLASH_COUNTDOWN, BLAZING_SLASH_READOUT_ARM, blazing_slash_camera,
+    blazing_slash_hop_height,
 };
 pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
 pub use capture::*;

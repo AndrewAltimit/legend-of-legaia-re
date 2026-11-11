@@ -743,6 +743,10 @@ pub struct BattleState {
     pub backdrop_slot_1_yaw: u16,
     /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
     pub backdrop_spin_frame: Option<u64>,
+    /// The battle frame the near-camera ghost pass last ran on
+    /// (`World::tick_battle_camera_ghost`): once a pass, as the controller
+    /// node runs it.
+    pub ghost_pass_frame: Option<u64>,
     /// The battle frame the separation pass last ran on
     /// (`World::tick_battle_separation`): retail runs it once a battle
     /// frame, so a per-vsync replay runs it on the frame's first tick.
@@ -794,6 +798,10 @@ pub struct BattleState {
     /// pass's frame out on the step the pass ran at and only then copies the
     /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
     pub pending_frame_step: Option<u8>,
+    /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
+    /// that opens a later frame takes it. The effect scene graphs claim the
+    /// same frame after the pass that set it, on the same tick.
+    pub pending_frame_step_from: u64,
     /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
     /// outranks the arm table and the default.
     pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
@@ -835,6 +843,24 @@ pub struct BattleState {
     /// root motion and hit walk), which on retail's cadence run after the
     /// pass (`World::tick_battle_anim_pass`).
     pub anim_slot_reached: bool,
+    /// Whether this tick's battle pass reached the cast tick's slot: on
+    /// retail's cadence the census and the effect-child drive run with the
+    /// pass's draw, after the anim walk (`World::tick_battle_anim_pass`).
+    pub cast_tick_due: bool,
+    /// What the cast tick spawned from the pass's draw: the effect children
+    /// and the screen flashes of a flight's lists. A node linked during the
+    /// draw first ticks, and so first shows, on the next pass, which hands
+    /// these on (`World::release_draw_spawns`).
+    pub draw_spawns: Vec<legaia_engine_battle::battle_events::BattleEffectSpawn>,
+    /// The landing flashes held beside [`Self::draw_spawns`].
+    pub draw_flashes: u8,
+    /// Whether the cast tick now running is the draw's (the tail of the
+    /// anim pass on retail's cadence).
+    pub in_draw_cast_tick: bool,
+    /// Whether a draw of this battle has measured the cast census yet. A
+    /// battle entered mid-flight has no draw behind its first pass, which
+    /// measures the census at its own head instead.
+    pub cast_census_drawn: bool,
     /// The actors this pass's hit walk committed a clip on inside their own
     /// anim tick in retail's order: the attacker's own event cut, and a
     /// reaction landed on a seat the actor walk reaches after the
@@ -848,6 +874,15 @@ pub struct BattleState {
     /// stages and makes inside the seat's next tick after its advance, so
     /// that pass's advance is skipped. Empty until the first walk.
     pub anim_slice_commits: Vec<u32>,
+    /// Each actor's root-motion term as its own slice of the last anim walk
+    /// left it: the playing entry's `(+0x0C speed, +0x21D scale)` and the
+    /// heading `+0x46` (`World::tick_battle_animations_walk`). The node tick
+    /// steps the root motion of the entry it holds once its own commits are
+    /// made (`lw s3,0x4c(s5)` at `0x80047B60`, read at `0x80047D34`), so a
+    /// reaction a later seat's hit walk stages on this seat (`+0x1DA` with
+    /// `+0x1DC |= 5`, `0x801EEC6C..0x801EEC84`) moves it from the seat's
+    /// next tick on, and this pass's step is the entry the seat ticked on.
+    pub anim_slice_roots: Vec<(Option<(i16, u8)>, u16)>,
     /// Each actor's display trio as the previous pass's draw stored it - the
     /// anchor the value readout projects a landed hit's numeral from
     /// (`World::battle_readout_trio`). Retail's readout `FUN_801DF6B8` runs
@@ -1086,6 +1121,11 @@ pub struct BattleState {
     /// point on the arm's pass, so the band rewrites it on every module tick
     /// and clears it when the arm has none. Drawn beside [`Self::clip_ribbon`].
     pub cast_ribbons: Option<legaia_engine_cast::cast_module_camera::CastRibbonRing>,
+    /// The world `rand()` state each of [`Self::cast_ribbons`]' calls started
+    /// on, dealt on the module pass that made them
+    /// (`World::deal_cast_ribbon_rands`): the draw replays each ribbon from
+    /// its word. `None` while no pass has dealt the ring.
+    pub cast_ribbon_seeds: Option<[u32; 16]>,
     /// This pass's streak ribbons from a landed move projectile: on every
     /// pass a phase-`3` homing slot's counter runs, `FUN_801E09F8` calls
     /// `FUN_801E1D98(&ctx[+0x1144 + slot * 8], record[+0x0B])` once per
@@ -1223,6 +1263,12 @@ pub struct BattleState {
     /// recording read it on when the deal times it. Empty outside that
     /// oracle: the hit then draws on the world stream as it stands.
     pub capture_hit_rand: std::collections::VecDeque<(u32, Option<u64>)>,
+    /// The attack camera's track coin `ctx[+0x26D]` as retail's recording of
+    /// the same strike held it: `(display frame, coin)` change points, the
+    /// first from the gate (`legaia_engine_capture::strike_deal`). Each
+    /// `+0x87` commit's draw takes the value standing a few frames on.
+    /// Empty outside that oracle.
+    pub capture_track_coin: Vec<(u64, u8)>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1477,6 +1523,7 @@ impl BattleState {
             round_open_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
+            ghost_pass_frame: None,
             separation_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
@@ -1489,6 +1536,7 @@ impl BattleState {
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             frame_cost_state: None,
             pending_frame_step: None,
+            pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,
             death_game_deal_seat: None,
@@ -1500,8 +1548,14 @@ impl BattleState {
             summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
+            cast_tick_due: false,
+            draw_spawns: Vec::new(),
+            draw_flashes: 0,
+            in_draw_cast_tick: false,
+            cast_census_drawn: false,
             hit_commit_rewalk: Vec::new(),
             anim_slice_commits: Vec::new(),
+            anim_slice_roots: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             frame_step_seed_after_accum: None,
@@ -1534,6 +1588,7 @@ impl BattleState {
             field_camera_reseat: false,
             clip_ribbon: None,
             cast_ribbons: None,
+            cast_ribbon_seeds: None,
             flight_ribbons: None,
             burn_emit_accum: 0,
             ambient_stored: legaia_engine_battle_vm::battle_ground_grid::GRID_FAR_BASE_NEUTRAL,
@@ -1552,6 +1607,7 @@ impl BattleState {
             capture_reseat: None,
             capture_reseat_bars: Vec::new(),
             capture_hit_rand: std::collections::VecDeque::new(),
+            capture_track_coin: Vec::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

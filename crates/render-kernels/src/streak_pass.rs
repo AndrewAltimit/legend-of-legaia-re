@@ -296,6 +296,49 @@ pub fn clip_ribbon_quads(
     crate::afterimage::build_streak_ribbon(corners, trail_id, frame_rng(frame))
 }
 
+/// The streak ribbon as a module arm's call draws it: `point` the stack trio
+/// the arm hands `FUN_801E1D98` (retail battle space, Y down), projected
+/// through the matrix the battle frame holds
+/// ([`crate::gte::FieldGteView::from_battle_pose`]) by the billboard routine
+/// itself ([`crate::afterimage::project_ribbon_corners`], `FUN_800195A8`), on
+/// the game's own `rand()` words.
+///
+/// `seed` is the world stream's state as the call starts (`0x80009010`), and
+/// the second value is the state its draws leave. Retail's routine draws
+/// inside the caller's tick (`jal 0x80056798` at `0x801E1E94..0x801E2054` for
+/// the bottom segment, `0x801E2134..0x801E2218` a chained one). A ribbon the
+/// top-edge test suppresses (`0x801E1E5C`) draws nothing and leaves the
+/// stream where it stood: with `H = 256` and a half-width of `0x100` that is
+/// every anchor nearer than `0x7E0` view units, one behind the eye included,
+/// whose saturated divide spreads the corners furthest.
+///
+/// The tick that makes the call steps the stream through this and keeps the
+/// seed; the draw replays the same words from it.
+// REF: FUN_801E1D98
+pub fn ribbon_quads_seeded(
+    view: &crate::gte::FieldGteView,
+    point: [i16; 3],
+    trail_id: u8,
+    seed: u32,
+) -> (Vec<AfterimageQuad>, u32) {
+    use legaia_engine_system::rand::{bios_rand_shape, world_lcg_step};
+    let corners = crate::afterimage::project_ribbon_corners(
+        &view.rot,
+        crate::gte::GteVec3::new(view.tr[0], view.tr[1], view.tr[2]),
+        (point[0], point[1], point[2]),
+        i32::from(view.h),
+        view.ofx,
+        view.ofy,
+        0,
+    );
+    let mut state = seed;
+    let quads = crate::afterimage::build_streak_ribbon(corners.xy, trail_id, || {
+        state = world_lcg_step(state);
+        bios_rand_shape(state)
+    });
+    (quads, state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,5 +477,46 @@ mod tests {
         // is a static quad.
         let frames: Vec<_> = (0..16).map(|f| streak_quads(&src, &m, f)).collect();
         assert!(frames.windows(2).any(|w| w[0] != w[1]));
+    }
+    /// The module-arm ribbon draws on the stream it is handed: an anchor far
+    /// enough to pass the top-edge test takes seven words for its bottom
+    /// segment and four a chained one, and one inside the suppression range
+    /// (or behind the eye) leaves the stream where it stood.
+    #[test]
+    fn a_seeded_ribbon_steps_the_stream_only_when_it_draws() {
+        use legaia_engine_camera::projection::BattleCamPose;
+        use legaia_engine_system::rand::world_lcg_step;
+        let pose = BattleCamPose {
+            pitch: 0.0,
+            yaw: 0.0,
+            tr: [0.0, 0.0, 8000.0],
+            focus: [0.0, 0.0, 0.0],
+        };
+        let view = crate::gte::FieldGteView::from_battle_pose(&pose);
+        let seed = 0x1234_5678;
+        let (quads, state) = ribbon_quads_seeded(&view, [0, 0, 0], 0xC, seed);
+        assert!(!quads.is_empty());
+        let mut walked = seed;
+        for _ in 0..7 + 4 * (quads.len() - 1) {
+            walked = world_lcg_step(walked);
+        }
+        assert_eq!(state, walked);
+        // The same call replays the same quads.
+        assert_eq!(ribbon_quads_seeded(&view, [0, 0, 0], 0xC, seed).0, quads);
+
+        let near = BattleCamPose {
+            tr: [0.0, 0.0, 1000.0],
+            ..pose
+        };
+        let view = crate::gte::FieldGteView::from_battle_pose(&near);
+        let (quads, state) = ribbon_quads_seeded(&view, [0, 0, 0], 0xC, seed);
+        assert!(quads.is_empty());
+        assert_eq!(state, seed);
+        let behind = BattleCamPose {
+            tr: [0.0, 0.0, -4000.0],
+            ..pose
+        };
+        let view = crate::gte::FieldGteView::from_battle_pose(&behind);
+        assert_eq!(ribbon_quads_seeded(&view, [0, 0, 0], 0xC, seed).1, seed);
     }
 }

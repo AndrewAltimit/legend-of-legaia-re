@@ -1,6 +1,6 @@
 //! Pixel width of an encoded dialog / UI string, the way retail draws it.
 //!
-//! PORT: FUN_80036514, FUN_80036888, FUN_80035F04
+//! PORT: FUN_80036888, FUN_80035F04
 //!
 //! Retail never measures the bytes a string is stored as. Every draw goes
 //! through the substitution expander `FUN_80036514`, which rewrites the
@@ -136,33 +136,82 @@ fn is_two_byte(b: u8) -> bool {
     b & 0xF0 == 0xC0
 }
 
+/// The `FUN_80036514` expansion of `text`, as the bytes retail hands its
+/// line renderer, and the substitution tokens `opts.expand` could not
+/// resolve. `keep_colours` is the routine's third argument: set on the draw
+/// path, clear on the measurer's, where a `0xCF` pair of the string is
+/// dropped (`0x80036610`). A pair inside a substituted name is copied either
+/// way.
+///
+/// REF: FUN_80036514 (the port is the private `expand` this wraps)
+pub fn expand_text(
+    text: &[u8],
+    opts: &MeasureOptions<'_>,
+    keep_colours: bool,
+) -> (Vec<u8>, Vec<(u8, u8)>) {
+    let mut unresolved = Vec::new();
+    let out = expand(text, opts, keep_colours, &mut unresolved);
+    (out, unresolved)
+}
+
 /// Stage 1: the `FUN_80036514` expansion. Returns the expanded bytes and
 /// records unresolved tokens.
-fn expand(text: &[u8], opts: &MeasureOptions<'_>, unresolved: &mut Vec<(u8, u8)>) -> Vec<u8> {
-    let mut out = Vec::with_capacity(text.len());
+///
+/// Retail runs two passes, and the second does not see the string the first
+/// did. The first (`0x8003654C..0x800365AC`) folds the author aliases in
+/// place - `0x5E X` to `0xCE (X - 0x2D)`, `0xFF` to `0xCF` - stepping over
+/// the operand of every `0xC0..=0xCF` lead. The second
+/// (`0x800365F0..0x80036868`) copies: `0xCE` and `0xCF` with their operand,
+/// a `0xC0..=0xC7` token as its substitution, and every other byte alone -
+/// `0xC8..=0xCD` included, whose operand is therefore read as the next
+/// token.
+///
+/// PORT: FUN_80036514
+fn expand(
+    text: &[u8],
+    opts: &MeasureOptions<'_>,
+    keep_colours: bool,
+    unresolved: &mut Vec<(u8, u8)>,
+) -> Vec<u8> {
+    // Pass 1: the alias fold.
+    let mut src = Vec::with_capacity(text.len());
     let mut i = 0;
-    while i < text.len() {
-        let mut b = text[i];
+    while i < text.len() && text[i] != 0 {
+        let lead = match text[i] {
+            0x5E => 0xCE,
+            0xFF => 0xCF,
+            b => b,
+        };
+        src.push(lead);
+        i += 1;
+        if is_two_byte(lead) {
+            let Some(&raw) = text.get(i) else {
+                src.pop();
+                break;
+            };
+            src.push(if text[i - 1] == 0x5E {
+                raw.wrapping_sub(0x2D)
+            } else {
+                raw
+            });
+            i += 1;
+        }
+    }
+    // Pass 2: the copy.
+    let mut out = Vec::with_capacity(src.len());
+    let mut i = 0;
+    while i < src.len() {
+        let b = src[i];
         if b == 0 {
             break;
         }
-        if b == 0x5E {
-            b = 0xCE;
-        } else if b == 0xFF {
-            b = 0xCF;
-        }
-        if !is_two_byte(b) {
+        if !matches!(b, 0xC0..=0xC7 | 0xCE | 0xCF) {
             out.push(b);
             i += 1;
             continue;
         }
-        let Some(&raw_arg) = text.get(i + 1) else {
+        let Some(&arg) = src.get(i + 1) else {
             break;
-        };
-        let arg = if text[i] == 0x5E {
-            raw_arg.wrapping_sub(0x2D)
-        } else {
-            raw_arg
         };
         i += 2;
         match b {
@@ -187,7 +236,8 @@ fn expand(text: &[u8], opts: &MeasureOptions<'_>, unresolved: &mut Vec<(u8, u8)>
                 }
             }
             0xC0 | 0xC6 => unresolved.push((b, arg)),
-            // 0xC8..=0xCF: kept as two-byte ops for the walk.
+            0xCF if !keep_colours => {}
+            // `0xCE` / `0xCF`: kept as two-byte ops for the walk.
             _ => {
                 out.push(b);
                 out.push(arg);
@@ -236,7 +286,7 @@ impl Font {
         mut emit: impl FnMut(PenItem),
     ) -> TextMeasure {
         let mut unresolved = Vec::new();
-        let expanded = expand(text, opts, &mut unresolved);
+        let expanded = expand(text, opts, true, &mut unresolved);
         let mut line_widths = Vec::new();
         let mut pen: u32 = 0;
         let mut i = 0;

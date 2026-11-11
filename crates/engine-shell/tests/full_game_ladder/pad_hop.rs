@@ -332,7 +332,38 @@ pub(super) fn pad_hop(
                 .and_then(|n| n.parse::<u32>().ok())
                 .is_some_and(|n| n <= 2)
     };
-    let walked = match pad_walk(session, goal, &walk_avoid, 0) {
+    let first_try = pad_walk(session, goal, &walk_avoid, 0);
+    // A band's tiles share a reachability, but not a side. `kor4`'s stair up
+    // to `kor5` is the square (16..17, 63..64), entered from the west; a
+    // walk that comes down the pad at (18, 62) picks (17, 63), the tile
+    // nearest it, which it meets only across the pad's own tile, and every
+    // plan to it from the west ends at its sibling door tiles, which a walk
+    // to (17, 63) keeps off as it does any other door. The continuous hand
+    // then walks to the band's other tiles in turn.
+    let (first_try, goal) = match first_try {
+        Err(e)
+            if continuous::PLAYS_ON.with(std::cell::Cell::get)
+                && e.contains("crosses a band that leaves the scene")
+                && scene_name(session) == here_name =>
+        {
+            let mut out = (Err(e), goal);
+            for d in &doors {
+                let t = (i16::from(d.tile.0), i16::from(d.tile.1));
+                if t == goal || (t.0 - goal.0).abs() + (t.1 - goal.1).abs() > 2 {
+                    continue;
+                }
+                let r = pad_walk(session, t, &walk_avoid, 0);
+                let ok = r.is_ok();
+                out = (r, t);
+                if ok || scene_name(session) != here_name {
+                    break;
+                }
+            }
+            out
+        }
+        other => (other, goal),
+    };
+    let walked = match first_try {
         Err(e)
             if (e.contains("changed nothing") || at_frame(&e))
                 && scene_name(session) == here_name =>

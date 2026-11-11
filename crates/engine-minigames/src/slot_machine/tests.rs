@@ -964,6 +964,7 @@ fn ring(m: &mut SlotMachine) -> Vec<i16> {
 #[test]
 fn the_cash_out_picker_moves_and_cancels_like_retail() {
     let mut m = SlotMachine::new(payouts(), 1, 50);
+    m.skip_entry_fade();
     assert!(!m.cash_out_input(0), "no edge: the machine keeps the pad");
     assert!(m.cash_out_input(menu_pad::OPEN & 0x10));
     assert_eq!(m.screen(), SlotScreen::Picker { row: 0 });
@@ -987,6 +988,7 @@ fn the_cash_out_picker_moves_and_cancels_like_retail() {
 #[test]
 fn the_quit_row_fades_then_commits() {
     let mut m = SlotMachine::new(payouts(), 1, 50);
+    m.skip_entry_fade();
     m.cash_out_input(0x100);
     m.cash_out_input(menu_pad::DOWN);
     m.cash_out_input(0x40);
@@ -1006,6 +1008,7 @@ fn the_quit_row_fades_then_commits() {
 #[test]
 fn the_rules_row_walks_both_pages_and_returns() {
     let mut m = SlotMachine::new(payouts(), 1, 50);
+    m.skip_entry_fade();
     m.cash_out_input(0x10);
     m.cash_out_input(menu_pad::DOWN);
     m.cash_out_input(menu_pad::DOWN);
@@ -1035,6 +1038,7 @@ fn the_rules_row_walks_both_pages_and_returns() {
 #[test]
 fn an_empty_machine_raises_the_prompt_and_leaves() {
     let mut m = SlotMachine::new(payouts(), 1, 2);
+    m.skip_entry_fade();
     assert!(m.cash_out_input(0));
     assert_eq!(m.screen(), SlotScreen::NoCoins);
     m.cash_out_input(0x80);
@@ -1042,6 +1046,7 @@ fn an_empty_machine_raises_the_prompt_and_leaves() {
     assert_eq!(m.phase(), SlotPhase::Leaving);
     // The submenu edge still wins over the gate on an empty machine.
     let mut m = SlotMachine::new(payouts(), 1, 0);
+    m.skip_entry_fade();
     m.cash_out_input(0x10);
     assert_eq!(m.screen(), SlotScreen::Picker { row: 0 });
 }
@@ -1124,4 +1129,35 @@ fn a_stop_press_rolls_the_reel_in_over_the_frames_that_follow() {
         rolled_frames.iter().any(|&f| f > 2),
         "some stop rolls in over frames: {rolled_frames:?}"
     );
+}
+
+/// State 1 holds the pad off while the entry fade runs down from `0xFF` by
+/// `8` a frame: thirty-two frames, then the first edge is read.
+#[test]
+fn the_entry_fade_holds_the_pad_off() {
+    let mut m = SlotMachine::new(payouts(), 1, 50);
+    assert_eq!(m.fade_level(), ENTRY_FADE_START);
+    for frame in 0..32 {
+        assert_eq!(m.frame(0x40), SlotFrameOutcome::Stepped);
+        assert_eq!(m.phase(), SlotPhase::Idle, "frame {frame}");
+    }
+    assert_eq!(m.fade_level(), 0);
+    m.frame(0x40);
+    assert_eq!(m.phase(), SlotPhase::Spinning);
+}
+
+/// Square and Circle bet as Cross does (`andi 0xe0`), and the frame state 4
+/// drops back to idle reads no pad.
+#[test]
+fn any_stop_button_bets() {
+    for edge in [0x80, 0x40, 0x20] {
+        let mut m = SlotMachine::new(payouts(), 1, 50);
+        m.skip_entry_fade();
+        m.frame(edge);
+        assert_eq!(m.phase(), SlotPhase::Spinning, "edge {edge:#x}");
+    }
+    let mut m = SlotMachine::new(payouts(), 1, 50);
+    m.skip_entry_fade();
+    m.frame(0x10);
+    assert_eq!(m.screen(), SlotScreen::Picker { row: 0 });
 }

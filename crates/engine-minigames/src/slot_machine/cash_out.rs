@@ -75,10 +75,13 @@ impl SlotMachine {
 
     /// The screen-fade level (`DAT_801d3c98`, `0..=0xFF`): how far the frame
     /// is faded to black (`FUN_80024EE4(0, 2, level * 0x10101)`). Non-zero only
-    /// across the instruction pages' transitions and the leave fade.
+    /// across the entry fade (`DAT_801d3794`), the instruction pages'
+    /// transitions and the leave fade.
     pub fn fade_level(&self) -> i32 {
         match self.phase {
             SlotPhase::Menu | SlotPhase::Leaving | SlotPhase::CashedOut => self.fade.clamp(0, 0xFF),
+            // The entry fade is the same call on its own level word.
+            SlotPhase::Idle => self.entry_fade,
             _ => 0,
         }
     }
@@ -124,6 +127,12 @@ impl SlotMachine {
         use menu_pad::*;
         match self.phase {
             SlotPhase::Idle => {
+                // The entry fade holds state 1 off the pad: the arm draws
+                // the fade, steps it and leaves (`0x801CF3B0..0x801CF3FC`).
+                if self.entry_fade != 0 {
+                    self.entry_fade = (self.entry_fade - ENTRY_FADE_STEP).max(0);
+                    return true;
+                }
                 if pressed & OPEN != 0 {
                     self.sounds.ring.push((0, CUE_MENU_CONFIRM));
                     self.menu_cursor = 0;

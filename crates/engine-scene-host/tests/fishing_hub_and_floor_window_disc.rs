@@ -176,6 +176,19 @@ fn a_shore_return_with_no_lure_left_parks_the_no_lure_screen_and_leaves() {
         }
         let _ = world.tick();
     }
+    // Let the meter run up: a cast that comes down inside `0x136` is an empty
+    // line on its landing frame and never waits in the water.
+    for _ in 0..400 {
+        if world
+            .minigames
+            .fishing
+            .as_ref()
+            .is_some_and(|s| s.cast_power() >= 0xC00)
+        {
+            break;
+        }
+        let _ = world.tick();
+    }
     press(world, PadButton::Cross);
     for _ in 0..2000 {
         if phase(world) == Some(PondPhase::Waiting) {

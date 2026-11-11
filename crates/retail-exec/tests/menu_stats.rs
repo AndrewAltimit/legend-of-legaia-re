@@ -11,6 +11,7 @@ use legaia_game_tables::item_effect::ItemEffectTable;
 use legaia_save::CharacterRecord;
 use psx_retail_exec::Stop;
 
+const SEEDER: u32 = 0x801C_F5D0;
 const SUMMER: u32 = 0x801C_F650;
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const RECORDS: u32 = 0x8008_4708;
@@ -19,7 +20,7 @@ const BLOCK: u32 = 0x801E_F080;
 
 #[test]
 fn the_menu_stat_block_is_what_retail_draws() {
-    differential!(prot(899, SUMMER));
+    differential!(prot(899, SEEDER), prot(899, SUMMER));
     let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
@@ -64,6 +65,12 @@ fn the_menu_stat_block_is_what_retail_draws() {
         for (i, b) in raw.iter().enumerate() {
             cpu.mem.wr8(r + i as u32, *b);
         }
+        // The seeder on its own: the record's eight words, no equipment.
+        assert_eq!(cpu.call(SEEDER, &[slot]), Stop::Returned);
+        let seeded: Vec<i32> = (0..8).map(|i| cpu.mem.rd32(BLOCK + i * 4) as i32).collect();
+        let block = legaia_engine_ui::EquipStatBlock::from_character_record(&raw).expect("record");
+        let words: Vec<i32> = (0..8).map(|i| block.stat_word(i)).collect();
+        assert_eq!(seeded, words, "round {round}: the seeder");
         assert_eq!(cpu.call(SUMMER, &[slot]), Stop::Returned);
         let retail: Vec<i32> = (0..8).map(|i| cpu.mem.rd32(BLOCK + i * 4) as i32).collect();
         let rec = CharacterRecord::parse(&raw).expect("record");

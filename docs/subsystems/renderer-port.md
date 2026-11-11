@@ -361,19 +361,70 @@ tick reaches it, which the port does not track per actor), a posed prop's record
 flag `0x800`, and the order inside one bucket (retail's last-linked-first). A
 clean frame keeps per-pixel depth.
 
-### The battle shell sorts by prim mean
+### The battle sorts by each primitive's link
 
-The battle stage is the case where that rule does hold. The shell and its spun
-slot are one object list linked at each prim's own mean `SZ`, so in PSX mode
-both hosts draw them at their corners' mean `w`: `DRAW_WORD_MEAN_DEPTH` on the
-draw's NCLIP word stages `flags.w = -1` (`prim_mean_depth` over
-`prim_c0..prim_c3` on the vertex stage), and the page's `meanDepth` placement
-keys its log depth on the same mean (`primMeanW`). A wall quad nearer by mean
-now paints over the horizon mist as retail's does. Worked on Sol Tower's stage:
-`battle_kor_dead_bone_strike` `.969` to `.993`, `battle_korb2_kemaro_strike`
-`.971` to `.990`, `battle_kor_spoon_strike` `.966` to `.984`. Clean rendering
-keeps per-pixel depth: a mean pops as the camera turns, which the retail frame
-shows and the clean frame need not.
+A battle has one ordering table too, and every mesh in it goes through the same
+per-prim leaves. The bodies are drawn object by object by `FUN_80048A08`
+(`jal 0x80043390` at `0x80048ED0`), the effect parts and draw-kind-4 nodes by
+the render dispatcher `FUN_8001ADA4`, and the backdrop shell as a background
+actor; each leaf links its primitive at the `AVSZ3` / `AVSZ4` mean of its corners
+(`ZSF = 0x555 >> 2` / `0x400 >> 2` under the battle shift `2`, so a bucket is `16`
+`SZ`). Nothing in the GPU tests depth, so a body and the additive ring around it
+sort by link, not by pixel.
+
+In PSX mode both hosts draw every battle mesh primitive at its corners' mean
+`w`, the field's machinery: `camera_frame::prim_link_order` raises
+`Renderer::set_field_prim_order` in battle as on the field, which stages
+`flags.w = -1` on every draw (`prim_mean_depth` over `prim_c0..prim_c3` on the
+vertex stage, the blend pass included, since it shares the vertex stage), and
+the play page sets `meanDepth` on every battle placement (`primMeanW`). In the
+battle units the port draws `SZ` is `w` itself.
+
+| Class | Clean | PSX mode |
+|---|---|---|
+| Backdrop shell and spun slot | per pixel | corner mean |
+| Ground grid | far bucket (`pin_to_far_bucket`, the page's `u_far_slice`) | far bucket |
+| Party and monster bodies | per pixel | corner mean |
+| After-image ghosts | per pixel, pushed past the body about the eye | corner mean of the pushed pose |
+| Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean; farthest corner on a `0x10000000` word |
+| Effect-pool billboards | per pixel | corner mean (the quad's centre) |
+| Screen primitives (trails, streaks, cast-arm packets) | over the 3D frame in their own order | unchanged |
+
+A part or node whose colour word carries `0x10000000` links at its farthest corner,
+the field's rule for a record flag `0x800`. The dispatcher stages the word's top
+byte at `0x1F800043` (`0x800433D8`) and forces a cued bank for any non-zero mode
+byte (`ori a2,a2,1` at `0x800433CC`), and every cued leaf tests the byte's `0x10`
+except bank 3's split quad leaf `FUN_80045BB4`, whose sixteen `GT3`s link on their
+own means (`ColourWord::links_at_far_corner`). The hosts draw such a draw with
+`DRAW_ORDER_FAR_CORNER`; the page bakes those parts and nodes into a stream of
+their own (`play_battle_fx_far_*`, drawn with `meanDepth` `2`). Inferno's (`0x9E`)
+tunnel wall is one: word `0x58000000`, `32` quads `2838` units out whose near
+corners reach past the camera. By mean they sort in front of the flame sheet
+inside them; the retail table holds the wall in buckets `828..938` and the
+flames in `397..584`.
+
+A semi-transparent primitive writes no depth and is drawn after every opaque one,
+sorted far to near by its triangle's centroid (`psx_blend`); with every
+primitive at its mean, the depth test it runs against the opaque ones is the
+link comparison.
+
+The retail table of Dohati's Chaos Breath, arm 1, shows the class
+(`ot-raster.py` on a RAM image of the recording): the rings' additive `GT4`s
+(code `0x3E`, CLUT `0x7F84`) sit in buckets `50..64` with corners from the top
+of the screen to below its bottom, and the body's packets (CLUTs
+`0x7900..0x7905`) in `113..308`, so the ring paints over the belly. Per pixel the
+belly stands in front of the ring wherever it reaches past the ring's radius.
+
+Worked on Sol Tower's shell: `battle_kor_dead_bone_strike` `.969` to `.993`,
+`battle_korb2_kemaro_strike` `.971` to `.990`, `battle_kor_spoon_strike` `.966`
+to `.984`.
+
+Not modelled: the order inside one bucket (retail's last-linked-first), a ghost's
+`0x50`-byte table offset (`FUN_80048A08` at `0x80048E7C`, twenty buckets deeper
+than its body; the hosts' eye push stands in), and the screen primitives' links,
+which composite over the 3D frame rather than among it. Clean rendering keeps
+per-pixel depth: a mean pops as the camera turns, which the retail frame shows
+and the clean frame need not.
 
 ## Enhanced lighting (enhancement, NOT retail)
 
@@ -411,7 +462,11 @@ by default in the renderer, and off IS retail** - the disabled path is pixel-ide
 `strength` is the host's eased output of the **visibility gate**
 (`engine-scene::field_occlusion`): a 5-point eye-to-player ray-cast against
 the static scene that arms the fade only when the character is completely
-hidden - a partially visible character never fades. A fragment then fades
+hidden - a partially visible character never fades. Only draws the frame
+draws count: the occluder set is built once per scene from every static
+draw, and the gate asks the shared `field_view_window::occluder_drawn` for
+each range (the terrain crop, the actor cull at the object's base position),
+so a wall the crop or the cull dropped cannot open a hole over the player. A fragment then fades
 only when its draw is environment geometry (the
 `set_occlusion_env_draws` watermark exempts the player / NPC draws via
 `flags[2]`), it is nearer the camera than the player by more than a small
@@ -1013,21 +1068,21 @@ a host: they carry `REPLACED-BY` naming the engine mechanism
 that does the routine's job (or, for `battle_on_screen`, that nothing on the
 disc references it).
 
-- [`actor_bind`](../../crates/engine-render/src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
+- [`actor_bind`](../../crates/engine-scene/src/actor_bind.rs) (`FUN_80020f88`) - resolves an actor's
   mesh-pool index off its `.MAP` placement record (`rec[+0x10] + prefix`,
   the rule [`renderer.md`](renderer.md) records as
   replacing the falsified positional one) and reports whether a `0x9C`-byte
   render node must be allocated.
-- [`battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
+- [`battle_on_screen`](../../crates/render-kernels/src/battle_on_screen.rs) (`FUN_8005126C`) - re-anchors
   a battle sprite on its seat actor and tests the projected box's horizontal
   span against `[0, 0x140]`. Horizontal only: retail reads the X of two
   corners and no Y at all, which is what separates it from the rectangle
   probe `FUN_8001B73C`.
-- [`mode_transition`](../../crates/engine-render/src/mode_transition.rs) (`FUN_80016230`) - the
+- [`mode_transition`](../../crates/engine-mode/src/mode_transition.rs) (`FUN_80016230`) - the
   mode-entry prologue: frame-pacing reset, the RAM-cached-overlay word-sum
   verdict, and the field snapshot a battle / cutscene / minigame mode is
   entered behind.
-- [`actor_cull`](../../crates/engine-render/src/actor_cull.rs) (`FUN_801CF754`) - the field actor-contact
+- [`contact_candidates`](../../crates/engine-field/src/contact_candidates.rs) (`FUN_801CF754`) - the field actor-contact
   **broad phase**, not a render cull: the per-frame candidate list (a
   `+/-0x180` window around the player, capped at `0x20`, falling back to the
   full actor walk when full) that the contact probe `FUN_801CFC40` reads.

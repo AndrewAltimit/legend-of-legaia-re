@@ -24,6 +24,21 @@ fn level_up_at_exact_threshold() {
     assert_eq!(t.level[0], 2);
 }
 
+/// Terra (roster record 3) banks EXP and never levels: `FUN_801E9504`
+/// returns at `0x801E9538` for record index `3` before it reads a
+/// threshold, after `FUN_8004E568` has added the share to `+0x0`. Granting
+/// her a level's worth grew her maxima past the template's 400 / 200 (the
+/// `430 / 215` a player reported in the Mt. Rikuroa fight).
+#[test]
+fn terra_banks_exp_but_never_levels() {
+    let mut t = LevelUpTracker::new().with_xp_table(placeholder_xp_table());
+    assert!(t.grant_xp(NO_LEVEL_SLOT as u8, 10_000).is_none());
+    assert_eq!(t.level[NO_LEVEL_SLOT], 1);
+    assert_eq!(t.xp[NO_LEVEL_SLOT], 10_000);
+    // The same grant levels any other record.
+    assert!(t.grant_xp(0, 10_000).is_some());
+}
+
 #[test]
 fn multi_level_jump() {
     let mut t = LevelUpTracker::new().with_xp_table(placeholder_xp_table());

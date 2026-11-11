@@ -7,6 +7,56 @@ use super::*;
 /// (`ctx[+0x6D8] = 0x3C`, PROT 0925 arm 8).
 const FLUTE_FLEE_WAIT_FRAMES: i16 = 0x3C;
 
+/// The context bytes the anim commit `FUN_8004E13C` stores
+/// (`0x8004E254..0x8004E2DC`): the solo latch `ctx[+0x243]`, the swing
+/// camera's re-seed pair and style byte, and the coin `ctx[+0x26D]`. A
+/// commit made by a host call inside the action SM's step writes the world's
+/// context while the step runs on a copy; [`Self::carry_over`] keeps those
+/// stores across the copy's write-back.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct CommitCtxStores {
+    latch: u8,
+    yaw_seeds: u32,
+    yaw_coin: u8,
+    variant: u8,
+    track_coin: u8,
+}
+
+impl CommitCtxStores {
+    fn of(ctx: &legaia_engine_battle_vm::battle_action::BattleActionCtx) -> Self {
+        Self {
+            latch: ctx.gauge_rearm_latch,
+            yaw_seeds: ctx.swing_yaw_seeds,
+            yaw_coin: ctx.swing_yaw_coin,
+            variant: ctx.camera_variant,
+            track_coin: ctx.track_coin,
+        }
+    }
+
+    /// `self` is the host's copy after the step, `pre` both copies before
+    /// it, `ctx` the step's copy written back. A byte the host moved and the
+    /// step left alone is the commit's.
+    fn carry_over(
+        self,
+        pre: Self,
+        ctx: &mut legaia_engine_battle_vm::battle_action::BattleActionCtx,
+    ) {
+        if self.latch != pre.latch && ctx.gauge_rearm_latch == pre.latch {
+            ctx.gauge_rearm_latch = self.latch;
+        }
+        if self.yaw_seeds != pre.yaw_seeds && ctx.swing_yaw_seeds == pre.yaw_seeds {
+            ctx.swing_yaw_seeds = self.yaw_seeds;
+            ctx.swing_yaw_coin = self.yaw_coin;
+        }
+        if self.variant != pre.variant && ctx.camera_variant == pre.variant {
+            ctx.camera_variant = self.variant;
+        }
+        if self.track_coin != pre.track_coin && ctx.track_coin == pre.track_coin {
+            ctx.track_coin = self.track_coin;
+        }
+    }
+}
+
 impl World {
     /// Set / clear the move-VM bytecode for `slot`. `None` clears the
     /// buffer; subsequent ticks won't run the move VM on this actor.
@@ -315,6 +365,7 @@ impl World {
         let pre_state = ctx.action_state;
         let pre_banner = ctx.levelup_banner_element;
         let pre_cursor = ctx.turn_cursor;
+        let pre_commit = CommitCtxStores::of(&ctx);
         let mut host = BattleHostImpl { world: self };
         let out = legaia_engine_battle_vm::battle_action::step(&mut host, &mut ctx);
         // One host path does write the context: the summon stager's strike
@@ -331,7 +382,26 @@ impl World {
         // back). The SM never writes the cursor in a summon-band state, so
         // a moved host value is the module's and survives the write-back.
         let host_cursor = self.battle_ctx.turn_cursor;
+        // The third: a clip a module stages with its restage bump commits
+        // inside the stager call, and the commit `FUN_8004E13C` stores the
+        // entry's solo byte into `ctx[+0x243]` beside its coin
+        // (`World::commit_staged_battle_anim`). Retail's commit runs in the
+        // anim tick on the context itself, so the stores stand: PROT 0952's
+        // Astral Slash stages Gaza's clip `0x0A` on arm 2, whose byte `2`
+        // lifts the backdrop pair's ceiling to `0x1000` and plays the strike
+        // on a black stage.
+        let host_commit = CommitCtxStores::of(&self.battle_ctx);
         self.battle_ctx = ctx;
+        // The module band only, where the stager's bump is the commit and a
+        // retail film holds the latch from it. A pose the SM stages in
+        // another band also commits inside the step; no film reads either
+        // way there (the enemy-cast set scores the same carried or not), so
+        // those bands keep the step's bytes until one does.
+        if pre_state
+            == legaia_engine_battle_vm::battle_action::ActionState::MagicCapturePhase2.as_byte()
+        {
+            host_commit.carry_over(pre_commit, &mut self.battle_ctx);
+        }
         if host_banner != pre_banner && self.battle_ctx.levelup_banner_element == pre_banner {
             self.battle_ctx.levelup_banner_element = host_banner;
         }

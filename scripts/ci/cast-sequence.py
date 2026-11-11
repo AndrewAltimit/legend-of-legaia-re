@@ -177,6 +177,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_RANGE_TRACE"] = "1"
     if a.hit_trace:
         env["LEGAIA_HIT_TRACE"] = "1"
+    if a.ghost_trace:
+        env["LEGAIA_GHOST_TRACE"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -185,7 +187,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace):
+            or a.range_trace or a.hit_trace or a.ghost_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -467,6 +469,26 @@ def traced_hit_words(out: Path) -> list[str] | None:
     return words
 
 
+def retail_track_coins(out: Path) -> list[str]:
+    """The attack camera's track coin `ctx[+0x26D]` through the recording, as
+    `coin@vsync` change points (the first row's value first). Retail draws it
+    `rand() % 2` at every commit of a clip whose `+0x87` byte is set
+    (`FUN_8004E13C`, `0x8004E2BC..0x8004E2DC`); a re-draw onto the same value
+    leaves no change point and needs none. Empty for a recording made before
+    the probe wrote the `coin` column."""
+    pts, prev = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            c = r.get("coin")
+            if c is None or c == "":
+                return []
+            c = int(c) & 1
+            if c != prev:
+                pts.append(f"{c}@{r['vsync']}")
+                prev = c
+    return pts
+
+
 def retail_hit_words(out: Path) -> list[str]:
     """The seed word retail held going into each melee hit of a `--physical`
     recording's first action, as `word@vsync`. A hit's spark burst makes its
@@ -520,6 +542,10 @@ def run_engine(a, out: Path) -> bool:
     args = rest[i + 1:]
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
+    # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
+    # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
+    # holds the side-band stage nine vsyncs longer. A harness seat.
+    env.setdefault("LEGAIA_SEAT_SIDEBAND_SEEK", "0")
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -614,6 +640,9 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_CAST_STEP_TRACK"] = str(track)
     if a.strike_deal:
         env["LEGAIA_STRIKE_DEAL"] = ",".join(retail_hit_words(out))
+        coins = retail_track_coins(out)
+        if coins:
+            env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -769,6 +798,8 @@ def main() -> int:
     ap.add_argument("--range-trace", action="store_true",
                     help="retail: each range-law call FUN_8004E2F0 with the pairs it reads to retail/range.csv "
                          "(breakpoint core)")
+    ap.add_argument("--ghost-trace", action="store_true",
+                    help="retail: each after-image ghost FUN_80049348 draws to retail/ghosts.csv (breakpoint core)")
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")

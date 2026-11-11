@@ -143,10 +143,16 @@ pub(crate) struct Rig {
 }
 
 pub(crate) fn rig() -> Option<Rig> {
+    rig_on(899)
+}
+
+/// The rig over another overlay loaded at the menu overlay's base (the
+/// field overlay, PROT 0897, shares it).
+pub(crate) fn rig_on(entry: usize) -> Option<Rig> {
     let (mut cpu, d, scus) = (scus_cpu()?, disc()?, scus()?);
     cpu.mem.load(
         OVERLAY_BASE,
-        &d.read_entry_footprint(899).expect("PROT 0899"),
+        &d.read_entry_footprint(entry).expect("the overlay"),
     );
     let tim = d
         .read_prot_bytes(

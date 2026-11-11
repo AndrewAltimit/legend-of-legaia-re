@@ -9,11 +9,11 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
         self.world
             .presentation
             .screen_frames
-            .push(crate::world::ScreenFrame {
-                width: args[0],
-                rgb: [args[1], args[2], args[3]],
-                ot: mode,
-            });
+            .push(crate::world::ScreenFrame::spawn(
+                args[0],
+                [args[1], args[2], args[3]],
+                mode,
+            ));
     }
 
     // Op `34 2x` (`0x801E001C`): hand the context's attached light a new

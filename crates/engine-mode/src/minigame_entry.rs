@@ -122,15 +122,16 @@ pub const DOME_SEED_SALT: u32 = 0x4D55_5343;
 /// the round-trip is pinned by this module's tests.
 pub const BAKA_FIGHTER_BGM_ID: u16 = 2055;
 
-/// Global `music_01` track the dance overlay loads for the **short** song:
-/// sound-test **60** (`M116` "Sol disco final 1"), extraction PROT `1048` -
-/// the entry the overlay's `0x41A` loader index names.
+/// Global `music_01` track the dance overlay loads for the qualifier and the
+/// how-to: sound-test **60** (`M116` "Sol disco final 1"), extraction PROT
+/// `1048` - the entry the overlay's `0x41A` loader index names.
 pub const DANCE_SHORT_SONG_BGM_ID: u16 = 2060;
 
-/// Global `music_01` track the dance overlay loads for the **long** song:
+/// Global `music_01` track the dance overlay loads for the finals:
 /// sound-test **66** (`M120` "Sol disco final 2"), extraction PROT `1054`
-/// (loader index `0x420`). Which of the two a heat plays is the overlay's own
-/// mode arm (`DAT_801D514C`) and is unpinned; the engine picks by song length.
+/// (loader index `0x420`). The mode word `DAT_801D514C` picks the track
+/// (`legaia_engine_minigames::dance::song_loader_index`); free play rotates
+/// these two and a third.
 pub const DANCE_LONG_SONG_BGM_ID: u16 = 2066;
 
 /// Global `music_01` track the Sol casino floor plays under its cabinets:
@@ -227,8 +228,8 @@ impl MinigameSubId {
     /// ([`DANCE_SHORT_SONG_BGM_ID`] / [`DANCE_LONG_SONG_BGM_ID`]): its song
     /// starts when the pre-song count-in clears, not at entry, so
     /// `legaia_engine_core::world::World::enter_dance` holds the id and the world's
-    /// dance tick starts it. Which of the two plays is the overlay's own
-    /// mode arm, which is unpinned - the engine picks by song length.
+    /// dance tick starts it. Which one plays is the overlay's own mode arm
+    /// (`legaia_engine_minigames::dance::song_loader_index`).
     pub fn bgm_id(self) -> Option<u16> {
         match self {
             MinigameSubId::BakaFighter => Some(BAKA_FIGHTER_BGM_ID),

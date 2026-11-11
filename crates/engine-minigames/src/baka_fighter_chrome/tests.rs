@@ -272,7 +272,8 @@ fn intro_subtitle_shrinks_and_flashes_the_clut() {
     let mut st = IntroTitle::default();
     let f = st.frame(100);
     assert_eq!(f.banner_clut, Some(BANNER_CLUT_FLASH));
-    assert_eq!(f.tint, Some(ScreenTint { grey: 0xFF }));
+    assert_eq!(f.tint, Some(ScreenTint { colour: 0xFF }));
+    assert_eq!(f.tint.unwrap().rgb(), [0xFF, 0, 0], "a red flash");
     let sub = f.draws.iter().find(|d| d.widget == 0x22).unwrap();
     assert_eq!(sub.size, (0x10 << 11) + 0x1000);
     let mut st = IntroTitle::default();
@@ -302,7 +303,11 @@ fn intro_caption_ramp_walks_four_cells() {
 
 #[test]
 fn intro_tint_fades_white_to_black_over_64_frames() {
-    let g = |t: i32| IntroTitle { announced: 2 }.frame(t).tint.unwrap().grey;
+    let g = |t: i32| {
+        let [r, g, b] = IntroTitle { announced: 2 }.frame(t).tint.unwrap().rgb();
+        assert!(r == g && g == b);
+        r
+    };
     assert_eq!(g(140), 0xFF);
     assert_eq!(g(150), 0xFF - 40);
     assert_eq!(g(204), 0x00);

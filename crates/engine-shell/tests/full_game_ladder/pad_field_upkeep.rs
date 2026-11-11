@@ -2099,6 +2099,11 @@ thread_local! {
     /// same flags restores nothing, so she is not a rest until one moves.
     pub(super) static DRY_RESTS: std::cell::RefCell<BTreeSet<(String, u8, u8, u64)>> =
         const { std::cell::RefCell::new(BTreeSet::new()) };
+    /// The scene whose rest last lifted the party to its line: where the
+    /// hand goes back to when an errand's gold has to be fought for from a
+    /// bed ([`pad_errand_from_rest`]).
+    pub(super) static LAST_REST: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// What a rest's record branches on, as a [`DRY_RESTS`] key: the live state
@@ -2424,6 +2429,7 @@ pub(super) fn pad_rest_to(
         if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
+            LAST_REST.with(|l| *l.borrow_mut() = Some(name.clone()));
             return Ok(None);
         }
         dry(session, 0, rec, key, before);
@@ -2449,6 +2455,7 @@ pub(super) fn pad_rest_to(
         if rest_gauge(session) >= line {
             // A rest that worked may be taken again after the next fights.
             RESTED.with(|r| r.borrow_mut().remove(&name));
+            LAST_REST.with(|l| *l.borrow_mut() = Some(name.clone()));
             return Ok(None);
         }
         dry(session, 1, slot, key, before);

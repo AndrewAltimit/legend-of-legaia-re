@@ -217,7 +217,9 @@ impl World {
         }
         // Natural end (`0x80047B30..0x80047B58`).
         let idle = a.battle.flag_bits.has(ANIM_FLAG_IDLE_AT_END);
-        a.battle.flag_bits = ActorFlags(a.battle.flag_bits.0 & 0xF8);
+        let (flags, _) =
+            legaia_engine_battle_vm::battle_action::natural_end_commit(a.battle.flag_bits.0, 0);
+        a.battle.flag_bits = ActorFlags(flags);
         // The monster-death arm: previous entry tagged 4, monster seat, HP 0.
         // It runs whatever bit 2 staged - it re-installs the entry itself.
         if playing == 4 && hp_zero && !is_party {
@@ -360,6 +362,28 @@ impl World {
         a.battle.flag_bits.clear(ANIM_FLAG_ROOT_LATCH);
         // The kneel played on the reaction channel, so the pose byte may
         // still name idle; forget it so the idle loop is re-installed.
+        a.battle_pose = None;
+        if a.battle_action_clips.is_some() {
+            self.apply_battle_pose(
+                slot,
+                legaia_engine_battle_vm::battle_action::Pose::Idle as u8,
+            );
+        }
+    }
+
+    /// Cut a living seat's reaction clip for its idle, as a staged `0` with
+    /// the `+0x1DC` bump cuts whatever plays on retail's one clip channel:
+    /// the channel is released, and the idle's own entry (clip, effect
+    /// script, cue track) goes back in. A downed seat keeps the pose it fell
+    /// to, and a seat with no reaction playing is left alone.
+    pub(in crate::world) fn cut_battle_reaction_to_idle(&mut self, slot: usize) {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return;
+        };
+        if a.battle_reaction.is_none() || a.battle.hp == 0 {
+            return;
+        }
+        Self::end_battle_reaction(a);
         a.battle_pose = None;
         if a.battle_action_clips.is_some() {
             self.apply_battle_pose(

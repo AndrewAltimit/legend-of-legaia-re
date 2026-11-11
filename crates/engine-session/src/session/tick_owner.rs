@@ -32,6 +32,11 @@ pub struct TickClaims {
     /// The host can draw a pause menu now (the browser page builds its menu
     /// assets on first use). The native window always can.
     pub pause_menu_ready: bool,
+    /// The pad word held this tick. A tick the field does not run takes
+    /// retail's pad pump from it (`InputState::pump_held`), which is what
+    /// raises the cursor auto-repeat the pause menu, a shop and the naming
+    /// prompt read; a field tick pumps through the host's `set_pad`.
+    pub held: u16,
 }
 
 /// Who owns one sim tick ([`BootSession::claim_tick`]).
@@ -71,6 +76,30 @@ impl<S: AudioSink> BootSession<S> {
     /// share. `edge` is the tick's just-pressed pad bits.
     // REF: FUN_801D1344, FUN_801D01B0
     pub fn claim_tick(&mut self, claims: TickClaims, edge: u16) -> TickOwner {
+        // The naming prompt reads the cursor auto-repeat on the tick it is
+        // stepped, so its pump comes first; every other owner but the field
+        // is pumped on the way out. The field's tick pumps in `set_pad`.
+        let naming = !claims.host_screen && self.host.world.name_entry_active();
+        if naming {
+            self.host.world.input.pump_held(claims.held);
+        }
+        let owner = self.claim_tick_owner(claims, edge);
+        match owner {
+            TickOwner::Field(_) => {}
+            // The list opens on a clean count, whatever was held coming in
+            // (`FUN_80030628` zeroes the chord).
+            TickOwner::PauseMenuOpened(_) | TickOwner::PauseMenuSpawned => {
+                self.host.world.input.pump_held(claims.held);
+                self.host.world.input.reset_menu_repeat();
+            }
+            _ if naming => {}
+            _ => self.host.world.input.pump_held(claims.held),
+        }
+        owner
+    }
+
+    /// [`Self::claim_tick`]'s order, without the pad pump.
+    fn claim_tick_owner(&mut self, claims: TickClaims, edge: u16) -> TickOwner {
         // Every tick handed out is a vsync the game ran, whoever owns it:
         // retail's play counter runs under the pause menu, the title and a
         // movie as it does on the field (`count_play_tick`).

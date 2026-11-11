@@ -211,7 +211,10 @@ fn seat_party(rig: &mut Rig, rng: &mut Rng, spells_always: bool) -> Party {
 fn pad(rng: &mut Rng) -> (u32, u32, SpellMenuInput) {
     let mut i = SpellMenuInput::default();
     let (mut edge, mut repeat) = (0, 0);
-    match rng.below(9) {
+    match rng.below(10) {
+        // Start, which no arm of these screens reads: the list kernel tests
+        // the edge word against the two masks alone.
+        9 => edge |= 0x800,
         0 | 1 => i.down = true,
         2 => i.up = true,
         3 => i.cross = true,

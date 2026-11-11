@@ -122,6 +122,8 @@ pub fn field_menu_root_draws(
         PauseScreen::TopLevel(TopLevelView {
             rows: &rows,
             cursor: view.cursor,
+            cursor_static: false,
+            hand_bob: hand_bob(Some(world)),
             money: view.money,
             play_time_seconds: view.play_time_seconds,
             coins: world
@@ -533,8 +535,12 @@ pub fn status_draws(
         xp_to_next: snap.xp_to_next,
         hp: snap.hp,
         hp_max: snap.hp_max,
+
+        hp_base: snap.hp_base,
         mp: snap.mp,
         mp_max: snap.mp_max,
+
+        mp_base: snap.mp_base,
         ap: snap.ap,
         ap_max: snap.ap_max,
         stat_rows: &stat_rows,
@@ -859,6 +865,7 @@ pub fn target_panel_members(model: &ps::TargetPanelModel) -> Vec<ui::TargetPanel
             base_mp_max: m.base_mp_max,
             stat_eff: m.stat_eff,
             stat_base: m.stat_base,
+            status: m.status,
         })
         .collect()
 }
@@ -1108,8 +1115,20 @@ pub fn equip_draws(
         }
     }
     let stats = item_detail_stats(model.info.as_ref().and_then(|i| i.detail.as_ref()));
+    let browse_stats =
+        item_detail_stats(model.browse_info.as_ref().and_then(|i| i.detail.as_ref()));
     let mut input = equip_compose_input(&model, !ctx.chrome_present());
     input.arrows_blink = list_arrows_blink(world);
+    input.hand_bob = hand_bob(world);
+    if let (Some(info), Some(d)) = (
+        input.browse_info.as_mut(),
+        model.browse_info.as_ref().and_then(|i| i.detail.as_ref()),
+    ) {
+        info.detail = Some(ui::PauseItemDetail {
+            text: &d.text,
+            stats: &browse_stats,
+        });
+    }
     if let (Some(info), Some(d)) = (
         input.info.as_mut(),
         model.info.as_ref().and_then(|i| i.detail.as_ref()),
@@ -1135,6 +1154,27 @@ fn item_detail_stats(detail: Option<&ps::ItemDetailText>) -> Vec<ui::PauseDetail
             })
             .collect()
     })
+}
+
+/// The pointing hands' idle bob this frame, off the play clock's vsync
+/// counter (`0x80084570`): the offset table `0x80073D78`, four vsyncs an
+/// entry. That clock is the all-rows hand's own (`FUN_8002B994` mode `4`);
+/// a single hand's timer restarts when it moves (mode `1`), which this
+/// stands in for with the same clock.
+pub(crate) fn hand_bob(world: Option<&World>) -> ui::menu::window_painters::HandBob {
+    let Some(w) = world else {
+        return ui::menu::window_painters::HandBob::default();
+    };
+    let vsyncs = w
+        .clock
+        .play_time_seconds
+        .wrapping_mul(60)
+        .wrapping_add(u32::from(w.clock.play_tick_phase));
+    let o = legaia_engine_dialog::cursor_sprite::CURSOR_BOB[((vsyncs << 1) & 0x38) as usize >> 3];
+    ui::menu::window_painters::HandBob {
+        animated: o,
+        clocked: o,
+    }
 }
 
 /// The kind-4 kernel's blink gate on the frame word retail reads
@@ -1171,6 +1211,7 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
         active_slot: m.active_slot,
         char_slot: m.party_row as usize,
         slot_cursor: m.slot_cursor,
+        hand_bob: Default::default(),
         pictogram_rows: m.pictogram_rows,
         text_cursor,
         arrows_blink: true,
@@ -1182,6 +1223,17 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
             detail: None,
             scope: i.scope_icon,
         }),
+        browse_info: m
+            .browse_info
+            .as_ref()
+            .map(|i| ui::pause_menu::EquipInfoInput {
+                name: i.name.as_str(),
+                count: i.count,
+                desc: i.desc.as_str(),
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+                detail: None,
+                scope: i.scope_icon,
+            }),
         compare: m.compare.as_ref().map(equip_compare_input),
     }
 }

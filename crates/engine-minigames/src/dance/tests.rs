@@ -1377,3 +1377,38 @@ fn free_play_draws_the_saved_best_panel() {
     assert_eq!(&hud[..4], &panel[..], "the panel leads the frame");
     assert!(g.hud_frame_rows(false).iter().any(|r| r.text == "BEST 568"));
 }
+
+/// The hosts' tick runs a game frame every third vsync on a delta of three,
+/// and judges a press on the game frame that follows it.
+#[test]
+fn the_hall_runs_a_game_frame_every_third_vsync() {
+    let mut g = game();
+    assert_eq!(g.advance_vsync(Some(DanceDir::A)), None);
+    assert_eq!(g.advance_vsync(None), None);
+    assert_eq!(
+        g.intra_beat_phase(),
+        0,
+        "the clock stands between game frames"
+    );
+    let ev = g.advance_vsync(None);
+    assert!(ev.is_some(), "the held press is judged on the game frame");
+    assert_eq!(g.intra_beat_phase(), HALL_FRAME_STEP * PHASE_PER_DELTA);
+    // No press held over: the next game frame judges nothing.
+    for _ in 0..3 {
+        assert_eq!(g.advance_vsync(None), None);
+    }
+    assert_eq!(g.intra_beat_phase(), 2 * HALL_FRAME_STEP * PHASE_PER_DELTA);
+}
+
+/// State 3's song pick: the mode's, and free play's three by its counter.
+#[test]
+fn the_song_is_the_modes() {
+    assert_eq!(song_loader_index(DanceMode::Qualifier, 2), 0x41A);
+    assert_eq!(song_loader_index(DanceMode::HowTo, 1), 0x41A);
+    assert_eq!(song_loader_index(DanceMode::Finals, 0), 0x420);
+    assert_eq!(
+        [0, 1, 2].map(|c| song_loader_index(DanceMode::FreePlay, c)),
+        [0x42B, 0x41A, 0x420]
+    );
+    assert_eq!([0, 1, 2].map(next_free_play_song), [1, 2, 0]);
+}

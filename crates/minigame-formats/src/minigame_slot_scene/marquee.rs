@@ -293,9 +293,10 @@ pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
         let row = (frame.payout_frame - PAYOUT_SLIDE_ROWS).min(0);
         let n = frame.payout;
         let digits = [n / 1000, (n % 1000) / 100, (n % 100) / 10, n % 10];
-        // Place 3 (the units) is unconditional; the rest need the figure to
-        // reach their own decade.
-        let thresholds = [1000, 100, 10, 0];
+        // Place 3 (the units) is unconditional, a negative figure included
+        // (its digit is the truncated remainder, `6 + n % 10`); the rest need
+        // the figure to reach their own decade.
+        let thresholds = [1000, 100, 10, i32::MIN];
         for ((&digit, &col), &threshold) in digits
             .iter()
             .zip(PAYOUT_DIGIT_COLS.iter())
@@ -303,7 +304,7 @@ pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
         {
             if n >= threshold {
                 out.push(MarqueePlacement {
-                    msg: MSG_NUMBER_BASE + digit as usize,
+                    msg: (MSG_NUMBER_BASE as i32 + digit) as usize,
                     col: col as i32,
                     row,
                 });
@@ -320,10 +321,12 @@ pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
         return out;
     }
     match frame.reel_state {
-        // States 1-2 (idle / spinning up): the pips count the rounds still owed.
+        // States 1-2 (idle / spinning up): the pips count the rounds still owed,
+        // lit from the right: the pip at column `0x40` while one is owed, `0x20`
+        // from two, `0` from three (`0x801D02B4..0x801D0324`).
         1 | 2 => {
             for (i, &col) in ROUND_PIP_COLS.iter().enumerate() {
-                let lit = frame.bonus_rounds > i as i32;
+                let lit = frame.bonus_rounds > (ROUND_PIP_COLS.len() - 1 - i) as i32;
                 out.push(MarqueePlacement {
                     msg: if lit {
                         MSG_ROUND_PIP_ON

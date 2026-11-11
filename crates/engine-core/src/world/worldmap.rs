@@ -126,9 +126,9 @@ impl World {
         self.auto_engage_world_map_portals();
         // The overworld runs the field overlay's walk tick too (the frame
         // driver `FUN_801D1344` calls `FUN_801D0B90` right before the
-        // locomotion controller, `0x801D16EC`): walk-regen passives, the
-        // Incense window drain and its wear-off notice.
-        self.tick_field_walk_regen();
+        // locomotion controller, `0x801D16EC`, behind the same gate): the
+        // step above ran it. Its Incense zero edge raises the wear-off
+        // notice, which runs here.
         self.tick_incense_notice();
         // The player's locomotion clip, in the field pump's order: the
         // settle's clip tail binds the base the step above wrote
@@ -599,6 +599,10 @@ impl World {
         if self.actors[slot].move_state.flags & 0x0008_0000 != 0 || self.encounter_owns_player() {
             return;
         }
+        // The walk-regen tick, ahead of the pad controller and behind the
+        // gate it shares (`0x801D16EC`): walk-regen passives and the Incense
+        // window's drain.
+        self.tick_field_walk_regen();
         // Held d-pad → camera-relative direction bits. `sx`/`sy` are the raw
         // screen deltas (right / forward); the azimuth remap rotates them into
         // world space against the overworld follow camera.

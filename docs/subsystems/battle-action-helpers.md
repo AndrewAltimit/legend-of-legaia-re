@@ -480,7 +480,7 @@ The per-body anim decode `FUN_8004998C` ends in a second spawn loop (`0x8004A5FC
 - Every body whose `+0x21F` impact selector is non-zero spends it `0x10` at a time.
 - Each pass picks a random object of the body's current pose, turns its translation by the facing `+0x46`, and jitters each axis by `(r >> 4) - rand % (r >> 3)`, with `r` the node's `+0x58` size.
 - When the point is at or above the floor (Y `<= 0`) it is handed to `FUN_801DFDF0`.
-- The loop runs only for a body the frame draws. `FUN_8004998C` is reached from the draw callback `FUN_80048A08`, and the draw tick `FUN_800480D8` calls the callback only past its colour test (`jal 0x80048A08` at `0x800482E0` / `0x800482F8`): a body whose colour word is zero (a module's hide, `+0x04 = 0` with `+0x21C = 0xFF`) sheds nothing and draws no `rand()`, whatever selector it keeps. Aluru's victim holds `2` from arm `0x12` through the Done band.
+- The loop runs only for a body the frame draws. `FUN_8004998C` is reached from the draw callback `FUN_80048A08`, and the draw tick `FUN_800480D8` calls the callback only past its colour test (`jal 0x80048A08` at `0x800482E0` / `0x800482F8`): a body whose colour word is zero (a module's hide, `+0x04 = 0` with `+0x21C = 0xFF`) sheds nothing and draws no `rand()`, whatever selector it keeps. Aluru's victim holds `2` from arm `0x12` through the Done band. A body the render dispatcher rejects for standing at the lens (view depth under `0xA1`, `0x8001AE94..0x8001AEF4`) never reaches the draw tick either: PROT 0958's victim stands at the eye of the arm-22 close-up with selector `1`, and the frame holds no fire.
 
 | Selector `+0x21F` | Effect | Condition |
 |---|---|---|
@@ -661,7 +661,7 @@ Port: kernels in `engine-effects::action_effect_script`; the spawns come back as
 
 #### `FUN_801E09F8` - cast-effect census + projectile flight / impact
 
-Runs two jobs each frame (0898 image at base `0x801CE818`; `overlay_battle_action_801e09f8.txt`).
+Runs two jobs each frame (0898 image at base `0x801CE818`; `overlay_battle_action_801e09f8.txt`). Its one caller is the battle draw tick `FUN_800480D8` (`jal 0x801E09F8` at `0x80048130`), in the once-a-frame preamble the first drawn body runs, so both jobs follow every node's tick of the pass: the action SM reads the census one pass on, and a landing's reaction commits on the victim's next node tick.
 
 **(1) Census** (`0x801E0A44..0x801E0BF0`). It recomputes from scratch the outstanding-effect fields the magic / summon exit states poll:
 

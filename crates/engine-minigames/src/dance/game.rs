@@ -20,6 +20,35 @@ pub struct DanceGame {
     pub(super) dancers: Vec<Dancer>,
     /// Triangle feedback window (`DAT_801d5144`), armed on the human's spend.
     pub(super) feedback: u32,
+    /// The port's own display window over the same spend: the minigames
+    /// page's caption reads [`DanceGame::triangle_feedback`], and retail has
+    /// no such caption outside the lesson, so its word never decays there.
+    pub(super) feedback_shown: u32,
+    /// `DAT_801d5138`: the lesson's hold on the song timer.
+    pub(super) song_hold: bool,
+    /// `DAT_801d5830`: the load gate. Set, the award routine takes no press.
+    pub(super) load_gate: bool,
+    /// `DAT_801d5150`: frames danced, which the lesson's free-dance steps
+    /// wait on and clear.
+    pub(super) progress: u32,
+    /// `DAT_801d5140`: armed on the human's missed press, read by the lesson.
+    pub(super) miss_window: u32,
+    /// `DAT_801d558c`: armed at `0x10` by the human's closed chain, stepped
+    /// by the beat track's draw, which lights its second note while it runs.
+    pub(super) chain_flash: i32,
+    /// `DAT_801d512c`: armed at `0x10` on a flash beat of the human's track;
+    /// the lesson steps it and calls the combo while it runs.
+    pub(super) track_flash: i32,
+    /// The beat clock has run a frame since the count-in: the hall's state
+    /// was `10` on entry to this one.
+    pub(super) clock_started: bool,
+    /// The pause flag `DAT_801d5130`: raised by the wipe of state `0xC`,
+    /// after which the award routine judges nothing.
+    pub(super) judging_closed: bool,
+    /// Vsyncs since the last game frame ([`Self::advance_vsync`]).
+    pub(super) vsync_phase: u32,
+    /// Press edges held for the next game frame, in the packed pad layout.
+    pub(super) pending_edges: u16,
     /// The mode global (`DAT_801d514c`), which the HUD driver's score-box
     /// permutation and its solo arm both key off.
     pub(super) mode: DanceMode,
@@ -116,6 +145,17 @@ impl DanceGame {
             },
             dancers: kinds.iter().map(|&k| Dancer::new(k)).collect(),
             feedback: 0,
+            feedback_shown: 0,
+            song_hold: false,
+            load_gate: false,
+            progress: 0,
+            miss_window: 0,
+            chain_flash: 0,
+            track_flash: 0,
+            clock_started: false,
+            judging_closed: false,
+            vsync_phase: 0,
+            pending_edges: 0,
             mode: DanceMode::Qualifier,
             widgets: Vec::new(),
             kinds: Vec::new(),
@@ -149,8 +189,8 @@ impl DanceGame {
     ///
     /// Starts the **qualifier** floor; [`DanceGame::from_overlay_for_mode`] is
     /// the per-mode entry point.
-    pub fn from_overlay(overlay: &[u8], long_song: bool) -> Option<Self> {
-        Self::from_overlay_for_mode(overlay, DanceMode::Qualifier, long_song)
+    pub fn from_overlay(overlay: &[u8]) -> Option<Self> {
+        Self::from_overlay_for_mode(overlay, DanceMode::Qualifier)
     }
 
     /// Start a run on `mode`'s floor.
@@ -161,11 +201,11 @@ impl DanceGame {
     /// single one, so a host that always spawns the qualifier's three is wrong
     /// in two of the four modes.
     ///
-    /// `long_song` stays a parameter because the caller owns the song choice;
-    /// the how-to demo is the one mode whose length retail fixes, and it forces
-    /// [`SONG_LEN_SHORT`] regardless.
+    /// The mode picks the song's length too: the song-end test reads the mode
+    /// word alone (`0x801D00D4..0x801D00FC`), [`SONG_LEN_SHORT`] for the how-to
+    /// demo and [`SONG_LEN_LONG`] for the other three.
     // PORT: FUN_801d0190 (per-mode spawn-table + cast-size selection)
-    pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode, long_song: bool) -> Option<Self> {
+    pub fn from_overlay_for_mode(overlay: &[u8], mode: DanceMode) -> Option<Self> {
         let chart = legaia_minigame_formats::dance_chart::parse(overlay)?;
         let tables =
             legaia_minigame_formats::dance_chart::parse_tables(overlay).unwrap_or_default();
@@ -198,7 +238,7 @@ impl DanceGame {
                     .collect()
             });
         let kinds: Vec<usize> = spawns.iter().map(|&(k, _)| k).collect();
-        let long = long_song && mode != DanceMode::HowTo;
+        let long = mode != DanceMode::HowTo;
         let mut game = Self::with_tables(chart, tables, &kinds, long);
         game.mode = mode;
         game.widgets = dance_widgets_with_abr(overlay);
@@ -681,36 +721,15 @@ impl DanceGame {
     /// The body and caps take CLUT `0x7D0D` on a flash beat and `0x7D08`
     /// otherwise: a flash beat is `beat & 7 == 3` (`beat & 3` at level `0`)
     /// within the first `0x46` phase units (`0x801D2620..0x801D266C`). The
-    /// second note's `0xFF` hit-flash pass (`DAT_801D558C`) is not modelled -
-    /// the engine keeps no writer of that counter - so every note draws at
-    /// `0x80`. Empty without a widget table.
-    ///
-    /// PORT: FUN_801d2524 (the emit sequence and draw area; the flash test and
-    /// note x are [`dance_combo_window_bright`] / [`dance_beat_track_note_x`])
+    /// second note draws at `0xFF` while the human's closed chain flashes.
+    /// Empty without a widget table. The calls are
+    /// [`Self::beat_track_emits`].
     pub fn beat_track_quads(&self, slot: usize, x: i16, y: i16) -> Vec<DanceHudQuad> {
-        const CLIP_W: i16 = 0x50;
         if self.widgets.is_empty() {
             return Vec::new();
         }
-        let level = self.dancer_gauge(slot) / GAUGE_STEP;
-        let beat = self.phase / BEAT_PERIOD;
-        let phase_in = self.phase - beat * BEAT_PERIOD;
-        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
-            BEAT_TRACK_CLUT_COMBO
-        } else {
-            BEAT_TRACK_CLUT_IDLE
-        };
-        let quad = |id: usize, qx: i16, qy: i16, clut: Option<u16>| {
-            self.widgets.get(id).map(|(w, abr)| {
-                let mut w = *w;
-                if let Some(c) = clut {
-                    w.clut = c;
-                }
-                dance_hud_widget_quad(&w, *abr, qx, qy, id as u32, DANCE_HUD_BRIGHTNESS, 0x1000)
-            })
-        };
+        let (lo, hi) = super::beat_track_clip(x);
         let clip = |q: DanceHudQuad| -> Option<DanceHudQuad> {
-            let (lo, hi) = (x, x + CLIP_W);
             if q.x1 <= lo || q.x0 >= hi {
                 return None;
             }
@@ -728,24 +747,67 @@ impl DanceGame {
             }
             Some(q)
         };
-        // Emission (submission) order, as retail links the packets; the
-        // screen-prim builder paints a shared bucket last-submitted first.
-        let mut out = Vec::new();
-        out.extend(quad(0x12, x + 8, y - 8, None));
-        out.extend(quad(0x10, x - 4, y, Some(track_clut)));
-        out.extend(quad(0x11, x + 0x54, y, Some(track_clut)));
+        self.beat_track_emits(slot, x, y)
+            .into_iter()
+            .filter_map(|e| {
+                let (w, abr) = self.widgets.get(e.widget as usize)?;
+                let mut w = *w;
+                if let Some(c) = e.clut {
+                    w.clut = c;
+                }
+                let q = dance_hud_widget_quad(&w, *abr, e.x, e.y, e.widget, e.brightness, 0x1000);
+                if e.clipped { clip(q) } else { Some(q) }
+            })
+            .collect()
+    }
+
+    /// The `FUN_801D2F38` calls of one beat track, in call order: what
+    /// [`Self::beat_track_quads`] resolves through the widget table. `clut`
+    /// is the word the routine patches into the widget's record ahead of the
+    /// call, and `clipped` marks the calls that paint under the track's draw
+    /// area ([`super::beat_track_clip`]).
+    // PORT: FUN_801d2524
+    pub fn beat_track_emits(&self, slot: usize, x: i16, y: i16) -> Vec<super::BeatTrackEmit> {
+        use super::BeatTrackEmit;
+        let level = self.dancer_gauge(slot) / GAUGE_STEP;
+        let beat = self.phase / BEAT_PERIOD;
+        let phase_in = self.phase - beat * BEAT_PERIOD;
+        let track_clut = if dance_combo_window_bright(beat, level, phase_in) {
+            BEAT_TRACK_CLUT_COMBO
+        } else {
+            BEAT_TRACK_CLUT_IDLE
+        };
+        let emit = |widget: u32, x: i16, y: i16, clut: Option<u16>, clipped: bool| BeatTrackEmit {
+            widget,
+            x,
+            y,
+            brightness: DANCE_HUD_BRIGHTNESS,
+            clut,
+            clipped,
+        };
+        let mut out = vec![
+            emit(0x12, x + 8, y - 8, None, false),
+            emit(0x10, x - 4, y, Some(track_clut), false),
+            emit(0x11, x + 0x54, y, Some(track_clut), false),
+        ];
         let row = self.chart.rows.get(level as usize);
         for i in 0..8u32 {
             let cell = (beat + i).wrapping_sub(1) & 31;
-            let sym = row.map_or(0, |r| r[cell as usize % r.len()]) as usize;
+            let sym = u32::from(row.map_or(0, |r| r[cell as usize % r.len()]));
             let nx = dance_beat_track_note_x(i32::from(x), i, phase_in) as i16;
-            out.extend(quad(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE)).and_then(clip));
+            let mut e = emit(sym + 0xD, nx, y, Some(BEAT_TRACK_CLUT_NOTE), true);
+            // The second note lights while the human's closed chain flashes
+            // (`DAT_801D558C`, `0x801D2844..0x801D287C`), on every track.
+            if i == 1 && self.chain_flash != 0 {
+                e.brightness = 0xFF;
+            }
+            out.push(e);
         }
         for i in 0..12 {
-            out.extend(quad(0x1E, x + 8 * i, y, Some(track_clut)).and_then(clip));
+            out.push(emit(0x1E, x + 8 * i, y, Some(track_clut), true));
         }
         for i in 0..self.triangles() as i16 {
-            out.extend(quad(0x1F, x + 16 * i, y + 0x10, None));
+            out.push(emit(0x1F, x + 16 * i, y + 0x10, None, false));
         }
         out
     }
@@ -886,6 +948,9 @@ impl DanceGame {
         for _ in 0..frame_delta {
             let s = fc.step();
             self.finish_cues.extend(s.cues);
+            if fc.wipe() >= super::FINISH_JUDGE_CLOSE {
+                self.judging_closed = true;
+            }
             if s.done {
                 self.finished = true;
                 break;
@@ -1067,7 +1132,7 @@ impl DanceGame {
     /// The triangle feedback window (`DAT_801d5144`) still running, and whether
     /// the spend that armed it landed on the combo slot.
     pub fn triangle_feedback(&self) -> Option<bool> {
-        (self.feedback > 0).then(|| self.dancers[0].landed)
+        (self.feedback_shown > 0).then(|| self.dancers[0].landed)
     }
 
     /// Dancers on the floor (slot 0 = the human).
@@ -1204,6 +1269,32 @@ impl DanceGame {
         self.advance_pressing(frame_delta, None);
     }
 
+    /// One **vsync** of the hall, for a host that ticks once a display frame.
+    ///
+    /// The hall's frame step `DAT_1F800393` is [`HALL_FRAME_STEP`] in every
+    /// retail capture of the dance: the state machine and the dancers run once
+    /// every three vsyncs, on a delta of three. The judge therefore reads the
+    /// beat phase in steps of thirty, and a rival's feed gets one turn per
+    /// game frame, not per vsync. A press is held until the game frame that
+    /// follows it, as the pad pump's edge word holds it, and is judged there in
+    /// the handler's own order (Triangle, Square, Circle). Returns that frame's
+    /// event.
+    pub fn advance_vsync(&mut self, press: Option<DanceDir>) -> Option<DanceEvent> {
+        if let Some(d) = press {
+            self.pending_edges |= d.pad_bit();
+        }
+        self.vsync_phase += 1;
+        if self.vsync_phase < HALL_FRAME_STEP {
+            return None;
+        }
+        self.vsync_phase = 0;
+        let edges = std::mem::take(&mut self.pending_edges);
+        let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
+            .into_iter()
+            .find(|d| edges & d.pad_bit() != 0);
+        self.advance_pressing(HALL_FRAME_STEP, dir)
+    }
+
     /// [`Self::advance`] with this frame's press, judged where retail's handler
     /// reads the pad: in slot 0's turn, so the rivals behind it on the floor see
     /// what it did. Returns the press's event.
@@ -1217,13 +1308,38 @@ impl DanceGame {
         // ahead of this frame's beat clock and judge.
         self.raise_best_score();
         self.advance_step_markers(frame_delta);
-        let step = frame_delta * PHASE_PER_DELTA;
-        self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
-        // The song timer saturates at the length limit (the retail clock keeps
-        // counting but the run ends; clamping keeps `song_over` monotone).
-        self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+        // The state's arm runs ahead of the tail's clock, and the song-end
+        // test sits in the tail (`0x801D00B0..0x801D010C`): the frame that
+        // hits the limit only stores state `0xB`, whose arm runs on the next.
+        // The frame state `0xC` hands over to the results leaves the band the
+        // tail clocks (`0x801CFFA8..0x801CFFBC`).
+        // State `10`'s own arm counts the frames danced
+        // (`0x801CFD44..0x801CFD58`). The frame that enters the state runs
+        // the tail's clock and not the arm.
+        if self.clock_started && !self.finished && self.finish.is_none() && !self.song_over() {
+            self.progress = self.progress.wrapping_add(frame_delta);
+        }
+        self.clock_started = true;
+        // The beat track's draw steps the chain flash, ahead of this frame's
+        // award.
+        self.chain_flash = super::chain_flash_step(self.chain_flash, frame_delta);
         self.advance_finish(frame_delta);
-        self.feedback = self.feedback.saturating_sub(frame_delta);
+        if !self.finished {
+            let step = frame_delta * PHASE_PER_DELTA;
+            self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
+            // The song timer saturates at the length limit (the retail clock
+            // keeps counting but the run ends; clamping keeps `song_over`
+            // monotone).
+            // The lesson holds the song still (`DAT_801d5138`,
+            // `0x801D0048`).
+            if !self.song_hold {
+                self.song_timer = self.song_timer.saturating_add(step).min(self.song_len);
+            }
+        }
+        // Retail's window `DAT_801d5144` is stepped by the lesson alone
+        // (`FUN_801d0750` case `0xD`); only the port's caption window decays
+        // here.
+        self.feedback_shown = self.feedback_shown.saturating_sub(frame_delta);
 
         let beat = self.beat_index();
         let rows = self.chart.rows.len();
@@ -1317,6 +1433,16 @@ impl DanceGame {
             if free {
                 self.bind_loop_clip(i);
             }
+        }
+        // The human's track arms the combo call on a flash beat
+        // (`0x801D2648..0x801D2654`).
+        let beat = self.phase / BEAT_PERIOD;
+        if dance_combo_window_bright(
+            beat,
+            self.dancer_gauge(0) / GAUGE_STEP,
+            self.phase - beat * BEAT_PERIOD,
+        ) {
+            self.track_flash = super::CHAIN_FLASH_FRAMES;
         }
         self.sync_dancer_actors();
         self.age_sprite_parts(frame_delta);
@@ -1434,6 +1560,78 @@ impl DanceGame {
         }
     }
 
+    /// Seat the chain flash `DAT_801D558C`, as the retail kernel differential
+    /// seeds it.
+    #[doc(hidden)]
+    pub fn seat_chain_flash(&mut self, flash: i32) {
+        self.chain_flash = flash;
+    }
+
+    /// The lesson's probe of the chart (`FUN_801d1960` with its third
+    /// argument's high byte set, `0x801D1960..0x801D1A1C` and the exit at
+    /// `0x801D1AE4`): whether this frame's cell of row `lane` asks for
+    /// `symbol`, outside the dead zone. Nothing is judged and no cursor moves.
+    pub fn probe_cell(&self, lane: i32, symbol: u8) -> bool {
+        if self.in_dead_zone() || lane < 0 {
+            return false;
+        }
+        self.cell(lane as usize, self.beat_index()) == symbol
+    }
+
+    /// The hall's words the lesson `FUN_801d0750` reads, as this run holds
+    /// them. The words the run does not hold keep `base`'s values.
+    pub fn tutorial_hall(
+        &self,
+        base: crate::dance_tutorial::TutorialHall,
+    ) -> crate::dance_tutorial::TutorialHall {
+        let d = &self.dancers[0];
+        crate::dance_tutorial::TutorialHall {
+            song_hold: u32::from(self.song_hold),
+            load_gate: u32::from(self.load_gate),
+            score: d.score,
+            gauge: d.gauge as i32,
+            progress: self.progress as i32,
+            miss_window: self.miss_window as i32,
+            feedback: self.feedback as i32,
+            track_flash: self.track_flash,
+            phase: self.phase,
+            song: self.song_timer,
+            stock: d.triangles,
+            landed: u32::from(d.landed),
+            ..base
+        }
+    }
+
+    /// Store the words [`Self::tutorial_hall`] reads back after a lesson
+    /// frame.
+    pub fn apply_tutorial_hall(&mut self, hall: &crate::dance_tutorial::TutorialHall) {
+        self.song_hold = hall.song_hold != 0;
+        self.load_gate = hall.load_gate != 0;
+        self.progress = hall.progress as u32;
+        self.miss_window = hall.miss_window as u32;
+        self.feedback = hall.feedback as u32;
+        self.track_flash = hall.track_flash;
+        self.phase = hall.phase;
+        self.song_timer = hall.song;
+        let d = &mut self.dancers[0];
+        d.score = hall.score;
+        d.gauge = hall.gauge as u32;
+        d.triangles = hall.stock;
+        d.landed = hall.landed != 0;
+    }
+
+    /// What the hall's states `2` and `3` clear when the lesson sends the
+    /// dance back to its count-in (`0x801CFA1C..0x801CFAA8`): the human's
+    /// gauge, every dancer's triangle stock and schedule cursor.
+    pub fn restart_for_count_in(&mut self) {
+        self.dancers[0].gauge = 0;
+        self.clock_started = false;
+        for d in &mut self.dancers {
+            d.triangles = 3;
+            d.tri_cursor = 0;
+        }
+    }
+
     // ---------------------------------------------------------------- press
 
     /// Judge a human press. Square / Circle are judged against the chart cell;
@@ -1455,6 +1653,16 @@ impl DanceGame {
     /// The award routine (`FUN_801d1af4`), for any dancer: the human's presses
     /// and the CPU dancers' auto-fed ones run through exactly this path.
     pub(super) fn award(&mut self, i: usize, dir: DanceDir) -> DanceEvent {
+        // The wipe's pause flag `DAT_801D5130` turns every press away at the
+        // routine's head (`0x801D1B38..0x801D1B68`), rivals' included.
+        if self.judging_closed {
+            return DanceEvent::Ignored;
+        }
+        // So does the load gate `DAT_801D5830` (`0x801D1B8C..0x801D1BA4`),
+        // which the lesson holds up while the Disco King talks.
+        if self.load_gate {
+            return DanceEvent::Ignored;
+        }
         let beat = self.beat_index();
         if self.dancers[i].locked() {
             return DanceEvent::Ignored;
@@ -1482,12 +1690,19 @@ impl DanceGame {
                     dc::MOVE_MISS_SQUARE
                 };
                 self.bind_move_clip(i, pair);
+                // The human's miss arms the lesson's scold
+                // (`sw s1,0x5140(v0)` at `0x801D2128`, `s1 == 1`).
+                if i == 0 {
+                    self.miss_window = 1;
+                }
             }
             DanceEvent::Sequence { weight, .. } => {
                 self.bind_move_clip(i, dc::move_sequence_pair(lane, circle));
                 // The human's closed chain fires the sequence-clear banner,
                 // which is three `FUN_801d3fd0` spawns into the part pool.
                 if i == 0 {
+                    // `sw v1,0(v0)` at `0x801D1F58` / `0x801D2098`.
+                    self.chain_flash = super::CHAIN_FLASH_FRAMES;
                     let b = good_banner_spawn(weight.min(0xFFFF) as u16);
                     self.spawn_sprite_part(&b.banner);
                     for s in &b.stars {
@@ -1599,6 +1814,7 @@ impl DanceGame {
         let left = d.triangles;
         // Whoever spent it (`sw v0,0x5144(v1)` at `0x801D1E38`).
         self.feedback = TRIANGLE_FEEDBACK_WINDOW;
+        self.feedback_shown = TRIANGLE_FEEDBACK_WINDOW;
         DanceEvent::Groovy {
             landed,
             points,

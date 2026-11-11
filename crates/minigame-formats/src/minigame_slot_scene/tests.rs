@@ -120,7 +120,8 @@ fn the_payout_caption_suppresses_leading_zeros_only() {
     );
 }
 
-/// The round pips light one per round still owed, left to right.
+/// The round pips light one per round still owed, from the right
+/// (`0x801D02B4..0x801D0324`).
 #[test]
 fn the_round_pips_count_the_rounds_still_owed() {
     let pips = |rounds: i32| {
@@ -135,7 +136,8 @@ fn the_round_pips_count_the_rounds_still_owed() {
         .collect::<Vec<_>>()
     };
     assert_eq!(pips(3), [true, true, true]);
-    assert_eq!(pips(1), [true, false, false]);
+    assert_eq!(pips(2), [false, true, true]);
+    assert_eq!(pips(1), [false, false, true]);
     assert_eq!(pips(0), [false, false, false]);
 }
 

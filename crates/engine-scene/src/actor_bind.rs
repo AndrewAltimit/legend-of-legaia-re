@@ -225,8 +225,11 @@ pub fn bind_actor_render(
 }
 
 /// The actor state retail leaves behind when the `0x9C`-byte allocation fails:
-/// kind reset to `0`, the caller's status word raised, `-1` returned.
+/// kind reset to `0`, the node bit left clear, the caller's status word
+/// raised, `-1` returned.
 pub fn on_render_node_alloc_failure(actor: &mut ActorBinding, status: &mut u32) -> i32 {
+    // The failure returns ahead of the `ori 0x800` at `0x800211C0`.
+    actor.flags &= !FLAG_NODE_READY;
     actor.kind = 0;
     *status |= ALLOC_FAIL_STATUS_BIT;
     -1

@@ -72,7 +72,7 @@ falling to 1x.
 | Enter, click on a *Controls* row | wait for the key that button goes on (Esc or a click calls it off) |
 | Ctrl+O | open the file dialog |
 | typing, Ctrl+V | enter or paste a disc path (Enter uses it, Esc clears it) |
-| Ctrl+C | copy the report of a game that stopped with an error, for a bug report |
+| Ctrl+C, a click on the help box | copy the report of a game that stopped with an error, for a bug report |
 | Esc | leave the Controls or Recent page, or quit |
 
 While a file is dragged over the window, the help box says what dropping it
@@ -314,7 +314,8 @@ moved) turns the disc card back into the picker with that reason. Otherwise
 the help box names the log, `legaia-engine-game.log` in the saves folder, and
 the reason the log gives - a panic's message, or the root of the error chain
 the engine exits with. A crash leaves no reason in the log, and none is
-invented from the lines before it. `Ctrl+C` then copies a report for a bug
+invented from the lines before it. `Ctrl+C`, or a click on the help box
+(its last line says so), then copies a report for a bug
 report: how the game ended, the reason and the end of the log, with your home
 folder cut out of it. A panic on any of the game's threads (the
 audio mixer inside the sound callback, the controller reader) ends the
@@ -486,7 +487,8 @@ GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
 folder; the page's box is a text field, a window has none), and *Start a
 battle here*, the scene's first encounter formation through the normal
 transition (`--battle first`, the page's button of the same name). The list scrolls
-under the cursor. The play page has the debug camera and the diagnostics bar as
+under the cursor, with a bar on the plate's edge showing where the view is, as
+the settings page has. The play page has the debug camera and the diagnostics bar as
 boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key

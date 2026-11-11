@@ -35,6 +35,8 @@ pub fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
         icon_money: a.band_icon_money(),
         label_time: a.band_label_time(),
         label_coin: a.band_label_coin(),
+        label_max_hp: a.band_label_max_hp(),
+        label_max_mp: a.band_label_max_mp(),
         gauge_cap: a.band_gauge_cap(),
         gauge_trough: a.band_gauge_trough(),
         gauge_box: a.band_gauge_box(),
@@ -92,7 +94,7 @@ pub fn name_entry_view<'a>(
     frame: u64,
     prompts: Option<&'a legaia_ui_formats::name_entry_prompts::NameEntryPrompts>,
 ) -> NameEntryView<'a> {
-    use legaia_engine_menus::name_entry::{GRID, NameEntryState, caret_on};
+    use legaia_engine_menus::name_entry::{GRID, caret_on};
     let (grid_cursor, control_cursor) = entry.cursor_cells();
     NameEntryView {
         grid_rows: &GRID,
@@ -100,10 +102,12 @@ pub fn name_entry_view<'a>(
         default_name: &entry.default_name,
         grid_cursor,
         control_cursor,
-        confirming: entry.state == NameEntryState::Confirm,
+        confirming: entry.confirm_shape,
         confirm_yes: entry.confirm_yes,
         caret_on: caret_on(frame),
         prompts,
+        char_index: entry.char_index,
+        line: entry.line as u8,
     }
 }
 

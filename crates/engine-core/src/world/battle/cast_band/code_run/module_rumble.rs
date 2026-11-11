@@ -52,7 +52,9 @@ impl World {
                     }
                 }
                 RumbleStore::OzmaSpray => {
-                    if on {
+                    // The arm runs once a battle frame, so its two words
+                    // are drawn on the tick that opens one.
+                    if on && self.module_tick_opens_pass() {
                         let r0 = self.next_rand();
                         let r1 = self.next_rand();
                         self.rumble.battle_write(ozma_spray(r0, r1));

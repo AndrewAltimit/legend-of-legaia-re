@@ -180,6 +180,28 @@ fn pack_tsb_semi_packs_bit15_only() {
     assert_eq!(pack_tsb_semi(0x01FF, true) & 0x01FF, 0x01FF);
 }
 
+/// A Gouraud-shaped group is tagged for the instrument that dithers by packet
+/// kind, a flat quad for the one that walks it, and on-disc bits under either
+/// tag are dropped.
+#[test]
+fn the_tsb_word_carries_the_packet_shape() {
+    use crate::descriptor::PacketShape as S;
+    assert_eq!(
+        shape_tsb_word(0x001A, false, Some(S::Gt3)),
+        0x001A | TSB_GOURAUD_BIT
+    );
+    assert_eq!(
+        shape_tsb_word(0x001A, true, Some(S::Gt4)),
+        0x801A | TSB_GOURAUD_BIT
+    );
+    assert_eq!(
+        shape_tsb_word(0x001A, false, Some(S::Ft4)),
+        0x001A | TSB_FLAT_QUAD_BIT
+    );
+    assert_eq!(shape_tsb_word(0x441A, false, Some(S::Ft3)), 0x001A);
+    assert_eq!(shape_tsb_word(0x441A, false, None), 0x001A);
+}
+
 #[test]
 fn empty_object_produces_empty_mesh() {
     let mut buf = Vec::new();

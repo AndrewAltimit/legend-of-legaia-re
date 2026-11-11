@@ -16,6 +16,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `scene_bundle` | The per-scene asset table inside a loaded `Scene`, walked into typed sub-assets, and the VDF buffer lookups (`find_vdf_buffer`, `vdf_entry`). See [`scene-bundles.md`](../../docs/formats/scene-bundles.md). |
 | `scene_assets` | `SceneAssets`: the typed per-scene snapshot (MES, SEQ / VAB stream entries, event scripts). |
 | `scene_resources` | `SceneResources`: a scene's TMD pools, ANM bundle and software VRAM, built per load kind (`build_targeted`). |
+| `actor_bind` | The actor render binding `FUN_80020F88`: the mesh-pool index off the placement record, the kind re-pick, and the render node the draw path walks. |
 | `model_bank` | The retail model pool `DAT_8007C018` (one slot = `GlobalTmd`) and the id space a placement's model byte and the scripted-motion VM's op `0x0E` share. |
 | `npc_catalog` | Every actor a scene's MAN places, resolved against a built `SceneResources` (and, for the play shape, the global model pool), with its conversation tree, plus the scene's ANM bundle lookup (`scene_anm_bundle`). |
 | `field_env` | The environment-geometry draw resolver: which `SceneResources` TMD each `.MAP` placement or terrain tile draws and where, object binds, prop animation, floor anchors. |

@@ -85,7 +85,7 @@ stateDiagram-v2
 | `7` | Decrements `DAT_801d513c`; at 0 jumps to `10`. |
 | `10` (`0xa`) | **Main play loop.** The beat clock advances, the song-end test runs. |
 | `11` (`0xb`) | Finish countdown: spawns `3`, `2`, `1` and `FINISH!` as four sprite parts at once and advances. |
-| `12` (`0xc`) | Result wipe: ramps `DAT_801d515c`, raises the pause flag `DAT_801d5130` past a threshold, then jumps to `0x14`. |
+| `12` (`0xc`) | Result wipe: ramps `DAT_801d515c` by three frame steps a frame, raises the pause flag `DAT_801d5130` at `0x349` (the award routine judges nothing from then on, rivals included), then jumps to `0x14` at `0x489`. |
 | `0x14` (20) | Results: copies the scores to display RAM, grades the run, clears the win flag on a loss, and tears down through `FUN_801D414C` once the fade reaches `0x100`. |
 
 A dev shortcut sits ahead of the switch: with `_DAT_8007b9b0` non-zero, pad `0x100` forces state `0x14` with the human score at `999`.
@@ -264,7 +264,9 @@ The feed sits inside the award routine, so its schedule stands still while a mov
 
 All of the Disco King's move clips are his own loop, so a judged press holds him for no time.
 
-`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`.
+`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`. A second test runs the state machine `FUN_801cf470` itself from state `6` to the results, the beat clock, the song-end test, the finale and the wipe included, at the hall's delta of `3`; its hands-off qualifier passes through the retail capture's tally (`295` / `280` for the rivals at song timer `19800`).
+
+**Order within a frame.** The state's arm runs ahead of the tail's clock, and the song-end test sits in the tail (`0x801D00B0..0x801D010C`). The frame that reaches the limit only stores state `0xB`; that state's arm spawns the countdown on the next frame, and state `0xC` first adds to the wipe on the one after. The frame state `0xC` hands over to `0x14` is outside the band the tail clocks, so the beat phase stands still on it while the dancers tick once more.
 
 ## The setumei (how-to) tutorial script (`FUN_801d0750`)
 
@@ -278,15 +280,19 @@ Mode 2 is driven by a dedicated actor script: the Disco King's per-frame state m
 |---|---|
 | opening prompt | Yes / no cursor `DAT_801d607c`, moved by **Left / Right** (`0x1000` / `0x4000`) although the options are stacked at y `0x98` / `0xa8`. The cursor row is masked to one bit and confirms to state `1` (yes) or state `5` (no thanks) - the literal-store tail. |
 | pages 1..4 | Text pages explaining the buttons. State `5`'s `+2` hops the acknowledgement at `6`, which only the "no thanks" path reaches. |
-| case `7` | "Try Square / Circle now": probes the human's press with two direct calls `FUN_801d1960(0, gauge/1000, 0x100)` / `0x101` and praises a correct one. Ends when the progress accumulator `DAT_801d5150` reaches `900`. |
+| case `7` | "Try Square / Circle now": clears the score and the gauge every frame, and asks the chart with two probe calls `FUN_801d1960(0, gauge/1000, 0x100)` / `0x101` whether this beat's cell is a Square or a Circle, printing that button's call when it is. A missed press (`DAT_801d5140`, armed by the award routine) puts a two-line scold up instead. Ends when the frames danced `DAT_801d5150` reach `900`. |
 | level page | "The level rises automatically": arms the load gate (`DAT_801d5830 = 1`, `DAT_801d5334 = 2`). |
 | groovy-move lesson | Text. |
-| case `0xd` | Groovy-move practice: reads the triangle-landed flag `DAT_801d570c` to print praise or a timing scold, for the duration of the feedback window `DAT_801d5144`. Shares the `900` gate. |
-| cases `0xc` / `0x11` | Countdown holds on the timer `DAT_801d6080` that clear the beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) before advancing. |
+| case `0xd` | Groovy-move practice: clears the score every frame, reads the triangle-landed flag `DAT_801d570c` to print praise or a timing scold for the duration of the feedback window `DAT_801d5144`, and prints the combo call while the beat track's flash `DAT_801d512c` runs. Shares the `900` gate, and raises the load gate when it passes. |
+| cases `0xc` / `0x11` | Countdown holds on the timer `DAT_801d6080`, which the page before each seeds. When it runs out they clear the beat clock (`DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`) and park the hall on state `2`; `0xc` also restocks three triangles, `0x11` drops the song hold and the load gate and releases the song. |
 
-**Timers.** Case `7`'s scold window `DAT_801d5140` counts **up** and snaps back to zero past `0x20` (a blink). Case `0xd`'s feedback window `DAT_801d5144` counts **down** to a floor of zero (a decay). Both countdown holds seed `DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run one frame longer than the seed reads.
+**Timers.** Case `7`'s scold window `DAT_801d5140` counts **up** and snaps back to zero past `0x20` (a blink). Case `0xd`'s feedback window `DAT_801d5144` counts **down** to a floor of zero (a decay), and that case is its only decay: outside the lesson a spent triangle leaves the word at `0x3c` until the next spend. Both countdown holds seed `DAT_801d6080 = 0x3c` and advance only once it goes **negative**, so they run one frame longer than the seed reads.
 
-**Port.** The script's output is Sony dialogue, so only its shape is ported: `legaia_engine_minigames::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`) carries the step classification, the option prompt, the advance tails and the two free-dance steps. `DanceTutorial` is the actor as one advancing object - one `step` per frame, fed the live session's score, feedback window and combo latch. Hosts draw placeholder captions at the retail line positions; the strings stay unread.
+**The gate is time, not points.** `DAT_801d5150` is raised by the frame step in the hall's state `10` and by nothing else, and both free-dance cases clear the score on every frame they run. A lesson step therefore ends after `900` units of dancing whatever the player presses.
+
+**The hall around it.** The opening prompt raises the song hold `DAT_801d5138`, which keeps the song timer `DAT_801d5820` still for the whole lesson. The pages at states `8`, `9` and `0xe` raise the load gate `DAT_801d5830`; with it up the award routine takes no press and the hall waits on state `2`. Four advances fade the song through `FUN_80062004` (to a half of the BGM volume from state `0xb`, a quarter from `7`, `0xe` and `0x10`).
+
+**Port.** `legaia_engine_minigames::dance_tutorial` (`crates/engine-minigames/src/dance_tutorial.rs`). `DanceTutorial::step` is the routine over the hall's words (`TutorialHall`), and the differential `dance_tutorial` runs it against `FUN_801d0750` whole: the state, every stored word, the printed lines by table address, the cursor, the cue, the probes and the music calls. `step_game` runs it over a live `DanceGame`, which holds the song hold, the load gate, the frames danced and both windows. The script's lines are Sony dialogue and stay unread: a frame names each by the address of its pointer word, and hosts draw placeholder captions at the retail positions.
 
 ## Dancers
 
@@ -418,7 +424,7 @@ Per cell, both passes:
 
 ### Step-marker tiles
 
-The marker lookup is `FUN_801d3ec0(1, x, z)`: kind **1** of the `.MAP` region block. That is the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger record the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`) resolves, scanned primary-then-fallback the same way - not a marker-specific format. See [`field-map.md`](../formats/field-map.md) and [`encounter.md`](../formats/encounter.md); the engine decodes it as `field_regions::TileTrigger`.
+The marker lookup is `FUN_801d3ec0(1, x + rec[6], z + rec[7])` - the neighbour cell step 2 probed, not the spawn cell (`0x801d2ba0..0x801d2be0`): kind **1** of the `.MAP` region block. That is the same 4-byte `[tile_x, tile_z, record, gate]` tile-trigger record the field's own per-tile lookup (`FUN_801D5630` / `FUN_801D5AE0`) resolves, scanned primary-then-fallback the same way - not a marker-specific format. See [`field-map.md`](../formats/field-map.md) and [`encounter.md`](../formats/encounter.md); the engine decodes it as `field_regions::TileTrigger`.
 
 The clip index is the record's `record` byte plus one:
 
@@ -672,7 +678,7 @@ The ABR rate folds into the texpage attribute as `tpage + abr * 0x20`, so `abr =
 | score boxes (widget 8) | centred at `(64, 20)` / `(160, 20)` / `(256, 20)`; digit bases `-0x20` / `0x40` / `0xA0`, 8 slots stepping 16 |
 | gauge | `Lv.` at `(88, 192)`, level digit at `(96, 192)` |
 | beat track | anchored at `(120, 192)`; arrow at `(128, 184)`; caps at `x-4` / `x+84`; 12 body tiles stepping 8; stock markers at `y+16` |
-| scrolling notes | `x = 120 + i*16 - (phase*16/0x119 + 5) - 4`, under a draw area of `[x, x+0x50)` |
+| scrolling notes | `x = 120 + i*16 - (phase*16/0x119 + 5) - 4`, under a draw area of `x ..= x+0x50` |
 | banner spawns (`FUN_801d3fd0`) | `(160, 120)` for `READY...` / `GO!` / the finish countdown; `(160, 128)` for `Miss!`; `(160, 144)` for the rating banners, star sparkles at `±0x38` / `±0x50` |
 
 ### The widget table's two pages
@@ -719,7 +725,9 @@ Mode `3` skips both side boxes and both side digit runs. The default arm (a mode
 
 **Draw order.** Every widget quad links into one ordering-table bucket through `AddPrim` (`jal 0x8003d2c4` at `0x801D32D8` in `FUN_801d2f38`), which prepends. The digit runs are emitted first (`0x801D23D0..0x801D2428`) and so draw last, over the box frames' opaque interiors (emitted at `0x801D2440..0x801D247C`).
 
-**Beat track** (`FUN_801d2524`). The body and notes draw under a draw area of `[x, x + 0x50)` (the `E3` / `E4` pair at `0x801D28E8..0x801D2974`); the caps, arrow and stock markers draw unclipped. The body is twelve tiles of widget `0x1E`; the eight notes are widget `sym + 0xD` (`addiu a2, a2, 0xd` at `0x801D289C`) for the chart cell of beat `(beat + i - 1) & 31`. Body and caps flash to CLUT `0x7D0D` on `beat & 7 == 3` (`beat & 3` at level `0`) inside the first `0x46` phase units (`0x801D2620..0x801D266C`). The stock markers read the triangle stock `DAT_801d534c` directly.
+**Beat track** (`FUN_801d2524`). The body and notes draw under a draw area of columns `x` through `x + 0x50` inclusive (the `E3` / `E4` pair at `0x801D28E8..0x801D2974`; the `E4` corner is the last column drawn); the caps, arrow and stock markers draw unclipped. The body is twelve tiles of widget `0x1E`; the eight notes are widget `sym + 0xD` (`addiu a2, a2, 0xd` at `0x801D289C`) for the chart cell of beat `(beat + i - 1) & 31`. Body and caps flash to CLUT `0x7D0D` on `beat & 7 == 3` (`beat & 3` at level `0`) inside the first `0x46` phase units (`0x801D2620..0x801D266C`). The stock markers read the triangle stock `DAT_801d534c` directly.
+
+The second note draws at brightness `0xFF` while the chain flash `DAT_801d558c` runs: the award routine arms it at `0x10` on a closed chain, each track draw steps it down by twice the frame step, and every track reads the human's word. A flash beat also arms `DAT_801d512c = 0x10`, which the lesson reads.
 
 Port: `dance::{dance_hud_draws, dance_score_box_slots}` behind `DanceGame::hud_draws`; `DanceGame::hud_draw_quads` keeps the retail emission order for the port's LIFO screen-primitive pass, and `DanceGame::beat_track_quads` applies the draw area by cropping. The second note's `0xFF` hit-flash pass (`DAT_801D558C`) is the one part not modelled: every note draws at `0x80`.
 
@@ -759,6 +767,7 @@ The pad is still read through the countdown, at the [finale tier](#the-triangle-
 
 **Port.**
 
+- `DanceGame::advance_vsync` is the hosts' tick: one game frame every third vsync on a delta of three (`HALL_FRAME_STEP`), as the hall runs, with a press held for the game frame that follows it. The judge therefore reads the beat phase in steps of thirty and a rival's feed takes one turn a game frame. `World::enter_dance` starts the song the mode names through `dance::song_loader_index` ([the BGM pick](#the-bgm-pick)), free play's counter kept in `MinigameState::dance_free_play_song`.
 - `dance::CountIn` runs states 3 to 5 (`COUNTIN_READY_EXIT`, `COUNTIN_GO_STEP`, `COUNTIN_START_CUE`). `World::enter_dance` arms it and the world's dance tick plays it out, holding `DanceGame::advance` off until the `GO!` fade ends. All three surfaces - the native window, the play page and the minigames page (`dance_countin_step`) - draw READY then `GO!` (`dance_countin_prims`, `dance_go_prims`) and fire `0x200` then `0x201` off that one kernel.
 - `dance::FinishCountdown` runs states `0xB` / `0xC` from `DanceGame::advance` once the song is over. The four programs are read out of the overlay and stepped by the port's move VM under `FUN_80021DF4`'s own tick: the `+0x78` rate step before the VM (`0x80022B4C..0x80022B7C`), the wait-timer decrement, and the clamp after it (`0x80022BC0..0x80022BEC`). Op `0x20 2` is the [sprite hook](#the-sprite-part-emit-dispatch) and op `0x1D` the cue, so a part draws exactly on the ticks its program calls the hook. The parts join `DanceGame::sprite_part_emits`.
 - `DanceGame::finished` - the song over and the state `0xC` wipe past `0x489` - is when the world restores the interrupted mode. The disc-gated `dance_minigame_real` test pins `3, 2, 1, FINISH!` with cues `0x209, 0x208, 0x207, 0x206` and the wipe at 384 vsyncs.
@@ -816,7 +825,7 @@ Globals live in the overlay's data region around `0x801d5xxx` / `0x801d6xxx`. Pe
 | `DAT_801d581c` | u32 | **Beat phase counter**; `% 0x119` = intra-beat phase, `/ 0x119` = beat index; wraps at `0x2320` |
 | `DAT_801d5820` | u32 | **Total-song timer**; song ends at `0x41dc` / `0x64fc` |
 | `DAT_801d5824` | u32 | Secondary bar counter (wraps `0x464`) |
-| `DAT_801d5138` | u32 | Beat-clock hold flag: freezes the `DAT_801d5820` advance when set *(I)* |
+| `DAT_801d5138` | u32 | Song hold: freezes the `DAT_801d5820` advance when set; raised by the lesson's prompt, dropped by its last countdown |
 | `DAT_801d5338` / `DAT_801d533c` | u32 | Camera key / segment timer |
 | `DAT_801d53cc[]` | u32×3 | **Per-dancer score**, clamped to `999`. `[0]` is the human, and the "dance points" cheat anchor `0x801d53cc` ([`cheats.md`](../reference/cheats.md)) |
 | `DAT_801d544c[]` | u32×3 | **Groove gauge**, clamped `[0,2999]`; `/1000` selects the chart row. Never lowered |
@@ -832,7 +841,7 @@ Globals live in the overlay's data region around `0x801d5xxx` / `0x801d6xxx`. Pe
 | `DAT_801d570c[]` | u32×3 | Last triangle landed on a combo slot (drives the banner and tutorial caption) |
 | `DAT_801d574c[]` | u32×3 | CPU triangle-schedule cursor (index into `DAT_801d41e4`'s kind row) |
 | `DAT_801d578c[]` | u32×3 | CPU combo slots banked since its last triangle |
-| `DAT_801d5144` | u32 | Triangle feedback window (`0x3c`, `-frame_delta`) |
+| `DAT_801d5144` | u32 | Triangle feedback window (`0x3c`; stepped down only by the lesson's case `0xd`) |
 | `DAT_801d5140` / `DAT_801d5150` / `DAT_801d6080` / `DAT_801d607c` | u32 | Tutorial scold blink, progress accumulator, hold timer, prompt cursor |
 | `DAT_801d6088` | u32 | Gauge award staged by the judge on a closed chain (`0xfa`) |
 | `DAT_801d608c` | u32 | Bonus points staged by the judge (accuracy-weighted for the human) |
@@ -902,7 +911,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 
 **Rules.** `DanceGame::press` returns the full event (Miss / Hit / Sequence with its points / Groovy with its landed flag, lock frames and remaining stock / NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side effects. `judge_press` folds it to a three-way Miss / Hit / Sequence result. `advance` steps the clock and runs the competitors' auto-fed presses through the same award path; `dancer_score(i)` / `dancer_triangles(i)` expose their runs.
 
-**Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the how-to mode also forces the short song. `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
+**Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the mode picks the song's length as well, the short song for the how-to and the long one for the other three, since the song-end test reads the mode word alone (`0x801D00D4..0x801D00FC`). `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
 
 **Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `engine-ui::dance::dance_tutorial_draws_for`.
 

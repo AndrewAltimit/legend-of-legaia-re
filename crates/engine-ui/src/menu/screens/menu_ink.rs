@@ -106,7 +106,7 @@ pub fn menu_ink_color(staging: u8) -> [f32; 4] {
 /// halfword is non-zero - see [`menu_hp_ink_with_status`], which this
 /// function is the `status == 0` case of.
 ///
-/// PORT: FUN_800349EC - menu HP ink tier (record `+0x104`/`+0x106`
+/// REF: FUN_800349EC - menu HP ink tier (record `+0x104`/`+0x106`
 /// thresholds at max/4 and max/2).
 pub fn menu_hp_ink(hp: u16, hp_max: u16) -> [f32; 4] {
     menu_hp_ink_with_status(hp, hp_max, 0)
@@ -240,8 +240,12 @@ mod health_tier_ink_tests {
             xp_to_next: 200,
             hp: 180,
             hp_max: 180,
+
+            hp_base: 180,
             mp: 10,
             mp_max: 12,
+
+            mp_base: 12,
             ap: 40,
             ap_max: 100,
             stat_rows: &[],

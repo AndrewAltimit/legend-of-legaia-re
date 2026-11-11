@@ -119,7 +119,6 @@ impl World {
         // world is what gives the **door-warp** entry a count-in on both
         // hosts. Previously only the native debug launcher ran one, from a
         // driver of its own.
-        let long_song = game.song_len() == legaia_engine_minigames::dance::SONG_LEN_LONG;
         let how_to = game.mode() == legaia_engine_minigames::dance::DanceMode::HowTo;
         // State 1's flag writes, after it has read the mode off them: the
         // three one-shot mode requests are cleared (`0x801CF950..0x801CF964`;
@@ -137,21 +136,28 @@ impl World {
         // The run raises and draws the saved best `_DAT_80084464` in place;
         // it starts from the save's.
         let mut game = game;
+        let mode = game.mode();
         game.set_best_score(self.minigames.dance_best);
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         self.minigames.dance_countin_banner = None;
         self.minigames.dance_countin_go = None;
-        // The dance overlay loads one of two mode-selected chart loops; the
-        // exact mode -> song arm is unpinned, so it is approximated by song
-        // length. Held until the count-in clears, which is when retail's
-        // beat clock starts.
-        self.minigames.dance_pending_bgm = Some(if long_song {
-            legaia_engine_mode::minigame_entry::DANCE_LONG_SONG_BGM_ID
-        } else {
-            legaia_engine_mode::minigame_entry::DANCE_SHORT_SONG_BGM_ID
-        });
+        // State 3 streams the song the mode names, and free play one of
+        // three by the save's counter, which it then bumps
+        // (`0x801CFAC0..0x801CFBA0`). Held until the count-in clears, which
+        // is when retail's beat clock starts.
+        let counter = self.minigames.dance_free_play_song;
+        let loader = legaia_engine_minigames::dance::song_loader_index(mode, counter);
+        if mode == legaia_engine_minigames::dance::DanceMode::FreePlay {
+            self.minigames.dance_free_play_song =
+                legaia_engine_minigames::dance::next_free_play_song(counter);
+        }
+        self.minigames.dance_pending_bgm =
+            legaia_engine_system::music_labels::sound_test_index_for_prot_entry(
+                u32::from(loader) - 2,
+            )
+            .map(|i| 2000 + i as u16);
         self.minigames.dance_tutorial =
             how_to.then(legaia_engine_minigames::dance_tutorial::DanceTutorial::new);
         self.minigames.dance_tutorial_frame = None;
@@ -249,6 +255,17 @@ impl World {
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
         // below-10 state band. The song starts on the frame it clears.
+        // The lesson's load gate holds the hall on state `2`, ahead of the
+        // count-in (`0x801CFA1C`).
+        let gated = self
+            .minigames
+            .dance_tutorial
+            .as_ref()
+            .is_some_and(|t| t.hall.load_gate != 0);
+        if gated && self.minigames.dance_countin.is_some() {
+            self.step_dance_tutorial();
+            return;
+        }
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
             self.minigames.dance_countin_banner = step.banner;
@@ -285,7 +302,7 @@ impl World {
         let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
             .into_iter()
             .find(|d| pressed & d.pad_bit() != 0);
-        if let Some(event) = game.advance_pressing(1, dir) {
+        if let Some(event) = game.advance_vsync(dir) {
             self.minigames.dance_last_judge = Some(event.judge());
         }
         let finished = game.finished();
@@ -383,23 +400,19 @@ impl World {
             self.minigames.dance_tutorial_frame = None;
             return;
         }
-        let (score, feedback_frames, combo_hit) = self
-            .minigames
-            .dance
-            .as_ref()
-            .map(|g| {
-                (
-                    g.score() as i32,
-                    g.feedback_frames() as i32,
-                    matches!(g.triangle_feedback(), Some(true)),
-                )
-            })
-            .unwrap_or((0, 0, false));
         let pressed = (self.input.pad() & !self.input.pad_prev()).rotate_right(8);
-        let Some(tut) = self.minigames.dance_tutorial.as_mut() else {
+        let (Some(tut), Some(game)) = (
+            self.minigames.dance_tutorial.as_mut(),
+            self.minigames.dance.as_mut(),
+        ) else {
             return;
         };
-        let frame = tut.step(pressed, score, feedback_frames, combo_hit, 1);
+        let frame = tut.step_game(game, pressed, 1);
+        // The hall goes back to its count-in (`DAT_801D5334 = 2`); the
+        // count-in itself waits on the load gate.
+        if frame.restart && self.minigames.dance_countin.is_none() {
+            self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
+        }
         if let Some(cue) = frame.cue {
             // `FUN_801d0750` stores its cursor / confirm blips straight into
             // ring slot 0 (`sh id, 0x8007B6D8`).

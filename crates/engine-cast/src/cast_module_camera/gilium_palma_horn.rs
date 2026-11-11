@@ -365,9 +365,12 @@ pub fn palma_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             let origin = palma_pan_origin(st, st.countdown.0);
             st.countdown.0 = 384 * S;
             st.creature = Some(ModuleSeat::default());
-            with_drift(
+            // The origin is a store: a pass that leaves the arm on its first
+            // tick lands the globals there once, not once a tick.
+            with_stored_drift(
                 cut([0x100, 0x600], [0, 0xC8, 0x1000], [0; 3], 0x160),
                 origin,
+                None,
             )
         }
         5 => {

@@ -15,6 +15,15 @@ pub struct EncounterState {
     /// scene's draw count re-dealt the battle (`player_steal_skeleton_banner`
     /// lost its phase to a dolk ambient-install fix).
     pub rng_hold: Option<u32>,
+    /// A tooling knob, not retail state: the monster ids of the next fight
+    /// in seat order, as a retail capture's formation cells
+    /// `DAT_8007BD0C..0F` hold them. Battle init's draws are already behind
+    /// such a capture - the species-order roll rewrote those cells, and each
+    /// body's opening clip phase is in its anim node - so an entry that finds
+    /// the pin seats this order and draws nothing for either, and the pinned
+    /// stream ([`Self::rng_hold`]) is the stream as init left it. Taken by
+    /// the entry it pins; a played fight never sets it.
+    pub seat_pin: Option<Vec<u16>>,
     /// Pending scripted-encounter install (field-VM bare arm-encounter op
     /// `0x37`/`0x41`). When that op runs and [`EncounterState::scripted_armed`]
     /// is set, the host records the bounded record window overlaying the opcode
@@ -104,6 +113,7 @@ impl EncounterState {
     pub fn new() -> Self {
         Self {
             rng_hold: None,
+            seat_pin: None,
             pending_scripted: None,
             scripted_armed: false,
             scripted_formation_pending: false,

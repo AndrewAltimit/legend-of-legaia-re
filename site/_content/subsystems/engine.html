@@ -379,7 +379,7 @@
   <ul class="bullets">
     <li><strong>Seating.</strong> The cold-boot spawn is authored for <code>town01</code> only; every other scene expects a door warp. A host that drops the player straight into a scene gets a resolved seat: the retail one if it stands inside the scene&rsquo;s largest walkable region, otherwise a door-arrival tile or the region&rsquo;s centroid.</li>
     <li><strong>Pass-through scenes.</strong> A scene can be a passage rather than a place: every arrival lands on a walk-on trigger that plays a beat and leaves the scene, and retail never hands the player control there. The scene host recognises that shape from the disc and seats a picked visit on the arrival itself, so the first tick plays the beat. Zora&rsquo;s Floating Castle&rsquo;s second form (<code>taiku2</code>) is the one such scene: its pack replaces every room the beat never frames with a three-vertex stub, so the castle to walk is <code>taiku</code>.</li>
-    <li><strong>Framing.</strong> Both hosts run the engine&rsquo;s retail follow camera and neither adds a cull of its own - what drops out of a frame is what retail drops, the <a href="renderer.html#no-culling">visible-tile crop and the actor cull</a> at retail framing; a wall between the lens and the player is handled by the see-through-walls fade.</li>
+    <li><strong>Framing.</strong> Both hosts run the engine&rsquo;s retail follow camera and neither adds a cull of its own - what drops out of a frame is what retail drops, the <a href="renderer.html#no-culling">visible-tile crop and the actor cull</a> at retail framing, which hold under a cutscene&rsquo;s own shot as retail&rsquo;s do; a wall between the lens and the player is handled by the see-through-walls fade.</li>
   </ul>
 </section>
 

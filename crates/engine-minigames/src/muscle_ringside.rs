@@ -529,6 +529,28 @@ impl FirstVisitHub {
         }
     }
 
+    /// The hub's counters as retail holds them, for the differential:
+    /// `0x801D1A7C`, `0x801D1A80`, `0x801D1A84`, `0x801D1A88`, `0x801D1A70`
+    /// and `0x801D1A8C`.
+    #[doc(hidden)]
+    pub fn words(&self) -> [i32; 6] {
+        [
+            self.backdrop,
+            self.intro,
+            self.card,
+            self.scale,
+            self.hold,
+            self.card_hold,
+        ]
+    }
+
+    /// Seat the frames left on the in-flight announcer line, as the
+    /// differential scripts the drive.
+    #[doc(hidden)]
+    pub fn seat_xa_busy(&mut self, frames: i32) {
+        self.xa_busy = frames;
+    }
+
     /// Which arm the hub is in.
     pub fn arm(&self) -> FirstVisitArm {
         self.arm

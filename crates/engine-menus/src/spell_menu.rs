@@ -182,7 +182,6 @@ pub struct SpellMenuInput {
     pub right: bool,
     pub cross: bool,
     pub circle: bool,
-    pub start: bool,
 }
 
 impl SpellMenuInput {
@@ -194,7 +193,6 @@ impl SpellMenuInput {
             right: pressed & PadButton::Right.mask() != 0,
             cross: pressed & PadButton::Cross.mask() != 0,
             circle: pressed & PadButton::Circle.mask() != 0,
-            start: pressed & PadButton::Start.mask() != 0,
         }
     }
 }
@@ -496,11 +494,9 @@ impl SpellMenuSession {
                 // Retail's caster picker is the list kernel `FUN_801D688C`
                 // over the party count with wrap (`0x801D8FF0`): confirm and
                 // cancel are read before any move, and only Up / Down move.
-                if input.start {
-                    self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cancelled);
-                    events.push(SpellMenuEvent::Cancelled);
-                    return events;
-                }
+                // Start is not read: the kernel tests the edge word against
+                // the two configured masks alone (`0x801D68B0..0x801D68E4`),
+                // and the handler `FUN_801D8F10` reads no pad of its own.
                 let mut cell = u32::from(cursor);
                 let nav = Self::nav(&mut cell, self.party.len(), input);
                 let new_cursor = cell as u8;

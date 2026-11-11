@@ -159,7 +159,7 @@ scene when it ends; press the same key again to quit.
 |---|---|---|---|---|
 | `K` / `U` | Noa dance rhythm (`U` = the how-to dance with the Disco King tutorial) | `legaia_engine_minigames::dance` | dance overlay PROT 0980 | Square/Circle/Triangle are the three arrows (the retail pad bits) |
 | `L` | Fishing | `legaia_engine_fishing::fishing` | fishing overlay PROT 0972 | Cross casts then reels, Square is the second reel button; `P` opens the point-exchange prize list |
-| `O` | Casino slot machine | `legaia_engine_minigames::slot_machine` | slot overlay PROT 0975 | Cross spins / stops each reel / collects |
+| `O` | Casino slot machine | `legaia_engine_minigames::slot_machine` | slot overlay PROT 0975 | Square / Cross / Circle spin and stop the reels / Cross collects |
 | `B` | Baka Fighter duel | `legaia_engine_minigames::baka_fighter` | Baka Fighter overlay PROT 0976 | Square / Circle / Cross throw the three rock-paper-scissors attacks (the special is the auto-finisher, no button); Left / Right pick NEXT GAME / PAY OUT after a win |
 | `M` | Muscle Dome contest | `legaia_engine_minigames::muscle_dome` (the leg session is `legaia_engine_battle_menus::muscle_dome_session`) | hand tables from battle overlay PROT 0898; card costs from the lead's player-file swing records | Left/Right/Up/Down queue the four direction commands under the AP budget, Cross confirms/continues |
 

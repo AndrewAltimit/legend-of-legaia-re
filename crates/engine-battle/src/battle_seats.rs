@@ -106,6 +106,48 @@ pub fn monster_seat(monster_count: u8, slot: usize, alt: bool) -> Seat {
     table[row][slot.min(3)]
 }
 
+/// The species-order rebuild of the four formation cells `DAT_8007BD0C..0F`,
+/// which battle init runs before any monster streams.
+///
+/// The walk counts copies of the first cell's species and, over cells `1..4`,
+/// the cells of any other species - keeping the **last** such id in one
+/// register. With no second species nothing is drawn and nothing moves.
+/// Otherwise one `rand()` is drawn (`jal 0x80056798` at `0x80055CDC`), and on
+/// an odd draw the cells are rewritten as the other species' count of that
+/// last id followed by the first species' copies. For two species that is the
+/// same formation with the other species in front; a third species is lost
+/// (`[a, b, c]` becomes `[c, c, a]`). Empty cells (`0`) are skipped by the
+/// count, so the rewrite also closes any gap.
+///
+/// Returns whether the cells were rewritten.
+///
+/// PORT: FUN_80055B6C (`0x80055C7C..0x80055D2C`, the species-order rebuild)
+pub fn rebuild_species_order<T: Copy + PartialEq + Default>(
+    cells: &mut [T; 4],
+    rand: impl FnOnce() -> u32,
+) -> bool {
+    let empty = T::default();
+    let first = cells[0];
+    let (mut first_count, mut other_count, mut other) = (1usize, 0usize, empty);
+    for &c in &cells[1..] {
+        if c == first {
+            first_count += 1;
+        } else if c != empty {
+            other = c;
+            other_count += 1;
+        }
+    }
+    if other_count == 0 || rand() & 1 == 0 {
+        return false;
+    }
+    // `first_count + other_count` is at most four: each of cells `1..4` is
+    // counted once at most.
+    for (i, c) in cells.iter_mut().take(first_count + other_count).enumerate() {
+        *c = if i < other_count { other } else { first };
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

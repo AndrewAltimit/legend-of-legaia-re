@@ -401,7 +401,10 @@ pub(super) fn cross_over_inner(
                         let mut left = None;
                         if again {
                             let mut log = Vec::new();
-                            left = play_beats(session, &mut log)
+                            CROSSING_BEATS.with(|c| c.set(true));
+                            let played = play_beats(session, &mut log);
+                            CROSSING_BEATS.with(|c| c.set(false));
+                            left = played
                                 .map_err(|b| format!("in crossing {x}, playing beats: {b}"))?;
                         }
                         match left {
@@ -425,6 +428,23 @@ pub(super) fn cross_over_inner(
                                 // walk there stalled: any door.
                                 if wanted.is_some() && scene_name(session) == x && r.is_err() {
                                     r = pad_hop(session, graph, cur);
+                                }
+                                // Still shut in: the levers in reach first,
+                                // then the walk again.
+                                if r.is_err()
+                                    && scene_name(session) == x
+                                    && walking(session)
+                                    && !opener_beats_here(session).is_empty()
+                                {
+                                    match press_switches(session) {
+                                        Ok(Some(s)) => r = Ok(s),
+                                        Ok(None) => {
+                                            WANT_LANDING.with(|w| *w.borrow_mut() = wanted);
+                                            r = pad_hop(session, graph, cur);
+                                            WANT_LANDING.with(|w| *w.borrow_mut() = None);
+                                        }
+                                        Err(e) => r = Err(e),
+                                    }
                                 }
                                 FAR_DOOR.with(|f| f.set(false));
                                 // A door whose record runs a script before

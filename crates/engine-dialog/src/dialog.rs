@@ -32,6 +32,12 @@
 use legaia_mes::{DialogPlayer, Format as MesFormat, Interpreter, MesEvent, PlayerState};
 use std::sync::Arc;
 
+/// The text colour escape: `0xCF n` stages ink `n` (`_DAT_8007B454`) for the
+/// glyphs after it (`FUN_80036888`, `0x80036944..0x8003695C`). The
+/// [`OwnedDialogPanel`]'s page carries each pair verbatim, as the expander
+/// `FUN_80036514` hands it to the renderer on the draw path.
+pub const COLOUR_ESCAPE: u8 = 0xCF;
+
 mod borrowed_panel;
 mod inline_segments;
 mod owned_panel;

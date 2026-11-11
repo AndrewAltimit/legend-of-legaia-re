@@ -188,3 +188,104 @@ fn a_contest_runs_and_settles_as_retails_does() {
         "{settled} {prizes} {ran}"
     );
 }
+
+/// The contest-start restore `FUN_801D0ED8` on a lead record of generated
+/// bytes, on every course, against `apply_contest_start_restore`: the whole
+/// record, with the stat aggregator it calls stubbed on both sides.
+#[test]
+fn the_contest_start_restore_writes_what_retail_writes() {
+    differential!(prot(977, RESTORE));
+    const RESTORE: u32 = 0x801D_0ED8;
+    const COURSE: u32 = 0x801D_1A90;
+    const LEAD: u32 = 0x8008_4708;
+    use legaia_engine_minigames::muscle_dome::{ContestStartRestore, apply_contest_start_restore};
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(977).expect("PROT 0977"));
+    cpu.stub(0x8004_2558, 0);
+    let mut rng = Rng(0x5354_5249);
+    for round in 0..3000 {
+        let course = rng.below(COURSE_COUNT as u32);
+        let mut raw = vec![0u8; legaia_save::CHARACTER_RECORD_SIZE];
+        for b in &mut raw {
+            *b = rng.next() as u8;
+        }
+        // The window around the record too: the routine addresses the record
+        // off the game-state window's base.
+        for i in 0..0x1A18u32 {
+            cpu.mem.wr8(0x8008_4140 + i, rng.next() as u8);
+        }
+        for (i, b) in raw.iter().enumerate() {
+            cpu.mem.wr8(LEAD + i as u32, *b);
+        }
+        let before: Vec<u8> = (0..0x1A18u32)
+            .map(|i| cpu.mem.rd8(0x8008_4140 + i))
+            .collect();
+        cpu.mem.wr32(COURSE, course);
+        assert_eq!(cpu.call(RESTORE, &[]), Stop::Returned);
+        let mut record = legaia_save::CharacterRecord::parse(&raw).expect("record");
+        apply_contest_start_restore(
+            &mut record,
+            ContestStartRestore {
+                strip_gear: course != 0,
+            },
+        );
+        let after: Vec<u8> = (0..0x1A18u32)
+            .map(|i| cpu.mem.rd8(0x8008_4140 + i))
+            .collect();
+        let mut expect = before;
+        let at = (LEAD - 0x8008_4140) as usize;
+        expect[at..at + raw.len()].copy_from_slice(&record.write());
+        assert!(
+            after == expect,
+            "round {round} course {course}: {:?}",
+            crate::common::diff_offsets(&after, &expect)
+        );
+    }
+}
+
+/// The leg's battle staging `FUN_801D1510` on every course and round of the
+/// ladder, against `parse_course_ladder`: the monster in formation slot 0,
+/// the three empty seats behind it and the mode word.
+#[test]
+fn every_leg_stages_the_monster_retail_stages() {
+    differential!(prot(977, STAGE));
+    const STAGE: u32 = 0x801D_1510;
+    const COURSE: u32 = 0x801D_1A90;
+    const ROUND: u32 = 0x801D_1A94;
+    const FORMATION: u32 = 0x8007_BD0C;
+    const NEXT_MODE: u32 = 0x8007_B83C;
+    use legaia_engine_minigames::muscle_dome::parse_course_ladder;
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = disc.read_entry(977).expect("PROT 0977");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    // The draw-environment put and the stream call.
+    cpu.stub(0x8006_BCB4, 0);
+    cpu.stub(0x8002_6478, 0);
+    let ladder = parse_course_ladder(&overlay).expect("ladder");
+    assert_eq!(ladder.len(), COURSE_COUNT);
+    let mut legs = 0;
+    for (course, c) in ladder.iter().enumerate() {
+        for (round, r) in c.rounds.iter().enumerate() {
+            cpu.mem.wr32(COURSE, course as u32);
+            cpu.mem.wr32(ROUND, round as u32);
+            cpu.mem.wr32(FORMATION, 0xFFFF_FFFF);
+            cpu.mem.wr16(NEXT_MODE, 0);
+            assert_eq!(cpu.call(STAGE, &[]), Stop::Returned);
+            assert_eq!(
+                cpu.mem.rd32(FORMATION),
+                u32::from(r.monster_id),
+                "course {course} round {round}"
+            );
+            assert_eq!(cpu.mem.rd16(NEXT_MODE), 0x14, "the battle mode");
+            legs += 1;
+        }
+    }
+    assert!(legs > 20, "{legs}");
+}

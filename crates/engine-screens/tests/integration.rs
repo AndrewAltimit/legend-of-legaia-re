@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-screens --test integration <name>::`.
 
 mod balloon_fit;
+mod dialog_speaker_ink_disc;
 mod field_hud_menu_lock_disc;
 mod field_occlusion_fade;
 mod map_display_disc;

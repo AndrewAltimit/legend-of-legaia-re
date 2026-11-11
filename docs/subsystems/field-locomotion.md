@@ -72,6 +72,27 @@ Every per-frame number on this page is counted in one of two retail clocks. Mixi
 
 The whole field frame lives inside that pass. `FUN_80016444` runs the actor-pool sweeps `FUN_8002519C`, which `jalr` each actor's `+0x0C` handler. The player's handler is `FUN_801D1344`, which calls the controller with `jal 0x801D01B0` at `0x801D16F4`. The only gates ahead of that call are the engaged flag, the system lock, the warp timer and the post-warp hold - not a cadence gate (see [the timed warp](#the-timed-kind-0-warp)).
 
+### The player tick's legs
+
+`FUN_801D1344` is short enough to read whole, and its order is what the port's field frame follows. With every callee answered by a logging hook, one call makes these legs in this order:
+
+| Leg | Call | When |
+|---|---|---|
+| Halt | `FUN_800196A4` | `_DAT_8007BAF4 != 0` (the overworld map display's fade-up): the player's lock `+0x10 \| 0x80000` is raised, this one leg runs and the tick returns |
+| Horizon arm | `FUN_801D8258(0, a, b, c)` | either of the scene words `_DAT_8007BCD0` / `_DAT_8007BCD4` is non-zero |
+| Party sync, party HUD | `FUN_801CF754`, `FUN_801D0D38` | always |
+| Walk regen, pad controller | `FUN_801D0B90`, then `FUN_801D01B0` | the walk gate: the player's lock clear, the system lock `0x1F800394 & 0x400` clear, the warp timer not positive and the pad hold zero |
+| Settle | `FUN_801D1BA0` | always |
+| Clip change | `FUN_80024E08(player, want + base)` | the wanted clip `_DAT_8007B8F8` differs from the latch `_DAT_8007B8A2` |
+| Zone re-query | `FUN_801DE234`, `FUN_801DE3E0` at `(coord + 0x40) >> 7` | the follow arm, with scratchpad bit 22 raised |
+| Camera | `FUN_801DB510`, `FUN_801DAA50` | the follow arm: the player free (both locks clear), or scratchpad bit 16 raised |
+| Camera, held | `FUN_801D9D30` | otherwise |
+| Frame end | `FUN_800172C0` | always |
+
+Between the HUD and the gate the tick drains the pad hold `_DAT_8007B6B4` by the frame step, clamped at zero, and counts the control byte `+0x62` of the scene block down the same way. With both locks clear it also drops bit `8` of the player's own `+0x62`, whatever the warp pair says.
+
+The walk-regen tick sits **inside** the gate and **ahead of** the controller, so a bump pays for the steps earlier frames banked and waits out every frame the player is held: a step that fills the accumulator and starts a fight is paid after the fight, and the Incense window still reads non-zero to the encounter roll on the frame its last step is walked. `World::step_field_locomotion` and the overworld's step take the gate as `field_warp_tile::player_tick_walks` and run the regen from that seat; the [retail kernel differential](../tooling/retail-kernel-differential.md) holds the gate, the drain and the leg order to the routine.
+
 ### Cadence invariance
 
 Because a pass covers a variable number of vsyncs, everything measured inside it is denominated **in vsyncs and scaled by `DAT_1F800393`**, never in passes:
@@ -983,6 +1004,10 @@ Crossing onto a kind-0 tile does not move the player at once. The kind-0 arm **a
 - **Arming.** The arm stores the tile, the destination `(_DAT_8007BDD0, _DAT_8007BDD4) = (rec[2], rec[3])` in half-tiles, `_DAT_8007B6B0 = 0x26`, spawns two fades through `FUN_801D58F0` - kind `2` black-to-white over `0x1C` frames holding `0xE` (a fade to black under the subtractive blend), then the reverse ramp delayed `0x29` frames - and clears the player's movement lock.
 - **Timer running** (`> 0`, `0x801D1EF4..0x801D2064`). It tags for tear-down the first live actor whose handler `+0x0C` is `0x801DA7F0` (the `4C E1` text balloon, `FUN_8003C764`'s handler), subtracts `DAT_1F800393`, and returns while positive.
 - **The landing** is the frame it reaches zero: `_DAT_8007B6B4 = 0x28`, the lock cleared, the encounter step counter re-rolled through `FUN_801DDF48` **only when it is `<= 0`** (`bgtz` at `0x801D1F64`, `jal` at `0x801D1F6C`), `_DAT_8007B6B0 = -1000`, the player seated at `(dest_x * 64 + 64, (dest_z + 1) * 64)`, the last-tile pair re-stamped, the camera re-pinned (`FUN_80017EC8`, `FUN_801DE3E0`, `FUN_801DB8EC`, `FUN_801DAA50`), the floor re-sampled into `+0x16`, and the kind-1 record at `(dest_x >> 1, dest_z >> 1)` run through `FUN_8003BDE0`, so the arrival's own record spawns.
+
+The re-pin is the whole `[4C 39]` sequence in code, so the camera does not ease across a warp. `FUN_801DE3E0` loads the camera block of the record covering the destination and `FUN_801DB8EC` copies its composed shot into the globals on the landing frame, under the fade. A film of `kor3`'s stair warp (`kor3_field_route_walk`, Up held) has retail on pitch `240`, yaw `827`, `H` `256` at the crossing and on the destination's `540` / `0` / `768` from the landing vsync on; the port ran the query's mask half alone, kept the old block and eased its yaw across the door. `World::tick_field_warp` now queues the query and the snap for the camera's drain.
+
+The `-1000` the landing parks outlives the landing by one system-channel pass, and that pass is what faces the player. The entity tick `FUN_801DA51C` runs the scene's system script before its tail clears the word (`0x801DA7C4..0x801DA7D8`), and a room selector's [`4C 2x`](#gp0x2d8-is-authored-not-computed) turns the player by the octants it moves while the word reads `-1000`. On the same film retail's heading goes `1024` to `2048` on the landing vsync, under the fade. The port cleared the sentinel inside the landing, so the script's pass never saw it and the player stood facing the way he had walked in until the pad turned him; `World::step_field_frame_slice` now clears it after the system slice.
 - **The pause.** The player's tick `FUN_801D1344` drains `_DAT_8007B6B4` by the frame delta, clamped at zero (`0x801D161C..0x801D1630`), and skips the pad controller while `_DAT_8007B6B0 > 0` or `_DAT_8007B6B4 != 0` (`0x801D16C8..0x801D16E4`). The player stands **idle** through both spans: with the controller skipped nothing rewrites the clip base, so the settle reads the `2` the [system channel stores every tick](#when-the-system-channels-store-reaches-the-settle).
 
 `_DAT_8007B6B4` is often called a dialogue-pacing countdown; it is one pad hold with several writers, this landing among them, and the player tick is its drain. The timer half does not walk the actor anywhere, and the crossing tile is `(_DAT_8007BDC8, _DAT_8007BDCC)` - a dump printed at the phantom VA `0x801C36AC` reads otherwise ([`overlay-va-aliases.md`](../reference/overlay-va-aliases.md)).
@@ -1134,7 +1159,29 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
 - **Spawn.** `FUN_8003a55c` runs the record's prologue itself, one op at a time through the dispatcher `FUN_801DE840` (`0x8003A914..0x8003A95C`), stopping after an executed `0x21`, on a cursor that did not move, or before a text byte. A door's is `4C 41 <rate>` then `4C 35`: rate `16` (one frame per tick), then reset-and-hold. The door is shut and frozen. A prop with no `4C 35` keeps the looping template flags and turns forever - Rim Elm's windmill.
 
   Because the pass is a VM run, a story-flag test in it picks the arm and its flag writes land: `korb3`'s stones (P0[3..9], P0[23], P0[24]) clear their flag, test `0x403` and either hold shut and park on the `0x21` the touch resumes from, or raise the flag and park in an idle loop.
-  The port (`field_env::run_spawn_prologue`) takes the parked cursor, the flag writes and the clip words from that run, so a two-state prop poses from the arm its flag picks: Conkram's shell on `map03` (P0[0]) tests `0x4C8` over a `4C 35` arm (frame 0, the lid standing open behind the town) and a `4C 36` arm (its last frame), and a retail capture with the flag clear holds the actor at cursor `0`. The class bits still come from a linear walk of both arms, so a door whose "already opened" arm sets `31 00` (`dolk`'s locked gates P0[15..18]) spawns collision-exempt whatever its flag says.
+  The port (`field_env::run_spawn_prologue`) takes the parked cursor, the flag writes and the clip words from that run, so a two-state prop poses from the arm its flag picks: Conkram's shell on `map03` (P0[0]) tests `0x4C8` over a `4C 35` arm (frame 0, the lid standing open behind the town) and a `4C 36` arm (its last frame), and a retail capture with the flag clear holds the actor at cursor `0`. The class bits come from the same run, so a door whose "already opened" arm sets `31 00` spawns solid while its flag says shut, and its touch body opens it; only a bank built without a world walks the prologue linearly.
+
+  `rikuroa`'s barricade (P0[1]) is the case that showed it: only its `0x142` arm carries the `31 00`, so read off both arms it spawned exempt yet posed shut, the player walked through the closed gate before Caruban, and its touch body (the fade, the swing, the `31 00`) never ran. Disc-gated `engine-session/tests/rikuroa_barricade_disc.rs` pins it.
+
+  Every bound object whose `31 00` hangs on a flag arm, from each prologue's disassembly (the test jumps when its flag is set). *Walk* objects open on body contact; *press* objects carry `31 1E` (the interact-gated class) and open only on the facing probe:
+
+  | Objects | Touch | Walk-through (`31 00`) when |
+  |---|---|---|
+  | `bylon` P0[3, 4, 22, 24..27], `edbylon` P0[3, 22, 24..27] | walk | `0x2A1` set and `0x2AC` clear |
+  | `bylon` P0[16], P0[18] (the wing rooms' south doors) | walk | `0x180` (P0[16]) / `0x181` (P0[18]) clear, or `0x2A1` set |
+  | `cave01` P0[0] | walk | `0x15E` set |
+  | `dolk` P0[15..18] (Sunrise and sister gates) | press | `0x270..0x273` set (the touch inserts the key) |
+  | `jiji` P0[1] | walk | `0x206` set |
+  | `map01` P0[6] | walk | `0x2C5` or `0x19A` set |
+  | `retock` P0[15..17] | press | `0x357` clear |
+  | `rikuroa` P0[1] | walk | `0x142` set |
+  | `taiku` P0[1], `taiku2` P0[1] | press / walk | `0x508` set |
+  | `taiku` P0[5] | walk | `0x519` set (and it parks off-map) |
+  | `tower` P0[0] | press | `0x1C6` set |
+  | `vell` P0[1] | press | `0x2AE` set |
+
+  Another script can open an object too: a switch's body runs `B1 <object> 00`, the `31 00` aimed at that object's channel. `bylon`'s wing switches P0[12] / P0[13] open P0[16] / P0[18], the north entrance (`map01` P2[11]) having raised `0x180` / `0x181` and shut them; `jiji` P0[3] opens P0[1]; `cave01` P2[13] opens the rock P0[0]; `taiku` P2[12] opens P0[5]. The write lands on the object's channel word, and the port carries it to that placement's prop (`prop_interact::poke_object_prop_cflags`), from a field-VM run and from a cutscene timeline alike, so the opened object stops blocking at once.
+
 - **Touch.** Resumed when the player's body hits the prop (`FUN_801cfc40` links the pair, `FUN_801d5b5c` posts the engagement, the dialog SM `FUN_80039b7c` runs the parked script). A house door's pass is a creak (`0x36` sub-`0x8000` -> the SFX cue player `FUN_80035b50`), then `2C 07` / `2C 01` / `2B 03` (clear reverse, **clear hold**, set clamp), then **`31 00`** (the door leaves the collision candidate list as the swing starts), then `2C 08` / `2D 08`, which spins until the tick latches the end. The clip plays forward and clamps open; the opened door neither blocks nor re-fires.
 - **Search body.** Rim Elm's cupboard continues past that spin: a `70 xx` searched-flag guard, `50 xx` flag SET + `39 xx` GIVE_ITEM, the `0x1F` message segments (found / empty, with the `C2` item-name escape), and only then the closing segment (`2B 07` / `2C 01` / `2B 03`, set reverse and play again). Because the script resumes only when the pager returns, the doors swing shut **after the message is dismissed**.
 - **Locked doors** (`town01` P0[1]) are the same shape with story-flag arms: while locked, the touch pass shows "The house is locked..." and never reaches the open ops or the `31 00`, so a locked door stays solid.

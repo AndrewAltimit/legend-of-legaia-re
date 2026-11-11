@@ -228,19 +228,21 @@ pub fn decode_prop_program_with(
     // 0, the lid standing open) and `4C 36` (the last frame); both arms
     // together left the lid on the last frame, lying over the town.
     //
-    // The class bits are still read off the linear walk, both arms of a
-    // branch together: a door whose "already opened" arm sets `31 00`
-    // therefore spawns exempt whatever its flag says. Retail spawns a
-    // locked door solid (`dolk` P0[15..18], the Sunrise and sister gates,
-    // test `0x270..0x273`), and the ladder's routes still pass through
-    // those doors unopened, so that half stays as it was.
+    // So are the class bits: a door whose "already opened" arm carries the
+    // `31 00` spawns solid while its flag is clear, and its touch body opens
+    // it. `rikuroa`'s barricade (P0[1], `71 42` over `31 00`) is shut until
+    // Caruban falls, and walking into it plays the swing; read off the
+    // linear walk, both arms together, it spawned exempt and drawn shut,
+    // so the player passed through a closed gate that never opened. The
+    // `dolk` gates (P0[15..18], `0x270..0x273`) are the same shape. With no
+    // flags the walk stays linear (a bank built without a world).
     let flagged = flags.is_some();
     let (executed, parked) = run_spawn_prologue(record, pc0, flags);
     let (prologue, _) = run_spawn_prologue(record, pc0, None);
     if flagged {
         prog.spawn = executed.iter().filter_map(anim_cmd).collect();
     }
-    for insn in &prologue {
+    for insn in if flagged { &executed } else { &prologue } {
         if let Some(c) = anim_cmd(insn) {
             if !flagged {
                 prog.spawn.push(c);

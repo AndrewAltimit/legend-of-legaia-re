@@ -102,3 +102,42 @@ fn the_logo_quads_are_the_retail_ones() {
         }
     }
 }
+
+/// `FUN_801CE9C0`, the mode-16 `READ INIT` body, is not run: it sets the
+/// 640x480 display, clears VRAM, initialises the pads, spawns two boot
+/// actors and uploads the logo TIMs it has just read off the CD - GPU,
+/// controller and CD work the interpreter has nothing to compare. What the
+/// port takes from it is the logos themselves, which this holds: the init
+/// pak decodes to every logo the sequencer draws, and the atlas the port
+/// builds from it gives each one a rect of its own size.
+#[test]
+fn the_init_pak_carries_every_logo_the_port_draws() {
+    not_a_differential!(
+        "FUN_801CE9C0 is display, VRAM, pad and CD setup with TIM uploads; checks the logos the port builds from its pak"
+    );
+    use legaia_engine_title::publisher_logos::{LOGO_COUNT, build_atlas_from_init_pak};
+    let Some(d) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pak = d.read_entry(895).expect("PROT 0895");
+    let atlas = build_atlas_from_init_pak(&pak).expect("the init pak's logos");
+    assert_eq!(atlas.rects.len(), LOGO_COUNT);
+    let mut y = 0;
+    for (i, r) in atlas.rects.iter().enumerate() {
+        assert!(r.2 > 0 && r.3 > 0, "logo {i}: {r:?}");
+        assert_eq!(r.1, y, "logo {i} stacks under the one before");
+        y += r.3;
+    }
+    assert_eq!(y, atlas.height);
+    // Every logo quad the sequencer draws samples inside its logo's rect.
+    for (logo, quads) in LOGO_QUADS.iter().enumerate() {
+        let r = atlas.rects[logo];
+        for q in quads.iter() {
+            assert!(
+                q.src.0 + q.src.2 <= r.2 && q.src.1 + q.src.3 <= r.3,
+                "logo {logo}: quad {q:?} within {r:?}"
+            );
+        }
+    }
+}

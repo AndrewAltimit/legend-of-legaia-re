@@ -80,6 +80,8 @@ fn run_opening_to_freeroam(host: &mut SceneHost) {
         confirm: true,
         ..Default::default()
     });
+    // The call after the Select press reads no pad (retail's state 2).
+    host.world.step_name_entry(NameEntryInput::default());
     host.world.step_name_entry(NameEntryInput {
         up: true,
         ..Default::default()

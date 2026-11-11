@@ -604,13 +604,43 @@ impl World {
     // PORT: FUN_80047430 (`0x80047D20..0x80047E18`, the signed root-motion
     // term; the approach half is `drive_attack_approach`)
     fn drive_playing_root_motion(&mut self, slot: usize, dt: u8) {
-        let Some((speed, scale)) = self.battle_playing_root_motion(slot) else {
+        // A frozen node (`+0x21D = 0`) scales the product to nothing: a body
+        // a cast module holds mid-reaction stands where the freeze found it
+        // (PROT 0958's victim through arms 18..=23).
+        if self.actors[slot].battle.anim_rate.get() == 0 {
+            return;
+        }
+        // A clip another seat's hit walk committed on this seat after its own
+        // slice of the pass is, in retail, only staged there
+        // (`0x801EEC6C..0x801EEC84`): this seat's tick has already stepped
+        // the entry it held (`lw s3,0x4c(s5)` at `0x80047B60`, the speed read
+        // at `0x80047D34`) along the heading it had, and the staged reaction
+        // moves it from its next tick on. `battle_jouind_gilium_lv3_strike`:
+        // Vahn's block ends on the pass Gilium's swing lands, his node holds
+        // idle, and his live pair stands still that pass and slides from the
+        // next.
+        // PORT: FUN_80047430 (`0x80047D20..0x80047D64`, the entry the root-motion term reads)
+        let staged_after_slice = self.toggles.battle_sm_frame_cadence
+            && self
+                .battle
+                .anim_slice_commits
+                .get(slot)
+                .zip(self.actors.get(slot))
+                .is_some_and(|(&c, a)| c != a.battle_clip_commits);
+        let slice_root = staged_after_slice
+            .then(|| self.battle.anim_slice_roots.get(slot).copied())
+            .flatten();
+        let (motion, slice_facing) = match slice_root {
+            Some((motion, facing)) => (motion, Some(facing)),
+            None => (self.battle_playing_root_motion(slot), None),
+        };
+        let Some((speed, scale)) = motion else {
             return;
         };
         let (facing, target, latched) = {
             let a = &self.actors[slot];
             (
-                a.battle.facing_angle,
+                slice_facing.unwrap_or(a.battle.facing_angle),
                 a.battle.active_target,
                 a.battle
                     .flag_bits

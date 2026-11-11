@@ -3,20 +3,19 @@
 //! `field_view_window::view_cells`) and the ground emitter's per-cell gate
 //! (`FUN_801F6D48`, `ViewCells::ground_visible`).
 //!
-//! Both hosts ask the one kernel (`field_view_window::field_view_cells`), and
-//! it answers only at retail framing: the window is authored for retail's
-//! frustum, so under the port's wider camera presets the crop would open
-//! black edges and the kernel draws the map whole instead. The play page and
-//! the native window both start on a wider preset, so no ladder that takes
-//! the default camera ever asks for a rectangle - the gate is the camera
-//! distance option, not the scene.
+//! Both hosts ask the one kernel (`field_view_window::field_view_cells`)
+//! through `crop_framing`. At retail framing it walks retail's window; under
+//! a pulled-back distance preset alone (the page's and the native window's
+//! default `far`) it walks the window widened to the preset's scale, so what
+//! lies past retail's near edge stays out of shot; under a swung, tilted or
+//! zoomed camera it draws the map whole.
 //!
 //! The ladder takes the option the way a player does - the page's distance
-//! control, cycled to `retail` - and scores the crop on its effect: the
-//! stamp a host re-uploads on is live, and both the ground index buffer and
-//! the terrain draw mask come back smaller than the whole map. Then it cycles
-//! off `retail` and requires the whole map back, so the crop is shown to be
-//! the option's and not the scene's.
+//! control - and scores the crop on its effect: at `retail` the stamp a host
+//! re-uploads on is live and both the ground index buffer and the terrain
+//! draw mask come back smaller than the whole map; at `far` the crop holds,
+//! at least as wide as retail's and still short of the whole map; a dragged
+//! orbit then gives the whole map back.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -75,13 +74,31 @@ fn the_retail_preset_crops_the_field_to_its_visible_tiles() {
         live.len()
     );
 
-    // Off the retail preset the kernel declines and the map draws whole.
+    // A pulled-back preset keeps the crop, widened: no cell retail draws is
+    // lost, and the map is still not drawn whole.
     set_distance(&mut rt, "far");
+    tick(&mut rt, 2);
+    assert_ne!(rt.field_view_window_stamp(false), 0, "far dropped the crop");
+    let far_ground = rt.field_ground_indices_cropped(false).len();
+    assert!(
+        far_ground >= ground && far_ground < whole_ground,
+        "far kept {far_ground} of {whole_ground} ground indices (retail {ground})"
+    );
+    let far_live = rt.field_terrain_live(false);
+    for (i, (&r, &f)) in live.iter().zip(&far_live).enumerate() {
+        assert!(
+            r == 0 || f == 1,
+            "terrain draw {i} drawn at retail, cropped at far"
+        );
+    }
+
+    // A swung camera is not retail's frustum: the map draws whole.
+    assert!(rt.play_camera_orbit_by(0.5), "the orbit knob is live");
     tick(&mut rt, 2);
     assert_eq!(
         rt.field_view_window_stamp(false),
         0,
-        "a wide preset kept the crop"
+        "a swung view kept the crop"
     );
     assert_eq!(rt.field_ground_indices_cropped(false).len(), whole_ground);
 }

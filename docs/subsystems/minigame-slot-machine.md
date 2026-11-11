@@ -79,8 +79,8 @@ stateDiagram-v2
 
 | Diagram | `DAT_801d3c84` | Role |
 |---|---|---|
-| Init | `0` | discard four LCG draws (`0x801CF150..0x801CF160`), build the reel strips, clone the symbol strip into the display strip, fade in, advance to `1` |
-| Idle | `1` | attract; tests the submenu edge, then the coin gate, then the bet (order below) |
+| Init | `0` | discard four LCG draws (`0x801CF150..0x801CF160`), build the reel strips, clone the symbol strip into the display strip, set the entry fade `DAT_801d3794` to `0xFF`, advance to `1`; the frame's tail runs like any other, so the LCG and the frame counter have each stepped once before state `1` |
+| Idle | `1` | runs the entry fade down first, then attract; tests the submenu edge, then the coin gate, then the bet (order below) |
 | SpinUp | `2` | brings the reels up one at a time, `+0xC` a frame to `0x66` (the ramp index is the stop counter `DAT_801d3d2c`, so nine frames a reel, `0x801CF60C..0x801CF650`), then runs the spin timer `DAT_801d3c90` down by the frame step until it goes below zero (`0x801CF654..0x801CF684`); every frame it adds the reel velocities `DAT_801d3cd0..` into the positions `DAT_801d3cc0..` (mod `0x1400`), and a face-button edge raises the [spin-up press latch](#the-spin-up-press-latch) |
 | Stopping | `3` | each Stop press (pad bits `0x80` / `0x40` / `0x20` → reels 0 / 1 / 2) calls `FUN_801d2114`; at `DAT_801d3d2c == 3` it runs `FUN_801d13e8` and advances to `4` |
 | Payout | `4` | ticks the win `DAT_801d3d38` into the balance `DAT_801d4114` ([timing](#sound)), then returns to `1` |
@@ -89,13 +89,17 @@ stateDiagram-v2
 | NoCoins | `0x5a` | not-enough-coins prompt; any face button (`& 0xf0`) leaves through `100` |
 | Exit | `100` | fades out `0x10` a frame; at full black writes `_DAT_800845A4 = DAT_801d4114` and runs the return warp `FUN_80026018` |
 
-State `1` reads the packed pad-edge word `_DAT_8007b874` in a fixed order:
+State `1` opens on the entry fade (`0x801CF3A8..0x801CF3FC`). While `DAT_801d3794` is non-zero the arm draws the fade at that level, takes `8 x` the frame step off it (clamped at `0`) and leaves, so a door entry fades in over thirty-two frames with the pad unread and the coin gate untested. The frame step `DAT_1F800393` is `1` in both retail captures of the machine.
+
+Past the fade, state `1` reads the packed pad-edge word `_DAT_8007b874` in a fixed order:
 
 1. Triangle or Select (`& 0x110`) routes to `0x32`, so the submenu opens even on an empty balance.
 2. A balance under 3 routes to `0x5a`.
 3. A face button (`& 0xe0`) charges the flat bet (3 coins, or 1 in feature modes 4..6), runs the [feature roll](#feature-roll---fun_801d258c) and advances to the spin-up.
 
 **There is no bet-line selection.** Every spin plays all five paylines for the flat cost. `DAT_801d4110` is the cash-out submenu cursor and nothing else.
+
+The routine opens every frame on a `rand()` whose result it discards (`jal 0x80056798` at `0x801CF100`), so the feature roll's draws depend on the frame the bet went down. One state arm runs a frame: the frame state `4` drops back to `1` reads no pad, and the submenu edge and coin gate wait for the next.
 
 After the switch, the tail of `FUN_801cf0d8` runs every frame: it refills one display-strip row per reel, draws the reels (`FUN_801d0fa8`), and refreshes the marquee and HUD (`FUN_801cfff0`). The reels turn in state `2` by their velocities and in state `3` through the integrator `FUN_801d0554` (`jal` at `0x801CF7E4`, after the frame's stops); no other state moves them.
 
@@ -178,7 +182,7 @@ x = (x << 16) + (x >> 16)        // fold the 16-bit halves; x is the result
 
 It drives reel-strip construction, reel-landing selection and the "feature stays on / turns off" rolls. It is a self-contained word, so reel outcomes are reproducible from the seed state. Port: `SlotRng`.
 
-**The BIOS `rand`**, `func_0x80056798` (the A0(0x2F) sibling, the same source the tile-board filler uses). It drives the per-spin feature / bonus rolls in `FUN_801d258c` and the landing-line row `FUN_801d2440` reads: the parts that should not be replayable from the visible reel state alone. The port substitutes a second deterministic generator (`BiosRand`) so replays stay bit-identical.
+**The BIOS `rand`**, `func_0x80056798` (the A0(0x2F) sibling, the same source the tile-board filler uses). It drives the per-spin feature / bonus rolls in `FUN_801d258c` and the landing-line row `FUN_801d2440` reads: the parts that should not be replayable from the visible reel state alone. The port substitutes a second deterministic generator (`BiosRand`) so replays stay bit-identical, and draws it once at the head of every frame as the routine does.
 
 ### Feature roll - `FUN_801d258c`
 
@@ -341,7 +345,7 @@ A claimed column prints `claimed - 0x10` = `value - 0xf`. The tally is the resul
 
 The same matrix has two other bonus faces, also from `FUN_801cfff0`:
 
-- Between spins of a round (states 1 / 2) it shows the **rounds still owed** as three pips (message `0x12` filled / `0x13` hollow).
+- Between spins of a round (states 1 / 2) it shows the **rounds still owed** as three pips (message `0x12` filled / `0x13` hollow), filled from the right: one owed lights the pip at column `0x40`, two add `0x20`, three add `0` (`0x801D02B4..0x801D0324`).
 - Once a paying spin tallies it shows the **payout figure**: digits at fixed right-aligned columns `0 / 0xd / 0x1a / 0x27`, each drawn only once the figure reaches its place, then the word "coin" at column `0x34`, whose tail runs off the 78-column matrix. It slides down into place over 13 frames (`row = min(frame - 0xd, 0)`).
 
 #### The message bank's roles
@@ -444,7 +448,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3fd0..` | source strip: the ten bonus **numerals** (`slot/2 + 0x10`, values `0x10..=0x19`) |
 | `DAT_801d37a0..` | the marquee's dot buffer (`col * 0x10 + row`), recomposed each frame by `FUN_801cfff0` |
 | `DAT_801d3790` | spin-up press latch: widens (rarefies) the next spin's feature denominators |
-| `DAT_801d3794` | flash / whiteout intensity |
+| `DAT_801d3794` | entry fade level: `0xFF` from state `0`, run down by state `1` before it reads the pad |
 | `DAT_801d3798` | "bonus just ended" flag: forces the next spin's long spin-up |
 | `DAT_801d4110` | cash-out submenu cursor (`% 3`) |
 | `DAT_801d4114` | **player credit balance** (seeded from `_DAT_800845A4` at entry, committed back on exit) |
@@ -533,7 +537,7 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 
 - `play-window`'s `O` key arms the mode-24 door warp with sub-id 3 (`World::request_minigame_warp`, the call the browser page's `play_mg_debug_warp` makes), so the session is the one a cabinet installs, with its balance assigned from the coin bank. This launcher is the `0x3E` arm alone, without the door gate; a bank below three coins meets the machine's own state-1 gate.
 - Coins: `play-window --cheat-coins N` (with `--key-script 60:O` to warp in and `--pad-script` for the presses), or the play page's Cheats panel (`cheat_set_coins`). The standalone minigames page racks its own 60.
-- Controls: Cross spins and collects; the three stops are Square / Cross / Circle for reels 0 / 1 / 2, the pad bits `0x80` / `0x40` / `0x20` retail's state-3 arms test, which is also the glyph each reel's pedestal carries.
+- Controls: Square, Cross or Circle bets and spins (retail's `& 0xe0`), Cross collects; the three stops are Square / Cross / Circle for reels 0 / 1 / 2, the pad bits `0x80` / `0x40` / `0x20` retail's state-3 arms test, which is also the glyph each reel's pedestal carries.
 
 Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 

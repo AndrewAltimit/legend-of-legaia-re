@@ -38,31 +38,47 @@ impl World {
     /// draw load the frame carries ([`Self::battle_frame_load`],
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
     fn push_frame_cost(&mut self, arm_step: Option<u8>) {
-        use legaia_engine_battle_loop::frame_clock::{
-            XA_STREAM_FRAME_COST, cost_of_step, measured_frame_cost_at,
-        };
+        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost_at};
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
             Some((s, n)) if s == state => n.saturating_add(1),
             _ => 0,
         };
         self.battle.frame_cost_state = Some((state, passes));
-        let xa_streaming = self.audio.battle_xa_busy_frames > 0 && self.audio.battle_xa_frame_load;
+        let xa_passes = self.battle_xa_passes_since_cue();
         let cost = arm_step.map_or_else(
             || {
                 let cost = measured_frame_cost_at(self.party.party_count, state, passes)
                     .saturating_add(self.battle_frame_load_cost());
-                // An XA clip's read span: the whole frame runs on the CD
-                // interrupt path (`FUN_8005DAB0`).
-                if xa_streaming {
-                    cost.max(XA_STREAM_FRAME_COST)
-                } else {
-                    cost
+                // An XA clip's read span: the frame runs on the CD interrupt
+                // path (`FUN_8005DAB0`) once the stream is up.
+                match xa_passes {
+                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(n, cost),
+                    None => cost,
                 }
             },
             cost_of_step,
         );
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+    }
+
+    /// The passes since a loading battle CD-XA clip's cue, `None` while none
+    /// plays ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
+    fn battle_xa_passes_since_cue(&self) -> Option<u64> {
+        if self.audio.battle_xa_busy_frames == 0 || !self.audio.battle_xa_frame_load {
+            return None;
+        }
+        Some(
+            self.audio
+                .battle_xa_cue_frame
+                .map_or(u64::MAX, |f| self.battle_frame_id().saturating_sub(f)),
+        )
+    }
+
+    /// Whether the clip's stream has reached the frame's full load
+    /// ([`Self::battle_xa_passes_since_cue`] two or more).
+    fn battle_xa_loads_frame(&self) -> bool {
+        self.battle_xa_passes_since_cue().is_some_and(|n| n >= 2)
     }
 
     /// What a battle frame draws past its state's base: the live move-VM
@@ -328,27 +344,18 @@ impl World {
         // pass opened runs out on the step it ran at, and a cost pushed now
         // first times the next pass, which also drains its timers by it
         // (`battle-stage-camera.md`, the frame step). An arm table's step is
-        // the length retail's frames ran under the arm, and takes effect on
-        // its own pass.
-        //
-        // The step the frames before this pass left in the ring: what a pass
-        // under a cheaper arm still runs at while a dearer arm's entries sit in
-        // the sixteen-frame history (`FUN_80016B6C` reads the ring's maximum,
-        // `0x800170D0..0x800170F4`).
-        let carried = self.battle.frame_cost_step;
+        // the cost retail's frames ran under the arm, pushed like any other.
         self.push_frame_cost(measured);
-        // An arm table names the cost of the arm's own frames, so a dearer arm
-        // raises the step from its first pass, and a cheaper arm after a dear
-        // one runs the ring's step until the dear entries leave it: Kiss of
-        // Death's arm 5 runs `3` for sixteen passes after arm 4's clamped
-        // frames, then `2`.
-        let measured = measured.map(|step| step.max(carried));
+        // An arm table names the cost of the arm's own frames, which the push
+        // above stored: the ring's step after it is the larger of the arm's and
+        // what the passes before left, so a cheaper arm after a dear one runs
+        // the ring's step until the dear entries leave it (Kiss of Death's arm
+        // 5 runs `3` for sixteen passes after arm 4's clamped frames, then `2`).
         // A frame the XA stream loads overruns its step (`span_extra`); an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
             && self.toggles.battle_party_cost_step
-            && self.audio.battle_xa_busy_frames > 0
-            && self.audio.battle_xa_frame_load
+            && self.battle_xa_loads_frame()
         {
             legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
@@ -358,7 +365,7 @@ impl World {
         self.battle.frame_clock.retime_span(tick, extra);
         let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
-            (Some(step), _) => step,
+            (Some(_), _) => self.battle.frame_cost_step,
             (None, true) => ordinary,
             (None, false)
                 if (ordinary != DEFAULT_BATTLE_FRAME_STEP
@@ -371,30 +378,35 @@ impl World {
             (None, false) => return,
         };
         self.battle.cast_arm_step_on = measured.is_some();
-        if measured.is_none() {
-            // The ring's step is the next pass's: retail waits this pass's
-            // frame out on the step the pass ran at (`VSync(0x1F800392)` at
-            // `0x800171C0`) and only then copies the new one in
-            // (`0x800171D8`), so the step this pass's cost raised opens the
-            // next frame.
-            self.battle.pending_frame_step = Some(want);
-            return;
-        }
-        // An arm table names the step of the arm's own frames, from its
-        // first pass on.
-        if self.battle.frame_clock.step != want {
-            // The pass this tick ran opened the frame the new step spans.
-            let tick = self.clock.display_frames;
-            self.battle.frame_clock.retime_frame(tick, want);
-            if let Some(cam) = self.battle.camera.as_mut() {
-                cam.set_frame_step(want);
-            }
-        }
+        // The ring's step is the next pass's, an arm's as an ordinary frame's:
+        // retail waits this pass's frame out on the step the pass ran at
+        // (`VSync(0x1F800392)` at `0x800171C0`) and only then copies the new
+        // one in (`0x800171D8`), so the step this pass's cost raised opens the
+        // next frame. A dear arm's first pass therefore runs on the step the
+        // frames before it left and the arm's own step from its second pass
+        // on: Nova's arm 3 runs `1` then `4`, as its recording reads.
+        self.battle.pending_frame_step = Some(want);
+        self.battle.pending_frame_step_from = self.battle_frame_id();
     }
 
     /// Install the step the last pass left ([`BattleState::pending_frame_step`])
     /// on the tick the next pass opens its frame.
-    fn take_pending_frame_step(&mut self) {
+    pub(in crate::world) fn take_pending_frame_step(&mut self) {
+        // The pass that left the step has its frame: the effect scene graphs'
+        // claims of that same frame (`World::summon_fx_pass_vsyncs`,
+        // `World::action_fx_pass_vsyncs`, run in the frame tail after the
+        // pass) leave it for the next one.
+        // A replay's stretched frame (`Self::stretch_battle_frame`) runs the
+        // pass after it on the stretched step and settles back to its own:
+        // the ring's step waits for the stretch to settle, or it would
+        // overwrite the step the stretch exists to give that pass and the
+        // replay's countdown would never reach retail's lattice.
+        if self.battle.pending_frame_step.is_none()
+            || self.battle_frame_id() == self.battle.pending_frame_step_from
+            || self.battle.frame_stretch.is_some()
+        {
+            return;
+        }
         let Some(want) = self.battle.pending_frame_step.take() else {
             return;
         };
@@ -693,6 +705,7 @@ impl World {
     /// A no-op on the per-vsync cadence, where the anim tick keeps its seat
     /// ahead of the SM.
     pub(in crate::world) fn tick_battle_anim_pass(&mut self) {
+        let cast_tick_due = std::mem::take(&mut self.battle.cast_tick_due);
         if self.mode != legaia_engine_mode::mode::SceneMode::Battle
             || !self.toggles.battle_sm_frame_cadence
             || self.battle.anim_pass_vsyncs == 0
@@ -770,6 +783,19 @@ impl World {
             cam.observe_active_commits(commits);
             cam.observe_active_installs(installs);
         }
+        // The draw's preamble, ahead of any body: the cast tick's census
+        // and its effect-child drive (`jal 0x801E09F8` at `0x80048130`).
+        // What a landing stages here commits on the victim's next node
+        // tick, a pass on.
+        // PORT: FUN_800480D8 (`0x800480FC..0x80048130`, the cast tick's seat in the pass)
+        if cast_tick_due {
+            self.tick_battle_cast_census();
+            self.battle.cast_census_drawn = true;
+            let n = self.battle.anim_pass_vsyncs;
+            self.battle.in_draw_cast_tick = true;
+            self.tick_battle_cast_drive(n);
+            self.battle.in_draw_cast_tick = false;
+        }
         // The draw: every body pair from the pose the pass left, for the
         // next pass's SM and camera to read - a seat the root-motion pass
         // has not seeded yet included (the draw stores every drawn actor's).
@@ -834,6 +860,20 @@ impl World {
         } else {
             live
         }
+    }
+
+    /// Whether this module tick is the one retail's pass maps onto: the
+    /// frame driver enters the module once a battle frame, while the module
+    /// here runs on every display tick ([`Self::module_pass`]), so what an
+    /// arm does once a pass (a spawn call, a `rand()` draw) runs on the tick
+    /// that opens a frame, and on the first tick of a multi-tick pass.
+    pub(in crate::world) fn module_tick_opens_pass(&self) -> bool {
+        !self.casting.module_pass_repeat
+            && self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0
     }
 
     /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
@@ -1424,6 +1464,48 @@ mod tests {
         w.audio.battle_xa_busy_frames = 0;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    /// A replay's stretched frame keeps its step for the pass after it: the
+    /// ring's pending step waits for the stretch to settle.
+    #[test]
+    fn a_pending_step_waits_out_a_replay_stretch() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.clock.display_frames = 10;
+        assert!(w.battle_sm_pass_due());
+        w.battle.pending_frame_step = Some(4);
+        w.battle.pending_frame_step_from = w.battle_frame_id();
+        w.stretch_battle_frame(3);
+        w.clock.display_frames = 13;
+        assert!(w.battle_sm_pass_due());
+        assert_eq!(
+            w.battle.frame_clock.step, 3,
+            "the stretched step runs the next pass"
+        );
+        assert_eq!(w.battle.pending_frame_step, Some(4));
+    }
+
+    /// A clip's stream loads the frame from the second pass after its cue:
+    /// the Amethyst Heal recording costs `392`, `507`, then the clamp.
+    #[test]
+    fn a_clips_stream_loads_the_frame_two_passes_after_its_cue() {
+        use legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
+        let mut w = World::new();
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x3E;
+        w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+        let mut costs = Vec::new();
+        for _ in 0..3 {
+            w.push_frame_cost(None);
+            costs.push(w.battle.frame_cost_ring.newest());
+            w.clock.display_frames += w.battle.frame_clock.span();
+        }
+        assert!(costs[0] < 0x1FF && costs[1] < 0x1FF, "{costs:?}");
+        assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
     }
 
     #[test]

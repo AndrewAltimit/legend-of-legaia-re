@@ -133,12 +133,12 @@ impl World {
     ///
     /// Supplies the kernel's six actor-side inputs from the engine's own
     /// player actor. Two of them stand in for retail slots the engine does not
-    /// carry: `+0x1E` / `+0x20` become the previous tick's `(world_y,
+    /// carry: `+0x1E` / `+0x20` become the previous pass's `(world_y,
     /// world_z)`, so the settle test still answers "has the actor stopped
     /// moving in Y and Z". The pad word is [`legaia_engine_system::story_flag_state::StoryFlagState::story_flags`] - the same
     /// `_DAT_1F800394` scratchpad word retail reads the input lock and the
-    /// fast-arm bit out of - and `_DAT_8007B850` is passed as `0`, which
-    /// leaves the fast arm disengaged (see the comment at the call).
+    /// fast-arm bit out of - and `_DAT_8007B850` is the held pad in retail's
+    /// packed layout, whose d-pad nibble the fast arm tests.
     ///
     /// The result is observable engine state, not a camera input:
     /// [`crate::world::camera_world`] still drives the rendered view from its float
@@ -167,12 +167,13 @@ impl World {
                 footing_settled: prev_y,
                 z,
                 z_target: prev_z,
-                // `_DAT_8007B850` has no engine mirror, so the fast arm
-                // never engages. It is a shortcut, not a behaviour: with it
-                // clear the adaptive arm reaches the same destination in the
-                // same 12-units-a-frame cap, only without pinning the step
-                // while the gap is small.
-                fast_flags: 0,
+                // `_DAT_8007B850`, the held pad word: with scratchpad bit 17
+                // raised (`2E 11`, the Sol Tower scenes and `jouinc`) a held
+                // direction pins the step at twelve a pass, where a standing
+                // or level-walking player otherwise creeps one.
+                fast_flags: u32::from(legaia_engine_field::world_map_panel_host::packed_pad(
+                    self.input.pad(),
+                )),
                 current: self.camera.offset_ease,
             },
         );

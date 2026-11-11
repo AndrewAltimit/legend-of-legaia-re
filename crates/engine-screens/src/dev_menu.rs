@@ -160,7 +160,7 @@ pub fn records_view(model: &RecordsScreen) -> ui::RecordsScreenView<'static> {
         treasure_total: model.treasure_total,
         treasure_percent: model.treasure_percent,
         treasure_fraction: model.treasure_fraction,
-        treasure_shown: model.treasure_shown,
+        treasure_percent_shown: model.treasure_percent_shown,
         labels: RECORDS_LABELS,
     }
 }
@@ -232,14 +232,18 @@ mod tests {
         assert_eq!((m.play_hours, m.play_minutes, m.play_seconds), (99, 59, 59));
     }
 
-    /// With a zero slot 1 the line is *absent*, not drawn as `0 / 0`.
+    /// With a zero slot 1 the line reads `0 / 0` with no percentage, as
+    /// retail draws it (`blez` at `0x801EDDC8` skips the percentage only).
     #[test]
-    fn treasure_line_is_hidden_not_zeroed() {
+    fn treasure_line_without_a_total_drops_its_percentage() {
         let m = dev_records_model(&[], NO_TALLY, 0, (0, 0));
-        assert!(!m.treasure_shown);
+        assert!(!m.treasure_percent_shown);
         let fields = records_screen_fields(&records_view(&m), DEV_RECORDS_PEN);
-        assert!(!fields.iter().any(
+        assert!(fields.iter().any(
             |f| matches!(f, RecordsField::Label { text, .. } if text == RECORDS_LABELS.treasure)
+        ));
+        assert!(!fields.iter().any(
+            |f| matches!(f, RecordsField::Label { text, .. } if text == RECORDS_LABELS.percent)
         ));
     }
 
@@ -250,7 +254,7 @@ mod tests {
     fn tally_and_slot_table_reach_the_page() {
         let m = dev_records_model(&[], (708, 37), 0, (25, 64));
         assert_eq!((m.battles, m.escapes), (708, 37));
-        assert!(m.treasure_shown);
+        assert!(m.treasure_percent_shown);
         assert_eq!((m.treasure_percent, m.treasure_fraction), (39, 6));
         let v = records_view(&m);
         assert_eq!((v.treasure_found, v.treasure_total), (25, 64));

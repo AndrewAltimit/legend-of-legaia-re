@@ -126,6 +126,9 @@ pub(crate) struct FxModelDraw {
     /// page multiplies its battle VP by this, which reproduces the native
     /// `fx_cam * model` exactly.
     pub model: [f32; 16],
+    /// The draw's primitives link at their farthest corner
+    /// (`FxPartModel::far_corner`): the page's `meanDepth` `2`.
+    pub far_corner: bool,
 }
 
 /// One frame's worth of built FX geometry, rebuilt by
@@ -143,6 +146,37 @@ pub(crate) struct BattleFxFrame {
     /// outline strips (draw the flat colour).
     pub flat: Vec<u8>,
     pub models: Vec<FxModelDraw>,
+    /// The baked nodes and parts whose primitives link at their farthest
+    /// corner (`FxMeshModel::far_corner` / `FxPartModel::far_corner`), a
+    /// stream of their own so the page draws them with that order word
+    /// (`meanDepth` `2`), built on the first such draw. Its own `far` and
+    /// `models` stay empty.
+    pub far: Option<Box<BattleFxFrame>>,
+}
+
+impl BattleFxFrame {
+    /// Where a baked draw goes: the far-corner stream or the main one.
+    fn bake_target(&mut self, far_corner: bool) -> &mut BattleFxFrame {
+        if far_corner {
+            self.far.get_or_insert_with(Default::default)
+        } else {
+            self
+        }
+    }
+
+    /// The far-corner stream, empty when no draw went there.
+    fn far_stream(&self) -> &BattleFxFrame {
+        static EMPTY: BattleFxFrame = BattleFxFrame {
+            positions: Vec::new(),
+            uvs: Vec::new(),
+            cba_tsb: Vec::new(),
+            indices: Vec::new(),
+            flat: Vec::new(),
+            models: Vec::new(),
+            far: None,
+        };
+        self.far.as_deref().unwrap_or(&EMPTY)
+    }
 }
 
 /// Full 4x4 inverse (cofactor expansion), column-major. Returns `None` for a
@@ -368,6 +402,7 @@ fn push_fx_models(
             tmd_index: em.index,
             source: FxModelSource::GlobalPool,
             model: mat4_mul(outer, &em.model),
+            far_corner: false,
         });
     }
     for p in &lists.parts {
@@ -386,19 +421,20 @@ fn push_fx_models(
                 &mut m,
                 &mat4_mul(cam, &p.model),
             );
-            bake_mesh(frame, &model, &m);
+            bake_mesh(frame.bake_target(p.far_corner), &model, &m);
             continue;
         }
         if !p.draw.draws_rest_mesh()
             && let Some(m) = world.part_draw_vram_mesh(&p.draw)
         {
-            bake_mesh(frame, &model, &m);
+            bake_mesh(frame.bake_target(p.far_corner), &model, &m);
             continue;
         }
         frame.models.push(FxModelDraw {
             tmd_index: p.draw.model_index,
             source: FxModelSource::GlobalPool,
             model,
+            far_corner: p.far_corner,
         });
     }
 }
@@ -501,9 +537,9 @@ impl LegaiaRuntime {
                     &mut m,
                     &mat4_mul(&cam, &n.model),
                 );
-                bake_mesh(&mut frame, &model, &m);
+                bake_mesh(frame.bake_target(n.far_corner), &model, &m);
             } else {
-                bake_mesh(&mut frame, &model, &n.mesh);
+                bake_mesh(frame.bake_target(n.far_corner), &model, &n.mesh);
             }
         }
         self.battle_fx = frame;
@@ -588,19 +624,20 @@ impl LegaiaRuntime {
                         &mat4_mul(&cull, &fp.model),
                     );
                 }
-                bake_mesh(&mut frame, &model, &m);
+                bake_mesh(frame.bake_target(fp.far_corner), &model, &m);
                 // The untextured prims take the same state - the native
                 // field-FX pass's colour half. The map display's pointer is
                 // all `F*` / `G*`, so without this it baked nothing.
                 let mut c = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
                 fp.draw.apply_render_state_color(&mut c);
-                bake_color_mesh(&mut frame, &model, &c);
+                bake_color_mesh(frame.bake_target(fp.far_corner), &model, &c);
                 continue;
             }
             frame.models.push(FxModelDraw {
                 tmd_index: fp.draw.model_index,
                 source: FxModelSource::ScenePack,
                 model,
+                far_corner: fp.far_corner,
             });
         }
         for n in &lists.kind4 {
@@ -610,9 +647,17 @@ impl LegaiaRuntime {
                     &mut m,
                     &mat4_mul(&cull, &n.model),
                 );
-                bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &m);
+                bake_mesh(
+                    frame.bake_target(n.far_corner),
+                    &mat4_mul(&outer, &n.model),
+                    &m,
+                );
             } else {
-                bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
+                bake_mesh(
+                    frame.bake_target(n.far_corner),
+                    &mat4_mul(&outer, &n.model),
+                    &n.mesh,
+                );
             }
         }
         self.battle_fx = frame;
@@ -784,6 +829,46 @@ impl LegaiaRuntime {
     /// quads, `0` on the outline strips (the page's hybrid-flat shader path).
     pub fn play_battle_fx_flat_rgba(&self) -> Vec<u8> {
         self.battle_fx.flat.clone()
+    }
+
+    /// The far-corner stream's vertex count ([`BattleFxFrame::far`]): the
+    /// baked nodes and parts whose primitives link at their farthest corner,
+    /// which the page uploads as a mesh of its own and draws with
+    /// `meanDepth` `2`. Read after [`Self::play_battle_fx_sync`] /
+    /// [`Self::play_field_fx_sync`].
+    pub fn play_battle_fx_far_vertex_count(&self) -> u32 {
+        (self.battle_fx.far_stream().positions.len() / 3) as u32
+    }
+
+    /// The far-corner stream's positions (the layout of
+    /// [`Self::play_battle_fx_positions`]).
+    pub fn play_battle_fx_far_positions(&self) -> Vec<f32> {
+        self.battle_fx.far_stream().positions.clone()
+    }
+
+    pub fn play_battle_fx_far_uvs(&self) -> Vec<u8> {
+        self.battle_fx.far_stream().uvs.clone()
+    }
+
+    pub fn play_battle_fx_far_cba_tsb(&self) -> Vec<u16> {
+        self.battle_fx.far_stream().cba_tsb.clone()
+    }
+
+    pub fn play_battle_fx_far_indices(&self) -> Vec<u32> {
+        self.battle_fx.far_stream().indices.clone()
+    }
+
+    pub fn play_battle_fx_far_flat_rgba(&self) -> Vec<u8> {
+        self.battle_fx.far_stream().flat.clone()
+    }
+
+    /// Whether FX model draw `i` links its primitives at their farthest
+    /// corner (`FxPartModel::far_corner`): the page's `meanDepth` `2`.
+    pub fn play_battle_fx_model_far_corner(&self, i: u32) -> bool {
+        self.battle_fx
+            .models
+            .get(i as usize)
+            .is_some_and(|m| m.far_corner)
     }
 
     /// Number of 3D FX model draws this frame (`etmd` effect meshes + summon

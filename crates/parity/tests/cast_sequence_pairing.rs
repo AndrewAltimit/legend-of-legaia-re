@@ -126,10 +126,12 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
     std::fs::create_dir_all(&rd).unwrap();
     std::fs::create_dir_all(&ed).unwrap();
 
-    // Retail: one module phase, step 2 throughout, frames of 2, 4 (the
-    // overrun), 2, 2 and 2 vsyncs. The game clock over those rows is
-    // 0 1 | 2 2 3 3 | 4 5 | 6 7 | 8 9, and every grab shows its own row
-    // (fixed lag 0) drawn at grey `3 * game time`.
+    // Retail: one module phase, step 2 throughout, counter runs of 2, 4 (the
+    // overrun), 2, 2 and 2 vsyncs. Each wait ends on its bump's row; the pass
+    // after the second run's wait runs two vsyncs past its step, so its state
+    // stands four rows for two vsyncs of game time: the game clock over the
+    // rows is 0 | 1 2 | 3 3 4 4 | 5 6 | 7 8 | 9, and every grab shows its own
+    // row (fixed lag 0) drawn at grey `3 * game time`.
     let frame_of = |t: u64| match t {
         100..=101 => 1,
         102..=105 => 2,
@@ -137,7 +139,7 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
         108..=109 => 4,
         _ => 5,
     };
-    let game = [0u16, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9];
+    let game = [0u16, 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9];
     let mut meta = String::from("vsync,st7,phase,step,shot,w,h,bpp,frame\n");
     for t in 100..112u64 {
         let name = format!("r_{t:05}.raw");
@@ -149,7 +151,7 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
 
     // Engine: the same phase, one tick a vsync of game time.
     let mut meta = String::from("tick,st7,phase,acting,shot\n");
-    for k in 0..10u16 {
+    for k in 0..11u16 {
         let t = 10 + u64::from(k);
         let name = format!("e_{t:05}.png");
         engine_png(&ed.join(&name), expand(k * 3));
@@ -172,7 +174,7 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
     let seg = r.segments.iter().find(|s| s.key == Key::Module(3)).unwrap();
     assert_eq!(
         (seg.retail_len, seg.retail_game_len, seg.engine_len),
-        (Some(12), Some(10), Some(10))
+        (Some(12), Some(10), Some(11))
     );
     // The whole frames between the cut ends: the 4-vsync one ran 2 over.
     assert_eq!((seg.overrun_frames, seg.overrun_vsyncs), (1, 2));

@@ -24,7 +24,32 @@ pub(super) fn walk_partition_gflag_sites(
     if let Some(hit) = WALKED.with(|w| w.borrow().get(&key).cloned()) {
         return hit;
     }
-    let sites = legaia_engine_field::man_field_scripts::walk_partition_gflag_sites(mf, man, part);
+    let mut sites =
+        legaia_engine_field::man_field_scripts::walk_partition_gflag_sites(mf, man, part);
+    // A placed object's SET that sits beside its dialogue reads as an ASCII
+    // alias (`dolk` P0[19]'s `52 6B` and P0[15]'s `52 70` lie between the
+    // case's and the gate's text segments), yet the record's own control
+    // flow runs it: a site the script reaches, following its jumps, both
+    // arms of each test and every picker option, is an instruction, not
+    // prose. Partition 0 only: the objects' scripts are short and framed.
+    if part == 0 {
+        use legaia_engine_field::man_field_scripts::partition_record_span;
+        let mut reach: HashMap<usize, HashSet<usize>> = HashMap::new();
+        for s in sites.iter_mut().filter(|s| s.text_alias) {
+            let Some((start, pc0, len)) = partition_record_span(mf, man, 0, s.record) else {
+                continue;
+            };
+            let pcs = reach.entry(s.record).or_insert_with(|| {
+                flow_reachable(&man[start..start + len], pc0, None)
+                    .iter()
+                    .map(|i| i.pc)
+                    .collect()
+            });
+            if s.abs_pc >= start && pcs.contains(&(s.abs_pc - start)) {
+                s.text_alias = false;
+            }
+        }
+    }
     WALKED.with(|w| {
         let mut w = w.borrow_mut();
         // A run visits scenes in stretches; a bounded memory of the last
@@ -35,6 +60,63 @@ pub(super) fn walk_partition_gflag_sites(
         w.insert(key, sites.clone());
     });
     sites
+}
+
+/// The instructions a record's script can run from `pc0`: its jumps are
+/// followed, a picker branches to every option, a box test and a
+/// conditional jump both ways, and a story-flag test both ways or, given
+/// `live`, the way the live flags send it. A path ends at a scene change,
+/// a decode error or an instruction already reached.
+pub(super) fn flow_reachable(
+    body: &[u8],
+    pc0: usize,
+    live: Option<&dyn Fn(u16) -> bool>,
+) -> Vec<legaia_scene_formats::field_disasm::Insn> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    let mut stack = vec![pc0];
+    while let Some(pc) = stack.pop() {
+        if pc >= body.len() || !seen.insert(pc) {
+            continue;
+        }
+        let Ok(insn) = decode(body, pc) else { continue };
+        if insn.size == 0 || matches!(insn.info, InsnInfo::Byte { .. }) {
+            continue;
+        }
+        let next = pc + insn.size;
+        match insn.info {
+            InsnInfo::JmpRel { target, .. } => stack.push(target),
+            InsnInfo::SceneChange { .. } => {}
+            InsnInfo::Picker { count, targets, .. } => {
+                stack.extend(targets.iter().take(usize::from(count)).copied());
+            }
+            InsnInfo::BBoxTest { skip_target, .. } => {
+                stack.push(skip_target);
+                stack.push(next);
+            }
+            InsnInfo::CondJmp { target, .. } => {
+                stack.push(target);
+                stack.push(next);
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => match live {
+                Some(f) if f(idx) => stack.push(target),
+                Some(_) => stack.push(next),
+                None => {
+                    stack.push(target);
+                    stack.push(next);
+                }
+            },
+            _ => stack.push(next),
+        }
+        out.push(insn);
+    }
+    out
 }
 
 /// Does the next anchor carry `flag`? `true` when there is no anchor to ask.

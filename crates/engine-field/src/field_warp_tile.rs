@@ -233,6 +233,21 @@ pub fn pad_suppressed(warp: &WarpTimer) -> bool {
     warp.timer > 0 || warp.hold != 0
 }
 
+/// The player tick's walk gate (`0x801D1694..0x801D16FC`): whether this frame
+/// runs the walk-regen tick `FUN_801D0B90` and then the pad controller
+/// `FUN_801D01B0`, in that order.
+///
+/// `engaged` is the player's own movement lock (`+0x10 & `[`MOVEMENT_LOCK`])
+/// and `scripted` the scratchpad word's bit `0x400` (`0x1F800394`); either
+/// sends the frame down the other arm, which neither walks nor regenerates.
+/// With both clear the tick drops the player's `+0x62` bit `8` and then tests
+/// the warp pair ([`pad_suppressed`]).
+///
+/// PORT: FUN_801D1344 (the walk gate)
+pub fn player_tick_walks(engaged: bool, scripted: bool, warp: &WarpTimer) -> bool {
+    !engaged && !scripted && !pad_suppressed(warp)
+}
+
 /// The tail of the entity tick `FUN_801DA51C` (`0x801DA7C4..0x801DA7D8`,
 /// PROT 0897): `lw v1,-0x4950(a0)` / `li v0,-0x3e8` / `bne` / `sw zero,
 /// -0x4950(a0)` - a `-1000` landed sentinel in `_DAT_8007B6B0` is cleared to

@@ -644,6 +644,11 @@ pub const TARGET_SELECT_Y: i16 = 162;
 pub const TARGET_SELECT_SLIDE_MIN_X: i16 = 0x148;
 /// How far right of its rest seat the slide starts (`addiu v0,v0,0x80`).
 pub const TARGET_SELECT_SLIDE_DX: i16 = 0x80;
+/// Seat B `x` of placement record `0x2A`, the outgoing target-select plaque:
+/// the disc value no mover rewrites (the pose driver writes only its seat A,
+/// `sh a0,0x3f2(s1)` at `0x801D5B24`), so the name the cursor left walks
+/// from its rest seat out to `328`, off the 320-wide display.
+pub const TARGET_SELECT_OUT_X: i16 = 328;
 
 /// Rest `x` of the target-select plaque's content box for a measured content
 /// width (`FUN_80035F04` over the target's name payload `actor[+0x1BC]`):

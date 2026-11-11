@@ -744,3 +744,14 @@
   <p>From a save with flag <code>0x471</code> clear, win the Master course. It ends after fight 12; a breakpoint at <code>0x801D1124</code> shows the branch taken and the item add skipped; after the lobby scene, byte <code>0x80085831</code> has bit <code>0x10</code> set. The counter-test: clear that bit, set <code>0x471</code>, win thirteen fights, and the item arrives. Clearing bit <code>0x10</code> at <code>0x80085831</code> should repair an affected save.</p>
   <p>Open: whether the party can leave Jette's Fortress between the last flag being set and the Jette fight was not checked.</p>
 </section>
+
+<section class="doc-section" id="throw-out-confirm-count">
+  <h2>The Throw Out confirm loses its count</h2>
+  <p>Choosing an item under Items &gt; Throw Out opens a small Yes / No window. On the USA disc it shows the item's name and, under it, "Throw out?". The window was written to say more: the name, then how many are in the bag, then "You are about to", with "Throw out?" below. The count and that first line are drawn, but far off the right edge of the screen.</p>
+  <h3>Mechanism</h3>
+  <p>The painter <code>FUN_801D1B20</code> draws the name and then places the count after it at <code>WX + 8 + n * 12</code>, where <code>n</code> is meant to be the name's glyph count. It reads <code>n</code> from the first byte of the name string (<code>0x801D1BB4</code>). The names on this disc carry no count byte and open on a letter, so <code>n</code> is that letter's code: <code>P</code> is 80, and the pen lands 968 pixels right of the window. "You are about to" follows the count there.</p>
+  <h3>In the port</h3>
+  <p>The port draws the count and the line after the name. Retail's seat is kept as a kernel that the <a href="../../tooling/retail-kernel-differential.html">retail differential</a> compares with the routine.</p>
+  <h3>Verifying it</h3>
+  <p>Open Items &gt; Throw Out, pick any stack, and read the window: the name's row holds the name alone. In a debugger, break at <code>0x801D1C20</code> and read <code>a2</code>, the count's pen x.</p>
+</section>

@@ -64,6 +64,8 @@ Controls panel, Explorer's shortcut list and the play window's `F12` panel.
 
 The launcher and the play window's chrome draw in either palette by role (`Palette::get`, `chrome::inks`), resolved by `resolve_dark`: the player's choice, else the window system, else the desktop's preference (`desktop_prefers_dark`), else dark. Light chrome letters the disc font without its drop shadow (`Font::atlas_rgba_without_shadow`), which would smear into dark ink.
 
+A notice line or the key hint sits over the game itself, on a plate of the palette's `ground` whose opacity is `chrome::notice_scrim_alpha`: a light plate is the more opaque of the two, because over a black screen (the title, a fade) it greys until the light inks no longer read.
+
 ## How a failed game is reported
 
 `game_exit` is the wording the launcher and Explorer share when the game they
@@ -89,6 +91,9 @@ strings); the palette does not.
   than `ink_dim`; `outline` at least 3:1 (the WCAG floor for a control's
   boundary); button and selected-row text, the accent on a button, and
   the primary button's label, likewise.
+- The notice plate over the worst picture behind it (white behind the dark
+  plate, black behind the light one): the heading and key inks at least
+  4.5:1.
 - The contrast function against the WCAG reference points.
 - The dark tokens stay within half an 8-bit step of the launcher's original
   float values.

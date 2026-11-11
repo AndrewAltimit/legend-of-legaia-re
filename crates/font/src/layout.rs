@@ -43,6 +43,40 @@ impl Font {
     /// Menus and battle draw at `0`; the field dialog pager `FUN_801D84D0`
     /// stores [`measure::DIALOG_GLYPH_PAD`] before each row (`0x801D97D8`).
     pub fn layout_padded(&self, text: &[u8], glyph_pad: u32) -> Layout {
+        let mut ink = 0;
+        self.layout_walk(text, glyph_pad, &mut ink, None)
+    }
+
+    /// [`Self::layout_padded`] with the ink each laid glyph draws in, one
+    /// entry per [`Layout::glyphs`] element. `ink` is the staging id
+    /// `_DAT_8007B454` on entry and on return: a `0xCF n` pair sets it for
+    /// the glyphs after it (`FUN_80036888`, `0x80036944..0x8003695C`:
+    /// `lbu v1,0x1(s3)` / `sw v1,-0x4bac(v0)`, no glyph and no advance), and
+    /// a caller drawing several rows threads it through them, as the field
+    /// pager does by staging ink `7` once before its row loop
+    /// (`0x801D9654..0x801D965C`).
+    pub fn layout_padded_inked(
+        &self,
+        text: &[u8],
+        glyph_pad: u32,
+        ink: &mut u8,
+    ) -> (Layout, Vec<u8>) {
+        let mut inks = Vec::new();
+        let laid = self.layout_walk(text, glyph_pad, ink, Some(&mut inks));
+        (laid, inks)
+    }
+
+    /// The one byte walk behind [`Self::layout_padded`] and
+    /// [`Self::layout_padded_inked`]: `inks`, when present, takes one ink per
+    /// laid glyph. The plain layout passes `None`, so the menu and battle
+    /// text it lays out every frame allocates no ink list it never reads.
+    fn layout_walk(
+        &self,
+        text: &[u8],
+        glyph_pad: u32,
+        ink: &mut u8,
+        mut inks: Option<&mut Vec<u8>>,
+    ) -> Layout {
         let mut glyphs = Vec::new();
         let mut pen_x: i32 = 0;
         let mut pen_y: i32 = 0;
@@ -73,6 +107,9 @@ impl Font {
                     let op = text[i];
                     i += 1;
                     if let Some(c) = self.escape_cell(op) {
+                        if let Some(inks) = inks.as_deref_mut() {
+                            inks.push(*ink);
+                        }
                         glyphs.push(LaidGlyph {
                             byte: ESCAPE_GLYPH_BYTE,
                             dst_x: pen_x,
@@ -86,11 +123,15 @@ impl Font {
                     }
                 }
                 0xCF if i < text.len() => {
+                    *ink = text[i];
                     i += 1;
                 }
                 0xCE | 0xCF => {}
                 FIRST_CHAR..=0xFF => {
                     if let Some((ax, ay)) = Self::glyph_origin(c) {
+                        if let Some(inks) = inks.as_deref_mut() {
+                            inks.push(*ink);
+                        }
                         glyphs.push(LaidGlyph {
                             byte: c,
                             dst_x: pen_x,

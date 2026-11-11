@@ -127,6 +127,9 @@ pub struct Automation {
     pub media: Option<String>,
     /// `LEGAIA_EXPLORER_SEARCH`: start with this text in the archive search.
     pub search: Option<String>,
+    /// `LEGAIA_EXPLORER_FIND`: start with this text in the Text tab's find
+    /// field.
+    pub find: Option<String>,
     /// `LEGAIA_EXPLORER_PLAY`: press Play once the disc has loaded.
     pub play: bool,
 }
@@ -148,6 +151,7 @@ impl Automation {
             actor: std::env::var("LEGAIA_EXPLORER_ACTOR").ok(),
             media: std::env::var("LEGAIA_EXPLORER_MEDIA").ok(),
             search: std::env::var("LEGAIA_EXPLORER_SEARCH").ok(),
+            find: std::env::var("LEGAIA_EXPLORER_FIND").ok(),
             play: std::env::var_os("LEGAIA_EXPLORER_PLAY").is_some_and(|v| !v.is_empty()),
         }
     }
@@ -311,6 +315,8 @@ pub struct App {
     tim_sel: usize,
     clut: usize,
     tim_zoom: f32,
+    /// *Fit* was pressed: the next draw sets the zoom to the pane.
+    tim_fit: bool,
     /// The Extract view's options are unfolded; a started run folds them, so
     /// a small window has room for its log.
     extract_options_open: bool,
@@ -333,6 +339,13 @@ pub struct App {
     /// sample: its rows are virtual, so only what scrolls past is decoded.
     waves: HashMap<(usize, usize, usize), Vec<u8>>,
     player: Player,
+    /// The Hex tab's *Go to* field.
+    hex_goto: String,
+    /// The Text tab's find field: only lines holding every word show.
+    text_filter: String,
+    /// Where the transport's seek slider is being dragged to (seconds); the
+    /// stream moves there when the pointer lets go.
+    seek_drag: Option<f64>,
     // Extract mode.
     out_text: String,
     job: Option<ExtractJob>,
@@ -437,6 +450,7 @@ impl App {
             tim_sel: 0,
             clut: 0,
             tim_zoom: 2.0,
+            tim_fit: false,
             zoom_applied: 1.0,
             extract_options_open: true,
             tim_tex: None,
@@ -451,6 +465,9 @@ impl App {
             seq_loop: false,
             waves: HashMap::new(),
             player,
+            seek_drag: None,
+            text_filter: String::new(),
+            hex_goto: String::new(),
             out_text,
             job: None,
             log_warnings_only: false,
@@ -497,6 +514,9 @@ impl App {
         }
         if let Some(q) = app.auto.search.clone() {
             app.filter = q;
+        }
+        if let Some(q) = app.auto.find.clone() {
+            app.text_filter = q;
         }
         if let Some(dir) = app.auto.extract_to.clone() {
             app.out_text = dir.display().to_string();
@@ -1808,7 +1828,7 @@ impl App {
                         self.report("entry", res, &out);
                     }
                 }
-                hex_view(ui, &a.bytes)
+                hex_view(ui, &a.bytes, &mut self.hex_goto)
             }
         }
     }
@@ -1954,13 +1974,21 @@ impl App {
         // ran off the pane's edge. The sliders shrink so a label, its slider
         // and its value box fit one row of the narrowest pane.
         let stacked = ui.available_width() < TEX_CONTROLS_ROW_MIN;
-        let zoom_row = |ui: &mut egui::Ui, zoom: &mut f32, w: f32| {
+        let zoom_row = |ui: &mut egui::Ui, zoom: &mut f32, fit: &mut bool, w: f32| {
             ui.spacing_mut().slider_width = w;
             ui.label("Zoom:");
-            ui.add(egui::Slider::new(zoom, 0.5..=8.0).step_by(0.5));
+            ui.add(egui::Slider::new(zoom, TIM_ZOOM.0..=TIM_ZOOM.1).step_by(0.5))
+                .on_hover_text("Ctrl + scroll over the image zooms too; drag the image to move it");
+            if ui
+                .small_button("Fit")
+                .on_hover_text("The whole texture in the pane")
+                .clicked()
+            {
+                *fit = true;
+            }
         };
         let slider_w =
-            (ui.available_width() / if stacked { 1.0 } else { 2.0 } - 110.0).clamp(60.0, 140.0);
+            (ui.available_width() / if stacked { 1.0 } else { 2.0 } - 150.0).clamp(60.0, 140.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().slider_width = slider_w;
             if t.palettes > 1 {
@@ -1980,11 +2008,11 @@ impl App {
             }
             if !stacked {
                 ui.separator();
-                zoom_row(ui, &mut self.tim_zoom, slider_w);
+                zoom_row(ui, &mut self.tim_zoom, &mut self.tim_fit, slider_w);
             }
         });
         if stacked {
-            ui.horizontal(|ui| zoom_row(ui, &mut self.tim_zoom, slider_w));
+            ui.horizontal(|ui| zoom_row(ui, &mut self.tim_zoom, &mut self.tim_fit, slider_w));
         }
         let key = self.take_export_key();
         ui.horizontal_wrapped(|ui| {
@@ -2055,17 +2083,38 @@ impl App {
             ui.colored_label(ui.visuals().error_fg_color, e);
         }
         if let Some((_, tex)) = &self.tim_tex {
-            let size = tex.size_vec2() * self.tim_zoom;
-            egui::ScrollArea::both().show(ui, |ui| {
-                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                checkerboard(ui, rect);
-                ui.painter().image(
-                    tex.id(),
-                    rect,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    Color32::WHITE,
-                );
-            });
+            let texels = tex.size_vec2();
+            if std::mem::take(&mut self.tim_fit) {
+                self.tim_zoom = fit_tim_zoom(texels, ui.available_size());
+            }
+            let size = texels * self.tim_zoom;
+            let mut zoom_by = 1.0;
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
+                    checkerboard(ui, rect);
+                    ui.painter().image(
+                        tex.id(),
+                        rect,
+                        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                    // The texel under the pointer, for whoever is matching
+                    // a model's UVs or a palette cell against the image.
+                    if let Some(p) = resp.hover_pos() {
+                        let at = (p - rect.min) / self.tim_zoom;
+                        let (x, y) = (
+                            (at.x as usize).min(texels.x as usize - 1),
+                            (at.y as usize).min(texels.y as usize - 1),
+                        );
+                        resp.on_hover_text_at_pointer(format!("x {x}, y {y}"));
+                        zoom_by = ui.input(|i| i.zoom_delta());
+                    }
+                });
+            if zoom_by != 1.0 {
+                self.tim_zoom = step_tim_zoom(self.tim_zoom, zoom_by);
+            }
         }
     }
 
@@ -2354,33 +2403,82 @@ impl App {
         mv.view.show(ui, model, vram, &caption);
     }
 
+    /// The audio transport both sound views open with: Stop, how far the
+    /// playing sound is (a bar; a slider that seeks for a streamed channel),
+    /// and what it is. One row at any width: Stop and the time come first
+    /// and the name is cut to what is left.
+    pub(crate) fn transport_row(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let playing = self.player.now_playing.is_some();
+            if ui.add_enabled(playing, egui::Button::new("Stop")).clicked() {
+                self.player.stop();
+                self.seek_drag = None;
+            }
+            let (Some(name), Some(progress)) =
+                (self.player.now_playing.clone(), self.player.progress())
+            else {
+                self.seek_drag = None;
+                ui.label("Stopped");
+                return;
+            };
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+            match progress.total {
+                Some(total) if self.player.can_seek() => {
+                    let mut at = self.seek_drag.unwrap_or(progress.secs).min(total);
+                    ui.spacing_mut().slider_width = TRANSPORT_BAR_W;
+                    let r = ui
+                        .add(egui::Slider::new(&mut at, 0.0..=total).show_value(false))
+                        .on_hover_text("Drag to move through the sound");
+                    if r.changed() {
+                        self.seek_drag = Some(at);
+                    } else if self.seek_drag.is_none()
+                        && ui.input(|i| i.pointer.primary_released())
+                        && let Some(p) = ui.input(|i| i.pointer.interact_pos())
+                        && r.rect.contains(p)
+                    {
+                        // A press and release inside one frame moves no
+                        // slider; the click's place on the rail still counts.
+                        let along = (p.x - r.rect.left()) / r.rect.width().max(1.0);
+                        self.seek_drag = Some(f64::from(along.clamp(0.0, 1.0)) * total);
+                    }
+                    if !r.is_pointer_button_down_on()
+                        && let Some(to) = self.seek_drag.take()
+                    {
+                        self.player.seek_stream(to);
+                    }
+                    let shown = crate::player::Progress {
+                        secs: at,
+                        total: Some(total),
+                    };
+                    ui.monospace(shown.text());
+                }
+                Some(_) => {
+                    ui.add(
+                        egui::ProgressBar::new(progress.fraction().unwrap_or(0.0))
+                            .desired_width(TRANSPORT_BAR_W)
+                            .desired_height(ui.spacing().interact_size.y * 0.5),
+                    );
+                    ui.monospace(progress.text());
+                }
+                None => {
+                    ui.monospace(progress.text());
+                    if let Some((tick, bpm, _)) = self.player.seq_progress() {
+                        ui.label(format!("tick {tick}, {bpm:.1} BPM"));
+                    }
+                }
+            }
+            ui.add(egui::Label::new(name.as_str()).truncate())
+                .on_hover_text(name);
+        });
+    }
+
     fn audio(&mut self, ui: &mut egui::Ui, lib: &crate::Library, a: &Analysis) {
         if a.vabs.is_empty() && a.seqs.is_empty() {
             ui.label("No VAB sound banks or SEQ sequences in this entry.");
             return;
         }
-        let playing = self.player.now_playing.is_some();
-        ui.horizontal(|ui| {
-            match &self.player.now_playing {
-                Some(n) => {
-                    ui.label(format!("Playing: {n}"));
-                    if let Some((tick, bpm, done)) = self.player.seq_progress() {
-                        ui.label(format!(
-                            "tick {tick}, {bpm:.1} BPM{}",
-                            if done { ", finished" } else { "" }
-                        ));
-                    }
-                    ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_millis(200));
-                }
-                None => {
-                    ui.label("Stopped");
-                }
-            }
-            if ui.add_enabled(playing, egui::Button::new("Stop")).clicked() {
-                self.player.stop();
-            }
-        });
+        self.transport_row(ui);
         ui.separator();
         if !a.vabs.is_empty() {
             self.vab_sel = self.vab_sel.min(a.vabs.len() - 1);
@@ -2527,18 +2625,48 @@ impl App {
         }
         // Ctrl+E saves the first text block the tab shows.
         let mut key = self.take_export_key();
+        // The find field sits above the scrolling text, so it stays in
+        // reach however far the lines are scrolled.
+        let total_lines = a.dialog.len() + a.mes.iter().map(|m| m.messages.len()).sum::<usize>();
+        ui.horizontal(|ui| {
+            ui.label("Find:");
+            let clear_w = small_button_width(ui, "x") + ui.spacing().item_spacing.x;
+            let field_w = (ui.available_width() - clear_w - 150.0).clamp(80.0, 260.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.text_filter)
+                    .hint_text("words in a line")
+                    .desired_width(field_w),
+            )
+            .on_hover_text(
+                "Shows only the lines holding every word typed here, in any order and \
+                 either case. Save text still writes every line.",
+            );
+            if !self.text_filter.is_empty() {
+                if ui.small_button("x").on_hover_text("Clear").clicked() {
+                    self.text_filter.clear();
+                }
+                let terms = find_terms(&self.text_filter);
+                let shown = a
+                    .dialog
+                    .iter()
+                    .filter(|l| line_matches(&l.text, &terms))
+                    .count()
+                    + a.mes
+                        .iter()
+                        .flat_map(|m| m.messages.iter())
+                        .filter(|s| line_matches(s, &terms))
+                        .count();
+                ui.label(format!("{shown} of {total_lines}"));
+            }
+        });
+        let terms = find_terms(&self.text_filter);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 if !a.dialog.is_empty() {
+                    // The button leads: after the heading and the markup
+                    // note it sat past the pane's edge at the minimum width.
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(format!("{} dialog lines", a.dialog.len())).strong(),
-                        );
-                        ui.label(
-                            RichText::new("language-pack markup: | = line break, {c1:00} = a name")
-                                .weak(),
-                        );
                         if ui
                             .small_button("Save text...")
                             .on_hover_text(EXPORT_KEY_HINT)
@@ -2559,18 +2687,28 @@ impl App {
                                 self.report("text", res, &out);
                             }
                         }
+                        ui.label(RichText::new(count_noun(a.dialog.len(), "dialog line")).strong());
+                        const MARKUP: &str =
+                            "language-pack markup: | = line break, {c1:00} = a name";
+                        ui.add(egui::Label::new(RichText::new(MARKUP).weak()).truncate())
+                            .on_hover_text(MARKUP);
                     });
+                    let mut any = false;
                     egui::Grid::new("dialog")
                         .striped(true)
                         .num_columns(2)
                         .show(ui, |ui| {
-                            for l in &a.dialog {
+                            for l in a.dialog.iter().filter(|l| line_matches(&l.text, &terms)) {
+                                any = true;
                                 let space = if l.from_man { "man" } else { "raw" };
                                 ui.monospace(format!("{space}:0x{:05X}", l.offset));
                                 ui.label(l.text.replace('|', "\n"));
                                 ui.end_row();
                             }
                         });
+                    if !any {
+                        ui.label(RichText::new("No dialog line holds those words.").weak());
+                    }
                     ui.separator();
                 }
                 for (k, m) in a.mes.iter().enumerate() {
@@ -2610,7 +2748,12 @@ impl App {
                             "No messages decode from this blob.".to_string()
                         });
                     }
-                    for (i, s) in m.messages.iter().enumerate() {
+                    for (i, s) in m
+                        .messages
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, s)| line_matches(s, &terms))
+                    {
                         ui.horizontal_wrapped(|ui| {
                             ui.monospace(format!("{i:3}"));
                             ui.label(RichText::new(s).monospace());
@@ -2980,6 +3123,8 @@ impl eframe::App for App {
         }
         self.poll_game(ctx);
         self.poll_export(ctx);
+        // A sound that has played out stops reading as playing.
+        self.player.poll();
     }
 
     /// Input and drawing. Everything that reads this frame's events (drops,
@@ -3294,6 +3439,7 @@ impl App {
     fn start_page(&mut self, ui: &mut egui::Ui) {
         const COLUMN: f32 = 700.0;
         let accent = crate::theme::accent(ui);
+        let (top_gap, gap) = start_gaps(ui.available_height());
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -3305,7 +3451,7 @@ impl App {
                     ui.add_space(side);
                     ui.vertical(|ui| {
                         ui.set_max_width(column);
-                        ui.add_space(28.0);
+                        ui.add_space(top_gap);
                         ui.label(RichText::new("Legaia Explorer").size(30.0).color(accent));
                         ui.label(
                             RichText::new(
@@ -3314,7 +3460,7 @@ impl App {
                             )
                             .size(15.0),
                         );
-                        ui.add_space(18.0);
+                        ui.add_space(gap - 2.0);
                         ui.horizontal(|ui| {
                             let big = egui::vec2(230.0, 38.0);
                             if ui
@@ -3352,7 +3498,7 @@ impl App {
                             });
                         }
                         if !self.explorer.settings.recent.is_empty() {
-                            ui.add_space(20.0);
+                            ui.add_space(gap);
                             ui.label(RichText::new("Open again").strong().size(15.0));
                             egui::Frame::new()
                                 .fill(ui.visuals().faint_bg_color)
@@ -3365,7 +3511,7 @@ impl App {
                                     }
                                 });
                         }
-                        ui.add_space(20.0);
+                        ui.add_space(gap);
                         ui.label(RichText::new("What you can do").strong().size(15.0));
                         egui::Grid::new("start_features")
                             .num_columns(2)
@@ -3405,7 +3551,7 @@ impl App {
                                     ui.end_row();
                                 }
                             });
-                        ui.add_space(20.0);
+                        ui.add_space(gap);
                         ui.label(
                             RichText::new(
                                 "No game data ships with this program: it reads only the \
@@ -3419,6 +3565,20 @@ impl App {
             });
     }
 }
+
+/// The start page's gaps (above the title, between its sections) for a page
+/// `height` points tall: the roomy ones, or tighter ones on a short window,
+/// where the roomy gaps put the last line under the window's bottom edge.
+fn start_gaps(height: f32) -> (f32, f32) {
+    if height < START_ROOMY_MIN_H {
+        (8.0, 10.0)
+    } else {
+        (28.0, 20.0)
+    }
+}
+
+/// The page height from which the start page takes its roomy gaps.
+const START_ROOMY_MIN_H: f32 = 520.0;
 
 /// The preview tab after (or before) `from`, skipping the ones `enabled`
 /// rules out and wrapping at the ends; `from` itself when no other is.
@@ -3439,6 +3599,55 @@ const TAB_COUNTS_MIN_WIDTH: f32 = 430.0;
 
 /// The hover line on each view's main export button.
 const EXPORT_KEY_HINT: &str = "Ctrl+E";
+
+/// The texture preview's zoom range.
+const TIM_ZOOM: (f32, f32) = (0.5, 8.0);
+
+/// The zoom after a Ctrl + scroll of factor `by`: kept on a quarter-step
+/// grid inside [`TIM_ZOOM`], and always at least one step from `zoom` in the
+/// scroll's direction, so a slow wheel still moves it.
+fn step_tim_zoom(zoom: f32, by: f32) -> f32 {
+    const STEP: f32 = 0.25;
+    if !by.is_finite() || by <= 0.0 || by == 1.0 {
+        return zoom;
+    }
+    let snapped = (zoom * by / STEP).round() * STEP;
+    let moved = if by > 1.0 {
+        snapped.max(zoom + STEP)
+    } else {
+        snapped.min(zoom - STEP)
+    };
+    moved.clamp(TIM_ZOOM.0, TIM_ZOOM.1)
+}
+
+/// The largest quarter-step zoom at which a texture of `texels` shows whole
+/// in a pane of `room` points, inside [`TIM_ZOOM`].
+fn fit_tim_zoom(texels: egui::Vec2, room: egui::Vec2) -> f32 {
+    if texels.x <= 0.0 || texels.y <= 0.0 {
+        return 1.0;
+    }
+    let fit = (room.x / texels.x).min(room.y / texels.y);
+    ((fit / 0.25).floor() * 0.25).clamp(TIM_ZOOM.0, TIM_ZOOM.1)
+}
+
+/// The words of a find field, lower-cased; none for a blank field.
+fn find_terms(query: &str) -> Vec<String> {
+    query.split_whitespace().map(str::to_lowercase).collect()
+}
+
+/// Whether `text` holds every one of `terms` ([`find_terms`]), in any order
+/// and either case. A line break in the markup (`|`) reads as a space, so
+/// words either side of one still match as typed. No terms match any line.
+fn line_matches(text: &str, terms: &[String]) -> bool {
+    if terms.is_empty() {
+        return true;
+    }
+    let hay = text.replace('|', " ").to_lowercase();
+    terms.iter().all(|t| hay.contains(t.as_str()))
+}
+
+/// The width of the transport's progress bar or seek slider.
+const TRANSPORT_BAR_W: f32 = 120.0;
 
 /// What the status line says when Ctrl+E finds nothing to save in `mode`.
 fn nothing_to_export(mode: Mode) -> &'static str {
@@ -3533,26 +3742,81 @@ fn checkerboard(ui: &egui::Ui, rect: egui::Rect) {
     }
 }
 
-fn hex_view(ui: &mut egui::Ui, bytes: &[u8]) {
+fn hex_view(ui: &mut egui::Ui, bytes: &[u8], goto: &mut String) {
     let font = egui::TextStyle::Monospace.resolve(ui.style());
     let char_w = ui.fonts_mut(|f| f.glyph_width(&font, '0'));
+    // A jump to a typed offset: the row holding it goes to the top.
+    let mut jump = None;
+    ui.horizontal(|ui| {
+        ui.label("Go to:");
+        let field = ui
+            .add(
+                egui::TextEdit::singleline(goto)
+                    .hint_text("hex offset")
+                    .desired_width(90.0)
+                    .font(egui::TextStyle::Monospace),
+            )
+            .on_hover_text("An offset into this entry in hex (1F40 or 0x1F40), then Enter");
+        let entered = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        match parse_hex_offset(goto) {
+            Some(off) if off < bytes.len() => {
+                if entered {
+                    jump = Some(off);
+                }
+            }
+            Some(_) => {
+                ui.colored_label(
+                    ui.visuals().error_fg_color,
+                    format!("past the end (0x{:X} bytes)", bytes.len()),
+                );
+            }
+            None if !goto.trim().is_empty() => {
+                ui.colored_label(ui.visuals().error_fg_color, "not a hex number");
+            }
+            None => {
+                ui.label(RichText::new(format!("0x{:X} bytes", bytes.len())).weak());
+            }
+        }
+    });
     let per_row = hex_row_bytes(ui.available_width(), char_w);
     let rows = bytes.len().div_ceil(per_row);
     let h = ui.text_style_height(&egui::TextStyle::Monospace);
-    egui::ScrollArea::both()
-        .auto_shrink([false, false])
-        .show_rows(ui, h, rows, |ui, range| {
-            for r in range {
-                // One text row per dump row: a wrapped row would put the
-                // virtualised rows out of step with the scroll bar.
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(hex_line(bytes, r * per_row, per_row)).monospace(),
-                    )
-                    .extend(),
-                );
-            }
-        });
+    let mut area = egui::ScrollArea::both().auto_shrink([false, false]);
+    if let Some(off) = jump {
+        let row = (off / per_row) as f32;
+        area = area.vertical_scroll_offset(row * (h + ui.spacing().item_spacing.y));
+    }
+    area.show_rows(ui, h, rows, |ui, range| {
+        for r in range {
+            // One text row per dump row: a wrapped row would put the
+            // virtualised rows out of step with the scroll bar.
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(hex_line(bytes, r * per_row, per_row)).monospace(),
+                )
+                .extend(),
+            );
+        }
+    });
+}
+
+/// A typed hex offset: digits with an optional `0x` (or `$`) in front and
+/// spaces or underscores anywhere. `None` for anything else, a blank field
+/// included.
+fn parse_hex_offset(text: &str) -> Option<usize> {
+    let t: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '_')
+        .collect();
+    let digits = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .or_else(|| t.strip_prefix('$'))
+        .unwrap_or(&t);
+    if digits.is_empty() {
+        return None;
+    }
+    usize::from_str_radix(digits, 16).ok()
 }
 
 /// The characters a hex dump row of `n` bytes takes: the offset and its gap,
@@ -3762,6 +4026,66 @@ mod layout_tests {
         assert_eq!(default, 270.0);
         // Never below the floor, however narrow.
         assert_eq!(tim_list_width(100.0).1, TIM_LIST_MIN);
+    }
+
+    #[test]
+    fn texture_zoom_steps_and_fits_inside_its_range() {
+        // A slow wheel still moves one step; a fast one moves further.
+        assert_eq!(step_tim_zoom(2.0, 1.01), 2.25);
+        assert_eq!(step_tim_zoom(2.0, 0.99), 1.75);
+        assert_eq!(step_tim_zoom(2.0, 1.5), 3.0);
+        assert_eq!(step_tim_zoom(8.0, 1.5), 8.0);
+        assert_eq!(step_tim_zoom(0.5, 0.5), 0.5);
+        assert_eq!(step_tim_zoom(2.0, 1.0), 2.0);
+        assert_eq!(step_tim_zoom(2.0, f32::NAN), 2.0);
+        // 256x256 in a 380x300 pane: 1.0 shows it whole, 1.25 would not.
+        let fit = fit_tim_zoom(egui::vec2(256.0, 256.0), egui::vec2(380.0, 300.0));
+        assert_eq!(fit, 1.0);
+        // A strip far wider than the pane stops at the smallest zoom.
+        assert_eq!(
+            fit_tim_zoom(egui::vec2(1024.0, 16.0), egui::vec2(300.0, 300.0)),
+            0.5
+        );
+        assert_eq!(
+            fit_tim_zoom(egui::vec2(16.0, 16.0), egui::vec2(900.0, 900.0)),
+            8.0
+        );
+    }
+
+    #[test]
+    fn hex_offsets_parse_with_or_without_a_prefix() {
+        assert_eq!(parse_hex_offset("1F40"), Some(0x1F40));
+        assert_eq!(parse_hex_offset(" 0x1f40 "), Some(0x1F40));
+        assert_eq!(parse_hex_offset("$10"), Some(0x10));
+        assert_eq!(parse_hex_offset("0001_0000"), Some(0x1_0000));
+        assert_eq!(parse_hex_offset(""), None);
+        assert_eq!(parse_hex_offset("0x"), None);
+        assert_eq!(parse_hex_offset("town01"), None);
+        assert_eq!(parse_hex_offset("-4"), None);
+    }
+
+    #[test]
+    fn find_matches_every_word_in_any_order_and_case() {
+        let t = find_terms("  LOCKED house ");
+        assert_eq!(t, ["locked", "house"]);
+        assert!(line_matches(
+            "The house is locked and you|can't get inside.",
+            &t
+        ));
+        assert!(!line_matches("The cupboard is empty!", &t));
+        // A break in the markup does not split a phrase's words apart.
+        assert!(line_matches("locked|house", &find_terms("locked house")));
+        // A blank field shows every line.
+        assert!(line_matches("anything", &find_terms("   ")));
+    }
+
+    #[test]
+    fn start_page_tightens_on_a_short_window() {
+        // The minimum window leaves the page about 400 points.
+        let (top, gap) = start_gaps(400.0);
+        let (roomy_top, roomy_gap) = start_gaps(640.0);
+        assert!(top < roomy_top && gap < roomy_gap);
+        assert_eq!(start_gaps(START_ROOMY_MIN_H), (roomy_top, roomy_gap));
     }
 
     #[test]

@@ -164,6 +164,49 @@ impl World {
                 st.goal = at;
             }
         }
+        if let Some(e) = entry {
+            self.run_seat_pass_node_tick(e, slot);
+        }
+    }
+
+    /// The seat pass's own node tick for a creature the host seats after the
+    /// pass's anim walk has run.
+    ///
+    /// Retail's installer `FUN_801F19EC` builds the node inside the module's
+    /// call on the frame driver's pass (`jal 0x80024C88` at `0x801F1D4C`),
+    /// and the actor list's tick walk `FUN_8002519C` reaches it later in the
+    /// same pass, so the creature's first advance and any commit its seat arm
+    /// asked for run on the seat pass: PROT 0934's arm 5 seats Ozma, stores
+    /// rate `4` and bumps `+0x1DA` (`0x801F7034..0x801F706C`), and the first
+    /// recorded creature row reads cursor `8`, staged `1`; PROT 0929's arm 5
+    /// bumps `+0x1DA` and `+0x1DC` bit 0 (`0x801F7094..0x801F70B8`), and Mule's
+    /// first row already plays clip `1` at cursor `0`. Every lone-caster summon
+    /// recording reads one advance on the seat's first row. The engine's hosts
+    /// seat the creature after the world tick, so the seat arm's held stores
+    /// (`Self::apply_seru_seat_writes`) land here, behind the installer's
+    /// resets, and the creature's slice of the walk runs once for the pass.
+    // PORT: FUN_8002519C (the seat pass reaching the node the module built)
+    fn run_seat_pass_node_tick(&mut self, entry: u32, slot: usize) {
+        if self.mode != SceneMode::Battle
+            || !self.toggles.battle_sm_frame_cadence
+            || self.battle.anim_pass_vsyncs == 0
+            || self.battle.anim_pass_frame != Some(self.battle_frame_id())
+        {
+            return;
+        }
+        let phase = self.casting.module_phase;
+        self.apply_seru_seat_writes(entry, phase);
+        // The node is new: its `+0x74` holds no tint pass's word yet, so the
+        // zero-colour skip (`0x800474D4..0x800474E0`) cannot stop its first
+        // advance, and the seat pass's draw then latches the word the seat
+        // arm left. Horn's seat arm hides its creature (`+0x04 = 0`), and its
+        // recording's first creature row reads cursor `3`, held there until
+        // arm 6 shows it.
+        if let Some(a) = self.actors.get_mut(slot) {
+            a.battle_node_colour_zero = Some(false);
+        }
+        self.tick_battle_animations_walk_of(false, Some(slot));
+        self.latch_battle_node_colours();
     }
 
     /// Whether a cast of `spell_id` seats its creature where the installer

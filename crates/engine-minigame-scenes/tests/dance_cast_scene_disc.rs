@@ -72,7 +72,7 @@ fn every_mode_draws_its_own_floor() {
         DanceMode::HowTo,
         DanceMode::FreePlay,
     ] {
-        let mut game = DanceGame::from_overlay_for_mode(&overlay, mode, false).expect("run");
+        let mut game = DanceGame::from_overlay_for_mode(&overlay, mode).expect("run");
         let bodies = game.body_frames();
         let want = mode.cast_size() + usize::from(mode == DanceMode::HowTo);
         assert_eq!(bodies.len(), want, "{mode:?} body count");

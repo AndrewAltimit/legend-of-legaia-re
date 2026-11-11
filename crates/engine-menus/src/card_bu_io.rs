@@ -281,17 +281,15 @@ impl CardIoState {
     /// `0x801E0680..0x801E06AC`)
     ///
     /// Retail zeroes about twenty further card globals here that this state
-    /// does not model, and it does not touch the phase word or the open
-    /// handle - the callers clear the phase (`0x801E16C4` in
-    /// `FUN_801E13B8`). The `phase` / `fd_open` resets below are the port's.
+    /// does not model. It does not touch the phase word or the open handle:
+    /// the callers clear the phase (`0x801E16C4` in `FUN_801E13B8`), and a
+    /// transfer in flight across a reset is still in flight after it.
     ///
     /// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - see the
     /// module heading; nothing services a [`CardOp`] because nothing needs to.
     pub fn reset(&mut self, keep_directory: bool) {
-        self.phase = CardPhase::Idle;
         self.write_failed = false;
         self.read_failed = false;
-        self.fd_open = false;
         if !keep_directory {
             self.dir_names.clear();
         }
@@ -731,8 +729,9 @@ mod tests {
             dir_names: vec!["A".into(), "B".into()],
         };
         st.reset(true);
-        assert_eq!(st.phase, CardPhase::Idle);
-        assert!(!st.write_failed && !st.read_failed && !st.fd_open);
+        // The transfer in flight is not the reset's to clear.
+        assert_eq!(st.phase, CardPhase::Reading);
+        assert!(!st.write_failed && !st.read_failed && st.fd_open);
         assert_eq!(st.dir_names.len(), 2);
         st.reset(false);
         assert!(st.dir_names.is_empty());

@@ -150,7 +150,7 @@ impl World {
     /// other lands just before the first unspawned slot.
     ///
     /// PORT: FUN_801D81E0
-    pub(crate) fn relink_placement_for_seat(&mut self, slot: u8) {
+    pub fn relink_placement_for_seat(&mut self, slot: u8) {
         let Some(running) = self.field_vm.prerun_running_slot else {
             self.relink_ambient_at_tail(slot);
             return;
@@ -641,7 +641,7 @@ impl World {
                     field_8e: 0,
                     path_target_present: false,
                     scripted_present: true,
-                    ambient_gate: false,
+                    ambient_gate: self.party.scene_save_allowed,
                     frame_step: speed,
                     scene_guard_clear: true,
                     global_suppress: suppressed,

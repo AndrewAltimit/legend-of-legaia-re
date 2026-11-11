@@ -186,6 +186,18 @@ fn exit_dance_with_a_run_still_clears_the_pad_latch() {
     );
 }
 
+/// Press `mask` and run the hall to its next game frame: it runs one every
+/// third vsync, and a press is judged on the one that follows it.
+fn dance_press(world: &mut World, mask: u16) {
+    world.set_pad(0);
+    world.set_pad(mask);
+    let _ = world.tick();
+    for _ in 0..2 {
+        world.set_pad(mask);
+        let _ = world.tick();
+    }
+}
+
 #[test]
 fn dance_tick_judges_a_correct_press() {
     let mut world = World::new();
@@ -196,9 +208,7 @@ fn dance_tick_judges_a_correct_press() {
     ));
     run_dance_countin(&mut world);
     // Rising edge on Square (DanceDir::A) - beat 0 of lane 0 wants symbol 1.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Square.mask());
-    let _ = world.tick();
+    dance_press(&mut world, input::PadButton::Square.mask());
     // The press was judged (the chain closed, the groove gauge advanced). The
     // score itself is the dancer kind's disc-resident bonus row, which a chart
     // fixture with no overlay tables leaves at zero - `dance_minigame_real`
@@ -220,9 +230,7 @@ fn dance_wrong_direction_misses() {
     ));
     run_dance_countin(&mut world);
     // Beat 0 wants Square; press Circle instead -> miss.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Circle.mask());
-    let _ = world.tick();
+    dance_press(&mut world, input::PadButton::Circle.mask());
     assert_eq!(
         world.minigames.dance_last_judge,
         Some(legaia_engine_minigames::dance::Judge::Miss)
@@ -247,17 +255,13 @@ fn dance_judges_the_retail_pad_bits_not_the_dpad() {
     ));
     run_dance_countin(&mut world);
     // Dpad Left used to be direction A; it is not a judged bit.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Left.mask());
-    let _ = world.tick();
+    dance_press(&mut world, input::PadButton::Left.mask());
     assert_eq!(
         world.minigames.dance_last_judge, None,
         "the dpad is not judged"
     );
     // Square is - and it is the direction beat 0 asks for.
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Square.mask());
-    let _ = world.tick();
+    dance_press(&mut world, input::PadButton::Square.mask());
     assert!(matches!(
         world.minigames.dance_last_judge,
         Some(legaia_engine_minigames::dance::Judge::Hit { .. })
@@ -574,11 +578,14 @@ fn slot_test_machine(balance: i32) -> legaia_engine_minigames::slot_machine::Slo
     for (i, p) in payouts.iter_mut().enumerate() {
         *p = ((i + 1) * 2) as u8;
     }
-    legaia_engine_minigames::slot_machine::SlotMachine::new(
+    let mut m = legaia_engine_minigames::slot_machine::SlotMachine::new(
         SlotPayoutTable { payouts },
         0xC0FFEE,
         balance,
-    )
+    );
+    // Past the entry fade, which holds state 1 off the pad.
+    m.skip_entry_fade();
+    m
 }
 
 #[test]
@@ -840,9 +847,7 @@ fn entering_the_dance_drops_the_confirm_press_edge() {
     // it again scores. (The latch clear is what this pins; the count-in in
     // between is `enter_dance_counts_in_before_the_beat_clock_runs`.)
     run_dance_countin(&mut world);
-    world.set_pad(0);
-    world.set_pad(input::PadButton::Square.mask());
-    let _ = world.tick();
+    dance_press(&mut world, input::PadButton::Square.mask());
     assert!(
         world.minigames.dance_last_judge.is_some(),
         "later presses still judge"

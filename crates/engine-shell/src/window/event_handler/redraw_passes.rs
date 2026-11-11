@@ -694,9 +694,9 @@ impl PlayWindowApp {
         fx_cam: Mat4,
     ) -> (
         Vec<(UploadedVramMesh, Mat4)>,
-        Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4, bool)>,
-        Vec<(UploadedColorMesh, Mat4, bool)>,
+        Vec<(UploadedVramMesh, Mat4, bool, bool)>,
+        Vec<(UploadedColorMesh, Mat4, bool, bool)>,
     ) {
         if self.boot_ui.is_active() {
             return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
@@ -737,7 +737,7 @@ impl PlayWindowApp {
                 ))
             })
             .collect();
-        let mut part_draws: Vec<(UploadedVramMesh, Mat4)> = lists
+        let mut part_draws: Vec<(UploadedVramMesh, Mat4, bool)> = lists
             .parts
             .iter()
             .filter_map(|p| {
@@ -751,7 +751,7 @@ impl PlayWindowApp {
                         &(fx_cam * model).to_cols_array(),
                     );
                 }
-                Some((upload(&vmesh, "summon/move-FX part")?, model))
+                Some((upload(&vmesh, "summon/move-FX part")?, model, p.far_corner))
             })
             .collect();
         for (n, what) in lists
@@ -777,7 +777,7 @@ impl PlayWindowApp {
                 &n.mesh
             };
             if let Some(m) = upload(mesh, what) {
-                part_draws.push((m, model));
+                part_draws.push((m, model, n.far_corner));
             }
         }
         let field_fx_draws = lists
@@ -795,6 +795,7 @@ impl PlayWindowApp {
                     upload(&vmesh, "field-FX part")?,
                     Mat4::from_cols_array(&fp.model),
                     fp.draw.colour.double_sided,
+                    fp.far_corner,
                 ))
             })
             .collect();
@@ -824,6 +825,7 @@ impl PlayWindowApp {
                         m,
                         Mat4::from_cols_array(&fp.model),
                         fp.draw.colour.double_sided,
+                        fp.far_corner,
                     )),
                     Err(e) => {
                         log::warn!("field-FX part colour mesh upload: {e:#}");
@@ -976,6 +978,8 @@ impl PlayWindowApp {
                 &mut vmesh.cba_tsb,
                 Some(legaia_engine_battle::battle_afterimage::GHOST_ABR),
             );
+            // The walk's word takes bank 2: flat packets.
+            legaia_engine_battle::battle_body_blend::apply_flat_bank(&mut vmesh.cba_tsb);
             match r.upload_vram_mesh(
                 &vmesh.positions,
                 &vmesh.uvs,

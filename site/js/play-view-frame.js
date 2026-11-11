@@ -834,6 +834,7 @@
         else if (d.terrainIdx !== undefined) order = terrain[d.terrainIdx] | 0;
         else if (d.npcSlot !== undefined) order = npcs.includes(d.npcSlot) ? 2 : 0;
         else if (d.effectPlayer) order = playerNear;
+        else if (d.fxFarCorner) order = 1;
         d.meanDepth = 1 + order;
       }
     }
@@ -1281,6 +1282,7 @@
          * window marks the same parts, FxFrame::push_draws). */
         draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL, noOccl: true, nclip: 0 });
       }
+      this._fxFarDraw(rt, draws, { noOccl: true, nclip: 0 });
       const n = rt.play_battle_fx_model_count();
       if (!n) return;
       const mats = rt.play_battle_fx_model_matrices();
@@ -1322,7 +1324,8 @@
           }
           if (!cache.fxMeshes.get(tmd)) continue;
         }
-        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16), noOccl: true });
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16), noOccl: true,
+          fxFarCorner: this._fxModelFar(rt, i) });
       }
     }
   });

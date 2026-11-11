@@ -1105,7 +1105,7 @@ fight runs ([battle](../subsystems/battle.md)):
 | party / monster count | battle context `*0x8007BD24`, `+0x00` / `+0x01` |
 | command-flow byte, action-state cursor | context `+0x06` / `+0x07` |
 | monster ids | formation cell `0x8007BD0C[0..4]` |
-| scripted-fight bit | `0x8007BD60 & 0x80` |
+| scripted-fight byte | `ctx[+0x287]` (latched from `0x8007BD60 & 0x80`) |
 | present party | `0x8007BD10` (1-based roster ids) |
 | combatant HP / max / MP / max | actor table `0x801C9370[slot]`, `+0x14C` / `+0x14E` / `+0x150` / `+0x152` |
 | camera | the field's rotation / translation globals; `H` is `256` |
@@ -1117,6 +1117,7 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
+| [Seat the capture's order](#the-seat-order-is-the-captures) | formation cells `0x8007BD0C[0..4]` as battle init left them | `EncounterState::seat_pin`, `LEGAIA_BATTLE_SEATS` |
 | [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
@@ -1141,7 +1142,13 @@ retail's was, so the scene's track has started.
 - **Formation.** The formation cell is matched against the scene's registered
   MAN rows. A cell no row carries (a fight installed from another table) is
   registered as a formation of its own, carrying the scripted bit, with the
-  monster archive's stats for its ids
+  monster archive's stats for its ids. The bit is read from the byte battle
+  setup latched, `ctx[+0x287]`, not from `0x8007BD60 & 0x80` it was latched
+  from: the action SM's `0x5A` wipe scans clear that bit at the end of an
+  action, so a state saved past the first action reads it clear on a scripted
+  fight (115 of 460 library battle states). Read from the bit, a Muscle Dome leg
+  entered as an ordinary fight, and its Hyper Art film's camera stood `78` px
+  off retail's through the return (`.748`; `.868` on the latched byte)
   ([`FormationCell`](../../crates/engine-capture/src/formation_cell.rs)).
   The bosses and duels are such cells (Cort, Zeto, the Delilas duels at
   `jou`, Zora at `town01`), and so is every showcase fight staged on a scene
@@ -1172,6 +1179,29 @@ replayed tutorial arm and the carrier's replayed BGM words
 combatants' live HP / MP are written over the engine's, and the session is
 placed at the capture's phase.
 
+### The seat order is the capture's
+
+Battle init reorders a two-species formation on an odd `rand()`
+(`FUN_80055B6C`, `0x80055C7C..0x80055D2C`: the other species opens in front),
+rewriting the formation cells in place, and battle setup draws each seated
+body's opening clip phase (`FUN_800513F0`). A capture stands after both: its
+cells hold the order as rolled and its anim nodes the phases as they ran on.
+An entry that rolled again would seat the other order half the time and score
+the roll, not the port (`enemies` `0.000`, `enemy_hp` `0.500` on a two-seat
+fight).
+
+- Both sides hand the entry the capture's ids in seat order
+  (`legaia_engine_capture::seat_pin`: `EncounterState::seat_pin` on the
+  headless seed, `LEGAIA_BATTLE_SEATS=<hex,hex..>` to the image child).
+  `World::enter_battle_from_formation` takes the pin: each id is seated on the
+  first authored seat of its species, and neither the roll nor the opening
+  phases draw. A played fight never sets it.
+- The bodies' phases come from the capture instead
+  (`LEGAIA_SEAT_BATTLE_CLIPS`, each anim node's cursor).
+- The scene's MAN row is matched on the capture's ids as authored, and failing
+  that as the rebuild would leave them (`seat_pin::rebuilt_order`), so a
+  capture that holds the rolled order still enters through its row.
+
 ### The stream at the entry
 
 Retail's RNG state at the instant its fight began is not in the capture. Its
@@ -1190,6 +1220,11 @@ every channel that rides a draw (a monster's pick and target, the battle
 camera, the frame) would move whenever a field-side port changed how many
 draws it takes.
 
+- The pinned stream is the stream **as battle init left it**. Init's own
+  draws - the species-order roll and each seat's opening clip phase - are
+  behind every capture, so the entry takes neither
+  ([the seat order](#the-seat-order-is-the-captures)) and the fight's first
+  draw is the stream's first.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition
@@ -4575,9 +4610,23 @@ texel rule (`PsxTexelRule::PcsxRedux`, `psx_params.w = 2`):
   the engine before this rule and match after it;
 - a flat-shaded textured polygon is cut to 5 bits with no dither, as that
   emulator's `getTextureTransColShade` draws it. The test is the packet
-  colour's screen derivative (zero across a flat polygon), which also takes a
-  Gouraud polygon whose corners agree for a flat one; that misreading is the
-  residual on `kor_field_route_walk`.
+  colour's screen derivative (zero across a flat polygon), which alone also
+  takes a Gouraud polygon whose corners agree for a flat one. So the packet
+  kind rides the vertex: a TMD group whose packet shape is Gouraud carries
+  `TSB_GOURAUD_BIT` (`legaia_tmd::mesh::prim_tsb_word`), as the draw-time
+  Gouraud packets do, and dithers whatever its corners hold. A body drawn
+  through handler bank 2 drops the tag again (`battle_body_blend::apply_flat_bank`):
+  the near-camera ghost and the after-images, whose leaves write flat
+  packets. Most textured
+  groups hold one grey on every corner, a battle body's among them: a retail
+  ordering table of PROT 0934's creature links nothing but `POLY_GT3`
+  packets on its eight CLUTs. Without the tag the frame's `4 x 4` dither
+  response on the lone-caster Aluru film stood at `.76`, `.31` and `1.52` of
+  the table's on arms 7, 10 and 11 against retail's `.95`, `.50` and `1.69`;
+  with it the three read `.94`, `.50` and `1.70`. Over the summon, mid-cast
+  and field-route states the PCSX-Redux mean absolute error goes from `8.02`
+  to `7.92` with the block score level (`.941`), no state moving by more
+  than `.009`; `kor_field_route_walk` reads `12.3` to `12.0`.
 
 Over the field states the PCSX-Redux bias moved from `-2.3` to `-0.3` and the
 mean absolute error from `5.7` to `4.2`; the block score moves on a few dozen

@@ -1,0 +1,89 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">reference</a> &middot; glossary</div>
+  <h1>Glossary</h1>
+  <p class="lede">The words these pages use without stopping to explain them: the disc's file formats, the console's hardware, the game's own vocabulary and the project's. Each entry is one or two sentences and a link to the page that covers it properly.</p>
+</header>
+
+<section class="doc-section" id="jump">
+  <h2>Jump to</h2>
+  <p><a href="#disc">On the disc</a> &middot; <a href="#code">In the code</a> &middot; <a href="#screen">On screen</a> &middot; <a href="#game">In the game</a> &middot; <a href="#project">In the project</a></p>
+</section>
+
+<section class="doc-section" id="disc">
+  <h2>On the disc</h2>
+  <dl class="kv">
+    <dt id="t-prot-dat">PROT.DAT</dt><dd>The game's main archive: 1233 numbered entries holding nearly every asset and every code overlay. Pages cite an entry as <em>PROT 0898</em>. <a href="../formats/prot.html">More</a></dd>
+    <dt id="t-cdname">CDNAME</dt><dd><code>CDNAME.TXT</code>, the developers' name map for PROT entries. Its numbers are in-RAM table indices, so the named content sits two entries earlier in an extraction; a CDNAME label is a hint, not a verdict. <a href="../formats/cdname.html">More</a></dd>
+    <dt id="t-lzs">LZS</dt><dd>Legaia's compression, a 4 KB ring-buffer scheme. Almost any bytes decompress without error, so decoded output is always checked for a known signature. <a href="../formats/lzs.html">More</a></dd>
+    <dt id="t-data-field">DATA_FIELD</dt><dd>The streaming container most entries use: a run of chunks, each led by a one-word header of type and length. <a href="../formats/data-field.html">More</a></dd>
+    <dt id="t-pack">Pack</dt><dd>The one pack format: a count, then a table of word offsets. Texture packs and model packs are this format behind a DATA_FIELD chunk header. <a href="../formats/pack.html">More</a></dd>
+    <dt id="t-scene">Scene</dt><dd>One loadable place (a town, a dungeon floor, a stretch of world map) and the block of PROT entries that makes it up, named by a short id such as <code>town01</code>. <a href="../reference/scene-names.html">More</a></dd>
+    <dt id="t-man">MAN</dt><dd>A scene's script-and-placement file: actors, walk-on triggers, the field scripts and the scene's banner name. <a href="../formats/scene-bundles.html">More</a></dd>
+    <dt id="t-tim">TIM</dt><dd>The PlayStation's texture file: pixel indices plus, optionally, a palette, with the VRAM position each is uploaded to. <a href="../formats/tim.html">More</a></dd>
+    <dt id="t-clut">CLUT</dt><dd>Colour look-up table: a 16- or 256-entry palette. At draw time it is read from VRAM, not from the texture's file, which is why one texture can wear many palettes. <a href="../subsystems/shading.html">More</a></dd>
+    <dt id="t-tmd">TMD</dt><dd>The model format. Legaia's is a custom variant with its own primitive grouping. <a href="../formats/tmd.html">More</a></dd>
+    <dt id="t-anm">ANM</dt><dd>The animation container for field actors and the party. <a href="../formats/anm.html">More</a></dd>
+    <dt id="t-vab-seq">VAB / SEQ</dt><dd>A sound bank of instrument samples, and a sequenced music track that plays through one. Legaia's SEQ differs from the stock format in its header and its meta events. <a href="../formats/seq.html">More</a></dd>
+    <dt id="t-xa">XA</dt><dd>Streamed CD audio interleaved on the disc: voice lines and movie soundtracks. <a href="../formats/xa.html">More</a></dd>
+    <dt id="t-str-mdec">STR / MDEC</dt><dd>The movie files and the PlayStation's video decoder. Legaia's movies use the Iki bitstream. <a href="../subsystems/cutscene.html">More</a></dd>
+    <dt id="t-mes">MES</dt><dd>A dialog text container. <a href="../formats/mes.html">More</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="code">
+  <h2>In the code</h2>
+  <dl class="kv">
+    <dt id="t-scus-942-54">SCUS_942.54</dt><dd>The game's executable on the USA disc. It holds the engine core and the static tables; most game logic is elsewhere, in overlays. <a href="../subsystems/boot.html">More</a></dd>
+    <dt id="t-overlay">Overlay</dt><dd>A block of code streamed from PROT.DAT into RAM when a mode needs it (the field, a battle, the menu) and replaced when it does not. A routine with no caller in the executable is usually called from one. <a href="../tooling/overlay-capture.html">More</a></dd>
+    <dt id="t-cast-module">Cast module</dt><dd>One of 64 small overlays, each the program for a summon or special attack, paged in for the length of the cast. <a href="../subsystems/cast-module.html">More</a></dd>
+    <dt id="t-fun-80xxxxxx"><code>FUN_80xxxxxx</code></dt><dd>Ghidra's name for a routine: the address of its first instruction. Addresses from <code>0x801C0000</code> up are in an overlay, so the same address can mean different routines in different modes. <a href="../reference/functions.html">More</a></dd>
+    <dt id="t-field-vm">Field VM</dt><dd>The interpreter for scene scripts: dialogue, doors, cutscenes, story flags. <a href="../subsystems/script-vm.html">More</a></dd>
+    <dt id="t-move-vm">Move VM</dt><dd>The interpreter for effect and ambient-animation programs, shared by the field and battle. <a href="../subsystems/move-vm.html">More</a></dd>
+    <dt id="t-story-flag">Story flag</dt><dd>One bit of the save's flag bank. Scripts set and test them; they are what the game remembers of the story. <a href="../subsystems/script-vm.html">More</a></dd>
+    <dt id="t-battle-context-ctx">Battle context (<code>ctx</code>)</dt><dd>The block of memory a battle allocates for itself. Pages write a field as <code>ctx[+0x07]</code>, an offset into it. <a href="../subsystems/battle-internals.html">More</a></dd>
+    <dt id="t-command-flow">Command flow</dt><dd>The battle state machine that asks the player what to do: the round prompt, the command ring, the target cursor. <a href="../subsystems/battle-command-flow.html">More</a></dd>
+    <dt id="t-action-state-machine">Action state machine</dt><dd>The battle state machine that plays a chosen action out: the walk-in, the swings or the cast, the damage, the walk back. <a href="../subsystems/battle-action.html">More</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="screen">
+  <h2>On screen</h2>
+  <dl class="kv">
+    <dt id="t-vram">VRAM</dt><dd>The PlayStation's video memory, one 1024x512 sheet holding the framebuffer, every texture page and every palette. <a href="../subsystems/renderer.html">More</a></dd>
+    <dt id="t-gte">GTE</dt><dd>The PlayStation's geometry coprocessor: rotates, projects and depth-averages vertices in fixed point. <a href="../subsystems/renderer.html">More</a></dd>
+    <dt id="t-ordering-table">Ordering table</dt><dd>The array of depth buckets every drawn packet is linked into; the GPU walks it far to near. It is the console's substitute for a depth buffer. <a href="../subsystems/battle-frame.html#ordering-table">More</a></dd>
+    <dt id="t-depth-cue">Depth cue</dt><dd>The blend of a primitive's colour toward a far colour with distance; the game's fog. <a href="../subsystems/shading.html">More</a></dd>
+    <dt id="t-dither">Dither</dt><dd>The 4x4 pattern added before colours are cut to 15 bits; the fine cross-hatch on a retail gradient. <a href="../subsystems/shading.html">More</a></dd>
+    <dt id="t-vsync-pass-frame-step">Vsync, pass, frame step</dt><dd>A vsync is one screen refresh. A pass is one run of the game's per-frame logic. The frame step is how many vsyncs the game decided a pass should span, from one to four, according to how costly recent frames were. <a href="../subsystems/battle-internals.html#frame-step">More</a></dd>
+    <dt id="t-psx-mode">PSX mode</dt><dd>The port's opt-in retail rasterisation: vertices snapped to the 320x240 grid, the console's sort order and its dither. Off, the port draws clean at the window's resolution. <a href="../subsystems/renderer-internals.html">More</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="game">
+  <h2>In the game</h2>
+  <dl class="kv">
+    <dt id="t-seru">Seru</dt><dd>The creatures the party absorbs to learn magic. A <em>Ra-Seru</em> is one of the three bonded to Vahn, Noa and Gala. <a href="../magic.html">More</a></dd>
+    <dt id="t-tactical-arts">Tactical Arts</dt><dd>Combo attacks entered as a string of directions. A <em>Miracle Art</em> or <em>Super Art</em> is a longer string that triggers a special finisher. <a href="../arts.html">More</a></dd>
+    <dt id="t-ap-gauge">AP gauge</dt><dd>The per-turn pool of action points the Arts command spends: each direction pressed costs some, so the pool sets how many fit in one turn. <a href="../subsystems/arts-command-gauge.html">More</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="project">
+  <h2>In the project</h2>
+  <dl class="kv">
+    <dt id="t-retail">Retail</dt><dd>The original game as shipped, and its measured behaviour. The reference every claim is held to. <a href="../tooling/measuring-parity.html">More</a></dd>
+    <dt id="t-port">Port</dt><dd>The from-scratch Rust engine that plays the game from a disc image the user supplies. It contains none of the original code. <a href="../subsystems/engine.html">More</a></dd>
+    <dt id="t-host">Host</dt><dd>A program the engine runs inside: the native window, the browser play page, the minigames page. <a href="../tooling/host-drift.html">More</a></dd>
+    <dt id="t-faithful-mode-enhancement">Faithful mode, enhancement</dt><dd>Faithful mode reproduces retail and is what the checks measure. An enhancement (lighting, see-through walls) is a toggle layered on top that changes nothing when off. <a href="../subsystems/engine.html#fidelity">More</a></dd>
+    <dt id="t-save-state">Save state</dt><dd>An emulator's snapshot of the whole console. The project reads retail's memory and video memory out of them. <a href="../tooling/retail-compare.html">More</a></dd>
+    <dt id="t-oracle">Oracle</dt><dd>A check that compares the port with something retail produced, as opposed to with the port's own earlier output. <a href="../tooling/retail-oracle-method.html">More</a></dd>
+    <dt id="t-still-film">Still, film</dt><dd>A still compares one instant against a save state. A film compares a stretch of time, frame by frame, against an emulator recording. <a href="../tooling/verification-ladder.html">More</a></dd>
+    <dt id="t-kernel-differential">Kernel differential</dt><dd>Running one of retail's own routines off the disc in an interpreter beside the Rust function that claims to port it, on the same inputs. <a href="../tooling/retail-kernel-differential.html">More</a></dd>
+    <dt id="t-ratchet-baseline">Ratchet, baseline</dt><dd>A check that fails when a measured number gets worse than the committed one (the baseline). <a href="../tooling/ratchet-integrity.html">More</a></dd>
+    <dt id="t-full-game-ladder">Full-game ladder</dt><dd>The automated run from New Game to the credits, cut into segments anchored on retail saves. <a href="../tooling/full-game-ladder.html">More</a></dd>
+    <dt id="t-evidence-grade">Evidence grade</dt><dd>What a claim rests on: <code>disassembly</code> (the strongest), <code>capture</code>, <code>decompiled-C</code> or <code>inference</code>. <a href="../reference/open-rev-eng-threads.html">More</a></dd>
+    <dt id="t-disc-gated-test">Disc-gated test</dt><dd>A test that needs the user's disc image and skips without it, so the public build runs with no game data. <a href="../tooling/ratchet-integrity.html#skips">More</a></dd>
+    <dt id="t-patcher-ppf">Patcher, PPF</dt><dd>The tool that edits a user's own disc image (randomizer, mods, translations), and the small patch file it can emit in place of a whole image. <a href="../tooling/randomizer.html">More</a></dd>
+    <dt id="t-expansion-pack">Expansion pack</dt><dd>New content for the port (maps, quests, fights) as a folder of text files that point at the user's disc and carry none of it. <a href="../formats/expansion-pack.html">More</a></dd>
+  </dl>
+</section>

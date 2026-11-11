@@ -120,6 +120,7 @@ pub fn battle_ground_shadow(
         single_sided: legaia_engine_effects::effect_default_arm::SHADOW_FLAG_WORD & 0x0800_0000
             == 0,
         tessellated: false,
+        far_corner: false,
         object_effect_kind: 0,
         object_effect_scale: 1.0,
     })
@@ -445,16 +446,16 @@ fn battle_live_model_table(
 /// `legaia_render_kernels::battle_trail`).
 ///
 /// For each party battle actor whose committed clip's `+0x77`
-/// identity byte matches its character's trigger row, sample the pose
-/// ring at even depths (one sweep step per two frames - the retail
-/// `2 * rate` cursor rewind under the per-frame `rate` advance),
-/// stopping at the clip boundary (ring `clip_key` mismatch), the
-/// 16-step budget, or a pose without the trigger's control points.
+/// identity byte matches its character's trigger row, decode the playing
+/// clip at the driver's rewound cursors
+/// (`legaia_render_kernels::battle_trail::sweep_cursors`: the live cursor,
+/// then `2 * record[+0x78]` back a step, down to the clip's start), up to
+/// the 16-step budget or a pose without the trigger's control points.
 /// A sweep below two steps draws nothing (`FUN_80048310`'s
 /// `slti 0x2` gate).
-// PORT: FUN_8005112C (trigger; table in `engine-battle-vm::battle_trail`)
-// REF: FUN_80048310 (sweep capture - the ring sampling here replaces
-// the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
+// PORT: FUN_8005112C (trigger; table in `render-kernels::battle_trail`)
+// REF: FUN_80048310 (sweep capture; the cursor walk is
+// `render-kernels::battle_trail::sweep_cursors`)
 pub fn battle_weapon_trail_draws(world: &World) -> Vec<BattleWeaponTrailDraw> {
     use legaia_render_kernels::battle_trail as wt;
     let mut out = Vec::new();
@@ -463,6 +464,13 @@ pub fn battle_weapon_trail_draws(world: &World) -> Vec<BattleWeaponTrailDraw> {
         // keys party-ness on identity, not slot (monsters may sit
         // anywhere - the slot-gate trap).
         if actor.battle_monster_id.is_some() {
+            continue;
+        }
+        // The draw tick reaches the trigger (`jal 0x8005112c` at
+        // `0x80048244`) on the branch its colour-word test takes
+        // (`bne v0,zero,0x80048244` at `0x800481CC`), the one the after-image
+        // walk shares: a hidden body leaves no trail.
+        if battle_body_word_zero(actor) {
             continue;
         }
         let Some(player) = &actor.battle_animation else {
@@ -475,18 +483,20 @@ pub fn battle_weapon_trail_draws(world: &World) -> Vec<BattleWeaponTrailDraw> {
         let Some(trig) = wt::trail_trigger(char_id, key) else {
             continue;
         };
-        let hist = &actor.battle_pose_history;
+        // A one-shot that ran out shows the queued clip's first frame;
+        // retail has committed that clip, whose cursor of zero captures
+        // nothing.
+        if player.finished() {
+            continue;
+        }
+        // The driver's capture walk: the playing clip decoded again at each
+        // rewound cursor, the live pose first.
         let mut steps = Vec::new();
-        'sweep: for k in 0..wt::MAX_SWEEP_STEPS {
-            let Some(f) = hist.get(k * wt::SWEEP_FRAMES_PER_STEP) else {
-                break;
-            };
-            if f.clip_key != key {
-                break;
-            }
+        'sweep: for c in wt::sweep_cursors(player.cursor_sixteenths() as i16, player.clip_rate()) {
+            let pose = player.pose_at_sixteenths(c as u16);
             let mut pts = [[0i16; 3]; wt::TRAIL_POINTS];
             for (p, pt) in pts.iter_mut().enumerate() {
-                match f.pose.bone_outputs.get(trig.base_part + p) {
+                match pose.bone_outputs.get(trig.base_part + p) {
                     Some((t, _rot)) => *pt = *t,
                     None => break 'sweep,
                 }

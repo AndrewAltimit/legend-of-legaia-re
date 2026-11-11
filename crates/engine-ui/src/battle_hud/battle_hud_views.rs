@@ -42,6 +42,12 @@ pub struct HudSlotView<'a> {
     /// Displayed character level - the count retail draws beside the base
     /// marker when `status_sprite == 0`. `0` suppresses the number.
     pub level: u8,
+    /// Draw the HP / MP figures as `?` cells - three per HP field, two per MP
+    /// field, right-aligned to the same edges - instead of the values.
+    /// Retail's readout for Terra, character id `4`
+    /// (`legaia_engine_battle::battle_hud_state::BattleSlotHud::hidden_readout`),
+    /// whose roster panel also carries no level / status element.
+    pub hidden_readout: bool,
 }
 
 /// One floating damage / heal / status popup.
@@ -87,6 +93,7 @@ impl<'a> HudSlotView<'a> {
             mp_fill: meta.mp_fill,
             status_sprite: meta.status_sprite,
             level: meta.level,
+            hidden_readout: meta.hidden_readout,
         }
     }
 }
@@ -110,6 +117,8 @@ pub struct HudSlotMeta {
     pub status_sprite: u8,
     /// See [`HudSlotView::level`].
     pub level: u8,
+    /// See [`HudSlotView::hidden_readout`].
+    pub hidden_readout: bool,
 }
 
 /// Short label for a retail status-element sprite id.
@@ -529,6 +538,15 @@ pub struct BattleHudFrame<'a> {
     /// unless a picker's cursor sits on the enemy row
     /// (`engine-battle-hud::battle_target_select_plaque`).
     pub target_select: Option<(&'a str, Option<u8>)>,
+    /// The target-select pair's glide, `(elapsed, total)` of the record
+    /// both plaques share (`legaia_engine_battle::battle_hud_state::TargetSelectSlide`):
+    /// [`Self::target_select`] walks from `max(rest + 0x80, 0x148)` to its
+    /// rest seat and [`Self::target_select_outgoing`] from its own rest seat
+    /// to `x = 328`. `None` draws the plaque at rest.
+    pub target_select_glide: Option<(u8, u8)>,
+    /// The name the cursor just left (placement record `0x2A`) and its
+    /// badge, sliding out under [`Self::target_select_glide`].
+    pub target_select_outgoing: Option<(&'a str, Option<u8>)>,
     /// The full-width message bar (HUD element `0x5B`, placement record 91 -
     /// `(16, 236)` sliding to `(16, 194)`, width 288): the steal / stolen-item
     /// caption `engine-battle-hud::battle_message_bar` names. It takes

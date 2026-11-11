@@ -12,8 +12,8 @@
     <dt>What it is</dt><dd>An 81-row cross-reference, one row per debug sound-test slot, compiled by Stann0x.</dd>
     <dt>Why it exists</dt><dd>Retail has no track-name table - a scene script starts music by number. This is the label layer for those numbers, the way the <a href="gamedata.html">curated game-data tables</a> label items and enemies.</dd>
     <dt>Naming spaces</dt><dd>Debug sound-test ID + title &middot; in-game context &middot; official OST title &middot; proposed relocalization.</dd>
-    <dt>Disc join</dt><dd>Global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>.</dd>
-    <dt>Bank layout</dt><dd>Piecewise: extraction entry <code>988 + i</code> for tracks <code>0..=67</code>, <code>990 + i</code> for <code>68..=80</code>, two-entry gap at <code>1056</code>/<code>1057</code>.</dd>
+    <dt>Disc join</dt><dd>Global BGM id <code>2000 + i</code> plays sound-test track <code>i</code>, loaded from extraction entry <code>988 + i</code>, one linear run (the retail resolver <code>FUN_800243F0</code>).</dd>
+    <dt>Bank layout</dt><dd>As curated, piecewise: extraction entry <code>988 + i</code> for tracks <code>0..=67</code>, <code>990 + i</code> for <code>68..=80</code>, two-entry gap at <code>1056</code>/<code>1057</code>. From track 68 that disagrees with what the resolver loads; which entries those rows hold is open.</dd>
     <dt>Resolver</dt><dd><code>legaia_engine_system::music_labels</code> - the engine HUD and viewers name tracks through it.</dd>
     <dt>Confidence</dt><dd><span class="tag tag-partial">Inferred</span>; OST columns <span class="tag tag-done">Confirmed</span> against the published listing.</dd>
   </dl>

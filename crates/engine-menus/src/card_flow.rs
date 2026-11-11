@@ -420,6 +420,11 @@ impl CardWriteMachine {
         self.state
     }
 
+    /// The pre-write delay left (`DAT_801EF128`).
+    pub fn delay(&self) -> i32 {
+        self.delay
+    }
+
     /// Arm a state directly (the screen SM's job in retail).
     pub fn set_state(&mut self, state: CardWriteState) {
         self.state = state;

@@ -41,14 +41,19 @@ fn extracted() -> Option<PathBuf> {
     found
 }
 
-/// The distinct `(CBA, TSB)` pairs the textured prims of `objects` sample.
+/// The distinct `(CBA, TSB)` pairs the textured prims of `objects` sample,
+/// with the per-prim packet tags (flat quad, Gouraud shape) masked off: the
+/// pair names the page and CLUT, not how each prim's packet is built.
 fn sampled(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Vec<(u16, u16)> {
     let sub = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&sub, raw);
     let mut v: Vec<(u16, u16)> = mesh
         .cba_tsb
         .iter()
-        .map(|c| (c[0], c[1] & !legaia_tmd::mesh::TSB_FLAT_QUAD_BIT))
+        .map(|c| {
+            let tags = legaia_tmd::mesh::TSB_FLAT_QUAD_BIT | legaia_tmd::mesh::TSB_GOURAUD_BIT;
+            (c[0], c[1] & !tags)
+        })
         .collect();
     v.sort_unstable();
     v.dedup();

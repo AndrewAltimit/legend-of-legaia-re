@@ -609,14 +609,14 @@ impl SceneHost {
     /// The door warp opens the floor the hall's script asked for: the overlay's
     /// state 1 reads it off story flags `0x133` / `0x134` / `0x135` / `0x428`
     /// ([`legaia_engine_minigames::dance::dance_mode_from_flags`]), so the qualifier, the finals,
-    /// the how-to demo and free play each seat their own cast. On the short
-    /// song.
+    /// the how-to demo and free play each seat their own cast and song
+    /// length.
     fn enter_dance_from_overlay(&mut self, loaded: &[u8]) -> bool {
         let mode = legaia_engine_minigames::dance::dance_mode_from_flags(|f| {
             self.world.system_flag_test(f)
         });
         let Some(mut game) =
-            legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(loaded, mode, false)
+            legaia_engine_minigames::dance::DanceGame::from_overlay_for_mode(loaded, mode)
         else {
             return false;
         };

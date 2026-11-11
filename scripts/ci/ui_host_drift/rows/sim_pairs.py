@@ -1215,18 +1215,20 @@ SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "visible-tile crop policy, native vs play page - retail draws "
         "only the cells the camera's tile window reaches (FUN_801F7088), and "
-        "whether a frame crops at all is a policy (knob, retail framing, field "
-        "mode, no cutscene, a focus the region box holds). Both hosts ask the "
-        "one `field_view_window::field_view_cells` entry with "
-        "`retail_framing` (retail's vantage, or a cutscene or helper record's "
-        "scripted shot owning the camera), so a host that cropped under its own rule would "
-        "black out cells the other draws",
+        "whether a frame crops, and by which window, is a policy (knob, field "
+        "mode, no cutscene, a focus the region box holds, and the framing). "
+        "Both hosts ask the one `field_view_window::field_view_cells` entry "
+        "with `crop_framing`'s three cases: retail's window at retail framing "
+        "(or a scripted shot), the window widened by the distance preset under "
+        "Far / Farther with the knobs at identity, the whole map under a "
+        "re-aimed view or the debug vantage - so a host that cropped under its "
+        "own rule would black out cells, or draw scenery, the other does not",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
-        "symbols": ["field_view_cells", "retail_framing"],
+        "symbols": ["field_view_cells", "crop_framing"],
     },
     {
         "what": "visible-tile crop of the terrain list, native vs play page - "
@@ -1393,12 +1395,28 @@ SIM_PAIRS: list[dict[str, object]] = [
         "to assert is that every host routes the press through the kernel "
         "rather than around it",
         "sites": {
-            "play_hosts": (SESSION_TICK_OWNER, "claim_tick"),
+            "play_hosts": (SESSION_TICK_OWNER, "claim_tick_owner"),
             "native_boot": (NATIVE_BOOT_FRAME_TICK, "tick"),
             "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
         "symbols": ["press_field_menu"],
+    },
+    {
+        "what": "pause-menu edge - the word a pause-menu tick reads is the "
+        "tick's new presses with the window kernel's cursor auto-repeat folded "
+        "in (`BootSession::pause_menu_edge`). The session's own menu step "
+        "folded it and both play hosts, which hold the menu themselves, cut a "
+        "plain edge: a direction held on a list stepped once on the window "
+        "and on the page while every headless driver saw it repeat. The "
+        "repeat is raised by the tick claim's pad pump (`TickClaims::held`), "
+        "since a host-held screen's tick makes no `set_pad`",
+        "sites": {
+            "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
+            "web": (WEB_PLAY_MENU_INPUT, "play_menu_input"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["pause_menu_edge"],
     },
     {
         "what": "tick order, native vs play page - which screen owns each "

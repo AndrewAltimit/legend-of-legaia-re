@@ -94,7 +94,14 @@ impl OwnedDialogPanel {
                     out.push((glyph(g), units));
                     units += 1;
                 }
-                Some(MesEvent::SkipTwo(arg)) => out.push((glyph(arg), units)),
+                // A colour pair: `FUN_80036514` copies it on the draw path
+                // and `FUN_80036888` restages the ink from its operand,
+                // drawing nothing and counting no unit. Keep the pair in the
+                // page so the draw restages the ink at the same place.
+                Some(MesEvent::SkipTwo(arg)) => {
+                    out.push((glyph(COLOUR_ESCAPE), units));
+                    out.push((glyph(arg), units));
+                }
                 Some(MesEvent::Substitute { kind, arg }) => {
                     if let Some(name) = self
                         .substitutions

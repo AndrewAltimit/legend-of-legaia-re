@@ -438,9 +438,28 @@ reaches the node, on the game's one stream: a retail watch of the seed word
 frame's draw (`World::deal_battle_draw_rands`): each such part keeps the stream's
 word as its seed (`ActorState::draw_rand_seed`), the stream steps past its draws,
 and the draw replays them, so the spikes change frame to frame and later deals
-stand where retail's do. The same watch puts arms 5..9's words in the streak
-ribbon `FUN_801E1D98` (`0x801E1E9C`, `0x801E213C..0x801E2220`), whose host draw
-still seeds a private generator a frame.
+stand where retail's do.
+
+The same watch puts arms 5..9's words in the streak ribbon `FUN_801E1D98`. A
+module arm calls it inside its own tick (PROT 0934's eight calls at
+`0x801F6EE4`, ahead of the arm's two rumble words at `0x801F6F10` /
+`0x801F6F40`), and the routine draws seven words for its bottom segment
+(`0x801E1E94..0x801E2054`) and four for each chained one
+(`0x801E2134..0x801E2218`) unless its top-edge test (`0x801E1E5C`) drops the
+ribbon. The test reads the corners `FUN_800195A8` projects at a half-width of
+`0x100`, so with `H = 256` an anchor nearer than `0x7E0` view units draws
+nothing and leaves the stream where it stood; one behind the eye saturates the
+divide and falls under the same test. A frame of Ozma's arm 5 therefore reads
+`1 + 108 + 2` words in retail (the frame driver's, the eight ribbons', the
+rumble's), and the count climbs with the camera's pull (`123`, `167`, `187`).
+
+The port deals those words on the pass that makes the calls
+(`World::deal_cast_ribbon_rands`): each call projects through the matrix the
+battle frame holds (`FieldGteView::from_battle_pose`, the integer routine), keeps
+the stream's word as its seed (`BattleState::cast_ribbon_seeds`) and steps the
+stream past its draws; the draw replays each ribbon from its seed
+(`streak_pass::ribbon_quads_seeded`). Per frame the engine's counts through
+arms 5..9 are retail's.
 
 The dispatcher hands the emitter `src = actor + 0x9C`, so the emitter's
 "record" is the actor. The selector and the draw kind are written by the

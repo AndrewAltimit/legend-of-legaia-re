@@ -455,6 +455,10 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
     let mut mg = LegaiaMinigames::new();
     mg.load_disc(bytes).expect("load_disc");
     assert!(mg.slot_start(BALANCE), "the machine racks");
+    // The entry fade holds state 1 off the pad for thirty-two frames.
+    for _ in 0..32 {
+        mg.slot_step(0);
+    }
 
     let row_of = |mg: &LegaiaMinigames, reel: usize| {
         (mg.slot_reel_pos()[reel] >> 8).rem_euclid(slot::STRIP_LEN) as usize
@@ -607,6 +611,10 @@ fn the_minigames_page_rasterises_the_shared_cabinet() {
     let mut mg = LegaiaMinigames::new();
     mg.load_disc(bytes).expect("load_disc");
     assert!(mg.slot_start(BALANCE), "the machine racks");
+    // The entry fade holds state 1 off the pad for thirty-two frames.
+    for _ in 0..32 {
+        mg.slot_step(0);
+    }
     assert!(mg.slot_cabinet_ready(), "the resident set decodes");
     mg.slot_step(0);
     let idle = mg.slot_frame_rgba(640, 240);

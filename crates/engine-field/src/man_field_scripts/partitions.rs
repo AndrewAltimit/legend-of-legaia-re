@@ -303,11 +303,8 @@ pub(crate) fn partition_record_offset(
 /// record 18 (`name_len=6` "Opening", all three blocks empty) this is `0x10`,
 /// the `0x34` EFFECT op that opens the prologue timeline.
 // REF: FUN_8003BDE0
-// PORT: FUN_8003D0BC (the name-field skip: first byte = char count, advance
-// 1 + count*2 - retail's standalone helper for the same walk)
 pub(crate) fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
-    let name_len = *body.first()? as usize;
-    let mut cur = 1 + name_len * 2; // name field (chars * 2, no terminator)
+    let mut cur = name_field_len(body)?; // name field (chars * 2, no terminator)
     let c0 = *body.get(cur)? as usize;
     cur += 1 + c0; // cond-block 0: 1 byte per unit
     let c1 = *body.get(cur)? as usize;
@@ -315,6 +312,15 @@ pub(crate) fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
     let c2 = *body.get(cur)? as usize;
     cur += 1 + c2 * 2; // cond-block 2: u16 per unit
     Some(cur)
+}
+
+/// Bytes a record's name field occupies: the count byte, then two bytes a
+/// character with no terminator. `None` on an empty body.
+///
+/// PORT: FUN_8003D0BC - retail's standalone skip (`lbu` the count, then
+/// `+2` per character), which returns the pointer past the field.
+pub fn name_field_len(body: &[u8]) -> Option<usize> {
+    Some(1 + usize::from(*body.first()?) * 2)
 }
 
 /// The C1 / C2 story-flag gate lists of a **partition-2 named-record**
@@ -335,8 +341,7 @@ pub fn partition2_record_gates(
     let script_start = partition_record_offset(man_file, man.len(), 2, index)?;
     let end = record_end_bound(man_file, man.len(), script_start);
     let body = man.get(script_start..end)?;
-    let name_len = *body.first()? as usize;
-    let mut cur = 1 + name_len * 2;
+    let mut cur = name_field_len(body)?;
     let c0 = *body.get(cur)? as usize;
     cur += 1 + c0;
     let read_u16_list = |body: &[u8], cur: &mut usize| -> Option<Vec<u16>> {

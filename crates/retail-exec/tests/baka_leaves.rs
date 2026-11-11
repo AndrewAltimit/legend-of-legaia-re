@@ -375,6 +375,118 @@ mod exchange {
             |_| {},
         );
     }
+
+    /// The damage kernel `FUN_801D3B18` called on its own over seated blocks
+    /// and actors, every attack type on either seat, the special's last
+    /// sub-keyframe included, against `BakaFight::apply_damage`.
+    #[test]
+    fn a_blow_lands_as_retail_lands_it() {
+        differential!(prot(976, DAMAGE));
+        const DAMAGE: u32 = 0x801D_3B18;
+        const ACTOR: [u32; 2] = [0x8014_0000, 0x8014_0100];
+        const CLIP_BASE: [u32; 2] = [0, 0x400];
+        const ACTION_TABLES: u32 = 0x801D_B8B8;
+        const PUSH: u32 = 0x801D_BEC0;
+        let Some(mut r) = rig() else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        r.cpu.stub(0x8005_67A8, 0);
+        let mut rng = Rng(0x424C_4F57);
+        let (mut finishers, mut crits, mut specials) = (0, 0, 0);
+        for round in 0..100_000 {
+            let rosters = [
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+                rng.below(bo::OPPONENT_COUNT as u32) as usize,
+            ];
+            let mut seats = random_seats(&mut rng, &r.opponents, rosters);
+            let loser = rng.below(2) as usize;
+            let winner = loser ^ 1;
+            // The winner holds an attack: the caller books a blow only for one.
+            seats[winner].chosen = 1 + rng.below(4) as u8;
+            // A round opens on a streak of 0, where the streak term is `-0x40`.
+            seats[loser].combo = rng.below(6) as i32;
+            let count = r.actions[rosters[winner]].keyframes[bo::ACTION_SPECIAL];
+            let landed = match rng.below(3) {
+                0 => None,
+                1 => Some((count - 1).max(0) as usize),
+                _ => Some(rng.below(count.max(1) as u32) as usize),
+            };
+            let mut f = BakaFight::from_tables(&r.opponents, &r.actions, rosters[0], rosters[1], 0)
+                .expect("fight");
+            f.seat_exchange(seats, 0, 0);
+            for s in 0..2usize {
+                seat(&mut r.cpu, s as u32, rosters[s], seats[s]);
+                let b = BLOCK + s as u32 * STRIDE;
+                let rec = ROSTER + rosters[s] as u32 * 0x6C;
+                let damage_mod = r.cpu.mem.rd32(rec + 0x24);
+                let table = r.cpu.mem.rd32(ACTION_TABLES + rosters[s] as u32 * 4);
+                r.cpu.mem.wr32(b + 0x0C, 1);
+                r.cpu.mem.wr32(b + 0x10, u32::from(seats[s].chosen));
+                r.cpu.mem.wr32(b + 0x14, CLIP_BASE[s]);
+                r.cpu.mem.wr32(b + 0x18, damage_mod);
+                r.cpu.mem.wr32(b + 0x20, 0);
+                r.cpu.mem.wr32(b + 0x34, 0);
+                r.cpu.mem.wr32(b + 0x38, 0);
+                r.cpu.mem.wr32(b + 0x98, u32::MAX);
+                for o in (0..0x100).step_by(4) {
+                    r.cpu.mem.wr32(ACTOR[s] + o, 0);
+                }
+                r.cpu.mem.wr32(ACTOR[s] + 0x48, table);
+                r.cpu.mem.wr32(0x801D_BFA0 + s as u32 * 4, ACTOR[s]);
+                r.cpu.mem.wr32(0x801D_BFAC + s as u32 * 4, ACTOR[s]);
+            }
+            r.cpu.mem.wr32(
+                BLOCK + winner as u32 * STRIDE + 0x98,
+                landed.map_or(u32::MAX, |i| i as u32),
+            );
+            r.cpu.mem.wr32(PUSH, 0);
+            assert_eq!(r.cpu.call(DAMAGE, &[loser as u32]), Stop::Returned);
+            f.land_blow(loser, landed);
+
+            let word =
+                |cpu: &mut Cpu, s: usize, o: u32| cpu.mem.rd32(BLOCK + s as u32 * STRIDE + o);
+            let retail = (
+                [read(&mut r.cpu, 0), read(&mut r.cpu, 1)],
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x34)),
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x38)),
+                [0, 1].map(|s| word(&mut r.cpu, s, 0x20) != 0),
+                word(&mut r.cpu, winner, 0x0C),
+                i32::from(r.cpu.mem.rd16(ACTOR[loser] + 0x5C) as i16) - CLIP_BASE[loser] as i32 - 1,
+                (
+                    i32::from(r.cpu.mem.rd16(ACTOR[0] + 0x14) as i16),
+                    r.cpu.mem.rd32(PUSH) as i32,
+                ),
+                i32::from(r.cpu.mem.rd16(ACTOR[1] + 0x14) as i16),
+            );
+            let strike = match f.strike_clock(winner).state {
+                legaia_engine_minigames::baka_fighter::StrikeState::Armed => 0,
+                legaia_engine_minigames::baka_fighter::StrikeState::Landed => 1,
+                legaia_engine_minigames::baka_fighter::StrikeState::Consumed => 2,
+            };
+            let port = (
+                f.exchange_seats(),
+                [f.round_wins(0), f.round_wins(1)],
+                [f.hits_taken(0), f.hits_taken(1)],
+                [f.locked(0), f.locked(1)],
+                strike,
+                f.motion(loser).record as i32,
+                f.push_back(),
+                f.push_back().0,
+            );
+            assert_eq!(
+                retail, port,
+                "round {round} rosters {rosters:?} seats {seats:?} loser {loser} landed {landed:?}"
+            );
+            finishers += u32::from(retail.1 != [0, 0]);
+            crits += u32::from(seats[winner].crit_pending);
+            specials += u32::from(seats[winner].chosen == 4 && seats[loser].hp > 0);
+        }
+        assert!(
+            finishers > 1000 && crits > 1000 && specials > 1000,
+            "{finishers} {crits} {specials}"
+        );
+    }
 }
 
 /// The HUD's number drawers: the right-aligned 8px field `FUN_801D6A18`, the
@@ -775,4 +887,251 @@ mod chrome {
             "{appended} {reused} {removed}"
         );
     }
+}
+
+/// The per-fighter mesh installer `FUN_801D4C50` on its retail arm (the
+/// streaming flag `_DAT_8007B8C2` set), over generated packs: the PROT entry it
+/// reads (`FUN_8003EB98`'s first argument) against `fighter_pack_entry`, and
+/// every chunk it hands the dispatcher `FUN_8001F05C` (payload address, header
+/// word, the decompressed flag) against `fighter_pack_chunks`. The allocator
+/// returns the scratch pack and the CD calls are stood in for.
+#[test]
+fn the_fighter_pack_walk_matches_retail() {
+    use legaia_engine_minigames::baka_fighter::{fighter_pack_chunks, fighter_pack_entry};
+    use psx_retail_exec::{A1, A2, A3};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const PACK_INSTALL: u32 = 0x801D_4C50;
+    const ALLOC: u32 = 0x8001_7888;
+    const FREE: u32 = 0x8001_7B94;
+    const READ_ENTRY: u32 = 0x8003_EB98;
+    const SYNC: u32 = 0x8003_DE7C;
+    const DISPATCH: u32 = 0x8001_F05C;
+    const STREAMING: u32 = 0x8007_B8C2;
+    const MESH_INDEX: u32 = 0x801D_C114;
+    const BUF: u32 = 0x8014_0000;
+    differential!(prot(976, PACK_INSTALL));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8005_8104, 0);
+    cpu.stub(FREE, 0);
+    cpu.stub(SYNC, 0);
+    cpu.stub(ALLOC, BUF);
+    let reads = Rc::new(RefCell::new(Vec::<(u32, u32, u32)>::new()));
+    let r2 = reads.clone();
+    cpu.hook(READ_ENTRY, move |r, _| {
+        r2.borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[A1], r.r[A2]))
+    });
+    let chunks = Rc::new(RefCell::new(Vec::<(u32, u32, u32, u32)>::new()));
+    let c2 = chunks.clone();
+    cpu.hook(DISPATCH, move |r, _| {
+        c2.borrow_mut()
+            .push((r.r[psx_retail_exec::A0], r.r[A1], r.r[A2], r.r[A3]))
+    });
+    cpu.mem.wr16(STREAMING, 1);
+    cpu.mem.wr32(MESH_INDEX, 0);
+    cpu.mem.wr32(0x8007_C018, 0);
+    let mut rng = Rng(0x4655_4B50);
+    let mut walked = 0usize;
+    for case in 0..2000 {
+        let roster = rng.below(6);
+        let mut pack = Vec::new();
+        for _ in 0..rng.below(12) {
+            let span = if rng.below(4) == 0 { 0x40 } else { 0x2000 };
+            let size = 1 + rng.below(span);
+            let kind = rng.next() & 0xFF;
+            pack.extend_from_slice(&((kind << 24) | size).to_le_bytes());
+            let body = ((size / 4) * 4) as usize;
+            pack.extend((0..body).map(|_| rng.next() as u8));
+        }
+        // The terminator: a type byte over a zero size.
+        pack.extend_from_slice(&((rng.next() & 0xFF) << 24).to_le_bytes());
+        cpu.mem.load(BUF, &pack);
+        reads.borrow_mut().clear();
+        chunks.borrow_mut().clear();
+        assert_eq!(
+            cpu.call(PACK_INSTALL, &[roster]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let (_, entry) = fighter_pack_entry(roster as usize);
+        assert_eq!(
+            *reads.borrow(),
+            [(entry, BUF, 1)],
+            "case {case}: roster {roster}"
+        );
+        let want: Vec<_> = fighter_pack_chunks(&pack)
+            .iter()
+            .map(|c| {
+                let hdr = u32::from_le_bytes(pack[c.offset - 4..c.offset].try_into().unwrap());
+                assert_eq!((c.kind, c.len as u32), ((hdr >> 24) as u8, hdr & 0xFF_FFFF));
+                (BUF + c.offset as u32, hdr, 0, 1)
+            })
+            .collect();
+        assert_eq!(*chunks.borrow(), want, "case {case}");
+        walked += want.len();
+    }
+    assert!(walked > 5000, "only {walked} chunks walked");
+}
+
+/// The special's afterimage actor `FUN_801D49E8`, frame by frame over
+/// generated live masks, cursors, steps, clip records and frame steps, against
+/// `afterimage_pass`: the retire bit on an empty mask, the mask and the kept
+/// cursor after the passes, and each ghost the mesh draw `FUN_8001B964` is
+/// called for, by the lagged cursor `+0x68` and the depth-cue level `+0x78` it
+/// sees. The view transform `FUN_8003D344` (run on a register the body never
+/// sets) is stubbed.
+#[test]
+fn the_afterimage_passes_as_retail_passes_it() {
+    use legaia_engine_minigames::baka_fighter_chrome::afterimage_pass;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    const GHOST: u32 = 0x801D_49E8;
+    const MESH_DRAW: u32 = 0x8001_B964;
+    const CLIP_TABLE_PTR: u32 = 0x8007_B888;
+    const CLIP_TABLE: u32 = 0x8016_0000;
+    const OWNERS: u32 = 0x801D_BFAC;
+    const OWNER: u32 = 0x8014_1000;
+    const GHOST_ACTOR: u32 = 0x8014_2000;
+    differential!(prot(976, GHOST));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8003_D344, 0);
+    let draws = Rc::new(RefCell::new(Vec::<(i16, u16)>::new()));
+    let dr = draws.clone();
+    cpu.hook(MESH_DRAW, move |r, m| {
+        let a = r.r[psx_retail_exec::A0];
+        dr.borrow_mut()
+            .push((m.rd16(a + 0x68) as i16, m.rd16(a + 0x78)));
+    });
+    cpu.mem.wr32(CLIP_TABLE_PTR, CLIP_TABLE);
+    cpu.mem.wr32(OWNERS, OWNER);
+    let mut rng = Rng(0x4748_5354);
+    let (mut drawn, mut expired, mut retired) = (0, 0, 0);
+    for case in 0..20_000 {
+        let mask = rng.below(4) as u16;
+        let cursor = rng.below(0x400) as i16 - 0x80;
+        let step = rng.below(0x40) as i16;
+        let n = 1 + rng.below(8) as u8;
+        let frames = rng.below(0x30) as u16;
+        let frame_step = 1 + rng.below(3);
+        let id = rng.below(0x10);
+        cpu.mem.wr32(CLIP_TABLE + 4 * id, 0x400);
+        cpu.mem.wr16(CLIP_TABLE + 0x400 + 2, frames);
+        cpu.mem.wr8(CLIP_TABLE + 0x400 + 6, n);
+        let a = GHOST_ACTOR;
+        cpu.mem.load(a, &[0; 0x100]);
+        cpu.mem.wr16(a + 0x5A, mask);
+        cpu.mem.wr16(a + 0x5C, id as u16);
+        cpu.mem.wr16(a + 0x68, cursor as u16);
+        cpu.mem.wr16(a + 0x6A, step as u16);
+        cpu.mem.wr16(a + 0x78, 0x1234);
+        cpu.mem.wr8(0x1F80_0393, frame_step as u8);
+        draws.borrow_mut().clear();
+        assert_eq!(cpu.call(GHOST, &[a]), Stop::Returned, "case {case}");
+        let port = afterimage_pass(mask, cursor, frame_step as i32, step, n, frames);
+        let label = format!(
+            "case {case}: mask {mask} cursor {cursor} step {step} n {n} frames {frames} fs {frame_step}"
+        );
+        assert_eq!(cpu.mem.rd32(a + 0x10) & 8 != 0, port.retire, "{label}");
+        if port.retire {
+            retired += 1;
+            continue;
+        }
+        assert_eq!(cpu.mem.rd16(a + 0x5A), port.live_mask, "{label}: mask");
+        assert_eq!(
+            cpu.mem.rd16(a + 0x68) as i16,
+            port.cursor,
+            "{label}: kept cursor"
+        );
+        assert_eq!(cpu.mem.rd16(a + 0x78), 0x1234, "{label}: cue restored");
+        let want: Vec<(i16, u16)> = port
+            .passes
+            .iter()
+            .filter(|p| p.drawn)
+            .map(|p| (p.cursor, p.cue))
+            .collect();
+        assert_eq!(*draws.borrow(), want, "{label}");
+        drawn += want.len();
+        expired += port.passes.iter().filter(|p| p.expired).count();
+    }
+    assert!(
+        drawn > 5000 && expired > 1000 && retired > 1000,
+        "{drawn} {expired} {retired}"
+    );
+}
+
+/// The player-select fighter's tick `FUN_801D3390` over generated roster ids,
+/// cursors, second matches, match phases and clip records, against
+/// `lineup_tick`: the retire bit, the cue `+0x78`, the rate `+0x6A`; and the
+/// two stores the kernel's doc names, the colour word `+0x74` zeroed and the
+/// flag bit `2` cleared, on a live tick. The clip driver `FUN_800204F8` is
+/// stubbed.
+#[test]
+fn the_lineup_fighter_ticks_as_retail_ticks_it() {
+    use legaia_engine_minigames::baka_cabinet::lineup_tick;
+    const LINEUP: u32 = 0x801D_3390;
+    const CURSOR_G: u32 = 0x801D_BF70;
+    const SECOND_G: u32 = 0x801D_BF74;
+    const PHASE_G: u32 = 0x801D_BF78;
+    const CLIP_TABLE: u32 = 0x8016_0000;
+    const FIGHTER: u32 = 0x8014_3000;
+    differential!(prot(976, LINEUP));
+    let Some(mut cpu) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub(0x8002_04F8, 0);
+    cpu.mem.wr32(0x8007_B888, CLIP_TABLE);
+    let mut rng = Rng(0x4C49_4E45);
+    let (mut lit, mut dim, mut retired) = (0, 0, 0);
+    for case in 0..10_000 {
+        let roster = rng.below(5) as i32;
+        let cursor = rng.below(4) as i32;
+        let second = rng.below(5) as i32 - 1;
+        let phase = if rng.below(4) == 0 {
+            1 + rng.below(2) as i32
+        } else {
+            0
+        };
+        let rate = rng.next() as u8;
+        let id = rng.below(0x20);
+        cpu.mem.wr32(CLIP_TABLE + 4 * id, 0x200 + 0x10 * id);
+        cpu.mem.wr8(CLIP_TABLE + 0x200 + 0x10 * id + 7, rate);
+        cpu.mem.wr32(CURSOR_G, cursor as u32);
+        cpu.mem.wr32(SECOND_G, second as u32);
+        cpu.mem.wr32(PHASE_G, phase as u32);
+        let flags = rng.next() & !8;
+        cpu.mem.load(FIGHTER, &[0xA5; 0x100]);
+        cpu.mem.wr32(FIGHTER + 0x10, flags);
+        cpu.mem.wr16(FIGHTER + 0x5A, roster as u16);
+        cpu.mem.wr16(FIGHTER + 0x5C, id as u16);
+        assert_eq!(cpu.call(LINEUP, &[FIGHTER]), Stop::Returned, "case {case}");
+        let t = lineup_tick(roster, cursor, Some(second), phase, rate);
+        let f = cpu.mem.rd32(FIGHTER + 0x10);
+        assert_eq!(f & 8 != 0, t.retire, "case {case}");
+        if t.retire {
+            assert_eq!(f, flags | 8, "case {case}: retire only");
+            retired += 1;
+            continue;
+        }
+        assert_eq!(f, flags & !2, "case {case}: flag bit 2 cleared");
+        assert_eq!(cpu.mem.rd16(FIGHTER + 0x78), t.cue, "case {case}: cue");
+        assert_eq!(cpu.mem.rd16(FIGHTER + 0x6A), t.rate, "case {case}: rate");
+        assert_eq!(cpu.mem.rd32(FIGHTER + 0x74), 0, "case {case}: colour word");
+        if t.cue == 0 {
+            lit += 1;
+        } else {
+            dim += 1;
+        }
+    }
+    assert!(
+        lit > 1000 && dim > 1000 && retired > 1000,
+        "{lit} {dim} {retired}"
+    );
 }

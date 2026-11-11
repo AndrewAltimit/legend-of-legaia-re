@@ -178,6 +178,17 @@ impl InputState {
         self.retail.reset_menu_repeat();
     }
 
+    /// Run the retail pump for a tick no [`Self::set_pad`] is made on: a
+    /// screen that holds the field (the pause menu, a shop, the naming
+    /// prompt) owns the tick and reads the cursor auto-repeat
+    /// ([`Self::take_menu_repeat`]), which only a pump raises. `mask` is the
+    /// held pad word. The published mask ([`Self::pad`]) is not touched: the
+    /// field's own edges resume from where its last tick left them. One pump
+    /// a tick: a tick that calls [`Self::set_pad`] must not call this too.
+    pub fn pump_held(&mut self, mask: u16) {
+        self.retail.pump_raw(mask, 1);
+    }
+
     /// Replace the pad mask. The previous frame's mask is rotated into
     /// `pad_prev` so edge queries reflect the transition between the last
     /// and current call.
@@ -189,7 +200,7 @@ impl InputState {
         // [`Self::retail_pad`]. A host with no cadence to supply implies one
         // vsync per call; [`Self::set_pad_reports`] takes the real
         // `DAT_1F800393`.
-        self.retail.pump_packed(u32::from(mask), 1);
+        self.retail.pump_raw(mask, 1);
         self.publish_pad(mask);
     }
 
@@ -818,6 +829,29 @@ mod tests {
             }
         }
         assert_eq!(pulses, 4, "one pulse every REPEAT_PERIOD vsyncs");
+    }
+
+    /// The cursor auto-repeat reaches a host that hands over an assembled
+    /// mask: a held direction re-fires, as that direction, and a held face
+    /// button never does.
+    #[test]
+    fn the_cursor_repeat_follows_the_held_direction_on_the_mask_entry() {
+        let mut s = InputState::new();
+        let mut fired = Vec::new();
+        for f in 0..30 {
+            s.set_pad(PadButton::Down.mask());
+            let r = s.take_menu_repeat();
+            if r != 0 {
+                assert_eq!(r, PadButton::Down.mask(), "frame {f}");
+                fired.push(f);
+            }
+        }
+        assert_eq!(fired, [20, 23, 26, 29]);
+        let mut s = InputState::new();
+        for _ in 0..60 {
+            s.set_pad(PadButton::Cross.mask());
+            assert_eq!(s.take_menu_repeat(), 0, "a held Cross repeats nothing");
+        }
     }
 
     #[test]

@@ -613,6 +613,14 @@ pub struct Actor {
     /// retail shows.)
     pub battle_pose: Option<u8>,
 
+    /// The `rand()` battle setup drew for this seat's opening clip phase
+    /// (`FUN_800513F0`, `0x80051544` on a party seat and `0x800518D0` on a
+    /// monster's): the node cursor `+0x68` opens at `(draw % frames) << 4`,
+    /// `frames` the seat's first stream's frame count, so no two bodies idle
+    /// in step. Taken by the seat's first idle
+    /// ([`crate::world::World::apply_battle_pose`]).
+    pub battle_idle_phase_draw: Option<u32>,
+
     /// Hit-reaction action tag currently playing on `battle_animation`
     /// (the retail `actor+0x1EF..+0x1F3` key space: `2`/`3` light flinch,
     /// `4` knockdown, `5` get-up, `0x0B` block). Set by

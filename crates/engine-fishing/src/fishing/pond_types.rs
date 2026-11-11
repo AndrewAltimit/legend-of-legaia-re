@@ -229,6 +229,8 @@ pub struct PondSession {
     pub(super) reel_repeat_in: i32,
     /// `DAT_801D9100` / `DAT_801D9104`: the fish's swim from last frame's tick.
     pub(super) last_swim: (i32, i32),
+    /// The fish's surge `DAT_801D90F4`, which lowers the rod's bend clamp.
+    pub(super) surge: i32,
     /// Last frame's lure probe - the water class the strike credit and the
     /// hooked fish's weight come off.
     pub(super) lure_probe: crate::fishing_actors::LureProbe,

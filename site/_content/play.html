@@ -665,10 +665,10 @@ div.play-vis-head { cursor: default; }
                 <span class="play-vis-tag is-retail">Retail look</span></label>
               <p class="play-vis-desc">The PS1&rsquo;s own 320&times;240 picture: chunky pixels, wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
             </li>
-            <li class="play-vis-row" title="Retail's visible-tile crop: at retail framing, draw only the terrain tiles the PS1's camera window covers (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
+            <li class="play-vis-row" title="Retail's visible-tile crop: draw only the terrain tiles the PS1's camera window covers, the window widened to match when the camera sits further back (far / farther); a dragged, tilted or zoomed camera draws the whole map (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
               <label class="play-vis-head"><input type="checkbox" id="play-retail-view-window" checked> <span class="play-vis-name">Retail tile crop</span>
                 <span class="play-vis-tag is-retail">Retail</span></label>
-              <p class="play-vis-desc">Draws only the ground tiles the PS1 camera would see. Off draws the whole map.</p>
+              <p class="play-vis-desc">Draws only the ground tiles the PS1 camera would see, so scenery behind the camera stays out of shot. Off draws the whole map.</p>
             </li>
             <li class="play-vis-row" title="Retail static-object windowing: placed objects outside the camera's tile window are not drawn (the retail_static_window option, persisted like the native config). Off draws every placement.">
               <label class="play-vis-head"><input type="checkbox" id="play-retail-static-window" checked> <span class="play-vis-name">Retail object window</span>

@@ -12,17 +12,20 @@ fn shiny_roll_boosts_only_the_capturable_enemy() {
     world.set_shiny_chance_pct(100); // force a shiny this battle
     // Killer Bee (id 7) is capturable (Seru 1); Wolf (id 9) is not.
     let formation = FormationDef::new(1, vec![FormationSlot::new(7), FormationSlot::new(9)]);
-    world.enter_battle_from_formation(&formation);
+    // Battle init may open with either species in front.
+    let seated = world.enter_battle_from_formation(&formation);
+    let bee = 1 + seated.slots.iter().position(|s| s.monster_id == 7).unwrap();
+    let wolf = 3 - bee;
 
-    // Slot 1 = first monster (Killer Bee). hp 25 -> 33, attack 9 -> 12.
+    // Killer Bee: hp 25 -> 33, attack 9 -> 12.
     assert!(
-        world.seru.shiny_enemy_slots.contains(&1),
+        world.seru.shiny_enemy_slots.contains(&(bee as u8)),
         "the capturable enemy is flagged shiny"
     );
-    assert_eq!(world.actors[1].battle.max_hp, 33, "shiny HP +35%");
-    assert_eq!(world.battle.attack[1], 12, "shiny ATK +35%");
-    // Slot 2 = Wolf (not capturable) is never chosen.
-    assert!(!world.seru.shiny_enemy_slots.contains(&2));
+    assert_eq!(world.actors[bee].battle.max_hp, 33, "shiny HP +35%");
+    assert_eq!(world.battle.attack[bee], 12, "shiny ATK +35%");
+    // Wolf (not capturable) is never chosen.
+    assert!(!world.seru.shiny_enemy_slots.contains(&(wolf as u8)));
 }
 
 #[test]
@@ -73,4 +76,45 @@ fn shiny_spell_deals_35_percent_more_damage() {
         shiny_dmg, expected,
         "shiny cast deals +35% (plain {plain_dmg} -> shiny {shiny_dmg})"
     );
+}
+
+/// Battle init's species-order rebuild (`FUN_80055B6C`,
+/// `0x80055C7C..0x80055D2C`): a formation of two species draws one `rand()`
+/// and opens with either species in front; one species draws nothing.
+#[test]
+fn a_two_species_formation_opens_either_way_round_and_draws_once() {
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+    let ids = |f: &FormationDef| f.slots.iter().map(|s| s.monster_id).collect::<Vec<_>>();
+    let mixed = FormationDef::new(
+        1,
+        vec![
+            FormationSlot::new(7),
+            FormationSlot::new(9),
+            FormationSlot::new(7),
+        ],
+    );
+    let (mut kept, mut swapped) = (0, 0);
+    for seed in 0..64u32 {
+        let mut world = capture_world(1);
+        world.rng_state = seed.wrapping_mul(0x9E37_79B9) | 1;
+        let mut twin = world.rng_state;
+        twin = legaia_engine_system::rand::world_lcg_step(twin);
+        let odd = legaia_engine_system::rand::bios_rand_shape(twin) & 1 != 0;
+        let seated = world.formation_in_species_order(&mixed);
+        assert_eq!(world.rng_state, twin, "one draw");
+        if odd {
+            assert_eq!(ids(&seated), vec![9, 7, 7]);
+            swapped += 1;
+        } else {
+            assert_eq!(ids(&seated), vec![7, 9, 7]);
+            kept += 1;
+        }
+    }
+    assert!(kept > 8 && swapped > 8, "{kept} {swapped}");
+
+    let mut world = capture_world(1);
+    let before = world.rng_state;
+    let solo = FormationDef::new(1, vec![FormationSlot::new(7), FormationSlot::new(7)]);
+    assert_eq!(ids(&world.formation_in_species_order(&solo)), vec![7, 7]);
+    assert_eq!(world.rng_state, before, "one species draws nothing");
 }

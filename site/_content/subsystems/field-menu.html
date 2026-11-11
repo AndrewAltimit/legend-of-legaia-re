@@ -127,7 +127,7 @@
       <p><strong>The pager</strong> walks with Left and Right through Condition, Skills, Magic and Moves; Up and Down walk the party. A confirm on Magic or Moves hands the pad to that page's list; on Magic a second confirm exchanges two spells, the order the Magic screen then lists. The live stat column adds the worn gear to the record's word.</p>
       <p><strong>Status page</strong> (offsets from the window origin <code>(WX, WY)</code>): header row - name <code>+8</code>, "LV" <code>+0x50</code>, level <code>+0x60</code> (record <code>+0x130</code>). HP row at <code>Y+0x13</code>, MP at <code>Y+0x20</code>, each placing current / max / base at <code>X+0x30 / +0x58 / +0x84</code>. AP gauge at <code>(X+0x40, Y+0x2D)</code>: four sprites from the system-UI sheet (CLUT row 4) plus a meter fill of <strong>two untextured gouraud quads</strong> spanning <code>x+0x1B .. +value/2</code> (dark-red &rarr; gold &rarr; dark-red gradient) and 6x6 digit records, with a dedicated "100" glyph at full charge. Six growth stats in a 3x2 grid at rows <code>Y+0x42/+0x4F/+0x5C</code>; seven equipment slots from <code>Y+0x6D</code> (icon <code>X+0</code>, name <code>X+0x10</code>; slots 4..6 in a right column); Experience at <code>Y+0xA5</code>, Next Level at <code>Y+0xB2</code>.</p>
       <p><strong>Tab plaque.</strong> The class-2 title tabs draw no gold frame: their chrome is the carved brown plaque - left cap <code>(208,64,8,20)</code>, 16x20 body tile repeated across the width, right cap <code>(216,64,8,20)</code>, all CLUT row 12 of the system-UI sheet. The tab renderer draws only the label.</p>
-      <p><strong>Satellites.</strong> Party list (<code>FUN_801D2094</code>): names at <code>WX+6</code> on <code>0xE</code> pitch, pointing-hand cursor sprite (UV <code>(152,64)</code>, CLUT 7) at <code>WX-0xC</code>. Pager (<code>FUN_801D30A4</code>): label flanked by solid triangles at <code>WX-0x10</code> / <code>WX+0x3A</code>. Summary (<code>FUN_801D31EC</code>): name, LV icon + 2-digit level, and "ATR:" with the per-character element icon - a <code>0xCE</code>-token string resolving through the aux table to 28x12 sprites in the system-UI extension strip TIM at <code>PROT.DAT[0x10178]</code>, palettes from the sibling TIM at <code>PROT.DAT[0x10028]</code>.</p>
+      <p><strong>Satellites.</strong> Party list (<code>FUN_801D2094</code>): names at <code>WX+6</code> on <code>0xE</code> pitch, pointing-hand cursor sprite (UV <code>(152,64)</code>, CLUT 7) at <code>WX-0xC</code>. The hand follows the focus word <code>DAT_801E46C4</code>: static under bit <code>0x1000</code>, bobbing without it, so on the Equip screen it bobs in the character picker and stands still once the slot browse has the pad. Pager (<code>FUN_801D30A4</code>): label flanked by solid triangles at <code>WX-0x10</code> / <code>WX+0x3A</code>. Summary (<code>FUN_801D31EC</code>): name, LV icon + 2-digit level, and "ATR:" with the per-character element icon - a <code>0xCE</code>-token string resolving through the aux table to 28x12 sprites in the system-UI extension strip TIM at <code>PROT.DAT[0x10178]</code>, palettes from the sibling TIM at <code>PROT.DAT[0x10028]</code>.</p>
       <p><strong>Selection plumbing.</strong> Highlighted member index = <code>*(u8*)(0x80084598 + (DAT_801E46C4 &amp; 0xFFF))</code>; its record = <code>0x80084708 + idx*0x414</code>. The renderer walks a running Y cursor down the page block by block.</p>
       <p><strong>Top-level windows.</strong> Command list (<code>FUN_801CFD68</code>): seven rows at <code>0xE</code> pitch in the retail order Items, Magic, Equip, Status, Options, Load, Save; blocked rows gray to CLUT 0 (Load under a dialog-context lock, Save when the save-enable flag is clear). Money box (<code>FUN_801D0148</code>): money pictogram + 8-digit amount, optional casino-coin row, clock from the 60 Hz tick counter <code>0x80084570</code>. Party panel (<code>FUN_801D030C</code>): one block per member at stride <code>0x3E</code> - name, LV, HP / MP with 4-digit fields, and the AP gauge fed from the persistent record <code>+0x10E</code>; HP / MP ink runs through the health-tier colour functions.</p>
     </div>
@@ -181,11 +181,40 @@
   <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-menus::pause_screens::list_kernel_navigate</code> + <code>engine-ui::menu::screens</code>.</p>
 </section>
 
+<section class="doc-section" id="cursor-repeat">
+  <h2>Holding a direction: the cursor repeat</h2>
+  <p>The list kernel does not read the pad's plain "just pressed" word. It reads a cursor word of its own, built by <code>FUN_80035C24</code>: a chord held unchanged is folded back in as a fresh press after <code>0x14</code> vsyncs (a third of a second), and then every <code>3</code>. The chord is the D-pad plus the four shoulder buttons, or the D-pad alone in battle, so a held face button never repeats.</p>
+  <figure class="diagram">
+    <svg class="dg-fit" viewBox="0 0 880 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A held Down on a timeline. The press itself moves the cursor once. Nothing happens for 0x14 vsyncs. After that the cursor moves again every 3 vsyncs for as long as the direction is held. A list that opens while the direction is already held clears the chord, so the whole delay runs again from the opening.">
+      <text class="dg-sub dg-start" x="20" y="22">Down held</text>
+      <rect class="dg-node" x="20" y="34" width="840" height="26" rx="3"/>
+      <rect class="dg-node-accent" x="20" y="34" width="8" height="26"/>
+      <text class="dg-sub dg-start" x="20" y="80">press: 1 step</text>
+      <text class="dg-sub" x="180" y="52">0x14 vsyncs: nothing</text>
+      <rect class="dg-node-accent" x="340" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="388" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="436" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="484" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="532" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="580" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="628" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="676" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="724" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="772" y="34" width="8" height="26"/>
+      <rect class="dg-node-accent" x="820" y="34" width="8" height="26"/>
+      <text class="dg-sub dg-start" x="340" y="80">then one step every 3 vsyncs</text>
+      <text class="dg-sub dg-start" x="20" y="118">A list that opens while the direction is already down clears the chord (FUN_80030628),</text>
+      <text class="dg-sub dg-start" x="20" y="136">so the whole delay runs again from the opening.</text>
+    </svg>
+  </figure>
+  <p>The same word drives the shop's quantity steppers and the naming screen's letter grid. Engine port: <code>engine-system::retail_pad::MenuRepeat</code>, folded in where the pause menu, the shop session, the naming grid and the battle spell and item lists take their edges, on both hosts.</p>
+</section>
+
 <section class="doc-section" id="items-use-flows">
   <h2>Items screen: Use / Throw Out / Arrange</h2>
   <ul class="bullets">
     <li><strong>Use</strong> dispatches on the item's effect class from the <a href="../formats/item-effect-table.html">item-effect table</a>: three class items get their own routes - <strong>Door of Light</strong> (confirm, defaulting Yes; consumes one and exits the menu with the dungeon-escape code), <strong>Door of Wind</strong> (a destination list over the 6-byte quick-travel records; exits with the world-map warp), <strong>Incense</strong> (confirm, applies encounter suppression, stays on the screen). Everything else opens the party target panel - all-party when the effect's flag says so, single-target otherwise - and applies through the executable's item-effect applier, consuming one bag copy per use.</li>
-    <li><strong>Throw Out</strong> re-points the list and confirms (Yes/No seeded to <strong>No</strong>); Yes zeroes both bytes of the bag-slot pair - <em>the whole stack is discarded</em>, with no compaction.</li>
+    <li><strong>Throw Out</strong> re-points the list and confirms (Yes/No seeded to <strong>No</strong>); Yes zeroes both bytes of the bag-slot pair - <em>the whole stack is discarded</em>, with no compaction. In retail the confirm window reads as the item name over "Throw out?": the count and the "You are about to" line are seated off the name's first byte and land off screen. The port draws both after the name and keeps retail's seat as a tested kernel.</li>
     <li><strong>Arrange</strong> inverts the overlay's display-order table into an id &rarr; rank map and selection-sorts the bag pairs; emptied slots sink behind the occupied run. The sort moves the bag itself, so the order stands after the screen closes.</li>
   </ul>
   <p>An apply screen outlives its use. Items and Magic stay on the target panel while the stack lasts (or the caster can pay) and somebody would still benefit, then hand back to the list. The panel takes only the list's place: the command, caster and info windows stay up behind it, and an all-party item or group spell puts the hand on every row and waits for one more confirm. The Magic screen's caster picker refuses a character with no spells, or with no Ra-Seru, with a buzz before any list opens; it never looks at HP, so a knocked-out member with MP still casts. Up and Down move the caster and target hands (Left and Right do nothing there), and every return to the spell list opens it on its first row.</p>

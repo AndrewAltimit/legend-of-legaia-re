@@ -525,11 +525,13 @@ impl World {
         if runs_master_driver {
             self.tick_register_ramps();
         }
-        // The camera vertical-offset easing `FUN_801DA390`: one call a frame,
-        // walking `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] - player[+0x16]`.
-        // Same gate as the ramps above - retail runs it off the field frame
-        // pump, which the CARD-mode frame does not reach.
-        if runs_master_driver {
+        // The camera vertical-offset easing `FUN_801DA390`: one call a game
+        // pass, walking `_DAT_8007BCAC` toward `scene_ctrl[+0x4A] -
+        // player[+0x16]`. Its one caller is the head of the entity tick
+        // `FUN_801DA51C` (`jal` at `0x801DA52C`), an actor-list handler, so it
+        // steps on the actor game tick: its unit steps are one a pass, not one
+        // a vsync.
+        if actor_tick_fired {
             self.tick_camera_offset_ease();
         }
         // The three frame-delta timer templates (`0x801F2858` bars,
@@ -768,12 +770,11 @@ impl World {
                 // Rebuild the tile-actor draw list from the current board +
                 // player cell (retail's per-frame board render pass).
                 self.refresh_tile_board_draw_list();
+                // The step runs the walk-regen tick ahead of the pad
+                // controller, behind the same gate
+                // (`World::tick_field_walk_regen`); its Incense zero edge
+                // raises the wear-off notice, which runs here.
                 self.step_field_locomotion();
-                // Walk-regen: drain the accumulator the step above just fed
-                // and apply the three accessory-gated restore bumps. Its
-                // Incense zero edge raises the wear-off notice, which runs
-                // here too.
-                self.tick_field_walk_regen();
                 self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a
                 // separate per-frame controller after the walk commits, so

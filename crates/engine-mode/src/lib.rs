@@ -18,4 +18,5 @@
 pub mod card_request;
 pub mod minigame_entry;
 pub mod mode;
+pub mod mode_transition;
 pub mod sfx_residency;

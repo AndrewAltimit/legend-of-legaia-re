@@ -184,6 +184,46 @@ pub struct EscapeTimerHud {
     pub hold: i16,
 }
 
+/// Where the countdown's readout sits: the spawner seeds the actor's position
+/// pair `+0x14` / `+0x16` with `(0xC0, 0x10)`.
+pub const COUNTDOWN_HUD_POS: (i16, i16) = (0xC0, 0x10);
+
+/// The second pair the spawner seeds, `+0x24` / `+0x26`.
+pub const COUNTDOWN_HUD_POS_B: (i16, i16) = (0xC0, -0x10);
+
+/// The spawner's `+0x6A` seed.
+pub const COUNTDOWN_HUD_SCALE: i16 = 0x200;
+
+/// What the countdown actor's install / remove routine does on one call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountdownSpawn {
+    /// Disarmed with an actor live: its kill bit is set (`+0x10 |= 8`).
+    Retire,
+    /// Armed with no actor live: allocate descriptor `0x801F22DC` and seed
+    /// the record - phase `+0x54` and hold `+0x68` zero, the readout at
+    /// [`COUNTDOWN_HUD_POS`].
+    Spawn(EscapeTimerHud),
+    /// Armed with an actor already live (it keeps its phase), or disarmed
+    /// with none.
+    Leave,
+}
+
+/// The countdown actor's install / remove, which the arming op `4C D3` calls
+/// after it has written the timer's words.
+///
+/// `armed` is `_DAT_800845B8` as the op left it and `live` whether the actor
+/// list holds one whose handler is the HUD tick `0x801D2EBC` (`FUN_8003CF04`).
+/// The lookup runs first, whatever the word (`0x801D5984..0x801D598C`).
+///
+/// PORT: FUN_801D596C
+pub fn countdown_actor_spawn(armed: i32, live: bool) -> CountdownSpawn {
+    match (armed != 0, live) {
+        (false, true) => CountdownSpawn::Retire,
+        (true, false) => CountdownSpawn::Spawn(EscapeTimerHud::default()),
+        _ => CountdownSpawn::Leave,
+    }
+}
+
 /// What one pass of [`EscapeTimerHud::step`] leaves on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EscapeTimerHudFrame {

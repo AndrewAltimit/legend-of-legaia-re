@@ -87,6 +87,13 @@ pub struct EquipScreenModel {
     /// a different layout for it - the reading that had window 24 waived as
     /// needing "the whole screen moved onto the descriptor-table layout".
     pub info: Option<EquipItemInfoModel>,
+    /// The slot browse's item panel: with the hand on a slot row that holds
+    /// something, window 22's second pass stages the worn id and draws the
+    /// shared panel `FUN_801D0F1C` inside the main window at
+    /// `(X + 0x94, Y + 0xC)` (`0x801D2800..0x801D28DC`). `None` on the Best
+    /// Equipment row, on an empty slot, under the character picker and in
+    /// the candidate step. The count is not drawn there.
+    pub browse_info: Option<EquipItemInfoModel>,
     /// Window 25's stat-compare panel, the candidate step's **other**
     /// addition (open script `0x801E4DC8` names 24 and 25 together).
     /// `None` outside the candidate step, or when the host supplied no
@@ -401,6 +408,37 @@ pub fn equip_screen_model(
         }
     });
 
+    // Window 22's other second-pass arm (`0x801D2800..0x801D28DC`): the hand
+    // on slot row `n >= 1` stages the id that row holds, and a non-zero id
+    // draws the shared item panel in the window's right half.
+    let browse_info = match session.state() {
+        EquipState::SlotPicker { cursor }
+            if cursor != crate::equip_session::SLOT_BROWSE_BEST_ROW
+                && !session.slot_cursor_hidden() =>
+        {
+            order
+                .get(usize::from(cursor) - 1)
+                .and_then(|&slot| record.equip.get(usize::from(slot)).copied())
+                .filter(|&id| id != 0)
+                .map(|id| {
+                    let t = text.map(|f| f(id)).unwrap_or_default();
+                    EquipItemInfoModel {
+                        name: if t.name.is_empty() {
+                            format!("Item {id:02X}")
+                        } else {
+                            t.name
+                        },
+                        count: 0,
+                        desc: t.desc,
+                        passive: t.passive,
+                        detail: t.detail,
+                        scope_icon: t.scope_icon,
+                    }
+                })
+        }
+        _ => None,
+    };
+
     // Window 25's panel. Retail's renderer bails outright when nothing is
     // staged (`beq v0, zero` on `DAT_801E46B0` at `0x801D12BC`), so the
     // panel appears with the candidate list and goes with it - the same
@@ -448,6 +486,7 @@ pub fn equip_screen_model(
 
     EquipScreenModel {
         info,
+        browse_info,
         compare,
         // The party window lists the present party (retail's
         // `DAT_80084594`-long member list), not every roster record; an empty

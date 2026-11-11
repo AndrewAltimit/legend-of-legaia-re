@@ -43,7 +43,7 @@ pub enum FieldWarpTick {
 /// slot-A images hold unrelated code at the same VA, hence the stem.
 ///
 /// PORT: overlay_field_0897_801d58f0
-fn warp_fade_template(
+pub fn warp_fade_template(
     f: &warp_tile::WarpFade,
     delay: i16,
 ) -> legaia_engine_system::fade::FadeTemplate {
@@ -98,19 +98,21 @@ impl World {
     /// Each running frame (and the landing frame) also tears down the live
     /// text balloon - retail tags the pool actor running `0x801DA7F0`.
     ///
-    /// Every frame ends with the system channel's clear of the `-1000`
-    /// landed sentinel ([`warp_tile::clear_landed_sentinel`]), which retail
-    /// runs later in the same tick from `FUN_801DA51C`: the timer reads
-    /// `-1000` only between the landing and the end of its own tick. The
+    /// The landing parks the `-1000` landed sentinel in the timer, and it
+    /// stands until the system channel's next tick: retail's entity tick
+    /// `FUN_801DA51C` runs the scene's system script and only then clears the
+    /// word (`0x801DA7C4..0x801DA7D8`), so the script's pass on the landing
+    /// sees it. That is what lets a room selector's `4C 2x` turn the player
+    /// with the pad octant it installs for the room he landed in
+    /// (`0x801E0EE4..0x801E0EFC`). [`Self::step_field_frame_slice`] makes the
+    /// clear after the slice ([`warp_tile::clear_landed_sentinel`]). The
     /// channel's dialogue / lock gates are not modelled - the landing frame
     /// has neither up.
     ///
     /// REF: FUN_801D1EC4 (ported as [`warp_tile::tick_warp_timer`]),
     /// FUN_801DDF48, FUN_80019278, FUN_801DA51C
     pub fn tick_field_warp(&mut self) -> FieldWarpTick {
-        let tick = self.tick_field_warp_timer();
-        warp_tile::clear_landed_sentinel(&mut self.locomotion.warp);
-        tick
+        self.tick_field_warp_timer()
     }
 
     fn tick_field_warp_timer(&mut self) -> FieldWarpTick {
@@ -170,6 +172,22 @@ impl World {
                 // rewrites the region-type mask there.
                 // REF: FUN_801DE3E0
                 self.zone_query_region_mask(i32::from(query_tile.0), i32::from(query_tile.1));
+                // The same query loads the destination's camera block, and the
+                // landing then snaps the camera onto it and clamps the focus
+                // (`jal 0x801DB8EC` at `0x801D2008`, `jal 0x801DAA50` at
+                // `0x801D2010`): the camera stands on the destination's shot
+                // from the landing frame, under the fade, instead of easing
+                // the old region's block across the door.
+                // REF: FUN_801DB8EC, FUN_801DAA50
+                self.push_camera_zone_request(
+                    legaia_engine_field::camera::CameraZoneRequest::QueryAtTile {
+                        x: query_tile.0,
+                        z: query_tile.1,
+                    },
+                );
+                self.push_camera_zone_request(
+                    legaia_engine_field::camera::CameraZoneRequest::SnapAndClamp,
+                );
                 self.pending_field_events.push(
                     legaia_engine_field::field_events::FieldEvent::MoveTo {
                         world_x: world.0 as u16,
@@ -263,6 +281,12 @@ impl World {
             legaia_engine_system::fade::spawn_fade(&mut seat, &t, MAP_INSTALL_FADE_ID);
             self.presentation.module_fades.extend(seat);
         }
+    }
+
+    /// The post-warp / post-load hold still to drain, retail's
+    /// `_DAT_8007B6B4`.
+    pub fn post_load_hold(&self) -> i32 {
+        self.locomotion.warp.hold
     }
 
     /// Whether a script context shows a text box this tick - the engine's
@@ -522,15 +546,24 @@ mod tests {
         let ms = &w.actors[slot].move_state;
         assert_eq!((ms.world_x, ms.world_z), (21 * 64 + 64, 41 * 64));
         assert_eq!(w.encounter_step_counter(), 300, "a live counter carries");
-        // The system channel clears the -1000 sentinel the same tick.
+        // The sentinel stands for the system channel's pass on the landing.
         assert_eq!(
-            w.locomotion.warp.timer, 0,
-            "sentinel cleared on the landing tick"
+            w.locomotion.warp.timer,
+            warp_tile::WARP_LANDED_SENTINEL,
+            "the landed sentinel waits for the system channel"
         );
+        assert!(!w.field_warp_in_flight());
         // The hold keeps the pad off after the landing.
         assert!(legaia_engine_field::field_warp_tile::pad_suppressed(
             &w.locomotion.warp
         ));
+        // The landing loads the destination's camera block and snaps onto it.
+        use legaia_engine_field::camera::CameraZoneRequest as R;
+        assert_eq!(
+            w.take_camera_zone_requests(),
+            [R::QueryAtTile { x: 10, z: 20 }, R::SnapAndClamp],
+            "FUN_801DE3E0 at the destination halved, then FUN_801DB8EC / FUN_801DAA50"
+        );
     }
 
     #[test]

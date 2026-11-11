@@ -104,7 +104,20 @@ impl World {
     /// the walker left on the pass before. The corpus pins the order: of the
     /// 24 captured bodies whose test parts between the RAM's pose and the pose
     /// one increment back, `+0x08` follows the older pose on all 24.
+    ///
+    /// On retail's cadence it runs once a battle frame, on the tick the pass
+    /// opens: run every tick, a body near the camera flipped between solid
+    /// and ghost on the ticks inside one pass (the `0x83` film's `0x28` pass
+    /// drew the monster as a ghost on its first tick and solid on its second,
+    /// where retail's frame holds one look for the whole pass).
     pub(in crate::world) fn tick_battle_camera_ghost(&mut self) {
+        if self.toggles.battle_sm_frame_cadence && self.mode == SceneMode::Battle {
+            let frame = self.battle_frame_id();
+            if self.battle.ghost_pass_frame == Some(frame) {
+                return;
+            }
+            self.battle.ghost_pass_frame = Some(frame);
+        }
         let pose = self.battle_cam_pose();
         self.camera_ghost_pass_on(pose);
     }

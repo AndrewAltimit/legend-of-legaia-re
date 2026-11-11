@@ -96,6 +96,8 @@ const SIZE_ENV: &str = "LEGAIA_LAUNCHER_SIZE";
 /// Skip the screen when the remembered disc is good (the older behaviour).
 const DIRECT_ENV: &str = "LEGAIA_LAUNCHER_DIRECT";
 const TITLE: &str = "Legend of Legaia";
+/// The help box's last line after a failed game: both ways to the report.
+const COPY_REPORT_HINT: &str = "Click or Ctrl+C: report";
 
 /// Run the launcher. Returns the argument list to run in-process (only
 /// under [`DIRECT_ENV`] with a good remembered disc), or `None` when the
@@ -2035,7 +2037,7 @@ impl LauncherApp {
                 help.x + 6,
                 help.y + help.h - 14,
                 if self.failure_report.is_some() {
-                    "Ctrl+C copies a report"
+                    COPY_REPORT_HINT
                 } else {
                     "Arrows, Enter, Tab, Esc"
                 },
@@ -2497,6 +2499,18 @@ impl LauncherApp {
         }
     }
 
+    /// Whether the cursor is on the help box: after a failed game a click
+    /// there copies the report, for a player with no hand on the keyboard.
+    fn cursor_on_help(&self) -> bool {
+        let Some((cx, cy)) = self.cursor else {
+            return false;
+        };
+        let st = self.stage();
+        let x = ((cx as i32) - st.origin.0).div_euclid(st.scale);
+        let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
+        help_rect().contains(x, y)
+    }
+
     /// The control under the cursor, if any.
     fn hit(&self) -> Option<Item> {
         let (cx, cy) = self.cursor?;
@@ -2632,6 +2646,11 @@ impl ApplicationHandler for LauncherApp {
                     _ => return,
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
+                if dir > 0 && self.failure_report.is_some() && self.cursor_on_help() {
+                    self.copy_failure_report();
+                    self.win.request_redraw();
+                    return;
+                }
                 if let Some(item) = self.hit()
                     && (dir > 0
                         || matches!(

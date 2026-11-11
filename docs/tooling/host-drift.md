@@ -360,6 +360,7 @@ is reached at runtime.
 | live-loop arming | `symbols_all` on the shared `World::arm_live_loop`. |
 | pause-menu press | `symbols_all` on `press_field_menu` at every host's press site. |
 | pause-menu open with no press | `symbols_all` on `open_field_menu` (the title's Continue / Options rows). |
+| pause-menu edge | `symbols_all` on `BootSession::pause_menu_edge` across the window's `tick_boot_ui` and the page's `play_menu_input`: the menu's edge word with the cursor auto-repeat folded in. |
 | party wipe | `symbols_all` on `GameOverOutcome::ReturnToTitle` across the two routing sites. |
 | title card | `symbols_all` on `FrontEndStep` + `AttractStart` + `AttractEnded` + `Picked` across the native boot UI and the page's `boot_title_step`: the session's front end steps the title, the host acts on the step. |
 | logos to title | `symbols_all` on `FrontEndStep` + `TitleOpened` across the native boot UI and the page's `boot_logos_step`: both take the seat's `boot_handoff` through the front end. |
@@ -1122,7 +1123,8 @@ found wrong, the file that has to hold it, and what it looks like when it does
 not: the winding handed back with the cull, the intro readback declared ahead
 of the ticks, the screen primitives' tie nudge, the hall's ambient tree taken
 off the world on leaving a dance, the screen layers composed on a pause-menu
-tick, zeros staged for a mesh's absent ground refs. A row is `contains` (the line is there) or `before` (the line is there,
+tick, zeros staged for a mesh's absent ground refs, the game's dither word
+staged on the renderer every frame and read into the PSX uniform. A row is `contains` (the line is there) or `before` (the line is there,
 ahead of another). It is a pin on a known defect and does not generalise.
 
 ## Two JavaScript-side gates
@@ -1238,7 +1240,7 @@ runs both hosts and compares what they leave.
 |---|---|
 | native side | `window::HeadlessPlayWindow`: the app `play-window` assembles (`assemble_play_window`, the launch stages after the intro movie) with no renderer, driven one display frame at a time - the redraw's sim ticks (`run_sim_ticks`), then the draw path's world-moving steps (`headless_frame_prep`) |
 | page side | the real `LegaiaRuntime`, driven the way `site/js/play-view-frame.js` drives it: the frame's ticks through `play_frame_ticks` (the export that owns their order on the page), the persistent tap set, the card-load take |
-| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, the host-held overlay screen (`sample_with_overlay`), and the four channels below |
+| sample | `engine-session::host_trace`: scene, mode, seat word and edges, `World::frame`, the world `rand()` state, field-VM pc, actor slots, field NPC positions, the retail camera globals, flag / roster / bag digests, dialogue, battle and field-VM contexts, the pause menu and its wipe, the merchant gate, the naming prompt, the host-held overlay screen (`sample_with_overlay`), and the five channels below |
 | verdict | per channel, the first display frame the two traces part on |
 
 Each scenario runs at three cadences - one tick per display frame, two (a
@@ -1263,6 +1265,7 @@ prompt for good.
 | `battle_stage` | the stage class, the backdrop depth-cue weight, the fog's stage cap, each actor's battle texture slot | the battle-entry frame: each host wrote them from its battle mesh build |
 | `audio` | the director's command record (`AudioCommandLog`): what the routing asked for, not what an output sounded | the first menu or shop press: the window queued a screen's blip, the page fired it at once, and the page's open blip lived in JS |
 | `switches` | the world toggles, locomotion rules, NPC switches, frame grab and camera distance a launch sets | frame 0: the window pushed its options into the world only from its first tick |
+| `pad` | the world's published pad word and the one before it, and the pad pump's held word | a shop's ticks: the window published and pumped a neutral word under it, the page neither |
 
 World state does not hang off the renderer. The steps that bind it are
 session steps both hosts call before building any mesh:
@@ -1404,6 +1407,8 @@ a scratch directory only.
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
 | `town_slope`, `town_seat` | town01 with the player seated at tile (30, 22) (`LEGAIA_SEAT` / `play_debug_seat`): the first with the follow knobs held at orbit 2.7, tilt -0.5 (`LEGAIA_DIAG_FOLLOW_KNOBS` / the page's knob setters), the view past the plateau ramp to the sea off retail's vantage; the second at retail's |
 | `battle_menus` | a fight's round prompt, the command ring's Item window and its cursor, the empty Magic window, an item used |
+| `menu_hold`, `shop_hold` | Down held on the pause menu's root list and on a shop's stock list: the cursor auto-repeat under a screen that owns its ticks |
+| `equip` | the pause menu's Equip row down a level at a time: the character picker, the slot browse with the worn item's panel beside each row, a slot's candidate list, and back out |
 | `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
 | `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
@@ -1422,6 +1427,13 @@ set the props' start phases) and again after it (`LEGAIA_RNG_SEED` natively, `de
 on the page). Unseeded, `late_fight` parted on its first frame's `rng` line and drew a
 different fight (`44%` of every frame off), and `ed_korout`'s props started out of phase and
 its shots parted (`34%`); seeded, they read `0.70%` and `0.13%` with the trace agreeing.
+
+A scene can agree perfectly and test nothing: a pause press in the first second
+of a door entry reaches no accept, so a menu scene keyed there pairs two hosts
+standing in a field. A scene that is for a screen names it (`reach`: a line of the
+trace some paired frame must show on both hosts), and its summary line says
+`VACUOUS` when neither or only one host got there. The menu scenes press Start at
+tick 90 for that reason.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
@@ -1612,6 +1624,7 @@ decidable per instance, not from a source pattern.
 | **A rule spelled beside the shared predicate.** A host calls the predicate and adds its own clause. | Native asked `field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its narration local; the page asked only the predicate, so Start opened the pause menu over a shop. | Move the clause into the kernel; a copy is two spellings again. |
 | **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-play/tests/battle_hud_badges.rs`). |
 | **A session default one host never overrides.** The session runs a step itself unless the host declares it owns it. | `BootSession::tick` opens the pause menu off the world's pad edge unless `set_host_owns_pause_menu` is raised. The page raised it; the window did not, so the menu had two openers natively, and the session's one read an edge the menu's ticks never advance: a Start held across the tick that closed the menu reopened it on the next field tick. | Both hosts raise the flag; `pause_menu_start_close_frames_match_across_hosts` holds the press across the close. |
+| **A pump only the field's tick makes.** Symmetric, so every tier and the trace agreed. | The cursor auto-repeat is raised by retail's pad pump, which the port ran inside `World::set_pad`, and a host calls that on a field tick alone. Under the naming prompt, a shop and the pause menu neither host pumped, so a held direction stepped once on both while every headless driver (`set_pad` each tick) saw it repeat; the window's shop tick also pumped a neutral word and published it, where the page left the pad alone. | `TickClaims::held`: `claim_tick` pumps every tick the field does not run (`InputState::pump_held`), and both hosts' pause menus take their edge through `BootSession::pause_menu_edge`. The trace's `pad` channel holds the published words and the pump's. |
 | **An input contract one host does not honour.** | `MenuRuntime::tick` filters no repeats; the native window handed it the *held* word, so one press stepped several rows. | `menu_runtime::menu_input_from_pad_edges` on both. |
 | **A raw word into a packed-mask reader.** | `World::input` holds the raw PSX word (Cross `0x4000`); the op-`0x49` submode family tests the packed masks `FUN_8001822C` builds (Cross `0x0040`). Cross did nothing on a coin cabinet on both hosts, and the tests fed the packed constant so they asserted the defect. | `World::submode_pad_words` through `dev_menu::retail_packed`. |
 | **A typed channel narrowed at one host.** | The web strike-SFX scheduler was `u8` end to end and dropped every cue above `0xFF` through a `try_from`. | Widen to the event's `u16`. |
@@ -1712,6 +1725,7 @@ reverse-engineering questions, so they are not on
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | With enhanced lighting on, a summon's semi-transparent parts (spell `0x8A`'s crystals) light differently, about 1.8% of a frame on two pairs of the `cast` scene and none with lighting off. The hosts derive the parts' normals differently - the window keeps each part mesh's own normals through the front-face cull, the page smooths new ones over its culled, baked billboard mesh - and which difference moves the pixels is not yet measured. |
+| packet colour through the near plane | Open. On the Baka duel's intro sweep (`baka`, ticks 195..235) the additive floor fan crosses the near plane, and its colour reads 4 to 8 levels darker on the page over the frame's bottom 25 rows: `2.8%` of a retail-mode frame, `1.7%` enhanced, `0.07%` once the camera settles, with the trace agreeing throughout. The window interpolates a packet colour screen-linearly over the clipped polygon (`@interpolate(linear)`); the page recovers it from varyings premultiplied by clip `w`, and the two agree only while every vertex is in front of the eye. Which of them retail's unclipped projection matches is not measured. `host-pair.mjs --scene baka --mode retail --from 195 --ticks 230 --every 5` shows it. |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 

@@ -336,11 +336,11 @@ fn cursor_wraps_by_swap() {
 fn list_body_draw_gate() {
     // phase Active(1) with input allowed -> draws.
     assert!(list_body_draws(1, 1));
-    // phase CancelUnwind(3) while unwind running -> draws.
+    // phase RowAction(3), the dispatcher's 1 -> draws.
     assert!(list_body_draws(3, 1));
-    // phase CancelUnwind after unwind done -> no draw.
+    // phase RowAction with a zero factor -> no draw.
     assert!(!list_body_draws(3, 0));
-    // phase ConfirmSettle -> never draws.
+    // phase CancelSettle -> never draws.
     assert!(!list_body_draws(2, 1));
     // phase Active with input suppressed -> no draw.
     assert!(!list_body_draws(1, 0));
@@ -378,16 +378,16 @@ fn records_screen_clamps() {
     assert_eq!(r.knockouts[0], 999);
     assert_eq!(r.monsters_defeated[0], 999_999);
     assert_eq!(r.hyper_arts[0], 7);
-    assert!(r.treasure_shown);
+    assert!(r.treasure_percent_shown);
     assert_eq!(r.treasure_percent, 50); // 25*100/50
     assert_eq!(r.treasure_fraction, 0);
 }
 
 #[test]
-fn records_treasure_hidden_when_no_total() {
+fn records_treasure_percent_hidden_when_no_total() {
     let chars = [CharRecordStats::default(); 3];
     let r = records_screen(0, 0, 0, &chars, 0, 0);
-    assert!(!r.treasure_shown);
+    assert!(!r.treasure_percent_shown);
     assert_eq!(r.treasure_percent, 0);
 }
 

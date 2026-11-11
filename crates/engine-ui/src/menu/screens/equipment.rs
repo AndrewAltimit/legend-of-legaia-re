@@ -219,7 +219,19 @@ pub fn equip_screen_draws_for_with(
         let grey: [f32; 4] = [0.6, 0.6, 0.6, 1.0];
         for &(row, name) in view.best_changes.iter().take(4) {
             let y = my + (i32::from(row) + 1) * EQUIP_ROW_PITCH;
-            str_at(&mut out, "->", mx + 0x8e, y, grey);
+            // The right arrow under ink 0's CLUT (`li a0,0x2` / `sw zero`
+            // ahead of `jal 0x8003C310`, `0x801D248C..0x801D249C`); the
+            // ASCII pair stands in for a font without the arrow cells.
+            match crate::arts_input::list_cell_draw(
+                font,
+                legaia_font::sprite_cell_ids::ink_arrow(0, 2),
+                (mx + 0x8e, y),
+                (0, 0),
+                1,
+            ) {
+                Some(cell) => out.push(cell),
+                None => str_at(&mut out, "->", mx + 0x8e, y, grey),
+            }
             str_at(&mut out, name, mx + 0xb8, y, white);
         }
 
@@ -309,6 +321,34 @@ pub fn equip_screen_draws_for_with(
     out
 }
 
+/// The slot browse panel's two shade boxes, content rects `(x, y, w, h)`.
+pub type EquipBrowseBoxes = [(i32, i32, i32, i32); 2];
+
+/// Where the slot browse's item panel sits in window 22, off its pen.
+pub const EQUIP_BROWSE_INFO_PEN: (i32, i32) = (0x94, 0x0C);
+
+/// The slot browse's item panel: with the hand on a slot row that holds
+/// something, window 22's renderer moves its own rect by `(+0x94, +0xC)`,
+/// runs the shared item panel `FUN_801D0F1C` there on the worn id and frames
+/// two `0x90 x 0x28` boxes under skin `3`, at the panel's origin and `0x38`
+/// below it. Returns the panel's text and the two boxes' content rects.
+///
+/// PORT: FUN_801d21c0 (`0x801D2800..0x801D28DC`)
+pub fn equip_browse_info_draws(
+    font: &legaia_font::Font,
+    main_pen: (i32, i32),
+    info: &crate::PauseItemInfo<'_>,
+) -> (Vec<TextDraw>, EquipBrowseBoxes) {
+    let (x, y) = (
+        main_pen.0 + EQUIP_BROWSE_INFO_PEN.0,
+        main_pen.1 + EQUIP_BROWSE_INFO_PEN.1,
+    );
+    (
+        crate::item_info_body_draws(font, (x, y), info),
+        [(x, y, 0x90, 0x28), (x, y + 0x38, 0x90, 0x28)],
+    )
+}
+
 /// The candidate list's sprites: each row's pictogram at the verb column
 /// (`(WX + 0xC, row_y)`, drawn by the kernel's class arm through `FUN_8002C488`),
 /// the hand on the selected row and the blink-gated page arrows, all off the
@@ -392,6 +432,14 @@ pub fn equip_candidate_sprites_for(
 /// slot-browse row at `main_pen + (0, 0xE*row)` - row `0` being the "Best
 /// Equipment" line, so `slot_cursor` is the row, not the slot index.
 ///
+/// Each hand draws in the mode its cursor word names. `party_cursor` is the
+/// character word `DAT_801E46C4` as the party window reads it
+/// (`0x801D2134..0x801D2180`), over `party_rows` rows, the present party's
+/// count: the character picker masks it to the row
+/// (`0x801D9948..0x801D9958`), so its hand bobs, and the slot browse raises
+/// bit `0x1000` on it (`0x801D9A4C`), so the hand stands still while the
+/// main window's reads the pad.
+///
 /// PORT: FUN_801d21c0 / FUN_801d2094 (icon + cursor placement).
 /// REF: FUN_8002c488 / FUN_8002b994 - the UI-icon + cursor primitives.
 #[allow(clippy::too_many_arguments)]
@@ -400,8 +448,10 @@ pub fn equip_screen_sprites_for(
     n_slot_rows: usize,
     main_pen: (i32, i32),
     party_pen: (i32, i32),
-    party_cursor: usize,
-    slot_cursor: Option<u16>,
+    party_rows: usize,
+    party_cursor: crate::menu::window_painters::ChoiceFlags,
+    slot_cursor: Option<crate::menu::window_painters::ChoiceFlags>,
+    bob: crate::menu::window_painters::HandBob,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
@@ -437,19 +487,33 @@ pub fn equip_screen_sprites_for(
         push(src, mx + 0x10, my + EQUIP_ROW_PITCH * (i as i32 + 1));
     }
 
-    // Party-window hand cursor at X-0xC on the active member's row.
+    // Party-window hand cursor at X-0xC on the active member's row, in the
+    // mode the character word names, over the present party's rows
+    // (`0x801D2188..0x801D2194`).
     let (px, py) = party_pen;
-    push(
-        rects.cursor,
-        px - 0x0c,
-        py + EQUIP_ROW_PITCH * party_cursor as i32,
-    );
+    for (x, y, variant) in crate::menu::window_painters::list_hand_marks(
+        party_cursor,
+        party_rows as u32,
+        (px - 0x0c, py),
+        EQUIP_ROW_PITCH,
+    ) {
+        let (dx, dy) = bob.offset(variant);
+        push(rects.cursor, x + dx, y + dy);
+    }
 
     // Main-window hand cursor on the hovered slot-browse row. Row 0 is the
     // "Best Equipment" line at the window origin (retail's `hand at (X, Y)`),
     // row `n` the slot row `n - 1` at `Y + 0xE*n`.
-    if let Some(row) = slot_cursor {
-        push(rects.cursor, mx, my + EQUIP_ROW_PITCH * row as i32);
+    // The cursor word `DAT_801E46C0` picks the rows and the hand's mode:
+    // static under bit `0x1000`, every row under `0x2000`
+    // (`0x801D2230..0x801D2278`, `0x801D22C0..0x801D2318`).
+    if let Some(flags) = slot_cursor {
+        for (x, y, variant) in
+            crate::menu::window_painters::list_hand_marks(flags, 8, (mx, my), EQUIP_ROW_PITCH)
+        {
+            let (dx, dy) = bob.offset(variant);
+            push(rects.cursor, x + dx, y + dy);
+        }
     }
     out
 }

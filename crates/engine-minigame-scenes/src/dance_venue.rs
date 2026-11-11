@@ -229,32 +229,43 @@ pub fn entry_face_stamps(e: &DanceSceneEntry) -> Vec<EntryFaceStamp> {
     out
 }
 
-/// Stamp `pose` of `rig` into `vram`: the selector's two `MoveImage` blits,
-/// eye cell then mouth cell, each from `base + (u >> 2, v)` of the pose's
-/// frame-table row to the rig's fixed destination. Returns `false` when the
-/// frame table is empty.
+/// One `MoveImage` of a face stamp: the source rect's origin and size and
+/// the destination, in halfword framebuffer coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FaceMove {
+    pub src: (u16, u16),
+    pub size: (u16, u16),
+    pub dst: (u16, u16),
+}
+
+/// The selector's two `MoveImage` blits for `pose` of `rig`, eye cell then
+/// mouth cell: each from `base + (u >> 2, v)` of the pose's frame-table row
+/// to the rig's fixed destination. `None` when the table has no such row.
+// PORT: FUN_801d03c4 (`0x801D04F4..0x801D0614`)
+pub fn face_moves(rig: &FaceRig, frames: &[[u8; 4]], pose: usize) -> Option<[FaceMove; 2]> {
+    let frame = frames.get(pose)?;
+    let cell = |u: u8, v: u8, blit: &legaia_minigame_formats::dance_art::FaceBlit| FaceMove {
+        src: (rig.base.0 + u16::from(u >> 2), rig.base.1 + u16::from(v)),
+        size: (blit.w_hw, blit.h),
+        dst: blit.dst,
+    };
+    Some([
+        cell(frame[0], frame[1], &rig.eyes),
+        cell(frame[2], frame[3], &rig.mouth),
+    ])
+}
+
+/// Stamp `pose` of `rig` into `vram` ([`face_moves`]; a pose past the table
+/// takes its last row). Returns `false` when the frame table is empty.
 ///
-// REF: FUN_801d03c4, FUN_80058490 (the selector's two `MoveImage` blits)
+// REF: FUN_80058490 (`MoveImage`)
 pub fn stamp_face(vram: &mut Vram, rig: &FaceRig, frames: &[[u8; 4]], pose: usize) -> bool {
-    let Some(frame) = frames.get(pose.min(frames.len().saturating_sub(1))) else {
+    let Some(moves) = face_moves(rig, frames, pose.min(frames.len().saturating_sub(1))) else {
         return false;
     };
-    vram.move_image(
-        rig.base.0 + u16::from(frame[0] >> 2),
-        rig.base.1 + u16::from(frame[1]),
-        rig.eyes.w_hw,
-        rig.eyes.h,
-        rig.eyes.dst.0,
-        rig.eyes.dst.1,
-    );
-    vram.move_image(
-        rig.base.0 + u16::from(frame[2] >> 2),
-        rig.base.1 + u16::from(frame[3]),
-        rig.mouth.w_hw,
-        rig.mouth.h,
-        rig.mouth.dst.0,
-        rig.mouth.dst.1,
-    );
+    for m in moves {
+        vram.move_image(m.src.0, m.src.1, m.size.0, m.size.1, m.dst.0, m.dst.1);
+    }
     true
 }
 

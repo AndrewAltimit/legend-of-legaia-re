@@ -135,9 +135,7 @@ impl PlayWindowApp {
             // The tutorial actor is installed by `World::enter_dance` when the
             // parsed run is a how-to one, so it reaches the browser play page
             // from the same call.
-            if self
-                .start_dance_minigame_mode(legaia_engine_minigames::dance::DanceMode::HowTo, false)
-            {
+            if self.start_dance_minigame_mode(legaia_engine_minigames::dance::DanceMode::HowTo) {
                 log::info!("dance: how-to started - face buttons advance the tutorial");
             }
             return true;

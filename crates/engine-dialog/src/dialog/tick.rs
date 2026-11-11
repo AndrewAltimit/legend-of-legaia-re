@@ -357,11 +357,21 @@ impl OwnedDialogPanel {
     /// Apply one non-terminator event to the page (plain-MES path).
     fn apply_event(&mut self, ev: MesEvent) {
         match ev {
-            MesEvent::Glyph(g) | MesEvent::WideGlyph(_, g) | MesEvent::SkipTwo(g) => {
+            MesEvent::Glyph(g) | MesEvent::WideGlyph(_, g) => {
                 self.page.push(PanelGlyph {
                     byte: g,
                     clut: self.current_clut,
                 });
+            }
+            // The colour pair stays in the page for the draw to restage its
+            // ink (`FUN_80036888`); it is no glyph.
+            MesEvent::SkipTwo(ink) => {
+                for byte in [COLOUR_ESCAPE, ink] {
+                    self.page.push(PanelGlyph {
+                        byte,
+                        clut: self.current_clut,
+                    });
+                }
             }
             MesEvent::Control(_) => {
                 self.waiting_for_input = true;

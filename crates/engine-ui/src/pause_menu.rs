@@ -458,6 +458,16 @@ pub enum GenericContent<'a> {
 pub struct TopLevelView<'a> {
     pub rows: &'a [FieldMenuRowView<'a>],
     pub cursor: u8,
+    /// The cursor word's bit `0x1000`: the hand stands still. The pause
+    /// menu never raises it on this list. The root picker masks the word
+    /// `DAT_801E46BC` to its row on entry (`0x801D6B64..0x801D6B78`), every
+    /// sub-screen it opens closes this window, and the four routines that
+    /// do raise the bit on that word are the shop's (`0x801DB270`,
+    /// `0x801DB3F8`, `0x801DBCB8`, `0x801DBDF4`), where the word is the
+    /// mode select's. So the pause-menu hosts pass `false`.
+    pub cursor_static: bool,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     pub money: u32,
     pub play_time_seconds: u32,
     /// The casino coin bank, `Some` while the box shows its coin row
@@ -553,6 +563,8 @@ pub struct EquipComposeView<'a> {
     pub char_slot: usize,
     /// Slot-picker cursor row, or `None` past the slot picker.
     pub slot_cursor: Option<u16>,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     /// Pictogram rows to draw - retail's seven.
     pub pictogram_rows: usize,
     /// ICO codes of the candidate rows, parallel to the view's candidates.
@@ -564,12 +576,18 @@ pub struct EquipComposeView<'a> {
     /// Window 24's item-info panel content for the hovered candidate, or
     /// `None` outside the candidate step. See [`WIN_EQUIP_ITEM_INFO`].
     pub info: Option<crate::PauseItemInfo<'a>>,
+    /// The slot browse's item panel inside window 22, for the worn item on
+    /// the hovered slot row ([`crate::equip_browse_info_draws`]).
+    pub browse_info: Option<crate::PauseItemInfo<'a>>,
     /// Window 25's stat-compare panel, or `None` outside the candidate step.
     /// See [`WIN_EQUIP_COMPARE`].
     pub compare: Option<EquipCompareInput<'a>>,
 }
 
 /// One pause-menu screen, as the composition sees it.
+// A borrowed view built and consumed inside one call; boxing the Equip
+// variant would buy nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum PauseScreen<'a> {
     TopLevel(TopLevelView<'a>),
     Status(StatusScreenView<'a>),
@@ -650,7 +668,10 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 ));
                 sprites.extend(crate::field_menu_icon_sprites_for(
                     rects,
-                    v.cursor,
+                    crate::menu::window_painters::ChoiceFlags(
+                        u32::from(v.cursor) | (u32::from(v.cursor_static) << 12),
+                    ),
+                    v.hand_bob,
                     v.party_ap,
                     ctx.rects.pen(window_ids::TOP_COMMAND_LIST),
                     money_pen,
@@ -1018,6 +1039,19 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             } else {
                 sprites.extend(ctx.window_chrome(&[window_ids::TAB_EQUIP, window_ids::EQUIP_LIST]));
             }
+            // The slot browse's item panel, inside window 22: the worn item
+            // of the hovered slot row over two shade boxes.
+            if browse && let Some(info) = v.browse_info.as_ref() {
+                let (draws, boxes) = crate::equip_browse_info_draws(
+                    ctx.font,
+                    ctx.rects.pen(window_ids::EQUIP_MAIN),
+                    info,
+                );
+                texts.extend(draws);
+                for b in boxes {
+                    sprites.extend(ctx.frame_around(b));
+                }
+            }
             // Window 24 - the candidate step's item-info panel. It is not a
             // fifth window of the *screen*: retail's sub-screen `0x14` opens
             // it (with window 25) on top of the browse step's four, through
@@ -1096,6 +1130,12 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 sprites.extend(ctx.frame_around(d.rect()));
                 let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
                 texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
+                // An HP / MP row's "MAX" tag and label are atlas sprites.
+                if let Some(rects) = ctx.chrome {
+                    sprites.extend(crate::compare_panel_icon_sprites(
+                        rects, &fields, ctx.origin, ctx.scale,
+                    ));
+                }
             }
             if !browse {
                 let hovered = usize::from(v.view.cursor) / crate::PAUSE_LIST_VISIBLE_ROWS;
@@ -1129,8 +1169,17 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     v.pictogram_rows,
                     ctx.rects.pen(window_ids::EQUIP_MAIN),
                     ctx.rects.pen(window_ids::EQUIP_PARTY),
-                    v.char_slot,
-                    v.slot_cursor,
+                    v.view.party_names.len(),
+                    // The character word: the row, with bit `0x1000` once
+                    // the slot browse has taken the pad (`0x801D9A4C`). The
+                    // character picker is the browse form with the slot hand
+                    // hidden, which is the form `slot_cursor` is `None` in.
+                    crate::menu::window_painters::ChoiceFlags(
+                        v.char_slot as u32 | (u32::from(v.slot_cursor.is_some()) << 12),
+                    ),
+                    v.slot_cursor
+                        .map(|r| crate::menu::window_painters::ChoiceFlags(u32::from(r))),
+                    v.hand_bob,
                     ctx.origin,
                     ctx.scale,
                 ));
@@ -1264,12 +1313,17 @@ pub struct EquipComposeInput<'a> {
     pub active_slot: u8,
     pub char_slot: usize,
     pub slot_cursor: Option<u16>,
+    /// The hands' bob this frame.
+    pub hand_bob: crate::menu::window_painters::HandBob,
     pub pictogram_rows: usize,
     /// Emit ASCII `>` cursors (no chrome atlas to draw the hand sprite).
     pub text_cursor: bool,
     /// The hovered candidate's info-panel row. `None` outside the candidate
     /// step, which is the phase window 24 is open in.
     pub info: Option<EquipInfoInput<'a>>,
+    /// The worn item on the hovered slot row, for the slot browse's own
+    /// panel inside window 22. `None` off a filled slot row.
+    pub browse_info: Option<EquipInfoInput<'a>>,
     /// Window 25's stat-compare panel, open in the same step as window 24.
     pub compare: Option<EquipCompareInput<'a>>,
 }
@@ -1308,6 +1362,16 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
         .map(|(row, name)| (*row, name.as_str()))
         .collect();
     let best_rows: Vec<u8> = input.best_changes.iter().map(|(row, _)| *row).collect();
+    fn info_of<'a>(i: EquipInfoInput<'a>) -> crate::PauseItemInfo<'a> {
+        crate::PauseItemInfo {
+            name: i.name,
+            count: i.count,
+            desc: i.desc,
+            passive: i.passive,
+            detail: i.detail,
+            scope: i.scope,
+        }
+    }
     let view = EquipScreenView {
         party_names: &party_names,
         party_cursor: input.char_slot,
@@ -1326,18 +1390,13 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             view: &view,
             char_slot: input.char_slot,
             slot_cursor: input.slot_cursor,
+            hand_bob: input.hand_bob,
             pictogram_rows: input.pictogram_rows,
             candidate_icons: input.candidate_icons,
             arrows_blink: input.arrows_blink,
             best_rows: &best_rows,
-            info: input.info.map(|i| crate::PauseItemInfo {
-                name: i.name,
-                count: i.count,
-                desc: i.desc,
-                passive: i.passive,
-                detail: i.detail,
-                scope: i.scope,
-            }),
+            info: input.info.map(info_of),
+            browse_info: input.browse_info.map(info_of),
             compare: input.compare,
         }),
     )

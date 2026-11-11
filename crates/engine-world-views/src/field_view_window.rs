@@ -10,7 +10,46 @@
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::field_view_window::{ViewCells, framing_is_retail, view_cells};
+use legaia_engine_scene::field_view_window::{
+    ViewCells, framing_is_retail, preset_only_scale, view_cells, widened_window,
+};
+
+/// How this frame's camera stands against retail's, for the visible-tile
+/// crop ([`field_view_cells`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CropFraming {
+    /// Retail's own frustum ([`retail_framing`]): the crop walks retail's
+    /// window.
+    Retail,
+    /// Retail's angles from further back - the `Far` / `Farther` distance
+    /// preset with the drag / tilt / zoom knobs at identity. The crop walks
+    /// the window grown by this scale (`widened_window`).
+    Widened(f32),
+    /// A view retail's window says nothing about (a swung, tilted or
+    /// wheeled follow camera, a host's debug vantage): the map draws whole.
+    Free,
+}
+
+/// This frame's [`CropFraming`]. `debug_camera` is the host's own debug
+/// vantage (`F3`), which frees the view.
+///
+/// The widened arm exists because lifting the crop whole under the default
+/// `Far` preset drew what retail's window is there to leave out. In
+/// `rikuroa`'s cave a stalactite hanging fifteen rows nearer the lens than
+/// the player, past the window's near edge, covered the frame through the
+/// first rockfall, and the mountain's sky shell, a placed object of another
+/// walk region, showed as a grey sheet through the cave's open floor.
+pub fn crop_framing(world: &World, camera: &Camera, debug_camera: bool) -> CropFraming {
+    if debug_camera {
+        CropFraming::Free
+    } else if retail_framing(world, camera) {
+        CropFraming::Retail
+    } else if let Some(scale) = preset_only_scale(camera) {
+        CropFraming::Widened(scale)
+    } else {
+        CropFraming::Free
+    }
+}
 
 /// Whether this frame's camera stands where retail's would: the host's own
 /// debug vantage (`F3`, `debug_camera`) is off, and the frame is a battle
@@ -39,8 +78,7 @@ pub fn retail_vantage(world: &World, camera: &Camera, debug_camera: bool) -> boo
 /// the user's follow knobs - the modal timeline's
 /// ([`crate::camera_view::cutscene_owns_camera`]) or a player-holding helper
 /// record's (`World::scripted_shot_holds_camera`, the ending vignettes).
-/// Hosts pass it, cleared under their own debug vantage, as
-/// [`field_view_cells`]'s `retail_framing`.
+/// [`crop_framing`] turns it into the crop's [`CropFraming::Retail`] arm.
 pub fn retail_framing(world: &World, camera: &Camera) -> bool {
     framing_is_retail(camera)
         || crate::camera_view::cutscene_owns_camera(world)
@@ -71,11 +109,11 @@ pub fn field_ground_drop(world: &World, camera: &Camera, debug_camera: bool) -> 
 ///
 /// - the crop knob is off ([`legaia_engine_core::world::WorldToggles::view_window_crop`],
 ///   from [`legaia_engine_menus::options::OptionsState::retail_view_window`]);
-/// - `retail_framing` is false - the host passes [`retail_framing`] and
-///   clears it under its own debug camera. The window is authored for
-///   retail's frustum, so under a wider or re-aimed view it would open black
-///   edges the player can see; the crop is the faithful mode's, not a
-///   constraint on the enhanced views;
+/// - `framing` is [`CropFraming::Free`] (the host passes [`crop_framing`]).
+///   The window is authored for retail's frustum, so under a re-aimed view
+///   it would open black edges the player can see. A pulled-back preset
+///   alone keeps retail's angles and crops by the window grown to its scale
+///   ([`CropFraming::Widened`]);
 /// - the world is not in [`SceneMode::Field`]: the kingdom overworld is drawn
 ///   by the PROT 0901 library, not by the pair this module ports, and the
 ///   other modes draw no `.MAP` cells;
@@ -94,8 +132,13 @@ pub fn field_ground_drop(world: &World, camera: &Camera, debug_camera: bool) -> 
 /// op `0x46` (`town0c` `P1[21]`'s `46 24 FD EC 18 03` before the Queen Bee
 /// shot; `rim_elm_queen_bee_battle` holds that window, and the cull kernel
 /// over it reproduces every placed actor's bit `1` in the capture).
-pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells> {
-    if !world.toggles.view_window_crop || !retail_framing || world.mode != SceneMode::Field {
+pub fn field_view_cells(world: &World, framing: CropFraming) -> Option<ViewCells> {
+    let scale = match framing {
+        CropFraming::Retail => 1.0,
+        CropFraming::Widened(scale) => scale,
+        CropFraming::Free => return None,
+    };
+    if !world.toggles.view_window_crop || world.mode != SceneMode::Field {
         return None;
     }
     // An expansion-pack cutscene's shot is not retail's frustum: the window
@@ -113,7 +156,10 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
     if tx < r0 || tx >= r2 || tz < r1 || tz >= r3 {
         return None;
     }
-    Some(view_cells(view))
+    Some(view_cells(&legaia_engine_field::camera::FieldCullView {
+        window: widened_window(view.window, scale),
+        ..*view
+    }))
 }
 
 /// The placed-object gate a host applies per draw while the visible-tile
@@ -141,12 +187,35 @@ pub fn placed_actor_visible(
     z: i32,
     cull_radius: u8,
 ) -> bool {
-    cells.is_none()
-        || !world.field_actor_culled_at(
+    cells.is_none_or(|c| {
+        !world.field_actor_culled_in_window(
             x.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
             z.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16,
             i16::from(cull_radius),
+            c.window_in,
         )
+    })
+}
+
+/// The occlusion fade's draw gate
+/// ([`legaia_engine_scene::field_occlusion::FieldOccluders::fully_occluded_where`]):
+/// `true` when the static draw an occluder range came from is drawn this
+/// frame. A terrain draw asks the terrain crop
+/// ([`legaia_engine_scene::field_view_window::terrain_draw_visible`]), a
+/// placed object the actor cull ([`placed_actor_visible`]) at its base
+/// position - where its occluder triangles stand. With no crop (`cells =
+/// None`) every draw is drawn. Both play hosts ask this one gate, so the
+/// fade opens over the same walls on both.
+pub fn occluder_drawn(
+    world: &World,
+    cells: Option<&ViewCells>,
+    d: &legaia_engine_scene::field_occlusion::OccluderDraw,
+) -> bool {
+    if d.list == legaia_engine_scene::field_occlusion::OCCLUDER_LIST_PLACEMENTS {
+        placed_actor_visible(world, cells, d.world_x, d.world_z, d.key.cull_radius)
+    } else {
+        legaia_engine_scene::field_view_window::terrain_draw_visible(cells, d.key)
+    }
 }
 
 /// The field-NPC gate a host applies per draw while the visible-tile crop is
@@ -169,11 +238,12 @@ pub fn npc_actor_visible(
     slot: u8,
     spawn: (i16, i16),
 ) -> bool {
-    if cells.is_none() {
+    let Some(cells) = cells else {
         return true;
-    }
+    };
     let (x, z) = world.npcs.positions.get(&slot).copied().unwrap_or(spawn);
-    !world.field_npc_culled(x, z)
+    // Placement radius: `+0x58` read 0 on every captured placement.
+    !world.field_actor_culled_in_window(x, z, 0, cells.window_in)
 }
 #[cfg(test)]
 mod tests {
@@ -241,21 +311,68 @@ mod tests {
     fn the_policy_needs_a_view_the_knob_and_retail_framing() {
         let mut world = World::new();
         world.mode = SceneMode::Field;
-        assert!(field_view_cells(&world, true).is_none(), "no view yet");
+        let retail = CropFraming::Retail;
+        assert!(field_view_cells(&world, retail).is_none(), "no view yet");
         world.npcs.cull_view = Some(town01());
-        assert_eq!(field_view_cells(&world, true), Some(view_cells(&town01())));
-        assert!(field_view_cells(&world, false).is_none());
+        assert_eq!(
+            field_view_cells(&world, retail),
+            Some(view_cells(&town01()))
+        );
+        assert!(field_view_cells(&world, CropFraming::Free).is_none());
         world.mode = SceneMode::WorldMap;
-        assert!(field_view_cells(&world, true).is_none());
+        assert!(field_view_cells(&world, retail).is_none());
         world.mode = SceneMode::Field;
         // A focus the latched region box does not hold: no crop.
         world.npcs.cull_view = Some(FieldCullView {
             focus_stored: [-(20 * 128), -(20 * 128)],
             ..town01()
         });
-        assert!(field_view_cells(&world, true).is_none());
+        assert!(field_view_cells(&world, retail).is_none());
         world.npcs.cull_view = Some(town01());
         world.toggles.view_window_crop = false;
-        assert!(field_view_cells(&world, true).is_none());
+        assert!(field_view_cells(&world, retail).is_none());
+    }
+
+    /// A pulled-back preset with the knobs at identity keeps the crop,
+    /// widened: an actor the retail window drops at its edge draws, one far
+    /// past the grown window or outside the region box does not.
+    #[test]
+    fn a_distance_preset_alone_crops_by_the_widened_window() {
+        use legaia_engine_camera::camera_distance::CameraDistance;
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        world.npcs.cull_view = Some(town01());
+        let mut cam = Camera::new();
+        cam.distance = CameraDistance::Retail;
+        assert_eq!(crop_framing(&world, &cam, false), CropFraming::Retail);
+        assert_eq!(crop_framing(&world, &cam, true), CropFraming::Free);
+        cam.distance = CameraDistance::Far;
+        let framing = crop_framing(&world, &cam, false);
+        assert_eq!(framing, CropFraming::Widened(CameraDistance::Far.scale()));
+        cam.manual_orbit = 0.4;
+        assert_eq!(crop_framing(&world, &cam, false), CropFraming::Free);
+
+        let retail = field_view_cells(&world, CropFraming::Retail).unwrap();
+        let wide = field_view_cells(&world, framing).unwrap();
+        // town01's `(-8, -6, 8, 12)` grown by 1.35 and a tile of slack.
+        assert_eq!(wide.window_in, [-12, -10, 12, 18]);
+        // Focus tile (32, 92). Nine columns left: outside retail's `-8`,
+        // inside the widened `-12`.
+        let (x, z) = ((32 - 9) * 128 + 64, 92 * 128 + 64);
+        assert!(!placed_actor_visible(&world, Some(&retail), x, z, 0));
+        assert!(placed_actor_visible(&world, Some(&wide), x, z, 0));
+        // Fourteen rows toward the lens: outside both.
+        let near = (92 - 14) * 128 + 64;
+        assert!(!placed_actor_visible(
+            &world,
+            Some(&wide),
+            32 * 128,
+            near,
+            0
+        ));
+        // Outside the region box (`x < 20`): never drawn while a crop holds.
+        assert!(!placed_actor_visible(&world, Some(&wide), 10 * 128, z, 100));
+        // No crop: everything draws.
+        assert!(placed_actor_visible(&world, None, 10 * 128, z, 0));
     }
 }

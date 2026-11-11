@@ -46,8 +46,13 @@ pub struct StatusSnapshot {
     pub xp_to_next: u32,
     pub hp: u16,
     pub hp_max: u16,
+    /// The record-side maximum HP (record `+0x11C`), which `FUN_801D33D8`
+    /// prints in parentheses beside the live maximum (`0x801D3684`).
+    pub hp_base: u16,
     pub mp: u16,
     pub mp_max: u16,
+    /// The record-side maximum MP (record `+0x11E`, `0x801D3734`).
+    pub mp_base: u16,
     pub ap: u8,
     pub ap_max: u8,
     pub attack: u16,

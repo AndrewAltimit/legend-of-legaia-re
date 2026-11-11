@@ -46,7 +46,8 @@
 //! (`0x800846A8`) and the 1/60 s play-time counter (`0x800845DC`). The
 //! treasure line's found/total pair is slots 0 and 1 of the field VM's
 //! script-counter table (`DAT_801C6460` / `DAT_801C6462`), not a save-block
-//! field at all, and retail hides the whole line when the total is zero.
+//! field at all. With a total of zero or less the line still reads
+//! `found / total`; only its percentage half is dropped.
 //!
 //! # Wiring status
 //!
@@ -178,8 +179,10 @@ pub struct RecordsScreenView<'a> {
     /// Percentage `found*100/total` and the two-digit fractional remainder.
     pub treasure_percent: i32,
     pub treasure_fraction: i32,
-    /// Whether the treasure line draws at all (`0 < total`).
-    pub treasure_shown: bool,
+    /// Whether the treasure line's percentage half draws (`0 < total`).
+    /// Its `found / total` half always draws: the `blez` at `0x801EDDC8`
+    /// skips only the percentage, the point, the fraction and the `%`.
+    pub treasure_percent_shown: bool,
     pub labels: RecordsLabels<'a>,
 }
 
@@ -420,29 +423,30 @@ pub fn records_screen_fields(view: &RecordsScreenView<'_>, pen: (i32, i32)) -> V
         num(&mut out, MAGIC_MAX, x + 0xF0, ry, 2, false, INK_MAGIC);
     }
 
-    // --- Treasure line (only when total > 0) at y+0xb7 -----------------------
-    if view.treasure_shown {
-        let yr = y + 0xB7;
-        label(&mut out, l.treasure, x + 0x10, yr);
-        num(
-            &mut out,
-            view.treasure_found as i64,
-            x + 0x50,
-            yr,
-            3,
-            false,
-            INK_TREASURE,
-        );
-        sym(&mut out, '/', x + 0x68, yr, INK_TREASURE);
-        num(
-            &mut out,
-            view.treasure_total as i64,
-            x + 0x70,
-            yr,
-            3,
-            false,
-            INK_TREASURE,
-        );
+    // --- Treasure line at y+0xb7: found / total always, the percentage
+    // only when total > 0 (`blez` at `0x801EDDC8`) ---------------------------
+    let yr = y + 0xB7;
+    label(&mut out, l.treasure, x + 0x10, yr);
+    num(
+        &mut out,
+        view.treasure_found as i64,
+        x + 0x50,
+        yr,
+        3,
+        false,
+        INK_TREASURE,
+    );
+    sym(&mut out, '/', x + 0x68, yr, INK_TREASURE);
+    num(
+        &mut out,
+        view.treasure_total as i64,
+        x + 0x70,
+        yr,
+        3,
+        false,
+        INK_TREASURE,
+    );
+    if view.treasure_percent_shown {
         num(
             &mut out,
             view.treasure_percent as i64,
@@ -606,7 +610,7 @@ mod tests {
             treasure_total: 50,
             treasure_percent: 50,
             treasure_fraction: 0,
-            treasure_shown: true,
+            treasure_percent_shown: true,
             labels: sample_labels(),
         }
     }
@@ -783,14 +787,30 @@ mod tests {
         }));
     }
 
+    /// With no total the line still reads `found / total`; only the
+    /// percentage half drops (`blez` at `0x801EDDC8`).
     #[test]
-    fn treasure_line_hidden_when_not_shown() {
+    fn treasure_line_drops_only_its_percentage_without_a_total() {
         let mut v = sample_view();
-        v.treasure_shown = false;
+        v.treasure_percent_shown = false;
         let f = records_screen_fields(&v, (0, 0));
         assert!(
-            !f.iter()
+            f.iter()
                 .any(|fld| matches!(fld, RecordsField::Label { text, .. } if text == "TREASURE"))
+        );
+        assert!(f.contains(&RecordsField::Symbol {
+            x: 0x68,
+            y: 0xB7,
+            ch: '/',
+            ink: 6
+        }));
+        assert!(
+            !f.iter()
+                .any(|fld| matches!(fld, RecordsField::Symbol { ch: '.', .. }))
+        );
+        assert!(
+            !f.iter()
+                .any(|fld| matches!(fld, RecordsField::Label { x: 0xC8, .. }))
         );
     }
 

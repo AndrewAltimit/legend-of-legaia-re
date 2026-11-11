@@ -336,6 +336,15 @@ pub mod chrome {
         }
     }
 
+    /// How opaque the plate under a notice line or the key hint is. Those
+    /// lines sit over the game itself, so the plate has to carry the text
+    /// over the worst picture behind it: a light plate over a black screen
+    /// (the title, a fade) greys far sooner than a dark plate over a bright
+    /// one, and at the dark plate's 0.7 the light inks fell under 3:1.
+    pub const fn notice_scrim_alpha(dark: bool) -> f32 {
+        if dark { 0.7 } else { 0.92 }
+    }
+
     /// The role an option row's value takes, one rule for the launcher's list
     /// and the play window's settings page so a value reads the same in
     /// both: the original game's own value dim, any other value of a row the
@@ -496,6 +505,40 @@ mod tests {
         assert_eq!(theme_name_dark("adwaita:dark"), Some(true));
         assert_eq!(theme_name_dark("breezelight"), Some(false));
         assert_eq!(theme_name_dark("'default'"), None);
+    }
+
+    /// `top` at `alpha` over `under`, blended in sRGB as the play window's
+    /// chrome is.
+    fn over(top: Rgb, under: Rgb, alpha: f32) -> Rgb {
+        let mix = |t: u8, u: u8| (t as f32 * alpha + u as f32 * (1.0 - alpha)).round() as u8;
+        Rgb(
+            mix(top.0, under.0),
+            mix(top.1, under.1),
+            mix(top.2, under.2),
+        )
+    }
+
+    #[test]
+    fn notice_lines_read_over_the_worst_picture_behind_them() {
+        // A dark plate is weakest over white, a light one over black.
+        for (dark, palette, behind) in [
+            (true, &DARK, Rgb(255, 255, 255)),
+            (false, &LIGHT, Rgb(0, 0, 0)),
+        ] {
+            let plate = over(palette.ground, behind, chrome::notice_scrim_alpha(dark));
+            for role in [chrome::HEADING, chrome::KEY] {
+                let ratio = palette.get(role).contrast(plate);
+                assert!(
+                    ratio >= 4.5,
+                    "{role:?} on the {} notice plate: {ratio:.2}:1",
+                    if dark { "dark" } else { "light" }
+                );
+            }
+        }
+        // The light plate at the dark one's alpha is the defect this holds
+        // off: the heading ink under 3:1 over a black screen.
+        let weak = over(LIGHT.ground, Rgb(0, 0, 0), chrome::notice_scrim_alpha(true));
+        assert!(LIGHT.get(chrome::HEADING).contrast(weak) < 3.0);
     }
 
     #[test]

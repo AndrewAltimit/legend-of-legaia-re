@@ -507,51 +507,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///   disc read) leaves the terminator at `params[1]`, the band goes
     ///   straight to its cleanup, and the owed outcome folds here.
     ///
-    /// PORT: FUN_801DBF9C
+    /// REF: FUN_801DBF9C (ported as [`World::stage_spell_anim_trigger`])
     fn spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
-        use legaia_engine_battle_vm::battle_action::{
-            SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID,
-        };
-        self.world
-            .pending_battle_events
-            .push(BattleEvent::SpellAnimTrigger {
-                party_slot,
-                spell_id,
-            });
-        if spell_id >= SPELL_TRIGGER_SUMMON_MIN_ID {
-            if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
-                a.battle.sub_route = 9;
-                a.battle.params[1] = 9;
-                a.battle.params[2] = SUMMON_CAST_EFFECT_ID;
-                a.battle.params[3] = 0xFF;
-            }
-            self.world.arm_summon_stager(party_slot, spell_id);
-        } else {
-            let pairs: Vec<(u8, u8)> = self
-                .world
-                .battle
-                .spell_anim_pairs
-                .pairs(spell_id)
-                .map(<[(u8, u8)]>::to_vec)
-                .unwrap_or_default();
-            if let Some(a) = self.world.actors.get_mut(party_slot as usize) {
-                let n = a.battle.params.len();
-                let mut end = 1usize;
-                for (k, (anim, effect)) in pairs.iter().enumerate() {
-                    let at = 1 + 2 * k;
-                    if at + 2 >= n {
-                        break;
-                    }
-                    a.battle.params[at] = *anim;
-                    a.battle.params[at + 1] = *effect;
-                    end = at + 2;
-                }
-                a.battle.params[end] = 0xFF;
-            }
-            if pairs.is_empty() {
-                self.world.fold_pending_cast();
-            }
-        }
+        self.world.stage_spell_anim_trigger(party_slot, spell_id);
     }
     /// Stage a full-screen fade from the band's template - the summon
     /// band's flash-in (`0x33`) and flash-out (`0x34`) - on the world's one
@@ -936,5 +894,56 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::DuckAudioLevel { target_pct });
+    }
+}
+
+impl World {
+    /// The party cast trigger's writes for `spell_id` on `party_slot`: the
+    /// body of [`BattleActionHost::spell_anim_trigger`], which documents the
+    /// two arms.
+    ///
+    /// PORT: FUN_801DBF9C
+    pub fn stage_spell_anim_trigger(&mut self, party_slot: u8, spell_id: u8) {
+        use legaia_engine_battle_vm::battle_action::{
+            SPELL_TRIGGER_SUMMON_MIN_ID, SUMMON_CAST_EFFECT_ID,
+        };
+        self.pending_battle_events
+            .push(BattleEvent::SpellAnimTrigger {
+                party_slot,
+                spell_id,
+            });
+        if spell_id >= SPELL_TRIGGER_SUMMON_MIN_ID {
+            if let Some(a) = self.actors.get_mut(party_slot as usize) {
+                a.battle.sub_route = 9;
+                a.battle.params[1] = 9;
+                a.battle.params[2] = SUMMON_CAST_EFFECT_ID;
+                a.battle.params[3] = 0xFF;
+            }
+            self.arm_summon_stager(party_slot, spell_id);
+        } else {
+            let pairs: Vec<(u8, u8)> = self
+                .battle
+                .spell_anim_pairs
+                .pairs(spell_id)
+                .map(<[(u8, u8)]>::to_vec)
+                .unwrap_or_default();
+            if let Some(a) = self.actors.get_mut(party_slot as usize) {
+                let n = a.battle.params.len();
+                let mut end = 1usize;
+                for (k, (anim, effect)) in pairs.iter().enumerate() {
+                    let at = 1 + 2 * k;
+                    if at + 2 >= n {
+                        break;
+                    }
+                    a.battle.params[at] = *anim;
+                    a.battle.params[at + 1] = *effect;
+                    end = at + 2;
+                }
+                a.battle.params[end] = 0xFF;
+            }
+            if pairs.is_empty() {
+                self.fold_pending_cast();
+            }
+        }
     }
 }

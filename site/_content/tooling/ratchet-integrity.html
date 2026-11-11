@@ -1,0 +1,86 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; ratchet integrity</div>
+  <h1>Ratchet integrity</h1>
+  <p class="lede">Most of this project's checks are <em>ratchets</em>: a measurement is compared with a number committed beside the code, and the check fails when the measurement gets worse. A ratchet can be undone two ways without the ratchet itself noticing. Someone edits the committed number, or the measurement quietly stops running. Each has its own gate, and neither gate needs the game disc.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg class="dg-fit" viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A ratchet compares a measurement with a committed baseline. Two things defeat it. First, the baseline is edited: the gate check-baseline-loosening.py reads the baseline at a base revision and in the working tree and fails on a value that moved the wrong way unless a ledger entry records that exact step with a reason. Second, the measurement never runs: a disc-gated test with a missing input prints a skip and reports ok, so the tally script reads the test log and fails on a disc skip when the disc is present and counts every other skip.">
+      <defs>
+        <marker id="ri-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <rect class="dg-node" x="20" y="92" width="150" height="62" rx="5"/>
+      <text class="dg-label" x="95" y="118">measurement</text><text class="dg-sub" x="95" y="137">disc, dumps, states</text>
+      <path class="dg-edge" d="M170 123 L206 123" marker-end="url(#ri-ah)"/>
+      <rect class="dg-node-accent" x="208" y="92" width="130" height="62" rx="5"/>
+      <text class="dg-label" x="273" y="118">ratchet</text><text class="dg-sub" x="273" y="137">worse = fail</text>
+      <path class="dg-edge" d="M273 60 L273 90" marker-end="url(#ri-ah)"/>
+      <rect class="dg-node" x="198" y="14" width="150" height="46" rx="5"/>
+      <text class="dg-label" x="273" y="34">baseline</text><text class="dg-sub" x="273" y="51">committed, plain text</text>
+
+      <rect class="dg-node-warn" x="400" y="14" width="200" height="62" rx="5"/>
+      <text class="dg-label" x="500" y="40">the baseline is edited</text><text class="dg-sub" x="500" y="59">a score lowered, a list grown</text>
+      <path class="dg-edge" d="M600 45 L636 45" marker-end="url(#ri-ah)"/>
+      <rect class="dg-node-ok" x="638" y="14" width="226" height="62" rx="5"/>
+      <text class="dg-label" x="751" y="40">loosening gate</text><text class="dg-sub" x="751" y="59">needs a ledger entry and a reason</text>
+
+      <rect class="dg-node-warn" x="400" y="170" width="200" height="62" rx="5"/>
+      <text class="dg-label" x="500" y="196">the measurement never runs</text><text class="dg-sub" x="500" y="215">a skip that reports "ok"</text>
+      <path class="dg-edge" d="M600 201 L636 201" marker-end="url(#ri-ah)"/>
+      <rect class="dg-node-ok" x="638" y="170" width="226" height="62" rx="5"/>
+      <text class="dg-label" x="751" y="196">skip tally</text><text class="dg-sub" x="751" y="215">disc skip fails, others counted</text>
+
+      <path class="dg-edge-dim" d="M348 37 L398 42"/>
+      <path class="dg-edge-dim" d="M95 154 L95 201 L398 201"/>
+    </svg>
+    <figcaption>The two ways round a ratchet, and the gate on each.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="loosening" data-doc="a-baseline-may-not-loosen-silently">
+  <h2>A baseline may not loosen silently</h2>
+  <p>Every ratchet accepts a new baseline in the same commit as the code that moved it. Most of them read inputs a build runner does not have (the disc, the function dumps, the save-state library), so in automated runs they report <code>SKIPPED</code> and pass. What is left on the runner is the baseline file itself, which is plain text, and anyone can lower a number in a text file.</p>
+  <p><code>scripts/ci/check-baseline-loosening.py</code> reads each baseline at a base revision and in the working tree and walks its numeric values. A value that moved the wrong way is a <strong>loosening</strong>:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Rule</th><th>What counts as a loosening</th></tr></thead>
+    <tbody>
+      <tr><td><code>up</code></td><td>The value fell: a score, a coverage figure, a ladder tier</td></tr>
+      <tr><td><code>down</code></td><td>The value rose: a worklist, a count of unparsed bytes</td></tr>
+      <tr><td><code>pin</code></td><td>The value changed at all: a setting of the measurement</td></tr>
+      <tr><td><code>set</code></td><td>An entry was added to a list of known-bad items</td></tr>
+      <tr><td>any</td><td>A baselined key, or the whole file, disappeared</td></tr>
+    </tbody>
+  </table></div>
+  <p>A table in the script says which rule each key takes. A numeric key that no rule covers is itself a finding, so a new baselined figure cannot arrive unclassified.</p>
+  <p>A loosening fails unless the ledger <code>scripts/ci/baseline-loosenings.toml</code> records that exact <code>from -&gt; to</code> step with a reason:</p>
+<pre><code>scripts/ci/check-baseline-loosening.py --propose &gt;&gt; scripts/ci/baseline-loosenings.toml
+# then write each `reason`</code></pre>
+  <p>An entry matches one transition only, so it cannot excuse a later fall, and it is never removed. The ledger is the history of what the ratchets gave back, which a squash-merged log would otherwise bury.</p>
+  <p>The pre-commit hook compares the working tree with the merge-base against <code>main</code>. The automated <code>gates</code> job compares a pull request's merge commit with the pull request's base, and a push with the commit it replaced.</p>
+</section>
+
+<section class="doc-section" id="skips" data-doc="a-skipped-test-is-not-a-passed-test">
+  <h2>A skipped test is not a passed test</h2>
+  <p>A disc-gated test that finds its input missing prints a skip line and returns, and the test runner reports <code>ok</code>. On a machine with no disc the whole gated suite is green. On a machine <em>with</em> the disc, a test whose second input is gone (the extraction folder, the save library, a memory-card file) is green too.</p>
+  <p><code>scripts/ci/run-disc-tests.sh</code> runs the workspace tests with every test's output kept, and <code>scripts/ci/disc-test-tally.py</code> reads the log:</p>
+  <ul>
+    <li>A test that skipped <strong>for want of the disc</strong> fails the run. With the image present, such a line means a gate that is reading the wrong thing.</li>
+    <li>A test that skipped <strong>on another input</strong> is counted, grouped by the line it printed, and written to the job summary. <code>LEGAIA_MAX_OTHER_SKIPS</code> turns the count into a bound.</li>
+  </ul>
+  <p>The tally depends on the skip line. A test that returns early without printing one is invisible to it, so a gated test prints <code>[skip] &lt;what was missing&gt;</code> before it returns and names <em>every</em> input it lacked. Only <code>LEGAIA_DISC_BIN</code> itself is "the disc"; another disc's variable is another input.</p>
+  <p>The suite runs through this script in a manually dispatched job (or one a <code>disc-test</code> label on a pull request starts) and on a nightly schedule, which skips a night when <code>main</code> has not moved since the last run that passed. The log holds output derived from the disc and stays on the runner.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Tooling</span>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <a href="retail-oracle-method.html">The retail-oracle method</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="disc-coverage.html">Disc coverage</a>
+    <a href="port-catalog.html">Port catalog</a>
+  </div>
+</section>

@@ -1,0 +1,256 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; a battle frame, end to end</div>
+  <h1>A battle frame, end to end</h1>
+  <p class="lede">One frame of a fight is built in four moves: the battle code decides what changed, every body and effect is turned into GPU packets, the packets are linked into an ordering table by depth, and the GPU walks that table from the far end to the near one. Each move has its own reference page. This page follows a single frame through all four, because most questions about a battle picture ("why is this flash a frame late", "why does this frame have no dither") are questions about which move did the work and in what order.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Decides</dt><dd>The action state machine <code>FUN_801E295C</code>, then the per-body anim tick <code>FUN_80047430</code> (<a href="battle-action.html">action state machine</a>, <a href="battle-actor-rendering.html">actor rendering</a>)</dd>
+    <dt>Lands casts</dt><dd>The cast tick <code>FUN_801E09F8</code>, called from the draw, after every body's tick (<a href="battle-action-helpers.html">action helpers</a>)</dd>
+    <dt>Emits</dt><dd>The per-body draw <code>FUN_80048A08</code> and the per-primitive dispatch <code>FUN_80043390</code> through the GTE (<a href="renderer.html">renderer</a>)</dd>
+    <dt>Sorts</dt><dd>One ordering table for 3D primitives and screen-space packets alike, walked far bucket first (<a href="renderer-internals.html">renderer internals</a>)</dd>
+    <dt>Colours</dt><dd>Texel, palette from VRAM, <code>texel * colour / 128</code>, blend, then the 4x4 dither into 15 bits (<a href="shading.html">shading</a>)</dd>
+    <dt>Paces</dt><dd>The frame step <code>DAT_1F800393</code>: one pass spans one to four vsyncs (<a href="battle-internals.html#frame-step">frame step</a>)</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="the-frame">
+  <h2>The frame in one picture</h2>
+  <p>Read it top to bottom. The top band is the <em>tick</em>: everything that changes state. The middle band is the <em>draw</em>: nothing here decides anything about the fight except the cast tick, which is the one piece of game logic that runs from the draw. The bottom band is the GPU's walk of what the draw linked.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 564" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A battle frame in three bands. Tick band, in order: the action state machine FUN_801E295C, the separation pass, the stage colour pass, the camera, then the anim tick FUN_80047430 for each body: cursor advance, root motion, hit walk, commits. Draw band: the first drawn body runs a once-a-frame preamble behind the latch ctx+0x272, holding the effect walker FUN_801E0080 and the cast tick FUN_801E09F8; then each body runs its tint pass FUN_8004A908, its pose decoder FUN_8004998C and its per-primitive dispatch FUN_80043390 through the GTE, and every primitive is linked into an ordering table bucket by its mean depth. The HUD and other screen-space emitters link into the same table. GPU band: DrawOTag walks the table from the far bucket to the near one, and each packet goes through texel, palette, modulate, blend and dither into the 15-bit framebuffer. An arrow from the cast tick back to the next frame's tick says the state machine reads the cast tick's census one pass later.">
+      <defs>
+        <marker id="bf-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+        <marker id="bf-ah-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-dim)"/></marker>
+      </defs>
+
+      <!-- tick band -->
+      <rect class="dg-group" x="8" y="26" width="884" height="146" rx="6"/>
+      <text class="dg-sub dg-start" x="16" y="18">1 &#183; tick - every list's tick pass runs before any draw pass (frame driver FUN_80016444)</text>
+      <rect class="dg-node-accent" x="24" y="44" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="99" y="66">action SM</text><text class="dg-sub" x="99" y="84">FUN_801E295C</text>
+      <path class="dg-edge" d="M174 72 L190 72" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="192" y="44" width="130" height="56" rx="4"/>
+      <text class="dg-label" x="257" y="66">separation</text><text class="dg-sub" x="257" y="84">FUN_80051078</text>
+      <path class="dg-edge" d="M322 72 L338 72" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="340" y="44" width="130" height="56" rx="4"/>
+      <text class="dg-label" x="405" y="66">stage colour</text><text class="dg-sub" x="405" y="84">FUN_80050120</text>
+      <path class="dg-edge" d="M470 72 L486 72" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="488" y="44" width="130" height="56" rx="4"/>
+      <text class="dg-label" x="553" y="66">camera</text><text class="dg-sub" x="553" y="84">framing, walker</text>
+      <path class="dg-edge" d="M618 72 L634 72" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node-accent" x="636" y="44" width="240" height="56" rx="4"/>
+      <text class="dg-label" x="756" y="66">anim tick, once a body</text><text class="dg-sub" x="756" y="84">FUN_80047430</text>
+      <!-- anim tick breakdown -->
+      <rect class="dg-node" x="392" y="118" width="112" height="40" rx="4"/><text class="dg-sub" x="448" y="142">cursor advance</text>
+      <rect class="dg-node" x="516" y="118" width="112" height="40" rx="4"/><text class="dg-sub" x="572" y="142">root motion</text>
+      <rect class="dg-node" x="640" y="118" width="112" height="40" rx="4"/><text class="dg-sub" x="696" y="142">hit walk</text>
+      <rect class="dg-node" x="764" y="118" width="112" height="40" rx="4"/><text class="dg-sub" x="820" y="142">clip commits</text>
+      <path class="dg-edge-dim" d="M756 100 L756 110 L448 110 L448 118"/>
+      <path class="dg-edge" d="M504 138 L514 138" marker-end="url(#bf-ah)"/>
+      <path class="dg-edge" d="M628 138 L638 138" marker-end="url(#bf-ah)"/>
+      <path class="dg-edge" d="M752 138 L762 138" marker-end="url(#bf-ah)"/>
+      <text class="dg-sub dg-start" x="34" y="128">every counter moves by the</text><text class="dg-sub dg-start" x="34" y="144">frame step, once a pass</text>
+
+      <!-- draw band -->
+      <rect class="dg-group" x="8" y="206" width="884" height="216" rx="6"/>
+      <text class="dg-sub" x="884" y="200" style="text-anchor:end">2 &#183; draw - per body, FUN_800480D8 then FUN_80048A08</text>
+      <path class="dg-edge" d="M820 158 L820 184 L119 184 L119 222" marker-end="url(#bf-ah)"/>
+
+      <rect class="dg-node-warn" x="24" y="224" width="190" height="96" rx="4"/>
+      <text class="dg-label" x="119" y="244">first body's preamble</text>
+      <text class="dg-sub" x="119" y="262">latch ctx+0x272</text>
+      <text class="dg-sub" x="119" y="282">effect walker FUN_801E0080</text>
+      <text class="dg-sub" x="119" y="300">cast tick FUN_801E09F8</text>
+      <path class="dg-edge" d="M214 272 L232 272" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="234" y="224" width="130" height="96" rx="4"/>
+      <text class="dg-label" x="299" y="254">tint pass</text><text class="dg-sub" x="299" y="272">FUN_8004A908</text><text class="dg-sub" x="299" y="290">colour word +0x74</text>
+      <path class="dg-edge" d="M364 272 L382 272" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="384" y="224" width="130" height="96" rx="4"/>
+      <text class="dg-label" x="449" y="254">pose decoder</text><text class="dg-sub" x="449" y="272">FUN_8004998C</text><text class="dg-sub" x="449" y="290">clip to bones</text>
+      <path class="dg-edge" d="M514 272 L532 272" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="534" y="224" width="150" height="96" rx="4"/>
+      <text class="dg-label" x="609" y="254">per-prim dispatch</text><text class="dg-sub" x="609" y="272">FUN_80043390</text><text class="dg-sub" x="609" y="290">RTPT, NCLIP, AVSZ</text>
+      <path class="dg-edge" d="M684 272 L702 272" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node-accent" x="704" y="224" width="172" height="96" rx="4"/>
+      <text class="dg-label" x="790" y="254">ordering table</text><text class="dg-sub" x="790" y="272">bucket = mean depth</text><text class="dg-sub" x="790" y="290">last linked, first drawn</text>
+
+      <rect class="dg-node" x="384" y="348" width="300" height="56" rx="4"/>
+      <text class="dg-label" x="534" y="370">HUD, banners, washes, the ground grid</text><text class="dg-sub" x="534" y="388">screen-space packets, same table</text>
+      <path class="dg-edge" d="M684 376 L790 376 L790 322" marker-end="url(#bf-ah)"/>
+      <text class="dg-sub dg-start" x="24" y="352">the cast tick is game logic</text>
+      <text class="dg-sub dg-start" x="24" y="368">that runs from the draw:</text>
+      <text class="dg-sub dg-start" x="24" y="384">it follows every body's tick</text>
+      <text class="dg-sub dg-start" x="24" y="400">of the same pass</text>
+
+      <!-- GPU band -->
+      <rect class="dg-group" x="8" y="456" width="884" height="96" rx="6"/>
+      <text class="dg-sub" x="884" y="450" style="text-anchor:end">3 &#183; GPU - DrawOTag, far bucket first</text>
+      <path class="dg-edge" d="M790 404 L790 432 L99 432 L99 472" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="24" y="474" width="150" height="60" rx="4"/>
+      <text class="dg-label" x="99" y="498">texel index</text><text class="dg-sub" x="99" y="516">4 or 8 bits</text>
+      <path class="dg-edge" d="M174 504 L190 504" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="192" y="474" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="272" y="498">palette entry</text><text class="dg-sub" x="272" y="516">read from VRAM</text>
+      <path class="dg-edge" d="M352 504 L368 504" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="370" y="474" width="170" height="60" rx="4"/>
+      <text class="dg-label" x="455" y="498">modulate</text><text class="dg-sub" x="455" y="516">texel x colour / 128</text>
+      <path class="dg-edge" d="M540 504 L556 504" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node" x="558" y="474" width="140" height="60" rx="4"/>
+      <text class="dg-label" x="628" y="498">blend</text><text class="dg-sub" x="628" y="516">4 modes or opaque</text>
+      <path class="dg-edge" d="M698 504 L714 504" marker-end="url(#bf-ah)"/>
+      <rect class="dg-node-accent" x="716" y="474" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="796" y="498">dither, 15 bits</text><text class="dg-sub" x="796" y="516">if the mode allows</text>
+
+      <!-- carry to next frame -->
+      <path class="dg-edge-dim" d="M24 300 L15 300 L15 72 L22 72" marker-end="url(#bf-ah-dim)"/>
+      <text class="dg-edge-label" x="34" y="166">dashed: read by the next pass's tick</text>
+    </svg>
+    <figcaption>One battle pass. On retail's cadence the pass runs once a battle frame and the frame holds for the frame step's worth of vsyncs.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="tick">
+  <h2>1. The tick decides</h2>
+  <p>The master frame driver <code>FUN_80016444</code> runs every list's tick pass before any of its draw passes. For a battle that means, in this order:</p>
+  <ol>
+    <li><strong>The action state machine</strong> <code>FUN_801E295C</code> runs one state of the acting seat's turn and drains its timers by the frame step.</li>
+    <li><strong>The separation pass</strong> pushes overlapping bodies apart, <strong>the stage colour pass</strong> moves the ambient ramp, and <strong>the camera</strong> frames the shot the state asked for.</li>
+    <li><strong>The anim tick</strong> <code>FUN_80047430</code> runs once for each body: it advances the clip cursor by <code>(step * rate * clip_rate) &gt;&gt; 1</code>, applies the clip's root motion, walks the clip's hit events, and only then commits a clip that was staged.</li>
+  </ol>
+  <p>Two consequences are worth holding on to. The commits sit after the advance and a commit zeroes the cursor, so a clip the state machine stages this pass starts the <em>next</em> pass on its first keyframe. And the camera frames ahead of the anim tick, so the shot is built from the pose the previous pass left on screen.</p>
+  <p>A pass is one call with the step folded in, not <code>step</code> one-vsync calls: retail tests each counter and range once a pass, so a threshold the pass's first vsync would have crossed does not stop its second.</p>
+</section>
+
+<section class="doc-section" id="cast-tick">
+  <h2>2. The cast tick runs from the draw</h2>
+  <p>The cast tick <code>FUN_801E09F8</code> has one caller, and it is not the tick pass. It is the battle draw tick <code>FUN_800480D8</code> (<code>jal 0x801E09F8</code> at <code>0x80048130</code>), in a preamble the frame's first drawn body runs behind the latch <code>ctx+0x272</code>. That preamble also holds the effect-pool walker <code>FUN_801E0080</code>, the damage popup and the effect-node sweep. So the routine that counts outstanding effects, flies projectiles and lands them runs <em>after</em> every body has ticked.</p>
+  <p>That placement sets when each part of a landing is seen:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>What the cast tick does on pass N</th><th>When it shows or is read</th></tr></thead>
+    <tbody>
+      <tr><td>Draws or stores something itself: flight ribbons, the victim's tint, the landing cue</td><td>Pass N</td></tr>
+      <tr><td>Recounts the census (bodies still mid-animation, live spell children, the sole-survivor latches)</td><td>The state machine reads it on pass N+1</td></tr>
+      <tr><td>Stages the victim's reaction clip</td><td>Commits on that seat's anim tick in pass N+1, so the reaction cue rings a frame after the landing cue</td></tr>
+      <tr><td>Links a new node: the landing flash's fade actor, a list's effect children</td><td>First ticks on pass N+1's walk and first shows there</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The port keeps the same seat: <code>World::tick_battle_cast_drive</code> runs at the tail of the anim pass, and the nodes it links are handed on at the head of the next pass (<code>World::release_draw_spawns</code>). A cast-sequence film shows the difference directly: Astral Wave's recording brightens one frame after the landing pass.</p>
+</section>
+
+<section class="doc-section" id="draw">
+  <h2>3. The draw emits packets</h2>
+  <p>Every battle body, whether a monster, a party member or a part of a summoned creature, goes through <code>FUN_80048A08</code> once a rendered frame. It composes the body's matrix under the camera's, runs the pose decoder <code>FUN_8004998C</code> to turn the clip cursor into bone matrices, applies the render scale, and hands each object of the mesh to a leaf. The usual leaf is the per-primitive dispatch <code>FUN_80043390</code>: for each triangle or quad it projects the corners (<code>RTPT</code>), rejects back faces (<code>NCLIP</code>), averages the depth (<code>AVSZ</code>) and runs the primitive's colour op.</p>
+  <p>The colour op is not lighting in the usual sense. A battle primitive carries a colour word baked into the mesh; the tint pass <code>FUN_8004A908</code> has already written the body's own colour word and blend weight from its distance to the camera and its status, and the depth cue pulls the result toward the far colour. The only primitives that take a light source are a mesh's light-source rows. See <a href="shading.html">shading</a> for the whole chain.</p>
+  <p>The pose decoder does one more job: it stores every body's position pair from the pose it just decoded. The next pass's state machine and camera read those, which is how the draw closes a pass.</p>
+</section>
+
+<section class="doc-section" id="ordering-table">
+  <h2>4. The ordering table sorts</h2>
+  <p>Nothing is drawn as it is emitted. Each packet is linked into an <em>ordering table</em>, an array of buckets indexed by depth, and the GPU later walks the array from the far end to the near end. There is no depth buffer: a nearer bucket paints over a farther one, and inside one bucket the packet linked last is drawn first.</p>
+  <p>3D primitives and screen-space packets share the one table. A plain battle frame's table reads, from far to near:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A battle frame's ordering table drawn as a strip from the far bucket on the left to bucket 0 on the right. Farthest bucket: a cast's armed wash, drawn through the fade quad with a draw-mode packet that clears the dither bit. Next, the ground grid at bucket 0x3FEC shifted, bracketed by two draw-mode packets: dither on before it, then the frame's own dither word after it. Then the backdrop shell and the bodies and effects, each primitive in the bucket of its mean depth; a body flagged 0x00800000 draws 0x50 buckets deeper. Last, buckets 1 and 0 hold the HUD's sprite pages. Below the strip a line shows the dither bit as the GPU walks: off behind an armed wash, on from the grid onward.">
+      <defs>
+        <marker id="bf-ot-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+      </defs>
+      <text class="dg-sub dg-start" x="20" y="20">far bucket - drawn first</text>
+      <text class="dg-sub" x="880" y="20" style="text-anchor:end">bucket 0 - drawn last, on top</text>
+      <path class="dg-edge" d="M20 34 L878 34" marker-end="url(#bf-ot-ah)"/>
+
+      <rect class="dg-node-warn" x="20" y="52" width="150" height="92" rx="4"/>
+      <text class="dg-label" x="95" y="76">armed wash</text>
+      <text class="dg-sub" x="95" y="96">layer ctx[+0x92] - 1</text>
+      <text class="dg-sub" x="95" y="114">fade quad FUN_80024EE4</text>
+      <text class="dg-sub" x="95" y="132">only during a cast</text>
+
+      <rect class="dg-node-accent" x="186" y="52" width="170" height="92" rx="4"/>
+      <text class="dg-label" x="271" y="76">ground grid</text>
+      <text class="dg-sub" x="271" y="96">bucket 0x3FEC &gt;&gt; shift</text>
+      <text class="dg-sub" x="271" y="114">FUN_80026CE4</text>
+      <text class="dg-sub" x="271" y="132">skipped on some stages</text>
+
+      <rect class="dg-node" x="372" y="52" width="150" height="92" rx="4"/>
+      <text class="dg-label" x="447" y="76">backdrop shell</text>
+      <text class="dg-sub" x="447" y="96">drawn twice,</text>
+      <text class="dg-sub" x="447" y="114">one more actor</text>
+
+      <rect class="dg-node" x="538" y="52" width="190" height="92" rx="4"/>
+      <text class="dg-label" x="633" y="76">bodies and effects</text>
+      <text class="dg-sub" x="633" y="96">each primitive at its mean Z</text>
+      <text class="dg-sub" x="633" y="114">flag 0x00800000:</text>
+      <text class="dg-sub" x="633" y="132">0x50 buckets deeper</text>
+
+      <rect class="dg-node" x="744" y="52" width="136" height="92" rx="4"/>
+      <text class="dg-label" x="812" y="76">HUD</text>
+      <text class="dg-sub" x="812" y="96">buckets 1 and 0</text>
+      <text class="dg-sub" x="812" y="114">sprite pages,</text>
+      <text class="dg-sub" x="812" y="132">plaques, numerals</text>
+
+      <!-- dither bit track -->
+      <text class="dg-sub dg-start" x="20" y="176">the draw mode's dither bit as the GPU walks the table, in three kinds of frame</text>
+      <text class="dg-sub dg-start" x="20" y="206">plain frame</text>
+      <rect class="dg-node-ok" x="20" y="212" width="860" height="22" rx="3"/>
+      <text class="dg-sub" x="450" y="227">on: the frame's own word _DAT_8007BA66, restated by the grid's pair (0xE1000200 twice)</text>
+      <text class="dg-sub dg-start" x="20" y="260">a wash over a stage that draws the grid</text>
+      <rect class="dg-node-warn" x="20" y="266" width="166" height="22" rx="3"/>
+      <text class="dg-sub" x="103" y="281">off</text>
+      <rect class="dg-node-ok" x="186" y="266" width="694" height="22" rx="3"/>
+      <text class="dg-sub" x="533" y="281">on again: the grid's first packet sets it</text>
+      <text class="dg-sub dg-start" x="20" y="314">a wash over a stage with no grid</text>
+      <rect class="dg-node-warn" x="20" y="320" width="724" height="22" rx="3"/>
+      <text class="dg-sub" x="382" y="335">off for the whole scene: nothing links a packet that sets it again</text>
+      <rect class="dg-node" x="744" y="320" width="136" height="22" rx="3"/>
+      <text class="dg-sub" x="812" y="335">HUD pages</text>
+    </svg>
+    <figcaption>Top: what a battle frame links where. Bottom: the dither bit is part of the GPU's draw mode, so a draw-mode packet in the table moves it for everything drawn after.</figcaption>
+  </figure>
+  <p>The port has no ordering table at run time for 3D geometry by default: it depth-tests. PSX mode draws the field's primitives at their retail table links, and the screen-space pass (<code>screen_prim::order_primitives</code>) reproduces the link-and-walk exactly, descending bucket and last-in first-out inside a bucket, for both hosts.</p>
+</section>
+
+<section class="doc-section" id="dither">
+  <h2>5. The GPU colours, and sometimes dithers</h2>
+  <p>For each pixel of a textured primitive the GPU reads a texel index, looks it up in a palette that lives in <strong>VRAM</strong> (not in the texture's file), multiplies by the primitive's colour as <code>texel * colour / 128</code>, blends with the framebuffer when the primitive and the palette entry both ask for it, and writes 15 bits. With dithering on, a 4x4 ordered offset is added before each channel is cut to 5 bits; that is the fine cross-hatch on a gradient.</p>
+  <p>Retail boots with dithering on and the frame-begin driver <code>FUN_80016B6C</code> copies the setting into the draw environment every frame. But the enable is a bit of the draw mode, and two battle draws link a draw-mode packet of their own:</p>
+  <ul>
+    <li><strong>A cast's armed wash</strong> goes through the fade quad <code>FUN_80024EE4</code> in the farthest bucket, and that routine links <code>SetDrawMode</code> (<code>FUN_80059010</code>) with the dither argument clear ahead of its quad. Everything behind the next packet that sets the bit is undithered.</li>
+    <li><strong>The ground grid</strong> <code>FUN_80026CE4</code> brackets itself with two draw-mode packets: dither on ahead of the grid, then the frame's own setting for the rest of the table.</li>
+  </ul>
+  <p>So a frame that arms the wash over a stage whose grid does not draw has no packet to set the bit again. Ozma's arms 16 to 21 show no 4x4 pattern at all in a retail recording, where the arms before them show the full one; the stacked additive fans are where it is visible, half a 5-bit step a layer. The port carries this as one flag a frame, <code>World::frame_dither</code>, and both hosts gate PSX mode's dither on it. A packet that moves the bit part of the way down the table is not modelled.</p>
+  <p>A cast module can link a draw-mode packet too, and every one a battle reaches passes the dither argument clear except the ground grid, the letterbox handler and one resident routine. The full list of call sites is in the <a href="../reference/functions.html">function reference</a>.</p>
+</section>
+
+<section class="doc-section" id="pacing">
+  <h2>What paces it</h2>
+  <p>At the end of the frame the driver <code>FUN_80016B6C</code> puts the frame's cost, an hblank count, into a sixteen-entry ring and bins the ring's maximum into the next frame step: 1, 2, 3 or 4 vsyncs. The pass above then runs once with that step folded into every counter. A busy cast (many additive sheets, a full party) costs more, the step rises, and the same clip plays over fewer, longer passes. This is why a recording is compared pass for pass on the game's own clock rather than vsync for vsync. The ring, the bins and what the port does for a console's cost are on <a href="battle-internals.html#frame-step">battle internals</a>.</p>
+</section>
+
+<section class="doc-section" id="measured">
+  <h2>How the port is held to it</h2>
+  <ul>
+    <li><strong>The order of the tick</strong> is pinned by a counter the camera and the anim tick both touch: the close-up accumulator gains <code>8 * step</code> in the state machine's framing prologue and a clip commit zeroes it. Retail save states hold the pair of values only one ordering produces.</li>
+    <li><strong>The commit sites of the anim tick</strong> run against retail's own routine in the <a href="../tooling/retail-kernel-differential.html">retail kernel differential</a>.</li>
+    <li><strong>The cast tick's seat</strong> shows in a <a href="../tooling/cast-sequence-oracle.html">cast-sequence film</a>: the landing cue, the reaction cue and the flash each fall on the pass the table above gives.</li>
+    <li><strong>The picture</strong> is scored by the <a href="../tooling/retail-compare.html">retail comparison corpus</a> in PSX mode at the native 320x240, where the dither pattern is part of the image.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="battle.html">Battle overview</a>
+    <a href="battle-internals.html">Battle internals</a>
+    <a href="battle-action.html">Action state machine</a>
+    <a href="battle-action-helpers.html">Action helpers</a>
+    <a href="battle-actor-rendering.html">Actor rendering</a>
+    <a href="battle-stage-camera.html">Stage and camera</a>
+    <a href="cast-pipeline.html">A cast, end to end</a>
+    <a href="renderer.html">Renderer</a>
+    <a href="shading.html">Shading</a>
+  </div>
+</section>

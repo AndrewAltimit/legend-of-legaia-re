@@ -280,6 +280,14 @@ the adds from the next tick, and the spawn-time run (`FUN_80021B04`, the VM
 alone) neither integrates nor uploads, so a fresh capture uploads on the
 second part tick.
 
+A battle part's first tick comes on the frame that seats it: the seat is made
+from a list-0 callback and the walk reaches list 1 afterwards. Its program has
+stored the rates and armed the gate by then, so a cycler leaves its seat frame
+one step of its rates on with `+0x9C = 2`. PROT 0921's two backdrop cyclers
+read `+0x90 = 4` on the frame arm 3 seats them, a step-`1` frame at a rate of
+`4` a vsync (`--retail-parts`); `World::seat_run_battle_fx` runs the arm on
+each part it seats.
+
 So the "pulsating flesh" never moves a vertex: it is **palette-space HSV
 cycling on the texture's CLUT rows**, re-uploaded every frame from the
 original capture.
@@ -897,6 +905,16 @@ at `0x8003A0D4`, and the only later store is `0x801E14BC`, once, two frames
 into game mode 3, from `P1[0]` `+0x1B2`. The box test needs the system
 context's position anchor seated on the player in overworld mode as well as
 field mode, or it fails every frame and the op is never reached.
+
+The ease `FUN_801DA390` has one caller, the head of the entity tick `FUN_801DA51C`
+(`jal` at `0x801DA52C`), so it steps once a game pass: one unit while the player's
+height and depth stand still, the gap over sixteen (at most twelve) while they move.
+Its fast arm pins the step at twelve while scratchpad bit 17 is raised (`2E 11`: the
+Sol Tower scenes `kor` / `kor3` / `kor4` / `korb2`, and `jouinc`) and the held pad
+word `_DAT_8007B850` carries a direction. The `kor3` film reads `148, 136, 124` a pass
+down to `0` after the stair warp with Up held. `World::tick_camera_offset_ease` runs on
+the actor game tick with the held pad; it had run once a vsync with the pad word zero,
+which crept one unit a vsync there.
 
 #### The texture blend is 5-bit
 

@@ -21,6 +21,36 @@ pub enum DanceMode {
     FreePlay,
 }
 
+/// The hall's frame step `DAT_1F800393`: vsyncs per game frame, and the delta
+/// each game frame advances by. `3` in every retail capture of the dance.
+pub const HALL_FRAME_STEP: u32 = 3;
+
+/// The raw loader index of the song state `3` streams for `mode`
+/// (`FUN_8001FC00(index, 5, ..)`): `0x41A` for the qualifier and the how-to,
+/// `0x420` for the finals, and for free play one of three by the save's
+/// counter `_DAT_80084468` - `0x42B`, `0x41A`, `0x420` for `0`, `1`, `2`.
+/// The extraction PROT entry is the index less two.
+///
+/// PORT: FUN_801cf470 (state 3's song pick, `0x801CFAC0..0x801CFB80`)
+pub fn song_loader_index(mode: DanceMode, free_play_counter: u32) -> u16 {
+    match (mode, free_play_counter) {
+        (DanceMode::Finals, _) => 0x420,
+        (DanceMode::Qualifier | DanceMode::HowTo, _) => 0x41A,
+        (DanceMode::FreePlay, 1) => 0x80C - 0x3F2,
+        (DanceMode::FreePlay, 2) => 0x812 - 0x3F2,
+        (DanceMode::FreePlay, _) => 0x81D - 0x3F2,
+    }
+}
+
+/// Free play's song counter after a run has streamed its song: bumped, and
+/// back to `0` at `3` (`0x801CFB84..0x801CFBA0`).
+///
+/// PORT: FUN_801cf470 (state 3's free-play counter)
+pub fn next_free_play_song(counter: u32) -> u32 {
+    let next = counter.wrapping_add(1);
+    if next < 3 { next } else { 0 }
+}
+
 /// Story flag state 1 maps to [`DanceMode::HowTo`] (`li a0,0x133` at
 /// `0x801CF8F8`).
 pub const MODE_FLAG_HOW_TO: u16 = 0x133;

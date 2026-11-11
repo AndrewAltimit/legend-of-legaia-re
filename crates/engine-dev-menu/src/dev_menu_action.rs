@@ -4,8 +4,8 @@
 //! world-map panel window system (`legaia_engine_field::world_map_panel`),
 //! whose list-cursor helper the dev menu's list picker mirrors, but its only
 //! caller in the port is the dev-menu screen
-//! `legaia_engine_menus::dev_menu_host`, whose cancel leg asks it for the park
-//! phase and the draw-gate factor.
+//! `legaia_engine_menus::dev_menu_host`, whose confirm leg asks it for the
+//! draw-gate factor, as the list picker `FUN_801ECA08` does (`0x801ECC6C`).
 //!
 //! ## Source
 //!
@@ -43,26 +43,56 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 /// `_DAT_8007B606` flag, ...). Out-of-range parks the caller's phase at
 /// [`DEV_MENU_ACTION_PARK_PHASE`].
 ///
-/// Returns `(new_phase, result)`: `new_phase` is `Some` only when the arm
-/// writes `ctx[+0x54]`, and `result` is always
+/// Returns `(park_phase, result)`: `park_phase` is `Some` for a row past the
+/// table, the one arm with no work of its own, and `result` is always
 /// [`DEV_MENU_ACTION_RESULT`].
 ///
+/// Every in-range arm writes `ctx[+0x54]` too - [`dev_menu_action_phase`]
+/// is that store, row by row - so `None` here does not mean the phase word
+/// is left alone; it means the row ran its cheat and the phase it leaves is
+/// the arm's own.
+///
 /// The arms' *effects* are not modelled - they poke globals and party
-/// records that have no engine counterpart, and which arm sits at which
-/// index is a property of the jump table at `0x801CF2E4`, not of the
-/// instruction stream. What is ported is the contract the **caller** depends
-/// on: the bound, the park phase, and the unconditional `1`.
+/// records that have no engine counterpart. What is ported is the contract
+/// the **caller** depends on: the bound, the phase each path leaves, and the
+/// unconditional `1`.
 ///
 /// PORT: FUN_801ea9b0 (dispatch head + shared epilogue)
 ///
 /// Wired: `legaia_engine_menus::dev_menu_host::DevMenuSession::tick` runs this
-/// on its cancel leg and uses both halves of the result - the park phase and
-/// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
+/// on its confirm leg and uses the factor
+/// [`crate::dev_menu_leaves::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
     if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
-        return (Some(DEV_MENU_ACTION_PARK_PHASE), DEV_MENU_ACTION_RESULT);
+        return (
+            Some(dev_menu_action_phase(row, false)),
+            DEV_MENU_ACTION_RESULT,
+        );
     }
     (None, DEV_MENU_ACTION_RESULT)
+}
+
+/// The phase each in-range row's arm stores to `ctx[+0x54]`, read off the
+/// 24 arms behind the jump table at `0x801CF2E4`. Row 1 is the one arm that
+/// picks: `2` while `_DAT_8007B868` is non-zero, else `4` (`0x801EAC40`).
+const DEV_MENU_ROW_PHASES: [i16; DEV_MENU_ACTION_ROWS as usize] = [
+    4, 2, 4, 1, 1, 4, 1, 2, 2, 2, 1, 2, 1, 1, 1, 0, 1, 1, 2, 2, 2, 2, 1, 2,
+];
+
+/// The phase `FUN_801EA9B0` leaves in `ctx[+0x54]` for `row`: the arm's own
+/// store for a row of the table, [`DEV_MENU_ACTION_PARK_PHASE`] past it.
+/// `row_one_gate` is `_DAT_8007B868 != 0`, read by row 1 alone.
+///
+/// PORT: FUN_801ea9b0 (the 24 arms' `ctx[+0x54]` stores)
+pub fn dev_menu_action_phase(row: i16, row_one_gate: bool) -> i16 {
+    match usize::try_from(row)
+        .ok()
+        .and_then(|r| DEV_MENU_ROW_PHASES.get(r))
+    {
+        Some(_) if row == 1 && !row_one_gate => 4,
+        Some(&phase) => phase,
+        None => DEV_MENU_ACTION_PARK_PHASE,
+    }
 }
 
 #[cfg(test)]

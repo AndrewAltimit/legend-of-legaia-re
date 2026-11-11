@@ -1,5 +1,7 @@
 //! The geometry colour grade [`shift_primitive_colours`] (`FUN_801D5E20`): an
-//! HSV shift applied to a TMD's packed primitive colour words.
+//! HSV shift applied to a TMD's packed primitive colour words, and the walk
+//! that hands it every object of every resident TMD
+//! ([`shift_resident_tmds`], `FUN_801D8280`).
 //!
 //! The `PORT` tag lives on the item that implements the address, so the
 //! liveness audit sees one anchor per port site.
@@ -24,6 +26,23 @@ pub const CHANNEL_MAX: i32 = 0xFF;
 /// table at `DAT_8007326C` with `((flags >> 1) - 8) >> 1`, so the two tables are
 /// addressed differently and are not interchangeable.
 pub const COLOUR_COUNT_TABLE_ADDR: u32 = 0x801F_26F0;
+
+/// The table at [`COLOUR_COUNT_TABLE_ADDR`], selectors `0..=0x13`: none for the
+/// two light-source rows (group flags `0x10..=0x17`), which carry no colour
+/// block, then one word for a flat primitive, three for a gouraud triangle and
+/// four for a gouraud quad - rows `0x18..=0x1F` untextured and `0x20..=0x27`
+/// textured.
+pub const COLOUR_COUNTS: [u8; 0x14] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 4, 1, 1, 3, 4];
+
+/// Colour words a primitive of group selector `flags >> 1` carries. Past the
+/// table retail reads whatever bytes follow it in the overlay's data; no
+/// shipped group has such a selector, and the port answers `0`.
+pub fn colour_count(selector: u16) -> u8 {
+    COLOUR_COUNTS
+        .get(usize::from(selector))
+        .copied()
+        .unwrap_or(0)
+}
 
 /// The HSV delta applied to every colour word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -51,56 +70,39 @@ impl HsvShift {
     }
 }
 
-/// The RGB/HSV conversion pair the grade calls out to (`func_0x8001A78C`
-/// RGB -> HSV, `func_0x8001A6C8` HSV -> RGB). They are SCUS leaf helpers, so
-/// the grade injects them rather than re-deriving them.
-pub trait HsvCodec {
-    /// `func_0x8001A78C(r, g, b, &h, &s, &v)`.
-    fn to_hsv(&mut self, rgb: [u8; 3]) -> (i32, i32, i32);
-    /// `func_0x8001A6C8(h, s, v, &r, &g, &b)`.
-    fn to_rgb(&mut self, hsv: (i32, i32, i32)) -> [u8; 3];
+/// Bytes of a TMD header, which every `*_top` offset is relative to the end of.
+const TMD_HEADER: usize = 12;
+
+/// Bytes per TMD object-table entry.
+const TMD_OBJECT: usize = 0x1C;
+
+fn word(bytes: &[u8], at: usize) -> Option<u32> {
+    bytes
+        .get(at..at + 4)
+        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
 }
 
-/// One group header of a Legaia TMD primitive block, in the three fields the
-/// grade reads. Layout per `docs/formats/tmd.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct PrimGroupHeader {
-    /// `+0x00` - primitives in the group.
-    pub count: u16,
-    /// `+0x02` - the mode/flags word; `flags >> 1` indexes the colour-count
-    /// table.
-    pub flags: u16,
-    /// `+0x05` - words per primitive; the byte stride is `ilen * 4`.
-    pub ilen: u8,
-}
-
-/// How far the walker's cursor advances over one group, in bytes.
+/// Shift the hue, saturation and value of every packed colour word in one
+/// object's primitive section, in place. `FUN_801D5E20`.
 ///
-/// **It is one primitive too far.** The stride add `ilen * 4` runs once per
-/// primitive (`801d5FF8`) *and* once more after the loop (`801d6010`), and the
-/// `count == 0` arm jumps straight to that trailing add. Against
-/// `docs/formats/tmd.md`'s `count x ilen*4` body that over-runs by one
-/// primitive per group. It is reproduced because it is what the bytes say: a
-/// consumer that "fixes" it walks a different set of colours than retail does.
-pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
-    8 + (usize::from(header.count) + 1) * usize::from(header.ilen) * 4
-}
-
-/// Rotate the hue of every packed colour word in a TMD primitive block.
-/// `FUN_801D5E20`.
+/// `block` starts at the object's first group header. The section is walked
+/// group by group until a header whose whole first **word** is zero
+/// (`0x801D5E60`, `0x801D6018`). A group is its 8-byte header, `count` records
+/// of `ilen * 4` bytes and one more record's worth of footer, which is the
+/// layout every Legaia TMD has (`legaia_tmd::legaia_prims`): the stride add
+/// runs once per record (`0x801D5FF8`) and once after the loop (`0x801D6010`),
+/// and an empty group jumps straight to the second.
 ///
-/// The block is walked group by group until a group header whose whole first
-/// **word** is zero. Within a group, `colour_count(flags >> 1)` decides how many
-/// four-byte colour words each primitive carries; `0` skips the group's body
-/// entirely. Each colour is the first three bytes of its word - the fourth byte
-/// is left alone.
+/// Within a record the first [`colour_count`]`(flags >> 1)` words are its
+/// colours, and a count of `0` leaves the group's records alone. Each colour is
+/// the first three bytes of its word; the fourth, the GP0 code byte, is not
+/// written. The shift goes through the SCUS pair `FUN_8001A78C` /
+/// `FUN_8001A6C8`, so every channel it writes is capped at `0xF8`.
 ///
-/// The cursor arithmetic is [`colour_walk_group_stride`]; read its docs before
-/// wiring this to a real block.
+/// Returns how many colour words it rewrote. A walk that runs off `block`
+/// stops there, where retail would read on.
 ///
 /// PORT: FUN_801D5E20
-/// REF: FUN_801D8280 - the `DAT_8007C018` resident-object table walker that
-/// calls this on every object's primitive block.
 ///
 /// REPLACED-BY: the renderer's prologue palette mode, whose packet-colour law
 /// (`legaia_engine_render::psx_light::prologue_sepia_word` and the page
@@ -109,7 +111,7 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// issue the op.
 ///
 /// The sole `jal` to `0x801D5E20` in the corpus is `0x801D82F8`, inside the
-/// `REF`'d walker `FUN_801D8280`, which is the field VM's op `0x4C`
+/// walker [`shift_resident_tmds`], which is the field VM's op `0x4C`
 /// outer-nibble-E sub-6 arm (`FieldActorSpawnHost::hsv_grade_resident_meshes`, three
 /// `i16` operands, which the walker forwards as this routine's `a1..a3` - the
 /// hue / saturation / value deltas, `addu`-ed onto the `FUN_8001A78C` result
@@ -129,47 +131,93 @@ pub fn colour_walk_group_stride(header: &PrimGroupHeader) -> usize {
 /// counterpart, so rather than rewriting uploaded mesh bytes the renderer
 /// applies the closed form per packet colour; a host that ran the op itself
 /// would draw the same pixels.
-pub fn shift_primitive_colours(
-    groups: &mut [(PrimGroupHeader, Vec<[u8; 4]>)],
-    shift: &HsvShift,
-    colour_count: &dyn Fn(u16) -> u8,
-    codec: &mut dyn HsvCodec,
-) -> usize {
+pub fn shift_primitive_colours(block: &mut [u8], shift: &HsvShift) -> usize {
     let mut touched = 0;
-    for (header, prims) in groups.iter_mut() {
-        if header.count == 0 {
-            continue;
+    let mut at = 0usize;
+    while let Some(first) = word(block, at) {
+        if first == 0 {
+            break;
         }
-        let per_prim = usize::from(colour_count(header.flags >> 1));
-        if per_prim == 0 {
-            continue;
+        let count = usize::from(first as u16);
+        let selector = (first >> 16) as u16 >> 1;
+        let Some(&ilen) = block.get(at + 5) else {
+            break;
+        };
+        let stride = usize::from(ilen) * 4;
+        at += 8;
+        let per_record = usize::from(colour_count(selector));
+        for _ in 0..count {
+            for k in 0..per_record {
+                let Some(rgb) = block.get_mut(at + k * 4..at + k * 4 + 3) else {
+                    return touched;
+                };
+                let (h, s, v) = legaia_engine_vm::move_vm::rgb_to_hsv(
+                    i32::from(rgb[0]),
+                    i32::from(rgb[1]),
+                    i32::from(rgb[2]),
+                );
+                let (h, s, v) = shift.apply(h, s, v);
+                let (r, g, b) = legaia_engine_vm::move_vm::hsv_to_rgb(h, s, v);
+                rgb[0] = r.min(0xF8) as u8;
+                rgb[1] = g.min(0xF8) as u8;
+                rgb[2] = b.min(0xF8) as u8;
+                touched += 1;
+            }
+            at += stride;
         }
-        let limit = usize::from(header.count) * per_prim;
-        for prim in prims.iter_mut().take(limit) {
-            let hsv = codec.to_hsv([prim[0], prim[1], prim[2]]);
-            let rgb = codec.to_rgb(shift.apply(hsv.0, hsv.1, hsv.2));
-            prim[0] = rgb[0];
-            prim[1] = rgb[1];
-            prim[2] = rgb[2];
-            touched += 1;
-        }
+        at += stride;
     }
     touched
+}
+
+/// Shift every object of one TMD, in place: object `i`'s primitive section is
+/// at `prim_top` (object entry `+0x10`) past the 12-byte header. Returns the
+/// colour words rewritten.
+///
+/// This is the body of [`shift_resident_tmds`]'s outer loop
+/// (`0x801D82D0..0x801D8310`) over a TMD in its file form, offsets not yet
+/// patched to addresses: retail's loop reads the object count at `+8` and
+/// steps `0x1C` from `+0x0C`, and `FUN_801D5E20` reads each entry's `+0x10`.
+pub fn shift_tmd_colours(tmd: &mut [u8], shift: &HsvShift) -> usize {
+    let Some(objects) = word(tmd, 8) else {
+        return 0;
+    };
+    let mut touched = 0;
+    for i in 0..objects as usize {
+        let Some(prim_top) = word(tmd, TMD_HEADER + i * TMD_OBJECT + 0x10) else {
+            break;
+        };
+        // The registrar `FUN_800268DC` makes the offset an address as
+        // `header end + (top & !3)`.
+        let Some(block) = tmd.get_mut(TMD_HEADER + (prim_top & !3) as usize..) else {
+            continue;
+        };
+        touched += shift_primitive_colours(block, shift);
+    }
+    touched
+}
+
+/// Shift every resident TMD: `FUN_801D8280(dh, ds, dv)`, the walk of the
+/// resident-object table `DAT_8007C018[0..=DAT_8007BB38]` behind the field
+/// VM's `4C E6`. The count word is the table's last index, so `-1` walks
+/// nothing (`addiu v0,v0,1` / `beqz` at `0x801D82BC`). Returns the colour words
+/// rewritten.
+///
+/// PORT: FUN_801D8280
+/// REPLACED-BY: the renderer's prologue palette mode - see
+/// [`shift_primitive_colours`]. No host keeps resident TMD bytes to rewrite.
+pub fn shift_resident_tmds<'a>(
+    tmds: impl IntoIterator<Item = &'a mut [u8]>,
+    shift: &HsvShift,
+) -> usize {
+    tmds.into_iter()
+        .map(|tmd| shift_tmd_colours(tmd, shift))
+        .sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct Codec;
-    impl HsvCodec for Codec {
-        fn to_hsv(&mut self, rgb: [u8; 3]) -> (i32, i32, i32) {
-            (i32::from(rgb[0]), i32::from(rgb[1]), i32::from(rgb[2]))
-        }
-        fn to_rgb(&mut self, hsv: (i32, i32, i32)) -> [u8; 3] {
-            [hsv.0 as u8, hsv.1 as u8, hsv.2 as u8]
-        }
-    }
 
     #[test]
     fn the_hue_wrap_is_359_not_360() {
@@ -196,77 +244,79 @@ mod tests {
         assert_eq!(s.apply(0, 0xF0, 0x10), (0, CHANNEL_MAX, 0));
     }
 
+    /// One group: header, `records` of `ilen` words, and the footer slot.
+    fn group(count: u16, flags: u16, ilen: u8, fill: [u8; 4]) -> Vec<u8> {
+        let mut g = Vec::new();
+        g.extend_from_slice(&count.to_le_bytes());
+        g.extend_from_slice(&flags.to_le_bytes());
+        g.extend_from_slice(&[0, ilen, 0, 0]);
+        for _ in 0..(usize::from(count) + 1) * usize::from(ilen) {
+            g.extend_from_slice(&fill);
+        }
+        g
+    }
+
+    const GREY: HsvShift = HsvShift {
+        hue: 0,
+        saturation: -0x100,
+        value: 0,
+    };
+
     #[test]
-    fn a_zero_colour_count_skips_a_whole_group() {
-        let mut groups = vec![
-            (
-                PrimGroupHeader {
-                    count: 2,
-                    flags: 4,
-                    ilen: 3,
-                },
-                vec![[1u8, 2, 3, 4]; 4],
-            ),
-            (
-                PrimGroupHeader {
-                    count: 2,
-                    flags: 8,
-                    ilen: 3,
-                },
-                vec![[1u8, 2, 3, 4]; 4],
-            ),
-        ];
-        let shift = HsvShift {
-            hue: 10,
-            ..Default::default()
-        };
-        // flags 4 -> index 2 -> one colour; flags 8 -> index 4 -> none.
-        let n = shift_primitive_colours(
-            &mut groups,
-            &shift,
-            &|idx| if idx == 2 { 1 } else { 0 },
-            &mut Codec,
-        );
-        assert_eq!(n, 2, "count * per_prim of the first group only");
-        assert_eq!(groups[0].1[0][0], 11);
-        assert_eq!(groups[0].1[2], [1, 2, 3, 4], "past count * per_prim");
-        assert_eq!(groups[1].1[0], [1, 2, 3, 4]);
+    fn a_record_s_leading_words_are_its_colours() {
+        // A gouraud triangle group (flags 0x1C -> selector 0xE -> three
+        // words) of two five-word records, then a flat group.
+        let mut block = group(2, 0x1C, 5, [0x80, 0x40, 0x20, 0x30]);
+        block.extend(group(1, 0x18, 4, [0x10, 0x90, 0x10, 0x20]));
+        block.extend_from_slice(&[0; 4]);
+        let n = shift_primitive_colours(&mut block, &GREY);
+        assert_eq!(n, 2 * 3 + 1);
+        for record in 0..2 {
+            let at = 8 + record * 20;
+            for w in 0..5 {
+                let got = &block[at + w * 4..at + w * 4 + 4];
+                if w < 3 {
+                    assert_eq!(got, [0x80, 0x80, 0x80, 0x30], "record {record} word {w}");
+                } else {
+                    assert_eq!(got, [0x80, 0x40, 0x20, 0x30], "record {record} word {w}");
+                }
+            }
+        }
+        // The footer slot is not a record.
+        assert_eq!(&block[8 + 40..8 + 44], [0x80, 0x40, 0x20, 0x30]);
+        let flat = 8 + 60;
+        assert_eq!(&block[flat + 8..flat + 12], [0x90, 0x90, 0x90, 0x20]);
+        assert_eq!(&block[flat + 12..flat + 16], [0x10, 0x90, 0x10, 0x20]);
     }
 
     #[test]
-    fn the_fourth_byte_of_a_colour_word_is_untouched() {
-        let mut groups = vec![(
-            PrimGroupHeader {
-                count: 1,
-                flags: 2,
-                ilen: 2,
-            },
-            vec![[0x10u8, 0x20, 0x30, 0xAB]],
-        )];
-        shift_primitive_colours(
-            &mut groups,
-            &HsvShift {
-                hue: 1,
-                saturation: 1,
-                value: 1,
-            },
-            &|_| 1,
-            &mut Codec,
-        );
-        assert_eq!(groups[0].1[0], [0x11, 0x21, 0x31, 0xAB]);
+    fn a_light_source_group_is_walked_and_left_alone() {
+        let mut block = group(3, 0x14, 4, [0xAA, 0xBB, 0xCC, 0xDD]);
+        block.extend(group(1, 0x1A, 4, [0xFF, 0x00, 0x00, 0x24]));
+        block.extend_from_slice(&[0; 4]);
+        let before = block.clone();
+        assert_eq!(shift_primitive_colours(&mut block, &GREY), 1);
+        let second = 8 + 4 * 16;
+        assert_eq!(block[..second + 8], before[..second + 8]);
+        // A grey of the word's max, capped at `0xF8`.
+        assert_eq!(&block[second + 8..second + 12], [0xF8, 0xF8, 0xF8, 0x24]);
     }
 
     #[test]
-    fn the_group_stride_over_advances_by_one_primitive() {
-        let h = PrimGroupHeader {
-            count: 4,
-            flags: 0,
-            ilen: 3,
-        };
-        // The documented body is 4 * 12 == 48 bytes plus the 8-byte header.
-        assert_eq!(colour_walk_group_stride(&h), 8 + 5 * 12);
-        // Even an empty group advances one primitive's worth.
-        let empty = PrimGroupHeader { count: 0, ..h };
-        assert_eq!(colour_walk_group_stride(&empty), 8 + 12);
+    fn a_tmd_s_objects_are_each_walked() {
+        let mut tmd = vec![0u8; TMD_HEADER + 2 * TMD_OBJECT];
+        tmd[0..4].copy_from_slice(&0x8000_0002u32.to_le_bytes());
+        tmd[8..12].copy_from_slice(&2u32.to_le_bytes());
+        for obj in 0..2 {
+            let prim_top = (tmd.len() - TMD_HEADER) as u32;
+            let at = TMD_HEADER + obj * TMD_OBJECT + 0x10;
+            tmd[at..at + 4].copy_from_slice(&prim_top.to_le_bytes());
+            tmd.extend(group(2, 0x20, 4, [0x20, 0x60, 0x40, 0x20]));
+            tmd.extend_from_slice(&[0; 4]);
+        }
+        let mut second = tmd.clone();
+        let n = shift_resident_tmds([tmd.as_mut_slice(), second.as_mut_slice()], &GREY);
+        assert_eq!(n, 8);
+        assert_eq!(tmd, second);
     }
 }

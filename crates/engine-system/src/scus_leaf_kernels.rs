@@ -484,6 +484,31 @@ pub const SCENE_CONTROL_BLOCK_RESET: SceneControlBlockReset = SceneControlBlockR
 /// Size of the scene control block, in bytes (`FUN_80017888(0, 0x64)`).
 pub const SCENE_CONTROL_BLOCK_SIZE: usize = 0x64;
 
+impl SceneControlBlockReset {
+    /// Write the reset over `block` as `FUN_8003A024` does: the image's six
+    /// words and the zero stores beside them. Every other byte of the fresh
+    /// allocation is left as the allocator handed it out - the routine clears
+    /// no more than it names.
+    pub fn install(&self, block: &mut [u8; SCENE_CONTROL_BLOCK_SIZE]) {
+        let mut h = |at: usize, v: u16| block[at..at + 2].copy_from_slice(&v.to_le_bytes());
+        for at in [0x08, 0x0A, 0x0C, 0x0E, 0x10, 0x4A, 0x52] {
+            h(at, 0);
+        }
+        h(0x12, self.field_12);
+        h(0x14, self.field_14);
+        h(0x4C, self.field_4c);
+        h(0x4E, self.field_4e);
+        h(0x50, self.field_50);
+        let mut w = |at: usize, v: u32| block[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        w(0x00, self.fallback_table);
+        w(0x04, self.fallback_table);
+        for at in [0x18, 0x1C, 0x20, 0x24, 0x28] {
+            w(at, 0);
+        }
+        block[0x5D..=0x62].fill(0);
+    }
+}
+
 /// The error code `FUN_8003A024` parks in `_DAT_8007B828` when the allocation
 /// **fails**.
 ///
@@ -498,6 +523,60 @@ pub const SCENE_CONTROL_BLOCK_ALLOC_FAIL_CODE: u32 = 0x1BC;
 /// `_DAT_8007B450` (the one the field VM's `0x49` opcode installs a tile board
 /// into - see `docs/subsystems/tile-board.md`).
 pub const SCENE_RESET_CLEARED_GLOBALS: [u32; 2] = [0x8007_B630, 0x8007_B450];
+
+/// What a script's target byte names, as `FUN_8003C83C` resolves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptTarget {
+    /// `0xF8`: the player object `_DAT_8007C364`.
+    Player,
+    /// `0xFB`: the node of the effect list `_DAT_8007C34C` at this position
+    /// from its head whose handler `+0x0C` is the world-map entity SM.
+    SystemNode(usize),
+    /// Any other id: the node of the context list `_DAT_8007C354` at this
+    /// position from its head whose script id `+0x50` equals it.
+    Context(usize),
+    /// No node matched: the routine returns a null.
+    None,
+}
+
+/// The handler `FUN_8003C83C` looks for under id `0xFB`: the field overlay's
+/// world-map entity SM `FUN_801DA51C`, the scene's system channel.
+pub const SYSTEM_CHANNEL_HANDLER: u32 = 0x801D_A51C;
+
+/// Resolve a script target id to the object it names (`FUN_8003C83C`, 45
+/// instructions, `see ghidra/scripts/funcs/8003c83c.txt`).
+///
+/// Three arms, tested in this order: `0xF8` is the player without a walk
+/// (`li v0,0xf8` / `bne a0,v0` at `0x8003C83C`), `0xFB` walks the effect list
+/// for the first node whose handler is [`SYSTEM_CHANNEL_HANDLER`]
+/// (`0x8003C860..0x8003C898`), and every other id walks the context list for
+/// the first node whose `+0x50` halfword equals it (`0x8003C8B0..0x8003C8E0`).
+/// The id is compared as a whole word against a zero-extended halfword, so
+/// one above `0xFFFF` matches nothing. Both walks start at the node the list
+/// head's first word names, and an empty list is a null.
+///
+/// `effect_handlers` and `context_ids` are the two lists in link order.
+///
+/// PORT: FUN_8003C83C
+///
+/// REPLACED-BY: the three stores the engine keeps apart - the player's actor slot, the world-map entity SM's seat and the field channel list - each read by the caller that already holds the store its id names (`legaia_engine_field::field_channels::resolve_target` answers the channel half and returns `None` for the two specials), so nothing walks one id through all three
+pub fn resolve_script_target(
+    id: u32,
+    effect_handlers: impl IntoIterator<Item = u32>,
+    context_ids: impl IntoIterator<Item = u16>,
+) -> ScriptTarget {
+    match id {
+        0xF8 => ScriptTarget::Player,
+        0xFB => effect_handlers
+            .into_iter()
+            .position(|h| h == SYSTEM_CHANNEL_HANDLER)
+            .map_or(ScriptTarget::None, ScriptTarget::SystemNode),
+        _ => context_ids
+            .into_iter()
+            .position(|c| u32::from(c) == id)
+            .map_or(ScriptTarget::None, ScriptTarget::Context),
+    }
+}
 
 /// The dialog-string **line separator** `FUN_8003CBA8` counts.
 pub const TEXT_LINE_BREAK: u8 = 0x7C;

@@ -665,6 +665,31 @@ impl PlayWindowApp {
             Some(s) => s,
             None if rec.begin_on_gate => {
                 if !self.capture_gate_met() {
+                    // `LEGAIA_DIAG_CAST_SEQ_PRE=1`: the acting seat's walk-in
+                    // up to the gate, one line a tick in the attack band (the
+                    // engine half of the probe's `pre.csv`).
+                    if std::env::var_os("LEGAIA_DIAG_CAST_SEQ_PRE").is_some()
+                        && (0x0C..=0x20).contains(&st)
+                        && let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor))
+                    {
+                        let p = a.battle_animation.as_ref();
+                        let t = w.actors.get(usize::from(a.battle.active_target));
+                        eprintln!(
+                            "cast sequence pre: {tick},{st},{acting},{},{},{},{},{},{},{},{},{},{},{},{}",
+                            a.battle.current_anim,
+                            a.battle.queued_anim,
+                            a.battle.flag_bits.0,
+                            p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                            a.move_state.world_x,
+                            a.move_state.world_z,
+                            a.battle.facing_angle,
+                            t.map_or(0, |t| t.move_state.world_x),
+                            t.map_or(0, |t| t.move_state.world_z),
+                            w.battle.camera.as_ref().map_or(-1, |c| c.action_yaw_base()),
+                            w.battle.frame_clock.step,
+                            a.battle.strike_index,
+                        );
+                    }
                     return;
                 }
                 eprintln!("cast sequence: the capture's gate at tick {tick} (seat {acting})");

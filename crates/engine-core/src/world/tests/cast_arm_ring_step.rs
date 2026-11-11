@@ -22,8 +22,17 @@ fn passes(w: &mut World, phase: u8, n: usize) -> Vec<u8> {
     w.casting.module_phase = phase;
     (0..n)
         .map(|_| {
+            // The pass opens on the step the last one left, then pushes its
+            // own frame's cost.
+            w.take_pending_frame_step();
+            let step = w.battle.frame_clock.step;
             w.apply_cast_arm_frame_step();
-            w.battle.frame_clock.step
+            // A second claim of the same frame (the frame tail's effect
+            // scene graphs) leaves the step for the next pass.
+            w.take_pending_frame_step();
+            assert_eq!(w.battle.frame_clock.step, step);
+            w.clock.display_frames += w.battle.frame_clock.span();
+            step
         })
         .collect()
 }
@@ -31,10 +40,8 @@ fn passes(w: &mut World, phase: u8, n: usize) -> Vec<u8> {
 #[test]
 fn a_cheap_arm_after_a_dear_one_runs_the_rings_step_until_it_empties() {
     let mut w = kiss_of_death_band();
-    assert!(
-        passes(&mut w, 4, 20).iter().all(|&s| s == 4),
-        "arm 4 reads the clamp"
-    );
+    let head = passes(&mut w, 4, 20);
+    assert!(head[1..].iter().all(|&s| s == 4), "arm 4 reads the clamp");
     let tail = passes(&mut w, 5, 24);
     // The first arm-5 pass runs on the step arm 4's last clamped frame left.
     assert_eq!(tail[0], 4);
@@ -42,10 +49,13 @@ fn a_cheap_arm_after_a_dear_one_runs_the_rings_step_until_it_empties() {
     assert!(tail[16..].iter().all(|&s| s == 2), "{tail:?}");
 }
 
+/// A dearer arm's first pass runs on the step the frames before it left and
+/// raises the step from its second: retail's frame-end pass stores the step
+/// the frame's cost reads for the next frame (`0x80017124..0x800171D8`). Nova's
+/// arm 3 on `party_basic_attack_vs_gobu_gobu` runs `1`, then `4`.
 #[test]
-fn a_dearer_arm_raises_the_step_on_its_first_pass() {
+fn a_dearer_arm_raises_the_step_from_its_second_pass() {
     let mut w = kiss_of_death_band();
     passes(&mut w, 5, 20);
-    assert_eq!(w.battle.frame_clock.step, 2);
-    assert_eq!(passes(&mut w, 4, 1), vec![4]);
+    assert_eq!(passes(&mut w, 4, 3), vec![2, 4, 4]);
 }

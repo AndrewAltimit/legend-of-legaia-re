@@ -127,6 +127,8 @@ stateDiagram-v2
 | `0x16` | ROUND card fade-out | card and backdrop drain `-dt*2` (`0x801D002C..0x801D0040`) | starts the fight (`FUN_801D1510`) |
 | `0x32` | Settle | contest settlement `FUN_801D0F60`; the one state that skips the re-pack tail | leaves the arena |
 
+**Arm `0x15` can step twice.** Once the card is at full level the arm adds its hold tick, stores `state + 1` when the hold passes `0x3C` (`0x801CFFB8..0x801CFFD4`), and then tests the pad and stores `state + 1` again (`0x801CFFDC..0x801D0000`). The second test reloads the state word, so a skip press on the one frame the hold runs out leaves it at `0x17`, an arm the jump table does not have: the hub then draws its backdrop and re-packs the cursor every frame and never starts the fight. The frame is a single game frame of each ROUND card. `FirstVisitHub::tick` takes it as one step to `0x16`; the differential `muscle_hub` runs the routine through that frame and reads `0x17` back.
+
 The hub stands on black. It runs in the mode-`0x19` overlay with the field swapped out and no 3D scene, and the arena loads only when arm `6` kicks the battle, so nothing but the hub's own wall and screens reaches the frame until the fight starts (`minigame_muscle_dome_retail_welcome`). Port: `HubTimers::first_visit_up`, which hides the arena surface and the walked-in field on both hosts.
 
 The fade rates, holds and draws per screen are in [Hub screens](#hub-screens). The committed dump `overlay_0977_slotA_801cf870.txt` stops at `0x801D0094` while the function runs to the `jr ra` at `0x801D00F0` (extent `0x801CF870..0x801D00F8`), so arm `0x0B`'s body, the HP restore and the shared draw tail are read from the image, not the dump.

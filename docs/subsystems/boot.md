@@ -1004,7 +1004,13 @@ Facts about the graph:
   `_DAT_8007B820`, up / down on `pad & 0x4000` / `0x1000`, confirm on `0x844`.
   The countdown decrement at `0x801DDCC8` and the two attract stores below it sit
   inside this handler's extent (`0x801DDB0C..0x801DDD94`), and no branch from
-  outside targets the block.
+  outside targets the block. Below `0x11` frames left the input block is
+  skipped, re-arm included, so a held button no longer holds the movie off; a
+  row-0 confirm leaves the tick at once and a row-1 confirm runs on through the
+  countdown. Every frame that does not leave through row 0 then runs the tick's
+  shared tail (`0x801DFFE8..0x801E007C`), which re-cues: L1 / Cross the confirm
+  `0x20`, then a cursor press with no face or shoulder button held the move
+  `0x21` - frozen or not.
 - **`0x15` is the card-check poll.** Counter to `0x259`, "Now checking" / "An
   error occurred" + retry.
 - **Two master-mode-`2` writers.** `LaunchGame` (`0x06`) writes it at
@@ -1237,26 +1243,45 @@ Two functions carry the screen:
 - **`FUN_801F03F0`** (state machine) - substate at `struct+0x54`, dispatched
   through a 5-entry jump table at `0x801CF71C`:
   - `0x801F0444` **init** - sets the active flag and advances to interactive.
-  - `0x801F0480` **interactive** - d-pad deltas `-0x11` (up) / `+0x11` (down) /
-    `+1` (right) / `-1` (left); after each move the cursor wraps modulo `0x77`
-    and skips non-selectable cells (the `|` separators) in the direction of
-    travel. Confirm on a glyph cell appends its character under two bounds:
+  - `0x801F0480` **interactive** - the arms are exclusive, in this order:
+    the cancel mask (takes the last glyph), the edge word equal to Start
+    (`0x800`: jumps to cell `0x74`, and on the Select button counts as a
+    confirm), the confirm mask, then the auto-repeat word's d-pad bits. The
+    deltas are `-0x11` (up) / `+0x11` (down) / `+1` (right) / `-1` (left). A
+    horizontal step wraps inside its own row; the walk repeats while it
+    stands on a `|` separator and, from the control row, while it stands on a
+    cell of the button it left, and a step left then slides to the first cell
+    of the button reached. A vertical step into the control row keeps its
+    column, so the way back up lands on the glyph it came from. Each arm
+    queues its cue (`0x20` accept, `0x21` move, `0x23` Select on an empty
+    name). Confirm on a glyph cell appends its character under two bounds:
     the name before it holds fewer than nine glyphs (`slti v0,s1,0x9` at
     `0x801F05F8`), and the name with it measures under `0x39` = 57 px
     (`FUN_80035F04`, `0x801F064C..0x801F0654`; a glyph that measures too wide
     is taken back). Confirm on a control cell runs its sentinel: `0x66`
     Backspace (truncate one glyph), `0x64` Default (copy the template name
     back from `0x801F2A6C + slot * 8` with `FUN_8003CA78`, `0x801F06F8`),
-    `0x65` End (gated on a non-empty name via a `blez` check → confirm).
+    `0x65` End (gated on the name's length via a `blez` check, so a name of
+    blanks passes → state `2`).
     A nine-glyph name fills the record's 9-byte field and the append stores
     its terminator at `+0x2B0`.
-  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** - the "Is this name
-    okay?" Yes / No prompt; Yes commits the name to record `+0x2A7` and exits,
-    No returns to interactive.
+  - `0x801F095C` / `0x801F09C0` / `0x801F097C` **confirm** - state `2` is one
+    call that seats the hand on No, sets the shape word `DAT_8007BB94` to `4`
+    and reads no pad; state `4` is the "Is this name okay?" Yes / No prompt.
+    Confirm is tested ahead of Up / Down, and there is no cancel arm. Yes
+    leaves the name in record `+0x2A7`, untrimmed, and exits; No (cue `0x37`)
+    returns to interactive.
+
+The editing prompt is the named character's own line (`0x801F3324 + char * 4`),
+drawn ahead of the arms, so the frame of the Select press still shows it. The
+renderer draws the caret only under shape `1`, while the name is shorter than
+nine bytes, and while the glyph under the hand (its table width plus one, or
+`0xC` on the control row) still fits the 57 px field.
 
 **Port.** The state machine is
 [`engine-menus::name_entry`](../../crates/engine-menus/src/name_entry.rs)
-(`NameEntry` + `NameEntryState` + `Control`), driven on the world by
+(`NameEntry` + `NameEntryState` + `Control`; `crates/retail-exec/tests/name_entry.rs`
+holds it and the renderer to retail call by call), driven on the world by
 `World::open_name_entry` / `step_name_entry` (committing into
 `World::party.party_names`) and rendered through
 [`legaia_engine_ui::menu::screens::name_entry`](../../crates/engine-ui/src/menu/screens/name_entry.rs).

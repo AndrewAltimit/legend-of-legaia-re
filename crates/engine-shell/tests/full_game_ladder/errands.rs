@@ -252,6 +252,7 @@ pub(super) fn pad_errand(
     graph: &DiscGraph,
     cur: &str,
     out: Option<&str>,
+    goal: Option<&str>,
     trail: &mut Vec<String>,
 ) -> Result<Option<String>, String> {
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
@@ -297,11 +298,41 @@ pub(super) fn pad_errand(
     // fights pay the rest.
     if errand_gold_short_after_sales(session)
         && scene_name(session) == cur
-        && let Some(s) = pad_train(session, graph, out)
+        && let Some(s) = pad_train(session, graph, out, goal)
             .map_err(|e| format!("in {cur}, training for gold: {e}"))?
     {
         trail.push(format!("{s}(training)"));
         return Ok(Some(s));
+    }
+    // And when they did not - the bag the training heals from ran down to
+    // its reserve, or the room the party stands in leads nowhere - the hand
+    // goes back to the last bed that worked and fights from there
+    // ([`pad_errand_from_rest`]), before it reaches the item's counter. That
+    // walk is the hand's own errand, as training is: only a wipe is the
+    // stretch's.
+    if errand_purse_short(session)
+        && errand_merchant_tiles(session).is_empty()
+        && scene_name(session) == cur
+        && walking(session)
+    {
+        match pad_errand_from_rest(session, graph, cur) {
+            Ok(Some(s)) => {
+                trail.push(format!("{s}(training from a rest)"));
+                return Ok(Some(s));
+            }
+            Ok(None) => {}
+            Err(e) if !e.contains("party wiped") && wiped(session).is_none() => {
+                if trace {
+                    eprintln!("    [errand] {cur}: the walk to a rest ended: {e}");
+                }
+                let here = scene_name(session);
+                if here != cur {
+                    trail.push(format!("{here}(training from a rest)"));
+                    return Ok(Some(here));
+                }
+            }
+            Err(e) => return Err(format!("in {cur}, training for gold from a rest: {e}")),
+        }
     }
     Ok(None)
 }

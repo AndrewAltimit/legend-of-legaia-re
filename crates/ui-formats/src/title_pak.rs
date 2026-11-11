@@ -346,6 +346,12 @@ pub const OVERLAY_SYSTEM_UI_LABEL_CLUT_ROW: u16 = 1;
 pub const OVERLAY_SYSTEM_UI_ICON_MONEY: (u32, u32, u32, u32) = (28, 128, 12, 12);
 pub const OVERLAY_SYSTEM_UI_LABEL_TIME: (u32, u32, u32, u32) = (40, 176, 24, 10);
 pub const OVERLAY_SYSTEM_UI_LABEL_COIN: (u32, u32, u32, u32) = (0, 150, 24, 10);
+/// The two "MAX" tags (UI-icon codes `0x64` / `0x65`, 20x10, same label CLUT
+/// row): the first in the HP label's colours, the second in the MP label's.
+/// The target panel's Life / Magic Water preview and the stat-compare
+/// panels' HP / MP rows draw one ahead of the HP or MP label.
+pub const OVERLAY_SYSTEM_UI_LABEL_MAX_HP: (u32, u32, u32, u32) = (0, 140, 20, 10);
+pub const OVERLAY_SYSTEM_UI_LABEL_MAX_MP: (u32, u32, u32, u32) = (20, 140, 20, 10);
 
 /// Status-page **AP gauge** pieces, decoded from CLUT row
 /// [`OVERLAY_SYSTEM_UI_GAUGE_CLUT_ROW`] of the same system-UI sheet.

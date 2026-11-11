@@ -1321,7 +1321,12 @@ fn the_leave_edge_gives_up_a_cast_only_where_retail_opens_the_gate() {
     assert_eq!(p.phase(), PondPhase::Idle, "the wind-up gives the cast up");
     assert_eq!(p.take_events(), vec![PondEvent::Recast]);
 
+    // A cast with the meter run up, so the lure comes down past `0x136`; a
+    // shorter one is an empty line on its landing frame.
     p.tick(press(true, false), 1, CAST_POWER_STEP);
+    for _ in 0..60 {
+        p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    }
     p.tick(press(true, false), 1, CAST_POWER_STEP);
     assert_eq!(p.phase(), PondPhase::Flight);
     p.tick(press(false, true), 1, CAST_POWER_STEP);

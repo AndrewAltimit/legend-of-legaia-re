@@ -188,12 +188,14 @@ impl LegaiaRuntime {
         }
     }
 
-    /// The game's dither word (`World::toggles.draw_dither`, field op `4C ED`),
-    /// which the page's PSX rasterisation gates its dither on.
+    /// Whether the GPU dithers this frame (`World::frame_dither`: the game's
+    /// dither word, field op `4C ED`, and in a battle the ground grid's draw
+    /// that carries it), which the page's PSX rasterisation gates its dither
+    /// on.
     pub fn play_draw_dither(&self) -> bool {
         self.scene_host
             .host()
-            .is_none_or(|h| h.world.toggles.draw_dither)
+            .is_none_or(|h| h.world.frame_dither())
     }
 
     /// This frame's retail GTE **NCLIP** winding-rejection mode for the

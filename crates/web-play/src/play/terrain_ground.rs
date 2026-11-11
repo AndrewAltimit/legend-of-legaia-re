@@ -80,10 +80,11 @@ impl LegaiaRuntime {
         let h = self.scene_host.host()?;
         legaia_engine_world_views::field_view_window::field_view_cells(
             &h.world,
-            legaia_engine_world_views::field_view_window::retail_framing(
+            legaia_engine_world_views::field_view_window::crop_framing(
                 &h.world,
                 self.scene_host.camera(),
-            ) && !debug_camera,
+                debug_camera,
+            ),
         )
     }
 
@@ -149,13 +150,14 @@ impl LegaiaRuntime {
     }
 
     /// Whether this frame's draws link per primitive
-    /// (`Renderer::set_field_prim_order`): the field frame and the world
-    /// map, whose landmarks and actors go through the same draw kernels.
+    /// (`Renderer::set_field_prim_order`): the field frame, the world map
+    /// and a battle, whose bodies, parts and backdrop all go through the
+    /// same per-prim leaves (`camera_frame::prim_link_order`, the native
+    /// window's gate).
     pub fn play_field_prim_order(&self) -> bool {
-        use legaia_engine_mode::mode::SceneMode;
         self.scene_host
             .host()
-            .is_some_and(|h| matches!(h.world.mode, SceneMode::Field | SceneMode::WorldMap))
+            .is_some_and(|h| legaia_engine_field::camera_frame::prim_link_order(h.world.mode))
     }
 
     /// Per-terrain-draw `DRAW_ORDER_*` word (`1` = farthest corner), parallel

@@ -86,6 +86,10 @@ pub struct AudioState {
     /// (Viguro's dispatch of `0x130` at `0x801F6C28`, then its arms 3..10;
     /// Palma's arms 4 and 5) and their Done bands at about `330`.
     pub battle_xa_frame_load: bool,
+    /// The battle frame the newest loading clip was started on
+    /// ([`Self::battle_xa_frame_load`]): its sectors reach the frame's cost
+    /// only after it ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
+    pub battle_xa_cue_frame: Option<u64>,
     /// The battle's runtime SFX descriptor bank - `bse.dat` (PROT 888), the
     /// rows behind ring ids `>= 0x200` while a battle is on screen
     /// (`docs/formats/bse-dat.md`). A fresh copy is installed at every battle
@@ -361,6 +365,7 @@ impl AudioState {
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
             battle_xa_frame_load: false,
+            battle_xa_cue_frame: None,
             battle_sfx_bank: None,
             field_xa_cues: Vec::new(),
             field_xa_prestage: Vec::new(),

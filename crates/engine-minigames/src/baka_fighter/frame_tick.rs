@@ -9,6 +9,8 @@ impl BakaFight {
     /// draw's calls). A fight without strike tables has no offsets and
     /// spawns nothing.
     pub(super) fn spawn_impact(&mut self, slot: usize, reset_keyframe: bool) {
+        // The routine opens by clearing the seat's `+0x38` (`0x801D4E34`).
+        self.f[slot].hits_taken = 0;
         let Some(st) = self.strike.as_ref() else {
             return;
         };

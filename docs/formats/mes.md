@@ -73,9 +73,26 @@ Reverse-engineered from the four SCUS interpreter functions ([`FUN_8003CA38`](#f
 | `0xC7 XX` | 2 | Substitute terrain / quest name from `DAT_80073F24 + XX*8`. |
 | `0xC8..0xCD XX` | 2 | 2-byte wide glyph (stride only). |
 | `0xCE XX` | 2 | Spacing op. The width-measure increments the glyph counter without emitting; the renderer uses `XX` as a horizontal offset. |
-| `0xCF XX` | 2 | Skip 2 bytes (passthrough - `XX` is rendered alone, not paired with the `0xCF` prefix). |
+| `0xCF XX` | 2 | **Colour.** Stages text ink `XX` (`_DAT_8007B454`, font CLUT `(96 + 16*XX, 510)`) for the glyphs after it and draws nothing - see [the speaker tag](#colour-pairs-and-the-speaker-tag). |
 | `0xD0..0xFE` | 1 | Single-byte glyph. |
 | `0xFF` | 1 | **Alias** - the substitution expander rewrites this to `0xCF`. |
+
+### Colour pairs and the speaker tag
+
+`FUN_80036888` reads a `0xCF` pair as an ink change: `lbu v1,0x1(s3)` /
+`addiu s3,s3,0x2` / `sw v1,-0x4bac(v0)` at `0x80036944..0x8003695C`, no glyph,
+no advance and no typewriter unit. The expander `FUN_80036514` copies the pair
+on the draw path (third argument `1`) and drops it on the measurer's. The field
+pager stages ink `7` once a frame before its row loop
+(`0x801D9654..0x801D965C`), so an ink a row leaves standing carries into the
+rows drawn after it.
+
+Dialogue names a speaking Ra-Seru with a pair either side of the name
+substitution: `CF 09 C7 00 CF 07` (Meta, orange), `CF 04 C7 01 CF 07` (Terra,
+green), `CF 05 C7 02 CF 07` (Ozma, teal). Ink `6` brackets art names
+(`CF 06 C5 XX`). Port: `OwnedDialogPanel` keeps each pair in its page, and the
+reading box draws every glyph in the ink standing at it
+(`legaia_font::Font::layout_padded_inked`, `engine-ui::dialog_reading_box`).
 
 The "is this a substitution opcode?" gate in `FUN_80036044` is the integer test `(byte + 0x40) < 8`, which catches `0xC0..0xC7`. Within that range the cases `0xC1..0xC5` and `0xC7` are explicit; `0xC0` and `0xC6` fall through to "no substitution" (still 2-byte stride).
 

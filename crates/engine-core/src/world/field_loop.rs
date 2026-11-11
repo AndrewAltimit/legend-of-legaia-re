@@ -158,8 +158,8 @@ impl World {
         // script bytes (`P1[3]`'s `52 89`, executed through
         // [`Self::run_boss_stager_record`]) immediately before its `3E FF`
         // battle-entry op reaches this path.
-        self.enter_battle_from_formation(&formation);
-        self.battle.active_formation = Some(formation);
+        let seated = self.enter_battle_from_formation(&formation);
+        self.battle.active_formation = Some(seated);
     }
 
     /// Seed the battle actor table from `formation` and enter
@@ -406,10 +406,81 @@ impl World {
         }
     }
 
-    pub(crate) fn enter_battle_from_formation(
+    /// The formation as battle init seats it: the species-order rebuild over
+    /// the first four seats (`FUN_80055B6C`, `0x80055C7C..0x80055D2C`,
+    /// [`legaia_engine_battle::battle_seats::rebuild_species_order`]). A
+    /// formation of two species draws one `rand()` and, on an odd draw, opens
+    /// with the other species in front; a single species draws nothing.
+    pub(crate) fn formation_in_species_order(
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
-    ) {
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        let mut cells = [0u16; 4];
+        for (c, s) in cells.iter_mut().zip(&formation.slots) {
+            *c = s.monster_id;
+        }
+        let before = cells;
+        let mut out = formation.clone();
+        if legaia_engine_battle::battle_seats::rebuild_species_order(&mut cells, || {
+            self.next_rand()
+        }) {
+            // A rebuilt cell takes the first authored seat of its species.
+            let seats: Vec<_> = cells
+                .iter()
+                .take_while(|&&id| id != 0)
+                .filter_map(|id| {
+                    let from = before.iter().position(|b| b == id)?;
+                    formation.slots.get(from).copied()
+                })
+                .collect();
+            let tail = formation.slots.iter().skip(4).copied();
+            out.slots = seats.into_iter().chain(tail).collect();
+        }
+        out
+    }
+
+    /// The formation in a capture's seat order
+    /// ([`legaia_engine_battle::encounter_state::EncounterState::seat_pin`]):
+    /// each pinned id takes the first authored seat of its species among the
+    /// four init cells, as the rebuild's own rewrite does. Draws nothing. A
+    /// pin that names a species the formation does not carry, or the authored
+    /// order itself, leaves the formation as authored.
+    pub(crate) fn formation_in_pinned_order(
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
+        ids: &[u16],
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        let head = &formation.slots[..formation.slots.len().min(4)];
+        if head.iter().map(|s| s.monster_id).eq(ids.iter().copied()) {
+            return formation.clone();
+        }
+        let seats: Option<Vec<_>> = ids
+            .iter()
+            .take(4)
+            .map(|id| head.iter().find(|s| s.monster_id == *id).copied())
+            .collect();
+        let mut out = formation.clone();
+        if let Some(seats) = seats.filter(|s| !s.is_empty()) {
+            let tail = formation.slots.iter().skip(4).copied();
+            out.slots = seats.into_iter().chain(tail).collect();
+        }
+        out
+    }
+
+    /// Enter the battle `formation` describes and return the formation as it
+    /// was seated: battle init may reorder its species
+    /// ([`Self::formation_in_species_order`]).
+    pub fn enter_battle_from_formation(
+        &mut self,
+        formation: &legaia_engine_battle::monster_catalog::FormationDef,
+    ) -> legaia_engine_battle::monster_catalog::FormationDef {
+        // A capture's seat order stands in for the roll, and its bodies'
+        // opening phases for the setup's draws (`EncounterState::seat_pin`).
+        let pin = self.encounters.seat_pin.take();
+        let seated = match &pin {
+            Some(ids) => Self::formation_in_pinned_order(formation, ids),
+            None => self.formation_in_species_order(formation),
+        };
+        let formation = &seated;
         // An expansion pack's monsters take their seats' catalog entries for
         // the fight (identity with no pack).
         self.expansion_prepare_battle(formation);
@@ -513,6 +584,22 @@ impl World {
         // Reuse the placement helper for actor spawn + seating, then overlay
         // per-slot stats.
         self.enter_battle(party_count, monster_count);
+        // Each seated body opens its first clip at a random phase: one
+        // `rand()` a party seat, then one a monster seat, in seat order
+        // (`0x80051544` / `0x800518D0`, `(rand() % frames) << 4` into the
+        // node cursor `+0x68`). The setup seats four monsters at most.
+        // A pinned entry's bodies stand where the capture's did.
+        let drawn_seats = if pin.is_some() {
+            0
+        } else {
+            usize::from(party_count) + usize::from(monster_count.min(4))
+        };
+        for slot in 0..drawn_seats {
+            let draw = self.next_rand();
+            if let Some(a) = self.actors.get_mut(slot) {
+                a.battle_idle_phase_draw = Some(draw);
+            }
+        }
         // The scripted-fight flag `ctx[+0x287]`, derived the way retail's
         // battle init does: `FUN_800513F0` stores `(DAT_8007BD60 >> 5) & 4`,
         // i.e. "the formation's `record[+0]` header byte is non-zero"
@@ -722,6 +809,7 @@ impl World {
         // (`World::begin_battle_round`).
         self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.begin_battle_round();
+        seated
     }
 
     /// Seat monster `monster_id`'s catalog stats on actor slot `mslot` for a
@@ -876,8 +964,19 @@ impl World {
     /// every direction of [`World::step_field_locomotion`] with nothing on
     /// screen to explain it. Never use it on an op-`0x3F` arrival: see
     /// [`World::seat_player_at_tile`] for why a door tile reads as a wall.
+    ///
+    /// The seat is a placement no door wrote, so it latches the region box
+    /// and re-plans the windowed object list at the new tile, as
+    /// [`World::debug_seat_player`] does: a seat that kept the entry's box
+    /// left the walk region, the visible-tile crop and the actor cull
+    /// planned for wherever the scene put the player first, which drew the
+    /// whole map around the seated player until something re-centred.
     pub fn seat_player_at_tile_rescued(&mut self, tile_x: u8, tile_z: u8) {
         self.seat_player_at_tile_inner(tile_x, tile_z, true);
+        if self.mode == SceneMode::Field {
+            self.refresh_field_regions();
+            self.recentre_field_window_on_player();
+        }
     }
 
     fn seat_player_at_tile_inner(&mut self, tile_x: u8, tile_z: u8, rescue: bool) {
@@ -1056,11 +1155,16 @@ impl World {
         let ch = &mut self.field_vm.channels[ci];
         let mask = 1u32 << bit;
         if ch.object_bind {
+            let before = ch.ctx.flags;
             if op == 0xB1 {
                 ch.ctx.flags |= mask;
             } else {
                 ch.ctx.flags &= !mask;
             }
+            // The object's prop carries the same word for the collision
+            // layer ([`Self::poke_object_prop_cflags`]).
+            let (key, after) = (ch.placement_index, ch.ctx.flags);
+            self.poke_object_prop_cflags(key, before, after);
         } else if op == 0xB1 {
             // The engine runs no placement channel on its own (the touch
             // and this engagement play its interactions), so a stale `0x100`
@@ -1327,7 +1431,19 @@ impl World {
     /// swap and clears sound-flag bit 2: it ends the entry latch
     /// ([`crate::world::AudioState::bgm_entry_latch`]).
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
+        // The system channel's tick is the entity tick `FUN_801DA51C`, once a
+        // game frame: it runs the script and then, at its tail, clears a
+        // `-1000` landed sentinel a kind-0 warp parked in `_DAT_8007B6B0`
+        // (`0x801DA7C4..0x801DA7D8`). So the pass after a landing reads the
+        // sentinel - `4C 2x` turns the player by the octants it moves under it
+        // - and the word is gone before the next.
+        let channel_tick = self.clock.script_slice_due()
+            || self.field_vm.system_install_pass
+            || self.audio.bgm_field_init_open;
         let last = self.run_field_frame_slice();
+        if channel_tick {
+            legaia_engine_field::field_warp_tile::clear_landed_sentinel(&mut self.locomotion.warp);
+        }
         self.field_vm.system_install_pass = false;
         self.audio.bgm_entry_latch = false;
         self.audio.bgm_field_init_open = false;

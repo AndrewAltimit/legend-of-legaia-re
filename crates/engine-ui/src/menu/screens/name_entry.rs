@@ -24,7 +24,7 @@ use crate::*;
 //   anchors -> `x = {16, 128, 224}, y = 189`;
 // - prompt "Select your name." at `(176, 32)` white; the confirm state
 //   replaces it with "Is this name okay?" at `(172, 24)` plus stacked teal
-//   "Yes" `(204, 38)` / "No" `(204, 50)` rows, hand at `x = 174` on the
+//   "Yes" `(204, 38)` / "No" `(204, 50)` rows, hand at `x = 172` on the
 //   selected row (opens on No).
 // ---------------------------------------------------------------------------
 
@@ -84,6 +84,15 @@ pub struct NameEntryView<'a> {
     /// wording reaches the screen; `None` (or a slot the image lacks) draws
     /// the port's English.
     pub prompts: Option<&'a legaia_ui_formats::name_entry_prompts::NameEntryPrompts>,
+    /// The character being named (the op's second byte). The editing prompt
+    /// is the table's slot for it (`0x801F3324 + char * 4`, `0x801F052C`):
+    /// "Select your name.", "Tell me my name." or the Biron monk's question.
+    pub char_index: usize,
+    /// The line above the grid this frame: `0` the editing prompt, `1`
+    /// none, `2` the confirm question with its choices and hand
+    /// (`engine-menus`' `NameEntryLine`). [`Self::confirming`] is the
+    /// renderer's shape word, which lags it by a frame on the way in.
+    pub line: u8,
 }
 
 /// Build the name-entry overlay's [`TextDraw`]s in **stage pixels** (320x240
@@ -112,7 +121,8 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
 
     // Prompt line(s). Confirming replaces the select prompt entirely
     // (retail draws the confirm text + Yes/No where the prompt line was).
-    if view.confirming {
+    if view.line == 1 {
+    } else if view.line == 2 {
         out.extend(text_draws_for(
             &font.layout_ascii(prompt(NamePrompt::Confirm, "Is this name okay?")),
             NAME_ENTRY_CONFIRM_PEN,
@@ -132,8 +142,13 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
             teal,
         ));
     } else {
+        let (slot, english) = match view.char_index {
+            1 => (NamePrompt::TellMe, "Tell me my name."),
+            2 => (NamePrompt::BironMonk, "Select your name."),
+            _ => (NamePrompt::Select, "Select your name."),
+        };
         out.extend(text_draws_for(
-            &font.layout_ascii(prompt(NamePrompt::Select, "Select your name.")),
+            &font.layout_ascii(prompt(slot, english)),
             NAME_ENTRY_PROMPT_PEN,
             white,
         ));
@@ -145,8 +160,12 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
         NAME_ENTRY_NAME_PEN,
         white,
     ));
-    if !view.confirming && view.caret_on {
-        let name_w = font.layout_ascii(view.name).advance_x as i32;
+    // The caret needs room for a tenth byte too (`slti v0,v0,0x9` on the
+    // name's length, `0x801E6E74`).
+    if !view.confirming && view.caret_on && view.name.len() < 9 {
+        // The measurer `FUN_80035F04` over the name: each byte's table
+        // width plus one, blanks included.
+        let name_w: i32 = view.name.bytes().map(|b| font.advance_of(b) as i32).sum();
         // Retail draws the `_` caret, ink 5 teal, at the name-field box's
         // left edge (`base + 0xAC`, 4 px left of the name pen) plus the
         // name's width plus 6 (`0x801E6EF8..0x801E6EFC`) - 2 px after the
@@ -158,7 +177,7 @@ pub fn name_entry_draws_for(font: &legaia_font::Font, view: &NameEntryView<'_>) 
                 .get(r)
                 .and_then(|row| row.as_bytes().get(c).copied())
         }) {
-            Some(ch) => font.layout_ascii(&(ch as char).to_string()).advance_x as i32 + 1,
+            Some(ch) => font.advance_of(ch) as i32,
             None => 0xC,
         };
         if name_w + room < 0x39 {
@@ -232,14 +251,18 @@ pub fn name_entry_chrome_sprite_draws_for(
 
     // Hand cursor. Grid cell: `(cell_x - 0x10, cell_y - 2)` with the cell at
     // `base + (col*15, 4 + row*14)`; control bar: the three label anchors at
-    // `x = base + {0, 112, 208} - 0x10, y = 189`; confirm: `x = 174` on the
+    // `x = base + {0, 112, 208} - 0x10, y = 189`; confirm: `x = 172` on the
     // selected Yes/No row.
-    let hand = if view.confirming {
+    let hand = if view.line == 2 {
         let row = if view.confirm_yes { 0 } else { 1 };
         Some((
-            NAME_ENTRY_YES_PEN.0 - 30,
+            // `FUN_8002B994(0, 1, 0xAC, choice * 0xC + 0x26)`, `0x801F0A40`.
+            NAME_ENTRY_YES_PEN.0 - 0x20,
             NAME_ENTRY_YES_PEN.1 + row * NAME_ENTRY_OPTION_PITCH,
         ))
+    } else if view.confirming {
+        // Shape `4` with no prompt up: the call that seats the confirm.
+        None
     } else if let Some((r, c)) = view.grid_cursor {
         Some((
             NAME_ENTRY_BASE.0 + c as i32 * NAME_ENTRY_COL_PITCH - 0x10,

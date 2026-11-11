@@ -76,17 +76,28 @@ impl SceneHost {
         );
         self.world.props.bank = bank;
         self.world.props.object_shifts.clear();
+        let bank = &self.world.props.bank;
         self.world.props.colliders = placements
             .iter()
             .map(|p| {
                 let anchor = (p.anchor_col, p.anchor_row);
                 let bind = binds.get(&anchor);
+                // The class bits the spawn pass actually set: a prop the bank
+                // holds ran its prologue against the live flags, so a door
+                // whose "already open" arm carries the `31 00` stands solid
+                // while its flag is clear (`rikuroa` P0[1], the barricade the
+                // player opens by walking into it).
                 let cflags = bind
                     .map(|b| {
-                        legaia_engine_scene::field_env::record_spawn_cflags(
-                            man_file,
-                            man_bytes,
-                            b.record as usize,
+                        bank.props.get(&anchor).map_or_else(
+                            || {
+                                legaia_engine_scene::field_env::record_spawn_cflags(
+                                    man_file,
+                                    man_bytes,
+                                    b.record as usize,
+                                )
+                            },
+                            |prop| prop.program.spawn_cflags,
                         )
                     })
                     .unwrap_or(0);

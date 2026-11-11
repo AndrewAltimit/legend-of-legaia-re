@@ -29,12 +29,14 @@ impl World {
             armed: cd != 0,
         };
         self.battle.escape_timer_hud = None;
-        // A zero duration marks a live HUD actor for teardown; otherwise a
-        // live one is kept (with its phase) and a missing one is spawned on
-        // the next tick (the spawner `0x801D596C` checks for the actor by
-        // handler before allocating).
-        if cd == 0 {
-            self.battle.escape_timer_actor = None;
+        // The op ends on the actor's install / remove `FUN_801D596C`: a zero
+        // duration retires a live HUD actor, a non-zero one spawns it when
+        // none is live, and a live one is otherwise kept with its phase.
+        use legaia_engine_field::escape_timer::{CountdownSpawn, countdown_actor_spawn};
+        match countdown_actor_spawn(cd as i32, self.battle.escape_timer_actor.is_some()) {
+            CountdownSpawn::Retire => self.battle.escape_timer_actor = None,
+            CountdownSpawn::Spawn(actor) => self.battle.escape_timer_actor = Some(actor),
+            CountdownSpawn::Leave => {}
         }
     }
 

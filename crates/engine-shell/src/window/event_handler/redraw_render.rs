@@ -149,8 +149,8 @@ impl PlayWindowApp {
             mut nclip_marks,
             color_clip_marks,
             mut color_nclip_marks,
-            order_marks,
-            color_order_marks,
+            mut order_marks,
+            mut color_order_marks,
         } = draw_cx.build_scene_draws();
         let OverlayDraws {
             hud,
@@ -242,6 +242,8 @@ impl PlayWindowApp {
             &mut nclip_marks,
             &mut color_draws,
             &mut color_nclip_marks,
+            &mut order_marks,
+            &mut color_order_marks,
         );
         // The floating value readout is a screen-space primitive run, not
         // a scene mesh: see `screen_prims` below, where both hosts build

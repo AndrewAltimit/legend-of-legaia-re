@@ -306,6 +306,11 @@ pub struct FieldBgmPlan {
 /// SPU voices start inside the region slot 10's bank was sent to, and every
 /// program change in the score names a program only `1056` defines.
 ///
+/// The one-shot gates more than the read: with `_DAT_8007B9B8` set the
+/// initialiser branches from `0x801D7198` straight past the BGM wait barrier
+/// (`0x801D72D4..0x801D7320`, the `FUN_800243F0` loop) as well, so a field
+/// entry after the credits track has been staged never waits on the resolver.
+///
 /// The engine's side is [`two_part_bgm_stream`], reached from
 /// `SceneHost::music_bank_entry_bytes` on every start of this id, so both
 /// play hosts stage the pair through their ordinary owned-VAB path. The slot

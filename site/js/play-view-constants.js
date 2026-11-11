@@ -17,6 +17,8 @@
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
   /* Battle 3D layer: 930000 backdrop, +1 ground grid, +2 the effect-pool
    * billboard batch, +3 the backdrop's spun slot (the horizon mist ribbon),
+   * +4 the FX batch's far-corner stream (the baked parts and nodes whose
+   * colour word links each primitive at its farthest corner),
    * +16+i actor meshes, +128+i an actor's shatter companion (the body
    * broken into its triangles, LegaiaFieldActors.shardMesh), +256+tmd the
    * 3D FX model cache
@@ -25,6 +27,7 @@
   const BATTLE_MESH_BASE = 930000;
   const BATTLE_FX_BILLBOARD_MESH = BATTLE_MESH_BASE + 2;
   const BATTLE_BACKDROP_SPUN_MESH = BATTLE_MESH_BASE + 3;
+  const BATTLE_FX_FAR_MESH = BATTLE_MESH_BASE + 4;
   const BATTLE_FX_MODEL_BASE = BATTLE_MESH_BASE + 256;
   /* Field-frame FX: a scene-pack stager part uploaded on demand (slot i of
    * the env pack that no placement drew), and script-spawned actor meshes
@@ -90,7 +93,7 @@
 
   window.LegaiaPlayShared = {
     A2R, PLAYER_MESH_ID, NPC_MESH_BASE, TILE_MESH_BASE, BATTLE_MESH_BASE,
-    BATTLE_FX_BILLBOARD_MESH, BATTLE_BACKDROP_SPUN_MESH,
+    BATTLE_FX_BILLBOARD_MESH, BATTLE_BACKDROP_SPUN_MESH, BATTLE_FX_FAR_MESH,
     BATTLE_FX_MODEL_BASE, FIELD_FX_PACK_MESH_BASE, DYN_ACTOR_MESH_BASE,
     IDENTITY_MODEL, VR_UNITS_PER_METER, VAHN_HEIGHT_M, VR_FP_EYE_HEIGHT_M,
     VR_FP_FALLBACK_MESH_HEIGHT, adoptPadBindings, padMaskOf, padTable,

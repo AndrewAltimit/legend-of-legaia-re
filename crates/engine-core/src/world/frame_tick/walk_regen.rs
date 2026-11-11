@@ -35,11 +35,17 @@ impl World {
     /// `0x0B` to `FUN_801F1E48` - the one-line wear-off notice. That edge
     /// raises [`Self::raise_incense_notice`].
     ///
+    /// The caller is the player tick `FUN_801D1344`, which runs it right
+    /// before the locomotion controller (`jal` at `0x801D16EC`) and only on a
+    /// frame that walks (`field_warp_tile::player_tick_walks`): the player
+    /// not held, no warp in flight, no pad hold. So a frame's bump pays for
+    /// steps earlier frames banked, and a bump owed when a script takes the
+    /// player waits for the script. [`Self::step_field_locomotion`] calls it
+    /// from that seat.
+    ///
     /// The same tick runs on the **overworld**: a kingdom map is a mode-3
-    /// field-run scene with the field overlay resident, and the frame driver
-    /// `FUN_801D1344` calls this routine (`jal` at `0x801D16EC`) right before
-    /// the locomotion controller. The WorldMap arm therefore calls it as
-    /// well ([`Self::tick_world_map`]).
+    /// field-run scene with the field overlay resident, so the overworld's
+    /// step calls it from the same seat.
     ///
     /// Member order is the present party: retail walks the member-id table
     /// at `0x80084598` for `DAT_80084594` entries ([`Self::present_party_list`]).

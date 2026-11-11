@@ -677,8 +677,8 @@ grant the whole item table through `FUN_800421D4`, play a track, toggle
 (the fourth disc-wide). It plays a track; cycling the cursor is
 `FUN_801E9F64`'s job. The arm (`0x801EACBC..0x801EAD20`) indexes the
 sound-test table at `0x801F2E94` by the cursor `_DAT_801F2E90`: a 10-byte
-stride whose first halfword is the **global BGM id** (`2000 + i` for
-sound-test track `i`; [`music-tracks.md`](../reference/music-tracks.md)) and
+stride whose first halfword is the **global BGM id** (`2000 + k`, extraction
+`988 + k`; [`music-tracks.md`](../reference/music-tracks.md)) and
 whose remaining eight bytes are the row's ASCII label. The table runs
 `2000..=2043` then `2045..=2071` - seventy-one rows for seventy-two ids, with
 `2044` carrying no row - so a cursor position and the id it plays differ above
@@ -703,7 +703,9 @@ calls it. The cheat arms' global pokes are not modelled.
 `legaia_engine_field::world_map_panel_host::PanelWindowHost` owns the
 `0x801F2B98` descriptor array and one window object per slot; `run_script`
 decodes a script through `run_panel_script` and applies every effect.
-`dev_menu_action` is hosted by the dev-menu screen's cancel leg.
+`dev_menu_action` is hosted by the dev-menu screen's confirm leg, as
+`FUN_801ECA08` runs it (phase 3, entered off the confirm button `cfg[+0x590]`);
+cancel (`cfg[+0x594]`) parks the list in phase 2 without it.
 
 ### The panel actor state machines
 

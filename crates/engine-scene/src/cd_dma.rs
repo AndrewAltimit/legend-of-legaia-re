@@ -126,33 +126,34 @@ impl std::ops::BitOr for LoadFlags {
 
 /// Outcome of [`CdDmaHost::read_wait_poll`].
 ///
-/// Mirrors the retail return convention of `FUN_8003DE7C`:
-/// - `0` -> `Ready` (read complete, consumer can use the buffer).
-/// - `1` -> `InProgress` (still streaming sectors).
-/// - `2` -> `Idle` (no read pending; gated by `_DAT_8007BA70 == 0`
-///   and `_DAT_8007B8C2 == 0`, i.e. only reachable on the dev arm).
+/// Mirrors the retail return convention of `FUN_8003DE7C` on the by-index
+/// branch (`_DAT_8007B8C2 != 0`):
+/// - `0` -> `Ready`: no read is open, or the per-frame poll just took an
+///   open read's completion.
+/// - `1` -> `InProgress`: the per-frame poll found the read still open.
+/// - `2` -> `Drained`: the blocking wait (`a0 == 0`) ran an open read to
+///   its completion.
 ///
-/// Engines treat `Ready` as the green light for consuming the
-/// destination buffer; `InProgress` is the wait-state; `Idle` is the
-/// "no read was ever issued" case (typically the boot path).
+/// Either completion closes the read and steps the cursor past it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadWaitOutcome {
-    /// Read complete - consumer can use the destination buffer.
+    /// No read open, or a polled read just completed - the consumer can use
+    /// the destination buffer.
     Ready,
     /// Read still streaming sectors. Caller should yield and re-poll
     /// next frame.
     InProgress,
-    /// No read pending.
-    Idle,
+    /// A blocking wait completed the open read.
+    Drained,
 }
 
 impl ReadWaitOutcome {
     /// Match the retail return: `0` = Ready, `1` = InProgress,
-    /// `2` = Idle (the `iVar2 == 2` branch in FUN_8003DE7C).
+    /// `2` = Drained (the `iVar2 == 2` exit of the blocking loop).
     pub fn from_retail(v: u32) -> Self {
         match v {
             0 => Self::Ready,
-            2 => Self::Idle,
+            2 => Self::Drained,
             _ => Self::InProgress,
         }
     }
@@ -161,7 +162,7 @@ impl ReadWaitOutcome {
         match self {
             Self::Ready => 0,
             Self::InProgress => 1,
-            Self::Idle => 2,
+            Self::Drained => 2,
         }
     }
 }

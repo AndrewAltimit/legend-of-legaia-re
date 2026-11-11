@@ -146,6 +146,8 @@ fn name_entry_opens_renders_commits_and_releases_the_field_vm() {
     );
 
     // No -> Yes -> commit.
+    // The call after the Select press reads no pad (retail's state 2).
+    rt.name_entry_input(0);
     rt.name_entry_input(UP);
     let committed = rt.name_entry_input(CROSS);
     assert!(committed, "confirming Yes commits the name");

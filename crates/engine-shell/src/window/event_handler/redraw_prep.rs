@@ -192,6 +192,9 @@ impl PlayWindowApp {
                     cam.align_menu_glide_pose(shown, left);
                 }
             }
+            if sc.seat_sideband_seek.is_some() {
+                self.session.host.world.casting.sideband_first_seek_seat = sc.seat_sideband_seek;
+            }
             // Ahead of the cast it forks: battle init clears the word.
             if let Some(n) = sc.seat_ai_counter
                 && self.session.host.world.casting.active_summon.is_none()
@@ -760,10 +763,11 @@ impl PlayWindowApp {
         // rectangle moves.
         let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
             &self.session.host.world,
-            legaia_engine_world_views::field_view_window::retail_framing(
+            legaia_engine_world_views::field_view_window::crop_framing(
                 &self.session.host.world,
                 &self.session.camera,
-            ) && !self.field_debug_camera,
+                self.field_debug_camera,
+            ),
         );
         self.sync_ground_wave();
         self.sync_ground_crop(view_cells.as_ref());

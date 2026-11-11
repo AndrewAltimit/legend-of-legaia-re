@@ -252,6 +252,15 @@ impl World {
                 .flag_bits
                 .set(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE);
         }
+        // A kernel that accumulated into `+0x10` wrote the bar's travel: the
+        // readout drains from the HP the hit found (`BattleActor::arm_hp_bar`
+        // seats the port's display word there; retail's `+0x172` always
+        // stands). Unarmed, the readout jumped to the new HP on the hit's
+        // tick, as PROT 0944's Guilty Cross did where retail's counts down
+        // through the cross.
+        if st.hp_bar_delta != a.battle.hp_bar_pending {
+            a.battle.arm_hp_bar();
+        }
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
         a.battle.field_flags = st.flags & !tracked;
@@ -278,6 +287,15 @@ impl World {
             && slot == self.battle_ctx.active_actor
             && st.restage & 1 != 0
             && reaction.is_none();
+        // A non-acting seat staged to idle with the bump is cut there: retail
+        // plays a reaction on the seat's one clip channel, which the bump
+        // commits over at once (PROT 0959's arm `0x11` on a victim held in
+        // its knockdown, `0x801F81A8..0x801F81B4`), where the engine's
+        // reaction channel would play on. A downed seat keeps its pose.
+        let cut_to_idle = !creature
+            && slot != self.battle_ctx.active_actor
+            && st.restage & 1 != 0
+            && st.staged_anim == 0;
         a.battle.active_target = st.target_code;
         a.battle.render_flag = st.render_flag;
         a.battle.render_color = st.present_04;
@@ -329,6 +347,9 @@ impl World {
         }
         if commit_now {
             self.commit_staged_battle_anim_at_boundary(slot as usize);
+        }
+        if cut_to_idle {
+            self.cut_battle_reaction_to_idle(slot as usize);
         }
     }
 

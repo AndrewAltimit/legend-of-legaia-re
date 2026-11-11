@@ -100,8 +100,10 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             xp_to_next,
             hp: hms.hp_cur,
             hp_max: hms.hp_max,
+            hp_base: growth.hp_max,
             mp: hms.mp_cur,
             mp_max: hms.mp_max,
+            mp_base: growth.mp_max,
             // The status page's AP gauge reads the persistent char-record
             // AP at `+0x10E` (`hp_mp_sp().sp_cur` under the (max, cur) pair
             // order - 0 on a fresh party; the new-game seed zeroes it), NOT

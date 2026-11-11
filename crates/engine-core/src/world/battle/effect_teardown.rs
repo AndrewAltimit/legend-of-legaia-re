@@ -131,6 +131,7 @@ impl World {
         self.casting.effect_pool = data_pool;
         self.battle.clip_ribbon = None;
         self.battle.cast_ribbons = None;
+        self.battle.cast_ribbon_seeds = None;
         self.battle.flight_ribbons = None;
         self.battle.effect_spawns.clear();
     }

@@ -297,33 +297,57 @@ impl World {
         // 7 to the 2D pool `FUN_801DFDF0` at the slot's heading, the rest to
         // the `0x801F6324` prototype scene with its CLUT stage
         // (`0x801E1178..0x801E1238`).
+        // From the draw, what a list spawns is a node linked behind the
+        // pass's tick walk: the fade actor and the effect children first
+        // tick, and first show, on the next pass
+        // (`World::release_draw_spawns`).
+        let from_draw = self.battle.in_draw_cast_tick;
         for s in spawns {
             // The landing list's `0x64` is a screen flash, not a spawn
             // (`FUN_80024E80(0x801C9070, 2)` at `0x801E1530`); retail's fade
             // actors run side by side, so it takes a seat of its own.
             if s.flash {
-                let (mut t, id) =
-                    legaia_engine_effects::action_effect_script::homing_flash_template();
-                t.mode[2] = id;
-                self.presentation
-                    .module_fades
-                    .push(legaia_engine_system::fade::FadeState::load(&t));
+                if from_draw {
+                    self.battle.draw_flashes = self.battle.draw_flashes.saturating_add(1);
+                } else {
+                    self.push_homing_flash();
+                }
                 continue;
             }
-            self.battle.effect_spawns.push(
-                legaia_engine_battle::battle_events::BattleEffectSpawn {
-                    actor_slot: caster,
-                    effect: s.effect
-                        & !legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT,
-                    direct: s.effect
-                        & legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT
-                        != 0,
-                    at: (s.at[0], s.at[1], s.at[2]),
-                    facing: s.heading,
-                    homing_slot: Some(s.slot),
-                },
-            );
+            let list = if from_draw {
+                &mut self.battle.draw_spawns
+            } else {
+                &mut self.battle.effect_spawns
+            };
+            list.push(legaia_engine_battle::battle_events::BattleEffectSpawn {
+                actor_slot: caster,
+                effect: s.effect & !legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT,
+                direct: s.effect & legaia_engine_effects::action_effect_script::EFFECT_DIRECT_BIT
+                    != 0,
+                at: (s.at[0], s.at[1], s.at[2]),
+                facing: s.heading,
+                homing_slot: Some(s.slot),
+            });
         }
+    }
+
+    /// The landing flash's fade actor.
+    fn push_homing_flash(&mut self) {
+        let (mut t, id) = legaia_engine_effects::action_effect_script::homing_flash_template();
+        t.mode[2] = id;
+        self.presentation
+            .module_fades
+            .push(legaia_engine_system::fade::FadeState::load(&t));
+    }
+
+    /// Hand on what the last pass's draw spawned (`BattleState::draw_spawns`):
+    /// the head of the pass that first ticks those nodes.
+    pub(in crate::world) fn release_draw_spawns(&mut self) {
+        for _ in 0..std::mem::take(&mut self.battle.draw_flashes) {
+            self.push_homing_flash();
+        }
+        let spawns = std::mem::take(&mut self.battle.draw_spawns);
+        self.battle.effect_spawns.extend(spawns);
     }
 }
 
@@ -414,6 +438,47 @@ mod tests {
                 (0x29, false, (5, -6, 7), Some(1)),
             ]
         );
+    }
+
+    /// A fade actor or an effect child the cast tick links from the draw
+    /// first ticks on the next pass: the draw's cast tick holds its spawns,
+    /// and the next pass's head hands them on.
+    #[test]
+    fn the_draws_cast_tick_holds_its_spawns_for_the_next_pass() {
+        let landing = |from_draw: bool| {
+            let mut world = world_with_a_landing_flight(0x49);
+            let cat = world.tables.move_power.as_ref().expect("catalog");
+            let mut raw = cat.record_at_index(1).expect("record").raw;
+            raw[0x16] = 0x64;
+            raw[0x17] = 0x2A;
+            let mut buf =
+                vec![0u8; MOVE_POWER_TABLE_FILE_OFFSET + 44 * MOVE_POWER_RECORD_STRIDE + 64];
+            buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+            let rec = MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE;
+            buf[rec..rec + raw.len()].copy_from_slice(&raw);
+            world.tables.move_power = Some(
+                legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&buf)
+                    .expect("synthetic catalog parses"),
+            );
+            world.battle.in_draw_cast_tick = from_draw;
+            world.casting.homing.emits = true;
+            for _ in 0..8 {
+                world.tick_homing_slots();
+            }
+            world
+        };
+        let direct = landing(false);
+        let fades = direct.presentation.module_fades.len();
+        let spawns = direct.battle.effect_spawns.len();
+        assert!(fades > 0 && spawns > 0, "{fades} {spawns}");
+
+        let mut held = landing(true);
+        assert!(held.presentation.module_fades.is_empty());
+        assert!(held.battle.effect_spawns.is_empty());
+        held.release_draw_spawns();
+        assert_eq!(held.presentation.module_fades.len(), fades);
+        assert_eq!(held.battle.effect_spawns.len(), spawns);
+        assert!(held.battle.draw_spawns.is_empty());
     }
 
     #[test]

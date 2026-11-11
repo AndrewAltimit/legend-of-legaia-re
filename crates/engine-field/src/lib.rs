@@ -33,6 +33,7 @@ pub mod clut_cell_fx;
 pub mod clut_fade_actor;
 pub mod clut_fx;
 pub mod code_lock_actor;
+pub mod contact_candidates;
 pub mod cutscene_narration;
 pub mod cutscene_timeline;
 pub mod dance_marker;

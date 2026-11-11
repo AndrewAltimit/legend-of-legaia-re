@@ -628,6 +628,57 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
 }
 
+/// [`confirm_pad`] until the naming prompt is up, then Right held for most
+/// of every 120 ticks: the grid's hand steps once on the press and then on
+/// the window kernel's auto-repeat (`0x14` vsyncs, then every three).
+fn naming_hold_pad(t: u32, f: &HostTraceFrame) -> u16 {
+    if f.naming.is_none() {
+        return confirm_pad(t, f);
+    }
+    if (10..90).contains(&(t % 120)) {
+        RIGHT
+    } else {
+        0
+    }
+}
+
+/// The prompt's state changed far more often than the holds were pressed,
+/// which only the auto-repeat does.
+fn naming_hand_auto_repeated(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let mut states: Vec<u64> = tr.iter().filter_map(|f| f.naming).collect();
+    let frames = states.len();
+    states.dedup();
+    let holds = frames / 120 + 1;
+    if states.len() > holds * 4 {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} naming states over {frames} frames ({holds} holds): no auto-repeat",
+            states.len()
+        ))
+    }
+}
+
+/// A direction held on the naming grid repeats on the vsync clock, so a
+/// 30 Hz and a 120 Hz display step the hand as far as a 60 Hz one, and the
+/// page as far as the window.
+#[test]
+fn naming_grid_auto_repeat_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "opdeene",
+        pad: naming_hold_pad,
+        ticks: 2400,
+        exercised: naming_hand_auto_repeated,
+        arm_shop: None,
+        hotkeys: &[],
+        battle_pad: None,
+        warps: &[],
+        coins: 0,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
 #[test]
 fn village_dialogue_frames_match_across_hosts() {
     let sc = Scenario {
@@ -677,6 +728,97 @@ fn shop_frames_match_across_hosts() {
         ticks: 480,
         exercised: opened_the_shop,
         arm_shop: Some((30, 0)),
+        hotkeys: &[],
+        battle_pad: None,
+        warps: &[],
+        coins: 0,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// Buy, then Down held on the stock list: one step on the press, then the
+/// window kernel's auto-repeat.
+fn shop_hold_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    let hold = if (130..250).contains(&t) { DOWN } else { 0 };
+    tap(t, 70, CROSS) | hold | tap(t, 290, CIRCLE) | tap(t, 330, CIRCLE)
+}
+
+/// The list's hand moved more often than the one press steps it.
+fn shop_hand_auto_repeated(tr: &[HostTraceFrame]) -> Result<(), String> {
+    opened_the_shop(tr)?;
+    let mut cursors: Vec<u8> = tr
+        .iter()
+        .filter_map(|f| f.overlay.as_ref())
+        .filter(|o| o.open)
+        .map(|o| o.cursor)
+        .collect();
+    cursors.dedup();
+    if cursors.len() > 5 {
+        Ok(())
+    } else {
+        Err(format!(
+            "the shop's hand stood on {cursors:?}: no auto-repeat"
+        ))
+    }
+}
+
+/// A shop owns its ticks, so no field `set_pad` pumps the pad under it: the
+/// tick claim does, and a held direction repeats on both hosts.
+#[test]
+fn shop_list_auto_repeat_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "bylon",
+        pad: shop_hold_pad,
+        ticks: 380,
+        exercised: shop_hand_auto_repeated,
+        arm_shop: Some((30, 0)),
+        hotkeys: &[],
+        battle_pad: None,
+        warps: &[],
+        coins: 0,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// Open the pause menu and hold Down on its root list.
+fn menu_hold_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    let hold = if (130..250).contains(&t) { DOWN } else { 0 };
+    tap(t, 50, START) | hold | tap(t, 290, CIRCLE)
+}
+
+/// The menu cued far more cursor steps than the one press makes: each step
+/// is a command on the audio record.
+fn menu_hand_auto_repeated(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let cues: Vec<u64> = tr
+        .iter()
+        .filter(|f| f.menu.0)
+        .filter_map(|f| f.audio.map(|a| a.0))
+        .collect();
+    let (Some(first), Some(last)) = (cues.first(), cues.last()) else {
+        return Err("the pause menu never opened".into());
+    };
+    if last - first > 8 {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} cues under the pause menu: no auto-repeat",
+            last - first
+        ))
+    }
+}
+
+/// The pause menu is a host-held screen: its lists take the auto-repeat
+/// through `BootSession::pause_menu_edge` on both hosts.
+#[test]
+fn pause_menu_auto_repeat_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: menu_hold_pad,
+        ticks: 340,
+        exercised: menu_hand_auto_repeated,
+        arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
         warps: &[],

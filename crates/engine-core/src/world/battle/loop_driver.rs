@@ -595,17 +595,29 @@ impl World {
         // the action that raised it (`legaia_engine_battle::battle_steal`).
         self.tick_steal_caption();
 
-        // Rebuild the cast-census bytes the magic band's exit states read.
-        // Retail's cast tick (`FUN_801E09F8`) does this from zero every frame
-        // before it drives any effect child, so the gates are measurements
-        // rather than latches.
-        // REF: FUN_801E09F8
-        self.tick_battle_cast_census();
-        // On retail's cadence the same tick then drives the effect children
-        // on the pass (`World::tick_battle_cast_drive`).
+        // The cast tick (`FUN_801E09F8`): the census the magic band's exit
+        // states read, rebuilt from zero every frame so the gates are
+        // measurements rather than latches, then the effect-child drive. Its
+        // one caller is the battle draw tick `FUN_800480D8` (`jal
+        // 0x801E09F8` at `0x80048130`, in the preamble the frame's first
+        // drawn body runs), and the master frame driver `FUN_80016444` runs
+        // every list's tick pass (`FUN_8002519C`) ahead of its draw passes
+        // (`FUN_8001D140`). So on retail's cadence the cast tick follows the
+        // pass's anim walk (`World::tick_battle_anim_pass`): a projectile
+        // that lands this pass stages its victim's reaction after that
+        // seat's node tick, and the SM reads this pass's census on the next.
+        // A battle with no draw behind it measures the census here once.
+        // REF: FUN_801E09F8, FUN_800480D8, FUN_80016444, FUN_8002519C, FUN_8001D140
         if self.toggles.battle_sm_frame_cadence {
-            let n = self.battle.anim_pass_vsyncs;
-            self.tick_battle_cast_drive(n);
+            self.battle.cast_tick_due = self.battle.anim_pass_vsyncs > 0;
+            if self.battle.cast_tick_due {
+                self.release_draw_spawns();
+            }
+            if !self.battle.cast_census_drawn {
+                self.tick_battle_cast_census();
+            }
+        } else {
+            self.tick_battle_cast_census();
         }
 
         // Pre-step snapshot of the attack chain's cursor. The chain consumes
@@ -954,10 +966,14 @@ impl World {
             self.casting.sideband_read_left = None;
             return;
         }
+        let base = self.battle_ctx.summon_frame_idx;
+        let seat = self.casting.sideband_first_seek_seat;
         let left = self.casting.sideband_read_left.get_or_insert_with(|| {
-            legaia_engine_battle_vm::battle_action::sideband_token_vsyncs(
-                self.battle_ctx.summon_frame_idx,
-            )
+            use legaia_engine_battle_vm::battle_action as ba;
+            match seat {
+                Some(seek) => ba::sideband_token_vsyncs_on(base, seek),
+                None => ba::sideband_token_vsyncs(base),
+            }
         });
         *left = left.saturating_sub(1);
         if *left == 0 {
@@ -975,6 +991,7 @@ impl World {
     ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
         self.audio.battle_xa_frame_load = true;
+        self.audio.battle_xa_cue_frame = Some(self.battle_frame_id());
         self.audio.battle_xa_cues.push(cue);
     }
 

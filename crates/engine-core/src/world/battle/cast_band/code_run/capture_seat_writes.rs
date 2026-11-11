@@ -108,6 +108,7 @@ impl World {
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
         let v = self.cast_view(victim_slot);
         st.victim_on_gate_clip = v.playing_anim == v.reaction_gate;
+        st.victim_on_knockdown_clip = v.playing_anim == v.knockdown_anim;
         st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
@@ -150,6 +151,23 @@ impl World {
         }
     }
 
+    /// A module's store into a monster caster's body radius alone
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_radius`]);
+    /// `None` puts it back on the seat's size class
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_radius_restore`]).
+    pub(in crate::world::battle::cast_band) fn store_caster_radius(
+        &mut self,
+        caster: u8,
+        radius: Option<i16>,
+    ) {
+        if caster < self.party.party_count {
+            return;
+        }
+        if let Some(a) = self.actors.get_mut(usize::from(caster)) {
+            a.battle.render_radius = radius;
+        }
+    }
+
     /// A module's stores into the loop-window bytes `+0x84..+0x86` of a
     /// monster caster's action entry `clip`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_window`]).
@@ -177,6 +195,42 @@ impl World {
         }
     }
 
+    /// A module's store into the root speed `+0x0C` of a monster caster's
+    /// action entry `clip`
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_speed`]).
+    /// Retail edits the archive's entry, and the root-motion term reads the
+    /// committed entry every tick (`lh v0,0xc(s3)` at `0x80047D34`), so a
+    /// clip already playing changes speed at once: the playing player takes
+    /// the value beside the bank.
+    pub(in crate::world::battle::cast_band) fn write_clip_root_speed(
+        &mut self,
+        caster: u8,
+        clip: u8,
+        speed: i16,
+    ) {
+        use legaia_actor_formats::monster_archive::ENTRY_ROOT_SPEED_OFFSET as AT;
+        if caster < self.party.party_count {
+            return;
+        }
+        let Some(a) = self.actors.get_mut(usize::from(caster)) else {
+            return;
+        };
+        if let Some(entry) = a
+            .battle_action_clips
+            .as_mut()
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(usize::from(clip)))
+            .and_then(Option::as_mut)
+            && let Some(bytes) = entry.effect_script.get_mut(AT..AT + 2)
+        {
+            bytes.copy_from_slice(&speed.to_le_bytes());
+        }
+        if a.battle.current_anim == clip
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.set_root_speed(speed);
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass
@@ -189,6 +243,12 @@ impl World {
     ) {
         if w.is_empty() {
             return;
+        }
+        // Retail plays a reaction on the seat's one clip channel, so an idle
+        // staged with the bump cuts it as it cuts any other clip (PROT
+        // 0958's arm 25 on a victim still in its get-up).
+        if w.stage == Some(0) && w.restage {
+            self.cut_battle_reaction_to_idle(usize::from(slot));
         }
         let Some(a) = self.actors.get_mut(usize::from(slot)) else {
             return;
@@ -228,6 +288,12 @@ impl World {
         if let Some(r) = w.rate {
             a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
         }
+        if let Some(floor) = w.seek_floor
+            && let Some(p) = a.battle_animation.as_mut()
+            && p.cursor_sixteenths() < floor
+        {
+            p.seek_sixteenths(floor);
+        }
         if w.cursor_reset
             && let Some(p) = a.battle_animation.as_mut()
         {
@@ -237,6 +303,11 @@ impl World {
             && let Some(p) = a.battle_animation.as_mut()
         {
             p.seek_sixteenths(at);
+        }
+        if w.ghost_ring_clear {
+            for f in a.battle_pose_history.iter_mut() {
+                f.ghost_eligible = false;
+            }
         }
         if w.loop_release {
             a.battle.hit_count_bound = 0;
@@ -264,6 +335,13 @@ impl World {
             {
                 self.commit_staged_battle_anim_at_boundary(i);
             }
+        }
+        // The seat's own `+0x1F1` staged with the bump: its knockdown cuts
+        // in at once, as the damage primitive's does.
+        if w.stage_knockdown
+            && let Some(map) = self.battle_reaction_map(usize::from(slot))
+        {
+            self.commit_battle_reaction_entry(usize::from(slot), map[2]);
         }
     }
 

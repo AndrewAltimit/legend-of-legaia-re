@@ -826,6 +826,7 @@ fn capture_bodies_that_finish_on_the_0x780_yaw_counter() {
     assert_eq!(capture_exit_yaw_base(966, SINGLE_BODY), Some(0x780));
     assert_eq!(capture_exit_yaw_base(962, ULTRA_CHARGE_BODY), None);
     assert_eq!(capture_exit_yaw_base(959, 0x801F_69F0), Some(0));
+    assert_eq!(capture_exit_yaw_base(958, BLAZING_SLASH_BODY), Some(0));
     assert_eq!(capture_exit_yaw_base(960, 0x801F_69D8), Some(0));
     assert_eq!(capture_exit_yaw_base(960, 0x801F_74E4), Some(0));
 }
@@ -1598,4 +1599,52 @@ fn a_gate_opening_mid_pass_drains_the_rest_of_the_pass() {
     let mut cd = ModuleCountdown(1536, 3);
     cd.pass_drain(MODULE_DRAIN_PER_TICK);
     assert_eq!(cd.0, 1536 - 4 * MODULE_DRAIN_PER_TICK);
+}
+
+/// Mystic Circle stores the caster's rate `+0x21D = 4` beside the clip arm 1
+/// stages as it passes (`0x801F6CD8`) and on every pass of arm 2
+/// (`0x801F6D9C`); arm 1's held passes and arm 3 store none.
+#[test]
+fn mystic_circle_halves_the_casters_clip_through_the_rise() {
+    let mut st = ModuleCamState::default();
+    mystic_circle_camera(&mut st, 0, seats());
+    let mut held = 0;
+    let pass = loop {
+        let a = mystic_circle_camera(&mut st, 1, seats());
+        if !a.hold {
+            break a;
+        }
+        assert_eq!(a.caster_write.rate, None);
+        held += 1;
+    };
+    assert_eq!(held, 0x800 / 8 - 1);
+    assert_eq!(pass.caster_write.rate, Some(4));
+    let a = mystic_circle_camera(&mut st, 2, seats());
+    assert!(a.hold);
+    assert_eq!(a.caster_write.rate, Some(4));
+    st.countdown.0 = 0;
+    mystic_circle_camera(&mut st, 2, seats());
+    assert_eq!(
+        mystic_circle_camera(&mut st, 3, seats()).caster_write.rate,
+        None
+    );
+}
+
+/// Guilty Cross's arm 3 drops the parked cross once its word reaches
+/// `scalar << 4` and stands it at `-0x200` as it passes (`0x801F701C..0x801F7074`).
+#[test]
+fn guilty_cross_drops_its_cross_through_arm_3s_last_frames() {
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = SPEED_SCALAR << 8;
+    let early = guilty_cross_camera(&mut st, 3, seats());
+    assert!(early.hold);
+    assert_eq!(early.part_write, None);
+    st.countdown.0 = (SPEED_SCALAR << 4) + MODULE_DRAIN_PER_TICK;
+    let falling = guilty_cross_camera(&mut st, 3, seats()).part_write.unwrap();
+    assert_eq!((falling.dy, falling.y), (0x100, None));
+    st.countdown.0 = MODULE_DRAIN_PER_TICK;
+    let pass = guilty_cross_camera(&mut st, 3, seats());
+    assert!(!pass.hold);
+    assert_eq!(pass.part_write.unwrap().y, Some(-0x200));
+    assert_eq!(pass.part_write.unwrap().records, &[0x801F_81E8]);
 }

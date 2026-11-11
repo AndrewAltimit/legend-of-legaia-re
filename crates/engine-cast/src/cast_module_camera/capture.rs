@@ -59,6 +59,17 @@ pub struct CaptureCamArm {
     /// radius (`+0x58` behind `+0x22C`), the words the range poll and the
     /// separation pass read.
     pub caster_reach: Option<(u8, i16)>,
+    /// The arm's pass stores the caster's body radius alone (`+0x58` behind
+    /// `+0x22C`), the size class left as it stands: PROT 0958's arm 8 zeroes
+    /// it ahead of the caster's runs through its victim (`0x801F76A8`).
+    pub caster_radius: Option<i16>,
+    /// The cue the arm's pass hands the dispatcher (`FUN_8004FCC8(id)`), for
+    /// a call the module makes on its own and no hit or clip sounds: PROT
+    /// 0958's arm 21 (`0x56` at `0x801F87BC`).
+    pub cue: Option<u16>,
+    /// The arm's pass puts the caster's body radius back on its size class
+    /// (`record[+0x1F] << 5`): PROT 0958's `0xFF` arm (`0x801F8CCC..0x801F8CE4`).
+    pub caster_radius_restore: bool,
     /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
     /// record stands as seat 7, on the caster.
     pub seats_creature: bool,
@@ -112,6 +123,11 @@ pub struct CaptureCamArm {
     /// which the clip commit seeds the loop counter `+0x21B` / budget `+0x176`
     /// from. Made ahead of the arm's caster stage.
     pub caster_clip_window: Option<(u8, [u8; 3])>,
+    /// `(clip, speed)`: the arm's store into the root speed `+0x0C` of the
+    /// same action entry, which every later root-motion term of the clip
+    /// reads (PROT 0960's arm 5 zeroes Lu's `0x0D` so her charge stops
+    /// where the arm leaves her).
+    pub caster_clip_speed: Option<(u8, i16)>,
     /// The arm drifts ahead of its gate and shoots after it, so a pass's
     /// cut lands on its own endpoint (the drift is spent before the cut).
     pub drift_first: bool,
@@ -274,6 +290,18 @@ pub struct CaptureSeatWrite {
     pub cursor_reset: bool,
     /// A store into the seat's node cursor `+0x68` (12.4).
     pub seek: Option<u16>,
+    /// The seat's node cursor `+0x68` raised to this where it reads under
+    /// it (`slti; beq; sh`): PROT 0958's arms 10, 13 and 16 on the victim.
+    pub seek_floor: Option<u16>,
+    /// The seat's own knockdown slot `+0x1F1` staged onto `+0x1DA` with the
+    /// `+0x1DC` bump (`lbu a0,0x1f1; sb a0,0x1da`): the reaction a body
+    /// stages itself beside its damage call (PROT 0958's arms 6, 9, 12, 15).
+    pub stage_knockdown: bool,
+    /// The seat's committed-clip ring `+0x1FB..+0x21A` zeroed: the
+    /// after-image walk `FUN_80049348` gates each ghost on its slot's id, so
+    /// the trail the playing clip left goes with the store (PROT 0958's
+    /// arm 7 on the caster).
+    pub ghost_ring_clear: bool,
 }
 
 impl CaptureSeatWrite {
@@ -313,6 +341,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (938, super::CHAOS_BREATH_BODY) => Some(super::chaos_breath_camera),
         (946, SINGLE_BODY) => Some(wave_camera),
         (966, SINGLE_BODY) => Some(super::evil_seru_magic_camera),
+        (958, super::BLAZING_SLASH_BODY) => Some(super::blazing_slash_camera),
         (959, super::MEGATON_PRESS_BODY) => Some(super::megaton_press_camera),
         (960, super::PLASMA_STRIKE_BODY) => Some(super::plasma_strike_camera),
         (960, super::NEO_STAR_SLASH_BODY) => Some(super::neo_star_slash_camera),
@@ -403,10 +432,12 @@ pub fn capture_shot_rearms_every_pass(entry: u32, body: u32, phase: u8) -> bool 
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// Three bodies zero the counter instead (`sh zero,0x2(base)` beside `sb
-/// zero,0xd`): PROT 0959 Megaton Press (`0x801F8214`), PROT 0960 Plasma Strike
-/// (`0x801F85FC`) and Neo Star Slash (`0x801F74A8`). Retail films of all three read the
-/// counter `0` on `0x71`, and the first Done pass adds its drift.
+/// Four bodies zero the counter instead (`sh zero,0x2(base)`): PROT 0958
+/// Blazing Slash (`0x801F8C58`, on its arm 25), PROT 0959 Megaton Press
+/// (`0x801F8214`), PROT 0960 Plasma Strike (`0x801F85FC`) and Neo Star Slash
+/// (`0x801F74A8`), the last three beside their `sb zero,0xd`. Retail films of
+/// all four read the counter `0` on `0x71`, and the first Done pass adds its
+/// drift.
 ///
 /// The bodies of 0946..0948 and 0953 clear `ctx[+0x0D]` without the store
 /// ([`capture_exit_clears_style`]).
@@ -426,7 +457,8 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
         | (963, 0x801F_6A20)
         | (964, 0x801F_69D8 | 0x801F_88EC)
         | (966, SINGLE_BODY) => Some(YAW),
-        (959, super::MEGATON_PRESS_BODY)
+        (958, super::BLAZING_SLASH_BODY)
+        | (959, super::MEGATON_PRESS_BODY)
         | (960, super::PLASMA_STRIKE_BODY | super::NEO_STAR_SLASH_BODY) => Some(0),
         _ => None,
     }
@@ -612,7 +644,7 @@ pub const GUILTY_CROSS_COUNTDOWN: u32 = 0x801F_8360;
 /// | 0 (`0x801F6AC8`) | shot: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x800)`, focus the caster, `0x20` frames | `= scalar << 7` |
 /// | 1 (`0x801F6CC4`) | drift TR z `+4` | `+= scalar << 7` |
 /// | 2 (`0x801F6E04`) | drift TR z `+4`; then a cut: pitch `0x100`, yaw `0x800 - victim[+0x46]`, TR `(0, 0x400, 0xA00)`, focus the victim | `+= scalar << 7` |
-/// | 3 (`0x801F6FD4`) | drift TR z `+32` | `+= scalar << 8` |
+/// | 3 (`0x801F6FD4`) | drift TR z `+32`; the cross falls `0x100` a vsync once the word is at or under `scalar << 4`, and rests at `-0x200` as the arm passes | `+= scalar << 8` |
 /// | 4 (`0x801F7238`) | a cut back to arm 0's framing | `+= scalar * 0xC0` |
 /// | 5 (`0x801F7378`) | drift TR z `+4` | - (the body finishes) |
 ///
@@ -654,6 +686,20 @@ pub fn guilty_cross_camera(
     let hold = st.countdown.drain_above(0);
     let mut shot = None;
     let mut arm = CaptureCamArm::default();
+    // Arm 3 drops the cross arm 2 parked at `0x801F836C`: once the drained
+    // word stands at or under `scalar << 4` (`slt` at `0x801F701C`) every
+    // pass adds `step << 8` to its `+0x16` (`0x801F702C..0x801F7040`), and
+    // the pass that leaves stores `-0x200` there (`0x801F7064..0x801F7074`),
+    // so the cross falls from `-0x1200` onto the victim in the arm's last
+    // sixteen frames and stands at `-0x200` through arm 4.
+    if phase == 3 && st.countdown.0 <= SPEED_SCALAR << 4 {
+        arm.part_write = Some(CapturePartWrite {
+            records: &GUILTY_CROSS_CROSS,
+            dy: if hold { GUILTY_CROSS_FALL_PER_TICK } else { 0 },
+            y: (!hold).then_some(GUILTY_CROSS_REST_Y),
+            ..Default::default()
+        });
+    }
     if !hold {
         match phase {
             1 => st.countdown.add(1 << 7),
@@ -715,6 +761,12 @@ pub fn guilty_cross_camera(
 
 /// The neutral colour word PROT 0944's arms store to show a seat.
 const GUILTY_CROSS_NEUTRAL: u32 = 0x2008_0200;
+/// The cross (`model_sel 25`) arm 2 seats and parks at `0x801F836C`.
+const GUILTY_CROSS_CROSS: [u32; 1] = [0x801F_81E8];
+/// Arm 3's fall: `step << 8` a frame, `0x100` a vsync.
+const GUILTY_CROSS_FALL_PER_TICK: i16 = 0x100;
+/// Where the cross rests once arm 3 passes (`li v0,-0x200` at `0x801F7068`).
+const GUILTY_CROSS_REST_Y: i16 = -0x200;
 
 /// PROT 0962's `0xA5` body (evolved Cort's Ultra Charge).
 pub const ULTRA_CHARGE_BODY: u32 = 0x801F_69D8;
@@ -982,7 +1034,7 @@ pub const MYSTIC_CIRCLE_COUNTDOWN: u32 = 0x801F_8040;
 /// | arm | camera |
 /// |---|---|
 /// | 0 (`0x801F6AA4`) | turns the caster to its target, then a cut: pitch `-0x40`, yaw `0x800 - caster[+0x46]`, TR `(0, 0x600, 0x600)`, focus the caster |
-/// | 1, 2 (`0x801F6C00`, `0x801F6D88`) | drift: TR z `+4`, TR y `-1`; arm 2's exit cuts to pitch `0x180`, yaw `-caster[+0x46]`, TR `(0, 0x600, 0xC00)` |
+/// | 1, 2 (`0x801F6C00`, `0x801F6D88`) | drift: TR z `+4`, TR y `-1`; arm 2's exit cuts to pitch `0x180`, yaw `-caster[+0x46]`, TR `(0, 0x600, 0xC00)`; the caster's rate `+0x21D = 4` as arm 1 passes and through arm 2 |
 /// | 3 (`0x801F6F3C`) | drift: TR z `+96`, TR y `-29` |
 /// | 4 (`0x801F71F8`) | the last gate |
 ///
@@ -1042,6 +1094,14 @@ pub fn mystic_circle_camera(
     };
     let hold = st.countdown.holds_after_drain(DRAIN, 0);
     let mut shot = None;
+    // The caster's anim rate `+0x21D = 4`: stored beside the clip `7` arm 1
+    // stages as it passes (`0x801F6CC8..0x801F6CE4`) and again on every pass
+    // of arm 2, ahead of its gate (`0x801F6D90..0x801F6D9C`), so the clip
+    // plays at half speed through the circle's rise.
+    let mut caster_write = CaptureSeatWrite::default();
+    if phase == 2 || (phase == 1 && !hold) {
+        caster_write.rate = Some(4);
+    }
     if !hold {
         match phase {
             1 => st.countdown.0 += 0x400,
@@ -1063,6 +1123,7 @@ pub fn mystic_circle_camera(
         drift,
         hold,
         next: None,
+        caster_write,
         ..Default::default()
     }
 }

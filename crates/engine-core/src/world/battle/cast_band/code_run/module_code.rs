@@ -383,6 +383,7 @@ impl World {
             }
         }
         run.capture_drift = direction.and_then(|d| d.drift);
+        self.casting.module_tick_rest = direction.and_then(|d| d.rest_drift);
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         run.tr_z_store = direction.and_then(|d| d.tr_z_store);
         let mut capture_held = false;
@@ -446,6 +447,9 @@ impl World {
             if let Some((clip, window)) = arm.caster_clip_window {
                 self.write_clip_loop_window(caster_slot, clip, window);
             }
+            if let Some((clip, speed)) = arm.caster_clip_speed {
+                self.write_clip_root_speed(caster_slot, clip, speed);
+            }
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
@@ -488,6 +492,14 @@ impl World {
         }
         if let Some(reach) = capture_arm.as_ref().and_then(|a| a.caster_reach) {
             self.store_caster_reach(caster_slot, reach);
+        }
+        if let Some(arm) = capture_arm.as_ref() {
+            if let Some(r) = arm.caster_radius {
+                self.store_caster_radius(caster_slot, Some(r));
+            }
+            if arm.caster_radius_restore {
+                self.store_caster_radius(caster_slot, None);
+            }
         }
         // A director arm that names the body's damage-wrapper call folds the
         // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
@@ -771,6 +783,23 @@ impl World {
                     capture_held = true;
                 }
             }
+        }
+        // The arm's streak-ribbon calls draw their `rand()` words inside the
+        // arm, ahead of its rumble words (PROT 0934's `0x801F6EE4` before
+        // `0x801F6F10`). PROT 0957's arm 5 calls after its scatter loop, so
+        // its ring is dealt where the scatter's height reaches it.
+        let pass_ribbons = capture_arm
+            .as_ref()
+            .and_then(|a| a.ribbons)
+            .or(direction.and_then(|d| d.ribbons));
+        if pass_ribbons.is_none() {
+            self.battle.cast_ribbon_seeds = None;
+        }
+        if let Some(ring) = pass_ribbons.as_ref()
+            && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)
+            && self.module_tick_opens_pass()
+        {
+            self.deal_cast_ribbon_rands(ring);
         }
         // The arm's controller rumble stores, on the edge each sits on.
         let rumble_passed = direction.map_or(!capture_held, |d| !d.hold);
@@ -1169,8 +1198,21 @@ impl World {
                     } else {
                         None
                     };
-                    if hit.is_some() {
+                    if let Some(roll) = hit {
                         self.casting.module_skips_fold = true;
+                        // Arm 3's popup, `FUN_801F44A0` on the latched roll
+                        // (`jal` at `0x801F7198`) ahead of the clamp, the
+                        // `+0x10` accumulate (`0x801F71E0`) and the HP write
+                        // (`0x801F71FC`): the numeral over the victim and
+                        // the readout's `DAMAGE` line.
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: victim_slot,
+                                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                                is_heal: false,
+                                is_crit: false,
+                            });
                     }
                     Some(arms::guilty_cross_tick(
                         &mut ctx,
@@ -1947,10 +1989,7 @@ impl World {
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
-        self.battle.cast_ribbons = capture_arm
-            .as_ref()
-            .and_then(|a| a.ribbons)
-            .or(direction.and_then(|d| d.ribbons));
+        self.battle.cast_ribbons = pass_ribbons;
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         // A capture director's seat stores (PROT 0959's stand-ins, heights
@@ -2094,7 +2133,7 @@ impl World {
             // the clamp), then the shape-A clamp and the HP write. The fold
             // owes the cast nothing.
             if legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
-                && entry == 959
+                && matches!(entry, 958 | 959)
             {
                 self.casting.module_skips_fold = true;
             }
@@ -2123,7 +2162,9 @@ impl World {
                 // body's other `+0x1DA` stores are arm `0x0A`, `0x0F` and `0x11`,
                 // so arm `0x0D` lands on a victim still parked in its get-up
                 // clip, and arm `0x0F`'s barrage restages nothing.
-                if site < 2 {
+                // PROT 0958's six sites are all the bare clamp: each arm
+                // stages the victim's knockdown itself beside its call.
+                if entry == 959 && site < 2 {
                     self.apply_effect_child_hit(0, roll.max(0));
                     if site == 0 && roll > 0 {
                         let survives = self.actors.first().is_some_and(|a| a.battle.hp > 0);
@@ -2151,9 +2192,19 @@ impl World {
             if entry == 959 {
                 self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
             }
+            // PROT 0958's clear the flag the same way and its arm 23 raises
+            // it as it passes (`0x801F8ABC..0x801F8ACC`).
+            if entry == 958 {
+                let readout = legaia_engine_cast::cast_module_camera::BLAZING_SLASH_READOUT_ARM;
+                self.battle.combo_cluster_held =
+                    phase_in < readout || (phase_in == readout && arm.hold);
+            }
             if arm.backdrop_off {
                 self.battle.backdrop_cue =
                     legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
+            }
+            if let Some(id) = arm.cue {
+                self.dispatch_battle_cue(id);
             }
         }
         // The hit-tint stores: colour word, blend and impact selector.
