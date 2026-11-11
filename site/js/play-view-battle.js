@@ -10,6 +10,7 @@
   const {
     poseInto, BATTLE_FX_BILLBOARD_MESH, IDENTITY_MODEL,
     BATTLE_FX_MODEL_BASE, BATTLE_MESH_BASE, BATTLE_BACKDROP_SPUN_MESH,
+    BATTLE_FX_FAR_MESH,
   } = window.LegaiaPlayShared;
 
   /* Collapse the vertices of the objects a battle body leaves out this frame
@@ -523,6 +524,7 @@
           rt.play_battle_fx_flat_rgba());
         draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL });
       }
+      this._fxFarDraw(rt, draws, {});
       const n = rt.play_battle_fx_model_count();
       if (!n) return;
       const mats = rt.play_battle_fx_model_matrices();
@@ -542,8 +544,31 @@
           }
         }
         if (!b.fxMeshes.get(tmd)) continue;
-        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16) });
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16),
+          meanDepth: this._fxModelFar(rt, i) ? 2 : undefined });
       }
+    }
+
+    /* The FX batch's far-corner stream: the baked parts and nodes whose
+     * colour word links each primitive at its farthest corner
+     * (`ColourWord::links_at_far_corner`), drawn with that order word
+     * (`meanDepth` 2, read only in PSX mode) - the native window's
+     * DRAW_ORDER_FAR_CORNER mark on the same draws. Guarded against a cached
+     * WASM without the export. */
+    _fxFarDraw(rt, draws, extra) {
+      if (typeof rt.play_battle_fx_far_vertex_count !== 'function'
+          || rt.play_battle_fx_far_vertex_count() === 0) return;
+      this.renderer.uploadSceneMesh(BATTLE_FX_FAR_MESH,
+        rt.play_battle_fx_far_positions(), rt.play_battle_fx_far_uvs(),
+        rt.play_battle_fx_far_cba_tsb(), rt.play_battle_fx_far_indices(),
+        rt.play_battle_fx_far_flat_rgba());
+      draws.push(Object.assign({ meshId: BATTLE_FX_FAR_MESH, model: IDENTITY_MODEL,
+        meanDepth: 2, fxFarCorner: true }, extra));
+    }
+
+    _fxModelFar(rt, i) {
+      return typeof rt.play_battle_fx_model_far_corner === 'function'
+        && rt.play_battle_fx_model_far_corner(i);
     }
 
     /* Upload the freshly-built battle scene: the battle VRAM (stage + flame

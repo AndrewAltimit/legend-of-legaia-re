@@ -1042,6 +1042,7 @@ pub fn default_arm_draw_row(
         tessellated: ColourWord::of(s).split_quads
             && crate::part_shatter::part_shatter_word(s) == 0
             && s.field_42 == 0,
+        far_corner: ColourWord::of(s).links_at_far_corner(),
         object_effect_kind: s.field_42,
         object_effect_scale: f32::from(s.field_72) / 4096.0,
     })
@@ -1128,6 +1129,7 @@ fn build_disc_mesh(
         ir0: 1,
         split_quads: false,
         double_sided: flag_word & 0x0800_0000 != 0,
+        far_corner: flag_word & 0x1000_0000 != 0,
     };
     vram_mesh(&decode(&b), 0x1000, &colour)
 }

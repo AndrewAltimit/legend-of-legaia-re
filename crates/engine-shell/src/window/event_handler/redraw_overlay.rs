@@ -39,13 +39,14 @@ pub(super) struct FxFrame {
     /// The summon / move-FX parts, then the draw-kind-4 nodes and the
     /// battle ground shadows (a single-sided node's back faces already
     /// dropped, `effect_draws::retail_front_faces`), drawn both-sided.
-    pub summon_part_draws: Vec<(UploadedVramMesh, Mat4)>,
+    /// Each with its far-corner link (`FxPartModel::far_corner`).
+    pub summon_part_draws: Vec<(UploadedVramMesh, Mat4, bool)>,
     /// The field move-VM parts, each with its colour word's double-sided bit
-    /// (`ColourWord::double_sided`).
-    pub field_fx_draws: Vec<(UploadedVramMesh, Mat4, bool)>,
-    /// The field move-VM parts' untextured prims, each with the same
-    /// double-sided bit.
-    pub field_fx_color_draws: Vec<(UploadedColorMesh, Mat4, bool)>,
+    /// (`ColourWord::double_sided`) and far-corner link.
+    pub field_fx_draws: Vec<(UploadedVramMesh, Mat4, bool, bool)>,
+    /// The field move-VM parts' untextured prims, each with the same two
+    /// bits.
+    pub field_fx_color_draws: Vec<(UploadedColorMesh, Mat4, bool, bool)>,
 }
 
 impl FxFrame {
@@ -63,7 +64,10 @@ impl FxFrame {
         nclip_marks: &mut Vec<(usize, u32)>,
         color_draws: &mut Vec<ColorSceneDraw<'x>>,
         color_nclip_marks: &mut Vec<(usize, u32)>,
+        order_marks: &mut Vec<(usize, u8)>,
+        color_order_marks: &mut Vec<(usize, u8)>,
     ) {
+        use legaia_engine_render::DRAW_ORDER_FAR_CORNER;
         let fx_cam = self.fx_cam;
         let effect_billboard = &self.effect_billboard;
         let effect_model_draws = &self.effect_model_draws;
@@ -90,17 +94,13 @@ impl FxFrame {
         // mask for that word, `0x80043520..0x80043540`). So none takes the
         // field pass's winding cull, which would judge a double-sided node
         // by its winding.
-        for (mesh, model) in summon_part_draws {
+        // A part whose colour word links its primitives at their farthest
+        // corner takes that order word (`FxPartModel::far_corner`); it reads
+        // only in PSX mode, where the battle and field draws sort by link.
+        for (mesh, model, far_corner) in summon_part_draws {
             nclip_marks.push((draws.len(), 0));
-            draws.push(SceneDraw {
-                mesh,
-                mvp: fx_cam * *model,
-                cue: None,
-            });
-        }
-        for (mesh, model, double_sided) in field_fx_draws {
-            if *double_sided {
-                nclip_marks.push((draws.len(), 0));
+            if *far_corner {
+                order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
             }
             draws.push(SceneDraw {
                 mesh,
@@ -108,9 +108,25 @@ impl FxFrame {
                 cue: None,
             });
         }
-        for (mesh, model, double_sided) in &self.field_fx_color_draws {
+        for (mesh, model, double_sided, far_corner) in field_fx_draws {
+            if *double_sided {
+                nclip_marks.push((draws.len(), 0));
+            }
+            if *far_corner {
+                order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
+            }
+            draws.push(SceneDraw {
+                mesh,
+                mvp: fx_cam * *model,
+                cue: None,
+            });
+        }
+        for (mesh, model, double_sided, far_corner) in &self.field_fx_color_draws {
             if *double_sided {
                 color_nclip_marks.push((color_draws.len(), 0));
+            }
+            if *far_corner {
+                color_order_marks.push((color_draws.len(), DRAW_ORDER_FAR_CORNER));
             }
             color_draws.push(ColorSceneDraw {
                 mesh,

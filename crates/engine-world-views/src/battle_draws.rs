@@ -120,6 +120,7 @@ pub fn battle_ground_shadow(
         single_sided: legaia_engine_effects::effect_default_arm::SHADOW_FLAG_WORD & 0x0800_0000
             == 0,
         tessellated: false,
+        far_corner: false,
         object_effect_kind: 0,
         object_effect_scale: 1.0,
     })
