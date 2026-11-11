@@ -595,6 +595,183 @@ pub fn find_disc(
         .find_map(|p| validate(p).ok())
 }
 
+/// What one row of the disc finder's folder listing is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderEntryKind {
+    /// A folder to open.
+    Folder,
+    /// A `.bin` or `.cue` file to try as the disc.
+    DiscImage,
+}
+
+/// One row of [`list_disc_folder`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderEntry {
+    pub path: PathBuf,
+    pub name: String,
+    pub kind: FolderEntryKind,
+}
+
+/// The folders and disc images (`.bin`, `.cue`) in `dir`, for the
+/// launcher's own disc finder: the list a controller can work, where the
+/// desktop's file dialog takes a mouse or a keyboard. Folders come first,
+/// then the images, each by name ignoring case; hidden entries (a leading
+/// `.`) and every other file are left out. Reads at most as many entries as
+/// [`find_disc`] does from one folder.
+pub fn list_disc_folder(dir: &Path) -> std::io::Result<Vec<FolderEntry>> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir)?
+        .flatten()
+        .take(FIND_DISC_ENTRY_LIMIT)
+    {
+        let path = e.path();
+        let Some(name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let kind = if path.is_dir() {
+            FolderEntryKind::Folder
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("bin") || e.eq_ignore_ascii_case("cue"))
+        {
+            FolderEntryKind::DiscImage
+        } else {
+            continue;
+        };
+        out.push(FolderEntry { path, name, kind });
+    }
+    out.sort_by(|a, b| {
+        (a.kind != FolderEntryKind::Folder, a.name.to_lowercase())
+            .cmp(&(b.kind != FolderEntryKind::Folder, b.name.to_lowercase()))
+    });
+    Ok(out)
+}
+
+/// The folder the disc finder opens on: the folder of the disc in use (or
+/// the one last remembered), else Downloads, else the home folder.
+pub fn disc_finder_start(remembered: Option<&Path>) -> Option<PathBuf> {
+    let home = dirs::home_dir();
+    remembered
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .filter(|d| d.is_dir())
+        .or_else(|| {
+            dirs::download_dir()
+                .or_else(|| home.as_ref().map(|h| h.join("Downloads")))
+                .filter(|d| d.is_dir())
+        })
+        .or(home)
+}
+
+/// The places the disc finder lists under its folder, each a folder that
+/// exists: the home folder, Downloads, Desktop, Documents, the program's own
+/// folder, then the top of every drive (`C:\` and on, on Windows; `/`, and
+/// the removable drives under `/media` and `/run/media`, elsewhere).
+pub fn disc_finder_places() -> Vec<(String, PathBuf)> {
+    let home = dirs::home_dir();
+    let mut places: Vec<(String, PathBuf)> = Vec::new();
+    let mut add = |label: &str, dir: Option<PathBuf>| {
+        if let Some(d) = dir.filter(|d| d.is_dir())
+            && !places.iter().any(|(_, p)| *p == d)
+        {
+            places.push((label.to_string(), d));
+        }
+    };
+    add("Home folder", home.clone());
+    add(
+        "Downloads",
+        dirs::download_dir().or_else(|| home.as_ref().map(|h| h.join("Downloads"))),
+    );
+    add(
+        "Desktop",
+        dirs::desktop_dir().or_else(|| home.as_ref().map(|h| h.join("Desktop"))),
+    );
+    add(
+        "Documents",
+        dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents"))),
+    );
+    add(
+        "This program's folder",
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(Path::to_path_buf)),
+    );
+    if cfg!(windows) {
+        for letter in b'C'..=b'Z' {
+            let root = PathBuf::from(format!("{}:\\", letter as char));
+            add(&format!("Drive {}:", letter as char), Some(root));
+        }
+    } else {
+        add("Whole computer", Some(PathBuf::from("/")));
+        let user = std::env::var("USER").unwrap_or_default();
+        for base in ["/media", "/run/media"] {
+            let base = Path::new(base).join(&user);
+            if let Ok(rd) = std::fs::read_dir(&base) {
+                for e in rd.flatten().take(16) {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    add(&format!("Drive {name}"), Some(e.path()));
+                }
+            }
+        }
+    }
+    places
+}
+
+/// The disc images Legaia Explorer opened, newest first, from its settings
+/// file's text (`settings.json`: `last_source`, then `recent`): what a first
+/// run of the game tries before it searches the usual folders, so a disc
+/// opened in Explorer is not hunted for a second time. Extracted folders
+/// and anything that is not a `.bin` or `.cue` are left out.
+pub fn explorer_discs_from_json(text: &str) -> Vec<PathBuf> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    let last = v.get("last_source").and_then(|s| s.as_str());
+    let recent = v
+        .get("recent")
+        .and_then(|r| r.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.as_str());
+    for p in last.into_iter().chain(recent).map(PathBuf::from) {
+        let disc = p
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("bin") || e.eq_ignore_ascii_case("cue"));
+        if disc && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Legaia Explorer's settings file (`<platform config dir>/legaia-explorer/
+/// settings.json`), the file [`explorer_discs_from_json`] reads.
+pub fn explorer_settings_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("legaia-explorer").join("settings.json"))
+}
+
+/// The first disc Legaia Explorer opened that passes `validate`
+/// ([`validate_disc`] in the binary).
+pub fn explorer_disc(
+    settings_text: Option<&str>,
+    validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
+) -> Option<DiscInfo> {
+    explorer_discs_from_json(settings_text?)
+        .iter()
+        .take(FIND_DISC_CANDIDATE_LIMIT)
+        .find_map(|p| validate(p).ok())
+}
+
 /// What the launcher does on start-up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchDecision {
@@ -2045,6 +2222,68 @@ mod tests {
         });
         assert_eq!(none, None);
         assert_eq!(find_disc(&[Pb::from("/does/not/exist")], accept_all), None);
+    }
+
+    #[test]
+    fn disc_finder_lists_folders_then_disc_images() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for f in [
+            "zeta.CUE",
+            "alpha.bin",
+            "notes.txt",
+            ".hidden.bin",
+            "save.mcr",
+        ] {
+            std::fs::write(root.join(f), b"x").unwrap();
+        }
+        for d in ["Games", "apps", ".cache"] {
+            std::fs::create_dir(root.join(d)).unwrap();
+        }
+        let got: Vec<(String, FolderEntryKind)> = list_disc_folder(root)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.name, e.kind))
+            .collect();
+        use FolderEntryKind::*;
+        assert_eq!(
+            got,
+            [
+                ("apps".to_string(), Folder),
+                ("Games".to_string(), Folder),
+                ("alpha.bin".to_string(), DiscImage),
+                ("zeta.CUE".to_string(), DiscImage),
+            ]
+        );
+        assert!(list_disc_folder(Path::new("/does/not/exist")).is_err());
+        // The finder opens beside the remembered disc when its folder is there.
+        let disc = root.join("alpha.bin");
+        assert_eq!(disc_finder_start(Some(&disc)).as_deref(), Some(root));
+    }
+
+    #[test]
+    fn explorer_discs_are_tried_on_a_first_run() {
+        let json = r#"{"last_source": "/g/Legaia.cue",
+            "recent": ["/g/extracted", "/g/Legaia.cue", "/h/other.BIN", 3]}"#;
+        assert_eq!(
+            explorer_discs_from_json(json),
+            [Pb::from("/g/Legaia.cue"), Pb::from("/h/other.BIN")]
+        );
+        assert!(explorer_discs_from_json("not json").is_empty());
+        let only_other = |p: &Path| {
+            if p.ends_with("other.BIN") {
+                Ok(DiscInfo {
+                    path: p.to_path_buf(),
+                    bin: p.to_path_buf(),
+                    executable: USA_EXECUTABLE.into(),
+                })
+            } else {
+                Err(DiscProblem::Missing(p.to_path_buf()))
+            }
+        };
+        let found = explorer_disc(Some(json), only_other).expect("found");
+        assert_eq!(found.path, Pb::from("/h/other.BIN"));
+        assert_eq!(explorer_disc(None, only_other), None);
     }
 
     #[test]

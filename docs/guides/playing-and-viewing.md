@@ -94,6 +94,18 @@ path and pressing `Enter`, works as well. On Linux the dialog goes through the d
 file-chooser portal; where no portal runs, the drag-and-drop and typed-path
 routes still work.
 
+A controller cannot work the desktop's file dialog, so Cross on *Choose
+disc...* opens the launcher's own disc finder instead, in place of the
+options: the folder of the disc last used (else Downloads, else the home
+folder), its subfolders and its `.bin` / `.cue` files, then the usual places
+(home, Downloads, Desktop, Documents, the program's folder, and the top of each
+drive). Cross opens a folder or tries a disc image, and a disc that passes the
+check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
+`Esc` closes the finder. The keyboard reaches it too, as *Find a disc on this
+computer...* on the *Recent* page. While a controller was the last thing
+pressed, the help box's key reminder and the "press to play" lines name its
+buttons, by the labels its maker prints on them.
+
 On a Wayland desktop the launcher window opens through XWayland, because the
 windowing library has no Wayland drag-and-drop; the compositor carries a drag
 from a Wayland file manager across, so dropping works there too. Without
@@ -122,7 +134,9 @@ leaves out the streamed movie and voice sectors), a compressed `.chd`, an
 EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
 was renamed - in which case the one `.bin` beside it is named.
 
-On a first run the launcher looks for a dump before asking for one: in its own
+On a first run the launcher looks for a dump before asking for one: first the
+discs Legaia Explorer opened (its `settings.json`, whatever the files are
+called), then in its own
 folder, Downloads, the Desktop, Documents and the home folder, and each of
 those folders' direct subfolders, for a `.bin` or `.cue` named for the game (or
 sitting in a folder named for it) that passes the check below. One that does is
@@ -181,6 +195,9 @@ started from Legaia Explorer (`legaia-engine launch --disc`).
 | Discs | every remembered disc: *In use*, *Ready* or *Not found* | switch to it | forget it |
 | Continue your game / Continue from card 2 | every save on that card, longest played first, by leader, level, place and play time | start the game on it, without the title screen (`play-window --resume-save`) | - |
 | Memory cards | every remembered card, and *Mount a memory card...* | mount it as card 2, or take it out | forget it |
+
+The Discs group ends with *Find a disc on this computer...*, the disc finder
+described under [Choosing the disc](#choosing-the-disc).
 
 `Esc`, Circle or the page's *Options* button goes back to the options.
 
