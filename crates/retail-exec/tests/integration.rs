@@ -178,6 +178,7 @@ mod field_walls;
 mod final_heal;
 mod finisher;
 mod fishing_cadence;
+mod fishing_catch;
 mod fishing_fight;
 mod fishing_floor;
 mod fishing_hud;
