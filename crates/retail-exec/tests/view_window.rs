@@ -10,7 +10,7 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_field::camera::FieldCullView;
-use legaia_engine_scene::field_view_window::view_cells;
+use legaia_engine_scene::field_view_window::{ViewCells, view_cells};
 use psx_retail_exec::{A0, A1, A2, A3, Stop};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -189,5 +189,107 @@ fn the_visible_tile_crop_matches_the_pass() {
     assert!(
         drawn > 5000 && clamped > 100 && alt_runs > 0,
         "drawn {drawn} clamped {clamped} alt {alt_runs}"
+    );
+}
+
+/// The ground emitter's cell loop (`0x801F6DE0..0x801F7058`): the cell each
+/// pass of the inner loop reads, as the column `a0` and row `a1` stand at the
+/// grid read `0x801F6DF8`.
+const GROUND_VISIT: u32 = 0x801F_6DF8;
+const PACKET_CURSOR: u32 = 0x1F80_03A0;
+const OT_PTR: u32 = 0x1F80_03F4;
+const PACKETS: u32 = 0x8015_0000;
+const OT: u32 = 0x8018_0000;
+
+#[test]
+fn the_ground_emitter_visits_the_cells_the_gate_names() {
+    differential!(prot(900, GROUND));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        return;
+    };
+    cpu.mem
+        .load(SLOT_B_BASE, &disc.read_entry(900).expect("PROT 0900"));
+    cpu.mem.wr32(MAP_PTR, MAP);
+    // Identity rotation, the scene well in front: most cells pass the depth
+    // gate (`SZ - 0x40 >= 0`) and write their packet.
+    for (r, v) in [
+        (0, 0x1000),
+        (2, 0x1000),
+        (4, 0x1000),
+        (7, 0x4000),
+        (26, 0x100),
+    ] {
+        cpu.gte.write_ctrl(r, v);
+    }
+    let visits = Rc::new(RefCell::new(Vec::<(i32, i32)>::new()));
+    {
+        let visits = visits.clone();
+        cpu.probe(GROUND_VISIT, move |r, _, _| {
+            visits.borrow_mut().push((r.r[A0] as i32, r.r[A1] as i32));
+        });
+    }
+    let mut rng = Rng(0x4752_4E44);
+    let (mut visited, mut drew, mut short) = (0usize, 0u32, 0usize);
+    for round in 0..3000 {
+        // A grid whose `0x1000` cells take the draw path, so the loop is run
+        // with its packet writes in between, and random heights and records.
+        let mut map = vec![0u8; 0x10000];
+        for b in map.iter_mut() {
+            *b = rng.next() as u8;
+        }
+        cpu.mem.load(MAP, &map);
+        cpu.mem.wr32(PACKET_CURSOR, PACKETS);
+        cpu.mem.wr32(OT_PTR, OT);
+        cpu.mem.wr8(0x1F80_03A4, 0);
+        // The window as the decoration pass writes it back: the clamp leaves
+        // `E8 <= EA`, `E9 <= EB` mostly, and now and then an empty or
+        // inverted span, which the `do`-`while` loops still run once.
+        let window: [i8; 4] = if round % 8 == 0 {
+            std::array::from_fn(|_| rng.below(20) as i8 - 10)
+        } else {
+            let (c0, r0) = (-(rng.below(10) as i8), -(rng.below(10) as i8));
+            [c0, r0, c0 + rng.below(20) as i8, r0 + rng.below(22) as i8]
+        };
+        for k in 0..4 {
+            cpu.mem.wr8(WINDOW + k as u32, window[k] as u8);
+        }
+        let first = [rng.below(0x80) as i32, rng.below(0x81) as i32];
+        let sub = [rng.below(0x80), rng.below(0x80)];
+        let cells = ViewCells {
+            first,
+            window,
+            sub: sub.map(|s| s as i32),
+            span: [0, 0],
+            region: [0, 0, 0x80, 0x80],
+            window_in: window,
+        };
+        visits.borrow_mut().clear();
+        let a1 = (first[1] - 1) as u32;
+        let stop = cpu.call(GROUND, &[first[0] as u32, a1, sub[0], sub[1]]);
+        assert_eq!(stop, Stop::Returned, "round {round}");
+        let got = visits.borrow().clone();
+        // Every cell the gate admits over a band wider than any window, in
+        // the loop's order: rows, then columns.
+        let mut want = Vec::new();
+        for dr in 0..0x80 {
+            let row = ((first[1] - 1) + dr) & 0x7F;
+            for col in first[0] - 2..first[0] + 0x30 {
+                if cells.ground_visible(col, row) {
+                    want.push((col, row));
+                }
+            }
+        }
+        let ctx = format!("round {round} first {first:?} window {window:?}");
+        let mut sorted = got.clone();
+        sorted.sort_by_key(|&(c, r)| (((r - (first[1] - 1)) & 0x7F), c));
+        assert_eq!(sorted, got, "the walk order, {ctx}");
+        assert_eq!(got, want, "cells visited, {ctx}");
+        visited += got.len();
+        drew += (cpu.mem.rd32(PACKET_CURSOR) - PACKETS) / 0x28;
+        short += usize::from(window[2] <= window[0] || window[3] <= window[1]);
+    }
+    assert!(
+        visited > 50_000 && drew > 1000 && short > 50,
+        "visited {visited} drew {drew} short {short}"
     );
 }
