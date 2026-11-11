@@ -122,12 +122,6 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
     },
     KnownDivergence {
-        label: "balden2_field_door_hop",
-        key: "vis:62",
-        class: "a-reported",
-        note: "the balden_field_route_walk entry's P1[62] seat, reached through the door: the install slice runs one pass late",
-    },
-    KnownDivergence {
         label: "concnow_field_door_hop",
         key: "vis:2",
         class: "b",
@@ -328,6 +322,35 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     },
     KnownDivergence {
         label: "doman_arrival_from_korb2",
+        key: "flag:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*: the MAN \
+               loader's install slice (FUN_8003AB2C) has not run, so its flag writes are \
+               missing from retail's bank",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "flag:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 flag:*",
+    },
+    KnownDivergence {
+        label: "nivora_cutscene_delilas_intro",
+        key: "flag:1140",
+        class: "b",
+        note: "nilboa P1[0]'s install slice clears 0x474 (64 74 at +0xCD) on every load; \
+               the capture is mid-visit, and retail's bank holds it raised since",
+    },
+    KnownDivergence {
+        label: "rikuroa_post_genesis_tree",
+        key: "flag:31",
+        class: "b",
+        note: "rikuroa P1[0]'s install slice sets 0x1F (50 1F at +0x49) on every load; \
+               the capture is mid-visit (and on a patched executable), retail's bank holds \
+               it cleared since",
+    },
+    KnownDivergence {
+        label: "doman_arrival_from_korb2",
         key: "vis:*",
         class: "b",
         note: "pre-load capture: the scene label already names the destination while the \
@@ -431,24 +454,9 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
                pass's 0x21 at +0x8E, tests 0x360 (+0x165), takes the 79 < counter-1 arm \
                and clears it (63 60 at +0x1B0), then zeroes the counter (4C CA 01 00 00). \
                The capture holds that end state (0x360 clear, counter 1 = 0, Xain at his \
-               spawn seat (7872,1856) = 23 3D 0E). The oracle compares before any per-frame \
-               pass; the engine clears it on its fifth tick. Pinned by \
+               spawn seat (7872,1856) = 23 3D 0E). The oracle compares after the install \
+               slice and before any per-frame pass; the engine clears it on its fifth tick. Pinned by \
                engine-scene-host entry_install_slice_disc.rs",
-    },
-    KnownDivergence {
-        label: "balden_field_route_walk",
-        key: "vis:62",
-        class: "a-reported",
-        note: "engine one pass behind retail at scene entry: P1[0] seats P1[62] at tile \
-               (10,105) with A3 55 0A 69 (+0x1A8, 0x1D5 set and 0x1D4 clear, both as \
-               captured) before its first 0x21 (+0x21B), i.e. in the install slice that \
-               FUN_8003AEB0 runs inside the load (jal FUN_8003AB2C at 0x8003BAD8, after \
-               the spawn loop). The engine runs that pass on its first tick instead, so \
-               the cold entry still shows the header park; one tick later the seat matches \
-               retail (entry_install_slice_disc.rs). Running the slice at load moves this \
-               oracle's flag channel too (its install passes clear the region-selector \
-               bands 0x19B..0x1AA / 0x527..0x52E that later passes re-set by position), \
-               so the fix needs the oracle's entry model reworked with it",
     },
     KnownDivergence {
         label: "conc3_field_inn_night",
@@ -725,6 +733,13 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
         host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));
         host.world.flags.system_flags = cap.flag_bank.clone();
+        // Enter where the capture stands, as a card load's MAN loader does
+        // (`FUN_8003AEB0` seats the save's position before its install slice,
+        // `FUN_8003AB2C`): the slice's region selector and `CD F8` box tests
+        // then read retail's position, not entry point 0's.
+        if let Some((x, z)) = cap.player_pos {
+            host.set_entry_seat(x, z);
+        }
         if let Err(err) = host.enter_field_scene(&cap.scene, 0) {
             divergences.push(Divergence {
                 label: cap.label.clone(),
@@ -734,6 +749,9 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
             });
             continue;
         }
+        // The MAN loader's last step, which the engine runs at the head of
+        // its first tick (`World::run_entry_script_install_slice`).
+        host.world.run_entry_script_install_slice();
         states_compared += 1;
 
         let scene = host.scene.as_ref().expect("scene loaded");
@@ -897,6 +915,13 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
         total_parked_both += parked_both;
 
         // ---- Story-flag bank: engine entry must be a no-op vs the capture. ----
+        // Except the region-selector bands: the install slice the MAN loader
+        // runs (`FUN_8003AB2C`) clears each one, and a later pass of the body
+        // re-selects the bit from the region-type latch the player tick
+        // writes (`_DAT_8007B8F4`). Every capture holds a pass that ran after
+        // a player tick; the cold entry holds the install's clear.
+        let bands = legaia_parity::retail_compare::selector_bands(&host.world.field_bytecode);
+        let in_band = |idx: usize| bands.iter().any(|b| b.contains(&(idx as u16)));
         let bank = &host.world.flags.system_flags;
         for (byte, (&e, &r)) in bank.iter().zip(cap.flag_bank.iter()).enumerate() {
             if e == r {
@@ -906,6 +931,10 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
                 let mask = 0x80u8 >> bit;
                 if (e ^ r) & mask != 0 {
                     let idx = byte * 8 + bit;
+                    if in_band(idx) && e & mask == 0 {
+                        tolerated += 1;
+                        continue;
+                    }
                     let key = format!("flag:{idx}");
                     let detail = format!(
                         "engine {} flag {idx} ({:#x}) during entry; retail bank holds {}",

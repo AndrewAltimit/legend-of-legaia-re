@@ -790,26 +790,35 @@ impl World {
     }
 
     /// Run the system script's owed install slice ahead of the spawned record
-    /// contexts, when a record is already installed. Returns whether it ran,
-    /// so the arm skips its own system slice on that tick.
+    /// contexts. Returns whether the arm's own system slice is already spent
+    /// on this tick.
     ///
     /// Retail runs the install slice inside the MAN load: `FUN_8003AEB0`
     /// calls `FUN_8003AB2C` (`jal` at `0x8003BAD8`), which drives the
     /// dispatcher `FUN_801DE840` itself (`jal` at `0x8003AD4C`), before any
     /// actor-list pass and so before the player tick whose stale last-tile
-    /// compare spawns an arrival record. The engine installs that record at
-    /// scene entry, and stepping it first let the entry script's ops land
-    /// over the record's. In `town01` the opening record `P2[3]` sets the
-    /// visible tile window `46 24 EF F3 0A 1F` (`(-17, -13, 10, 31)`, the
-    /// window `rim_elm_zoom_intro` holds) and `P1[0]`'s `46 24 F6 FA 08 0E`
-    /// then replaced it with the walking window `(-10, -6, 8, 14)`, so the
-    /// crop and the actor cull hid most of Rim Elm through the establishing
-    /// pan.
+    /// compare spawns an arrival record. The engine's first tick stands for
+    /// the load's tail and the first frame together, so it opens with the
+    /// slice ([`Self::run_entry_script_install_slice`]) and then runs the
+    /// frame's own system pass, the script's second, where the arm always
+    /// runs it.
     ///
-    /// Only the ordering moves: with no record installed the slice runs where
-    /// it always did.
+    /// Stepping a record installed at scene entry first let the entry
+    /// script's ops land over the record's. In `town01` the opening record
+    /// `P2[3]` sets the visible tile window `46 24 EF F3 0A 1F`
+    /// (`(-17, -13, 10, 31)`, the window `rim_elm_zoom_intro` holds) and
+    /// `P1[0]`'s `46 24 F6 FA 08 0E` then replaced it with the walking window
+    /// `(-10, -6, 8, 14)`, so the crop and the actor cull hid most of Rim Elm
+    /// through the establishing pan.
+    ///
+    /// A script that opens on no `0x24` / `0x25` gets no install slice; its
+    /// first pass still goes ahead of a record installed at entry, and is the
+    /// tick's system slice.
     // REF: FUN_8003AB2C, FUN_8003AEB0
     pub fn step_install_slice_ahead_of_records(&mut self) -> bool {
+        if self.run_entry_script_install_slice() {
+            return false;
+        }
         if !self.field_vm.system_install_pass
             || !(self.cutscene_timeline_active() || !self.field_vm.helper_contexts.is_empty())
         {

@@ -1552,6 +1552,40 @@ impl World {
         last
     }
 
+    /// Run the just-loaded scene-entry system script's **install slice**: the
+    /// one `0x21`-bounded pass retail runs inside the MAN loader, before the
+    /// scene's first frame. Returns whether it ran.
+    ///
+    /// `FUN_8003AEB0` calls `FUN_8003AB2C` at `0x8003BAD8`, after the
+    /// partition-1 spawn loop (`FUN_8003A1E4`, `0x8003B8D4`), the object
+    /// binds (`FUN_8003A55C`, `0x8003B908`) and the player's entry seat
+    /// (`0x8003BAA4..0x8003BAC4`, from `_DAT_80073EF4` / `_DAT_80073EF8`).
+    /// The install gates on the first opcode being `0x24` / `0x25`
+    /// (`0x8003AD18..0x8003AD20`) and on it not being a text byte
+    /// (`0x8003AD2C..0x8003AD34`), then calls the dispatcher until the op it
+    /// ran was `0x21` (`0x8003AD58`), the PC did not move (`0x8003AD68`) or
+    /// the next byte is text (`0x8003AD84`) - the loop
+    /// [`Self::step_field_frame_slice`] runs once per frame. The first frame
+    /// then runs the script's **second** pass.
+    ///
+    /// The engine's scene entry hands the world on to its host's own staging
+    /// (the live loop, the save hydration, the door seat), so the slice runs
+    /// at the head of the first tick
+    /// ([`Self::step_install_slice_ahead_of_records`]), and that tick's system
+    /// pass is the second. Run as the tick's only pass, the engine stood one
+    /// pass behind retail for the whole visit.
+    ///
+    /// PORT: FUN_8003AB2C (the install slice, `0x8003AD0C..0x8003AD88`)
+    pub fn run_entry_script_install_slice(&mut self) -> bool {
+        if !self.field_vm.system_install_pass
+            || !matches!(self.field_bytecode.get(self.field_pc), Some(&(0x24 | 0x25)))
+        {
+            return false;
+        }
+        self.step_field_frame_slice();
+        true
+    }
+
     /// Seat the ctx-`0xFB` system context's position anchor on the **live**
     /// player actor.
     ///

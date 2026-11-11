@@ -1077,9 +1077,10 @@ The MAN loader runs the scene's system script once before the first actor-list p
 `FUN_8003AEB0` calls the install `FUN_8003AB2C` (`jal` at `0x8003BAD8`), which drives the
 dispatcher `FUN_801DE840` itself (`jal` at `0x8003AD4C`). An arrival record is spawned later,
 by the player tick's tile compare, so on the arrival frame the entry script's first ops land
-before the record's. The engine installs the record at scene entry, and on that first tick
-runs the owed install slice ahead of the record contexts
-(`World::step_install_slice_ahead_of_records`, all three field-run arms).
+before the record's. The engine installs the record at scene entry and opens its first tick
+with the install slice, ahead of the record contexts
+(`World::step_install_slice_ahead_of_records`, all three field-run arms); the tick's own system
+pass then runs as the script's second.
 
 The order is visible in `town01`. `P1[0]` sets the walking tile window `46 24 F6 FA 08 0E`
 (`(-10, -6, 8, 14)`), and the opening record `P2[3]` then sets `46 24 EF F3 0A 1F`

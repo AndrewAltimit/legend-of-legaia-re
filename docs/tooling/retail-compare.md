@@ -4762,14 +4762,17 @@ record holds the player ([script-vm](../subsystems/script-vm.md#engagement-and-t
 `cort_evolved_approach_cutscene` holds `0x19F` while `jouind P2[4]` has Vahn
 on region type 3, where the body would select `0x19E`: retail chose `0x19F` at
 the arrival tile and has sat out every pass since. The engine's seed enters,
-hydrates and seats before its first tick, and in a scene the engine does not
-pre-run (every scene but the three opening legs) the entry script's install
-slice runs on that first tick - after the seat - so the band is cleared and
-re-selected at the seat. Retail runs the install slice in the load frame
-(`FUN_8003AB2C`, to the first executed `0x21`). Moving every scene's install
-slice into the load frame closes this bit but runs the entry's BGM cue and fog
-op before the seed's flags exist, and the corpus `bgm` channel fell by a
-fifth (by a tenth even with `--flags-first`), so the order stands, and the
+hydrates and seats before its first tick, and the entry script's install
+slice runs at the head of that tick
+([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)) -
+after the seat - so the band is cleared and re-selected at the seat. Retail
+runs the install slice in the load frame (`FUN_8003AB2C`, to the first
+executed `0x21`), over the arrival seat. Running it inside the engine's scene
+entry instead reads the seat before a host's staging has run: a card load
+hydrates the save after the landing and lands the save's band bits over the
+slice's clears, and the live loop arms the field mode after it, so the
+selector arms never re-ran: every state whose view window a selector arm
+owns lost it. The
 seed lands the save's bit back over the band once the settle has run
 ([below](#the-band-is-held)), with the window of the arm that bit names. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two

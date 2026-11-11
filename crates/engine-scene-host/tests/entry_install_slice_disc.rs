@@ -8,8 +8,8 @@
 //!   slice** retail's MAN loader runs (`FUN_8003AEB0` calls `FUN_8003AB2C`
 //!   at `0x8003BAD8`, after the spawn loop and the player seat). The
 //!   capture holds the actor at `(1344, 13504)`. The engine runs that pass
-//!   on the first tick, not inside the load; this test pins the seat on the
-//!   first frame and both arms of the flag gate.
+//!   at the head of its first tick, ahead of the frame's own pass; this test
+//!   pins the seat on the first frame and both arms of the flag gate.
 //! - `tunnelc` (Fire Path): Xain's `P1[4]` spawn section sets `0x360` and
 //!   writes `80` to script counter `1` (`53 60`, `4C CA 01 50 00`); the
 //!   clear comes from `P1[0]`'s per-frame body (`+0x165` test, the
