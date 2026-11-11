@@ -3488,7 +3488,16 @@ in Monaural folds each cue voice to its larger side in retail's key-on chain and
 the probe folds the port's registers to compare. What remains is not a defect:
 
 - A row past the end of a scene's runtime bank. Retail reads whatever follows the table, and the port
-  stops at its own bound, so the last row of a scene's run disagrees.
+  stops at its own bound, so the last row of a scene's run disagrees. Such a row often carries a voice
+  count near `0x1F` (`balden`'s `0x214` reads `01 00 E0 FF`): its empty tone slots (`vag 0`) key nothing
+  on either side, but where the count runs a sustained cue past tone `15` retail reads a tone beyond the
+  program's sixteen slots and keys it (voice `23`, pitch `0xB000`, a non-zero start address), where the
+  port's program holds sixteen slots and stops. No producer is known to push one of these rows.
+- `conc3_field_inn_night`, saved after the inn's night sequence. Its side-band request is `2070`
+  (`_DAT_8007BABC` and the acknowledge `_DAT_8007BAA0` both), which `conc3`'s P2[9] stores
+  (`36 01 80 16 08`); the entry script's own request is `2116` (P1[0], `36 01 80 44 08`). The seed
+  enters `conc3` on its entry script alone, so its category-`3` rows key `2116`'s bank where retail's
+  key `2070`'s: the state's history, not the cue path.
 - `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
 - The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
   ending theme overwrote hold stale tone data in retail's RAM.
