@@ -325,7 +325,9 @@ the pad. Run from a terminal, the game's output still prints there too.
 `legaia-engine launch --disc <bin>` starts what *Play* starts on that disc,
 with the launcher's remembered switches and expansion pack and no screen. Legaia
 Explorer's *Play* runs it, so a game started from Explorer plays with everything
-set here.
+set here. Explorer's *Game options* (`Shift+F5`) opens this screen on the disc
+Explorer has open (`legaia-engine --open <bin>`, as a dropped disc), so a player
+who starts from Explorer reaches these rows without finding the other program.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
