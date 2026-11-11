@@ -9,8 +9,6 @@ use legaia_engine_cast::cast_module_camera::{ModuleSeat, heading};
 /// The colour word arm `0xA` parks the creature on (`0x801F7700`): a red
 /// lane, the others out.
 const RED_WORD: u32 = 0x3FF;
-/// Arm `0xC`'s turn rate in the frame delta: eight units a tick.
-const TURN_RATE: i32 = 8;
 /// The turn's half circle, in the bearing's 12-bit units.
 const HALF_TURN: i32 = 0x800;
 /// A full circle.
@@ -38,7 +36,7 @@ impl World {
     /// | `0xB` | - | the creature's target `+0x1DD = 9` |
     /// | `0xC` | [`Self::mushura_chase`], ahead of the director ([`Self::mushura_chase_ahead`]) | the creature's fade `+0x21C = 2` |
     ///
-    /// Not carried: `+0x48`, the creature's bank, which no engine draw reads.
+    /// Arm `0xC` also banks the creature (`+0x48`, `BattleActor::render_roll`) as it turns.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::world::battle::cast_band) fn apply_mushura_run(
         &mut self,
@@ -296,29 +294,77 @@ impl World {
             self.casting.module_mushura_target = target;
             self.casting.module_mushura_retail_seat = seat;
         }
-        let Some(t) = self.actors.get(usize::from(target)) else {
+        // The turn and the bank are a pass's law (`(step * scalar) << 3` and
+        // `step * scalar`, `0x801F7B74..0x801F7D10`): run once every frame
+        // step of ticks with the pass's whole amounts, since a facing within
+        // the pass's rate of the bearing holds rather than snaps.
+        let step = legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
+            915,
+            legaia_engine_cast::cast_module_camera::MUSHURA_HIT_ARM,
+        )
+        .unwrap_or(4);
+        let ticks = self.casting.module_mushura_turn_ticks + 1;
+        if ticks < step {
+            self.casting.module_mushura_turn_ticks = ticks;
+            return;
+        }
+        self.casting.module_mushura_turn_ticks = 0;
+        // The bearing reads the target's body pair `+0x3C` / `+0x40`
+        // (`lh a2,0x40(v0)` / `lh a3,0x3c(v0)` at `0x801F7B18`).
+        let Some((tx, tz)) = self.live_body_pair(usize::from(target)) else {
             return;
         };
         let bearing = heading(
             here,
             ModuleSeat {
-                x: t.move_state.world_x,
+                x: tx,
                 y: 0,
-                z: t.move_state.world_z,
+                z: tz,
                 facing: 0,
             },
         );
-        let (to, from) = closest_turn(i32::from(bearing), facing);
-        let rate = TURN_RATE * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
-        let next = if (to - from).abs() < rate {
-            to
-        } else if to < from {
-            from - rate
-        } else {
-            from + rate
+        let pass = i32::from(step) * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
+        let Some(a) = self.actors.get_mut(usize::from(seat)) else {
+            return;
         };
-        if let Some(a) = self.actors.get_mut(usize::from(seat)) {
-            a.battle.facing_angle = (next & 0xFFF) as u16;
+        let bank = i32::from(a.battle.render_roll);
+        if i32::from(bearing & 0xFFF) == facing {
+            // On the bearing: the bank eases back to level (`0x801F7C68..`).
+            a.battle.render_roll = if bank == 0 {
+                0
+            } else if bank < 0x800 {
+                if bank < pass { 0 } else { (bank - pass) as u16 }
+            } else if 0x1000 - bank < pass {
+                0
+            } else {
+                ((bank + pass) & 0xFFF) as u16
+            };
+            return;
+        }
+        let (to, from) = closest_turn(i32::from(bearing & 0xFFF), facing);
+        let rate = pass << 3;
+        if to < from {
+            // Turning down: the facing holds inside a pass's rate
+            // (`0x801F7B8C..0x801F7BA8`) and the body banks down to `-0x100`
+            // (`0xF00`, `0x801F7BC4..0x801F7BEC`).
+            if from >= to + rate {
+                a.battle.facing_angle = ((from - rate) & 0xFFF) as u16;
+            }
+            let b = (bank - pass) & 0xFFF;
+            a.battle.render_roll = if (0xC01..0xF00).contains(&b) {
+                0xF00
+            } else {
+                b as u16
+            };
+        } else {
+            // Turning up (`0x801F7C08..0x801F7C24`), the bank up to `0x100`
+            // (`0x801F7C40..0x801F7C64`): any word past it, the far side of
+            // level included, stores `0x100`.
+            if to >= from + rate {
+                a.battle.facing_angle = ((from + rate) & 0xFFF) as u16;
+            }
+            let b = (bank + pass) & 0xFFF;
+            a.battle.render_roll = if b < 0x101 { b as u16 } else { 0x100 };
         }
     }
 }

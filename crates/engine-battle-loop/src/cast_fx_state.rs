@@ -283,6 +283,9 @@ pub struct CastFxState {
     /// PROT 0915's chase target as retail's seat (`3..=6`), for a draw that
     /// lands on a seat the engine seats nobody in.
     pub module_mushura_retail_seat: u8,
+    /// PROT 0915 arm `0xC`'s ticks since its last turn: the turn and the
+    /// bank are a pass's law, run once every frame step of ticks.
+    pub module_mushura_turn_ticks: u8,
     /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
     /// `-0x100` and arm 16 walks it toward the row.
     pub module_mule_front: i32,
@@ -591,6 +594,7 @@ impl CastFxState {
             module_spoon_clip: 0,
             module_mushura_target: 0,
             module_mushura_retail_seat: 0,
+            module_mushura_turn_ticks: 0,
             module_mule_front: 0,
             module_terra_orbit: (0, 0),
             module_meta_tail: 0,
