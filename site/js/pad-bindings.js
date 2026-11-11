@@ -181,11 +181,16 @@
     if (FOLD_SRC) {
       let pads = [];
       try { pads = (navigator.getGamepads && navigator.getGamepads()) || []; } catch (e) { pads = []; }
-      let dz = 50;
-      try { if (typeof FOLD_SRC.stick_dead_zone === 'function') dz = FOLD_SRC.stick_dead_zone() | 0; } catch (e) {}
+      /* Read once a frame, and only with a pad connected: a frame with none
+       * makes no call into the engine. */
+      let dz = -1;
       const seen = new Set();
       for (const gp of pads) {
         if (!gp || !gp.connected) continue;
+        if (dz < 0) {
+          dz = 50;
+          try { if (typeof FOLD_SRC.stick_dead_zone === 'function') dz = FOLD_SRC.stick_dead_zone() | 0; } catch (e) {}
+        }
         const key = padKey(gp);
         seen.add(key);
         let st = padState.get(key);
