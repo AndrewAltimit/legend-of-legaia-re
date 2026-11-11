@@ -65,29 +65,48 @@ impl<'a> FieldCameraMotionHost for FieldHostImpl<'a> {
         self.world.camera.scene_offset = target;
     }
 
+    // The neither-bit arm with `ticks != 0` (`0x801E1608..0x801E162C`):
+    // `FUN_8003C5F0(0, &ctrl[+0x4A], 2, lh ctrl[+0x4A], target, ticks)`.
     fn ramp_camera_offset(&mut self, target: i16, ticks: u16) {
-        // Retail schedules a ramp over `ticks` frames through the register
-        // ramp helper; the engine has one ramp mechanism and this is not it,
-        // so the endpoint is posted immediately and the per-frame easing
-        // supplies the approach. `ease_step` caps the move at 12 units a
-        // frame either way, so the visible difference is the shape of the
-        // last few frames, not the destination.
-        let _ = ticks;
-        self.world.camera.scene_offset = target;
+        if ticks == 0 {
+            self.world.camera.scene_offset = target;
+            return;
+        }
+        self.world.ramp_camera_scene_offset(target, ticks);
     }
 
+    // The bit-25 arm (`0x801E1498..0x801E152C`). With `ticks != 0` both stores
+    // go to the ramp pool: `_DAT_8007BCAC` from its live value to
+    // `target - player[+0x16]` as a word (`0x801E14D8..0x801E150C`), then
+    // `+0x4A` to `target` as a halfword (`0x801E1510..0x801E152C`).
     fn write_camera_offset_delta(&mut self, target: i16, ticks: u16) {
-        let _ = ticks;
-        self.world.camera.scene_offset = target;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera.offset_ease = i32::from(target.wrapping_sub(footing));
+        let ease = i32::from(target.wrapping_sub(footing));
+        if ticks == 0 {
+            self.world.camera.scene_offset = target;
+            self.world.camera.offset_ease = ease;
+            return;
+        }
+        self.world.ramp_camera_offset_ease(ease, ticks);
+        self.world.ramp_camera_scene_offset(target, ticks);
     }
 
+    // The bit-24 arm (`0x801E153C..0x801E15E4`). With `ticks != 0`
+    // `_DAT_8007BCAC` ramps to `target` (`0x801E1564..0x801E1588`) and `+0x4A`
+    // to `target + player[+0x16]` (`0x801E15B4..0x801E1760`). Bit 24 is the
+    // easing's input lock, so the ramp alone moves the accumulator:
+    // `concnow_field_door_hop`'s climbs about a unit a vsync from `163` and
+    // stops on `266`.
     fn write_camera_offset_player_relative(&mut self, target: i16, ticks: u16) {
-        let _ = ticks;
         let footing = self.world.camera_ease_player_footing();
-        self.world.camera.scene_offset = target.wrapping_add(footing);
-        self.world.camera.offset_ease = i32::from(target);
+        let scene = target.wrapping_add(footing);
+        if ticks == 0 {
+            self.world.camera.scene_offset = scene;
+            self.world.camera.offset_ease = i32::from(target);
+            return;
+        }
+        self.world.ramp_camera_offset_ease(i32::from(target), ticks);
+        self.world.ramp_camera_scene_offset(scene, ticks);
     }
 
     fn camera_glide_live(&mut self) -> bool {

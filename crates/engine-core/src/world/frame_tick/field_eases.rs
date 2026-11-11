@@ -125,6 +125,42 @@ impl World {
             .map_or(0, |slot| self.actors[slot].move_state.world_y)
     }
 
+    /// Hand `_DAT_8007BCAC` ([`legaia_engine_field::camera_rig::CameraRig::offset_ease`])
+    /// to the property-ramp pool: from its live value to `end` over `ticks`
+    /// frame steps, a word store (`kind 4`).
+    ///
+    /// REF: FUN_8003C5F0
+    pub fn ramp_camera_offset_ease(&mut self, end: i32, ticks: u16) {
+        use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind};
+        self.camera.offset_ramps.install(Ramp {
+            dest: legaia_engine_field::camera_rig::CAMERA_OFFSET_RAMP_EASE,
+            owner: 0,
+            start: self.camera.offset_ease,
+            end,
+            total: i32::from(ticks),
+            remaining: i32::from(ticks),
+            kind: RampKind::U32,
+        });
+    }
+
+    /// Hand scene control `+0x4A` ([`legaia_engine_field::camera_rig::CameraRig::scene_offset`])
+    /// to the property-ramp pool: from its live value to `end` over `ticks`
+    /// frame steps, a halfword store (`kind 2`).
+    ///
+    /// REF: FUN_8003C5F0
+    pub fn ramp_camera_scene_offset(&mut self, end: i16, ticks: u16) {
+        use legaia_engine_motion_vm::ambient_motion::{Ramp, RampKind};
+        self.camera.offset_ramps.install(Ramp {
+            dest: legaia_engine_field::camera_rig::CAMERA_OFFSET_RAMP_SCENE,
+            owner: 0,
+            start: i32::from(self.camera.scene_offset),
+            end: i32::from(end),
+            total: i32::from(ticks),
+            remaining: i32::from(ticks),
+            kind: RampKind::U16,
+        });
+    }
+
     /// One frame of the camera vertical-offset easing.
     ///
     /// REF: FUN_801DA390 - this is the per-frame call site retail runs off the
@@ -246,6 +282,18 @@ impl World {
             for w in self.terrain.floor_ladder_ramps.tick(frame_delta) {
                 if let Some(rung) = self.terrain.floor_height_lut.get_mut(w.dest as usize) {
                     *rung = w.value as i16;
+                }
+            }
+        }
+
+        // Op `4C 49`'s timed camera-offset stores, on the same pool.
+        if self.camera.offset_ramps.active() != 0 {
+            for w in self.camera.offset_ramps.tick(frame_delta) {
+                match w.dest {
+                    legaia_engine_field::camera_rig::CAMERA_OFFSET_RAMP_EASE => {
+                        self.camera.offset_ease = w.value;
+                    }
+                    _ => self.camera.scene_offset = w.value as i16,
                 }
             }
         }

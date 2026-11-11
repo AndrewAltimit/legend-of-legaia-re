@@ -1293,6 +1293,20 @@ not an absolute jump: `opurud`'s entry script reaches its op-`0x44` at `+0x7A`
 with bit 24 set, unreachable under a jump arm. A VM that parks on a sub-9 ramp
 stalls `conc3` `P2[10]` on its `4C 49` and never sets `0x3E5`.
 
+"Write/ramp" is the `ticks` operand (`[4..6]`): zero stores, anything else hands
+each store to the property-ramp pool (`FUN_8003C5F0`), which lerps the word from
+its live value over that many frame steps. The delta arm ramps `_DAT_8007BCAC`
+as a word to `target - player[+0x16]` (`0x801E14D8..0x801E150C`) and `+0x4A` as
+a halfword to `target` (`0x801E1510..0x801E152C`); the player-relative arm
+ramps `_DAT_8007BCAC` to `target` (`0x801E1564..0x801E1588`) and `+0x4A` to
+`target + player[+0x16]` (`0x801E15B4..0x801E1760`); the neither-bit arm ramps
+`+0x4A` alone (`0x801E1608..0x801E162C`). The endpoints are read at the op, so a
+footing on a bobbing floor tier carries its phase into the end value. `concnow`'s
+door-hop record runs `2E 18 2E 19 4C 49 0A 00 F0 00`: a 240-step delta ramp the
+`concnow_field_door_hop` film shows climbing about a unit a vsync to `266`, with
+bit 24 holding the per-frame easing off the word. Port: `CameraRig::offset_ramps`,
+ticked with the frame-delta timers (`World::tick_field_timer_actors`).
+
 ### 0x4C nibble A - skip on a flag bit
 
 Sub-0 reads `ctx.flags`, sub-1 `ctx.local_flags`, sub-2 the scratchpad word
