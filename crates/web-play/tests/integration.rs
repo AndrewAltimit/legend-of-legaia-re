@@ -55,6 +55,7 @@ mod play_sfx_channel;
 mod point_card_toast_page;
 mod prize_confirm_page;
 mod raseru_cross_out_page;
+mod rikuroa_rockfall_rock_page;
 mod rikuroa_summit_page;
 mod screen_effect_page_prims;
 mod shop_overlay_parity;

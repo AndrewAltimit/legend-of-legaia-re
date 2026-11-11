@@ -694,11 +694,39 @@ impl World {
         &self,
         draw: &legaia_engine_effects::summon::SummonPartDraw,
     ) -> Option<legaia_engine_scene::model_bank::GlobalTmd> {
+        if draw.morph.lanes().is_empty() {
+            return None;
+        }
+        let rest = self.global_tmd(draw.model_index as i16)?;
+        let tmd = self.part_morphed_tmd(draw, &rest.tmd)?;
+        Some(legaia_engine_scene::model_bank::GlobalTmd {
+            tmd,
+            raw: rest.raw.clone(),
+        })
+    }
+
+    /// `rest` with the part draw's live VDF morph lanes staged onto every
+    /// group they name, or `None` when the part carries no armed lane or no
+    /// lane resolves. The kernel under [`Self::morphed_part_tmd`], for a
+    /// host that holds the part's rest mesh itself.
+    ///
+    /// The field stager parts take it with their scene-pack TMD: the case-5
+    /// model draw `FUN_8001ADA4` copies the actor's `+0x10` flag word to the
+    /// scratchpad (`0x8001ADF4..0x8001ADFC`) and, per group, calls the
+    /// morph substitution `FUN_8001C604` while bit `0x1000` is up
+    /// (`0x8001B43C..0x8001B448`) - the part draws its own morphed
+    /// vertices, whichever placed objects share its pack slot. `rikuroa`'s
+    /// rockfall rocks (pack slots `58` / `59`) are stalactites at rest; the
+    /// lanes lay each one across the cave path.
+    pub fn part_morphed_tmd(
+        &self,
+        draw: &legaia_engine_effects::summon::SummonPartDraw,
+        rest: &legaia_tmd::Tmd,
+    ) -> Option<legaia_tmd::Tmd> {
         let lanes = draw.morph.lanes();
         if lanes.is_empty() {
             return None;
         }
-        let rest = self.global_tmd(draw.model_index as i16)?;
         let resolve = |idx: u8| -> Option<&[u8]> {
             if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
                 legaia_engine_scene::scene_bundle::vdf_entry(
@@ -716,7 +744,7 @@ impl World {
         if slots.is_empty() {
             return None;
         }
-        let mut tmd = rest.tmd.clone();
+        let mut tmd = rest.clone();
         for (group, obj) in tmd.objects.iter_mut().enumerate() {
             let deltas = legaia_scene_formats::vdf_morph::sum_group_deltas(
                 obj.vertices.len(),
@@ -729,10 +757,7 @@ impl World {
                 v.z = v.z.wrapping_add(d[2]);
             }
         }
-        Some(legaia_engine_scene::model_bank::GlobalTmd {
-            tmd,
-            raw: rest.raw.clone(),
-        })
+        Some(tmd)
     }
 
     /// The local-space mesh a summon / move-FX part draw renders: its

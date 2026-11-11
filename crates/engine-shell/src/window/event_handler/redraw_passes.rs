@@ -788,6 +788,10 @@ impl PlayWindowApp {
             .iter()
             .filter_map(|fp| {
                 let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                // A part with armed morph lanes draws its own staged
+                // vertices (`FUN_8001ADA4` -> `FUN_8001C604`).
+                let morphed = world.part_morphed_tmd(&fp.draw, tmd);
+                let tmd = morphed.as_ref().unwrap_or(tmd);
                 let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, raw);
                 // The case-5 draw's render state: scale `+0x72`, colour word
                 // `+0x74` / `+0x78` (ABE / ABR ORed into every packet).
@@ -811,6 +815,8 @@ impl PlayWindowApp {
             .iter()
             .filter_map(|fp| {
                 let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                let morphed = world.part_morphed_tmd(&fp.draw, tmd);
+                let tmd = morphed.as_ref().unwrap_or(tmd);
                 let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(tmd, raw);
                 if cmesh.is_empty() {
                     return None;

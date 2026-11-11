@@ -616,7 +616,12 @@ impl LegaiaRuntime {
                     .and_then(|f| f.env_tmds.get(fp.draw.model_index).copied())
                     .and_then(|i| self.res()?.tmds.get(i))
             {
-                let mut m = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
+                // A part with armed morph lanes bakes its own staged
+                // vertices (`FUN_8001ADA4` -> `FUN_8001C604`), as the native
+                // field-FX pass uploads them.
+                let morphed = world.part_morphed_tmd(&fp.draw, &rtmd.tmd);
+                let tmd = morphed.as_ref().unwrap_or(&rtmd.tmd);
+                let mut m = legaia_tmd::mesh::tmd_to_vram_mesh(tmd, &rtmd.raw);
                 fp.draw.apply_render_state(&mut m);
                 if fp.single_sided {
                     legaia_engine_world_views::effect_draws::retail_front_faces(
@@ -628,7 +633,7 @@ impl LegaiaRuntime {
                 // The untextured prims take the same state - the native
                 // field-FX pass's colour half. The map display's pointer is
                 // all `F*` / `G*`, so without this it baked nothing.
-                let mut c = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+                let mut c = legaia_tmd::mesh::tmd_to_color_mesh(tmd, &rtmd.raw);
                 fp.draw.apply_render_state_color(&mut c);
                 bake_color_mesh(frame.bake_target(fp.far_corner), &model, &c);
                 continue;
