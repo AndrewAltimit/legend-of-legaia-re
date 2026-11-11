@@ -66,11 +66,27 @@ pub fn apply_flat_bank(cba_tsb: &mut [[u16; 2]]) {
 /// ([`legaia_render_kernels::prim_near_reject::prim_corner_plan`] groups it
 /// back); a vertex shared between primitives keeps its own colour.
 pub fn apply_flat_bank_colours<T: Copy>(colours: &mut [T], indices: &[u32]) {
-    let plan = legaia_render_kernels::prim_near_reject::prim_corner_plan(colours.len(), indices);
-    let src: Vec<T> = colours.to_vec();
-    for (c, rec) in colours.iter_mut().zip(&plan) {
+    use legaia_render_kernels::prim_near_reject::{PrimPlanScratch, prim_corner_plan_into};
+    use std::cell::RefCell;
+    // A ghost body flattens every frame it is near the eye; the plan's buffers
+    // stay with the thread so the pass allocates nothing once warm.
+    thread_local! {
+        static SCRATCH: RefCell<(Vec<[u32; 5]>, PrimPlanScratch)> = RefCell::default();
+    }
+    SCRATCH.with_borrow_mut(|(plan, scratch)| {
+        prim_corner_plan_into(colours.len(), indices, plan, scratch);
+        flatten(colours, plan);
+    });
+}
+
+fn flatten<T: Copy>(colours: &mut [T], plan: &[[u32; 5]]) {
+    // In place: the plan marks only the corners of primitives that own every
+    // corner alone, and such a primitive's first corner plans to itself, so
+    // no corner that is read as a first corner is ever written.
+    for (v, rec) in plan.iter().enumerate() {
         if rec[4] != 0
-            && let Some(&first) = src.get(rec[0] as usize)
+            && let Some(&first) = colours.get(rec[0] as usize)
+            && let Some(c) = colours.get_mut(v)
         {
             *c = first;
         }
