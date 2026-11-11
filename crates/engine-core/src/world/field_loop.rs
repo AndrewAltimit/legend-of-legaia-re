@@ -1155,11 +1155,16 @@ impl World {
         let ch = &mut self.field_vm.channels[ci];
         let mask = 1u32 << bit;
         if ch.object_bind {
+            let before = ch.ctx.flags;
             if op == 0xB1 {
                 ch.ctx.flags |= mask;
             } else {
                 ch.ctx.flags &= !mask;
             }
+            // The object's prop carries the same word for the collision
+            // layer ([`Self::poke_object_prop_cflags`]).
+            let (key, after) = (ch.placement_index, ch.ctx.flags);
+            self.poke_object_prop_cflags(key, before, after);
         } else if op == 0xB1 {
             // The engine runs no placement channel on its own (the touch
             // and this engagement play its interactions), so a stale `0x100`

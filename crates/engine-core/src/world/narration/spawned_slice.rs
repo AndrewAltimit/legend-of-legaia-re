@@ -1366,6 +1366,7 @@ impl World {
                             .mirror_object_end_latch(key, &mut channels[ci].ctx.local_flags);
                     }
                     let clip_words = (channels[ci].ctx.local_flags, channels[ci].ctx.field_6a);
+                    let class_before = channels[ci].ctx.flags;
                     let r = vm::field::step_with_caller(
                         &mut host,
                         &mut channels[ci].ctx,
@@ -1408,6 +1409,13 @@ impl World {
                             (clip_words.0, c.local_flags),
                             (clip_words.1, c.field_6a),
                         );
+                        // And at its `+0x10`, the word the collision list
+                        // reads: `cave01` P2[13], the end of Terra's
+                        // training, opens the camp's rock (object 0) with
+                        // `B1 00 00`; landed on the channel alone, the rock
+                        // stood shut and the party could not leave.
+                        host.world
+                            .poke_object_prop_cflags(key, class_before, c.flags);
                     }
                     // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
                     // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
