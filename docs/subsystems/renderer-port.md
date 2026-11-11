@@ -386,9 +386,22 @@ battle units the port draws `SZ` is `w` itself.
 | Ground grid | far bucket (`pin_to_far_bucket`, the page's `u_far_slice`) | far bucket |
 | Party and monster bodies | per pixel | corner mean |
 | After-image ghosts | per pixel, pushed past the body about the eye | corner mean of the pushed pose |
-| Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean |
+| Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean; farthest corner on a `0x10000000` word |
 | Effect-pool billboards | per pixel | corner mean (the quad's centre) |
 | Screen primitives (trails, streaks, cast-arm packets) | over the 3D frame in their own order | unchanged |
+
+A part or node whose colour word carries `0x10000000` links at its farthest corner,
+the field's rule for a record flag `0x800`. The dispatcher stages the word's top
+byte at `0x1F800043` (`0x800433D8`) and forces a cued bank for any non-zero mode
+byte (`ori a2,a2,1` at `0x800433CC`), and every cued leaf tests the byte's `0x10`
+except bank 3's split quad leaf `FUN_80045BB4`, whose sixteen `GT3`s link on their
+own means (`ColourWord::links_at_far_corner`). The hosts draw such a draw with
+`DRAW_ORDER_FAR_CORNER`; the page bakes those parts and nodes into a stream of
+their own (`play_battle_fx_far_*`, drawn with `meanDepth` `2`). Inferno's (`0x9E`)
+tunnel wall is one: word `0x58000000`, `32` quads `2838` units out whose near
+corners reach past the camera. By mean they sort in front of the flame sheet
+inside them; the retail table holds the wall in buckets `828..938` and the
+flames in `397..584`.
 
 A semi-transparent primitive writes no depth and is drawn after every opaque one,
 sorted far to near by its triangle's centroid (`psx_blend`); with every
