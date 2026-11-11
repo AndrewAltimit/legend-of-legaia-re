@@ -1814,6 +1814,22 @@ before it left, so its step column names that arm. Those entries take the cost c
 instead. Iota's arm 4 costs the clamp where its step column read `1`, so arm 5 opens on `4`
 as retail's does, and the film's arm 5 reads `.633` against `.400`.
 
+**The two emulators price an arm differently.** The ramp is the law's, so both emulators run
+it, but how far it reaches depends on what the frames before the arm cost, and that is the
+emulated machine's. On PCSX-Redux Cort's Guilty Cross (`chitei2_cort_pre_guilty_cross`) opens
+arm 1 at step `3` and runs `4` from its second pass on the clamp; the Mednafen state the PCM
+channel replays (`cort_guilty_cross_mid_cast`) holds its arm-1 ring at `626..668`, step `3`.
+Zenoir's arm 5 opens `1`, `3`, then `4` on PCSX-Redux (`party_basic_attack_vs_gobu_gobu`),
+where the Mednafen state already reads step `3` in arm 3, which runs `1` on PCSX-Redux. The arm
+table is the PCSX-Redux reading, so a replay of a Mednafen state takes the ramp from the wrong
+machine's costs, and the PCM channel's cast windows, recorded on Mednafen, part from it by about
+two vsyncs on both casts. Taking an arm's step on its own first pass hid that by accident.
+
+A replay's stretched frame (`World::stretch_battle_frame`) keeps its step for the pass after it:
+the ring's pending step waits for the stretch to settle. Taken on that pass, it undid the
+stretch, the drive stretched again every pass, and Guilty Cross's replay ran frames of `2`, `3`
+and `4` vsyncs in turn until its gate.
+
 Neither Ozma (`.635`) nor Odd Dimension (`.710`) loses its film to the step. On retail's own steps
 (`--retail-steps`) they score `.632` and `.724`. Ozma's arms 6 to 20 already match retail's step on
 every game-clock vsync, its slow frames are paired by the game clock, and its arms 7 to 9 score
