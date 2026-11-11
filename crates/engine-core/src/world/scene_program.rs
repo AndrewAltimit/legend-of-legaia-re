@@ -45,7 +45,8 @@ use super::*;
 
 use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::field_actor_program::{
-    PLAYER_LIFTING, ProgramEffect, ProgramEnv, ProgramPlayer, step_scene_program,
+    PLAYER_LIFTING, ProgramEffect, ProgramEnv, ProgramPlayer, VOICE_CHANNEL, VOICE_CLIP,
+    VOICE_DURATION, step_scene_program,
 };
 use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_YIELD;
 
@@ -165,8 +166,25 @@ impl World {
                         self.push_field_xa_cue(clip, chan, dur);
                         out.xa.push((clip, Some(chan)));
                     }
-                    // The seek-ahead: nothing to play (module docs).
-                    ProgramEffect::XaStream { clip } => out.xa.push((clip, None)),
+                    // The seek-ahead: nothing to play (module docs), but it
+                    // names the file the voice state's one-shot reads at
+                    // least 0x28 vsyncs later, so it is the program's
+                    // prestage point - the lead a host that decodes clips
+                    // asynchronously (the browser page) needs to start that
+                    // line on its frame. A host that reads on demand drops
+                    // the list.
+                    ProgramEffect::XaStream { clip } => {
+                        if clip == VOICE_CLIP {
+                            self.queue_xa_prestage([
+                                legaia_engine_system::sound_state::XaVoiceClip {
+                                    clip: u32::from(VOICE_CLIP),
+                                    channel: u32::from(VOICE_CHANNEL),
+                                    duration_sectors: u32::from(VOICE_DURATION),
+                                },
+                            ]);
+                        }
+                        out.xa.push((clip, None))
+                    }
                 }
             }
             out.stepped += 1;
@@ -322,6 +340,41 @@ mod tests {
         assert!(
             end - start >= usize::from(VOICE_DURATION),
             "the program waited out the {VOICE_DURATION}-vsync span ({start}..{end})"
+        );
+    }
+
+    #[test]
+    fn the_seek_ahead_prestages_the_voice_line_ahead_of_its_frame() {
+        // The voice state's seek-ahead (`FUN_80019794`) names the file the
+        // one-shot reads; the engine lists the one-shot for prestage there,
+        // so a host that decodes clips asynchronously has it staged before
+        // the frame that starts it. Retail's own wait between the two is
+        // at least 0x28 vsyncs.
+        let mut w = world_with_player();
+        w.system_flag_set(u16::from(FLAG_SCENE_ACTIVE));
+        assert_eq!(w.man_load_resume_programs(), vec![2]);
+        let want = legaia_engine_system::sound_state::XaVoiceClip {
+            clip: u32::from(VOICE_CLIP),
+            channel: u32::from(VOICE_CHANNEL),
+            duration_sectors: u32::from(VOICE_DURATION),
+        };
+        let (mut listed, mut started) = (None, None);
+        for frame in 0..800 {
+            w.tick_scene_programs(2);
+            w.retire_yielded_actors();
+            if listed.is_none() && w.drain_field_xa_prestage().contains(&want) {
+                listed = Some(frame);
+            }
+            if started.is_none() && w.drain_field_xa_cues().contains(&want) {
+                started = Some(frame);
+            }
+            w.tick_field_xa_busy();
+        }
+        // Each step spans two vsyncs.
+        let (listed, started) = (listed.expect("listed"), started.expect("started"));
+        assert!(
+            (started - listed) * 2 >= 0x28,
+            "the prestage leads the line by 0x28 vsyncs (steps {listed}..{started})"
         );
     }
 }
