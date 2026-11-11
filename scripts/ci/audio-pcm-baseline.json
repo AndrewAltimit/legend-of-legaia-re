@@ -5,8 +5,8 @@
       "xa_level": -0.1319
     },
     "cort_guilty_cross_mid_cast": {
-      "cast_corr": 0.9813,
-      "cast_level": -0.0052
+      "cast_corr": 0.8594,
+      "cast_level": 0.0163
     },
     "cort_mystic_shield_mid_cast": {
       "cast_corr": 0.995,
@@ -97,8 +97,8 @@
       "track_level": 0.0114
     },
     "zenoir_summon_mid_cast": {
-      "cast_corr": 0.9977,
-      "cast_level": 0.0866
+      "cast_corr": 0.8549,
+      "cast_level": 0.0623
     },
     "zeto_big_wave_mid_cast": {
       "cast_corr": 0.986,
