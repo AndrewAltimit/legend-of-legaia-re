@@ -148,7 +148,14 @@ impl PlayWindowApp {
         // The settings panel holds the game still and reads the pad itself.
         let panel_holds = self.panel_holds_game();
         if panel_holds {
-            let edge = first_tick_pad & !self.prev_pad;
+            // A held controller direction steps the panel's list again, as a
+            // held arrow key's OS repeat does (`gamepad::NavRepeat`).
+            let repeat = self.panel_pad_repeat.step(
+                self.gamepad_held,
+                legaia_engine_system::gamepad::DPAD_MOVES,
+                self.started_at.elapsed().as_millis() as u64,
+            );
+            let edge = (first_tick_pad & !self.prev_pad) | repeat;
             self.panel_pad_edge(edge);
             self.prev_pad = held_pad;
         }

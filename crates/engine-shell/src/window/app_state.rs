@@ -867,6 +867,10 @@ pub(super) struct PlayWindowApp {
     /// (or nothing yet): the prompts that name a button's key name the
     /// controller's button instead while this is set.
     pub(super) last_pad: Option<legaia_engine_system::gamepad::PadStyle>,
+    /// The `F12` panel's auto-repeat for a held controller direction, on a
+    /// clock from [`Self::started_at`].
+    pub(super) panel_pad_repeat: legaia_engine_system::gamepad::NavRepeat,
+    pub(super) started_at: std::time::Instant,
     /// Pad bits the `--simple-dialogue` picker owned and that are still held
     /// (`step_simple_dialog_picker`): hidden from the world until released.
     pub(super) picker_swallow: u16,

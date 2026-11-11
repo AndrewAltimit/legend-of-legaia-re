@@ -478,6 +478,58 @@ impl GamepadMapping {
     }
 }
 
+/// Auto-repeat for a held controller move on a host-drawn list (the
+/// launcher, the native window's `F12` panel), at the pace a held arrow key
+/// repeats there: the first repeat [`NAV_REPEAT_DELAY_MS`] after the press,
+/// then one every [`NAV_REPEAT_PERIOD_MS`]. The game's own menus need none:
+/// their auto-repeat is retail's pump over the held word, which a controller
+/// feeds as a key does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NavRepeat {
+    held: u16,
+    since_ms: Option<u64>,
+    last_ms: Option<u64>,
+}
+
+/// The four d-pad bits, the moves a list repeats.
+pub const DPAD_MOVES: u16 = PadButton::Up as u16
+    | PadButton::Down as u16
+    | PadButton::Left as u16
+    | PadButton::Right as u16;
+
+/// [`NavRepeat`]'s delay before the first repeat.
+pub const NAV_REPEAT_DELAY_MS: u64 = 400;
+/// [`NavRepeat`]'s period between repeats.
+pub const NAV_REPEAT_PERIOD_MS: u64 = 80;
+
+impl NavRepeat {
+    /// The bits of `held & moves` to act on again at `now_ms` (any
+    /// monotonic millisecond clock). A change to the held moves restarts the
+    /// delay; the press itself is the caller's edge, not a repeat.
+    pub fn step(&mut self, held: u16, moves: u16, now_ms: u64) -> u16 {
+        let held = held & moves;
+        if held != self.held {
+            self.held = held;
+            self.since_ms = Some(now_ms);
+            self.last_ms = None;
+            return 0;
+        }
+        let Some(since) = self.since_ms.filter(|_| held != 0) else {
+            return 0;
+        };
+        let due = match self.last_ms {
+            None => now_ms.saturating_sub(since) >= NAV_REPEAT_DELAY_MS,
+            Some(last) => now_ms.saturating_sub(last) >= NAV_REPEAT_PERIOD_MS,
+        };
+        if due {
+            self.last_ms = Some(now_ms);
+            held
+        } else {
+            0
+        }
+    }
+}
+
 /// What one poll of the controllers changed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct GamepadEdges {
@@ -801,5 +853,24 @@ mod tests {
         let mut short = short;
         short.bind(ButtonSpace::Standard, 10, PadButton::L3);
         assert_eq!(short.buttons.len(), STANDARD_BUTTON_COUNT);
+    }
+
+    #[test]
+    fn a_held_move_repeats_after_the_delay() {
+        let mut r = NavRepeat::default();
+        let down = PadButton::Down.mask();
+        let moves = down | PadButton::Up.mask();
+        let held = down | PadButton::Cross.mask();
+        assert_eq!(r.step(held, moves, 0), 0, "the press is the caller's edge");
+        assert_eq!(r.step(held, moves, 399), 0);
+        assert_eq!(r.step(held, moves, 400), down);
+        assert_eq!(r.step(held, moves, 440), 0);
+        assert_eq!(r.step(held, moves, 480), down);
+        assert_eq!(r.step(PadButton::Cross.mask(), moves, 500), 0, "let go");
+        assert_eq!(
+            r.step(PadButton::Cross.mask(), moves, 5000),
+            0,
+            "Cross is no move"
+        );
     }
 }

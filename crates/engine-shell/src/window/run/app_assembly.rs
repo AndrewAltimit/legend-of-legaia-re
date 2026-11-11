@@ -179,6 +179,8 @@ impl PlayWindowApp {
             pad_taps: Default::default(),
             gamepad: None,
             last_pad: None,
+            panel_pad_repeat: Default::default(),
+            started_at: std::time::Instant::now(),
             gamepad_held: 0,
             picker_swallow: 0,
             tick_no: 0,

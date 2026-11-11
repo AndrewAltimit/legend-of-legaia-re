@@ -3317,50 +3317,36 @@ enum PadNav {
     Play,
 }
 
-/// A held controller direction steps again, as a held arrow key does: the
-/// first repeat [`NAV_REPEAT_DELAY`] after the press, then one every
-/// [`NAV_REPEAT_PERIOD`]. Only the moves repeat (D-pad, stick, L1 / R1);
-/// a held Cross does not press twice.
-#[derive(Debug, Default)]
+/// A held controller move steps again, as a held arrow key does
+/// (`gamepad::NavRepeat`, the `F12` panel's too). Only the moves repeat
+/// (D-pad, stick, L1 / R1); a held Cross does not press twice.
+#[derive(Debug)]
 struct NavRepeat {
-    held: u16,
-    since: Option<Instant>,
-    last: Option<Instant>,
+    repeat: legaia_engine_system::gamepad::NavRepeat,
+    epoch: Instant,
 }
 
-const NAV_REPEAT_DELAY: Duration = Duration::from_millis(400);
-const NAV_REPEAT_PERIOD: Duration = Duration::from_millis(80);
+impl Default for NavRepeat {
+    fn default() -> Self {
+        Self {
+            repeat: Default::default(),
+            epoch: Instant::now(),
+        }
+    }
+}
 
 impl NavRepeat {
     /// The moves to repeat this poll, given what the controller holds.
     fn step(&mut self, held: u16, now: Instant) -> u16 {
         use legaia_engine_system::pad::PadButton as B;
-        let moves = held
-            & (B::Up.mask()
-                | B::Down.mask()
-                | B::Left.mask()
-                | B::Right.mask()
-                | B::L1.mask()
-                | B::R1.mask());
-        if moves != self.held {
-            self.held = moves;
-            self.since = Some(now);
-            self.last = None;
-            return 0;
-        }
-        let Some(since) = self.since.filter(|_| moves != 0) else {
-            return 0;
-        };
-        let due = match self.last {
-            None => now.duration_since(since) >= NAV_REPEAT_DELAY,
-            Some(last) => now.duration_since(last) >= NAV_REPEAT_PERIOD,
-        };
-        if due {
-            self.last = Some(now);
-            moves
-        } else {
-            0
-        }
+        let moves = B::Up.mask()
+            | B::Down.mask()
+            | B::Left.mask()
+            | B::Right.mask()
+            | B::L1.mask()
+            | B::R1.mask();
+        let ms = now.saturating_duration_since(self.epoch).as_millis() as u64;
+        self.repeat.step(held, moves, ms)
     }
 }
 
@@ -4491,7 +4477,7 @@ mod tests {
     fn a_held_direction_repeats_and_a_held_cross_does_not() {
         use legaia_engine_system::pad::PadButton as B;
         let mut r = NavRepeat::default();
-        let t0 = Instant::now();
+        let t0 = r.epoch;
         let at = |ms| t0 + Duration::from_millis(ms);
         let down = B::Down.mask() | B::Cross.mask();
         assert_eq!(
