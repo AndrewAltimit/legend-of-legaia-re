@@ -885,8 +885,41 @@ pub(super) fn chain_terminator_pass(ram: &[u8], ctx: u32, action_state: u8, step
 /// step `2`. Walked back two passes (yaw `1970`) its frame read `image`
 /// `.823`; at the shot's origin (yaw `2168`, where the doc's walk-in film
 /// swings the framing) `.943`.
+#[cfg(test)]
 pub(super) fn module_shot_frames(ram: &[u8], ctx: u32) -> Option<i32> {
-    if game_anchors::u8_at(ram, ctx + 7) != 0x70 || game_anchors::u8_at(ram, ctx + 0x279) != 3 {
+    module_shot(ram, ctx).map(|s| s.frames)
+}
+
+/// A module shot of a known length ([`module_shot_frames`]) and what the
+/// framing before its arm did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct KnownModuleShot {
+    /// The builder's tween length (`inc = ceil(gap / frames)`).
+    pub frames: i32,
+    /// Whether the framing the arm cut away from was still walking on the
+    /// passes before it. PROT 0962's wind-up shot sets out from the walk-in's
+    /// case-6 follow, which had landed (the walk back stops at the shot's
+    /// origin); Kiss of Death's arm 0 (PROT 0955, `0xC` frames,
+    /// `kiss_of_death_camera`) sets out from the magic-capture fade `0x6F`,
+    /// which re-arms case 6 on every pass and was still closing.
+    pub prior_walks: bool,
+}
+
+/// The shot [`module_shot_frames`] names, with its prior framing.
+///
+/// `battle_map01_lippian_kiss_of_death_mid_cast` holds arm 0's table two
+/// frame-step units in (pitch `3` a unit with `26` to go, TR z `301` with
+/// `3005`): the arm built it on the RAM's pass, which ran at step `2` (the
+/// history's newest entry, `0x2BC`, names the step-`4` pass to come). The
+/// frame on screen stood on the fade's framing one pass earlier still. Taken
+/// to the shot's origin the still read `image` `.890`, two passes on the
+/// unbounded walk `.911`, and with the fade's pass walked at the table's own
+/// increments on its step `.953` (a sweep of the walk back peaks there, `.942`
+/// a half pass either side). The fade's own case-6 endpoint is not in the
+/// RAM, so its pass walks on the shot's increments: a stand-in fit to the
+/// frame, not a law.
+pub(super) fn module_shot(ram: &[u8], ctx: u32) -> Option<KnownModuleShot> {
+    if game_anchors::u8_at(ram, ctx + 7) != 0x70 {
         return None;
     }
     let seat = game_anchors::u8_at(ram, ctx + 0x13);
@@ -895,10 +928,21 @@ pub(super) fn module_shot_frames(ram: &[u8], ctx: u32) -> Option<i32> {
         return None;
     }
     let action = game_anchors::u8_at(ram, actor + 0x1DF);
-    (0xA2..=0xA4).contains(&action).then_some(i32::from(
-        legaia_engine_cast::cast_module_camera::WIND_UP_SHOT_FRAMES,
-    ))
+    let phase = game_anchors::u8_at(ram, ctx + 0x279);
+    if phase == 3 && (0xA2..=0xA4).contains(&action) {
+        return Some(KnownModuleShot {
+            frames: i32::from(legaia_engine_cast::cast_module_camera::WIND_UP_SHOT_FRAMES),
+            prior_walks: false,
+        });
+    }
+    (phase == 1 && action == KISS_OF_DEATH).then_some(KnownModuleShot {
+        frames: i32::from(legaia_engine_cast::cast_module_camera::KISS_OF_DEATH_ARM0_SHOT_FRAMES),
+        prior_walks: true,
+    })
 }
+
+/// Kiss of Death's action id (PROT 0955's body `0x6E`).
+const KISS_OF_DEATH: u8 = 0x6E;
 
 /// A slot-B arm calls the builder `FUN_801D829C` on the pass it runs and
 /// never again, so the table the RAM holds is the one every pass since has
@@ -942,7 +986,7 @@ pub(super) fn displayed_module_cam_live(
     // ceil(gap / frames)`, read on the component that moves furthest a
     // unit); the frame before the arm stood on the framing the shot set out
     // from, which is the table's own origin, so the walk back stops there.
-    if let Some(frames) = module_shot_frames(ram, ctx)
+    if let Some(shot) = module_shot(ram, ctx)
         && let Some((inc, gap)) = (0..9u32)
             .filter(|&k| k != 2)
             .map(table)
@@ -950,7 +994,19 @@ pub(super) fn displayed_module_cam_live(
             .max_by_key(|&(inc, _)| inc)
     {
         let left = (gap.abs() + inc - 1) / inc;
-        vsyncs = vsyncs.min((frames - left).max(0));
+        let walked = (shot.frames - left).max(0);
+        vsyncs = if shot.prior_walks && walked > 0 && vsyncs > walked {
+            // The pass that armed the shot walked `walked` units on its own
+            // step; the passes before it ran on the framing it cut from.
+            walked
+                + steps
+                    .iter()
+                    .skip(1)
+                    .map(|&s| i32::from(s.max(1)))
+                    .sum::<i32>()
+        } else {
+            vsyncs.min(walked)
+        };
     }
     let mut back = [0i32; 9];
     for k in (0..9u32).filter(|&k| k != 2) {

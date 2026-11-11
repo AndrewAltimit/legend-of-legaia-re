@@ -24,6 +24,10 @@ const fn on_caster_seat(record: u32) -> ModuleSpawn {
 /// PROT 0955's Kiss of Death tick body, the trampoline's `0x6E` arm.
 pub const KISS_OF_DEATH_BODY: u32 = 0x801F_86A4;
 
+/// Arm 0's shot length: the builder `FUN_801D829C` (`jal` at `0x801F883C`)
+/// takes `a3 = 0xC` frames (`li a3,0xc` at `0x801F8808`).
+pub const KISS_OF_DEATH_ARM0_SHOT_FRAMES: u16 = 0xC;
+
 /// PROT 0955's countdown word (`lui 0x8020` / `-0x62D8`).
 pub const KISS_OF_DEATH_COUNTDOWN: u32 = 0x801F_9D28;
 
@@ -89,7 +93,11 @@ pub fn kiss_of_death_camera(
         pass_spawns[0] = Some(on_caster_seat(a));
         pass_spawns[1] = Some(on_caster_seat(b));
         return CaptureCamArm {
-            shot: Some(on_caster(-0x20, third(seats.depth_raw), 0xC)),
+            shot: Some(on_caster(
+                -0x20,
+                third(seats.depth_raw),
+                KISS_OF_DEATH_ARM0_SHOT_FRAMES,
+            )),
             pass_spawns,
             // Every standing seat hidden (`sw zero,0x4` / `sb 0xFF,0x21c`
             // behind the HP test, `0x801F887C..0x801F88B0`), then the caster

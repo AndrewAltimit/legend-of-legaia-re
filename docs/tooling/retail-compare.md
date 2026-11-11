@@ -2884,6 +2884,22 @@ table two units in, one step-`2` pass: walked back the lag's two passes their
 frames stood yaw `1970`, `198` units round of the shot's `2168` origin, and
 read `image` `.943` each at the origin.
 
+<a id="the-module-shots-walk-back"></a>
+The walk goes past the origin when the framing the arm cut from was still
+walking. Kiss of Death's arm 0 (PROT 0955) builds its shot over `0xC` units
+(`li a3,0xc` at `0x801F8808`, builder `jal 0x801D829C` at `0x801F883C`;
+`KISS_OF_DEATH_ARM0_SHOT_FRAMES`) out of the magic-capture fade `0x6F`, which
+re-arms case 6 on every pass. `battle_map01_lippian_kiss_of_death_mid_cast`
+holds the table two units in (pitch `3` a unit with `26` to go, TR z `301`
+with `3005`), so the RAM's pass built it and ran at step `2`: the history's
+newest entry (`0x2BC`) names the step-`4` pass to come, and a forward film
+then moves `4 * inc` a pass. The frame on screen stood one pass further back,
+on the fade's framing (`module_shot`, `prior_walks`), which walks on the
+shot's own increments at the older pass's step: the fade's case-6 endpoint is
+not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
+`image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
+on the table, `.950` on this walk; a sweep of the walk back peaks there.
+
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
 delta` a pass, the director's own unit) and PROT 0965's `0x801F8370`, which
@@ -4741,8 +4757,17 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   modulating it on its `B + F/4` path (`((t >> 2) * m) >> 7`,
   `getTextureTransColShade` in `gpu/soft/soft.cc`), so a texel channel
   under `4` adds nothing whatever its colour. The dark stem drops out and
-  the red lips keep a trace, which is the open faintness above: the residual
-  is the blend's arithmetic, not the ghost's pose or facing.
+  the red lips keep a trace, which is the open faintness above: the ghost's
+  faintness is the blend's arithmetic, not its pose or facing. That arithmetic
+  is the emulator's, not the console's: the GPU blends the **modulated**
+  texel, `min(B + (F >> 2), 31)` with `F = (t5 * c8) >> 7` (nocash PSX-SPX,
+  "GPU - Texture Color / Blending"; [the 5-bit table](../subsystems/renderer.md)),
+  so the port's game path keeps the console's rule and the PCSX-Redux texel
+  rule stays an instrument of the image child alone
+  (`PsxTexelRule::PcsxRedux`, already on for a PCSX-Redux state). Most of the
+  still's frame-wide residue was the camera instead: arm 0 built its `0xC`-frame
+  shot on the RAM's own pass, at step `2`, and the frame on screen stood a pass
+  earlier on the fade's framing ([the module shot's walk back](#the-module-shots-walk-back)).
 
 ### Which pose names a strike capture's ghost bits
 

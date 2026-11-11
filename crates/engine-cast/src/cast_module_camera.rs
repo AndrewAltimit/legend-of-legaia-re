@@ -1183,8 +1183,8 @@ pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{
-    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN,
-    KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
+    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_ARM0_SHOT_FRAMES, KISS_OF_DEATH_BODY,
+    KISS_OF_DEATH_COUNTDOWN, KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
 };
 pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
