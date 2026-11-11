@@ -58,7 +58,6 @@ const EMPTY_WRITE: CaptureSeatWrite = CaptureSeatWrite {
     seek_floor: None,
     stage_knockdown: false,
     ghost_ring_clear: false,
-    alive_only: false,
 };
 
 pub(super) const fn seat(record: u32, pos: [i16; 3], rot: [i16; 3]) -> ModuleSpawn {

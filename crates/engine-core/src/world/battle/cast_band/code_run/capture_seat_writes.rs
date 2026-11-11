@@ -244,14 +244,6 @@ impl World {
         if w.is_empty() {
             return;
         }
-        if w.alive_only
-            && self
-                .actors
-                .get(usize::from(slot))
-                .is_none_or(|a| a.battle.hp == 0)
-        {
-            return;
-        }
         // Retail plays a reaction on the seat's one clip channel, so an idle
         // staged with the bump cuts it as it cuts any other clip (PROT
         // 0958's arm 25 on a victim still in its get-up).

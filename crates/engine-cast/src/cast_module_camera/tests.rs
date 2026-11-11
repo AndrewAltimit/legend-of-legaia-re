@@ -1648,18 +1648,3 @@ fn guilty_cross_drops_its_cross_through_arm_3s_last_frames() {
     assert_eq!(pass.part_write.unwrap().y, Some(-0x200));
     assert_eq!(pass.part_write.unwrap().records, &[0x801F_81E8]);
 }
-
-/// Megaton Press's arm `0x11` stages a living victim back to idle with the
-/// bump as it passes (`0x801F81A8..0x801F81B4`, behind `bne v1,zero` at
-/// `0x801F8158`).
-#[test]
-fn megaton_press_stands_a_living_victim_up_as_it_ends() {
-    let mut st = ModuleCamState::default();
-    st.countdown.0 = 0;
-    let a = megaton_press_camera(&mut st, 0x11, seats());
-    assert!(!a.hold);
-    assert_eq!(a.victim_write.stage, Some(0));
-    assert!(a.victim_write.restage);
-    assert!(a.victim_write.alive_only);
-    assert_eq!(a.victim_write.z, Some(-0x200));
-}
