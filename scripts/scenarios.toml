@@ -3824,6 +3824,22 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "route walk", "map02"]
 
 [[scenarios]]
+label = "minigame_fishing_retail_catch_lift"
+backup_fingerprint = "042781f358bc16f654c092b83358fd227267596fd19c6d6a1e1066b3642e44db"
+description = "Fishing, a catch mid close-up: the landed Species-5 fish (render scale 0x52B) flung up at its arc's peak (actor +0x16 = -2800) under the orbiting catch camera, state word 0x801D926C = 0x1E, hooked-fish sub-state 0x801D91C8 = 4, mode 0x19. From minigame_fishing_retail_lure_cast, autorun_fishing_catch_film.lua (pad closed-loop on the fishing globals: full-power recast, cadence pump, tension-gauge fight); saved 240 vsyncs after the catch."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "catch"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_catch_plate"
+backup_fingerprint = "1bb2252da0fb4b8314efb9ea48a90a395f73b1c66c090842a63b82e40eec278c"
+description = "Fishing, the catch result plate held (state 0x22): the landed Species-5 fish hanging from the plate's line at its rest, line tie DAT_801D9154 = (159, 92), 'Small 40 POINT', mode 0x19. Same run as minigame_fishing_retail_catch_lift, saved 600 vsyncs after the catch."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "catch"]
+
+[[scenarios]]
 label = "minigame_fishing_retail_shore"
 backup_fingerprint = "53cf37172c0bb2aa9a529358e4751c9727a5ab5ce7b559037fe074eb147d1af2"
 description = "Fishing at the Vidna venue, the idle shore: state word 0x801D926C = 0xC, the three party members with their backs to the camera, Normal Lure, mode 0x19 (venue block other1). From minigame_fishing_retail_ready (a retail, pad-only state parked on the fade state 0xB), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d926c:12:60, 72 vsyncs after the load."
