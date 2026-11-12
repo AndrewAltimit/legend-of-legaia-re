@@ -169,6 +169,12 @@ pub struct ScriptGate {
     /// (`0x801DE90C..0x801DE944`), so the PC alone meets the gate on the
     /// leg's first frame.
     pub walk: Option<(u8, i16)>,
+    /// A gate parked on the player's walk wait (`B3 F8 0A`) behind the
+    /// record's walk-to-tile (`C7 F8 <x> <z> <mode>`): the tile's centre and
+    /// the player's distance left to it at the capture, the larger axis.
+    /// The wait holds the record on its PC for the whole walk, so the PC
+    /// alone meets the gate on the walk's first frame.
+    pub player_walk: Option<(i32, i32, i32)>,
 }
 
 /// Where retail's pager stands inside a page ([`ScriptGate::pager`]).
@@ -246,8 +252,12 @@ impl ScriptGate {
                 )
             })
             .unwrap_or_default();
+        let player_walk = self
+            .player_walk
+            .map(|(x, z, left)| format!(":m{x}.{z}.{left}"))
+            .unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{player_walk}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -266,8 +276,16 @@ impl ScriptGate {
         let mut latch = None;
         let mut walk = None;
         let mut pager = None;
+        let mut player_walk = None;
         for tail in it {
-            if let Some(p) = tail.strip_prefix('p') {
+            if let Some(m) = tail.strip_prefix('m') {
+                let mut f = m.split('.');
+                player_walk = Some((
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ));
+            } else if let Some(p) = tail.strip_prefix('p') {
                 let mut f = p.splitn(4, '.');
                 let state = f.next()?.parse().ok()?;
                 let scroll = f.next()?.parse().ok()?;
@@ -319,6 +337,7 @@ impl ScriptGate {
             pager,
             latch,
             walk,
+            player_walk,
         })
     }
 
@@ -329,7 +348,10 @@ impl ScriptGate {
     /// phase. Each tick since the engine took up the gate's record is a
     /// frame retail drew too.
     pub fn takes_displayed_frame(&self) -> bool {
-        self.latch.is_some() || self.typing.is_some() || self.pager.is_some()
+        self.latch.is_some()
+            || self.typing.is_some()
+            || self.pager.is_some()
+            || self.player_walk.is_some()
     }
 
     /// The per-tick resume drive both seeds run: start the gate's record
@@ -402,13 +424,26 @@ impl ScriptGate {
     }
 
     /// The target's compass leg has spent as many units as the capture's,
-    /// for a gate held behind a walking placement ([`Self::walk`]); `true`
-    /// for any other gate, and once the engine's leg has landed.
+    /// for a gate held behind a walking placement ([`Self::walk`]), and the
+    /// player stands as near its walk's tile as retail's did, for a gate on
+    /// the player's walk wait ([`Self::player_walk`]); `true` for any other
+    /// gate, and once the engine's leg has landed.
     fn walk_reached(&self, world: &legaia_engine_core::world::World) -> bool {
         self.walk.is_none_or(|(target, accum)| {
             world
                 .npc_compass_walk_accum(target)
                 .is_none_or(|a| a as i16 >= accum)
+        }) && self.player_walk.is_none_or(|(x, z, left)| {
+            world
+                .player_actor_slot
+                .and_then(|p| world.actors.get(usize::from(p)))
+                .is_none_or(|a| {
+                    let (px, pz) = (
+                        i32::from(a.move_state.world_x),
+                        i32::from(a.move_state.world_z),
+                    );
+                    (x - px).abs().max((z - pz).abs()) <= left
+                })
         })
     }
 
@@ -1147,6 +1182,7 @@ mod tests {
             pager: None,
             latch: None,
             walk: None,
+            player_walk: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {
@@ -1154,6 +1190,7 @@ mod tests {
             typing: Some((1, 15)),
             latch: Some(-3),
             walk: Some((59, 8)),
+            player_walk: Some((5952, 5952, 544)),
             ..g
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));

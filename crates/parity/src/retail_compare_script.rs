@@ -66,6 +66,44 @@ pub struct RetailScript {
     /// compass leg: the target byte and the leg's spent units `+0x54`
     /// ([`walking_target`]).
     pub walk: Option<(u8, i16)>,
+    /// Parked on the player's walk wait `B3 F8 0A` behind the record's own
+    /// `C7 F8 <x> <z> <mode>`: the walk's tile centre and the player's
+    /// distance left to it ([`player_walk`]).
+    pub player_walk: Option<(i32, i32, i32)>,
+}
+
+/// One tile of the field grid, in world units.
+const TILE: i32 = 128;
+
+/// A record parked on the player's walk wait (`B3 F8 0A`, the test of the
+/// halt bit the walk arm raised) with its own walk-to-tile op seated on
+/// `+0x94` (`C7 F8 <x> <z> <mode>`, op `0x47` on the player): the tile's
+/// centre and the player's distance left to it, the larger axis. The wait
+/// holds the record on its PC for the whole walk, so the PC alone meets
+/// the gate on the walk's first frame.
+fn player_walk(
+    ram: &[u8],
+    node: u32,
+    op: u8,
+    operands: Option<Vec<u8>>,
+) -> Option<(i32, i32, i32)> {
+    if op != 0xB3 || operands.is_none_or(|o| o != [0xF8, 0x0A]) {
+        return None;
+    }
+    if game_anchors::u32_at(ram, node + 0x10) & HALT == 0 {
+        return None;
+    }
+    let seat = bytes_at(ram, game_anchors::u32_at(ram, node + 0x94), 4)?;
+    if seat[..2] != [0xC7, 0xF8] {
+        return None;
+    }
+    let (tx, tz) = (
+        i32::from(seat[2]) * TILE + TILE / 2,
+        i32::from(seat[3]) * TILE + TILE / 2,
+    );
+    let (px, pz) = game_anchors::player_pos(ram)?;
+    let left = (tx - i32::from(px)).abs().max((tz - i32::from(pz)).abs());
+    Some((tx, tz, left))
 }
 
 /// The halt bit a walk arm raises on its target (`+0x10 & 0x400`), held
@@ -277,6 +315,12 @@ impl RetailScripts {
                 op,
                 bytes_at(ram, base.wrapping_add(pc as u32 + 1), 1).map(|b| b[0]),
             );
+            let player_walk = player_walk(
+                ram,
+                node,
+                op,
+                bytes_at(ram, base.wrapping_add(pc as u32 + 1), 2),
+            );
             out.running.push(RetailScript {
                 flat_index: id,
                 pc,
@@ -284,6 +328,7 @@ impl RetailScripts {
                 op,
                 player_latch,
                 walk,
+                player_walk,
                 head,
                 latches: bytes_at(ram, base, pc + 1)
                     .map(|body| run_latches(&body, pc))
@@ -351,6 +396,7 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         pager: scripts.pager.clone().filter(|_| s.op & 0x7F < 0x20),
         latch: s.player_latch,
         walk: s.walk,
+        player_walk: s.player_walk,
     })
 }
 
@@ -520,6 +566,7 @@ mod tests {
                 latches: Vec::new(),
                 player_latch: None,
                 walk: Some((59, 8)),
+                player_walk: None,
             }],
             display_lag: 4,
             ..RetailScripts::default()
@@ -559,6 +606,7 @@ mod tests {
             latches: Vec::new(),
             player_latch: (op == 0xAD).then_some(219),
             walk: None,
+            player_walk: None,
         };
         let scripts = RetailScripts {
             running: vec![script(0x1F)],
