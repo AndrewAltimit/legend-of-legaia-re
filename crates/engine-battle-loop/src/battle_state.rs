@@ -991,8 +991,9 @@ pub struct BattleState {
     /// with `a0 = 1`) and never times it out - the next key-`1` registration
     /// reuses the node (the compare at `0x80035520`), and the only removals
     /// are the hook's `FUN_800319A8(0)` / `(1)` pair under a waiting box at
-    /// flow `0x5A` (`0x801F71BC..0x801F71D8`) and the teardown drain
-    /// `FUN_800355F0` - so it stays on screen over the surface it named
+    /// flow `0x5A` (`0x801F71BC..0x801F71D8`) and the drain `FUN_800355F0`
+    /// (the round's `0xFE` hand-off through `FUN_801D99BC`, and the
+    /// teardown) - so it stays on screen over the surface it named
     /// (`v0_1_battle_command_submenu`: the `[Begin]` arm's prompt over the
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group

@@ -338,6 +338,14 @@ impl World {
             self.minigames.muscle_leg_ran = true;
         }
         self.battle.command = None;
+        // `0xFE`'s arm opens on `FUN_801D99BC` (`jal` at `0x801D31E8`), whose
+        // `FUN_800355F0` (`0x801D9A24`) frees every node on the `gp+0x148`
+        // text-actor list. The sparring tutorial's standing prompt is the
+        // key-`1` node there, so it leaves the screen as the round plays out:
+        // `battle_town01_tetsu_strike` holds only the name plate and the
+        // bottom strip on that list mid-strike, with the `[Begin]` prompt the
+        // round was committed under gone.
+        self.battle.tutorial_standing = None;
         self.battle.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
         // command surface on a hand-built battle) has no keys yet; retail

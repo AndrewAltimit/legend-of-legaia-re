@@ -894,14 +894,19 @@ The key decides how long a box stays. A self-dismissing prompt (key `1`) is
 never timed out: the next key-`1` registration reuses its node, and the only
 explicit removals are the hook's `FUN_800319A8(0)` / `FUN_800319A8(1)` pair on
 the suppressed path at flow state `0x5A` (`0x801F71BC..0x801F71D8`) and the
-teardown drain `FUN_800355F0`. `v0_1_battle_command_submenu` still shows the
+drain `FUN_800355F0`, which also runs at each round's hand-off: the `0xFE` arm
+opens on `FUN_801D99BC` (`0x801D31E8`), whose drain (`0x801D9A24`) frees every
+node on the list. So the prompt the round was committed under is gone while
+the round plays out: `battle_town01_tetsu_strike` holds only the name plate
+(key `0x23`) and the bottom strip (`0x27`) on the list over Tetsu's swing. `v0_1_battle_command_submenu` still shows the
 `[Begin]` arm's prompt over the category ring it named. The port's battle
 loop parks on any box in its queue, so a self-dismissing box still holds it
 for a dwell (`TUTORIAL_BOX_AUTO_FRAMES`, or until Cross) that retail's does
 not; but when the box leaves the queue it stays on screen as the standing
 prompt (`BattleState::tutorial_standing`) until the next self-dismissing
 emission replaces it, the flow-`0x5A` unregister frees it under a waiting
-box, or the teardown drains it. Both hosts draw it with the queue's front
+box, the round's hand-off drains it (`World::begin_round_execution`), or the
+teardown does. Both hosts draw it with the queue's front
 group (`BattleState::battle_tutorial_boxes_on_screen`).
 
 Two further consequences fall out of the registrar read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
