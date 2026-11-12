@@ -1384,6 +1384,19 @@ holds endpoint `3368` under cursor `72`, and `3368` is `60 * 2 + 0x700 - 2640`.
 Rounding the cursor down to a keyframe aims up to `30` units short
 (`battle_rugi_slippery_poisonous_breath_mid_cast`).
 
+The driver's shots are re-armed like every other framing: each pass of the magic
+band rebuilds the table from the live pose, and the walker adds
+`ceil(gap / frames) * frame_step` a pass, clamping on the endpoint. So a six-frame
+shot covers two thirds of its gap on a step-`4` pass, not all of it, and a group
+shot that takes over from case `0xA` walks in over several passes.
+Caruban's Fire Breath on a full party shows it: case `0xA` hands on to the group
+shot `0xB` on the first hit, on step `4`, and retail's table reads yaw `26` and TR z
+`825` a vsync over gaps of `156` and `4950`, the camera landing four passes later
+(`battle_rugi_caruban_2_fire_breath_mid_cast`'s film). Port:
+`BattleCamera`'s magic-band arm steps the shot as a `Glide::chase`; stepped as a
+glide over `frames / step` passes, the step-`4` pass halved six frames to one step
+and cut straight to the group shot.
+
 ### The Battle Camera option
 
 The options screen's Battle Camera row (Close / Normal / Far, config word

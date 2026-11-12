@@ -1886,6 +1886,15 @@ impl BattleCamera {
             // cast-effect driver's shot is the camera, re-armed on every pass
             // that calls it, and a pass that does not leaves the last tween
             // to land.
+            //
+            // Re-armed, the builder's `ceil(gap / frames)` a vsync times the
+            // pass's step is the law ([`Glide::chase`]), not a glide over
+            // `frames / step` passes: a six-frame shot on a step-`4` pass
+            // halves to one step, a snap, where retail covers two thirds of
+            // the gap. Caruban's Fire Breath on a full party hands case `0xA`
+            // to the group shot `0xB` on step `4`, and retail's step table
+            // reads yaw `26` / TR z `825` a vsync over gaps of `156` / `4950`,
+            // the camera walking in over four passes.
             if SPELL_CAM_STATES.contains(&self.last_action_state) {
                 if let Some(mut si) = self.spell_cam.take() {
                     si.accum = self.attack.ctx.accum;
@@ -1896,8 +1905,13 @@ impl BattleCamera {
                             self.spell_shot = Some((si.case, self.last_frames));
                         }
                         let mut from = self.pose;
-                        let steps = self.frames_to_steps(shot.frames);
-                        let g = Glide::linear(&mut from, shot.pose, shot.raw_z, steps, true);
+                        let g = Glide::chase(
+                            &mut from,
+                            shot.pose,
+                            shot.raw_z,
+                            shot.frames,
+                            f32::from(self.frame_step),
+                        );
                         self.pose = from;
                         self.glides.clear();
                         self.glides.push_back(g);
