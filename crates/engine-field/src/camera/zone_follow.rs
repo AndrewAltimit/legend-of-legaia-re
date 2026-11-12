@@ -422,9 +422,14 @@ impl Camera {
     /// shot and go cinematic" froze the camera on the terrain-less fallback
     /// pose (`H = 512`, the zone-miss depth) in every such scene.
     ///
-    /// A zero trigger arms the follow camera's snap, which composes, clamps
-    /// and copies on this frame's [`Camera::tick`]; a non-zero trigger
-    /// composes now and arms the mover toward that pose.
+    /// A zero trigger composes, clamps and copies now, as the arm does
+    /// inside the op: the follow camera's own snap waits for its tick, which
+    /// does not run while a record holds the shot, and `bylon` `P2[6]`'s
+    /// `45 C0 00 00` before "Noa: Vahn!" then kept the stair shot for the
+    /// whole box where a retail recording has cut to the follow pose
+    /// (pitch `215`, `H` `768`) twenty frames before it opens. The snap stays
+    /// armed for the follow tick as well. A non-zero trigger composes now
+    /// and arms the mover toward that pose.
     ///
     /// PORT: FUN_801DE084
     /// REF: FUN_801DAB90, FUN_801DAA50
@@ -436,8 +441,17 @@ impl Camera {
     ) {
         self.mode = CameraMode::Follow;
         self.script_owns_focus = false;
-        if apply_trigger == 0 || !zone_camera_scene(world) {
+        if !zone_camera_scene(world) {
             self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        }
+        if apply_trigger == 0 {
+            self.mover = None;
+            self.prime_zone_before_script(world);
+            if let Some((target, _)) = self.compose_follow_globals(world) {
+                self.globals.0 = target;
+            }
             self.zone.snap_pending = true;
             return;
         }
