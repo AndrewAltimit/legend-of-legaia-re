@@ -45,8 +45,10 @@ common cases with buttons:
    what the view shows without reaching for the button (on *3D model* it
    writes the textured `.glb`). After an export, *Show folder* on the status
    line opens the folder it went to. An export made with a controller skips
-   the save window and goes into the last export folder (at first
-   `Legaia Explorer` in Pictures) under its own name.
+   the save window and goes into the export folder (at first
+   `Legaia Explorer` in Pictures) under its own name; the View menu's
+   *Export folder* row, or *Change folder...* on the status line after such
+   an export, picks another.
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder
    (it proposes one beside the disc image), open *Options* for the same skip options the
    command line offers, and start. The tab shows progress and the log, can be
