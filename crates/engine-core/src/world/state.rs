@@ -689,6 +689,7 @@ impl World {
         self.clock.play_tick_phase = 0;
         self.cutscene.timeline = None;
         self.field_vm.helper_contexts.clear();
+        self.drop_field_submode_screen_for_title();
         self.cutscene.narration = None;
         self.cutscene.card = None;
         self.cutscene.text_balloon = None;
