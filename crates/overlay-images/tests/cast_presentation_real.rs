@@ -307,6 +307,32 @@ fn a_site_a_phase_store_falls_through_to_runs_on_the_pass() {
     assert_eq!(kill.timing, SiteTiming::Every, "{}", dump(&p));
 }
 
+/// PROT 0957's Thunder Storm enters arm 4 through `bne v0,zero,0x801F7048`
+/// with `lui a0,0x20` in the delay slot (`0x801F6AD4`); the arm ORs `0x2020`
+/// into `a0` (`0x801F7050`) and arms the wash with it (`0x801F70A0`).
+#[test]
+fn thunder_storm_arms_its_arm_four_wash_off_the_switch_delay_slot() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] cast presentation: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let bytes = read_entry(&mut archive, 957);
+    let p = cast_presentation::decode(&bytes, content_end(&bytes, SLOT_B_LINK_BASE));
+    let wash = |arm: u8| {
+        p.arm_sites(Some(0x801F_6A14), arm)
+            .find_map(|s| match s.call {
+                PresentationCall::ArmedWash { rgb } => Some(rgb),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("arm {arm} arms the wash\n{}", dump(&p)))
+    };
+    assert_eq!(wash(4), Some(0x20_2020));
+    assert_eq!(wash(5), Some(0x10_2010));
+    assert_eq!(wash(6), Some(0x10_2010));
+}
+
 #[test]
 fn kemaro_arm_eight_ramps_its_wash_behind_the_countdown() {
     use cast_presentation::{WordGuard, WordTest};

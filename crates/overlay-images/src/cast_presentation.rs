@@ -1935,6 +1935,23 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             {
                 seed.r[li.rt()] = V::C(u32::from(phase));
             }
+            // An arm the switch's chain branches into runs that branch's
+            // delay slot on the way in: PROT 0957's Thunder Storm enters arm
+            // 4 through `bne v0,zero,0x801F7048` with `lui a0,0x20` in its
+            // slot (`0x801F6AD4`), the high half of the armed wash colour
+            // the arm ORs `0x2020` into (`0x801F7050`).
+            let into: Vec<u32> = (d.load..entry)
+                .step_by(4)
+                .filter(|&va| {
+                    img.ins(va)
+                        .is_some_and(|i| i.is_branch() && i.branch_target() == entry)
+                })
+                .collect();
+            if let [b] = into[..]
+                && let Some(slot) = img.ins(b + 4)
+            {
+                seed.exec(&slot);
+            }
             let entry = match img.ins(entry) {
                 Some(i) if i.is_j() => {
                     if let Some(d) = img.ins(entry + 4) {

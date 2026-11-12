@@ -4395,6 +4395,18 @@ The scatter's density follows the frame step: retail reads step `4` through arms
 to 6 and the engine's default is `2`, so the engine seats twice retail's sparks a
 vsync ([the frame step](battle-stage-camera.md#the-battle-frame-step-is-the-frames-own-cost)).
 
+Arms 4 to 6 each arm the wash every pass: `0x202020` on arm 4 (its high half
+set in the switch's delay slot, [above](#presentation-calls)), `0x102010` on
+arms 5 and 6 (`0x801F7324`, `0x801F76C4`). The farthest bucket then holds the
+subtractive quad, not the opaque clear, and the frames build on each other: a
+retail ordering table of arm 4 rasterised on black shows thin ribbons on a dark
+field, where the displayed frame holds a white cloud and a lavender wash, the
+ribbons of each pass's seed over the passes before. Built that way, arm 4 reads
+`.838`, `.835` and `.839` on the three Gilium films (`chitei2`, `jouind_lv3`,
+`noaru_lv2`) against `.58` on a cleared target. What remains is early in the
+arm, where the engine's frame stands brighter (`201` of luma against `158`).
+Grade `disassembly` + `capture`.
+
 <a id="prot-0959-megaton-press"></a>
 
 **0959 Megaton Press** (`cast_module_camera::megaton_press_camera`) stages
@@ -5617,6 +5629,16 @@ both hosts ([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-one
 target gets no quad, since it could only darken the frame's own pixels:
 composited that way, Horn's arm-9 wash (`0x202020` a pass) took that much off
 every additive layer of the arm.
+
+**An arm's first register can be the switch's.** A conditional branch's delay
+slot runs on the way into the arm it selects, so a value the arm only finishes
+can start there. Thunder Storm enters arm 4 through `bne v0,zero,0x801F7048`
+with `lui a0,0x20` in its slot (`0x801F6AD4`), and the arm ORs `0x2020` into
+`a0` (`0x801F7050`) before arming the wash at `0x801F70A0`: `0x202020`. The
+decoder seeds an arm's walk with the slot of the one chain branch that targets
+its entry. Read from the arm alone, the colour is unknown, the engine armed
+nothing, and arm 4 drew each frame on a cleared target where retail's ribbons
+and scatter build to white ([Thunder Storm](#prot-0957-thunder-storm)).
 
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
