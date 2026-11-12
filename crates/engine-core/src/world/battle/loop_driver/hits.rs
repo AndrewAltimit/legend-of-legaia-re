@@ -1320,7 +1320,7 @@ impl World {
         // of a `--hit-trace` recording's `hits.csv` / `blocks.csv` columns.
         if std::env::var_os("LEGAIA_DIAG_BLOCKS").is_some() {
             eprintln!(
-                "block: att {attacker} tgt {target} seed {seed} a {}/{} d {}/{} ramps {}/{} spirit {} entry {block_entry} juggle {reacting} accum {} granted {granted}",
+                "block: att {attacker} tgt {target} seed {seed} a {}/{} d {}/{} ramps {}/{} spirit {} entry {block_entry} juggle {reacting} accum {} granted {granted} dability {:?} dstatus {:#x}",
                 roll.attacker.spd,
                 roll.attacker.atk,
                 roll.defender.spd,
@@ -1329,6 +1329,8 @@ impl World {
                 roll.guard_ramp,
                 roll.defender_spirit,
                 accum,
+                roll.defender.ability,
+                roll.defender.status,
             );
         }
         let mut blocked = granted;

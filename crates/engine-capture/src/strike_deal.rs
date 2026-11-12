@@ -79,7 +79,26 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
+    stand_dealt_guard(world);
     deal_hit_words(world, deal);
+}
+
+/// The party seats retail held in the Spirit stance (`+0x1DE == 4`) when the
+/// strike began (`LEGAIA_BATTLE_GUARD`, the probe's `guard=`), standing in it.
+///
+/// The block roll scales the defender's side by `3 / 2` for that stance
+/// (`0x801EC6C0..0x801EC6D4`), and the damage roll halves a guarded hit, so a
+/// struck member's stance decides the swing's verdict as much as the seed
+/// word does. The replay's drive commits a plain Attack for every member but
+/// on a whole-party Spirit round, so a capture whose round mixed the two
+/// (`battle_korb2_warhalf_strike`: Vahn and Gala on Spirit, Noa on Attack)
+/// replayed an unguarded Vahn: its second swing landed where retail's roll
+/// read `683 < 978` and blocked.
+fn stand_dealt_guard(world: &mut World) {
+    let forced = world.battle.forced_guard;
+    for (g, f) in world.battle.guarding.iter_mut().zip(forced) {
+        *g |= f;
+    }
 }
 
 /// Arm the hit words alone: the deal of a cast whose hits are the melee
@@ -156,6 +175,16 @@ mod tests {
         b.current_anim = 7;
         restage_dealt_byte(&mut b, &[8, 7, 6]);
         assert_eq!(b.queued_anim, 7);
+    }
+
+    #[test]
+    fn the_deal_stands_the_captured_guards_in_the_spirit_stance() {
+        let mut world = World::new();
+        world.battle.forced_guard = [true, false, true];
+        world.battle.guarding = [false, true, false];
+        stand_dealt_guard(&mut world);
+        // A seat the replay put on Spirit itself keeps it.
+        assert_eq!(world.battle.guarding, [true, true, true]);
     }
 
     #[test]

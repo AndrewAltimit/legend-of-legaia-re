@@ -1068,6 +1068,14 @@ on both sides, so a clip both sides played can be read cue for cue.
   holds `393` / `64`, the replay `86` / `116`;
 - the striker's working ATK `+0x158` off the state: `battle_map02_mad_ogre_strike` stands on a Power
   Charge's `257` where the replay, which never cast it, holds `206`;
+- the party seats in the Spirit stance at the strike's start (`+0x1DE == 4`, the probe's `guard=`,
+  passed as `LEGAIA_BATTLE_GUARD`). The block roll scales the defender's side by `3 / 2` for the
+  stance (`0x801EC6C0..0x801EC6D4`), and the drive commits Spirit only on a round the whole party
+  sat out on it, so a round that mixed the two replayed an unguarded member.
+  `battle_korb2_warhalf_strike` holds Vahn and Gala on Spirit and Noa on Attack: Warhalf's second
+  swing rolls `683` against Vahn's `978` in retail (his `435` times `3 / 2` for the stance and again
+  for his ability bit `0x100000`, `0x801EC80C..0x801EC828`) and blocks, where the replay's unguarded
+  Vahn stood on `652` and took the hit;
 - the seed word `0x80009010` going into each hit. A `--hit-trace` recording logs it at the head of the
   strike kernel's hit body (`0x801EC5A8`, past the head guards and ahead of the block roll's two draws),
   for every hit the kernel resolves, blocked, missed or landed, as `retail/hits.csv`; the deal hands those
