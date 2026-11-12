@@ -118,6 +118,10 @@
 --                        (the absolute vsync, as in meta.csv), and the whole
 --                        emulator state beside it as state_<vsync>.rawsstate
 --                        (VRAM included: sstate_vram.py); empty = none
+--   LEGAIA_GPU_COST      1 = also write gpu.csv, one row per vsync from the inject:
+--                        the frame-cost words gp+0x3A8 / gp+0x3AC and the GPU
+--                        draw-time model of the table the GPU was handed last
+--                        (lib/probe/gpu_cost.lua), in hblanks
 --   LEGAIA_CAST_PARTS    1 = also write parts.csv from the cast begin, one row per
 --                        vsync per live move-VM part (actor-list nodes on the
 --                        part tick FUN_80021DF4): the retail half of the engine
@@ -245,6 +249,30 @@ local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
     return v
+end
+-- gpu.csv (`LEGAIA_GPU_COST=1`): per vsync, the frame-cost words `gp+0x3A8`
+-- (CPU done) and `gp+0x3AC` (after `DrawSync`), and what the table the GPU was
+-- handed last costs to draw on the v2 GPU's measured costs (`probe.gpu_cost`,
+-- in hblanks). On the probe table: the frame body has no upvalue to spare.
+local GPU_COST = probe.getenv_num("LEGAIA_GPU_COST", 0) ~= 0
+function probe.gpu_cost_row(elapsed, st7, cx)
+    if not GPU_COST then return end
+    if probe.gpu_csv == nil then
+        probe.gpu_cost = require("probe.gpu_cost")
+        probe.gpu_csv = probe.csv_open(probe.out_path("gpu.csv"),
+            "vsync,frame,st7,phase,party,step,cpu,tot,cost,draw,dma,polys,pc,ra")
+    end
+    local function scratch_u16(a)
+        return (probe.read_scratch_u8(a) or 0) + 256 * (probe.read_scratch_u8(a + 1) or 0)
+    end
+    local draw, dma, polys = probe.gpu_cost.drawn_table(probe.read_u16, scratch_u16)
+    -- Where the CPU stood at the vsync: one PC sample a vsync, which over a
+    -- long pass says what the pass spends its time on.
+    local r = PCSX.getRegisters()
+    probe.gpu_csv:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%.1f,%.1f,%d,0x%08X,0x%08X", elapsed, u32(0x8007B798), st7,
+        u8(cx + 0x279), u8(cx), probe.read_scratch_u8(0x1F800393) or 0, u32(0x8007B6C0), u32(0x8007B6C4),
+        probe.frame_cost_newest(), draw, dma, polys, bit.band(tonumber(r.pc) or 0, 0xFFFFFFFF),
+        bit.band(tonumber(r.GPR.n.ra) or 0, 0xFFFFFFFF))
 end
 -- parts.csv: every live move-VM part, in list order. On the probe table: the
 -- frame body already sits at Lua's limit of 60 upvalues.
@@ -896,6 +924,7 @@ probe.run({
             probe.frame_cost_newest(), u8(cx + 0x26D))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
         probe.cast_parts_row(cast_seen, elapsed, st7, cx)
+        probe.gpu_cost_row(elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
         -- engine recorder's file of the same name.
         if cast_seen then

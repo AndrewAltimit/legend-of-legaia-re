@@ -181,6 +181,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_GHOST_TRACE"] = "1"
     if a.calc_clock:
         env["LEGAIA_CALC_CLOCK"] = "1"
+    if a.gpu_cost:
+        env["LEGAIA_GPU_COST"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -892,6 +894,9 @@ def main() -> int:
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
+    ap.add_argument("--gpu-cost", action="store_true",
+                    help="retail: also write gpu.csv, the frame-cost words and the GPU draw-time model "
+                         "of the table drawn each vsync (scripts/ci/frame-cost-agreement.py reads it)")
     ap.add_argument("--retail-parts", action="store_true",
                     help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
     ap.add_argument("--prim-calls", action="store_true",
