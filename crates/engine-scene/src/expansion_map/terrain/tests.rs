@@ -353,3 +353,65 @@ fn a_decal_on_a_slope_follows_the_ground() {
     assert_eq!(flat.objects[0].vertices.len(), 6);
     assert!(flat.objects[0].vertices.iter().all(|v| v.y == 0));
 }
+
+/// A soft boundary's overlay is emitted ahead of the ground it lies on, so
+/// it wins the coplanar tie the way an earlier prim wins retail's
+/// ordering-table bucket: the hosts' coplanar pass
+/// (`legaia_tmd::mesh::separate_coplanar_prims`) keeps the ground in place
+/// and lifts the overlay toward the eye. Emitted after the ground it lost on
+/// both hosts and in PSX mode, and the boundary drew hard.
+#[test]
+fn a_soft_boundary_draws_over_the_ground_it_blends() {
+    let mut def = def();
+    let t = def.terrain.as_mut().unwrap();
+    t.materials = toml::from_str::<toml::Table>(
+        r#"m = [
+  { name = "path", chars = ".", cells = [{ tpage = 12, clut = 32005, tile = 38 }] },
+  { name = "rock", chars = "^", cells = [{ tpage = 12, clut = 32000, tile = 9 }] },
+]"#,
+    )
+    .unwrap()["m"]
+        .clone()
+        .try_into()
+        .unwrap();
+    t.soften = 0.6;
+    let s = def.terrain_surface().unwrap().unwrap();
+    assert!(
+        s.paint
+            .iter()
+            .flatten()
+            .flatten()
+            .any(|p| p.overlay.is_some()),
+        "the boundary softens"
+    );
+    let grid = def.tile_grid().unwrap();
+    let stp: std::collections::BTreeMap<u16, u16> =
+        [(32005, 0x7FF0), (32000, 0x7FF1)].into_iter().collect();
+    let meshes = tile_meshes(&def, &grid, &s, None, &stp, None).unwrap();
+    let mut overlays = 0;
+    for (_, raw) in &meshes {
+        let tmd = legaia_tmd::parse(raw).unwrap();
+        let model = legaia_tmd::encode::decode_model(&tmd, raw).unwrap();
+        let groups = &model[0].groups;
+        let soft = groups
+            .iter()
+            .position(|g| g.semi_transparent && g.prims.iter().all(|p| p.tsb & 0x60 == 0));
+        let Some(soft) = soft else { continue };
+        let ground = groups.iter().position(|g| !g.semi_transparent).unwrap();
+        assert!(soft < ground, "the overlay is emitted ahead of the ground");
+        overlays += groups[soft].prims.len();
+        // Through the hosts' coplanar pass: no ground triangle moves, the
+        // overlay's do (toward the eye).
+        let mut m = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, raw, |_, _, _| true);
+        let before = m.positions.clone();
+        legaia_tmd::mesh::separate_coplanar_prims(&mut m);
+        let moved = |v: usize| m.positions[v] != before[v];
+        let n_soft = groups[soft].prims.len() * 3;
+        assert!((0..n_soft).any(moved), "an overlay triangle lifts");
+        assert!(
+            (n_soft..m.positions.len()).all(|v| !moved(v)),
+            "the ground stays where the floor is"
+        );
+    }
+    assert!(overlays > 0, "the terrain carries a soft boundary");
+}

@@ -431,11 +431,18 @@ fn tile_mesh(
             }
         }
     }
+    // The soft boundary goes ahead of the ground it lies on. Two coplanar
+    // prims resolve as retail's ordering table resolves them - the earlier
+    // one is linked at the bucket's head and draws last, on top - and the
+    // depth-tested hosts follow the same rule (`separate_coplanar_prims`
+    // keeps the later of two equal prims in place and lifts the earlier one
+    // toward the eye). Emitted after the ground, the overlay lost to it on
+    // every host and the boundary drew hard.
     let mut groups = Vec::new();
     for (prims, semi) in [
+        (soft, true),
         (ground, false),
         (water, false),
-        (soft, true),
         (foam_prims, true),
     ] {
         if !prims.is_empty() {
