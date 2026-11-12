@@ -1665,8 +1665,17 @@ write the slot; SFX `0x24` on any change, buzz `0x23` on none.
 **Candidate list `0x14`**: per frame it resolves the hovered row (class
 `0x4000` payload 0 = Remove, `0x7000` = the equipped item itself, else a bag
 slot) and derives the stat preview by **trial-equipping** - the record's 8
-equip bytes save into `DAT_801EF0C8`, the candidate (or 0) is written,
-`FUN_801CF650` re-aggregates, the bytes restore. The confirm arm
+equip bytes save into `DAT_801EF0C8`, the candidate is written (the Remove row
+stages `-1` into `DAT_801E46B0` and writes `0`), the stat aggregator
+`FUN_80042558` runs over the record, `FUN_801CF650` sums the trial block into
+`0x801EF0A0` (the two blocks swap around it), the bytes restore and the
+aggregator runs again. Because the trial goes through the aggregator, an
+accessory's percent boosts and the maxima clamps reach the trial block, HP and
+MP words included. It also has a side effect: the aggregator lowers a current
+HP or MP that exceeds the trial maximum, and the restore does not raise it
+back, so hovering a candidate that lowers a maximum (Remove on an HP-boosting
+accessory, say) clips the character's current value. The port previews on
+copies and does not reproduce the clip. The confirm arm
 (`0x801DA0B4..0x801DA1D0`) tests only class `0x4000` (Remove: return the
 equipped item to the bag, buzz `0x37` on an empty slot) and the bag classes
 `0x6000` / `0x9000` (take one copy via `FUN_80042EE0` + `FUN_80043048`, return

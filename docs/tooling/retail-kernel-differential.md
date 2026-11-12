@@ -1355,3 +1355,14 @@ rung's first-round intro never played), the tally state leaving on its first fra
 the drain, the pause menu opening mid-exchange where the combat ticks gate it on the player standing idle, and the scene
 suppress, two menu latches and the shutout tally a frame or a sense out. The anim commit `FUN_8004AD80`, entered at its
 head, matches the cue-cursor seed and the tag ladder.
+
+The Equip screen's candidate step `FUN_801D9C14`, entered, armed and run one frame per candidate row with the stat
+aggregator live beneath it, found three defects. Window 25's trial block was summed off the record's live window as it
+stood, where retail writes the candidate into the record and runs the aggregator first, so an accessory's HP, MP or
+stat boost never showed as a rise on the Goods rows. The Remove row staged `0` where retail stages `-1`, so on an
+accessory row the panel did not fall back to the worn piece's stat rows. And taking the last of a stack through an
+equip left an `(id, 0)` stack in the bag where retail's by-slot consume empties the slot. The same run shows a retail
+oversight the port does not reproduce: the trial's aggregator lowers a current HP or MP above the trial maximum and the
+restore never raises it back, so hovering a candidate that lowers a maximum clips the character's current value. The
+shop's party column `FUN_801D4C28`, run with its summer and the aggregator, matches the port's members, notes and
+arrows, and the commit log's launch leaf `FUN_801DB7B0` matches the record the glide stepper then walks.
