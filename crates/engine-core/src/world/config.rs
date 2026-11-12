@@ -707,6 +707,14 @@ pub(crate) fn tile_board_held_mask(input: &input::InputState) -> u16 {
 /// `2F 13` its script clear.
 pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
 
+/// The roll hold the touch post `FUN_801D5B5C` arms
+/// (`EncounterState::roll_hold`, `li v0,0x8` / `sb` at `0x801D5BE8..0x801D5BEC`).
+pub const TOUCH_ROLL_HOLD: u8 = 8;
+
+/// The roll hold a record spawn `FUN_8003BDE0` arms (`li v0,0x4` / `sb` at
+/// `0x8003C0E0..0x8003C0E4`).
+pub const RECORD_SPAWN_ROLL_HOLD: u8 = 4;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,11 +739,3 @@ mod tests {
         assert_eq!(field_npc_glide_speed(0x82), field_npc_glide_speed(2));
     }
 }
-
-/// The roll hold the touch post `FUN_801D5B5C` arms
-/// (`EncounterState::roll_hold`, `li v0,0x8` / `sb` at `0x801D5BE8..0x801D5BEC`).
-pub const TOUCH_ROLL_HOLD: u8 = 8;
-
-/// The roll hold a record spawn `FUN_8003BDE0` arms (`li v0,0x4` / `sb` at
-/// `0x8003C0E0..0x8003C0E4`).
-pub const RECORD_SPAWN_ROLL_HOLD: u8 = 4;
