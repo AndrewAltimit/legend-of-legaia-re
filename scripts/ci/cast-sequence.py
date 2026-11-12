@@ -526,16 +526,28 @@ def retail_step_track(out: Path) -> str:
 
 
 def frame_step_rows(rows: list[dict]) -> str:
-    """The step track's lines off `meta.csv` rows ([`retail_step_track`])."""
-    lines, first, last = [], None, None
+    """The step track's lines off `meta.csv` rows ([`retail_step_track`]).
+
+    A recording that opens on a state's own instant can open on a frame whose
+    pass ran before the first row: no `rand()` draw lands in it (every battle
+    pass makes the frame driver's discarded draw, `FUN_80046A20`), and its
+    step belongs to no pass the engine runs from the gate. That frame is
+    left out; Lip King's Kiss of Death otherwise ran its first arm-1 pass on
+    the leftover frame's step `3` and arm 1 a pass long."""
+    frames, first, last = [], None, None
     for r in rows + [None]:
         if last is not None and (r is None or r["frame"] != last["frame"]):
-            lines.append(_step_row(first, last))
+            frames.append((first, last, r))
             first = None
         if r is not None and first is None:
             first = r
         last = r
-    return "".join(lines)
+    if frames and frames[0][2] is not None and "rand" in frames[0][0]:
+        f0, _, nxt = frames[0]
+        run0 = [r for r in rows if r["frame"] == f0["frame"]]
+        if all(r["rand"] == nxt["rand"] for r in run0):
+            frames = frames[1:]
+    return "".join(_step_row(f, l) for f, l, _ in frames)
 
 
 def retail_rand_track(out: Path) -> str:
