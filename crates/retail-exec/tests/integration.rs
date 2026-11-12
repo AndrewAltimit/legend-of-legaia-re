@@ -139,6 +139,7 @@ mod dev_menu_adjust;
 mod dev_menu_flags;
 mod dev_menu_rows;
 mod dev_rows;
+mod dialog_line_walk;
 mod dialog_pager;
 mod dome_hud;
 mod dome_tally;
