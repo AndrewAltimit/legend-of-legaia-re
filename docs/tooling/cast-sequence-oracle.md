@@ -843,6 +843,19 @@ it now starts from retail's stand, and what it does from there (the targets it
 trades, the hits that knock the row about) is the chase's own to read. Gilium's `0x95` loses `.002` plain, a few hundredths on arms `0xD`,
 `0x10` and `0x11` whose camera now stands nearer the recording's.
 
+Kemaro's arms `0x12` and `0x13` were held by the draw: the spear arm 9 seats and arms
+13..17 walk by handle never moved, and arm 17's two discs, once seated on retail's trio,
+drew over the band wash that covers them in retail
+([cast module](../subsystems/cast-module.md#summon-creature-directors)). With both, arm
+`0x12` reads `.982` and arm `0x13` `.973` on every seat, against `.825` and `.741`, and no
+other film of the set moves:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9079` | `.9084` | `0x90` `.935` to `.950` |
+| `--retail-steps` | `.9133` | `.9138` | `0x90` `.936` to `.950` |
+| `--retail-steps --rand-track` | `.9356` | `.9361` | `0x90` `.936` to `.950` |
+
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
 and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
 the passes the rand track seats fall on other frames; Juggernaut's arm 26 reads `.44`
