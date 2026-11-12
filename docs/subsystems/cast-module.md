@@ -3092,6 +3092,53 @@ and frames the victim's display pair, draws the creature off, and on its pass pu
 seat and facing. The pitch is `BattleActor::render_pitch`, composed by both
 hosts as `Rx(-pitch)` outside the facing (the frame flip conjugates it).
 
+<a id="barras-sky"></a>
+
+**Barra's sky.** Arm 6's pass arms the colour wash in scanline mode `1`
+(`0x801F73D0..0x801F7400`, height `8`, no wobble, alpha `0x80`), so from arm 7 on
+the sky is the uploaded page resampled line by line. Its sample origin moves. The
+tick keeps two words, `u` at `0x801F9360` and `v` at `0x801F9362`, which arm 0 zeroes
+and the arms slide with `p` the pass's scalar times its frame step:
+
+| Arm | Every pass | On the pass |
+|---:|---|---|
+| 7 | `v += 4p`, `u -= p` (`0x801F7484..0x801F74A8`) | |
+| 8 | `u -= p` (`0x801F75A0`) | `v = 0x2000`, `u -= 0x6000` (`0x801F7650..0x801F7664`) |
+| 9 | `v -= 4p` (`0x801F76A8..0x801F76BC`) | |
+| `0xA` | `v -= 2p` (`0x801F7800..0x801F7818`) | |
+| `0xB` | `v -= p` (`0x801F78B0..0x801F78BC`) | `v = 0`, `u -= 0x6000` (`0x801F793C..0x801F794C`) |
+| `0xC` | `v += 8p` while the wash alpha it ramps down lasts (`0x801F7AEC..0x801F7AFC`) | |
+
+The tick epilogue (`0x801F8230..0x801F82A0`) stores `u >> 8` as the wash's start
+`u` `ctx[+0x285]` and `v >> 8`, clamped to `0..=0x20`, as its start row `ctx[+0x286]`
+on every busy pass, and the Done arm stores both `0`. The words are register
+arithmetic the presentation decode cannot fold, so the port carries them by hand
+(`cast_module_camera::barra_backdrop_scroll`). Drawn from `(0, 0)` throughout, the
+sky stood still while retail's slid down and back, and arms 7 to `0xB` of the Gobu
+Gobu film (`0x8F`) read `.75` to `.92` on retail's steps; with the scroll they read
+`.97` to `1.00`.
+
+The module's stage byte `ctx[+0x278]` is ported by hand too
+(`cast_module_camera::barra_stage_byte`): `2` on the passes of arms 2, 4 and `0xC`,
+`3` on arm 3's, and `3` in arm 6 only on the passes whose arc word has reached
+`0xA1` (`slti` at `0x801F7100`, the store at `0x801F71F4`). Fired at arm 6's entry,
+as a decoded store is, it took away the dimmed ground retail keeps through the
+first half of the arc.
+
+The white pulses over arm 7 are the clouds. The emitter `0x801F8B18` calls stager
+arm 1 once a pass (`SLOT_B_HOOK` then `WAIT 1`), and arm 1 seats one of four records
+`0x801F8B40` / `0x801F8B78` / `0x801F8BB0` / `0x801F8BE8` by the module word
+`0x801F9364`, stepping it `(w + 1) & 3` (`0x801F83DC..0x801F848C`). The four are one
+record but for their texture band: each draws a quarter of the cloud page (`v`
+`0..63`, `64..127`, `128..191`, `192..255`) as a `0x800`-wide sprite flying at the lens
+for `31` vsyncs. The frame whitens as a sprite of the cycle reaches the lens, so the
+pulse comes once every four passes: twelve vsyncs at step `3`, sixteen at `4`, and
+irregular because retail's arm-7 frames run a mix of the two. Its phase is the pass
+count since arm 6's pass seated the emitter, which is why it follows the frame step
+and not the `rand()` stream: on the engine's own steps the pulses drift a frame or
+two off retail's and arm 7 reads `.75`; on `--retail-steps` they land pair for pair
+and it reads `.995`.
+
 <a id="the-victims-display-pair"></a>
 
 **The victim's display pair.** A few summon shots focus on the victim's display pair
