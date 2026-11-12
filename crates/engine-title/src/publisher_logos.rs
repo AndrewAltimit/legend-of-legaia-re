@@ -221,15 +221,9 @@ pub struct LogosAtlas {
 /// flush-left within its row.
 ///
 /// This is the port's stand-in for the **upload** half of the mode-16
-/// `READ INIT` body: retail rewrites each TIM's CLUT and pixel
-/// destination rects and hands the TIM to `FUN_800198E0`, and the
-/// `tpage`/`clut` those rects imply are what bind a descriptor record
-/// to a logo. Sampling an atlas rect replaces the VRAM page, so the
-/// rects themselves live in `docs/subsystems/boot.md` rather than here.
-/// The rest of `FUN_801CE9C0` - the 640×480 display env, the
-/// `ClearImage` of `(0, 0, 640, 500)`, the pad init, the two boot-actor
-/// spawns and the game-mode `0x11` store - is host setup the shell owns.
-// PORT: FUN_801ce9c0 (mode-16 READ INIT body - the publisher-logo upload)
+/// `READ INIT` body ([`read_init`]): retail rewrites each TIM's CLUT and
+/// pixel destination rects ([`LOGO_VRAM`]) and hands the TIM to
+/// `FUN_800198E0`; sampling an atlas rect replaces the VRAM page.
 pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<LogosAtlas> {
     let pak = legaia_ui_formats::init_pak::parse(prot_0895_bytes)?;
     let mut tims = Vec::with_capacity(LOGO_COUNT);
@@ -273,6 +267,159 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
         height: atlas_h,
         rects,
     })
+}
+
+/// Where the mode-16 `READ INIT` body places one logo TIM in VRAM: it
+/// rewrites the TIM's CLUT block and pixel block destinations (the `+4` /
+/// `+6` halfwords of each) before the upload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LogoVram {
+    /// The CLUT's VRAM `(x, y)`.
+    pub clut: (u16, u16),
+    /// The pixel block's VRAM `(x, y)`, in 16-bit VRAM words.
+    pub pixels: (u16, u16),
+    /// 8bpp (a 256-colour CLUT) rather than 4bpp.
+    pub bpp8: bool,
+}
+
+impl LogoVram {
+    /// The `tpage` word a sprite sampling this logo names.
+    pub const fn tpage(&self) -> u16 {
+        (self.pixels.0 / 64) | ((self.pixels.1 / 256) << 4) | if self.bpp8 { 0x80 } else { 0 }
+    }
+
+    /// The `clut` word a sprite sampling this logo names.
+    pub const fn clut_word(&self) -> u16 {
+        (self.clut.0 / 16) | (self.clut.1 << 6)
+    }
+}
+
+/// [`LogoVram`] per logo, indexed by atlas index. Reading a sprite
+/// descriptor's `tpage` / `clut` back through these is what binds the
+/// descriptor to a logo ([`LOGO_QUADS`]).
+pub const LOGO_VRAM: [LogoVram; LOGO_COUNT] = [
+    // PROKION
+    LogoVram {
+        clut: (320, 507),
+        pixels: (640, 256),
+        bpp8: true,
+    },
+    // Contrail
+    LogoVram {
+        clut: (320, 509),
+        pixels: (768, 256),
+        bpp8: true,
+    },
+    // SCEA
+    LogoVram {
+        clut: (320, 508),
+        pixels: (640, 0),
+        bpp8: false,
+    },
+    // WARNING
+    LogoVram {
+        clut: (0, 506),
+        pixels: (704, 0),
+        bpp8: false,
+    },
+];
+
+/// The order the body uploads the logos: SCEA and WARNING as their rects are
+/// written, PROKION and Contrail once the display env is up.
+pub const LOGO_UPLOAD_ORDER: [usize; LOGO_COUNT] =
+    [LOGO_SCEA, LOGO_WARNING, LOGO_PROKION, LOGO_CONTRAIL];
+
+/// The VRAM rect the body clears to black before the uploads (the `RECT` at
+/// file `+0x08`).
+pub const READ_INIT_CLEAR: (i16, i16, i16, i16) = (0, 0, 640, 500);
+
+/// The 16-entry CLUT row the body loads after the uploads (the `RECT` at file
+/// `+0x00`). Only its first two entries are set, `0x0000` and `0x5294`: the
+/// rest of the 32-byte source is the routine's uninitialised stack.
+pub const READ_INIT_CLUT_ROW: (i16, i16, i16, i16) = (0, 500, 16, 1);
+/// See [`READ_INIT_CLUT_ROW`].
+pub const READ_INIT_CLUT_HEAD: [u16; 2] = [0x0000, 0x5294];
+
+/// The display mode the body selects (`FUN_8001DAF8`): the 640-wide one.
+pub const READ_INIT_DISPLAY: u16 = 0x400;
+
+/// The game mode the body stores at its end, `READ` (`0x11`).
+pub const READ_INIT_NEXT_MODE: u16 = 0x11;
+
+/// The sequencer's done word (`0x801F3EB0`) bit that ends the logos.
+pub const LOGOS_DONE_BIT: u32 = 2;
+
+/// The words the body's skip arms read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ReadInitFlags {
+    /// `_DAT_8007B98C` - the build's debug-mode word.
+    pub debug_word: u32,
+    /// `_DAT_8007B8C2` - the loader-path selector (non-zero is retail).
+    pub build_mode: i16,
+    /// `_DAT_8007B850` - the held pad word.
+    pub pad: u32,
+    /// `_DAT_8007B868` - the dev / dual-mode word.
+    pub dev_word: u32,
+}
+
+impl ReadInitFlags {
+    /// What a retail boot reads: no debug word, the retail loader path, no
+    /// pad held, no dev word.
+    pub const RETAIL: Self = Self {
+        debug_word: 0,
+        build_mode: 1,
+        pad: 0,
+        dev_word: 0,
+    };
+}
+
+/// What the body leaves for the frames after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadInit {
+    /// `_DAT_8007BB00`, the front-end entry word the title overlay reads.
+    pub entry_word: u32,
+    /// `0x801F3EB0`, the sequencer's done word: [`LOGOS_DONE_BIT`] set means
+    /// the logos are skipped.
+    pub done: u32,
+    /// Whether the body raised the sequencer's load permit `0x801F3EA4`
+    /// (bit 0), which it does exactly when the logos are skipped.
+    pub permit: bool,
+}
+
+/// The mode-16 `READ INIT` body's decisions.
+///
+/// It raises the entry word and clears the done word, then: with the debug
+/// word set on a dev build (`_DAT_8007B8C2 == 0`) it drops the entry word and
+/// skips the logos - unless pad bit 0 is held, which puts both back; with the
+/// dev word set it drops the entry word and skips the logos. A skip raises
+/// the load permit so the loader runs at once.
+///
+/// The rest of the body is setup the host owns, with the values above: the
+/// [`READ_INIT_DISPLAY`] mode, the [`READ_INIT_CLEAR`] clear, the
+/// [`LOGO_VRAM`] uploads in [`LOGO_UPLOAD_ORDER`], the
+/// [`READ_INIT_CLUT_ROW`] load, the pad init, the two boot actors and the
+/// [`READ_INIT_NEXT_MODE`] store.
+// PORT: FUN_801ce9c0 (mode-16 READ INIT body - the publisher-logo upload)
+pub fn read_init(f: ReadInitFlags) -> ReadInit {
+    let mut entry_word = 1;
+    let mut done = 0;
+    if f.debug_word != 0 && f.build_mode == 0 {
+        entry_word = 0;
+        done |= LOGOS_DONE_BIT;
+        if f.pad & 1 != 0 {
+            done = 0;
+            entry_word = 1;
+        }
+    }
+    if f.dev_word != 0 {
+        entry_word = 0;
+        done |= LOGOS_DONE_BIT;
+    }
+    ReadInit {
+        entry_word,
+        done,
+        permit: done & LOGOS_DONE_BIT != 0,
+    }
 }
 
 /// Phase within a single logo, sized by that logo's [`LogoStep`].
@@ -322,6 +469,14 @@ impl PublisherLogosSession {
             done: false,
             skip_requested: false,
         }
+    }
+
+    /// The session the `READ INIT` body leaves: [`Self::new`], or already
+    /// done when the body skipped the logos.
+    pub fn after_read_init(init: &ReadInit) -> Self {
+        let mut s = Self::new();
+        s.done = init.done & LOGOS_DONE_BIT != 0;
+        s
     }
 
     /// The [`RETAIL_SEQUENCE`] step now playing, or `None` when done.
