@@ -247,6 +247,7 @@ mod level_up;
 mod libsnd_voices;
 mod light_pool;
 mod list_order;
+mod log_launch;
 mod lzs_decode;
 mod magic_level;
 mod man_install;
