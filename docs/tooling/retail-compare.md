@@ -938,7 +938,9 @@ that PC for the whole walk. On the player (`0xF8`) the arm halts the record
 and seats the op on the record's own `+0x94`; on a placement it halts and
 seats the placement. `ScriptGate::tile_walk` carries the target, the tile
 and the walker's distance left to it, and the gate is met once the engine's
-walker stands as near. Three `concend` checkpoints 60 vsyncs apart had all
+walker stands as near; a walker that landed on the capture's frame has
+dropped its halt bit with the record still on the test, and is met once the
+engine's lands too. Three `concend` checkpoints 60 vsyncs apart had all
 met on the player's first tick of the walk (position `.175`, `0`, `0`; met
 on the walk, `1`), and `concnow` `P2[13]`'s wait on flat `50` at `+0x399`
 read image `.34` on the PC alone and `.84` on the walk.

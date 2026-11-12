@@ -101,9 +101,9 @@ fn tile_walk(
                 && game_anchors::u16_at(ram, n + 0x50) == u16::from(target)
         })?
     };
-    if game_anchors::u32_at(ram, holder + 0x10) & HALT == 0 {
-        return None;
-    }
+    // A walker that landed the frame of the capture has dropped its halt bit
+    // with the record still on the test: its distance left is `0`, and the
+    // gate waits for the engine's walker to land too (`concend` flat `7`).
     let seat = bytes_at(ram, game_anchors::u32_at(ram, holder + 0x94), 4)?;
     if seat[..2] != [0xC7, target] {
         return None;
