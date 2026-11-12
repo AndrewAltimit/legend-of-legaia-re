@@ -3698,9 +3698,19 @@ Without the director the pager seated all of the image's records at once and the
 held `0x6F`'s pose: a `--physical` film of `battle_noaru_songi_chaos_flare_mid_cast`
 read `.233` frame by frame, `.703` with it. Its charge clip `8` goes in on arm 2's pass
 (`capture_caster_stage_arms`), not ahead of the module. Not carried: arms 2 and 6's stores into the
-first monster record's node (`+0x85` / `+0x86`), the light words behind `0x800845C8`, and
-arms 9 and 10's hold of the victim's rate on its reaction clip. Grade `disassembly` +
-`capture`.
+first monster record's node (`+0x85` / `+0x86`) and the light words behind `0x800845C8`.
+Grade `disassembly` + `capture`.
+
+The strike's knockdown plays at rate `2` (arm 8's exit, `sb v1,0x21d(s1)` at
+`0x801F7498`), and arms 9 and 10 hold it there: on every pass, ahead of the gate, each
+stores `2` into the victim's `+0x21D` while its playing clip `+0x1D9` is still its
+knockdown `+0x1F1`, else `0`, which stops the clip it went on to where it stands
+(`0x801F7520..0x801F753C`, `0x801F75C0..0x801F75DC`); arm 10's passing pass ends on `2`
+(`0x801F76DC`). Without the hold the knockdown ran at the reaction's own rate, twice as
+fast, and its two `0x17` steps on `battle_noaru_songi_chaos_flare_mid_cast` landed `48` and
+`68` ticks ahead of retail's (cue score `.750`); with it every cue matches on the plain
+run and on `--retail-steps --rand-track` (`1.000`), the film reads `.818` against `.800`,
+and the band's exit `0x71` `.963` against `.458`. Grade `disassembly` + `capture`.
 
 ### PROT 0954 (Fatal Decision)
 

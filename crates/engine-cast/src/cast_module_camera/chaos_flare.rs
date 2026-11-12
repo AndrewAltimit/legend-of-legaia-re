@@ -67,6 +67,16 @@ fn push(n: i16) -> CaptureDrift {
     }
 }
 
+/// The victim's rate arms 9 and 10 store on every pass, ahead of their gates
+/// (`0x801F7520..0x801F753C`, `0x801F75C0..0x801F75DC`): `2` while it still
+/// plays its knockdown (`+0x1D9 == +0x1F1`), else `0`, which holds the clip it
+/// went on to where it stands. The knockdown's cues ride the slower rate:
+/// `battle_noaru_songi_chaos_flare_mid_cast`'s two `0x17` steps land forty
+/// vsyncs apart on retail, twenty at the default rate.
+fn knockdown_rate(st: &ModuleCamState) -> u8 {
+    if st.victim_on_knockdown_clip { 2 } else { 0 }
+}
+
 /// **Chaos Flare** (`sltiu 0x0C` through the table at `0x801F69D8`; caster
 /// `actor_table[ctx + 0x13]`, victim `actor_table[caster + 0x1DD]`). Every
 /// gate drains the word `0x801F89CC` by `scalar * delta` and holds while it
@@ -81,17 +91,16 @@ fn push(n: i16) -> CaptureDrift {
 /// | 5 (`0x801F6FDC`) | every pass TR y and TR z `+8 * delta` | `+= scalar << 6` |
 /// | 6 (`0x801F7050`) | the pool flushed; the flare's seven records on the caster; the stage byte `3`, the backdrop off, the caster's rate `5` | `+= scalar * 0x60` |
 /// | 7 (`0x801F7288`) | a cut on the caster: pitch `0x100`, yaw `0xA00 - facing`, TR `(0x300, 0x600, 0x800)` | `+= scalar * 0x60` |
-/// | 8 (`0x801F735C`) | every pass TR z `+24 * delta`; a cut on the victim: pitch `0x80`, yaw `-facing`, TR `(0, 0x600, 0x800)`; the strike, the victim turned on the caster | `+= scalar * 0xC0` |
-/// | 9 (`0x801F74D0`) | every pass TR z `+12 * delta` | `+= scalar << 7` |
-/// | 10 (`0x801F75C0`) | the pool flushed; a cut on the caster: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0x600, 0x600)`; the caster's clip released and the stage byte `0` | `+= scalar << 7` |
+/// | 8 (`0x801F735C`) | every pass TR z `+24 * delta`; a cut on the victim: pitch `0x80`, yaw `-facing`, TR `(0, 0x600, 0x800)`; the strike, the victim turned on the caster, its knockdown at rate `2` | `+= scalar * 0xC0` |
+/// | 9 (`0x801F74D0`) | every pass TR z `+12 * delta`; the victim's rate held ([`knockdown_rate`]) | `+= scalar << 7` |
+/// | 10 (`0x801F75C0`) | every pass the victim's rate held; the pool flushed; a cut on the caster: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0x600, 0x600)`; the caster's clip released and the stage byte `0`; the victim's rate `2` | `+= scalar << 7` |
 /// | 11 (`0x801F76F4`) | every pass TR z `+4 * delta`; then every seat with HP shown, rate `8` | - |
 ///
 /// Every cut is one frame. The phase chain, the strike and the victim's
 /// settle are [`crate::cast_module_ticks::CHAOS_FLARE_TICK`]'s and the band's,
 /// so `next` stays `None`. Not carried: arms 2 and 6's stores into the first
 /// monster record's node (`+0x85` / `+0x86`), arm 6's and 7's light words
-/// behind `0x800845C8`, and arms 9 and 10's hold of the victim's rate on its
-/// reaction clip.
+/// behind `0x800845C8`.
 ///
 /// PORT: overlay_cast_chaos_flare_0951_801f6a20 (PROT 0951 `0x36`; the camera arms, the record runs and the seat hides)
 pub fn chaos_flare_camera(
@@ -198,15 +207,22 @@ pub fn chaos_flare_camera(
             arm.shot = cut([0x80, yaw_from(0, v.facing), 0], [0, 0x600, 0x800], v);
             let facing = bearing_12bit_approx(c.z, c.x, v.z, v.x).wrapping_add(0x800) & 0xFFF;
             arm.victim_write.facing = Some(facing);
+            // The knockdown the strike stages plays at rate `2`
+            // (`li v1,0x2` / `sb v1,0x21d(s1)` at `0x801F7494`).
+            arm.victim_write.rate = Some(2);
             st.countdown.add(0xC0);
         }
         9 => {
             arm.drift = Some(push(12));
+            arm.victim_write.rate = Some(knockdown_rate(st));
             gate!();
             st.countdown.add(1 << 7);
         }
         10 => {
+            arm.victim_write.rate = Some(knockdown_rate(st));
             gate!();
+            // The arm's last store, after the cut (`0x801F76DC`).
+            arm.victim_write.rate = Some(2);
             arm.flushes_pool = true;
             arm.shot = cut([-0x80, yaw_from(0x800, c.facing), 0], [0, 0x600, 0x600], c);
             arm.caster_write = CaptureSeatWrite {
@@ -297,5 +313,34 @@ mod tests {
         let a = chaos_flare_camera(&mut st, 11, seats());
         assert_eq!(a.others_write.rate, Some(8));
         assert_eq!(a.others_write.render_flag, Some(0));
+    }
+
+    /// Arms 9 and 10 hold the victim at rate `2` on its knockdown and at `0`
+    /// off it, on held passes too; arm 10's pass ends on `2`.
+    #[test]
+    fn arms_9_and_10_hold_the_victims_rate_on_its_knockdown() {
+        let mut st = ModuleCamState {
+            victim_on_knockdown_clip: true,
+            ..ModuleCamState::default()
+        };
+        st.countdown.0 = SPEED_SCALAR << 7;
+        let a = chaos_flare_camera(&mut st, 9, seats());
+        assert!(a.hold);
+        assert_eq!(a.victim_write.rate, Some(2));
+        st.victim_on_knockdown_clip = false;
+        let a = chaos_flare_camera(&mut st, 9, seats());
+        assert!(a.hold);
+        assert_eq!(a.victim_write.rate, Some(0));
+        let a = chaos_flare_camera(&mut st, 10, seats());
+        assert!(a.hold);
+        assert_eq!(a.victim_write.rate, Some(0));
+        st.countdown.0 = 1;
+        let a = chaos_flare_camera(&mut st, 10, seats());
+        assert!(!a.hold);
+        assert_eq!(a.victim_write.rate, Some(2));
+        st.countdown.0 = 1;
+        let a = chaos_flare_camera(&mut st, 8, seats());
+        assert!(!a.hold);
+        assert_eq!(a.victim_write.rate, Some(2));
     }
 }
