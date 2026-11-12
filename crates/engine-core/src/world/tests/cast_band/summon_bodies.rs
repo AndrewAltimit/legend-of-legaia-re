@@ -398,6 +398,23 @@ fn a_dead_idle_monster_enters_the_defeat_fade_and_drains() {
     assert_eq!(world.actors[2].battle.render_flag, 0);
 }
 
+/// The stand-in waits: a kill's HP lands passes before the knockdown
+/// commits, and a body faded in that gap drains to black and stops ticking
+/// short of the knockdown's end, losing the death arm and its cue `0x0D`.
+#[test]
+fn a_freshly_killed_monster_is_not_faded_before_its_knockdown() {
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 0;
+    world.actors[1].battle.render_flag = 0;
+    world.actors[1].battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+    for _ in 0..4 {
+        world.tick_battle_animations();
+    }
+    assert_eq!(world.actors[1].battle.render_flag, 0, "still lit");
+    assert_eq!(world.actors[1].battle_dead_idle_passes, 4);
+}
+
 /// Horn hides the party for its rise (arm 8), shows it again on the heal
 /// (arm `0xA`), whose pass relights the creature white under the tint
 /// machine's hold state rather than hiding it (`0x801F77A8..0x801F77EC`);

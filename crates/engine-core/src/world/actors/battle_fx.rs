@@ -1139,6 +1139,9 @@ impl World {
     }
 
     pub(in crate::world) fn tick_battle_impact_fx(&mut self) {
+        // Passes a monster stands dead and idle before the tint pass puts it
+        // into the defeat fade itself (see the stand-in below).
+        const DEAD_IDLE_FADE_PASSES: u8 = 8;
         use legaia_engine_battle_vm::battle_formulas::{FadeInputs, TintWords, tint_sm_step};
         use legaia_engine_battle_vm::battle_impact_fx as ifx;
         // The tag-`0x67` ribbon is a per-frame call in retail: re-derived
@@ -1189,15 +1192,27 @@ impl World {
             // always in the fade by then, and every row poll in the cast band
             // waits on its lanes draining (`+0x04 == 0`), so the engine puts
             // such a body into the fade rather than let it stand lit for
-            // good.
-            if a.battle_monster_id.is_some()
+            // good. It waits `DEAD_IDLE_FADE_PASSES`: a kill's HP lands
+            // passes before its knockdown commits (four on Gimard's), and a
+            // body put into the fade there drains to black - and stops
+            // ticking on the zero colour word (`0x800474D4..0x800474E0`) -
+            // before the knockdown's natural end, so the death arm and its
+            // defeat cue `0x0D` never ran (the Gobu Gobu films of Gimard,
+            // Iota, Barra, Slippery and Gizam, whose last arm plays the cue
+            // in retail).
+            let dead_idle = a.battle_monster_id.is_some()
                 && a.battle.hp == 0
                 && a.battle.render_flag == 0
                 && a.battle_reaction.is_none()
                 && a.battle.current_anim == 0
                 && a.battle.capture_state == 0
-                && a.battle.render_color & 0x00FF_FFFF != 0
-            {
+                && a.battle.render_color & 0x00FF_FFFF != 0;
+            a.battle_dead_idle_passes = if dead_idle {
+                a.battle_dead_idle_passes.saturating_add(1)
+            } else {
+                0
+            };
+            if a.battle_dead_idle_passes >= DEAD_IDLE_FADE_PASSES {
                 a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             }
             let b = &mut a.battle;

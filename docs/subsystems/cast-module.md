@@ -3352,7 +3352,15 @@ it are closed in the tint pass: the fade gate compares the committed clip
 against the cached knockdown entry `+0x1F1` itself (a knockdown committed on
 the action channel, as a seat seeded dead from retail RAM carries it), and a
 dead, idle, lit monster the death arm never reached - a hit on a seat a
-module had frozen - enters the fade.
+module had frozen - enters the fade. That stand-in waits eight passes: a
+kill's HP lands passes before the knockdown commits (four on Gimard's), and
+a body put into the fade there drains to black first. A seat whose colour
+word reads zero does not tick (`0x800474D4..0x800474E0`), so the knockdown
+held on its frame `31` of `36`, never reached its natural end, and the
+death arm with its defeat cue `0x0D` (`0x8004B27C`) never ran: the
+Gobu Gobu films of Gimard, Iota, Barra, Slippery and Gizam lost the cue
+retail plays in the cast's last arm, and Gimard's arm 12 read `.618`
+against `.943` with the knockdown played out.
 
 **The band lets go of a stalled module.** A module still busy
 `SUMMON_LINGER_STALL_FRAMES` ticks after its outcome is held on a poll the

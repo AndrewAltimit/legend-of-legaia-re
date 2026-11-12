@@ -670,6 +670,12 @@ pub struct Actor {
     /// [`crate::world::World::latch_battle_node_colours`].
     pub battle_node_colour_zero: Option<bool>,
 
+    /// Consecutive passes this monster has stood dead and idle outside the
+    /// defeat fade, with no reaction playing: the count the tint pass's
+    /// stand-in for the death arm waits on
+    /// ([`crate::world::World::tick_battle_impact_fx`]).
+    pub battle_dead_idle_passes: u8,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`
