@@ -896,6 +896,10 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     } catch (e) {
       this._ssaoBroken = true;
       try { console.warn('ssao pass disabled:', e); } catch (_) { /* no console */ }
+      /* The host says so to the player (`PlayView._passUnavailable`). */
+      if (typeof this.onPassUnavailable === 'function') {
+        try { this.onPassUnavailable('ssao'); } catch (_) { /* no host */ }
+      }
     }
     /* Hand the frame back to the scene pass exactly as it left it. */
     gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);

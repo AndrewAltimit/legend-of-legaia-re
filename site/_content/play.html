@@ -390,6 +390,8 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   font-family: var(--font-mono); font-size: 0.76rem; color: var(--text);
 }
 div.play-vis-head { cursor: default; }
+/* An enhancement whose pass this browser could not build (PlayView._passUnavailable). */
+.play-vis-head.is-unavailable .play-vis-name { text-decoration: line-through; color: var(--text-dim, var(--text)); }
 .play-vis-head kbd { font-size: 0.68rem; padding: 0 0.3rem; }
 .play-vis-head select { font-family: var(--font-mono); font-size: 0.72rem; }
 .play-vis-name { font-weight: 600; }
@@ -551,7 +553,7 @@ div.play-vis-head { cursor: default; }
         </div>
         <div class="play-btn-row">
           <button id="play-recenter" type="button">Reset camera</button>
-          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (F11; Esc to exit)">&#9974; Fullscreen</button>
           <button id="play-touch-pad" type="button" aria-pressed="false"
                   title="Show or hide the on-screen pad (D-pad, face buttons, shoulders, Start and Select) for a touch screen. Shown by default on a phone or tablet; remembered.">Touch pad</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
@@ -987,7 +989,7 @@ div.play-vis-head { cursor: default; }
             <button id="save-export" type="button" disabled>Export save</button>
           </div>
           <label class="play-save-import">Import save (.lgsf / memory card)
-            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.gme,.mcs" disabled>
+            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.srm,.gme,.mcs" disabled>
           </label>
           <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
         </div>
@@ -1037,6 +1039,7 @@ div.play-vis-head { cursor: default; }
             <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
             <kbd>Wheel</kbd><span>Zoom in / out</span>
             <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
+            <kbd>F11</kbd><span>Fullscreen on / off, as the Fullscreen button</span>
             <kbd>Touch</kbd><span>On-screen pad over the picture: the Touch pad button shows or hides it</span>
             <kbd>Pad</kbd><span>A controller plays by position (bottom Cross, right Circle, left Square, top Triangle); the left stick walks. Every connected pad drives the player</span>
             <kbd>Pad rebind</kbd><span>Pause menu, Options, Select: Key Config takes a key or a controller button on each row</span>
@@ -2789,7 +2792,7 @@ div.play-vis-head { cursor: default; }
     return file.arrayBuffer().then(buf => {
       importSaveBytes(new Uint8Array(buf), {
         name: file.name.replace(/\.[^.]+$/, ''),
-        format: (file.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1] || null,
+        format: (file.name.match(/\.(mcr|mcd|srm|gme|mcs)$/i) || [])[1] || null,
       });
     }).catch(err => {
       saveMsg(`Could not read ${file.name}: ${err.message || err}`, true);
@@ -2843,7 +2846,7 @@ div.play-vis-head { cursor: default; }
         heading: 'Your saves',
         wasm: saveTools,
         harvest: harvestPortraits,
-        acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
+        acceptExts: '.lgsf,.mcr,.mcd,.srm,.gme,.mcs',
         onAdd: addSaveFile,
         fixedTiles: browserCardTiles,
         primaryButton: (meta) => ({
@@ -3109,7 +3112,7 @@ div.play-vis-head { cursor: default; }
       saveMsg(`Could not read ${f.name}: ${err.message || err}`, true);
       return;
     }
-    const ext = (f.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1];
+    const ext = (f.name.match(/\.(mcr|mcd|srm|gme|mcs)$/i) || [])[1];
     importSaveBytes(bytes, {
       name: f.name.replace(/\.[^.]+$/, ''),
       format: ext ? ext.toLowerCase() : null,
@@ -4234,17 +4237,24 @@ div.play-vis-head { cursor: default; }
     fsBtn.disabled = true;
     fsBtn.title = 'This browser does not expose the Fullscreen API';
   }
-  fsBtn.addEventListener('click', () => {
+  /* The button and `F11` (play-view-input.js, the native window's key)
+   * share one toggle. Answers the state it asked for,
+   * or `null` where the browser has no Fullscreen API. */
+  function toggleFullscreen() {
+    if (!fsSupported) return null;
     if (fsElement()) {
       (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      return;
+      return false;
     }
     const req = canvasWrap.requestFullscreen || canvasWrap.webkitRequestFullscreen;
     /* Chrome rejects the promise if the gesture is stale; keep it non-fatal. */
     Promise.resolve(req.call(canvasWrap)).catch(() => {
       fsBtn.title = 'Fullscreen was blocked by the browser';
     });
-  });
+    return true;
+  }
+  fsBtn.addEventListener('click', toggleFullscreen);
+  window.__playToggleFullscreen = toggleFullscreen;
   /* Sync on every transition, including Esc and the browser's own controls. */
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((evt) => {
     document.addEventListener(evt, () => {

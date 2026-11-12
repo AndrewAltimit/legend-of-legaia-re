@@ -17,8 +17,16 @@
     /* ---------- input ---------- */
 
     _attachInput() {
+      /* `F11`: the stage full screen on or off, the native window's
+       * `fullscreen_key`. The browser's own `F11` fills the screen with the
+       * whole document; this fills it with the 4:3 stage, as the page's
+       * Fullscreen button does. The window's second key, `Alt+Enter`, stays
+       * native: `Enter` is a bindable pad key here, and a chord on it would
+       * be a page key table the pad bindings cannot see. */
+      const isFullscreenKey = (e) => e.code === 'F11';
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        if (isFullscreenKey(e) && typeof window.__playToggleFullscreen === 'function') return;
         /* Key Config (Select on the pause menu's Options screen) needs the
          * PHYSICAL key, not the pad bit it currently carries: the whole point
          * is binding a key that is not in the table yet, and the guard below
@@ -59,6 +67,12 @@
       this._onHotkey = (e) => {
         if (e.repeat) return;
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
+        if (isFullscreenKey(e) && typeof window.__playToggleFullscreen === 'function') {
+          e.preventDefault();
+          const on = window.__playToggleFullscreen();
+          if (on !== null) this._hotkeyNotice(`Fullscreen: ${on ? 'on' : 'off'}`);
+          return;
+        }
         if (this._hostKey(e)) { e.preventDefault(); return; }
         if (typeof this.rt.play_host_hotkey !== 'function') return;
         let id = '';

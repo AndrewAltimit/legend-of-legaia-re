@@ -826,10 +826,10 @@
       if (typeof opts.onAdd !== 'function') return;
       var add = el('button', 'lgrb-btn lgrb-primary', '+ Add save file');
       add.type = 'button';
-      add.title = 'Import a memory-card save (.mcr / .mcd / .gme / .mcs) or an engine .lgsf';
+      add.title = 'Import a memory-card save (.mcr / .mcd / .srm / .gme / .mcs) or an engine .lgsf';
       var picker = document.createElement('input');
       picker.type = 'file';
-      picker.accept = opts.acceptExts || '.mcr,.mcd,.gme,.mcs,.lgsf';
+      picker.accept = opts.acceptExts || '.mcr,.mcd,.srm,.gme,.mcs,.lgsf';
       picker.style.display = 'none';
       picker.addEventListener('change', function () {
         if (picker.files && picker.files[0]) {

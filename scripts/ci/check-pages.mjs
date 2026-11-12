@@ -362,6 +362,17 @@ async function main() {
         if (!/play-screen/.test(fsq.el)) failures.push(`play.html: the Fullscreen button presented "${fsq.el}"`);
         else if (fsq.h < fsq.vh * 0.9 || Math.abs(fsq.w / fsq.h - 4 / 3) > 0.02) failures.push(`play.html: fullscreen picture is ${fsq.w | 0}x${fsq.h | 0} in a ${fsq.vh}px-high screen`);
         else if (!/play-canvas/.test(fsq.focus)) failures.push(`play.html: fullscreen left the keyboard on "${fsq.focus}"`);
+        // The native window's key for the same toggle: F11 leaves, and F11 comes back to
+        // the stage, not the browser's whole-document full screen.
+        const fsKey = async () => {
+          await page.keyboard.press('F11');
+          await page.waitForTimeout(800);
+          return page.evaluate(() => (document.fullscreenElement ? document.fullscreenElement.className : ''));
+        };
+        const left = await fsKey();
+        const back = await fsKey();
+        if (left) failures.push(`play.html: F11 left "${left}" full screen`);
+        else if (!/play-screen/.test(back)) failures.push(`play.html: F11 presented "${back}"`);
         await context.close();
       }
       // Controllers plugged in mid-game: a pad without the standard mapping walks on its
