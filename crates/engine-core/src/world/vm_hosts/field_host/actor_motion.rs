@@ -579,12 +579,13 @@ impl FieldHostImpl<'_> {
         // hides an actor that far off the map, so the seat below parks the
         // placement in the hide box. `town01`'s blackboard tour hides the
         // villagers around the map this way (`P1[51]`, `CC 31 51 7F 7F ..`)
-        // and re-seats them with `CC 31 C3` after it. The player keeps the
-        // older no-op until the player arm's hide (`balden` `P1[6]`,
-        // `CC F8 51 7F 7F`) is measured against the follow camera.
-        if is_player && world_x == 0x3FC0 && world_z == 0x3FC0 {
-            return;
-        }
+        // and re-seats them with `CC 31 C3` after it. On the player it is
+        // the same seat: the arm stores the tile before the identity compare
+        // that splits the player arm off (`0x801E1954`), and the player arm
+        // then re-centres on the operand tile (`0x801E1A58`). `map01`
+        // `P2[29]` hides Vahn this way (`CC F8 51 7F 7F 80 02`) before its
+        // pan from the Genesis Tree's light to Drake Castle; leaving him on
+        // his arrival tile drew him outside the castle under the pan.
         if is_player {
             // The words every arm writes ahead of the seat land on the player
             // too: `s5` is the resolved actor, and the identity compare that

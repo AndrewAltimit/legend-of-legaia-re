@@ -1042,6 +1042,10 @@ executing context, or the `CC <t> 51` target):
    `+0x26`, and a floor re-sample (`FUN_80019278`) into `+0x16` when
    `+0x10` carries a `0x20200` bit or `_DAT_8007B6A8` is set, never under
    `0x20000000` (`0x801E1904..0x801E1940`). No walk kernel is armed: it is a teleport.
+   The parked-sentinel tile `(0x7F, 0x7F)` seats the player in the hide box like
+   anyone else: `map01` `P2[29]` hides Vahn with `CC F8 51 7F 7F 80 02` before its
+   pan from the Genesis Tree's light to Drake Castle, and the player arm then
+   re-centres on that tile.
 4. **Clip.** On the player (`0x801E1954..0x801E1A3C`) the `move_id` is the
    clip base `_DAT_8007BDD8`, picked and bound at once
    ([`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail)).
