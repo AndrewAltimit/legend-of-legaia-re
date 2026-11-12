@@ -206,6 +206,17 @@ canvas once: "the screen" is that framebuffer until the frame ends, reads inside
 the frame included. On the canvas itself the fill rule below would not hold, since
 a polygon edge resolves to a blend of partly covered samples. The native renderer
 is single-sample throughout, and the page's enhanced mode keeps its MSAA.
+That framebuffer runs bottom-up, so where a snapped edge lies exactly on a row
+of pixel centres its rasteriser hands the tie to the other row from the window's
+top-left rule: every flat 3D edge drew a row low. The page's vertex stage lifts
+the primitive a sixteenth of a row (`PSX_NATIVE_TIE_ROWS` in
+[`webgl-shaders.js`](../../site/js/webgl-shaders.js)), the smallest step its
+sub-pixel grid keeps, and reads the UV and the Gouraud colour that much lower
+again, so the texel and the shade are the pixel's. The lift also moves the tie of a sloped
+edge that crosses a pixel centre exactly, and of a centre within a sixteenth of a
+row of an edge, which the window's column rule decides: those are the hairline
+pixels the pair still reads. A finer lift is under the page's sub-pixel grid on a
+real GPU and moves nothing; drawing the pass top-down is what would settle both.
 
 At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
 at a window-sized target could. The snapped vertices move half a stage pixel
