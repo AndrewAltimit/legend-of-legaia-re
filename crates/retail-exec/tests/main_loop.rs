@@ -179,3 +179,80 @@ fn the_mode_table_loop_dispatches_what_retail_dispatches() {
     }
     assert!(total_passes > 5000 && total_edges > 3000 && init_passes > 1000);
 }
+
+/// The master frame driver `FUN_80016444`, run with every call stubbed and
+/// its passes recorded. It is not compared: the port has no list of actor
+/// lists to hold against it - `World::tick` runs one actor pool with per-kind
+/// loops, and the render passes and the flip are the host renderer's. What
+/// is checked is the order its doc states: five tick passes `FUN_8002519C`,
+/// the flip `FUN_8001D058` ahead of the five render passes `FUN_8001D140` in
+/// STR mode (`0x15`) and after them otherwise, and the passes' third and
+/// fourth lists chosen by the scratchpad mirror bit `0x1F800394 & 0x10`:
+/// `0x8007C358` / `0x8007C354` with it clear, `0x8007C360` / `0x8007C35C`
+/// with it set. A zero argument, the map display's, runs no tick pass.
+#[test]
+fn the_frame_driver_runs_its_passes_in_the_documented_order() {
+    not_a_differential!(
+        "FUN_80016444's passes walk seven actor-list heads the port's single actor pool has no counterpart for; drives it and checks the pass order World::tick's doc states"
+    );
+    const DRIVER: u32 = 0x8001_6444;
+    const DRIVER_END: u32 = 0x8001_698C;
+    const TICK_PASS: u32 = 0x8002_519C;
+    const RENDER_PASS: u32 = 0x8001_D140;
+    const FLIP: u32 = 0x8001_D058;
+    const HEADS: u32 = 0x8007_C34C;
+    const MIRROR: u32 = 0x1F80_0394;
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let gp = cpu.regs.r[GP];
+    cpu.stub_outside = Some((DRIVER, DRIVER_END));
+    let calls: Rc<RefCell<Vec<(char, u32)>>> = Rc::default();
+    for (va, tag) in [(TICK_PASS, 't'), (RENDER_PASS, 'r'), (FLIP, 'f')] {
+        let c = calls.clone();
+        cpu.hook(va, move |r, _| {
+            c.borrow_mut().push((tag, r.r[psx_retail_exec::A0]))
+        });
+    }
+    for i in 0..9 {
+        cpu.mem.wr32(HEADS + 4 * i, 0x100 + i);
+    }
+    for (param, mirror, mode) in [(1, false, 3), (1, true, 3), (1, false, 0x15), (0, false, 3)] {
+        cpu.mem.wr32(gp + 0x3B8, 0);
+        cpu.mem.wr32(gp + 0x3D0, 0);
+        cpu.mem.wr16(gp + 0x524, mode);
+        cpu.mem.wr32(MIRROR, if mirror { 0x10 } else { 0 });
+        calls.borrow_mut().clear();
+        assert_eq!(cpu.call(DRIVER, &[param]), Stop::Returned);
+        let lists = |t: char| -> Vec<u32> {
+            calls
+                .borrow()
+                .iter()
+                .filter(|c| c.0 == t)
+                .map(|c| c.1 - 0x100)
+                .collect()
+        };
+        // List `k` is the head at `0x8007C34C + 4 * k`.
+        let passes: Vec<u32> = if mirror {
+            vec![0, 1, 5, 4, 8]
+        } else {
+            vec![0, 1, 3, 2, 8]
+        };
+        assert_eq!(
+            lists('t'),
+            if param == 0 { vec![] } else { passes.clone() },
+            "param {param} mirror {mirror}"
+        );
+        assert_eq!(lists('r'), passes, "mirror {mirror}");
+        let order: Vec<char> = calls
+            .borrow()
+            .iter()
+            .map(|c| c.0)
+            .filter(|&t| t != 't')
+            .collect();
+        let flip_first = order.first() == Some(&'f');
+        assert_eq!(flip_first, mode == 0x15, "mode {mode:#x}: {order:?}");
+        assert_eq!(order.iter().filter(|&&t| t == 'f').count(), 1);
+    }
+}

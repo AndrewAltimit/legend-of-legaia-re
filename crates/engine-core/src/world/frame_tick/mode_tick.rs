@@ -48,9 +48,12 @@ impl World {
     ///
     /// This is the engine's counterpart of the retail master frame driver
     /// `FUN_80016444`: retail runs five `FUN_8002519C` **tick passes** over
-    /// the actor-list heads `_DAT_8007C34C..0x36C` (pass 3/4 swapped by the
-    /// `_DAT_1F800394 & 0x10` mirror bit), then five `FUN_8001D140` **render
-    /// passes** (the scratchpad-SP trampoline into `FUN_8001ADA4`), with the
+    /// the actor-list heads at `0x8007C34C`, `0x8007C350`, then `0x8007C358`
+    /// / `0x8007C354` - or `0x8007C360` / `0x8007C35C` while the
+    /// `_DAT_1F800394 & 0x10` mirror bit is set - and `0x8007C36C` (none at
+    /// all when its argument is zero, the map display's), then five
+    /// `FUN_8001D140` **render passes** over the same heads (the
+    /// scratchpad-SP trampoline into `FUN_8001ADA4`), with the
     /// display flip (`FUN_8001D058` → `FUN_80026CE4`) before the render
     /// passes in STR mode (0x15) and after them otherwise, plus dev error
     /// prints and the dev mode-transition writer `FUN_800179C0`. The engine
