@@ -134,6 +134,10 @@ pub struct RetailScripts {
     /// counter, while `_DAT_801F2734` is the typing state `0x0B`
     /// ([`pager_typing`]).
     pub typing: Option<(u8, i32)>,
+    /// The field pager in another arm of a page (a load, a scroll, a
+    /// completing press), its rows as offsets into the first running
+    /// record ([`pager_phase`]).
+    pub pager: Option<PagerPhase>,
 }
 
 /// The pager state word `_DAT_801F2734` (field overlay).
@@ -144,6 +148,38 @@ const PAGER_REVEAL: u32 = 0x801F_2748;
 const PAGER_LAST_ROW: u32 = 0x801F_3530;
 /// Pager state `0x0B`: typing the row at the last index.
 const PAGER_TYPING: i32 = 0x0B;
+/// The scroll word `_DAT_801F2738`.
+const PAGER_SCROLL: u32 = 0x801F_2738;
+/// The row table `_DAT_801F3540[]`: a pointer to each row's `0x1F` lead.
+const PAGER_ROWS: u32 = 0x801F_3540;
+/// Slots of the row table read: the three-row window and the row a scroll
+/// brings in under it.
+const PAGER_ROW_SLOTS: u32 = 4;
+
+/// The pager's arm and rows when it stands between a page's press and its
+/// wait in an arm other than the typing one ([`PagerPhase::applies`]),
+/// with every row pointer taken as an offset from `base`, the record's
+/// script start. A row outside the record leaves it `None`.
+pub fn pager_phase(ram: &[u8], base: u32) -> Option<PagerPhase> {
+    let state = u8::try_from(game_anchors::u32_at(ram, PAGER_STATE)).ok()?;
+    if !PagerPhase::applies(state) {
+        return None;
+    }
+    let mut rows = Vec::new();
+    for i in 0..PAGER_ROW_SLOTS {
+        let p = game_anchors::u32_at(ram, PAGER_ROWS + 4 * i);
+        if p == 0 {
+            break;
+        }
+        rows.push(usize::try_from(p.checked_sub(base)?).ok()?);
+    }
+    Some(PagerPhase {
+        state,
+        rows,
+        scroll: game_anchors::u32_at(ram, PAGER_SCROLL) as i32,
+        counter: game_anchors::u32_at(ram, PAGER_REVEAL) as i32,
+    })
+}
 
 /// The pager's typing row and reveal counter when the state holds a page
 /// still being typed (`FUN_801D84D0` state `0x0B`, `0x801D89B8`).
@@ -228,6 +264,9 @@ impl RetailScripts {
                 continue;
             };
             let op = game_anchors::u8_at(ram, base.wrapping_add(pc as u32));
+            if out.running.is_empty() {
+                out.pager = pager_phase(ram, base);
+            }
             let player_latch =
                 on_player_latch(op, bytes_at(ram, base.wrapping_add(pc as u32 + 1), 2))
                     .then(|| player.map(|p| game_anchors::i16_at(ram, p + 0x68)))
@@ -309,6 +348,7 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
         system_pc: scripts.system_pc,
         resumed_early: std::cell::Cell::new(false),
         typing: scripts.typing.filter(|_| s.op & 0x7F < 0x20),
+        pager: scripts.pager.clone().filter(|_| s.op & 0x7F < 0x20),
         latch: s.player_latch,
         walk: s.walk,
     })
@@ -325,11 +365,11 @@ pub fn script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
 pub fn displayed_script_gate_from_retail(scripts: &RetailScripts) -> Option<ScriptGate> {
     let mut g = script_gate_from_retail(scripts)?;
     g.wait = (i32::from(g.wait) - i32::from(scripts.display_lag)).max(0) as i16;
-    // Two pager calls back: each typing call adds `min(frame step, 4)` units
-    // (`0x801D8A08..0x801D8A70`), and the lag is two game frames.
-    if let Some((_, counter)) = g.typing.as_mut() {
-        *counter = (*counter - i32::from(scripts.display_lag.min(8))).max(1);
-    }
+    // A text gate mid-page keeps the RAM's pager phase: the child meets it on
+    // the engine's own pager and takes its frame `display_lag` ticks back
+    // ([`ScriptGate::takes_displayed_frame`]). Two calls back from a box's
+    // first typing calls the pager had not drawn the box yet, which no
+    // reveal counter names.
     if let Some(left) = g.glide_left.as_mut() {
         *left += i32::from(scripts.display_lag);
     }
@@ -530,10 +570,29 @@ mod tests {
             script_gate_from_retail(&scripts).and_then(|g| g.typing),
             Some((1, 19))
         );
+        // The displayed frame keeps the RAM's phase: the child takes it the
+        // display lag back from the tick it meets the gate on.
+        let shown = displayed_script_gate_from_retail(&scripts).unwrap();
+        assert_eq!(shown.typing, Some((1, 19)));
+        assert!(shown.takes_displayed_frame());
+        // A page turned onto under the held rows: state 5, the row table's
+        // pointers as record offsets.
+        let base = 0x8012_6000u32;
+        w32(&mut ram, PAGER_STATE, 0x05);
+        w32(&mut ram, PAGER_ROWS, base + 0x6A5);
+        w32(&mut ram, PAGER_ROWS + 4, base + 0x6CA);
         assert_eq!(
-            displayed_script_gate_from_retail(&scripts).and_then(|g| g.typing),
-            Some((1, 15))
+            pager_phase(&ram, base),
+            Some(PagerPhase {
+                state: 0x05,
+                rows: vec![0x6A5, 0x6CA],
+                scroll: 0,
+                counter: 19,
+            })
         );
+        // A page that waits is no mid-page phase.
+        w32(&mut ram, PAGER_STATE, 0x19);
+        assert_eq!(pager_phase(&ram, base), None);
         // The pager word means nothing to a gate that is not on text.
         let scripts = RetailScripts {
             running: vec![script(0xAD)],
@@ -541,6 +600,7 @@ mod tests {
         };
         let g = script_gate_from_retail(&scripts).unwrap();
         assert_eq!((g.typing, g.latch), (None, Some(219)));
+        assert!(g.pager.is_none());
         assert!(on_player_latch(0xAD, Some(vec![0xF8, 0x08])));
         assert!(!on_player_latch(0xAD, Some(vec![0x31, 0x08])));
     }
