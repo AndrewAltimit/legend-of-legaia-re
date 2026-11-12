@@ -4179,6 +4179,24 @@ the handing-over tick's own drift (`CastFxState::module_tick_drift`) for the
 ticks of the pass it does not run. A body-paced director's first tick in an arm
 carries the new arm's drift (`drift_after_shot`), which is left out.
 
+That drift goes in **ahead of** the pass's stores and shot when the director runs
+retail's drift-first order (PROT 0959, 0960, and the others that raise
+`CaptureCamArm::drift_first`): each arm drifts the globals first, tests its
+countdown, and only then makes its pass stores and its builder call `FUN_801D829C`
+(PROT 0959 arm `0x0A`: the drift at `0x801F756C..0x801F7590`, the `jal` at
+`0x801F7664`). A cut made over the whole pass's drift lands on its own endpoint, so
+`World::module_pass` re-makes the tick's pose stores and re-arms its shot
+(`CastFxState::module_tick_after_drift`) after the rest of the drift. Drifted after
+the cut instead, Plasma Strike's arms 7, 9 and `0x0B` each opened a step-`2` or `3`
+drift past retail's (`yaw 496`, TR z `1075` against `512` / `819` on arm 8 of the
+`--retail-steps` film), and that offset rode through arm `0x0E`, where the column
+stood off its frame: `nivora_duel_pre_plasma_strike` (`--retail-steps`) reads arms
+`8..0x0D` `.59..81` to `.97..1.00` and arm `0x0E` `.47` to `.90`. PROT 0959's director
+did not raise the flag, so its arm `0x0A` cut carried three ticks of its own drift
+into arm `0x0B` (pitch `-12`, TR y `+96`); raised, `nivora_duel_pre_megaton_press`
+(`--retail-steps --rand-track`) reads arms `0x0B..0x11` on retail's camera to the
+unit. Grade `disassembly` + `capture`.
+
 The seat moves an arm makes ahead of its gate scale the same way, and so does its
 focus z drift. PROT 0958's runs carry the caster `-8 s` a vsync on every pass of
 arms 9 / 10 (`0x801F76AC`, `0x801F78E0`), and a retail film walks it `-256` a step-`4`
@@ -4517,6 +4535,23 @@ cut the engine's `0x71` held `54` ticks on the knockdown and the Done band opene
 on case 6's endpoint instead of easing from the module's last shot
 (`nivora_duel_pre_megaton_press`: `0x51` `.678` to `.889`).
 
+Che jumps at rate `4`, not the `2` arm `0x0A` stores. The arm stores the caster's `2`
+on every pass (`0x801F7598`) and, on the one that leaves, bumps her next clip
+(`0x801F768C`); the action SM runs the module and the anim tick commits the clip after
+it, and the commit lifts any rate but `8` to `4` (`0x8004B080`). A retail film's
+`rates.csv` holds seat 3 at `4` from the arm-`0x0B` clip's first vsync, and its cursor
+reaches `368` by the jump's end. The port commits a tick body's bump at once
+(`World::write_cast_actor_state`), ahead of the director's seat writes, so the `2`
+landed over the decay and the jump played at half pace (cursor `184`): Che stood low
+and near the camera through the arc and the landing. A rate the director stores on a
+seat whose bump the same tick committed now meets the decay
+(`CastFxState::module_bump_commits`). With the drift-first order above,
+`nivora_duel_pre_megaton_press` (`--retail-steps --rand-track`) reads arm `0x0B` `.78`
+to `.95`, `0x0C` / `0x0D` `.92` / `.93` to `.90` / `.92` and `0x0E..0x11` `.70..87` to
+`.83..93`. Arms 9 and `0x0A`, the rock rings, read `.98` / `.99` under `--rand-track` and
+`.71` without it: their residue on the other seats is the `rand()` deal. Grade
+`disassembly` + `capture`.
+
 <a id="prot-0958-blazing-slash"></a>
 
 **0958 Blazing Slash** (`cast_module_camera::blazing_slash_camera`) is the
@@ -4602,6 +4637,23 @@ and takes the close as arm `0xF` opens; bumped, the close cut in at the burst an
 Lu stood in another pose through arm `0xE`. `nivora_duel_pre_plasma_strike`
 (`--retail-steps --rand-track`) reads arm `0xE` `.36` to `.46` and arm `0xF` `.82`
 to `.95`. Grade `disassembly` + `capture`.
+
+The burst raises its numeral. Behind the wrapper call the arm pushes the popup
+`FUN_801F44A0(roll, 0)` on the raw roll (`jal` at `0x801F817C`, ahead of the clamp,
+the `+0x10` accumulate and the HP write), then clears the readout flag `0x8007B64C`
+(`0x801F81BC`); arm `0xF` raises it to `0x78` as it passes (`0x801F84B8..0x801F84BC`),
+which is where the `DAMAGE` cluster opens. Retail's film shows the burst's number
+over Noa through arm `0xE` and the cluster through the Done band. The port pushes the
+popup with the roll and holds the cluster (`BattleState::combo_cluster_held`) from the
+cast's start to arm `0xF`'s pass; no earlier arm raises the flag, and the flurry's
+banked hits write neither it nor HP. Grade `disassembly` + `capture`.
+
+The flurry's hits are deals, not shapes. A `--hit-trace` recording of the cast shows all
+seven of Lu's hits blocked by Noa's Spirit stance (`blocks.csv`, every row `blocked 1`;
+category `4`, block entry `11`), so retail lands nothing until the burst and draws no
+number before it. The engine rolls the same inputs (SPD `165` / `193`, ATK `123` /
+`127`, `LEGAIA_DIAG_BLOCKS`) on its own `rand()` words and lets one of the seven through,
+whose `37` and cluster then stand in frames retail holds clean. Grade `capture`.
 
 <a id="capture-walk-in-bodies"></a>
 
