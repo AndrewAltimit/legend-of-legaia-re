@@ -69,6 +69,13 @@ pub(super) fn progress_digest(s: &NativeSession) -> u64 {
     // parks the script on it for the glide's whole length (`jouine`
     // `P2[16]` pans for 2200 frames), and nothing else in the digest moves.
     let _ = write!(h, "glide{}|", w.camera.state.glide_frames);
+    // The Boss Rush intermission and result screens own the frame between
+    // stages (`run_rules_runs::step_run_rules`): a cursor walk or a bought
+    // supply is the player acting, though the field under them stands still.
+    if let Some(m) = w.run_rules.intermission.as_ref() {
+        let _ = write!(h, "rush{}{:?}{}|", m.cursor, m.message, w.party.money);
+    }
+    let _ = write!(h, "{:?}|", w.boss_rush_result());
     // Scripted NPC glides: an actor walking off-screen is still progress.
     for (slot, m) in &w.npcs.motions {
         let _ = write!(

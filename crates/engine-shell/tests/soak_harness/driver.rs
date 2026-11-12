@@ -167,7 +167,12 @@ pub(super) fn confirm(
         f.signature(),
     );
     let arming = o.arming;
-    let softlock = matches!(f.detector, "softlock");
+    // `LEGAIA_SOAK_REDUCE_LIVE=1` reduces a softlock with the pad still live
+    // in its window: the neutral-pad control makes any screen that waits for
+    // a press read as frozen, so a park on a *stale* screen (one no press
+    // can move) reduces under it to a screen merely waiting - a replay that
+    // still fires once the stale screen is fixed.
+    let softlock = matches!(f.detector, "softlock") && !env_flag("LEGAIA_SOAK_REDUCE_LIVE");
     // A `control_starved` window is evidence only as the policy pressed it:
     // every way out a player would try, tried. Zeroing inside it leaves a
     // stream that confirms one looping picker option for the whole window,

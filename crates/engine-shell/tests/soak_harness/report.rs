@@ -185,6 +185,20 @@ pub(super) fn write_report(
         *surfaces.entry(name).or_default() += 1;
     }
     let _ = writeln!(md, "- runs that reached each battle surface: {surfaces:?}");
+    let mut cabinet: BTreeMap<&String, u32> = BTreeMap::new();
+    for name in r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.cabinet_states.iter())
+    {
+        *cabinet.entry(name).or_default() += 1;
+    }
+    if !cabinet.is_empty() {
+        let _ = writeln!(
+            md,
+            "- runs that reached each Baka Fighter cabinet state: {cabinet:?}"
+        );
+    }
     let revisits: u32 = r.outcomes.iter().map(|o| o.stats.minigame_revisits).sum();
     let _ = writeln!(
         md,
