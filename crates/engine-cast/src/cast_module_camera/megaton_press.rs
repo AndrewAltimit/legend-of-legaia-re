@@ -109,7 +109,14 @@ pub fn megaton_press_camera(
     // The host's default order (shot, then drift) measures `.004` better
     // over the cast than the body's own drift-first order; arms 0, 3 and 9
     // take the drift-first path through their stores anyway.
-    let mut arm = CaptureCamArm::default();
+    // Every arm drifts the camera globals ahead of its countdown test and
+    // makes its builder call after it (arm `0x0A`: the stores at
+    // `0x801F756C..0x801F7590`, the `jal 0x801D829C` at `0x801F7664`), so a
+    // passing arm's cut lands on its own endpoint, not one pass's drift past.
+    let mut arm = CaptureCamArm {
+        drift_first: true,
+        ..Default::default()
+    };
     if phase == 0 {
         st.countdown.0 = SPEED_SCALAR * 12;
         let caster_at = ModuleSeat {

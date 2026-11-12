@@ -400,6 +400,19 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::rest_drift`]):
     /// what the rest of a handing-over pass repeats in place of the drift.
     pub module_tick_rest: Option<Option<legaia_engine_cast::cast_module_camera::CaptureDrift>>,
+    /// The newest module tick's pose stores and shot when its director runs
+    /// retail's drift-first order (drift, stores, shot): the rest of a
+    /// handing-over pass's drift lands ahead of them, so `World::module_pass`
+    /// stores and arms them again after it.
+    /// The seats (bit per slot) whose `+0x1DC` bump the newest module tick
+    /// committed at once (`World::write_cast_actor_state`). Retail commits it
+    /// in the anim tick after the action SM, so a rate the arm stores in the
+    /// same pass still meets the commit's decay (`0x8004B080`).
+    pub module_bump_commits: u8,
+    pub module_tick_after_drift: Option<(
+        Option<legaia_engine_cast::cast_module_camera::CapturePoseSet>,
+        Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
+    )>,
     /// The every-pass seat moves and focus drift of the newest module tick
     /// that held its arm ([`ModulePassMoves`]). An arm that hands over
     /// mid-pass owes the rest of the pass's moves as it owes its drift
@@ -638,6 +651,8 @@ impl CastFxState {
             module_pass_repeat: false,
             module_tick_drift: None,
             module_tick_rest: None,
+            module_tick_after_drift: None,
+            module_bump_commits: 0,
             module_held_moves: None,
             caster_stages: None,
             caster_size_store: None,

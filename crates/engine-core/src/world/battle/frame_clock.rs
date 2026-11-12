@@ -1018,6 +1018,7 @@ impl World {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
             self.casting.module_tick_drift = None;
+            self.casting.module_tick_after_drift = None;
             // The one-vsync ticks of the pass still owed after this one: an
             // arm leaving on this tick has drained `delta` ticks' worth by
             // retail's clock (the whole pass's product in one `subu`), and
@@ -1044,10 +1045,20 @@ impl World {
 
     /// Re-apply the handing-over tick's camera drift for the `ticks` of its
     /// pass the port does not run ([`Self::module_pass`]).
+    ///
+    /// A director in retail's drift-first order (PROT 0959, 0960) drifts the
+    /// globals by the whole pass's `k * delta` and only then makes its pass
+    /// stores and its builder call, so the rest of the drift goes in ahead of
+    /// them: the stores and the shot the tick made are made again over it. A
+    /// cut then lands on its own endpoint, where drifting after it left
+    /// Plasma Strike's arm-7, 9 and `0x0B` cuts a step-`2` or `3` drift past
+    /// retail's (`yaw 496`, TR z `1075` against `512` / `819` on arm 8 of the
+    /// `--retail-steps` film).
     fn drift_rest_of_pass(&mut self, ticks: u8) {
         let Some(d) = self.casting.module_tick_drift else {
             return;
         };
+        let after = self.casting.module_tick_after_drift.take();
         let Some(cam) = self.battle.camera.as_mut() else {
             return;
         };
@@ -1055,6 +1066,23 @@ impl World {
             cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
             if d.tr_x != 0 {
                 cam.drift_module_tr_x(d.tr_x);
+            }
+        }
+        if ticks == 0 {
+            return;
+        }
+        if let Some((set, shot)) = after {
+            if let Some(set) = set {
+                cam.set_module_pose(
+                    set.yaw.map(f32::from),
+                    set.tr_y.map(|v| v as f32),
+                    set.tr_z.map(|v| v as f32),
+                    set.focus_xz.map(|[x, z]| [f32::from(x), f32::from(z)]),
+                );
+            }
+            if let Some(shot) = shot {
+                let (pose, raw_z) = shot.pose();
+                cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
             }
         }
     }
@@ -1277,6 +1305,48 @@ mod tests {
         w.module_pass(hand_over_drifting);
         let after = w.battle.camera.as_ref().unwrap().pose().yaw;
         assert_eq!((after - before).rem_euclid(4096.0), 128.0);
+    }
+
+    /// A drift-first director's handing-over pass drifts the globals by the
+    /// whole pass and only then cuts (PROT 0960's arms 7, 9 and `0x0B`): the
+    /// rest of the drift goes in ahead of the cut, which lands on its own
+    /// endpoint.
+    #[test]
+    fn a_drift_first_handover_cuts_after_the_whole_pass_drift() {
+        use legaia_engine_battle_vm::battle_cam_script::{
+            BattleCamPhase, BattleCamera, ModuleShot,
+        };
+        const CUT: ModuleShot = ModuleShot {
+            angles: [0, 512, 0],
+            tr: [0, 825, 0x200],
+            focus: [0, 0, 0],
+            frames: 1,
+        };
+        fn drift_then_cut(w: &mut World) -> bool {
+            let d = legaia_engine_cast::cast_module_camera::CaptureDrift {
+                yaw: -4,
+                tr_z: 64,
+                ..Default::default()
+            };
+            w.casting.module_tick_drift = Some(d);
+            if let Some(cam) = w.battle.camera.as_mut() {
+                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                let (pose, raw_z) = CUT.pose();
+                cam.arm_module_shot(pose, raw_z, u32::from(CUT.frames));
+            }
+            w.casting.module_tick_after_drift = Some((None, Some(CUT)));
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(4);
+        w.battle.camera = Some(BattleCamera::new(BattleCamPhase::Menu, 0));
+        w.module_pass(drift_then_cut);
+        let (want, _) = CUT.pose();
+        let got = w.battle.camera.as_ref().unwrap().pose();
+        assert_eq!(got.yaw, want.yaw);
+        assert_eq!(got.tr[2], want.tr[2]);
     }
 
     /// An arm that hands over mid-pass moves its seats for the rest of the

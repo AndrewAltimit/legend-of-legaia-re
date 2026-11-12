@@ -486,6 +486,10 @@ impl World {
                     let (pose, raw_z) = shot.pose();
                     cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
                 }
+                if run.capture_pose_set.is_some() || run.camera_shot.is_some() {
+                    self.casting.module_tick_after_drift =
+                        Some((run.capture_pose_set, run.camera_shot));
+                }
             } else {
                 if let Some(shot) = run.camera_shot {
                     let (pose, raw_z) = shot.pose();
