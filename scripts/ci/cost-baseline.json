@@ -21,11 +21,11 @@
    },
    "cast": {
     "enhanced": {
-     "gl_draws_per_frame": 128.15,
+     "gl_draws_per_frame": 128.21,
      "wasm_bytes_per_frame": 109224
     },
     "retail": {
-     "gl_draws_per_frame": 105.54,
+     "gl_draws_per_frame": 105.59,
      "wasm_bytes_per_frame": 102054
     }
    },
