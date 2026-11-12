@@ -594,6 +594,58 @@ impl PlayWindowApp {
         }
     }
 
+    /// A `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate` film lets go of the drive at its
+    /// gate and stands the fight on the capture's own instant, once. Called
+    /// on the tick the gate opens, right after the session step that opened
+    /// it, so the film's first frame (the recorder starts on that tick's
+    /// present) already stands on the capture's ground: run only ahead of
+    /// the next tick, Bloody Horns' first frame drew Xain on the replay's
+    /// pair (`370`) where retail's stands on `502`. A harness seat.
+    fn release_battle_drive_at_gate(&mut self) {
+        if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+            && self.capture_gate_met()
+            && let Some(sc) = self.screenshot.as_ref()
+        {
+            // The drive holds the capture band's two polls while it steers
+            // (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`);
+            // once it lets go nothing would answer them, and a gate that
+            // opens inside `0x6F` (`battle_map01_gomboo_steal_mid_cast`)
+            // parked the band there for the rest of the run.
+            if !sc.battle_drive_released.replace(true) {
+                let world = &mut self.session.host.world;
+                world.battle.prev_action_cleared = true;
+                world.audio.sound_bank_ready = true;
+                // The capture's ground (`LEGAIA_BATTLE_GROUND_SNAP`): each
+                // seat's live pair and heading. The replay's rounds need not
+                // have turned or walked a seat where retail's did, and the
+                // action framing's yaw is the counter less the framed seat's
+                // heading. A heal state's caster and patient faced their
+                // earlier targets in `battle_nilboa_amethyst_heal_mid_cast`
+                // and stood at `0x800` in the replay. The pairs stand with
+                // the headings: a strike's attacker re-faces every pass onto
+                // its target's body pair, which the target's heading turns,
+                // so a heading seated on a replay's pair moved the attacker's
+                // bearing off retail's (`battle_dolk_drake_ghost_strike`'s
+                // drake stood `15` units off, and Vahn's retail heading
+                // swung its bearing a further `30`). A seat of the harness:
+                // it moves no rule.
+                let snaps: Vec<_> = sc
+                    .battle_ground_snap
+                    .iter()
+                    .map(|s| legaia_engine_capture::ground_snap::GroundSnap { body: None, ..*s })
+                    .collect();
+                let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+                // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
+                // `entries;cursor`): the frames after the gate run on the
+                // ring from where retail's stood, not on the step the walk
+                // up to the gate was pinned to.
+                if let Some((entries, cursor)) = env_cost_ring() {
+                    world.seed_frame_cost_ring(entries, cursor);
+                }
+            }
+        }
+    }
+
     /// The field pad word this tick hands the world: the options' simulation
     /// knobs re-asserted, a capture's battle bars seeded, and a
     /// `LEGAIA_BATTLE_DRIVE` capture's own pad path over the player's.
@@ -669,48 +721,7 @@ impl PlayWindowApp {
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {
             gate.steer(&mut self.session.host.world);
         }
-        if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
-            && self.capture_gate_met()
-            && let Some(sc) = self.screenshot.as_ref()
-        {
-            // The drive holds the capture band's two polls while it steers
-            // (`prev_action_cleared` on `0x6F`, `sound_bank_ready` on `0x6E`);
-            // once it lets go nothing would answer them, and a gate that
-            // opens inside `0x6F` (`battle_map01_gomboo_steal_mid_cast`)
-            // parked the band there for the rest of the run.
-            if !sc.battle_drive_released.replace(true) {
-                let world = &mut self.session.host.world;
-                world.battle.prev_action_cleared = true;
-                world.audio.sound_bank_ready = true;
-                // The capture's ground (`LEGAIA_BATTLE_GROUND_SNAP`): each
-                // seat's live pair and heading. The replay's rounds need not
-                // have turned or walked a seat where retail's did, and the
-                // action framing's yaw is the counter less the framed seat's
-                // heading. A heal state's caster and patient faced their
-                // earlier targets in `battle_nilboa_amethyst_heal_mid_cast`
-                // and stood at `0x800` in the replay. The pairs stand with
-                // the headings: a strike's attacker re-faces every pass onto
-                // its target's body pair, which the target's heading turns,
-                // so a heading seated on a replay's pair moved the attacker's
-                // bearing off retail's (`battle_dolk_drake_ghost_strike`'s
-                // drake stood `15` units off, and Vahn's retail heading
-                // swung its bearing a further `30`). A seat of the harness:
-                // it moves no rule.
-                let snaps: Vec<_> = sc
-                    .battle_ground_snap
-                    .iter()
-                    .map(|s| legaia_engine_capture::ground_snap::GroundSnap { body: None, ..*s })
-                    .collect();
-                let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
-                // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
-                // `entries;cursor`): the frames after the gate run on the
-                // ring from where retail's stood, not on the step the walk
-                // up to the gate was pinned to.
-                if let Some((entries, cursor)) = env_cost_ring() {
-                    world.seed_frame_cost_ring(entries, cursor);
-                }
-            }
-        }
+        self.release_battle_drive_at_gate();
         match self.screenshot.as_ref() {
             Some(sc) if sc.battle_drive_released.get() => field_pad,
             Some(sc) if let Some(drive) = sc.battle_drive => {
@@ -839,6 +850,9 @@ impl PlayWindowApp {
                 );
             }
         }
+        // The gate may have opened on this step: release the drive before
+        // the frame is drawn ([`Self::release_battle_drive_at_gate`]).
+        self.release_battle_drive_at_gate();
         // A script gate on the player's clip latch or mid-page in a box takes
         // the displayed frame `display_lag` ticks before the gate: any tick
         // since the engine started replaying the gate's record is a frame
