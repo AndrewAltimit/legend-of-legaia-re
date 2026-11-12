@@ -1,9 +1,8 @@
-//! Four overlay rows the differential does not run, each settled by what the
+//! Three overlay rows the differential does not run, each settled by what the
 //! disc image shows about it: who reaches the routine and what it calls.
 //!
 //! - `FUN_801D5C2C` (PROT 0972) has no reference anywhere on the disc.
 //! - `FUN_801D553C` (PROT 0976) hands its text to a stub retail ships empty.
-//! - `FUN_801D4FC8` (PROT 0976) is a template tick spawned by one cabinet arm.
 //! - `FUN_801D2050` (PROT 0972) is the lead angler's template tick, a
 //!   dispatcher over callees that run in their own differentials.
 
@@ -124,32 +123,6 @@ fn the_action_dump_hands_its_text_to_an_emptied_stub() {
     assert_eq!(
         referenced(&overlay, BAKA_BASE, 0x801D_553C),
         vec![0x801D_1E90]
-    );
-}
-
-#[test]
-fn the_keyframe_editor_is_one_cabinet_arms_template_tick() {
-    not_a_differential!(
-        "FUN_801D4FC8 is the tick word of actor template 0x801D766C, which the cabinet spawns at 0x801D1D90 in its developer editor arm; the port keeps the editor's pad steps, and no shipped play enters that arm"
-    );
-    let Some(d) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset");
-        return;
-    };
-    let overlay = d.read_entry(976).expect("PROT 0976");
-    assert_eq!(
-        referenced(&overlay, BAKA_BASE, 0x801D_4FC8),
-        vec![0x801D_7674],
-        "the template's tick word is the editor's only reference"
-    );
-    // The template is named once, by the arm that spawns it.
-    assert_eq!(
-        referenced(&overlay, BAKA_BASE, 0x801D_766C),
-        vec![0x801D_1D68]
-    );
-    assert_eq!(
-        calls_in(&overlay, BAKA_BASE, 0x801D_1D68, 0x801D_1D98),
-        vec![0x8002_0DE0]
     );
 }
 

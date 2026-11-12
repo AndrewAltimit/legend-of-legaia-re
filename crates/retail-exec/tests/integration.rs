@@ -245,6 +245,7 @@ mod item_use_screen;
 mod items_command;
 mod items_panels;
 mod key_on_volume;
+mod keyframe_editor;
 mod kiss_of_death;
 mod leader_swap;
 mod ledge_hop;
