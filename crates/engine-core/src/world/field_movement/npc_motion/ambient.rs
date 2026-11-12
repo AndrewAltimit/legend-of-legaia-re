@@ -956,7 +956,7 @@ impl World {
                             legaia_engine_scene::model_bank::SPECIAL_MODEL_THRESHOLD as i16,
                         ),
                     };
-                    self.npcs.models.insert(slot, id);
+                    self.set_field_npc_live_model(slot, id);
                 }
                 Fx::BitTargetFault => {}
             }

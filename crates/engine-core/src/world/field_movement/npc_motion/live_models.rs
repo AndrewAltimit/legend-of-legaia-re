@@ -72,10 +72,26 @@ impl World {
             .filter(|&id| id != 0)
     }
 
-    /// Install a live model id on a slot, as op `0x0E` does. For a host or a
-    /// test that drives the re-bind directly.
+    /// Install a live model id on a slot, as op `0x0E` and op `4C 50` do.
+    ///
+    /// The re-stage also re-sizes the actor's render node: `FUN_80020F88`
+    /// calls `FUN_80024D78`, which writes the new TMD's object count into the
+    /// node (`0x80024D94..0x80024D9C`) and re-points one entry per object
+    /// (`0x80024DB4..0x80024DD4`), so the next clip `FUN_800204F8` binds poses
+    /// the new mesh's parts. The slot's bound bone count
+    /// ([`crate::world::FieldNpcState::clip_bones`]) is that node's count, so
+    /// a new model drops it and the next re-target sets it again. Kept, it
+    /// refused the clip of a mesh with another part count and drew the new
+    /// mesh under the old skeleton's pose: `dolk` `P2[11]` re-models two of
+    /// the people the pens free (`CC 24 50 85 00`, `CC 25 50 86 00`, ten- and
+    /// seven-part monsters to four-part people) and binds their four-bone
+    /// clips (`A2 24 1B`, `A2 25 1C`).
+    ///
+    /// REF: FUN_80024E08, FUN_80020F88, FUN_80024D78 (the re-stage re-sizes the node)
     pub fn set_field_npc_live_model(&mut self, slot: u8, id: i16) {
-        self.npcs.models.insert(slot, id);
+        if self.npcs.models.insert(slot, id) != Some(id) {
+            self.npcs.clip_bones.remove(&slot);
+        }
     }
 
     /// The player actor's live field position, or `None` when no player

@@ -22,6 +22,7 @@ mod cd_reverb_minigame_disc;
 mod dance_sfx_disc;
 mod dead_target_redirect_disc;
 mod dialog_font_metrics;
+mod dolk_pens_remodel_clip_disc;
 mod expansion_battle_stage_disc;
 mod expansion_boss_script_disc;
 mod expansion_map_resume_disc;
