@@ -363,6 +363,24 @@ over `390` vsyncs, the engine on the track runs the same frames in `259` ticks, 
 reads `.47` against the plain run's `.93`. Read a film the track takes down as the seat's
 miss, not as the law's.
 
+<a id="a-frames-step-belongs-to-its-own-pass"></a>
+
+**A frame's step belongs to its own pass.** A track line is one value of the frame
+counter (`gp+0x480`, bumped at the head of `FUN_80016B6C` at `0x80016BA8`), keyed on
+the state on the frame's first row and carrying the step on its last. The pass's logic
+runs after the counter's first row: across the recordings no change of state or phase
+lands on a frame's first row, so that row holds the state the pass opens on, the state the
+pass before it left. The step column is the pass's own drain. Water Crystals' arm
+countdowns (`capture_countdown::WATER_CRYSTALS`, re-armed by `Add`, so a residue carries)
+end every arm on the frame the recording shows when each pass drains by its own frame's
+step, and a frame late when it drains by the frame before's: arm 1 opens behind a
+step-`3` frame and its eight step-`4` frames drain `256` exactly. The engine drains a pass
+by the ticks the frame before it spanned, so the step the track hands a pass that left a
+key is the one the next frame spans, and the arming pass takes the recording's first.
+Keyed on a frame's last row with its own step, every pass ran one frame late on the
+track: Water Crystals' first arm-1 pass drained `24` where retail's drained `32`, and the
+one step-`3` frame of arm 3 fell outside it, so arm 3 ran `128` game frames.
+
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
 `0` and the rate the new clip's. `battle_jou_party_vahn_chain_open` shows clip `0x10` at
@@ -750,14 +768,16 @@ five extra cues. Read it as a harness seat that takes the stream out, not as a s
 
 Nor does it seat a roll on a pass the engine does not run. Water Crystals' hit
 (`FUN_801DD4B0(0xC0)` at `0x801F7318`) on `battle_jou_freed_v3_water_crystals_mid_cast`
-lands on the pass arm 3's `scalar << 7` countdown opens. Retail's wait ran one pass
-longer than the engine's: one of its frames ran on step `3` (`131` game frames against
-`128`), so the hit took that pass's discarded draw first and the wrapper's four draws
-after it, and the bonus draw `rand() % 49` that sets a Spirit-guarded victim's damage
-read `35` (`113`) where the engine, a pass earlier, read the frame's first four
-(`120` under `--rand-track`, `103` on its own stream). The same pass pairs the engine's
-arm 4 a pass off retail's shatter. Both are the frame step, not the roll: the wrapper's draws and arithmetic
-reproduce retail's `113` from the recorded word. Grade `disassembly` + `capture`.
+lands on the pass arm 3's `scalar << 7` countdown opens. On its own steps the engine's
+wait runs a pass short of retail's: one of retail's frames there runs on step `3` (`131`
+game frames against `128`), so retail's hit takes that pass's discarded draw first and the
+wrapper's four draws after it, and the bonus draw `rand() % 49` that sets a
+Spirit-guarded victim's damage reads `35` (`113`) where the engine, a pass earlier, reads
+the frame's first four (`103` on its own stream). The wrapper's draws and arithmetic
+reproduce retail's `113` from the recorded word. Seated on the recording's steps
+([keyed on the state a pass opens on](#a-frames-step-belongs-to-its-own-pass)) the engine
+runs the step-`3` pass where retail's does, arm 3 runs `131` game frames, and with
+`--rand-track` the hit reads `113`. Grade `disassembly` + `capture`.
 
 ### The Seru set on three seats
 

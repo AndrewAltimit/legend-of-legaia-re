@@ -99,9 +99,11 @@ ACTION_BANDS = (0x35, 0x36, 0x70)  # the module bands, where a step track keys t
 
 
 def step_track(rows: list[list]) -> str:
-    """`state phase step` per game frame, in order: the frame's last row, as
-    `scripts/ci/cast-sequence.py`'s `retail_step_track` writes it. A row that repeats a
-    vsync is a frame-advance key the emulator dropped, and is skipped."""
+    """`state phase step` per game frame, in order: the state on the frame's
+    first row (the state its pass opens on) and the step on its last, as
+    `scripts/ci/cast-sequence.py`'s `retail_step_track` writes it. A row that
+    repeats a vsync is a frame-advance key the emulator dropped, and is
+    skipped."""
     seen, frames = set(), []
     for r in rows:
         vsync, frame = r[0], r[-9]
@@ -109,13 +111,13 @@ def step_track(rows: list[list]) -> str:
             continue
         seen.add(vsync)
         if frames and frames[-1][0] == frame:
-            frames[-1][1] = r
+            frames[-1][2] = r
         else:
-            frames.append([frame, r])
+            frames.append([frame, r, r])
     out = []
-    for _, r in frames:
-        state, step = r[4], r[-10]
-        phase = r[1] if state in ACTION_BANDS else 0
+    for _, first, last in frames:
+        state, step = first[4], last[-10]
+        phase = first[1] if state in ACTION_BANDS else 0
         out.append(f"{state} {phase} {step}\n")
     return "".join(out)
 
