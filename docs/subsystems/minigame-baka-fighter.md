@@ -971,6 +971,14 @@ Retail carries three dev-kit screens it cannot reach: the developer menu (`0xC8`
 
 **Why they are unreachable.** The editor band is written in exactly one place, the developer menu arm (`0x801D19DC`, state `0xC8`). The cabinet enters `0xC8` only when `_DAT_8007B868` is non-zero (`0x801D08E8`, the pause-menu edge; otherwise state `0xBF`). A disc-wide `find-gp-relative-refs.py --va 0x8007b868 --prot` sweep finds two stores to that word in any image: the boot store of `FUN_8002B92C`'s result (`0x80015F18`), whose whole body is `jr ra; move v0, zero`, and a bit-clear (`0x8001E008`). The word boots to zero and is only ever cleared. The ports carry `REPLACED-BY:` tags saying so.
 
+### The developer menu
+
+State `0xC8` (`0x801D1648..0x801D19E4`) is five rows on Up / Down, each move cueing `0x21`. Left / Right edit two words: row `2` the debug-mode word `DAT_801DBF94` (non-zero enables the cabinet's debug traces, `2` the opponent's mirror mode), row `3` a stage pick `DAT_801DBF60`, which every pause-menu edge seeds from the stage counter (`0x801D08F4`, whichever menu then opens). The cursor, the stage pick and the mode word are wrapped unsigned every frame (`% 5`, `% 14`, `% 3`).
+
+Circle confirms the row; Cross resumes from any row, by writing the Circle bit into the shared edge word `_DAT_8007B874` and putting the cursor on row `0` (`0x801D192C..0x801D1940`). Row `0` resumes the duel, or, when the stage pick differs from the stage, stores it as the stage and runs the next-rung reload (`0x6E`, match phase `1`). Row `1` reboots the cabinet (state `0`, match phase `0`); row `4` opens the keyframe editor. A confirm raises no cue.
+
+State `0` zeroes the all-clear flag, the scene suppress and the shake (`0x801CF694..0x801CF6D0`) and leaves the high score and the blink phase alone, so a reboot keeps both until the player select zeroes the score. Port: `BakaCabinet`'s state `0xC8`; the cabinet differential raises the gate in one session in four and drives the menu, the reboot and both editor states.
+
 ### The developer keyframe editor
 
 `FUN_801D4FC8` is the in-game **action-table editor**. It is linked, not dead: its address is the callback of prototype record `0x801D766C` ([Actor prototypes](#actor-prototypes)), so it is spawnable through the ordinary actor path and it is the state band that never opens. Contrast `FUN_801D5C2C` in [`minigame-fishing.md`](minigame-fishing.md#scene-geometry-helpers), which has no reference of any form.
@@ -1266,7 +1274,7 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
 - The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.
 - The minigames page draws the duel HUD page-side rather than through `baka_screen_prims`.
-- The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
+- The keyframe editor's tick `FUN_801D4FC8` is not ported (`REPLACED-BY:` tags); its slot helpers (`baka_fighter_chrome::anim_slot_install` / `anim_slot_delete`), the developer menu and the action-table dump are.
 
 **Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.
 

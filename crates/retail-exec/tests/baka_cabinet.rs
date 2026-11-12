@@ -91,10 +91,11 @@ fn the_cabinet_runs_sessions_as_retail_does() {
         // The scene-ready bit state `0x37` waits on (`0x801D04A8`), which
         // the port takes as up.
         cpu.mem.wr32(0x1F80_0394, 0x80);
-        // The developer menu stays shut: retail boots its gate to zero and
-        // never sets it (`baka_cabinet::action_dump`), and its rows edit
-        // words the port's menu does not model.
-        let dev = false;
+        // The developer menu: retail boots its gate to zero and never sets
+        // it (`baka_cabinet::action_dump`); one session in four raises it, so
+        // the pause edge opens the menu, its rows and the keyframe editor's
+        // two states.
+        let dev = session % 4 == 3;
         cpu.mem.wr32(DEV_MENU, u32::from(dev));
         let mut cam = DuelCamera::default();
         let step = 1 + rng.below(3) as i32;
@@ -109,8 +110,8 @@ fn the_cabinet_runs_sessions_as_retail_does() {
             let mut edge: u16 = 0;
             if rng.below(6) == 0 {
                 edge = [
-                    0x0800, 0x0040, 0x0020, 0x8000, 0x2000, 0x1000, 0x4000, 0x0010,
-                ][rng.below(8) as usize];
+                    0x0800, 0x0040, 0x0020, 0x8000, 0x2000, 0x1000, 0x4000, 0x0010, 0x0004, 0x0100,
+                ][rng.below(10) as usize];
             }
             if state == ST_DUEL && edge & 0x0110 != 0 && rng.below(4) != 0 {
                 edge = 0;
@@ -233,7 +234,7 @@ fn the_cabinet_runs_sessions_as_retail_does() {
         }
     }
     eprintln!("states seen {seen:x?}, frames {frames_run}");
-    for want in [0x6D, 0xFA, 0xFE, 0x96] {
+    for want in [0x6D, 0xFA, 0xFE, 0x96, 0xC8, 0x191] {
         assert!(
             seen.contains(&want),
             "state {want:#x} never reached: {seen:x?}"

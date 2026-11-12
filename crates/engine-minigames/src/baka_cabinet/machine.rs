@@ -175,6 +175,15 @@ pub struct BakaCabinet {
     pub(super) menu_cursor: i32,
     /// `DAT_801DC10C` - the ladder's stage counter (retail seeds it `2`).
     pub(super) stage: i32,
+    /// `DAT_801DBF60` - the developer menu's stage pick: seeded from the
+    /// stage counter on every pause-menu edge (`0x801D08F4`), edited on the
+    /// menu's row `3` (wrapped unsigned `% 14`), and installed as the next
+    /// rung by row `0`'s confirm when it differs from the stage.
+    pub(super) dev_stage: i32,
+    /// `DAT_801DBF94` - the debug-mode word the developer menu's row `2`
+    /// edits (wrapped unsigned `% 3`): `!= 0` enables the cabinet's debug
+    /// traces, `2` the opponent's mirror mode.
+    pub(super) dev_mode: i32,
     /// `DAT_801DC110` - the displayed rung number.
     pub(super) stage_display: i32,
     /// `DAT_801DBF06` - the secret-opponent override.
@@ -232,6 +241,8 @@ impl BakaCabinet {
             select_cursor: 0,
             menu_cursor: 0,
             stage: 2,
+            dev_stage: 0,
+            dev_mode: 0,
             stage_display: 0,
             secret: SecretOpponent::None,
             high_score: 0,
@@ -395,7 +406,7 @@ impl BakaCabinet {
     /// Every scalar the cabinet keeps, beside the overlay word it mirrors
     /// (all words but the secret override, a halfword): the view the retail
     /// kernel differential reads the machine through.
-    pub fn retail_words(&self) -> [(u32, i32); 26] {
+    pub fn retail_words(&self) -> [(u32, i32); 28] {
         [
             (0x801D_BF44, self.state as i32),
             (0x801D_C128, self.scene_timer),
@@ -410,6 +421,8 @@ impl BakaCabinet {
             (0x801D_BF70, self.select_cursor),
             (0x801D_BF90, self.menu_cursor),
             (0x801D_C10C, self.stage),
+            (0x801D_BF60, self.dev_stage),
+            (0x801D_BF94, self.dev_mode),
             (0x801D_C110, self.stage_display),
             (0x801D_BF06, i32::from(self.secret.raw())),
             (0x801D_BEE4, self.high_score),

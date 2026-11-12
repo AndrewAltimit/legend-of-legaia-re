@@ -19,10 +19,13 @@ impl BakaCabinet {
         let entry = self.state;
         match self.state {
             ST_BOOT => {
+                // `0x801CF694..0x801CF6D0`: the all-clear flag, the scene
+                // suppress and the shake are zeroed; the high score and the
+                // blink phase are not (the developer menu's reboot row
+                // returns here with both live).
                 self.suppress_scene = false;
                 self.all_clear = 0;
-                self.high_score = 0;
-                self.scene_timer = 0;
+                self.shake = 0;
                 self.state = ST_ATTRACT;
             }
             ST_ATTRACT => {
@@ -70,9 +73,10 @@ impl BakaCabinet {
                 // `0x801CF88C..0x801CFA60`: the three party fighters spawn
                 // (their lineup is `baka_duel_scene::SELECT_LINEUP`), the
                 // stage counter re-seeds to `2`, and the banner actor spawns.
+                // The round index the banner announces is the opponent
+                // install's to zero (`0x801CFDB0`), not this arm's.
                 self.high_score = 0;
                 self.match_phase = 0;
-                self.round = 0;
                 self.perfect_matches = 0;
                 self.stage = 2;
                 self.stage_display = 0;
@@ -536,6 +540,10 @@ impl BakaCabinet {
         if pause_ready && input.pad_edge & CABINET_DUEL_MENU != 0 {
             f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
             self.menu_cursor = 0;
+            // The developer menu's stage pick starts on the stage, whichever
+            // menu opens (`sw a0,-0x40a0(v0)` in the delay slot at
+            // `0x801D08F4`).
+            self.dev_stage = self.stage;
             self.state = if input.dev_menu_enabled {
                 ST_DEV_MENU
             } else {
@@ -582,43 +590,73 @@ impl BakaCabinet {
         }
     }
 
-    /// The developer menu: five rows, with left/right editing the debug-mode
-    /// and stage fields on rows `2` and `3`.
+    /// The developer menu (state `0xC8`, `0x801D1648..0x801D19E4`): five
+    /// rows on Up / Down, each move cueing `0x21`; Left / Right edit the
+    /// debug-mode word on row `2` and the stage pick on row `3`. The cursor,
+    /// the stage pick and the mode word are then wrapped unsigned (`% 5`,
+    /// `% 14`, `% 3`) every frame. Cross resumes from any row: it sets the
+    /// Circle bit in the edge word and puts the cursor on row `0`
+    /// (`0x801D192C..0x801D1940`). Circle confirms the row: row `0` resumes
+    /// the duel, or, when the stage pick differs from the stage, installs it
+    /// as the next rung (state `0x6E`, match phase `1`); row `1` reboots the
+    /// cabinet; row `4` opens the keyframe editor. A confirm raises no cue.
+    ///
+    /// PORT: FUN_801cf388 (state `0xC8`)
     fn tick_dev_menu(&mut self, input: &CabinetInput, f: &mut CabinetFrame) {
-        let edge = input.pad_edge;
-        let (c, moved) = cursor_step_mod(
-            self.menu_cursor,
-            DEV_MENU_ROWS,
-            edge,
-            CABINET_UP,
-            CABINET_DOWN,
-        );
+        const DEV_CONFIRM: u16 = 0x0020;
+        const DEV_RESUME: u16 = 0x0040;
+        let mut edge = input.pad_edge;
+        let (c, moved) =
+            super::cursor::cursor_raw(self.menu_cursor, edge, CABINET_UP, CABINET_DOWN);
         self.menu_cursor = c;
         if moved {
             f.cues.push(crate::baka_fighter::BAKA_CUE_CURSOR);
         }
-        if self.menu_cursor == 3 {
+        if self.menu_cursor == 2 {
             if edge & CABINET_LEFT != 0 {
-                self.stage -= 1;
+                self.dev_mode -= 1;
             }
             if edge & CABINET_RIGHT != 0 {
-                self.stage += 1;
+                self.dev_mode += 1;
             }
         }
-        if edge & CABINET_CONFIRM != 0 {
-            f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
-            match self.menu_cursor {
-                0 => self.state = ST_DUEL,
-                1 => {
-                    self.match_phase = 0;
-                    self.state = ST_BOOT;
-                }
-                4 => {
-                    self.match_phase = 0;
-                    self.state = ST_DEV_EDITOR;
-                }
-                _ => {}
+        if self.menu_cursor == 3 {
+            if edge & CABINET_LEFT != 0 {
+                self.dev_stage -= 1;
             }
+            if edge & CABINET_RIGHT != 0 {
+                self.dev_stage += 1;
+            }
+        }
+        let wrap = |v: i32, n: u32| (v as u32 % n) as i32;
+        self.menu_cursor = wrap(self.menu_cursor, DEV_MENU_ROWS as u32);
+        self.dev_stage = wrap(self.dev_stage, STAGE_WRAP as u32);
+        self.dev_mode = wrap(self.dev_mode, 3);
+        if edge & DEV_RESUME != 0 {
+            edge |= DEV_CONFIRM;
+            self.menu_cursor = 0;
+        }
+        if edge & DEV_CONFIRM == 0 {
+            return;
+        }
+        match self.menu_cursor {
+            0 => {
+                self.state = ST_DUEL;
+                if self.dev_stage != self.stage {
+                    self.state = ST_NEXT_RUNG;
+                    self.stage = self.dev_stage;
+                    self.match_phase = 1;
+                }
+            }
+            1 => {
+                self.match_phase = 0;
+                self.state = ST_BOOT;
+            }
+            4 => {
+                self.match_phase = 0;
+                self.state = ST_DEV_EDITOR;
+            }
+            _ => {}
         }
     }
 }
