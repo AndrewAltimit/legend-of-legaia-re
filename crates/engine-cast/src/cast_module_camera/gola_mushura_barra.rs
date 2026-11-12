@@ -689,6 +689,29 @@ pub fn barra_backdrop_scroll(
     (words, ((words.0 >> 8) as u8, row))
 }
 
+/// PROT 0917's stage byte `ctx[+0x278]` for one pass of arm `phase`, with
+/// `word` the module word `0x801F934C` as the pass leaves it:
+///
+/// | arm | store |
+/// |---:|---|
+/// | 2 | `2` on the pass (`0x801F6DEC`) |
+/// | 3 | the phase, `3`, on the pass (`sb s1` at `0x801F6E90`) |
+/// | 4, `0xC` | `2` on the pass (`0x801F6F70`, `0x801F7B60`) |
+/// | 6 | `3` on every pass whose stepped word has reached `0xA1` (`slti 0xA1` at `0x801F7100`, the store at `0x801F71F4`) |
+///
+/// Arm 6's store is in the arc's second branch, not at the arm's entry: the
+/// ground stays up, dimmed, through the first half of the arc.
+///
+/// PORT: overlay_summon_barra_0917_801f6a30 (PROT 0917; the stage byte stores of arms 2, 3, 4, 6 and 0xC)
+pub fn barra_stage_byte(phase: u8, passed: bool, word: i32) -> Option<u8> {
+    match phase {
+        2 | 4 | 0xC if passed => Some(2),
+        3 if passed => Some(3),
+        6 if passed || word >= 0xA1 => Some(3),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -713,6 +736,15 @@ mod tests {
             barra_backdrop_scroll(0xFF, false, true, (0x1234, 0x1000), 8).1,
             (0, 0)
         );
+    }
+
+    /// Arm 6 takes the ground away only from the arc's second half.
+    #[test]
+    fn barra_arm6_stage_store_waits_for_the_arc() {
+        assert_eq!(barra_stage_byte(6, false, 0xA0), None);
+        assert_eq!(barra_stage_byte(6, false, 0xA1), Some(3));
+        assert_eq!(barra_stage_byte(3, true, 0), Some(3));
+        assert_eq!(barra_stage_byte(4, false, 0), None);
     }
 
     #[test]

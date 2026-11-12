@@ -2503,6 +2503,15 @@ impl World {
         {
             ctx.ctx_278 = v;
         }
+        if entry == 917
+            && let Some(v) = legaia_engine_cast::cast_module_camera::barra_stage_byte(
+                phase_in,
+                ctx.phase != phase_in,
+                self.casting.module_cam.countdown.0,
+            )
+        {
+            ctx.ctx_278 = v;
+        }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
