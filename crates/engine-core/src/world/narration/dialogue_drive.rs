@@ -1462,6 +1462,14 @@ impl World {
             .and_then(|ch| u8::try_from(ch.placement_index).ok())
     }
 
+    /// Where the placement a cross-context target byte names stands
+    /// ([`Self::placement_slot_for_target`]), or `None` when `t` names no
+    /// placement.
+    pub fn npc_position_for_target(&self, t: u8) -> Option<(i16, i16)> {
+        let slot = self.placement_slot_for_target(t)?;
+        self.npcs.positions.get(&slot).copied()
+    }
+
     /// How far the compass-walk leg (`B7` / `C1 <t> b0 b1`) a script armed on
     /// the placement target byte `t` names has run: the spent units the walk
     /// kernel keeps on the actor's `+0x54` (one per vsync, the frame step a

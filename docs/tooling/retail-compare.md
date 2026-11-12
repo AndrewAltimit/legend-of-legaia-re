@@ -932,13 +932,16 @@ the seed stops paging once it is there. Met on the PC alone, none was:
 `+0x969` to `+0xC72`, and each scored the settle-window sample (image
 `.20`..`.36`, against `.94`..`.99` met on the page).
 
-**The player's walk wait.** `B3 F8 0A` tests the halt bit the record's own
-walk-to-tile on the player (`C7 F8 <x> <z> <mode>`, seated on the record's
-`+0x94`) raised, so the record sits on that PC for the whole walk.
-`ScriptGate::player_walk` carries the tile and the player's distance left
-to it, and the gate is met once the engine's player stands as near.
-Three `concend` checkpoints 60 vsyncs apart had all met on the walk's first
-tick (position `.175`, `0`, `0`; met on the walk, `1`).
+**A walk-to-tile's wait.** `B3 <t> 0A` tests the halt bit a walk-to-tile
+on the same actor (`C7 <t> <x> <z> <mode>`) raised, so the record sits on
+that PC for the whole walk. On the player (`0xF8`) the arm halts the record
+and seats the op on the record's own `+0x94`; on a placement it halts and
+seats the placement. `ScriptGate::tile_walk` carries the target, the tile
+and the walker's distance left to it, and the gate is met once the engine's
+walker stands as near. Three `concend` checkpoints 60 vsyncs apart had all
+met on the player's first tick of the walk (position `.175`, `0`, `0`; met
+on the walk, `1`), and `concnow` `P2[13]`'s wait on flat `50` at `+0x399`
+read image `.34` on the PC alone and `.84` on the walk.
 
 A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
@@ -956,7 +959,7 @@ frames before the one the RAM holds, so the image child's gate takes
 `2 * step` vsyncs off the retail wait (`parity::retail_compare_script::displayed_script_gate_from_retail`,
 the step rebuilt from the frame-duration history). The state channels keep
 the RAM's wait. A gate with no wait to take back - one on the player's clip
-latch, a text gate mid-page, the player's walk wait - keeps the RAM's phase,
+latch, a text gate mid-page, a walk-to-tile's wait - keeps the RAM's phase,
 and the child takes its frame `display_lag` ticks before the tick it meets
 it on (`ScriptGate::takes_displayed_frame`, the `.retake` re-run). A box two
 pager calls into its first row was not drawn yet, which no reveal counter
