@@ -171,7 +171,7 @@ fn the_named_scene_change_stages_what_retail_stages() {
             .iter()
             .filter(|(_, n)| n.as_bytes() == folded.as_slice())
             .map(|(k, _)| *k)
-            .next_back();
+            .last();
         match (&parked, hit) {
             (Some((n, px, pz, pd)), Some(define)) => {
                 assert_eq!(n.as_bytes(), folded.as_slice(), "{label}");
