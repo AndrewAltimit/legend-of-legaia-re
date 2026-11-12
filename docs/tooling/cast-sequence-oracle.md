@@ -807,9 +807,10 @@ the victim stands where a retail RAM image holds it, frame for frame. Over the s
 | `--retail-steps` | `.9091` | `.9133` | `0x9F` `.863` to `.960`, `0x9E` `.918` to `.937` |
 | `--retail-steps --rand-track` | `.9314` | `.9356` | `0x9F` `.863` to `.960`, `0x9E` `.920` to `.940` |
 
-Mushura's arms 8..11 lift on every seat (arm 10 `.890` to `.987`); its arm 12 chase
-stays at `.75`..`.79`, which now starts from retail's stand and leaves the chase's own
-targets to read. Gilium's `0x95` loses `.002` plain, a few hundredths on arms `0xD`,
+Mushura's arms 8..11 lift on every seat (arm 10 `.890` to `.987`). Its arm 12 chase
+reads `.792` / `.750` / `.736` on the three seats, against `.789` / `.796` / `.778`:
+it now starts from retail's stand, and what it does from there (the targets it
+trades, the hits that knock the row about) is the chase's own to read. Gilium's `0x95` loses `.002` plain, a few hundredths on arms `0xD`,
 `0x10` and `0x11` whose camera now stands nearer the recording's.
 
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
