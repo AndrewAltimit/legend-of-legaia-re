@@ -97,6 +97,8 @@
       <tr><td>pause menu</td><td>random taps for a random budget, then Circle until it closes</td></tr>
       <tr><td>battle</td><td>mostly the route ladder's fighter (Begin, Attack, Auto, confirm); in the sparring tutorial it follows the lesson, since any other pick rewinds it</td></tr>
       <tr><td>minigame / other</td><td>random face buttons and held directions, rarely Start - the minigames' escape</td></tr>
+      <tr><td>Baka Fighter cabinet</td><td>strikes with Square / Circle / Cross in the duel and rarely opens the pause menu, which takes Continue four times in five; other cabinet screens mostly confirm, so runs climb the ladder to the tally and later rungs</td></tr>
+      <tr><td>Boss Rush intermission</td><td>a planned row ("Next battle" half the time), the cursor walked there, then Cross</td></tr>
     </tbody>
   </table>
 </section>
@@ -164,6 +166,7 @@
       <tr><td><code>LEGAIA_SOAK_RETAIL</code></td><td>soak under the hosts' retail mode: the options' engine knobs and every fidelity toggle pinned to retail</td></tr>
       <tr><td><code>LEGAIA_SOAK_BARE</code></td><td>soak a bare <code>BootSession</code> without the hosts' arming</td></tr>
       <tr><td><code>LEGAIA_SOAK_REDUCE</code> / <code>_REDUCE_SIG</code> / <code>_REDUCE_OUT</code></td><td>re-reduce a saved replay, optionally toward a different signature</td></tr>
+      <tr><td><code>LEGAIA_SOAK_REDUCE_LIVE</code></td><td>reduce a softlock with the pad live in its window: the neutral-pad control reduces a park on a stale screen to the same screen merely waiting for a press</td></tr>
     </tbody>
   </table>
   <p>The headless engine ticks far faster than real time, so a soak is bounded by the minimiser, not by the runs. Overflow and debug-assertion coverage comes from building the same test with those checks on, into its own target directory.</p>
@@ -219,6 +222,10 @@
           <tr><td><code>son_nook_seat_through_culled_npc</code></td><td>a talk seat in <code>son</code>'s wall nook left the player <code>confined</code></td><td>harness: the seat floods count culled placements as solid</td></tr>
           <tr><td><code>kor3_warp_pad_parks_on_capped_screen</code></td><td>the Sol Tower warp pad's <code>49 04</code> read a stale screen left by a capped <code>other7</code> record</td><td>a record the anti-hang cap ends takes its op-<code>0x49</code> screen with it (<code>World::drop_capped_op49_screen</code>); retail has no cap</td></tr>
           <tr><td><code>town01_hardcore_spar_item_lesson</code></td><td>under hardcore, Tetsu's spar held its Item lesson for good</td><td>hardcore leaves the tutorial's Item lesson its window</td></tr>
+          <tr><td><code>town01_spar_item_lesson_under_pack_challenge</code></td><td>with the sample pack's Bare Hands challenge armed, Tetsu's spar refused the Item chip and held its Item lesson for good</td><td>the sparring tutorial is no challenge's battle (<code>World::expansion_battle_formation</code>)</td></tr>
+          <tr><td><code>edlast_soft_reset_screen_survives_continue</code></td><td>after the credits reloaded to the title and a save was continued, the next credits' <code>49 0C</code> parked for good and the records kept drawing</td><td>the title's card load and New Game drop the op-<code>0x49</code> screen and park, as retail's executable reload does</td></tr>
+          <tr><td><code>cave01_come_with_me_player_walk</code></td><td>"Come with me!" waited on its player walk past the stall window</td><td>harness: a player walk the context armed counts as progress, whichever op waits on it</td></tr>
+          <tr><td><code>town0b_boss_rush_intermission_unread</code></td><td>the Boss Rush intermission read as a frozen field</td><td>harness: the digest reads the Boss Rush screen; the policy confirms a planned row</td></tr>
         </tbody>
       </table>
       <p>The full list, with every fixed replay, is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md#fixtures" target="_blank" rel="noopener">source doc</a>.</p>

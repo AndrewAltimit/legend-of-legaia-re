@@ -158,7 +158,7 @@ formation = "ogre_pack"
 rules = { turn_limit = 10, no_items = true, no_magic = true }
 score = { base = 1000, turn_bonus = 100 }
 rewards = { gold = 2000 }</code></pre>
-  <p>A challenge is armed (<code>World::expansion_arm_challenge</code>, the Journal's <em>Challenges</em> page) and then applies to the next battle against its <code>formation</code>, or to the next battle at all when it names none. Arming is refused when the present party already breaks a party rule, or when a named formation does not resolve.</p>
+  <p>A challenge is armed (<code>World::expansion_arm_challenge</code>, the Journal's <em>Challenges</em> page) and then applies to the next battle against its <code>formation</code>, or to the next battle at all when it names none. Tetsu's sparring tutorial is no challenge's battle: its rules do not reach it and it does not use the challenge up, since a <code>no_items</code> rule there would refuse the Item chip the tutorial's Item lesson needs. Arming is refused when the present party already breaks a party rule, or when a named formation does not resolve.</p>
   <table>
     <thead><tr><th>Rule</th><th>Effect</th></tr></thead>
     <tbody>
