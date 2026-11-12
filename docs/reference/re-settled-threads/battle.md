@@ -2545,3 +2545,18 @@ The engine runs the driver's draw ahead of its module tick too, so a replay with
 
 Owning pages: [`cast-module.md`](../../subsystems/cast-module.md#prot-0957-death-game), [`cast-sequence-oracle.md`](../../tooling/cast-sequence-oracle.md).
 
+### A battle target surface's replay
+
+Grade `disassembly` for the states, `capture` for the frames. The command-flow dispatch tree tests eight sub-cursor values the selection band does not hold (`0x801D0D30..0x801D0DA4`): `0x5B..=0x5E` and `0x64..=0x67`, one per window and target shape, each with its own handler, confirm and cancel. `BattleFlowState` now decodes all eight, the World stands the flow byte on the one the open window's session is in, and the magic window's all-target spells wait for their confirm as `0x5E` / `0x67` do instead of casting on the list's press. The menu drive walks the window's cursor onto the row the seat's `+0x1DF` names before it confirms.
+`battle_magic_target_gaza2_retail` (`0x5C`) and `battle_item_allparty_gaza2_retail` (`0x66`) are catalogued and reached on `phase` `1.000`. On the second, the `All Allies` plate stands on record `0x3E`'s seat, which `FUN_801D57E8` copies onto the target plaque (`image` `.961` to `.996`); on the first, the breadcrumb's third tab reads `Magic`, spell `0`'s name, for a Seru spell (`.990` to `.991`).
+
+Owning page: [`battle-command-flow.md`](../../subsystems/battle-command-flow.md#the-window-target-sub-cursors).
+
+### A walked-back pose about twenty units of yaw off
+
+Grade `capture`. `battle_map01_gomboo_steal_mid_cast` (action state `0x6F`) holds yaw `3757` on increment `21` toward `3940`, and its frame peaks two passes back at `3610`, where a walk back on a fixed endpoint lands at `3631`. A PCSX-Redux film from the state (`autorun_cast_sequence.lua`, `LEGAIA_PHYSICAL=1`, recompiler) shows the next pass re-arm case 6 before it steps, on an endpoint four units on (`3944`, increment `ceil(187 / 12) = 16`, the yaw `3805`), and the endpoint stays the yaw counter `ctx[+0x6DA]` plus `1864` on every pass, the counter climbing `4` a pass at step `3`.
+So the pass before the RAM's chased `3936` and stood at `3694`, and the pass before that at `3610` (increment `ceil(326 / 12) = 28`). The capture channel's walk back already lands there (`image` `1.000` in the baseline), so the gap was the older fixed-endpoint walk.
+
+The focus follows the same law with an endpoint the bodies move. A film of `battle_ropeway_party_gala_flying_knee_mid` from the strike loop to the fade-down holds `focus = previous + step * ceil((endpoint - previous) / 12)` on `42` of `48` pass edges through `0x1E`, `0x1F` and the return `0x20` (the rest land within a unit of the endpoint, or split a pass across two rows). Walked back two passes on each pass's own endpoint, the focus lands within `8` units of the frame's; on the RAM's endpoint alone, up to `36` units off during the return.
+
+Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#battle-states).

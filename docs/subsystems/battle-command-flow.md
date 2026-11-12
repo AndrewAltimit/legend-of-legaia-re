@@ -112,6 +112,52 @@ action SM"). `0xFF` (idle) is **not**: no comparison tests for it, so it reaches
 the default at `0x801D3290` like every other unlisted value - idle by falling
 through rather than by being handled.
 
+<a id="the-window-target-sub-cursors"></a>
+
+### The window target sub-cursors
+
+The item window `0x3C` and the magic window `0x46` commit a row by reading its
+target flags, byte `+2` of the item effect record or the spell record (`0x40`
+the enemy side, `0x20` every target on it;
+[item-effect-table](../formats/item-effect-table.md)), and raising one of four
+states each. The item ladder is `0x801D18E0..0x801D19F4`, the magic one
+`0x801D1C50..0x801D1D7C`.
+
+| Side, scope | Item | Magic | Target byte `+0x1DD` | HUD step, `a1` | Plate record `0x29` |
+|---|---|---|---|---|---|
+| one enemy | `0x5B` (`0x801D23F0`) | `0x5C` (`0x801D2590`) | a monster seat, kept if `3..=7`, else `FUN_801DB8B4` | `0x12` / `0x19`, `0` | the monster's name |
+| all enemies | `0x5D` (`0x801D278C`) | `0x5E` (`0x801D28C0`) | `9` | `0x12` `1` / `0x19` `2` | adopts record `0x3D`, `"  All"` |
+| one ally | `0x64` (`0x801D2A00`) | `0x65` (`0x801D2B3C`) | the caster's seat | `0x16` / `0x1B`, then `0x18` per step | the member's name |
+| all allies | `0x66` (`0x801D2DB4`) | `0x67` (`0x801D2EF4`) | `8` | `0x1D` / `0x1F`, `3` | adopts record `0x3E`, `"All Allies"` |
+
+Every one of the eight reads the pad the same way. The cancel mask
+`0x800846D4` returns to the window it came from (`0x3C` or `0x46`) with cue
+`0x23`; the confirm mask commits with cue `0x21` and leaves for the ring
+`0x28` when `FUN_801DB81C` finds another member to enter, or for `0x6E` when it
+returns the party count `ctx[+0x00]`. The one-target states also step their
+cursor: `0x5B` / `0x5C` walk the monster seats through `FUN_801D8D00` on the
+`0x2000` / `0x8000` masks, `0x64` / `0x65` step `+0x1DD` by one and wrap on
+the party count, frozen for a party of one. The all-target states have no
+cursor to move, but they still wait for the confirm: the window's press
+raises the state, a second press commits.
+
+`FUN_801D57E8(dst, src)` copies a placement record's seat A, `y`, width,
+seat B and string onto another, and the all-target steps use it on the
+target plaque: the label sits at its preset record's disc seats, `(230, 162)`
+for `0x3D` and `(224, 122)` for `0x3E`, both sliding in from `x = 328`, not
+at the name law's centre on `0xE8`. The spell steps also relabel the
+breadcrumb's third tab (record `0x3B`): the spell record's name below id
+`0x65`, and spell `0`'s, `Magic`, for every Seru spell from `0x65` up
+(`slti v0,a1,0x65` at `0x801D42FC`).
+
+The engine carries all eight on `BattleFlowState`, and the World stands the
+flow byte on the one its window's session is in. The magic window's
+all-target spells wait on `SpellPhase::SweepConfirm` for their confirm, as
+retail's `0x5E` / `0x67` do; the item window's all-allies item has its own
+confirm (`AllPartyConfirm`). The item session keeps the all flag `0x20` but
+not the side `0x40`, so the Spikefish Flute (`0xE4`), the one consumable that
+raises `0x5D` in retail, takes the all-allies confirm there.
+
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,
 items, spirit and hyper arts, and never magic. Engine mirror

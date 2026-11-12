@@ -275,7 +275,9 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 ### A walked-back pose about twenty units of yaw off
 
-`open` `battle_map01_gomboo_steal_mid_cast` peaks on a yaw beside the walk-back's (`displayed_cam_live_steps`): `3610` against `3631` (`.82` to `.91`), and nothing names the gap. The other capture once listed here, `battle_geremi_ogre_strike` (`190` against `168`), was a locked walker nearest on ring slot `3`, whose displayed pass is the walk's last and whose table chased the walk's bearing ([retail-compare](../tooling/retail-compare.md#battle-states)); its walk back now lands on `189`. `battle_jou_cort_181_strike`'s peak about `10` units past its walk back was Cort's body, drawn on the displayed frame's ring pair once seated there ([retail-compare](../tooling/retail-compare.md#battle-states), `.870` to `.957`); on that seat its yaw sweep reads `.963` at `826`.
+`open (narrowed)` The yaw half is settled ([settled](re-settled-threads/battle.md#a-walked-back-pose-about-twenty-units-of-yaw-off)): `battle_map01_gomboo_steal_mid_cast`'s `3610` is the walk back's own, and two films confirm the re-arm law the walk back inverts, yaw and focus alike. What is left is the near-camera ghosts' placement below.
+
+The other capture once listed here, `battle_geremi_ogre_strike` (`190` against `168`), was a locked walker nearest on ring slot `3`, whose displayed pass is the walk's last and whose table chased the walk's bearing ([retail-compare](../tooling/retail-compare.md#battle-states)); its walk back now lands on `189`. `battle_jou_cort_181_strike`'s peak about `10` units past its walk back was Cort's body, drawn on the displayed frame's ring pair once seated there ([retail-compare](../tooling/retail-compare.md#battle-states), `.870` to `.957`); on that seat its yaw sweep reads `.963` at `826`.
 
 The frame step is not what holds these strikes low: lowering it (`LEGAIA_BATTLE_PARTY_STEP=0`) leaves Aluru, Cort 181, Poisonous Worm, Gilium Lv2, `battle_melee_hit_spark` and Moldy Worm unchanged (Moldy Worm's residue was the walk back's endpoint, [retail-compare](../tooling/retail-compare.md#battle-states)).
 
@@ -289,7 +291,8 @@ The same cue costs 27 non-overworld captures one block each (`battle_jou_vera_v3
 `displayed_ambient_base` keeps a floored base as read, and the backdrop weight (`576`, three step-`3` passes of the latch) bounds the base's start from above only, so the displayed base needs the dim's starting value, which no word keeps. On the `bylon` / `kor` / `taiku` captures the blocks sit on the slot-1 horizon mist band's edges. Grade `capture`.
 It is a placement residue, not a near-lens draw rule: the near body sits about `500` world units from the eye, where a small error in the eye's position moves it several times as far as it moves Noa or the worm. A yaw near `3100` with the same focus puts it at the edge but moves the rest of the frame (`image` `.84` to `.53`), so the eye's position, not its yaw alone, is what is off. Grade `capture`.
 
-Recordings confirm the yaw half of the law (`inc = ceil(gap_before / 0xC)`, the endpoint drifting with the counter), which leaves the focus: its endpoint chases walking bodies, and a focus error reads as a pan. The first step is a retail `cam.csv` across a strike's walk, comparing the recorded focus two passes back with what the walk-back gives, using `walker_end_shift`. `battle_map02_poisonous_worm_strike` and `battle_nilboa_aluru_v2_strike` peak on the law's yaw, so their residue is not the camera; Aluru's was the readout bar and actor plaque one pass short of landing on screen ([retail-compare](../tooling/retail-compare.md#hud-glides-the-capture-had-landed), `0.865` to `0.988`). Grade `capture`.
+Recordings confirm both halves of the law (`inc = ceil(gap_before / 0xC)`, re-armed every pass, the yaw endpoint drifting with the counter and the focus endpoint with the bodies). A walk back that knows each earlier pass's endpoint lands on the displayed focus; one that holds the RAM's endpoint does not, by up to `36` units on a party's return walk `0x20`, where `walker_end_shift` gives no shift (it reads the strike loop `0x1E` alone). A return-walk capture whose frame stands off its walk back would start there.
+`battle_map02_poisonous_worm_strike` and `battle_nilboa_aluru_v2_strike` peak on the law's yaw, so their residue is not the camera; Aluru's was the readout bar and actor plaque one pass short of landing on screen ([retail-compare](../tooling/retail-compare.md#hud-glides-the-capture-had-landed), `0.865` to `0.988`). Grade `capture`.
 
 ### Xain's frame at Bloody Horns' band entry
 
@@ -303,16 +306,6 @@ Xain's pose is half of what was left. The rings say the walk clip committed insi
 
 The other half is Noa (seat 1): retail draws her as the ghost, the engine solid. Her `+0x8` is clear in the RAM, which fits the ghost pass's pose one pass before the RAM's (yaw `2850`, her planar distance `1302` against a radius `1258`), and the walked-back pose the image child hands the pass (yaw `2578`) clears her too. Ghosting her needs a pose with yaw about `2986` or more at that focus and depth, the RAM's own, or a depth past `5600`. Forced, it reads `.006` higher. The image scan agrees that the screen's camera is not the walk back's: with Xain posed, the replay's own pose (yaw `3052`, focus x `535`) reads `.868`, and the walk back's (`2714`, `615`) `.742`. A film across the band's entry would give the pose.
 
-### A battle target surface's replay
-
-`open` `battle_magic_target_gaza2_retail` (`ctx[+0x06] = 0x5C`) and the all-party
-item confirm `0x66` hold a surface reached through a window on a flow byte
-`BattleFlowState` does not model (`from_raw` reads both as `Idle`), so the seed
-stands them on the round prompt. `BattleDrive::Menu` reaches the single-ally item
-target `0x64` through the window's first row. Both states are held on disk under
-`captures/` and not in the catalog until the drive can walk a window's row and the
-flow byte carries them. The engine's `0x66` screen is grounded on the pad walk's
-frame alone: panels up, `All Allies` plate, no score.
 
 ### Zenoir's walk over a small window
 
