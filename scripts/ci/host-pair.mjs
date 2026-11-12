@@ -73,6 +73,8 @@ export const SCENES = {
   map_walk: { scene: 'map01', ticks: 300, every: 30, hold: walk },
   /* A scene with a ground-fog bank (the Ravine), for `--mode fog_bloom`. */
   fog_walk: { scene: 'keikoku', ticks: 85, every: 10, hold: walk }, /* the walk leaves the scene at about tick 90 */
+  /* Torches on posts, MAN props whose light set is read from their clip's first-frame pose. */
+  lamp_walk: { scene: 'rugi', ticks: 300, every: 30, hold: walk },
   menu: { scene: 'town01', ticks: 1020, every: 30, taps: menuTaps(), reach: PAUSE_MENU },
   dialog: { scene: 'town01', ticks: 600, every: 30, talk: { tick: 30, slot: 0 }, taps: every(120, 590, 40, 'Cross') },
   shop: { scene: 'bylon', ticks: 420, every: 15, reach: OPEN_SHOP, shop: { tick: 30, idx: 0 }, taps: [[90, 'Cross'], [150, 'Down'], [200, 'Cross'], [260, 'Circle'], [320, 'Circle']] },

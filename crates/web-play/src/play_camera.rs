@@ -203,12 +203,14 @@ impl LegaiaRuntime {
     /// the shared [`camera_frame::nclip_cull_mode`] the native window's
     /// `Renderer::set_backface_cull` call also reads. `2` for the field pass
     /// and for a cutscene camera on any other non-overworld mode; `0`
-    /// otherwise, which is both-sided drawing.
+    /// otherwise, which is both-sided drawing. Under the pause menu the mode
+    /// is the suspended scene's (`BootSession::frame_draw_mode`), as natively:
+    /// the field still draws under the wipe.
     pub fn play_render_nclip_mode(&self) -> u32 {
         let mode = self
             .scene_host
-            .host()
-            .map_or(SceneMode::Title, |h| h.world.mode);
+            .session()
+            .map_or(SceneMode::Title, |s| s.frame_draw_mode());
         camera_frame::nclip_cull_mode(self.cutscene_owns_frame(), mode)
     }
 
