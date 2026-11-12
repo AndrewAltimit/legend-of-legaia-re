@@ -326,8 +326,14 @@ impl World {
             return;
         }
         // A recording's own steps outrank a capture's seeded one: the track
-        // holds every frame the seed's one state does.
-        if self.battle.retail_step_track.is_some() {
+        // holds every frame the seed's one state does. Before the film begins
+        // the fight runs on its own rules.
+        if self
+            .battle
+            .retail_step_track
+            .as_ref()
+            .is_some_and(|t| t.armed())
+        {
             self.battle.pending_frame_step = None;
             self.apply_retail_step_track();
             return;
@@ -442,6 +448,24 @@ impl World {
             if let Some(cam) = self.battle.camera.as_mut() {
                 cam.set_frame_step(want);
             }
+        }
+    }
+
+    /// Start a film's retail step track on the pass just run
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack::arm`]):
+    /// the recorder calls it on the tick its recording begins, the cast's
+    /// begin or the capture's gate. A harness seat.
+    pub fn arm_retail_step_track(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte()
+            || state == S::SummonReturn.as_byte()
+            || state == S::MagicCapturePhase2.as_byte();
+        let phase = if band { self.casting.module_phase } else { 0 };
+        if let Some(track) = self.battle.retail_step_track.as_mut()
+            && !track.armed()
+        {
+            track.arm(state, phase);
         }
     }
 

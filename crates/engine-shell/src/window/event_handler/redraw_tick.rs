@@ -367,6 +367,7 @@ impl PlayWindowApp {
         let field_pad = if neutral { 0 } else { self.pad };
         let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
+        self.arm_cast_step_track();
         let field_pad = self.resolve_tick_pad(field_pad);
         let field_pad = field_pad & net_pad_filter;
         // A suspending screen's tick is not the field's: the tick claim has
@@ -554,6 +555,42 @@ impl PlayWindowApp {
                 None => 0,
             };
             self.pad = scripted_pad | scripted_key_pad | gate_pad;
+        }
+    }
+
+    /// `--retail-steps` (`LEGAIA_CAST_STEP_TRACK`): start the film's step
+    /// track on the pass its recording opens on, by the recorder's own rule
+    /// (the capture's gate for a `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate` film, else
+    /// the acting seat's cast begin), checked ahead of the tick after it. The
+    /// recording's frames are the film's alone: armed from the fight's first
+    /// pass, the rounds a drive replayed and a mid-cast state's opening passes
+    /// spent them and ran on them, and `battle_dohaty_dohati_chaos_breath`'s
+    /// first arm walked `.926` to `.474`. A harness seat.
+    fn arm_cast_step_track(&mut self) {
+        let w = &self.session.host.world;
+        if w.mode != SceneMode::Battle
+            || w.battle
+                .retail_step_track
+                .as_ref()
+                .is_none_or(|t| t.armed())
+        {
+            return;
+        }
+        let begin = if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate") {
+            self.capture_gate_met()
+        } else {
+            // The recorder's seats are retail's: the party on `0..=2`, the
+            // monsters from `3`.
+            let pc = w.party.party_count.clamp(1, 3) as usize;
+            let a = usize::from(w.battle_ctx.active_actor);
+            let acting = if a < pc { a } else { 3 + a - pc };
+            let seat = std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok());
+            matches!(w.battle_ctx.action_state, 0x28 | 0x3C) && seat.is_none_or(|s| s == acting)
+        };
+        if begin {
+            self.session.host.world.arm_retail_step_track();
         }
     }
 

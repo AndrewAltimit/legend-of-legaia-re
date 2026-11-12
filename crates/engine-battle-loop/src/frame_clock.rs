@@ -561,8 +561,15 @@ impl BattleFrameClock {
 pub struct RetailStepTrack {
     /// `(action state, module phase)` to the step of each retail frame under it.
     frames: std::collections::BTreeMap<(u8, u8), Vec<u8>>,
-    /// Passes the engine has run under each key.
+    /// Passes the engine has run under each key since the film began.
     passes: std::collections::BTreeMap<(u8, u8), usize>,
+    /// Whether the film has begun ([`Self::arm`]). The recording's frames
+    /// start at its own first vsync, while the engine runs the whole fight up
+    /// to it: the rounds a drive replays and, for a state held mid-cast, the
+    /// cast's opening passes. Before the film begins the engine keeps its own
+    /// step, so those passes neither spend the recording's frames nor run on
+    /// them.
+    armed: bool,
 }
 
 impl RetailStepTrack {
@@ -589,11 +596,29 @@ impl RetailStepTrack {
     /// same ordinal under the key, its last one past that, `None` for a key
     /// the film never saw.
     pub fn next_step(&mut self, state: u8, phase: u8) -> Option<u8> {
+        if !self.armed {
+            return None;
+        }
         let frames = self.frames.get(&(state, phase))?;
         let n = self.passes.entry((state, phase)).or_default();
         let step = frames.get(*n).or(frames.last()).copied();
         *n += 1;
         step
+    }
+
+    /// The film began on a pass the engine has just run under `(state,
+    /// phase)`: the recording's first frame under that key is that pass's,
+    /// so the next pass takes the key's second frame, and every other key
+    /// counts from its first.
+    pub fn arm(&mut self, state: u8, phase: u8) {
+        self.passes.clear();
+        self.passes.insert((state, phase), 1);
+        self.armed = true;
+    }
+
+    /// Whether the film has begun.
+    pub fn armed(&self) -> bool {
+        self.armed
     }
 }
 
@@ -668,6 +693,22 @@ impl RetailRandTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_step_track_counts_from_the_films_first_pass() {
+        let mut t = RetailStepTrack::parse("112 1 3\n112 1 4\n112 1 4\n81 0 2\n");
+        // The rounds and the cast's opening passes before the film run on
+        // the engine's own step and spend nothing.
+        assert_eq!(t.next_step(81, 0), None);
+        assert_eq!(t.next_step(112, 1), None);
+        // The film opens on a pass under 112:1, which was the recording's
+        // first frame there.
+        t.arm(112, 1);
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(81, 0), Some(2));
+    }
 
     #[test]
     fn the_rand_track_hands_out_each_keys_words_in_order() {

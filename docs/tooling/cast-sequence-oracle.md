@@ -339,6 +339,20 @@ rule, so the port does not fit it. Seated on the recording's steps (`--retail-st
 `battle_jou_party_vahn_chain_open` reads `.915` against `.890` on the engine's own, and
 `battle_jou_party_gala_chain_open` `.935` against `.860`.
 
+The track starts where the recording does: on the cast's begin, or on the capture's gate
+for a film that opens on a state's own action (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`). The
+engine runs the whole fight up to that pass, the rounds a drive replays and a mid-cast
+state's opening passes among them, and those run on the fight's own steps and spend none
+of the recording's frames; the pass the film opens on is the key's first frame
+(`RetailStepTrack::arm`). Counted from the fight's first pass instead, a monster cast's
+replay ran its earlier rounds' Done bands on the cast's own frames and skipped the arm
+table, and `rugi_rogue_pre_element_change` read `.804` against its plain `.954` (`.970`
+started on the cast). The seat still does not fit every capture-band film: on
+`battle_dohaty_dohati_chaos_breath_mid_cast` retail's arm 1 runs `65` frames at step `4`
+over `390` vsyncs, the engine on the track runs the same frames in `259` ticks, and the arm
+reads `.47` against the plain run's `.93`. Read a film the track takes down as the seat's
+miss, not as the law's.
+
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
 `0` and the rate the new clip's. `battle_jou_party_vahn_chain_open` shows clip `0x10` at
