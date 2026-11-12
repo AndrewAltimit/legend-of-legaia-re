@@ -1457,8 +1457,8 @@ trace some paired frame must show on both hosts), and its summary line says
 tick 90 for that reason.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
-by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
-other row. That residual is there on a real GPU and on SwiftShader alike. The run prints;
+by a few tenths of a percent, hairline pixels on sloped 3D edges where a tie lands on
+the other side. That residual is there on a real GPU and on SwiftShader alike. The run prints;
 it asserts nothing and is not a CI gate, since it needs a disc, a built bundle and a
 display.
 
