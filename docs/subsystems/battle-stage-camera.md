@@ -1225,6 +1225,21 @@ the increments the last held pass armed, and case 8 is armed by the Done arm a
 pass later. An Attack's Done band therefore opens with one un-re-armed step of
 case 7's table between the two framings.
 
+That pass is also the one on which the change that ended the return happened:
+the target's get-up finished, or its defeat fade reached black (the `0x20`
+arm's own exit test reads the node's colour word, `0x801E5530..0x801E5544`).
+The engine's camera reads the target after the pass's anim and tint ticks, so
+re-arming there framed the new state a pass early: on the Flying Knee that
+kills the Killer Bee, the stand-off arm for the gone node pulled the pitch from
+`84` to `63` on the exit pass, where retail's film holds `84` and moves on the
+Done arm's pass. The port holds the framing for that pass
+(`BattleCamInputs::return_exit_pass`, `BattleCamera::observe_return_exit_pass`:
+the newest pass ran `0x20` and stored `0x50`), stepping only the tween that
+stands. Over the party-strike films the Done band's first pair rises from `.668`
+to `.980` (Gala's Flying Knee), `.677` to `.824` (Vahn's chain) and `.713` to
+`.729` (Noa's Lizard Tail). Grade `disassembly` for the exit pass, `capture`
+for the films.
+
 `player_steal_skeleton_pre` (`0x1E`) reads case 7's tween targets;
 `player_steal_skeleton_banner` (`0x20`, the skeleton on its knockdown at HP
 `0`) reads case 8's death re-frame at the ramp cap.
