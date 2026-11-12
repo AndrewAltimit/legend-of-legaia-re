@@ -6,16 +6,17 @@
 //! clamp edge.
 //!
 //! The projection `FUN_800195A8` is hooked: its anchor and half-extent are
-//! compared, and it answers a square the test draws (at an OT depth of
-//! `0x80` or more - the routine's near arm under `0x80` has no port, see the
-//! differential doc). `AddPrim` `FUN_8003D2C4` is hooked to collect the
+//! compared, and it answers a square the test draws at an ordering-table
+//! depth on either side of `0x80`, so the routine's near arm, which reseats
+//! the square `0x20` pixels from its near corner (`popup_near_square`), runs
+//! too. `AddPrim` `FUN_8003D2C4` is hooked to collect the
 //! packets in link order; each `POLY_FT4` is compared whole with the port's
 //! cell, and the ring's timers and values after the walk.
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_value_readout::{
     CODE_COLOUR, GLYPH_CLUT, GLYPH_TPAGE, OT_TAG, POPUP_TIMER_LIMIT, popup_anchor_at_step,
-    popup_cells, popup_timer_at_step,
+    popup_cells, popup_near_square, popup_timer_at_step,
 };
 use psx_retail_exec::{A0, A1, A2, A3, SP, Stop, V0};
 use std::cell::RefCell;
@@ -50,7 +51,7 @@ fn the_popup_numeral_lays_out_as_retail() {
         cpu.mem.wr32(ACTORS + s * 4, ACTOR + s * 0x400);
     }
     // The projection answers the squares queued for it, in call order.
-    let squares = Rc::new(RefCell::new(Vec::<(i16, i16, i16, i16)>::new()));
+    let squares = Rc::new(RefCell::new(Vec::<(i16, i16, i16, i16, u32)>::new()));
     let projected = Rc::new(RefCell::new(Vec::new()));
     {
         let squares = squares.clone();
@@ -61,14 +62,14 @@ fn the_popup_numeral_lays_out_as_retail() {
             projected
                 .borrow_mut()
                 .push((anchor, r.r[A1] as i32, r.r[A2] as i32, r.r[A3]));
-            let (x0, y0, x1, y1) = squares.borrow_mut().remove(0);
+            let (x0, y0, x1, y1, depth) = squares.borrow_mut().remove(0);
             let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
             for (k, (x, y)) in corners.iter().enumerate() {
                 let p = m.rd32(r.r[SP] + 0x10 + 4 * k as u32);
                 m.wr16(p, *x as u16);
                 m.wr16(p + 2, *y as u16);
             }
-            r.r[V0] = 0x80 + (v & 0x3FF);
+            r.r[V0] = depth;
         });
     }
     let linked = Rc::new(RefCell::new(Vec::new()));
@@ -131,7 +132,12 @@ fn the_popup_numeral_lays_out_as_retail() {
                 1 => rng.below(40) as i16,
                 _ => 10 + rng.below(16) as i16,
             };
-            want_squares.push((x0, y0, x0 + w, y0 + w));
+            let depth = if rng.below(3) == 0 {
+                rng.below(0x80)
+            } else {
+                0x80 + rng.below(0x400)
+            };
+            want_squares.push((x0, y0, x0 + w, y0 + w, depth));
         }
         *squares.borrow_mut() = want_squares.clone();
         projected.borrow_mut().clear();
@@ -149,8 +155,11 @@ fn the_popup_numeral_lays_out_as_retail() {
                 let trio = trios[usize::from(seat)].map(i32::from);
                 let (anchor, half) = popup_anchor_at_step(trio, age, step);
                 want_proj.push((anchor.map(|v| v as i16), half, half, 0));
-                let &(x0, y0, x1, y1) = sq.next().unwrap();
-                let rect = (i32::from(x0), i32::from(y0), i32::from(x1), i32::from(y1));
+                let &(x0, y0, x1, y1, depth) = sq.next().unwrap();
+                let rect = popup_near_square(
+                    (i32::from(x0), i32::from(y0), i32::from(x1), i32::from(y1)),
+                    depth as i32,
+                );
                 let laid = popup_cells(value, rect, timer);
                 by_digits[laid.len()] += 1;
                 // Retail links the units digit first, then each higher one.

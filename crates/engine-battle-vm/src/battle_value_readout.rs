@@ -495,6 +495,46 @@ pub fn popup_anchor_at_step(trio: [i32; 3], age: u16, step: u8) -> ([i32; 3], i3
     ([trio[0], y, trio[2]], half)
 }
 
+/// The ordering-table depth under which `FUN_801DF6B8` reseats the projected
+/// square (`slti v0,v0,0x80` on `FUN_800195A8`'s return at `0x801DF828`).
+pub const POPUP_NEAR_OT_DEPTH: i32 = 0x80;
+
+/// The side of the square a near numeral is reseated on (`addiu 0x20` at
+/// `0x801DF840` / `0x801DF844`).
+pub const POPUP_NEAR_SQUARE: i32 = 0x20;
+
+/// The battle ordering table's shift, the byte `0x1F8003A4` the projection's
+/// return is shifted by (`2` in every catalogued battle state).
+pub const BATTLE_OT_SHIFT: u32 = 2;
+
+/// The depth `FUN_800195A8` returns for a square whose view-space `Z` is
+/// `sz`: `(SZ3 >> 2) >> *(0x1F8003A4)` (`0x80019670..0x80019694`), `SZ3`
+/// the GTE's unsigned 16-bit screen-Z.
+pub fn popup_ot_depth(sz: i32) -> i32 {
+    (sz.clamp(0, 0xFFFF) >> 2) >> BATTLE_OT_SHIFT
+}
+
+/// `FUN_801DF6B8`'s near arm (`0x801DF820..0x801DF854`): a square the
+/// projection returned under [`POPUP_NEAR_OT_DEPTH`] keeps its near corner and
+/// becomes a `0x20`-pixel square from it, its right and bottom edges
+/// `x0 + 0x20` / `y0 + 0x20`. A numeral under a close camera (a view-space
+/// `Z` under `0x800` in battle) is therefore laid out from its projected
+/// square's top-left corner rather than over the square's whole extent.
+pub fn popup_near_square(rect: (i32, i32, i32, i32), ot_depth: i32) -> (i32, i32, i32, i32) {
+    if (ot_depth as i16) < POPUP_NEAR_OT_DEPTH as i16 {
+        let (x0, y0, _, _) = rect;
+        let wrap = |v: i32| i32::from(v as i16);
+        (
+            x0,
+            y0,
+            wrap(x0 + POPUP_NEAR_SQUARE),
+            wrap(y0 + POPUP_NEAR_SQUARE),
+        )
+    } else {
+        rect
+    }
+}
+
 /// Lay a value out the way `FUN_801DF6B8` does from the projected square
 /// `rect = (left, top, right, bottom)` in stage pixels at ring timer `timer`
 /// ([`popup_timer`]). Cells come back left to right; a cell's far corner is
