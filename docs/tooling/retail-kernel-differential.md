@@ -1375,3 +1375,9 @@ member, accepted any member for a Hyper-Art book, and refused a book's owner whi
 the bag, the cue and where the screen lands afterwards (the target rows again, the Use list or the command window)
 match.
 
+The summon installer `FUN_801F19EC`, run over every player cast's creature record off `summon.dat`, matches the record
+layout the port reads: the name, TMD and pool words become pointers off the record, each part word a pointer off the
+record or, for the seven big summons, off `*0x8007B85C + 0x44000` (where the previous slot's part pool lands, the pool
+the port reads those parts from), and each part's links resolve off the record's table. The seat's resets match
+`World::seat_summon_actor`, with the module's own seat-arm stores taken as the arm's.
+

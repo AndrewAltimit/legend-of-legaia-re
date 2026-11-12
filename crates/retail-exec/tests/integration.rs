@@ -383,6 +383,7 @@ mod stream_slot;
 mod strv2_decode;
 mod subsystem_enter;
 mod summon_cameras;
+mod summon_install;
 mod summon_roll_sites;
 mod super_learn;
 mod swordie;
