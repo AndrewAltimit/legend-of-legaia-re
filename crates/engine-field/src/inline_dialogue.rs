@@ -503,6 +503,101 @@ impl InlineDialogue {
     }
 }
 
+/// Why a [`run_to_next_text`] slice ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SliceEnd {
+    /// The byte at the PC is in the text / terminator band (`& 0x7F < 0x20`),
+    /// before the first step or after one.
+    Text,
+    /// The op just executed was the `0x21` NOP, the authored frame boundary.
+    FrameMark,
+    /// The step left the PC where it was: a wait or a halt parks the context.
+    Parked,
+    /// The host stopped the slice: a step it could not run, a byte past the
+    /// bytecode, or the budget. Retail has none of these.
+    Stopped,
+}
+
+/// What one [`run_to_next_text`] slice did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Slice {
+    /// The byte retail returns: the text byte the PC landed on, or the op
+    /// byte last executed when the slice ended on `0x21` or a park.
+    pub byte: u8,
+    /// The PC the context is left on (`+0x9E`).
+    pub pc: usize,
+    pub end: SliceEnd,
+    /// How many ops ran.
+    pub steps: usize,
+}
+
+/// Retail's run-to-next-text helper: execute field-VM ops from `pc` until the
+/// op just run was `0x21`, the PC did not move, or the byte at the new PC is
+/// text (`& 0x7F < 0x20`). A slice that starts on text runs nothing.
+///
+/// `byte_at` reads the bytecode and `step` runs one op at a PC, returning the
+/// PC it leaves (or `None` to stop the slice). The state `S` is threaded
+/// through both so a host can pass itself.
+///
+/// The test order is retail's: `0x21` is checked ahead of the park, so a
+/// `0x21` that stays put still ends as a frame mark, and the returned byte is
+/// the op byte read **before** the step (`s0`), not re-read after it.
+///
+/// PORT: FUN_8003CF7C
+pub fn run_to_next_text<S>(
+    state: &mut S,
+    mut pc: usize,
+    budget: usize,
+    byte_at: impl Fn(&S, usize) -> Option<u8>,
+    mut step: impl FnMut(&mut S, usize) -> Option<usize>,
+) -> Slice {
+    let mut steps = 0;
+    let stopped = |byte, pc, steps| Slice {
+        byte,
+        pc,
+        end: SliceEnd::Stopped,
+        steps,
+    };
+    let Some(mut byte) = byte_at(state, pc) else {
+        return stopped(0, pc, 0);
+    };
+    loop {
+        if byte & 0x7F < 0x20 {
+            return Slice {
+                byte,
+                pc,
+                end: SliceEnd::Text,
+                steps,
+            };
+        }
+        if steps == budget {
+            return stopped(byte, pc, steps);
+        }
+        let Some(next) = step(state, pc) else {
+            return stopped(byte, pc, steps + 1);
+        };
+        steps += 1;
+        if byte == 0x21 || next == pc {
+            let end = if byte == 0x21 {
+                SliceEnd::FrameMark
+            } else {
+                SliceEnd::Parked
+            };
+            return Slice {
+                byte,
+                pc: next,
+                end,
+                steps,
+            };
+        }
+        pc = next;
+        let Some(b) = byte_at(state, pc) else {
+            return stopped(byte, pc, steps);
+        };
+        byte = b;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

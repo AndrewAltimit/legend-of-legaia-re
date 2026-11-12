@@ -43,10 +43,11 @@ impl World {
     /// no inline dialogue is running.
     // PORT: FUN_80039B7C
     // REF: FUN_80038050 (the option-jump apply is delegated to OwnedDialogPanel::confirm_menu)
-    // PORT: FUN_8003CF7C (the inline fast-forward loop below is retail's
-    //      run-to-next-text helper: tick the field VM until `byte & 0x7F <
-    //      0x20`, with the raw-`0x21` execute-then-stop and the stalled-PC
-    //      stop mapped to the loop's end paths)
+    // REF: FUN_8003CF7C (the inline fast-forward loop below runs the
+    //      run-to-next-text helper's stops - `byte & 0x7F < 0x20`, the raw
+    //      `0x21` execute-then-stop, the stalled PC - fused with the SM's box
+    //      decisions; the helper's own port is
+    //      `inline_dialogue::run_to_next_text`)
     pub fn step_inline_dialogue(&mut self, confirm: bool, up: bool, down: bool) {
         use legaia_engine_field::inline_dialogue::INLINE_DIALOGUE_STEP_BUDGET;
         let Some(mut id) = self.dialog.inline.take() else {
