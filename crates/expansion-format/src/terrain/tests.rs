@@ -467,3 +467,13 @@ fn the_memoed_field_is_the_whole_build_over_edits() {
         assert_ne!(*m.terrain_field().unwrap().unwrap(), *first);
     }
 }
+
+/// A cell pick is the full 64-bit hash's remainder on every target: a hash
+/// with its high word set picks what a 64-bit build picks, not what the
+/// hash narrowed to a 32-bit `usize` would (`1 % 3`).
+#[test]
+fn a_cell_pick_does_not_depend_on_the_pointer_width() {
+    assert_eq!(pick_index(0x1_0000_0001, 3), 2);
+    assert_eq!(pick_index(u64::MAX, 7), (u64::MAX % 7) as usize);
+    assert_eq!(pick_index(5, 0), 0);
+}

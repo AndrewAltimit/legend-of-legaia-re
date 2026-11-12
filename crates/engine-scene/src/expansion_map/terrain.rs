@@ -372,7 +372,7 @@ fn tile_mesh(
                 let k = legaia_expansion_format::map_detail::splitmix64(
                     ((i / res) as u64) << 32 | (j / res) as u64,
                 );
-                w.cells[k as usize % w.cells.len()]
+                w.cells[legaia_expansion_format::terrain::pick_index(k, w.cells.len())]
             } else {
                 cell
             };

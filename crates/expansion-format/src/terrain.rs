@@ -767,6 +767,14 @@ pub fn orient_uv(orient: u8, u: f32, v: f32) -> (f32, f32) {
     (u, v)
 }
 
+/// The pick `hash` makes among `len` choices: the remainder taken on the
+/// full 64-bit hash. Narrowing the hash to `usize` first gives a different
+/// pick on a 32-bit target (the browser's `wasm32`) than on a 64-bit one,
+/// so the two play hosts would paint one map's tiles with different cells.
+pub fn pick_index(hash: u64, len: usize) -> usize {
+    (hash % len.max(1) as u64) as usize
+}
+
 /// A hash of `(seed, a, b)` in `0..1`.
 fn hash01(seed: u64, a: i64, b: i64) -> f32 {
     let k = splitmix64(
@@ -1749,7 +1757,7 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                 }
                 let hsh = tile_hash(u64::from(m) << 20);
                 Some((
-                    mat.cells[(hsh >> 8) as usize % mat.cells.len()],
+                    mat.cells[pick_index(hsh >> 8, mat.cells.len())],
                     if mat.rotate { (hsh & 7) as u8 } else { 0 },
                 ))
             };
@@ -1780,7 +1788,7 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                 if s > edge && !c.cells.is_empty() {
                     let hsh = tile_hash(0x434C);
                     let q = Some(QuadPaint {
-                        cell: c.cells[(hsh >> 8) as usize % c.cells.len()],
+                        cell: c.cells[pick_index(hsh >> 8, c.cells.len())],
                         orient: (hsh & 7) as u8,
                         material: CLIFF,
                         // A face just past the threshold keeps a veil of the
