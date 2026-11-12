@@ -238,6 +238,20 @@ impl World {
             let (pose, raw_z) = shot.pose();
             cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
         }
+        // A pass that drifts the globals and then builds its shot from them
+        // (PROT 0933's arm 8: the drift at `0x801F73C4..0x801F7424`, ahead
+        // of the gate, then the cut at `0x801F7504`) leaves the shot's pose:
+        // retail drifts once, by the whole pass, before the builder reads the
+        // globals. The rest of a pass that hands over on this tick owes no
+        // drift on top of the shot (`World::module_pass`); repeated after it,
+        // it stood Terra's arm 9 `12` yaw units off the cut it opened on.
+        if run
+            .as_ref()
+            .is_some_and(|r| r.camera_shot.is_some() && !r.capture_drift_after_shot)
+        {
+            self.casting.module_tick_drift = None;
+            self.casting.module_tick_rest = None;
+        }
         if let Some(z) = run.as_ref().and_then(|r| r.tr_z_store)
             && let Some(cam) = self.battle.camera.as_mut()
         {
