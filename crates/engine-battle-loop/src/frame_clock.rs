@@ -608,9 +608,12 @@ impl RetailStepTrack {
         track
     }
 
-    /// The step of the pass just run under this key: retail's frame of the
-    /// same ordinal under the key, its last one past that, `None` for a key
-    /// the film never saw.
+    /// The step of the pass that opens after one just run under this key:
+    /// retail's frame of the same ordinal among those opening on the key (a
+    /// track line is the state a frame's pass opens on, which is the state
+    /// the pass before it left), its last one past that, `None` for a key
+    /// the film never saw. The engine's pass drains by the vsyncs the frame
+    /// before it spanned, so the step a pass leaves is the next pass's.
     pub fn next_step(&mut self, state: u8, phase: u8) -> Option<u8> {
         if !self.armed {
             return None;
@@ -634,14 +637,15 @@ impl RetailStepTrack {
         frames.get(n).or(frames.last()).copied()
     }
 
-    /// The film began on a pass the engine has just run under `(state,
-    /// phase)`: the recording's first frame under that key is that pass's,
-    /// so the next pass takes the key's second frame, and every other key
-    /// counts from its first.
-    pub fn arm(&mut self, state: u8, phase: u8) {
+    /// The film began on a pass the engine has just run, which left the
+    /// action SM under `(state, phase)`: the recording's first frame opens
+    /// on that state, so its step is the one the arming pass's own frame
+    /// spans, returned here for the caller to install. Every key counts
+    /// from there.
+    pub fn arm(&mut self, state: u8, phase: u8) -> Option<u8> {
         self.passes.clear();
-        self.passes.insert((state, phase), 1);
         self.armed = true;
+        self.next_step(state, phase)
     }
 
     /// Whether the film has begun.
@@ -729,9 +733,9 @@ mod tests {
         // the engine's own step and spend nothing.
         assert_eq!(t.next_step(81, 0), None);
         assert_eq!(t.next_step(112, 1), None);
-        // The film opens on a pass under 112:1, which was the recording's
-        // first frame there.
-        t.arm(112, 1);
+        // The film opens on a pass that left 112:1: the recording's first
+        // frame opens there, and its step spans the arming pass's frame.
+        assert_eq!(t.arm(112, 1), Some(3));
         assert_eq!(t.next_step(112, 1), Some(4));
         assert_eq!(t.next_step(112, 1), Some(4));
         assert_eq!(t.next_step(112, 1), Some(4));

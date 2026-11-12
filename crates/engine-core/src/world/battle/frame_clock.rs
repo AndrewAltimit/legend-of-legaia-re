@@ -489,10 +489,29 @@ impl World {
             || state == S::SummonReturn.as_byte()
             || state == S::MagicCapturePhase2.as_byte();
         let phase = if band { self.casting.module_phase } else { 0 };
-        if let Some(track) = self.battle.retail_step_track.as_mut()
-            && !track.armed()
-        {
-            track.arm(state, phase);
+        let Some(track) = self
+            .battle
+            .retail_step_track
+            .as_mut()
+            .filter(|t| !t.armed())
+        else {
+            return;
+        };
+        // The recording's first frame opens on the state the arming pass
+        // left, so its step spans the arming pass's frame: the next pass
+        // drains by it. The recorder arms ahead of the tick after the pass,
+        // so the frame is re-timed from its own first tick.
+        let Some(want) = track.arm(state, phase) else {
+            return;
+        };
+        self.battle.pending_frame_step = None;
+        let tick = self.clock.display_frames;
+        let open = tick - self.battle.frame_clock.ticks_into_frame(tick);
+        if self.battle.frame_clock.step != want {
+            self.battle.frame_clock.retime_frame(open, want);
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_frame_step(want);
+            }
         }
     }
 
@@ -525,7 +544,8 @@ impl World {
         tracked.unwrap_or_else(|| self.battle_frame_step()).max(1)
     }
 
-    /// A film's retail step for the frame this pass opens
+    /// A film's retail step for the frame this pass opens, which the next
+    /// pass drains by
     /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
     fn apply_retail_step_track(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;

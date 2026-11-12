@@ -507,16 +507,34 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
 
 def retail_step_track(out: Path) -> str:
     """`state phase step` per retail frame, in film order, for
-    `LEGAIA_CAST_STEP_TRACK`: a frame's row is its last, and the phase counts
-    only inside the module bands, as the pairing's key does."""
-    lines, last = [], None
+    `LEGAIA_CAST_STEP_TRACK`: the state a frame's pass opens on and the step
+    it drains by, the phase counted only inside the module bands, as the
+    pairing's key does.
+
+    A frame is one value of the frame counter (`gp+0x480`, bumped at the
+    head of `FUN_80016B6C`). Its pass's logic runs after the frame's first
+    row - no state change in a recording lands on a frame's first row - so
+    that row holds the state the pass opens on, which is the state the pass
+    before it left: the engine's key for the pass whose step it installs
+    next. The step is the frame's own (its last row, past the step store):
+    a countdown that drains by it ends each arm on the frame retail's does
+    (Water Crystals' arm 3 runs `33` frames, one of them at step `3`).
+    Keyed by the frame's last row instead, a frame's step went to the pass
+    after it."""
     with open(out / "retail" / "meta.csv") as f:
-        for r in csv.DictReader(f):
-            if last is not None and r["frame"] != last["frame"]:
-                lines.append(_step_row(last))
-            last = r
-    if last is not None:
-        lines.append(_step_row(last))
+        return frame_step_rows(list(csv.DictReader(f)))
+
+
+def frame_step_rows(rows: list[dict]) -> str:
+    """The step track's lines off `meta.csv` rows ([`retail_step_track`])."""
+    lines, first, last = [], None, None
+    for r in rows + [None]:
+        if last is not None and (r is None or r["frame"] != last["frame"]):
+            lines.append(_step_row(first, last))
+            first = None
+        if r is not None and first is None:
+            first = r
+        last = r
     return "".join(lines)
 
 
@@ -546,10 +564,10 @@ def retail_rand_track(out: Path) -> str:
     return "".join(lines)
 
 
-def _step_row(r: dict) -> str:
-    st7 = int(r["st7"])
-    phase = int(r["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
-    return f"{st7} {phase} {r['step']}\n"
+def _step_row(first: dict, last: dict) -> str:
+    st7 = int(first["st7"])
+    phase = int(first["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
+    return f"{st7} {phase} {last['step']}\n"
 
 
 def traced_hit_words(out: Path) -> list[str] | None:
