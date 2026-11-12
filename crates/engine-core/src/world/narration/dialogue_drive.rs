@@ -157,10 +157,13 @@ impl World {
                     id.held_box = Some(HeldBox::after_press(panel, continuation));
                     id.panel = None;
                 } else if panel.is_done() {
-                    // Plain box dismissed: the byte after the box decides
-                    // whether the talk goes on (`FUN_80038050`).
-                    id.pc = panel.pc;
-                    id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
+                    // Plain box dismissed: the SM walks the cursor past the
+                    // shown text (`legaia_mes::dialog_box::shown_text_end`),
+                    // and the byte it stops on decides whether the talk goes
+                    // on (`FUN_80038050`).
+                    id.pc = legaia_mes::dialog_box::shown_text_end(&panel.bytes, panel.pc);
+                    let post = panel.bytes.get(id.pc).map(|b| b & 0x7F);
+                    id.held_box = Some(HeldBox::after_press(panel, post));
                     id.panel = None;
                     end_talk_at_post_box_byte(&mut id);
                 } else if panel.is_waiting_for_input() {
@@ -171,8 +174,9 @@ impl World {
                     // back onto one of them still reads as a wrap.
                     panel.advance_page();
                     if panel.is_done() {
-                        id.pc = panel.pc;
-                        id.held_box = Some(HeldBox::after_press(panel, post_page_byte(panel)));
+                        id.pc = legaia_mes::dialog_box::shown_text_end(&panel.bytes, panel.pc);
+                        let post = panel.bytes.get(id.pc).map(|b| b & 0x7F);
+                        id.held_box = Some(HeldBox::after_press(panel, post));
                         id.panel = None;
                         end_talk_at_post_box_byte(&mut id);
                     } else {
