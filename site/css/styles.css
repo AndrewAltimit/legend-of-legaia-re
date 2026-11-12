@@ -549,6 +549,10 @@ body:has(> .app.no-chrome) { padding-top: 0; }
 .sidebar-foot a { color: var(--text-muted); }
 .sidebar-foot a:hover { color: var(--accent); }
 
+/* The page list below the zone strip: transparent to layout on a desktop,
+   where the sidebar scrolls; the drawer section turns it into the scroller. */
+.sidebar-list { display: contents; }
+
 /* Zone shortcuts inside the drawer: the icon rail's destinations, which are a
    different set from the page list below them. Hidden while the rail itself is
    on screen; the responsive shell section at the end of this file turns it on
@@ -4021,19 +4025,30 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
   }
   .sidebar.open { transform: translateX(0); }
   /* The rail's destinations, which the hidden rail no longer provides. They
-     stay pinned: the drawer opens wherever its saved or revealed scroll
-     position left it, and a strip that scrolled with the list went up under
-     the top bar, out of reach. `scroll-padding-top` keeps a keyboard-focused
-     row out from under the pinned strip. The drawer's top padding moves onto
-     the strip, or the list would show through that band above it. */
-  .sidebar { padding-top: 0; scroll-padding-top: 6rem; }
+     stay pinned by structure, not by `position: sticky`: the drawer itself
+     does not scroll, the page list under the strip does. A sticky strip in a
+     scrolling drawer went up under the top bar on phone browsers (Chrome and
+     Firefox on Android). The drawer's padding moves onto the strip and the
+     list, or the list would scroll under a band of the drawer's own. */
+  .sidebar {
+    overflow: hidden;
+    padding: 0;
+  }
   .sidebar-zones {
     display: grid;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    padding-top: 0.9rem;
+    flex: none;
+    padding: 0.9rem 0.85rem 0.75rem;
+    margin: 0;
     background: var(--bg-raised);
+  }
+  .sidebar-list {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.6rem 0.85rem 2rem;
   }
 
   .sidebar-toggle { display: inline-flex; }
