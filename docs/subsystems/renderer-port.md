@@ -182,7 +182,12 @@ knowing the window is larger (`Renderer::presented_size` is the window's), and
 `capture_rgba` reads back the native frame itself. The browser page does the
 same with its canvases: PSX rasterisation gives the GL canvas and the overlay
 canvas a `320 x 240` backing store and lets the browser magnify them with
-`image-rendering: pixelated`.
+`image-rendering: pixelated`. The page also takes the window's whole step: its
+stage takes the largest whole multiple of `320` device pixels (`devicePixelRatio`
+times the CSS width) that the layout offers, and the rest of the column, or of
+the screen in fullscreen, stays letterbox (`fitPixelExact` in
+[`play.html`](../../site/_content/play.html)). Stretched to the layout's width,
+a stage pixel came out two or three device pixels wide by turns.
 
 Off PSX mode the same target serves one presentation case
 (`fill_target_for`): a window just short of a whole step of the stage - at

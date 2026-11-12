@@ -279,6 +279,10 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
              calc((100vh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
   max-width: none;
 }
+/* PSX rasterisation sizes the wrap to a whole multiple of the 320 x 240 stage
+   in device pixels (`fitPixelExact`), and the picture is the canvas's content
+   box, so the border that would take a pixel off each side goes. */
+.play-canvas-wrap.is-pixel-exact .play-canvas { border: 0; }
 /* No focus border in fullscreen: the accent outline framed the picture. */
 .play-screen:fullscreen .play-canvas,
 .play-screen:fullscreen .play-canvas:focus { border-color: transparent; }
@@ -3343,7 +3347,51 @@ div.play-vis-head { cursor: default; }
     if (view.setBloom) view.setBloom(!!bloomEl.checked);
     if (view.setSsao) view.setSsao(!!ssaoEl.checked);
     showQualitySteps(view.qualitySteps());
+    fitPixelExact();
   }
+  /* PSX rasterisation draws the frame at the native 320 x 240 and the browser
+   * magnifies it with square pixels. Stretched to whatever width the layout
+   * gives the stage, that magnification is a non-whole number of device pixels
+   * per stage pixel, so stage pixels come out one or two device pixels apart in
+   * size. The window presents its native target at the largest whole scale it
+   * holds, black around it (`Renderer::set_native_resolution`); the page does
+   * the same here: the wrap takes the largest whole multiple of 320 device
+   * pixels that fits the width its layout offers (which the layout already
+   * caps by the window's height), and what is left over stays page or, in
+   * fullscreen, black letterbox. The canvas border goes while it is on: the
+   * picture is the canvas's content box, and the overlay canvas spans the wrap. */
+  const PSX_STAGE_W = 320;
+  const stageWrap = canvas.parentElement;
+  function fitPixelExact() {
+    const on = !!(view && view.psxRender) && !document.body.classList.contains('xw-preview');
+    stageWrap.classList.toggle('is-pixel-exact', on);
+    stageWrap.style.width = '';
+    if (!on) return;
+    const dpr = window.devicePixelRatio || 1;
+    const offered = stageWrap.getBoundingClientRect().width * dpr;
+    const scale = Math.floor(offered / PSX_STAGE_W + 1e-6);
+    /* Narrower than the stage itself: no whole step fits, keep the stretch. */
+    if (scale >= 1) stageWrap.style.width = `${(PSX_STAGE_W * scale) / dpr}px`;
+  }
+  /* Re-fit when the width on offer moves: the column or the screen resizing
+   * (fullscreen included), and the device pixel ratio changing (browser zoom,
+   * a window dragged to another monitor), which leaves the CSS width alone. */
+  if (typeof ResizeObserver === 'function') {
+    let lastOffered = -1;
+    new ResizeObserver((entries) => {
+      const w = entries[entries.length - 1].contentRect.width;
+      if (w === lastOffered) return;
+      lastOffered = w;
+      fitPixelExact();
+    }).observe(stageWrap.parentElement);
+  }
+  window.addEventListener('resize', fitPixelExact);
+  (function watchDpr() {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    const again = () => { fitPixelExact(); watchDpr(); };
+    if (mq.addEventListener) mq.addEventListener('change', again, { once: true });
+  })();
   /* The automatic step-down's note: what is off, and that the saved options are
    * not. `?autoquality=0` leaves the ladder unarmed. */
   const qualityNoteEl = document.getElementById('play-quality-note');
