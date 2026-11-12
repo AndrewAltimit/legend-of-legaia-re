@@ -6,7 +6,7 @@
 use crate::common::disc;
 
 /// `(PROT entry or None for SCUS_942.54, VA, frame prologue expected, why)`.
-const UNDRIVEN: [(Option<usize>, u32, bool, &str); 5] = [
+const UNDRIVEN: [(Option<usize>, u32, bool, &str); 4] = [
     (
         None,
         0x8001_5E90,
@@ -18,13 +18,6 @@ const UNDRIVEN: [(Option<usize>, u32, bool, &str); 5] = [
         0x8002_4D78,
         false,
         "REPLACED-BY: the actor's OBJECT table has no port counterpart; every renderer walks the bound TMD",
-    ),
-    (
-        None,
-        0x8001_6444,
-        // `lw v0,0x3b8(gp)` sits ahead of the frame prologue.
-        false,
-        "the per-frame game loop: five actor-list tick passes, five GPU render passes and the display flip; the port keeps only the pass order, its passes are the World tick's loops and the host renderer",
     ),
     (
         Some(970),

@@ -232,3 +232,103 @@ pub fn per_frame_stage(mode: GameMode) -> Option<PerFrameStage> {
     };
     Some(stage)
 }
+
+/// The actor-list heads the master frame driver walks, in the order it
+/// names them (`0x8007C348 + 4 * n`, then `0x8007C36C`).
+pub const ACTOR_LIST_HEADS: [u32; 7] = [
+    0x8007_C34C,
+    0x8007_C350,
+    0x8007_C354,
+    0x8007_C358,
+    0x8007_C35C,
+    0x8007_C360,
+    0x8007_C36C,
+];
+
+/// What the master frame driver reads to pick its passes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MasterFrameInputs {
+    /// The driver's argument: `0` (MAPDISP) runs no tick passes.
+    pub param: i32,
+    /// `_DAT_8007B6E8`: non-zero holds the tick passes and counts the held
+    /// frame in `_DAT_8007B8BC`.
+    pub tick_hold: bool,
+    /// `_DAT_1F800394 & 0x10`: the mirror bit, which swaps the third and
+    /// fourth list pairs (`0x8007C360` / `0x8007C35C` for `0x8007C358` /
+    /// `0x8007C354`). Retail reads it again ahead of the render passes; the
+    /// plan takes the one value.
+    pub mirror: bool,
+    /// `_DAT_8007B83C`, the game mode: STR (`0x15`) flips ahead of the render
+    /// passes, every other mode after them.
+    pub mode: u16,
+    /// `_DAT_8007BC3C`, the overlay submode: `2` (the world map) draws the
+    /// horizon `FUN_801D7EA0` after the render passes.
+    pub submode: u32,
+}
+
+/// One pass of the master frame driver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FramePass {
+    /// `FUN_800179C0`, the debug mode-advance chord.
+    DevChord,
+    /// `FUN_8002519C(head)`, one actor list's tick pass.
+    Tick(u32),
+    /// The tick passes held: `_DAT_8007B8BC += 1`.
+    HeldTick,
+    /// `FUN_800172C0`, the view-matrix rebuild.
+    View,
+    /// `FUN_8001D058`, the display flip.
+    Flip,
+    /// `FUN_8001D140(head)`, one actor list's render pass.
+    Render(u32),
+    /// `FUN_80046978`, the cast-wash drain.
+    WashDrain,
+    /// `FUN_801D7EA0`, the world map's horizon.
+    Horizon,
+    /// `FUN_800188C8(_DAT_1F800391)`, the dev readout.
+    Readout,
+}
+
+/// The master frame driver's passes, in retail order.
+///
+/// Its dev prints (`FUN_8001A068`, behind `_DAT_8007B6D0`, `_DAT_8007B98C`
+/// and the other debug words), the `VSync(1)` timestamps between the passes
+/// and the heap queries the prints read are left out: none of them changes
+/// game state.
+///
+/// The engine runs these passes as its own loops: the tick passes are the
+/// World tick's actor loops, the render passes and the flip the host
+/// renderer's (`World::tick`).
+///
+/// PORT: FUN_80016444
+pub fn master_frame_plan(i: MasterFrameInputs) -> Vec<FramePass> {
+    let h = ACTOR_LIST_HEADS;
+    let lists = if i.mirror {
+        [h[0], h[1], h[5], h[4], h[6]]
+    } else {
+        [h[0], h[1], h[3], h[2], h[6]]
+    };
+    let mut out = vec![FramePass::DevChord];
+    if i.param != 0 {
+        if i.tick_hold {
+            out.push(FramePass::HeldTick);
+        } else {
+            out.extend(lists.iter().map(|&l| FramePass::Tick(l)));
+        }
+    }
+    out.push(FramePass::View);
+    let str_mode = i.mode == 0x15;
+    if str_mode {
+        out.push(FramePass::Flip);
+    }
+    out.extend(lists.iter().map(|&l| FramePass::Render(l)));
+    out.push(FramePass::WashDrain);
+    if i.submode == 2 {
+        out.push(FramePass::Horizon);
+    }
+    if !str_mode {
+        out.push(FramePass::Flip);
+    }
+    out.push(FramePass::Readout);
+    out
+}

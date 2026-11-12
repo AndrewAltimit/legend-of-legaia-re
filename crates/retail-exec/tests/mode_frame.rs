@@ -12,6 +12,10 @@
 //! `+0x0C` handler (the actor at `gp + 0x5C8`, `0x8007B8E0`), the readout
 //! `FUN_800188C8` with the scratchpad byte `0x1F800391`, no master driver,
 //! and a return of `0`.
+//!
+//! The master driver `FUN_80016444` itself runs against
+//! `master_frame_plan`: its tick, render, flip, horizon and readout passes in
+//! order, with the list head each pass is handed.
 
 use crate::common::{Rng, scus_cpu};
 use legaia_engine_mode::mode::{CARD_FRAME_BODY, FrameBody, GameMode, per_frame_stage};
@@ -150,4 +154,94 @@ fn the_card_body_runs_the_card_actor_and_returns_zero() {
         assert_eq!(calls[0].0, CHORD);
         assert_eq!(calls[2], (READOUT, u32::from(step)), "{calls:x?}");
     }
+}
+
+/// The master frame driver `FUN_80016444` over every combination of what
+/// picks its passes - the argument, the tick hold `_DAT_8007B6E8`, the mirror
+/// bit `_DAT_1F800394 & 0x10`, the STR mode and the world-map submode - with
+/// the dev words raised or not, against `mode::master_frame_plan`. Each pass
+/// is hooked and logged with the list head it was handed; the dev prints,
+/// the `VSync(1)` timestamps and the heap queries are hooked and ignored.
+/// The held-tick counter `_DAT_8007B8BC` is compared too.
+#[test]
+fn the_master_frame_driver_runs_the_plans_passes() {
+    differential!(scus(MASTER));
+    use legaia_engine_mode::mode::{
+        ACTOR_LIST_HEADS, FramePass, MasterFrameInputs, master_frame_plan,
+    };
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub_outside = Some((MASTER, 0x8001_698C));
+    let log: Rc<RefCell<Vec<FramePass>>> = Rc::new(RefCell::new(Vec::new()));
+    let head_of = |a: u32| {
+        // The heads are seeded with their own addresses.
+        assert!(ACTOR_LIST_HEADS.contains(&a), "{a:#x}");
+        a
+    };
+    let simple = [
+        (CHORD, FramePass::DevChord),
+        (0x8001_72C0, FramePass::View),
+        (0x8001_D058, FramePass::Flip),
+        (0x8004_6978, FramePass::WashDrain),
+        (0x801D_7EA0, FramePass::Horizon),
+        (READOUT, FramePass::Readout),
+    ];
+    for (va, pass) in simple {
+        let l = log.clone();
+        cpu.hook(va, move |_, _| l.borrow_mut().push(pass));
+    }
+    {
+        let l = log.clone();
+        cpu.hook(0x8002_519C, move |r, _| {
+            l.borrow_mut().push(FramePass::Tick(head_of(r.r[A0])))
+        });
+        let l = log.clone();
+        cpu.hook(0x8001_D140, move |r, _| {
+            l.borrow_mut().push(FramePass::Render(head_of(r.r[A0])))
+        });
+    }
+    for va in [0x8001_A068, 0x8005_FB84, 0x8002_B688, 0x8002_B790] {
+        cpu.hook(va, |r, _| r.r[V0] = 0);
+    }
+    for &h in &ACTOR_LIST_HEADS {
+        cpu.mem.wr32(h, h);
+    }
+    let mut runs = 0;
+    for bits in 0..256u32 {
+        let i = MasterFrameInputs {
+            param: (bits & 1) as i32,
+            tick_hold: bits & 2 != 0,
+            mirror: bits & 4 != 0,
+            mode: if bits & 8 != 0 { 0x15 } else { 0x03 },
+            submode: if bits & 16 != 0 { 2 } else { 1 },
+        };
+        let dev = bits >> 5;
+        cpu.mem
+            .wr32(0x8007_B6D0, if dev & 1 != 0 { 0xF } else { 0 });
+        cpu.mem
+            .wr32(0x8007_B98C, if dev & 2 != 0 { 0x8000_0000 } else { 0 });
+        cpu.mem.wr16(0x8007_B86E, if dev & 4 != 0 { 1 } else { 0 });
+        cpu.mem.wr32(0x8007_B6E8, u32::from(i.tick_hold));
+        cpu.mem.wr32(0x1F80_0394, if i.mirror { 0x10 } else { 0 });
+        cpu.mem.wr16(0x8007_B83C, i.mode);
+        cpu.mem.wr32(0x8007_BC3C, i.submode);
+        cpu.mem.wr16(0x8007_B8BC, 7);
+        log.borrow_mut().clear();
+        assert_eq!(cpu.call(MASTER, &[i.param as u32]), Stop::Returned);
+        assert_eq!(cpu.regs.r[V0], 0);
+        let plan = master_frame_plan(i);
+        // The held tick is the counter, not a call.
+        let calls: Vec<FramePass> = plan
+            .iter()
+            .copied()
+            .filter(|p| *p != FramePass::HeldTick)
+            .collect();
+        assert_eq!(*log.borrow(), calls, "{i:?} dev {dev}");
+        let held = plan.contains(&FramePass::HeldTick);
+        assert_eq!(cpu.mem.rd16(0x8007_B8BC), 7 + u16::from(held), "{i:?}");
+        runs += 1;
+    }
+    assert_eq!(runs, 256);
 }

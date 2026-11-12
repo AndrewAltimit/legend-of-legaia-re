@@ -62,8 +62,8 @@ impl World {
     /// swapchain present, and the dev prints are not ported. Divergence:
     /// engine actors live in one pool with an `active` flag, not five
     /// linked lists - pass ORDER is preserved by the sequencing below.
-    // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
-    //                     host renderer's, dev prints not ported)
+    // REF: FUN_80016444 (the pass order is `mode::master_frame_plan`;
+    //                    render/flip halves are the host renderer's)
     pub fn tick(&mut self) -> Option<StepOutcome> {
         // The CD drive runs on every vsync, held frame or not
         // (`World::tick_cast_drive`).
