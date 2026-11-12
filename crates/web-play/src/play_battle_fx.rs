@@ -145,6 +145,18 @@ pub(crate) struct BattleFxFrame {
     /// (sample VRAM, modulated by the retail brightness envelope), `0` on the
     /// outline strips (draw the flat colour).
     pub flat: Vec<u8>,
+    /// Per-vertex normal, `3 x f32`: the normal the native pass lights the
+    /// same vertex with ([`native_normals`]), in the mesh's own object frame
+    /// and not turned by its model matrix, as the native shader reads it. A
+    /// billboard quad takes the native one face normal (`right x up` in the
+    /// native frame). The enhanced light reads it; smoothed over the baked
+    /// stream instead, a summon's crystal facets lit as the native frame's
+    /// mirror image.
+    pub normals: Vec<f32>,
+    /// The billboard corners are in page space (the field twin's `Y`
+    /// negated), so a quad's face normal takes the flip back to the native
+    /// frame.
+    pub page_space_quads: bool,
     pub models: Vec<FxModelDraw>,
     /// The baked nodes and parts whose primitives link at their farthest
     /// corner (`FxMeshModel::far_corner` / `FxPartModel::far_corner`), a
@@ -172,6 +184,8 @@ impl BattleFxFrame {
             cba_tsb: Vec::new(),
             indices: Vec::new(),
             flat: Vec::new(),
+            normals: Vec::new(),
+            page_space_quads: false,
             models: Vec::new(),
             far: None,
         };
@@ -331,8 +345,16 @@ fn push_quad(
     flat: [u8; 4],
 ) {
     let base = (frame.positions.len() / 3) as u32;
+    // The native billboard's one normal toward the viewer (`right x up`,
+    // `geometry::effect_billboard_mesh`); the light takes `|N.L|`, so the
+    // winding's sign does not matter.
+    let mut face = quad_face_normal(&corners);
+    if frame.page_space_quads {
+        face[1] = -face[1];
+    }
     for (p, uv) in corners.iter().zip(uv) {
         frame.positions.extend_from_slice(p);
+        frame.normals.extend_from_slice(&face);
         frame.uvs.extend_from_slice(&uv);
         frame.cba_tsb.extend_from_slice(&cba_tsb);
         frame.flat.extend_from_slice(&flat);
@@ -342,11 +364,72 @@ fn push_quad(
         .extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 1, base + 3]);
 }
 
+/// The unit normal of a quad's TL / TR / BL plane, zero when degenerate.
+fn quad_face_normal(c: &[[f32; 3]; 4]) -> [f32; 3] {
+    unit(face_cross(c[0], c[1], c[2]))
+}
+
+/// `(b - a) x (c - a)`, unnormalised (its length is twice the area).
+fn face_cross(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
+    let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ]
+}
+
+fn unit(n: [f32; 3]) -> [f32; 3] {
+    let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+    if len > 1e-12 {
+        [n[0] / len, n[1] / len, n[2] / len]
+    } else {
+        [0.0; 3]
+    }
+}
+
+/// The normal the native pass lights each vertex of an object-space mesh
+/// with: its smoothed mesh normal, or where that is the zero sentinel (a
+/// double-sided part's paired copies cancel in the smoothing) the facet the
+/// native shader falls back to, `cross(dpdx, dpdy)` of the object-space
+/// position (`vram_mesh.wgsl`, `color_mesh.wgsl`). A baked vertex has only
+/// its world position on the page, so the fallback is taken here, per vertex
+/// over the triangles that hold it (one facet on a planar quad).
+fn native_normals(positions: &[[f32; 3]], normals: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
+    let mut out: Vec<[f32; 3]> = (0..positions.len())
+        .map(|i| normals.get(i).copied().unwrap_or([0.0; 3]))
+        .collect();
+    let zero = |n: &[f32; 3]| n[0] * n[0] + n[1] * n[1] + n[2] * n[2] < 1e-8;
+    let need: Vec<bool> = out.iter().map(zero).collect();
+    if !need.iter().any(|&z| z) {
+        return out;
+    }
+    let mut acc = vec![[0.0f32; 3]; positions.len()];
+    for tri in indices.as_chunks::<3>().0 {
+        let [a, b, c] = tri.map(|i| i as usize);
+        if a.max(b).max(c) >= positions.len() || !(need[a] || need[b] || need[c]) {
+            continue;
+        }
+        let f = face_cross(positions[a], positions[b], positions[c]);
+        for v in [a, b, c] {
+            acc[v] = [acc[v][0] + f[0], acc[v][1] + f[1], acc[v][2] + f[2]];
+        }
+    }
+    for (i, n) in out.iter_mut().enumerate() {
+        if need[i] {
+            *n = unit(acc[i]);
+        }
+    }
+    out
+}
+
 /// Bake a per-frame mesh into the billboard stream through `model` (the
 /// page's model list addresses library meshes by index, so a mesh only this
 /// frame has rides the stream instead).
 fn bake_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh::VramMesh) {
     let base = (frame.positions.len() / 3) as u32;
+    let normals = native_normals(&m.positions, &m.normals, &m.indices);
     for (i, p) in m.positions.iter().enumerate() {
         let w = [
             model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
@@ -358,6 +441,7 @@ fn bake_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh:
         frame.cba_tsb.extend_from_slice(&m.cba_tsb[i]);
         let c = m.colors[i];
         frame.flat.extend_from_slice(&[c[0], c[1], c[2], 255]);
+        frame.normals.extend_from_slice(&normals[i]);
     }
     frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
 }
@@ -368,6 +452,9 @@ fn bake_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh:
 /// the native colour pipeline reads off [`legaia_tmd::mesh::ColorMesh::blend`].
 fn bake_color_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh::ColorMesh) {
     let base = (frame.positions.len() / 3) as u32;
+    // The native colour mesh carries no normals: each prim lights off its
+    // object-space facet.
+    let normals = native_normals(&m.positions, &[], &m.indices);
     for (i, p) in m.positions.iter().enumerate() {
         let w = [
             model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
@@ -381,6 +468,7 @@ fn bake_color_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd:
             .extend_from_slice(&[0, m.blend.get(i).copied().unwrap_or(0)]);
         let c = m.colors[i];
         frame.flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
+        frame.normals.extend_from_slice(&normals[i]);
     }
     frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
 }
@@ -581,6 +669,7 @@ impl LegaiaRuntime {
         let right = transform_dir(&inv, [1.0, 0.0, 0.0]);
         let up = transform_dir(&inv, [0.0, 1.0, 0.0]);
         let flip = |p: [f32; 3]| [p[0], -p[1], p[2]];
+        frame.page_space_quads = true;
         for b in effect_billboards(world, 1.0) {
             let corners = b.corners_at(flip(b.sprite.world_pos), right, up);
             push_billboard(&mut frame, &b, corners, [right, up], 1.0);
@@ -818,6 +907,13 @@ impl LegaiaRuntime {
         self.battle_fx.positions.clone()
     }
 
+    /// Per-vertex normals, `3 x f32` ([`BattleFxFrame::normals`]): the native
+    /// pass's own normal stream for each baked vertex, which the page binds
+    /// for the enhanced light instead of smoothing its own.
+    pub fn play_battle_fx_normals(&self) -> Vec<f32> {
+        self.battle_fx.normals.clone()
+    }
+
     pub fn play_battle_fx_uvs(&self) -> Vec<u8> {
         self.battle_fx.uvs.clone()
     }
@@ -865,6 +961,12 @@ impl LegaiaRuntime {
 
     pub fn play_battle_fx_far_flat_rgba(&self) -> Vec<u8> {
         self.battle_fx.far_stream().flat.clone()
+    }
+
+    /// The far-corner stream's normals (the layout of
+    /// [`Self::play_battle_fx_normals`]).
+    pub fn play_battle_fx_far_normals(&self) -> Vec<f32> {
+        self.battle_fx.far_stream().normals.clone()
     }
 
     /// Whether FX model draw `i` links its primitives at their farthest

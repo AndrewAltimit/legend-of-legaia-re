@@ -136,6 +136,15 @@ function buildSemiTail(indices, cbaTsb) {
   return { indices: out, ranges, prims: prim };
 }
 
+/* A scene mesh's `u_use_flat_colors` word: 0 with no untextured half, 1
+ * with one, 2 when its stream also carries the native pass's own normals
+ * (`uploadSceneMesh`'s `normals`, the baked FX parts): its untextured prims
+ * then light off that normal - their object-space facet - where every other
+ * mesh's take the screen-space facet of their own positions. */
+function flatColorsWord(m) {
+  return m.hasFlat ? (m.cpuNormals ? 2 : 1) : 0;
+}
+
 /* The single-mesh blend pass's per-prim order: the page twin of
  * engine-render's psx_blend push_draw_prims / sort_blend_list /
  * coalesce_sorted, which the native window's scene pass blends every semi

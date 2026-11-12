@@ -470,7 +470,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const pos = rec.cpuPositions;
     const idx = rec.cpuIndices;
     if (!pos || !idx || pos.length === 0) return;
-    const normals = computeSmoothNormals(pos, idx);
+    const normals = rec.cpuNormals || computeSmoothNormals(pos, idx);
     if (rec.normBuf && rec.normLen === normals.length) {
       /* A re-pose: same size, and the VAO's pointer still stands. */
       gl.bindBuffer(gl.ARRAY_BUFFER, rec.normBuf);

@@ -10,7 +10,7 @@
   const {
     poseInto, BATTLE_FX_BILLBOARD_MESH, IDENTITY_MODEL,
     BATTLE_FX_MODEL_BASE, BATTLE_MESH_BASE, BATTLE_BACKDROP_SPUN_MESH,
-    BATTLE_FX_FAR_MESH,
+    BATTLE_FX_FAR_MESH, fxNormals,
   } = window.LegaiaPlayShared;
 
   /* Collapse the vertices of the objects a battle body leaves out this frame
@@ -523,7 +523,7 @@
         this.renderer.uploadSceneMesh(BATTLE_FX_BILLBOARD_MESH,
           rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
           rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
-          rt.play_battle_fx_flat_rgba());
+          rt.play_battle_fx_flat_rgba(), fxNormals(rt, 'play_battle_fx_normals', this.renderer));
         draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL });
       }
       this._fxFarDraw(rt, draws, {});
@@ -563,7 +563,7 @@
       this.renderer.uploadSceneMesh(BATTLE_FX_FAR_MESH,
         rt.play_battle_fx_far_positions(), rt.play_battle_fx_far_uvs(),
         rt.play_battle_fx_far_cba_tsb(), rt.play_battle_fx_far_indices(),
-        rt.play_battle_fx_far_flat_rgba());
+        rt.play_battle_fx_far_flat_rgba(), fxNormals(rt, 'play_battle_fx_far_normals', this.renderer));
       draws.push(Object.assign({ meshId: BATTLE_FX_FAR_MESH, model: IDENTITY_MODEL,
         meanDepth: 2, fxFarCorner: true }, extra));
     }

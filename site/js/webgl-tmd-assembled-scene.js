@@ -23,7 +23,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
    * draws at the raw texel.
    *
    * Idempotent: re-upload under the same meshId overwrites. */
-  uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba) {
+  uploadSceneMesh(meshId, positions, uvs, cbaTsb, indices, flatRgba, normals) {
     const gl = this.gl;
     let m = this.sceneMeshes.get(meshId);
     if (!m) {
@@ -91,6 +91,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * _ensureNormals); the semi tail repeats triangles, so the base list. */
     m.cpuPositions = positions;
     m.cpuIndices = indices;
+    /* A stream that carries the native pass's own normals (the baked FX
+     * parts, `play_battle_fx_normals`) binds those instead of smoothing. */
+    m.cpuNormals = (normals && normals.length === positions.length) ? normals : null;
     m.normalsDirty = true;
   }
 
@@ -183,7 +186,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.uniform1i(this.locFogEnable, 0);
     gl.uniform1i(this.locNoDisc, 0);
     gl.uniform1i(this.locSemiPass, -1);
-    gl.uniform1i(this.locUseFlatColors, m.hasFlat ? 1 : 0);
+    gl.uniform1i(this.locUseFlatColors, flatColorsWord(m));
     if (tint) gl.uniform4f(this.locGhost, tint[0], tint[1], tint[2], 1);
     else gl.uniform4f(this.locGhost, 0, 0, 0, 0);
     gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
@@ -698,9 +701,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         if (m.indexCount === 0 || list.length === 0) continue;
         /* Hybrid env meshes carry an untextured vertex-colour half; flip the
          * FS flat branch on only for them (state-change once per mesh). */
-        const wantFlat = !!m.hasFlat;
+        const wantFlat = flatColorsWord(m);
         if (wantFlat !== flatColorsOn) {
-          gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+          gl.uniform1i(this.locUseFlatColors, wantFlat);
           flatColorsOn = wantFlat;
         }
         this._ensureNormals(m);
@@ -780,9 +783,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         gl.uniform1i(this.locSemiPass, 1);
         blendOn = true;
       }
-      const wantFlat = !!m.hasFlat;
+      const wantFlat = flatColorsWord(m);
       if (wantFlat !== flatColorsOn) {
-        gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+        gl.uniform1i(this.locUseFlatColors, wantFlat);
         flatColorsOn = wantFlat;
       }
       gl.bindVertexArray(m.vao);

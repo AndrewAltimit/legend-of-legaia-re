@@ -1424,8 +1424,12 @@ void main() {
       flat_base = prologue_sepia_word(max(flat_base.r, max(flat_base.g, flat_base.b)));
     }
     /* Native's colour-mesh format carries no normals, so its untextured
-     * prims light off the facet normal alone - same here. */
-    flat_base = dyn_light(flat_base, vec3(0.0), geo_n, (tsb & 0x2000u) != 0u);
+     * prims light off the facet normal alone - same here. A baked stream's
+     * vertices sit in the page's world frame, not the object frame native
+     * takes that facet in, so it hands the object facet over as its normal
+     * (u_use_flat_colors 2). */
+    flat_base = dyn_light(flat_base, vec3(0.0), u_use_flat_colors == 2 ? v_normal : geo_n,
+                          (tsb & 0x2000u) != 0u);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
       emit(vec4(semi_out(psx_dither(flat_lit * u_palette.rgb)), 1.0));
