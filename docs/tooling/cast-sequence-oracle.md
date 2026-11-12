@@ -247,6 +247,8 @@ seeded, and the recorder on:
 
 Each seat's HP travels from the recording's cast begin (`retail_cast_hp`), over the state's HUD bars. A `--monster-pick` recording plays the party's turns to the pick, so the caster and its victims stand at other HP when the cast begins, and the capture-class wrappers fold the attacker's `hp >> 8` into the roll (`0x801DD728`). Bloody Horns from `battle_tunnelc_xain_strike` lands `595` on Gala in retail; on the state's bars (Xain at `9511` where retail's turns left `7145`) the same draws read `605`, and seated it lands `595` on `--rand-track`. A harness seat.
 
+A `--physical` film keeps the state's drive, which commits Spirit for the whole party while a monster casts (`BattleDrive::Action`), so its victims stand guarded whatever the recording's `guard=` says. Where retail's party was not in the stance the film's damage reads low: `battle_chitei2_gilium_thunder_storm_mid_cast` lands `148` / `235` / `148` against retail's `583` / `745` / `544`, `battle_korb2_ghost_knight_neo_windhash_mid_cast` `298` against `771`. The kernels read retail's numbers once the stance matches; the drive's Spirit commit is the gap. A harness seat.
+
 A monster's AI counter `0x801C8FE4` travels with the state
 (`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts
 from a cleared word plays another element's arms.
