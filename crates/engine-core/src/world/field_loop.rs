@@ -72,11 +72,7 @@ impl World {
             // (2 in a field scene). Sampling per vsync counted a diagonal
             // that crosses its X and Z boundaries on different vsyncs of one
             // game tick as two steps where retail sees one.
-            if self.clock.game_tick_fired && self.encounters.roll_hold != 0 {
-                // The roll hold a touch or a record spawn armed spends this
-                // tick in place of the reader (`0x801DA58C..0x801DA598`).
-                self.encounters.roll_hold -= 1;
-            } else if self.clock.game_tick_fired {
+            if self.clock.game_tick_fired {
                 match self.terrain.step_tile {
                     Some(prev) if prev != tile => {
                         self.terrain.step_tile = Some(tile);

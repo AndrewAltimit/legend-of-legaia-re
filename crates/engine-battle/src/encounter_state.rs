@@ -81,14 +81,6 @@ pub struct EncounterState {
     /// the scene-entry top-up) set it through
     /// `World::set_encounter_step_counter`.
     pub step_counter: i32,
-    /// `_DAT_8007B604` - the roll hold, in game ticks. The system entity's
-    /// idle state (`FUN_801DA51C`, `0x801DA580..0x801DA598`) spends a tick
-    /// of it instead of calling the region reader `FUN_801D9E1C`, so while
-    /// it runs no step is sampled, counted or rolled and the reader's tile
-    /// cache stands. The touch post `FUN_801D5B5C` stores `8`
-    /// (`0x801D5BEC`) and a record spawn `FUN_8003BDE0` stores `4`
-    /// (`0x8003C0E4`); there is no other writer.
-    pub roll_hold: u8,
     /// `_DAT_8007B605`, the roll's anti-repeat latch: one retail global, so a
     /// scene's first roll still tests the last scene's formation row.
     pub last_formation: u8,
@@ -130,7 +122,6 @@ impl EncounterState {
             scene_hint_frames: 0,
             last_formation: crate::region_encounter::BOOT_LAST_FORMATION,
             step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
-            roll_hold: 0,
             region_setup: None,
             battle_map_define: None,
             hud_short_idle_raises: 0,
