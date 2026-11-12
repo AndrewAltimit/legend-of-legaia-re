@@ -29,6 +29,7 @@ impl World {
             return Some(self.run_fatal_decision(entry));
         }
         self.casting.module_running_entry = Some(entry);
+        self.casting.module_bump_commits = 0;
         let mut ctx = self.cast_module_ctx();
         // The phase the tick enters on, before a state-touching stager below
         // steps it (PROT 0909's arm 0 is its stager's).
@@ -949,8 +950,21 @@ impl World {
                     // landing: once it has landed here, the band's generic
                     // fold owes nothing. Folding as well rolled the
                     // `0x1C0` a second time through the catalog def.
-                    if hit.is_some() {
+                    if let Some(roll) = hit {
                         self.casting.module_skips_fold = true;
+                        // The popup `FUN_801F44A0(roll, 0)` on the raw roll
+                        // (`jal` at `0x801F817C`, `a0` the roll's low half)
+                        // ahead of the clamp, the `+0x10` accumulate and the
+                        // HP write: the burst's numeral over seat 0.
+                        // REF: FUN_801F44A0
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: 0,
+                                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                                is_heal: false,
+                                is_crit: false,
+                            });
                     }
                     Some(ticks::plasma_strike_tick(
                         &mut ctx,
@@ -2221,6 +2235,17 @@ impl World {
             // PROT 0959's hits clear the readout flag and its arm `0x0F`
             // raises it as it passes: the cluster opens on that pass.
             if entry == 959 {
+                self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
+            }
+            // PROT 0960's Plasma Strike burst clears it beside its HP write
+            // (`sb zero,-0x49B4` at `0x801F81BC`) and arm `0x0F` raises it
+            // as it passes (`li v0,0x78` / `sb` at `0x801F84B8..0x801F84BC`):
+            // the burst's numeral goes up alone and the cluster opens on that
+            // pass. No earlier arm raises it, and the flurry's banked hits
+            // write neither the flag nor HP.
+            if entry == 960
+                && body == Some(legaia_engine_cast::cast_module_camera::PLASMA_STRIKE_BODY)
+            {
                 self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
             }
             // PROT 0958's clear the flag the same way and its arm 23 raises
