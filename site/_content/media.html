@@ -595,7 +595,7 @@
       sub.push(`PROT ${e.prot_index}`);
       const tags = [];
       if (e.uncertain) tags.push('<span class="st-tag" title="Flagged by the source as a dev placeholder / working title.">placeholder</span>');
-      if (!e.playable) tags.push('<span class="st-tag" title="No audio on the retail disc - a pochi-filled dev leftover slot.">no audio</span>');
+      if (!e.playable) tags.push('<span class="st-tag" title="No audio on the retail disc - an empty placeholder slot the developers left behind.">no audio</span>');
       const actions = e.playable
         ? `<button data-act="play">&#x25B6; play</button><button data-act="wav">.wav</button>`
         : '';

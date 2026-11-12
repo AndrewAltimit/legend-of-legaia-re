@@ -134,8 +134,10 @@ dl.dm-kv dd { margin: 0; font-family: var(--font-mono); color: var(--text); over
   <h1>Disc map</h1>
   <p class="lede">
     Every sector of the Legend of Legaia disc, laid out as nested boxes. Each box is one region of
-    the image, sized by its sector count: the ISO9660 files, then inside <code>PROT.DAT</code> its
-    1233 entries grouped by CDNAME block and coloured by the format each one parses as. Hover a box
+    the image, sized by its sector count: the disc's files, then inside <code>PROT.DAT</code> (the
+    game's one big archive) its 1233 entries, grouped by the named blocks the disc's name list
+    <code>CDNAME.TXT</code> gives them (one scene, one battle set, one sound bank) and coloured by
+    the format each one parses as. Hover a box
     to see what it is and where it is documented; click to zoom in.
   </p>
 </header>
