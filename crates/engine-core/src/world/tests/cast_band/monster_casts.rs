@@ -163,3 +163,70 @@ fn element_change_stays_on_the_seat_and_ends_with_the_battle() {
         "the next fight starts on the disc element"
     );
 }
+
+/// PROT 0959's director lands Megaton Press's hits itself, through its own
+/// `FUN_801DD6B4` sites, so the generic fold the arm with a wrapper site
+/// opens must roll nothing. The arm-open used to reset the director's skip
+/// before the fold read it: arm 8 then landed one generic roll beside its
+/// site-0 hit, a doubled first hit (retail's recording lands `67`; the film
+/// landed `141`, a `76` fold and a `65` site).
+#[test]
+fn megaton_press_folds_no_generic_roll_beside_its_sites() {
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    let mut world = module_code_world();
+    world.party.party_count = 1;
+    world.battle_ctx.active_actor = 1;
+    world.actors[1].battle.active_target = 0;
+    for a in world.actors.iter_mut().take(2) {
+        a.battle.hp = 9000;
+        a.battle.max_hp = 9000;
+    }
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[0x7A].class = CAPTURE_CLASS;
+    // Sub-id 24 pages PROT 0959 (`935 + 24`).
+    entries[0x7A].sub_class = 24;
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    assert_eq!(world.cast_module_for(0x7A), Some(959));
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
+        caster: 1,
+        spell_id: 0x7A,
+        targets: vec![0],
+        on_flight: false,
+    });
+    world.arm_capture_cast_module(0x7A);
+    let mut drops = Vec::new();
+    let mut hp = world.actors[0].battle.hp;
+    for _ in 0..20_000 {
+        world.clock.display_frames += 1;
+        let phase = world.casting.module_phase;
+        let busy = world
+            .run_cast_module_code(0x7A, phase)
+            .is_some_and(|r| r.busy);
+        let now = world.actors[0].battle.hp;
+        if now != hp {
+            drops.push((phase, hp - now));
+            hp = now;
+        }
+        if !busy {
+            break;
+        }
+    }
+    assert!(
+        world.casting.pending_cast.is_none(),
+        "the pending cast is spent"
+    );
+    let (_, first) = *drops.first().expect("the director landed no hit");
+    // One site-0 roll at power `0x80` cannot exceed its attacker side:
+    // `rand % 33 + (hp >> 8) + 0x80 + ATK`. Two rolls on the arm can.
+    let atk = world.battle.attack[1];
+    let one_roll = 32 + (9000 >> 8) + 0x80 + atk;
+    assert!(
+        first <= one_roll,
+        "arm {:?} took {first} HP in one pass, more than one site roll's {one_roll}: the fold \
+         rolled the cast beside the director ({drops:?})",
+        drops.first().map(|d| d.0)
+    );
+}

@@ -1100,7 +1100,14 @@ gives each exactly one owner:
     `module_skips_fold`.
   - PROT 0959's eleven wrapper hits, which its director names one by one
     ([above](#prot-0959-megaton-press)) and which waive the fold for the
-    whole cast.
+    whole cast. The waiver holds through the chain arm that opens the fold
+    (arm 7, the first with a wrapper site): that arm's own skip computation
+    ORs into it rather than replacing it. Replaced, it opened the fold on a
+    cleared skip and Megaton Press's first pass landed a generic roll beside
+    the site-0 hit, `141` where a retail recording of
+    `nivora_duel_pre_megaton_press` lands `67`
+    (`megaton_press_folds_no_generic_roll_beside_its_sites`). Grade
+    `capture`.
 
 Whatever rolls the wrapper in-tick must waive the fold on the same branch.
 Two module HP writes are not wrapper rolls and owe the fold nothing: PROT
