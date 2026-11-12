@@ -14,6 +14,7 @@ pub mod app;
 pub mod arts;
 pub mod export;
 pub mod extract_job;
+pub mod file_browser;
 pub mod gamepad;
 pub mod launch;
 pub mod library;
@@ -103,6 +104,69 @@ pub fn kind_of_class(class: &str) -> &'static str {
         }
         _ => "Unidentified",
     }
+}
+
+/// One sentence on what a [`kind_of_class`] kind is, for a player: the
+/// Overview tab's line under the kind, with the format names kept for its
+/// technical details.
+pub fn kind_blurb(kind: &str) -> &'static str {
+    match kind {
+        "3D models" => "Shapes the game draws in 3D: characters, objects or pieces of a place.",
+        "Textures" => "Pictures the game paints onto its 3D models or shows on screen.",
+        "Sound and music" => {
+            "Instrument samples and the note data the game plays its music and sound \
+             effects from."
+        }
+        "Animation" => "Movement that makes the models walk, fight and gesture.",
+        "Characters" => "A fighter's battle data: model, textures and moves.",
+        "Effects" => "The flashes, sparks and spell graphics a battle shows.",
+        "Scene textures and models" => {
+            "The main bundle of one place: the pictures and shapes it is drawn with."
+        }
+        "Maps and scripts" => {
+            "The layout of a place and the scripts that run its events and its people."
+        }
+        "Game code" => {
+            "Program code the game loads when it needs it: a battle, a menu, a minigame."
+        }
+        "Packed data" => "Data kept packed on the disc, unpacked when the game loads it.",
+        "Empty or filler" => "Space on the disc with nothing in it, or placeholder bytes.",
+        _ => "Data this program cannot name yet; the Hex tab shows its bytes.",
+    }
+}
+
+/// What an entry holds, in plain words (`"18 textures, 70 3D models"`),
+/// from the counts the analysis found: textures (TIM), 3D models (TMD),
+/// sound banks (VAB), music tracks (SEQ), text blocks (MES), dialog lines
+/// and compressed sections (LZS). Empty when it found none.
+pub fn contents_plain(counts: &ContentCounts) -> Vec<String> {
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    [
+        (counts.tims, "texture", "textures"),
+        (counts.tmds, "3D model", "3D models"),
+        (counts.vabs, "sound bank", "sound banks"),
+        (counts.seqs, "music track", "music tracks"),
+        (counts.mes, "text block", "text blocks"),
+        (counts.dialog, "line of dialog", "lines of dialog"),
+        (counts.lzs, "compressed section", "compressed sections"),
+    ]
+    .into_iter()
+    .filter(|(n, ..)| *n > 0)
+    .map(|(n, one, many)| plural(n, one, many))
+    .collect()
+}
+
+/// The sub-asset counts [`contents_plain`] words.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContentCounts {
+    pub tims: usize,
+    pub tmds: usize,
+    pub vabs: usize,
+    pub seqs: usize,
+    pub mes: usize,
+    pub dialog: usize,
+    pub lzs: usize,
 }
 
 /// The display name of the scene a CDNAME label names (`town01` -> `Rim

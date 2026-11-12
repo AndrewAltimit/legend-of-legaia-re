@@ -361,6 +361,7 @@
    "modules": [
     "disc_text",
     "drop_backend",
+    "folder_list",
     "game_exit",
     "icons",
     "placement",
@@ -3202,6 +3203,7 @@
     "arts",
     "export",
     "extract_job",
+    "file_browser",
     "gamepad",
     "launch",
     "library",

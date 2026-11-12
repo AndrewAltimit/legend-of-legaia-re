@@ -552,3 +552,34 @@ fn equipment_names_per_build() {
         "some PAL item name carries an accented letter"
     );
 }
+
+/// The Overview tab's plain words: every kind has a sentence, and the
+/// contents line counts in words, singular where one.
+#[test]
+fn overview_speaks_plainly() {
+    use legaia_explorer::{ContentCounts, contents_plain, kind_blurb, kind_of_class};
+    for class in [
+        "scene_asset_table",
+        "tim_pack",
+        "mips_overlay",
+        "no_such_class",
+    ] {
+        let blurb = kind_blurb(kind_of_class(class));
+        assert!(blurb.ends_with('.'), "{class}: {blurb}");
+        assert!(
+            !blurb.contains("TIM") && !blurb.contains("TMD"),
+            "{class}: {blurb}"
+        );
+    }
+    let counts = ContentCounts {
+        tims: 18,
+        tmds: 1,
+        dialog: 232,
+        ..Default::default()
+    };
+    assert_eq!(
+        contents_plain(&counts),
+        ["18 textures", "1 3D model", "232 lines of dialog"]
+    );
+    assert!(contents_plain(&ContentCounts::default()).is_empty());
+}

@@ -101,6 +101,38 @@ pub fn engine_disc_offer(recent: &[PathBuf]) -> Option<PathBuf> {
     engine_disc_from_settings(&text).filter(|d| d.is_file() && !recent.contains(d))
 }
 
+/// The folders a first run looks in for a disc: the program's own folder,
+/// then Downloads, Desktop, Documents and the home folder (the game
+/// launcher's first-run search, `launcher::disc_search_dirs`).
+pub fn disc_search_dirs() -> Vec<PathBuf> {
+    let home = dirs::home_dir();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(std::path::Path::to_path_buf));
+    let mut out: Vec<PathBuf> = [
+        exe_dir,
+        dirs::download_dir().or_else(|| home.as_ref().map(|h| h.join("Downloads"))),
+        dirs::desktop_dir().or_else(|| home.as_ref().map(|h| h.join("Desktop"))),
+        dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents"))),
+        home.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    out.dedup();
+    out
+}
+
+/// A disc image named for the game in the usual folders
+/// ([`disc_search_dirs`], `legaia_app_theme::folder_list::find_dumps`), for
+/// a first run with nothing to open again: offered on the start page,
+/// never opened unasked.
+pub fn found_disc_offer() -> Option<PathBuf> {
+    legaia_app_theme::folder_list::find_dumps(&disc_search_dirs(), 8)
+        .into_iter()
+        .find(|p| p.is_file())
+}
+
 /// The log file a Explorer-started game writes into.
 pub const GAME_LOG: &str = "legaia-explorer-game.log";
 

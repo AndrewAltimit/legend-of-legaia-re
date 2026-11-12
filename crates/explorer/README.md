@@ -13,9 +13,9 @@ runtime, and writes only into folders the user chooses.
 
 | Area | What the user gets |
 |---|---|
-| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does, in a centred column that narrows with the window (`start_column`, `start_gaps`). A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, a file that is not a raw dump is named for what it is (`psx_iso::sniff`), and one shorter than its file table says is called incomplete (`legaia_app_theme::disc_text`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
+| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does, in a centred column that narrows with the window (`start_column`, `start_gaps`). A native file dialog (opened in the last disc's folder; or a typed path, a file dropped on the window, or the in-app file browser, [below](#controller)) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, a file that is not a raw dump is named for what it is (`psx_iso::sniff`), and one shorter than its file table says is called incomplete (`legaia_app_theme::disc_text`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
 | Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its kind in plain words and size; a search whose every term must match the retail block, the place name, the filename label, the kind, the category or the index (`Explorer::entry_matches`), plus a *Show* filter over the kinds with each one's count, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. The next start reopens the selected entry. |
-| Overview | The pane's heading names the entry's retail block as the tree does; the file name, which can name a neighbour, is on its hover. Where an entry opens when it has nothing for the chosen preview tab; such a tab is greyed out without a count (`tab_label`), and a pane narrower than `TAB_COUNTS_MIN_WIDTH` shows no counts at all, which keeps the tab row to one line at the minimum window width. PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, size, the sub-assets found (only the kinds present), the DATA_FIELD chunk list, raw `.BIN` export. A value wider than the panel ends in an ellipsis and shows whole on hover. |
+| Overview | The pane's heading names the entry's retail block as the tree does; the file name, which can name a neighbour, is on its hover. Where an entry opens when it has nothing for the chosen preview tab; such a tab is greyed out without a count (`tab_label`), and a pane narrower than `TAB_COUNTS_MIN_WIDTH` shows no counts at all, which keeps the tab row to one line at the minimum window width. The plain half first: the kind with one sentence on what it is (`kind_blurb`), the place it belongs to, what it holds in words (`contents_plain`: textures, 3D models, sound banks, lines of dialog, ...), size and entry number, each row's technical name on its hover. *Show technical details* (remembered, `overview_details`) opens the PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), the audit category, location in `PROT.DAT`, exact size, the sub-assets by format name and the DATA_FIELD chunk list. Raw `.BIN` export. A value wider than the panel ends in an ellipsis and shows whole on hover. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom (the slider, Ctrl + scroll over the image, or *Fit* for the whole texture in the pane; dragging the image moves it, and the pointer shows the texel it is on); PNG export of one or all. The list takes at most half the pane (`tim_list_width`), so the sliders keep their room at the minimum window width; a row too long for it ends in an ellipsis and shows whole on hover. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
 | 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view (drag, scroll, double-click to reset; the triangle count and the hint are drawn inside the view, on the theme's `stage` backdrop) with retail shading (`texel * colour / 128`), as a see-through wireframe, or untextured under a viewer light, picked from one compact toolbar row that holds at the minimum window width. Textures come from the entry's own TIMs or from its **scene** (see below); the view opens on the entry only when its TIMs hold every CLUT and texel the textured prims read (`Model::texture_coverage`), else on the scene; OBJ and textured `.glb` export from the *Export* menu. |
 | Audio | VAB banks (spans resolved through the DATA_FIELD body chunk) with per-sample length, waveform (decoded as a row scrolls into view; it narrows to leave the row's Play and WAV buttons on screen at the minimum window width, `wave_width`), play and WAV export; SEQ playback on the `legaia-engine-audio` SPU + sequencer with a chosen bank. The [transport row](#the-audio-transport) shows how far the sound is. |
@@ -227,13 +227,34 @@ L2 / R2 the preview tabs, Select the next view, Start `F5`, and the right
 stick the mouse wheel. The pads are read on a thread that wakes the window
 only when a button moves, so an idle window with a pad plugged in draws
 nothing; a scripted run opens none. The shortcuts box lists the buttons
-under the keys, and scrolls in a window too short for both. The native file
-dialog stays out of a pad's reach: the start page's recent list and the
-game's own disc (below) are the ways in without one.
+under the keys, and scrolls in a window too short for both.
+
+### Controller
+
+The native file dialog stays out of a pad's reach, so while a controller was
+the last thing pressed (`pad_active`; a key or a mouse button clears it)
+*Open disc image*, *Open extracted folder* and the Extract view's
+*Choose...* open the in-app file browser (`file_browser`) instead: the
+folder's subfolders and the files it was opened for, the way up, and the
+usual places (home, Downloads, Desktop, Documents, the drives), listed by
+`legaia_app_theme::folder_list` as the game launcher's finder lists them.
+The D-pad moves, Cross or Right opens a folder or takes the file, Left goes
+up, Circle closes; the keyboard's arrows, Enter, Backspace and Esc do the
+same. It also opens when the desktop's dialog comes back at once (it never
+appeared: a desktop with no file-dialog service), and from the start page's
+*find it in this window* link. An export with a controller in hand writes
+into the remembered export folder (else `Legaia Explorer` in Pictures) under
+its own name, never over an earlier file, and the status line says where.
+With nothing focused on the start page, a controller's first press puts the
+focus on the disc on offer, else on *Open disc image*.
 
 The start page also offers the disc the game itself boots - the `disc` of the
 engine's `launcher.toml` (`launch::engine_disc_offer`) - while it is not on the
 recent list, so a disc chosen in the game's launcher opens here in one click.
+On a first run with nothing to open again, it offers instead a disc image
+named for the game found in the program's folder, Downloads, Desktop,
+Documents or the home folder (`launch::found_disc_offer`, the search the
+game's launcher makes, `legaia_app_theme::folder_list::find_dumps`).
 
 ### Scripted runs
 
@@ -254,6 +275,7 @@ These environment variables drive a run without a person at the keyboard
 | `LEGAIA_EXPLORER_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
 | `LEGAIA_EXPLORER_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
 | `LEGAIA_EXPLORER_PLAY` | Press *Play* once the disc has loaded. |
+| `LEGAIA_EXPLORER_BROWSE` | Open the in-app file browser at start: `disc`, `folder` (an extracted folder) or `out` (the extraction output folder). |
 | `LEGAIA_EXPLORER_SETTINGS` | Settings file to use instead of the per-user one. |
 
 The screenshot reads the window's own framebuffer, so on a shared desktop run
