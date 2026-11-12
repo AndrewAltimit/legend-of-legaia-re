@@ -765,6 +765,41 @@ probe.run({
                 blocks:row("%d,%d,%d,%d", last_elapsed, tou32(r.s0), tou32(r.s1), tou32(r.v0))
             end)
         end
+        if probe.getenv_num("LEGAIA_RIBBON_TRACE", 0) ~= 0 then
+            -- Each streak-ribbon call FUN_801E1D98 (breakpoint core), read at
+            -- 0x801E1E4C, just past its billboard projection (`jal
+            -- 0x800195A8`): the seed word its draws start from, the caller,
+            -- the anchor trio the routine copied to sp+0x20, the four
+            -- projected corners in the packet s2+0x08..+0x22, and the GTE
+            -- view the projection ran under (R, TR, OFX, OFY, H): the
+            -- inputs a ribbon's segment count, and so its rand() draws, read.
+            local ribbons = probe.csv_open(probe.out_path("ribbons.csv"),
+                "vsync,st7,phase,seed,ra,px,py,pz,x0,y0,x1,y1,x2,y2,x3,y3,"
+                .. "r0,r1,r2,r3,r4,trx,try,trz,ofx,ofy,h")
+            local ribbon_ra = 0
+            probe.arm_breakpoint(0x801E1D98, "Exec", 4, "ribbon_in", function()
+                ribbon_ra = tou32(PCSX.getRegisters().GPR.n.ra)
+            end)
+            probe.arm_breakpoint(0x801E1E4C, "Exec", 4, "ribbon", function()
+                local r = PCSX.getRegisters()
+                local sp = tou32(r.GPR.n.sp)
+                local pk = tou32(r.GPR.n.s2)
+                local cx = u32(CTX_PTR)
+                local c = {}
+                for i = 0, 26 do c[i] = -1 end
+                pcall(function()
+                    for i = 0, 26 do c[i] = tou32(r.CP2C.r[i]) end
+                end)
+                ribbons:row("%d,%d,%d,%d,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+                    .. "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                    last_elapsed, ptr_ok(cx) and u8(cx + 7) or -1,
+                    ptr_ok(cx) and u8(cx + 0x279) or -1, u32(0x80009010), ribbon_ra,
+                    s16(sp + 0x20), s16(sp + 0x22), s16(sp + 0x24),
+                    s16(pk + 0x08), s16(pk + 0x0A), s16(pk + 0x10), s16(pk + 0x12),
+                    s16(pk + 0x18), s16(pk + 0x1A), s16(pk + 0x20), s16(pk + 0x22),
+                    c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[24], c[25], c[26])
+            end)
+        end
         if probe.getenv_num("LEGAIA_GHOST_TRACE", 0) ~= 0 then
             -- Each after-image ghost the draw tick's walk FUN_80049348 draws
             -- (breakpoint core): 0x8004950C is its `jal 0x80048A08`, the
