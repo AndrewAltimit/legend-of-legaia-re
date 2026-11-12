@@ -8058,3 +8058,21 @@ expected_game_mode = 0x03
 expected_active_scene = "vell"
 ram_poked = ["system flags 0x2A1, 0x2A2, 0x2A6, 0x2A7, 0x2AE, 0x2B0 cleared", "item 169 x1 in bag slot 32"]
 topics = ["field", "story beat", "vell", "Genesis Tree", "translucent"]
+
+[[scenarios]]
+label = "nilboa_delilas_family_pose"
+backup_fingerprint = "5fb48e5f6f364055024960c386d803b7a6e25dca1c789cfd7941fd66116f0700"
+description = "nilboa P2[7], the Delilas siblings' introduction: the three siblings, landed from their ledges, strike the family pose after 'We are the Delilas Family!' (record parked on the 90-frame wait at +0xC21). RETAIL disc, pad only, no pokes: nivora_cutscene_delilas_intro played forward by autorun_walk_route.lua with Cross every 20 vsyncs, saved 3150 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "nilboa"
+topics = ["field", "story beat", "nilboa", "Delilas", "cutscene", "held height"]
+
+[[scenarios]]
+label = "nilboa_delilas_family_after_pose"
+backup_fingerprint = "e516a9f51db3afc8bab155da2ad08595c975428ed1ef661b3e1ee766ed5e7add"
+description = "nilboa P2[7], the Delilas siblings' introduction, the shot after the family pose: the three siblings in the foreground, the party behind the crystals (record at +0xC6A). RETAIL disc, pad only, no pokes: nivora_cutscene_delilas_intro played forward by autorun_walk_route.lua with Cross every 20 vsyncs, saved 3330 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "nilboa"
+topics = ["field", "story beat", "nilboa", "Delilas", "cutscene", "held height"]
