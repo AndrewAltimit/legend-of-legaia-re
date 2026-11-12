@@ -76,7 +76,14 @@ cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
 roll. A scrolled page's phase is time since its scroller started, which a pre-cast
 state carries and the engine's fresh battle does not: the Cort states whose shield
 was raised a turn earlier start the sphere's bands where retail's stand, and
-`cort_guilty_cross` reads `.801` against `.611` without the seed.
+`cort_guilty_cross` reads `.801` against `.611` without the seed. The hold lasts through
+the fresh fight's intro timer `0x0A` / `0x0B` (the plates and the banner), which the
+engine runs ahead of the cast where the state stood past it: released on `0x0B`, the
+shield's page rolled through the whole intro and stood `72` rows on at the cast's
+`0x28` (a `LEGAIA_DIAG_CAST_VRAM_AT` image against the seed), and the sphere drew
+another band's colour through every arm. Released on `0x0C` it stands `3` rows on,
+and `chitei2_cort_pre_mystic_circle` reads `.676` to `.893`,
+`chitei2_cort_pre_guilty_cross` `.686` to `.826`. A harness seat.
 
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
@@ -162,7 +169,7 @@ compare by value, not by count. The same goes for `cam.csv` against the pairs of
 `report.json` (`shown_vsync`, `engine_tick`): a constant difference through an arm names
 a store or a drift, one that grows names a rate.
 
-`LEGAIA_DIAG_CAST_VRAM_AT=<tick>` writes the battle VRAM at that tick as
+`LEGAIA_DIAG_CAST_VRAM_AT=<tick>[,<tick>..]` writes the battle VRAM at those ticks as
 `engine/vram_<tick>.bin`, to hold against a retail recording's
 `LEGAIA_RAM_AT` state through `sstate_vram.py`. A byte comparison of the side-band pages
 and CLUT rows is how a palette or texture reading is settled before a frame's colours are

@@ -4179,6 +4179,17 @@ the handing-over tick's own drift (`CastFxState::module_tick_drift`) for the
 ticks of the pass it does not run. A body-paced director's first tick in an arm
 carries the new arm's drift (`drift_after_shot`), which is left out.
 
+The seat moves an arm makes ahead of its gate scale the same way, and so does its
+focus z drift. PROT 0958's runs carry the caster `-8 s` a vsync on every pass of
+arms 9 / 10 (`0x801F76AC`, `0x801F78E0`), and a retail film walks it `-256` a step-`4`
+pass from `0x180` to `-0x540`, the passing passes included. The port's runs lost the
+rest of each passing pass and stood it about `330` units short as arm 11 cut to the
+victim. `World::module_pass` therefore repeats the moves of the arm's last held tick
+(`CastFxState::module_held_moves`: the caster's and the victim's writes that store
+no position, and the focus z) for the same ticks. The handing-over tick's own writes
+are not the record, since they also carry the arm's passing stores (a knockdown's
+`0x300` shove). Grade `disassembly` + `capture`.
+
 ### The Mystic Shield effect
 
 <a id="the-mystic-shield-effect"></a>
@@ -4582,6 +4593,15 @@ height, with one-pass arms 8 and `0xA` between; arm `0xD` holds for cursor
 point; arm `0xE` hides the victim and cuts to TR `(-0x80, 0x200, 0x340)` on
 Lu. The decoder reads arm 4's stage byte as `0` (its `s6` is loaded by the
 phase switch ahead of the arm), so the director stores it.
+
+Arm `0xD`'s pass stages the victim's knockdown with the `+0x1DC` bump and Lu's
+close `0x0F` without one: the bump at `0x801F8208` is the victim's (`s3`), and
+`li v0,0xF; sb v0,0x1da(s2)` (`0x801F820C..0x801F8214`) stores the caster's byte
+alone. Lu therefore plays `0x0D` out from cursor `0x160` to its end (about `0x26A`)
+and takes the close as arm `0xF` opens; bumped, the close cut in at the burst and
+Lu stood in another pose through arm `0xE`. `nivora_duel_pre_plasma_strike`
+(`--retail-steps --rand-track`) reads arm `0xE` `.36` to `.46` and arm `0xF` `.82`
+to `.95`. Grade `disassembly` + `capture`.
 
 <a id="capture-walk-in-bodies"></a>
 
