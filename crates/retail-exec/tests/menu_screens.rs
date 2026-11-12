@@ -444,7 +444,7 @@ const ROW_SEATS: u32 = 0x801E_43E8;
 const WEAPON_SEAT: u32 = 0x8007_B42C;
 
 /// A logged draw as the port's field list spells it.
-fn field_of(e: &Ev) -> Option<legaia_engine_ui::ComparePanelField> {
+pub(crate) fn field_of(e: &Ev) -> Option<legaia_engine_ui::ComparePanelField> {
     use legaia_engine_ui::ComparePanelField as F;
     Some(match e {
         Ev::Text(s, x, y, ink) => F::Text {
