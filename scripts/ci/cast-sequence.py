@@ -210,10 +210,28 @@ def run_retail(a, out: Path) -> bool:
     return True
 
 
+def rc_stream(report: Path, label: str) -> str | None:
+    """The battle stream retail-compare's seed used for `label` (its report's
+    `stream` detail), or None."""
+    try:
+        states = json.loads(report.read_text())["states"]
+    except (OSError, ValueError, KeyError):
+        return None
+    for s in states:
+        if s.get("label") == label:
+            return s.get("detail", {}).get("stream")
+    return None
+
+
 def child_cmd(a, out: Path) -> Path | None:
     """The retail-compare image child's command for the state."""
     kept = out / "rc" / "engine" / f"{a.state}.cmd.sh"
-    if kept.exists() and not a.reseed:
+    # The battle stream the seed was searched under: a kept command seeded
+    # under another pin (or none) names another stream, so it is re-seeded.
+    pin_file = out / "rc" / "pin-seed.txt"
+    pin = a.pin_seed or ""
+    pinned_as = pin_file.read_text().strip() if pin_file.exists() else ""
+    if kept.exists() and not a.reseed and pinned_as == pin:
         return kept
     library = REPO / "saves" / "library"
     if not library.is_dir():
@@ -222,11 +240,23 @@ def child_cmd(a, out: Path) -> Path | None:
     if not (extracted / "PROT.DAT").exists():
         extracted = main_checkout() / "extracted"
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error")
+    if pin:
+        # The film's own stream, tried ahead of the search list
+        # (`LEGAIA_RC_PIN_SEED`, retail-compare's pin): the first stream that
+        # reaches the phase moves with any change to the draws before it.
+        env["LEGAIA_RC_PIN_SEED"] = pin
     cmd = [str(EXE), "retail-compare", "--out", str(out / "rc"), "--library", str(library),
            "--extracted-root", str(extracted), "--manifest", str(REPO / "scripts" / "scenarios.toml"),
            "--images", "--filter", f"={a.state}"]
     print(f"[engine] seeding {a.state} through retail-compare")
     subprocess.run(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (out / "rc").mkdir(parents=True, exist_ok=True)
+    pin_file.write_text(pin + "\n")
+    if pin:
+        stream = rc_stream(out / "rc" / "report.json", a.state)
+        if stream is not None and int(stream, 16) != int(pin, 16):
+            print(f"[engine] pinned stream {pin} no longer reaches the phase; "
+                  f"the search dealt {stream}")
     if not kept.exists():
         print(f"[engine] FAILED: retail-compare kept no child command for {a.state} "
               f"(see {out / 'rc' / 'report.md'})")
@@ -930,6 +960,10 @@ def main() -> int:
     ap.add_argument("--rerecord", action="store_true",
                     help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")
+    ap.add_argument("--pin-seed", metavar="HEX",
+                    help="the battle stream the seed tries first (LEGAIA_RC_PIN_SEED): a film set pins "
+                         "each film to the stream it was baselined on, so a change to the draws before "
+                         "the phase does not re-deal it")
     ap.add_argument("--engine-only", action="store_true", help="skip the retail stage (needs a cached capture)")
     ap.add_argument("--retail-only", action="store_true")
     ap.add_argument("--score-only", action="store_true")

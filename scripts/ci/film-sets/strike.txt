@@ -1,62 +1,62 @@
 # Monster strikes, each dealt the hit words its --hit-trace recording holds (scripts/ci/film-cues.py)
-balden_devil_pump_strike --physical --state battle_balden_devil_pump_strike --every 8 --hit-trace --strike-deal
-balden_orb_v2_strike --physical --state battle_balden_orb_v2_strike --every 8 --hit-trace --strike-deal
-balden_swordie_v2_strike --physical --state battle_balden_swordie_v2_strike --every 8 --hit-trace --strike-deal
-chitei2_gilium_strike --physical --state battle_chitei2_gilium_strike --every 8 --hit-trace --strike-deal
-chitei2_kemaro_lv2_strike --physical --state battle_chitei2_kemaro_lv2_strike --every 8 --hit-trace --strike-deal
-deene_garnet_strike --physical --state battle_deene_garnet_strike --every 8 --hit-trace --strike-deal
-deene_ironman_strike --physical --state battle_deene_ironman_strike --every 8 --hit-trace --strike-deal
-deene_neo_bison_strike --physical --state battle_deene_neo_bison_strike --every 8 --hit-trace --strike-deal
-deroa_spoon_v2_strike --physical --state battle_deroa_spoon_v2_strike --every 8 --hit-trace --strike-deal
-dohaty_gola_gola_strike --physical --state battle_dohaty_gola_gola_strike --every 8 --hit-trace --strike-deal
-dohaty_nova_v2_strike --physical --state battle_dohaty_nova_v2_strike --every 8 --hit-trace --strike-deal
-doman_freed_strike --physical --state battle_doman_freed_strike --every 8 --hit-trace --strike-deal
-doman_killer_wolf_strike --physical --state battle_doman_killer_wolf_strike --every 8 --hit-trace --strike-deal
-jouind_gilium_lv3_strike --physical --state battle_jouind_gilium_lv3_strike --every 8 --hit-trace --strike-deal
-jou_nova_v3_strike --physical --state battle_jou_nova_v3_strike --every 8 --hit-trace --strike-deal
-jou_orb_v3_strike --physical --state battle_jou_orb_v3_strike --every 8 --hit-trace --strike-deal
-korb2_aluru_strike --physical --state battle_korb2_aluru_strike --every 8 --hit-trace --strike-deal
-korb2_ghost_knight_strike --physical --state battle_korb2_ghost_knight_strike --every 8 --hit-trace --strike-deal
-korb2_kemaro_strike --physical --state battle_korb2_kemaro_strike --every 8 --hit-trace --strike-deal
-korb2_mage_strike --physical --state battle_korb2_mage_strike --every 8 --hit-trace --strike-deal
-korb2_medusa_strike --physical --state battle_korb2_medusa_strike --every 8 --hit-trace --strike-deal
-korb2_warhalf_strike --physical --state battle_korb2_warhalf_strike --every 8 --hit-trace --strike-deal
-kor_dead_bone_strike --physical --state battle_kor_dead_bone_strike --every 8 --hit-trace --strike-deal
-kor_shade_strike --physical --state battle_kor_shade_strike --every 8 --hit-trace --strike-deal
-kor_spoon_strike --physical --state battle_kor_spoon_strike --every 8 --hit-trace --strike-deal
-map01_frog_strike --physical --state battle_map01_frog_strike --every 8 --hit-trace --strike-deal
-map01_gobu_gobu_strike --physical --state battle_map01_gobu_gobu_strike --every 8 --hit-trace --strike-deal
-map02_demon_fly_strike --physical --state battle_map02_demon_fly_strike --every 8 --hit-trace --strike-deal
-map02_mad_ogre_strike --physical --state battle_map02_mad_ogre_strike --every 8 --hit-trace --strike-deal
-map02_wolf_strike --physical --state battle_map02_wolf_strike --every 8 --hit-trace --strike-deal
-map03_grude_strike --physical --state battle_map03_grude_strike --every 8 --hit-trace --strike-deal
-map03_heavy_grude_strike --physical --state battle_map03_heavy_grude_strike --every 8 --hit-trace --strike-deal
-nilboa_lava_face_strike --physical --state battle_nilboa_lava_face_strike --every 8 --hit-trace --strike-deal
-nilboa_neo_grude_strike --physical --state battle_nilboa_neo_grude_strike --every 8 --hit-trace --strike-deal
-noaru_barra_v2_strike --physical --state battle_noaru_barra_v2_strike --every 8 --hit-trace --strike-deal
-noaru_gilium_lv2_strike --physical --state battle_noaru_gilium_lv2_strike --every 8 --hit-trace --strike-deal
-noaru_slippery_v2_strike --physical --state battle_noaru_slippery_v2_strike --every 8 --hit-trace --strike-deal
-retockin_evil_shadow_strike --physical --state battle_retockin_evil_shadow_strike --every 8 --hit-trace --strike-deal
-retockin_skull_knight_strike --physical --state battle_retockin_skull_knight_strike --every 8 --hit-trace --strike-deal
-retona_hells_rat_strike --physical --state battle_retona_hells_rat_strike --every 8 --hit-trace --strike-deal
-retona_king_frog_strike --physical --state battle_retona_king_frog_strike --every 8 --hit-trace --strike-deal
-retona_mushura_strike --physical --state battle_retona_mushura_strike --every 8 --hit-trace --strike-deal
-retona_viguro_lv2_strike --physical --state battle_retona_viguro_lv2_strike --every 8 --hit-trace --strike-deal
-rikuroa_caruban_strike --physical --state battle_rikuroa_caruban_strike --every 8 --hit-trace --strike-deal
-rikuroa_worm_strike --physical --state battle_rikuroa_worm_strike --every 8 --hit-trace --strike-deal
-ropeway_mad_mantis_strike --physical --state battle_ropeway_mad_mantis_strike --every 8 --hit-trace --strike-deal
-ropeway_orb_strike --physical --state battle_ropeway_orb_strike --every 8 --hit-trace --strike-deal
-rugi_barra_strike --physical --state battle_rugi_barra_strike --every 8 --hit-trace --strike-deal
-rugi_slippery_strike --physical --state battle_rugi_slippery_strike --every 8 --hit-trace --strike-deal
-taiku_terror_face_strike --physical --state battle_taiku_terror_face_strike --every 8 --hit-trace --strike-deal
-taiku_thermo_strike --physical --state battle_taiku_thermo_strike --every 8 --hit-trace --strike-deal
-taiku_topaz_strike --physical --state battle_taiku_topaz_strike --every 8 --hit-trace --strike-deal
-teien_berserker_strike --physical --state battle_teien_berserker_strike --every 8 --hit-trace --strike-deal
-tower_guardian_strike --physical --state battle_tower_guardian_strike --every 8 --hit-trace --strike-deal
-tower_swordie_strike --physical --state battle_tower_swordie_strike --every 8 --hit-trace --strike-deal
-tunnelb_gel_frog_strike --physical --state battle_tunnelb_gel_frog_strike --every 8 --hit-trace --strike-deal
-tunnelb_mush_mush_strike --physical --state battle_tunnelb_mush_mush_strike --every 8 --hit-trace --strike-deal
-tunnelb_nova_strike --physical --state battle_tunnelb_nova_strike --every 8 --hit-trace --strike-deal
-tunnelb_warman_strike --physical --state battle_tunnelb_warman_strike --every 8 --hit-trace --strike-deal
-vozz_gizam_strike --physical --state battle_vozz_gizam_strike --every 8 --hit-trace --strike-deal
-vozz_twin_tomb_strike --physical --state battle_vozz_twin_tomb_strike --every 8 --hit-trace --strike-deal
+balden_devil_pump_strike --physical --state battle_balden_devil_pump_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+balden_orb_v2_strike --physical --state battle_balden_orb_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
+balden_swordie_v2_strike --physical --state battle_balden_swordie_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+chitei2_gilium_strike --physical --state battle_chitei2_gilium_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
+chitei2_kemaro_lv2_strike --physical --state battle_chitei2_kemaro_lv2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+deene_garnet_strike --physical --state battle_deene_garnet_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+deene_ironman_strike --physical --state battle_deene_ironman_strike --every 8 --hit-trace --strike-deal --pin-seed 0x510E527F
+deene_neo_bison_strike --physical --state battle_deene_neo_bison_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+deroa_spoon_v2_strike --physical --state battle_deroa_spoon_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+dohaty_gola_gola_strike --physical --state battle_dohaty_gola_gola_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+dohaty_nova_v2_strike --physical --state battle_dohaty_nova_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+doman_freed_strike --physical --state battle_doman_freed_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+doman_killer_wolf_strike --physical --state battle_doman_killer_wolf_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+jouind_gilium_lv3_strike --physical --state battle_jouind_gilium_lv3_strike --every 8 --hit-trace --strike-deal --pin-seed 0x7F4A7C15
+jou_nova_v3_strike --physical --state battle_jou_nova_v3_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+jou_orb_v3_strike --physical --state battle_jou_orb_v3_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
+korb2_aluru_strike --physical --state battle_korb2_aluru_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+korb2_ghost_knight_strike --physical --state battle_korb2_ghost_knight_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
+korb2_kemaro_strike --physical --state battle_korb2_kemaro_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
+korb2_mage_strike --physical --state battle_korb2_mage_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
+korb2_medusa_strike --physical --state battle_korb2_medusa_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+korb2_warhalf_strike --physical --state battle_korb2_warhalf_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+kor_dead_bone_strike --physical --state battle_kor_dead_bone_strike --every 8 --hit-trace --strike-deal --pin-seed 0x428A2F98
+kor_shade_strike --physical --state battle_kor_shade_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+kor_spoon_strike --physical --state battle_kor_spoon_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+map01_frog_strike --physical --state battle_map01_frog_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+map01_gobu_gobu_strike --physical --state battle_map01_gobu_gobu_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+map02_demon_fly_strike --physical --state battle_map02_demon_fly_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+map02_mad_ogre_strike --physical --state battle_map02_mad_ogre_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+map02_wolf_strike --physical --state battle_map02_wolf_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+map03_grude_strike --physical --state battle_map03_grude_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+map03_heavy_grude_strike --physical --state battle_map03_heavy_grude_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+nilboa_lava_face_strike --physical --state battle_nilboa_lava_face_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+nilboa_neo_grude_strike --physical --state battle_nilboa_neo_grude_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
+noaru_barra_v2_strike --physical --state battle_noaru_barra_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+noaru_gilium_lv2_strike --physical --state battle_noaru_gilium_lv2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+noaru_slippery_v2_strike --physical --state battle_noaru_slippery_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+retockin_evil_shadow_strike --physical --state battle_retockin_evil_shadow_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+retockin_skull_knight_strike --physical --state battle_retockin_skull_knight_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+retona_hells_rat_strike --physical --state battle_retona_hells_rat_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+retona_king_frog_strike --physical --state battle_retona_king_frog_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+retona_mushura_strike --physical --state battle_retona_mushura_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
+retona_viguro_lv2_strike --physical --state battle_retona_viguro_lv2_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+rikuroa_caruban_strike --physical --state battle_rikuroa_caruban_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+rikuroa_worm_strike --physical --state battle_rikuroa_worm_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+ropeway_mad_mantis_strike --physical --state battle_ropeway_mad_mantis_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+ropeway_orb_strike --physical --state battle_ropeway_orb_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+rugi_barra_strike --physical --state battle_rugi_barra_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9B05688C
+rugi_slippery_strike --physical --state battle_rugi_slippery_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+taiku_terror_face_strike --physical --state battle_taiku_terror_face_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+taiku_thermo_strike --physical --state battle_taiku_thermo_strike --every 8 --hit-trace --strike-deal --pin-seed 0x7F4A7C15
+taiku_topaz_strike --physical --state battle_taiku_topaz_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+teien_berserker_strike --physical --state battle_teien_berserker_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
+tower_guardian_strike --physical --state battle_tower_guardian_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
+tower_swordie_strike --physical --state battle_tower_swordie_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+tunnelb_gel_frog_strike --physical --state battle_tunnelb_gel_frog_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+tunnelb_mush_mush_strike --physical --state battle_tunnelb_mush_mush_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
+tunnelb_nova_strike --physical --state battle_tunnelb_nova_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
+tunnelb_warman_strike --physical --state battle_tunnelb_warman_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
+vozz_gizam_strike --physical --state battle_vozz_gizam_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+vozz_twin_tomb_strike --physical --state battle_vozz_twin_tomb_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
