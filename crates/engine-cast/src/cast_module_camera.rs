@@ -340,6 +340,10 @@ pub struct ModuleCamState {
     /// victim onto the origin (`0x801F9354..0x801F935C`), which arm `0xF`'s
     /// exit puts back and frames.
     pub saved_victim: Option<ModuleSeat>,
+    /// PROT 0957's arm 6 widened its ribbon ring on this battle frame (the
+    /// word was still at most `0xC0` as the pass opened), so the frame's
+    /// ribbons stand for every tick of it.
+    pub ring_widening: bool,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6

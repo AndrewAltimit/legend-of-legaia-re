@@ -177,7 +177,7 @@ pub struct CaptureCamArm {
     pub party_shove: Option<i16>,
     /// The pass seats [`crate::cast_module_camera::STORM_SCATTER_PAIRS`] pairs of
     /// [`crate::cast_module_camera::STORM_SCATTER_RECORDS`] on `rand()` points
-    /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 255`, `z = 0x100`.
+    /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 257`, `z = 0x100`.
     pub scatter_pairs: bool,
     /// [`Self::ribbons`] take their height off the `y` the scatter's last pair
     /// drew: the two loops share one stack trio (PROT 0957's arm 5).

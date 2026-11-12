@@ -229,6 +229,10 @@ pub struct CastFxState {
     pub module_scatter_y: i16,
     /// This pass's ribbons take that height.
     pub module_ribbons_on_scatter_y: bool,
+    /// The pass's scatter and ribbons were already dealt ahead of the hit
+    /// that lands on it (PROT 0957's arm 5 draws both before its
+    /// `FUN_801DD4B0`), so the arm's later stage only takes their height.
+    pub module_storm_dealt: bool,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// The held arm's [`Self::module_debris`] is seated from the pass's last
     /// module tick (`CaptureCamArm::spawns_at_pass_end`).
@@ -613,6 +617,7 @@ impl CastFxState {
             module_scatter_level: None,
             module_scatter_y: 0,
             module_ribbons_on_scatter_y: false,
+            module_storm_dealt: false,
             module_debris: Vec::new(),
             module_debris_at_pass_end: false,
             module_rumble_alternate: 0,

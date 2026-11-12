@@ -523,6 +523,21 @@ impl World {
             && self.casting.module_hit_arm != Some(phase_in)
         {
             self.casting.module_hit_arm = Some(phase_in);
+            // Thunder Storm's arm 5 seats its scatter pairs and calls its
+            // ribbons (`0x801F7330..0x801F7498`) ahead of the countdown test
+            // and the party's hit (`jal 0x801DD4B0` at `0x801F7514`), so on
+            // a pass that opens and lands the hit at once both draw first.
+            if entry == 957
+                && arm.scatter_pairs
+                && arm.ribbons_on_scatter_y
+                && self.module_tick_opens_pass()
+                && std::mem::take(&mut self.casting.module_scatter_pairs)
+            {
+                self.seat_storm_scatter_pairs(entry, arm.shot);
+                self.battle.cast_ribbons = arm.ribbons;
+                self.deal_storm_ribbons(true);
+                self.casting.module_storm_dealt = true;
+            }
             // Gigaton Press seats its debris ring - sixteen `rand() % 4`
             // picks - ahead of its `FUN_801DD4B0` (`0x801F717C..0x801F72B4`),
             // so the ring draws first.
@@ -2027,6 +2042,10 @@ impl World {
         self.battle.cast_ribbons = pass_ribbons;
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
+        if std::mem::take(&mut self.casting.module_storm_dealt) {
+            self.deal_storm_ribbons(false);
+            self.casting.module_ribbons_on_scatter_y = false;
+        }
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
