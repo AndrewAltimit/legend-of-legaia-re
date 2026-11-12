@@ -45,7 +45,7 @@ pub const KEMARO_ARM5_SPAWNS: [ModuleSpawn; 1] = [rec(0x801F_8D84, SpawnAnchor::
 pub const KEMARO_ARM7_SPAWNS: [ModuleSpawn; 1] = [rec(0x801F_8E88, lit([0; 3], [0; 3]))];
 
 /// PROT 0918 arm 9's three calls on its pass (`0x801F787C..0x801F78BC`),
-/// on the creature: the parts whose handles arms 13..17 walk.
+/// on the creature: the spear whose handles arms 13..17 walk.
 pub const KEMARO_ARM9_SPAWNS: [ModuleSpawn; 3] = [
     rec(0x801F_8ED8, SpawnAnchor::Creature),
     rec(0x801F_8F48, SpawnAnchor::Creature),
@@ -137,9 +137,9 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 ///
 /// The drifts are [`kemaro_drift`]'s. Not carried: arm 4's TR y shake
 /// (an absolute store `0x600` or `countdown / 2 + 0x600` on alternate
-/// passes, `0x801F7088..0x801F70C4`), arm 12's absolute pose store
-/// (`0x801F7B90..0x801F7BAC`) and the heights arms 13..17 walk the arm-9
-/// parts through by handle.
+/// passes, `0x801F7088..0x801F70C4`) and arm 12's absolute pose store
+/// (`0x801F7B90..0x801F7BAC`). The walk arms 13..17 make of the arm-9 parts
+/// by handle is the host's (`World::kemaro_spear_writes`).
 ///
 /// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {

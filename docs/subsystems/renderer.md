@@ -365,7 +365,11 @@ Structural facts, read from the raw table:
   on its own: V-Windhash's trail (`0x801F79B8` / `0x801F79DC`, word `0xE9`) is
   four quads that run from the blade's edge to tips past the screen, and drawn
   as two triangles each its texture smeared across the frame (arm 3 `.686`
-  whole, `.730` split).
+  whole, `.730` split; `.901` with the pairs seated on the pass's drained focus,
+  [cast module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)). Against a
+  retail table of the arm, the newest pair already landed on
+  retail's sub-triangle corners, and the colours (corners `0` / `0x80` cued by the
+  level) matched packet for packet: the split was right, the older pairs' seat was not.
   The leaf lists each `GT3`'s corners in the reverse of the port's order
   (staged index bytes `0x50 0x30 0x00` and siblings at `0x80045BB4..0x80045BE0`);
   the port keeps the parent quad's winding for the host's face cull, and a

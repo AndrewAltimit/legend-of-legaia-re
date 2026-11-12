@@ -449,6 +449,27 @@ which composite over the 3D frame rather than among it. Clean rendering keeps
 per-pixel depth: a mean pops as the camera turns, which the retail frame shows
 and the clean frame need not.
 
+#### The far bucket under the cast wash
+
+The table holds `4096` words and `SZ` saturates at `0xFFFF`, so a quad whose four
+corners stand past that depth links in the last word: `AVSZ4` under `ZSF4 = 0x400 >> 2`
+is the sum over `16`, `0x3FFF`, and `& 0xFFFC` gives `ot + 0x3FFC`. No triangle reaches
+it (`ZSF3 = 0x555 >> 2`). The GPU walks that bucket first, last-linked first. While a
+cast module holds its band wash, the dispatchers' tail links the wash's opaque `G4`s
+there before the actor walk draws the scene (`FUN_801F2410`,
+[`cast_colour_wash`](../../crates/render-kernels/src/cast_colour_wash.rs)), so every scene
+quad linked there later is painted first and covered: nothing of it shows. The hosts
+draw the wash as a far-plane screen layer, under everything, so the same quad would
+draw over it at its own depth. The shared effect-draw list drops such quads from a
+draw-kind-4 node's mesh while the band wash covers the far bucket
+(`effect_draws::drop_far_bucket_quads`, `World::cast_wash_covers_far_bucket`), in clean
+and PSX mode alike, since retail shows none of it either way. Kemaro's arm-17 discs
+are the case ([cast module](cast-module.md#summon-creature-directors)): a retail
+table of arm `0x12` rasterised with and without their `32` packets is the same picture.
+
+Not modelled: a mesh part's quads in that bucket (no shipped part is known to reach
+it), and the scanline modes' links, which no capture has read.
+
 ## Enhanced lighting (enhancement, NOT retail)
 
 `Renderer::set_dynamic_lighting(true)` shades the VRAM-mesh and colour-mesh

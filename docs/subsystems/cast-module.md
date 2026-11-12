@@ -2944,18 +2944,36 @@ whirl's centre through arm `0xE`. A retail recording's
 Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+0x21C = 0xC8`, `0x801F81E0..0x801F825C`): the reaction arm 15 staged has to tick, and its cue reaches the screen on arm 17.
 The flag is the tint pass's cursor-dim arm (colour `0x010101` at weight `0x1000`, [battle actor rendering](battle-actor-rendering.md)), so the victim draws as a dark silhouette through arms 16 to 19. Arms 16 and 17 focus on the first arm-9 part's height, which arm `0xE`'s pass sets to `trunc(victim[+0x3E] * 4 / 3)` (`0x801F7F5C..0x801F7F7C`, read back at `0x801F8280` / `0x801F83A8`):
 `228` above the floor on Gobu Gobu (a retail RAM image of arm `0x12` holds the focus word).
-With both, arm `0x12` reads `.820` and arm `0x13` `.736` on the Gobu Gobu film, against `.638` and `.570`. What remains there is the frozen victim's pose and the length of arm 17's streak. Grade `disassembly` + `capture`.
+With both, arm `0x12` reads `.820` and arm `0x13` `.736` on the Gobu Gobu film, against `.638` and `.570`; the spear's walk below takes them further. Grade `disassembly` + `capture`.
 
-Arm 17's streak is its first two records, `0x801F911C` and `0x801F9160`: static rings
+Arm 17's first two records, `0x801F911C` and `0x801F9160`, are static discs
 (`ROT_ADD` roll `-0x400`, op `0x13` radius `0` to `0x1800` / `0x2800`, both heights
 `-0x8000`) seated on the victim's position but on the stack's angle trio, not the
 victim's (`a0 = victim + 0x34`, `a1 = sp+0x20` at `0x801F85CC..0x801F8630`, the shot's
-yaw `0xC00` with its pitch zeroed). A `--retail-parts` recording holds them at rotation
-`(0, 0xC00, -0x400)`; the port seats them on the victim's own trio, `(0, 0, -0x400)`.
-Seated on the stack's trio, the port draws them as a face-on disc far down the view
-axis, where retail shows only the streak: a ring `0x8000` units out is past the GTE's
-`SZ` and `IR` limits, and which of its `GT3`s retail draws, and where, is not settled,
-so the seat stays as it is. Grade `disassembly` + `capture` (the trio); the draw is open.
+yaw `0xC00` with its pitch zeroed): a `--retail-parts` recording holds them at
+rotation `(0, 0xC00, -0x400)` (`SpawnAnchor::VictimRot`). Turned that way each disc
+stands `0x8000` units out along the view axis, four times that in the battle's eye
+space, so every corner saturates `SZ` and `AVSZ4` links the `GT4`s in the table's last
+word. The band wash the dispatchers' tail linked there first is drawn after them and
+covers the screen: a retail table of arm `0x12` holds the `32` packets in bucket `4095`
+between the fill and the wash's two `G4`s, and its raster with or without them is the
+same picture ([the far bucket under the wash](renderer-port.md#the-far-bucket-under-the-cast-wash)).
+Grade `disassembly` + `capture`.
+
+The streak that crosses the screen is the spear arm 9 seats on the creature
+(`0x801F8ED8`, `0x801F8F48`, `0x801F8FB8`, handles at `0x801F92CC..0x801F92D4`), which
+arms 13 to 17 walk by handle (`World::kemaro_spear_writes`): arm 13 walks its `z` down
+`(scalar * step) << 5` a pass while the word is at or under `scalar << 5` and the first
+record stands at or past `-0x7FF`, and its pass sets `z = 0x1400`; arm `0xE` sets
+`z = word * 32 - 0xA00` each pass and on its pass `z = ctx[+0x6D0] / 8 + 0x800` at four
+thirds of the victim's height; arms 15 and 16 walk it down again, arm 16's pass stands it
+at `z = -0xB00` and arm 7's record at `y = 0x200`; arm 17 sets its height off the
+victim's `+0x3E` by monster id (`5 h / 4`, or `7 h / 8`, `h`, `9 h / 4`, `3 h / 4` for
+the ids the jump table at the slot-B base names, `0x801F8408..0x801F8524`). Unwalked,
+the spear stood at the creature through arms `0x12` and `0x13`, and the port's streak
+was a stub. With the walk and the discs under the wash the Gobu Gobu film reads arm
+`0x12` `.982` and arm `0x13` `.973` on every seat, against `.825` and `.741`, and its
+meta, body and camera channels are the same tick for tick. Grade `disassembly` + `capture`.
 
 Slippery's creature comes up out of the floor: arm 2's exit seats it at
 `y = -(scalar << 8)` and stages clip 1 bare, arm 3 lifts it `4 p` a pass and stands
@@ -3456,10 +3474,23 @@ swaps the victim in and the caster out, so neither is ever on screen with the
 other. Arms 2 to 4 keep a moving point in `0x801F7B48` and seat the blade's
 two sides, `96` units across its heading, around it: once on arm 2 and on
 **every pass** of arms 3 and 4, held or not. The director only names those calls;
-the host seats them on the tick that opens a battle frame, the way PROT 0962's
+the host seats them once a battle frame, the way PROT 0962's
 rays are seated, so the trail's density follows the frame step, and retail's
 recording runs these arms at step `4` ([the capture table](battle-stage-camera.md#what-the-arm-step-table-is)). Arm 3's shot closes on the
 victim as the countdown falls.
+
+Arm 3 drains the word by the whole pass's `scalar * delta` in one `subu` and only
+then works out the shot's focus and the blade on it (`0x801F70FC..0x801F7398`), so
+the newest pair sits on the focus. The port runs a pass as `delta` one-vsync ticks,
+and seated the pair from the first, one tick's drain in: on a step-`4` pass the newest
+pair stood about `190` units further out than the focus, the older pairs reached past
+the eye, and their sixteen-way split quads painted broad sheets either side of the
+narrow V a retail table of the arm holds. The director marks such calls
+(`CaptureCamArm::spawns_at_pass_end`, arms 3 and 4, whose blade walks a tick at a
+time) and the host seats them from the pass's last tick
+(`World::module_tick_closes_pass`), one set a pass, the handing-over pass included.
+Arm 3 reads `.730` to `.901`, `.704` to `.862` and `.752` to `.926` on the three
+PROT 0947 films, on every seat. Grade `disassembly` + `capture`.
 
 Arm 3's hit bakes one power per action. The `bne` on `+0x1DF != 0xA7` at `0x801F73D8`
 carries `li a0,0x7b` in its delay slot and lands on the `jal 0x801DD4B0` at `0x801F7414`, so
