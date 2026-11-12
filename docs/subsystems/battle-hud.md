@@ -1497,7 +1497,7 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | Piece | Pin |
 |---|---|
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
-| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line in ink 7 on placement record `0x17`'s pen `(16, 132 - 2)` |
+| description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window description in ink 7 on placement record `0x17`'s pen `(16, 132 - 2)`, a second line one `0xE` pitch down |
 | hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7), the [list kernel's](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) `FUN_8002B994(0, browsing, WX - 6, row_y)`: `x = 168` plus the bob table's `-2..2` (`167` on this capture), `y = 45 + 14*row` - row pitch 14 |
 | rows | eight per page on the list kernel's pen `WX = 174` (placement record `0x16`'s content box `(174, 38)`): name at `WX + 0xC` on the hand's own `row_y`, ink from `y = 47`; the bag count in the three-cell number field at `WX + 0x6C`; ink 7, ink 0 for a disabled row - its enable bit, not the hand |
 | header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
@@ -1510,6 +1510,32 @@ list (`0`) enables a field-usable row only when the relevance check
 (`1`) enables a row on the descriptor's battle-usable bit alone
 (`0x800309C8..0x800309E4`). A Healing Leaf with the whole party at full HP is
 therefore pickable in a fight and greyed in the pause menu.
+
+**Rows are bag slots.** The list is the builder's content id 3 in the battle
+context: one row per occupied slot of the active window, never one per id.
+Battle-usable rows keep slot order; the rest (equipment, battle-unusable items,
+then the effect-flag-`0x8` group) follow, greyed. An id held in two slots is
+two rows with their own counts. The commit names the row's slot
+(`_DAT_8007BB88`, read at `0x801D187C`), stores its id in the actor's
+`+0x1DF`, and the copy comes off through `FUN_80042310(id, 1)` - the first
+window slot holding the id, not necessarily the row's.
+
+Two stacks of one id meet only in one place: Vahn's and Noa's halves of the bag
+once both are in the party. Retail closes that case at the join itself, which
+[normalizes the bag](inventory.md#a-list-rows-payload-is-a-slot-and-the-bag-is-not-compacted-first),
+so the pair's Caruban fight lists one Healing Leaf stack.
+
+**Cursor.** The window is a kind-4 list, so the
+[list kernel](field-menu.md#the-kind-4-list-kernel-scus-fun_80032a44) drives
+it: the hand rests on greyed rows too (a Confirm there buzzes), Up / Down wrap
+inside the eight-row page, and Left / Right flip pages. Down on a page's last
+row returns to that page's top; it never scrolls onto the next page.
+
+**Description lines.** The disc description breaks its lines with the MES
+`0x7C` token, and the string primitive `FUN_80036888` takes it as "x back to
+the pen, y down `0xE`" (`0x80036924..0x80036934`). Nothing else wraps or clips:
+every named item's description fits the box by the measurer's advance, with
+one retail exception, item `0xAB`, whose line runs two pixels into the frame.
 
 **Row names.** Every held id gets a row, unusable ones included, and its name
 is the static [item-name table](../formats/item-table.md)'s, which names all
@@ -1548,7 +1574,14 @@ SM runs into `0x64` (`FUN_801D388C(0x12)`:
 step 1 opens for the ring - sends the description window (`34/1`) off, and
 re-points the bar per cursor move (step `0x18`).
 
-**Port.** `engine-ui::battle_item_ui` carries the pins and composes the windows
+**Port.** The rows come from `World::battle_item_rows` (the builder,
+`menu_list_rows::build_use_list_rows`, in the battle context), and the session
+runs them under the list kernel (`InventoryUseSession::with_list_kernel_rows`).
+`battle_item_ui::desc_lines` splits the description at its break; the
+disc-gated `engine-ui` test `battle_item_desc_fit` measures every description
+against the box.
+
+`engine-ui::battle_item_ui` carries the pins and composes the windows
 through the shared 9-slice menu-window chrome and the save-select hand cell; the
 trail and the name tag are the HUD builder's. The projection (dedup row list with the cursor mapped
 into it, disc description, breadcrumb name, same-side target rows) is
