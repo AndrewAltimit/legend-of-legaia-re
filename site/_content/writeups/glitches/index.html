@@ -82,6 +82,7 @@
       <tr><td><a href="items-and-equipment.html#jp-coin-vendor-99">Coin vendor sells past 99 (Japanese release)</a></td><td><span class="tag tag-done">explained</span></td><td>The Japanese prize counter only asks whether the coins cover the price; the bag then adds the item and silently trims the stack back to 99.</td></tr>
       <tr><td><a href="items-and-equipment.html#war-god-icon-missable">War God Icon can be missed for good</a></td><td><span class="tag tag-done">explained</span></td><td>The item and its &#x27;already awarded&#x27; flag come from two pieces of code that disagree about what clearing the course means.</td></tr>
       <tr><td><a href="items-and-equipment.html#throw-out-confirm-count">The Throw Out confirm loses its count</a></td><td><span class="tag tag-done">explained</span></td><td>The window seats the bag count off the item name&#x27;s first byte, read as a glyph count; the names carry no count byte, so the count and "You are about to" are drawn off screen.</td></tr>
+      <tr><td><a href="items-and-equipment.html#equip-preview-clips-hp">Hovering an Equip candidate clips current HP or MP</a></td><td><span class="tag tag-done">explained</span></td><td>The preview equips the candidate on the real record and runs the stat aggregator, which lowers current HP or MP to the trial maximum; the restore brings the maximum back but not the current value. Interpreter-observed.</td></tr>
     </tbody>
   </table></div>
   <h3><a href="field-sequence-breaks.html">Incense, doors and the Door of Light</a></h3>

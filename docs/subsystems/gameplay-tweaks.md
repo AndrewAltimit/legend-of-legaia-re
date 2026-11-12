@@ -32,6 +32,7 @@ Classes:
 | `--jewel-fix` | (b) carried | `WorldToggles::jewel_fix`. |
 | (no patcher flag) state-`0x51` HP-readout park | (b) carried | `WorldToggles::hp_readout_guard`; the patcher has no fix for this park. |
 | (no patcher flag) Tetsu spar fought before the measuring | (b) carried | `WorldToggles::tetsu_spar_fix`; the patcher has no fix for this softlock. |
+| (no patcher flag) Equip preview clipping current HP / MP | (a) | The candidate preview runs on a copy of the record (`engine-menus` `aggregated_menu_block`), so hovering never lowers a current value ([glitch page](../reference/glitches/items-and-equipment.md#hovering-an-equip-candidate-clips-current-hp-or-mp)). |
 | `--equipment-drops` | (b) carried | `WorldToggles::bonus_drop`. |
 | `--spirit-ap`, `--damage-ap` | (b) carried | `WorldToggles::spirit_ap`, `damage_ap`. |
 | `--seru-catch-rate` | (b) carried | `WorldToggles::seru_catch_pct`. |
