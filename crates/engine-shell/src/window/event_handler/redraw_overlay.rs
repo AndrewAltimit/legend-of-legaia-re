@@ -11,6 +11,8 @@ pub(super) struct OverlayDraws {
     /// The glyph layer.
     pub hud: Vec<TextDraw>,
     pub logo_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
+    /// The logo slot's blend spans: PROKION's exit wash.
+    pub logo_blend: Vec<legaia_engine_render::OverlayBlendSpan>,
     pub title_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
     pub menu_glyph_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
     pub muscle_hub_draw_vec: Vec<legaia_engine_ui::SpriteDraw>,
@@ -188,7 +190,7 @@ impl PlayWindowApp {
         // `publisher_logo_sprite_draws` unfolds them into N
         // side-by-side strips; Contrail/WARNING + the title
         // TIM produce a single quad each.
-        let logo_draw_vec = self.publisher_logo_sprite_draws(w, h);
+        let (logo_draw_vec, logo_blend) = self.publisher_logo_sprite_draws(w, h);
         let title_draw_vec = self.title_screen_sprite_draws(w, h);
         let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
         // Muscle Dome hub screens (intro card / ROUND banner / INTERVAL +
@@ -293,6 +295,7 @@ impl PlayWindowApp {
         OverlayDraws {
             hud,
             logo_draw_vec,
+            logo_blend,
             title_draw_vec,
             menu_glyph_draw_vec,
             muscle_hub_draw_vec,

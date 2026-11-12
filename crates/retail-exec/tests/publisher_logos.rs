@@ -126,7 +126,16 @@ fn the_init_pak_carries_every_logo_the_port_draws() {
         assert_eq!(r.1, y, "logo {i} stacks under the one before");
         y += r.3;
     }
-    assert_eq!(y, atlas.height);
+    // The white block the wash samples sits under the logos, opaque white.
+    let (wx, wy, ww, wh) = atlas.white;
+    assert_eq!(wy, y, "the white block stacks under the logos");
+    assert_eq!(y + wh, atlas.height);
+    for row in wy..wy + wh {
+        for col in wx..wx + ww {
+            let o = ((row * atlas.width + col) * 4) as usize;
+            assert_eq!(atlas.rgba[o..o + 4], [0xFF; 4], "white at ({col}, {row})");
+        }
+    }
     // Every logo quad the sequencer draws samples inside its logo's rect.
     for (logo, quads) in LOGO_QUADS.iter().enumerate() {
         let r = atlas.rects[logo];
@@ -147,6 +156,8 @@ const SCREEN_FADE: u32 = 0x801D_0460;
 const LOAD_PENDING: u32 = 0x801F_3EA4;
 const COUNTER: u32 = 0x801F_3EA8;
 const DONE_WORD: u32 = 0x801F_3EB0;
+/// `r0` of the first `DRAWENV` (`0x8007BF44 + 0x19`).
+const DRAWENV_BG: u32 = 0x8007_BF5D;
 const BOOT_ACTOR: u32 = 0x8016_0000;
 
 /// What one sequencer frame drew: the logo, the level it handed the
@@ -201,7 +212,16 @@ fn the_sequencer_paces_the_logos_as_the_session_does() {
         let frame = frame.clone();
         cpu.hook(SCREEN_FADE, move |r, _| {
             // Drawn ahead of the logo it covers; marked as a logo-less
-            // entry and folded onto the logo below.
+            // entry and folded onto the logo below. A grey (`r = g = b`)
+            // on ordering-table slot 0 under ABR `B + F`.
+            let g = r.r[psx_retail_exec::A2] & 0xFF;
+            assert_eq!(r.r[psx_retail_exec::A2], g * 0x1_0101, "a grey wash");
+            assert_eq!(r.r[psx_retail_exec::A0], 0, "OT slot 0");
+            assert_eq!(
+                r.r[psx_retail_exec::A1],
+                u32::from(legaia_engine_title::publisher_logos::WASH_ABR),
+                "the wash's ABR"
+            );
             frame.borrow_mut().push(Drawn {
                 logo: usize::MAX,
                 level: 0,
@@ -253,9 +273,20 @@ fn the_sequencer_paces_the_logos_as_the_session_does() {
             break;
         }
         let level = u32::from(port.retail_level());
+        // The `r0 / g0 / b0` bytes of the first `DRAWENV`: white through
+        // the tail settles, black before them.
+        let bg = cpu.mem.rd8(DRAWENV_BG);
         let Some(&d) = drawn.first() else {
-            // A settle: nothing drawn, and the port's frame is black.
-            assert_eq!(level, 0, "a black frame, {at}");
+            // A settle: no logo drawn, and the port draws none. Black ahead
+            // of the logos; white (a whole-stage `0xFF` wash) after them.
+            assert_eq!(level, 0, "no logo, {at}");
+            let white = state >= 11;
+            assert_eq!(bg, if white { 0xFF } else { 0 }, "the background, {at}");
+            assert_eq!(
+                port.screen_wash().map(|w| (w.rect, w.level)),
+                white.then_some(((0, 0, 640, 480), 0xFF)),
+                "the tail's white, {at}"
+            );
             frames += 1;
             continue;
         };
@@ -265,21 +296,23 @@ fn the_sequencer_paces_the_logos_as_the_session_does() {
             // side names (the frame a logo's step rolls into the next).
             None => {
                 assert_eq!(d.level, level, "level, {at}");
+                assert_eq!(port.screen_wash(), None, "no wash, {at}");
                 if level != 0 {
                     assert_eq!(d.logo, port.current_logo(), "logo, {at}");
                 }
             }
-            // State 10: PROKION held at full under the blend quad, which
-            // the port stands in for by fading the logo over the same span
-            // (`docs/subsystems/boot.md`); the quad's level and the port's
-            // drop run on one schedule.
+            // State 10: PROKION held at full under the additive wash, whose
+            // grey the port draws frame for frame.
             Some(f) => {
                 assert_eq!((d.logo, d.level), (LOGO_PROKION, 0x80), "{at}");
                 assert_eq!(port.current_logo(), LOGO_PROKION, "{at}");
-                let drop = 2 * (0x80 - level);
-                assert!(
-                    drop.abs_diff(f.min(0x100)) <= 10,
-                    "blend {f:#x} against the port's drop {drop:#x}, {at}"
+                assert_eq!(level, 0x80, "the logo stays at full, {at}");
+                let wash = port.screen_wash().expect("the port's wash");
+                assert_eq!(wash.level, f as u8, "the wash's grey, {at}");
+                assert_eq!(
+                    wash.rect,
+                    legaia_engine_title::publisher_logos::WASH_RECT,
+                    "{at}"
                 );
             }
         }

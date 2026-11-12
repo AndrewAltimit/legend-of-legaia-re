@@ -2187,6 +2187,16 @@ div.play-vis-head { cursor: default; }
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (ld && ld.sprites && logoBlit) logoBlit.blit(ctx, ld.sprites);
+        /* PROKION's exit: retail adds a flat grey quad over the logo (B + F). */
+        if (ld && ld.wash) {
+          const [wx, wy, ww, wh] = ld.wash.dst;
+          const g = ld.wash.level | 0;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = `rgb(${g},${g},${g})`;
+          ctx.fillRect(wx, wy, ww, wh);
+          ctx.restore();
+        }
         if (done) {
           logos = false;
           startTitleBgm();

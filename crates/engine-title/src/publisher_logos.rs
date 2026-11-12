@@ -132,8 +132,56 @@ pub struct LogoStep {
     pub fade_in: u16,
     /// Frames at [`LEVEL_FULL`].
     pub hold: u16,
-    /// Frames ramping back down to `0`.
+    /// Frames of the step's exit.
     pub fade_out: u16,
+    /// How the step leaves the screen over its `fade_out` frames.
+    pub exit: LogoExit,
+}
+
+/// How a logo step leaves the screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogoExit {
+    /// The logo's level ramps from [`LEVEL_FULL`] down to `0`.
+    Dim,
+    /// The logo stays at [`LEVEL_FULL`] under an additive flat quad
+    /// ([`PublisherLogosSession::screen_wash`]).
+    Wash,
+}
+
+/// The screen wash of PROKION's exit (state 10): a semi-transparent flat
+/// quad (GP0 `0x2B`, `FUN_801D0460`) with `abr = 1`, `B + F`, linked at
+/// ordering-table slot `0` - over the logo pair's slot `0xA`
+/// (`FUN_801D08F0`'s `a0`), so the screen adds the quad's grey to the logo.
+///
+/// Its grey is the shared counter `0x801F3EA8`, which state 10 advances by
+/// `frame_delta << 2` per pass (`0x801CF2C0..0x801CF2DC`; `4` at the boot
+/// pass's one-vsync step, [`WASH_STEP`]) and clamps at `0xFF` for the draw
+/// (`0x801CF318..0x801CF324`); the state ends once it reaches `0x101`.
+pub const WASH_STEP: u16 = 4;
+
+/// The wash's ceiling: `slti s0,0x100` / `li s0,0xff`.
+pub const WASH_MAX: u16 = 0xFF;
+
+/// The wash's ABR equation: `FUN_801D0460(0, 1, rgb)` hands `a1 = 1` to the
+/// tpage word (`(abr << 5) | 0xE`, `0x801D0534..0x801D0540`).
+pub const WASH_ABR: u8 = 1;
+
+/// The wash quad's `(x, y, w, h)` in the [`STAGE`] space.
+///
+/// `FUN_801D0460` spans `x = 0 .. width` and `y = 0x18 .. height - 0x14`
+/// of the draw extents `0x1F80038C` / `0x1F80038E` (`0x801D04D4..0x801D051C`),
+/// which the boot pass's `FUN_8001DAF8(0x400)` sets to `640 x 480`
+/// (`0x8001DC24` / `0x8001DC28`): the top 24 and bottom 20 rows stay out of it.
+pub const WASH_RECT: (i32, i32, u32, u32) = (0, 0x18, STAGE.0, STAGE.1 - 0x18 - 0x14);
+
+/// A flat grey the boot pass adds over the frame ([`WASH_ABR`]): `rect` in
+/// the [`STAGE`] space, `level` the grey.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenWash {
+    /// `(x, y, w, h)` in the [`STAGE`] space.
+    pub rect: (i32, i32, u32, u32),
+    /// The grey, `r = g = b`.
+    pub level: u8,
 }
 
 impl LogoStep {
@@ -154,14 +202,15 @@ impl LogoStep {
 ///   hold; state 8 walks the same counter back down from `0x80`, and draws
 ///   its last frame at `0`, so PROKION opens on two black frames.
 /// - PROKION: state 9 runs `0` → `0x351` at `8` per frame, again clamped
-///   (16 frames of ramp, 92 at full with state 10's first). Its exit, state 10, is **not** a fade to black - it
-///   holds PROKION at full while a full-screen blend quad
+///   (16 frames of ramp, 92 at full). Its exit, state 10, is **not** a fade
+///   to black - it holds PROKION at full while an additive flat quad
 ///   (`FUN_801D0460`) ramps the screen to white over `0x101` at
-///   `4 × frame_delta` per tick. The port ramps the logo down over that
-///   same 65-frame span instead of compositing the blend quad.
-/// - The settles draw nothing: states 0..2 ahead of SCEA (two `0x11`-tick
-///   counts either side of one frame, 35 frames), state 6 between SCEA and
-///   Contrail (17), and states 11 and 12 after PROKION ([`TAIL_FRAMES`]).
+///   `4 × frame_delta` per tick, 65 frames ([`LogoExit::Wash`],
+///   [`WASH_RECT`]).
+/// - The settles draw no logo: states 0..2 ahead of SCEA (two `0x11`-tick
+///   counts either side of one frame, 35 frames) and state 6 between SCEA
+///   and Contrail (17) are black; states 11 and 12 after PROKION
+///   ([`TAIL_FRAMES`]) are white.
 ///   Each step's `before` counts its black frames as the session shows them,
 ///   ticked then drawn: the frame that rolls into a step is its first.
 pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
@@ -171,6 +220,7 @@ pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
         fade_in: 16,
         hold: 131,
         fade_out: 32,
+        exit: LogoExit::Dim,
     },
     LogoStep {
         logo: LOGO_CONTRAIL,
@@ -178,6 +228,7 @@ pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
         fade_in: 16,
         hold: 121,
         fade_out: 16,
+        exit: LogoExit::Dim,
     },
     LogoStep {
         logo: LOGO_PROKION,
@@ -185,12 +236,20 @@ pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
         fade_in: 16,
         hold: 92,
         fade_out: 65,
+        exit: LogoExit::Wash,
     },
 ];
 
 /// Ticks after the one that ends PROKION's step, to the one the sequencer
 /// raises its done bit on (`_DAT_801F3EB0 |= 2`): state 11's one frame and
-/// state 12's `0x11`-tick settle, black throughout.
+/// state 12's `0x11`-tick settle.
+///
+/// They are **white**, not black: both states write `0xFF` into the
+/// `r0 / g0 / b0` background bytes of both `DRAWENV`s (`0x8007BF5D..5F`
+/// and `+0x74`, `0x801CF360..0x801CF398` and `0x801CF3B0..0x801CF3E4`), so
+/// every clear fills the frame white; state 11 also adds one more `0xFFFFFF`
+/// wash. [`PublisherLogosSession::screen_wash`] carries it as a whole-stage
+/// wash at `0xFF`, which lands white over the black clear the hosts draw.
 pub const TAIL_FRAMES: u16 = 17;
 
 /// One logo's atlas placement: source rect `(x, y, w, h)` in atlas
@@ -212,7 +271,14 @@ pub struct LogosAtlas {
     /// WARNING`), indexed by the `LOGO_*` constants - not the order
     /// [`RETAIL_SEQUENCE`] plays them in.
     pub rects: [LogoRect; LOGO_COUNT],
+    /// A block of opaque white texels under the logos: the texture a host
+    /// samples to draw the untextured [`WASH_RECT`] quad through its sprite
+    /// overlay.
+    pub white: LogoRect,
 }
+
+/// Side of the [`LogosAtlas::white`] block.
+const WHITE_BLOCK: u32 = 4;
 
 /// Build a [`LogosAtlas`] by parsing PROT 0895 (`init.pak`) bytes and
 /// decoding each of the four TIMs.
@@ -243,7 +309,8 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
     }
 
     let atlas_w = tims.iter().map(|(_, w, _)| *w).max().unwrap_or(0);
-    let atlas_h: u32 = tims.iter().map(|(_, _, h)| *h).sum();
+    let atlas_w = atlas_w.max(WHITE_BLOCK);
+    let atlas_h: u32 = tims.iter().map(|(_, _, h)| *h).sum::<u32>() + WHITE_BLOCK;
     let mut atlas = vec![0u8; (atlas_w * atlas_h * 4) as usize];
 
     let mut rects: [LogoRect; LOGO_COUNT] = [(0, 0, 0, 0); LOGO_COUNT];
@@ -260,12 +327,17 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
         rects[i] = (0, y_cursor, *w, *h);
         y_cursor += h;
     }
+    for row in y_cursor..y_cursor + WHITE_BLOCK {
+        let off = (row * atlas_w * 4) as usize;
+        atlas[off..off + (WHITE_BLOCK * 4) as usize].fill(0xFF);
+    }
 
     Ok(LogosAtlas {
         rgba: atlas,
         width: atlas_w,
         height: atlas_h,
         rects,
+        white: (0, y_cursor, WHITE_BLOCK, WHITE_BLOCK),
     })
 }
 
@@ -432,7 +504,8 @@ pub enum LogoPhase {
     FadeIn,
     /// Held at [`LEVEL_FULL`], over `LogoStep::hold` frames.
     Hold,
-    /// [`LEVEL_FULL`] → black, over `LogoStep::fade_out` frames.
+    /// The step's exit, over `LogoStep::fade_out` frames: [`LEVEL_FULL`] →
+    /// black, or the [`LogoExit::Wash`] over a logo held at full.
     FadeOut,
 }
 
@@ -573,6 +646,7 @@ impl PublisherLogosSession {
                 .checked_div(step.fade_in)
                 .unwrap_or(LEVEL_FULL),
             LogoPhase::Hold => LEVEL_FULL,
+            LogoPhase::FadeOut if step.exit == LogoExit::Wash => LEVEL_FULL,
             LogoPhase::FadeOut => {
                 let into_fadeout = f.saturating_sub(step.fade_in + step.hold);
                 let drop = (LEVEL_FULL * into_fadeout)
@@ -581,6 +655,35 @@ impl PublisherLogosSession {
                 LEVEL_FULL - drop.min(LEVEL_FULL)
             }
         }
+    }
+
+    /// The grey of the additive screen wash drawn over the logo this frame
+    /// ([`WASH_RECT`], [`WASH_ABR`]), or `None` when none is up: `4, 8, ..`
+    /// from the first frame of a [`LogoExit::Wash`] exit, clamped at
+    /// [`WASH_MAX`].
+    ///
+    /// The settles after the last logo ([`TAIL_FRAMES`]) answer a whole-stage
+    /// wash at [`WASH_MAX`]: their white background.
+    pub fn screen_wash(&self) -> Option<ScreenWash> {
+        if self.done {
+            return None;
+        }
+        let Some(step) = self.current_step() else {
+            return Some(ScreenWash {
+                rect: (0, 0, STAGE.0, STAGE.1),
+                level: WASH_MAX as u8,
+            });
+        };
+        if step.exit != LogoExit::Wash || self.phase() != LogoPhase::FadeOut {
+            return None;
+        }
+        let into = self
+            .frames_in_logo
+            .saturating_sub(step.before + step.fade_in + step.hold);
+        Some(ScreenWash {
+            rect: WASH_RECT,
+            level: ((into + 1) * WASH_STEP).min(WASH_MAX) as u8,
+        })
     }
 
     /// Opacity in `[0.0, 1.0]` for the current logo this frame -
@@ -666,6 +769,51 @@ mod tests {
             s.tick();
         }
         assert!(s.retail_level() < LEVEL_FULL);
+    }
+
+    /// PROKION's exit keeps the logo at full under a wash rising four levels
+    /// a frame from `4` to its `0xFF` ceiling, over the step's 65 frames.
+    #[test]
+    fn prokion_exits_under_a_rising_wash() {
+        let mut s = PublisherLogosSession::new();
+        for step in &RETAIL_SEQUENCE[..2] {
+            for _ in 0..step.frames() {
+                assert_eq!(s.screen_wash(), None);
+                s.tick();
+            }
+        }
+        let step = RETAIL_SEQUENCE[2];
+        assert_eq!(step.logo, LOGO_PROKION);
+        for _ in 0..(step.before + step.fade_in + step.hold) {
+            assert_eq!(s.screen_wash(), None);
+            s.tick();
+        }
+        let mut washes = Vec::new();
+        for _ in 0..step.fade_out {
+            assert_eq!(s.current_logo(), LOGO_PROKION);
+            assert_eq!(s.retail_level(), LEVEL_FULL);
+            let w = s.screen_wash().expect("the wash is up");
+            assert_eq!(w.rect, WASH_RECT);
+            washes.push(w.level);
+            s.tick();
+        }
+        // The tail settles: a white stage until the done bit.
+        for _ in 0..TAIL_FRAMES {
+            assert!(!s.is_done());
+            assert_eq!(
+                s.screen_wash(),
+                Some(ScreenWash {
+                    rect: (0, 0, 640, 480),
+                    level: 0xFF
+                })
+            );
+            s.tick();
+        }
+        assert!(s.is_done());
+        assert_eq!(s.screen_wash(), None);
+        let want: Vec<u8> = (1..=65u16).map(|k| (4 * k).min(0xFF) as u8).collect();
+        assert_eq!(washes, want);
+        assert_eq!(WASH_RECT, (0, 24, 640, 436));
     }
 
     #[test]

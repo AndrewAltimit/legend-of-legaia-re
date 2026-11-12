@@ -155,6 +155,7 @@ impl PlayWindowApp {
         let OverlayDraws {
             hud,
             logo_draw_vec,
+            logo_blend,
             title_draw_vec,
             menu_glyph_draw_vec,
             muscle_hub_draw_vec,
@@ -177,7 +178,7 @@ impl PlayWindowApp {
         let logo_overlay = self.publisher_logos.as_ref().map(|p| TextOverlay {
             atlas: &p.atlas,
             draws: &logo_draw_vec,
-            blend: &[],
+            blend: &logo_blend,
         });
         let title_overlay = self.title_screen.as_ref().map(|t| TextOverlay {
             atlas: &t.atlas,
