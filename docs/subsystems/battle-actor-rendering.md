@@ -431,6 +431,8 @@ So every monster cast and solo strike and every party art darkens its audience: 
 
 **Cursor dim.** `+0x21C == 0xC8` (the target cursor's non-pointed monsters) is its own arm: colour `0x010101` at weight `0x1000`, unless the seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads as a black silhouette. Both hosts draw it as the pass computes it (`BattleActorDrawPlan::tint_cue_applies`); only the pointed-at flag `5` keeps the cursor's own pulse (`battle_action::cursor_cue`). PROT 0918's arm 16 raises the flag on Kemaro's victim (`+0x04 = 0x401004`, `+0x0C = 0x1000` in a retail RAM image of arm `0x12`), and retail draws the body as a dark silhouette through arms 16 to 19, where a cursor cue at weight `0.55` left it textured: arm `0x12` reads `.638` on the Gobu Gobu film with the cursor cue.
 
+The target cursor draws the same: on a retail three-monster cursor (rugi: Barra, Barra, Slippery, the cursor on Slippery) the two dimmed Barras are black to the pixel, and the port's frame matches them (`retail-compare` image `.997`).
+
 #### The near-camera ghost pass (`FUN_8004DC68`)
 
 The tint pass takes the colour word's top byte from the pool actor's `+0x8` word (`0x8004AA44..0x8004AA50`), and that byte is the draw's mode: bit 31 raises semi-transparency, bits 24/25 pick the blend rule. `FUN_8004DC68` owns those bits. The frame driver `FUN_80046A20` calls it once per battle frame (`jal` at `0x80047124`, between the camera update and the tint SM `FUN_80050120`). It only ever sets or clears `0x83000000` - mode `3`, `B + F/4`, a faint ghost of the body (`ghidra/scripts/funcs/8004dc68.txt`). The reference point is the camera, not an actor, and the effect is translucency, not dimming.

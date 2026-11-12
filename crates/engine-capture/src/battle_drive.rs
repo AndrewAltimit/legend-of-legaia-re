@@ -55,7 +55,10 @@ pub enum BattleDrive {
     /// the bag slot (`0x801D189C`) and the magic window off the hovered spell
     /// (`0x801D1A34`) - or `0` for the window's opening row. The drive walks
     /// the window's cursor down onto that row before it confirms, so the
-    /// sub-cursor reached is the one the row's target flags raise.
+    /// sub-cursor reached is the one the row's target flags raise. On the
+    /// Attack's target cursor (`0x5A`) it is the retail seat (`3..8`) the
+    /// cursor rests on (the seat's `+0x1DD`), which the drive steps the
+    /// cursor onto, or `0` for the cursor's opening monster.
     Menu {
         flow: BattleFlowState,
         seat: u8,
@@ -1337,10 +1340,13 @@ impl BattleDrive {
             }
             // A menu capture is a surface the player sat on: the camera has
             // arrived at its framing, so the frame waits out the glide.
-            Self::Menu { flow, seat, .. } => {
+            Self::Menu {
+                flow, seat, pick, ..
+            } => {
                 world.battle.flow == flow
                     && (!menu_seat_matters(flow) || world.battle_ctx.active_actor == seat)
                     && !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
+                    && cursor_on_pick(world, flow, pick)
             }
             Self::Action { seat, end, .. } if end.is_end() => {
                 // The sequencer frames its pose actor `ctx[+0x13]`.
@@ -1985,9 +1991,30 @@ impl BattleDrive {
         match *self {
             Self::Opening { .. } => None,
             Self::Menu {
-                flow, seat, spirit, ..
+                flow,
+                seat,
+                spirit,
+                pick,
             } => {
                 let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
+                // The Attack cursor's capture: the screen walk that made it
+                // pressed with idle vsyncs between, so each framing had
+                // landed before the next press - and the cursor's case-1
+                // yaw reads the camera's live focus (`0x801D5A6C`), which
+                // mid-glide is not yet the member. A harness pacing.
+                if ours
+                    && flow == BattleFlowState::TargetSelect
+                    && pick != 0
+                    && world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
+                {
+                    return None;
+                }
+                if ours
+                    && flow == BattleFlowState::TargetSelect
+                    && matches!(cmd.phase, CommandPhase::Targeting { .. })
+                {
+                    return (!cursor_on_pick(world, flow, pick)).then_some(PadButton::Right);
+                }
                 match cmd.phase {
                     CommandPhase::RoundPrompt { .. } if flow == BattleFlowState::EscapePrompt => {
                         Some(PadButton::Right)
@@ -2179,6 +2206,29 @@ pub fn menu_seat_matters(flow: BattleFlowState) -> bool {
 
 /// Whether monster row `row` stands in the engine's pool (party count +
 /// `row`), so the target cursor can land on it.
+/// Whether the Attack cursor rests on the menu drive's `pick` (a retail
+/// monster seat), or the drive names none.
+fn cursor_on_pick(
+    world: &legaia_engine_core::world::World,
+    flow: BattleFlowState,
+    pick: u8,
+) -> bool {
+    if flow != BattleFlowState::TargetSelect
+        || !(3..8).contains(&pick)
+        || !aim_alive(world, pick - 3)
+    {
+        return true;
+    }
+    let picker = world.battle.command.as_ref().and_then(|c| c.picker());
+    match picker.map(|p| p.state()) {
+        Some(legaia_engine_battle::target_picker::PickerState::Cursor {
+            row: legaia_engine_battle::target_picker::CursorRow::Enemy,
+            slot,
+        }) => slot == pick - 3,
+        _ => true,
+    }
+}
+
 pub(crate) fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bool {
     let pc = usize::from(world.party.party_count.clamp(1, 3));
     world

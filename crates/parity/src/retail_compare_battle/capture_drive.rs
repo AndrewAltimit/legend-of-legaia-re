@@ -1798,6 +1798,11 @@ impl RetailBattle {
                 // bag item or spell.
                 pick: if flow.window_of_target().is_some() {
                     self.queued_action
+                } else if flow == BattleFlowState::TargetSelect
+                    && (3..8).contains(&self.target_code)
+                {
+                    // The Attack cursor's monster: the seat's `+0x1DD`.
+                    self.target_code
                 } else {
                     0
                 },

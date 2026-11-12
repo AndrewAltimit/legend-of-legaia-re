@@ -2724,6 +2724,7 @@ that holds the phase; a drive the headless side never completed is not imaged.
 | Members ahead of a menu capture's seat that committed Spirit | Spirit (the ring's Down arm), read off each seat's `+0x1DE = 4`: the commit log draws each member's committed command (`delilas_che_hammer_gaps_v3`'s Vahn and Noa) |
 | The capture's seat, menu capture | the arm that leads to the captured surface: Left then `Command` for the arts entry `0x50`, Up for the item window `0x3C`, Right for the magic window `0x46` |
 | The capture's seat, window target capture | the window's arm, then Down onto the row that holds the seat's `+0x1DF` (the bag item or spell under the cursor) and Cross, which raises the sub-cursor that row's target flags name (`0x5B..0x5E`, `0x64..0x67`, [battle-command-flow](../subsystems/battle-command-flow.md#the-window-target-sub-cursors)) |
+| The capture's seat, Attack cursor capture (`0x5A`) | Left then `Auto`, each press after the camera's glide has landed, then Right until the cursor rests on the monster the seat's `+0x1DD` names ([below](#the-attack-cursor-is-paced)) |
 | The capture's seat, action capture | the same Attack every round; Spirit when its committed category `+0x1DE` is `4` |
 | A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back), at the seat `+0x1DD` names whatever the record's shape says (Slime Divide's scripted arm stores the caster under an all-allies shape) |
 | The party, on such a monster-cast drive | Spirit instead of Attack, so the caster is still standing when its turn comes (Zeto's two mid-cast captures sit in a party that kills him in two swings) |
@@ -2731,6 +2732,22 @@ that holds the phase; a drive the headless side never completed is not imaged.
 
 Monster seats are translated from retail's fixed pool slots `3..` onto the
 engine's seating straight after the party.
+
+#### The Attack cursor is paced
+
+The cursor's case-1 shot turns the yaw to `0x800 - bearing(target -> focus)`
+off the camera's **live** focus (`0x801D5A6C..0x801D5AD0`,
+[battle-stage-camera](../subsystems/battle-stage-camera.md)), so the yaw it settles
+on depends on how far the ring's close-up had glided when the cursor opened.
+The screen walk that records a cursor capture idles between presses and the
+close-up has landed on the member; a drive pressing every other tick opened
+the cursor with the focus still a few hundred units short, and the shot
+stood some `0x700` round. The drive waits out each glide before it presses
+toward the cursor - a harness pacing, which no play path reads - and walks the
+cursor onto the captured monster (`BattleDrive::Menu`'s `pick`). On a
+three-monster rugi fight recorded for the cursor (Barra, Barra, Slippery)
+that moved the camera `.875` to `1.000` and the frame `.717` to `.996`; the
+Gaza cursor states are unchanged.
 
 **Arts strings.** A party seat whose committed queue `+0x1DF..+0x1EE` holds an
 art starter (`0x19` / `0x1A`) entered its turn through `Command`, so its drive
