@@ -1016,6 +1016,7 @@ impl World {
                 // the one that hands over: the rest of the pass's drift.
                 if live && self.casting.module_phase != phase {
                     self.drift_rest_of_pass(delta - 1 - i);
+                    self.repeat_module_seat_moves(phase, delta - 1 - i);
                 }
                 break;
             }

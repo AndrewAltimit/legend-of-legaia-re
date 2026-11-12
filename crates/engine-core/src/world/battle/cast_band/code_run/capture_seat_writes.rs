@@ -237,6 +237,49 @@ impl World {
         }
     }
 
+    /// The every-pass move in a held arm's seat write - `(slot, dz, dy)` -
+    /// that the rest of a handing-over pass repeats (`World::module_pass`):
+    /// only a write that stores no position of its own.
+    pub(in crate::world::battle::cast_band) fn seat_move_of(
+        slot: u8,
+        w: &legaia_engine_cast::cast_module_camera::CaptureSeatWrite,
+    ) -> Option<(u8, i16, i16)> {
+        let dz = if w.z.is_none() { w.dz } else { 0 };
+        let dy = if w.y.is_none() { w.dy } else { 0 };
+        (dz != 0 || dy != 0).then_some((slot, dz, dy))
+    }
+
+    /// Repeat arm `phase`'s every-pass seat moves and focus drift, as its
+    /// last held tick made them, for the `ticks` of the pass it handed over
+    /// on that the port does not run (`World::module_pass`, beside the camera
+    /// drift it repeats). Retail's passing pass moves the whole step ahead of
+    /// the arm's gate.
+    pub(in crate::world::battle) fn repeat_module_seat_moves(&mut self, phase: u8, ticks: u8) {
+        let Some(moves) = self.casting.module_held_moves.take() else {
+            return;
+        };
+        if moves.phase != phase {
+            return;
+        }
+        for _ in 0..ticks {
+            for &(slot, dz, dy) in moves.seats.iter().flatten() {
+                self.apply_capture_seat_writes(
+                    slot,
+                    legaia_engine_cast::cast_module_camera::CaptureSeatWrite {
+                        dz,
+                        dy,
+                        ..Default::default()
+                    },
+                );
+            }
+            if moves.focus_z != 0
+                && let Some(cam) = self.battle.camera.as_mut()
+            {
+                cam.drift_module_focus_z(moves.focus_z);
+            }
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass

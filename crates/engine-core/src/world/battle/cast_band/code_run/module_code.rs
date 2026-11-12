@@ -2085,6 +2085,17 @@ impl World {
             }
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
+            if capture_held {
+                self.casting.module_held_moves =
+                    Some(legaia_engine_battle_loop::cast_fx_state::ModulePassMoves {
+                        phase: phase_in,
+                        seats: [
+                            Self::seat_move_of(caster_slot, &arm.caster_write),
+                            Self::seat_move_of(victim_slot, &arm.victim_write),
+                        ],
+                        focus_z: arm.focus_z,
+                    });
+            }
             if !arm.party_write.is_empty() {
                 for slot in 0..self.party.party_count {
                     let a = &self.actors[usize::from(slot)];

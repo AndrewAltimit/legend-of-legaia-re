@@ -7,6 +7,23 @@ use std::sync::Arc;
 
 use crate::cast_band::{PendingCast, SummonStager};
 
+/// A capture arm's every-pass moves, read off a pass that held it: the seat
+/// writes that store no position of their own, `(slot, dz, dy)` for the caster
+/// and the victim, and the focus z drift. Retail's pass makes them once, scaled
+/// by its step, ahead of the arm's gate, so the pass an arm hands over on moves
+/// the whole step: PROT 0958's runs carry the caster `-8 s` a vsync through it.
+/// The held pass's moves are the arm's own; the handing-over pass's writes also
+/// carry its passing stores (a knockdown's shove), which do not repeat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModulePassMoves {
+    /// The module phase the arm ran on.
+    pub phase: u8,
+    /// `(slot, dz, dy)` of the caster's and the victim's writes.
+    pub seats: [Option<(u8, i16, i16)>; 2],
+    /// The arm's focus z drift.
+    pub focus_z: i16,
+}
+
 /// Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
 pub struct CastFxState {
     /// A capture body's store into a monster caster's size class (record
@@ -383,6 +400,11 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::rest_drift`]):
     /// what the rest of a handing-over pass repeats in place of the drift.
     pub module_tick_rest: Option<Option<legaia_engine_cast::cast_module_camera::CaptureDrift>>,
+    /// The every-pass seat moves and focus drift of the newest module tick
+    /// that held its arm ([`ModulePassMoves`]). An arm that hands over
+    /// mid-pass owes the rest of the pass's moves as it owes its drift
+    /// (`World::module_pass`).
+    pub module_held_moves: Option<ModulePassMoves>,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -616,6 +638,7 @@ impl CastFxState {
             module_pass_repeat: false,
             module_tick_drift: None,
             module_tick_rest: None,
+            module_held_moves: None,
             caster_stages: None,
             caster_size_store: None,
             pending_move_fx_spawn: None,
