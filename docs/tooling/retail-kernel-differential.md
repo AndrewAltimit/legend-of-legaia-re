@@ -1400,3 +1400,13 @@ arm in `FUN_80039B7C`, over every text lead in the disc's records, showed the wa
 padding and other yield bytes, where the runner resumed at the page's dispatch byte. The fishing line actor
 `FUN_801D4948` showed the catch celebration firing its stages off a stage word: the stage cue on the arm's second frame
 rather than with the bursts, each stage once at any frame step, and the hand-back to the tracking sub-state.
+
+Baka Fighter's developer keyframe editor `FUN_801D4FC8`, run one tick at a time over its globals, both actors and an
+action table, showed the port's model of it wrong in three places: it installed or removed a keyframe whenever the frame
+cursor moved, where retail does so only when the edit flag changes across the dev menu `FUN_8002B984`, which ships as an
+empty stub, so never; it wrapped the action cursor at `0x11`, where that wrap is the fighter cursor's, tested unsigned so
+a cursor stepped below zero lands on `0`; and it reset the frame cursor past `count - 1`, where retail resets at
+`count - 1`. No shipped play reaches the editor. The run-to-next-text helper `FUN_8003CF7C`, the master frame driver
+`FUN_80016444`'s pass plan, the `READ INIT` body `FUN_801CE9C0` (whose CLUT-row load at `(0, 500)` sets two of its
+sixteen entries and takes the rest from the routine's uninitialised stack) and the animated-mesh renderer `FUN_8001B964`
+posing a sprite-arm node's parts match.

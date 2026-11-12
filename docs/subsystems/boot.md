@@ -1528,9 +1528,15 @@ after the display env is up. The routine also:
 - selects the **640×480** wide display mode (`FUN_8001DAF8(0x400)`);
 - clears VRAM `(0, 0, 640, 500)` to black through `FUN_80058298` with the RECT
   at file `+0x08`;
-- loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00`;
+- loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00`, of which it sets
+  only the first two entries (`0x0000`, `0x5294`): the other fourteen come off the routine's
+  uninitialised stack;
 - raises the front-end entry word `_DAT_8007BB00` (`0x801CEB84`);
 - spawns the two boot actors and stores game mode `0x11` (`0x801CEC94`).
+
+The port carries the placements as `publisher_logos::LOGO_VRAM` in `LOGO_UPLOAD_ORDER`, and
+the body's skip arms as `publisher_logos::read_init`, which the front end opens the logo
+session through; the retail differential runs the body against both.
 
 **The logo CLUT rows stay resident after boot.** Nothing re-uploads
 `(320..575, 507)` until a scene's own TIM claims the cells, so PROKION's palette
