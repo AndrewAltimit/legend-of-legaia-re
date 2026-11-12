@@ -818,7 +818,18 @@ impl World {
             Some(g) => g,
             None => self.global_tmd(draw.model_index as i16)?.as_ref(),
         };
-        let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw);
+        // A bank-3 word draws the mesh's `GT4`s as sixteen `GT3`s each
+        // ([`legaia_engine_effects::summon::split_bank3_quads`]). A shattering
+        // part keeps its quads whole for the shatter kernel, which breaks the
+        // mesh by face.
+        let mut mesh = if draw.colour.split_quads && draw.shatter == 0 {
+            let (mut mesh, flags) =
+                legaia_tmd::mesh::tmd_to_vram_mesh_with_group_flags(&g.tmd, &g.raw);
+            legaia_engine_effects::summon::split_bank3_quads(&mut mesh, &flags);
+            mesh
+        } else {
+            legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw)
+        };
         draw.apply_render_state(&mut mesh);
         Some(mesh)
     }

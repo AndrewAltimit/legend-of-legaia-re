@@ -357,7 +357,15 @@ Structural facts, read from the raw table:
   `gimard_burning_attack`'s ordering table holds its rings as `GT3`s only.
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
-  word carries the bit; both hosts draw that emitter's mesh.
+  word carries the bit; both hosts draw that emitter's mesh. A mesh part's
+  model draw takes the same bank, so `World::part_draw_vram_mesh` splits the
+  part's kind-19 quads (group flags `>> 1`) on such a word and leaves its other
+  kinds whole (`summon::split_bank3_quads`). Each `GT3` is then its own
+  primitive to the near reject and the size limit, and maps its texels affinely
+  on its own: V-Windhash's trail (`0x801F79B8` / `0x801F79DC`, word `0xE9`) is
+  four quads that run from the blade's edge to tips past the screen, and drawn
+  as two triangles each its texture smeared across the frame (arm 3 `.686`
+  whole, `.730` split).
   The leaf lists each `GT3`'s corners in the reverse of the port's order
   (staged index bytes `0x50 0x30 0x00` and siblings at `0x80045BB4..0x80045BE0`);
   the port keeps the parent quad's winding for the host's face cull, and a
