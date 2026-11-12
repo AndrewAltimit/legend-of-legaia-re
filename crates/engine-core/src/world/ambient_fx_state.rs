@@ -126,7 +126,7 @@ pub struct AmbientFxState {
     /// child (`LEGAIA_SEAT_VRAM_RECTS`).
     pub vram_rect_seed: Vec<SeededVramRect>,
     /// The battle VRAM pass drops [`Self::vram_rect_seed`] on the first pass
-    /// an action runs (`ctx[7]` past `0x0A`): a capture taken ahead of a cast
+    /// an action runs (`ctx[7]` past `0x0A` and the intro timer `0x0B`): a capture taken ahead of a cast
     /// holds the scroller rects where the state stood, and from the cast on
     /// the rects roll on their own clock as retail's do. The cast-sequence
     /// child's form of the seed (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`).

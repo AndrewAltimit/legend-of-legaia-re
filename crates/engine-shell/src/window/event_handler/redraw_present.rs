@@ -826,10 +826,11 @@ impl PlayWindowApp {
             w.battle_frame_load().0,
             w.battle_frame_load().1,
         );
-        // `LEGAIA_DIAG_CAST_VRAM_AT=<tick>`: the battle VRAM at that tick
-        // (`vram_<tick>.bin`, 1 MiB BGR555), for a byte comparison with a retail
-        // recording's `sstate_vram.py` image.
-        if std::env::var("LEGAIA_DIAG_CAST_VRAM_AT").is_ok_and(|v| v == tick.to_string())
+        // `LEGAIA_DIAG_CAST_VRAM_AT=<tick>[,<tick>..]`: the battle VRAM at
+        // those ticks (`vram_<tick>.bin`, 1 MiB BGR555), for a byte comparison
+        // with a retail recording's `sstate_vram.py` image.
+        if std::env::var("LEGAIA_DIAG_CAST_VRAM_AT")
+            .is_ok_and(|v| v.split(',').any(|t| t.trim() == tick.to_string()))
             && let Some(v) = self.battle_vram.as_ref()
         {
             let _ = std::fs::write(rec.dir.join(format!("vram_{tick}.bin")), v.as_bytes());
