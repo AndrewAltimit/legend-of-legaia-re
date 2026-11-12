@@ -29,9 +29,10 @@ from a short list of flat shapes and writes the SVG, the 256 px PNG, the
 | `drop_backend` | `prefer_x11_for_drop_from_env`: on a Wayland session with XWayland on offer, the launcher and Explorer open as X11 clients, because winit 0.30 has no Wayland drag-and-drop; each has its own opt-out (`LEGAIA_LAUNCHER_WAYLAND`, `LEGAIA_EXPLORER_WAYLAND`). |
 | `settings_file` | `set_aside` / `set_aside_notice` / `write_atomic`: a settings file that exists but does not parse is renamed to `<name>.broken` (never overwritten by the defaults) and the program says where it went; every settings write lands whole (temp file, then rename). Explorer's `settings.json` and the launcher's `launcher.toml` both go through it. |
 | `placement` | `restore` / `restore_physical`: where a window reopens. The outer position a program saved when it last closed (physical pixels) is put back only when enough of the title bar to grab lands on a monitor that is still connected; otherwise the desktop places the window. Explorer, the launcher and the play window all use it. |
+| `folder_list` | `list`, `drive_places`, `find_dumps`: the folder listing behind the in-app file finders a controller can work (the launcher's disc / card / pack finder, Explorer's file browser), and the first-run search both make for a file named like a Legend of Legaia dump. |
 | `release_layout` | `find_engine`: the release archive keeps every command-line program in `command-line-tools/` below the two double-click programs, and this finds `legaia-engine` there, beside the program (a `cargo build`), or inside `Legend of Legaia.app`. The `legaia-launch` stub and Explorer's Play button both use it. |
 
-`win_icon`, `release_layout`, `drop_backend` and `settings_file` need `std`
+`win_icon`, `release_layout`, `drop_backend`, `settings_file` and `folder_list` need `std`
 (processes, paths, files, the environment); the palette does not. None of them adds a
 dependency.
 

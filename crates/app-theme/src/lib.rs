@@ -26,7 +26,9 @@
 //! [`drop_backend`] is the windowing backend the launcher and Explorer open
 //! on so a dropped file reaches them. [`settings_file`] is how both treat
 //! their own settings file: a broken one is set aside, never overwritten,
-//! and every write lands whole.
+//! and every write lands whole. [`folder_list`] is the folder listing
+//! behind the in-app file finders a controller can work (the launcher's and
+//! Explorer's), where the desktop's file dialog wants a mouse.
 //!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
@@ -39,6 +41,7 @@ extern crate std;
 
 pub mod disc_text;
 pub mod drop_backend;
+pub mod folder_list;
 pub mod game_exit;
 pub mod icons;
 pub mod placement;
