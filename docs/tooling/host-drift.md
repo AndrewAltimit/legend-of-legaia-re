@@ -1429,6 +1429,7 @@ a scratch directory only.
 | `menu_hold`, `shop_hold` | Down held on the pause menu's root list and on a shop's stock list: the cursor auto-repeat under a screen that owns its ticks |
 | `equip` | the pause menu's Equip row down a level at a time: the character picker, the slot browse with the worn item's panel beside each row, a slot's candidate list, and back out |
 | `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
+| `lamp_walk` | `rugi`'s torches on their posts: MAN props whose enhanced-lighting set is read from their clip's first-frame pose |
 | `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
