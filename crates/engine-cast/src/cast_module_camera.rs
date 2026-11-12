@@ -521,6 +521,50 @@ pub enum ModuleCaption {
     ModuleString(u32),
 }
 
+/// Where a module's [`ModuleCaption`] puts its pen: the `a3` of its
+/// `FUN_8003541C` call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleCaptionPen {
+    /// `addiu a3,zero,C; ...; jal 0x8003541C; subu a3,a3,v0` with
+    /// `v0 = FUN_80035F04(str) >> 1`: the measured string centred on `C`.
+    Centred(i16),
+    /// `addiu a3,zero,X` with no measure: the string's pen at a typed-in `X`.
+    At(i16),
+}
+
+/// The pen of the caption PROT `prot_entry` prints as `caption`.
+///
+/// Every module measures its spell-name line and subtracts the half-width
+/// from a constant of its own, and the constant is not always `0xA0`:
+/// PROT 0903 / 0905 use `0xAC` (`0x801F6FDC`, `0x801F724C` ahead of the
+/// calls at `0x801F700C` / `0x801F727C`), PROT 0904 / 0924 / 0925 / 0926 /
+/// 0930..0934 use `0xA6` (Theeder `addiu a3,zero,0xa6` at `0x801F704C`, call
+/// `0x801F707C`). The record-name line of PROT 0966 / 0967 also centres on
+/// `0xA6` (`0x801F7E10`, call `0x801F7E28`). Every other measured caption of
+/// the band centres on `0xA0`.
+///
+/// Three module lines are not measured at all - the image's head string at
+/// a literal pen: PROT 0924's "Ultimate Rave" at `0x64`
+/// (`0x801F7508`), PROT 0927's attack name at `0x70` (`0x801F7710`), and
+/// PROT 0907's attack name at `0x6A` (`0x801F7980`). PROT 0907 draws the
+/// head string only when its init roll `rand() % 8` (`0x801F6B7C`, word
+/// `0x801F8534`) is non-zero; its zero arm draws the creature record name
+/// (the same text on the US disc) centred on `0xA0` at `y = 0xAA`
+/// (`0x801F799C..0x801F79E8`). The port does not model that roll and takes
+/// the seven-in-eight arm.
+pub fn module_caption_pen(prot_entry: u32, caption: ModuleCaption) -> ModuleCaptionPen {
+    use ModuleCaptionPen::{At, Centred};
+    match (caption, prot_entry) {
+        (ModuleCaption::SpellName, 903 | 905) => Centred(0xAC),
+        (ModuleCaption::SpellName, 904 | 924..=926 | 930..=934) => Centred(0xA6),
+        (ModuleCaption::AttackName, 966 | 967) => Centred(0xA6),
+        (ModuleCaption::AttackName, 907) => At(0x6A),
+        (ModuleCaption::ModuleString(_), 924) => At(0x64),
+        (ModuleCaption::ModuleString(_), 927) => At(0x70),
+        _ => Centred(0xA0),
+    }
+}
+
 /// Where one module spawn call seats its record (`a0` / `a1` of
 /// `FUN_80021B04(pos, rot, record, 0x1000)`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

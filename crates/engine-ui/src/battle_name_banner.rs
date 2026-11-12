@@ -67,6 +67,26 @@ pub const ARTS_TABLE_SENTINEL: u8 = 0x63;
 /// Screen X the banner is centred on.
 pub const BANNER_CENTER_X: i32 = 0xA0;
 
+/// Where the move-name label's pen sits along X.
+///
+/// The placement-record label and most summon module lines centre the
+/// measured name on [`BANNER_CENTER_X`]; a module line takes its module's
+/// own constant (`0xA6` / `0xAC` for ten spell names) or a typed-in X
+/// (`engine-cast::cast_module_camera::module_caption_pen`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelPen {
+    /// `centre - width / 2`.
+    Centred(i32),
+    /// A fixed pen X, whatever the width.
+    At(i32),
+}
+
+impl Default for LabelPen {
+    fn default() -> Self {
+        Self::Centred(BANNER_CENTER_X)
+    }
+}
+
 /// Leading name byte that nudges the banner right by [`NUDGE_PIXELS`].
 pub const MARKER_NUDGE: u8 = 0xCF;
 

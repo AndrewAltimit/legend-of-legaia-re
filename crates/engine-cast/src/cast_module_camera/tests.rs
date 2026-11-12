@@ -1648,3 +1648,27 @@ fn guilty_cross_drops_its_cross_through_arm_3s_last_frames() {
     assert_eq!(pass.part_write.unwrap().y, Some(-0x200));
     assert_eq!(pass.part_write.unwrap().records, &[0x801F_81E8]);
 }
+
+/// The spell-name constants and typed-in pens of the band's captions, as
+/// the disassembly carries them (`docs/reference/glitches/name-centering.md`).
+#[test]
+fn module_caption_pens_follow_each_modules_constant() {
+    use super::{ModuleCaption as C, ModuleCaptionPen as P, module_caption_pen as pen};
+    assert_eq!(pen(903, C::SpellName), P::Centred(0xAC)); // Gimard
+    assert_eq!(pen(905, C::SpellName), P::Centred(0xAC)); // Vera
+    assert_eq!(pen(904, C::SpellName), P::Centred(0xA6)); // Theeder
+    for e in [924, 925, 926, 930, 931, 932, 933, 934] {
+        assert_eq!(pen(e, C::SpellName), P::Centred(0xA6), "PROT {e}");
+    }
+    for e in (906..=923).chain([927, 928, 929]) {
+        assert_eq!(pen(e, C::SpellName), P::Centred(0xA0), "PROT {e}");
+    }
+    // The attack name is centred on 0xA0 even where the spell name is not.
+    assert_eq!(pen(903, C::AttackName), P::Centred(0xA0));
+    assert_eq!(pen(904, C::AttackName), P::Centred(0xA0));
+    assert_eq!(pen(966, C::AttackName), P::Centred(0xA6));
+    // The three typed-in pens.
+    assert_eq!(pen(907, C::AttackName), P::At(0x6A));
+    assert_eq!(pen(924, C::ModuleString(0x801F_69D8)), P::At(0x64));
+    assert_eq!(pen(927, C::ModuleString(0x801F_69D8)), P::At(0x70));
+}

@@ -21,6 +21,8 @@ use legaia_engine_battle::battle_hud_state::*;
 use legaia_engine_battle_vm::battle_value_readout::ComboStyle;
 
 mod plaques;
+/// The pen type [`battle_move_name_module_pen`] returns.
+pub use legaia_engine_cast::cast_module_camera::ModuleCaptionPen;
 pub use plaques::*;
 mod command_chips;
 pub use command_chips::*;

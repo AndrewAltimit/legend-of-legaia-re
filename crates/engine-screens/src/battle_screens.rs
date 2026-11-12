@@ -309,6 +309,15 @@ pub fn battle_hud_frame_draws(
             third_tab: third_tab.as_deref(),
             move_name: move_name.as_deref(),
             move_name_module_line: bh::battle_move_name_is_module_line(w),
+            move_name_pen: match bh::battle_move_name_module_pen(w) {
+                Some(bh::ModuleCaptionPen::Centred(c)) => {
+                    legaia_engine_ui::battle_name_banner::LabelPen::Centred(i32::from(c))
+                }
+                Some(bh::ModuleCaptionPen::At(x)) => {
+                    legaia_engine_ui::battle_name_banner::LabelPen::At(i32::from(x))
+                }
+                None => Default::default(),
+            },
             target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
             plaque_dy: bh::battle_action_plaque_dy(w),
             target_plaque_dy: bh::battle_target_plaque_dy(w),
