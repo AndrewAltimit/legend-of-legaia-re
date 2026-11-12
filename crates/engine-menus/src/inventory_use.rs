@@ -362,7 +362,7 @@ pub struct InventoryUseSession {
     /// The list kernel's rows, when the session draws one row per bag slot
     /// and steps its cursor the way `FUN_80032A44` does (the battle Item
     /// window). `None` keeps the id-merged rows and the filtered-cursor walk.
-    pub list_rows: Option<ListKernelRows>,
+    pub list_rows: Option<Box<ListKernelRows>>,
 }
 
 impl InventoryUseSession {
@@ -423,10 +423,10 @@ impl InventoryUseSession {
     ///
     /// PORT: FUN_80032A44 (navigation and the disabled-row confirm)
     pub fn with_list_kernel_rows(mut self, disabled: Vec<bool>, page_rows: usize) -> Self {
-        self.list_rows = Some(ListKernelRows {
+        self.list_rows = Some(Box::new(ListKernelRows {
             disabled,
             page_rows: page_rows.max(1),
-        });
+        }));
         self.refresh_filter();
         self
     }

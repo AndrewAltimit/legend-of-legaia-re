@@ -10,7 +10,7 @@ impl World {
     /// anyone else. Ticked here, since no bag helper changes the party.
     ///
     /// PORT: FUN_8004313C (the call sites)
-    fn refresh_bag_window(&mut self) {
+    pub(in crate::world) fn refresh_bag_window(&mut self) {
         const FULL_WINDOW_FLAG: u16 = 20;
         // Retail's inputs are the field list (`0x80084594` / `0x80084598`),
         // and a fight that reseats the party keeps that list aside: `Noa`
