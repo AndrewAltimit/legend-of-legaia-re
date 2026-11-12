@@ -502,8 +502,11 @@ impl World {
         // spans it. It goes in as the step that pass's frame claims
         // (`Self::take_pending_frame_step`); the recorder arms ahead of the
         // tick after the arming pass, so any later claim is a later frame.
-        self.battle.pending_frame_step = track.arm(state, phase);
-        self.battle.pending_frame_step_from = u64::MAX;
+        // A key the film never saw leaves the engine's own step in place.
+        if let Some(want) = track.arm(state, phase) {
+            self.battle.pending_frame_step = Some(want);
+            self.battle.pending_frame_step_from = u64::MAX;
+        }
     }
 
     /// The step of the battle frame this tick belongs to, as a module arm
