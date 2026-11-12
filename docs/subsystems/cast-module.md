@@ -2281,6 +2281,18 @@ distance, and the shot filled with it. Arm 13's hide is the colour word as
 well as the byte ([renderer](battle-actor-rendering.md)): with the byte alone
 the creature stood in front of arm 15's pulled-back camera.
 
+The turn and arm 16's camera yaw `+= sin(W / 2) / 2` are each a fixed step a
+**pass** (`0x801F8000..0x801F8038`, `0x801F8068..0x801F80A4`), taken at the
+countdown the pass climbs to, and so is arm `0x13`'s `0x600` landing spin:
+none scales with the frame step. Retail's arm 16 runs 85 passes over its 260
+game ticks on Gobu Gobu (steps `4`, `3`, then `2`), so the port lands each on
+the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
+countdown fed through `module_words`), where it used to spread a step-`2`
+pass's turn over every tick. On retail's frame steps the camera's 83 yaw adds
+then match the recording's one for one and end on its `2587`, against `1506`;
+arm 16 reads `.724` against `.690`. What is left there is the jittered ring
+records and the victim's pose. Grade `disassembly` + `capture`.
+
 ### The shatter effect on monsters
 
 The actor word `+0x1BA` reaches the draw as the node's `+0x7A`, where a
@@ -2889,6 +2901,14 @@ toward the turn, clamped at `-0x100` / `0x100` and levelled on the bearing
 of arms 7 and 8 banks it too, `-sin(word * 32) / 8` (`0x801F70A8..0x801F70D4`), level
 on arm 8's pass. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.
+The reach is `FUN_8004E2F0(7, seat)`, whose attacker size is seat 7's record
+`0x801C9348[4]`, the cast record the seat arm copied in (`32` for Mushura in a
+retail RAM image), so a monster is in reach under `3 * (32 + size) / 5 * 16`.
+A chase target on an empty seat reads its body pair as `(0, 0)` and, through
+the seat's null record pointer, its size from RAM `0x1F`, which holds `0x81`
+in every retail image: in reach from anywhere near the field, so it is traded
+again on the next pass and the creature keeps after the row
+(`World::mushura_chase`). Grade `disassembly` + `capture`.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
 `4` (`0x8004B080`), so arm 5 runs at `4` until arm 6 stores `1` again: the eye close-up

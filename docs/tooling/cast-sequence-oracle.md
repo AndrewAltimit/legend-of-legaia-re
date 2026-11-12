@@ -764,6 +764,22 @@ classes found there were each a few lines of the director:
   Barra's arm `0xF` `.630` to `.941`, Gizam's arm-9 cut `.845` to `.997`;
 - Kemaro's victim under the tint pass's cursor-dim arm, and its shots on the arm-9
   part's height (arm `0x12` `.638` to `.820`).
+- an arm step that is a fixed amount a **pass**, not a frame product: Nova's arm-16
+  victim turn and camera yaw ([cast module](../subsystems/cast-module.md#body-paced-directors)),
+  which on retail's steps now add turn for turn with the recording (arm 16 `.690` to
+  `.724`, film `.865` to `.881`);
+- the ground shadow's pitch / roll gate, which reads the battle body's `+0x44` /
+  `+0x48` ([renderer](../subsystems/renderer.md#the-ground-shadow)): Kemaro's frozen
+  victim casts none (arm `0x12` `.820` to `.825`).
+
+The step track had a seat's own defect: the pass applied the recording's step after
+the SM step that ran the module, so on every step change the module pass and the
+director read the step the last frame ran (`World::module_frame_step` now peeks the
+track). Nova's arm 16 drifted a tick a change before it, and missed one of its 83
+passes. Over the 29 films the step seat's mean moved `.901` to `.909` (`0x99`
+`.857` to `.912`, Gola Gola's `0x8C` `.872` to `.909`); `0x9F` fell `.895` to `.863` on
+arms 9..11, whose camera is unchanged, so what moved there is its parts. The plain
+seat, which runs no track, moved `.9063` to `.9065`.
 
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
 and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so

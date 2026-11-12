@@ -7039,6 +7039,33 @@ expected_active_scene = "korb3"
 topics = ["battle", "command flow", "retail-compare"]
 
 [[scenarios]]
+label = "battle_menu_rugi_barra_retail"
+backup_fingerprint = "7295d47c6577729852be57cbd778dd629dd74128df91736703b6f8dbcd5c78b3"
+description = "rugi fight (formation [0x8D, 0x8D, 0x96]: Barra A, Barra B, Slippery) at Vahn's command input, ctx[+0x06] 0x1E, 30 vsyncs in. RETAIL disc, pad only, no pokes: battle_rugi_barra_strike played on to the next command input (autorun_screen_walk.lua --turbo, bflow:1e)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_target_cursor_rugi_barra_retail"
+backup_fingerprint = "f1b80152a1c966a1ed7497dde1852b3e1f1399a1c517c0840b84a2242ad2499c"
+description = "rugi fight's Attack cursor on Barra A (seat 3, +0x21C = 5), Barra B and Slippery dimmed (+0x21C = 0xC8), ctx[+0x06] 0x5A. CROSS, LEFT, LEFT. RETAIL disc, pad only, no pokes: battle_menu_rugi_barra_retail (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_target_cursor_rugi_slippery_retail"
+backup_fingerprint = "ca5aa7754f525d2341ddf313f981d47a232bef77b4ed4d8850a6c7448bf1dc40"
+description = "rugi fight's Attack cursor on Slippery (seat 5), both Barras dimmed (+0x21C = 0xC8) and drawn black, ctx[+0x06] 0x5A. CROSS, LEFT, LEFT, RIGHT. RETAIL disc, pad only, no pokes: battle_menu_rugi_barra_retail (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
 label = "battle_item_target_gaza2_retail"
 backup_fingerprint = "538a66c6ddd19dc56202791f9dabc9c3767ac1a99a8564c3bd230607b5a1ae34"
 description = "Gaza boss fight's item target, ctx[+0x06] 0x64, on the bag's first row. CROSS, UP, CROSS. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
