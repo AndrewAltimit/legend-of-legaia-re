@@ -57,6 +57,7 @@ mod scene_encounter_rollable;
 mod scene_entry_cutscene_handback_disc;
 mod sfx_cue_resident_bank;
 mod sfx_shared_region;
+mod taiku_escape_clock_expiry_disc;
 mod taiku_security_door_camera;
 mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
