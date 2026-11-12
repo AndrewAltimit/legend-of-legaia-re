@@ -261,7 +261,9 @@ into the remembered export folder (else `Legaia Explorer` in Pictures) under
 its own name, never over an earlier file, and the status line says where,
 with *Change folder...* beside it. The View menu's *Export folder* row names
 the folder and its *Change...* picks another (the in-app browser with a pad,
-the desktop's folder dialog otherwise); the save dialog opens there too.
+the desktop's folder dialog otherwise); the save dialog opens there too. A
+save dialog that comes back at once (no file-dialog service, no `zenity`)
+writes the export there the same way, rather than nothing.
 With nothing focused on the start page, a controller's first press puts the
 focus on the disc on offer, else on *Open disc image*.
 

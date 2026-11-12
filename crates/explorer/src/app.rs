@@ -700,14 +700,7 @@ impl App {
         // A controller cannot type a file name: the export goes into the
         // export folder under its own name, and the status line says where.
         if self.pad_active {
-            let dir = self.export_dir();
-            if let Err(e) = std::fs::create_dir_all(&dir) {
-                self.explorer.error = Some(format!("Could not make {}: {e}", dir.display()));
-                return None;
-            }
-            self.explorer.settings.last_export_dir = Some(dir.clone());
-            self.explorer.save_settings();
-            return Some(unused_name(&dir, default_name));
+            return self.export_into_folder(default_name);
         }
         let mut d = rfd::FileDialog::new()
             .set_file_name(default_name)
@@ -715,12 +708,31 @@ impl App {
         if let Some(dir) = &self.explorer.settings.last_export_dir {
             d = d.set_directory(dir);
         }
+        let asked = std::time::Instant::now();
         let picked = d.save_file();
         if let Some(p) = &picked {
             self.explorer.settings.last_export_dir = p.parent().map(Path::to_path_buf);
             self.explorer.save_settings();
+        } else if asked.elapsed() < DIALOG_NEVER_SHOWN {
+            // The save window never appeared (no file-dialog service): the
+            // export goes where a controller's would, rather than nowhere.
+            log::warn!("the desktop save dialog did not open; exporting into the export folder");
+            return self.export_into_folder(default_name);
         }
         picked
+    }
+
+    /// `default_name` in the export folder, made if need be, never over an
+    /// earlier file: an export with no save window to name it.
+    fn export_into_folder(&mut self, default_name: &str) -> Option<PathBuf> {
+        let dir = self.export_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.explorer.error = Some(format!("Could not make {}: {e}", dir.display()));
+            return None;
+        }
+        self.explorer.settings.last_export_dir = Some(dir.clone());
+        self.explorer.save_settings();
+        Some(unused_name(&dir, default_name))
     }
 
     /// Whether Ctrl+E was pressed this frame, clearing it: the one export
