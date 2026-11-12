@@ -422,8 +422,10 @@ display lag says. The fit's `48` is therefore not the drawn cursor: the
 cut pass draws `52` on a camera already on its endpoint, and the image's
 preference for `48` with yaw `+6` is another residual of that frame (the
 body's matrix, or the metric trading sway against framing). Grade
-`capture`. Next: the engine's film of the same cast (`cast-sequence.py
---engine-only` on this recording) scored at the cut's pair.
+`capture`. Next: the engine's film of the same cast scored at the cut's
+pair, against a recording that opens on cast begin `0x28` as the oracle
+pairs it (this one opens on the state's `0x0A`, and the oracle pairs it at
+`.46` throughout).
 
 Answered questions: [settled battle / arts / level-up](re-settled-threads/battle.md), [settled rendering / camera](re-settled-threads/rendering-camera.md), [settled world map](re-settled-threads/world-map.md); falsified readings: [battle](re-do-not-re-walk.md#battle--arts--level-up), [rendering / camera](re-do-not-re-walk.md#rendering--camera).
 
