@@ -2,6 +2,14 @@
 
 The extraction CLIs, the Ghidra and emulator automation, and every measurement instrument and gate that pins the port to retail.
 
+The pages fall into five families, interleaved in the table below:
+
+- **Getting bytes out of the disc** - [`extraction.md`](extraction.md), [`static-overlay-pipeline.md`](static-overlay-pipeline.md), [`ghidra.md`](ghidra.md).
+- **Watching retail run** - [`mednafen-automation.md`](mednafen-automation.md) and [`pcsx-redux-automation.md`](pcsx-redux-automation.md), and the capture runbooks built on them (`*-capture.md`, [`overlay-capture.md`](overlay-capture.md)).
+- **Measuring the port against retail** - start at [`verification-ladder.md`](verification-ladder.md), which stacks every check with its blind spot, then the instrument you need ([`retail-compare.md`](retail-compare.md), [`retail-kernel-differential.md`](retail-kernel-differential.md), the films, [`full-game-ladder.md`](full-game-ladder.md)). [`retail-oracle-method.md`](retail-oracle-method.md) is the same method written for another project.
+- **Auditing the corpus and the port's claims** - [`port-catalog.md`](port-catalog.md), [`port-provenance.md`](port-provenance.md), [`disc-coverage.md`](disc-coverage.md), [`byte-accounting.md`](byte-accounting.md) and the triage pages beside them.
+- **Patching, building and shipping** - [`randomizer.md`](randomizer.md) and its companions, [`translation/`](translation/index.md), [`build-and-test-speed.md`](build-and-test-speed.md), [`releases.md`](releases.md), and the site and CI gates.
+
 | Doc | Covers |
 |---|---|
 | [`extraction.md`](extraction.md) | Per-stage CLIs (`disc-extract`, `prot-extract`, `lzs-decode`, `legaia-extract`, …). |

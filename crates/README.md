@@ -2,6 +2,10 @@
 
 The workspace crate map. Each crate has a one-page `README.md` describing its scope, format coverage, and how it composes into the pipeline. Crate naming: package `legaia-foo`, lib `legaia_foo` for the game-specific crates; the generic PS1 crates (disc, XA, bytes, TIM, VAB, SEQ, LZS, MDEC, the save-state readers, RAM image, retail-exec) take `psx-foo` / `psx_foo` instead ([`reusing-for-other-ps1-games.md`](../docs/tooling/reusing-for-other-ps1-games.md)). Directories under `crates/` carry no prefix.
 
+The two tracks read bottom-up. Track 1's format stack starts at `bytes`, `iso`, `prot` and `lzs`, then `container-formats`, then the format-family crates (`scene-formats`, `actor-formats`, `game-tables`, ...) that the `asset` tool, the extraction pipeline, the patcher and the engine all parse the disc through.
+
+Track 2 starts at the `World`-free kernel crates (`engine-system` at the bottom, then the VMs, battle, field and menu kernels), with `engine-core` holding the simulation above them, the crates that drive a `World` from outside (`engine-scene-host`, `engine-menu-runtime`, ...) over it, `engine-session` running a game for either host, and the hosts on top: `engine-shell` natively and `web-play` in the browser. [`engine.md`](../docs/subsystems/engine.md#crate-layering) explains the layers; the site's [crate map](https://andrewaltimit.github.io/legend-of-legaia-re/crates.html) draws them.
+
 ## Workspace rules
 
 Every dependency, internal or external, is declared once in the root `[workspace.dependencies]` and taken as `psx-tim.workspace = true` - never a per-crate `path =` or version pin. A crate's command-line binary sits behind its default-on `cli` feature (`required-features = ["cli"]`, `clap` / `libc` optional); the workspace table lists those crates with `default-features = false`, which keeps CLI dependencies out of library builds and the wasm bundle. No crate re-exports another crate's modules: a use site names the crate that owns the code, and each `Cargo.toml` lists exactly the workspace crates its sources name.

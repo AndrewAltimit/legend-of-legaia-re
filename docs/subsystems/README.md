@@ -2,6 +2,16 @@
 
 How the runtime engine works, one page per subsystem. The retail side of each page is Ghidra-traced; the port side names the crate that implements it.
 
+The table runs roughly in the order a frame touches the code, not alphabetically. A first pass:
+
+1. [`engine.md`](engine.md) - what the port is, how its crates layer, and which knobs default to retail or to an enhancement.
+2. [`boot.md`](boot.md) and [`asset-loader.md`](asset-loader.md) - how the game reaches its first scene and how a PROT entry becomes loaded data.
+3. [`script-vm.md`](script-vm.md) and [`field-locomotion.md`](field-locomotion.md) - the field: the event-script VM that drives every scene, and the player's walk.
+4. [`battle.md`](battle.md) - the battle hub; its sibling pages (`battle-*`, `cast-module.md`, `arts-command-gauge.md`) hang off it, and [`battle-round-loop.md`](battle-round-loop.md) follows one fight end to end.
+5. [`renderer.md`](renderer.md), [`shading.md`](shading.md) and [`audio.md`](audio.md) - what reaches the screen and the speakers.
+
+[`vm-inventory.md`](vm-inventory.md) is the map of every bytecode interpreter and state machine when a page names one you have not met. The minigame pages (`minigame-*`) stand alone. Pages for what retail does not have - [`expansion-modes.md`](expansion-modes.md), [`run-rules.md`](run-rules.md), [`gameplay-tweaks.md`](gameplay-tweaks.md), [`netplay.md`](netplay.md), [`vr-mode.md`](vr-mode.md) - describe the port's own features.
+
 | Doc | Covers |
 |---|---|
 | [`engine.md`](engine.md) | The port as it is: what works, crate layering, the hosts on one engine, the fidelity-vs-enhancement model with current defaults, the legal boundary. |
