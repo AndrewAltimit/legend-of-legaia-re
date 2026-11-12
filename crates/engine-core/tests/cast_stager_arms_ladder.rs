@@ -236,6 +236,19 @@ struct CastRun {
 /// Cast `id` once from party seat 0 and run its band out.
 fn run_cast(w: &mut World, disc: &Disc, id: u8) -> CastRun {
     let mut run = CastRun::default();
+    // A fight the last cast's tail ended (a kill the refill could not undo,
+    // a monster's escape) is still on its end sequence: let it leave and
+    // start the next cast in a fresh one. Which casts end their fight is the
+    // RNG's, and any timing change re-deals it.
+    if w.mode == SceneMode::Battle && w.battle.end.is_some() {
+        for _ in 0..0x1000 {
+            if w.mode != SceneMode::Battle {
+                break;
+            }
+            w.set_pad(0);
+            frame(w);
+        }
+    }
     if w.mode != SceneMode::Battle && !enter_battle(w, disc) {
         return run;
     }
@@ -244,6 +257,8 @@ fn run_cast(w: &mut World, disc: &Disc, id: u8) -> CastRun {
         if w.battle.command.is_some() {
             break;
         }
+        // The last cast's band can still be landing its hits here.
+        refill(w);
         w.set_pad(0);
         frame(w);
     }

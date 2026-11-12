@@ -228,7 +228,17 @@ pub fn sideband_slot_count(base: u8) -> u8 {
 /// Gilium, `4` on Swordie and at the arm's entry on Orb, which this value
 /// meets to within `5` on all four (the band ahead of the module is not
 /// the same length in every cast).
-pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 9;
+///
+/// The fit is against arm 1, so it carries the band's length ahead of the
+/// module: `0x34` ends on the pass after the invoke clip's natural end, which
+/// commits idle behind the advance that crosses it (`0x80047A48..0x80047B58`,
+/// then `lbu v0,0x1d9` / `bne` at `0x801E4AD4..0x801E4ADC`), and with that
+/// pass in place arm 1 opens two vsyncs sooner than it did with the end
+/// taken a pass late. The stage keeps its place against arm 1 at `7`:
+/// `zenoir_summon_mid_cast`'s flash-out age and its arm-3 step change fall on
+/// the same pass again (camera `.980` at `9`, `1.000` at `7`), as do
+/// `slippery_summon_mid_cast`'s (`.997`, `1.000`).
+pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 7;
 
 /// The vsyncs the applier's stage byte stays up after a seed of `base`:
 /// [`sideband_slot_count`] reads of [`SIDEBAND_SLOT_READ_VSYNCS`] each, and
