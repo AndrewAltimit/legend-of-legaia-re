@@ -449,9 +449,15 @@ impl World {
                 }
             } else if !self.casting.module_debris.is_empty() {
                 // A director's per-pass calls on a held arm (PROT 0947's
-                // trail): one battle frame, one call.
+                // trail): one battle frame, one call. A call that reads the
+                // pass's drained state is seated from the pass's last tick.
                 let debris = std::mem::take(&mut self.casting.module_debris);
-                if opens_pass {
+                let seat_now = if std::mem::take(&mut self.casting.module_debris_at_pass_end) {
+                    self.module_tick_closes_pass()
+                } else {
+                    opens_pass
+                };
+                if seat_now {
                     self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
                 }
             }

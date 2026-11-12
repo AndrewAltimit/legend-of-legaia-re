@@ -978,6 +978,23 @@ impl World {
                 == 0
     }
 
+    /// Whether this module tick is the last of its pass: on the battle-frame
+    /// cadence a pass runs its `delta` one-vsync ticks back to back
+    /// ([`Self::module_pass`]), and only the last has drained, drifted and
+    /// walked what retail's one `delta`-scaled call has when it makes its
+    /// calls. Off the cadence a pass is one tick, the frame-opening one.
+    pub(in crate::world) fn module_tick_closes_pass(&self) -> bool {
+        if !self.toggles.battle_sm_frame_cadence {
+            return self.module_tick_opens_pass();
+        }
+        self.casting.module_cam.countdown.1 == 0
+            && self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0
+    }
+
     /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
     /// `FUN_801F2160`), at retail's frame delta.
     ///

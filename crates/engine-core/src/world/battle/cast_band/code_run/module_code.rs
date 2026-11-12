@@ -470,6 +470,7 @@ impl World {
                     .flatten()
                     .copied(),
             );
+            self.casting.module_debris_at_pass_end = arm.spawns_at_pass_end;
             self.casting.module_scatter = arm.scatter;
             self.casting.module_trail = arm.trail;
             self.casting.module_rock_burst = arm.rock_burst;

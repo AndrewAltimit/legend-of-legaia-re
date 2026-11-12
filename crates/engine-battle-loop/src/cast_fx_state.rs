@@ -230,6 +230,9 @@ pub struct CastFxState {
     /// This pass's ribbons take that height.
     pub module_ribbons_on_scatter_y: bool,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
+    /// The held arm's [`Self::module_debris`] is seated from the pass's last
+    /// module tick (`CaptureCamArm::spawns_at_pass_end`).
+    pub module_debris_at_pass_end: bool,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
     pub module_rumble_alternate: u32,
@@ -611,6 +614,7 @@ impl CastFxState {
             module_scatter_y: 0,
             module_ribbons_on_scatter_y: false,
             module_debris: Vec::new(),
+            module_debris_at_pass_end: false,
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,
             module_settle_ticks: 0,

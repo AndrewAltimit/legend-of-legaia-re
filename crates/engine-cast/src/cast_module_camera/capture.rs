@@ -223,6 +223,12 @@ pub struct CaptureCamArm {
     /// The `FUN_80021B04` calls this pass makes at points the arm works out,
     /// held or not. Seated on the tick that opens a battle frame.
     pub pass_spawns: [Option<super::ModuleSpawn>; 5],
+    /// A held arm's [`Self::pass_spawns`] read the state the whole pass
+    /// leaves: retail makes the calls after the pass's one `scalar * delta`
+    /// drain (and drift), which the port's one-vsync ticks reach only on the
+    /// pass's last tick. The host seats them from that tick's call instead of
+    /// the first (PROT 0947's trail, which sits on the shot's focus).
+    pub spawns_at_pass_end: bool,
     /// A passing arm's larger run of the same calls (PROT 0948's arm 1).
     pub charge_spawns: [Option<super::ModuleSpawn>; 8],
     /// The arm stores `0x800` into both backdrop records' `+0x78`, the
