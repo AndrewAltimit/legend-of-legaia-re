@@ -137,6 +137,33 @@ impl Spu {
         }
     }
 
+    /// The voices sounding from a sample in `span` (byte addresses, end
+    /// exclusive), as a mask.
+    pub fn voices_reading(&self, span: std::ops::Range<u32>) -> u32 {
+        (0..NUM_VOICES)
+            .filter(|&i| self.voices[i].reads_from(span.clone()))
+            .fold(0, |m, i| m | (1u32 << i))
+    }
+
+    /// Move the voices in `mask` that read from `from` onto the copy of
+    /// those samples now at `to_base` ([`voice::Voice::rebase`]).
+    pub fn rebase_voices(&mut self, mask: u32, from: std::ops::Range<u32>, to_base: u32) {
+        for i in 0..NUM_VOICES {
+            if mask & (1u32 << i) != 0 {
+                self.voices[i].rebase(from.clone(), to_base);
+            }
+        }
+    }
+
+    /// Stop the voices in `mask` outright ([`voice::Voice::cut`]).
+    pub fn cut_voices(&mut self, mask: u32) {
+        for i in 0..NUM_VOICES {
+            if mask & (1u32 << i) != 0 {
+                self.voices[i].cut();
+            }
+        }
+    }
+
     /// Record a key-on for `voice` into the note trace, if one is attached.
     ///
     /// Called next to the real key-on rather than from [`Self::key_on_mask`]:

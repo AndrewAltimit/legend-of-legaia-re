@@ -211,10 +211,77 @@ impl<S: AudioSink> AudioDirector<S> {
     /// Re-check the tail borrowers against the live track's sample end and
     /// forget the ones it overran ([`BgmTail::observe_bgm_end`]). Runs after
     /// every track upload; idempotent.
+    ///
+    /// A borrower's sample can still be sounding when the track lands on it:
+    /// a side-band one-shot keyed just before the scene's track loads, as
+    /// `rikuroa`'s post-Caruban beat keys cue `0x20D` and then starts its
+    /// track. Retail's banks have bases of their own, so there the
+    /// sample plays out to its end flag; here the voice would read the
+    /// track's instruments instead, and a looped one holds forever. Each
+    /// such voice is remembered against the span, for the re-stage to move
+    /// ([`Self::park_tail_bank`]) or the frame's end to cut
+    /// ([`Self::settle_evicted_voices`]).
     pub(super) fn observe_track(&mut self) {
         let end = legaia_engine_audio::bgm_tail::track_end(self.bank.as_ref());
-        for slot in self.tail.observe_bgm_end(end) {
-            self.sfx_vabs.remove(&slot);
+        for b in self.tail.observe_bgm_end_spans(end) {
+            self.sfx_vabs.remove(&b.slot);
+            let voices = self.audio.with_spu(|spu| {
+                let mask = spu.voices_reading(b.base..b.end);
+                (0..spu.voices.len())
+                    .filter(|&i| mask & (1 << i) != 0)
+                    .map(|i| (i, spu.voices[i].key_on_count()))
+                    .collect::<Vec<_>>()
+            });
+            if !voices.is_empty() {
+                self.tail_evicted.push((b, voices));
+            }
+        }
+    }
+
+    /// The voices of an evicted borrower ([`Self::observe_track`]) that are
+    /// still the ones it keyed - not re-keyed since - and still read from its
+    /// old span, as a mask.
+    fn evicted_mask(
+        spu: &legaia_engine_audio::Spu,
+        span: &TailBorrow,
+        voices: &[(usize, u32)],
+    ) -> u32 {
+        voices
+            .iter()
+            .filter(|&&(i, keyed)| {
+                spu.voices[i].key_on_count() == keyed
+                    && spu.voices[i].reads_from(span.base..span.end)
+            })
+            .fold(0, |m, &(i, _)| m | (1 << i))
+    }
+
+    /// Move the voices an eviction of `slot` left sounding onto the bank just
+    /// re-staged in `base..end` - the same samples, moved up the tail. A
+    /// different bank in the slot (a span of another size) moves nothing; its
+    /// voices are cut with the frame's end.
+    pub(super) fn rebase_evicted_voices(&mut self, slot: u8, base: u32, end: u32) {
+        let (moved, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.tail_evicted)
+            .into_iter()
+            .partition(|(b, _)| b.slot == slot && b.end - b.base == end - base);
+        self.tail_evicted = kept;
+        for (b, voices) in moved {
+            self.audio.with_spu(|spu| {
+                let mask = Self::evicted_mask(spu, &b, &voices);
+                spu.rebase_voices(mask, b.base..b.end, base);
+            });
+        }
+    }
+
+    /// Cut every voice still reading a borrower span a track overran and no
+    /// re-stage moved: its sample is gone, and what the voice reads now is
+    /// the track's. Runs once the frame's SFX routing has re-staged what it
+    /// will.
+    pub(super) fn settle_evicted_voices(&mut self) {
+        for (b, voices) in std::mem::take(&mut self.tail_evicted) {
+            self.audio.with_spu(|spu| {
+                let mask = Self::evicted_mask(spu, &b, &voices);
+                spu.cut_voices(mask);
+            });
         }
     }
 
@@ -464,6 +531,7 @@ impl<S: AudioSink> AudioDirector<S> {
         }
         // The positional emitters' key / volume / release calls.
         self.drive_sfx_emitters(&world.take_sfx_emitter_ops());
+        self.settle_evicted_voices();
     }
 
     /// Drive the positional sound emitters' voices (the part tick's

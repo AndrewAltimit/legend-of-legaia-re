@@ -163,6 +163,13 @@ pub struct AudioDirector<S: AudioSink> {
     /// kernel the browser page drives too
     /// ([`legaia_engine_audio::bgm_tail`]).
     tail: BgmTail<SideBandBank>,
+    /// Tail borrowers a new track overran while one of their samples was
+    /// still sounding: the span the borrower held and each voice reading
+    /// from it, with the voice's key-on count then. A re-stage of the slot
+    /// moves those voices onto the new copy ([`Self::park_tail_bank`]); any
+    /// left when the frame's SFX routing ends are cut
+    /// ([`Self::settle_evicted_voices`]).
+    tail_evicted: Vec<(TailBorrow, Vec<(usize, u32)>)>,
     /// The bank the SPU region VAB slots `2` and `6` share holds - retail's
     /// per-mode refill of one region (`FUN_800265E8` gives both slots
     /// `0x33010`), driven by
@@ -259,6 +266,7 @@ impl<S: AudioSink> AudioDirector<S> {
             duck_pct: 100,
             runtime_sfx_bundle: Vec::new(),
             tail: BgmTail::default(),
+            tail_evicted: Vec::new(),
             shared_region: None,
             shared_retry_gen: None,
             shared_region_base: legaia_engine_audio::spu_layout::SFX_REGION_BASE,

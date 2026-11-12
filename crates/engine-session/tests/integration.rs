@@ -47,6 +47,7 @@ mod rayman_collapse_audio_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;
 mod rikuroa_barricade_disc;
+mod rikuroa_caruban_aftermath_audio_disc;
 mod rikuroa_cave_far_crop_disc;
 mod rikuroa_rockfall_rock_disc;
 mod rikuroa_summit_cutscene_cull_disc;
