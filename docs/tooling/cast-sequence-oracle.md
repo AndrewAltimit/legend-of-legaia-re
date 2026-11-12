@@ -869,6 +869,23 @@ other film of the set moves:
 | `--retail-steps` | `.9133` | `.9138` | `0x90` `.936` to `.950` |
 | `--retail-steps --rand-track` | `.9356` | `.9361` | `0x90` `.936` to `.950` |
 
+Barra's arms 6..0xB and Gizam's arm 5 were the module's own stores. Barra's sky is a
+scanline wash whose sample origin two module words slide every pass, and its arm 6
+takes the ground away only from the arc's second half
+([cast module](../subsystems/cast-module.md#barras-sky)); Gizam's arm 4 hides its
+creature by its colour word as well as its flag, so it does not stand at the caster
+through the phase-5 hole ([cast module](../subsystems/cast-module.md#prot-0906-gizam));
+and Theeder prints its own captions. No other film of the set moves:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9080` | `.9100` | `0x8F` `.884` to `.921`, `0x84` `.874` to `.893`, `0x82` `.954` to `.957` |
+| `--retail-steps` | `.9183` | `.9207` | `0x8F` `.924` to `.973`, `0x84` `.880` to `.899`, `0x82` `.962` to `.964` |
+
+Barra's arm 7 reads `.995` on retail's steps and `.75` on the engine's own: its white
+pulses are a four-record cloud cycle stepped once a pass, so where they fall is the
+frame cadence, not the module.
+
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
 and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
 the passes the rand track seats fall on other frames; Juggernaut's arm 26 reads `.44`
