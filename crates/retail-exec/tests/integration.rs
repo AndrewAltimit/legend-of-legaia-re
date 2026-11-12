@@ -22,6 +22,7 @@ mod afterimage_walk;
 mod ambient_emitter;
 mod ambient_motion;
 mod ambient_probe;
+mod anim_commit;
 mod anim_cue_walk;
 mod anim_cursor;
 mod anim_rate_restore;
