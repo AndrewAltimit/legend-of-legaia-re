@@ -1346,3 +1346,12 @@ sub-keyframe, where the port printed two columns; the port now prints the routin
 The ground emitter's cell loop `FUN_801F6D48`, the stage placement `FUN_801D6D60`, the tile board's install
 state of `FUN_801EF2B0`, the fishing session machine's power meter entered at `FUN_801CF3BC` and the Hyper
 Crush and Hyper Lightning stagers match.
+
+The party battle-mesh assembler `FUN_80052FA0`, run whole for three seats from the loader's stream table, matches the
+port's merged TMD, swing entries and texture uploads. Baka Fighter's cabinet `FUN_801CF388`, run over whole sessions
+from boot through the secret rungs and the all-clear, found a won secret rung never clearing its override (the ladder
+served the same secret opponent again with the stage frozen), the round index carried across matches (so a secret
+rung's first-round intro never played), the tally state leaving on its first frame where retail holds two seconds after
+the drain, the pause menu opening mid-exchange where the combat ticks gate it on the player standing idle, and the scene
+suppress, two menu latches and the shutout tally a frame or a sense out. The anim commit `FUN_8004AD80`, entered at its
+head, matches the cue-cursor seed and the tag ladder.
