@@ -1233,7 +1233,12 @@ radius `actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`. Its mode word is
 ([effect-vm.md](effect-vm.md#the-default-arms-draw)). `FUN_80043390` draws it
 with flag word `0x8A000000` - semi-transparent, blend mode 2, subtracted from
 the frame - only while the actor is neither pitched nor rolled
-(`+0x24 == 0 && +0x28 == 0`).
+(`+0x24 == 0 && +0x28 == 0`). In battle the node's angle trio is the battle
+actor's `+0x44..+0x48`, which the anim tick `FUN_80047430` copies across every
+pass (`0x800476AC..0x800476C4`, `0x80048088..0x800480A0`), so a body a cast
+module tips casts none: Kemaro's frozen victim (pitch `1`, `0x801F8388`),
+Mushura's banking creature (roll `+0x48`), Barra's diving pair. The port reads
+the battle pitch and roll there (`engine_world_views::battle_draws::battle_ground_shadow`).
 
 | Case | Centre / rim colour |
 |---|---|
