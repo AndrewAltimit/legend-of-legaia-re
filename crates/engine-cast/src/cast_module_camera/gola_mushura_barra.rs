@@ -619,6 +619,76 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     }
 }
 
+/// PROT 0917's backdrop scroll: the module words `0x801F9360` (`u`) and
+/// `0x801F9362` (`v`) one pass of arm `phase` leaves, and the scanline wash's
+/// sample origin `ctx[+0x285]` / `+0x286` the tick epilogue
+/// (`0x801F8230..0x801F82A0`) builds from them.
+///
+/// Arm 6's pass arms the wash in scanline mode `1` (`0x801F73D0..0x801F7400`),
+/// so from arm 7 on the sky the arms draw is the uploaded page sampled from
+/// this origin, and the arms slide it:
+///
+/// | arm | every pass | on the pass |
+/// |---:|---|---|
+/// | 0 | both `= 0` (`0x801F6C68..0x801F6C7C`) | |
+/// | 7 | `v += 4p`, `u -= p` (`0x801F7484..0x801F74A8`) | |
+/// | 8 | `u -= p` (`0x801F75A0..0x801F75AC`) | `v = 0x2000`, `u -= 0x6000` (`0x801F7650..0x801F7664`) |
+/// | 9 | `v -= 4p` (`0x801F76A8..0x801F76BC`) | |
+/// | `0xA` | `v -= 2p` (`0x801F7800..0x801F7818`) | |
+/// | `0xB` | `v -= p` (`0x801F78B0..0x801F78BC`) | `v = 0`, `u -= 0x6000` (`0x801F793C..0x801F794C`) |
+/// | `0xC` | `v += 8p` while the wash alpha lasts (`0x801F7AEC..0x801F7AFC`) | |
+///
+/// `p` is the pass's scalar times its frame step. The epilogue stores
+/// `u >> 8` as the start `u`, and `v >> 8` as the start row clamped to
+/// `0..=0x20` (`bgez` / `slti 0x2001`); the Done arm stores both `0`
+/// (`0x801F8220..0x801F822C`).
+///
+/// PORT: overlay_summon_barra_0917_801f6a30 (PROT 0917; the backdrop words `0x801F9360` / `0x801F9362` and the epilogue's `ctx[+0x285]` / `+0x286` stores)
+pub fn barra_backdrop_scroll(
+    phase: u8,
+    passed: bool,
+    wash_live: bool,
+    words: (u16, u16),
+    p: i32,
+) -> ((u16, u16), (u8, u8)) {
+    let (mut u, mut v) = (words.0 as i32, words.1 as i32);
+    match phase {
+        0 => (u, v) = (0, 0),
+        7 => {
+            v += 4 * p;
+            u -= p;
+        }
+        8 => {
+            u -= p;
+            if passed {
+                v = 0x2000;
+                u -= 0x6000;
+            }
+        }
+        9 => v -= 4 * p,
+        0xA => v -= 2 * p,
+        0xB => {
+            v -= p;
+            if passed {
+                v = 0;
+                u -= 0x6000;
+            }
+        }
+        0xC if wash_live => v += 8 * p,
+        _ => {}
+    }
+    let words = (u as u16, v as u16);
+    if phase == 0xFF {
+        return (words, (0, 0));
+    }
+    let row = match words.1 as i16 {
+        r if r < 0 => 0,
+        r if r > 0x2000 => 0x20,
+        r => (r as u16 >> 8) as u8,
+    };
+    (words, ((words.0 >> 8) as u8, row))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,6 +696,25 @@ mod tests {
     /// Arm `0xD`'s exit shot reads the yaw global after the pass's own drift
     /// (`0x801F74F0..0x801F74FC`, read back at `0x801F7630`), so its yaw gap
     /// is zero and arm `0xE`'s drift runs on.
+    /// Arm 7 slides the sample origin down the page and back along it, and
+    /// the row clamps at `0x20` once the word passes `0x2000`.
+    #[test]
+    fn barra_arm7_scrolls_the_backdrop() {
+        let (w, uv) = barra_backdrop_scroll(7, false, true, (0, 0), 8);
+        assert_eq!(w, (0xFFF8, 32));
+        assert_eq!(uv, (0xFF, 0));
+        let (_, uv) = barra_backdrop_scroll(7, false, true, (0, 0x2100), 8);
+        assert_eq!(uv.1, 0x20);
+        let (_, uv) = barra_backdrop_scroll(9, false, true, (0, 0x10), 8);
+        assert_eq!(uv.1, 0, "a negative word clamps to row 0");
+        let (w, _) = barra_backdrop_scroll(8, true, true, (0x7000, 0x1000), 8);
+        assert_eq!(w, (0x7000 - 8 - 0x6000, 0x2000));
+        assert_eq!(
+            barra_backdrop_scroll(0xFF, false, true, (0x1234, 0x1000), 8).1,
+            (0, 0)
+        );
+    }
+
     #[test]
     fn gola_gola_hit_exit_yaw_includes_the_pass_drift() {
         let mut st = ModuleCamState {

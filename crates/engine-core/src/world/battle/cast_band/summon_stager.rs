@@ -45,6 +45,7 @@ impl World {
         self.casting.module_nighto_outcome = None;
         self.casting.module_stager_calls.clear();
         self.casting.module_barra_counter = 0;
+        self.casting.module_barra_scroll = (0, 0);
         self.casting.module_running_entry = None;
         self.casting.module_spikefish_words = Default::default();
         self.casting.module_ozma_word = 0;
