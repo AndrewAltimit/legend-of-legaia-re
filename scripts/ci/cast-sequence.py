@@ -181,6 +181,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_GHOST_TRACE"] = "1"
     if a.ribbon_trace:
         env["LEGAIA_RIBBON_TRACE"] = "1"
+    if a.popup_trace:
+        env["LEGAIA_POPUP_TRACE"] = "1"
     if a.calc_clock:
         env["LEGAIA_CALC_CLOCK"] = "1"
     if a.cd_trace:
@@ -195,7 +197,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace or a.ghost_trace or a.ribbon_trace or a.calc_clock or a.cd_trace):
+            or a.range_trace or a.hit_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -961,6 +963,9 @@ def main() -> int:
     ap.add_argument("--ribbon-trace", action="store_true",
                     help="retail: each streak-ribbon call FUN_801E1D98 with its seed word, anchor, "
                          "projected corners and GTE view registers to retail/ribbons.csv (breakpoint core)")
+    ap.add_argument("--popup-trace", action="store_true",
+                    help="retail: each damage numeral FUN_801DF6B8 projects, with its timer, anchor, corners, "
+                         "ordering-table depth and GTE view, to retail/popups.csv (breakpoint core)")
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")
