@@ -335,7 +335,20 @@ impl World {
             a.battle.render_flag = r;
         }
         if let Some(r) = w.rate {
-            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
+            use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, commit_rate_decay};
+            // A seat the tick's own bump committed this pass: retail stores
+            // the rate in the SM and commits in the anim tick after it, so
+            // the commit's decay still lands on this store. PROT 0959's arm
+            // `0x0A` stores Che's `2` every pass (`0x801F7598`) and bumps her
+            // next clip on the last (`0x801F768C`); she jumps at `4`.
+            let bumped = w.stage.is_none()
+                && slot < 8
+                && self.casting.module_bump_commits & (1 << slot) != 0;
+            a.battle.anim_rate = if bumped {
+                commit_rate_decay(AnimRate(r))
+            } else {
+                AnimRate(r)
+            };
         }
         if let Some(floor) = w.seek_floor
             && let Some(p) = a.battle_animation.as_mut()
