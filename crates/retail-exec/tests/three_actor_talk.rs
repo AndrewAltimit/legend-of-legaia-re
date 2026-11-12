@@ -175,10 +175,7 @@ fn the_three_actor_talk_arms_what_retail_arms() {
         }
         cpu.mem.wr32(STACK_TOP + 0x10, u32::from(byte));
         assert_eq!(
-            cpu.call(
-                SPAWN_TALK,
-                &[actor(0), actor(1), actor(2), u32::from(word)]
-            ),
+            cpu.call(SPAWN_TALK, &[actor(0), actor(1), actor(2), u32::from(word)]),
             Stop::Returned,
             "{label}"
         );
@@ -193,7 +190,8 @@ fn the_three_actor_talk_arms_what_retail_arms() {
         // spawner adds them back, so the byte as written is the record.
         let ctr = cpu.mem.rd16(CTRL + 0x72);
         assert_eq!(
-            ctr.wrapping_add(header[0] as u16).wrapping_add(header[1] as u16),
+            ctr.wrapping_add(header[0] as u16)
+                .wrapping_add(header[1] as u16),
             u16::from(talk.duration),
             "{label}"
         );

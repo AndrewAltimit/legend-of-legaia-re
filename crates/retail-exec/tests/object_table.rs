@@ -97,5 +97,8 @@ fn the_object_table_is_the_objects_the_port_walks() {
             tmds += 1;
         }
     }
-    assert!(tmds > 400 && objects > 1000, "{tmds} TMDs, {objects} objects");
+    assert!(
+        tmds > 400 && objects > 1000,
+        "{tmds} TMDs, {objects} objects"
+    );
 }

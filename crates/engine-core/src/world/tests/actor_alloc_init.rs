@@ -27,8 +27,12 @@ fn a_reused_slot_does_not_inherit_its_previous_occupant() {
     );
     assert_eq!(a.state_54, 0);
     assert_eq!(a.move_state.world_x, 0);
-    assert_eq!(a.move_state.flags, 0);
+    // The engaged bit is gone; bit `2` is the one the allocator ORs onto
+    // every descriptor's flags (`ori v0,v0,0x2` at `0x80020ED8`).
+    assert_eq!(a.move_state.flags, 2);
     assert_eq!(a.move_state.field_72, 0x1000, "render scale +0x72");
+    assert_eq!(a.move_state.field_6a, 0x10, "clip rate +0x6A");
+    assert_eq!(a.move_state.field_74, 0x0080_8080, "colour +0x74");
     assert_eq!((a.kind, a.variant), (3, 4));
 }
 
