@@ -411,6 +411,7 @@ mod tint_sm;
 mod title_menu;
 mod title_prims;
 mod tmd_register;
+mod tmd_render;
 mod touch_post;
 mod transition_sweep;
 mod travel_art;
