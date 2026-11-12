@@ -159,7 +159,12 @@ impl Renderer {
         }
         // Per-(light, draw) light-space MVPs. `model = view_proj^-1 * mvp`
         // (same recovery as the main pass), so
-        // `light_mvp = light_vp * model`.
+        // `light_mvp = light_vp * model`. The product keeps that order: the
+        // main pass shades `model * p` from `model_rows(inv_vp * mvp)`, and
+        // regrouping it as `(light_vp * inv_vp) * mvp` rounds the recovered
+        // model differently, by enough at field coordinates to sink a whole
+        // draw under its own shadow depth on some frames (a ground tile
+        // blinking dark under a lamp).
         let Some(inv_vp) = self.scene_view_proj.get().map(|vp| vp.inverse()) else {
             return;
         };
@@ -177,9 +182,8 @@ impl Renderer {
         let stride = self.uniform_offset_alignment as usize;
         let su_size = std::mem::size_of::<ShadowUniforms>();
         for (li, lvp) in light_vps.iter().enumerate() {
-            let model_to_light = *lvp * inv_vp;
             let mut stage = |di: usize, mvp: Mat4, bounds: &([f32; 3], [f32; 3])| {
-                let smvp = model_to_light * mvp;
+                let smvp = *lvp * (inv_vp * mvp);
                 if !crate::scene_lights::bounds_touch_frustum(&smvp, bounds) {
                     return;
                 }

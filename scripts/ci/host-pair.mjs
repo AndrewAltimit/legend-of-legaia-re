@@ -181,6 +181,7 @@ const MODES = {
   no_lighting: { native: ['--no-dynamic-lighting'], boxes: [], unboxes: ['play-dyn-light'] },
   no_fog: { native: ['--no-volumetric-fog'], boxes: [], unboxes: ['play-ground-fog'] },
   no_fade: { native: ['--no-occlusion-fade'], boxes: [], unboxes: ['play-see-through'] },
+  no_shadows: { native: ['--no-dyn-shadows'], boxes: [], unboxes: ['play-dyn-shadows'] },
   /* The two passes that default off, on for both hosts: the window has no switch that turns
    * either on, so its run reads them from the options file in its own working directory. */
   fog_bloom: { native: [], options: 'volumetric_fog = true\nbloom = true\n', boxes: ['play-ground-fog', 'play-bloom'] },
