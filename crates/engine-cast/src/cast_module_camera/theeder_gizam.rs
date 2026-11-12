@@ -664,7 +664,7 @@ mod tests {
     fn theeder_captions_follow_their_arms() {
         let mut st = ModuleCamState::default();
         let s = seats(0);
-        let mut pass = |arm: u8, st: &mut ModuleCamState| loop {
+        let pass = |arm: u8, st: &mut ModuleCamState| loop {
             let d = theeder_direct(st, arm, s);
             if !d.hold {
                 return d.caption;
