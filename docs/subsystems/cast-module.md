@@ -1698,6 +1698,14 @@ trio, and the module's stager `0x801F8EAC` seats `0x801F90B0` on its caller
 `theeder_stager_spawns`; the two fades fire as
 [presentation calls](#presentation-calls).
 
+The module prints its own line: the spell name on arm 5's exit (measured at
+`0x801F7024`, printed at `0x801F707C` on centre `0xA6`), cleared on arm 6's
+(`FUN_800319A8(0)` at `0x801F7140`), the attack name on arm 7's once the
+creature's `+0x21B` has left `0xFF` (`0x801F71E4..0x801F7218`, centre `0xA0`), and
+cleared again on arm 13's once the retract reports done (`0x801F7FC4`). The
+director carries the four (`theeder_direct`); arms 7 and 13 are the body's to
+pace, so their two land on the next arm's first pass, a tick after retail's.
+
 Arm 11's exit lights the monster row again: every live seat `3..7` takes the
 neutral word `+0x04 = 0x20080200` behind its HP test
 (`0x801F7934..0x801F7978`), its render flag left at the band's `0xFF`. The
@@ -1817,7 +1825,12 @@ phase 5 on that program's clock
 (256 ticks, a wait `v` lasting `v + 1` frames) and the host fires stager arms
 0 and 1 on ticks 191 and 192. Retail's hole lasts 309 vsyncs and its flash
 lands about 60 vsyncs later than the clock puts it; the difference is not
-traced.
+traced. Arm 4 hides the creature behind both its flag and its colour word
+(`+0x21C = 0xFF`, `sw zero,4(s4)` at `0x801F6D34`), so through the hole it
+neither draws nor ticks its node: retail's clip waits on its first frames
+until stager arm 1 lights it. With the flag alone the port drew the creature
+at the caster through arm 5, which on the Gobu Gobu film (`0x84`) read `.887`
+against `.985` with both.
 
 The other arms are countdowns on `ctx[+0x6D8]`: arm 3 waits on the band
 timer, arms 6, 8, 11 and 12 arm `scalar * 180`, `170`, `40` and `<< 8`, arm 9
