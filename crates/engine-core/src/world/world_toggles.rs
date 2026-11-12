@@ -238,8 +238,9 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`].
     pub jewel_fix: bool,
     /// Battle HP-readout guard (port softlock fix, **on** by default): a
-    /// party slot whose displayed HP differs from its live HP with nothing
-    /// left in the readout's pending accumulator - the absorbing state that
+    /// party slot whose displayed HP differs from its resting value (live HP
+    /// less the melee combo total still banked, which the readout runs ahead
+    /// of mid-combo) with nothing left in the readout's pending accumulator - the absorbing state that
     /// parks the action SM's state `0x51` on every party-targeted action
     /// (`docs/subsystems/battle-action-exit-gates.md`) - gets the difference
     /// re-seeded, so the readout counts to live HP and the gate opens. Retail
