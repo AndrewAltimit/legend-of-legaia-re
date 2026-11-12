@@ -276,6 +276,10 @@ impl World {
                         .flag_bits
                         .set(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
                 }
+                // A standing member whose queued item never ran gets the
+                // copy back (`0x8004F354..0x8004F38C`); the floor below
+                // reads the pre-floor HP the per-member loop tests first.
+                self.refund_unacted_items();
                 // A downed member leaves a won battle standing at 1 HP
                 // (`0x8004F390..0x8004F398`).
                 self.floor_downed_party_hp();
@@ -308,6 +312,48 @@ impl World {
                     VICTORY_RESULTS_HOLD_FRAMES.saturating_add(VICTORY_EXIT_PHASE);
             }
             BattleEndCause::Escaped => {}
+        }
+    }
+
+    /// The win arm's unspent-item refund (`0x8004F354..0x8004F38C`), inside
+    /// the per-member spoils loop, after the level-up applier: a seat that
+    /// is standing (`+0x14C != 0`, else `beq a1,zero,0x8004F390` takes the
+    /// HP floor instead) and not Stoned (`+0x16E & 4`, else the loop skips
+    /// at `0x8004F248`), whose initiative key `+0x16C` is still unspent and
+    /// whose committed category `+0x1DE` is Item, hands the reserved id
+    /// `+0x1DF` back through `FUN_800421D4(id, 1)` (`0x8004F380`).
+    ///
+    /// The window's commit takes the copy out of the bag; the effect lands
+    /// only when the member's turn dispatches. So a battle that ends before
+    /// that turn - the last monster killed by an earlier actor, or fled on
+    /// its own turn - returns the item rather than eating it. A seat that
+    /// falls before its turn gets the same refund from the turn picker's
+    /// dead-slot sweep (`World::next_combatant_by_initiative`).
+    ///
+    /// PORT: FUN_8004E568 (`0x8004F354..0x8004F38C`, the queued-item refund)
+    pub(in crate::world) fn refund_unacted_items(&mut self) {
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+        const STONE_WORD_BIT: u16 = 0x0004;
+        for slot in self.party_floor_seats() {
+            let stoned = self.raw_status_word(slot as u8) & STONE_WORD_BIT != 0;
+            let b = &self.actors[slot].battle;
+            if b.hp == 0
+                || stoned
+                || b.init_key == 0
+                || b.action_category
+                    != legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte()
+            {
+                continue;
+            }
+            if let Some(Some(PendingPartyAction::Item { item_id, .. })) = self
+                .battle
+                .round_flow
+                .pending
+                .get_mut(slot)
+                .map(Option::take)
+            {
+                let _ = self.party.inventory.add(item_id, 1);
+            }
         }
     }
 

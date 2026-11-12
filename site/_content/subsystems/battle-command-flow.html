@@ -143,6 +143,9 @@
 </section>
 
 <section class="doc-section" id="commit">
+  <h2>An item leaves the bag at the commit</h2>
+  <p>The item window's commit takes the copy out of the bag; the effect lands only when the member's turn runs. Until then the copy is reserved on the actor (category <code>+0x1DE == 1</code>, id <code>+0x1DF</code>), and four routines hand it back through <code>FUN_800421D4</code> when the turn cannot run: the ring's cancel stepping back onto the member, the turn picker's dead-slot sweep (<code>0x801DAC58</code>), the Stone applier, and the win arm of <code>FUN_8004E568</code> (<code>0x8004F380</code>) for a battle won before the member's turn came - the last monster killed by an earlier actor, or fleeing on its own turn.</p>
+
   <h2>Commit log and confirm</h2>
   <p>Each committed member gets a row of three screen elements - name, command, target - from placement records <code>0x2B + 3n</code>, where <code>n</code> is the step counter. The commit arms of the window-choreography helper <code>FUN_801D388C</code> land them, seat them off the measured width of the name (<code>x = 16</code>, <code>name_w + 0x20</code>, <code>name_w + 0x60</code>) and scroll earlier rows up as the party commits. An all-target commit logs a dedicated &ldquo;all&rdquo; record in the target column.</p>
   <p>The commit-confirm screen (<code>0x6E</code>) is raised after the <strong>last member that can act</strong> has committed, for every party size - a solo party reaches it off its only member. No option gates it. Begin arms the round (<code>0xFE</code>); Reselect reopens the ring.</p>

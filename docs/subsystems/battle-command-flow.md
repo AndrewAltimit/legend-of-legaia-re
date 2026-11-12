@@ -442,6 +442,27 @@ dropping the landed member's typed commit and its Spirit stance and refunding
 an item. It stages no `0x6E` screen - the last commit begins the round - so the
 `Reselect` entry has no seat.
 
+### An item leaves the bag at the commit
+
+The item window's commit takes the copy out of the bag; the effect lands only
+when the member's turn dispatches (`0x3C..0x40`, `FUN_800402F4`). Between the
+two the copy is reserved on the actor - category `+0x1DE == 1`, id `+0x1DF` -
+and four routines hand it back through `FUN_800421D4(+0x1DF, 1)` when the turn
+cannot run:
+
+| Site | When |
+|---|---|
+| ring cancel, `0x801D12AC` | the cursor steps back onto the member (above) |
+| turn picker's dead-slot sweep, `0x801DAC58` (`FUN_801DABA4`) | the member fell holding an unspent key `+0x16C` |
+| Stone applier, `0x80041CFC..0x80041D4C` (`FUN_800402F4`) | the member is petrified with its key unspent |
+| win arm, `0x8004F380` (`FUN_8004E568`) | the battle is won with the member standing, not Stoned, key unspent |
+
+The last covers a fight that ends before the member's turn: the last monster
+killed by an earlier actor, or fleeing on its own turn. Port:
+`World::refund_unacted_items` (the results frame and the direct teardown),
+`World::next_combatant_by_initiative`, `World::stone_cancels_queued_action`,
+`World::step_back_battle_command`.
+
 ### The commit-confirm screen (`0x6E`)
 
 Every commit site above stores `0x6E` instead of `0x28` once `FUN_801DB81C`

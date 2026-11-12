@@ -134,6 +134,8 @@ impl World {
             && self.battle.end == Some(BattleEndCause::MonsterWipe)
             && let Some(formation) = self.battle.active_formation.clone()
         {
+            // The win arm's unspent-item refund, as the results frame runs it.
+            self.refund_unacted_items();
             // `apply_battle_loot` borrows the catalog while mutating self, so
             // swap it out and back around the call.
             let catalog = std::mem::take(&mut self.tables.monster_catalog);
