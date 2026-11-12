@@ -370,15 +370,35 @@ pub const BANK3_SPLIT_KIND: u16 = 19;
 /// PORT: FUN_80045BB4 (the model draw's kind-19 prims on bank 3)
 pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u16]) {
     use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
+    let is_quad = |ix: &[u32], k: usize| {
+        let a = ix[k];
+        ix.get(k..k + 6) == Some(&[a, a + 1, a + 2, a + 1, a + 3, a + 2][..])
+    };
+    let splits = |ix: &[u32], k: usize| {
+        is_quad(ix, k) && group_flags.get(ix[k] as usize).map(|f| f >> 1) == Some(BANK3_SPLIT_KIND)
+    };
+    // The output's size, so the per-frame build allocates once.
+    let (mut verts, mut k) = (0, 0);
+    while k + 3 <= mesh.indices.len() {
+        let (n, step) = if splits(&mesh.indices, k) {
+            (16 * 3, 6)
+        } else if is_quad(&mesh.indices, k) {
+            (4, 6)
+        } else {
+            (3, 3)
+        };
+        verts += n;
+        k += step;
+    }
     let src = std::mem::replace(
         mesh,
         legaia_tmd::mesh::VramMesh {
-            positions: Vec::new(),
-            uvs: Vec::new(),
-            cba_tsb: Vec::new(),
-            indices: Vec::new(),
-            normals: Vec::new(),
-            colors: Vec::new(),
+            positions: Vec::with_capacity(verts),
+            uvs: Vec::with_capacity(verts),
+            cba_tsb: Vec::with_capacity(verts),
+            indices: Vec::with_capacity(verts * 2),
+            normals: Vec::with_capacity(verts),
+            colors: Vec::with_capacity(verts),
         },
     );
     // Copy vertex `i` and return its new index.
@@ -394,9 +414,7 @@ pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u
     let mut k = 0;
     while k + 3 <= ix.len() {
         let a = ix[k];
-        let quad = ix.get(k..k + 6) == Some(&[a, a + 1, a + 2, a + 1, a + 3, a + 2][..]);
-        let kind = group_flags.get(a as usize).map(|f| f >> 1);
-        if quad && kind == Some(BANK3_SPLIT_KIND) {
+        if splits(ix, k) {
             let a = a as usize;
             let corners: [SplitVertex; 4] = std::array::from_fn(|c| SplitVertex {
                 pos: src.positions[a + c].map(|v| v as i16),
@@ -414,7 +432,7 @@ pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u
                 }
             }
             k += 6;
-        } else if quad {
+        } else if is_quad(ix, k) {
             // A whole quad keeps its four shared corners, so the hosts still
             // read it as one primitive.
             let b = copy(mesh, a as usize);
