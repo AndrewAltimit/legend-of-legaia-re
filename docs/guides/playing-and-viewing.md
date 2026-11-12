@@ -102,7 +102,12 @@ folder), its subfolders and its `.bin` / `.cue` files, then the usual places
 drive). Cross opens a folder or tries a disc image, and a disc that passes the
 check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
 `Esc` closes the finder. The keyboard reaches it too, as *Find a disc on this
-computer...* on the *Recent* page. While a controller was the last thing
+computer...* on the *Recent* page. With a controller in hand, choosing a
+memory card or an expansion pack past the remembered ones opens the same
+finder on those files (`.mcr` / `.mcd` / `.srm` / `.gme` / `.mcs`, or
+`.lxpack` / `pack.toml`) rather than the file dialog; the card finder's
+places start with the emulators' card folders that exist (DuckStation's
+`memcards`, Mednafen's `sav`, RetroArch's `saves`, ePSXe's `memcards`). While a controller was the last thing
 pressed, the help box's key reminder and the "press to play" lines name its
 buttons, by the labels its maker prints on them.
 
@@ -142,7 +147,8 @@ those folders' direct subfolders, for a `.bin` or `.cue` named for the game (or
 sitting in a folder named for it) that passes the check below. One that does is
 offered on the disc card (*Found your disc image*), with *Choose disc...*
 reading *Use this disc*: `Enter` adopts it, `Ctrl+O` or `Shift+Enter` picks
-another file. Nothing else on the machine is read and nothing is written unless
+another file. *Play* (or Start) adopts the found disc and starts the game in
+one press. Nothing else on the machine is read and nothing is written unless
 it is adopted.
 
 A disc that passes is remembered in `launcher.toml` in the platform config
