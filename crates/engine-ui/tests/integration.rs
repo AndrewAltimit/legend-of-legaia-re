@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-ui --test integration <name>::`.
 
 mod battle_fx_ladder;
+mod battle_item_desc_fit;
 mod camera_relative_retail_oracle;
 mod field_hud_stand_in;
 mod numeral_host_parity;
