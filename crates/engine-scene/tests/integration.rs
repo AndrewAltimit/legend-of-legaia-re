@@ -7,6 +7,7 @@
 //! Run a single file's tests with
 //! `cargo test -p legaia-engine-scene --lib integration::<name>::`.
 
+mod actor_crawl_narration_disc;
 mod ambient_motion_op_census_disc;
 mod battle_hud_subdraw_disc;
 mod battle_stage_boss_transition;

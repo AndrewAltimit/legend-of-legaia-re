@@ -230,6 +230,10 @@ back-pointer) and `actor[+0x54] = 0`. It does **not** write `+0x3C` / `+0x3E`
 - only the [`4C D8`](#what-the-0x4c-0xd8-spawner-builds) spawner carries
 explicit immediates.
 
+The records a script hands it are text pages, and the child is the narration
+roller `FUN_80037174`: the [crawl](cutscene.md#inline-narration-format), on
+whatever context the op runs on.
+
 #### `4C 81`: the actor tint
 
 `+0x74 = colour` (`FUN_8003CEB8`, 24-bit `0xBBGGRR`) and `+0x78 = blend`

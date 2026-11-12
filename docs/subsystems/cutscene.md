@@ -1128,17 +1128,29 @@ field-VM script that interleaves:
 
 The narration is carried as **inline ASCII text pages embedded in the timeline script**, not as
 a `MES` text id. A **crawl block** is introduced by field-VM op `0x4C` in its outer-nibble-8
-form with the cross-context target `0xF8`:
+form with an extended target `tt`, the cutscene context `0xF8` in the opening:
 
 ```text
-0xCC 0xF8 0x80 N        ; op (0xCC = 0x80|0x4C extended), N = page count
+0xCC tt 0x80 N          ; op (0xCC = 0x80|0x4C extended), N = page count
 1F <ascii…> 00          ; page 1
 1F <ascii…> 00          ; page 2
 …                       ; N pages total
 ```
 
-Each page is framed `0x1F <printable ASCII> 0x00`. The page count `N` equals the number of
-framed pages that follow, which validates the parse.
+Each page is framed `0x1F <printable ASCII> 0x00`, with the dialog renderer's two-byte name
+escapes (`0xC1..=0xC7` and an operand byte, any value) allowed inside. The page count `N` equals
+the number of framed pages that follow, which validates the parse.
+
+The op's arm (`0x801E1ECC..0x801E1FBC` in `FUN_801DE840`) halt-acquires the context it runs on
+(`ori v0,v0,0x400` at `0x801E1F24`) and allocates the roller over the pages; it reads the target
+for nothing else, so a crawl can run on any actor. Five records outside the opening open one on
+an actor's context: `town0b` `P2[23]` (`0x5B`), `rikuroa` `P2[54]` (`0x05`), `vozz` `P2[17]`
+(`0x06`, Ozma's speech as he hatches), `ropeway` `P2[31]` (`0x21`) and `map01` `P2[39]` (`0x12`).
+A record waits for its crawl by testing that context's halt bit (`B3 06 0A` in `vozz`), which
+the roller clears as it retires its last page; a retail recording of the `vozz` beat holds the
+record on that test for the whole crawl. The engine's timeline keeps the crawl's target
+(`CutsceneTimeline::narration_target`) and holds the test on it, and resolves each page's name
+escapes through the live name tables (`World::narration_page_text`).
 
 A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
 an optional short placement word) but presents differently: the pages show **simultaneously**,
@@ -1157,7 +1169,9 @@ legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
 ```
 
 The disc-gated test `crates/engine-scene/tests/opdeene_narration.rs` checks the structure (two
-blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded).
+blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded), and
+`actor_crawl_narration_disc.rs` the `vozz` block on actor `0x06` and the list of actor-context
+crawls.
 
 ### Narration playback - the crawl roller (`FUN_80037174`)
 

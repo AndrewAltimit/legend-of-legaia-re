@@ -257,8 +257,13 @@ impl World {
                     legaia_engine_field::cutscene_timeline::NarrationSite {
                         op_offset: b.op_offset,
                         end: end.min(body.len()),
-                        pages: b.pages.into_iter().map(|p| p.text).collect(),
+                        pages: b
+                            .pages
+                            .iter()
+                            .map(|p| self.narration_page_text(&p.raw))
+                            .collect(),
                         kind: b.kind,
+                        target: b.target,
                     }
                 })
                 .collect();

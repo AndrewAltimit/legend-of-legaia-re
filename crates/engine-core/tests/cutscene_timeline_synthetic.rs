@@ -338,3 +338,59 @@ fn player_walk_leg_closes_the_dominant_axis_first_on_a_compass_facing() {
     assert!(headings.contains(&0xC00), "the X run faces -X");
     assert_eq!(ms.render_26, 0xA00, "the leg ends on the -X -Z diagonal");
 }
+
+/// A crawl opened on an actor's context (`CC 06 80 N`, `vozz` `P2[17]`'s
+/// shape) holds a record that tests that actor's halt bit (`B3 06 0A`)
+/// until the roller retires: the `4C 80` arm halt-acquires its target
+/// (`ori v0,v0,0x400` at `0x801E1F24`) and the roller `FUN_80037174` frees
+/// the parent as its last page leaves. Without the hold the record ran past
+/// Ozma's speech while the crawl had not been drawn at all.
+#[test]
+fn an_actor_targeted_crawl_holds_the_halt_test_on_its_target() {
+    use legaia_engine_field::cutscene_timeline::NarrationSite;
+    use legaia_scene_formats::cutscene_text::NarrationKind;
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    // `[CC 06 80 01][1F "Hi" 00][B3 06 0A][GFLAG_SET 16]`.
+    let mut tl = CutsceneTimeline::new(
+        vec![
+            0xCC, 0x06, 0x80, 0x01, 0x1F, b'H', b'i', 0x00, 0xB3, 0x06, 0x0A, 0x2E, 0x10,
+        ],
+        0,
+    );
+    tl.narration_blocks = vec![NarrationSite {
+        op_offset: 0,
+        end: 8,
+        pages: vec!["Hi".to_string()],
+        kind: NarrationKind::Crawl,
+        target: 0x06,
+    }];
+    w.cutscene.timeline = Some(tl);
+
+    for _ in 0..4 {
+        step_frame(&mut w);
+    }
+    assert!(w.cutscene_narration_active(), "the crawl opens");
+    assert_eq!(
+        w.cutscene.timeline.as_ref().map(|t| t.pc),
+        Some(8),
+        "the record waits on B3 06 0A"
+    );
+    assert_eq!(w.flags.story_flags & (1 << 16), 0);
+
+    let mut frames = 0;
+    while w.cutscene_narration_active() && frames < 4000 {
+        step_frame(&mut w);
+        frames += 1;
+    }
+    assert!(!w.cutscene_narration_active(), "the roller retires");
+    for _ in 0..4 {
+        step_frame(&mut w);
+    }
+    assert!(
+        w.flags.story_flags & (1 << 16) != 0,
+        "the record runs on once the crawl is gone"
+    );
+}

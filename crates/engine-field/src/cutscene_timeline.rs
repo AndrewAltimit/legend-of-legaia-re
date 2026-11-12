@@ -102,6 +102,11 @@ pub struct NarrationSite {
     /// plays; a static title card installs (or, when its pages are blank,
     /// clears) the card overlay and the timeline continues.
     pub kind: legaia_scene_formats::cutscene_text::NarrationKind,
+    /// The context the introducing op halt-acquires (its extended target):
+    /// a record that waits for the crawl tests that context's halt bit
+    /// (`B3 <target> 0A`), which the roller clears as it retires its last
+    /// page.
+    pub target: u8,
 }
 
 /// A cross-context channel wait the timeline is PARKED on.
@@ -202,6 +207,9 @@ pub struct CutsceneTimeline {
     /// so the block waits for the active one to drain before opening. The
     /// pre-step gate then re-enters the block's op to open it.
     pub narration_pc: Option<usize>,
+    /// The context the open crawl's op halt-acquired ([`NarrationSite::target`]);
+    /// `None` reads as the cutscene context `0xF8`.
+    pub narration_target: Option<u8>,
     /// Kept alongside [`Self::narration_pc`]; always `true` while a hold is
     /// live (the only remaining hold shape is "waiting to OPEN this block
     /// once the prior roller drains").
@@ -565,6 +573,7 @@ impl CutsceneTimeline {
             arms_prologue_handoff: false,
             narration_blocks: Vec::new(),
             narration_pc: None,
+            narration_target: None,
             narration_pending_open: false,
             dialog: None,
             dialog_claim: 0,
