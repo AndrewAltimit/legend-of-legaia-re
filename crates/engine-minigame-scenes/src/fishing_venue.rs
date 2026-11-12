@@ -168,6 +168,22 @@ pub fn venue_camera_globals_view(
     }
 }
 
+/// The sky strip's vertex positions for a frame drawn under `view`, its
+/// screen rects projected from `sky` - the globals the lead's tick saw
+/// (`VenueCameraDriver::sky_camera`), whose stored focus and yaw words
+/// scroll it.
+pub fn venue_sky_positions(
+    view: &legaia_engine_camera::psx_camera::FieldCameraView,
+    sky: &legaia_engine_fishing::fishing_actors::VenueCamera,
+) -> Vec<[f32; 3]> {
+    crate::fishing_scene::sky_positions_split(
+        view,
+        &venue_camera_globals_view(sky),
+        sky.focus[0],
+        sky.rot[1],
+    )
+}
+
 /// The fishing camera this frame, while a fishing session is up: the
 /// venue's scripted camera ([`FishingVenue::camera`] - the lead's view at the
 /// shore, the dolly over the water on the cast, the in-water view, the catch
@@ -230,6 +246,11 @@ pub struct FishingVenue {
     /// The scripted camera ([`legaia_engine_fishing::fishing_actors::VenueCameraDriver`]),
     /// stepped once a venue frame.
     pub camera: legaia_engine_fishing::fishing_actors::VenueCameraDriver,
+    /// The catch's white-out: the two screen fades the line actor's
+    /// celebration spawns ([`legaia_engine_fishing::fishing_actors::CATCH_FLASH_FADES`]),
+    /// stepped once a venue frame until each runs out. Every host draws them
+    /// through [`Self::catch_flash_prims`].
+    pub catch_flash: Vec<legaia_engine_system::fade::FadeState>,
 }
 
 /// VA of the ripple record the lead's roll spawns on `rand() & 1 != 0`
@@ -310,11 +331,27 @@ impl Default for FishingVenue {
             ripple_records: None,
             ripple_fx: None,
             camera: Default::default(),
+            catch_flash: Vec::new(),
         }
     }
 }
 
 impl FishingVenue {
+    /// The catch white-out's full-screen quads this frame: one additive
+    /// quad per live fade past its start delay, at the fade's ordering-table
+    /// bucket (`FUN_80025000` -> `FUN_80024EE4(id, kind, rgb)`). Hosts draw
+    /// them after the HUD sprites and before the font text.
+    // REF: FUN_80025000
+    pub fn catch_flash_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+        self.catch_flash
+            .iter()
+            .filter(|f| f.visible())
+            .map(|f| {
+                legaia_render_kernels::screen_prim::screen_fade_prim(f.rgb(), f.abr(), f.ot_layer())
+            })
+            .collect()
+    }
+
     /// Whether the venue has been armed (its wander actor exists).
     pub fn armed(&self) -> bool {
         self.wander.is_some()
@@ -690,6 +727,7 @@ pub fn tick_venue_actors(
                 phase,
                 lead: (w.x, w.y, w.z, w.facing),
                 record: session.line_record(),
+                lure_height: session.lure_actor().map(|l| l.y_fixed),
                 lure_drift,
                 venue: session.venue,
                 close_up,
@@ -710,6 +748,10 @@ pub fn tick_venue_actors(
     // The ripple parts tick first (the actor list runs the parts before the
     // lead's tick seats a new one), then the roll's spawn runs its first
     // slice.
+    // The white-out's fade actors tick ahead of this frame's spawn
+    // (`FUN_80025000` -> `FUN_80020C14`), each dropped once its ramp and
+    // hold have run.
+    v.catch_flash.retain_mut(|f| f.step());
     v.tick_ripples();
     if let Some((variant, pos, rot)) = ripple {
         v.spawn_ripple(variant, pos, rot);
@@ -730,6 +772,12 @@ pub fn tick_venue_actors(
         for b in &f.bursts {
             if let Some((x, y)) = seat(b.world_point(origin)) {
                 fx.spawn(x, y, legaia_engine_minigames::minigame_fx::BURST_SPRITE_ID);
+            }
+        }
+        if f.flash {
+            for t in &legaia_engine_fishing::fishing_actors::CATCH_FLASH_FADES {
+                v.catch_flash
+                    .push(legaia_engine_system::fade::FadeState::load(t));
             }
         }
         if !f.done {

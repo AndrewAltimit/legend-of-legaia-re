@@ -144,10 +144,14 @@ impl LegaiaRuntime {
         let Some(table) = host.world.minigames.fishing_sprites.as_deref() else {
             return Vec::new();
         };
-        legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
+        let mut prims = legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
             &self.fishing_hud_items(),
             table,
-        )
+        );
+        // The catch white-out over the sprites, under the text - the native
+        // window appends the same quads.
+        prims.extend(host.world.minigames.fishing_venue.catch_flash_prims());
+        prims
     }
 
     /// The live fishing session, when one is installed on the scene host's

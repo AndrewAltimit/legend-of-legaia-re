@@ -687,6 +687,32 @@ window.MgFishing = (function () {
       g.restore();
     }
 
+    /* The catch white-out (FUN_801D4948's two FUN_801D7964 fades): each
+     * live quad adds its colour over the pond and the HUD sprites, under the
+     * text, as the play hosts' GPU pass blends it. The pond is on the WebGL
+     * canvas below, so it is first copied under this canvas's own pixels;
+     * a frame with no flash leaves both canvases as they are. */
+    function drawCatchFlash() {
+      if (!api.fishing_catch_flash_json) return;
+      let quads = [];
+      try { quads = JSON.parse(api.fishing_catch_flash_json()) || []; }
+      catch (_) { quads = []; }
+      if (!quads.length) return;
+      const W = canvas.width, H = canvas.height;
+      g.save();
+      if (scene && glCanvas) {
+        g.globalCompositeOperation = 'destination-over';
+        g.drawImage(glCanvas, 0, 0, W, H);
+      }
+      for (const q of quads) {
+        /* ABR 1 is B + F; the white-out uses no other rate. */
+        g.globalCompositeOperation = q[3] === 1 ? 'lighter' : 'source-over';
+        g.fillStyle = 'rgb(' + q[0] + ',' + q[1] + ',' + q[2] + ')';
+        g.fillRect(0, 0, W, H);
+      }
+      g.restore();
+    }
+
     /* One full frame: 3D pass below, HUD + overlay above. `hud` is the
      * ported draw-item list for this frame (already JSON-parsed) and `fx` the
      * effect pool's parts. */
@@ -717,6 +743,7 @@ window.MgFishing = (function () {
       drawWaterOverlay(st);
       const sprites = !!hud && hudSpritesReady();
       if (sprites) drawHudSprites();
+      drawCatchFlash();
       if (hud) for (const it of hud) drawHudItem(it, sprites);
       drawFxParts(fx);
       drawHub();

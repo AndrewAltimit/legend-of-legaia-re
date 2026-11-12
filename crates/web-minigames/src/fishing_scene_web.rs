@@ -818,6 +818,20 @@ impl LegaiaMinigames {
 
     /// Sky backdrop vertex positions for `venue` (world space, Y down).
     pub fn fishing_sky_positions(&self, venue: u32) -> Vec<f32> {
+        // The armed venue's strip comes off the globals the lead's tick saw
+        // (`VenueCameraDriver::sky_camera`), seated under the frame's camera.
+        if self.fishing_pond.is_some() && self.fishing_venue_actors.armed() {
+            let Some((view, _)) = self.fishing_camera(venue) else {
+                return Vec::new();
+            };
+            return legaia_engine_minigame_scenes::fishing_venue::venue_sky_positions(
+                &view,
+                self.fishing_venue_actors.camera.sky_camera(),
+            )
+            .into_iter()
+            .flatten()
+            .collect();
+        }
         self.fishing_sky(venue)
             .map(|(m, _)| m.positions.iter().flatten().copied().collect())
             .unwrap_or_default()
@@ -933,6 +947,24 @@ impl LegaiaMinigames {
             ),
             None => "null".to_string(),
         }
+    }
+
+    /// The catch white-out this frame: `[[r, g, b, abr], ...]`, one entry
+    /// per live fade quad (`FishingVenue::catch_flash_prims`, the quads the
+    /// two play hosts draw over their HUD sprites). The page adds each over
+    /// the pond and the HUD sprites, under its text.
+    pub fn fishing_catch_flash_json(&self) -> String {
+        let quads: Vec<String> = self
+            .fishing_venue_actors
+            .catch_flash
+            .iter()
+            .filter(|f| f.visible())
+            .map(|f| {
+                let [r, g, b] = f.rgb();
+                format!("[{r},{g},{b},{}]", f.abr())
+            })
+            .collect();
+        format!("[{}]", quads.join(","))
     }
 
     /// Landed-fish `[u, v]` per vertex.

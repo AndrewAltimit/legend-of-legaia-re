@@ -316,16 +316,25 @@ pub struct CatchLift {
 }
 
 impl CatchLift {
-    /// The lift for a lure caught at line record `record`. Retail holds the
-    /// lure's height at or under `(record - 0xFA) << 8` once the record is
-    /// under `400` (`0x801D2F50..0x801D2F60`), and a catch needs a record under
-    /// `0x136`, so the port starts the lift at that ceiling (floored at the
-    /// surface, `0`) - the lure's own sink below it is not modelled.
+    /// The lift from the lure's 24.8 height accumulator `0x801D9178` as the
+    /// catch lands: sub-state `4` never reseeds it (only `+0x3E` and the
+    /// actor's `+0x16` are written on the first frame, `0x801D4BC0` /
+    /// `0x801D4BDC`), so the arc starts where the reel left the lure. That
+    /// height is the lure tick's sink step on the landing frame, which caps
+    /// it against the **previous** frame's record (`0x801D2F44..0x801D2F7C`
+    /// runs ahead of the tail that re-measures the record and lands the
+    /// fish). The retail catch film reads `-49` on the second lifted frame
+    /// from a record-`314` cap of `64` at step `3`.
+    pub fn from_height(acc: i32) -> Self {
+        Self { acc, rise: -0x300 }
+    }
+
+    /// The lift for a lure caught at line record `record`, for a caller with
+    /// no lure height: the ceiling `(record - 0xFA) << 8` the sink step holds
+    /// the lure under once the record is under `400` (floored at the
+    /// surface, `0`). The lure's own height can sit below it.
     pub fn at_record(record: i32) -> Self {
-        Self {
-            acc: ((record - 0xFA) << 8).max(0),
-            rise: -0x300,
-        }
+        Self::from_height(((record - 0xFA) << 8).max(0))
     }
 
     /// The height the line actor reads this frame (`acc >> 8`).
@@ -350,6 +359,9 @@ pub struct VenueCameraFrame {
     pub lead: (i16, i16, i16, i16),
     /// The live line record (`0x801D927C`).
     pub record: i32,
+    /// The lure's 24.8 height accumulator (`0x801D9178`), while a lure is
+    /// out: where the catch close-up's lift starts ([`CatchLift::from_height`]).
+    pub lure_height: Option<i32>,
     /// The lure's sideways walk-grid drift off its cast spawn, world units.
     pub lure_drift: i32,
     /// The venue (`DAT_801D90D0`), for the showcase's focus.
@@ -395,6 +407,8 @@ pub struct VenueCameraDriver {
     pub camera: VenueCamera,
     prev: Option<crate::fishing::PondPhase>,
     catch: Catch,
+    /// The globals as the lead's tick saw them this frame ([`Self::sky_camera`]).
+    sky: VenueCamera,
 }
 
 impl VenueCameraDriver {
@@ -404,6 +418,7 @@ impl VenueCameraDriver {
         let (lx, ly, lz, facing) = f.lead;
         let step = f.step.max(1);
         let entered = self.prev != Some(f.phase);
+        let before = self.camera;
         match f.phase {
             // The no-lure screen is state `10`'s shore with the gate parked.
             P::Idle | P::NoLure => {
@@ -433,12 +448,39 @@ impl VenueCameraDriver {
             }
             P::Landed => self.landed(f, step),
         }
+        // Which writer ran decides what the sky saw: the driver's own writes
+        // (wind-up, showcase) land before the actor ticks and the lead's
+        // publish inside his tick ahead of the sky call, while the lure
+        // tick's in-water pose and the line actor's close-up run after it.
+        let lagged = match f.phase {
+            P::Waiting | P::Hooked => true,
+            P::Landed => {
+                matches!(self.catch, Catch::CloseUp(..))
+                    || (matches!(self.catch, Catch::Restored) && f.close_up_done)
+            }
+            _ => false,
+        };
+        self.sky = if lagged { before } else { self.camera };
         self.prev = Some(f.phase);
     }
 
     /// The camera globals this frame.
     pub fn camera(&self) -> &VenueCamera {
         &self.camera
+    }
+
+    /// The camera globals the sky strip projects through this frame: the
+    /// strip is emitted by the lead's tick (`FUN_801D2050` calls
+    /// `FUN_801D24EC` last), which runs after the driver's switch and ahead
+    /// of the lure and line actors, so the in-water pose and the catch
+    /// close-up reach it a frame late. The `minigame_fishing_retail_catch_lift`
+    /// run's ordering tables hold the close-up's strip at the previous frame's
+    /// camera (`(-132, 164)` from step-`4` globals `t = 51`, the RAM holding
+    /// `t = 55`'s), and the landing frame draws no strip: the in-water pose's
+    /// horizon is above the frame.
+    // REF: FUN_801d2050 (the lead's tick, its last call), FUN_801d24ec (the strip)
+    pub fn sky_camera(&self) -> &VenueCamera {
+        &self.sky
     }
 
     /// The landed fish's world point `(x, y, z)` while the close-up lifts it
@@ -464,7 +506,9 @@ impl VenueCameraDriver {
                 // The first frame's height is the `sh zero,0x16` the save
                 // block stores before the `TR.y` write reads it.
                 self.camera.celebrate_step(0, step);
-                let mut lift = CatchLift::at_record(f.record);
+                let mut lift = f
+                    .lure_height
+                    .map_or_else(|| CatchLift::at_record(f.record), CatchLift::from_height);
                 lift.step(step);
                 self.catch = Catch::CloseUp(lift, (x, z), 0);
             }
@@ -554,6 +598,7 @@ mod tests {
             phase,
             lead: (5888, -64, 4480, 0x800),
             record: 349,
+            lure_height: None,
             lure_drift: 0,
             venue: 1,
             close_up: None,
@@ -728,5 +773,22 @@ mod tests {
         // rise -0x2FB: (-0x2FB << 8) / 20 truncates to -9766.
         assert_eq!(l.acc, ((0x130 - 0xFA) << 8) - 9766);
         assert!(CatchLift::at_record(0x100).y() >= 0);
+    }
+
+    /// The retail catch film (`autorun_fishing_catch_film.lua`, the run
+    /// behind `minigame_fishing_retail_catch_lift`): the landing frame's
+    /// sink step caps the lure at the record-`314` ceiling, `64 << 8`; the
+    /// close-up's first tick runs at step `3` and the next four at step `4`,
+    /// and the hooked fish reads `-49`, `-196`, `-339`, `-477` on its
+    /// following ticks.
+    #[test]
+    fn the_catch_lift_starts_from_the_lure_height_as_the_film_reads() {
+        let mut l = CatchLift::from_height((314 - 0xFA) << 8);
+        let mut ys = Vec::new();
+        for step in [3, 4, 4, 4] {
+            l.step(step);
+            ys.push(l.y());
+        }
+        assert_eq!(ys, [-49, -196, -339, -477]);
     }
 }

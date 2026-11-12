@@ -63,10 +63,20 @@ impl PlayWindowApp {
         let Some(table) = self.session.host.world.minigames.fishing_sprites.as_deref() else {
             return Vec::new();
         };
-        legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
+        let mut prims = legaia_engine_ui::fishing::sprite::fishing_hud_sprite_prims(
             &self.fishing_hud_items(),
             table,
-        )
+        );
+        // The catch white-out over the sprites, under the text.
+        prims.extend(
+            self.session
+                .host
+                .world
+                .minigames
+                .fishing_venue
+                .catch_flash_prims(),
+        );
+        prims
     }
 
     /// The fishing rod and line as screen primitives

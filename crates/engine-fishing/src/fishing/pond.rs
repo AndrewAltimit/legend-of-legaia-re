@@ -45,6 +45,7 @@ impl PondSession {
             last_award: 0,
             result_ramp: 0,
             lift_timer: None,
+            tick_entry: PondPhase::Idle,
             exit_requested: false,
             lure_gate_armed: true,
             catch_banner: 0,
@@ -508,6 +509,7 @@ impl PondSession {
         // Circle / L2 edge drop the cast back to the shore.
         let mut may_leave = false;
         let entry = self.phase;
+        self.tick_entry = entry;
         match self.phase {
             PondPhase::Idle => {
                 if input.cast_edge {
@@ -1009,8 +1011,12 @@ impl PondSession {
     pub fn catch_hud(&self) -> PondCatchHud {
         PondCatchHud {
             // State `10` clears the HUD word `DAT_801D9058`, so neither the
-            // shore nor the no-lure screen draws it.
-            visible: !matches!(self.phase, PondPhase::Idle | PondPhase::NoLure),
+            // shore nor the no-lure screen draws it; so does the catch,
+            // state `0x1E` (`sw zero` at `0x801CFD44`), from the frame after
+            // the landing - the lure tick lands the fish after the driver's
+            // tail has drawn the landing frame's HUD.
+            visible: !matches!(self.phase, PondPhase::Idle | PondPhase::NoLure)
+                && !(self.phase == PondPhase::Landed && self.tick_entry == PondPhase::Landed),
             record: self.line_record,
             cast_power: self.cast_power(),
             line_extent: self.lure_actor.map_or(0, |l| l.y_fixed),

@@ -124,7 +124,7 @@ stateDiagram-v2
 | `0x14` | Power meter: bounces `DAT_801d9274` between `0x20` and `0x1000`, `0x20` per frame-step. On the `& 0xC0` edge (`0x801CFBA4`) it locks the power, clears the line-break latch `DAT_801d91a4`, spawns the rod, lure and line actors, computes the lure spawn point from the locked power and advances to `0x15`. |
 | `0x15` | No case of its own: the lure is in flight. The lure tick moves the state to `0x19` when the flown lure's power countdown reaches zero, raising cue `0x204` and bumping the cast counter. |
 | `0x19` | Lure in water (sets the allow-leave flag only). The lure tick ends it - see [Fight exits](#fight-exits). |
-| `0x1e` | The catch. Clears `DAT_801d90bc`, waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear, then jumps to `0x20`. |
+| `0x1e` | The catch. Clears `DAT_801d90bc` and the catch-HUD word `DAT_801d9058` (`0x801CFD44`), waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear, then jumps to `0x20`. |
 | `0x20..0x22` | The catch showcase: `0x20` cuts the camera to a fixed shot of the party, `0x21` tilts it up, `0x22` holds; `0x21` / `0x22` read the result-accept word `DAT_801d90bc`. |
 | `0x28` | Waits on the converging banner (`DAT_801d9164`, `FUN_801d7528`), then returns to `10`. |
 | `0x2d` | Miss / retry bookkeeping: runs the `DAT_801d9268` timer through `FUN_801d6f10`, then back to `0x32`. No store on the disc sets this state ([Open](#open)). |
@@ -640,7 +640,10 @@ Port: `engine-fishing::fishing_actors::VenueCamera` holds the globals with one m
 
 Every host builds its view from those globals (`fishing_venue::venue_camera_globals_view`): the native window and the browser play page through `FishingSurface` and the line projection (`fishing_venue::venue_view`), the minigames page through `fishing_venue_vp`, and the native window also folds them into its engine camera's globals. The minigames page has no free camera.
 
-Two inputs are the port's own: the bearing takes the lure at the record's distance along the facing plus the port lure's sideways drift, and the close-up's lift starts at the height ceiling a catch record allows (`(record - 0xFA) << 8`), not the lure's tracked height.
+One input is the port's own: the bearing takes the lure at the record's distance along the facing plus the port lure's sideways drift.
+
+The close-up's lift starts at the lure's height: sub-state `4` never reseeds the 24.8 accumulator `0x801D9178` (its first frame writes only `+0x3E` and the actor's `+0x16`, `0x801D4BC0` / `0x801D4BDC`), so the arc rises from where the reel left the lure. On the landing frame that height is the sink step's cap against the **previous** frame's record, since the cap (`0x801D2F44..0x801D2F7C`) runs ahead of the tail that re-measures the record and lands the fish. The retail film reads it: a record-`314` cap of `64` lifted at step `3`, then `4`, gives the fish's `-49`, `-196`, `-339`, `-477` (`CatchLift::from_height`, `the_catch_lift_starts_from_the_lure_height_as_the_film_reads`).
+The session's lure actor carries the same capped height (`LureActor::y_fixed`), which `VenueCameraFrame::lure_height` hands the lift.
 
 ### The landed fish
 
@@ -656,6 +659,17 @@ A landed catch is drawn twice over, by two actors that carry the same body: scen
 
 The retail film holds the tie at `(159, 92)` once the fish settles; the port's kernel lands it at `(160, 93)`.
 
+**The white-out.** The close-up climbs into a white screen. On the first frame whose starting `+0x22` passes `0x87` (`slti v0,v0,0x88` at `0x801D50D0`, behind the gate word `0x801D92A8` the first stage raised), the lift calls `FUN_801d7964` twice (`0x801D5110`, `0x801D5134`), each a fade template spawned through `FUN_80024E80(t, 1)`:
+
+| Fade | Kind | Ramp | Start delay | Hold |
+|---|---|---|---|---|
+| first | `1` (`B + F`) | black to white over `0x3C` frames | none | `0x50` frames |
+| second | `1` | white to black over `0x1E` frames | `0x8B` frames | none |
+
+The spawn wrapper stamps id `1` into the template (`sh s2,0x18` at `0x80024EBC`), the quad's ordering-table bucket, so the white covers the HUD sprites and leaves the font text over it. The screen is white through the end of the close-up and the showcase's cut, and the second ramp hands the frame back as the showcase tilts. The retail film shows the brightening sky, the white frames with only the lure label and count over them, and the release.
+
+Port: `LineActorFrame::flash` at the second stage, `CATCH_FLASH_FADES`, and `FishingVenue::catch_flash`, stepped every venue frame. The native window and the browser play page append `FishingVenue::catch_flash_prims` to the HUD sprite primitives; the minigames page adds `fishing_catch_flash_json`'s quads over the pond and its sprites, under its text.
+
 Port: `engine-fishing::fishing_actors::catch_fish` decides which body draws where (`CatchFishPlace::World` through the close-up, `CameraLocked` on the plate, from `VenueCameraDriver::lift_point` and `PondSession::catch_result`), `camera_locked_linear` builds the saturated matrix, `plate_fish_y` the height ladder; the tables decode through `legaia_minigame_formats::fishing_species::parse_catch_poses`.
 
 `engine-minigame-scenes::fishing_catch::CatchBodies` holds the ten bodies and poses them into raw world vertices, a camera-locked body placed through the inverse of the frame's view. The native window and the browser play page draw them as part of `FishingSurface`'s mesh and the plate line through `fishing_line_screen_prims` (`FishingScene::catch_line`); the minigames page appends the same span to its pond buffer (`fishing_catch_positions`) and strokes `fishing_catch_line_json`. Tests: `fishing_catch_body_disc` (engine-scene-host), `the_landed_fish_is_posed_and_hung_on_the_plate` (web-minigames).
@@ -670,6 +684,11 @@ The sky is not geometry. `FUN_801d24ec` draws it as a screen-space strip every f
 4. Six 128 x 256 `POLY_FT4`s follow, two per 256-pixel step, alternating the 8bpp pages `0x88` / `0x89` (VRAM `(512, 0)` / `(576, 0)`), `u 0..0x80`, `v 0..0xFF`, CLUT `0x7D40` (row 501), colour `0x80`. Then the yaw is put back and the view rebuilt.
 
 The `minigame_fishing` library state's ordering table holds exactly these six packets, from `x = -169`, `y 19..275`. The texture is part of the pond bundle's own TIM upload.
+
+**The strip is a frame late behind the actors' camera writes.** The lead's tick `FUN_801d2050` calls the strip last, after its own camera publish (`FUN_801d2278`), and the driver's switch runs before the actor list, so the shore view, the wind-up and the showcase reach the strip on their own frame. The lure tick's in-water pose and the line actor's catch close-up run after the lead's tick and reach it on the next. The `minigame_fishing_retail_catch_lift` run pins it: its two ordering tables hold the strip from `(-132, 164)` and `(-76, 150)`, the projections of the step-`4` close-up globals at `+0x22 = 51` and `47`, while RAM holds the globals of `55`.
+On the landing frame the strip is the in-water pose's, whose horizon sits above the frame (`(-187, -189)` in `minigame_fishing_retail_lure_cast`).
+
+Port: `VenueCameraDriver::sky_camera` keeps the globals the lead's tick saw, and `fishing_venue::venue_sky_positions` builds the strip from them (`sky_quads_stored`, with the camera's stored focus word, which the wind-up walks out over the water and the close-up sets on the fish) and seats it under the frame's own camera.
 
 Port: `fishing_scene::sky_quads` (the strip), and `sky_mesh` / `sky_positions`, which unproject each screen corner through the venue camera to a far eye-space depth, so the strip and the clear-colour plate draw as world-space geometry that lands on the retail screen rects on every host. The surface moves them every frame with the lead's aim; the minigames page seats them per venue (`fishing_sky_*`).
 
@@ -733,6 +752,8 @@ The flag maintenance runs before either path and is never skipped. A negative fl
 ### Catch HUD
 
 `FUN_801d1580` renders the live cast state: the line length `DAT_801d927c`, the lure height `DAT_801d9178` (the `DEPTH` row and the second term of `LINE`), the cast-power word `DAT_801d9274` as a percent and a bar (`FUN_801d1a90`), and - gated on `DAT_801d91b4` - the fight's depth `DAT_801d9298` and tension `DAT_801d9168` bars (`FUN_801d1870`).
+
+**Who clears the word.** The driver's tail draws it while `DAT_801d9058` is set: state `0xd` sets it, state `0xc` and state `0x1E`, the catch, clear it (`0x801CF9A4`, `0x801CFD44`), and so does the showcase's cut (`0x801CFE54`). The driver runs before the actor list, and the lure tick lands the fish, so the landing frame still draws the catch HUD and the close-up after it does not; a broken line (`0x28`) keeps it until the shore. Port: `PondCatchHud::visible` off the phase the tick started in (`the_catch_hud_goes_the_frame_after_the_landing`).
 
 **Power and depth.** The power word is the meter until the lock and the flight's fuel after it, so `POWER` falls to `0 %` by the landing (`0x801D28D0`, `0x801D2924`). The height is set by the flight and then by the in-water arm of the lure tick (`0x801D2F44..0x801D3080`): under record `0x190` it is capped at `(record - 0xFA) << 8`; past it a Light lure (`0`) rises `pull * 0x600 >> 13` a frame-step and snaps from below `0x1400` to `0x1900`, a Normal lure (`1`) rises `pull * 0x500 >> 13` and snaps from below `0x5000` to `0x5A00`, a Heavy lure holds, and the result never goes negative.
 
@@ -1051,6 +1072,6 @@ The retail tables, kernels and screens above are pinned. What remains is the glu
 - **The lure's rings.** Record `0x801D892C` is seated at the landing (`FUN_80021B04` at `0x801D29B4`) and, in the water, on every frame of a live reel pull or a hooked fish (`0x801D39A4`, `sh zero,0x16` so at `y = 0`): the trail of rings behind a reeled float (`PondEvent::LureRing`, `FishingVenue::seat_ring`). The ring grows through the mode-2 radius channels at scale `0x400`. The native window's effect-mesh pass does not show it over the pond yet; the browser pages read `ripple_world_mesh` in the pond's camera.
 - **Off-screen latch.** The latch's value `3` is ported too: `PondSession::line_frame_retail` projects the spawn point through the venue camera on each line frame, latches outside `-0x20..0x161`, and on an in-water frame breaks the line in place of the packet. The latch is cleared only by the cast lock (`0x801CFBEC`), so one raised in flight breaks the line on landing. Only a host projecting through the venue's own camera runs it (`fishing_venue::fishing_line_frame` with `venue_camera`); the minigames page's fitted framing calls `line_frame` and takes no off-screen breaks, and a point behind the port's eye latches nothing.
   On an ordinary cast the spawn point sits at the frame's centre column (`x` `157..160` over a full cast and fight on the play page), so the latch fires only when a fish drags the camera round. Pinned by `fishing_line_frame::a_spawn_point_driven_off_screen_breaks_the_line` and `a_latch_raised_in_flight_breaks_the_line_on_landing`.
-- **The landed fish's lift start.** The close-up lifts the body from the height ceiling the catch record allows (`CatchLift::at_record`), not the lure's tracked height; the retail film reads the first lifted frame `12` units higher. The arc, its peak and the plate are as retail draws them ([The landed fish](#the-landed-fish)).
+- **The catch's bursts.** The close-up's effect parts (the `FUN_80021B04` spawns of its first frame and every frame, and the stage's `FUN_801D7A5C` pairs) draw in retail as rings, sparkles, a halo and a rainbow over the white-out; the port seats only the burst sprites in the minigame effect pool.
 - **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.
 - **Mode states `0`, `0xb`, `200`.** The tackle grant, the fade ramps and the exit fade are not session phases; the hosts' leave affordance replaces the exit fade, and state `0xb`'s lure gate runs on the frame the session returns to the shore ([The no-lure screen](#the-no-lure-screen)).

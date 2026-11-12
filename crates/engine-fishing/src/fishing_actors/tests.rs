@@ -315,17 +315,25 @@ fn the_line_actor_arms_tracks_and_celebrates() {
     line.land(700);
     let mut fired = None;
     let mut done = false;
+    let mut flash_at = Vec::new();
     for _ in 0..CELEBRATION_STAGE_FRAMES.2 + 2 {
+        let start = line.timer;
         let f = line.tick(1);
         if f.cue.is_some() {
             assert!(fired.is_none(), "the stage cue fires once");
             fired = Some(f.bursts.len());
+        }
+        if f.flash {
+            flash_at.push(start);
         }
         done |= f.done;
     }
     // Score 700 clears the 200 + 600 tiers only.
     assert_eq!(fired, Some(2));
     assert!(done);
+    // The white-out spawns once, on the first frame whose starting `+0x22`
+    // passes `0x87` (`slti v0,v0,0x88` at `0x801D50D0`).
+    assert_eq!(flash_at, [0x88]);
 }
 
 #[test]

@@ -121,6 +121,33 @@ pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static Celebrati
 /// of the close-up hands back, at step `1`.
 pub const CELEBRATION_STAGE_FRAMES: (i16, i16, i16) = (0x72, 0x87, 0xD2);
 
+/// The two screen fades the celebration's second stage spawns
+/// (`0x801D50C8..0x801D5138`, through `FUN_801D7964`, which unpacks its
+/// arguments into a fade template and spawns it with `FUN_80024E80(t, 1)`):
+/// an additive (kind `1`) ramp from black to white over `0x3C` frames held
+/// `0x50` more, and a white-to-black ramp over `0x1E` frames after a
+/// `0x8B`-frame delay - the white-out the close-up climbs into and its
+/// release on the showcase. The spawn wrapper stamps id `1` (`sh s2,0x18`
+/// at `0x80024EBC`), the quad's ordering-table bucket: in front of the HUD
+/// sprites, behind the font text.
+// REF: FUN_801d7964 (the template it unpacks), FUN_80024E80 (the spawn and its id stamp)
+pub const CATCH_FLASH_FADES: [legaia_engine_system::fade::FadeTemplate; 2] = [
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 1,
+        duration: 0x3C,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        mode: [0, 0x50, 1],
+    },
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 1,
+        duration: 0x1E,
+        start_rgb: [0xFF, 0xFF, 0xFF],
+        end_rgb: [0, 0, 0],
+        mode: [0x8B, 0, 1],
+    },
+];
+
 /// What one [`LineActorSim::tick`] asks the host to do.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LineActorFrame {
@@ -131,6 +158,9 @@ pub struct LineActorFrame {
     /// [`celebration_bursts`] resolution) - the host spawns each at its
     /// offset from the catch position and fires its own `cue`.
     pub bursts: Vec<CelebrationBurst>,
+    /// The celebration's second stage: the two white-out screen fades
+    /// ([`CATCH_FLASH_FADES`]) spawn this frame.
+    pub flash: bool,
     /// The celebration ran its `+0x22` timer out - the actor hands back.
     pub done: bool,
 }
@@ -190,6 +220,9 @@ impl LineActorSim {
                 if crossed(CELEBRATION_STAGE_FRAMES.0) {
                     out.cue = Some(CELEBRATE_CUE);
                     out.bursts = celebration_bursts(self.score).copied().collect();
+                }
+                if crossed(CELEBRATION_STAGE_FRAMES.1) {
+                    out.flash = true;
                 }
                 if crossed(CELEBRATION_STAGE_FRAMES.2) {
                     out.done = true;
