@@ -445,6 +445,7 @@ impl SceneHost {
                 .flatten()
                 .and_then(|m| m.triangle_count())
                 .unwrap_or(0);
+            log::info!("battle body: monster {id:#04x} in slot {slot}, {tris} triangles");
             self.world.actors[slot].battle_body_triangles =
                 Some((id, u16::try_from(tris).unwrap_or(u16::MAX)));
         }
