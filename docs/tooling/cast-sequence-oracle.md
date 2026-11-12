@@ -240,6 +240,8 @@ seeded, and the recorder on:
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
+Each seat's HP travels from the recording's cast begin (`retail_cast_hp`), over the state's HUD bars. A `--monster-pick` recording plays the party's turns to the pick, so the caster and its victims stand at other HP when the cast begins, and the capture-class wrappers fold the attacker's `hp >> 8` into the roll (`0x801DD728`). Bloody Horns from `battle_tunnelc_xain_strike` lands `595` on Gala in retail; on the state's bars (Xain at `9511` where retail's turns left `7145`) the same draws read `605`, and seated it lands `595` on `--rand-track`. A harness seat.
+
 A monster's AI counter `0x801C8FE4` travels with the state
 (`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts
 from a cleared word plays another element's arms.

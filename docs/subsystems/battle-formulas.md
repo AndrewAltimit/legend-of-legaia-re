@@ -898,6 +898,8 @@ mitigate more. On ordinary defence values the scaled attacker roll lands below
 `def + power`, the bonus arm rebuilds the attacker roll out of the defender
 roll, and `atk - def` collapses to `power + rand` - near-flat against defence.
 
+A retail recording pins the bypass wrapper to the unit: Xain's Bloody Horns (power `0x1D0`) on Gala lands `595`, and the port's kernel on the recording's `rand()` words and inputs (Xain's ATK `272` at `7145` HP, Gala's `+0x15C` / `+0x160` `145` / `144`) lands `595`, attacker `787` clearing `192 + 464` with no bonus draw. The attacker's `hp >> 8` term is live: on Xain's full `9511` the same draws read `605` (`battle_damage_wrappers::tests::bloody_horns_reads_the_casters_hp_at_the_cast`).
+
 Wrapper census over every capture-class module (byte-scan for the `jal` words
 `0x0C0775AD` bypass / `0x0C07752C` respect; the `09xx` extents tile exactly, so
 each offset names one word inside its own entry). Shared modules dispatch **per

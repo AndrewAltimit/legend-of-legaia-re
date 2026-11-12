@@ -444,4 +444,36 @@ mod tests {
         // The ATK-wrapper defender modulus is `((0 + 0) >> 3) + 1 == 1` likewise.
         assert_eq!(atk_defender_roll(&WrapperDefender::default(), 7), 0);
     }
+    #[test]
+    fn bloody_horns_reads_the_casters_hp_at_the_cast() {
+        // Xain's Bloody Horns (`0x5C`, PROT 0952's `0x1D0` site) on Gala, as a
+        // retail recording of `battle_tunnelc_xain_strike` lands it: 595. The
+        // party's turns before the pick leave Xain at 7145 HP, and the roll
+        // folds `hp >> 8` into the attacker side (`0x801DD728`), so the same
+        // draws on the state's 9511 read 605. No bonus arm: 787 clears
+        // `192 + 464`.
+        let gala = WrapperDefender {
+            hp: 9999,
+            agl: 0,
+            stat_a: 145,
+            stat_b: 144,
+            status: 0,
+            guard: 0,
+        };
+        let xain = |hp| WrapperAttacker {
+            hp,
+            agl: 0,
+            spell_power: 272,
+            status: 0,
+        };
+        let roll = |hp| {
+            atk_wrapper_predamage(0x1D0, &xain(hp), &gala, 100, [14181, 11553], || {
+                panic!("the bonus arm must not draw")
+            })
+        };
+        assert_eq!(roll(7145), (787, 192));
+        assert_eq!(wrapper_net_damage(787, 192), 595);
+        let (a, d) = roll(9511);
+        assert_eq!(wrapper_net_damage(a, d), 605);
+    }
 }

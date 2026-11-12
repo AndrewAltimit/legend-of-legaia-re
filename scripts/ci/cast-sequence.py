@@ -121,6 +121,42 @@ def engine_ground(retail: str) -> str:
     return ",".join(party + monsters)
 
 
+def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
+    """Each seat's HP on retail's cast begin, keyed by engine slot, for
+    `LEGAIA_BATTLE_BARS`. The child's bars are the state's HUD at its own
+    instant, but a `--monster-pick` recording plays the party's turns to the
+    monster's pick first, so the caster and its victims stand at other HP when
+    the cast begins. The capture-class wrappers read the attacker's HP into
+    the roll (`hp >> 8` at `0x801DD728`), so Bloody Horns' `595` read `605` on
+    the state's bars. A harness seat, like the ground. Party seats re-key as
+    `engine_ground` does; a seat at `0` HP on either side is left alone."""
+    cast = int(done.get("cast", "-1"))
+    if cast < 0:
+        return {}
+    row = None
+    try:
+        with open(out / "retail" / "meta.csv") as f:
+            for r in csv.DictReader(f):
+                if int(r["vsync"]) > cast:
+                    break
+                row = r
+    except (OSError, KeyError, ValueError):
+        return {}
+    if row is None:
+        return {}
+    toks = done.get("ground", "").split(",")
+    party = [s for s in range(3) if s < len(toks) and toks[s] not in ("", "-")]
+    slots = {s: e for e, s in enumerate(party)}
+    for m in range(5):
+        slots[3 + m] = len(party) + m
+    hp = {}
+    for seat, slot in slots.items():
+        v = row.get(f"hp{seat}")
+        if v and v.lstrip("-").isdigit() and int(v) > 0:
+            hp[slot] = int(v)
+    return hp
+
+
 def run_retail(a, out: Path) -> bool:
     rdir = out / "retail"
     done = read_kv(rdir / "done.txt")
@@ -801,6 +837,14 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_GUARD"] = guard
     if a.learned and caster < 3:
         env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
+    if (cast_hp := retail_cast_hp(out, done)) and env.get("LEGAIA_BATTLE_BARS"):
+        def seated(e: str) -> str:
+            f = e.split(":")
+            slot = int(f[0])
+            if slot in cast_hp and int(f[1]) > 0:
+                f[1] = str(cast_hp[slot])
+            return ":".join(f)
+        env["LEGAIA_BATTLE_BARS"] = ",".join(seated(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
     if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
         # `slot:hp:mp[:..]`, engine slots: the party's first, `129+` empty seats.
         pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
