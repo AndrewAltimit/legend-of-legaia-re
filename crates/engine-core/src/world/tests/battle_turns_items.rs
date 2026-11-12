@@ -399,3 +399,63 @@ fn a_lone_noa_lists_only_her_half_of_the_bag_in_battle() {
     let ids: Vec<u8> = view.rows.iter().map(|r| r.id).collect();
     assert_eq!(ids, vec![0x02], "Vahn's half stays out of reach");
 }
+
+/// Issues #590 / #588: with Vahn and Noa in the party the window spans the
+/// whole bag, and each of their Healing Leaf stacks is its own row (the SCUS
+/// builder walks slots; nothing merges two stacks of one id until a
+/// normalize). A battle-unusable item sorts to the greyed tail. A used copy
+/// comes off the first slot holding the id (`FUN_80042310`), so emptying
+/// Vahn's stack drops its row and leaves Noa's where it stood.
+#[test]
+fn split_stacks_are_separate_rows_and_an_emptied_one_leaves() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 2,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.battle.player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_item_catalog(full_test_catalog());
+    for i in 0..2usize {
+        world.actors[i].battle.max_hp = 200;
+        world.actors[i].battle.hp = 50;
+        world.actors[i].battle.liveness = 1;
+    }
+    // Vahn's half: Healing Leaf x1, Power Tonic (field-only) x1, Spirit Sphere;
+    // Noa's half from slot 128: Healing Leaf x1.
+    let mut slots = vec![(0u8, 0u8); 256];
+    slots[0] = (0x01, 1);
+    slots[1] = (0x0E, 1);
+    slots[2] = (0x10, 1);
+    slots[128] = (0x01, 1);
+    world.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&slots);
+    let rows = |w: &World| -> Vec<(u8, u8, bool)> {
+        w.build_battle_item_session()
+            .menu_view()
+            .rows
+            .iter()
+            .map(|r| (r.id, r.count, r.admissible))
+            .collect()
+    };
+    assert_eq!(
+        rows(&world),
+        vec![
+            (0x01, 1, true),
+            (0x10, 1, true),
+            (0x01, 1, true),
+            (0x0E, 1, false)
+        ],
+        "one row per stack; the field-only row greys at the tail"
+    );
+    // Use a Healing Leaf off Noa's row: the copy still comes off Vahn's slot.
+    world.consume_item(0x01);
+    assert_eq!(world.party.inventory.slot(0), (0, 0));
+    assert_eq!(world.party.inventory.slot(128), (0x01, 1));
+    assert_eq!(
+        rows(&world),
+        vec![(0x10, 1, true), (0x01, 1, true), (0x0E, 1, false)],
+        "Vahn's emptied stack leaves; Noa's row keeps its place"
+    );
+}

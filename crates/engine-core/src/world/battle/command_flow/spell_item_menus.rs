@@ -208,15 +208,14 @@ impl World {
             InventoryContext, InventoryUseSession, TargetRow,
         };
         let names = self.party.roster_names();
-        // One entry per stack, each carrying its count: the window's rows
-        // print the bag's count (the list builder `FUN_80030628`).
-        let (mut items, mut counts): (Vec<u8>, Vec<u8>) = self
-            .party
-            .inventory
-            .iter()
-            .filter(|(_, qty)| **qty > 0)
-            .map(|(id, qty)| (*id, *qty))
-            .unzip();
+        // The window's rows are the SCUS content builder's (`FUN_80030628`,
+        // content id 3, battle context `gp+0x85C == 1`): one row per occupied
+        // bag slot of the active window, each printing its own slot's count.
+        // An id in two slots - Vahn's and Noa's halves before a normalize
+        // merges them - is two rows; a used copy comes off the first slot
+        // holding the id (`FUN_80042310` at the commit), so an emptied stack's
+        // row simply leaves and the other stays where it was.
+        let (mut items, mut counts, mut disabled) = self.battle_item_rows();
         // Row names off the disc's item-name table: the catalog names only
         // the usable items, and the window lists every held id. Bag ids only -
         // a pack item's alias id names the pack item through the catalog.
@@ -228,6 +227,7 @@ impl World {
         // aliases (none without a pack).
         items.extend(self.pack_battle_item_ids());
         counts.resize(items.len(), 1);
+        disabled.resize(items.len(), false);
         let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
@@ -284,6 +284,77 @@ impl World {
         )
         .with_bag_counts(counts)
         .with_item_names(item_names)
+        .with_list_kernel_rows(
+            disabled,
+            legaia_engine_menus::inventory_use::BATTLE_ITEM_LIST_ROWS,
+        )
+    }
+
+    /// The battle Item window's bag rows as `(ids, counts, disabled)`, in the
+    /// SCUS content builder's order for the battle context: battle-usable
+    /// rows in slot order, then the rest greyed at the tail (equipment and
+    /// battle-unusable rows, then the effect-flag-`0x8` group).
+    ///
+    /// With no disc item-effect table the order is the same rule over the
+    /// catalog's battle flag: usable rows in place, the rest at the tail.
+    ///
+    /// REF: FUN_80030628 (content id 3; the builder is
+    /// `legaia_engine_menus::menu_list_rows::build_use_list_rows`)
+    pub(in crate::world) fn battle_item_rows(&self) -> (Vec<u8>, Vec<u8>, Vec<bool>) {
+        use legaia_engine_menus::menu_list_rows::{
+            EffectRowTables, ROW_DISABLED, ROW_NAME_PAYLOAD_MASK, UseListCtx, build_use_list_rows,
+        };
+        let bag = &self.party.inventory;
+        let (start, end) = bag.window_bounds();
+        let slots = bag.slots();
+        let window = &slots[start.min(slots.len())..end.min(slots.len())];
+        let words: Vec<u16> = match self.tables.item_effects.as_ref() {
+            Some(effects) => {
+                let ids: Vec<u8> = window.iter().map(|&(id, _)| id).collect();
+                let applicable = |_: u8| true;
+                let ctx = UseListCtx {
+                    battle: true,
+                    door_light_blocked: false,
+                    door_wind_blocked: false,
+                    applicable: &applicable,
+                };
+                build_use_list_rows(&ids, start as u16, &EffectRowTables(effects), &ctx)
+            }
+            None => {
+                let usable = |id: u8| {
+                    self.tables
+                        .item_catalog
+                        .get(id)
+                        .is_some_and(|e| e.usable_in_battle)
+                };
+                let occupied = || {
+                    window
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, (id, _))| *id != 0)
+                        .map(|(i, &(id, _))| ((start + i) as u16, id))
+                };
+                occupied()
+                    .filter(|&(_, id)| usable(id))
+                    .map(|(slot, _)| slot | 0x1000)
+                    .chain(
+                        occupied()
+                            .filter(|&(_, id)| !usable(id))
+                            .map(|(slot, _)| slot | 0x1000 | ROW_DISABLED),
+                    )
+                    .collect()
+            }
+        };
+        let mut ids = Vec::with_capacity(words.len());
+        let mut counts = Vec::with_capacity(words.len());
+        let mut disabled = Vec::with_capacity(words.len());
+        for w in words {
+            let (id, count) = bag.slot((w & ROW_NAME_PAYLOAD_MASK) as u8);
+            ids.push(id);
+            counts.push(count);
+            disabled.push(w & ROW_DISABLED != 0);
+        }
+        (ids, counts, disabled)
     }
 
     /// Drive the open battle inventory submenu one frame from [`World::input`].
@@ -319,6 +390,17 @@ impl World {
             || (target_select && self.input.just_pressed(PadButton::Right))
         {
             Some(InventoryUseInput::Down)
+        } else if !target_select
+            && (self.input.just_pressed(PadButton::Left) || repeat & PadButton::Left.mask() != 0)
+        {
+            // The list kernel pages on the horizontal pad, off the same
+            // repeat-folded cursor word as Up / Down (`gp+0x86C`,
+            // `0x80032AE8`).
+            Some(InventoryUseInput::Left)
+        } else if !target_select
+            && (self.input.just_pressed(PadButton::Right) || repeat & PadButton::Right.mask() != 0)
+        {
+            Some(InventoryUseInput::Right)
         } else if self.input.just_pressed(PadButton::Cross) {
             Some(InventoryUseInput::Confirm)
         } else if self.input.just_pressed(PadButton::Circle) {

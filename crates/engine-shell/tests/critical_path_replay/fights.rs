@@ -106,14 +106,20 @@ impl FightPolicy {
         if let Some(menu) = w.battle.item_menu.as_ref() {
             return match menu.state {
                 InventoryUseState::Browsing { .. } => {
-                    if menu.filtered_items.is_empty() {
+                    // The heal's row: the list kernel's cursor rests on
+                    // greyed rows too, so look for an enabled one.
+                    let heal_row = (0..menu.filtered_items.len()).find(|&i| {
+                        menu.row_enabled(i)
+                            && menu.items.get(menu.filtered_items[i]) == Some(&self.heal_item)
+                    });
+                    match heal_row {
                         // Nothing usable in here - back out and swing instead.
-                        PadButton::Circle.mask()
-                    } else if menu.current_item().map(|e| e.id) == Some(self.heal_item) {
-                        PadButton::Cross.mask()
-                    } else {
-                        // Walk the list to the heal row, one press at a time.
-                        PadButton::Down.mask()
+                        None => PadButton::Circle.mask(),
+                        // Walk the list to the heal row, one press at a time
+                        // (a page flip first when it is on another page).
+                        Some(row) => menu
+                            .browse_pad_toward(row)
+                            .unwrap_or(PadButton::Cross.mask()),
                     }
                 }
                 // The target strip opens on the party leader, which is who

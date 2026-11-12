@@ -394,6 +394,37 @@ pub trait ItemRowTables {
     fn equip_flags(&self, subtype: u8) -> u8;
 }
 
+/// [`ItemRowTables`] over the item-effect table alone - what the **Use**
+/// list build ([`build_use_list_rows`]) reads (`kind`, `subtype`, the effect
+/// flags), for a caller that has no price or equipment table to hand. The
+/// price and equipment-flag answers are `0`, so the builders that read them
+/// (sell, Throw Out) need a fuller table.
+pub struct EffectRowTables<'a>(pub &'a legaia_game_tables::item_effect::ItemEffectTable);
+
+impl ItemRowTables for EffectRowTables<'_> {
+    fn kind(&self, id: u8) -> u8 {
+        self.0.kind(id)
+    }
+    fn subtype(&self, id: u8) -> u8 {
+        self.0.subtype(id)
+    }
+    fn price(&self, _id: u8) -> u16 {
+        0
+    }
+    fn effect_flags(&self, subtype: u8) -> u8 {
+        self.0.descriptor(subtype).map(|d| d.flags).unwrap_or(0)
+    }
+    fn effect_marker(&self, subtype: u8) -> u8 {
+        self.0
+            .descriptor(subtype)
+            .map(|d| d.marker)
+            .unwrap_or(GOODS_NO_PASSIVE_MARKER)
+    }
+    fn equip_flags(&self, _subtype: u8) -> u8 {
+        0
+    }
+}
+
 /// Item-effect flag consumed by the Throw Out builder: set = the item is
 /// not discardable (key items).
 pub const EFFECT_FLAG_NOT_DISCARDABLE: u8 = 0x01;

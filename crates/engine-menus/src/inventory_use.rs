@@ -142,8 +142,32 @@ impl TargetRow {
 pub enum InventoryUseInput {
     Up,
     Down,
+    /// Page back - the list kernel's Left (`0x80032B90`). Only a session
+    /// built with [`InventoryUseSession::with_list_kernel_rows`] pages; any
+    /// other list ignores it.
+    Left,
+    /// Page forward - the list kernel's Right (`0x80032C1C`).
+    Right,
     Confirm,
     Cancel,
+}
+
+/// Rows one page of the battle Item window shows: placement record `0x16`'s
+/// content box is `131 x 120`, and the list allocator's
+/// `visible = (content_h - 4) / 0xE` makes that `8` (`FUN_80030104`). The
+/// window builder's `battle_item_ui::ROWS_PER_PAGE` is the same number.
+pub const BATTLE_ITEM_LIST_ROWS: usize = 8;
+
+/// The kind-4 list kernel's view of a session's rows: one row per entry of
+/// [`InventoryUseSession::items`], in the builder's order, each enabled or
+/// disabled (`0x800`), paged `page_rows` at a time. See
+/// [`InventoryUseSession::with_list_kernel_rows`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListKernelRows {
+    /// The row's `0x800` bit: drawn grey, a Confirm on it buzzes.
+    pub disabled: Vec<bool>,
+    /// Rows one page shows (`visible = (content_h - 4) / 0xE`).
+    pub page_rows: usize,
 }
 
 /// State the session is currently in. Engines render based on this plus
@@ -335,6 +359,10 @@ pub struct InventoryUseSession {
     /// (arms `0x0B..=0x0D` match the slot exactly and ignore HP). `None`
     /// keeps the catalog-side [`target_valid_for_effect`].
     pub field_target_gate: Option<Vec<(u8, u8)>>,
+    /// The list kernel's rows, when the session draws one row per bag slot
+    /// and steps its cursor the way `FUN_80032A44` does (the battle Item
+    /// window). `None` keeps the id-merged rows and the filtered-cursor walk.
+    pub list_rows: Option<ListKernelRows>,
 }
 
 impl InventoryUseSession {
@@ -371,7 +399,74 @@ impl InventoryUseSession {
             item_names: std::collections::BTreeMap::new(),
             field_unaffected: None,
             field_target_gate: None,
+            list_rows: None,
         }
+    }
+
+    /// Drive the list the way retail's kind-4 list kernel `FUN_80032A44`
+    /// does, over rows the SCUS content builder `FUN_80030628` built.
+    ///
+    /// `items` (with [`Self::bag_counts`] / [`Self::bag_slots`] parallel to
+    /// it) must already be the builder's rows: **one per bag slot**, so an id
+    /// held in two slots - Vahn's and Noa's halves of the bag before a
+    /// normalize merges them - is two rows, each with its own count.
+    /// `disabled` is each row's `0x800` bit.
+    ///
+    /// Under this mode the browsing cursor is the kernel's selected row:
+    ///
+    /// - it rests on every row, disabled ones included; a Confirm on a
+    ///   disabled row buzzes (`0x80032D04`, cue `0x23`);
+    /// - Up / Down wrap **inside the page** (`0x80032AE8..0x80032B84`: Down
+    ///   past the page's last row, or the list's, lands on the page top);
+    /// - Left / Right flip a page while one is there
+    ///   (`0x80032B90..0x80032C70`), Right clamping the row to the last.
+    ///
+    /// PORT: FUN_80032A44 (navigation and the disabled-row confirm)
+    pub fn with_list_kernel_rows(mut self, disabled: Vec<bool>, page_rows: usize) -> Self {
+        self.list_rows = Some(ListKernelRows {
+            disabled,
+            page_rows: page_rows.max(1),
+        });
+        self.refresh_filter();
+        self
+    }
+
+    /// The pad press that moves the browsing cursor one step toward list row
+    /// `row` under the list kernel's law - Right / Left to reach its page,
+    /// then Down inside it - or `None` when the cursor is on it (or the
+    /// session is not browsing). For a scripted hand: Down alone never leaves
+    /// a page.
+    pub fn browse_pad_toward(&self, row: usize) -> Option<u16> {
+        use legaia_engine_system::input::PadButton;
+        let InventoryUseState::Browsing { cursor } = self.state else {
+            return None;
+        };
+        if cursor == row || row >= self.filtered_items.len() {
+            return None;
+        }
+        let Some(rows) = self.list_rows.as_ref().map(|l| l.page_rows) else {
+            return Some(PadButton::Down.mask());
+        };
+        let pad = match (row / rows).cmp(&(cursor / rows)) {
+            std::cmp::Ordering::Greater => PadButton::Right,
+            std::cmp::Ordering::Less => PadButton::Left,
+            std::cmp::Ordering::Equal => PadButton::Down,
+        };
+        Some(pad.mask())
+    }
+
+    /// Whether filtered row `idx` can be confirmed: a list-kernel row
+    /// without the disabled bit, or any row of a filtered list.
+    pub fn row_enabled(&self, idx: usize) -> bool {
+        idx < self.filtered_items.len() && !self.row_disabled(idx)
+    }
+
+    /// Whether row `idx` carries the list kernel's disabled bit.
+    fn row_disabled(&self, idx: usize) -> bool {
+        self.list_rows
+            .as_ref()
+            .and_then(|l| l.disabled.get(idx).copied())
+            .unwrap_or(false)
     }
 
     /// Answer the field list's applicability gate with retail's probe
@@ -458,13 +553,19 @@ impl InventoryUseSession {
     /// [`Self::items`] (throw-out delete, Arrange reorder) and clamp a
     /// browsing cursor back into the filtered range.
     pub fn refresh_filter(&mut self) {
-        self.filtered_items = filter_items(
-            &self.items,
-            &self.catalog,
-            self.context,
-            &self.targets,
-            self.field_unaffected.as_deref(),
-        );
+        // The list kernel's cursor rests on every row: the filter is the
+        // identity, and the disabled bit gates the confirm instead.
+        self.filtered_items = if self.list_rows.is_some() {
+            (0..self.items.len()).collect()
+        } else {
+            filter_items(
+                &self.items,
+                &self.catalog,
+                self.context,
+                &self.targets,
+                self.field_unaffected.as_deref(),
+            )
+        };
         if let InventoryUseState::Browsing { cursor } = &mut self.state {
             *cursor = (*cursor).min(self.filtered_items.len().saturating_sub(1));
         }
@@ -515,7 +616,19 @@ impl InventoryUseSession {
             self.filtered_items.iter().copied().collect();
         let mut rows: Vec<ItemMenuRow> = Vec::new();
         let mut row_of_id: std::collections::HashMap<u8, usize> = std::collections::HashMap::new();
+        let kernel = self.list_rows.is_some();
         for (i, id) in self.items.iter().enumerate() {
+            // The list kernel's rows are the builder's, one per bag slot:
+            // nothing merges, and the row's own bit decides its ink.
+            if kernel {
+                rows.push(ItemMenuRow {
+                    id: *id,
+                    name: self.item_label(*id),
+                    count: self.bag_count_of(i),
+                    admissible: !self.row_disabled(i),
+                });
+                continue;
+            }
             match row_of_id.get(id) {
                 Some(&r) => {
                     rows[r].count = rows[r].count.saturating_add(self.bag_count_of(i));
@@ -545,7 +658,11 @@ impl InventoryUseSession {
         let selected_id = item_cursor
             .and_then(|c| self.filtered_items.get(c).copied())
             .and_then(|idx| self.items.get(idx).copied());
-        let cursor_row = selected_id.and_then(|id| row_of_id.get(&id).copied());
+        let cursor_row = if kernel {
+            item_cursor.filter(|&c| c < rows.len())
+        } else {
+            selected_id.and_then(|id| row_of_id.get(&id).copied())
+        };
         ItemMenuView {
             rows,
             cursor_row,
@@ -585,7 +702,42 @@ impl InventoryUseSession {
 
     fn input_browsing(&mut self, cursor: usize, input: InventoryUseInput) {
         let n = self.filtered_items.len();
+        if let Some(page_rows) = self.list_rows.as_ref().map(|l| l.page_rows) {
+            use legaia_engine_system::input::PadButton;
+            let pad = match input {
+                InventoryUseInput::Up => Some(PadButton::Up),
+                InventoryUseInput::Down => Some(PadButton::Down),
+                InventoryUseInput::Left => Some(PadButton::Left),
+                InventoryUseInput::Right => Some(PadButton::Right),
+                _ => None,
+            };
+            if let Some(pad) = pad {
+                if n == 0 {
+                    return;
+                }
+                let next = crate::pause_screens::list_kernel_navigate_rows(
+                    cursor,
+                    n,
+                    pad.mask(),
+                    page_rows,
+                );
+                self.state = InventoryUseState::Browsing { cursor: next };
+                // Up / Down always queue the step cue (`0x80032C74`); a page
+                // flip only when it flipped (`blez` at `0x80032B98`, the
+                // `slt` at `0x80032C2C`).
+                if matches!(pad, PadButton::Up | PadButton::Down) || next != cursor {
+                    self.events.push(InventoryUseEvent::CursorMoved);
+                }
+                return;
+            }
+            if input == InventoryUseInput::Confirm && self.row_disabled(cursor) {
+                self.events.push(InventoryUseEvent::InvalidConfirm);
+                return;
+            }
+        }
         match input {
+            // Only the list kernel pages.
+            InventoryUseInput::Left | InventoryUseInput::Right => {}
             InventoryUseInput::Up => {
                 if n == 0 {
                     return;
@@ -730,6 +882,9 @@ impl InventoryUseSession {
 
     fn input_target_select(&mut self, item_cursor: usize, cursor: usize, input: InventoryUseInput) {
         match input {
+            // The battle tick folds the horizontal pad into Up / Down here
+            // (state `0x64` steps on it); the session itself takes no page.
+            InventoryUseInput::Left | InventoryUseInput::Right => {}
             InventoryUseInput::Up => {
                 let Some(new_cursor) = self.step_target_cursor(cursor, false) else {
                     return;
@@ -1643,5 +1798,85 @@ mod tests {
         assert!(v.target_select);
         assert_eq!(v.selected_id, Some(0x01), "second bag slot of the stack");
         assert_eq!(v.cursor_row, Some(1));
+    }
+
+    /// The battle Item window under the list kernel: an id held in two bag
+    /// slots is two rows with their own counts (issue #590), and the cursor
+    /// rests on the greyed rows the builder sorted to the tail.
+    #[test]
+    fn list_kernel_rows_are_one_per_slot() {
+        // Vahn's Healing Leaf x2, a Magic Leaf, then Noa's Healing Leaf x1,
+        // and a greyed key item at the tail.
+        let s = empty_session(vec![0x01, 0x03, 0x01, 0x0E], InventoryContext::Battle)
+            .with_bag_counts(vec![2, 1, 1, 1])
+            .with_list_kernel_rows(vec![false, false, false, true], BATTLE_ITEM_LIST_ROWS);
+        let v = s.menu_view();
+        let rows: Vec<(u8, u8, bool)> = v
+            .rows
+            .iter()
+            .map(|r| (r.id, r.count, r.admissible))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                (0x01, 2, true),
+                (0x03, 1, true),
+                (0x01, 1, true),
+                (0x0E, 1, false)
+            ]
+        );
+        assert_eq!(s.filtered_items, vec![0, 1, 2, 3]);
+    }
+
+    /// Down at a page's last row wraps to that page's top, Right pages,
+    /// Left pages back, and a disabled row buzzes on Confirm (issue #588:
+    /// the kind-4 kernel `FUN_80032A44`).
+    #[test]
+    fn list_kernel_cursor_wraps_in_the_page_and_pages_sideways() {
+        let items = vec![0x01; 11];
+        let mut disabled = vec![false; 11];
+        disabled[9] = true;
+        let mut s = empty_session(items, InventoryContext::Battle)
+            .with_list_kernel_rows(disabled, BATTLE_ITEM_LIST_ROWS);
+        let cursor = |s: &InventoryUseSession| match s.state {
+            InventoryUseState::Browsing { cursor } => cursor,
+            other => panic!("not browsing: {other:?}"),
+        };
+        for _ in 0..7 {
+            s.input(InventoryUseInput::Down);
+        }
+        assert_eq!(cursor(&s), 7, "the page's last row");
+        s.input(InventoryUseInput::Down);
+        assert_eq!(cursor(&s), 0, "Down wraps to the page top");
+        s.input(InventoryUseInput::Up);
+        assert_eq!(cursor(&s), 7, "Up wraps to the page's last row");
+        s.input(InventoryUseInput::Right);
+        assert_eq!(cursor(&s), 10, "Right pages, clamped to the last row");
+        assert_eq!(s.menu_view().cursor_row, Some(10));
+        s.input(InventoryUseInput::Down);
+        assert_eq!(cursor(&s), 8, "the last page wraps inside itself");
+        s.input(InventoryUseInput::Down);
+        assert_eq!(cursor(&s), 9, "the cursor rests on a greyed row");
+        s.drain_events();
+        s.input(InventoryUseInput::Confirm);
+        assert_eq!(s.drain_events(), vec![InventoryUseEvent::InvalidConfirm]);
+        assert_eq!(cursor(&s), 9);
+        s.input(InventoryUseInput::Left);
+        assert_eq!(cursor(&s), 1, "Left pages back one page");
+        s.drain_events();
+        s.input(InventoryUseInput::Left);
+        assert_eq!(cursor(&s), 1, "no page before the first");
+        assert!(s.drain_events().is_empty(), "a refused flip is silent");
+        // A scripted hand reaches a row on another page through Right.
+        assert_eq!(
+            s.browse_pad_toward(10),
+            Some(legaia_engine_system::input::PadButton::Right.mask())
+        );
+        assert_eq!(
+            s.browse_pad_toward(4),
+            Some(legaia_engine_system::input::PadButton::Down.mask())
+        );
+        assert_eq!(s.browse_pad_toward(1), None);
+        assert!(!s.row_enabled(9) && s.row_enabled(10));
     }
 }
