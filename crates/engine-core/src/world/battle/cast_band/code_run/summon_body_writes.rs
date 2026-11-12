@@ -478,6 +478,14 @@ impl World {
             } else {
                 legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             }
+            // PROT 0915's turns the victim to face down the lane whatever it
+            // staged (`li v0,0x800` / `sh v0,0x46(s1)` at `0x801F724C..0x801F7254`):
+            // the reaction's root motion slides it straight back along `+z`.
+            if entry == 915
+                && let Some(a) = self.actors.get_mut(usize::from(t))
+            {
+                a.battle.facing_angle = 0x800;
+            }
             // PROT 0928's parks the flinch at rate 0 (`0x801F81C8`); arm 0xF's
             // pass runs its cue cursor off the track and arm 0x13 sets the row
             // going again (`apply_palma_writes`).

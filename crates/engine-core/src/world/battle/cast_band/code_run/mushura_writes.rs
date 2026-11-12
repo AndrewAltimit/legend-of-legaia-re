@@ -36,7 +36,7 @@ impl World {
     /// | arm | every pass | its pass |
     /// |---|---|---|
     /// | 5 | - | the creature on the slanted clip row |
-    /// | 6 | `+0x38 += 3 * step` | the spin word zeroed |
+    /// | 6 | `+0x38 += 3 * step` | the spin word zeroed; the victim `+0x38 += radius / 6` |
     /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`), bank `-sin(word * 32) / 8` | arm 8: facing `0xB00`, bank `0` |
     /// | 9 | - | the creature's facing on its target; the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
     /// | `0xA` | - | the creature parked on word `0x3FF` |
@@ -75,6 +75,17 @@ impl World {
         }
         if phase == 9 && passed {
             self.casting.module_creature_clip_kind = 1;
+        }
+        // Arm 6's pass, after its shot: the victim steps back a sixth of its
+        // body radius, `+0x38 += *(+0x22C)[+0x58] / 6` (`lw v0,0x22c(s1)`,
+        // `lhu a0,0x58(v0)`, the `0x2AAAAAAB` divide and `sh v0,0x38(s1)` at
+        // `0x801F6FB0..0x801F7000`): `112` on Gobu Gobu's `672`, the stand
+        // the reaction arm 7 stages slides on from.
+        if phase == 6 && passed {
+            let push = self.battle_body_radius(victim) / 6;
+            if let Some(v) = self.actors.get_mut(usize::from(victim)) {
+                v.move_state.world_z = v.move_state.world_z.wrapping_add(push);
+            }
         }
         let step = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
         let Some(a) = self.actors.get_mut(usize::from(seat)) else {

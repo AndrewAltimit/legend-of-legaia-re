@@ -694,3 +694,56 @@ fn mules_wave_rolls_train_the_spell() {
         "the wave's rolls ran the finisher's XP tail"
     );
 }
+
+/// PROT 0915 (Mushura): arm 6's pass steps the victim back a sixth of its
+/// body radius (`0x801F6FB0..0x801F7000`) and arm 7's pre-hit turns it to
+/// face down the lane (`sh v0,0x46(s1)`, `v0 = 0x800`, at `0x801F7254`), so
+/// the reaction it stages slides it straight back along `+z`.
+#[test]
+fn mushura_steps_its_victim_back_and_turns_it_down_the_lane() {
+    const MUSHURA: u8 = 0x8D;
+    let mut world = module_code_world();
+    roster_with_spell(&mut world, MUSHURA, 1);
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[1].battle.hp = 9000;
+    world.actors[1].battle.max_hp = 9000;
+    world.actors[1].battle.render_radius = Some(672);
+    world.actors[1].battle.facing_angle = 0x815;
+    world.actors[1].move_state.world_z = -260;
+    world.actors[0].battle.active_target = 1;
+    for i in 2..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.tables.summon_creatures.insert(
+        MUSHURA,
+        legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Mushura", 900, 10),
+    );
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, MUSHURA);
+    let mut z_after_six = None;
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(MUSHURA, phase) else {
+            break;
+        };
+        if phase == 6 && world.casting.module_phase != 6 {
+            z_after_six = Some(world.actors[1].move_state.world_z);
+        }
+        if !run.busy || world.casting.module_phase > 7 {
+            break;
+        }
+    }
+    assert_eq!(
+        z_after_six,
+        Some(-260 + 672 / 6),
+        "arm 6 steps the victim back"
+    );
+    assert!(world.casting.module_phase > 7, "arm 7 passed");
+    assert_eq!(
+        world.actors[1].battle.facing_angle, 0x800,
+        "arm 7 turns the victim"
+    );
+}
