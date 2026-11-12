@@ -156,8 +156,10 @@ pub struct PartyState {
     /// lays its regions over, so the window words the engine does not model
     /// survive. `None` after a New Game.
     pub retail_window: Option<Vec<u8>>,
-    /// The previous scene's CDNAME label (retail `0x80084558`), backed up by
-    /// every scene change and written into a card Save.
+    /// The second scene label (retail `0x80084558`), written into a card
+    /// Save. Despite the name it holds the scene's own label: the scene-change
+    /// packet `FUN_8001FD44` copies the active buffer into it after the
+    /// resolver has already overwritten that buffer with the destination.
     pub previous_scene: Option<String>,
     /// The lifetime battle and escape counters retail keeps in its save
     /// window (`0x800846A4` / `0x800846A8`), the records screen's "No. of

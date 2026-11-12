@@ -38,9 +38,11 @@ impl<'a> FieldSceneHost for FieldHostImpl<'a> {
     // `FUN_8001D7F8`, which rewrites `0x80084540` with the destination's
     // index. Then it forks on `_DAT_8007B8C2` (`0x8001FDCC`):
     //
-    // - `!= 0` (retail boots with it set): the old active name is backed up
-    //   to `0x80084558` (the previous-scene buffer), the new name becomes the
-    //   active one, and the index goes to `_DAT_8007B768` (`0x8001FDF4`);
+    // - `!= 0` (retail boots with it set): the active buffer, which the
+    //   resolver has just overwritten with the lower-cased destination, is
+    //   copied to `0x80084558` - so that buffer ends up holding the new
+    //   name, not the old one - the name as given becomes the active one, and
+    //   the index goes to `_DAT_8007B768` (`0x8001FDF4`);
     // - `== 0` (the dev arm, never taken on the disc): the name goes to
     //   `0x800915C8`, the saved name is restored into the active buffer, and
     //   the index goes to `gp+0x688`.

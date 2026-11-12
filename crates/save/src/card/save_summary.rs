@@ -29,10 +29,13 @@ pub const RETAIL_LIVE_WINDOW_OFFSET: usize = RETAIL_GAME_DATA_OFFSET;
 /// of the `0x1A18`-byte copy).
 pub const RETAIL_LIVE_WINDOW_LEN: usize = RETAIL_LIVE_STATE_SIZE - RETAIL_LIVE_WINDOW_OFFSET;
 
-/// The previous scene's CDNAME label, `0x10` bytes NUL-padded (RAM
-/// `0x80084558`). Every name-based scene change backs the active label up
-/// into it before installing the new one (`FUN_80056758(0x80084558,
-/// 0x80084548)`, `FUN_8001FD44` / the transition actor `FUN_80021934`).
+/// The second scene label, `0x10` bytes NUL-padded (RAM `0x80084558`),
+/// named for the backup it was taken to be. The scene-change packet
+/// `FUN_8001FD44` copies the active buffer into it (`FUN_80056758(0x80084558,
+/// 0x80084548)` at `0x8001FDDC`) after its resolver `FUN_8001D7F8` has
+/// overwritten that buffer with the staged destination, so it holds the
+/// destination's own label, lower-cased in its first eight bytes. Every
+/// block on the library cards carries the active label here.
 pub const RETAIL_PREVIOUS_SCENE_LABEL_OFFSET: usize =
     RETAIL_SCENE_LABEL_OFFSET + RETAIL_SCENE_LABEL_LEN;
 
