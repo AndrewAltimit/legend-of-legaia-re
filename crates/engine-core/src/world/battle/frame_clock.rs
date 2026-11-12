@@ -469,6 +469,35 @@ impl World {
         }
     }
 
+    /// The step of the battle frame this tick belongs to, as a module arm
+    /// that runs inside the pass should read it. On a film's retail step
+    /// track the pass applies the recording's step only after the SM step
+    /// that runs the module ([`Self::apply_cast_arm_frame_step`]), so the
+    /// frame's step is the track's next one, not the one the last frame ran;
+    /// elsewhere it is [`Self::battle_frame_step`].
+    pub(in crate::world) fn module_frame_step(&self) -> u8 {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let opening = self
+            .battle
+            .frame_clock
+            .ticks_into_frame(self.clock.display_frames)
+            == 0;
+        let tracked = self
+            .battle
+            .retail_step_track
+            .as_ref()
+            .filter(|t| opening && self.toggles.battle_sm_frame_cadence && t.armed())
+            .and_then(|t| {
+                let state = self.battle_ctx.action_state;
+                let band = state == S::SummonSustain.as_byte()
+                    || state == S::SummonReturn.as_byte()
+                    || state == S::MagicCapturePhase2.as_byte();
+                let phase = if band { self.casting.module_phase } else { 0 };
+                t.peek_step(state, phase)
+            });
+        tracked.unwrap_or_else(|| self.battle_frame_step()).max(1)
+    }
+
     /// A film's retail step for the frame this pass opens
     /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
     fn apply_retail_step_track(&mut self) {
@@ -949,7 +978,9 @@ impl World {
     pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
         let cadence = self.toggles.battle_sm_frame_cadence;
         let delta = if cadence {
-            self.battle_frame_step().max(1)
+            // The frame this pass opens, which a film's step track times
+            // only after the pass ([`Self::module_frame_step`]).
+            self.module_frame_step()
         } else {
             if self.casting.module_handover_waits {
                 if self

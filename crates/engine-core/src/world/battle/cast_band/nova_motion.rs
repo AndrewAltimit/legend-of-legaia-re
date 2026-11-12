@@ -7,7 +7,9 @@ use legaia_engine_battle_loop::nova_motion::*;
 use legaia_engine_cast::cast_module_camera::{
     NOVA_CLOUD_RECORDS, NOVA_LIFT_RECORDS, NOVA_RING_RECORD,
 };
-use legaia_engine_cast::seru_magic_ticks::{NOVA_DAMAGE_PHASE, NOVA_LIFT_PHASE};
+use legaia_engine_cast::seru_magic_ticks::{
+    NOVA_DAMAGE_PHASE, NOVA_LIFT_PHASE, SETTLE_DRAIN_PER_TICK,
+};
 
 impl World {
     /// PROT 0913's writes for the arm the tick body just ran (`phase_in`,
@@ -18,12 +20,13 @@ impl World {
     ///   victim's plane pair and turns them by the victim's heading less
     ///   the creature's (`0x801F7A54..0x801F7B0C`).
     /// - Arm `0x10`, every pass: the victim climbs to
-    ///   [`nova_lift_height`] and turns by [`nova_lift_spin_per_tick`];
+    ///   [`nova_lift_height`], and on the tick that opens each pass turns by
+    ///   [`nova_lift_spin_per_pass`] at the countdown the pass leaves;
     ///   each whirlwind ring is jittered round the victim
     ///   (`rand() % 63 - 0x20` on both plane coordinates,
     ///   `0x801F7F48..0x801F7FCC`). Its pass halts the sixteen rings
     ///   (`0x801F8124..0x801F8140`).
-    /// - Arm `0x13` while it holds: the victim turns `0x600` a frame and
+    /// - Arm `0x13` while it holds: the victim turns `0x600` a pass and
     ///   comes down along [`nova_landing_height`], arm 18's three parts
     ///   riding on it (`0x801F82FC..0x801F8368`). Its pass stands it on the
     ///   floor facing the creature (`0x801F8374..0x801F83AC`).
@@ -58,6 +61,10 @@ impl World {
             v.battle.facing_angle & 0xFFF,
         );
         let passed = phase_out != phase_in;
+        // Retail turns the victim a fixed step a pass in arms `0x10` and
+        // `0x13`, so the port turns it once, on the tick that opens the pass.
+        let opens_pass = self.module_tick_opens_pass();
+        let pass_ticks = i32::from(self.module_frame_step());
         match phase_in {
             NOVA_CLOUD_CARRY_ARM if passed => {
                 let turn = creature.map_or(0, |c| vf.wrapping_sub(c.2));
@@ -73,7 +80,15 @@ impl World {
                 }
             }
             NOVA_LIFT_PHASE => {
-                let spin = nova_lift_spin_per_tick(w);
+                // The pass's sine reads the countdown after the whole
+                // pass's climb (`W += (rate * speed) >> 1`, `0x801F7FE4..
+                // 0x801F7FF8`), where the port's word has climbed one tick.
+                let w_pass = w + (pass_ticks - 1) * (SETTLE_DRAIN_PER_TICK >> 1);
+                let spin = if opens_pass && !passed {
+                    nova_lift_spin_per_pass(w_pass)
+                } else {
+                    0
+                };
                 if let Some(a) = self.actors.get_mut(usize::from(victim_slot)) {
                     a.move_state.world_y = nova_lift_height(w, depth);
                     a.battle.facing_angle =
@@ -102,11 +117,11 @@ impl World {
                 let y = nova_landing_height(w, depth);
                 if let Some(a) = self.actors.get_mut(usize::from(victim_slot)) {
                     a.move_state.world_y = y;
-                    a.battle.facing_angle = a
-                        .battle
-                        .facing_angle
-                        .wrapping_sub(NOVA_LANDING_SPIN_PER_TICK)
-                        & 0xFFF;
+                    a.battle.facing_angle = a.battle.facing_angle.wrapping_sub(if opens_pass {
+                        NOVA_LANDING_SPIN_PER_PASS
+                    } else {
+                        0
+                    }) & 0xFFF;
                 }
                 if let Some(scene) = self.casting.active_summon.as_mut() {
                     for part in &mut scene.parts {

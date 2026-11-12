@@ -231,6 +231,11 @@ impl World {
                 // some arms frame instead of its live pair (PROT 0910's arm 9
                 // and settle, 0916's arms `0x13` / `0x14`, 0917's arm `0xF`).
                 st.victim_body = self.module_body_seat(latched);
+                // The battle frame this tick belongs to: an arm that steps a
+                // fixed amount once a pass (PROT 0913's arm `0x10` yaw) lands
+                // it on the tick that opens the frame.
+                st.frame_step = self.module_frame_step();
+                st.opens_pass = self.module_tick_opens_pass();
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);

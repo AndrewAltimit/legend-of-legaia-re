@@ -606,6 +606,18 @@ impl RetailStepTrack {
         step
     }
 
+    /// What [`Self::next_step`] will answer for this key, without counting
+    /// the pass: a module arm that runs inside the pass reads the step its
+    /// frame will be timed on before the pass applies it.
+    pub fn peek_step(&self, state: u8, phase: u8) -> Option<u8> {
+        if !self.armed {
+            return None;
+        }
+        let frames = self.frames.get(&(state, phase))?;
+        let n = self.passes.get(&(state, phase)).copied().unwrap_or(0);
+        frames.get(n).or(frames.last()).copied()
+    }
+
     /// The film began on a pass the engine has just run under `(state,
     /// phase)`: the recording's first frame under that key is that pass's,
     /// so the next pass takes the key's second frame, and every other key

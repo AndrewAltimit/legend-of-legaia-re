@@ -144,7 +144,9 @@ pub const NOVA_LANDING_SPAWNS: [ModuleSpawn; 2] = [
 /// | 20 | every pass | `FUN_801D5854(caster, 8)`, the post-action framing |
 ///
 /// Arm 0x10's yaw add is a fixed sine step a **pass**, not a multiple of the
-/// frame product, so the engine's ticks of a battle frame share it.
+/// frame product, so it lands on the tick that opens each battle frame: the
+/// arm's turn follows how many passes the frame steps fit into its `0x101`
+/// ticks, not its length.
 ///
 /// PORT: FUN_801F69F0 (PROT 0913; every camera arm, the drifts of arms 1..4, 11 and 16, the yaw stores of arms 3/4/13 and the arm 6/7 captions)
 pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -244,7 +246,7 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     _ => ArmDirection::PASS,
                 }
             },
-            each: |st, arm, ticks| match arm {
+            each: |st, arm, _ticks| match arm {
                 1 | 2 => drift(0, 0, 0, p / 4),
                 3 => drift(0, 8 * p, 0, 0),
                 4 => drift(0, p / 4, 0, p / 4),
@@ -259,16 +261,19 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     )
                 }
                 0x10 => {
-                    // The body's countdown climbs `P / 2` a tick from the `0`
-                    // arm 0x0F left, and `yaw += sin(n / 2) / 2` lands once a pass
+                    // The body's countdown (`module_words[0]`, fed by the
+                    // host) climbs `P / 2` a tick from the `0` arm 0x0F left,
+                    // and `yaw += sin(n / 2) / 2` lands once a pass
                     // (`0x801F8068..0x801F80A4`): on the first tick of each,
-                    // at the word as the pass leaves it.
-                    let step = crate::cast_module_frame_step::cast_arm_frame_step(913, arm)
-                        .map_or(2, i32::from);
-                    if ticks % step != 0 {
+                    // at the word as the pass leaves it. The pass is the
+                    // host's battle frame (`opens_pass`, `frame_step`), so a
+                    // run on retail's frame steps lands the add as often as
+                    // retail's passes do.
+                    if !st.opens_pass {
                         return ArmDirection::PASS;
                     }
-                    let n = (p / 2) * (ticks + step);
+                    let step = i32::from(st.frame_step.max(1));
+                    let n = st.module_words[0].max(0) + (p / 2) * step;
                     let (sin, _) = trig12(((n / 2) & 0xFFF) as u16);
                     drift(0, i32::from(sin) / 2, 0, 0)
                 }
