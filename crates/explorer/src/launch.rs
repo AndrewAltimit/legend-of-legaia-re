@@ -128,9 +128,24 @@ pub fn disc_search_dirs() -> Vec<PathBuf> {
 /// a first run with nothing to open again: offered on the start page,
 /// never opened unasked.
 pub fn found_disc_offer() -> Option<PathBuf> {
-    legaia_app_theme::folder_list::find_dumps(&disc_search_dirs(), 8)
-        .into_iter()
-        .find(|p| p.is_file())
+    pick_offer(legaia_app_theme::folder_list::find_dumps(
+        &disc_search_dirs(),
+        8,
+    ))
+}
+
+/// The dump to offer among `found` (a `.cue` ahead of its `.bin`, as
+/// `find_dumps` sorts them): one named for the USA release first, the disc
+/// Play boots, then the rest in order.
+pub fn pick_offer(found: Vec<PathBuf>) -> Option<PathBuf> {
+    let usa = |p: &PathBuf| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.to_ascii_lowercase().contains("usa"))
+    };
+    let mut found: Vec<PathBuf> = found.into_iter().filter(|p| p.is_file()).collect();
+    found.sort_by_key(|p| !usa(p));
+    found.into_iter().next()
 }
 
 /// The log file a Explorer-started game writes into.

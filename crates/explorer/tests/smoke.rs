@@ -583,3 +583,24 @@ fn overview_speaks_plainly() {
     );
     assert!(contents_plain(&ContentCounts::default()).is_empty());
 }
+
+/// A first run offers the USA dump (the disc Play boots) ahead of another
+/// region's named earlier in the folder.
+#[test]
+fn first_run_offer_prefers_the_usa_dump() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for f in [
+        "Legend of Legaia (France).cue",
+        "Legend of Legaia (USA).cue",
+        "Legend of Legaia (USA).bin",
+    ] {
+        std::fs::write(root.join(f), b"x").unwrap();
+    }
+    let found = legaia_app_theme::folder_list::find_dumps(&[root.to_path_buf()], 8);
+    assert_eq!(
+        legaia_explorer::launch::pick_offer(found),
+        Some(root.join("Legend of Legaia (USA).cue"))
+    );
+    assert_eq!(legaia_explorer::launch::pick_offer(Vec::new()), None);
+}
