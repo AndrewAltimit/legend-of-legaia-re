@@ -1261,6 +1261,41 @@ mod tests {
         assert_eq!((after - before).rem_euclid(4096.0), 128.0);
     }
 
+    /// An arm that hands over mid-pass moves its seats for the rest of the
+    /// pass by its held ticks' every-pass moves (PROT 0958's runs), and a
+    /// held pass of another arm owes nothing.
+    #[test]
+    fn a_handover_pass_moves_the_seats_for_its_whole_delta() {
+        use legaia_engine_battle_loop::cast_fx_state::ModulePassMoves;
+        fn hand_over(w: &mut World) -> bool {
+            w.actors[0].move_state.world_z -= 64;
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(4);
+        w.actors.push(crate::world::Actor::default());
+        w.casting.module_phase = 9;
+        w.casting.module_held_moves = Some(ModulePassMoves {
+            phase: 9,
+            seats: [Some((0, -64, 0)), None],
+            focus_z: 0,
+        });
+        w.module_pass(hand_over);
+        assert_eq!(w.actors[0].move_state.world_z, -256);
+        assert!(w.casting.module_held_moves.is_none());
+        // A record from another arm is not this one's.
+        w.actors[0].move_state.world_z = 0;
+        w.casting.module_held_moves = Some(ModulePassMoves {
+            phase: 3,
+            seats: [Some((0, -64, 0)), None],
+            focus_z: 0,
+        });
+        w.module_pass(hand_over);
+        assert_eq!(w.actors[0].move_state.world_z, -64);
+    }
+
     /// On the per-vsync cadence an arm that hands over leaves the next arm
     /// to the tick that opens the next battle frame: the band holds on the
     /// ticks between without entering the module.
