@@ -117,6 +117,21 @@ impl World {
     /// clock left it rather than retail's. `cursor` may sit below zero (the
     /// displayed frame from before the loop's last wrap).
     pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        self.seat_clip_cursor(slot, clip, cursor, false)
+    }
+
+    /// [`Self::seat_battle_clip_cursor`] that lands a one-shot clip too: a
+    /// cast film's opening seat (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) stands
+    /// the acting body on the state's own RAM cursor, and the cast clip it
+    /// plays there is a one-shot the replay committed on its own clock.
+    /// Refused as a still's seat is, Caruban's Fire Breath clip `9` opened
+    /// its film a step-`2` pass ahead of retail's (`48` against `40`), and
+    /// case `0xA`'s yaw, which reads the cursor, ran `15` units ahead.
+    pub fn seat_acting_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        self.seat_clip_cursor(slot, clip, cursor, true)
+    }
+
+    fn seat_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32, one_shots: bool) -> bool {
         // A party member the capture holds downed plays entry `8`, the kneel
         // that re-commits itself at every natural end
         // ([`legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
@@ -156,7 +171,7 @@ impl World {
         // whole body in that time (`battle_gimard_tail_fire_b`'s Vahn, still
         // upright mid-fall on the displayed frame at `72` less two frames'
         // advance, sprawled on the RAM's).
-        if !player.is_looping() && !downed && !reacting {
+        if !player.is_looping() && !downed && !reacting && !one_shots {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;

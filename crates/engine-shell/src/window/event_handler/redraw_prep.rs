@@ -397,8 +397,14 @@ impl PlayWindowApp {
             // still behind the whole strike.
             // The gate itself, not the capture frame: a film forces its
             // capture tick past the run (`LEGAIA_DIAG_CAPTURE_TICK`).
-            if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
-                && self.capture_gate_met()
+            // A film from a pre-cast state lets go on the cast's begin, the
+            // recorder's own first frame: the state holds the angle the
+            // fresh fight's intro would otherwise have wound on, and held to
+            // the end it stood `rikuroa`'s horizon mist arc still through
+            // the whole Fire Breath, where retail's sweeps across the HP-bar
+            // settle `0x51`.
+            if std::env::var_os("LEGAIA_DIAG_CAST_SEQ").is_some()
+                && self.cast_film_begun()
                 && let Some(sc) = self.screenshot.as_mut()
             {
                 sc.battle_backdrop_yaw = None;
@@ -874,7 +880,16 @@ impl PlayWindowApp {
             };
             if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
-                world.seat_battle_clip_cursor(slot, clip, cursor);
+                world.seat_acting_clip_cursor(slot, clip, cursor);
+            }
+            // ... and every other body on its loop as the state's RAM holds it.
+            if on_gate
+                && seat_now
+                && let Some(seeds) = sc.cast_seq_seat_clips.take()
+            {
+                for s in seeds {
+                    world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
+                }
             }
         }
         // Colour the ground grid from this frame's battle ambient (a summon

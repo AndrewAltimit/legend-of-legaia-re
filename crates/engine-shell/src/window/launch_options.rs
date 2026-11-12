@@ -553,6 +553,14 @@ pub struct ScreenshotConfig {
     /// seats it on the gate's tick: the state's own RAM cursor, where the
     /// capture's clip seeds stand the displayed frame's. Taken once.
     pub cast_seq_seat_cursor: std::cell::Cell<Option<(u8, i32)>>,
+    /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS=slot:clip:cursor,..`: every other
+    /// body's clip and cursor in the state's own RAM, on engine slots, which a
+    /// gate film seats on the gate with the acting body's
+    /// ([`Self::cast_seq_seat_cursor`]). The capture's clip seeds land on the
+    /// still's capture frame, which a film never reaches. Loops only. Taken
+    /// once.
+    pub cast_seq_seat_clips:
+        std::cell::Cell<Option<Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -1351,6 +1359,11 @@ impl ScreenshotConfig {
                         let (c, k) = v.split_once(',')?;
                         Some((c.trim().parse().ok()?, k.trim().parse().ok()?))
                     }),
+            ),
+            cast_seq_seat_clips: std::cell::Cell::new(
+                std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v)),
             ),
             seat_module_shot: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_MODULE_SHOT").ok().and_then(|v| {

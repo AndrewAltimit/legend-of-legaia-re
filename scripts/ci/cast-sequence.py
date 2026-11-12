@@ -401,6 +401,43 @@ def state_opening_cursor(out: Path) -> str | None:
     return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
 
 
+def state_body_cursors(out: Path) -> str | None:
+    """Every other body's `slot:clip:cursor` in the state's own RAM, on engine
+    slots (the party packed ahead of the monsters), for a `--physical` film's
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS`. The capture's clip seeds are the
+    displayed frame's and land on the still's capture frame, which a film never
+    reaches, so its bodies idled on the replay's own phases:
+    `battle_rugi_caruban_2_fire_breath_mid_cast`'s party opened the film on
+    idle cursors `132`, `72`, `108` where the state holds `96`, `112`, `48`, and
+    a close camera shows the near bodies' sway. The engine lands loops only. A
+    harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None:
+        return None
+    acting = int(first["acting"])
+    bodies = {}
+    for seat in range(8):
+        a = ram_u32(ram, 0x801C9370 + 4 * seat)
+        if not RAM_BASE <= a < RAM_TOP - 0x300:
+            continue
+        if seat < 3 and int.from_bytes(ram[a - RAM_BASE + 0x14E:a - RAM_BASE + 0x150], "little") == 0:
+            continue
+        node = ram_u32(ram, a + 0x22C)
+        if not RAM_BASE <= node < RAM_TOP - 0x80:
+            continue
+        o = node - RAM_BASE
+        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], int.from_bytes(ram[o + 0x68:o + 0x6A], "little"))
+    pc = max(1, sum(1 for s in bodies if s < 3))
+    seeds = [f"{s if s < 3 else pc + s - 3}:{c}:{k}" for s, (c, k) in sorted(bodies.items()) if s != acting]
+    return ",".join(seeds) or None
+
+
 def state_strike_queue(out: Path) -> str | None:
     """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
     own RAM, as the drive's `q` field, for a `--physical` film of a monster
@@ -748,6 +785,8 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
     if (cursor := (state_opening_cursor(out) or retail_opening_cursor(out, first_row=True)) if a.physical else retail_opening_cursor(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
+    if a.physical and (bodies := state_body_cursors(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS"] = bodies
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),

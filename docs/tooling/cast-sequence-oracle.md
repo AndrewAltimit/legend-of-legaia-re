@@ -256,7 +256,11 @@ The backdrop's slot-1 angle (`LEGAIA_BATTLE_BACKDROP_YAW`,
 its phase is the capture's, but a gate film lets go of it on the gate's frame:
 retail's frame driver winds it half a frame step a frame from there on, and
 held through the film it stood the horizon mist or cloud band still behind
-every strike on a stage that keeps object 1.
+every strike on a stage that keeps object 1. A film from a pre-cast state lets go on
+the cast's begin `0x28`, the recorder's first frame: held to the end,
+`rikuroa_caruban_pre_fire_breath`'s Fire Breath stood `rikuroa`'s horizon mist arc
+still while retail's swept across the HP-bar settle `0x51`, and the film read `.868`
+where it reads `.955` let go (`0x51` `.689` to `.943`).
 
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
@@ -426,7 +430,13 @@ still's. The capture's clip seeds (`LEGAIA_SEAT_BATTLE_CLIPS`) put each body on
 the displayed frame, two passes older than the RAM, which is right for the still
 and wrong for a film that runs on from the gate: the driver seats the acting body's
 clip and node cursor read off the state (`state_opening_cursor`,
-`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`, taken on the gate's tick). And a monster
+`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`, taken on the gate's tick). The seat lands a
+one-shot clip too (`World::seat_acting_clip_cursor`), where a still's clip seed
+re-poses only a loop: the cast clip the gate stands in was committed on the replay's
+clock. Refused, Caruban's Fire Breath clip `9` opened its films a step-`2` pass ahead
+of retail's (cursor `48` against `40`), case `0xA`'s yaw, which reads the cursor, ran
+`15` units ahead, and the full-party films read `.930` / `.927` where they read
+`.964` / `.959` seated. And a monster
 striker's committed queue `+0x1DF..` goes on the drive (`state_strike_queue`, the
 `q` field) unless the still already steered it: the picker drew those clips before
 the state was saved, and a replay that reached the gate on another pick swings
