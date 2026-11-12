@@ -4607,6 +4607,20 @@ waives its fold, as for PROT 0959. A frozen seat
 mid-knockdown stands still. `nivora_duel_mid_blazing_slash` reads `.504` to
 `.766` with cues `.00` to `.74`. Grade `disassembly` + `capture`.
 
+What still holds arms `0x0D` / `0x0E` low (`.44` / `.42` on `--retail-steps
+--rand-track`, with the camera on retail's to a tick) is two things. The flame puffs
+are a deal: a `--retail-parts` film puts the same number of effect-pool children per
+arm on both sides, their centroids within the spread of the rolled offsets
+(`fxpool.csv`, arm `0x0D` six against five about `(11, -268, -717)` and
+`(-35, -224, -745)`). The popup is a shape. Retail's number is a primitive in the
+ordering table, linked at slot 1 (`*(0x1F8003F4) + 4`, `jal 0x8003D2C4` at
+`0x801DFC14`), and the film shows it first about four frames after the hit, low over
+Vahn, rising to the top over the next two; the earlier hit's number stands beside it
+until then. The engine draws the number over the scene from its first frame, already
+risen. Whether the flame sprites cover retail's first frames (a deeper link) or the
+number's first frames sit off the screen's top clamp is not yet read. Grade `capture`
+(puffs) and `disassembly` + `capture` (the popup's link), the cause `inference`.
+
 <a id="prot-0960-plasma-strike"></a>
 
 **0960 Plasma Strike** (`cast_module_camera::plasma_strike_camera`) is
