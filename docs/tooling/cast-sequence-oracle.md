@@ -436,7 +436,10 @@ re-poses only a loop: the cast clip the gate stands in was committed on the repl
 clock. Refused, Caruban's Fire Breath clip `9` opened its films a step-`2` pass ahead
 of retail's (cursor `48` against `40`), case `0xA`'s yaw, which reads the cursor, ran
 `15` units ahead, and the full-party films read `.930` / `.927` where they read
-`.964` / `.959` seated. The other bodies stand on the state's RAM too
+`.964` / `.959` seated. It moves a one-shot only within a pass of the replay's
+cursor (`16` units): a state saved mid draw tick can hold an after-image's older
+cursor in the node word, and `cave01_theeder_thunderbolt`'s `8` stood its
+Thunderbolt `32` units behind the body retail's recording shows. The other bodies stand on the state's RAM too
 (`state_body_cursors`, `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS`, loops only): the still's
 clip seeds land on a capture frame a film never reaches, so the party idled on the
 replay's phases (`132`, `72`, `108` where the `_2_` state holds `96`, `112`, `48`),

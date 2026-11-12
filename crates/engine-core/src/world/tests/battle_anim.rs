@@ -1677,6 +1677,41 @@ fn a_reaction_entry_takes_the_capture_cursor() {
     assert_eq!(cursor, Some(40));
 }
 
+/// A cast film's opening seat lands the acting body's one-shot clip, which a
+/// still's clip seed leaves on the replay's clock, but only within a pass of
+/// where the replay stands: a state saved mid draw tick can hold an
+/// after-image's older cursor in the node word.
+#[test]
+fn a_film_seat_lands_a_one_shot_within_a_pass() {
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[9] = Some(pose_test_clip(9, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.queued_anim = 9;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.actors[0].battle.current_anim, 9);
+    let cursor = |w: &World| {
+        w.actors[0]
+            .battle_animation
+            .as_ref()
+            .map(|p| i32::from(p.cursor_sixteenths()))
+    };
+    let start = cursor(&world).expect("a playing clip");
+    assert!(
+        !world.seat_battle_clip_cursor(0, 9, start + 8),
+        "a still's seed leaves a one-shot"
+    );
+    assert!(world.seat_acting_clip_cursor(0, 9, start + 8));
+    assert_eq!(cursor(&world), Some(start + 8));
+    assert!(
+        !world.seat_acting_clip_cursor(0, 9, start + 8 + 32),
+        "past a pass's reach"
+    );
+    assert_eq!(cursor(&world), Some(start + 8));
+}
+
 /// `FUN_80047430` skips the whole advance for a body on its idle whose
 /// status word carries Stone (`0x4`) or Numb (`0x400`) (`andi v0,a0,0x404`
 /// at `0x80047640`, the clip test at `0x8004764C`, `j 0x800480B0`): a

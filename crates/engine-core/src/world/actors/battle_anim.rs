@@ -14,6 +14,11 @@ use legaia_engine_mode::mode::SceneMode;
 const DEALT_COIN_LOOKAHEAD: u64 = 8;
 const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
 
+/// How far a cast film's opening seat moves a one-shot clip's cursor
+/// ([`World::seat_acting_clip_cursor`]): one step-`4` pass at the normal
+/// rate, in sixteenths of a keyframe.
+const ONE_SHOT_SEAT_REACH: i32 = 16;
+
 impl World {
     /// The engine slots behind retail's seven battle table seats (party
     /// `0..=2`, monsters from `3`), in seat order, for a walk retail bounds at
@@ -172,6 +177,19 @@ impl World {
         // upright mid-fall on the displayed frame at `72` less two frames'
         // advance, sprawled on the RAM's).
         if !player.is_looping() && !downed && !reacting && !one_shots {
+            return false;
+        }
+        // A one-shot moves only within a pass of where the replay stands
+        // ([`ONE_SHOT_SEAT_REACH`]): a state saved mid draw tick can hold an
+        // after-image's older cursor in the node word, and
+        // `cave01_theeder_thunderbolt`'s `8` stood its Thunderbolt `32` units
+        // behind the body retail's recording shows, the cast `9` ticks long.
+        if !player.is_looping()
+            && one_shots
+            && !downed
+            && !reacting
+            && (i32::from(player.cursor_sixteenths()) - cursor).abs() > ONE_SHOT_SEAT_REACH
+        {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;
