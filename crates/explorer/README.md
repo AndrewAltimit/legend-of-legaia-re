@@ -258,7 +258,10 @@ same. It also opens when the desktop's dialog comes back at once (it never
 appeared: a desktop with no file-dialog service), and from the start page's
 *find it in this window* link. An export with a controller in hand writes
 into the remembered export folder (else `Legaia Explorer` in Pictures) under
-its own name, never over an earlier file, and the status line says where.
+its own name, never over an earlier file, and the status line says where,
+with *Change folder...* beside it. The View menu's *Export folder* row names
+the folder and its *Change...* picks another (the in-app browser with a pad,
+the desktop's folder dialog otherwise); the save dialog opens there too.
 With nothing focused on the start page, a controller's first press puts the
 focus on the disc on offer, else on *Open disc image*.
 
@@ -289,7 +292,7 @@ These environment variables drive a run without a person at the keyboard
 | `LEGAIA_EXPLORER_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
 | `LEGAIA_EXPLORER_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
 | `LEGAIA_EXPLORER_PLAY` | Press *Play* once the disc has loaded. |
-| `LEGAIA_EXPLORER_BROWSE` | Open the in-app file browser at start: `disc`, `folder` (an extracted folder) or `out` (the extraction output folder). |
+| `LEGAIA_EXPLORER_BROWSE` | Open the in-app file browser at start: `disc`, `folder` (an extracted folder), `out` (the extraction output folder) or `export` (the export folder). |
 | `LEGAIA_EXPLORER_SETTINGS` | Settings file to use instead of the per-user one. |
 
 The screenshot reads the window's own framebuffer, so on a shared desktop run
