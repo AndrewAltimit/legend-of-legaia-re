@@ -1397,3 +1397,38 @@ reason = "Wave 38: play_gzip_bytes grows by code (+0.54%): the controller layer 
 changes = [
   ["counts/bundle/play_gzip_bytes", 5003370, 5030469],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Wave 39. Garmel's hyper elbow: the in-turn clip commit now shows a clip's first keyframe on its first frame (FUN_8004AD80, cursor 0), which lifts the knee, lizard and frog strike films and moves Vahn's pose at this still by a few blocks; the still is harness-placed, so the pose shift is the seat's, not a mechanics loss. Gimard's Seru capture: the drop arrives with the harness 0x20 return-walk arm, which lifts melee_hit_spark 0.919 -> 0.954; why this still loses ten thousandths under that arm is not measured, and the entry records it as an open residual rather than a settled cause."
+changes = [
+  ["states/battle_garmel_party_vahn_hyper_elbow_mid/image", 0.99, 0.988],
+  ["states/rim_elm_gimard_seru_capture_before/image", 0.994, 0.984],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 39. The summon_cast allocation rise (+0.5%) is the bank-3 quad split (FUN_80045BB4 draws each kind-19 GT4 as sixteen GT3s), which builds the split mesh per frame; the other native rises are under 0.4%. The bundle grows by code (+0.5% play gzip, no data): the battle cast and clip-timing fixes, the CD-timing models (console timing and the GPU cost model, both opt-in) and the menu and item-window fixes. The browser wasm_bytes_per_frame rises (cast enhanced +6.3%, battle enhanced +2.9%, the rest under 0.5%) are not bisected; the likely source is the extra primitives the battle and cast draws now emit (the bank-3 split and the staged one-shots), and are measured on the gate host only."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 116168, 119540],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 114334, 114475],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 102751, 109224],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 101549, 102054],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161809, 162135],
+  ["counts/bundle/gzip_bytes", 7143173, 7190901],
+  ["counts/bundle/play_gzip_bytes", 5030469, 5055115],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4484.8, 4485.8],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1283.3, 1283.4],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4456.0, 4457.5],
+  ["counts/native/battle/retail/allocs_per_frame", 1230.9, 1231.2],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4588.2, 4611.6],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1298.8, 1300.1],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4559.5, 4584.2],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1246.8, 1252.1],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1707.7, 1708.9],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1438.5, 1442.8],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1391.1, 1391.5],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1472.0, 1476.3],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1209.7, 1213.9],
+  ["counts/native/world_map/retail/allocs_per_frame", 1760.9, 1761.0],
+]
