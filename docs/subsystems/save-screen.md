@@ -830,7 +830,7 @@ Global header fields, as absolute block offsets:
 | `0x254` | `0xC` x 3 | `0x80084394` | Party display-name list for the info panel, one slot per active member (`RETAIL_PARTY_NAME_TABLE_OFFSET`) |
 | `0x30C`..`0x32C` | - | `0x8008444C`.. | Fishing words and the dance best ([minigame purses](#the-minigame-purses-are-live-state-words-too)) |
 | `0x408` | `0x10` | `0x80084548` | CDNAME label of the current scene, NUL-padded - the scene a load resumes into |
-| `0x418` | `0x10` | `0x80084558` | CDNAME label of the previous scene |
+| `0x418` | `0x10` | `0x80084558` | Second copy of the scene's CDNAME label (lower-cased) |
 | `0x428` | 8 | `0x80084568` / `6C` | Field position snapshot `(x, z)`, two sign-extended words |
 | `0x430` | 4 | `0x80084570` | Play clock, 60 Hz ticks |
 | `0x43C` | 8 | `0x8008457C` / `80` | Configured audio level, voice / SFX volume |
@@ -1065,7 +1065,7 @@ reads on retail's load screen and in the BIOS card browser:
 | `0x04..0x44` | `0x80084144` | title `Legend of Legaia NN  Time HH:MM`, from the template at menu-overlay VA `0x801E4FC8` (PROT 0899 file `0x167B0`) when the block has no title | `FUN_8003D26C(0x80084144, 0x801E4FC8, 2)` at `0x801E1A18`; the time digits match the block's clock on every library card |
 | `0x224..0x260` | `0x80084364..` | save summary: clock copy `0x224`, party count `0x228`, `1` at `0x229`, save number `0x22A`, per member its id `0x22C+k`, level `0x230+k`, the record's HP / MP halfwords in four rows (`0x234`, `0x23C`, `0x244`, `0x24C`, `+2k`) and its name at `0x254 + 0xC*k` | `0x801E1A34..0x801E1AE8` (`card::write_retail_save_summary`) |
 | `0x400` | `0x80084540` | the current scene's raw CDNAME define, a `u32` | rewritten by `FUN_8001D7F8` on a scene change; the library cards hold the define of the `0x408` label |
-| `0x418` | `0x80084558` | the previous scene's label | backed up from `0x80084548` by every name-based scene change (`FUN_8001FD44`, `FUN_80021934`); the engine tracks it on scene entry (`PartyState::previous_scene`, `LGXC`) |
+| `0x418` | `0x80084558` | the scene's own label, lower-cased | the packet `FUN_8001FD44` copies `0x80084548` into it after its resolver has overwritten that buffer with the destination, so every retail block holds the active label here; the engine seats it on scene entry (`PartyState::previous_scene`, `LGXC`) |
 
 What such a block still leaves zero are the banner name's bytes after its NUL,
 the play clock's sub-second ticks (the engine keeps whole seconds; a window

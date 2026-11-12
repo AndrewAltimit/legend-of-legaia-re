@@ -1381,3 +1381,22 @@ record or, for the seven big summons, off `*0x8007B85C + 0x44000` (where the pre
 the port reads those parts from), and each part's links resolve off the record's table. The seat's resets match
 `World::seat_summon_actor`, with the module's own seat-arm stores taken as the arm's.
 
+
+The name-based scene-change packet `FUN_8001FD44`, run with its resolver `FUN_8001D7F8` over the define table the loader
+builds, shows the buffer at `0x80084558` holding the destination's own label: on the shipped arm (`_DAT_8007B8C2 != 0`)
+the packet copies the active buffer into it after the resolver has overwritten that buffer with the staged name. Every
+block on the library cards carries the active label there, where the port wrote the scene the player had left. The pool
+allocator `FUN_80020DE0` showed `Actor::init_allocated` leaving the clip rate `+0x6A = 0x10`, the neutral colour
+`+0x74 = 0x808080` and the `+0x10` bit the allocator ORs onto every descriptor at zero; it also shows that retail does
+not clear the record whole (`+0x16`, `+0x50`, the move PC `+0x70` and the tail past `+0x8F` keep the last occupant's
+bytes). `main`'s mode loop `FUN_80015E90`, the object-table stamp `FUN_80024D78`, the three-actor talk spawner
+`FUN_801D2D38`, the TMD renderer's corner loads in `FUN_8002735C` over every TMD on the disc, the FMV play loop
+`FUN_801CF098`, the FMV master dispatch `FUN_801CEA3C` and the message-bar raise through `FUN_801D8DE8` match.
+
+The touch post `FUN_801D5B5C` showed an encounter roll hold the port did not have: `_DAT_8007B604`, which the system
+entity's idle state spends one game tick at a time in place of the region reader, so for eight ticks after a talk or a
+prop touch (four after a record spawn, `FUN_8003BDE0`) no step is sampled, counted or rolled. The dialog SM's state-2
+arm in `FUN_80039B7C`, over every text lead in the disc's records, showed the walk past shown text running on over zero
+padding and other yield bytes, where the runner resumed at the page's dispatch byte. The fishing line actor
+`FUN_801D4948` showed the catch celebration firing its stages off a stage word: the stage cue on the arm's second frame
+rather than with the bursts, each stage once at any frame step, and the hand-back to the tracking sub-state.
