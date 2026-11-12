@@ -349,3 +349,48 @@ fn a_cycler_takes_the_mode_3_arm_on_its_seat_frame() {
     let part = &world.casting.active_summon.as_ref().unwrap().parts[0];
     assert_eq!((part.state.field_9c, part.state.tween_src_x), (2, h));
 }
+
+/// PROT 0933 (Terra)'s arms 6 and 7 walk the whirl records by the frame
+/// step once a pass (`+0x7A += step`, `+0x16 += 4 * step`,
+/// `0x801F70FC..0x801F7124`), and arms `0xA` / `0xC` step the row's orbit
+/// once a pass (`speed += 3 * step`, then `angle += speed`,
+/// `0x801F75D4..0x801F7600`): the later ticks of a pass add nothing.
+#[test]
+fn terra_walks_its_whirl_and_orbit_once_a_pass() {
+    let mut world = module_code_world();
+    let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+    scene
+        .parts
+        .push(legaia_engine_effects::summon::SummonPartRuntime {
+            model_sel: -1,
+            reserved: 0,
+            buf: vec![0x08],
+            state: legaia_engine_vm::move_vm::ActorState {
+                field_78: 0x1000,
+                ..Default::default()
+            },
+            finished: false,
+            origin: Some([0; 3]),
+            tag: Some(0x801F_8838),
+            seat_pokes: Vec::new(),
+            seat_halve_speed: false,
+            halted_walks: 0,
+            walk_reached: false,
+        });
+    world.casting.active_summon = Some(scene);
+    let step = world.module_frame_step();
+    world.casting.module_pass_repeat = false;
+    world.apply_terra_writes(6, false, 1, 9);
+    world.casting.module_pass_repeat = true;
+    world.apply_terra_writes(6, false, 1, 9);
+    let s = &world.casting.active_summon.as_ref().unwrap().parts[0].state;
+    assert_eq!(s.field_7a, u16::from(step));
+    assert_eq!(s.world_y, 4 * i16::from(step));
+    world.casting.module_terra_orbit = (0, 0);
+    for repeat in [false, true, true, false] {
+        world.casting.module_pass_repeat = repeat;
+        world.apply_terra_writes(0xA, false, 1, 9);
+    }
+    let k = 3 * i32::from(step);
+    assert_eq!(world.casting.module_terra_orbit, (2 * k, k + 2 * k));
+}

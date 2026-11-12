@@ -539,7 +539,7 @@ impl World {
     /// | 6, 7 (`0x801F70C8..0x801F7154`, `0x801F7234..0x801F72C0`) | every | each part in the pool but handle `0`: `+0x7A += step`, `+0x16 += 4 * step`, killed at a level `+0x78` of `0xA00` or under |
     /// | 8 (`0x801F745C`, `0x801F7478`) | pass | creature rate `2`; row shown |
     /// | 9 (`0x801F7590`) | pass | orbit words zeroed |
-    /// | `0xA`, `0xC` (`0x801F75E4..`) | every | the row's orbit about `(0, 0x613)` |
+    /// | `0xA`, `0xC` (`0x801F75D4..`) | every | the row's orbit about `(0, 0x613)`: `speed += 3 * step`, `angle += speed`, facing `+= speed` |
     /// | `0xA`, `0xB` (`0x801F7820`, `0x801F7910`) | pass | creature rate `4`, `2` |
     /// | `0xC` (`0x801F7C8C..`) | pass | row rate `0`, back on its seat, facing `0x800` |
     /// | `0xE` (`0x801F7E18`) | pass | creature rate `8` |
@@ -551,16 +551,25 @@ impl World {
     /// | `0x15` | pass | row restored, scale `0x1000` |
     ///
     /// PORT: overlay_summon_terra_0933_801f6a30 (the row and creature stores)
-    pub(in crate::world::battle::cast_band) fn apply_terra_writes(
+    pub(in crate::world) fn apply_terra_writes(
         &mut self,
         phase: u8,
         passed: bool,
         monster_count: u8,
         creature: u8,
     ) {
-        // The pool the arms walk holds the stager's two whirl records, one a
-        // pass's worth of them each; a pass runs a step of these ticks.
+        // Both walks below are a pass's, by the frame step `0x1F800393`
+        // (`lbu v1,0x7f(a2)`, `a2 = 0x1F800314`), so the port takes each once,
+        // on the tick that opens the pass: shared out a tick at a time, the
+        // pass an arm hands over on stopped short of its step, and the orbit
+        // summed its angle over every tick.
+        let opens_pass = self.module_tick_opens_pass();
+        let step = i32::from(self.module_frame_step());
+        // The pool the arms walk holds the stager's two whirl records: each
+        // pass, before the gate, `+0x7A += step` and `+0x16 += 4 * step`
+        // (`0x801F70FC..0x801F7124`, `0x801F7268..0x801F7290`).
         if matches!(phase, 6 | 7)
+            && opens_pass
             && let Some(scene) = self.casting.active_summon.as_mut()
         {
             const WHIRL_RECORDS: [u32; 2] = [0x801F_8838, 0x801F_88F0];
@@ -569,8 +578,8 @@ impl World {
                 .iter_mut()
                 .filter(|p| !p.finished && p.tag.is_some_and(|t| WHIRL_RECORDS.contains(&t)))
             {
-                part.state.field_7a = part.state.field_7a.wrapping_add(1);
-                part.state.world_y = part.state.world_y.wrapping_add(4);
+                part.state.field_7a = part.state.field_7a.wrapping_add(step as u16);
+                part.state.world_y = part.state.world_y.wrapping_add((4 * step) as i16);
                 if part.state.field_78 <= 0xA00 {
                     part.finished = true;
                 }
@@ -653,9 +662,11 @@ impl World {
         if phase == 0xC {
             self.keep_row_tr_y(monster_count);
         }
-        if matches!(phase, 0xA | 0xC) {
+        // The orbit is a pass's too: `speed += 3 * step`, then `angle +=
+        // speed` once (`0x801F75D4..0x801F7600`).
+        if matches!(phase, 0xA | 0xC) && opens_pass {
             let (speed, angle) = self.casting.module_terra_orbit;
-            let speed = speed + 3 * D;
+            let speed = speed + 3 * step;
             let angle = angle + speed;
             self.casting.module_terra_orbit = (speed, angle);
             for (e, i) in self.ra_seru_row(monster_count) {
