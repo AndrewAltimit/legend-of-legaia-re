@@ -498,6 +498,7 @@ fn the_active_stat_compare_matches() {
         record: &record,
         equip_info: Some(&info),
         item_effects: Some(&effects),
+        passives: None,
     };
     let label = |l, f| legaia_engine_ui::menu::window_painters::pool_label(Some(&pool), l, f);
     // Ids whose category picks the HP / MP or the SPD / INT / AGL rows.

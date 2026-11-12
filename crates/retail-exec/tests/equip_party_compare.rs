@@ -37,10 +37,54 @@ const EQUIPPED: u32 = 0x801C_EBAC;
 const CANNOT: u32 = 0x801C_EBB8;
 const LABELS: [u32; 3] = [0x801C_E9A0, 0x801C_E9A4, 0x801C_E9A8];
 
+/// The equipment ids a record wears, sorted the way a game holds them.
+pub(crate) struct Gear {
+    /// Every sellable piece.
+    pub gear: Vec<u8>,
+    /// The Ra-Seru forms: the item table's three runs (`0x01..=0x1A`) and
+    /// any row flagged Ra-Seru (`+7` bit 0). They sit in their own byte and
+    /// are never sold.
+    pub raseru: Vec<u8>,
+    /// [`Self::gear`] by `+7` class: body, head, weapon, footwear.
+    pub by_class: [Vec<u8>; 4],
+}
+
+pub(crate) fn gear(m: &mut psx_retail_exec::Memory, info: &DiscEquipInfo) -> Gear {
+    let all: Vec<u8> = (1..=255u8).filter(|id| info.entry(*id).is_some()).collect();
+    let mut is_raseru = |id: u8| {
+        let row = m.rd8(ITEMS + u32::from(id) * 12 + 1);
+        id <= 0x1A || m.rd8(EQUIPMENT + u32::from(row) * 8 + 7) & 1 != 0
+    };
+    let (raseru, gear): (Vec<u8>, Vec<u8>) = all.into_iter().partition(|&id| is_raseru(id));
+    assert!(!raseru.is_empty());
+    let mut by_class: [Vec<u8>; 4] = Default::default();
+    for &id in &gear {
+        use legaia_game_tables::equip_stats::EquipSlot as S;
+        let c = match info.entry(id).unwrap().category {
+            S::Body => 0,
+            S::Head => 1,
+            S::Weapon => 2,
+            S::Footwear => 3,
+        };
+        by_class[c].push(id);
+    }
+    Gear {
+        gear,
+        raseru,
+        by_class,
+    }
+}
+
 /// Worn bytes in retail's order: body, head, the weapon byte (`2` for Vahn
 /// and Gala, `3` for Noa), the Ra-Seru byte, footwear, three Goods. Each
 /// armament byte holds a piece of its own class, as the equip screen leaves it.
-fn seed_record(rng: &mut Rng, r: &mut [u8], ch: usize, by_class: &[Vec<u8>; 4], raseru: &[u8]) {
+pub(crate) fn seed_record(
+    rng: &mut Rng,
+    r: &mut [u8],
+    ch: usize,
+    by_class: &[Vec<u8>; 4],
+    raseru: &[u8],
+) {
     for b in r.iter_mut() {
         *b = rng.below(256) as u8;
     }
@@ -99,36 +143,11 @@ fn the_party_compare_column_matches() {
     let stats = EquipStatTable::from_scus(&scus).expect("equipment");
     let table = equip_modifier_table_from_disc(&stats);
     let info = DiscEquipInfo::from_disc(&stats);
-    let gear: Vec<u8> = (1..=255u8).filter(|id| info.entry(*id).is_some()).collect();
-    // Ra-Seru forms (`0x01..=0x1A`, the item table's three runs) and the
-    // Ra-Seru-flagged rows (`+7` bit 0) sit in their own byte and are never
-    // sold.
-    let is_raseru = |m: &mut psx_retail_exec::Memory, id: u8| {
-        let row = m.rd8(ITEMS + u32::from(id) * 12 + 1);
-        id <= 0x1A || m.rd8(EQUIPMENT + u32::from(row) * 8 + 7) & 1 != 0
-    };
-    let raseru: Vec<u8> = gear
-        .iter()
-        .copied()
-        .filter(|&id| is_raseru(&mut rig.cpu.mem, id))
-        .collect();
-    let gear: Vec<u8> = gear
-        .iter()
-        .copied()
-        .filter(|&id| !is_raseru(&mut rig.cpu.mem, id))
-        .collect();
-    assert!(!raseru.is_empty());
-    let mut by_class: [Vec<u8>; 4] = Default::default();
-    for &id in &gear {
-        use legaia_game_tables::equip_stats::EquipSlot as S;
-        let c = match info.entry(id).unwrap().category {
-            S::Body => 0,
-            S::Head => 1,
-            S::Weapon => 2,
-            S::Footwear => 3,
-        };
-        by_class[c].push(id);
-    }
+    let Gear {
+        gear,
+        raseru,
+        by_class,
+    } = gear(&mut rig.cpu.mem, &info);
     let others: Vec<u8> = (1..=255u8)
         .filter(|&id| rig.cpu.mem.rd8(ITEMS + u32::from(id) * 12) != 1)
         .collect();

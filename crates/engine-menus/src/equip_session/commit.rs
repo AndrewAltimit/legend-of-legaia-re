@@ -139,11 +139,14 @@ impl EquipSession {
     /// the bag, refund the prior occupant, write, cue.
     fn commit_engine_only(&mut self, slot: u8, item_id: u8) {
         let owned = self.inventory.get(&item_id).copied().unwrap_or(0);
-        if owned == 0 {
+        let Some(at) = self.inventory.find_slot(item_id).filter(|_| owned > 0) else {
             self.events.push(EquipEvent::InvalidConfirm);
             return;
-        }
-        *self.inventory.entry(item_id).or_insert(0) -= 1;
+        };
+        // Retail's by-slot consume (`FUN_80043048`, the `0x801DA190` call of
+        // `FUN_801D9C14`'s Goods arm): the last one taken empties the id
+        // byte too, leaving a hole rather than an `(id, 0)` stack.
+        let _ = self.inventory.consume_slot(at as u8, 1);
         let removed = self.record.equip[slot as usize];
         if removed != 0 {
             let _ = self.inventory.add(removed, 1);

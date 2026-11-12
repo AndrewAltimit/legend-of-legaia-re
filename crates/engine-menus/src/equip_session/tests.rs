@@ -665,7 +665,8 @@ fn unequip_returns_item_to_bag_and_refuses_empty_slot() {
         ..Default::default()
     });
     assert_eq!(s.record().equip[0], 0x05);
-    assert_eq!(s.inventory().get(&0x05), Some(&0));
+    // The last one taken empties the slot whole (`FUN_80043048`).
+    assert_eq!(s.inventory().get(&0x05), None);
 
     // Remove row: item returns to the bag, slot clears.
     let mut s2 = s.clone();

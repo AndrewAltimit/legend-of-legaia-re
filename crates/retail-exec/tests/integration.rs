@@ -153,6 +153,7 @@ mod encounter_carve;
 mod encounter_roll;
 mod encounter_top_up;
 mod enemy_impact;
+mod equip_candidates;
 mod equip_commit;
 mod equip_main;
 mod equip_panel;

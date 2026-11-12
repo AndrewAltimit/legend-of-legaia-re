@@ -1081,6 +1081,7 @@ fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
             record: &record,
             equip_info: None,
             item_effects: None,
+            passives: None,
         };
         let model = equip_screen_model(&session, 0, &names, &[], None, Some(ctx));
         let compare = model.compare.expect("candidate step publishes window 25");
@@ -1101,6 +1102,7 @@ fn compare_category_falls_back_to_the_sentinel_without_tables() {
         record: &record,
         equip_info: None,
         item_effects: None,
+        passives: None,
     };
     assert_eq!(
         compare_category_for_item(0x11, &ctx),

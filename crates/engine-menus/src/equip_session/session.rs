@@ -18,16 +18,17 @@ pub(super) struct SessionEquipHost<'a> {
 
 impl legaia_engine_dev_menu::dev_equip_commit::EquipCommitHost for SessionEquipHost<'_> {
     fn find_in_bag(&self, item_id: u8) -> u16 {
-        match self.inventory.get(&item_id) {
-            Some(qty) if *qty > 0 => item_id as u16,
-            _ => legaia_engine_dev_menu::dev_equip_commit::BAG_MISS,
+        match self.inventory.find_slot(item_id) {
+            Some(slot) => slot as u16,
+            None => legaia_engine_dev_menu::dev_equip_commit::BAG_MISS,
         }
     }
 
+    /// Retail's by-slot consume (`FUN_80043048`): an emptied stack loses its
+    /// id byte too, so the slot is a hole the next add can claim, not an
+    /// `(id, 0)` ghost.
     fn take_from_bag(&mut self, bag_index: u16, qty: u8) {
-        if let Some(have) = self.inventory.get_mut(&(bag_index as u8)) {
-            *have = have.saturating_sub(qty);
-        }
+        let _ = self.inventory.consume_slot(bag_index as u8, qty);
     }
 
     fn give_to_bag(&mut self, item_id: u8, qty: u8) {
