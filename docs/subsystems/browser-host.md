@@ -1028,7 +1028,12 @@ in a deferred **blend pass**: the opaque pass discards blending texels
 (`buildSemiTail`, the browser mirror of engine-render's
 `psx_blend::append_semi_tail`) re-draw them depth-tested but not
 depth-written with the matching GL blend state (`0.5B+0.5F` / `B+F` / `B-F`
-/ `B+0.25F`). This is what makes fountain water (Hunter's Spring) and house
+/ `B+0.25F`). The single-mesh draw the minigame venues use keys each semi
+prim by its centroid's clip `w` every frame and blends them far to near, an
+equal key later-submitted first (`orderSemiPrims`, the mirror of
+`psx_blend::sort_blend_list`), as the window's scene pass and retail's
+ordering table do; `renderAssembled` still blends a draw's prims by mode
+bucket. This is what makes fountain water (Hunter's Spring) and house
 window light read translucent instead of opaque grey. Disc-gated pin:
 `crates/web-viewer/tests/field_scene_blend.rs`.
 
