@@ -546,7 +546,7 @@ pub fn engine_frame_with(
     // A PCSX-Redux capture's frames ran on its CD response time: a voice
     // clip's stop watch took two thirds of the CPU there, a sixteenth of a
     // console's (`WorldToggles::battle_cd_timing`). The child prices it the
-    // capture's way, a harness seat.
+    // capture's way whatever the parent opted in to.
     if pcsx_redux {
         cmd.env("LEGAIA_BATTLE_CD_TIMING", "pcsx-redux");
     }

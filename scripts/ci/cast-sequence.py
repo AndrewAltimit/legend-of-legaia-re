@@ -762,14 +762,10 @@ def run_engine(a, out: Path) -> bool:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
-    # The recordings are PCSX-Redux's: the engine prices a voice clip's CD
-    # stop watch at its response time, a harness seat (`--console-cd` runs
-    # the engine's own console timing; docs/subsystems/battle-stage-camera.md,
-    # "The CD stop watch").
-    if a.console_cd:
-        env.pop("LEGAIA_BATTLE_CD_TIMING", None)
-    else:
-        env["LEGAIA_BATTLE_CD_TIMING"] = "pcsx-redux"
+    # The recordings are PCSX-Redux's, and so is the engine's default CD
+    # timing; `--console-cd` opts in to a console's response time
+    # (docs/subsystems/battle-stage-camera.md, "The CD stop watch").
+    env["LEGAIA_BATTLE_CD_TIMING"] = "console" if a.console_cd else "pcsx-redux"
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -970,8 +966,8 @@ def main() -> int:
                          "of the frame drawn last) (LEGAIA_BATTLE_GPU_COST=1, opt-in; retail's "
                          "max(cpu, dma + draw) entry, docs/subsystems/battle-stage-camera.md)")
     ap.add_argument("--console-cd", action="store_true",
-                    help="engine: price a voice clip's CD stop watch at a console's response time, the "
-                         "engine's default, not the recording's PCSX-Redux one (LEGAIA_BATTLE_CD_TIMING)")
+                    help="engine: price a voice clip's CD stop watch at a console's response time (opt-in, "
+                         "LEGAIA_BATTLE_CD_TIMING=console), not the recording's and the default PCSX-Redux one")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")

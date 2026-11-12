@@ -1458,7 +1458,7 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. That is PCSX-Redux's
 [CD stop watch](#the-cd-stop-watch), and a console's frames cost about a sixteenth over their
-work. Port, under the PCSX-Redux seat: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`.
+work. Port, on the default PCSX-Redux timing: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`.
 The overrun is the lightest measured, so Spirit bands run short of that recording. The load does not start on the cue's own frame: the cue is issued inside it and the
 drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
 (`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
@@ -1513,8 +1513,8 @@ Outside a summon band a frame runs the frame driver's own law over a measured co
 on a step read off a retail recording of the cast
 (`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
 a band opens at `1` and its whole-screen arms read `4` on PCSX-Redux, where a voiced arm's
-frames carry the [CD stop watch](#the-cd-stop-watch); the engine reads the same arms at a
-console's CD response time by default. The table is a measurement
+frames carry the [CD stop watch](#the-cd-stop-watch); an opt-in reads the same arms at a
+console's CD response time. The table is a measurement
 standing in for the frame's cost, not game data and not a model of the cause, and
 the [next section](#what-the-arm-step-table-is) says how far it holds.
 The capture band reads a second table of the same measurement
@@ -1680,19 +1680,20 @@ the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on
 PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
 both emulators, `docs` for the console.
 
-**Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. On `Console`, the
-default, the summon arm table and the capture band's (`CONSOLE_ARM_STEPS`,
+**Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
+default, keeps the recordings' tables, the clamp `1063` and the overrun. On `Console`, an opt-in
+(`LEGAIA_BATTLE_CD_TIMING=console` on a native session, `cast-sequence.py --console-cd`), the
+summon arm table and the capture band's (`CONSOLE_ARM_STEPS`,
 `CONSOLE_CAPTURE_ARM_STEPS` in `cast_module_frame_step`) are the PCSX-Redux tables with each arm a
 clip spans re-read at the console's share over `--cd-trace` recordings of the same casts
 ([`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)), and an item's, a Spirit's or an arts
 voice's frames from the pass after the cue cost their base over `.935`
-(`console_poll_cost`), inside their step. `PcsxRedux` keeps the recordings' tables, the clamp
-`1063` and the overrun. It is a harness seat for comparisons against PCSX-Redux recordings: the
-cast-sequence films set it (`LEGAIA_BATTLE_CD_TIMING=pcsx-redux`; `--console-cd` lifts it), and so
-does the retail-compare child of a PCSX-Redux capture. Mednafen's captures and the PCM cast
-channel run the engine's own `Console`.
+(`console_poll_cost`), inside their step. The retail-compare child of a PCSX-Redux capture runs
+`PcsxRedux` whatever its parent opted in to. `Console` is the closer model of a console, but it
+stays opt-in until five enemy casts' lost cues (below) are explained
+([open threads](../reference/open-rev-eng-threads.md)): under it the full-game ladder re-deals too.
 
-Measured on the engine's own timing against mednafen, which is the nearer machine for this term:
+Measured with the opt-in against mednafen, which is the nearer machine for this term:
 
 | Instrument | PCSX-Redux timing | Console timing |
 |---|---:|---:|
@@ -1711,8 +1712,8 @@ films fall, and that fall is the artifact's size: the Seru films' mean goes from
 the enemy casts' from `.8949` to `.8675`, the monster strikes' stays at `.963`. The cue channel
 holds on the Seru films and the strikes; five enemy casts lose cues on it (Glare's and Lip King's
 Kiss of Death's entirely), so a pass-counted arm whose cue the films place on PCSX-Redux's lattice
-moves with the step. With the seat, each film reads the PCSX-Redux timing's score and the cue
-ratchet passes on all three sets.
+moves with the step, or a body emits its cue off a step-dependent test. On the default timing each
+film reads the base engine's score and the cue ratchet passes on all three sets.
 
 <a id="the-engines-gpu-frame-step-source"></a>
 
@@ -1983,8 +1984,8 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
 - **It is not the box.** Repeat recordings of Iota, Ozma, Terra and Theeder read the same
   per-arm histograms within a few vsyncs: the cost is the emulated machine's (CPU and
   GPU cost model of PCSX-Redux), not the host's. On a voiced arm that machine's cost is
-  mostly its CD response time ([the CD stop watch](#the-cd-stop-watch)), and the engine runs
-  the table re-read at a console's (`CONSOLE_ARM_STEPS`) unless a harness seats PCSX-Redux's.
+  mostly its CD response time ([the CD stop watch](#the-cd-stop-watch)); an opt-in runs the
+  table re-read at a console's (`CONSOLE_ARM_STEPS`).
 - **It holds across fights where the screen is the effect's.** Gimard in `battle_map01`,
   `battle_tower` and `battle_kor` reads arms 3..11 as the table's fight does, within a few
   vsyncs, and Ozma's arms 6..20 and 24 read `4` in `battle_kor` too.

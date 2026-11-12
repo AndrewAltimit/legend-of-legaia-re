@@ -13,9 +13,6 @@ fn kiss_of_death_band() -> World {
     let mut w = World::new();
     w.enter_battle(3, 1);
     w.toggles.battle_sm_frame_cadence = true;
-    // The recording's table: on a console Kiss of Death's voiced arms read
-    // their own work, and arm 4 no longer reaches the clamp.
-    w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
     w.casting.capture_spell = Some(0x6E);
     w.battle_ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
     w

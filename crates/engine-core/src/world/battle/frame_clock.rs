@@ -1757,8 +1757,9 @@ mod tests {
     /// frames after the cue cost their work over that, inside their step.
     #[test]
     fn a_console_clip_leaves_the_frame_near_its_own_cost() {
-        use legaia_engine_cast::cast_module_frame_step::console_poll_cost;
+        use legaia_engine_cast::cast_module_frame_step::{CdTiming, console_poll_cost};
         let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::Console;
         w.party.party_count = 1;
         w.battle_ctx.action_state = 0x3E;
         let base = legaia_engine_battle_loop::frame_clock::measured_frame_cost_at(1, 0x3E, 2);

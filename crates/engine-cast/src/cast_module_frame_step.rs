@@ -163,13 +163,14 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
 pub enum CdTiming {
     /// A console's: `GetStat` answers in `0xC4E1` cycles on average (psx-spx,
     /// CDROM response timings), and the polls take [`CONSOLE_POLL_SHARE_PER_MILLE`]
-    /// of the CPU. The engine's default.
-    #[default]
+    /// of the CPU. Opt-in (`LEGAIA_BATTLE_CD_TIMING=console`): under it five
+    /// enemy casts' cues no longer play in the films, which is open.
     Console,
     /// PCSX-Redux's: every command answers `0x800` cycles after it
     /// (`cdrom.cc`, `AddIrqQueue(m_cmd, 0x800)`), and the polls take about two
     /// thirds of the CPU. The cast films and the PCSX-Redux battle captures
-    /// were recorded on it, so their harnesses seat it.
+    /// were recorded on it. The engine's default.
+    #[default]
     PcsxRedux,
 }
 
