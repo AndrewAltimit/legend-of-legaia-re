@@ -367,6 +367,14 @@ impl World {
             // frame its own cost. A module with no seek (the capture band's)
             // starts its clip as the cue funnel does.
             self.audio.battle_xa_frame_load = self.casting.drive_arms.is_none();
+            // A band module's line loads the frame from its cue's pass, with
+            // no onset ramp (`frame_clock::xa_stream_pass_cost` reads a clip
+            // with no cue frame as long started). The funnel's ramp measured
+            // lower on the films of the band's voiced casts: Call Wave `.784`
+            // to `.545`, Lapis Wave `.919` to `.869`, Terio Punch `.860` to
+            // `.837`. Without this store the ramp read off whichever clip
+            // cued last.
+            self.audio.battle_xa_cue_frame = None;
             self.audio
                 .battle_xa_cues
                 .push(legaia_engine_system::sound_state::XaVoiceClip {

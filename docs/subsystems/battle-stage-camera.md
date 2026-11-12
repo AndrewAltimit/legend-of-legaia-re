@@ -1472,6 +1472,15 @@ with no charge on the pass after it, a full party's Spirit rounds ran a pass at 
 retail's run `4`, and five stills that replay Spirit rounds reached their gates three ticks
 early.
 
+A capture-band module's own line takes no such ramp: the port loads the frame from the cue's
+pass (`World::emit_battle_xa_cue` clears the cue frame). On the funnel's ramp the voiced band
+casts film lower: Call Wave `.784` to `.545`, Lapis Wave `.919` to `.869`, Terio Punch `.860`
+to `.837`, Bull Charge `.968` to `.956`. Grade `capture`. The line is timed on vsyncs, so it
+runs out against the band's wall clock: retail's frames under it run past their step (Bloody
+Horns' arms 3 to 5 at seven vsyncs a step-`4` frame), the port's table arms at their step, and
+Bloody Horns' arm-2 line `0x158` ends before retail's arm 6 and some `100` ticks into the
+port's ([the open thread](../reference/open-rev-eng-threads.md#xains-frame-at-bloody-horns-band-entry)).
+
 A summon module's own voice clip does not. The module seeks the drive to the
 clip's file on an arm ahead of its cue ([CD-seek waits](../tooling/cast-sequence-oracle.md#cd-seek-waits)),
 and a `--sfx-callers` recording of Viguro on `party_basic_attack_vs_gobu_gobu`

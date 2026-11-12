@@ -1765,6 +1765,34 @@ mod tests {
         assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
     }
 
+    /// A capture-band module's own line loads the frame from its cue's pass,
+    /// whatever clip cued before it: the band's voiced casts film lower on
+    /// the cue funnel's onset ramp (Call Wave `.784` to `.545`).
+    #[test]
+    fn a_capture_modules_line_loads_the_frame_from_its_cue() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_FRAME_COST};
+        for earlier_cue_passes_back in [0u64, 1, 300] {
+            let mut w = World::new();
+            w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+            w.party.party_count = 3;
+            w.battle_ctx.action_state = 0x70;
+            let mut spans = vec![0u16; 0x60];
+            spans[0x58] = 527;
+            w.audio.xa_cue_durations = Some(spans);
+            // Another clip cued this many display ticks ago.
+            w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+            w.clock.display_frames += earlier_cue_passes_back;
+            w.emit_battle_xa_cue(0x158);
+            assert!(w.audio.battle_xa_frame_load, "a band module seeks no file");
+            w.push_frame_cost(None);
+            assert_eq!(
+                w.battle.frame_cost_ring.newest(),
+                XA_STREAM_FRAME_COST.min(0x2BC),
+                "{earlier_cue_passes_back}"
+            );
+        }
+    }
+
     /// On a console the clip's stop watch takes a sixteenth of the CPU: the
     /// frames after the cue cost their work over that, inside their step.
     #[test]
