@@ -2426,6 +2426,22 @@ retail's side-band request does.
 The director calls `observe_bgm_end` after every track upload and before each
 tail placement; the call is idempotent.
 
+**A voice follows its bank up the tail.** A borrower's sample can still be
+sounding when a track lands on it. `rikuroa`'s entry script, with flag `0x289`
+up after the Caruban fight, requests side-band `2012`, starts track `2025` and
+spawns P2[50], which shatters Caruban and rings cue `0x20D`. That cue is a
+side-band one-shot whose sample ends on an end flag with no repeat, and the
+track loads a few frames after it. Retail's slot `3` has its own base, so
+the sample plays out. In the port the track overruns the bank, and a voice
+left on the old span reads the track's instruments: a looped one holds for
+good, which players heard as a horn looping over the scene. `observe_track`
+records every voice reading a dropped span (`BgmTail::observe_bgm_end_spans`)
+with its key-on count. A re-stage of the same bank in that slot moves those
+voices onto the new copy at the same offset (`Voice::rebase`), so the cue
+ends where retail's does. Any voice no re-stage claims is cut once the frame's
+SFX routing ends, because its sample is gone.
+Pinned by `engine-session/tests/rikuroa_caruban_aftermath_audio_disc.rs`.
+
 ### The scheduler under a menu-overlay screen
 
 Retail runs the pause menu, a shop and the prize exchange at game mode `0x17`,
