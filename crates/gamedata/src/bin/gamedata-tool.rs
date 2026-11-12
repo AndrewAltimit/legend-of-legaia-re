@@ -41,7 +41,7 @@ enum Cmd {
         /// Substring to search for.
         query: String,
     },
-    /// Resolve a comma-separated player input sequence ("Arms,Ra-Seru,High")
+    /// Resolve a comma-separated player input sequence ("Arms,Ra-Seru,Arms")
     /// for a character to one or more matching arts.
     ArtsByCommand {
         /// Character (Vahn/Noa/Gala).
