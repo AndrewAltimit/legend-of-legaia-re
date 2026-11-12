@@ -266,10 +266,11 @@ pub fn editor_tick(
     if let Some(r) = actions.get_mut(row(g.prev_action)) {
         r.power = g.power as i32;
         r.speed = g.speed as i32;
-        if g.key >= 0 && g.paused != 0 {
-            if let Some(k) = r.keys.get_mut(g.key as usize) {
-                k.offset = g.offset;
-            }
+        if g.key >= 0
+            && g.paused != 0
+            && let Some(k) = r.keys.get_mut(g.key as usize)
+        {
+            k.offset = g.offset;
         }
     }
     if g.fighter as u16 >= EDITOR_FIGHTER_COUNT {

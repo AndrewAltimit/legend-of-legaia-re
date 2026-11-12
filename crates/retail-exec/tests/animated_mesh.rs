@@ -30,6 +30,9 @@ const OBJECT: u32 = 0x8011_2000;
 const CLIP: u32 = 0x8011_4000;
 const CAMERA: u32 = 0x1F80_03C8;
 
+/// The GTE rotation (row-major) and translation at one part's draw.
+type Pose = ([i32; 9], [i32; 3]);
+
 fn node(rng: &mut Rng, parts: usize) -> ActorState {
     let mut s = ActorState {
         move_substate: DRAW_KIND_MULTI as i16,
@@ -87,7 +90,7 @@ fn the_animated_mesh_renderer_poses_each_part_as_the_port_does() {
     ] {
         cpu.stub(va, 0);
     }
-    let posed: Rc<RefCell<Vec<([i32; 9], [i32; 3])>>> = Rc::default();
+    let posed: Rc<RefCell<Vec<Pose>>> = Rc::default();
     {
         let posed = posed.clone();
         cpu.probe(LEAF_CALL, move |_, _, g| {
