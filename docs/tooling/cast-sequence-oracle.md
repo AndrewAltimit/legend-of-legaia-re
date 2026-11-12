@@ -260,7 +260,10 @@ every strike on a stage that keeps object 1. A film from a pre-cast state lets g
 the cast's begin `0x28`, the recorder's first frame: held to the end,
 `rikuroa_caruban_pre_fire_breath`'s Fire Breath stood `rikuroa`'s horizon mist arc
 still while retail's swept across the HP-bar settle `0x51`, and the film read `.868`
-where it reads `.955` let go (`0x51` `.689` to `.943`).
+where it reads `.955` let go (`0x51` `.689` to `.943`). Every pre-cast film on a stage
+that keeps object 1 gains with it: over the enemy set's pre-cast films the mean goes
+from `.882` to `.912` (`rikuroa_pump_bat_pre_windcutter` `.918` to `.989`,
+`balden_orb_v2_pre_jewel_beam` `.860` to `.934`).
 
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
