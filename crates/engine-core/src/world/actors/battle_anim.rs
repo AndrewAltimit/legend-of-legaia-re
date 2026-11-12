@@ -301,61 +301,7 @@ impl World {
             if let Some(tag) = finished {
                 self.finish_battle_reaction(i, tag);
             }
-            // Staged-clip end - the engine's anim-end signal (retail: the
-            // anim system's completion edge). Clear `ADVANCE_DONE` so the
-            // attack chain's read gate opens for the next strike byte, and
-            // converge the id pair back to idle `0` when the SM hasn't
-            // staged a new id meanwhile; the idle restore below then
-            // resumes the loop.
-            let staged_done = {
-                let a = &self.actors[i];
-                match (a.battle_staged_anim, &a.battle_animation) {
-                    (Some(id), Some(p)) if p.finished() => Some(id),
-                    _ => None,
-                }
-            };
-            // The same id staged again behind itself - a monster stream that
-            // repeats a byte (`[5, 5, 0]`) - reads as "nothing new" on the id
-            // pair alone; the stage latch is what says a byte is waiting.
-            // Retail's natural-end path calls `FUN_8004AD80` unconditionally
-            // (`0x80047B30..0x80047B58`), and with `+0x1DA == +0x1D9` that is
-            // the re-commit: the clip replays from its first keyframe with
-            // its hit index zeroed. Converging to idle instead dropped the
-            // second swing - and with it the parked-cursor hit that lands the
-            // accumulated total on live HP, leaving the bar drained and the
-            // SM parked in `0x51` for good.
-            // PORT: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
-            let restaged = staged_done.is_some_and(|id| {
-                let b = &self.actors[i].battle;
-                b.queued_anim == id
-                    && b.current_anim == id
-                    && b.flag_bits
-                        .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
-            });
-            if restaged {
-                self.commit_staged_battle_anim_at_boundary(i);
-            } else if let Some(id) = staged_done {
-                let a = &mut self.actors[i];
-                a.battle_staged_anim = None;
-                a.battle
-                    .flag_bits
-                    .clear(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
-                if a.battle.queued_anim == id {
-                    a.battle.queued_anim = 0;
-                    a.battle.current_anim = 0;
-                } else {
-                    // A byte was staged behind this clip (the retail one-ahead
-                    // stream): the natural-end commit installs it right here,
-                    // in the same tick, exactly as `FUN_8004AD80` is called
-                    // from the tick's natural-end path (`0x80047B54`). Leaving
-                    // it to the next frame's pair-inequality commit would let
-                    // the SM overwrite the queued byte first.
-                    self.commit_staged_battle_anim_at_boundary(i);
-                }
-            }
-            // A finished one-shot action clip falls back to the idle loop -
-            // except defeat, which holds its final (downed) keyframe.
-            self.restore_idle_after_action_clip(i);
+            self.finish_staged_clip(i);
             // A Stone or Numb body on its idle stands frozen: the tick skips
             // the whole advance (`0x80047638..0x800476D4`, jumping to the
             // epilogue at `0x800480B0`).
@@ -808,6 +754,18 @@ impl World {
     ) {
         if commit_after {
             let reaction_done = self.finish_reaction_at_natural_end(i);
+            // A one-shot action clip whose cursor crossed its end on this pass
+            // takes the natural end now as well, in the slice of the advance
+            // that finished it: the tick commits behind the advance
+            // (`0x80047A48..0x80047B58`; with `+0x1DC` bit 2 up it stages idle
+            // first, `sb zero,0x1da` at `0x80047B44`), so the pass shows the
+            // next entry's first keyframe. Left to the head of the next slice,
+            // the body held the clip's last frame a pass longer:
+            // `battle_jou_nighto_v3_eye_beam_mid_cast`'s Nighto stood on clip
+            // `0x0A` at cursor `464` where retail's reads clip `0` at `0`.
+            if !reaction_done && self.finish_staged_clip(i) {
+                self.show_committed_first_keyframe(i);
+            }
             self.commit_staged_battle_anim(i);
             if reaction_done {
                 self.restore_idle_after_action_clip(i);
@@ -858,6 +816,76 @@ impl World {
         };
         self.finish_battle_reaction(i, tag);
         true
+    }
+
+    /// A staged one-shot whose player has finished takes its natural end:
+    /// the same id staged again behind itself re-commits, a byte staged
+    /// behind it commits, and otherwise the pair converges on idle and the
+    /// idle loop resumes (defeat holds). Returns whether the seat's clip
+    /// changed.
+    fn finish_staged_clip(&mut self, i: usize) -> bool {
+        let before = (
+            self.actors[i].battle_clip_commits,
+            self.actors[i].battle.current_anim,
+            self.actors[i].battle_pose,
+        );
+        // Staged-clip end - the engine's anim-end signal (retail: the
+        // anim system's completion edge). Clear `ADVANCE_DONE` so the
+        // attack chain's read gate opens for the next strike byte, and
+        // converge the id pair back to idle `0` when the SM hasn't
+        // staged a new id meanwhile; the idle restore below then
+        // resumes the loop.
+        let staged_done = {
+            let a = &self.actors[i];
+            match (a.battle_staged_anim, &a.battle_animation) {
+                (Some(id), Some(p)) if p.finished() => Some(id),
+                _ => None,
+            }
+        };
+        // The same id staged again behind itself - a monster stream that
+        // repeats a byte (`[5, 5, 0]`) - reads as "nothing new" on the id
+        // pair alone; the stage latch is what says a byte is waiting.
+        // Retail's natural-end path calls `FUN_8004AD80` unconditionally
+        // (`0x80047B30..0x80047B58`), and with `+0x1DA == +0x1D9` that is
+        // the re-commit: the clip replays from its first keyframe with
+        // its hit index zeroed. Converging to idle instead dropped the
+        // second swing - and with it the parked-cursor hit that lands the
+        // accumulated total on live HP, leaving the bar drained and the
+        // SM parked in `0x51` for good.
+        // PORT: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
+        let restaged = staged_done.is_some_and(|id| {
+            let b = &self.actors[i].battle;
+            b.queued_anim == id
+                && b.current_anim == id
+                && b.flag_bits
+                    .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
+        });
+        if restaged {
+            self.commit_staged_battle_anim_at_boundary(i);
+        } else if let Some(id) = staged_done {
+            let a = &mut self.actors[i];
+            a.battle_staged_anim = None;
+            a.battle
+                .flag_bits
+                .clear(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE);
+            if a.battle.queued_anim == id {
+                a.battle.queued_anim = 0;
+                a.battle.current_anim = 0;
+            } else {
+                // A byte was staged behind this clip (the retail one-ahead
+                // stream): the natural-end commit installs it right here,
+                // in the same tick, exactly as `FUN_8004AD80` is called
+                // from the tick's natural-end path (`0x80047B54`). Leaving
+                // it to the next frame's pair-inequality commit would let
+                // the SM overwrite the queued byte first.
+                self.commit_staged_battle_anim_at_boundary(i);
+            }
+        }
+        // A finished one-shot action clip falls back to the idle loop -
+        // except defeat, which holds its final (downed) keyframe.
+        self.restore_idle_after_action_clip(i);
+        let a = &self.actors[i];
+        (a.battle_clip_commits, a.battle.current_anim, a.battle_pose) != before
     }
 
     /// A finished one-shot falls back to the idle loop, except defeat, which

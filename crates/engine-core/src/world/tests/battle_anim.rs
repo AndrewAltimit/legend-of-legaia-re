@@ -1367,8 +1367,10 @@ fn a_downed_actor_does_not_tween_or_step() {
         zs.push(world.actors[0].pose_frame.as_ref().unwrap().bone_outputs[0].0[2]);
     }
     // HP 0 fails the gate: the last frame blends toward itself, and the
-    // natural end moves nothing (no Seru staged).
-    assert_eq!(zs, vec![32, 64, 64, 64]);
+    // natural end moves nothing (no Seru staged). The pass that crosses the
+    // end commits the idle behind its advance and shows its first keyframe
+    // (`0x80047A48..0x80047B58`).
+    assert_eq!(zs, vec![32, 64, 64, 0]);
     assert_eq!(world.actors[0].move_state.world_z, z0);
 }
 
