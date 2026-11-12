@@ -564,6 +564,13 @@ pub struct PendingBurst {
     pub pos: [i16; 3],
     pub rot: [i16; 3],
     pub scale: u16,
+    /// Whether the frame's part-list walk had a node after the calling part
+    /// when the op ran (its `ActorState::walk_successor`): the seater `FUN_80021B04`
+    /// appends each child at the list's tail, so the walk reaches the twelve
+    /// children on the same frame only when this is set. A trigger seated
+    /// last is the tail, and its children take their first part tick a frame
+    /// after the seat.
+    pub reached: bool,
 }
 
 impl CastFxState {

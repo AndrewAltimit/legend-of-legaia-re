@@ -1187,6 +1187,32 @@ to particle spawner `FUN_80050ED4`" - they are neither tables nor direct callers
 of the spawner. They are move programs, and it is the `0x17` inside them that
 reaches it.
 
+#### Which pass the children first tick on
+
+The trigger and the twelve children are part-list nodes, and the list walk
+`FUN_8002519C` reads a node's `next` before it calls the node's tick
+(`lw s1,0x0(s1)` at `0x800251D8`), while the allocator appends every new node at
+the list's tail. The effect spawner seats the trigger from a list-0 callback, so
+the walk reaches it on the same pass: its part tick drains the `WAIT_SET 0`
+(`0x80022B94..0x80022BA4` call the VM only once `+0x54` is negative), runs the
+`0x17`, and the children land behind a trigger that is itself the tail. The walk
+has already read that `next`, so on their seat pass the children draw what their
+own seat run left - the first `SPRITE_ADD` frame, at the parent's point - and
+take their first part tick a pass later. A `--retail-parts` film of
+`battle_ropeway_party_gala_flying_knee_mid` holds it: trigger and children both
+listed on one pass, the children at frame `0` (`+0xA8 = 0x00`) on the trigger's
+position, frame `1` and one motion step out on the next, and the trigger halted
+on that next pass. A child is then listed ten passes - eight frames, the pass
+its `HALT` runs, and the pass the walk flags it `0x2000000` before unlinking it
+(`FUN_800204A4`) - but draws on the first eight only: the part tick leaves for
+its epilogue when the VM halted (`andi v0,v0,0x8` / `bne` at `0x80022BB4`),
+before any draw, and the walk calls no tick on a halted node
+(`0x800251E8..0x800252A8`).
+
+The port queues the `0x17` with whether the caller's node had a successor
+(`PendingBurst::reached`, from `ActorState::walk_successor`), and
+`World::flush_battle_bursts` gives children of a tail caller only the seat run.
+
 `FUN_80050ED4` is **not** a boundary either: it is decoded (
 `see ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot
 pointer pool at `DAT_801C90F0` that forwards the same four arguments to

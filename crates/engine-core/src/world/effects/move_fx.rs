@@ -510,6 +510,27 @@ impl World {
                     child.state.tween_scale_y = req.tail;
                 }
             }
+            // The seater runs each child's program before it returns
+            // (`FUN_80021B04`), and appends the child at the part list's
+            // tail. A burst whose caller was the walk's last node (the
+            // trigger the effect spawner seated this frame) lies past the
+            // `next` the walk already read, so its children draw the frame
+            // their own run left - sprite frame `0` at the parent's point -
+            // and take their first part tick on the next frame
+            // (`battle_ropeway_party_gala_flying_knee_mid`'s probe: twelve
+            // children at frame `0` on the seat's pass, frame `1` on the
+            // next). Run here, the seat run leaves nothing for
+            // `Self::seat_run_battle_fx` to tick on this frame.
+            if !b.reached {
+                let mut host = MoveVmHostImpl {
+                    world: self,
+                    current_slot: None,
+                    deferred_writes: std::collections::BTreeMap::new(),
+                    field_record_words: None,
+                    child_spawns: Vec::new(),
+                };
+                scene.seat_unrun(&mut host);
+            }
             if self.casting.active_action_fx.len() < Self::ACTION_FX_CAP {
                 self.casting.active_action_fx.push(scene);
             }
