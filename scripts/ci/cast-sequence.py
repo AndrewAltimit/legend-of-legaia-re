@@ -213,6 +213,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_RANGE_TRACE"] = "1"
     if a.hit_trace:
         env["LEGAIA_HIT_TRACE"] = "1"
+    if a.wrapper_trace:
+        env["LEGAIA_WRAPPER_TRACE"] = "1"
     if a.ghost_trace:
         env["LEGAIA_GHOST_TRACE"] = "1"
     if a.ribbon_trace:
@@ -233,7 +235,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
+            or a.range_trace or a.hit_trace or a.wrapper_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -1052,6 +1054,10 @@ def main() -> int:
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")
+    ap.add_argument("--wrapper-trace", action="store_true",
+                    help="retail: each capture-class damage roll (FUN_801DD4B0 / FUN_801DD6B4) to "
+                         "retail/wrappers.csv (breakpoint core): power, slots, seed, stat words, the roll "
+                         "words before and after the finisher")
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")

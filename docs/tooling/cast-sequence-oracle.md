@@ -108,6 +108,7 @@ Flags worth knowing:
 | `--popup-trace` | Retail: each damage numeral `FUN_801DF6B8` projects to `retail/popups.csv` (breakpoint core), read at `0x801DF820`: the ring timer, the projected corners, the ordering-table depth and the GTE view |
 | `--ghost-trace` | Retail: each after-image ghost the draw tick's walk `FUN_80049348` draws to `retail/ghosts.csv` (breakpoint core), a row per `jal 0x80048A08` at `0x8004950C` with the frame counter, the ring depth and the seat: the ghosts a frame's `cost` was measured with |
 | `--range-trace` | Retail: each call of the range law `FUN_8004E2F0` to `retail/range.csv` (breakpoint core): its caller, the attacker's live pair and the target's live pair, body pair, heading, node cursor and clip, the inputs a walk-in's reach poll reads |
+| `--wrapper-trace` | Retail: each capture-class damage roll to `retail/wrappers.csv` (breakpoint core): at the entry of `FUN_801DD4B0` / `FUN_801DD6B4` the power, slots, seed word and the stat words the rolls read, then the two roll words `sp+0x18` / `sp+0x1C` before and after the finisher ([a roll against retail's](#a-capture-class-roll-against-retails)) |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
 | `--gpu-cost` | Retail: `gpu.csv`, per vsync the frame-cost words `gp+0x3A8` / `gp+0x3AC`, the ring's newest entry, the GPU draw-time model of the table the GPU was handed last (`lib/probe/gpu_cost.lua`, draw and DMA in hblanks, polygons) and the PC and `ra` at the vsync; [`frame-cost-agreement.py`](../../scripts/ci/frame-cost-agreement.py) scores it ([a real console's frame cost](../subsystems/battle-stage-camera.md#what-a-real-consoles-frame-costs)) |
 | `--cd-trace` | Retail: `cd.csv` (breakpoint core), each libcd command call (`FUN_8005CF80` / `FUN_8005D0B8` / `FUN_8005CCB4`, the command, its first parameter byte, `ra`), CdSync's entry and return, the response dispatcher `FUN_8005DAB0`'s entry, interrupt causes, callbacks and exit, every exception at `0x80000080`, and the frame's `VSync(n)` return and CPU-done marks, each with the CPU cycle. [`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py) prices each frame's CD interrupt time ([the CD stop watch](../subsystems/battle-stage-camera.md#the-cd-stop-watch)) |
@@ -179,6 +180,10 @@ a store or a drift, one that grows names a rate.
 `LEGAIA_RAM_AT` state through `sstate_vram.py`. A byte comparison of the side-band pages
 and CLUT rows is how a palette or texture reading is settled before a frame's colours are
 argued over: Iota's cycler rows match the kernel entry for entry.
+
+### A capture-class roll against retail's
+
+A `--wrapper-trace` recording reads a cast's damage off its inputs rather than off the HP columns. V-Windhash from `battle_kor_ghost_knight_v_windhash_mid_cast` enters `FUN_801DD4B0` with power `0x7B`, the Ghost Knight's INT `+0x168 = 302` and Vahn guarding (`+0x1DE = 4`), leaves the roll at `750` against `500` and the finisher at `625`, so `125` lands. The engine on the same draws reads the same three pairs. A film whose child command was seeded before the seat pin (`LEGAIA_BATTLE_SEATS`) seats the fight in the formation's order, so the cast came from the other monster (INT `140`) and landed `63`: re-seed (`--reseed`) a recording copied from an older run before reading its numbers.
 
 ## What each side records
 
