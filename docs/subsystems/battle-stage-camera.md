@@ -1684,7 +1684,10 @@ Ozma) because the close-up's GPU-bound frames hold step `2` into it where retail
 `1`. The module arms barely move (`-.002`
 pair-weighted): an arm table's step `4` is a CPU reading, and `max` cannot lower it. Against
 mednafen's own per-arm steps (`frame-cost-film.py` over the nine `*_summon_mid_cast` states)
-the engine's steps agree on `.28` of the vsyncs plain and `.22` with the source. What parts
+the engine's steps agree on `.28` of the vsyncs plain and `.22` with the source. On
+[`audio-pcm.py`](../../scripts/ci/audio-pcm.py)'s cast channel against mednafen's PCM, seven
+of nine casts score the same both ways (the channel's seeded step outranks the ring), Theeder
+falls `.712` to `.682` and Zenoir rises `.855` to `.875`. What parts
 them is the CPU half: the arms of Freed, Orb, Swordie and Vera that the tables run at `4`
 read `230` to `400` hblanks on mednafen (step `1` to `3`), a gap no GPU term can close and of
 the size of Guilty Cross's CD wait above (whether it is that wait on these arms is not
