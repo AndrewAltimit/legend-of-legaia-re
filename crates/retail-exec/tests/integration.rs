@@ -222,6 +222,7 @@ mod hop_spawn;
 mod hp_bar_settle;
 mod hsv;
 mod hub_actors;
+mod hud_element_raise;
 mod iki_decode;
 mod incense;
 mod incense_confirm;
