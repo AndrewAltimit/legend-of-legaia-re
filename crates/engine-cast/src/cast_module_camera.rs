@@ -125,6 +125,11 @@ pub struct ModuleCamState {
     /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`); PROT 0951 `0x5B`'s
     /// saved victim height (`0x801F89D6`).
     pub horns_lift: i16,
+    /// PROT 0918's arm-9 part height: arm `0xE`'s pass stores
+    /// `trunc(victim[+0x3E] * 4 / 3)` into the part `0x801F92CC` names
+    /// (`0x801F7F5C..0x801F7F7C`), and the shots of arms 16 and 17 focus on
+    /// its negation (`lhu v1,0x16(v1)` at `0x801F8280` / `0x801F83A8`).
+    pub part_height: i16,
     /// Which halves of [`Self::horns_pin`] an arm has saved, where a director
     /// writes back only what it saved (PROT 0951): bit 0 the victim's, bit 1
     /// the caster's.

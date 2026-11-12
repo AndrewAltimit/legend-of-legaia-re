@@ -429,7 +429,7 @@ Over the 97 catalogued battle states, recomputing the pass from each seated acto
 
 So every monster cast and solo strike and every party art darkens its audience: `battle_tower_guardian_windhash_mid_cast` holds lanes `0xE0` on three bodies, `battle_korb2_aluru_cannon_mid_cast` `0x100`. Port `World::sweep_solo_bystanders`, over `battle_formulas::solo_commit_state`.
 
-**Cursor dim.** `+0x21C == 0xC8` (the target cursor's non-pointed monsters) is its own arm: colour `0x010101` at weight `0x1000`, unless the seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads as a black silhouette. The arm is ported (`battle_actor_tint`), but no catalogued state holds that flag, so both hosts keep their own cursor cue (`battle_action::cursor_cue`) for the two cursor flags.
+**Cursor dim.** `+0x21C == 0xC8` (the target cursor's non-pointed monsters) is its own arm: colour `0x010101` at weight `0x1000`, unless the seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads as a black silhouette. Both hosts draw it as the pass computes it (`BattleActorDrawPlan::tint_cue_applies`); only the pointed-at flag `5` keeps the cursor's own pulse (`battle_action::cursor_cue`). PROT 0918's arm 16 raises the flag on Kemaro's victim (`+0x04 = 0x401004`, `+0x0C = 0x1000` in a retail RAM image of arm `0x12`), and retail draws the body as a dark silhouette through arms 16 to 19, where a cursor cue at weight `0.55` left it textured: arm `0x12` reads `.638` on the Gobu Gobu film with the cursor cue.
 
 #### The near-camera ghost pass (`FUN_8004DC68`)
 

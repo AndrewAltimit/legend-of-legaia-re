@@ -494,8 +494,9 @@ impl<'m> DrawCtx<'_, 'm> {
                     // silhouette. Once its
                     // lanes reach zero the draw plan above skips the
                     // body (`FUN_800480D8`'s word-zero arm), as it
-                    // does the summon hide. The two cursor flags keep
-                    // their own cue.
+                    // does the summon hide. The pointed-at cursor flag
+                    // keeps its own pulse; the dim flag `0xC8` takes the
+                    // pass's own arm.
                     //
                     // The cue is the whole tint pass, not only its
                     // blend arm: with no blend running retail still

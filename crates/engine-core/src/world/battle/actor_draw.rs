@@ -138,8 +138,12 @@ impl BattleActorDrawPlan {
     }
 
     /// Whether the body takes the tint pass's cue (`cue_far` / `cue_ir0`)
-    /// this frame, given its render flag. The target cursor's two flags
-    /// carry their own cue (`battle_action::cursor_cue`); the capture /
+    /// this frame, given its render flag. The pointed-at monster's flag `5`
+    /// carries the cursor's own pulse (`battle_action::cursor_cue`). The dim
+    /// flag `0xC8` takes the pass's own arm 1 (`0x8004A948`), colour
+    /// `0x010101` at weight `0x1000`: PROT 0918's arm 16 raises it on
+    /// Kemaro's victim (`+0x04 = 0x401004`), and retail draws the body as a
+    /// dark silhouette through arms 16 to 19. The capture /
     /// defeat fade (`render_flag == 2`) draws additive, so it takes the cue
     /// only while its word raises ABE - un-cued it is never an opaque black
     /// silhouette. The blend rides every stream the body draws
@@ -147,10 +151,7 @@ impl BattleActorDrawPlan {
     /// whether the body is posed.
     pub fn tint_cue_applies(&self, render_flag: u8) -> bool {
         use legaia_engine_battle_vm::battle_action as ba;
-        !matches!(
-            render_flag,
-            ba::CURSOR_FLAG_SELECTED | ba::CURSOR_FLAG_DIMMED
-        ) && (render_flag != 2 || self.semi_mode().is_some())
+        render_flag != ba::CURSOR_FLAG_SELECTED && (render_flag != 2 || self.semi_mode().is_some())
     }
 
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
@@ -853,7 +854,7 @@ mod tests {
         let mut p = world.battle_actor_draw_plan(0, None, 4.0, false).unwrap();
         assert!(p.tint_cue_applies(0));
         assert!(!p.tint_cue_applies(5), "cursor flag keeps its own cue");
-        assert!(!p.tint_cue_applies(200));
+        assert!(p.tint_cue_applies(200), "cursor dim: the pass's own arm");
         p.draw_colour &= 0x7FFF_FFFF;
         assert!(!p.tint_cue_applies(2), "opaque fade: no cue");
         p.draw_colour |= 0x8100_0000;

@@ -131,16 +131,15 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// | 13 (`0x801F7DFC`) | cut pitch `0`, yaw `0`, TR `(0, 0x400, 0)` on the victim's `z` |
 /// | 14 (`0x801F7EE8`) | cut pitch `0x80`, yaw `0x900`, TR `(0, 0x500, ctx[+0x6D0])` on the victim's `z` |
 /// | 15 (`0x801F810C`) | a held white fade (the presentation hook's) |
-/// | 16 (`0x801F82CC`) | cut pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] / 4)` on the victim's `z` |
+/// | 16 (`0x801F82CC`) | cut pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] / 4)` on the victim's `z` at the first arm-9 part's height |
 /// | 17 (`0x801F8400`, no gate) | a `0x60`-frame shot pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] * 3 / 2)` on the victim's `z`; [`KEMARO_ARM17_SPAWNS`] |
 /// | `0x13` (`0x801F8A4C`) | the line cleared |
 ///
 /// The drifts are [`kemaro_drift`]'s. Not carried: arm 4's TR y shake
 /// (an absolute store `0x600` or `countdown / 2 + 0x600` on alternate
 /// passes, `0x801F7088..0x801F70C4`), arm 12's absolute pose store
-/// (`0x801F7B90..0x801F7BAC`), the heights arms 13..17 walk the arm-9
-/// parts through by handle, and the `y` of the shots of arms 16 / 17,
-/// which read the first arm-9 part's height.
+/// (`0x801F7B90..0x801F7BAC`) and the heights arms 13..17 walk the arm-9
+/// parts through by handle.
 ///
 /// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -156,6 +155,13 @@ pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
     // clip's end, and its cue reaches the screen on arm 17.
     if phase == 9 && !held {
         st.creature_stage = Some(1);
+    }
+    // Arm `0xE`'s pass stands the first arm-9 part at four thirds of the
+    // victim's display height (`0x801F7F5C..0x801F7F7C`), which the shots of
+    // arms 16 and 17 then focus on.
+    if phase == 14 && !held {
+        let y = i32::from(st.victim_body.unwrap_or(seats.victim).y);
+        st.part_height = (y * 4 / 3) as i16;
     }
     // Arm 6 puts the name up on the pass its ramp reaches `0x1000`.
     if phase == 6 && !held && ramp_before < 0x1000 {
@@ -180,6 +186,9 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
         .map_or(-0xC00, |c| c.z)
         .wrapping_neg();
     let victim_z = seats.victim.z.wrapping_neg();
+    // The arm-9 part arm `0xE` stood at the victim's height, negated into the
+    // raw focus trio (`subu v1,zero,v1` at `0x801F82A0` / `0x801F83C4`).
+    let part_y = st.part_height.wrapping_neg();
     let depth = seats.depth_raw as i16;
     match phase {
         0 => ArmDirection::shot(cut([0, 0x800], [0, 0x600, 0x800], 0, 0x400, 1)),
@@ -217,12 +226,18 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
         15 => ArmDirection {
             ..ArmDirection::PASS
         },
-        16 => ArmDirection::shot(cut([-0x20, 0xC00], [0, 0x200, depth / 4], 0, victim_z, 1)),
+        16 => ArmDirection::shot(cut(
+            [-0x20, 0xC00],
+            [0, 0x200, depth / 4],
+            part_y,
+            victim_z,
+            1,
+        )),
         17 => {
             let z = (i32::from(depth) * 15 / 10) as i16;
             ArmDirection {
                 spawns: &KEMARO_ARM17_SPAWNS,
-                ..ArmDirection::shot(cut([-0x20, 0xC00], [0, 0x200, z], 0, victim_z, 0x60))
+                ..ArmDirection::shot(cut([-0x20, 0xC00], [0, 0x200, z], part_y, victim_z, 0x60))
             }
         }
         0x13 => ArmDirection {
