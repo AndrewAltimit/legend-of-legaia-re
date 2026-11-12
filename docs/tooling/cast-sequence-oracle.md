@@ -1550,16 +1550,16 @@ that cast's low score in arms 2 to 4.
 <a id="the-side-band-reads-seek"></a>
 
 The byte's length is the drive's. The engine holds it `30` vsyncs a slot
-(`SIDEBAND_SLOT_READ_VSYNCS`) plus nine for the seek into the first
-`summon.dat` slot, the figure mednafen's drive reads
-(`SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`). PCSX-Redux's drive reads no such seek:
+(`SIDEBAND_SLOT_READ_VSYNCS`) plus seven for the seek into the first
+`summon.dat` slot, fitted on mednafen's drive against where the stage drops
+in the module's arm 1 (`SIDEBAND_FIRST_SLOT_SEEK_VSYNCS`). PCSX-Redux's drive reads no such seek:
 on every film of the lone-caster Seru set the stage drops `90` vsyncs after
 `0x32`'s store for a three-slot base and `120` for a four-slot one. The
 driver therefore seats the recording drive's seek on the engine child
 (`LEGAIA_SEAT_SIDEBAND_SEEK=0`, `CastFxState::sideband_first_seek_seat`), a
 harness seat that no play path sets. It matters where the byte outlasts the
-band head, the four-slot bases `0x9A..=0xA0`: Ozma's arm 2 let go nine
-vsyncs late, so the band's fall to black stood that much further on through
+band head, the four-slot bases `0x9A..=0xA0`: Ozma's arm 2 let go late by
+the modelled seek, so the band's fall to black stood that much further on through
 arm 3, which reads `.969` without the seat and `.999` with it.
 
 ### A fight that opens on an ambush

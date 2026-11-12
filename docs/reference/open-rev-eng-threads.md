@@ -475,9 +475,12 @@ in on Theeder, about `7` on Gilium, `4` on Swordie and `0` on Orb, where the por
 (`30` vsyncs a slot and a first-slot seek) lands it within `5` of each. The band ahead of the module is
 not one length either: from the state to the flash, Theeder's `0x33` runs `7` vsyncs longer in the port
 (the invoke clip's cursor holds `3` ticks after its commit and its first effect record fires at cursor
-`~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. What closes it: the invoke clip's
-first passes after its commit against retail's (the caster's `+0x68` cursor beside `ctx[+0x87C]`), and
-`0x34`'s hold on the caster's `+0x1D9`.
+`~128`), and Swordie's `0x34` `5` longer to arm 1, while Orb's matches. `0x34`'s hold on the caster's
+`+0x1D9` is the port's now: the invoke clip's natural end commits idle in the pass that crosses it, and
+`0x34` leaves on the next (`0x80047A48..0x80047B58`, `0x801E4AD4..0x801E4ADC`), which is `60` vsyncs on the
+`0x86` film as on retail; the first-slot seek is refitted to `7` on that band. What closes the rest: the
+invoke clip's first passes after its commit against retail's (the caster's `+0x68` cursor beside
+`ctx[+0x87C]`).
 
 On the PCSX-Redux summon films the module's own poll arm waits `4` vsyncs where
 the mednafen-fitted model holds it `22` (Nova, Freed) to `30` (Orb) ticks. The
