@@ -407,6 +407,11 @@ pub struct ScreenshotConfig {
     /// capture frame (`World::seed_placement_seat`: position only on a tile,
     /// with the heading on the park seat).
     pub seat_placements: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
+    /// `LEGAIA_SEAT_HEADINGS=<fields>`: placements a finished beat turned to
+    /// a compass literal on the seat the card load stands them on
+    /// (`legaia_parity::retail_compare::scripted_heading_seats`), turned on
+    /// the capture frame (`World::seed_placement_heading`).
+    pub seat_headings: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
@@ -1262,6 +1267,9 @@ impl ScreenshotConfig {
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),
             seat_placements: std::env::var("LEGAIA_SEAT_PLACEMENTS")
+                .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
+                .unwrap_or_default(),
+            seat_headings: std::env::var("LEGAIA_SEAT_HEADINGS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")

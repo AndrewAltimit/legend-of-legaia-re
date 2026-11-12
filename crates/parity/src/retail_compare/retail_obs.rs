@@ -229,6 +229,11 @@ pub struct RetailObs {
     /// MAN; seated, position only, by the headless seed and by the image
     /// child (`LEGAIA_SEAT_PLACEMENTS`).
     pub scripted_seats: Vec<WalkerSeed>,
+    /// Placements a finished beat turned to a compass literal on a seat the
+    /// card load reproduces ([`scripted_heading_seats`]): set by the corpus
+    /// run, turned by the headless seed and by the image child
+    /// (`LEGAIA_SEAT_HEADINGS`) where the engine stands them on retail's seat.
+    pub scripted_headings: Vec<WalkerSeed>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -447,6 +452,7 @@ impl RetailObs {
             cue_clut_source: None,
             panel: None,
             scripted_seats: Vec::new(),
+            scripted_headings: Vec::new(),
             movie: (class == StateClass::Cutscene)
                 .then(|| super::movie_run::RetailMovie::from_ram(ram)),
             walkers: if matches!(class, StateClass::Field) {
@@ -737,6 +743,9 @@ impl RetailObs {
         }
         if !self.scripted_seats.is_empty() {
             env.push(("LEGAIA_SEAT_PLACEMENTS", walkers_env(&self.scripted_seats)));
+        }
+        if !self.scripted_headings.is_empty() {
+            env.push(("LEGAIA_SEAT_HEADINGS", walkers_env(&self.scripted_headings)));
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));

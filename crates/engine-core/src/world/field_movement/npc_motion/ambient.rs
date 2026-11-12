@@ -216,6 +216,31 @@ impl World {
         true
     }
 
+    /// Capture alignment for the retail comparison (`LEGAIA_SEAT_HEADINGS`):
+    /// turn the placement whose flat MAN index is `flat` to the retail-space
+    /// `heading` a finished beat turned it to, where the engine already
+    /// stands it on retail's `(x, z)`: a card load past the beat stands it on
+    /// its record's seat with the record's facing. A placement the engine
+    /// stands elsewhere keeps its own heading, so the position channel and
+    /// the facing channel both still score it. Returns whether it turned.
+    pub fn seed_placement_heading(&mut self, flat: u16, x: i16, z: i16, heading: u16) -> bool {
+        let Some(slot) = self.ambient_seat_slot(flat) else {
+            return false;
+        };
+        if self.npcs.positions.get(&slot) != Some(&(x, z)) {
+            return false;
+        }
+        let engine = (heading as i16).wrapping_add(0x800) & 0x0FFF;
+        if self.npcs.headings.get(&slot).map(|h| h & 0x0FFF) == Some(engine) {
+            return false;
+        }
+        self.npcs.headings.insert(slot, engine);
+        if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
+            chan.vm.heading = heading;
+        }
+        true
+    }
+
     pub(crate) fn resync_ambient_start_positions(&mut self) {
         for (slot, chan) in self.npcs.ambient.iter_mut() {
             if chan.live.is_some() {

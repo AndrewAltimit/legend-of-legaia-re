@@ -485,6 +485,16 @@ engine verdict:
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
   ([the npcs channel](#the-npcs-channel)).
+  A beat's last turn is seated where the card load already stands the
+  placement on retail's seat: a heading retail holds that is a compass
+  literal a partition-2 beat turns that flat to (a targeted `0x38` CAM_CFG's
+  `op0 & 0xF`, or a `4C 51` seat's `depth & 0xF`, through the SCUS
+  `0x80073F04` table) is taken over the record's facing
+  (`retail_compare::scripted_heading_seats`, `World::seed_placement_heading`,
+  the image child's `LEGAIA_SEAT_HEADINGS`). `son` `P2[5]` turns Luctes
+  (flat `10`) onto index `3`, `0x600`, with `B8 0A 83 12`, on the tile his
+  record `P1[4]` seats him on facing index `7` (`4C 51 92 BD 07 ..`), so a
+  state past the beat otherwise scores his record's `0xE00`.
   A walk-on beat's draw flags are seated too: an object actor whose `+0x74`
   word carries the semi-transparency bit (field-VM `4C D6`) hands its flag
   byte to the image child (`retail_object_draw_flags`,

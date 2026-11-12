@@ -31,6 +31,21 @@
 //! A placement retail holds on the park seat ([`npc_parked`]) whose flat a
 //! beat parks is stood on retail's park coordinates, with retail's heading:
 //! the beat's last walk turned it, and nothing draws it there.
+//!
+//! A beat's last turn is the same history when the beat ends with its cast
+//! member on the seat its record stands it on anyway. `son` `P2[5]` turns
+//! Luctes (flat `10`) with `B8 0A 83 12`, a budgeted `0x38` rotate onto
+//! compass index `3`, `0x600`, and leaves him on `(2432, 7936)`, the tile his
+//! record `P1[4]` seats him on with `4C 51 92 BD 07 ..`, facing index `7`
+//! (`0xE00`). A card load past the beat stands him there facing `0xE00`, so
+//! the position seat has nothing to move and his heading stays the record's.
+//! A placement the engine already stands on retail's seat, whose retail
+//! heading is a compass literal a partition-2 beat turns it to (a targeted
+//! `0x38` CAM_CFG, `table[op0 & 0xF]`, or a `4C 51` seat's `depth & 0xF`;
+//! the table is SCUS `0x80073F04`, index `i` = `i * 0x200`), takes retail's
+//! heading ([`scripted_heading_seats`], `World::seed_placement_heading`, the
+//! image child's `LEGAIA_SEAT_HEADINGS`). A heading no beat names for that
+//! flat still scores as a miss.
 
 use std::collections::BTreeMap;
 
@@ -59,6 +74,16 @@ pub fn move_to_world(b: u8) -> i16 {
 pub struct BeatMoves {
     pub targets: BTreeMap<u16, Vec<(i16, i16)>>,
     pub parks: std::collections::BTreeSet<u16>,
+    /// Every retail-space compass heading a beat turns a flat to: a targeted
+    /// `0x38` CAM_CFG's `op0 & 0xF` and a `4C 51` seat's `depth & 0xF`, each
+    /// an index into the SCUS `0x80073F04` table.
+    pub turns: BTreeMap<u16, std::collections::BTreeSet<u16>>,
+}
+
+/// The retail heading compass index `i` names in the SCUS `0x80073F04`
+/// table (`[0, 0x200, .. 0xE00]`); `None` past its eight entries.
+fn compass_heading(i: u8) -> Option<u16> {
+    (i < 8).then(|| u16::from(i) * 0x200)
 }
 
 /// Every cross-context `MOVE_TO` target and park a scene's partition-2
@@ -98,6 +123,19 @@ pub fn beat_move_targets(man: &[u8]) -> BeatMoves {
                 } if (*x_enc, *z_enc) == PARK => {
                     out.parks.insert(flat);
                 }
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble5NpcRun { depth, .. },
+                    ..
+                } => {
+                    if let Some(h) = compass_heading(depth & 0xF) {
+                        out.turns.entry(flat).or_default().insert(h);
+                    }
+                }
+                InsnInfo::CamCfg { op0, .. } => {
+                    if let Some(h) = compass_heading(op0 & 0xF) {
+                        out.turns.entry(flat).or_default().insert(h);
+                    }
+                }
                 _ => {}
             }
         }
@@ -117,6 +155,29 @@ pub fn scripted_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerS
                 .get(&a.flat)
                 .is_some_and(|t| t.contains(&(a.x, a.z)))
                 || (npc_parked(a.x, a.z) && beats.parks.contains(&a.flat))
+        })
+        .map(|a| WalkerSeed {
+            flat: a.flat,
+            x: a.x,
+            z: a.z,
+            heading: (a.facing as u16) & 0x0FFF,
+        })
+        .collect()
+}
+
+/// The retail placements, standing on a seat, whose heading is a compass
+/// literal a beat turns them to ([`BeatMoves::turns`]), as heading seats:
+/// the seed stands the heading only where the engine already holds retail's
+/// position (`World::seed_placement_heading`).
+pub fn scripted_heading_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerSeed> {
+    facings
+        .iter()
+        .filter(|a| !a.ambient && !npc_parked(a.x, a.z))
+        .filter(|a| {
+            beats
+                .turns
+                .get(&a.flat)
+                .is_some_and(|t| t.contains(&((a.facing as u16) & 0x0FFF)))
         })
         .map(|a| WalkerSeed {
             flat: a.flat,
@@ -167,6 +228,45 @@ mod tests {
         assert_eq!(seats.len(), 1);
         assert_eq!((seats[0].flat, seats[0].x, seats[0].z), (14, 4160, 11968));
         assert_eq!(seats[0].heading, 0x0800);
+    }
+
+    #[test]
+    fn only_a_heading_a_beat_turns_the_flat_to_is_seated() {
+        let mut beats = BeatMoves::default();
+        beats.turns.entry(10u16).or_default().insert(0x600);
+        let facing = |flat, facing, x, z, ambient| ActorFacing {
+            flat,
+            facing,
+            x,
+            z,
+            y: 0,
+            model: 69,
+            flags: 0,
+            ambient,
+            ambient_op: None,
+        };
+        let seats = scripted_heading_seats(
+            &beats,
+            &[
+                facing(10, 0x600, 2432, 7936, false),
+                // A heading no beat names for the flat.
+                facing(10, 0x400, 2432, 7936, false),
+                // The literal, on another flat.
+                facing(11, 0x600, 2432, 7936, false),
+                // A wanderer, and a parked placement.
+                facing(10, 0x600, 2432, 7936, true),
+                facing(10, 0x600, 16320, 16320, false),
+            ],
+        );
+        assert_eq!(seats.len(), 1);
+        assert_eq!((seats[0].flat, seats[0].heading), (10, 0x600));
+    }
+
+    #[test]
+    fn compass_indices_name_the_eight_table_headings() {
+        assert_eq!(compass_heading(3), Some(0x600));
+        assert_eq!(compass_heading(7), Some(0xE00));
+        assert_eq!(compass_heading(8), None);
     }
 
     #[test]
