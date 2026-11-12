@@ -1843,7 +1843,7 @@ full blue lane and arm 14's poll holds sixty ticks longer than retail's.
 Arm 13's pass also clears the caption after its exit shot (`FUN_800319A8(0)`
 at `0x801F75D4`). The director frames arms 0
 and 1 on the caster and arms 7..12 on the creature; arm 9 frames the
-creature's `+0x3C` / `+0x40` pair, which the port reads as its seat. Arm
+creature's display pair `+0x3C` / `+0x40` (`0x801F7058`), the others its seat. Arm
 13's exit snaps onto the sweep's outcome at yaw `-facing` of the creature
 (`0x801F7514..0x801F75CC`): on a group target (`caster[+0x1DD] >= 8`) the
 negated centroid `FUN_801DCEAC` returns, pitch `0x80`, TR y `0x500` and TR z
