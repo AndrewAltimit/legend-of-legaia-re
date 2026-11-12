@@ -436,7 +436,11 @@ re-poses only a loop: the cast clip the gate stands in was committed on the repl
 clock. Refused, Caruban's Fire Breath clip `9` opened its films a step-`2` pass ahead
 of retail's (cursor `48` against `40`), case `0xA`'s yaw, which reads the cursor, ran
 `15` units ahead, and the full-party films read `.930` / `.927` where they read
-`.964` / `.959` seated. And a monster
+`.964` / `.959` seated. The other bodies stand on the state's RAM too
+(`state_body_cursors`, `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS`, loops only): the still's
+clip seeds land on a capture frame a film never reaches, so the party idled on the
+replay's phases (`132`, `72`, `108` where the `_2_` state holds `96`, `112`, `48`),
+and seated the two films read `.967` / `.963`. And a monster
 striker's committed queue `+0x1DF..` goes on the drive (`state_strike_queue`, the
 `q` field) unless the still already steered it: the picker drew those clips before
 the state was saved, and a replay that reached the gate on another pick swings
