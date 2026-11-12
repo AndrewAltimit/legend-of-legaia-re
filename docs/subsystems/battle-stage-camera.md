@@ -1643,6 +1643,60 @@ read them near mednafen's. The clamp an item's or a Spirit's clip holds the ring
 recording of one would say whether it is the same wait. Grade `capture` for the emulators,
 `docs` for the console.
 
+<a id="the-engines-gpu-frame-step-source"></a>
+
+**The engine's GPU frame-step source.** `WorldToggles::battle_gpu_cost_step` (off by
+default; `LEGAIA_BATTLE_GPU_COST=1` on a native session, `cast-sequence.py --gpu-cost-step`)
+pushes `max(cpu, gpu)` into the ring, where `cpu` is the cost the engine pushes anyway (the
+PCSX-Redux tables below and the cast arm tables) and `gpu` is the same model priced over the
+frame the native window drew last (`legaia_engine_system::gpu_draw_cost`,
+`World::note_drawn_table_cost`). The window keeps each upload's CPU streams
+(`Renderer::set_keep_cpu_meshes`), projects every textured and untextured draw through its own
+view-projection, links a mesh's split quads back as one quad packet, leaves out the faces the
+draw's NCLIP word culls and corners on or behind the eye, and adds the screen primitives as
+quad packets. The text and sprite overlays are not priced. `LEGAIA_DIAG_GPU_COST=<csv>` logs
+the priced frame a tick, whether or not the step reads it.
+
+On Zenoir from the Gobu Gobu opener the engine's frame reads retail's table close in time
+(action states `0x29` to `0x35`: `357` against `347`, `227` against `232`, `161` against `157`,
+`280` against `285` hblanks of draw, PCSX-Redux `--gpu-cost`) but links half again as many
+polygons (`1377` against `828` in the module band). Against mednafen's model of the same arm in
+nine mid-summon states the engine reads a median `7%` over (tenth to ninetieth percentile `-3%`
+to `+26%`). The excess is geometry retail never links: under the summon flash `0x34`
+mednafen's table holds about `50` polygons (Gizam, Swordie) and the engine's `626`, the stage
+and the bodies drawn under the white. A light arm that retail's GPU holds just under `0xF1` (Theeder's arms 1 and 2 at
+`228`, Gizam's at `218`, Nighto's at `220`) the engine prices at `242` to `246`, one step up.
+
+Measured as films (`scripts/ci/film-sets/`, engine side only, each film plain and with the
+source), against the PCSX-Redux recordings the sets pair:
+
+| Set | Films | Plain | With the GPU source |
+|---|---:|---:|---:|
+| Seru casts | 29 | `.9048` | `.8935` |
+| Enemy casts | 106 | `.8913` | `.8910` |
+| Monster strikes | 60 | `.9635` | `.9642` |
+| Player arts, chains among them (`--physical --hit-trace --strike-deal`) | 17 | `.8623` | `.8699` |
+
+PCSX-Redux draws for free, so a GPU term can only part the engine from those recordings
+where the engine's CPU term is right, and it does so in one place: the Seru films' flash
+`0x34`, where twenty-five of twenty-nine lose the segment (`.998` to `.51` on Zenoir and on
+Ozma) because the close-up's GPU-bound frames hold step `2` into it where retail drops to
+`1`. The module arms barely move (`-.002`
+pair-weighted): an arm table's step `4` is a CPU reading, and `max` cannot lower it. Against
+mednafen's own per-arm steps (`frame-cost-film.py` over the nine `*_summon_mid_cast` states)
+the engine's steps agree on `.28` of the vsyncs plain and `.22` with the source. What parts
+them is the CPU half: the arms of Freed, Orb, Swordie and Vera that the tables run at `4`
+read `230` to `400` hblanks on mednafen (step `1` to `3`), a gap no GPU term can close and of
+the size of Guilty Cross's CD wait above (whether it is that wait on these arms is not
+measured), and the source moves the light arms the wrong way through the overcount. Where the
+source helps a PCSX-Redux film it stands in for a CPU term that reads low: three arts films
+gain on their strike states `0x1E..0x20` (Tri-Somersault `.687` to `.770`, Lizard
+Tail `.904` to `.944`, Sonic Javelin `.819` to `.842`), whose effect frames price up to
+`720` to `820` hblanks, at or over `0x2D1`, where retail's CPU-bound frames ran step `4`. Neither Ozma's film (`.955` to `.949`, all of it
+the flash), Water Crystals' arm passes (`.7651` both ways) nor the four chain films (unchanged
+to the fourth place) move with it. Grade `capture`; the stand-in reading of the arts gain is
+inference.
+
 The engine ports the law whole and feeds it a table
 (`frame_clock::FrameCostRing`, `measured_frame_cost`, `World::push_frame_cost`, raised
 by `WorldToggles::battle_party_cost_step`): the median entry per party size and action
