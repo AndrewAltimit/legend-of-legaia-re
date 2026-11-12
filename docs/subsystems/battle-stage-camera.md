@@ -1559,6 +1559,75 @@ Across the library's PCSX-Redux battle states the two words agree on `.997` of t
 so on that machine the entry is the CPU's time alone and the GPU has no cost. Mednafen
 states do show a gap, up to `127` hblanks.
 
+<a id="what-a-real-consoles-frame-costs"></a>
+
+**What a real console's frame costs.** The window both words measure opens at the frame
+end's `VSync(n)` (`0x800171C0`; libetc's `VSync(1)` counts hblanks since the last call that
+waited). Right after it the flip puts the display and draw environments and hands the GPU
+the table the pass just built (`DrawOTag` at `0x80017288`). The next pass runs while the
+GPU draws that table; at its own end `VSync(1)` (`0x800174CC`) is the CPU's finish,
+`DrawSync(0)` (`0x800174D8`) waits for the table, and the second `VSync(1)` (`0x800174E0`) is
+the entry. So the entry is `max(cpu, dma + draw of the previous pass's table)`, both counted
+from the same vsync.
+
+The GPU half has a model with no free constant
+([`scripts/mednafen/gpu_cost.py`](../../scripts/mednafen/gpu_cost.py), the same in the probe
+library's `gpu_cost.lua`). It walks the table and prices each command on the v2 GPU's
+measured costs as DuckStation's `gpu.cpp` records them: polygon setup by kind, a cycle a
+shaded or textured pixel, half one for a flat one, a per-row term, rectangles by texture
+depth, the fill. Each list node costs its DMA header and block (`dma.cpp`). A scanline is
+`3413` video cycles, `3413 * 7 / 11` CPU cycles (psx-spx).
+
+Measured frame by frame on mednafen
+([`frame-cost-film.py`](../../scripts/mednafen/frame-cost-film.py)) over seven states, the
+GPU bounds `384` passes. On them the entry reads the model `8` hblanks under it at the median
+(tenth to ninetieth percentile `-28` to `-1`), and `.86` of them land within `25`. Of the
+`390` passes the CPU bounds, the model passes the entry by more than `25` on six. Mednafen's
+GPU wait is the table's drawing, not an emulator quirk.
+
+On PCSX-Redux, whose GPU is free, the same model goes over the CPU's word mostly on a lone
+member. A lone Vahn's strike (`0x20`) reads CPU `342` against GPU `396`, both step `2`. In a
+summon band's light arms it reads `175` against `254`, which is step `1` against `2`.
+
+[`frame-cost-agreement.py`](../../scripts/ci/frame-cost-agreement.py) runs the step law over
+three costs and scores each against the step the emulator stored. `cpu` is `gp+0x3A8`
+alone, `cpu+gpu` is `max(cpu, model)`, and `entry` is the emulator's own ring entry, the
+ceiling the pass pairing allows:
+
+| Recording | Emulator | Passes | `cpu` | `cpu+gpu` | `entry` |
+|---|---|---:|---:|---:|---:|
+| `zenoir_summon_mid_cast` | mednafen | 127 | `.748` | `.991` | `.991` |
+| `theeder_summon_mid_cast` | mednafen | 91 | `.800` | `.867` | `.880` |
+| `party_battle_gobu_gobu` | mednafen | 102 | `.826` | `.953` | `.988` |
+| `cort_guilty_cross_mid_cast` | mednafen | 111 | `.989` | `.989` | `.989` |
+| `battle_melee_hit_spark`, `terra_party_battle`, `noa_levelup_fight_pre` | mednafen | 343 | `1.000` | `1.000` | `1.000` |
+| `party_basic_attack_vs_gobu_gobu`, Zenoir `0x86` | PCSX-Redux | 547 | `.996` | `.755` | `.996` |
+| `party_basic_attack_vs_gobu_gobu`, Theeder `0x82` | PCSX-Redux | 513 | `.998` | `.811` | `.998` |
+| `chitei2_cort_pre_guilty_cross`, `0x37` | PCSX-Redux | 296 | `.996` | `.993` | `.996` |
+| `battle_tunnelb_gel_frog_strike`, `battle_dolk_drake_ghost_strike` | PCSX-Redux | 199 | `1.000` | `1.000` | `1.000` |
+
+The split between the emulators is the CPU's, not the GPU's. A GPU wait only adds
+(`max`), so mednafen reading a frame below PCSX-Redux means its CPU is cheaper. It is: the
+CPU word of a full party's action reads `460` to `510` on mednafen against the table's `545`
+to `622` (about `.8`). PCSX-Redux charges every instruction two cycles (`BIAS = 2` in its
+interpreter), where mednafen models the instruction cache and memory waits. No hardware
+document gives the game's own cycles per instruction, so that half stays open
+([open threads](../reference/open-rev-eng-threads.md)).
+
+A CD wait is a third term, and the largest. Guilty Cross's arms 1 to 3 read
+`1632` to `1700` hblanks of CPU on PCSX-Redux (step `4`) and `646` to `660` on mednafen (step
+`3`), with the GPU near `540` on both. The arms play the cast's voice (`XA22`). One PC
+sample a vsync (`gpu.csv`'s `pc`, the frame boundary's PC on mednafen) puts `.32` of
+PCSX-Redux's samples in libcd (`0x8005B800..0x8005E400`, `.18` in the command wait
+`FUN_8005C4AC` alone) and `.25` in the BIOS interrupt path; mednafen's read `.09` and `.13`.
+On the hardware, psx-spx says, ADPCM sectors raise no `INT1` once XA-ADPCM is on, and a
+command's first response takes `0xC4E1` cycles on average (about `23` hblanks), `0x3115B` at
+most (about `93`). So these arms' step `4` is PCSX-Redux's CD timing, and a console would
+read them near mednafen's. The clamp an item's or a Spirit's clip holds the ring at
+(`XA_STREAM_FRAME_COST`) has the same shape and was read off PCSX-Redux too; a mednafen
+recording of one would say whether it is the same wait. Grade `capture` for the emulators,
+`docs` for the console.
+
 The engine ports the law whole and feeds it a table
 (`frame_clock::FrameCostRing`, `measured_frame_cost`, `World::push_frame_cost`, raised
 by `WorldToggles::battle_party_cost_step`): the median entry per party size and action

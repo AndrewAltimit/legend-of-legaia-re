@@ -244,8 +244,11 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// A member adds about `0x7C` hblanks, and on this machine the entry is the CPU's
 /// alone: `gp+0x3A8` (CPU done) and `gp+0x3AC` (after `DrawSync`) read the same.
 /// It is a measurement of one emulated machine, like the cast arm tables, and no
-/// model of a frame's work: Mednafen reads a full party's action about `100` lower,
-/// with the GPU wait in it, and no real hardware has been measured.
+/// model of a frame's work: Mednafen reads a full party's action about `100` lower.
+/// That gap is the CPU's (PCSX-Redux charges two cycles an instruction), not the GPU's,
+/// whose wait only ever adds; the GPU's share of a real console's frame is modelled in
+/// `docs/subsystems/battle-stage-camera.md` ("What a real console's frame costs") and
+/// rarely passes this table's CPU figure. No real hardware has been measured.
 ///
 /// The strike states `0x1E..=0x20` of a lone member and a full party are the
 /// monster strike recordings' frames with no effect part live (the probe's

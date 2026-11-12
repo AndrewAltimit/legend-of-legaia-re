@@ -3702,7 +3702,8 @@ at the hand-over. Mednafen's arm 3 opens on eleven step-`3` frames and the engin
 action state and arm, so arms 5 to 10 then run under keys mednafen never recorded and keep the step
 they had. Why the shared word ends the band under those steps and not under retail's is open. Which emulator a console agrees with is
 [open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
-a GPU wait on a CPU that costs less.
+a GPU wait on a CPU that costs less. The GPU wait is the table's drawing, and what moves Guilty Cross's
+arms is PCSX-Redux's CD command wait ([a real console's frame cost](battle-stage-camera.md#what-a-real-consoles-frame-costs)).
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 
