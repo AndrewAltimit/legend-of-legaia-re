@@ -366,6 +366,7 @@ impl World {
         let step = legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
             915,
             legaia_engine_cast::cast_module_camera::MUSHURA_HIT_ARM,
+            self.toggles.battle_cd_timing,
         )
         .unwrap_or(4);
         let ticks = self.casting.module_mushura_turn_ticks + 1;

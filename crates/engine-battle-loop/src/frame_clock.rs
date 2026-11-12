@@ -24,6 +24,8 @@
 //!
 //! REF: FUN_80016B6C
 
+pub use legaia_engine_cast::cast_module_frame_step::CdTiming;
+
 /// The engine's battle frame step: retail's step on an ordinary battle frame,
 /// the one the camera and the root-motion carry assume by default.
 pub const DEFAULT_BATTLE_FRAME_STEP: u8 = 2;
@@ -344,7 +346,21 @@ pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
 /// (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp;
 /// Amethyst's on a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`) costs
 /// `392` on the cue's pass, `507` on the next, then the clamp.
-pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16) -> u16 {
+///
+/// Those are PCSX-Redux's costs ([`CdTiming::PcsxRedux`]): the clip player's
+/// stop watch polls the drive from interrupt context for the whole clip, and
+/// `1063` is a frame of about `370` hblanks of work over the third of the CPU
+/// the polls leave there. On a console ([`CdTiming::Console`]) a pass from the
+/// cue's next on costs its base over the console's share
+/// ([`legaia_engine_cast::cast_module_frame_step::console_poll_cost`]).
+pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTiming) -> u16 {
+    if let CdTiming::Console = timing {
+        return if passes_since_cue == 0 {
+            base
+        } else {
+            legaia_engine_cast::cast_module_frame_step::console_poll_cost(base)
+        };
+    }
     match passes_since_cue {
         0 => base,
         1 => base.saturating_add(XA_STREAM_ONSET_COST),

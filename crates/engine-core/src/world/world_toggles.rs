@@ -156,6 +156,16 @@ pub struct WorldToggles {
     /// `max(cpu, dma + draw)` entry. The native session raises it from
     /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
     pub battle_gpu_cost_step: bool,
+    /// Which machine's CD response timing a battle frame's cost reads while a
+    /// CD-XA voice clip plays: a console's by default, where the clip player's
+    /// stop watch polls the drive on a sixteenth of the CPU, or PCSX-Redux's,
+    /// where the same polls take two thirds of it and a voiced arm's frames
+    /// reach step `4` (`docs/subsystems/battle-stage-camera.md`, "The CD stop
+    /// watch"). PCSX-Redux's is a harness seat for comparisons against
+    /// recordings made on it: the native session takes it from
+    /// `LEGAIA_BATTLE_CD_TIMING=pcsx-redux`, which the cast-sequence films and
+    /// the retail-compare child of a PCSX-Redux capture set.
+    pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -435,6 +445,7 @@ impl WorldToggles {
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
+            battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::Console,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

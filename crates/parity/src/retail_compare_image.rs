@@ -539,8 +539,16 @@ pub fn engine_frame_with(
     // accuracy mode adds `--psx-render`: the frame drawn at the display's own
     // 320x240 with retail's snap and dither (`FrameRender`).
     let render = frame_render();
-    if render == FrameRender::Psx && CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux" {
+    let pcsx_redux = CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux";
+    if render == FrameRender::Psx && pcsx_redux {
         cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
+    }
+    // A PCSX-Redux capture's frames ran on its CD response time: a voice
+    // clip's stop watch took two thirds of the CPU there, a sixteenth of a
+    // console's (`WorldToggles::battle_cd_timing`). The child prices it the
+    // capture's way, a harness seat.
+    if pcsx_redux {
+        cmd.env("LEGAIA_BATTLE_CD_TIMING", "pcsx-redux");
     }
     cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");
     cmd.args(["play-window", "--no-audio"])

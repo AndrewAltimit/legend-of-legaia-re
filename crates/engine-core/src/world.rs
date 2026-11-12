@@ -118,6 +118,8 @@ use legaia_engine_battle_loop::cast_band::{
     CastModuleCodeRun, CasterStagePhase, CasterStageRun, PendingCast, SummonPhase, SummonStager,
 };
 use legaia_engine_battle_loop::cast_fx_state::CastFxState;
+/// The CD response timing [`WorldToggles::battle_cd_timing`] picks.
+pub use legaia_engine_battle_loop::frame_clock::CdTiming;
 use legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
 use legaia_engine_battle_loop::message_banner::{
     ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,

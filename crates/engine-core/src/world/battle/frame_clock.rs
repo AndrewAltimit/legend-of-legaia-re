@@ -53,7 +53,11 @@ impl World {
                 // An XA clip's read span: the frame runs on the CD interrupt
                 // path (`FUN_8005DAB0`) once the stream is up.
                 match xa_passes {
-                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(n, cost),
+                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
+                        n,
+                        cost,
+                        self.toggles.battle_cd_timing,
+                    ),
                     None => cost,
                 }
             },
@@ -376,6 +380,7 @@ impl World {
                 legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
                     entry,
                     self.casting.module_phase,
+                    self.toggles.battle_cd_timing,
                 )
             });
         let measured = measured.or_else(|| {
@@ -386,6 +391,7 @@ impl World {
             legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
                 spell,
                 self.casting.module_phase,
+                self.toggles.battle_cd_timing,
             )
         });
         // `FUN_80016B6C` closes a pass by storing the step this frame's cost
@@ -401,9 +407,12 @@ impl World {
         // what the passes before left, so a cheaper arm after a dear one runs
         // the ring's step until the dear entries leave it (Kiss of Death's arm
         // 5 runs `3` for sixteen passes after arm 4's clamped frames, then `2`).
-        // A frame the XA stream loads overruns its step (`span_extra`); an
+        // A frame the XA stream loads overruns its step on PCSX-Redux
+        // (`span_extra`); a console's polls leave it inside its step, and an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
+            && self.toggles.battle_cd_timing
+                == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
             && self.toggles.battle_party_cost_step
             && self.battle_xa_loads_frame()
         {
@@ -1686,9 +1695,10 @@ mod tests {
     }
 
     #[test]
-    fn an_xa_read_span_runs_overrunning_step_four_frames() {
-        use legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA;
+    fn an_xa_read_span_runs_overrunning_step_four_frames_on_pcsx_redux() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_SPAN_EXTRA};
         let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.audio.battle_xa_busy_frames = 60;
         w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
@@ -1725,8 +1735,9 @@ mod tests {
     /// the Amethyst Heal recording costs `392`, `507`, then the clamp.
     #[test]
     fn a_clips_stream_loads_the_frame_two_passes_after_its_cue() {
-        use legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_FRAME_COST};
         let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.party.party_count = 1;
         w.battle_ctx.action_state = 0x3E;
         w.audio.battle_xa_busy_frames = 200;
@@ -1740,6 +1751,30 @@ mod tests {
         }
         assert!(costs[0] < 0x1FF && costs[1] < 0x1FF, "{costs:?}");
         assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
+    }
+
+    /// On a console the clip's stop watch takes a sixteenth of the CPU: the
+    /// frames after the cue cost their work over that, inside their step.
+    #[test]
+    fn a_console_clip_leaves_the_frame_near_its_own_cost() {
+        use legaia_engine_cast::cast_module_frame_step::console_poll_cost;
+        let mut w = World::new();
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x3E;
+        let base = legaia_engine_battle_loop::frame_clock::measured_frame_cost_at(1, 0x3E, 2);
+        w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+        let mut costs = Vec::new();
+        for _ in 0..3 {
+            w.push_frame_cost(None);
+            costs.push(w.battle.frame_cost_ring.newest());
+            w.clock.display_frames += w.battle.frame_clock.span();
+        }
+        assert_eq!(costs[2], console_poll_cost(base), "{costs:?}");
+        assert!(w.battle.frame_cost_step < 4);
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
 
     #[test]

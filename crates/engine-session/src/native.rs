@@ -175,6 +175,12 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
+    // A harness seat: price the CD stop watch at PCSX-Redux's response time,
+    // for a comparison against a recording made on it
+    // (`WorldToggles::battle_cd_timing`).
+    if std::env::var("LEGAIA_BATTLE_CD_TIMING").is_ok_and(|v| v.trim() == "pcsx-redux") {
+        toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::PcsxRedux;
+    }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
     }
