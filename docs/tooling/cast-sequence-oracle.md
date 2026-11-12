@@ -738,6 +738,17 @@ It does not help every film. The words are retail's frame ends, so an engine pas
 draws in another order than retail's inside the frame still parts: Fatal Decision gains
 five extra cues. Read it as a harness seat that takes the stream out, not as a score.
 
+Nor does it seat a roll on a pass the engine does not run. Water Crystals' hit
+(`FUN_801DD4B0(0xC0)` at `0x801F7318`) on `battle_jou_freed_v3_water_crystals_mid_cast`
+lands on the pass arm 3's `scalar << 7` countdown opens. Retail's wait ran one pass
+longer than the engine's: one of its frames ran on step `3` (`131` game frames against
+`128`), so the hit took that pass's discarded draw first and the wrapper's four draws
+after it, and the bonus draw `rand() % 49` that sets a Spirit-guarded victim's damage
+read `35` (`113`) where the engine, a pass earlier, read the frame's first four
+(`120` under `--rand-track`, `103` on its own stream). The same pass pairs the engine's
+arm 4 a pass off retail's shatter. Both are the frame step, not the roll: the wrapper's draws and arithmetic
+reproduce retail's `113` from the recorded word. Grade `disassembly` + `capture`.
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`
