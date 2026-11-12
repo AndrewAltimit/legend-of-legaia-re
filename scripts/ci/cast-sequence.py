@@ -181,6 +181,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_GHOST_TRACE"] = "1"
     if a.calc_clock:
         env["LEGAIA_CALC_CLOCK"] = "1"
+    if a.cd_trace:
+        env["LEGAIA_CD_TRACE"] = "1"
     if a.gpu_cost:
         env["LEGAIA_GPU_COST"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
@@ -191,7 +193,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace or a.ghost_trace or a.calc_clock):
+            or a.range_trace or a.hit_trace or a.ghost_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -760,6 +762,14 @@ def run_engine(a, out: Path) -> bool:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
+    # The recordings are PCSX-Redux's: the engine prices a voice clip's CD
+    # stop watch at its response time, a harness seat (`--console-cd` runs
+    # the engine's own console timing; docs/subsystems/battle-stage-camera.md,
+    # "The CD stop watch").
+    if a.console_cd:
+        env.pop("LEGAIA_BATTLE_CD_TIMING", None)
+    else:
+        env["LEGAIA_BATTLE_CD_TIMING"] = "pcsx-redux"
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -929,6 +939,9 @@ def main() -> int:
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
+    ap.add_argument("--cd-trace", action="store_true",
+                    help="retail: cd.csv, every libcd command, CdSync span, CD interrupt and its callbacks "
+                         "with the CPU cycle, and each frame's CPU-done mark (breakpoint core)")
     ap.add_argument("--gpu-cost", action="store_true",
                     help="retail: also write gpu.csv, the frame-cost words and the GPU draw-time model "
                          "of the table drawn each vsync (scripts/ci/frame-cost-agreement.py reads it)")
@@ -956,6 +969,9 @@ def main() -> int:
                     help="engine: a battle pass's frame cost is max(its CPU term, the GPU draw-time model "
                          "of the frame drawn last) (LEGAIA_BATTLE_GPU_COST=1, opt-in; retail's "
                          "max(cpu, dma + draw) entry, docs/subsystems/battle-stage-camera.md)")
+    ap.add_argument("--console-cd", action="store_true",
+                    help="engine: price a voice clip's CD stop watch at a console's response time, the "
+                         "engine's default, not the recording's PCSX-Redux one (LEGAIA_BATTLE_CD_TIMING)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")

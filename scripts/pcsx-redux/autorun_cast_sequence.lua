@@ -56,6 +56,11 @@
 --                seed word the hit's rolls draw from.
 --   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
 --                these bytes with its pc, ra and registers.
+--   cd.csv       with LEGAIA_CD_TRACE=1 (breakpoint core): libcd's command
+--                calls, CdSync, the CD response dispatcher and its callbacks,
+--                every exception and the frame's VSync-return / CPU-done
+--                marks, each with the CPU cycle: where a frame's CD time goes
+--                (scripts/ci/cd-poll-steps.py).
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -603,6 +608,62 @@ probe.run({
             probe.arm_breakpoint(0x8006B854, "Exec", 4, "kon", function()
                 local R = PCSX.getRegisters()
                 if (tonumber(R.GPR.n.a0) or 0) == 1 then calc_row("kon") end
+            end)
+        end
+        if probe.getenv_num("LEGAIA_CD_TRACE", 0) ~= 0 then
+            -- Where a frame's CD time goes (breakpoint core), each row with
+            -- the CPU cycle: libcd's command calls FUN_8005CF80 /
+            -- FUN_8005D0B8 / FUN_8005CCB4 (a0 the command, the first param
+            -- byte, ra), CdSync FUN_8005CA34's entry and its `jr ra`
+            -- (0x8005CCAC, v0 the result), the response dispatcher
+            -- FUN_8005DAB0's entry and exit (0x8005DB74), each interrupt
+            -- cause it reads (0x8005DAF0, s0), its data-ready and completion
+            -- callbacks (0x8005DB20 / 0x8005DB54, v0 the callback), and the
+            -- frame tail's CPU-done VSync(1) (0x800174CC).
+            local cd_csv = probe.csv_open(probe.out_path("cd.csv"), "vsync,st7,phase,kind,cycle,a0,a1,ra")
+            local function cd_row(kind, a0, a1)
+                local R = PCSX.getRegisters()
+                local c = u32(CTX_PTR)
+                local ok = c >= 0x80000000
+                cd_csv:row("%d,%d,%d,%s,%.0f,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
+                    ok and u8(c + 7) or -1, ok and u8(c + 0x279) or -1, kind,
+                    tonumber(PCSX.getCPUCycles()), a0, a1, tou32(R.GPR.n.ra))
+            end
+            for _, f in ipairs({ { 0x8005CF80, "ctl" }, { 0x8005D0B8, "ctlb" }, { 0x8005CCB4, "ctlf" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local n = PCSX.getRegisters().GPR.n
+                    local p = tou32(n.a1)
+                    cd_row(f[2], tou32(n.a0), ptr_ok(p) and u8(p) or 0)
+                end)
+            end
+            probe.arm_breakpoint(0x8005CA34, "Exec", 4, "sync", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("sync", tou32(n.a0), 0)
+            end)
+            probe.arm_breakpoint(0x8005CCAC, "Exec", 4, "sync_end", function()
+                cd_row("sync_end", tou32(PCSX.getRegisters().GPR.n.v0), 0)
+            end)
+            probe.arm_breakpoint(0x8005DAB0, "Exec", 4, "irq", function() cd_row("irq", 0, 0) end)
+            probe.arm_breakpoint(0x8005DB74, "Exec", 4, "irq_end", function() cd_row("irq_end", 0, 0) end)
+            probe.arm_breakpoint(0x8005DAF0, "Exec", 4, "cause", function()
+                cd_row("cause", tou32(PCSX.getRegisters().GPR.n.s0), 0)
+            end)
+            probe.arm_breakpoint(0x8005DB20, "Exec", 4, "ready", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("ready", tou32(n.v0), tou32(n.a0))
+            end)
+            probe.arm_breakpoint(0x8005DB54, "Exec", 4, "complete", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("complete", tou32(n.v0), tou32(n.a0))
+            end)
+            probe.arm_breakpoint(0x800174CC, "Exec", 4, "cpudone", function() cd_row("cpudone", 0, 0) end)
+            -- The frame end's VSync(n) return (0x800171C8, past `jal` at
+            -- 0x800171C0), where the cost words' window opens, and every
+            -- exception's entry at the vector 0x80000080 (a0 the cause).
+            probe.arm_breakpoint(0x800171C8, "Exec", 4, "vsyncret", function() cd_row("vsyncret", 0, 0) end)
+            probe.arm_breakpoint(0x80000080, "Exec", 4, "exc", function()
+                local ok, cause = pcall(function() return PCSX.getRegisters().CP0.n.Cause end)
+                cd_row("exc", ok and tou32(cause or 0) or 0, 0)
             end)
         end
         if probe.getenv_num("LEGAIA_PRIM_CALLS", 0) ~= 0 then
