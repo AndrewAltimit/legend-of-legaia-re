@@ -1382,32 +1382,38 @@ impl App {
                 });
         } else if let Some(s) = &self.explorer.status {
             let green = crate::theme::good(ui);
+            // A button of the line holding the keyboard (or a pad's) focus
+            // holds the line up, as the pointer over it does.
+            let mut focused = false;
             let row = ui.horizontal(|ui| {
                 ui.colored_label(green, s);
-                if let Some(dir) = &self.last_written
-                    && ui
+                if let Some(dir) = &self.last_written {
+                    let b = ui
                         .small_button("Show folder")
-                        .on_hover_text(dir.display().to_string())
-                        .clicked()
-                {
-                    show = Some(dir.clone());
+                        .on_hover_text(dir.display().to_string());
+                    focused |= b.has_focus();
+                    if b.clicked() {
+                        show = Some(dir.clone());
+                    }
                 }
                 // A controller's export had no save window to choose the
                 // folder in: the way to change it sits beside it.
                 if self.pad_active
                     && self.last_written.is_some()
                     && self.last_written == self.explorer.settings.last_export_dir
-                    && ui
-                        .small_button("Change folder...")
-                        .on_hover_text("Choose the folder exports go into")
-                        .clicked()
                 {
-                    change_export = true;
+                    let b = ui
+                        .small_button("Change folder...")
+                        .on_hover_text("Choose the folder exports go into");
+                    focused |= b.has_focus();
+                    change_export = b.clicked();
                 }
-                dismiss = ui.small_button("Dismiss").clicked();
+                let b = ui.small_button("Dismiss");
+                focused |= b.has_focus();
+                dismiss = b.clicked();
             });
             if let Some((_, at)) = &mut self.status_seen {
-                if row.response.contains_pointer() {
+                if row.response.contains_pointer() || focused {
                     *at = now;
                 }
                 let left = STATUS_TTL.saturating_sub(now.duration_since(*at));

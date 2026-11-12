@@ -3971,8 +3971,6 @@ fn sentence(s: &str) -> String {
 /// one, so the help box under them keeps room for a whole message.
 const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 2;
 
-/// Button `i`'s rect: one full-width row each, except the last two, which
-/// split the bottom row.
 /// A button label that fits a button `w` stage pixels wide, with a margin
 /// on each side: the label itself, else its short form, else the label
 /// ellipsized. The placeholder font the screen letters in before a disc is
@@ -3998,6 +3996,8 @@ fn fit_button_label(c: &Canvas, label: &str, w: i32) -> String {
 /// Stage pixels kept clear between a button's edge and its label.
 const BUTTON_LABEL_MARGIN: i32 = 3;
 
+/// Button `i`'s rect: the first [`FULL_BUTTONS`] take a full-width row
+/// each, the rest pair up two to a row.
 fn button_rect(i: usize) -> Rect {
     // The first four buttons take a row each; the rest pair up, two to a
     // row (Controls / Recent, Saves folder / Quit).
