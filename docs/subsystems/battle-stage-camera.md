@@ -1692,6 +1692,28 @@ cast-sequence films set it (`LEGAIA_BATTLE_CD_TIMING=pcsx-redux`; `--console-cd`
 does the retail-compare child of a PCSX-Redux capture. Mednafen's captures and the PCM cast
 channel run the engine's own `Console`.
 
+Measured on the engine's own timing against mednafen, which is the nearer machine for this term:
+
+| Instrument | PCSX-Redux timing | Console timing |
+|---|---:|---:|
+| `audio-pcm.py` cast channel, Guilty Cross | `.8594` | `.9813` |
+| `audio-pcm.py` cast channel, Zenoir | `.8549` | `.8296` |
+| `retail-compare`, `cort_guilty_cross_mid_cast` image | `.966` | `.988` |
+| `retail-compare`, `vera_summon_mid_cast` image | `.986` | `1.000` |
+
+The other eight casts of the PCM channel and the other twenty-nine mednafen mid-cast stills do
+not move: the channel's and the stills' seeded step outranks the arm tables on most of them.
+Zenoir's fall is the arm the console reading leaves alone: mednafen runs its arm 3 at `3`, where
+both tables run `1`.
+
+Against the PCSX-Redux films the console timing is the recordings' artifact taken out, so the
+films fall, and that fall is the artifact's size: the Seru films' mean goes from `.9065` to `.8658`,
+the enemy casts' from `.8949` to `.8675`, the monster strikes' stays at `.963`. The cue channel
+holds on the Seru films and the strikes; five enemy casts lose cues on it (Glare's and Lip King's
+Kiss of Death's entirely), so a pass-counted arm whose cue the films place on PCSX-Redux's lattice
+moves with the step. With the seat, each film reads the PCSX-Redux timing's score and the cue
+ratchet passes on all three sets.
+
 <a id="the-engines-gpu-frame-step-source"></a>
 
 **The engine's GPU frame-step source.** `WorldToggles::battle_gpu_cost_step` (off by
