@@ -572,7 +572,16 @@ to Nivora set four rules the continuous hand plays by:
   `jiji` P0[3] opens the corridor door P0[1], and `bylon`'s wing switches
   P0[12] / P0[13] open the south doors P0[16] / P0[18] the north entrance
   shut (the way out to West and East Voz). A crossing that a far door's
-  hop cannot finish presses the scene's switches and tries the hop again.
+  hop cannot finish presses the scene's switches and tries the hop again,
+  before it settles for any door, and once more from where the walk
+  stalled: `bylon`'s west wing is an airlock whose hall door P0[19] shuts
+  the south door P0[16] as the party walks in, so the switch P0[12] is
+  pressed from inside the wing.
+- **A door that opens itself on its own channel.** A door's touch may aim
+  its `31 00` at its own id (`B1 <own> 00`): `bylon` P0[19] opens that way
+  once `0x2A0` is up, and the planner counts it open like a bare `31 00`.
+  A touch loop that only pokes another actor's channel opens nothing:
+  `bylon` P0[20] runs `B1 45 08` and stands shut until the tree revives.
 - **A key before its lock.** A prop whose record tests a flag another
   listed prop raises plays after that prop: `dolk`'s Sunrise Gate P0[15]
   inserts the key only once the case P0[19] has given it (`0x26B`). A

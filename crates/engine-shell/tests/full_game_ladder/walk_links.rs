@@ -1120,10 +1120,21 @@ pub(super) fn idle_touch_props(session: &NativeSession) -> HashSet<(u8, u8)> {
                 return false;
             };
             let flow = flow_reachable(body, resume, None);
+            // A flag poke on another actor's channel (a target past the
+            // placed objects, not the player) opens nothing either: `bylon`
+            // P0[20], the door at (33, 117), only runs `B1 45 08` in its
+            // touch loop and stands shut until the tree has revived (its
+            // spawn arm tests `0x2A1`).
+            let n0 = mf.partitions.first().map_or(0, Vec::len);
+            let pokes_actor = |i: &legaia_scene_formats::field_disasm::Insn| {
+                matches!(i.opcode, 0x2B | 0x2C | 0x31 | 0x32)
+                    && i.extended
+                        .is_some_and(|t| t != 0xF8 && usize::from(t) >= n0)
+            };
             !flow.is_empty()
-                && flow
-                    .iter()
-                    .all(|i| i.opcode == 0x21 || matches!(i.info, InsnInfo::JmpRel { .. }))
+                && flow.iter().all(|i| {
+                    i.opcode == 0x21 || matches!(i.info, InsnInfo::JmpRel { .. }) || pokes_actor(i)
+                })
         })
         .map(|(&a, _)| a)
         .collect()
@@ -1186,7 +1197,11 @@ pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option
     // A story-flag test on the way is followed against the live flags, as
     // the touch runs it: `ropeway2` P0[16], the elevator door, opens only
     // once `0x1D5` (the power cut) is set.
-    let opens = |body: &[u8], pc0: usize| -> Option<Option<TileBox>> {
+    // The `31 00` may be aimed at the door's own channel (`B1 <own> 00`, a
+    // bound object's id being its partition-0 record index): `bylon` P0[19]
+    // / P0[20], the doors at (23, 117) / (33, 117), open themselves that way
+    // once `0x2A0` is up.
+    let opens = |body: &[u8], pc0: usize, own: usize| -> Option<Option<TileBox>> {
         let mut pc = if matches!(body.get(pc0), Some(0x24 | 0x25)) {
             LinearWalker::new(body, pc0)
                 .map_while(Result::ok)
@@ -1206,7 +1221,11 @@ pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option
                 InsnInfo::CFlag {
                     kind: FlagKind::Set,
                     bit: 0,
-                } if insn.extended.is_none() => return Some(boxed),
+                } if insn.extended.is_none()
+                    || insn.extended.is_some_and(|t| usize::from(t) == own) =>
+                {
+                    return Some(boxed);
+                }
                 // A prop that parks itself on the hide tile is out of the
                 // way as surely: `vozz` P0[1], the thickets across East
                 // Voz's paths, run `23 7F 7F` on the action button once
@@ -1258,7 +1277,7 @@ pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option
         .iter()
         .filter_map(|(&a, p)| {
             let (start, pc0, len) = partition_record_span(&mf, man, 0, p.record)?;
-            Some((a, opens(&man[start..start + len], pc0)?))
+            Some((a, opens(&man[start..start + len], pc0, p.record)?))
         })
         .collect()
 }
