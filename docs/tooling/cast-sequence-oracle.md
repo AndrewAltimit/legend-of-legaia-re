@@ -749,6 +749,30 @@ read `35` (`113`) where the engine, a pass earlier, read the frame's first four
 arm 4 a pass off retail's shatter. Both are the frame step, not the roll: the wrapper's draws and arithmetic
 reproduce retail's `113` from the recorded word. Grade `disassembly` + `capture`.
 
+### The Seru set on three seats
+
+Run three ways, plain, `--retail-steps` and `--retail-steps --rand-track`, the 29 Seru
+films of [`film-sets/seru.txt`](../../scripts/ci/film-sets/seru.txt) split their residue.
+An arm the step track lifts was the frame's cost; one the rand track lifts was the
+deal (Gizam's bubbles, Aluru's and Iota's ray fans, Ozma's arm 21); an arm that reads
+low on all three seats is the model's or the draw's. Ranked by the pairs it loses on
+its best seat, the held arms were the place to read the disassembly, and the camera
+classes found there were each a few lines of the director:
+
+- a shot that frames the victim's or the creature's display pair `+0x3C` / `+0x40`
+  where the port read the seat ([cast module](../subsystems/cast-module.md#the-victims-display-pair)):
+  Barra's arm `0xF` `.630` to `.941`, Gizam's arm-9 cut `.845` to `.997`;
+- Kemaro's victim under the tint pass's cursor-dim arm, and its shots on the arm-9
+  part's height (arm `0x12` `.638` to `.820`).
+
+What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
+and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
+the passes the rand track seats fall on other frames; Juggernaut's arm 26 reads `.44`
+against one retail recording and `.80` against another of the same cast, so its ring
+phase is the recording's; and Viguro's lightning, Spoon's rings and Terra's vortex part
+on phase rather than shape. The rest is listed in the
+[open threads](../reference/open-rev-eng-threads.md#battle--rendering).
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`

@@ -3031,6 +3031,8 @@ and frames the victim's display pair, draws the creature off, and on its pass pu
 seat and facing. The pitch is `BattleActor::render_pitch`, composed by both
 hosts as `Rx(-pitch)` outside the facing (the frame flip conjugates it).
 
+<a id="the-victims-display-pair"></a>
+
 **The victim's display pair.** A few summon shots focus on the victim's display pair
 `+0x3C` / `+0x40`, the live pair plus the pose's facing-rotated centroid, rather than on
 the live pair `+0x34` / `+0x38` the walks and headings read: Barra's arm `0xF`
