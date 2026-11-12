@@ -1234,6 +1234,14 @@ the same chain (`801d84b0..`). When the applier reports through
 `_DAT_8007BB78` (seeded `0xFF` at `801d850c`), script `0x801E4C60` opens
 **window 8** and waits for a confirm before closing it (`0x801E4C68`).
 
+The re-check is the whole target gate: the validator's arm is the item's
+effect class, so a heal refuses a member at full HP, an MP restore a fallen
+member, and a Hyper-Art book every member but its owner - the book arms
+`0x0B..=0x0D` test the slot alone and take a fallen owner. The port's target
+confirm asks the same validator for each present member when the session is
+built (`menu_validator::item_target_valid`); the effect class's own liveness
+rule is only the fallback without the disc table.
+
 The rows are the **present party**, not the roster records. The cursor
 kernel is handed the party count (`lbu a1,0x454(s0)` over `0x80084140` at
 `0x801D83C0`) and the applier takes the roster id byte the row names

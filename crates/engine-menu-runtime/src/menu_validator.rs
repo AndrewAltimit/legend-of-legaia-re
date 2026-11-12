@@ -183,6 +183,26 @@ pub fn item_affects_anyone(world: &World, id: u8) -> Option<bool> {
     ))
 }
 
+/// Whether the field Items screen's target confirm takes item `id` on roster
+/// slot `slot`: the action validator `FUN_8003FB10` run with the item's
+/// effect descriptor `+0` / `+1` as arm and sub-case, as `FUN_801D8308` runs
+/// it at `0x801D8448`. `None` when the disc item-effect table is not
+/// installed.
+///
+/// REF: FUN_801D8308 (the confirm's validator call)
+pub fn item_target_valid(world: &World, id: u8, slot: u8) -> Option<bool> {
+    let effect = world.tables.item_effects.as_ref()?.effect(id)?;
+    let mut host = RosterValidator::new(world);
+    let mut bits = 0u8;
+    Some(validate_action(
+        &mut host,
+        effect.class,
+        effect.tier,
+        slot,
+        &mut bits,
+    ))
+}
+
 /// Whether casting `spell_id` from the pause menu would do anything - the
 /// `FUN_8003053C` broadcast over the present party, with the validator run
 /// against the roster records.

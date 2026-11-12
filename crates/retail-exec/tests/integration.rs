@@ -237,6 +237,7 @@ mod intro_tiles;
 mod inventory;
 mod item_apply;
 mod item_probe;
+mod item_use_screen;
 mod items_command;
 mod items_panels;
 mod key_on_volume;

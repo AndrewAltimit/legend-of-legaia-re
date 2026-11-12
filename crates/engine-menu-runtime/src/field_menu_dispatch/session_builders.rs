@@ -153,6 +153,7 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         .copied()
         .filter(|&id| crate::menu_validator::item_affects_anyone(world, id) == Some(false))
         .collect();
+    let ids = items.clone();
     let session = InventoryUseSession::new(
         world.tables.item_catalog.clone(),
         items,
@@ -160,7 +161,24 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
         InventoryContext::Field,
     );
     let session = if world.tables.item_effects.is_some() {
-        session.with_field_probe(unaffected)
+        // The target confirm is the validator too (`FUN_801D8308`), per
+        // item and present member.
+        let accepted: Vec<(u8, u8)> = ids
+            .iter()
+            .flat_map(|&id| {
+                session
+                    .targets
+                    .iter()
+                    .map(move |t| (id, t.slot))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|&(id, slot)| {
+                crate::menu_validator::item_target_valid(world, id, slot) == Some(true)
+            })
+            .collect();
+        session
+            .with_field_probe(unaffected)
+            .with_field_target_gate(accepted)
     } else {
         session
     };

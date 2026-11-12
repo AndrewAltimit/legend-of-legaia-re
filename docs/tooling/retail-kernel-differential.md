@@ -1366,3 +1366,12 @@ oversight the port does not reproduce: the trial's aggregator lowers a current H
 restore never raises it back, so hovering a candidate that lowers a maximum clips the character's current value. The
 shop's party column `FUN_801D4C28`, run with its summer and the aggregator, matches the port's members, notes and
 arrows, and the commit log's launch leaf `FUN_801DB7B0` matches the record the glide stepper then walks.
+
+The Items screen's apply screens `FUN_801D8308` and `FUN_801D7FF8`, run from the confirm through the applier, the
+aggregator, the bag's by-slot consume, the re-probe and the exhaustion timer against the field menu's Items session
+on a `World`, showed the port's target confirm testing only that the member was alive. Retail runs the action
+validator on the picked member, so the port spent a healing item on a member at full HP and an MP item on a full
+member, accepted any member for a Hyper-Art book, and refused a book's owner while that owner was down. The records,
+the bag, the cue and where the screen lands afterwards (the target rows again, the Use list or the command window)
+match.
+

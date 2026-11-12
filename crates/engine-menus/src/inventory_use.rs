@@ -322,6 +322,14 @@ pub struct InventoryUseSession {
     /// reconstruction [`item_has_valid_target`], which is what a host without
     /// the disc item-effect table has. Battle never reads it.
     pub field_unaffected: Option<Vec<u8>>,
+    /// The `(item id, target slot)` pairs retail's target confirm accepts,
+    /// when the host can answer for it: `FUN_801D8308` runs the action
+    /// validator `FUN_8003FB10` on the picked member (`0x801D8448`) and buzzes
+    /// cue `0x23` on a refusal. So a heal refuses a member at full HP, an MP
+    /// restore a fallen one, and a Hyper-Art book every member but its owner
+    /// (arms `0x0B..=0x0D` match the slot exactly and ignore HP). `None`
+    /// keeps the catalog-side [`target_valid_for_effect`].
+    pub field_target_gate: Option<Vec<(u8, u8)>>,
 }
 
 impl InventoryUseSession {
@@ -357,6 +365,7 @@ impl InventoryUseSession {
             bag_counts: Vec::new(),
             item_names: std::collections::BTreeMap::new(),
             field_unaffected: None,
+            field_target_gate: None,
         }
     }
 
@@ -365,6 +374,14 @@ impl InventoryUseSession {
     pub fn with_field_probe(mut self, unaffected: Vec<u8>) -> Self {
         self.field_unaffected = Some(unaffected);
         self.refresh_filter();
+        self
+    }
+
+    /// Answer the target confirm with retail's validator
+    /// ([`Self::field_target_gate`]): `accepted` are the `(id, slot)` pairs
+    /// it takes.
+    pub fn with_field_target_gate(mut self, accepted: Vec<(u8, u8)>) -> Self {
+        self.field_target_gate = Some(accepted);
         self
     }
 
@@ -715,7 +732,13 @@ impl InventoryUseSession {
                     self.events.push(InventoryUseEvent::InvalidConfirm);
                     return;
                 }
-                if !target_valid_for_effect(&entry.effect, &target) {
+                let valid = match &self.field_target_gate {
+                    Some(accepted) if self.context == InventoryContext::Field => {
+                        accepted.contains(&(entry.id, target.slot))
+                    }
+                    _ => target_valid_for_effect(&entry.effect, &target),
+                };
+                if !valid {
                     self.events.push(InventoryUseEvent::InvalidConfirm);
                     return;
                 }
