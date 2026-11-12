@@ -1456,9 +1456,10 @@ the ring's clamp (`700`), with the frame spent on the CD interrupt path (the
 response dispatcher `FUN_8005DAB0`) and through `CdSync`; the entry comes off at
 the clip's span, and the step then runs down over the sixteen-pass ring. A frame's
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
-step `4`, `1411`..`1660` on the Spirit's six and seven. Port: `XA_STREAM_FRAME_COST`
-and `XA_STREAM_SPAN_EXTRA`. The overrun is the lightest measured, so Spirit bands
-run short of retail. The load does not start on the cue's own frame: the cue is issued inside it and the
+step `4`, `1411`..`1660` on the Spirit's six and seven. That is PCSX-Redux's
+[CD stop watch](#the-cd-stop-watch), and a console's frames cost about a sixteenth over their
+work. Port, under the PCSX-Redux seat: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`.
+The overrun is the lightest measured, so Spirit bands run short of that recording. The load does not start on the cue's own frame: the cue is issued inside it and the
 drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
 (`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
 (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
@@ -1511,7 +1512,9 @@ Outside a summon band a frame runs the frame driver's own law over a measured co
 ([what the ring holds](#what-the-ring-holds)). Inside a band, each module arm runs
 on a step read off a retail recording of the cast
 (`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
-a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
+a band opens at `1` and its whole-screen arms read `4` on PCSX-Redux, where a voiced arm's
+frames carry the [CD stop watch](#the-cd-stop-watch); the engine reads the same arms at a
+console's CD response time by default. The table is a measurement
 standing in for the frame's cost, not game data and not a model of the cause, and
 the [next section](#what-the-arm-step-table-is) says how far it holds.
 The capture band reads a second table of the same measurement
@@ -1629,19 +1632,65 @@ interpreter), where mednafen models the instruction cache and memory waits. No h
 document gives the game's own cycles per instruction, so that half stays open
 ([open threads](../reference/open-rev-eng-threads.md)).
 
-A CD wait is a third term, and the largest. Guilty Cross's arms 1 to 3 read
+A CD wait is a third term, and on PCSX-Redux the largest. Guilty Cross's arms 1 to 3 read
 `1632` to `1700` hblanks of CPU on PCSX-Redux (step `4`) and `646` to `660` on mednafen (step
-`3`), with the GPU near `540` on both. The arms play the cast's voice (`XA22`). One PC
-sample a vsync (`gpu.csv`'s `pc`, the frame boundary's PC on mednafen) puts `.32` of
-PCSX-Redux's samples in libcd (`0x8005B800..0x8005E400`, `.18` in the command wait
-`FUN_8005C4AC` alone) and `.25` in the BIOS interrupt path; mednafen's read `.09` and `.13`.
-On the hardware, psx-spx says, ADPCM sectors raise no `INT1` once XA-ADPCM is on, and a
-command's first response takes `0xC4E1` cycles on average (about `23` hblanks), `0x3115B` at
-most (about `93`). So these arms' step `4` is PCSX-Redux's CD timing, and a console would
-read them near mednafen's. The clamp an item's or a Spirit's clip holds the ring at
-(`XA_STREAM_FRAME_COST`) has the same shape and was read off PCSX-Redux too; a mednafen
-recording of one would say whether it is the same wait. Grade `capture` for the emulators,
-`docs` for the console.
+`3`), with the GPU near `540` on both. The arms play the cast's voice (`XA22`). What spends
+them is the clip's stop watch, below.
+
+<a id="the-cd-stop-watch"></a>
+
+**The CD stop watch.** The clip player `FUN_8003D53C` hands the drive to the sequencer
+`FUN_8003D764`, installed as the CdSync callback, and from the clip's start that callback polls
+the head until it passes the clip's end sector (`gp+0x974`). Its state word `gp+0x928` picks the
+arm (the jump table at `0x800111C4`): on a command's completion one arm issues `GetlocL`
+(`li a0,0x10` at `0x8003D984`, the state up one); the next converts the reply to a sector
+(`FUN_8005C42C` at `0x8003D9D0`) and, short of the end, issues `GetStat` and steps the state back
+(`0x8003DA10..0x8003DA28`), or past it moves to state `9`, the `Pause`. Every command goes out from
+inside the CD interrupt (`FUN_8005DAB0`'s completion callback, `jalr` at `0x8005DB54`), so the
+polls run back to back for the whole clip and take whatever share of the CPU the drive's response
+time leaves them. The frame's own work runs in the gaps, and the frame stretches by the share.
+
+The cast probe's `--cd-trace` (breakpoint core) logs each libcd command, each CD interrupt from
+the exception vector `0x80000080` to the dispatcher's exit, and the frame's `VSync(n)` return
+(`0x800171C8`) and CPU-done mark (`0x800174CC`), the window the cost words measure, each with the
+CPU cycle. On Freed's cast from the Gobu Gobu opener arms 3 to 17 run `278` to `1204` polls a
+frame, `GetStat` and `GetlocL` in turn from `0x8005C10C` with `FUN_8003D764` the completion
+callback each time: one every `5390` cycles, `1838` of them from the vector to the dispatcher and
+`1480` inside it. PCSX-Redux answers every command `0x800` cycles after it (`cdrom.cc`,
+`AddIrqQueue(m_cmd, 0x800)`), so the polls take about two thirds of its CPU, and a voiced frame's
+work, its cost less its CD interrupt time, is about a third of what it costs: `403` of arm 4's
+`1170` hblanks, `1058` of arm 8's `3073`. The ring law over each frame's traced cost gives the
+step the recording stored on `.999` of the band frames of all 29 Seru casts.
+
+A console's `GetStat` answers in `0xC4E1` cycles on average (psx-spx, CDROM response timings;
+`0x4A73` to `0x3115B`), twenty-five times PCSX-Redux's. With the same interrupt work a poll the
+polls take about `.065` of a console's CPU, so a voiced frame costs its work over `.935`. Mednafen
+reads the arms there: on `freed_summon_mid_cast` (another fight, a full party) Freed's arms 3 to 6
+cost `384`, `375`, `313` and `341` hblanks, where the work of the same arms on PCSX-Redux is `408`,
+`403`, `309` and `326`. Re-read at the console's share, the nine summons the mednafen frame-cost
+films cover agree with mednafen's per-arm steps on `.69` of the band's vsyncs, against `.13` for
+the PCSX-Redux table, and the agreement does not move for any share from `0` to `.10`. What is
+left is mednafen's side: its CD-seek arm 2 reads `3` where PCSX-Redux's reads `1`, and its full
+parties' light arms run a step higher. Guilty Cross's arms read `3` at the console's share, as
+mednafen's ring does.
+
+The item and Spirit clips run the same stop watch, so the clamp they hold PCSX-Redux's ring at is
+the same artifact: `XA_STREAM_FRAME_COST` (`1063`) is a frame of about `370` hblanks of work over
+the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on most voiced arms,
+PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
+both emulators, `docs` for the console.
+
+**Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. On `Console`, the
+default, the summon arm table and the capture band's (`CONSOLE_ARM_STEPS`,
+`CONSOLE_CAPTURE_ARM_STEPS` in `cast_module_frame_step`) are the PCSX-Redux tables with each arm a
+clip spans re-read at the console's share over `--cd-trace` recordings of the same casts
+([`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)), and an item's, a Spirit's or an arts
+voice's frames from the pass after the cue cost their base over `.935`
+(`console_poll_cost`), inside their step. `PcsxRedux` keeps the recordings' tables, the clamp
+`1063` and the overrun. It is a harness seat for comparisons against PCSX-Redux recordings: the
+cast-sequence films set it (`LEGAIA_BATTLE_CD_TIMING=pcsx-redux`; `--console-cd` lifts it), and so
+does the retail-compare child of a PCSX-Redux capture. Mednafen's captures and the PCM cast
+channel run the engine's own `Console`.
 
 <a id="the-engines-gpu-frame-step-source"></a>
 
@@ -1689,9 +1738,8 @@ the engine's steps agree on `.28` of the vsyncs plain and `.22` with the source.
 of nine casts score the same both ways (the channel's seeded step outranks the ring), Theeder
 falls `.712` to `.682` and Zenoir rises `.855` to `.875`. What parts
 them is the CPU half: the arms of Freed, Orb, Swordie and Vera that the tables run at `4`
-read `230` to `400` hblanks on mednafen (step `1` to `3`), a gap no GPU term can close and of
-the size of Guilty Cross's CD wait above (whether it is that wait on these arms is not
-measured), and the source moves the light arms the wrong way through the overcount. Where the
+read `230` to `400` hblanks on mednafen (step `1` to `3`), a gap no GPU term can close: it is
+PCSX-Redux's [CD stop watch](#the-cd-stop-watch) on the summon's voice, and the source moves the light arms the wrong way through the overcount. Where the
 source helps a PCSX-Redux film it stands in for a CPU term that reads low: three arts films
 gain on their strike states `0x1E..0x20` (Tri-Somersault `.687` to `.770`, Lizard
 Tail `.904` to `.944`, Sonic Javelin `.819` to `.842`), whose effect frames price up to
@@ -1912,7 +1960,9 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
 
 - **It is not the box.** Repeat recordings of Iota, Ozma, Terra and Theeder read the same
   per-arm histograms within a few vsyncs: the cost is the emulated machine's (CPU and
-  GPU cost model of PCSX-Redux), not the host's. No hardware reading stands behind it.
+  GPU cost model of PCSX-Redux), not the host's. On a voiced arm that machine's cost is
+  mostly its CD response time ([the CD stop watch](#the-cd-stop-watch)), and the engine runs
+  the table re-read at a console's (`CONSOLE_ARM_STEPS`) unless a harness seats PCSX-Redux's.
 - **It holds across fights where the screen is the effect's.** Gimard in `battle_map01`,
   `battle_tower` and `battle_kor` reads arms 3..11 as the table's fight does, within a few
   vsyncs, and Ozma's arms 6..20 and 24 read `4` in `battle_kor` too.
