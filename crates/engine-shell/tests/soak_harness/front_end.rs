@@ -189,10 +189,20 @@ pub(super) fn drive_continue(
     cell: u8,
     opts: &FieldLiveOpts,
 ) -> Result<(String, u32), String> {
+    // `cell` names the block (`continue_card`); the grid is keyed by the save
+    // number the filename's two digits spell, not by the block the BIOS put
+    // the file in (`MountedCard::block_of_save_number`, docs/subsystems/
+    // save-screen.md). They agree only on a card written in order: on the
+    // ladder card `-05` sits in block 4 and cell 3 is `-03`.
+    let block = cell + 1;
+    let grid_cell = card
+        .save_number_of_block(block)
+        .and_then(|n| u8::try_from(n).ok())
+        .ok_or_else(|| format!("block {block} files no save number"))?;
     let ports = [Some(card), None];
     let mut screen = ContinueScreen::open(ports);
     for frame in 0..FRONT_END_BUDGET {
-        let pad = select_pad(screen.session(), screen.flow(), frame, cell);
+        let pad = select_pad(screen.session(), screen.flow(), frame, grid_cell);
         let load = match screen.step(pad, ports) {
             ContinueStep::Running { .. } => continue,
             ContinueStep::BackedOut { .. } => {
@@ -200,12 +210,11 @@ pub(super) fn drive_continue(
             }
             ContinueStep::Loaded { load, .. } => load,
         };
-        if load.port != 0 || load.block != cell + 1 {
+        if load.port != 0 || load.block != block {
             return Err(format!(
-                "loaded port {} block {}, wanted port 1 block {}",
+                "loaded port {} block {}, wanted port 1 block {block} (save number {grid_cell})",
                 load.port + 1,
                 load.block,
-                cell + 1
             ));
         }
         let landing = session.resume_save(load.save, &load.scene, opts);

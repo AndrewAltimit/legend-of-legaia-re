@@ -85,7 +85,8 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags. A third is `dream`: a save whose flags arm one
+gated off by the save's flags; it signs as a `softlock` or, when the walks
+keep the pad moving, as `confined`. A third is `dream`: a save whose flags arm one
 of its vignettes plays it, and the closing record then picks the scene to
 return to (`3F` to `doman`, `bubu1`, `son`, ...) by a flag the sleep that
 leads there sets. Entered by name no branch matches, the record ends on its
@@ -213,7 +214,9 @@ front end instead (`soak_harness/front_end.rs`), stepping the same
 - `title+continue[@<save>]` mounts the library card in port 1, opens the
   title with Continue live, picks it, and walks the retail save-select
   (the session's `ContinueScreen`, the screen both play hosts step) onto the
-  named save's block, then
+  named save's cell - the save number its filename's two digits spell, which
+  is not its card block on a card written out of order
+  ([`save-screen.md`](../subsystems/save-screen.md)) - then
   resumes it through `BootSession::resume_save`. With no `@<save>` it takes
   the card's first save.
 
