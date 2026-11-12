@@ -362,6 +362,7 @@ impl World {
             // (`FUN_8003D53C`; the same latch `push_battle_xa_cue` arms for
             // the melee kernel's clips).
             self.audio.battle_xa_busy_frames = req.duration_sectors.min(u16::MAX as u32) as u16;
+            self.arm_battle_xa_load_window();
             // A summon module seeks the drive to its clip's file on an arm
             // ahead of the cue (`module_drive_arms`); that clip leaves the
             // frame its own cost. A module with no seek (the capture band's)

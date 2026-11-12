@@ -1471,8 +1471,8 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. That is PCSX-Redux's
 [CD stop watch](#the-cd-stop-watch), and a console's frames cost about a sixteenth over their
-work. Port, on the default PCSX-Redux timing: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`.
-The overrun is the lightest measured, so Spirit bands run short of that recording. The load does not start on the cue's own frame: the cue is issued inside it and the
+work. Port, on the default PCSX-Redux timing: `xa_loaded_frame_cost` and the span law
+([a frame's span](#a-frames-span)). The load does not start on the cue's own frame: the cue is issued inside it and the
 drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
 (`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
 (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
@@ -1513,6 +1513,47 @@ with no seek arm load the frame; a summon module's voice
 An overrun lengthens the frame, not the step: the camera walker runs once a frame,
 scaled by the step (`BattleCamera::sync_step_phase`), so an overrunning frame still
 steps it once.
+
+<a id="a-frames-span"></a>
+
+**A frame's span.** `VSync(n)` (`FUN_8005FB84`) waits for the vsync count to reach the
+last return's plus `n - 1` (`0x8005FBE8..0x8005FC18`), then for the next vertical blank
+(`0x8005FC2C..0x8005FC38`), and only then stores the root counter as the next frame's
+base (`0x8005FCA4..0x8005FCB0`); a step under `2` waits `VSync(0)`, the next blank. A
+frame still running at its step's last blank therefore runs on to the first blank
+after its work, and its span is `max(step, (cost + 20) / 263 + 1)` vsyncs. The `20`
+hblanks are what a frame spends past its cost word: the vblank handler and `VSync`'s
+return ahead of the base, and the ring update between `FUN_800173BC` and the call
+(`0x80017044..0x800171C0`). PCSX-Redux's strike recordings' spans read it best at `20`
+(`.968` of `4145` frames), and the ten loaded frames of the Flying Knee `--cd-trace`
+recording bound it to `-4..38`. Grade `disassembly` for the law, `capture` for the
+constant.
+
+Under a clip's polls the cost is the frame's work at what the polls leave of the CPU.
+The Flying Knee trace (`battle_ropeway_party_gala_flying_knee_mid`) spends `1.63`
+hblanks of each poll from the exception vector to the dispatcher's exit and `.92`
+outside it, so its loaded frames cost `2.75`..`2.87` times what runs outside the traced
+spans. That remainder (`681`..`931` hblanks) is more than the same art's frames cost
+unloaded (`620`..`660` before the cue, `707`..`821` after it), so part of each poll
+runs outside the span. Read over the unloaded cost, the spans give `3.1`..`3.6` on
+that film, `3.1`..`3.9` on a full party's heals (`ropeway_orb_pre_heal` runs its
+loaded frames at `9` vsyncs, `deene_garnet_pre_heal` at `8` and `9`,
+`taiku_topaz_pre_hyper_heal` at `8`, over the table's `595`) and `3.0`..`4.5` on
+Amethyst's on a lone Vahn (`5` and `6` over `345`); `3.4` reads all three. The clip's
+read window is its span: the heals' loaded frames end some `13` vsyncs after the
+clip's `261`, Flying Knee's `15` after its `90`, a frame or two of the long ones.
+
+Port: `frame_clock::frame_span` and `xa_loaded_frame_cost`
+(`XA_POLL_COST_RATIO_MILLI`, at least the item's measured `1063`);
+`World::apply_cast_arm_frame_step` re-times each pass's frame by the span its cost
+reads. An arm table names its frames' step and no cost, so an arm takes the law only
+while a clip loads it; the harness's retail step track and a replay's seeded state
+run their steps exact. Where the constant overrun of one vsync ran a full party's
+loaded frame at `5`, the law runs it at `8` (the table's `595`), so a vsync-timed line
+covers as many passes as retail's. What the law cannot reach is a frame whose cost
+the engine does not hold: the capture band's and the summons' heavy arms, whose
+PCSX-Redux frames run `5` to `17` vsyncs with no clip (Water Crystals `13` to `16`,
+Thunder Storm `6` to `9`), run their table's step.
 
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
@@ -1830,8 +1871,9 @@ where PCSX-Redux reads `594`, and no real hardware has been measured.
 
 The gap between the vsyncs a pass and the mean step is frames that ran past their
 step, a fifth of a full party's fight: its timers still drain one step, so retail's
-fight runs that much longer on the wall than its game clock, and the engine, which
-does not overrun, plays it that much shorter. Run over retail's own sequence of states,
+fight runs that much longer on the wall than its game clock. The engine overruns
+where its own cost reads past the step ([a frame's span](#a-frames-span)), which covers
+a loaded frame and a dear first pass on a cheaper step, but not the heavy arms' frames. Run over retail's own sequence of states,
 the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes. The
 table was read off these same fights, so that is a fit, and no held-out score. The
 Vahn and Noa fight stands on a state reached by a door-tile poke from

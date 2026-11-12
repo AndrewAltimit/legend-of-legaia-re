@@ -942,8 +942,9 @@ byte the counter run before it ends on. The **game clock** adds that step per
 pass, spread evenly over the pass's rows, so an overrunning frame advances it
 by its step, not by its length. The pairing
 measures retail's offset into a segment on that clock, and the engine's on its
-own ticks less the ones its frames overran. The engine models one overrun, a
-frame the XA stream loads (`XA_STREAM_SPAN_EXTRA`), and the recorder marks each
+own ticks less the ones its frames overran. The engine's frames overrun by retail's
+`VSync` law over their cost ([a frame's span](../subsystems/battle-stage-camera.md#a-frames-span)),
+and the recorder marks each
 such tick in `meta.csv`'s `over` column (`Side::live_clock`). Counted as game
 time, those ticks left a voiced cast's magic band a pass behind retail's for
 every four it ran: Gaza's Astral Wave read its `0x2B` burst some `45` ticks

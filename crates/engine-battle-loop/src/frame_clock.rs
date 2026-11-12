@@ -367,6 +367,17 @@ pub const fn xa_loaded_frame_cost(work: u16) -> u16 {
     }
 }
 
+/// Vsyncs a battle clip's polls load the frame past its span on PCSX-Redux. The
+/// clip player sets its end sector `span * 150 / 60` sectors on
+/// (`0x8003D698..0x8003D6D8`, the drive's double speed) and polls until the
+/// head passes it, but the emulator defers a sector while a command's
+/// interrupt is pending (`cdrom.cc` `readInterrupt`, `scheduleCDReadIRQ(irqReschedule)`),
+/// and the polls keep one pending nearly all the time. Flying Knee's polls
+/// (`--cd-trace`) run `18` vsyncs past its `90` from the cue, `3` of them the
+/// seek; the full party's heals' loaded frames end `10` to `17` past their
+/// `261`.
+pub const XA_READ_TAIL_VSYNCS: u16 = 15;
+
 /// Hblanks a vsync spans: the NTSC field's `263` lines, the unit of libetc's
 /// `VSync(1)` count (`FUN_8005FB84`, root counter 1 less its base at
 /// `0x800797D0`).

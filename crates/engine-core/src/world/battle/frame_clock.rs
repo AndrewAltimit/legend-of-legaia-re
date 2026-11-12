@@ -90,10 +90,22 @@ impl World {
         }
     }
 
+    /// Open the window a clip just started loads the frame for
+    /// ([`crate::world::AudioState::battle_xa_load_frames`]): its span, plus
+    /// PCSX-Redux's read tail.
+    pub(in crate::world) fn arm_battle_xa_load_window(&mut self) {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_READ_TAIL_VSYNCS};
+        let tail = match self.toggles.battle_cd_timing {
+            CdTiming::PcsxRedux => XA_READ_TAIL_VSYNCS,
+            CdTiming::Console => 0,
+        };
+        self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
+    }
+
     /// The passes since a loading battle CD-XA clip's cue, `None` while none
     /// plays ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
     fn battle_xa_passes_since_cue(&self) -> Option<u64> {
-        if self.audio.battle_xa_busy_frames == 0 || !self.audio.battle_xa_frame_load {
+        if self.audio.battle_xa_load_frames == 0 || !self.audio.battle_xa_frame_load {
             return None;
         }
         Some(
@@ -1722,6 +1734,7 @@ mod tests {
         w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.party.party_count = 1;
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_cost_step, 4);
@@ -1729,6 +1742,7 @@ mod tests {
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, XA_STREAM_SPAN_EXTRA);
         w.audio.battle_xa_busy_frames = 0;
+        w.audio.battle_xa_load_frames = 0;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
@@ -1744,6 +1758,7 @@ mod tests {
         w.party.party_count = 3;
         w.battle_ctx.action_state = 0x20;
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = true;
         w.battle.frame_clock.step = 4;
         w.apply_cast_arm_frame_step();
@@ -1803,6 +1818,7 @@ mod tests {
         w.party.party_count = 1;
         w.battle_ctx.action_state = 0x3E;
         w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_load_frames = 200;
         w.audio.battle_xa_frame_load = true;
         w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
         let mut costs = Vec::new();
@@ -1854,6 +1870,7 @@ mod tests {
         w.battle_ctx.action_state = 0x3E;
         let base = legaia_engine_battle_loop::frame_clock::measured_frame_cost_at(1, 0x3E, 2);
         w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_load_frames = 200;
         w.audio.battle_xa_frame_load = true;
         w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
         let mut costs = Vec::new();
@@ -1874,6 +1891,7 @@ mod tests {
         // module's clip still reads: the clip does not load the frame.
         let mut w = World::new();
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = false;
         for _ in 0..16 {
             w.push_frame_cost(None);

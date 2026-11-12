@@ -320,6 +320,7 @@ impl World {
 
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
+        self.audio.battle_xa_load_frames = self.audio.battle_xa_load_frames.saturating_sub(1);
 
         // The battle template's tick runs in the actor pool on every battle
         // frame, whoever owns the rest of it, and ends in the passive sweep.
@@ -1035,6 +1036,7 @@ impl World {
         cue: legaia_engine_system::sound_state::XaVoiceClip,
     ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.arm_battle_xa_load_window();
         self.audio.battle_xa_frame_load = true;
         self.audio.battle_xa_cue_frame = Some(self.battle_frame_id());
         self.audio.battle_xa_cues.push(cue);

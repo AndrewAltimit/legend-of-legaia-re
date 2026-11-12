@@ -95,6 +95,11 @@ pub struct AudioState {
     /// (Viguro's dispatch of `0x130` at `0x801F6C28`, then its arms 3..10;
     /// Palma's arms 4 and 5) and their Done bands at about `330`.
     pub battle_xa_frame_load: bool,
+    /// Vsyncs the clip's polls go on loading the frame from its cue: the
+    /// clip's span, and on PCSX-Redux its read tail past it
+    /// (`frame_clock::XA_READ_TAIL_VSYNCS`). Counted down beside
+    /// [`Self::battle_xa_busy_frames`], which keeps gating the drive.
+    pub battle_xa_load_frames: u16,
     /// The battle frame the newest loading clip was started on
     /// ([`Self::battle_xa_frame_load`]): its sectors reach the frame's cost
     /// only after it ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
@@ -374,6 +379,7 @@ impl AudioState {
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
             battle_xa_frame_load: false,
+            battle_xa_load_frames: 0,
             battle_xa_cue_frame: None,
             battle_sfx_bank: None,
             field_xa_cues: Vec::new(),
