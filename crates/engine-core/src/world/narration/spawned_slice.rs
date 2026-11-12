@@ -1665,13 +1665,15 @@ impl World {
                 // `42 01 08` / `42 01 09` (Circle / Cross held) and a `26`
                 // back to the wait - and retail sits in it until the press;
                 // reading it as a wrap dropped the record and handed the
-                // player the pad in the ending's last scene.
+                // player the pad in the ending's last scene. A loop through a
+                // picker is the same wait: `rikuroa` `P2[54]`'s No arm jumps
+                // back to ask Noa's question again until the answer is Yes.
                 if matches!(
                     kind,
                     legaia_engine_field::cutscene_timeline::TraceResult::Advance
                 ) && next_pc <= pc
                     && tl.visited.get(next_pc).copied().unwrap_or(false)
-                    && !loop_polls_held_pad(&tl.bytecode, next_pc, pc)
+                    && !loop_waits_on_player(&tl.bytecode, next_pc, pc)
                 {
                     // There used to be a carve-out here for a `45 C0 <s16>`
                     // "camera-apply loop-back", on the reading that retail's
@@ -1685,15 +1687,21 @@ impl World {
                     tl.done = true;
                     stop = true;
                 }
-                // A touch-resumed placement context ends its interaction at
-                // the first raw `0x21` it executes (`FUN_80039B7C`: the loop
-                // exits on `0x21` at `0x80039E20` and `0x80039E68..0x80039E7C`
-                // clears the engaged bit). The Rim Elm bee beat (`town0c` /
+                // Every context this runner steps ends its run at the first
+                // raw `0x21` it executes (`FUN_80039B7C`: the loop exits on
+                // `0x21` at `0x80039E20` and `0x80039E68..0x80039E7C` clears
+                // the engaged bit that `FUN_8003BC08` tests before stepping
+                // the script again). A touch-resumed placement context ends
+                // its interaction there: the Rim Elm bee beat (`town0c` /
                 // `town0b` `P1[21]`) is `50 00` (the scripted-loss latch),
-                // `3E FF 03`, `21`, then a jump back to its flag dispatch: the
-                // `21` is what stops the fight re-firing until the next touch.
-                if tl.interaction_slot.is_some()
-                    && opcode_byte == 0x21
+                // `3E FF 03`, `21`, then a jump back to its flag dispatch, and
+                // the `21` is what stops the fight re-firing until the next
+                // touch. A spawned record is the same context kind (its
+                // template's tick is `FUN_8003BC08`, engaged at `0x8003C0A4`),
+                // so it ends there too: `rikuroa` `P2[54]`'s Yes arm plays
+                // the join and stops on a `21`, and the No arm's brooding and
+                // second ask after it run only by the first picker's jump.
+                if opcode_byte == 0x21
                     && matches!(
                         kind,
                         legaia_engine_field::cutscene_timeline::TraceResult::Advance

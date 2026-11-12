@@ -52,6 +52,7 @@ mod op49_sub_op_census;
 mod op49_window_census_disc;
 mod opdeene_narration;
 mod opening_scene_anm_bundle;
+mod record_stop_marker_disc;
 mod rim_elm_sparring_carrier;
 mod scene_bundle_smoke;
 mod spell_catalog_disc;

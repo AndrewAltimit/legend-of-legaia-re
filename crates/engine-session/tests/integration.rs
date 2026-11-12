@@ -49,6 +49,7 @@ mod resume_landing;
 mod rikuroa_barricade_disc;
 mod rikuroa_caruban_aftermath_audio_disc;
 mod rikuroa_cave_far_crop_disc;
+mod rikuroa_genesis_tree_noa_join_disc;
 mod rikuroa_rockfall_rock_disc;
 mod rikuroa_summit_cutscene_cull_disc;
 mod rot_clut_disc;
