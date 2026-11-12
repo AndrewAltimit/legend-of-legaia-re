@@ -1954,6 +1954,15 @@ where the disc's edge stands. Arm `0` seats its eight rays at
 
 ### PROT 0908 (Zenoir)
 
+**The seat opens a half keyframe ahead.** On the `0x86` Gobu Gobu film the
+port's creature reaches its first step-`3` pass at cursor `24` where retail's
+reads `16`, in two halves of `4`. The port advances the node on the phase-4
+pass while it still stands on the caster's point; retail's reads cursor `-1`
+until the seat pass, which shows `4` on the stage point. Retail's seat pass
+then overruns to three vsyncs and the next pass steps `3` (`+12`), where the
+port runs one more step-`1` pass first. `--retail-steps` keeps both, so neither
+is the frame cost the step track carries. Grade `capture`.
+
 **Stepping over the victim.** Arm 8 holds on `FUN_8004E2F0(7, victim)` (`0x801F7628`) while clip 2's root motion walks the creature on a fixed facing, and it has no other exit. The step is `speed * frame step * +0x21D / 8`: speed 255, step 4 and rate 4 go 510 units a pass, and a foe of `+0x1F = 14` answers in range only inside a window 448 across. So the creature can step clean over the window and walk off the stage for good, the action never ending. The port lets the poll pass on the first pass beyond the victim (`World::creature_ran_past`), a guard that reads false on any walk that lands. The arithmetic is retail's at the frame step the table measures; whether a retail fight has hung this way is [an open question](../reference/open-rev-eng-threads.md#zenoirs-walk-over-a-small-window).
 
 The director `cast_module_camera::zenoir_direct` carries every arm's gate:
