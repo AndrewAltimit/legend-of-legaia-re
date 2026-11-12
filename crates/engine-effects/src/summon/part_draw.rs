@@ -368,7 +368,8 @@ pub const BANK3_SPLIT_KIND: u16 = 19;
 /// Positions are the TMD's integer vertices, so the split's `sra` halvings
 /// see the words retail's leaf reads.
 ///
-/// PORT: FUN_80045BB4 (the model draw's kind-19 prims on bank 3)
+/// The split alone, every quad kept; the live draw takes
+/// [`split_bank3_quads_kept`].
 pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u16]) {
     split_bank3_quads_kept(mesh, group_flags, |_| true);
 }
@@ -380,6 +381,8 @@ pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u
 /// lying off one screen edge before it splits anything
 /// ([`legaia_render_kernels::prim_near_reject::bank3_quad_rejected`]). The
 /// other kinds pass as they are.
+///
+/// PORT: FUN_80045BB4 (the model draw's kind-19 prims on bank 3)
 pub fn split_bank3_quads_kept(
     mesh: &mut legaia_tmd::mesh::VramMesh,
     group_flags: &[u16],
