@@ -310,30 +310,61 @@ fn the_line_actor_arms_tracks_and_celebrates() {
     line.tick(1);
     assert_eq!(line.raw, 2);
     assert_eq!(line.tick(1), LineActorFrame::default());
-    // Landing enters the celebrate arm; the first stage frame fires the
-    // celebrate cue + every unlocked burst, and the last hands back.
+    // Landing enters the celebrate arm: the stage cue on its second frame,
+    // every unlocked burst once the timer passes `0x72`, the flash once it
+    // passes `0x87`, and the hand-back to tracking once it passes `0xD2`.
     line.land(700);
-    let mut fired = None;
-    let mut done = false;
+    let mut cue_at = Vec::new();
+    let mut bursts_at = Vec::new();
     let mut flash_at = Vec::new();
+    let mut done_at = None;
     for _ in 0..CELEBRATION_STAGE_FRAMES.2 + 2 {
         let start = line.timer;
         let f = line.tick(1);
         if f.cue.is_some() {
-            assert!(fired.is_none(), "the stage cue fires once");
-            fired = Some(f.bursts.len());
+            cue_at.push(start);
+        }
+        if !f.bursts.is_empty() {
+            bursts_at.push((start, f.bursts.len()));
         }
         if f.flash {
             flash_at.push(start);
         }
-        done |= f.done;
+        if f.done {
+            done_at = Some(start);
+            break;
+        }
     }
+    assert_eq!(cue_at, [CELEBRATION_CUE_FRAME]);
     // Score 700 clears the 200 + 600 tiers only.
-    assert_eq!(fired, Some(2));
-    assert!(done);
+    assert_eq!(bursts_at, [(0x73, 2)]);
     // The white-out spawns once, on the first frame whose starting `+0x22`
     // passes `0x87` (`slti v0,v0,0x88` at `0x801D50D0`).
     assert_eq!(flash_at, [0x88]);
+    assert_eq!(done_at, Some(0xD3));
+    assert_eq!(
+        (line.raw, line.timer),
+        (2, 1),
+        "back on the tracking sub-state"
+    );
+}
+
+/// A frame step that changes from frame to frame fires every stage once.
+#[test]
+fn the_celebration_stages_fire_once_at_a_varying_step() {
+    let mut line = LineActorSim::hooked();
+    line.land(0x4B1);
+    let (mut cues, mut bursts, mut flashes) = (0, 0, 0);
+    for k in 0..400 {
+        let f = line.tick([1, 3, 2][k % 3]);
+        cues += usize::from(f.cue.is_some());
+        bursts += usize::from(!f.bursts.is_empty());
+        flashes += usize::from(f.flash);
+        if f.done {
+            break;
+        }
+    }
+    assert_eq!((cues, bursts, flashes), (1, 1, 1));
 }
 
 #[test]
