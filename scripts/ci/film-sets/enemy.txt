@@ -1,0 +1,108 @@
+# Enemy casts, each from its own pre-cast or mid-cast state (scripts/ci/film-cues.py)
+balden_devil_pump_pre_multi_cutter__65 --spell 0x65 --state balden_devil_pump_pre_multi_cutter --caster 3 --target 8
+balden_orb_v2_pre_jewel_beam__2D --spell 0x2D --state balden_orb_v2_pre_jewel_beam --caster 4 --target 1
+balden_swordie_v2_pre_vacuum_slicer__69 --spell 0x69 --state balden_swordie_v2_pre_vacuum_slicer --caster 3 --target 0
+balden_verial_pre_cross_beam__58 --spell 0x58 --state balden_verial_pre_cross_beam --caster 4 --target 2
+chitei2_gilium_thunder_storm --physical --state battle_chitei2_gilium_thunder_storm_mid_cast --caster 3 --target 0
+deene_lapis_lapis_wave --physical --state battle_deene_lapis_lapis_wave_mid_cast --caster 3 --target 3
+dohaty_nova_v2_scythe_wind --physical --state battle_dohaty_nova_v2_scythe_wind_mid_cast --caster 4 --target 0
+doman_boogie_pump_windcutter --physical --state battle_doman_boogie_pump_windcutter_mid_cast --caster 4 --target 2
+garmel_songi_hyper_wave --physical --state battle_garmel_songi_hyper_wave_mid_cast --caster 3 --target 0
+jou_freed_v3_water_crystals --physical --state battle_jou_freed_v3_water_crystals_mid_cast --caster 3 --target 2
+jou_gizam_v3_water_hazard --physical --state battle_jou_gizam_v3_water_hazard_mid_cast --caster 5 --target 8
+jou_puera_v3_death_game --physical --state battle_jou_puera_v3_death_game_mid_cast --caster 3 --target 3
+jou_spoon_v3_white_shield --physical --state battle_jou_spoon_v3_white_shield_mid_cast --caster 4 --target 0
+jouind_gilium_lv3_thunder_storm --physical --state battle_jouind_gilium_lv3_thunder_storm_mid_cast --caster 4 --target 0
+kor_gaza_166_astral_wave --physical --state battle_kor_gaza_166_astral_wave_mid_cast --caster 3 --target 1
+kor_ghost_knight_v_windhash --physical --state battle_kor_ghost_knight_v_windhash_mid_cast --caster 4 --target 0
+korb2_ghost_knight_windhash --physical --state battle_korb2_ghost_knight_windhash_mid_cast --caster 4 --target 0
+map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0
+map02_ogre_power_charge --physical --state battle_map02_ogre_power_charge_mid_cast --caster 4 --target 0
+map03_acid_slime_melt_spray --physical --state battle_map03_acid_slime_melt_spray_mid_cast --caster 3 --target 0
+noaru_gilium_lv2_thunder_storm --physical --state battle_noaru_gilium_lv2_thunder_storm_mid_cast --caster 4 --target 0
+noaru_songi_chaos_flare --physical --state battle_noaru_songi_chaos_flare_mid_cast --caster 3 --target 3
+retona_lip_king_kiss_of_death --physical --state battle_retona_lip_king_kiss_of_death_mid_cast --caster 3 --target 0
+retona_songi_hyper_lightning --physical --state battle_retona_songi_hyper_lightning_mid_cast --caster 3 --target 3
+rugi_caruban_2_fire_breath --physical --state battle_rugi_caruban_2_fire_breath_mid_cast --caster 3 --target 8
+rugi_caruban_3_fire_breath --physical --state battle_rugi_caruban_3_fire_breath_mid_cast --caster 3 --target 8
+rugi_gola_gola_v2_rolling_flare --physical --state battle_rugi_gola_gola_v2_rolling_flare_mid_cast --caster 4 --target 0
+tunnelc_xain_bull_charge --physical --state battle_tunnelc_xain_bull_charge_mid_cast --caster 3 --target 0
+tunnelc_xain_strike__5C --spell 0x5C --state battle_tunnelc_xain_strike --caster 3 --target 2
+tunnelc_xain_terio_punch --physical --state battle_tunnelc_xain_terio_punch_mid_cast --caster 3 --target 3
+vozz_gizam_water_column --physical --state battle_vozz_gizam_water_column_mid_cast --caster 3 --target 1
+chitei2_kemaro_v2_pre_lava_breath__46 --spell 0x46 --state chitei2_kemaro_v2_pre_lava_breath --caster 3 --target 8
+cort_evolved_card_pre_doomsday__B4 --spell 0xB4 --state cort_evolved_card_pre_doomsday --caster 3 --target 8
+deene_garnet_pre_heal__2E --spell 0x2E --state deene_garnet_pre_heal --caster 4 --target 3
+deene_ironman_pre_jagged_earth__35 --spell 0x35 --state deene_ironman_pre_jagged_earth --caster 3 --target 1
+deroa_spoon_v2_pre_hyper_heal__2F --spell 0x2F --state deroa_spoon_v2_pre_hyper_heal --caster 3 --target 4
+dohaty_nova_v2_pre_scythe_wind__5B --spell 0x5B --state dohaty_nova_v2_pre_scythe_wind --caster 4 --target 0
+jou_nova_v3_pre_scythe_wind__5B --spell 0x5B --state jou_nova_v3_pre_scythe_wind --caster 3 --target 1
+jou_orb_v3_pre_grand_beam__63 --spell 0x63 --state jou_orb_v3_pre_grand_beam --caster 3 --target 8
+kor_ghost_knight_pre_v_windhash__57 --spell 0x57 --state kor_ghost_knight_pre_v_windhash --caster 4 --target 0
+kor_shade_pre_fatal_decision__5F --spell 0x5F --state kor_shade_pre_fatal_decision --caster 3 --target 1
+nilboa_lava_face_pre_fissure__32 --spell 0x32 --state nilboa_lava_face_pre_fissure --caster 3 --target 1
+nilboa_lucifer_pre_cross_beam__58 --spell 0x58 --state nilboa_lucifer_pre_cross_beam --caster 4 --target 2
+nilboa_neo_grude_pre_power_up__52 --spell 0x52 --state nilboa_neo_grude_pre_power_up --caster 4 --target 4
+nilboa_rock_lizard_pre_earthquake__4A --spell 0x4A --state nilboa_rock_lizard_pre_earthquake --caster 3 --target 8
+nivora_duel_mid_blazing_slash --physical --state nivora_duel_mid_blazing_slash --caster 3 --target 0
+nivora_duel_pre_megaton_press__7A --spell 0x7A --state nivora_duel_pre_megaton_press --caster 3 --target 0
+noaru_barra_v2_pre_multi_cutter__65 --spell 0x65 --state noaru_barra_v2_pre_multi_cutter --caster 3 --target 8
+noaru_slippery_v2_pre_big_wave__56 --spell 0x56 --state noaru_slippery_v2_pre_big_wave --caster 4 --target 8
+noaru_slippery_v2_pre_poisonous_breath__67 --spell 0x67 --state noaru_slippery_v2_pre_poisonous_breath --caster 4 --target 8
+retona_viguro_v2_pre_thunder_break__30 --spell 0x30 --state retona_viguro_v2_pre_thunder_break --caster 4 --target 0
+rikuroa_caruban_pre_fire_breath__25 --spell 0x25 --state rikuroa_caruban_pre_fire_breath --caster 3 --target 8
+rikuroa_pump_bat_pre_windcutter__3A --spell 0x3A --state rikuroa_pump_bat_pre_windcutter --caster 4 --target 0
+ropeway_curry_devil_pre_cross_beam__58 --spell 0x58 --state ropeway_curry_devil_pre_cross_beam --caster 4 --target 1
+ropeway_orb_pre_heal__2E --spell 0x2E --state ropeway_orb_pre_heal --caster 3 --target 4
+ropeway_orb_pre_jewel_beam__2D --spell 0x2D --state ropeway_orb_pre_jewel_beam --caster 3 --target 1
+rugi_rogue_pre_element_change__AF --spell 0xAF --state rugi_rogue_pre_element_change --caster 3 --target 3
+rugi_rogue_pre_rogue_flame__B2 --spell 0xB2 --state rugi_rogue_pre_rogue_flame --caster 3 --target 8 --guard 0,1,2
+rugi_rogue_pre_rogue_thunder__B1 --spell 0xB1 --state rugi_rogue_pre_rogue_thunder --caster 3 --target 8 --guard 0,1,2
+rugi_rogue_pre_rogue_wind__B0 --spell 0xB0 --state rugi_rogue_pre_rogue_wind --caster 3 --target 8 --guard 0,1,2
+taiku_terror_face_pre_fissure__32 --spell 0x32 --state taiku_terror_face_pre_fissure --caster 4 --target 2
+taiku_terror_face_pre_terror_scream__70 --spell 0x70 --state taiku_terror_face_pre_terror_scream --caster 4 --target 2
+taiku_thermo_pre_void_accessories__73 --spell 0x73 --state taiku_thermo_pre_void_accessories --caster 4 --target 1
+taiku_topaz_pre_hyper_heal__2F --spell 0x2F --state taiku_topaz_pre_hyper_heal --caster 3 --target 3
+teien_berserker_pre_spore_gas__4F --spell 0x4F --state teien_berserker_pre_spore_gas --caster 3 --target 1
+teien_berserker_pre_stone_circle__B9 --spell 0xB9 --state teien_berserker_pre_stone_circle --caster 3 --target 8
+tunnelb_nova_pre_scythe_wind__5B --spell 0x5B --state tunnelb_nova_pre_scythe_wind --caster 3 --target 2
+garmel_zeto_pre_poisonous_bubbles__28 --spell 0x28 --state garmel_zeto_pre_poisonous_bubbles --caster 3 --target 0
+garmel_zeto_pre_call_wave__55 --spell 0x55 --state garmel_zeto_pre_call_wave --caster 3 --target 8
+garmel_zeto_pre_big_wave__56 --spell 0x56 --state garmel_zeto_pre_big_wave --caster 3 --target 8
+nilboa_koru_pre_blade_breath__A2 --spell 0xA2 --state nilboa_koru_pre_blade_breath --caster 3 --target 0
+nilboa_koru_pre_thunder_needle__A3 --spell 0xA3 --state nilboa_koru_pre_thunder_needle --caster 3 --target 0
+nilboa_koru_pre_gigaton_press__A4 --spell 0xA4 --state nilboa_koru_pre_gigaton_press --caster 3 --target 0
+nilboa_koru_pre_ultra_charge__A5 --spell 0xA5 --state nilboa_koru_pre_ultra_charge --caster 3 --target 3
+chitei2_cort_pre_mystic_shield__AC --spell 0xAC --state chitei2_cort_pre_mystic_shield --caster 3 --target 3
+chitei2_cort_pre_guilty_cross__37 --spell 0x37 --state chitei2_cort_pre_guilty_cross --caster 3 --target 0
+chitei2_cort_pre_mystic_circle__B7 --spell 0xB7 --state chitei2_cort_pre_mystic_circle --caster 3 --target 8
+rugi_berserker_2_pre_spore_gas__4F --spell 0x4F --state rugi_berserker_2_pre_spore_gas --caster 3 --target 0
+deroa_jette_clone --physical --state battle_deroa_jette_clone_mid_cast --caster 3 --target 3
+deroa_jette_shadow_break --physical --state battle_deroa_jette_shadow_break_mid_cast --caster 4 --target 3
+dohaty_dohati_chaos_breath --physical --state battle_dohaty_dohati_chaos_breath_mid_cast --caster 3 --target 3
+kor_gaza_165_astral_slash --physical --state battle_kor_gaza_165_astral_slash_mid_cast --caster 3 --target 3
+taiku_zora_dark_typhoon --physical --state battle_taiku_zora_dark_typhoon_mid_cast --caster 3 --target 3
+tunnelc_xain_bloody_horns --physical --state battle_tunnelc_xain_bloody_horns_mid_cast --caster 3 --target 2
+gaza2_card_pre_neo_star_slash__A6 --spell 0xA6 --state gaza2_card_pre_neo_star_slash --caster 3 --target 8
+cort_evolved_card_pre_doomsday__B6 --spell 0xB6 --state cort_evolved_card_pre_doomsday --caster 3 --target 8
+jagaroom_van_saryu_earthquake --physical --state battle_jagaroom_van_saryu_earthquake_mid_cast --caster 3 --target 3
+retona_songi_hyper_crush --physical --state battle_retona_songi_hyper_crush_mid_cast --caster 3 --target 3
+garmel_zeto_pre_call_wave__55 --spell 0x55 --state garmel_zeto_pre_call_wave --caster 3 --target 3
+cave01_theeder_thunderbolt --physical --state battle_cave01_theeder_thunderbolt_mid_cast --caster 3 --target 0
+bylon_gimard_v2_tail_fire --physical --state battle_bylon_gimard_v2_tail_fire_mid_cast --caster 3 --target 0
+garmel_zenoir_fire_claw --physical --state battle_garmel_zenoir_fire_claw_mid_cast --caster 4 --target 0
+jou_slippery_v3_moldy_breath --physical --state battle_jou_slippery_v3_moldy_breath_mid_cast --caster 3 --target 0
+korb2_medusa_glare --physical --state battle_korb2_medusa_glare_mid_cast --caster 4 --target 0
+korb2_aluru_cannon --physical --state battle_korb2_aluru_cannon_mid_cast --caster 4 --target 0
+map01_green_slime_divide --physical --state battle_map01_green_slime_divide_mid_cast --caster 4 --target 0
+retona_hells_rat_steal --physical --state battle_retona_hells_rat_steal_mid_cast --caster 4 --target 0
+kor_dead_bone_curse_all --physical --state battle_kor_dead_bone_curse_all_mid_cast --caster 4 --target 0
+jou_gimard_v3_tail_flare --physical --state battle_jou_gimard_v3_tail_flare_mid_cast --caster 3 --target 0
+jou_theeder_v3_thunder_blast --physical --state battle_jou_theeder_v3_thunder_blast_mid_cast --caster 3 --target 0
+jou_zenoir_v3_grand_claw --physical --state battle_jou_zenoir_v3_grand_claw_mid_cast --caster 5 --target 0
+jou_mad_golem_forced_earthcrush --physical --state battle_jou_mad_golem_forced_earthcrush_mid_cast --caster 4 --target 0
+jou_nighto_v3_eye_beam --physical --state battle_jou_nighto_v3_eye_beam_mid_cast --caster 5 --target 0
+jou_viguro_v3_thunder_burst --physical --state battle_jou_viguro_v3_thunder_burst_mid_cast --caster 3 --target 0
+deroa_iota_v2_paralyzing_wave --physical --state battle_deroa_iota_v2_paralyzing_wave_mid_cast --caster 3 --target 0
+korb2_ghost_knight_neo_windhash --physical --state battle_korb2_ghost_knight_neo_windhash_mid_cast --caster 4 --target 0
+nivora_duel_pre_plasma_strike__7B --spell 0x7B --state nivora_duel_pre_plasma_strike --caster 3 --target 0

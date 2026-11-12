@@ -130,6 +130,12 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
   <p>The level of the voice itself, rather than its timing, is measured against mednafen's audio output by the <a href="../subsystems/audio-internals.html#real-pcm">real-PCM cast channel</a>; how a summon's voice waits for the CD drive is on the <a href="../subsystems/cast-module.html#voice">cast module</a> page.</p>
 </section>
 
+<section class="doc-section" id="cue-ratchet" data-doc="the-cue-ratchet">
+  <h2>The cue ratchet</h2>
+  <p>A film's image score moves a little with every engine change, so the films stay report-only. Their cue channel is held to a committed baseline instead: <code>film-cues.py --check</code> reads each film's report from a run of the committed film sets (the Seru casts, the enemy casts, the dealt monster strikes) and fails when a baselined film plays fewer of retail's cues on retail's clock. A baseline that falls needs a ledger entry, which the baseline-loosening gate enforces on the file alone.</p>
+  <p>Two cue drops show why. A summon kill's fade stand-in once faded the body before its knockdown committed, so the defeat cue never rang on five Seru films. Chaos Flare's victim lost the rate its knockdown plays at when reactions began to commit in the struck seat's own node tick, and both of the knockdown's cues rang early. Most of those films' images moved by a thousandth or so; only the cue channel said anything was wrong.</p>
+</section>
+
 <section class="doc-section" id="waits" data-doc="waits-the-engine-does-not-run">
   <h2>Waits the engine does not run</h2>
   <p>Some waits in a summon band are CD reads, which the engine's resident streams answer at once, so their segments part on length without any engine error. The pairing keys each segment on its own, so they do not shift the rest of the cast's pairs.</p>

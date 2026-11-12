@@ -1156,6 +1156,38 @@ adds its reaction-channel entry). What the recordings on
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
+## The cue ratchet
+
+A film's image score moves a little with every engine change, so the films stay
+report-only. The cue channel does not: a cast plays the cue retail plays on the same
+clock or it does not, and a cue that stops playing is a defect even when the picture
+holds. [`film-cues.py`](../../scripts/ci/film-cues.py) holds that channel of the
+committed film sets to [`film-cue-baseline.json`](../../scripts/ci/film-cue-baseline.json):
+
+```bash
+scripts/ci/cast-sequence-batch.py scripts/ci/film-sets/seru.txt --out captures/films/seru
+scripts/ci/film-cues.py --check captures/films/seru
+scripts/ci/film-cues.py --check captures/films/seru captures/films/enemy --propose /tmp/cues.json
+```
+
+The sets are batch files under [`film-sets/`](../../scripts/ci/film-sets/): the Seru
+casts from the Gobu Gobu opener, the enemy casts and the dealt monster strikes. A film's
+`retail/` may be a symlink to an existing recording, which the batch driver reuses. A
+baselined film fails when its cue score falls or it matches fewer cues; one whose
+retail side holds another number of cues was re-recorded and is listed, not scored; one
+with no report is counted as a skip, not a pass. `--propose` writes a candidate
+baseline, each film at the better of baseline and measurement. A lower value needs a
+[`baseline-loosenings.toml`](../../scripts/ci/baseline-loosenings.toml) entry, which
+[`check-baseline-loosening.py`](ratchet-integrity.md) enforces on the file alone.
+
+Two cue drops show why. A summon kill's fade stand-in once faded the body before its
+knockdown committed, so the death arm and its defeat cue `0x0D` never ran: five Seru
+films read `.889` with the image near unchanged. Chaos Flare's victim lost its
+per-pass rate store when reactions began to commit in the seat's own node tick: the
+strike's `2` met the commit's decay to `4`, and both of the knockdown's `0x17` cues
+rang 48 and 68 ticks early. Four of the five Seru films' images moved by `.001` and Chaos
+Flare's by `.003`: only the cue channel said anything was wrong.
+
 ## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
