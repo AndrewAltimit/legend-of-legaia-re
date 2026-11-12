@@ -1151,6 +1151,13 @@ impl LauncherApp {
     /// Start the game; `online` opens its Multiplayer screen once the
     /// field is up (`--multiplayer`).
     fn play(&mut self, evl: &ActiveEventLoop, online: bool, resume: Option<&Path>) {
+        // Play on a first run takes the disc found in the usual folders, as
+        // *Use this disc* would: one press from a fresh install to the game.
+        if self.uses_found_disc()
+            && let Some(found) = self.found_disc.clone()
+        {
+            self.try_disc(&found.path);
+        }
         let Some(info) = self.disc.clone() else {
             self.status = Some(vec![(
                 "Choose your Legend of Legaia (USA) disc image first.".into(),
@@ -1341,7 +1348,7 @@ impl LauncherApp {
                 }
                 PadNav::Activate(d) => self.activate(self.focus, d, evl),
                 PadNav::Play => {
-                    if self.disc.is_some() {
+                    if self.can_play() {
                         self.activate(Item::Play, 1, evl);
                     }
                 }
@@ -1705,6 +1712,12 @@ impl LauncherApp {
             .as_ref()
             .and_then(|m| m.first())
             .is_some_and(|(_, ink)| *ink == GOOD)
+    }
+
+    /// Whether Play can start the game: a disc is in use, or one was
+    /// found on a first run (Play then takes it, [`Self::play`]).
+    fn can_play(&self) -> bool {
+        self.disc.is_some() || self.uses_found_disc()
     }
 
     /// Whether *Choose disc* takes the disc found on a first run rather than
@@ -2445,7 +2458,7 @@ impl LauncherApp {
             let r = button_rect(i);
             hits.push((*item, r));
             let focused = self.focus == *item;
-            let enabled = !matches!(item, Item::Play | Item::Online) || self.disc.is_some();
+            let enabled = !matches!(item, Item::Play | Item::Online) || self.can_play();
             let (bg, ink) = match (*item == Item::Play, enabled, focused) {
                 (true, true, false) => (PRIMARY, ON_GOLD),
                 (true, true, true) => (PRIMARY_FOCUS, ON_GOLD),
@@ -2813,6 +2826,12 @@ impl LauncherApp {
                     "Start the game at the title screen. In game, F12 or Select+Start \
                      opens these options. Values in green differ from the original game."
                         .into()
+                } else if let Some(found) = self.found_disc.as_ref() {
+                    format!(
+                        "Start the game on {}, found in your folders. In game, F12 or \
+                         Select+Start opens these options.",
+                        file_name_of(&found.path)
+                    )
                 } else {
                     "Choose your disc image first.".into()
                 }
