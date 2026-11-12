@@ -192,6 +192,11 @@ a guard is reached by a **planned** walk instead:
    An `ACT` line presses Cross at a cabinet or a sign-up counter and saves
    the minigame that opens at chosen vsyncs; a `TALK` line opens and pages a
    conversation that must be had to pass (the Gold Card guard at `koin3`).
+   The hand only attacks, so a story fight runs one logged battle-flow cycle
+   (`0x14` .. `0xFF`) a round for as long as it lasts. `vozz` P2[13]'s
+   Viguro pair (formation `10`, two foes at 1280 HP) after Songi's arrival
+   cycles every ~2200 vsyncs and reads like a battle that restarts; it is
+   one fight, and an ACT line's shot window does not fight at all.
 
 The planner sees walls, trigger tiles and spawn points only. A door actor, a
 moving NPC or a story-gated paint can block a planned leg; the probe then
