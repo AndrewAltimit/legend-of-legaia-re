@@ -223,18 +223,25 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
     let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
     if let Some(menu) = w.battle.item_menu.as_ref() {
         if lesson == Some(TutorialLesson::Items) {
+            // The lesson takes any item: the first row the window lets the
+            // hand confirm (the list kernel's cursor rests on greyed rows too).
+            let first = (0..menu.filtered_items.len()).find(|&i| menu.row_enabled(i));
             return match &menu.state {
-                InventoryUseState::Browsing { .. } if !menu.filtered_items.is_empty() => {
-                    PadButton::Cross.mask()
-                }
+                InventoryUseState::Browsing { .. } if first.is_some() => first
+                    .and_then(|row| menu.browse_pad_toward(row))
+                    .unwrap_or(PadButton::Cross.mask()),
                 InventoryUseState::TargetSelect { .. }
                 | InventoryUseState::AllPartyConfirm { .. } => PadButton::Cross.mask(),
                 _ => PadButton::Circle.mask(),
             };
         }
+        // A row the window lets the hand confirm: the battle list carries its
+        // greyed rows (the list kernel's cursor rests on them, a Confirm
+        // buzzes), so only an enabled row lists its item here.
         let listed = |i: usize| {
-            menu.filtered_items
-                .get(i)
+            menu.row_enabled(i)
+                .then(|| menu.filtered_items.get(i))
+                .flatten()
                 .and_then(|&k| menu.items.get(k))
                 .copied()
         };
@@ -272,7 +279,13 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
                 Some((id, _)) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
-                Some(_) => PadButton::Down.mask(),
+                // Walk to the item's row the way the list kernel moves: Down
+                // wraps inside its page, so a row on another page is reached
+                // with Right / Left first.
+                Some((id, _)) => (0..menu.filtered_items.len())
+                    .find(|&i| listed(i) == Some(id))
+                    .and_then(|row| menu.browse_pad_toward(row))
+                    .unwrap_or(PadButton::Down.mask()),
                 None => {
                     let key = (actor, party_hp_key(w));
                     NO_ITEM.with(|n| n.borrow_mut().insert(key));
