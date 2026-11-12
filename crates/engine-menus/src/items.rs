@@ -95,6 +95,9 @@ const BATTLE_BUFF_ITEMS: &[(u8, &str)] = &[
 /// ([`ItemCatalog::apply_action_gauge_items`]).
 const ACTION_GAUGE_ITEMS: &[(u8, &str)] = &[(0x81, "Fury Boost")];
 
+/// The retail summon flutes' catalog names, by item id.
+const SUMMON_FLUTE_ITEMS: &[(u8, &str)] = &[(0x98, "Lippian Flute"), (0x99, "Spikefish Flute")];
+
 /// The nine Hyper-Art books (effect classes `11`/`12`/`13`) by their real
 /// retail ids + names. The class picks the **character record** the art id
 /// lands on - `11` = roster slot 0, `12` = slot 1, `13` = slot 2 - and the
@@ -218,6 +221,14 @@ pub enum ItemEffect {
     /// present, and no retail row carries the class (see
     /// [`ItemCatalog::apply_point_card_items`]).
     PointCardStrike,
+    /// A **summon flute** (classes `126` / `127`). A marker: the item seed of
+    /// the action SM reroutes the flute ids to the summon band
+    /// (`FUN_801E295C`, `0x801E2E30..0x801E2EAC`), so nothing resolves at the
+    /// window. Its side and scope are the descriptor's `0x40` / `0x20` flags
+    /// ([`ItemCatalog::is_enemy_side`], [`ItemCatalog::is_all_party`]). Only
+    /// installed when a real table is present (see
+    /// [`ItemCatalog::apply_summon_flute_items`]).
+    SummonFlute,
     /// Item exists in inventory but has no battle effect (key items).
     KeyItem,
 }
@@ -246,6 +257,12 @@ pub struct ItemCatalog {
     /// fans a flagged item out across every valid ally instead of asking for a
     /// single target.
     all_party: std::collections::HashSet<u8>,
+    /// Item ids whose effect aims at the **enemy side** (the descriptor's
+    /// `0x40` flag): the battle window's commit raises `0x5B` (one enemy) or,
+    /// with the `0x20` flag, `0x5D` (all enemies) for them
+    /// (`0x801D18E0..0x801D19F4`). Refreshed from disc by
+    /// [`ItemCatalog::apply_effect_flags`].
+    enemy_side: std::collections::HashSet<u8>,
 }
 
 impl ItemCatalog {
@@ -423,6 +440,59 @@ impl ItemCatalog {
             } else {
                 self.all_party.remove(&id);
             }
+            if eff.enemy_side() {
+                self.enemy_side.insert(id);
+            } else {
+                self.enemy_side.remove(&id);
+            }
+        }
+    }
+
+    /// Seed the battle-usable summon flutes (descriptor class `126` / `127`,
+    /// on the two ids the item seed reroutes) as [`ItemEffect::SummonFlute`]
+    /// markers, with its descriptor's side
+    /// and scope flags. The retail consumables are the Lippian Flute (`0x98`,
+    /// `0xC4`, one enemy) and the Spikefish Flute (`0x99`, `0xE4`, all
+    /// enemies). An id the catalog already names keeps its name.
+    pub fn apply_summon_flute_items(
+        &mut self,
+        table: &legaia_game_tables::item_effect::ItemEffectTable,
+    ) {
+        use legaia_game_tables::item_effect::ItemEffectCategory;
+        for id in 0..=u8::MAX {
+            let Some(eff) = table.effect(id) else {
+                continue;
+            };
+            // Only the two ids the action SM's item seed reroutes to the
+            // summon band (`(id + 0x68) & 0xFF < 2`, `0x801E2E30..0x801E2EAC`)
+            // summon anything; the equipment rows whose `+1` byte lands on a
+            // flute descriptor are not consumables.
+            if id.wrapping_add(0x68) >= 2
+                || eff.category() != ItemEffectCategory::SummonFlute
+                || !eff.battle_usable()
+            {
+                continue;
+            }
+            let name = self
+                .by_id
+                .get(&id)
+                .map(|e| e.name)
+                .or_else(|| {
+                    SUMMON_FLUTE_ITEMS
+                        .iter()
+                        .find(|(i, _)| *i == id)
+                        .map(|(_, n)| *n)
+                })
+                .unwrap_or("Flute");
+            self.insert(ItemEntry {
+                id,
+                name,
+                effect: ItemEffect::SummonFlute,
+                usable_in_battle: true,
+                usable_in_field: eff.field_usable(),
+            });
+            self.set_all_party(id, eff.all_party());
+            self.set_enemy_side(id, eff.enemy_side());
         }
     }
 
@@ -590,6 +660,21 @@ impl ItemCatalog {
             self.all_party.insert(id);
         } else {
             self.all_party.remove(&id);
+        }
+    }
+
+    /// `true` if the item aims at the enemy side (the descriptor's `0x40`
+    /// flag); with [`Self::is_all_party`] it covers every enemy.
+    pub fn is_enemy_side(&self, id: u8) -> bool {
+        self.enemy_side.contains(&id)
+    }
+
+    /// Set or clear the enemy-side flag for an item id.
+    pub fn set_enemy_side(&mut self, id: u8, on: bool) {
+        if on {
+            self.enemy_side.insert(id);
+        } else {
+            self.enemy_side.remove(&id);
         }
     }
 
@@ -771,7 +856,8 @@ pub fn apply_effect(effect: ItemEffect, target: &TargetSnapshot) -> ItemOutcome 
         | ItemEffect::BattleBuff
         | ItemEffect::ActionGauge
         | ItemEffect::ArtsBook
-        | ItemEffect::PointCardStrike => ItemOutcome::NoEffect,
+        | ItemEffect::PointCardStrike
+        | ItemEffect::SummonFlute => ItemOutcome::NoEffect,
         ItemEffect::Spirit { amount } => ItemOutcome::SpiritGained { amount },
         ItemEffect::Capture { strength } => ItemOutcome::CaptureRolled { strength },
         ItemEffect::Escape => ItemOutcome::EscapeRequested,

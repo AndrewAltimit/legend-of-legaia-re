@@ -343,3 +343,53 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
     assert_eq!(world.battle.ap_gauges[0].base_ap, 14);
     assert_eq!(world.battle.fury_boost[0], Some(4));
 }
+
+/// The summon flutes come off the disc descriptor table with their side and
+/// scope flags: the Lippian Flute (`0x98`, `0xC4`) one enemy, the Spikefish
+/// Flute (`0x99`, `0xE4`) every enemy - the item ladder's `0x5B` and `0x5D`
+/// (`0x801D18E0..0x801D1968`). Skips without `LEGAIA_DISC_BIN`.
+#[test]
+fn the_summon_flutes_carry_their_descriptor_side_and_scope() {
+    let Some(path) = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    if !path.is_file() {
+        eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
+        return;
+    }
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
+        .expect("open disc")
+        .read("SCUS_942.54")
+        .expect("SCUS_942.54 present");
+    let table = ItemEffectTable::from_scus(&scus).expect("item-effect table parses");
+    let names =
+        legaia_game_tables::item_names::ItemNameTable::from_scus(&scus).expect("item table parses");
+    let mut world = World::new();
+    world.set_item_catalog(ItemCatalog::vanilla());
+    world.set_item_effects(table);
+    let catalog = &world.tables.item_catalog;
+    let flutes: Vec<u8> = catalog
+        .iter()
+        .filter(|e| matches!(e.effect, ItemEffect::SummonFlute))
+        .map(|e| e.id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(flutes, vec![0x98, 0x99], "the two battle-usable flutes");
+    for id in flutes {
+        let entry = catalog.get(id).unwrap();
+        assert_eq!(names.name(id), Some(entry.name), "id {id:#04x}");
+        assert!(entry.usable_in_battle && !entry.usable_in_field);
+        assert!(catalog.is_enemy_side(id), "id {id:#04x} aims at the enemy");
+    }
+    assert!(!catalog.is_all_party(0x98), "the Lippian Flute: one enemy");
+    assert!(
+        catalog.is_all_party(0x99),
+        "the Spikefish Flute: every enemy"
+    );
+    assert!(
+        !catalog.is_enemy_side(0x7A),
+        "Healing Bloom stays on the party"
+    );
+}

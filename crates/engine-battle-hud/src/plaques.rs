@@ -812,6 +812,14 @@ pub fn battle_target_select_plate(
                 None,
             ));
         }
+        // `0x5D`'s step `0x12` with `a1 = 1` adopts record `0x3D`.
+        Some(CommandSurface::ItemAllEnemies) => {
+            return Some(plate(
+                TARGET_SELECT_LABEL_KEY,
+                legaia_engine_battle_vm::battle_commit_log::ALL_ENEMIES_LABEL.to_string(),
+                None,
+            ));
+        }
         // A party target: the item target step `0x12` and the spell target
         // step `0x1B` both open record `0x29` (`29/0`), and the arm measures
         // the target's name payload `+0x1BC` whichever side it is on -

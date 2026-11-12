@@ -256,9 +256,8 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
     enter_battle(&mut w);
 
     // Wait for the party command session, then commit a SummonFlute use as
-    // the live loop's item arm now does (the flute ids are not in the
-    // port's item catalog's usable set, so the menu path is not the
-    // vehicle here - the arming contract is).
+    // the live loop's item arm does - the arming contract, not the window
+    // (`the_spikefish_flute_raises_the_all_enemies_confirm` walks that).
     let mut opened = false;
     for _ in 0..0x40 {
         w.set_pad(0);
@@ -317,5 +316,80 @@ fn summon_flute_item_reroutes_to_the_summon_band_and_completes() {
     assert_eq!(
         w.battle_ctx.menu_open, 0,
         "the summon band's menu_open latch must be released"
+    );
+}
+
+/// The Spikefish Flute (`0x99`, descriptor `0xE4`) through the item window:
+/// its commit raises the all-enemies confirm `0x5D` with the target byte on
+/// the enemy group code `9` (`0x801D1968` / `0x801D1CF8`), a cancel re-picks
+/// the first living monster (`FUN_801DB8B4` at `0x801D27A8`), and the second
+/// press commits the flute on `9`, which its dispatch keeps.
+#[test]
+fn the_spikefish_flute_raises_the_all_enemies_confirm() {
+    use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+    use legaia_engine_battle_vm::battle_cue_group::TARGET_ALL_ENEMIES;
+    use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemEntry};
+    let mut w = build_world();
+    let mut catalog = ItemCatalog::new();
+    catalog.insert(ItemEntry {
+        id: 0x99,
+        name: "Spikefish Flute",
+        effect: ItemEffect::SummonFlute,
+        usable_in_battle: true,
+        usable_in_field: false,
+    });
+    catalog.set_all_party(0x99, true);
+    catalog.set_enemy_side(0x99, true);
+    w.set_item_catalog(catalog);
+    w.party.inventory.insert(0x99, 2);
+    enter_battle(&mut w);
+    for i in 0..3 {
+        w.actors[i].battle.max_hp = 100;
+        w.actors[i].battle.hp = 100;
+        w.actors[i].battle.liveness = 1;
+    }
+    w.battle.no_escape = true;
+    let mut trace: Vec<u8> = Vec::new();
+    press(&mut w, PadButton::Cross, &mut trace);
+    press(&mut w, PadButton::Up, &mut trace);
+    assert!(
+        w.battle.item_menu.is_some(),
+        "the Item arm opens the window"
+    );
+    let user = w.battle_ctx.active_actor as usize;
+    let first_monster = w.party.party_count;
+
+    press(&mut w, PadButton::Cross, &mut trace);
+    assert_eq!(w.battle.flow, Flow::ItemAllEnemies, "0x5D, not 0x66");
+    assert_eq!(w.actors[user].battle.active_target, TARGET_ALL_ENEMIES);
+
+    press(&mut w, PadButton::Circle, &mut trace);
+    assert_eq!(w.battle.flow, Flow::ItemWindow);
+    assert_eq!(
+        w.actors[user].battle.active_target, first_monster,
+        "the cancel re-picks the first living monster"
+    );
+
+    press(&mut w, PadButton::Cross, &mut trace);
+    assert_eq!(w.actors[user].battle.active_target, TARGET_ALL_ENEMIES);
+    press(&mut w, PadButton::Cross, &mut trace);
+    assert_eq!(
+        w.actors[user].battle.action_category,
+        ActionCategory::Item.as_byte()
+    );
+    assert_eq!(w.party.inventory.get(&0x99).copied(), Some(1));
+    for _ in 0..2 {
+        press(&mut w, PadButton::Down, &mut trace);
+    }
+    press(&mut w, PadButton::Cross, &mut trace);
+    assert_eq!(w.actors[user].battle.params[0], 0x99, "the staged item id");
+    assert_eq!(
+        w.actors[user].battle.active_target, TARGET_ALL_ENEMIES,
+        "the flute dispatches on the enemy group code"
+    );
+    idle_ticks(&mut w, 0x80, &mut trace);
+    assert!(
+        trace.contains(&ActionState::SummonInvoke.as_byte()),
+        "the flute reroutes to the summon band; trace = {trace:02X?}"
     );
 }

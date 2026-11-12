@@ -37,6 +37,7 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
                 | CommandSurface::ItemBrowse
                 | CommandSurface::ItemTarget(_)
                 | CommandSurface::ItemAllAllies
+                | CommandSurface::ItemAllEnemies
         )
     ) || battle_begin_tab_alone(world)
 }
@@ -128,7 +129,9 @@ pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> 
             Some(battle_magic_chip(world, slot).0)
         }
         CommandSurface::ItemBrowse => Some(BattleCommand::Item.label().to_string()),
-        CommandSurface::ItemTarget(_) | CommandSurface::ItemAllAllies => {
+        CommandSurface::ItemTarget(_)
+        | CommandSurface::ItemAllAllies
+        | CommandSurface::ItemAllEnemies => {
             let model = crate::battle_item_menu_model(world)?;
             let row = model.view.cursor_row?;
             model.view.rows.get(row).map(|r| r.name.clone())

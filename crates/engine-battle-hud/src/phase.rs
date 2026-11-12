@@ -188,6 +188,9 @@ pub enum CommandSurface {
     /// `0x66`: an all-party item's confirm, the panels up under an `All Allies`
     /// plate (`battle_item_allparty_gaza2`).
     ItemAllAllies,
+    /// `0x5D`, step `0x12` with `a1 = 1`: an all-enemies item's confirm (the
+    /// Spikefish Flute), the panels parked under an `"  All"` plate.
+    ItemAllEnemies,
     /// `0x46`, step 7: `01/3 06/0 4E/0 4F/0 07/1 08/1 09/1 0B/1 0E/0 18/0
     /// 19/0 1A/3 1F/0 64/0 52/1` - panels up, bar parked, plate gone.
     SpellBrowse,
@@ -252,6 +255,12 @@ pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Optio
             legaia_engine_menus::inventory_use::InventoryUseState::AllPartyConfirm { .. }
         ) {
             return Some(CommandSurface::ItemAllAllies);
+        }
+        if matches!(
+            menu.state,
+            legaia_engine_menus::inventory_use::InventoryUseState::AllEnemiesConfirm { .. }
+        ) {
+            return Some(CommandSurface::ItemAllEnemies);
         }
         return Some(if view.target_select {
             CommandSurface::ItemTarget(

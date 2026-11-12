@@ -154,9 +154,22 @@ The engine carries all eight on `BattleFlowState`, and the World stands the
 flow byte on the one its window's session is in. The magic window's
 all-target spells wait on `SpellPhase::SweepConfirm` for their confirm, as
 retail's `0x5E` / `0x67` do; the item window's all-allies item has its own
-confirm (`AllPartyConfirm`). The item session keeps the all flag `0x20` but
-not the side `0x40`, so the Spikefish Flute (`0xE4`), the one consumable that
-raises `0x5D` in retail, takes the all-allies confirm there.
+confirm (`AllPartyConfirm`), and its all-enemies item its own
+(`AllEnemiesConfirm`): the item catalog carries both descriptor flags, so the
+Spikefish Flute (`0x99`, `0xE4`), the one consumable that raises `0x5D`, waits
+there, and the Lippian Flute (`0x98`, `0xC4`) opens the enemy ring `0x5B`.
+The flutes reach the catalog off the disc's descriptor table on the two ids
+the item seed reroutes to the summon band (`(id + 0x68) & 0xFF < 2`).
+
+Raising an all-target state writes the side's group code into `+0x1DD`: `9`
+for `0x5D` / `0x5E` (`li v0,0x9` at `0x801D1CF8`, stored in the delay slot at
+`0x801D1D00`; the item arm joins at `0x801D1CF0`), `8` for `0x66` / `0x67`
+(`0x801D1D68..0x801D1D6C`; the item arm stores the caster's seat first, then
+joins at `0x801D1D50`). A cancel off any of the four re-picks the first
+living monster through `FUN_801DB8B4` (`0x801D27A8`, `0x801D28DC`,
+`0x801D2DDC`, `0x801D2F1C`); a confirm leaves the code for the commit, and an
+all-target item dispatches on it whatever the number of living seats on its
+side. The World does the same (`World::seat_sweep_target`).
 
 That band is what pins the tutorial's table. Its nine live slots are exactly
 these ten states **minus the magic window** - the sparring fight teaches attacks,

@@ -159,6 +159,11 @@ pub enum InventoryUseState {
     /// whole party and Cancel returns to the list (the field's sub-screen `9`,
     /// `FUN_801D7FF8`, `FUN_801D688C` over zero rows; the battle's `0x66`).
     AllPartyConfirm { item_cursor: usize },
+    /// An all-enemies item's confirm (the descriptor's `0x40 | 0x20`, the
+    /// battle's `0x5D`): no row to pick, Confirm commits it on the whole
+    /// enemy row and Cancel returns to the list. The Spikefish Flute is the
+    /// one retail consumable that raises it.
+    AllEnemiesConfirm { item_cursor: usize },
     /// Terminal - the engine should drain the outcome and dispose of the
     /// session.
     Done(ItemOutcome),
@@ -412,7 +417,8 @@ impl InventoryUseSession {
         let cursor = match self.state {
             InventoryUseState::Browsing { cursor } => cursor,
             InventoryUseState::TargetSelect { item_cursor, .. }
-            | InventoryUseState::AllPartyConfirm { item_cursor } => item_cursor,
+            | InventoryUseState::AllPartyConfirm { item_cursor }
+            | InventoryUseState::AllEnemiesConfirm { item_cursor } => item_cursor,
             _ => return None,
         };
         let idx = *self.filtered_items.get(cursor)?;
@@ -479,7 +485,8 @@ impl InventoryUseSession {
         let cursor = match self.state {
             InventoryUseState::Browsing { cursor } => cursor,
             InventoryUseState::TargetSelect { item_cursor, .. }
-            | InventoryUseState::AllPartyConfirm { item_cursor } => item_cursor,
+            | InventoryUseState::AllPartyConfirm { item_cursor }
+            | InventoryUseState::AllEnemiesConfirm { item_cursor } => item_cursor,
             _ => return None,
         };
         let item_idx = self.filtered_items.get(cursor).copied()?;
@@ -531,7 +538,8 @@ impl InventoryUseSession {
                 item_cursor,
                 cursor,
             } => (Some(item_cursor), true, cursor),
-            InventoryUseState::AllPartyConfirm { item_cursor } => (Some(item_cursor), true, 0),
+            InventoryUseState::AllPartyConfirm { item_cursor }
+            | InventoryUseState::AllEnemiesConfirm { item_cursor } => (Some(item_cursor), true, 0),
             _ => (None, false, 0),
         };
         let selected_id = item_cursor
@@ -555,7 +563,8 @@ impl InventoryUseSession {
                 item_cursor,
                 cursor,
             } => self.input_target_select(item_cursor, cursor, input),
-            InventoryUseState::AllPartyConfirm { item_cursor } => match input {
+            InventoryUseState::AllPartyConfirm { item_cursor }
+            | InventoryUseState::AllEnemiesConfirm { item_cursor } => match input {
                 InventoryUseInput::Confirm => {
                     if let Some(entry) = self.current_item().copied() {
                         self.confirm_all_party(entry);
@@ -599,6 +608,28 @@ impl InventoryUseSession {
                     return;
                 }
                 let entry = self.current_item().copied();
+                // An all-enemies item (descriptor `0x40 | 0x20`) picks no row
+                // either: the window's commit raises `0x5D` and a second press
+                // commits it on the enemy row (`0x801D1968`, `0x801D278C`).
+                if let Some(entry) = entry
+                    && self.context.allows(&entry)
+                    && self.catalog.is_enemy_side(entry.id)
+                    && self.catalog.is_all_party(entry.id)
+                {
+                    if self
+                        .targets
+                        .iter()
+                        .any(|t| target_valid_for_effect(&entry.effect, t))
+                    {
+                        self.state = InventoryUseState::AllEnemiesConfirm {
+                            item_cursor: cursor,
+                        };
+                        self.events.push(InventoryUseEvent::EnteredTargetSelect);
+                    } else {
+                        self.events.push(InventoryUseEvent::InvalidConfirm);
+                    }
+                    return;
+                }
                 // All-party items (Healing Bloom / Fruit) pick no row: their
                 // confirm screen takes one more Cross, which fans out across
                 // every valid ally in one use.
@@ -765,7 +796,9 @@ impl InventoryUseSession {
     /// Records each affected slot in [`Self::used_slots`] and emits a `Used`
     /// event per ally; the terminal [`InventoryUseState::Done`] carries the
     /// first ally's outcome as a representative. Bounces with `InvalidConfirm`
-    /// when no valid ally is present (e.g. the whole party is down).
+    /// when no valid ally is present (e.g. the whole party is down). An
+    /// all-enemies item takes the same path: its effect's validity names the
+    /// living enemy rows instead.
     fn confirm_all_party(&mut self, entry: ItemEntry) {
         let mut first: Option<ItemOutcome> = None;
         for target in &self.targets {
@@ -904,9 +937,10 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
-            target.alive && target.is_enemy
-        }
+        ItemEffect::Damage { .. }
+        | ItemEffect::Capture { .. }
+        | ItemEffect::PointCardStrike
+        | ItemEffect::SummonFlute => target.alive && target.is_enemy,
         ItemEffect::Heal { .. } | ItemEffect::HealAll => {
             target.alive && !target.is_enemy && (target.hp_max == 0 || target.hp < target.hp_max)
         }
@@ -933,9 +967,10 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
 /// mirror rule.
 pub fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
-            target.is_enemy
-        }
+        ItemEffect::Damage { .. }
+        | ItemEffect::Capture { .. }
+        | ItemEffect::PointCardStrike
+        | ItemEffect::SummonFlute => target.is_enemy,
         _ => !target.is_enemy,
     }
 }
@@ -949,9 +984,10 @@ fn target_valid_for_effect(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
-            target.alive && target.is_enemy
-        }
+        ItemEffect::Damage { .. }
+        | ItemEffect::Capture { .. }
+        | ItemEffect::PointCardStrike
+        | ItemEffect::SummonFlute => target.alive && target.is_enemy,
         ItemEffect::Escape => target.alive,
         _ => target.alive && !target.is_enemy,
     }
@@ -1126,6 +1162,63 @@ mod tests {
         // Confirm lands on the ally and uses the item.
         s.input(InventoryUseInput::Confirm);
         assert!(matches!(s.state, InventoryUseState::Done(_)));
+    }
+
+    /// The Spikefish Flute's descriptor (`0xE4`: `0x40` enemy side, `0x20`
+    /// all) raises the all-enemies confirm `0x5D`, not the all-allies one,
+    /// and its second press commits on every living enemy row.
+    #[test]
+    fn an_all_enemies_item_takes_the_all_enemies_confirm() {
+        let mut cat = test_catalog();
+        cat.insert(ItemEntry {
+            id: 0x99,
+            name: "Flute",
+            effect: ItemEffect::SummonFlute,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        cat.set_all_party(0x99, true);
+        cat.set_enemy_side(0x99, true);
+        let mut targets = mixed_targets();
+        targets.push(
+            TargetRow::new(4, "Slug")
+                .with_stats(60, 60, 0, 0)
+                .with_enemy(true),
+        );
+        let mut s = InventoryUseSession::new(cat, vec![0x99], targets, InventoryContext::Battle);
+        s.input(InventoryUseInput::Confirm);
+        assert!(matches!(
+            s.state,
+            InventoryUseState::AllEnemiesConfirm { item_cursor: 0 }
+        ));
+        s.input(InventoryUseInput::Cancel);
+        assert!(matches!(s.state, InventoryUseState::Browsing { cursor: 0 }));
+        s.input(InventoryUseInput::Confirm);
+        s.input(InventoryUseInput::Confirm);
+        assert!(matches!(s.state, InventoryUseState::Done(_)));
+        assert_eq!(s.used_slots, vec![3, 4], "every living enemy, no ally");
+        assert_eq!(s.used_item, Some(0x99));
+    }
+
+    /// A one-enemy flute (`0xC4`, the Lippian Flute) opens the enemy ring.
+    #[test]
+    fn a_one_enemy_flute_opens_the_enemy_ring() {
+        let mut cat = test_catalog();
+        cat.insert(ItemEntry {
+            id: 0x98,
+            name: "Flute",
+            effect: ItemEffect::SummonFlute,
+            usable_in_battle: true,
+            usable_in_field: false,
+        });
+        cat.set_enemy_side(0x98, true);
+        let mut s =
+            InventoryUseSession::new(cat, vec![0x98], mixed_targets(), InventoryContext::Battle);
+        s.input(InventoryUseInput::Confirm);
+        assert!(matches!(
+            s.state,
+            InventoryUseState::TargetSelect { cursor: 1, .. }
+        ));
     }
 
     #[test]

@@ -627,9 +627,9 @@ pub(super) fn fight_pad(s: &NativeSession, rng: &mut Rng) -> u16 {
                 }
             }
             InventoryUseState::Browsing { .. } => b(PadButton::Circle),
-            InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. } => {
-                b(PadButton::Cross)
-            }
+            InventoryUseState::TargetSelect { .. }
+            | InventoryUseState::AllPartyConfirm { .. }
+            | InventoryUseState::AllEnemiesConfirm { .. } => b(PadButton::Cross),
             _ => 0,
         };
     }
