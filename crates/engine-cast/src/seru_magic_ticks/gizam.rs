@@ -14,7 +14,8 @@ pub const GIZAM_TICK: u32 = 0x801F_69F4;
 /// The phase PROT 0906's chain names no arm for. See [`gizam_tick`].
 pub const GIZAM_MISSING_ARM: u8 = 5;
 
-/// The arm PROT 0906 hides the summon seat in (`li v0,0xff` at `0x801F6D30`).
+/// The arm PROT 0906 hides the summon seat in (`li v0,0xff` at `0x801F6D30`,
+/// the colour word cleared at `0x801F6D34`).
 pub const GIZAM_HIDE_ARM: u8 = 4;
 
 /// The arm PROT 0906 bumps the summon seat's clip in (`0x801F6F4C`): the
@@ -117,6 +118,11 @@ pub fn gizam_tick(
         }
         GIZAM_HIDE_ARM => {
             if let Some(s) = seats.get_mut(who.summon as usize) {
+                // `sw zero,4(s4)` beside the flag (`0x801F6D34`): the colour
+                // word goes too, so the creature neither draws nor ticks its
+                // node until stager arm 1 lights it, and its clip waits on
+                // its first frames through the phase-5 hole.
+                s.present_04 = 0;
                 s.render_flag = GIZAM_HIDDEN_RENDER_FLAG;
             }
             CastArmStep::Advance
