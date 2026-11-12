@@ -383,6 +383,10 @@ a frame's last row with its own step and re-timed onto the frame the pass had ju
 opened, every frame spanned retail's length while the pass after it drained by the
 frame before's: Water Crystals' first arm-1 pass drained `24` where retail's drained
 `32`, and the one step-`3` frame of arm 3 fell outside it, so arm 3 ran `128` game frames.
+A recording that opens on a state's own instant can open on a frame whose pass ran before
+the first row; no `rand()` draw lands in it (every battle pass makes the frame driver's
+discarded draw), and the track leaves it out. Handed on, its step ran Lip King's first
+arm-1 pass on the leftover step `3`, and Kiss of Death read `.899` where it reads `.993`.
 
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
