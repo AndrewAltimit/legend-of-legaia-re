@@ -119,12 +119,32 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
         }
     }
     assert!(landed, "a fish lands within the budget");
+    // The landing frame still draws the catch HUD (the lure tick lands the
+    // fish after the driver's tail drew it).
+    assert!(
+        host.world
+            .minigames
+            .fishing
+            .as_ref()
+            .unwrap()
+            .catch_hud()
+            .visible
+    );
 
     // The close-up: the hooked body at its lifted world point, climbing.
     let mut lift_ys = Vec::new();
     let mut plate = None;
-    for _ in 0..2000 {
+    let mut flash_from = None;
+    for f in 0..2000 {
         frame(&mut host, &mut surface, 0);
+        let s = host.world.minigames.fishing.as_ref().unwrap();
+        assert!(!s.catch_hud().visible, "state 0x1E clears the catch HUD");
+        // The white-out (`FUN_801D7964` twice at the lift's second stage)
+        // draws as additive full-screen quads over the HUD sprites.
+        let flash = host.world.minigames.fishing_venue.catch_flash_prims();
+        if flash_from.is_none() && !flash.is_empty() {
+            flash_from = Some(f);
+        }
         let scene = surface.scene().unwrap();
         let Some(fish) = scene.catch_fish else {
             continue;
@@ -160,6 +180,11 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
         lift_ys.iter().min().unwrap() < &-2000,
         "flung well up out of the water (Y-down): {:?}",
         lift_ys.iter().min()
+    );
+    let flash_from = flash_from.expect("the close-up whites out");
+    assert!(
+        (0x86..=0x8A).contains(&flash_from),
+        "the white-out starts at the lift's second stage: frame {flash_from}"
     );
     let (fish, y) = plate.expect("the plate shows the body");
     let scene = surface.scene().unwrap();
