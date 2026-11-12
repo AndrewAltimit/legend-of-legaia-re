@@ -1152,6 +1152,12 @@ record on that test for the whole crawl. The engine's timeline keeps the crawl's
 (`CutsceneTimeline::narration_target`) and holds the test on it, and resolves each page's name
 escapes through the live name tables (`World::narration_page_text`).
 
+The context need not be a modal timeline either. `rikuroa` `P2[54]`, Terra's speech to Noa after
+the Genesis Tree revives, is spawned by the scene's entry script (`44 60`, once `0x2C9` is up),
+which the engine runs as a helper context beside the field rather than as the modal timeline;
+the arm opens the roller the same way from it. Both installs parse the record's narration
+blocks (`World::install_helper_record`, `World::install_cutscene_timeline_record`).
+
 A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
 an optional short placement word) but presents differently: the pages show **simultaneously**,
 centered, while the parent script continues; a later card block whose pages are blank clears the

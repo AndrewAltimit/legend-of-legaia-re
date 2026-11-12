@@ -387,6 +387,23 @@ plays the engagement as the touch-resumed interaction timeline
 `0x21` leaves the placement context's PC past it, as the shared retail context
 does.
 
+A spawned partition-2 record is the same kind of context, and an executed `0x21`
+ends it for good. `FUN_8003BDE0` allocates it from the template at `0x80073E88`, whose
+tick is `FUN_8003BC08`, and raises its engaged bit itself (`0x8003C0A4`), so the
+runner's `0x21` exit clears that bit as it does on a placement. Nothing raises it
+again: the spawn links the context into the list at `0x8007C34C`, and the id resolver
+`FUN_8003C83C` walks `0x8007C354` (plus the `0xF8` and `0xFB` special cases), so no
+`B1 <id> 08` reaches it. Bytes after such a stop run only when a jump lands on them.
+`rikuroa` `P2[54]` depends on it: the Yes arm of Noa's "take me with you" plays the
+join and stops on a `0x21`, and the bytes after it are the No arm's brooding and its
+second ask, which only the first picker's No jump reaches. The No arm's last ask jumps
+back over its picker until the answer is Yes, so a backward jump over a picker is a
+wait, not a wrapped record. Port: the slice runner ends any record on an executed
+`0x21` (`World::run_spawned_record_slice`); disc-gated pins
+`crates/engine-session/tests/rikuroa_genesis_tree_noa_join_disc.rs` and
+`crates/engine-scene/tests/record_stop_marker_disc.rs`, which lists the partition-2
+records that carry code after a stop.
+
 A walk-on record engages the same way. `cave01` `P2[9]` (gated on `0x15A`
 clear) walks the player to `(81, 64)`, turns them to Terra and runs
 `B1 03 08`; Terra's record then plays its stage-`0x159` lesson from its
