@@ -2910,6 +2910,9 @@ whirl's centre through arm `0xE`. A retail recording's
 `creature.csv` reads these directly. Jedo's arm 7 shrinks its three rings every pass, the drained word `<< 12` over `192` into each part's scale `+0x72` (`0x801F7354..0x801F73B0`), and its pass halts them (`JEDO_ARM7_RING_RECORDS`, `World::apply_jedo_writes`).
 
 Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+0x21C = 0xC8`, `0x801F81E0..0x801F825C`): the reaction arm 15 staged has to tick, and its cue reaches the screen on arm 17.
+The flag is the tint pass's cursor-dim arm (colour `0x010101` at weight `0x1000`, [battle actor rendering](battle-actor-rendering.md)), so the victim draws as a dark silhouette through arms 16 to 19. Arms 16 and 17 focus on the first arm-9 part's height, which arm `0xE`'s pass sets to `trunc(victim[+0x3E] * 4 / 3)` (`0x801F7F5C..0x801F7F7C`, read back at `0x801F8280` / `0x801F83A8`):
+`228` above the floor on Gobu Gobu (a retail RAM image of arm `0x12` holds the focus word).
+With both, arm `0x12` reads `.820` and arm `0x13` `.736` on the Gobu Gobu film, against `.638` and `.570`. What remains there is the frozen victim's pose and the length of arm 17's streak. Grade `disassembly` + `capture`.
 
 Slippery's creature comes up out of the floor: arm 2's exit seats it at
 `y = -(scalar << 8)` and stages clip 1 bare, arm 3 lifts it `4 p` a pass and stands
@@ -3023,10 +3026,23 @@ onto the creature (focus `z = 2 drop`); arm `0xC`'s pass hangs both at
 pass to the ground and flies the creature on `y = trunc(15 sin 12w / 8) -
 0x2000`, `z = 0x1000 - 2 drop - cos 12w`, pitch `12w + 0xC00`, which arm
 `0xE` continues; arm `0xF` re-runs the target-size framing `FUN_801F0348`
-on every pass (`jal` at `0x801F805C`) before its shot reads `ctx[+0x6D0]`,
-draws the creature off, and on its pass puts the victim back on its saved
+on every pass (`jal` at `0x801F805C`) before its shot reads `ctx[+0x6D0]`
+and frames the victim's display pair, draws the creature off, and on its pass puts the victim back on its saved
 seat and facing. The pitch is `BattleActor::render_pitch`, composed by both
 hosts as `Rx(-pitch)` outside the facing (the frame flip conjugates it).
+
+**The victim's display pair.** A few summon shots focus on the victim's display pair
+`+0x3C` / `+0x40`, the live pair plus the pose's facing-rotated centroid, rather than on
+the live pair `+0x34` / `+0x38` the walks and headings read: Barra's arm `0xF`
+(`0x801F8068`), Aluru's damage-path framing of arms `0x13` / `0x14` (`0x801F873C`,
+`0x801F87D4`), Swordie's arm 9 and settle arm (`0x801F7980`, `0x801F7A9C`), and Zenoir's
+arms 9 and 10 (`0x801F7874`, `0x801F7984`; arm 10 also stands the creature on the pair).
+The two part ways when a clip carries the body off its seat. Barra's knocked-down victim
+lies about `370` units from its live pair in arm `0xF`, and framed on the live pair the
+camera stood inside the body: the arm read `.630` on the Gobu Gobu film, `.941` on the
+display pair. The directors take the pair as `ModuleCamState::victim_body`, which the
+host feeds every summon director as it does the capture directors. Grade `disassembly` +
+`capture`.
 
 **Spawns.** Each module's `FUN_80021B04` / `FUN_80050ED4` calls are seated on
 the pass their arm makes them (`cast_module_camera::creature_arm_spawns`,
