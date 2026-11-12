@@ -522,50 +522,6 @@ plays the battle theme, not `2013`, and mednafen's calc has not been watched ove
 it: a state from the battle that leads into this cast, run under the same clock with a watch on that
 voice's pitch and KON bits; the library holds no state of that fight before the cast.
 
-### When does a ring cue sound against the frame that pushed it?
-
-*Status:* open (measured)
-
-Frame-stepped under mednafen, a battle cue's voices key one game frame after the vsync its
-ring slot first shows the id: `zeto_big_wave_mid_cast` at step `4` (pushes at `351`, `391`,
-`399`, `407`, `419`, `483`, voices keyed at `355`, `395`, `403`, `411`, `423`, `487`) and
-`zenoir_summon_mid_cast` at step `3` (`778` to `781`); `son_field_door_hop`'s field part keys
-two vsyncs after its store at step `2`. Retail's mode handler runs the ager `FUN_8001698C`, the
-frame body `FUN_80016444`, then `FUN_80016B6C`, which drains at its head and paces the vsync
-wait after (`0x8001702C..0x80017068`), so a cue keys where the frame's work ends. The port
-drains on the tick that opens the frame, which puts the cast channel's cues up to a frame step
-early (Big Wave's party reactions, the reading the [cast channel](../subsystems/audio.md#the-cast-channel)
-gave as four vsyncs). The recordings put the onset a whole frame step after the push (Big
-Wave's first cue `3.9` vsyncs after the engine's, which pushes on retail's vsync), so the lag is
-the step, not `step - 1`. Holding the key-on a battle frame step leaves every cast row's median
-correlation where it was and lowers the tenth percentile on Swordie (`0.77` to `0.33`), Zenoir
-(`0.68` to `0.33`), Theeder and Guilty Cross, raising it only on Big Wave (`0.48` to `0.52`):
-the port's battle step is its cost model's, `2` through Big Wave's reactions where retail runs
-`4`, and `4` through Zenoir's kill phase where retail alternates `3` and `4`, so a lag on the
-port's step moves half the cues the wrong way. It is not ported. What closes it: the battle
-frame step itself on those arms (the cost ring's table), after which the lag is the step.
-The step byte is not always the frame's length either: on the PCSX-Redux film of Gaza's Neo
-Star Slash (`gaza2_card_pre_neo_star_slash`) capture phase 3 holds the step byte `4` and the
-cost at its `700` clamp while the frames take `6` vsyncs rising to `15` (`48` frames in
-`583` vsyncs, the frame counter `gp+0x480`), so a frame that overruns its step delays its
-cues by the overrun as well; the engine runs the same phase in `240` ticks.
-Held on the port's own step from the arms' current cost rows, the same run reads Big Wave's
-tenth percentile `0.478` to `0.522`, Zenoir's `0.682` to `0.329`, Swordie's `0.774` to
-`0.332` and Theeder's `0.342` to `0.308`, the medians unmoved: the table still names a step
-retail does not run through the kill phases.
-
-The lag is not a sound-against-picture offset the port owes, and holding the cue alone would
-create one. `FUN_80016B6C` drains the ring at its head (`0x80016BF8`), then waits out the frame
-(`jal 0x8005FB84` at `0x80017088` / `0x800171C0`), and only after the wait swaps the display and
-draws the ordering table the frame built (`0x80017230`, `0x80017254`, `DrawOTag` at `0x80017288`),
-into the buffer the *next* frame's swap shows. So retail keys frame `N`'s cue at the end of `N`
-and shows `N`'s picture at the end of `N + 1`: the sound leads its picture by one frame step. The
-port presents a tick's picture and keys its cues on that tick. A cue held one step would trail its
-picture by a step, two steps from retail's order, where the unheld cue is one step from it. The
-cast channel's residual is therefore a term of the comparison (its one offset per cast cannot
-absorb a step that changes arm by arm), not a cue the player hears late. What would still close
-the number: the cast render delaying each ring cue by retail's step on that arm, in the oracle.
-
 ## Title / boot / overlays
 
 No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
