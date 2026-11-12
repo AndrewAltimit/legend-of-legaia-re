@@ -60,6 +60,31 @@ pub struct FieldClipPlayer {
     hold_at_end: bool,
 }
 
+/// Frame `frame` of record `record_index` as the posed-mesh builders take it
+/// (`tmd_to_vram_mesh_posed_rot`): one `(translation, rotation)` per bone of
+/// the record, a bone whose entry does not decode at the identity. `None`
+/// when the record does not decode. Both hosts pose a placed actor's rest
+/// mesh on its clip's first frame through this, so the mesh a light set is
+/// read from is the one the window draws before the clip player runs.
+pub fn record_frame_pose(
+    bundle: &PlayerAnmBundle,
+    record_index: usize,
+    frame: usize,
+) -> Option<Vec<([i16; 3], [i16; 3])>> {
+    let rec = bundle.record(record_index).ok()?;
+    Some(
+        (0..rec.bone_count as usize)
+            .map(|b| match bundle.bone_transform(record_index, frame, b) {
+                Some(t) => (
+                    [t.t_x as i16, t.t_y as i16, t.t_z as i16],
+                    [t.r_x as i16, t.r_y as i16, t.r_z as i16],
+                ),
+                None => ([0; 3], [0; 3]),
+            })
+            .collect(),
+    )
+}
+
 impl FieldClipPlayer {
     /// Pre-decode record `record_index` of a locomotion bundle. `None` when
     /// the record is out of range / malformed or carries no frames.

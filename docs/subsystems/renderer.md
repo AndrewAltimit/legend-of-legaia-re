@@ -3194,7 +3194,11 @@ world space by each host's own draw list (the `.MAP` placement + terrain
 layers through `placement_model`, the MAN scene-actor props at their spawn
 anchor) and clustered greedily (`CLUSTER_MERGE_DIST`; clusters wider than
 `CLUSTER_MAX_EXTENT` are dropped as sheets). A light sits `LIGHT_LIFT` above
-its geometry so it pools onto the floor. A prop's set follows the actor's
+its geometry so it pools onto the floor. A prop's set is read from its mesh
+posed on the first frame of its clip (`field_anim::record_frame_pose`), the
+pose the window draws before the clip player runs: unposed, a clip prop's
+parts all sit at its origin, and a lamp its clip lifts onto a post or a roof
+lit the ground under it. The set follows the actor's
 live anchor every frame (`World::field_npc_live_anchor`). The
 `MAX_SCENE_LIGHTS` (8) lights nearest the player shade each frame, scaled by
 the mood's lamp strength; attenuation is `(1 - (d/r)^2)^2` with a
@@ -3208,7 +3212,11 @@ opaque (cutout texels shadow solid), and the cone is a spot approximation:
 geometry above the light attenuates but is never shadowed. With the
 sub-toggle off the lamps keep shading unshadowed (each light's
 `color.w = 0`, no shadow pass). The browser page draws the same shadows into
-its own depth array.
+its own depth array. The window recovers each draw's model from its MVP
+(`view_proj^-1 * mvp`) for both the shading and the shadow pass, and both
+group the product the same way: regrouped as `(light_vp * view_proj^-1) *
+mvp`, the shadow pass rounded a ground draw under its own depth on some
+frames, and whole tiles under a lamp blinked dark.
 
 **Glow sprites (the bloom stand-in).** Around each picked light the host
 draws an additive camera-facing halo and a soft vertical shaft falling from

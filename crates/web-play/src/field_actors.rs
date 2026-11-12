@@ -380,9 +380,12 @@ impl FieldActors {
 
     /// Enhanced lighting's light sets of the catalog's actors, each clustered
     /// at its spawn anchor (the floor under its placement) from its rest
-    /// mesh - the native window's MAN-prop light pass. Painted lamplight is
-    /// not read here (on a character it is skin), so a set comes only from
-    /// glow prims and the curated emissive table.
+    /// mesh posed on its clip's first frame - the native window's MAN-prop
+    /// light pass, whose mesh build poses the same frame. Unposed, a clip
+    /// actor's parts sit at its origin, and a flame its clip lifts lit the
+    /// floor. Painted lamplight is not read here (on a character it is
+    /// skin), so a set comes only from glow prims and the curated emissive
+    /// table.
     pub fn prop_light_sets(
         &self,
         host: &SceneHost,
@@ -394,11 +397,33 @@ impl FieldActors {
         };
         let mut out = Vec::new();
         for (i, e) in n.pack.entries.iter().enumerate() {
-            let Ok((tmd, raw)) = self.entry_tmd(host, banks, i as u32) else {
+            let Ok((mut tmd, raw)) = self.entry_tmd(host, banks, i as u32) else {
                 continue;
             };
-            let mut vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw);
-            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw);
+            let slot = e.placement.index as u8;
+            let anim = host
+                .world
+                .field_npc_live_anim(e.placement.index)
+                .unwrap_or(e.placement.anim_id);
+            let pose = anim
+                .checked_sub(1)
+                .zip(Self::clip_bank(host, banks, slot, e.special))
+                .and_then(|(rec, b)| {
+                    legaia_engine_field::field_anim::record_frame_pose(b, rec as usize, 0)
+                });
+            let (mut vmesh, mut cmesh) = match &pose {
+                Some(p) => {
+                    tmd.objects.truncate(p.len());
+                    (
+                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &raw, p),
+                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&tmd, &raw, p),
+                    )
+                }
+                None => (
+                    legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw),
+                    legaia_tmd::mesh::tmd_to_color_mesh(&tmd, &raw),
+                ),
+            };
             let hit = sl::tag_emissive_meshes(&raw, &mut vmesh, &mut cmesh, &res.vram);
             let mut samples = sl::vram_mesh_emitters(
                 &vmesh.positions,
