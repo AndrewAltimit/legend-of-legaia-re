@@ -374,12 +374,15 @@ pass before it left. The step column is the pass's own drain. Water Crystals' ar
 countdowns (`capture_countdown::WATER_CRYSTALS`, re-armed by `Add`, so a residue carries)
 end every arm on the frame the recording shows when each pass drains by its own frame's
 step, and a frame late when it drains by the frame before's: arm 1 opens behind a
-step-`3` frame and its eight step-`4` frames drain `256` exactly. The engine drains a pass
-by the ticks the frame before it spanned, so the step the track hands a pass that left a
-key is the one the next frame spans, and the arming pass takes the recording's first.
-Keyed on a frame's last row with its own step, every pass ran one frame late on the
-track: Water Crystals' first arm-1 pass drained `24` where retail's drained `32`, and the
-one step-`3` frame of arm 3 fell outside it, so arm 3 ran `128` game frames.
+step-`3` frame and its eight step-`4` frames drain `256` exactly. A retail pass also
+spans its own step: the next pass's logic lands that many vsyncs later. So the track
+hands a pass's step on as the pending step the next frame claims
+(`World::take_pending_frame_step`), the way an arm table's goes in, and the next pass
+both drains by it and spans it; the arming pass hands on the recording's first. Keyed on
+a frame's last row with its own step and re-timed onto the frame the pass had just
+opened, every frame spanned retail's length while the pass after it drained by the
+frame before's: Water Crystals' first arm-1 pass drained `24` where retail's drained
+`32`, and the one step-`3` frame of arm 3 fell outside it, so arm 3 ran `128` game frames.
 
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already

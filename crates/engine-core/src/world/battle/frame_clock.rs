@@ -498,21 +498,12 @@ impl World {
             return;
         };
         // The recording's first frame opens on the state the arming pass
-        // left, so its step spans the arming pass's frame: the next pass
-        // drains by it. The recorder arms ahead of the tick after the pass,
-        // so the frame is re-timed from its own first tick.
-        let Some(want) = track.arm(state, phase) else {
-            return;
-        };
-        self.battle.pending_frame_step = None;
-        let tick = self.clock.display_frames;
-        let open = tick - self.battle.frame_clock.ticks_into_frame(tick);
-        if self.battle.frame_clock.step != want {
-            self.battle.frame_clock.retime_frame(open, want);
-            if let Some(cam) = self.battle.camera.as_mut() {
-                cam.set_frame_step(want);
-            }
-        }
+        // left: its step is the next pass's, which both drains by it and
+        // spans it. It goes in as the step that pass's frame claims
+        // (`Self::take_pending_frame_step`); the recorder arms ahead of the
+        // tick after the arming pass, so any later claim is a later frame.
+        self.battle.pending_frame_step = track.arm(state, phase);
+        self.battle.pending_frame_step_from = u64::MAX;
     }
 
     /// The step of the battle frame this tick belongs to, as a module arm
@@ -544,12 +535,17 @@ impl World {
         tracked.unwrap_or_else(|| self.battle_frame_step()).max(1)
     }
 
-    /// A film's retail step for the frame this pass opens, which the next
-    /// pass drains by
-    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
+    /// A film's retail step for the frame the next pass opens
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]), the
+    /// step that pass drains by and the frame it spans. It goes in as the
+    /// pending step the next frame claims, the way an arm table's does: a
+    /// pass's step and its frame's length are one value. Re-timed onto this
+    /// pass's own frame instead, the frame lasted the next pass's step while
+    /// the next pass drained by this one's, so a seated film either kept
+    /// retail's wall timing and drained a frame late, or drained on time
+    /// and moved every step change's frame boundary by a pass.
     fn apply_retail_step_track(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
-        let tick = self.clock.display_frames;
         let Some(track) = self.battle.retail_step_track.as_mut() else {
             return;
         };
@@ -561,12 +557,8 @@ impl World {
         let Some(want) = track.next_step(state, phase) else {
             return;
         };
-        if self.battle.frame_clock.step != want {
-            self.battle.frame_clock.retime_frame(tick, want);
-            if let Some(cam) = self.battle.camera.as_mut() {
-                cam.set_frame_step(want);
-            }
-        }
+        self.battle.pending_frame_step = Some(want);
+        self.battle.pending_frame_step_from = self.battle_frame_id();
     }
 
     /// Start the capture band's CD wait on the state the SM just entered.
