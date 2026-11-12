@@ -947,6 +947,47 @@ impl PlayWindowApp {
                 );
             }
         }
+        // `fxparts.csv` beside it (no header): every live part of the
+        // battle's other scene graphs - `tick,scene,index,finished,flags,
+        // u0 (+0xA8),x,y,z` with scene `m` (move FX), `a<n>` (effect-script
+        // action FX) or `s` (stage) - so a melee burst's lifetime reads
+        // part by part against the probe's `parts.csv`.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("fxparts.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            let c = &w.casting;
+            let scenes = c
+                .active_move_fx
+                .iter()
+                .map(|s| ("m".to_string(), s))
+                .chain(
+                    c.active_action_fx
+                        .iter()
+                        .enumerate()
+                        .map(|(n, s)| (format!("a{n}"), s)),
+                )
+                .chain(c.stage_fx.iter().map(|s| ("s".to_string(), s)));
+            for (name, sc) in scenes {
+                for (i, part) in sc.parts.iter().enumerate() {
+                    let st = &part.state;
+                    let _ = writeln!(
+                        f,
+                        "{tick},{name},{i},{},{:#06x},{:#06x},{},{},{},{:#010x}",
+                        u8::from(part.finished),
+                        st.flags,
+                        st.actor_u16(0xA8),
+                        st.world_x,
+                        st.world_y,
+                        st.world_z,
+                        part.tag.unwrap_or(0),
+                    );
+                }
+            }
+        }
         for (id, kind) in &due {
             let _ = writeln!(
                 rec.sfx,
