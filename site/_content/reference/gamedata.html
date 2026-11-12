@@ -205,7 +205,7 @@ let db = Database::load();
 for art in db.arts_for(Character::Vahn) {
     println!("{:?} {:&gt;3} AP  {}", art.kind, art.ap, art.name);
 }
-let art = db.find_art_by_directions(Character::Vahn, &amp;[1, 2, 4]).unwrap();   // Hyper Elbow
+let art = db.find_art_by_directions(Character::Vahn, &amp;[1, 2, 1]).unwrap();   // Hyper Elbow
 let ap = db.ap_cost_for_action(Character::Gala, 0x1B).unwrap();                // 99, Biron Rage
 for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
     println!("  {:&gt;20}  {:&gt;5}G", entry.name, entry.price.unwrap_or(0));
@@ -217,7 +217,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
   <div class="cli"><code>gamedata-tool list arts --character Noa</code></div>
   <div class="cli"><code>gamedata-tool list magic --element light</code></div>
   <div class="cli"><code>gamedata-tool find "Tornado Flame"</code></div>
-  <div class="cli"><code>gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,High"</code></div>
+  <div class="cli"><code>gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,Arms"</code></div>
   <div class="cli"><code>gamedata-tool shop "Sol"</code></div>
   <div class="cli"><code>gamedata-tool dump-json arts &gt; arts.json</code></div>
   <p class="hint">From source: <code>cargo run -p legaia-gamedata --bin gamedata-tool -- &lt;subcommand&gt;</code>.</p>

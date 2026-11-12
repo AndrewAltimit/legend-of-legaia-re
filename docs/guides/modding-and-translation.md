@@ -208,7 +208,7 @@ ground truth beside the randomizer's read-only listings:
 ```bash
 ./gamedata-tool find "Healing Leaf"
 ./gamedata-tool list arts --character Vahn
-./gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,High"
+./gamedata-tool arts-by-command Vahn "Arms,Ra-Seru,Arms"
 ./gamedata-tool shop "Rim Elm"
 ./gamedata-tool dump-json enemies
 ```

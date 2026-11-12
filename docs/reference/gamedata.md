@@ -347,7 +347,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
 cargo run -p legaia-gamedata --bin gamedata-tool -- list arts --character Noa
 cargo run -p legaia-gamedata --bin gamedata-tool -- list magic --element light
 cargo run -p legaia-gamedata --bin gamedata-tool -- find "Tornado Flame"
-cargo run -p legaia-gamedata --bin gamedata-tool -- arts-by-command Vahn "Arms,Ra-Seru,High"
+cargo run -p legaia-gamedata --bin gamedata-tool -- arts-by-command Vahn "Arms,Ra-Seru,Arms"
 cargo run -p legaia-gamedata --bin gamedata-tool -- shop "Sol"
 cargo run -p legaia-gamedata --bin gamedata-tool -- dump-json arts > arts.json
 ```
