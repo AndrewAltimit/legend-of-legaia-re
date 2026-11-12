@@ -227,6 +227,10 @@ impl World {
                 let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.module_cam_with_yaw_base();
                 self.feed_seru_cam(entry, caster_slot, &mut st);
+                // The latched victim's display pair `+0x3C` / `+0x40`, which
+                // some arms frame instead of its live pair (PROT 0910's arm 9
+                // and settle, 0916's arms `0x13` / `0x14`, 0917's arm `0xF`).
+                st.victim_body = self.module_body_seat(latched);
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);

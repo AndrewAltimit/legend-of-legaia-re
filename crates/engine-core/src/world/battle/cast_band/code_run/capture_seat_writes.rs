@@ -81,6 +81,21 @@ impl World {
         a.battle.facing_angle = facing;
     }
 
+    /// Seat `slot`'s display trio `+0x3C..+0x40` and heading `+0x46`, as a
+    /// module arm reads the body where its walk reads the live pair.
+    pub(in crate::world::battle::cast_band) fn module_body_seat(
+        &self,
+        slot: u8,
+    ) -> Option<legaia_engine_cast::cast_module_camera::ModuleSeat> {
+        let p = self.battle_display_trio(usize::from(slot))?;
+        Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+            x: p[0] as i16,
+            y: p[1] as i16,
+            z: p[2] as i16,
+            facing: self.actors.get(usize::from(slot))?.battle.facing_angle & 0xFFF,
+        })
+    }
+
     /// Fill the capture director inputs of `st` that the seats do not carry:
     /// both bodies' display trios, the lead party member's roster id
     /// `0x8007BD10[0]`, the frame step and whether this tick opens a battle
@@ -91,17 +106,8 @@ impl World {
         victim_slot: u8,
         st: &mut legaia_engine_cast::cast_module_camera::ModuleCamState,
     ) {
-        let body = |w: &World, slot: u8| {
-            let p = w.battle_display_trio(usize::from(slot))?;
-            Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
-                x: p[0] as i16,
-                y: p[1] as i16,
-                z: p[2] as i16,
-                facing: w.actors.get(usize::from(slot))?.battle.facing_angle & 0xFFF,
-            })
-        };
-        st.caster_body = body(self, caster_slot);
-        st.victim_body = body(self, victim_slot);
+        st.caster_body = self.module_body_seat(caster_slot);
+        st.victim_body = self.module_body_seat(victim_slot);
         st.lead_roster = (self.party_roster_slot(0) + 1) as u8;
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).

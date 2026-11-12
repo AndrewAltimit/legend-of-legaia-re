@@ -236,8 +236,7 @@ fn shot(angles: [i16; 2], tr: [i16; 3], focus: [i16; 3], frames: i32) -> ArmDire
 /// the killing of the arm-14 records in arm 15 (they run until they halt),
 /// arm `0x11`'s turn of the victim onto the creature, the kill tallies in
 /// the character record (`+0x5D0`, `+0x664`) and arm `0x13`'s banner
-/// [`ALURU_KILL_BANNER`]. The arm `0x14` framing focuses the victim's seat
-/// rather than its `+0x3C` / `+0x40` pair.
+/// [`ALURU_KILL_BANNER`].
 ///
 /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the whole phase chain's gates, camera writes, captions, spawns and the band / colour words; arm 0's kill roll is `aluru_kill_verdict`)
 pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -250,6 +249,9 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     let f = i32::from(creature.facing);
     let on_creature = focus_on(creature);
     let on_victim = focus_on(v);
+    // The damage path's framing reads the victim's display pair `+0x3C` /
+    // `+0x40` (`0x801F873C`, `0x801F87D4`), not its live pair.
+    let body = st.victim_body.unwrap_or(v);
     let kill = st.kill == Some(true);
     st.band_spread = None;
     st.victim_shatter_step = 0;
@@ -458,7 +460,7 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                     next = crate::seru_magic_ticks::SERU_B_DONE_PHASE;
                 } else {
                     next += 1;
-                    d.shot = Some(settle_shot(creature, v, seats.depth_raw));
+                    d.shot = Some(settle_shot(creature, body, seats.depth_raw));
                 }
             }
             if next != phase {
@@ -469,7 +471,7 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         }
         ALURU_SETTLE_ARM => {
             let mut d = ArmDirection {
-                shot: Some(settle_shot(creature, v, seats.depth_raw)),
+                shot: Some(settle_shot(creature, body, seats.depth_raw)),
                 ..gate(!st.victim_settled)
             };
             if st.victim_settled {
@@ -486,7 +488,8 @@ pub fn aluru_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
 }
 
 /// The damage path's framing of arms `0x13` and `0x14`: pitch `0x40`, yaw
-/// `-f - 0x200`, TR `(0, 0x500, 2 depth / 3)` on the victim, over `0x10`
+/// `-f - 0x200`, TR `(0, 0x500, 2 depth / 3)` on the victim's display pair
+/// `+0x3C` / `+0x40`, over `0x10`
 /// frames (`0x801F873C..0x801F87A8`, `0x801F87D4..0x801F8840`).
 fn settle_shot(creature: ModuleSeat, victim: ModuleSeat, depth_raw: i32) -> ModuleShot {
     let f = i32::from(creature.facing);

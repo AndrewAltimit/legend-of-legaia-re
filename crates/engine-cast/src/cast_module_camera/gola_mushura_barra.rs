@@ -405,7 +405,7 @@ const BARRA_PULL: i32 = P << 7;
 /// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `3`, cut in; word `= 0` |
 /// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | clip `4` after clip `3`; the hit |
 /// | 0xE | word `+= p / 8` until `0x56`, on from arm 0xD's | word `= scalar << 7` |
-/// | 0xF | word, then the victim settled | every pass a cut on the victim at a third of the depth, TR z easing from half the depth; on its pass the victim back on arm 4's saved seat, the focus and yaw stored onto it; the caption cleared; `0xFF` |
+/// | 0xF | word, then the victim settled | every pass a cut on the victim's display pair at a third of the depth, TR z easing from half the depth; on its pass the victim back on arm 4's saved seat, the focus and yaw stored onto it; the caption cleared; `0xFF` |
 ///
 /// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps and the victim and creature arcs are the engine's `World::apply_barra_writes`; part spawns and the epilogue's ctx bytes not carried)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -588,7 +588,12 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         0xF => {
             let full = S << 7;
             let ease = ((full - st.countdown.0.max(0)) * (depth / 2)) / full;
-            let shot = cut([0, 0x80], [0, depth / 3, depth / 2 + ease], on(v), 1);
+            // The cut frames the victim's display pair `+0x3C` / `+0x40`
+            // (`lhu v0,0x3c(s3)` / `lhu v1,0x40(s3)` at `0x801F8068` /
+            // `0x801F8078`), which its knockdown clip carries off the live
+            // pair the arm-4 seat stood it on.
+            let body = st.victim_body.unwrap_or(v);
+            let shot = cut([0, 0x80], [0, depth / 3, depth / 2 + ease], on(body), 1);
             if st.countdown.0 > 0 && st.countdown.holds_after_drain(P, 0) {
                 return ArmDirection { hold: true, ..shot };
             }
