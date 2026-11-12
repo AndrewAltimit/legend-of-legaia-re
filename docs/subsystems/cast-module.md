@@ -4195,7 +4195,11 @@ stood off its frame: `nivora_duel_pre_plasma_strike` (`--retail-steps`) reads ar
 did not raise the flag, so its arm `0x0A` cut carried three ticks of its own drift
 into arm `0x0B` (pitch `-12`, TR y `+96`); raised, `nivora_duel_pre_megaton_press`
 (`--retail-steps --rand-track`) reads arms `0x0B..0x11` on retail's camera to the
-unit. Grade `disassembly` + `capture`.
+unit. Of the other enemy films only the Thunder Storm, Dark Typhoon, Shadow Break,
+and Earthquake (Saryu, Rock Lizard) casts reach a pass of this shape;
+`battle_jouind_gilium_lv3_thunder_storm_mid_cast` (`--retail-steps`) reads arms 5 / 6
+`.80` / `.77` to `.90` / `.87`, the rest move by `.003` or less. Grade `disassembly` +
+`capture`.
 
 The seat moves an arm makes ahead of its gate scale the same way, and so does its
 focus z drift. PROT 0958's runs carry the caster `-8 s` a vsync on every pass of
@@ -4548,7 +4552,8 @@ seat whose bump the same tick committed now meets the decay
 (`CastFxState::module_bump_commits`). With the drift-first order above,
 `nivora_duel_pre_megaton_press` (`--retail-steps --rand-track`) reads arm `0x0B` `.78`
 to `.95`, `0x0C` / `0x0D` `.92` / `.93` to `.90` / `.92` and `0x0E..0x11` `.70..87` to
-`.83..93`. Arms 9 and `0x0A`, the rock rings, read `.98` / `.99` under `--rand-track` and
+`.83..93`; of the other enemy films only Koru's Thunder Needle meets the case, and its
+film does not move. Arms 9 and `0x0A`, the rock rings, read `.98` / `.99` under `--rand-track` and
 `.71` without it: their residue on the other seats is the `rand()` deal. Grade
 `disassembly` + `capture`.
 
