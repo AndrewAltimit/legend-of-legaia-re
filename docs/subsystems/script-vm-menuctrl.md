@@ -1186,6 +1186,18 @@ raises the bit and parks at `540` in its prologue (`31 1D`,
 in `World::tick_field_npc_heights` from their context's flag word and `+0x8E`,
 which both play hosts read through `World::field_npc_render_y`.
 
+A scripted arc (op `0x43` sub `0` / `1` / `0xA` / `0xB`) writes the held
+height too. Its helper `FUN_801D5C08` stores `-y` into a parent's `+0x8E` on
+every flight frame and the landing's `-y` on the last
+(`0x801D5CB0..0x801D5CBC`, `0x801D5D40..0x801D5D4C`); only the player, the
+compare against `_DAT_8007C364`, skips the store. So a placement on the
+held-height arm stays at its landing when it next walks: `nilboa` `P2[7]`'s
+Delilas siblings hold `+0x8E = 470..580` on their ledges, leap down to the
+floor and land with `+0x8E = 0`, then a `MoveTo` lines them up for their
+pose. The port writes the placement context's `field_8e` in
+`World::tick_field_script_arcs` and hands the slot back to the height arm on
+the landing.
+
 The ramp lands on whichever actor the op resolved: the arm passes
 `a1 = &s5+0x8E`, the live `lh +0x8E` as the start and kind 2
 (`0x801E1214..0x801E1230`), with `s5` the prefix-resolved target, so a

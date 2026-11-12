@@ -350,9 +350,31 @@ impl World {
                 ScriptActorRef::Npc(slot) => {
                     self.npcs.positions.insert(slot, (x, z));
                     self.script_actors.npc_heights.insert(slot, (x, z, y));
+                    // A parent that is not the player also takes `-y` into
+                    // its held height `+0x8E`, every flight frame and on the
+                    // landing (`0x801D5CB0..0x801D5CBC`, `0x801D5D40..
+                    // 0x801D5D4C`), so a placement on the held-height arm
+                    // (`+0x10 & 0x20000000`) stays where the arc put it.
+                    let held = y.wrapping_neg();
+                    for ch in self
+                        .field_vm
+                        .channels
+                        .iter_mut()
+                        .filter(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                    {
+                        ch.ctx.field_8e = held;
+                    }
                 }
             }
             let watch = hop_arc::release_watcher_tick(&a.watcher, tick.arrived);
+            if tick.arrived
+                && let ScriptActorRef::Npc(slot) = a.actor
+            {
+                // Landed: the actor driver's height arm (`FUN_8003BC08`) owns
+                // `+0x16` again from the next tick, starting from the landing.
+                self.script_actors.npc_heights.remove(&slot);
+                self.npcs.glide_y.insert(slot, y);
+            }
             if let Some(mask) = watch.release_mask {
                 if let Some(slot) = a.release_channel {
                     for ch in self
@@ -674,5 +696,61 @@ mod npc_draw_pose_tests {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         w.npcs.positions.insert(3, (hide, hide));
         assert!(w.field_npc_draw_pose(3, (100, 200)).is_none());
+    }
+
+    /// An arc on a placement writes `-y` into the placement's held height
+    /// `+0x8E` (`FUN_801D5C08`, `0x801D5CB0` / `0x801D5D40`), so one on the
+    /// held-height arm (`+0x10 & 0x20000000`) stands at the landing after it
+    /// walks off it. `nilboa` `P2[7]`'s Delilas siblings leap down from
+    /// ledges `470..580` up, land on the floor and pose: the port had drawn
+    /// them back at their ledge heights once their next `MoveTo` took them
+    /// off the landing spot.
+    #[test]
+    fn an_arc_carries_a_held_placement_s_height_to_its_landing() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 4,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    world_x: 0x0840,
+                    world_y: (-470i16) as u16,
+                    world_z: 0x0840,
+                    flags: 0x2003_0880,
+                    field_8e: 470,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        w.npcs.positions.insert(4, (0x0840, 0x0840));
+        w.npcs.glide_y.insert(4, -470);
+        let req = hop_arc::ScriptArcRequest {
+            sub_op: 0xA,
+            tile_x: 0x12,
+            tile_z: 0x10,
+            apex: 64,
+            frames: 20,
+            explicit_y: Some(0),
+        };
+        assert!(w.start_field_script_arc(ScriptActorRef::Npc(4), &req, Some(4)));
+        let mut flown = Vec::new();
+        while w.script_arc_live(ScriptActorRef::Npc(4)) {
+            w.tick_field_script_arcs();
+            flown.push(w.field_vm.channels[0].ctx.field_8e);
+            assert!(flown.len() < 100, "the arc lands");
+        }
+        assert!(
+            flown.iter().any(|&h| h > 470),
+            "the apex lifts the held height"
+        );
+        assert_eq!(*flown.last().unwrap(), 0, "landed: `+0x8E = -end.y`");
+        // Off the landing spot, the height arm holds it at the landing.
+        w.npcs.positions.insert(4, (0x0900, 0x0840));
+        w.tick_field_npc_heights();
+        assert_eq!(w.field_npc_render_y(4, 0x0900, 0x0840), 0);
     }
 }

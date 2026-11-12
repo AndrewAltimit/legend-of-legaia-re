@@ -544,12 +544,13 @@ pub struct HopArcTick {
 ///    point** `+0x24..+0x2B` into the parent verbatim (no final curve
 ///    evaluation - the landing is exact by construction), and tear down.
 ///
-/// Not modelled: the entry gate `*(parent + 0x10) & 8` (the parent already
-/// carries the pool's tear-down bit) and the non-player arm at
+/// Not modelled here: the entry gate `*(parent + 0x10) & 8` (the parent
+/// already carries the pool's tear-down bit), and the non-player arm at
 /// `0x801D5CB0` / `0x801D5D40`, which writes `-y` into a non-player parent's
-/// `+0x8E`. The player hop never takes that arm - `FUN_801d2404` back-links
-/// `_DAT_8007C364` itself, and the compare against that same global is what
-/// selects it.
+/// `+0x8E` on every flight frame and on the landing. The player hop never
+/// takes that arm - `FUN_801d2404` back-links `_DAT_8007C364` itself, and the
+/// compare against that same global is what selects it; the scripted arc on a
+/// placement takes it in `World::tick_field_script_arcs`.
 ///
 /// PORT: FUN_801d5c08
 /// REF: FUN_801e45bc
