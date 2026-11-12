@@ -116,13 +116,17 @@ pub fn spell_phase_cue(
                 None
             }
         }
-        (P::Select { .. }, P::Targeting { .. } | P::Confirmed { .. }) => Some(BattleUiCue::Confirm),
+        (P::Select { .. }, P::Targeting { .. } | P::SweepConfirm { .. } | P::Confirmed { .. }) => {
+            Some(BattleUiCue::Confirm)
+        }
         (P::Select { .. }, P::Aborted) => Some(BattleUiCue::ListCancel),
         (P::Targeting { picker: a, .. }, P::Targeting { picker: b, .. }) => {
             (a.state() != b.state()).then_some(BattleUiCue::Cursor)
         }
-        (P::Targeting { .. }, P::Confirmed { .. }) => Some(BattleUiCue::Confirm),
-        (P::Targeting { .. }, P::Select { .. }) => Some(BattleUiCue::Back),
+        (P::Targeting { .. } | P::SweepConfirm { .. }, P::Confirmed { .. }) => {
+            Some(BattleUiCue::Confirm)
+        }
+        (P::Targeting { .. } | P::SweepConfirm { .. }, P::Select { .. }) => Some(BattleUiCue::Back),
         _ => None,
     }
 }

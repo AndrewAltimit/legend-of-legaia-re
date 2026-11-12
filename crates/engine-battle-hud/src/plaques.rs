@@ -789,11 +789,26 @@ pub fn battle_target_select_plate(
     use legaia_engine_battle::battle_hud_state::TargetSelectPlate;
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
     let plate = |key: u8, name: String, badge: Option<u8>| TargetSelectPlate { key, name, badge };
+    // The magic window's all-target surfaces (`0x5E` / `0x67`) adopt the
+    // same preset labels as the item window's: step `0x19` / `0x1F` with
+    // `a1 = 2` copies record `0x3D` (`"  All"`), with `a1 = 3` record `0x3E`
+    // (`0x801D4404..0x801D443C`).
+    if let Some(legaia_engine_battle::battle_magic::SpellPhase::SweepConfirm { row, .. }) =
+        world.battle.spell_menu.as_ref().map(|m| &m.phase)
+        && battle_command_surface(world).is_some()
+    {
+        use legaia_engine_battle_vm::battle_commit_log as log;
+        let label = match row {
+            CursorRow::Enemy => log::ALL_ENEMIES_LABEL,
+            CursorRow::Ally => log::ALL_ALLIES_LABEL,
+        };
+        return Some(plate(TARGET_SELECT_LABEL_KEY, label.to_string(), None));
+    }
     match battle_command_surface(world) {
         Some(CommandSurface::ItemAllAllies) => {
             return Some(plate(
                 TARGET_SELECT_LABEL_KEY,
-                "All Allies".to_string(),
+                legaia_engine_battle_vm::battle_commit_log::ALL_ALLIES_LABEL.to_string(),
                 None,
             ));
         }

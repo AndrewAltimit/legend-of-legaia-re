@@ -238,6 +238,10 @@ pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Optio
                     _ => None,
                 })
             }
+            // The all-target confirm (`0x5E` / `0x67`) points at no member.
+            legaia_engine_battle::battle_magic::SpellPhase::SweepConfirm { .. } => {
+                CommandSurface::SpellTarget(None)
+            }
             _ => CommandSurface::SpellBrowse,
         });
     }

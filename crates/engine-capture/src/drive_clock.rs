@@ -81,6 +81,7 @@ mod tests {
             flow: BattleFlowState::ArtsCommandEntry,
             seat: 0,
             spirit: 0,
+            pick: 0,
         }
     }
 

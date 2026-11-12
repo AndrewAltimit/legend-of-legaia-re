@@ -48,10 +48,19 @@ pub enum BattleDrive {
     /// it commit a plain Attack, or Spirit for each seat set in `spirit`
     /// (the retail commit each member's `+0x1DE` holds, which the commit
     /// log draws), and the seat itself takes the arm that leads to `flow`.
+    ///
+    /// `pick` is the action id the window row under the cursor holds on a
+    /// capture inside the item or magic window or one of their target
+    /// sub-cursors - the seat's `+0x1DF`, which the item window stamps off
+    /// the bag slot (`0x801D189C`) and the magic window off the hovered spell
+    /// (`0x801D1A34`) - or `0` for the window's opening row. The drive walks
+    /// the window's cursor down onto that row before it confirms, so the
+    /// sub-cursor reached is the one the row's target flags raise.
     Menu {
         flow: BattleFlowState,
         seat: u8,
         spirit: u8,
+        pick: u8,
     },
     /// An action in flight: rounds are committed (a plain Attack each, the
     /// capture's own seat Spirit when that is what it had committed) until
@@ -837,7 +846,15 @@ impl BattleDrive {
     pub fn to_env(&self) -> String {
         match *self {
             Self::Opening { swept, entry } => format!("opening,{},{entry}", u8::from(swept)),
-            Self::Menu { flow, seat, spirit } if spirit != 0 => {
+            Self::Menu {
+                flow,
+                seat,
+                spirit,
+                pick,
+            } if pick != 0 => format!("menu,{},{seat},{spirit},{pick}", flow.raw()),
+            Self::Menu {
+                flow, seat, spirit, ..
+            } if spirit != 0 => {
                 format!("menu,{},{seat},{spirit}", flow.raw())
             }
             Self::Menu { flow, seat, .. } => format!("menu,{},{seat}", flow.raw()),
@@ -1097,11 +1114,19 @@ impl BattleDrive {
                 flow: BattleFlowState::from_raw(flow),
                 seat,
                 spirit: 0,
+                pick: 0,
             }),
             ("menu", &[flow, seat, spirit]) => Some(Self::Menu {
                 flow: BattleFlowState::from_raw(flow),
                 seat,
                 spirit,
+                pick: 0,
+            }),
+            ("menu", &[flow, seat, spirit, pick]) => Some(Self::Menu {
+                flow: BattleFlowState::from_raw(flow),
+                seat,
+                spirit,
+                pick,
             }),
             ("action", &[seat, state, category, queued]) => Some(Self::Action {
                 seat,
@@ -1927,23 +1952,41 @@ impl BattleDrive {
             }
             return Some(PadButton::Cross);
         }
-        // The item window's target step: `Cross` on the row the window opens
-        // on, the bag's first battle-usable row a state's probe confirmed.
-        if matches!(
-            self,
-            Self::Menu {
-                flow: BattleFlowState::TargetConfirm,
-                ..
-            }
-        ) && world.battle.item_menu.is_some()
-            && world.battle.flow == BattleFlowState::ItemWindow
+        // A window's target sub-cursor: walk the window's cursor onto the
+        // capture's row (`pick`, the seat's `+0x1DF`), then `Cross`, which
+        // raises the sub-cursor that row's target flags name. With no pick,
+        // the row the window opens on.
+        if let Self::Menu { flow, pick, .. } = *self
+            && let Some(window) = flow.window_of_target()
+            && world.battle.flow == window
         {
-            return Some(PadButton::Cross);
+            let under = if window == BattleFlowState::ItemWindow {
+                world
+                    .battle
+                    .item_menu
+                    .as_ref()
+                    .map(|m| m.current_item().map(|e| e.id))
+            } else {
+                world
+                    .battle
+                    .spell_menu
+                    .as_ref()
+                    .map(|m| m.menu_spell().map(|r| r.id))
+            };
+            if let Some(under) = under {
+                return Some(if pick != 0 && under != Some(pick) {
+                    PadButton::Down
+                } else {
+                    PadButton::Cross
+                });
+            }
         }
         let cmd = world.battle.command.as_ref()?;
         match *self {
             Self::Opening { .. } => None,
-            Self::Menu { flow, seat, spirit } => {
+            Self::Menu {
+                flow, seat, spirit, ..
+            } => {
                 let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
                 match cmd.phase {
                     CommandPhase::RoundPrompt { .. } if flow == BattleFlowState::EscapePrompt => {
@@ -1956,10 +1999,8 @@ impl BattleDrive {
                         Some(PadButton::Down)
                     }
                     CommandPhase::Menu { .. } if !ours => Some(PadButton::Left),
-                    CommandPhase::Menu { .. } => match flow {
-                        BattleFlowState::ItemWindow | BattleFlowState::TargetConfirm => {
-                            Some(PadButton::Up)
-                        }
+                    CommandPhase::Menu { .. } => match flow.window_of_target().unwrap_or(flow) {
+                        BattleFlowState::ItemWindow => Some(PadButton::Up),
                         BattleFlowState::MagicWindow => Some(PadButton::Right),
                         BattleFlowState::ArtsCommandEntry
                         | BattleFlowState::AttackModePrompt

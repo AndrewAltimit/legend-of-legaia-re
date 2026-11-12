@@ -40,8 +40,26 @@
 //! | `0x6E` = 110 | [`BattleFlowState::CommitBegin`] | Every member has committed - begin the round. |
 //! | `0x78` = 120 | [`BattleFlowState::AttackModePrompt`] | The Auto / Command attack-mode prompt. |
 //!
-//! Above the selection band sit the resolution states (`0x5B..=0x67` per-window
-//! target sub-cursors, `0xFE` "round armed, run the action SM", `0xFF` idle).
+//! Above the selection band sit the item and magic windows' target
+//! sub-cursors, two disjoint runs the dispatch tree tests one constant at a
+//! time (`0x801D0D30..0x801D0DA4`; no case for `0x5F..=0x63`). The window's
+//! commit picks one off the row's target flags (`+2` of the item / spell
+//! effect record, `0x40` enemy side, `0x20` all), item at
+//! `0x801D18E0..0x801D19F4`, magic at `0x801D1C50..0x801D1D7C`:
+//!
+//! | side, scope | item | magic | target byte `+0x1DD` |
+//! |---|---|---|---|
+//! | one enemy | `0x5B` [`BattleFlowState::ItemEnemyTarget`] | `0x5C` [`BattleFlowState::SpellEnemyTarget`] | a monster seat, walked by `FUN_801D8D00` |
+//! | all enemies | `0x5D` [`BattleFlowState::ItemAllEnemies`] | `0x5E` [`BattleFlowState::SpellAllEnemies`] | `9` |
+//! | one ally | `0x64` [`BattleFlowState::TargetConfirm`] | `0x65` [`BattleFlowState::SpellAllyTarget`] | the caster's seat, stepped `+-1` |
+//! | all allies | `0x66` [`BattleFlowState::ItemAllAllies`] | `0x67` [`BattleFlowState::SpellAllAllies`] | `8` |
+//!
+//! Every one of the eight confirms the same way: the confirm mask commits and
+//! leaves for the ring (`0x28`, the next member) or `0x6E` after the last
+//! (`FUN_801DB81C` against `ctx[+0x00]`), and the cancel mask goes back to the
+//! window it came from (`0x3C` / `0x46`). An all-target surface waits for that
+//! confirm like a cursor does: it has no cursor to move, not no confirm.
+//! `0xFE` is "round armed, run the action SM"; `0xFF` is idle.
 //!
 //! ## Why this byte matters beyond the menus
 //!
@@ -85,8 +103,26 @@ pub enum BattleFlowState {
     ArtsCommandEntry = 80,
     /// The target cursor (retail `0x5A`).
     TargetSelect = 90,
-    /// Target confirmed (retail `0x64`).
+    /// The item window's one-enemy target cursor (retail `0x5B`,
+    /// `0x801D23F0`).
+    ItemEnemyTarget = 0x5B,
+    /// The magic window's one-enemy target cursor (retail `0x5C`,
+    /// `0x801D2590`).
+    SpellEnemyTarget = 0x5C,
+    /// The item window's all-enemies confirm (retail `0x5D`, `0x801D278C`).
+    ItemAllEnemies = 0x5D,
+    /// The magic window's all-enemies confirm (retail `0x5E`, `0x801D28C0`).
+    SpellAllEnemies = 0x5E,
+    /// The item window's one-ally target cursor (retail `0x64`,
+    /// `0x801D2A00`) - the "target confirm" of the selection band.
     TargetConfirm = 100,
+    /// The magic window's one-ally target cursor (retail `0x65`,
+    /// `0x801D2B3C`).
+    SpellAllyTarget = 0x65,
+    /// The item window's all-allies confirm (retail `0x66`, `0x801D2DB4`).
+    ItemAllAllies = 0x66,
+    /// The magic window's all-allies confirm (retail `0x67`, `0x801D2EF4`).
+    SpellAllAllies = 0x67,
     /// Every party member has committed - begin the round (retail `0x6E`).
     CommitBegin = 110,
     /// The Auto / Command attack-mode prompt (retail `0x78`).
@@ -100,10 +136,17 @@ impl BattleFlowState {
     }
 
     /// Decode a raw `ctx[+0x06]` byte. Values outside the modelled selection
-    /// band (retail's entry / resolution states) decode to
-    /// [`BattleFlowState::Idle`].
+    /// band and its target sub-cursors (retail's entry / resolution states)
+    /// decode to [`BattleFlowState::Idle`].
     pub fn from_raw(raw: u8) -> Self {
         match raw {
+            0x5B => Self::ItemEnemyTarget,
+            0x5C => Self::SpellEnemyTarget,
+            0x5D => Self::ItemAllEnemies,
+            0x5E => Self::SpellAllEnemies,
+            0x65 => Self::SpellAllyTarget,
+            0x66 => Self::ItemAllAllies,
+            0x67 => Self::SpellAllAllies,
             30 => Self::TurnPrompt,
             40 => Self::CategoryMenu,
             50 => Self::EscapePrompt,
@@ -115,6 +158,48 @@ impl BattleFlowState {
             110 => Self::CommitBegin,
             120 => Self::AttackModePrompt,
             _ => Self::Idle,
+        }
+    }
+
+    /// Whether this is one of the item / magic windows' target sub-cursors
+    /// (`0x5B..=0x5E`, `0x64..=0x67`).
+    pub fn is_window_target(self) -> bool {
+        matches!(self.raw(), 0x5B..=0x5E | 0x64..=0x67)
+    }
+
+    /// The window a target sub-cursor's cancel returns to: the item window
+    /// `0x3C` for `0x5B` / `0x5D` / `0x64` / `0x66`, the magic window `0x46`
+    /// for the other four (`sb v0,0x0(s3)` with `0x3C` at `0x801D2574`,
+    /// `0x801D27A4`, `0x801D2A2C`, `0x801D2DD8`; `0x46` at `0x801D2704`,
+    /// `0x801D28D8`, `0x801D2B68`, `0x801D2F18`).
+    pub fn window_of_target(self) -> Option<Self> {
+        match self {
+            Self::ItemEnemyTarget
+            | Self::ItemAllEnemies
+            | Self::TargetConfirm
+            | Self::ItemAllAllies => Some(Self::ItemWindow),
+            Self::SpellEnemyTarget
+            | Self::SpellAllEnemies
+            | Self::SpellAllyTarget
+            | Self::SpellAllAllies => Some(Self::MagicWindow),
+            _ => None,
+        }
+    }
+
+    /// The target sub-cursor a window's commit raises for a row whose target
+    /// flags name `enemy` side and `all` scope (`0x40` / `0x20` of the effect
+    /// record's `+2`): the ladder at `0x801D18E0..0x801D18EC` (item) and
+    /// `0x801D1C50..0x801D1C5C` (magic).
+    pub fn window_target(magic: bool, enemy: bool, all: bool) -> Self {
+        match (magic, enemy, all) {
+            (false, true, false) => Self::ItemEnemyTarget,
+            (false, true, true) => Self::ItemAllEnemies,
+            (false, false, false) => Self::TargetConfirm,
+            (false, false, true) => Self::ItemAllAllies,
+            (true, true, false) => Self::SpellEnemyTarget,
+            (true, true, true) => Self::SpellAllEnemies,
+            (true, false, false) => Self::SpellAllyTarget,
+            (true, false, true) => Self::SpellAllAllies,
         }
     }
 }
@@ -336,9 +421,37 @@ mod tests {
 
     #[test]
     fn entry_and_resolution_states_are_idle() {
-        for raw in [0u8, 0x0A, 0x0B, 0x14, 0x5B, 0x66, 0xFE, 0xFF] {
+        for raw in [0u8, 0x0A, 0x0B, 0x14, 0x5F, 0x63, 0xFE, 0xFF] {
             assert_eq!(BattleFlowState::from_raw(raw), BattleFlowState::Idle);
         }
+    }
+
+    /// The dispatch tree's sub-cursor cases are two runs, `0x5B..=0x5E` and
+    /// `0x64..=0x67`, each decoding to itself and cancelling to its window.
+    #[test]
+    fn window_targets_are_two_runs_that_round_trip() {
+        for raw in 0x5Bu8..=0x67 {
+            let s = BattleFlowState::from_raw(raw);
+            let live = matches!(raw, 0x5B..=0x5E | 0x64..=0x67);
+            assert_eq!(s.is_window_target(), live, "0x{raw:02X}");
+            if live {
+                assert_eq!(s.raw(), raw);
+                let window = s.window_of_target().unwrap();
+                let magic = window == BattleFlowState::MagicWindow;
+                // Odd low bits are magic in the first run, the opposite
+                // parity in the second (0x5B item / 0x5C magic, 0x64 item /
+                // 0x65 magic).
+                assert_eq!(magic, (raw & 1 == 0) == (raw < 0x64), "0x{raw:02X}");
+            }
+        }
+        assert_eq!(
+            BattleFlowState::window_target(true, true, false),
+            BattleFlowState::SpellEnemyTarget
+        );
+        assert_eq!(
+            BattleFlowState::window_target(false, false, true),
+            BattleFlowState::ItemAllAllies
+        );
     }
 
     #[test]

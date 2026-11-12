@@ -405,14 +405,9 @@ fn a_live_cast_stages_its_module_records() {
             .map(|r| r.id)
             .unwrap_or_else(|| panic!("no spell under the cursor at row {row}"));
         press(&mut w, PadButton::Cross); // pick the spell
-        // A single-target shape opens the picker; a group shape commits
-        // straight away, so only confirm when there is something to confirm.
-        if w.battle
-            .spell_menu
-            .as_ref()
-            .and_then(|s| s.picker())
-            .is_some()
-        {
+        // A single-target shape opens the picker and a group shape its
+        // all-target surface (`0x5E` / `0x67`); either waits for a confirm.
+        if w.battle.spell_menu.is_some() {
             press(&mut w, PadButton::Cross); // confirm the target
         }
         cast += 1;

@@ -867,6 +867,24 @@ pub fn battle_text_draws(
             SpellPhase::Targeting { picker, .. } => {
                 out.extend(target_lines(font, picker, "cast", BATTLE_MENU_Y));
             }
+            SpellPhase::SweepConfirm { row, .. } => {
+                use legaia_engine_battle::target_picker::CursorRow;
+                use legaia_engine_ui::text_draws_for;
+                let line = match row {
+                    CursorRow::Enemy => "cast -> all enemies",
+                    CursorRow::Ally => "cast -> all allies",
+                };
+                out.extend(text_draws_for(
+                    &font.layout_ascii(line),
+                    (BATTLE_MENU_X, BATTLE_MENU_Y),
+                    MENU_WHITE,
+                ));
+                out.extend(text_draws_for(
+                    &font.layout_ascii(TARGET_HINT),
+                    (BATTLE_MENU_X, BATTLE_MENU_Y + 14),
+                    MENU_DIM,
+                ));
+            }
             _ => {}
         }
     } else if w.battle.item_menu.is_some() {

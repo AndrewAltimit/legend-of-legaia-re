@@ -7048,6 +7048,24 @@ expected_active_scene = "korb3"
 topics = ["battle", "command flow", "retail-compare"]
 
 [[scenarios]]
+label = "battle_magic_target_gaza2_retail"
+backup_fingerprint = "2200d2b77c622c33daa2833d001e4719c9fe01406dce56e7d0383e2e7a1ce7dc"
+description = "Gaza boss fight's magic one-enemy target, ctx[+0x06] 0x5C, on the magic window's second row. CROSS, RIGHT, DOWN, CROSS. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_item_allparty_gaza2_retail"
+backup_fingerprint = "3434193271a04120a975ced244d232af18bc383ef162f246ce946329e10c5ce3"
+description = "Gaza boss fight's all-allies item confirm, ctx[+0x06] 0x66, on the bag's fifth row. CROSS, UP, DOWN x4, CROSS. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
 label = "menu_items_all_apply_kor_retail"
 backup_fingerprint = "149a682286c538b4774dc354ed0c16541d5e0b28635ee46f39cef4010953dd3a"
 description = "Items all-party apply over kor, sub-screen 0x09, Healing Fruit. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."

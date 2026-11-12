@@ -71,6 +71,12 @@ pub enum SpellPhase {
         spell_id: u8,
         picker: TargetPickerSession,
     },
+    /// An all-enemies / all-allies spell is chosen and waits for its
+    /// confirm: retail's `0x5E` / `0x67` (`0x801D28C0`, `0x801D2EF4`). The
+    /// window's commit seats the sweep target byte (`9` / `8`) and leaves no
+    /// cursor, but the surface still reads the confirm and cancel masks: the
+    /// confirm commits, the cancel goes back to the list.
+    SweepConfirm { spell_id: u8, row: CursorRow },
     /// Resolved: the live loop should cast `spell_id` against the target.
     Confirmed {
         spell_id: u8,
@@ -256,6 +262,28 @@ impl BattleSpellSession {
                     None => SpellPhase::Targeting { spell_id, picker },
                 };
             }
+            // The all-target surfaces: the cancel mask is tested first
+            // (`beq s4,zero` / `and v0,s2,v0` on `0x800846D4` at
+            // `0x801D28C0..0x801D28D4`), then the confirm.
+            SpellPhase::SweepConfirm { spell_id, row } => {
+                self.phase = if ev.circle {
+                    SpellPhase::Select {
+                        cursor: self
+                            .spells
+                            .iter()
+                            .position(|s| s.id == spell_id)
+                            .unwrap_or(0) as u8,
+                    }
+                } else if ev.cross {
+                    SpellPhase::Confirmed {
+                        spell_id,
+                        target_row: row,
+                        target_slot: 0,
+                    }
+                } else {
+                    SpellPhase::SweepConfirm { spell_id, row }
+                };
+            }
             other => self.phase = other,
         }
     }
@@ -298,12 +326,24 @@ fn step_select(
         if row.affordable
             && let Some(def) = catalog.get(row.id)
         {
-            let picker =
-                TargetPickerSession::new(target_kind_for(def.target), party_slot, party, monsters);
+            let kind = target_kind_for(def.target);
+            let picker = TargetPickerSession::new(kind, party_slot, party, monsters);
             // Immediate kinds (sweep / self / no-candidates) resolve in the
             // constructor; fold that here so we don't stall a frame.
             if let Some(outcome) = picker.outcome() {
                 return match outcome {
+                    // An all-target spell stands on its confirm surface
+                    // (`0x5E` / `0x67`) rather than casting on the list's
+                    // press: the window's commit only raises the state
+                    // (`0x801D1CDC..0x801D1D04`, `0x801D1D48..0x801D1D7C`).
+                    PickerOutcome::Sweep { row: r }
+                        if matches!(kind, TargetKind::AllEnemies | TargetKind::AllAllies) =>
+                    {
+                        SpellPhase::SweepConfirm {
+                            spell_id: row.id,
+                            row: r,
+                        }
+                    }
                     PickerOutcome::Single { slot, row: r } => SpellPhase::Confirmed {
                         spell_id: row.id,
                         target_row: r,
@@ -392,16 +432,39 @@ mod tests {
     }
 
     #[test]
-    fn heal_all_resolves_immediately_as_sweep() {
+    fn heal_all_waits_on_its_confirm_surface() {
         let cat = SpellCatalog::vanilla();
-        // Heal All (0x11) is AllAllies -> sweep, no cursor; Cross confirms in
-        // one step.
+        // Heal All (0x11) is AllAllies -> sweep, no cursor; the list's Cross
+        // raises the all-allies surface (retail `0x67`) and a second Cross
+        // casts.
         let mut s = BattleSpellSession::new(0, 0, &[0x11], &cat, 50, 0);
+        s.input(press("c"), &cat, party3(), one_monster());
+        assert!(matches!(
+            s.phase,
+            SpellPhase::SweepConfirm {
+                spell_id: 0x11,
+                row: CursorRow::Ally
+            }
+        ));
+        assert!(s.resolved().is_none());
+        s.input(press(""), &cat, party3(), one_monster());
+        assert!(s.resolved().is_none());
         s.input(press("c"), &cat, party3(), one_monster());
         assert!(matches!(
             s.resolved(),
             Some(SpellResolution::Confirmed { spell_id: 0x11, .. })
         ));
+    }
+
+    #[test]
+    fn a_sweep_surface_cancels_back_to_its_row() {
+        let cat = SpellCatalog::vanilla();
+        let mut s = BattleSpellSession::new(0, 0, &[0x10, 0x11], &cat, 50, 0);
+        s.input(press("D"), &cat, party3(), one_monster());
+        s.input(press("c"), &cat, party3(), one_monster());
+        assert!(matches!(s.phase, SpellPhase::SweepConfirm { .. }));
+        s.input(press("o"), &cat, party3(), one_monster());
+        assert!(matches!(s.phase, SpellPhase::Select { cursor: 1 }));
     }
 
     #[test]

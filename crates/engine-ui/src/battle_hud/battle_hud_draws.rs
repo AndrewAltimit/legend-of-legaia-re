@@ -1025,16 +1025,26 @@ pub fn battle_hud_draws_for(
                 0
             };
             let interior = lead + name_w;
-            let rest = chrome::target_select_plaque_x(interior as u16);
+            // A whole-side label adopts its preset record's seats
+            // (`FUN_801D57E8`); an actor's name is measured and seated.
+            let preset = chrome::target_select_preset_seat(name);
+            let (rest, y, start) = match preset {
+                Some((rest, y, start)) => (rest, y, start),
+                None => {
+                    let rest = chrome::target_select_plaque_x(interior as u16);
+                    (
+                        rest,
+                        chrome::TARGET_SELECT_Y,
+                        chrome::target_select_slide_start(rest),
+                    )
+                }
+            };
             let x = if incoming {
-                seat(
-                    i32::from(chrome::target_select_slide_start(rest)),
-                    i32::from(rest),
-                )
+                seat(i32::from(start), i32::from(rest))
             } else {
                 seat(i32::from(rest), i32::from(chrome::TARGET_SELECT_OUT_X))
             };
-            let y = i32::from(chrome::TARGET_SELECT_Y);
+            let y = i32::from(y);
             plate_run(text, sprites, x - PLATE_CAP_W, y - 6, interior, false);
             if let Some(src) = badge {
                 stage_sprite(sprites, src, x, y - 2);

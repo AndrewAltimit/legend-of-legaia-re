@@ -125,7 +125,28 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
+                // Still browsing or targeting: the flow byte stands on the
+                // window or on the target sub-cursor its commit raised
+                // (`0x5C` / `0x5E` / `0x65` / `0x67`, the ladder at
+                // `0x801D1C50..0x801D1D7C`).
+                use legaia_engine_battle::battle_magic::SpellPhase;
+                use legaia_engine_battle::target_picker::CursorRow;
+                use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+                let flow = match &menu.phase {
+                    SpellPhase::Targeting { picker, .. } => {
+                        Flow::window_target(true, picker.kind().picks_enemy(), false)
+                    }
+                    SpellPhase::SweepConfirm { row, .. } => {
+                        Flow::window_target(true, *row == CursorRow::Enemy, true)
+                    }
+                    _ => Flow::MagicWindow,
+                };
                 self.battle.spell_menu = Some(menu);
+                if self.battle.set_battle_flow(flow) {
+                    self.battle.spell_menu = None;
+                    let actor = self.battle_ctx.active_actor;
+                    self.open_battle_command(actor);
+                }
             }
         }
     }
@@ -345,10 +366,20 @@ impl World {
             }
             _ => {
                 // Still browsing / target-selecting - keep the menu open. The
-                // target step is retail's own state `0x64` (`0x801D1958`).
+                // target step is the sub-cursor the window's commit raised
+                // off the row's side and scope (`0x5B` one enemy, `0x64` one
+                // ally, `0x66` all allies; `0x801D18E0..0x801D19F4`). The
+                // session's cursor for an offensive item walks only the
+                // enemy rows, a heal's only the party's, so the row under it
+                // names the side.
                 use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
                 let flow = match menu.state {
-                    InventoryUseState::TargetSelect { .. } => Flow::TargetConfirm,
+                    InventoryUseState::TargetSelect { cursor, .. } => Flow::window_target(
+                        false,
+                        menu.targets.get(cursor).is_some_and(|t| t.is_enemy),
+                        false,
+                    ),
+                    InventoryUseState::AllPartyConfirm { .. } => Flow::ItemAllAllies,
                     _ => Flow::ItemWindow,
                 };
                 self.battle.item_menu = Some(menu);

@@ -1374,9 +1374,12 @@ impl RetailBattle {
     /// after the flip, and its screen is one pass back.
     pub fn image_drive(&self) -> Option<BattleDrive> {
         match (self.battle_drive(), self.displayed_menu_flow()) {
-            (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => {
-                Some(BattleDrive::Menu { flow, seat, spirit })
-            }
+            (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => Some(BattleDrive::Menu {
+                flow,
+                seat,
+                spirit,
+                pick: 0,
+            }),
             (Some(BattleDrive::Opening { swept, entry }), _) if (0x80..=0xC0).contains(&entry) => {
                 let lag = u8::try_from(self.display_phase_lag).unwrap_or(u8::MAX);
                 Some(BattleDrive::Opening {
@@ -1791,6 +1794,13 @@ impl RetailBattle {
                 flow,
                 seat,
                 spirit: self.spirit_seats_ahead(seat),
+                // A window capture's row: the seat's `+0x1DF`, the hovered
+                // bag item or spell.
+                pick: if flow.window_of_target().is_some() {
+                    self.queued_action
+                } else {
+                    0
+                },
             }),
             SeedPlan::Action { seat, state } => Some(BattleDrive::Action {
                 seat,
