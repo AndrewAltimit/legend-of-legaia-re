@@ -558,7 +558,9 @@ fn colour_render_state_packs_the_blend_word_and_scale() {
     };
     assert!(!draw.draws_rest_mesh());
     draw.apply_render_state_color(&mut mesh);
-    let want = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT | (1 << 5);
+    // ABE reaches the code byte; the word's ABR `1` does not, since an
+    // untextured packet has no page halfword to carry it.
+    let want = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
     assert_eq!(mesh.blend, vec![want; 3]);
     assert_eq!(mesh.positions[0], [2.0, 4.0, 6.0]);
     // IR0 1 of 0x1000 toward black: the DPCS step's arithmetic shift

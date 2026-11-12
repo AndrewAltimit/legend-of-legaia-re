@@ -276,11 +276,18 @@ impl SummonPartDraw {
 
     /// [`Self::apply_render_state`] for the mesh's **untextured** prims - the
     /// `F*` / `G*` packets the colour pipeline draws
-    /// ([`legaia_tmd::mesh::ColorMesh`]). The dispatcher writes the same
-    /// state into every packet whatever its kind: the render scale, the
-    /// colour word's depth cue on the packet colour (an untextured prim has
-    /// no texel to modulate, so the cued colour is the fill) and its ABE /
-    /// ABR into the blend word, packed as the textured path packs its TSB.
+    /// ([`legaia_tmd::mesh::ColorMesh`]): the render scale, the colour word's
+    /// depth cue on the packet colour (an untextured prim has no texel to
+    /// modulate, so the cued colour is the fill) and its ABE, and **not** its
+    /// ABR. The dispatcher stages the two apart (`0x80043504..0x8004351C`:
+    /// ABR `<< 21` to `0x1F800030`, ABE `<< 25` to `0x1F800034`), and the
+    /// untextured leaves read only the ABE word, ORed into the code byte
+    /// (`lw v0,-0x2e0(t2)` / `or t8,t8,v0` at `0x800449B8` in the kind-12
+    /// leaf, `0x80044B94` in kind 13); only the textured leaves read the ABR
+    /// word into their page halfword. An `F*` / `G*` packet has no page, so
+    /// it blends on the draw mode the chain left, the PSX default mode `0`
+    /// here: the map display's pointer (`0xC9000000`, ABR `1`) is an average
+    /// over the ground in retail's packets, not an add.
     ///
     /// The shatter word is not applied here: no shipped part that carries
     /// one draws untextured prims, and the shatter kernel splits a
@@ -297,16 +304,10 @@ impl SummonPartDraw {
                 *c = self.colour.cue(*c);
             }
         }
-        let abr = u16::from(self.colour.abr) << 5;
-        let semi = if self.colour.semi {
-            legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT
-        } else {
-            0
-        };
-        if abr | semi != 0 {
+        if self.colour.semi {
             mesh.blend.resize(mesh.positions.len(), 0);
             for b in &mut mesh.blend {
-                *b |= abr | semi;
+                *b |= legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
             }
         }
     }

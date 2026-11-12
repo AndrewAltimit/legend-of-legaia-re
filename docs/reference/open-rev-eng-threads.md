@@ -303,15 +303,6 @@ Xain's pose is half of what was left. The rings say the walk clip committed insi
 
 The other half is Noa (seat 1): retail draws her as the ghost, the engine solid. Her `+0x8` is clear in the RAM, which fits the ghost pass's pose one pass before the RAM's (yaw `2850`, her planar distance `1302` against a radius `1258`), and the walked-back pose the image child hands the pass (yaw `2578`) clears her too. Ghosting her needs a pose with yaw about `2986` or more at that focus and depth, the RAM's own, or a depth past `5600`. Forced, it reads `.006` higher. The image scan agrees that the screen's camera is not the walk back's: with Xain posed, the replay's own pose (yaw `3052`, focus x `535`) reads `.868`, and the walk back's (`2714`, `615`) `.742`. A film across the band's entry would give the pose.
 
-### The map display pointer's ink
-
-`partial` On `world_map_display_map01_retail` the pointer draws dark red with shaded
-facets; the port draws its colour word as ABE `1` additive over the ground, bright
-orange. Grade `capture` for the frame; the record's program is `disassembly`
-([world-map](../subsystems/world-map.md#the-map-display---prot-0981)). The frame
-says the word's blend does not reach the pixel. Closing it wants a packet read of
-the pointer's prims under `FUN_801CE850`.
-
 ### A battle target surface's replay
 
 `open` `battle_magic_target_gaza2_retail` (`ctx[+0x06] = 0x5C`) and the all-party
