@@ -199,6 +199,7 @@ mod fishing_tackle;
 mod flag_window;
 mod flash_ramp;
 mod floor_height;
+mod fmv_dispatch;
 mod fog_render;
 mod fog_spawn;
 mod format_leaves;
