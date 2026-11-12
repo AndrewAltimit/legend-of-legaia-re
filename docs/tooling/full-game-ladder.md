@@ -145,11 +145,17 @@ first-visit talks (P1[36], P1[18], P1[5], P1[32], P1[33], P1[28]:
 `0x297`..`0x2A0`) each branch to the mist once `vell` P1[3] has raised
 `0x2A1`, so they play on the way to `vell`; on the way back the mist chain
 plays (`0x2A2`..`0x2A7`: the mist arrives, Gala goes ahead into it and
-rejoins). The seeded segment starts at Drake and crosses `bylon` before the
-tree, and the cheapest route only crosses it. The `vell_fog_field` anchor is
-a poke that seeds nothing (`seeds_next = false`), so the stretch that ends
-at it steers its beats by the anchor after it as well: the poke names the
-scene, not what the retail run had played on the way there.
+rejoins). The seeded segments start at Drake, before the tree, and with
+`bylon`'s doors spawning as retail does neither crosses it without that
+chain: the hall door P0[19] opens on its touch only once `0x2A0` is up, and
+East Voz's door P0[20] only once the tree has raised `0x2A1`. So the seeded
+pad tier plays the chain as well, as `pad_via`: `keikoku`, `bylon`,
+`keikoku` on the way to `vell`, and for `voz_forest` on through `vell`
+(the tree) and back through `bylon`. The `vell_fog_field` anchor is a poke
+that seeds nothing (`seeds_next = false`), so the stretch that ends at it
+steers its beats by the anchor after it as well, in part C and in the
+seeded pad tier alike: the poke names the scene, not what the retail run
+had played on the way there.
 
 Zora Castle is another case: its seeded segment starts from an anchor whose flags the save bridge carries forward, but a run of its own has to raise the chain that opens `deene`'s dock (`nilboa`, `bubu1`, `koin1b`, `bubu1`, `deene`, `son`; [route notes](#overworld-and-dungeon-joins)), and Conkram's Past takes `son` for the crossing to `concnow`.
 
@@ -576,7 +582,13 @@ to Nivora set four rules the continuous hand plays by:
   before it settles for any door, and once more from where the walk
   stalled: `bylon`'s west wing is an airlock whose hall door P0[19] shuts
   the south door P0[16] as the party walks in, so the switch P0[12] is
-  pressed from inside the wing.
+  pressed from inside the wing. The pad hand walks to each lever before it
+  pulls it, nearest first, skips one it cannot walk to, and hands back to
+  the crossing at the first press that opened or shut a door. Pressed from
+  wherever the walk had stalled, P0[12] worked the airlock from outside:
+  it shut P0[19], and the walk in through P0[19] shut P0[16] again; walked
+  to, it is reached through P0[19] and opens P0[16] with the party inside,
+  and the walk to the next lever no longer carries the party back out.
 - **A door that opens itself on its own channel.** A door's touch may aim
   its `31 00` at its own id (`B1 <own> 00`): `bylon` P0[19] opens that way
   once `0x2A0` is up, and the planner counts it open like a bare `31 00`.

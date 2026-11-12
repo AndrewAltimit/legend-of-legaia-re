@@ -435,7 +435,11 @@ pub(super) fn cross_over_inner(
                                 // while `0x180` is up, and walking in through
                                 // P0[19] shuts P0[16] again, so the switch is
                                 // pressed from inside the wing.
-                                for _ in 0..2 {
+                                // The pad hand presses one lever a round
+                                // ([`press_switches`]), so it gets a round
+                                // more for each it may need.
+                                let rounds = if pad_hand() { 4 } else { 2 };
+                                for _ in 0..rounds {
                                     if !(wanted.is_some()
                                         && scene_name(session) == x
                                         && r.is_err()

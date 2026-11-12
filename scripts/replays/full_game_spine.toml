@@ -140,6 +140,12 @@ seeds_next = false
 # the way to vell. Continuous run only; the beats steer by PRO-01, since this
 # anchor is a poke.
 continuous_via = ["keikoku", "bylon", "keikoku"]
+# The seeded pad tier plays the same chain: bylon's doors spawn shut, and the
+# way west runs through the hall door P0[19], whose touch opens it only once
+# Biron's chain has raised 0x2A0, then the west wing, whose switch P0[12]
+# opens the south door P0[16]. The pad pass steers by PRO-01 as well, since
+# this anchor is a poke.
+pad_via = ["keikoku", "bylon", "keikoku"]
 anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
 
 [[milestone]]
@@ -153,6 +159,11 @@ reach = "scene"
 # 0x2A6) and rejoins (P2[14], 0x2A7). The cheapest route only crosses bylon.
 # Continuous run only: the seeded segment starts at Drake, before the tree.
 continuous_via = ["bylon"]
+# The seeded pad tier starts at Drake too, and East Voz's door P0[20] stays
+# shut until the tree has revived (its spawn arm tests 0x2A1): it plays
+# Biron's chain, crosses the west wing to vell for the tree, and comes back
+# through bylon.
+pad_via = ["keikoku", "bylon", "keikoku", "vell", "bylon"]
 anchor = { kind = "card", card = "playthrough-ladder-pro00-14.mcr", save = "PRO-01" }
 
 [[milestone]]

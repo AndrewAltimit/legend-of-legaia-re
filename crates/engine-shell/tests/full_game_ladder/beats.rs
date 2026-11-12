@@ -1389,6 +1389,10 @@ pub(super) fn opener_beats_here(session: &NativeSession) -> Vec<PropBeat> {
 /// south doors (P0[16], P0[18]), and the walk to the East Voz exit stalls
 /// until the east room's switch (P0[13]) has opened P0[18].
 /// `Ok(Some(scene))` when a switch carried the party to another scene.
+///
+/// The pad hand walks to the levers, nearest first, and stops at the first
+/// press that opened or shut a door, so the crossing tries its walk again
+/// from beside that lever before the walk to the next one undoes it.
 pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<String>, String> {
     if session.host.world.mode != SceneMode::Field {
         return Ok(None);
@@ -1397,8 +1401,48 @@ pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<Strin
     let Some((mf, man, _)) = scene_man_and_triggers(session) else {
         return Ok(None);
     };
-    for (anchor, at, gated) in opener_beats(session, &mf, &man) {
+    let mut openers = opener_beats(session, &mf, &man);
+    let doors = |s: &NativeSession| -> BTreeSet<(u8, u8)> {
+        s.host
+            .world
+            .props
+            .bank
+            .props
+            .iter()
+            .filter(|(_, p)| p.collision_exempt())
+            .map(|(&a, _)| a)
+            .collect()
+    };
+    if pad_hand() {
+        let (px, pz) = player_xz(session);
+        let (tx, tz) = tile_of(px, pz);
+        openers.sort_by_key(|&(a, _, _)| (i16::from(a.0) - tx).abs() + (i16::from(a.1) - tz).abs());
+    }
+    for (anchor, at, gated) in openers {
+        // The pad hand walks up to the lever before it pulls it, and a lever
+        // it cannot walk to is not in reach. Pressed from wherever the walk
+        // stalled, `bylon`'s wing switch P0[12] toggled the west wing's
+        // airlock from outside it: the press shut the hall door P0[19] the
+        // party was to come in by, and walking in through it shut the south
+        // door P0[16] again. Walked to, the switch is reached through P0[19]
+        // (its touch moves the party into the wing and shuts P0[16]), so the
+        // press opens P0[16] with the party inside.
+        if pad_hand() {
+            let avoid = pad_avoid(session, None);
+            let goal = (i16::from(anchor.0), i16::from(anchor.1));
+            match pad_walk(session, goal, &avoid, 1) {
+                Ok(Walk::Arrived) => {}
+                Ok(Walk::Entered(s)) => return Ok(Some(s)),
+                Err(e) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [switch] {name} {anchor:?} out of reach: {e}");
+                    }
+                    continue;
+                }
+            }
+        }
         let f0 = flags_of_world(session);
+        let d0 = doors(session);
         let r = if gated {
             examine_prop(session, anchor, at, false)
         } else {
@@ -1413,6 +1457,9 @@ pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<Strin
             Run::Battle(b) => return Err(format!("switch {anchor:?}: {b}")),
             Run::Error(e) => return Err(e),
             Run::Parked(_) | Run::Released => {}
+        }
+        if pad_hand() && doors(session) != d0 {
+            break;
         }
     }
     Ok(None)
