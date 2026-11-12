@@ -50,7 +50,9 @@ A retail pass reads the pad the probe set one vsync earlier, and a pass is on a 
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.
 
-The placement report keys on the flat MAN index. A wanderer's heading and seat
+The placement report keys on the flat MAN index: the channel slot past the
+partition-0 count of the scene the film stands in, re-read when a film crosses
+a scene change. A wanderer's heading and seat
 are `rand()` history, so one that parts from retail after a few dozen vsyncs is
 not a finding by itself; a placement off retail from the first row is.
 
@@ -69,5 +71,7 @@ not a finding by itself; a placement off retail from the first row is.
 - Town placements hold retail's headings and seats for a 300-vsync film in `garmel`, `vozz` and `retona` (`off retail 0`); `town01_field_card_boot`'s seven that part are wanderers, each first off after `40` vsyncs or more.
 - A held walk's clip runs at retail's rate: `kor_field_route_walk` steps `16` a pass through the same ten frames on both sides.
 - A carried player's height glides as retail's does. `tower_field_walk`'s scripted stair walk reads `-32, -8, 0` a pass on both sides once the walker legs leave `+0x16` to the [settle](../subsystems/field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878); the step snap had landed it in one, and the camera fields off over its 61 passes went from pitch `33`, eye Y `35`, eye Z `34` to `1`, `4`, `1`. The leg itself now spends on the game-frame grid in a prop run as in a timeline (`8` a pass rather than `4` a vsync), so the follow focus trails it a whole pass as retail's does: focus Z off went from `54` to `7`, eye Y to `1`.
+
+- A beat's last turn holds when the engine plays the beat. `son` `P2[5]` turns Luctes (flat `10`) onto `0x600` at `(2432, 7936)` and the engine film from the mid-beat checkpoint ends on the same heading and seat; a checkpoint after the beat seeds through the card load, whose entry stands him on his record's `0xE00`, so its facing miss is the seed's, not the engine's.
 
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).

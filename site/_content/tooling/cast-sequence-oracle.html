@@ -133,6 +133,7 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
 <section class="doc-section" id="cue-ratchet" data-doc="the-cue-ratchet">
   <h2>The cue ratchet</h2>
   <p>A film's image score moves a little with every engine change, so the films stay report-only. Their cue channel is held to a committed baseline instead: <code>film-cues.py --check</code> reads each film's report from a run of the committed film sets (the Seru casts, the enemy casts, the dealt monster strikes) and fails when a baselined film plays fewer of retail's cues on retail's clock. A baseline that falls needs a ledger entry, which the baseline-loosening gate enforces on the file alone.</p>
+  <p>Each strike and enemy film is pinned to the battle random stream it was baselined on. The seed tries that stream first, so a change to the draws before the cast no longer hands the film whichever stream now happens to reach the phase first - a re-deal that read as a regression without any defect behind it. A pin that stops reaching falls back to the search, and the film run says which stream it got.</p>
   <p>Two cue drops show why. A summon kill's fade stand-in once faded the body before its knockdown committed, so the defeat cue never rang on five Seru films. Chaos Flare's victim lost the rate its knockdown plays at when reactions began to commit in the struck seat's own node tick, and both of the knockdown's cues rang early. Most of those films' images moved by a thousandth or so; only the cue channel said anything was wrong.</p>
 </section>
 

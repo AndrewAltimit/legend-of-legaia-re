@@ -904,11 +904,43 @@ every capture on a closing page (`garmel`'s Songi taunt), and the run
 sampled the settle window instead. A capture caught while the pager still
 types (`_DAT_801F2734` in state `0x0B`) is met on the typing row instead:
 the same window row (`_DAT_801F3530`) with the reveal counter
-`_DAT_801F2748` at least the capture's, taken two pager calls back for the
-displayed frame (each typing call adds `min(step, 4)` units).
+`_DAT_801F2748` at least the capture's.
 `casino_ticket_counter_dialog` shows "This is the P" with the rest of its
 page still to type; met on the page's wait, its frame showed the whole page
-and read `0.976`, met on the counter it reads `0.992`. A capture with no camera mover on its
+and read `0.976`, met on the counter it reads `0.992`.
+
+A capture in any other arm of a page is met on the arm too
+(`ScriptGate::pager`): the fresh box's load (`2`), the `0x24` page's load
+under the rows the last page left (`5`), a scroll (`0x0C`, `0x0E`, `0x0F`,
+with the scroll word `_DAT_801F2738` at least as far) and a page a press
+completed (`0x0D`). Each is met on the engine window's mirror arm over the
+same row table: retail's `_DAT_801F3540[]` pointers, taken as offsets into
+the record, against the window's row leads. A `0x0D` capture is one the
+player pressed through while it typed, so the seed presses once the engine's
+row has revealed as far as the capture's counter. The engine falls back to
+the waiting page when it never stands in the arm.
+
+**A later page of a box.** The dialog SM moves the record's PC onto each
+page as the press turns to it: on pager state `3` / `6` / `9` it walks the
+shown lines from `+0x9E` and stores the byte after them back in `+0x9E`
+(`0x80039BD4..0x80039C68`), `FUN_80038050` steps past the `0x24`, and the
+next line loads from that PC (`0x80039FA4..0x8003A000`). The engine pages a
+box's `0x24` chain inside one panel and holds its PC on the first page's
+lead, so a capture on a later page is met on the panel's current page and
+the seed stops paging once it is there. Met on the PC alone, none was:
+`concend` `P2[0]` parks on `+0x6E8` and `+0x73E`, `concnow` `P2[13]` on
+`+0x969` to `+0xC72`, and each scored the settle-window sample (image
+`.20`..`.36`, against `.94`..`.99` met on the page).
+
+**The player's walk wait.** `B3 F8 0A` tests the halt bit the record's own
+walk-to-tile on the player (`C7 F8 <x> <z> <mode>`, seated on the record's
+`+0x94`) raised, so the record sits on that PC for the whole walk.
+`ScriptGate::player_walk` carries the tile and the player's distance left
+to it, and the gate is met once the engine's player stands as near.
+Three `concend` checkpoints 60 vsyncs apart had all met on the walk's first
+tick (position `.175`, `0`, `0`; met on the walk, `1`).
+
+A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
 there the record's context is met on the gate PC only once the engine's glide
 has landed too: `name_input_ui` is parked on the opening's `49 03` one op
@@ -923,7 +955,13 @@ double-buffers exactly as the battle does
 frames before the one the RAM holds, so the image child's gate takes
 `2 * step` vsyncs off the retail wait (`parity::retail_compare_script::displayed_script_gate_from_retail`,
 the step rebuilt from the frame-duration history). The state channels keep
-the RAM's wait. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
+the RAM's wait. A gate with no wait to take back - one on the player's clip
+latch, a text gate mid-page, the player's walk wait - keeps the RAM's phase,
+and the child takes its frame `display_lag` ticks before the tick it meets
+it on (`ScriptGate::takes_displayed_frame`, the `.retake` re-run). A box two
+pager calls into its first row was not drawn yet, which no reveal counter
+taken back names: `concend`'s box openings read `.79`..`.83` on the counter
+and `.99`..`1.00` on the retake. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
 after `34 01 FF FF FF 1E`, a subtractive white walk-in (`27` vsyncs once a
 white blend-`2` target loses its eighth), on a step-`3` frame; gated on the
 RAM's wait the engine frame was darkened six vsyncs further than the one

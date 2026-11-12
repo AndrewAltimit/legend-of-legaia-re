@@ -1191,6 +1191,13 @@ baseline, each film at the better of baseline and measurement. A lower value nee
 [`baseline-loosenings.toml`](../../scripts/ci/baseline-loosenings.toml) entry, which
 [`check-baseline-loosening.py`](ratchet-integrity.md) enforces on the file alone.
 
+Each strike and enemy film is pinned to the battle stream it was baselined on
+(`--pin-seed`, retail-compare's `LEGAIA_RC_PIN_SEED`): the seed tries that stream
+ahead of the search list, and a change to the draws before the phase no longer hands
+the film whichever stream now reaches first. A pin that stops reaching falls through
+to the list, and `cast-sequence.py` says which stream it dealt. Re-pin from the
+`stream` detail of the film's `rc/report.json`.
+
 Two cue drops show why. A summon kill's fade stand-in once faded the body before its
 knockdown committed, so the death arm and its defeat cue `0x0D` never ran: five Seru
 films read `.889` with the image near unchanged. Chaos Flare's victim lost its
