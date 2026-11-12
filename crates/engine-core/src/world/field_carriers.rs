@@ -417,6 +417,8 @@ impl World {
         // move as the interaction engages, whatever the interaction is.
         // REF: FUN_8003C9AC
         self.kick_field_npc_motion_pause();
+        // ...after arming the eight-tick roll hold (`0x801D5BEC`).
+        self.encounters.roll_hold = crate::world::TOUCH_ROLL_HOLD;
         // Turn the addressed NPC to face the player, saving the heading it
         // stood with (retail's touch post + dialog SM; see
         // [`Self::face_field_npc_at_player`]). Ahead of the dialogue open so

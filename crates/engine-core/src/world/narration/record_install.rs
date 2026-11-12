@@ -60,8 +60,10 @@ impl World {
                 tl.touch_pad = Some(self.input.pad());
             }
             // `FUN_8003BDE0` ends a successful spawn with the motion-pause
-            // kick (`jal 0x8003C9AC` at `0x8003C0D4`).
+            // kick (`jal 0x8003C9AC` at `0x8003C0D4`) and a four-tick roll
+            // hold (`sb` at `0x8003C0E4`).
             self.kick_field_npc_motion_pause();
+            self.encounters.roll_hold = crate::world::RECORD_SPAWN_ROLL_HOLD;
         }
         installed
     }
@@ -140,8 +142,9 @@ impl World {
             legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body.to_vec(), pc0),
         );
         // The same spawn tail as `Self::install_gated_p2_record`: the kick at
-        // `0x8003C0D4`.
+        // `0x8003C0D4` and the four-tick roll hold at `0x8003C0E4`.
         self.kick_field_npc_motion_pause();
+        self.encounters.roll_hold = crate::world::RECORD_SPAWN_ROLL_HOLD;
         true
     }
 

@@ -314,6 +314,10 @@ impl World {
         // (retail: `FUN_801D5B5C` raises `player+0x10 |= 0x80000`, the dialog
         // SM teardown clears it).
         self.set_player_engaged(true);
+        // The post's tail: the eight-tick roll hold (`0x801D5BEC`) and the
+        // walkers' standing-move kick (`jal 0x8003C9AC` at `0x801D5BF0`).
+        self.encounters.roll_hold = crate::world::TOUCH_ROLL_HOLD;
+        self.kick_field_npc_motion_pause();
         true
     }
 
