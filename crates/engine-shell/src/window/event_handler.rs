@@ -57,7 +57,13 @@ impl ApplicationHandler for PlayWindowApp {
             return;
         }
         legaia_engine_render::profile::startup("window + renderer + pipelines");
-        if !self.scripted_run() {
+        if self.scripted_run() {
+            // A scripted run is deterministic: it draws light chrome only
+            // when the options file fixes `ui_theme = "light"`, never from
+            // the desktop it happens to run on.
+            self.chrome_dark = self.options_state.ui_theme.forced_dark().unwrap_or(true);
+            self.ensure_chrome_atlas();
+        } else {
             self.resolve_chrome_theme();
             if !setup_fullscreen
                 && crate::window_placement::game_was_maximized()
