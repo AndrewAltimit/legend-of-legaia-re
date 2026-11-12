@@ -104,6 +104,7 @@ Flags worth knowing:
 | `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
 | `--hit-trace` | Retail: each melee hit's `rand()` seed word to `retail/hits.csv` (breakpoint core), read at the head of `FUN_801EC3E4`'s hit body (`0x801EC5A8`); `--strike-deal` deals these words in place of the spark-burst reading ([below](#a-monsters-physical-attack)) |
 | `--hit-trace` block columns | The same recording's `hits.csv` also carries each hit's block-roll inputs (both sides' SPD `+0x164` and ATK `+0x158`, `ctx[+0x6D2]` / `+0x6D4`, the defender's category, clip, block entry and juggle window), and `blocks.csv` the two rolled sides and the verdict at `0x801EC878`; `LEGAIA_DIAG_BLOCKS=1` (through `--engine-env`) prints the engine's |
+| `--ribbon-trace` | Retail: each streak-ribbon call `FUN_801E1D98` to `retail/ribbons.csv` (breakpoint core), read at `0x801E1E4C` past its billboard projection: the seed word, the caller, the anchor trio, the four projected corners and the GTE view (`R`, `TR`, `OFX`, `OFY`, `H`), the inputs a ribbon's segment count and so its `rand()` draws read |
 | `--ghost-trace` | Retail: each after-image ghost the draw tick's walk `FUN_80049348` draws to `retail/ghosts.csv` (breakpoint core), a row per `jal 0x80048A08` at `0x8004950C` with the frame counter, the ring depth and the seat: the ghosts a frame's `cost` was measured with |
 | `--range-trace` | Retail: each call of the range law `FUN_8004E2F0` to `retail/range.csv` (breakpoint core): its caller, the attacker's live pair and the target's live pair, body pair, heading, node cursor and clip, the inputs a walk-in's reach poll reads |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
@@ -768,6 +769,17 @@ were saved, so neither `--rand-at` nor the track reaches the deal: both states' 
 still read zero. `LEGAIA_SEAT_DEATH_GAME_DEAL=a,b,c,d` (through `--engine-env`) lands the
 engine's deal on a table read off a retail RAM image (`LEGAIA_RAM_AT` in arm 2); the
 retail-compare seed derives the same seat for a state past arm 0. A harness seat.
+
+A draw whose count is a projection couples the camera to the stream. The streak ribbon
+`FUN_801E1D98` draws seven words for its bottom segment and four for each segment it
+chains up the screen, so its count is where its anchor projects under the GTE view the
+pass inherits. A `--ribbon-trace` recording of `battle_jouind_gilium_lv3_thunder_storm_mid_cast`
+held each call's seed, anchor and corners against the engine's: the anchors stood three
+ring words short, the heights were another modulus's, and the hit rolled ahead of the
+scatter ([Thunder Storm](../subsystems/cast-module.md#prot-0957-thunder-storm)). With
+those three ported the seeds agree call for call, and `--retail-steps --rand-track`
+deals retail's damage on both recordings. On `--retail-steps` alone the stream enters
+the cast on the engine's own words, so the numbers there are a deal, not a defect.
 
 It does not help every film. The words are retail's frame ends, so an engine pass that
 draws in another order than retail's inside the frame still parts: Fatal Decision gains

@@ -4508,13 +4508,35 @@ TR z `+16` a vsync; its exit plays clip `0x0A` and cuts to pitch `0x400`, yaw
 TR y `-8`. Arm 3's exit hides the party, flushes the pool and seats `0x801FA0D4`,
 `0x801FA174` and a ring of six `0x801FA194` on `i * 0x1000 / 6`, each with the
 `+0xB8` seed Ozma's rays take. Arms 4 to 6 seat four pairs of `0x801FA1D8` /
-`0x801FA228` a battle frame on `x, y = 0x80 - rand() % 255`, `z = 0x100`: eight
-`rand()`s a frame. Arm 5 ends on the party's hit (`FUN_801DD4B0(0x100, ..)`, a seat
-with HP and no Stone, turned on the caster). Arms 5 and 6 draw six streak ribbons
-(`FUN_801E1D98`, trail `0xB`) on a ring widening one unit a vsync; arm 5's height
-is the stack word its scatter loop left, arm 6 draws ahead of its scatter and reads
-zero. Arm 6 climbs a fade word `16` a vsync into every part's level `+0x78`, then
-flushes and leaves for `0xFF`.
+`0x801FA228` a battle frame on `x, y = 0x80 - rand() % 257`, `z = 0x100`: eight
+`rand()`s a frame (the reciprocal `0x7F807F81` with `sra 7` divides by `257`, and
+`(q << 8) + q` is its product, `0x801F70B4..0x801F70D4`). Arm 5 ends on the party's
+hit (`FUN_801DD4B0(0x100, ..)` at `0x801F7514`, a seat with HP and no Stone, turned on
+the caster), after that pass's scatter and ribbons. Arms 5 and 6 draw six streak
+ribbons (`FUN_801E1D98`, trail `0xB`) on a ring whose word gains the frame step once
+a battle frame (`0x801F73D0..0x801F73E4`, `0x801F76E4..0x801F76F0`; arm 6 only while
+the word is at most `0xC0`), `32` units of radius a word; arm 5's height is the stack
+word its scatter loop left, arm 6 draws ahead of its scatter and reads zero. Arm 6
+climbs a fade word `16 * step` a frame into every part's level `+0x78`, then flushes
+and leaves for `0xFF`.
+
+**The camera reaches the hit through the ribbons.** A ribbon draws `7` words for its
+bottom segment and `4` for each chained one, and how many segments it chains is
+where its projected anchor stands under the GTE view the pass inherits
+([the streak ribbon](battle-actor-rendering.md#move-fx-streak-ribbon-fun_801e1d98)), so the ring's radius, its height and the camera's TR z
+each move the count, and the hit at the end of arm 5 rolls on the words that
+leaves. A `--ribbon-trace` recording logs each call's seed, anchor, corners and GTE
+view ([oracle](../tooling/cast-sequence-oracle.md#the-rand-stream)); held against
+it, the port's ring stood three words short at every deal (it gained one word a
+tick, and a step-`4` pass dealt on its first tick), its heights were the `% 255`
+reading's, and on a pass whose countdown opens on its first tick the hit rolled
+ahead of the scatter. Ported (`thunder_storm::ring_step`,
+`World::seat_storm_scatter_pairs`, the early deal at the arm's hit), the anchors,
+corners and seeds agree call for call, and on `--retail-steps --rand-track` both
+recordings of `battle_jouind_gilium_lv3_thunder_storm_mid_cast` deal retail's three
+numbers (`134` / `128` / `160` and `148` / `148` / `156`) where the port dealt
+`159` / `160` / `147`. The GTE view at the call is the pose the previous pass left,
+which is what the port reads. Grade `disassembly` + `capture`.
 
 Arm 6 seats its scatter pairs (`jal 0x80050ED4` at `0x801F7834` / `0x801F784C`) ahead
 of the loop that stores the fade word into every pooled part (`sh a0,0x78(v0)` at
