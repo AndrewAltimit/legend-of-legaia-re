@@ -135,6 +135,7 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
     let mut lift_ys = Vec::new();
     let mut plate = None;
     let mut flash_from = None;
+    let (mut sprites, mut locked, mut lit) = (0, false, 0);
     for f in 0..2000 {
         frame(&mut host, &mut surface, 0);
         let s = host.world.minigames.fishing.as_ref().unwrap();
@@ -144,6 +145,28 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
         let flash = host.world.minigames.fishing_venue.catch_flash_prims();
         if flash_from.is_none() && !flash.is_empty() {
             flash_from = Some(f);
+        }
+        // The close-up's own parts (`FUN_801D4948` sub-state 4): the
+        // sprite-arm halo and flare from its first frame, the camera-locked
+        // rainbow rings from its first stage, all drawn out of the pond VRAM.
+        let venue = &host.world.minigames.fishing_venue;
+        if let Some(scene) = venue.ripple_fx.as_ref() {
+            sprites = sprites.max(scene.sprite_arm_draws().len());
+            locked |= venue.ripple_draws().iter().any(|d| d.flags_52 & 0x400 != 0);
+        }
+        if f == 0x80 {
+            let vram = surface.vram().expect("the pond VRAM");
+            let words: Vec<u16> = (0..512)
+                .flat_map(|y| (0..1024).map(move |x| (x, y)))
+                .map(|(x, y)| vram.pixel(x, y))
+                .collect();
+            lit = venue
+                .ripple_rgba(&words, 320, 240)
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .filter(|p| p[3] != 0 && (p[0] | p[1] | p[2]) != 0)
+                .count();
         }
         let scene = surface.scene().unwrap();
         let Some(fish) = scene.catch_fish else {
@@ -180,6 +203,12 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
         lift_ys.iter().min().unwrap() < &-2000,
         "flung well up out of the water (Y-down): {:?}",
         lift_ys.iter().min()
+    );
+    assert_eq!(sprites, 8, "the close-up seats its eight sprite parts");
+    assert!(locked, "the first stage bursts camera-locked rings");
+    assert!(
+        lit > 1000,
+        "the parts draw out of the pond VRAM: {lit} pixels"
     );
     let flash_from = flash_from.expect("the close-up whites out");
     assert!(

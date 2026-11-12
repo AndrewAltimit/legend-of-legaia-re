@@ -43,31 +43,19 @@ pub const HOOK_CUE: u8 = 0x3A;
 /// SFX cue the celebration's first stage raises.
 pub const CELEBRATE_CUE: u8 = 0x2B;
 
-/// One firework burst of the catch celebration: the score threshold that
-/// unlocks it, its spawn offset and the SFX cue it raises (`None` for the
-/// top tier, which is silent).
+/// One ring burst of the catch celebration: the fight-strength threshold
+/// that unlocks it, the eye-space point its camera-locked rings stand at and
+/// the SFX cue it raises (`None` for the top tier, which is silent).
+// REF: FUN_801d7a5c (the burst these points feed)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CelebrationBurst {
-    /// Exclusive lower bound on the catch score `DAT_801D91B8`.
+    /// Exclusive lower bound on the fight strength `DAT_801D91B8`.
     pub above: i32,
-    /// Spawn offset `(x, y, z)`.
+    /// The on-stack trio `(x, y, z)` handed to `FUN_801D7A5C`: an eye-space
+    /// point, the ring record being camera-locked (`+0x52 & 0x400`).
     pub offset: (i16, i16, i16),
     /// Cue raised alongside the burst.
     pub cue: Option<u8>,
-}
-
-impl CelebrationBurst {
-    /// The burst's world point for a catch at world `(x, z)` `origin`: the
-    /// spawn offset added to the origin's `x` / `z`, its `y` taken as is
-    /// (the on-stack trio `FUN_801D4948` hands each `FUN_80021B04`). A host
-    /// projects it through the venue camera to seat the part.
-    pub fn world_point(&self, origin: (i16, i16)) -> [i32; 3] {
-        [
-            origin.0 as i32 + self.offset.0 as i32,
-            self.offset.1 as i32,
-            origin.1 as i32 + self.offset.2 as i32,
-        ]
-    }
 }
 
 /// The four bursts, in the order retail evaluates them. Every tier whose
@@ -86,12 +74,12 @@ pub const CELEBRATION_BURSTS: [CelebrationBurst; 4] = [
     },
     CelebrationBurst {
         above: 600,
-        offset: (0x190, -0x190, 800),
+        offset: (-0x190, 0x190, 800),
         cue: Some(0x26),
     },
     CelebrationBurst {
         above: 800,
-        offset: (-0x190, 0, 800),
+        offset: (0, -0x190, 800),
         cue: Some(0x27),
     },
     CelebrationBurst {

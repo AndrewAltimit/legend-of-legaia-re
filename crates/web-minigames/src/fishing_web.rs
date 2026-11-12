@@ -570,7 +570,6 @@ impl LegaiaMinigames {
             p,
             &events,
             0,
-            &mut self.fx,
             || scene.as_ref().and_then(|s| s.map.clone()),
         );
         self.fishing_catch_frame = if p.phase() == legaia_engine_fishing::fishing::PondPhase::Landed
@@ -655,6 +654,19 @@ impl LegaiaMinigames {
             }
         }
         format!("[{}]", out.join(","))
+    }
+
+    /// The venue's move-VM parts (the ambient ripples and the catch
+    /// close-up's rings, sparks, halo and rainbow) rasterised onto a
+    /// `w x h` RGBA8 layer over black out of the pond's VRAM
+    /// (`FishingVenue::ripple_rgba`), for the page to add over its frame.
+    /// Empty when no part draws or the pond did not decode.
+    pub fn fishing_ripples_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        let Some(scene) = self.fishing_scene.as_ref() else {
+            return Vec::new();
+        };
+        self.fishing_venue_actors
+            .ripple_rgba(&scene.vram_words(), w as usize, h as usize)
     }
 
     /// This frame's ambient ripple rings as stage triangles - the overlay's

@@ -663,7 +663,35 @@ window.MgFishing = (function () {
      * fill, so each triangle takes its corners' mean packet colour;
      * semi-transparent packets add (the ring's texel is a system-page patch
      * this page does not stage - the fill colour is the modulation word). */
+    let partsCanvas = null;
     function drawRipples() {
+      /* The parts textured out of the pond's VRAM, added over the frame: the
+       * pond is on the WebGL canvas below, so it is first copied under this
+       * canvas's pixels. */
+      if (api.fishing_ripples_rgba) {
+        const PW = 320, PH = 240;
+        let px = null;
+        try { px = api.fishing_ripples_rgba(PW, PH); } catch (_) { px = null; }
+        if (px && px.length === PW * PH * 4) {
+          if (!partsCanvas) {
+            partsCanvas = document.createElement('canvas');
+            partsCanvas.width = PW;
+            partsCanvas.height = PH;
+          }
+          partsCanvas.getContext('2d').putImageData(
+            new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.length), PW, PH), 0, 0);
+          g.save();
+          if (scene && glCanvas) {
+            g.globalCompositeOperation = 'destination-over';
+            g.drawImage(glCanvas, 0, 0, canvas.width, canvas.height);
+          }
+          g.globalCompositeOperation = 'lighter';
+          g.imageSmoothingEnabled = false;
+          g.drawImage(partsCanvas, 0, 0, canvas.width, canvas.height);
+          g.restore();
+        }
+        return;
+      }
       if (!api.fishing_ripples_json) return;
       let tris = [];
       try { tris = JSON.parse(api.fishing_ripples_json()) || []; }
