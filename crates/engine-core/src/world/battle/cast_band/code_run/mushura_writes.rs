@@ -23,6 +23,13 @@ const ARM_FRAME_STEP: i32 = 4;
 /// seat the engine seats nobody in).
 const MUSHURA_EMPTY_SEAT: u8 = 0xFF;
 
+/// The size class `FUN_8004E2F0` reads for a seat with no monster: its record
+/// pointer `0x801C9348[seat - 3]` is null, so `lbu s2,0x1f(v0)` reads RAM
+/// `0x0000001F`, a byte of the kernel's low area that holds `0x81` in every
+/// retail RAM image of the cast. Against Mushura's `32` that is a reach of
+/// `3 * (32 + 0x81) / 5 * 16 = 1536` units.
+const NULL_RECORD_SIZE: u8 = 0x81;
+
 impl World {
     /// PROT 0915's creature, on each pass of the arms that move it:
     ///
@@ -240,10 +247,18 @@ impl World {
             facing: c.battle.facing_angle,
         };
         let facing = i32::from(here.facing);
+        // The creature's own size: the reach reads seat 7's record
+        // `0x801C9348[4]` (`lbu s2,0x1f(v0)` at `0x8004E394`), the cast
+        // record the seat arm copied in (Mushura's `32`).
+        let size = self
+            .tables
+            .summon_creatures
+            .get(&spell_id)
+            .map_or(0, |d| d.size_class);
         for (e, _) in self.ra_seru_row(monster_count) {
             let s = e as u8;
             let v = self.cast_view(s);
-            let in_reach = self.creature_range_metric((here.x, here.z), 0, s) == 0;
+            let in_reach = self.creature_range_metric((here.x, here.z), size, s) == 0;
             if !in_reach || v.flags & FLAG_NON_TARGETABLE != 0 || self.battle_current_anim(e) != 0 {
                 continue;
             }
@@ -299,11 +314,24 @@ impl World {
         // The chase target `0x801F8154`. A target in reach is traded by
         // `do t = rand() % 4 + 3 while t == old` (`0x801F7ABC..0x801F7AE8`):
         // the four monster seats whatever the row holds, standing or not, so
-        // a seat with no monster in it can come up. The engine has no actor
-        // there; it holds `0xFF`, which no metric reaches and no turn reads.
+        // a seat with no monster in it can come up. Such a seat's body pair
+        // reads `(0, 0)` and its size the null record's
+        // ([`NULL_RECORD_SIZE`]), so it is in reach from anywhere near the
+        // field and traded again on the next pass: the creature keeps
+        // chasing the row, a pass's turn toward the origin at most.
         let _ = monster_count;
         let mut target = self.casting.module_mushura_target;
-        if self.creature_range_metric((here.x, here.z), 0, target) == 0 {
+        let empty = target == MUSHURA_EMPTY_SEAT
+            || self
+                .actors
+                .get(usize::from(target))
+                .is_none_or(|a| a.battle_monster_id.is_none());
+        let reached = if empty {
+            self.empty_seat_in_reach((here.x, here.z), size)
+        } else {
+            self.creature_range_metric((here.x, here.z), size, target) == 0
+        };
+        if reached {
             let map = self.cast_seat_map();
             let old = if target == MUSHURA_EMPTY_SEAT {
                 self.casting.module_mushura_retail_seat
@@ -336,9 +364,20 @@ impl World {
         }
         self.casting.module_mushura_turn_ticks = 0;
         // The bearing reads the target's body pair `+0x3C` / `+0x40`
-        // (`lh a2,0x40(v0)` / `lh a3,0x3c(v0)` at `0x801F7B18`).
-        let Some((tx, tz)) = self.live_body_pair(usize::from(target)) else {
-            return;
+        // (`lh a2,0x40(v0)` / `lh a3,0x3c(v0)` at `0x801F7B18`), which an
+        // empty seat holds at `(0, 0)`.
+        let empty = target == MUSHURA_EMPTY_SEAT
+            || self
+                .actors
+                .get(usize::from(target))
+                .is_none_or(|a| a.battle_monster_id.is_none());
+        let (tx, tz) = if empty {
+            (0, 0)
+        } else {
+            let Some(pair) = self.live_body_pair(usize::from(target)) else {
+                return;
+            };
+            pair
         };
         let bearing = heading(
             here,
@@ -392,6 +431,29 @@ impl World {
             let b = (bank + pass) & 0xFFF;
             a.battle.render_roll = if b < 0x101 { b as u16 } else { 0x100 };
         }
+    }
+}
+
+impl World {
+    /// `FUN_8004E2F0(7, seat) == 0` for a monster seat with no monster: the
+    /// target's body pair `(0, 0)` and the null record's size
+    /// ([`NULL_RECORD_SIZE`]) against the creature's `size`.
+    fn empty_seat_in_reach(&self, pos: (i16, i16), size: u8) -> bool {
+        use legaia_engine_battle_vm::battle_action::motion;
+        let inputs = motion::RangeInputs {
+            attacker_party: false,
+            target_party: false,
+            attacker_reach: 0,
+            attacker_size: size,
+            target_size: NULL_RECORD_SIZE,
+            attacker_pos: pos,
+            target_ref: (0, 0),
+        };
+        let bearing =
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(0, 0, pos.1, pos.0);
+        let angle = legaia_engine_battle_vm::battle_approach::approach_angle(bearing) as u16;
+        let (sin, cos) = legaia_engine_system::trig::trig12(angle);
+        motion::range_metric(&inputs, sin, cos) == 0
     }
 }
 
