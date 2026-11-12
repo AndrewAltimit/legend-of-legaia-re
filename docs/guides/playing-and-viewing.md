@@ -503,7 +503,7 @@ enhancement has a retail-faithful off position
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
-| `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
+| `F11`, `Alt+Enter` | Borderless fullscreen (on the play page `F11` alone puts the picture full screen, as its Fullscreen button) | off, remembered | `--fullscreen` / `--windowed` |
 | `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
 **Screenshots.** `Print Screen` saves the picture on screen as a PNG, menus
