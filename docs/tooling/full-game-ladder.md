@@ -134,7 +134,13 @@ A milestone may also name `via` scenes: story waypoints the anchors show the ret
 A milestone may instead name `continuous_via`: the waypoints part C plays in place of `via`, where a seeded segment starts past the story or its seated hand cannot play it. Dr. Usha's research and Nivora are its case, the chain the [Nivora route notes](#nivora) list: `korb3`, `map03`, `koin2` for the first (Sol's stone maze and Gaza's second fight, the Genesis Tree, Etora's password), and `doman`, Uru Mais and its three dreams, and `doman` again for the second; Gaza's second fight is that stretch's risk.
 
 West Voz Forest and Voz Forest are another: `bylon` is a waypoint of both
-stretches in part C, before and after the West Voz Genesis Tree. Biron's
+stretches in part C, before and after the West Voz Genesis Tree, and the
+ravine `keikoku` is crossed on both sides of the first Biron visit. Its mist
+beats P2[5] / P2[8] (`0x2B9`) test Biron's `0x29E` clear (a field-VM flag
+test jumps when the flag is set), so they come before it; P2[6] (`0x2BA`)
+tests the tree's `0x2B0` clear and stands south of the mist wall P2[7],
+whose post-Rikuroa arms only ever turn the party back, so it is reached from
+the ravine's south entrance on the way to `vell`. Biron's
 first-visit talks (P1[36], P1[18], P1[5], P1[32], P1[33], P1[28]:
 `0x297`..`0x2A0`) each branch to the mist once `vell` P1[3] has raised
 `0x2A1`, so they play on the way to `vell`; on the way back the mist chain
@@ -484,6 +490,12 @@ expiry flag still clear, is the story waiting on the clock: the hand stands
 still until the countdown runs out, then looks at the scene again.
 `chitei2`'s collapse is the case: its expiry flag `0x4C7` is what the entry
 script's `0x4C8` hand-off tests, and no record on the disc sets it.
+Not every expiry is story: `taiku`'s escape clock (`0x396`, armed by P2[16]
+after Zora) makes the entry script spawn P2[20], which raises `0x501` and
+`0x616` and changes scene to `map03`; `map03`'s cruise P2[9] then ends on
+`4C EA`, the scripted game over, because `0x616` is set. The hand plays such
+an arrival through before routing from it, and a game over reloads the
+stretch's save as a wipe does.
 
 ### Talks the story reaches from elsewhere
 
@@ -928,7 +940,7 @@ cargo test -p legaia-engine-shell --profile release-test \
 | `LEGAIA_FGL_PIN_RETAIL=1` | Pins every fidelity toggle to retail's value (`WorldToggles::pin_retail`) in each session the ladder opens, so both parts measure the retail-faithful mode. The gameplay difference from the defaults is the ledge-hop landing guard, off; the rest is presentation. |
 | `LEGAIA_FGL_SOLID_NPCS=0` | Disarms `npcs.solid` in each session the ladder opens, so the pad tier walks through NPC bodies. The default arms it, as both play hosts do ([solid NPCs](#solid-npcs)); a run with it off is a probe and no longer the measured configuration. |
 | `LEGAIA_FGL_CONTINUOUS_FROM=<id>` | Starts part C at that milestone, seeded once from its retail anchor and never again, and does not assert the baseline. A probe for a later stretch's carried state; the party it sets out with is retail's, so it is not the continuous score. |
-| `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, with the scene, rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
+| `LEGAIA_FGL_CHECKPOINT_DIR=<dir>` | Part C keeps the engine's own save at each milestone it reaches in that directory (`<id>.lgsf`, naming its scene in the resume trailer, so `legaia-engine`'s `--resume-save` lands there without `--scene`; the rand stream and learned exchange rate beside it). The saves hold disc-derived state: keep the directory under `target/`. |
 | `LEGAIA_FGL_CONTINUOUS_RESUME=<id>` | Starts part C at that milestone from the save an earlier run kept there, and does not assert the baseline. The party is the run's own; the picker rotation and the shopping memory start fresh, so a stall it shows is confirmed on the full run. |
 | `LEGAIA_FGL_CONTINUOUS_UNTIL=<id>` | Ends part C once it reaches that milestone, and does not assert the baseline: with `LEGAIA_FGL_CONTINUOUS_RESUME` and a spread of `LEGAIA_FGL_RNG_SEED` values, how often one stretch clears. |
 

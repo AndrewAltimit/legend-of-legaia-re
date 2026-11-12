@@ -132,9 +132,14 @@ order_check = false
 seeds_next = false
 # Biron's first-visit chain (bylon P1[36], P1[18], P1[5], P1[32]: 0x297..0x2A0)
 # is in PRO-01 and every talk of it branches to the mist once vell's tree has
-# raised 0x2A1, so a run plays it before the tree. Continuous run only; the
-# beats steer by PRO-01, since this anchor is a poke.
-continuous_via = ["bylon"]
+# raised 0x2A1, so a run plays it before the tree. The ravine in the mist
+# comes first: keikoku P2[5] / P2[8] raise 0x2B9 only while Biron's 0x29E is
+# clear, and P2[7]'s first post-Rikuroa arm (0x2BE) plays on the north side.
+# P2[6] (0x2BA) needs the tree's 0x2B0 still clear and stands south of the
+# mist wall P2[7], so the ravine is crossed again from the south entrance on
+# the way to vell. Continuous run only; the beats steer by PRO-01, since this
+# anchor is a poke.
+continuous_via = ["keikoku", "bylon", "keikoku"]
 anchor = { kind = "state", label = "vell_fog_field", fingerprint = "bd407707f5aa6f437bc3c9a075416da1ac26fad3d7ea6a54cf1fd6450965775e" }
 
 [[milestone]]

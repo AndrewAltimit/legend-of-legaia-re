@@ -222,7 +222,15 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
     if let Some(dir) = save.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    if std::fs::write(&save, cp.save.write()).is_err() || std::fs::write(&side, text).is_err() {
+    // The save names its own scene (the `LGX5` resume point), so a
+    // checkpoint resumes with `legaia-engine --resume-save` alone.
+    let resume = legaia_save::SaveResume {
+        scene: cp.scene.clone(),
+        location: String::new(),
+    };
+    if std::fs::write(&save, cp.save.write_with_resume(&resume)).is_err()
+        || std::fs::write(&side, text).is_err()
+    {
         eprintln!("    [checkpoint] could not write {}", save.display());
     }
 }
@@ -233,7 +241,8 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
 fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
     let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
     let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
-    let save = legaia_save::SaveFile::parse(&bytes).map_err(|e| format!("{e:#}"))?;
+    let (save, _) =
+        legaia_save::SaveFile::parse_with_resume(&bytes).map_err(|e| format!("{e:#}"))?;
     let text = std::fs::read_to_string(&side).map_err(|e| format!("{}: {e}", side.display()))?;
     let mut lines = text.lines();
     let scene = lines.next().unwrap_or_default().to_string();
@@ -681,7 +690,9 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
-            let wiped = err.contains("party wiped");
+            // A scripted game over (`taiku`'s escape clock run out, `4C EA`)
+            // is a loss the player reloads from, as a wipe is.
+            let wiped = err.contains("party wiped") || err.contains("scripted game over");
             let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
             // A walking player stuck where the playthrough ran switches
             // Field Move to Run and reloads, once, and keeps running.

@@ -1345,5 +1345,22 @@ fn wait_out_story_timer(session: &mut NativeSession) -> Result<bool, String> {
         session.host.world.set_pad(0);
         session.tick().map_err(|e| format!("{e:#}"))?;
     }
+    // The clock's expiry may carry the party on (`taiku`: P2[20] to
+    // `map03`, whose cruise P2[9] ends in the scripted game over `4C EA`
+    // on `0x616`). Play the arrival through before routing from it, so a
+    // game over reads as one and the run reloads instead of routing from a
+    // cutscene's landing tile.
+    let mut settle = 0;
+    while settle < 6000 && !released(session) && !session.host.world.game_over {
+        pad_budget(session)?;
+        session.host.world.set_pad(0);
+        session.tick().map_err(|e| format!("{e:#}"))?;
+        settle += 1;
+    }
+    if session.host.world.game_over {
+        return Err(format!(
+            "the escape clock ran out (0x{flag:03X}): scripted game over"
+        ));
+    }
     Ok(session.host.world.system_flag_test(flag) || scene_name(session) != here)
 }
