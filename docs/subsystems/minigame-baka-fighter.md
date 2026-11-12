@@ -304,7 +304,9 @@ stage == 0xD  && high_score > 0xAAE60 (700,000)  ->  override = 2
 
 The tally drains its rows in order, but each row's **fade** (`DAT_801DBEF4` / `..BEEC` / `..BEF0` / `..BEFC`, the brightness its row draws at, times ten) advances while the row *just above* it is empty, whatever the rows further up hold: each section tests only its neighbour (`0x801D26C4`, `0x801D274C`, `0x801D2800`). A zero score row therefore lets the row below it fade in while the first row is still counting, and that row starts draining the frame its turn comes, with no fade-in wait. A fade past `0x10` is held there (`0x801D28C0..0x801D292C`). Port: `BakaTally::tick`, run frame by frame against the routine by the retail kernel differential. **Confirmed.**
 
-Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed on use (the install state clears it, and `override == 2` additionally latches `DAT_801DBEB8 = 2`), so each bonus rung is served once per arming. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
+Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed by the win over its rung: the match-won arm clears it (`0x801D07A4`), `override == 2` latching `DAT_801DBEB8 = 2` first, and the stage steps on that win as on any other, so each bonus rung is served once per arming and the second ends the run in the all-clear. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
+
+The pause menu opens from the duel only while the gate `DAT_801DBEC4` is up: the player's combat tick raises it while the player stands on the idle clip, either tick drops it while a knockdown latch is set, and the round-over arm drops it on its own frame (`0x801D0638`). The tally state's two-second hold (`0x79`) counts only once the drain `FUN_801D239C` reports every row empty, and the flourish `0x65` hands it a zeroed word. Every opponent install clears the tally rows and the round index (`0x801CFCE4..0x801CFDB0`), so each match opens on round `0`. `DAT_801DBF28` counts shutouts: the match-won arm skips it when the opponent took a round.
 
 Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confirmed.**
 
@@ -319,7 +321,7 @@ The pot is the casino prize accumulator `_DAT_80084440`.
 
 The match-won arm also seeds the tally's first score row: `0x7530` (30,000) when the opponent won **no** round, else `0x4E20` (20,000) - a shutout bonus. Port: `baka_cabinet::match_bonus`. **Confirmed.**
 
-In that arm, the store that sets the next state to the victory flourish (`0x65`) sits in the **delay slot** of the "did the opponent take a round" branch, so it runs either way: any match win reaches the flourish, and the branch only skips the dropped-round tally `DAT_801DBF28`.
+In that arm, the store that sets the next state to the victory flourish (`0x65`) sits in the **delay slot** of the "did the opponent take a round" branch, so it runs either way: any match win reaches the flourish, and the branch only skips the shutout tally `DAT_801DBF28` when the opponent took a round. The player select zeroes the tally; nothing else reads it.
 
 There is no save point inside mode 24, so the coin bank is the only result that outlives a visit.
 
@@ -1008,14 +1010,14 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `DAT_801DBF84` | round-end banner sub-state |
 | `DAT_801DBF88` | round-over hold timer in `0x64` (runs to `0xB5`); the choice sheet draws only while it is zero |
 | `DAT_801DBF24` | player-untouched flag (PERFECT) |
-| `DAT_801DBF28` | dropped-round tally |
+| `DAT_801DBF28` | shutout tally (matches won without dropping a round) |
 | `DAT_801DC110` | displayed stage counter (the HUD draws it `+ 1`); `0xE` picks the final-stage all-clear line |
 | `DAT_801DC128` | the cabinet's scene clock: attract blink phase, round banner clock (zeroed by the round setup), the FIGHT flash's first-frame test |
 | `DAT_801DBE94` | title-card clock |
 | `DAT_801DC134` / `DAT_801DC138` | all-clear announcer state / timer |
 | `DAT_801DBEB4` | the all-clear's second fade (announcer gate `0x11`) |
 | `DAT_801DBEC0` | screen-shake amplitude the epilogue decays toward zero |
-| `DAT_801DBED4` | suppresses both epilogue draw passes |
+| `DAT_801DBED4` | suppresses both epilogue draw passes; raised by the tally's secret branch, it stands through `0x6D`, the next install and the banners until the spin arm `0x35` drops it |
 | `_DAT_8007B868` | non-zero routes the in-duel menu to the developer menu; retail boots it to zero and never sets it |
 | `DAT_801DBF94` | debug-verbosity / mode global (enables the `func_0x8001a068` traces; `== 2` = mirror input mode) |
 

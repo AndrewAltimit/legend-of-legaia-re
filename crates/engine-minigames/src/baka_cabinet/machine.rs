@@ -112,6 +112,17 @@ pub struct CabinetInput {
     /// finisher flag `+0x2C` (`0x801DBFE8` / `0x801DC090`, raised when a
     /// special lands its full chain, `0x801D3C2C`) or both HPs at zero.
     pub round_clock: bool,
+    /// The score tally `FUN_801D239C` still has a row to drain (its
+    /// non-zero answer). The tally state holds its two-second count until
+    /// it is clear.
+    pub tally_draining: bool,
+    /// The duel's pause gate `DAT_801DBEC4`: the player's combat tick raises
+    /// it while the player stands on the idle clip (`actor+0x5C` one past
+    /// `block+0x14`, seat `0` only, `0x801D47FC..0x801D4824`) and either tick drops it
+    /// while a knockdown latch `+0x2C` is up (`0x801D4828..0x801D4848`). The
+    /// duel state opens its menu only with it up (`0x801D08B0`), so the pause
+    /// edge does nothing mid-exchange.
+    pub pause_ready: bool,
     /// The round-start camera beat this frame ran left the camera short of
     /// its mark, so the arm holds: state `0x35`'s spin with the yaw not yet
     /// past `0x1000` (`slti a0,a0,0x1001` at `0x801D03A0`), or state
@@ -175,7 +186,7 @@ pub struct BakaCabinet {
     /// `DAT_801DBEE0` - the tally's match-bonus row.
     pub(super) bonus: i32,
     /// `DAT_801DBEB8` - the all-clear flag.
-    pub(super) all_clear: bool,
+    pub(super) all_clear: i32,
     /// `DAT_801DBF8C` - the round index, clamped to `9`.
     pub(super) round: i32,
     /// `DAT_801DBF78` - the match phase the fight rules gate on.
@@ -188,8 +199,9 @@ pub struct BakaCabinet {
     pub(super) pot: u32,
     /// `DAT_801DBF58` / `DAT_801DBEC8` - the HUD's max-streak latch.
     pub(super) max_streak: i32,
-    /// `DAT_801DBF28` - matches won that were *not* shutouts.
-    pub(super) rounds_dropped: i32,
+    /// `DAT_801DBF28` - matches won without dropping a round (shutouts);
+    /// zeroed at the player select.
+    pub(super) perfect_matches: i32,
     /// The parsed action tables, when a host installed them: the only thing
     /// the developer dump state has to dump.
     pub(super) action_tables: Vec<BakaActionSet>,
@@ -225,14 +237,14 @@ impl BakaCabinet {
             high_score: 0,
             prize: 0,
             bonus: 0,
-            all_clear: false,
+            all_clear: 0,
             round: 0,
             match_phase: 0,
             suppress_scene: false,
             shake: 0,
             pot: 0,
             max_streak: 0,
-            rounds_dropped: 0,
+            perfect_matches: 0,
             action_tables: Vec::new(),
         }
     }
@@ -313,7 +325,7 @@ impl BakaCabinet {
     }
 
     pub fn all_clear(&self) -> bool {
-        self.all_clear
+        self.all_clear != 0
     }
     pub fn high_score(&self) -> i32 {
         self.high_score
@@ -331,9 +343,9 @@ impl BakaCabinet {
     pub fn max_streak(&self) -> i32 {
         self.max_streak
     }
-    /// `DAT_801DBF28` - matches won that were not shutouts.
-    pub fn rounds_dropped(&self) -> i32 {
-        self.rounds_dropped
+    /// `DAT_801DBF28` - matches won without dropping a round.
+    pub fn perfect_matches(&self) -> i32 {
+        self.perfect_matches
     }
 
     /// Mirror the live casino prize accumulator (`_DAT_80084440`) into the
@@ -378,5 +390,39 @@ impl BakaCabinet {
     /// Kick the screen shake (`DAT_801DBEC0`); the epilogue decays it.
     pub fn shake_screen(&mut self, amplitude: i32) {
         self.shake = amplitude;
+    }
+
+    /// Every scalar the cabinet keeps, beside the overlay word it mirrors
+    /// (all words but the secret override, a halfword): the view the retail
+    /// kernel differential reads the machine through.
+    pub fn retail_words(&self) -> [(u32, i32); 26] {
+        [
+            (0x801D_BF44, self.state as i32),
+            (0x801D_C128, self.scene_timer),
+            (0x801D_BF88, self.state_timer),
+            (0x801D_BE94, self.intro_timer),
+            (0x801D_BE90, self.lose_timer),
+            (0x801D_BE9C, self.exit_timer),
+            (0x801D_C12C, self.blink),
+            (0x801D_C130, self.frames),
+            (0x801D_BEB0, self.clear_fade_in),
+            (0x801D_BEB4, self.clear_fade_out),
+            (0x801D_BF70, self.select_cursor),
+            (0x801D_BF90, self.menu_cursor),
+            (0x801D_C10C, self.stage),
+            (0x801D_C110, self.stage_display),
+            (0x801D_BF06, i32::from(self.secret.raw())),
+            (0x801D_BEE4, self.high_score),
+            (0x801D_BEE8, self.prize),
+            (0x801D_BEE0, self.bonus),
+            (0x801D_BEB8, self.all_clear),
+            (0x801D_BF8C, self.round),
+            (0x801D_BF78, self.match_phase),
+            (0x801D_BED4, i32::from(self.suppress_scene)),
+            (0x801D_BEC0, self.shake),
+            (0x801D_BF58, self.max_streak),
+            (0x801D_BF28, self.perfect_matches),
+            (0x8008_4440, self.pot as i32),
+        ]
     }
 }

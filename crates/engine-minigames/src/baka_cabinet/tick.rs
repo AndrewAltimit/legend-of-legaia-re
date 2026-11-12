@@ -19,6 +19,8 @@ impl BakaCabinet {
         let entry = self.state;
         match self.state {
             ST_BOOT => {
+                self.suppress_scene = false;
+                self.all_clear = 0;
                 self.high_score = 0;
                 self.scene_timer = 0;
                 self.state = ST_ATTRACT;
@@ -71,6 +73,7 @@ impl BakaCabinet {
                 self.high_score = 0;
                 self.match_phase = 0;
                 self.round = 0;
+                self.perfect_matches = 0;
                 self.stage = 2;
                 self.stage_display = 0;
                 self.state = ST_SELECT;
@@ -119,6 +122,12 @@ impl BakaCabinet {
                 self.state = ST_OPPONENT_INSTALL;
             }
             ST_OPPONENT_INSTALL => {
+                // The tally's rows clear for the new rung, the match-bonus
+                // row with them (`0x801CFCE4..0x801CFCF4`).
+                self.bonus = 0;
+                // Every match starts at round `0` (`0x801CFDB0`), so a secret
+                // rung's first round is the one its intro pose waits for.
+                self.round = 0;
                 let (roster, mesh) = rung_fold(self.stage, self.secret);
                 f.install_opponent = Some((roster, mesh));
                 self.match_phase = 2;
@@ -150,6 +159,7 @@ impl BakaCabinet {
             // passes a full turn, so the HUD (drawn from `0x36` on, the
             // epilogue's `s7` test at `0x801D218C`) waits for the camera.
             ST_ROUND_BANNER_C => {
+                self.suppress_scene = false;
                 f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
                 if !input.camera_hold {
@@ -181,14 +191,20 @@ impl BakaCabinet {
             }
             ST_DUEL => self.tick_duel(input, &mut f),
             ST_PERFECT => {
+                // The wipe holds at `0xF0` for its last draw, but the word
+                // itself is zeroed for the tally (`0x801D095C..0x801D0960`).
                 self.state_timer += step * 3;
                 if self.state_timer >= 0xF1 {
-                    self.state_timer = 0xF0;
+                    self.state_timer = 0;
                     self.state = ST_TALLY;
                 }
             }
             ST_TALLY => {
-                self.state_timer += step;
+                // The hold counts only once the drain `FUN_801D239C` reports
+                // every row empty (`bnez v0` at `0x801D09C0`).
+                if !input.tally_draining {
+                    self.state_timer += step;
+                }
                 if self.state_timer >= 0x79 {
                     self.state_timer = 0xF0;
                     self.state = ST_TALLY_OUT;
@@ -207,7 +223,7 @@ impl BakaCabinet {
                     self.state_timer = 0;
                     self.stage_display += 1;
                     self.state = ST_CHOICE;
-                    if self.all_clear {
+                    if self.all_clear != 0 {
                         self.clear_fade_in = 0;
                         self.clear_fade_out = 0;
                         self.state = ST_CLEAR_A;
@@ -216,15 +232,21 @@ impl BakaCabinet {
             }
             ST_CHOICE => self.tick_choice(input, &mut f),
             ST_CHOICE_SECRET => {
-                // Cleared at the top of the arm, every frame - the tally's
-                // secret branch raises it and this state is where it comes
-                // back down, one frame later.
-                self.suppress_scene = false;
-                self.state_timer += step;
+                // The scene stays suppressed here: the tally's secret branch
+                // raised it and the spin arm `0x35` is what drops it
+                // (`0x801D033C`), so the walls, the floor light and the HUD
+                // stay off through the challenger's announcement and intro.
+                // The arm's first frame seeds the word at `1`, then tests it
+                // and steps it, the hand-off frame included
+                // (`0x801D1094..0x801D1168`).
+                if self.state_timer == 0 {
+                    self.state_timer = 1;
+                }
                 if self.state_timer >= 0xB5 {
                     self.match_phase = 1;
                     self.state = ST_NEXT_RUNG;
                 }
+                self.state_timer += step;
             }
             ST_NEXT_RUNG => {
                 self.match_phase = 1;
@@ -305,6 +327,7 @@ impl BakaCabinet {
             }
             ST_DEV_MENU => self.tick_dev_menu(input, &mut f),
             ST_CLEAR_A => {
+                self.suppress_scene = false;
                 self.clear_fade_in += step * 4;
                 if self.clear_fade_in >= 0x101 {
                     self.clear_fade_in = 0x100;
@@ -343,15 +366,20 @@ impl BakaCabinet {
                 f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
             }
             ST_CLEAR_E => {
+                self.suppress_scene = false;
                 self.clear_fade_out = (self.clear_fade_out - step * 2).max(0);
                 self.state_timer += step;
+                // The last fade draws at `0xFF`; the word itself is zeroed
+                // with the hand-off (`0x801D1CAC..0x801D1CD0`).
+                let mut level = self.state_timer;
                 if self.state_timer >= 0x100 {
-                    self.state_timer = 0xFF;
+                    level = 0xFF;
+                    self.state_timer = 0;
                     self.match_phase = 0;
                     self.exit_timer = 0;
                     self.state = ST_EXIT;
                 }
-                f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
+                f.clear_fade = Some(level.clamp(0, 0xFF) as u8);
             }
             ST_DEV_EDITOR => {
                 self.state = ST_DEV_EDITOR_RUN;
@@ -450,12 +478,15 @@ impl BakaCabinet {
         // The menu cursor is re-zeroed every duel frame, not on entry to the
         // menu - so a re-opened pause menu always starts on its first row.
         self.menu_cursor = 0;
+        let mut pause_ready = input.pause_ready;
         if self.state_timer < 0xB5 {
             if input.round_clock {
                 self.state_timer += step;
             }
         } else {
-            // Round over.
+            // Round over. The arm drops the pause gate (`0x801D0638`), so
+            // the menu cannot open on this frame.
+            pause_ready = false;
             self.state_timer = 0;
             self.round = (self.round + 1).min(9);
             self.state = ST_ROUND_SETUP;
@@ -467,22 +498,34 @@ impl BakaCabinet {
                 // in this dispatcher - its one store to the word is the
                 // game-over zero.
                 self.prize = input.rung_prize as i32;
+                // A win over an ordinary rung may insert a secret one
+                // (`0x801D072C..0x801D0790`); a win over a secret rung clears
+                // the override, and the second secret's ends the run in the
+                // all-clear (`all_clear = 2`, `0x801D0794..0x801D07A4`). The
+                // stage steps whenever no override is left standing, and
+                // reaching `0xE` is the other all-clear.
                 if self.secret == SecretOpponent::None {
                     self.secret = secret_opponent_gate(self.stage, self.high_score);
+                } else {
+                    if self.secret == SecretOpponent::Second {
+                        self.all_clear = 2;
+                    }
+                    self.secret = SecretOpponent::None;
                 }
                 let adv = advance_stage(self.stage, self.secret);
                 self.stage = adv.stage;
                 if adv.all_clear {
-                    self.all_clear = true;
+                    self.all_clear = 1;
                 }
                 self.bonus = match_bonus(input.opponent_round_wins);
                 // `state = 0x65` sits in the **delay slot** of the
                 // "did the opponent take a round" branch, so it runs either
                 // way - a match win always reaches the flourish. The branch
-                // only skips the dropped-round tally `DAT_801DBF28`.
+                // (`bnez` at `0x801D0868`) skips the shutout tally
+                // `DAT_801DBF28` when the opponent took a round.
                 self.state = ST_PERFECT;
-                if input.opponent_round_wins != 0 {
-                    self.rounds_dropped += 1;
+                if input.opponent_round_wins == 0 {
+                    self.perfect_matches += 1;
                 }
             } else if input.opponent_round_wins == input.win_target {
                 self.state = ST_LOSE;
@@ -490,7 +533,7 @@ impl BakaCabinet {
             }
         }
 
-        if input.pad_edge & CABINET_DUEL_MENU != 0 {
+        if pause_ready && input.pad_edge & CABINET_DUEL_MENU != 0 {
             f.cues.push(crate::baka_fighter::BAKA_CUE_CONFIRM);
             self.menu_cursor = 0;
             self.state = if input.dev_menu_enabled {
@@ -527,12 +570,15 @@ impl BakaCabinet {
                     self.state = ST_EXIT;
                 }
             }
-        } else {
+        }
+        // The latch's tail runs on the confirm frame too: the hand-off test
+        // first, then the step (`0x801D0F40..0x801D0F94`).
+        if self.state_timer >= 0xD3 {
+            self.match_phase = 1;
+            self.state = ST_NEXT_RUNG;
+        }
+        if self.state_timer != 0 {
             self.state_timer += step;
-            if self.state_timer >= 0xD3 {
-                self.match_phase = 1;
-                self.state = ST_NEXT_RUNG;
-            }
         }
     }
 
