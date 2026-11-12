@@ -1884,6 +1884,21 @@ per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
 
+<a id="a-heavy-fights-hit-frames"></a>
+
+**A heavy fight's hit frames.** A step moves bodies as well as the camera: a reaction
+clip's root motion runs `step` times its rate a pass, so a knockback carried on a step-`4`
+pass ends further back than on a step-`3` one. `battle_nilboa_neo_grude_strike`'s retail
+frames cost `694` to `719` through the strike loop, on the edge of the step-`4` reading,
+and two of its hit frames run at `4`; the engine's cost those frames at `659` to `685` and
+runs them at `3`. Each hit then leaves Vahn a few units short of retail's (`(-207, -249)`
+against `(-212, -268)` after the third swing), the striker's re-face onto his body pair turns
+on that, and by the return state `0x20` the striker stands on heading `2620` against retail's
+`2602`. Case 7's yaw is `counter - heading`, so the camera sits about `20` units off
+retail's for the rest of the action and the backdrop slides some ten pixels across the
+frame (film `.879`, `0x1E..0x20` segments `.86` to `.89`), with every clip on retail's cursor
+pass for pass.
+
 What a ghost costs inside a full party's frame stays open. Over 61 recorded monster
 strikes (the `battle_*_strike` states' cast-sequence recordings, retail's step every vsync) the mesh
 cost lifts the engine's step agreement from `.916` to `.951` (Frog on `map01` `.20` to
