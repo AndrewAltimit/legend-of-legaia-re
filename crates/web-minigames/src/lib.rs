@@ -228,6 +228,8 @@ pub struct LegaiaMinigames {
     /// run on `World::minigames.fishing_venue`, here over this page's own
     /// session and effect pool.
     fishing_venue_actors: legaia_engine_minigame_scenes::fishing_venue::FishingVenue,
+    /// This page's pond cue clock, the twin of `World::minigames.fishing_cues`.
+    fishing_cues: legaia_engine_minigame_scenes::minigame_state::PondCueClock,
     /// The landed fish's clip frame, advanced by the pond tick while a
     /// catch shows.
     fishing_catch_frame: usize,
@@ -469,6 +471,7 @@ impl LegaiaMinigames {
             fishing_angler_facing: 0x800,
             fishing_lures_held: [fishing_web::MINIGAMES_TACKLE_HELD; 3],
             fishing_venue_actors: Default::default(),
+            fishing_cues: Default::default(),
             fishing_catch_frame: 0,
             item_names: None,
             muscle: None,

@@ -18,6 +18,7 @@ impl World {
         }
         self.minigames.fishing = Some(session);
         self.minigames.fishing_events.clear();
+        self.minigames.fishing_cues.reset();
         self.mode = SceneMode::Fishing;
     }
 
@@ -137,6 +138,7 @@ impl World {
         let session = self.minigames.fishing.take();
         self.minigames.fishing_exchange = None;
         self.minigames.fishing_events.clear();
+        self.minigames.fishing_cues.reset();
         if let Some(s) = &session {
             self.bank_fishing_persist(s.persist());
         }
@@ -342,14 +344,13 @@ impl World {
                     self.minigames.fx.spawn(x, y, p.sprite_id);
                 }
             }
-            // The hook and catch cues - one kernel shared with the minigames
-            // page. The hook cue used to live on the native window's line
-            // actor, which made the strike audible on one surface; the cue
-            // queue is drained by every host.
-            self.minigames
-                .pending_sfx
-                .extend(legaia_engine_minigame_scenes::minigame_state::pond_event_cues(e));
         }
+        // The hook and catch cues - one clock shared with the minigames
+        // page, on the world's cue queue every host drains. The celebration's
+        // cues land on the line actor's stage frames, not the landing frame.
+        let strength = self.minigames.fishing.as_ref().map_or(0, |s| s.strength());
+        let cues = self.minigames.fishing_cues.frame(&events, strength, 1);
+        self.minigames.pending_sfx.extend(cues);
         self.minigames.fishing_events = events;
     }
 }

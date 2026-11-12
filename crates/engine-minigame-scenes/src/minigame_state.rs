@@ -30,6 +30,9 @@ pub struct MinigameState {
     /// their HUD banner one-shots from it, the way the minigames page does
     /// from its own tick's return.
     pub fishing_events: Vec<legaia_engine_fishing::fishing::PondEvent>,
+    /// The pond's SFX cue clock ([`PondCueClock`]): the hook cue on the
+    /// strike and the celebration's cues on their retail frames.
+    pub fishing_cues: PondCueClock,
     /// The scene mode to restore when the fishing minigame ends
     /// (`World::enter_fishing` snapshots the interrupted mode).
     pub fishing_return_mode: SceneMode,
@@ -366,6 +369,7 @@ impl MinigameState {
             dance_best: 0,
             dance_free_play_song: 0,
             fishing_events: Vec::new(),
+            fishing_cues: PondCueClock::default(),
             fishing_exchange: None,
             fishing_prize_venues: None,
             fishing_hub_text: None,
@@ -478,32 +482,139 @@ impl FishingCaptionText {
     }
 }
 
-/// The SFX cues one pond event raises, in order: the hook cue on a strike
-/// (`_DAT_8007B6DA`), and on a catch the celebration cue plus whichever of
-/// the four score-gated burst cues it unlocked (`FUN_801d4948`). Splash,
-/// snap and recast raise none here (the splash is a spawn into the effect
-/// pool, not a cue).
+/// The pond's SFX cue clock: the hook cue on a strike (`_DAT_8007B6DA`), and
+/// on a catch the celebration's cues on the frames the reeling-line actor
+/// (`FUN_801d4948` sub-state `4`) raises them - the stage cue once its
+/// `+0x22` timer has passed `1`, the score-gated burst cues once it has
+/// passed `0x72` (`0x801D4F10..`), each once on the stage word
+/// `DAT_801D92A8`. Splash, snap and recast raise none here (the splash is a
+/// spawn into the effect pool, not a cue).
 ///
-/// One answer for every host that runs a pond: `World::tick` queues these
-/// for both play hosts, and the standalone minigames page keys them off its
-/// own session's events - which played no hook or catch sound at all before.
-pub fn pond_event_cues(e: &legaia_engine_fishing::fishing::PondEvent) -> Vec<u16> {
-    use legaia_engine_fishing::fishing::PondEvent;
-    match *e {
-        PondEvent::Hooked(_) => vec![u16::from(legaia_engine_fishing::fishing_actors::HOOK_CUE)],
-        PondEvent::Landed(points) => {
-            let mut cues = vec![u16::from(
-                legaia_engine_fishing::fishing_actors::CELEBRATE_CUE,
-            )];
-            cues.extend(
-                legaia_engine_fishing::fishing_actors::celebration_bursts(points)
-                    .filter_map(|b| b.cue)
-                    .map(u16::from),
-            );
-            cues
+/// The celebration runs on [`legaia_engine_fishing::fishing_actors::LineActorSim`],
+/// the kernel the retail-exec differential pins against the overlay, so the
+/// cues land when the close-up's bursts and flash do rather than on the
+/// landing frame. The tiers climb the fight strength `DAT_801D91B8`
+/// (`0x801D4F34`), not the points the catch scored.
+///
+/// One answer for every host that runs a pond: `World::tick` drives one for
+/// both play hosts, and the standalone minigames page drives its own off its
+/// session's events.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PondCueClock {
+    /// The celebration in flight, from the landing frame to its hand-back.
+    celebration: Option<legaia_engine_fishing::fishing_actors::LineActorSim>,
+}
+
+impl PondCueClock {
+    /// One pond frame: `events` is this frame's session events, `strength`
+    /// the session's fight strength ([`legaia_engine_fishing::fishing::PondSession::strength`])
+    /// and `frame_step` the frame step the pond ran at. Returns the cues to
+    /// raise this frame, in order.
+    ///
+    /// The landing frame is the celebration's first (its timer starts at
+    /// zero on it, as the pond's lift does), so the arm ticks the frame it
+    /// lands.
+    pub fn frame(
+        &mut self,
+        events: &[legaia_engine_fishing::fishing::PondEvent],
+        strength: i32,
+        frame_step: i16,
+    ) -> Vec<u16> {
+        use legaia_engine_fishing::fishing::PondEvent;
+        use legaia_engine_fishing::fishing_actors::{CELEBRATE_CUE, HOOK_CUE, LineActorSim};
+        let mut cues = Vec::new();
+        for e in events {
+            match *e {
+                // The arm's first frame is the strike's (the line actor is
+                // spawned on it and stores the cue at once).
+                PondEvent::Hooked(_) => {
+                    self.celebration = None;
+                    cues.push(u16::from(HOOK_CUE));
+                }
+                PondEvent::Landed(_) => {
+                    let mut line = LineActorSim::hooked();
+                    line.land(strength);
+                    self.celebration = Some(line);
+                }
+                PondEvent::Snapped => self.celebration = None,
+                PondEvent::Splash | PondEvent::Recast | PondEvent::LureRing(..) => {}
+            }
         }
-        PondEvent::Splash | PondEvent::Snapped | PondEvent::Recast | PondEvent::LureRing(..) => {
-            Vec::new()
+        if let Some(line) = self.celebration.as_mut() {
+            let f = line.tick(frame_step);
+            if f.cue == Some(CELEBRATE_CUE) {
+                cues.push(u16::from(CELEBRATE_CUE));
+            }
+            cues.extend(f.bursts.iter().filter_map(|b| b.cue).map(u16::from));
+            if f.done {
+                self.celebration = None;
+            }
+        }
+        cues
+    }
+
+    /// Drop a celebration in flight (the session closed under it).
+    pub fn reset(&mut self) {
+        self.celebration = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PondCueClock;
+    use legaia_engine_fishing::fishing::PondEvent;
+    use legaia_engine_fishing::fishing_actors::{
+        CELEBRATE_CUE, CELEBRATION_CUE_FRAME, CELEBRATION_STAGE_FRAMES, HOOK_CUE,
+    };
+
+    /// The strike raises the hook cue on its own frame; the catch raises
+    /// nothing on the landing frame, the stage cue on the celebration's
+    /// frame `2`, and every unlocked tier's cue once its timer passes `0x72`,
+    /// off the fight strength rather than the points.
+    #[test]
+    fn the_celebration_cues_land_on_the_line_actors_stage_frames() {
+        let mut clock = PondCueClock::default();
+        assert_eq!(
+            clock.frame(&[PondEvent::Hooked(3)], 0, 1),
+            [u16::from(HOOK_CUE)]
+        );
+        assert!(clock.frame(&[], 0, 1).is_empty());
+        // Strength 0x4B1 unlocks all four tiers (three carry a cue); the
+        // award handed with the event is ignored.
+        let mut heard = Vec::new();
+        for frame in 0..0x100i16 {
+            let events = if frame == 0 {
+                vec![PondEvent::Landed(5)]
+            } else {
+                Vec::new()
+            };
+            for cue in clock.frame(&events, 0x4B1, 1) {
+                heard.push((frame, cue));
+            }
+        }
+        let burst_frame = CELEBRATION_STAGE_FRAMES.0 + 1;
+        assert_eq!(
+            heard,
+            [
+                (CELEBRATION_CUE_FRAME, u16::from(CELEBRATE_CUE)),
+                (burst_frame, 0x25),
+                (burst_frame, 0x26),
+                (burst_frame, 0x27),
+            ]
+        );
+    }
+
+    /// A snapped line or a fresh strike drops a celebration in flight.
+    #[test]
+    fn a_new_strike_drops_the_celebration() {
+        let mut clock = PondCueClock::default();
+        assert!(clock.frame(&[PondEvent::Landed(0)], 0x4B1, 1).is_empty());
+        assert_eq!(
+            clock.frame(&[PondEvent::Hooked(0)], 0, 1),
+            [u16::from(HOOK_CUE)]
+        );
+        for _ in 0..0x100 {
+            assert!(clock.frame(&[], 0x4B1, 1).is_empty());
         }
     }
 }

@@ -354,6 +354,7 @@ impl LegaiaMinigames {
         self.fishing_prizes.clear();
         self.fishing_lures_held = [MINIGAMES_TACKLE_HELD; 3];
         self.fishing_venue_actors = Default::default();
+        self.fishing_cues.reset();
         // The lead's two ambient-ripple part records, off the overlay image
         // the tables decoded from.
         self.fishing_venue_actors.ripple_records = self.fishing_overlay.as_deref().and_then(|ov| {
@@ -603,12 +604,9 @@ impl LegaiaMinigames {
             hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
         }
         let mut out = hub_events;
-        // The hook and catch cues, through the kernel `World::tick` queues
-        // them with for the two play hosts. This page keyed neither.
-        let cues: Vec<u16> = events
-            .iter()
-            .flat_map(legaia_engine_minigame_scenes::minigame_state::pond_event_cues)
-            .collect();
+        // The hook and catch cues, through the clock `World::tick` drives
+        // for the two play hosts.
+        let cues = self.fishing_cues.frame(&events, p.strength(), 1);
         for cue in hub_cue.into_iter().chain(cues) {
             self.minigame_sfx_cue(cue);
         }
