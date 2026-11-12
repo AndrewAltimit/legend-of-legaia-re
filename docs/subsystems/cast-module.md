@@ -2860,7 +2860,14 @@ on each: the monster row re-seated in front of the creature and put back, hidden
 and shown, the creature's animation rate arm by arm (which is what keeps its
 clips on retail's frames), Terra's orbit of the row and the whirl its arms 6 and 7
 walk (each pooled part's `+0x7A` and height climbing, killed at a level of `0xA00`
-or under, so four stand where twenty have been seated), and Ozma's blue ease
+or under, so four stand where twenty have been seated). Both of Terra's walks are a pass's,
+by the frame step byte `0x1F800393`, not a vsync's: the whirl `+0x7A += step`,
+`+0x16 += 4 * step` ahead of the gate (`0x801F70FC..0x801F7124`), and the orbit
+`speed += 3 * step`, then `angle += speed` and the row's facing `+= speed` once
+(`0x801F75D4..0x801F7790`). The port takes each on the tick that opens the pass; a
+`--retail-parts` recording of the Gobu Gobu cast holds the arm-7 whirl at the
+heights it gives (`96`, `192`, `288`, `+0x7A` `24` / `48` / `72`), and its `body.csv`
+holds the victim on the orbit's points through arms `0xA` and `0xB`. Then Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
 into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
 a shake on the low bit of a pass word, and draw eight streak ribbons on a ring,
@@ -2887,7 +2894,12 @@ shot then reads `ctx[+0x6D0]`: 0903, 0906, 0907, 0910, 0913, 0914, 0916, 0917, 0
 and 0920. Without that call the shot reads the band's `0x600` and frames at half
 retail's depth or less.
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
-down the victim's lane (arms 6..8), the heading on its target and the soft-red word
+down the victim's lane (arms 6..8), the victim stepped back a sixth of its body radius on
+arm 6's pass (`*(+0x22C)[+0x58] / 6` into `+0x38`, the `0x2AAAAAAB` divide at
+`0x801F6FB0..0x801F7000`: `112` on Gobu Gobu's `672`) and turned down the lane by arm
+7's pre-hit (`+0x46 = 0x800` at `0x801F7254`, whatever it staged), so the reaction
+staged there (clip 4, then 5) slides it straight back to `z = 426` before arm 9's
+`+0xCA`, as a retail RAM image holds it, the heading on its target and the soft-red word
 (arm 9's pass), the parked-red word with the additive mode word `+0x08 = 0x81000000`
 (arm `0xA`, cleared on arm `0xB`'s pass) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
 quartered roll and the creature closes on a target, trading it
@@ -2933,6 +2945,17 @@ Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+
 The flag is the tint pass's cursor-dim arm (colour `0x010101` at weight `0x1000`, [battle actor rendering](battle-actor-rendering.md)), so the victim draws as a dark silhouette through arms 16 to 19. Arms 16 and 17 focus on the first arm-9 part's height, which arm `0xE`'s pass sets to `trunc(victim[+0x3E] * 4 / 3)` (`0x801F7F5C..0x801F7F7C`, read back at `0x801F8280` / `0x801F83A8`):
 `228` above the floor on Gobu Gobu (a retail RAM image of arm `0x12` holds the focus word).
 With both, arm `0x12` reads `.820` and arm `0x13` `.736` on the Gobu Gobu film, against `.638` and `.570`. What remains there is the frozen victim's pose and the length of arm 17's streak. Grade `disassembly` + `capture`.
+
+Arm 17's streak is its first two records, `0x801F911C` and `0x801F9160`: static rings
+(`ROT_ADD` roll `-0x400`, op `0x13` radius `0` to `0x1800` / `0x2800`, both heights
+`-0x8000`) seated on the victim's position but on the stack's angle trio, not the
+victim's (`a0 = victim + 0x34`, `a1 = sp+0x20` at `0x801F85CC..0x801F8630`, the shot's
+yaw `0xC00` with its pitch zeroed). A `--retail-parts` recording holds them at rotation
+`(0, 0xC00, -0x400)`; the port seats them on the victim's own trio, `(0, 0, -0x400)`.
+Seated on the stack's trio, the port draws them as a face-on disc far down the view
+axis, where retail shows only the streak: a ring `0x8000` units out is past the GTE's
+`SZ` and `IR` limits, and which of its `GT3`s retail draws, and where, is not settled,
+so the seat stays as it is. Grade `disassembly` + `capture` (the trio); the draw is open.
 
 Slippery's creature comes up out of the floor: arm 2's exit seats it at
 `y = -(scalar << 8)` and stages clip 1 bare, arm 3 lifts it `4 p` a pass and stands
@@ -4170,6 +4193,8 @@ holds the band after a hand-over until the tick that opens the next battle
 frame; the arms keep their one-vsync drains, so an arm's own span is
 unchanged. On retail's cadence the pass is already a frame.
 
+<a id="the-rest-of-a-handing-over-pass"></a>
+
 The pass that hands over still drifts the camera globals by `k * delta` before
 it stores the phase (Gola Gola's arm `0xB` adds `yaw += 4 p` and only then tests
 the park). The port's pass stops on the tick that hands over, so on a step-`4`
@@ -4177,7 +4202,14 @@ pass that tick drifted a quarter of retail's: Gola's arm 12 opened `96` yaw unit
 short and stood `128` short to the band's end. `World::module_pass` re-applies
 the handing-over tick's own drift (`CastFxState::module_tick_drift`) for the
 ticks of the pass it does not run. A body-paced director's first tick in an arm
-carries the new arm's drift (`drift_after_shot`), which is left out.
+carries the new arm's drift (`drift_after_shot`), which is left out. So does a
+pass that drifts and then cuts: PROT 0933's arm 8 drifts the globals ahead of its
+gate (`0x801F73C4..0x801F7424`) and its passing pass then builds its shot from
+them (`0x801F7504`), so the shot's pose is where the pass leaves the camera. Re-applied
+after the shot, the rest of the pass stood Terra's arm 9 `12` yaw units off the cut it
+opens on, and arms `0xA` / `0xB` `36` TR units off; the summon band drops the rest
+when the handing-over tick armed a shot ahead of its drift. Grade `disassembly` +
+`capture`.
 
 That drift goes in **ahead of** the pass's stores and shot when the director runs
 retail's drift-first order (PROT 0959, 0960, and the others that raise

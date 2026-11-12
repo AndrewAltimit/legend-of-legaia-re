@@ -785,9 +785,32 @@ the SM step that ran the module, so on every step change the module pass and the
 director read the step the last frame ran (`World::module_frame_step` now peeks the
 track). Nova's arm 16 drifted a tick a change before it, and missed one of its 83
 passes. Over the 29 films the step seat's mean moved `.901` to `.909` (`0x99`
-`.857` to `.912`, Gola Gola's `0x8C` `.872` to `.909`); `0x9F` fell `.895` to `.863` on
-arms 9..11, whose camera is unchanged, so what moved there is its parts. The plain
-seat, which runs no track, moved `.9063` to `.9065`.
+`.857` to `.912`, Gola Gola's `0x8C` `.872` to `.909`). `0x9F` fell `.895` to `.863` on
+arms 9..11, and the lookahead was not the defect there: it moved arm 8's handing-over
+tick one tick earlier, and what the port did on that pass was wrong either way. The
+port re-applied the rest of the pass's camera drift after the passing arm's cut,
+which retail builds from the drifted globals ([cast module](../subsystems/cast-module.md#the-rest-of-a-handing-over-pass)),
+and Terra walked its whirl parts and its row's orbit a vsync at a time where retail
+steps them once a pass. With both carried, the arm-7 whirl heights match a
+`--retail-parts` recording part for part, the victim's live pair matches the
+recording's `body.csv` through arms `0xA` and `0xB`, and `0x9F` reads `.960` on
+retail's steps.
+
+The Mushura film's arm 12 was held by its victim's stand, not by the chase or the
+reaction clip: arm 6's pass steps the victim back a sixth of its body radius, and
+arm 7's pre-hit turns it down the lane before the reaction slides it, and with both
+the victim stands where a retail RAM image holds it, frame for frame. Over the set:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9065` | `.9079` | `0x8D` `.907` to `.922`, `0x9E` `.906` to `.926` |
+| `--retail-steps` | `.9091` | `.9133` | `0x9F` `.863` to `.960`, `0x9E` `.918` to `.937` |
+| `--retail-steps --rand-track` | `.9314` | `.9356` | `0x9F` `.863` to `.960`, `0x9E` `.920` to `.940` |
+
+Mushura's arms 8..11 lift on every seat (arm 10 `.890` to `.987`); its arm 12 chase
+stays at `.75`..`.79`, which now starts from retail's stand and leaves the chase's own
+targets to read. Gilium's `0x95` loses `.002` plain, a few hundredths on arms `0xD`,
+`0x10` and `0x11` whose camera now stands nearer the recording's.
 
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
 and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
