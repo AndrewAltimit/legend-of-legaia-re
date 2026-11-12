@@ -4706,10 +4706,18 @@ arm on both sides, their centroids within the spread of the rolled offsets
 ordering table, linked at slot 1 (`*(0x1F8003F4) + 4`, `jal 0x8003D2C4` at
 `0x801DFC14`), and the film shows it first about four frames after the hit, low over
 Vahn, rising to the top over the next two; the earlier hit's number stands beside it
-until then. The engine draws the number over the scene from its first frame, already
-risen. Whether the flame sprites cover retail's first frames (a deeper link) or the
-number's first frames sit off the screen's top clamp is not yet read. Grade `capture`
-(puffs) and `disassembly` + `capture` (the popup's link), the cause `inference`.
+until then. A `--popup-trace` recording reads the arm-13 hit's numeral pass by pass: its
+first draw (ring timer `64`) projects a `7`-pixel square at `(153, 146)`, too small to
+read; the next (`128`) returns depth `74`, under the near arm's `0x80`, and is reseated
+as a `32`-pixel square at `(50, 144)`, low on the screen; then `(98, 55)` at depth `126`
+(near again) and `(89, 14)`, clamped to row `32`. So the number appears low and climbs
+because the close camera's square starts small and its anchor rises `3/2` of the timer
+a frame, and the near arm, which the port lacked, decides where the second and third
+draws stand. With it ported ([the numeral renderer](battle-action-helpers.md#fun_801df6b8---damage-number-popup-renderer))
+the engine's numeral for that hit stands on the near square too (view Z `1137`), and
+the film's arms 13 and 14 read as before (`.43` / `.41`): what holds them is the
+scene, not the number. Grade `capture` (puffs) and `disassembly` + `capture` (the
+popup's link and its near arm).
 
 <a id="prot-0960-plasma-strike"></a>
 

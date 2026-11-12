@@ -107,6 +107,7 @@
   </div>
   <p><strong>Flinch or knockdown</strong> is decided in the damage arm: flinch only when the actor has no get-up entry <em>and</em> the damage is survivable. Every player battle file carries a get-up entry, so a party member takes the knockdown arm on any hit.</p>
   <p><strong>When a staged clip commits.</strong> Mid-clip, commit-flag bit 0 commits at once and bit 1 commits once the cursor is past the entry&rsquo;s gate frame. Otherwise the staged byte waits for the natural end, and it commits in the same advance that crosses that end (<code>0x80047A48..0x80047B58</code>): a reaction&rsquo;s last pass is the pass that lands the next entry on its first keyframe, and state <code>0x20</code>&rsquo;s hold reads the idle on the following pass. A clip left staged behind itself re-commits from frame one, which is how a loop loops.</p>
+  <p>The same holds for an action clip that simply runs out. On the pass Nighto&rsquo;s Eye Beam clip ends, the retail film already shows him back on his idle at frame zero; the port used to hold the beam&rsquo;s last frame for one more pass before switching.</p>
   <p><strong>Each actor commits inside its own tick.</strong> The actor list ticks the battle bodies one after another in seat order, and each tick advances its clip, runs its hits and only then commits. So a Super Art&rsquo;s freeze lands on the monster before its own tick that frame, and a hit reaction (or a clip a cast module asks for) is only queued on its target: it starts on its first keyframe the frame after.</p>
 </section>
 

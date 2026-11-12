@@ -866,8 +866,8 @@ when the string total is live, which the port's fragments did not compose. The d
 (`finisher`), called on its own with the two rolls, matches on the value, the Stone nullify, the strip, the rumble
 and the summon XP; its Spirit fill stores each add as the halfword `+0x170` and caps the halfword, so a percent past
 `0xFFFF` - a big hit on a tiny max HP - wraps under the cap, where the port saturated. The per-hit numeral
-`FUN_801DF6B8` (`popup_numeral`) matches, except an arm with no port: under an OT depth of `0x80` the projection's
-square is reseated `32` px from its near corner, and the host projection carries no OT depth.
+`FUN_801DF6B8` (`popup_numeral`) matches, its near arm included: under an OT depth of `0x80` the projection's
+square is reseated `32` px from its near corner (`popup_near_square`), and the test answers depths on both sides.
 
 Matched on their first run: the side-band tick `FUN_80056208` (`battle_sideband`); the battle floor's grid
 `FUN_801D02C0`, both passes and every packet, the GTE answered by the interpreter's (`ground_grid`); the per-actor
