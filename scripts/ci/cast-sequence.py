@@ -758,6 +758,8 @@ def run_engine(a, out: Path) -> bool:
         coins = retail_track_coins(out)
         if coins:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
+    if a.gpu_cost_step:
+        env["LEGAIA_BATTLE_GPU_COST"] = "1"
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -950,6 +952,10 @@ def main() -> int:
     ap.add_argument("--retail-steps", action="store_true",
                     help="engine: run on the recording's own frame steps (a harness seat: it takes the "
                          "frame's cost out of what the film scores, so a law residual reads alone)")
+    ap.add_argument("--gpu-cost-step", action="store_true",
+                    help="engine: a battle pass's frame cost is max(its CPU term, the GPU draw-time model "
+                         "of the frame drawn last) (LEGAIA_BATTLE_GPU_COST=1, opt-in; retail's "
+                         "max(cpu, dma + draw) entry, docs/subsystems/battle-stage-camera.md)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")

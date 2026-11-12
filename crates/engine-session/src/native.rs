@@ -170,6 +170,11 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_PARTY_STEP").is_ok_and(|v| v.trim() == "0") {
         toggles.battle_party_cost_step = false;
     }
+    // Opt-in: price each battle frame's GPU wait off the drawn table
+    // (`WorldToggles::battle_gpu_cost_step`).
+    if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.battle_gpu_cost_step = true;
+    }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
     }

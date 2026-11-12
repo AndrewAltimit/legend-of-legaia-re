@@ -306,6 +306,15 @@ impl Renderer {
             MeshBufferKind::Index,
             bytemuck::cast_slice(&indices_with_tail),
         );
+        let cpu = self.keep_cpu_meshes.get().then(|| {
+            std::sync::Arc::new(MeshCpuCopy {
+                positions: positions.to_vec(),
+                words: cba_tsb.to_vec(),
+                colors: colors.to_vec(),
+                indices: indices.to_vec(),
+                textured: true,
+            })
+        });
         Ok(UploadedVramMesh {
             vertex_buf,
             index_buf,
@@ -313,6 +322,7 @@ impl Renderer {
             bounds: position_bounds(positions),
             semi_ranges,
             semi_prims,
+            cpu,
         })
     }
 
@@ -356,6 +366,9 @@ impl Renderer {
         mesh.index_count = indices.len() as u32;
         mesh.semi_ranges = semi_ranges;
         mesh.semi_prims = semi_prims;
+        if let Some(cpu) = mesh.cpu.as_mut() {
+            std::sync::Arc::make_mut(cpu).indices = indices.to_vec();
+        }
         Ok(())
     }
 
@@ -462,6 +475,17 @@ impl Renderer {
             MeshBufferKind::Index,
             bytemuck::cast_slice(&indices_with_tail),
         );
+        let cpu = self.keep_cpu_meshes.get().then(|| {
+            std::sync::Arc::new(MeshCpuCopy {
+                positions: positions.to_vec(),
+                words: (0..positions.len())
+                    .map(|i| [0, blend.get(i).copied().unwrap_or(0)])
+                    .collect(),
+                colors: colors.to_vec(),
+                indices: indices.to_vec(),
+                textured: false,
+            })
+        });
         Ok(UploadedColorMesh {
             vertex_buf,
             index_buf,
@@ -469,6 +493,7 @@ impl Renderer {
             bounds: position_bounds(positions),
             semi_ranges,
             semi_prims,
+            cpu,
         })
     }
 

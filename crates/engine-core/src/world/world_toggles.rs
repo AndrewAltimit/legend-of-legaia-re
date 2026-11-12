@@ -147,6 +147,15 @@ pub struct WorldToggles {
     /// default. Off in a bare `World`, which unit tests pin on the default; the
     /// play hosts raise it through [`Self::retail_cost_step`].
     pub battle_party_cost_step: bool,
+    /// Opt-in frame-step source, off by default (the step tables stay the
+    /// default clock): a battle pass's frame cost is the larger of its
+    /// CPU term (the PCSX-Redux tables behind [`Self::battle_party_cost_step`]
+    /// and the cast arm tables) and the modelled GPU wait over the table the
+    /// host drew last (`BattleState::drawn_table_cost`,
+    /// `legaia_engine_system::gpu_draw_cost`), retail's
+    /// `max(cpu, dma + draw)` entry. The native session raises it from
+    /// `LEGAIA_BATTLE_GPU_COST=1`; only the native window prices its frames.
+    pub battle_gpu_cost_step: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -425,6 +434,7 @@ impl WorldToggles {
             battle_pass_rand_draw: true,
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
             battle_party_cost_step: true,
+            battle_gpu_cost_step: false,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

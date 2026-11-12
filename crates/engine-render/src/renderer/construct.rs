@@ -255,6 +255,7 @@ impl Renderer {
             frame_ring_next: std::cell::Cell::new(0),
             native: None,
             psx_texel_rule: std::cell::Cell::new(PsxTexelRule::Gpu),
+            keep_cpu_meshes: std::cell::Cell::new(false),
             psx_mode: std::cell::Cell::new(false),
             draw_dither: std::cell::Cell::new(true),
             ui_psx_tint: std::cell::Cell::new(true),

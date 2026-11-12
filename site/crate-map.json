@@ -2809,6 +2809,7 @@
     "fade",
     "fade_ramp",
     "gamepad",
+    "gpu_draw_cost",
     "incense_window",
     "input",
     "menu_input",

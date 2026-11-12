@@ -59,7 +59,25 @@ impl World {
             },
             cost_of_step,
         );
+        let cost = match self.battle.drawn_table_cost {
+            Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
+            _ => cost,
+        };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+    }
+
+    /// Note the GPU's wait over the battle frame the host just drew, in
+    /// hblanks (draw plus DMA of its table,
+    /// `legaia_engine_system::gpu_draw_cost`). The next pass's cost is the
+    /// larger of its CPU term and this while
+    /// `WorldToggles::battle_gpu_cost_step` is up: retail's entry is
+    /// `max(cpu, dma + draw of the previous pass's table)`, the table the GPU
+    /// draws while the pass runs (`DrawOTag` at `0x80017288`, `DrawSync(0)`
+    /// at `0x800174D8`). A no-op outside a battle.
+    pub fn note_drawn_table_cost(&mut self, hblanks: u16) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.drawn_table_cost = Some(hblanks);
+        }
     }
 
     /// The passes since a loading battle CD-XA clip's cue, `None` while none
@@ -1377,6 +1395,35 @@ mod tests {
             }
         }
         assert_eq!(passes, [10, 13, 16]);
+    }
+
+    /// Under `battle_gpu_cost_step` a pass costs the larger of its CPU term
+    /// and the GPU's wait over the frame the host drew last; off, the drawn
+    /// cost is stored and never read.
+    #[test]
+    fn the_drawn_table_raises_a_pass_only_under_the_gpu_toggle() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x1E;
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2);
+        // A drawn table over the step-3 threshold `0x1FF`.
+        w.note_drawn_table_cost(0x240);
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2, "the toggle is off");
+        w.toggles.battle_gpu_cost_step = true;
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 3);
+        // A table under the CPU term leaves the pass on its CPU cost.
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_gpu_cost_step = true;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x1E;
+        w.note_drawn_table_cost(20);
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2);
     }
 
     #[test]

@@ -19,6 +19,7 @@ pub mod draw_census;
 pub mod fade;
 pub mod fade_ramp;
 pub mod gamepad;
+pub mod gpu_draw_cost;
 pub mod incense_window;
 pub mod input;
 pub mod menu_input;

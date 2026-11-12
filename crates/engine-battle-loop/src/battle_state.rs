@@ -797,6 +797,12 @@ pub struct BattleState {
     pub frame_cost_ring: crate::frame_clock::FrameCostRing,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
+    /// The GPU's wait over the table the host drew last, in hblanks (draw
+    /// plus DMA, `legaia_engine_system::gpu_draw_cost`), which the host
+    /// notes after each battle frame it draws (`World::note_drawn_table_cost`)
+    /// while `WorldToggles::battle_gpu_cost_step` is up. `None` before the
+    /// first such frame.
+    pub drawn_table_cost: Option<u16>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -1552,6 +1558,7 @@ impl BattleState {
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
+            drawn_table_cost: None,
             frame_cost_state: None,
             pending_frame_step: None,
             pending_frame_step_from: 0,
