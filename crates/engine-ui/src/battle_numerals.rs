@@ -204,17 +204,9 @@ pub fn arts_banner_prims(
 /// through it with its Y negated. Fed unflipped, a numeral's rise
 /// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
 /// fall: the run sank through the floor and off the bottom of the stage.
-pub fn popup_rect(
-    vp: &[f32; 16],
-    world_scale: f32,
-    anchor: [i32; 3],
-    half: i32,
-) -> Option<(i32, i32, i32, i32)> {
-    popup_square(vp, world_scale, anchor, half).map(|(rect, _)| rect)
-}
-
-/// [`popup_rect`] beside the square's view-space depth, the clip `w` of its
-/// centre: what `FUN_800195A8`'s ordering-table return is made of
+///
+/// Beside the rect it returns the square's view-space depth, the clip `w` of
+/// its centre: what `FUN_800195A8`'s ordering-table return is made of
 /// ([`vr::popup_ot_depth`]).
 pub fn popup_square(
     vp: &[f32; 16],
@@ -338,7 +330,7 @@ mod tests {
         let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
         let trio = [144.0, -112.0, -1173.0];
         let row = |age: u16| popup_value_cells(&vp, SCALE, trio, 16, age)[0].y;
-        let floor = popup_rect(&vp, SCALE, [144, 0, -1173], 1).unwrap().1;
+        let floor = popup_square(&vp, SCALE, [144, 0, -1173], 1).unwrap().0.1;
         assert!(row(0) < floor, "the push frame sits over the floor");
         assert!(row(8) < row(0), "and climbs: {} then {}", row(0), row(8));
         assert_eq!(row(21), vr::RESTING_TOP_Y);

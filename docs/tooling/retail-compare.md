@@ -6313,7 +6313,7 @@ every pass, so it moves with the phase of both clips):
   models' own, and the anchor went in unflipped: the run fell through the
   floor and left by the bottom of the stage, so no engine frame of a landed
   hit carried the figure retail's shows at row `32`
-  (`battle_numerals::popup_rect`). Its size was off the same way round: the
+  (`battle_numerals::popup_square`). Its size was off the same way round: the
   square's half-extent is half the ring timer in **view** units, added after
   the camera matrix has scaled the centre, and it went through the 4x stage
   scale with the anchor - at the 24-px cap from its fourth frame, where
