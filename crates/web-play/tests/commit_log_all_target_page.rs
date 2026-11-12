@@ -180,8 +180,9 @@ fn an_all_target_spell_commit_lands_the_row_label_on_the_page() {
     // round prompt by a varying number of frames. Begin (Left) is answered
     // until the command ring draws; then the Magic arm (Right), then Cross on
     // row 0 of the spell list (the spell just learned is prepended). A
-    // whole-row spell opens no target cursor, so the commit lands at once
-    // and the log draws the row while the next member's ring is up.
+    // whole-row spell opens no target cursor but its own confirm surface
+    // (`0x5E` / `0x67`), whose second Cross commits; the log then draws the
+    // row while the next member's ring is up.
     let trace = std::env::var_os("W8_TRACE").is_some();
     let mut best = 0usize;
     let mut pre_commit = 0usize;
@@ -202,7 +203,9 @@ fn an_all_target_spell_commit_lands_the_row_label_on_the_page() {
                 // The ring opens on a glide and reads no pad until its arms
                 // land (sixteen frames and the landing pass).
                 (Some(r), None) if f == r + 24 => pad = PadButton::Right.mask(),
-                (Some(r), None) if f == r + 44 => {
+                (Some(r), None) if f == r + 44 => pad = PadButton::Cross.mask(),
+                // The confirm surface opens on its own glide too.
+                (Some(r), None) if f == r + 80 => {
                     pad = PadButton::Cross.mask();
                     commit_at = Some(f);
                 }
