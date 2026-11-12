@@ -231,6 +231,50 @@ pub fn retail_front_faces(mesh: &mut legaia_tmd::mesh::VramMesh, mvp: &[f32; 16]
     mesh.indices = keep;
 }
 
+/// The local-space mesh a summon / move-FX part draws under the camera `cam`
+/// (column-major, the draw frame to clip space; the part's own matrix is
+/// [`FxPartModel::model`]), the faces retail's leaves reject already gone.
+/// Both hosts draw what comes back both-sided.
+///
+/// A battle part whose colour word sends its `GT4`s to handler bank 3
+/// (`ColourWord::split_quads`) takes the bank-3 leaf's whole-quad rejects
+/// ahead of the split, on each quad's own corners: its winding over corners
+/// `0..=2` (unless the word carries `0x08000000`) and all four corners off one
+/// screen edge
+/// ([`legaia_render_kernels::prim_near_reject::bank3_quad_rejected`]). Its
+/// sixteen triangles then take no winding test, only the near reject the
+/// vertex stage runs. Every other single-sided part drops its back faces
+/// triangle by triangle ([`retail_front_faces`]).
+///
+/// `None` when the part's mesh is not in the pool; with no `cam` (a host
+/// vantage) the mesh comes back with every face.
+pub fn part_seen_mesh(
+    world: &World,
+    p: &FxPartModel,
+    cam: Option<&[f32; 16]>,
+) -> Option<legaia_tmd::mesh::VramMesh> {
+    let Some(cam) = cam else {
+        return world.part_draw_vram_mesh(&p.draw);
+    };
+    let mvp = mat4_mul(cam, &p.model);
+    if world.mode == SceneMode::Battle && p.draw.colour.split_quads && p.draw.shatter == 0 {
+        let h = legaia_engine_field::camera_frame::BATTLE_GTE_H;
+        let view = legaia_render_kernels::prim_near_reject::QuadView {
+            mvp,
+            sz_per_w: 1.0,
+            h,
+            aspect_fix: legaia_render_kernels::prim_near_reject::projection_aspect_fix(cam, h),
+            cull_back: p.single_sided,
+        };
+        return world.part_draw_vram_mesh_viewed(&p.draw, Some(&view));
+    }
+    let mut m = world.part_draw_vram_mesh(&p.draw)?;
+    if p.single_sided {
+        retail_front_faces(&mut m, &mvp);
+    }
+    Some(m)
+}
+
 /// The live effect layer's 3D draws for this frame, by source.
 #[derive(Debug, Clone, Default)]
 pub struct FxModelDraws {

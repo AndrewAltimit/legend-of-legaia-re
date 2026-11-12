@@ -370,6 +370,21 @@ pub const BANK3_SPLIT_KIND: u16 = 19;
 ///
 /// PORT: FUN_80045BB4 (the model draw's kind-19 prims on bank 3)
 pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u16]) {
+    split_bank3_quads_kept(mesh, group_flags, |_| true);
+}
+
+/// [`split_bank3_quads`] with the leaf's whole-quad rejects ahead of the
+/// split: `keep` sees each bank-3 quad's four corners (the mesh's local
+/// positions, corner order `0..=3`) and a quad it refuses is not drawn at
+/// all - retail's leaf drops it on its winding and on the four corners all
+/// lying off one screen edge before it splits anything
+/// ([`legaia_render_kernels::prim_near_reject::bank3_quad_rejected`]). The
+/// other kinds pass as they are.
+pub fn split_bank3_quads_kept(
+    mesh: &mut legaia_tmd::mesh::VramMesh,
+    group_flags: &[u16],
+    mut keep: impl FnMut(&[[f32; 3]; 4]) -> bool,
+) {
     use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
     let is_quad = |ix: &[u32], k: usize| {
         let a = ix[k];
@@ -378,11 +393,15 @@ pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u
     let splits = |ix: &[u32], k: usize| {
         is_quad(ix, k) && group_flags.get(ix[k] as usize).map(|f| f >> 1) == Some(BANK3_SPLIT_KIND)
     };
+    let corners_of = |m: &legaia_tmd::mesh::VramMesh, a: u32| -> [[f32; 3]; 4] {
+        std::array::from_fn(|c| m.positions[a as usize + c])
+    };
     // The output's size, so the per-frame build allocates once.
     let (mut verts, mut k) = (0, 0);
     while k + 3 <= mesh.indices.len() {
         let (n, step) = if splits(&mesh.indices, k) {
-            (16 * 3, 6)
+            let kept = keep(&corners_of(mesh, mesh.indices[k]));
+            (if kept { 16 * 3 } else { 0 }, 6)
         } else if is_quad(&mesh.indices, k) {
             (4, 6)
         } else {
@@ -416,6 +435,10 @@ pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u
     while k + 3 <= ix.len() {
         let a = ix[k];
         if splits(ix, k) {
+            if !keep(&corners_of(&src, a)) {
+                k += 6;
+                continue;
+            }
             let a = a as usize;
             let corners: [SplitVertex; 4] = std::array::from_fn(|c| SplitVertex {
                 pos: src.positions[a + c].map(|v| v as i16),
@@ -500,6 +523,12 @@ mod split_tests {
             m.positions[16 * 3..],
             [[0.0, 0.0, 0.0], [8.0, 0.0, 0.0], [0.0, 8.0, 0.0]]
         );
+
+        // A quad the leaf rejects whole draws nothing; the triangle stays.
+        let mut dropped = quad_and_tri();
+        split_bank3_quads_kept(&mut dropped, &[0x26; 7], |c| c[3] != [64.0, 64.0, 0.0]);
+        assert_eq!(dropped.indices.len(), 3);
+        assert_eq!(dropped.positions.len(), 3);
 
         // A flat-textured quad (kind 15, flags `0x1E`) takes bank 1's leaf.
         let mut flat = quad_and_tri();

@@ -744,16 +744,15 @@ impl PlayWindowApp {
             .parts
             .iter()
             .filter_map(|p| {
-                let mut vmesh = world.part_draw_vram_mesh(&p.draw)?;
+                // The faces retail's leaves keep (a single-sided part's
+                // front faces, a bank-3 word's whole-quad rejects), as the
+                // draw-kind-4 nodes below do.
+                let vmesh = legaia_engine_world_views::effect_draws::part_seen_mesh(
+                    world,
+                    p,
+                    Some(&fx_cam.to_cols_array()),
+                )?;
                 let model = Mat4::from_cols_array(&p.model);
-                // A single-sided part keeps retail's front faces only, as
-                // the draw-kind-4 nodes below do.
-                if p.single_sided {
-                    legaia_engine_world_views::effect_draws::retail_front_faces(
-                        &mut vmesh,
-                        &(fx_cam * model).to_cols_array(),
-                    );
-                }
                 Some((upload(&vmesh, "summon/move-FX part")?, model, p.far_corner))
             })
             .collect();

@@ -498,17 +498,15 @@ fn push_fx_models(
             continue;
         }
         let model = mat4_mul(outer, &p.model);
-        // A single-sided battle part keeps retail's front faces only, as the
-        // native pass uploads it (`effect_draws::retail_front_faces`): baked,
+        // A single-sided battle part keeps retail's front faces only, and a
+        // bank-3 word's quads take the leaf's whole-quad rejects, as the
+        // native pass uploads them (`effect_draws::part_seen_mesh`): baked,
         // rest mesh or not. `cam` times the part matrix is the draw's MVP.
-        if p.single_sided
+        if (p.single_sided || p.draw.colour.split_quads)
             && let Some(cam) = cam
-            && let Some(mut m) = world.part_draw_vram_mesh(&p.draw)
+            && let Some(m) =
+                legaia_engine_world_views::effect_draws::part_seen_mesh(world, p, Some(cam))
         {
-            legaia_engine_world_views::effect_draws::retail_front_faces(
-                &mut m,
-                &mat4_mul(cam, &p.model),
-            );
             bake_mesh(frame.bake_target(p.far_corner), &model, &m);
             continue;
         }

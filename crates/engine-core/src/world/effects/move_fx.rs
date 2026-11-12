@@ -813,6 +813,19 @@ impl World {
         &self,
         draw: &legaia_engine_effects::summon::SummonPartDraw,
     ) -> Option<legaia_tmd::mesh::VramMesh> {
+        self.part_draw_vram_mesh_viewed(draw, None)
+    }
+
+    /// [`Self::part_draw_vram_mesh`] under a view: a bank-3 word's quads
+    /// take the leaf's whole-quad rejects (winding, all corners off one screen
+    /// edge) ahead of the split
+    /// ([`legaia_render_kernels::prim_near_reject::QuadView`]). With `None`
+    /// every quad splits.
+    pub fn part_draw_vram_mesh_viewed(
+        &self,
+        draw: &legaia_engine_effects::summon::SummonPartDraw,
+        view: Option<&legaia_render_kernels::prim_near_reject::QuadView>,
+    ) -> Option<legaia_tmd::mesh::VramMesh> {
         let morphed = self.morphed_part_tmd(draw);
         let g = match morphed.as_ref() {
             Some(g) => g,
@@ -825,7 +838,10 @@ impl World {
         let mut mesh = if draw.colour.split_quads && draw.shatter == 0 {
             let (mut mesh, flags) =
                 legaia_tmd::mesh::tmd_to_vram_mesh_with_group_flags(&g.tmd, &g.raw);
-            legaia_engine_effects::summon::split_bank3_quads(&mut mesh, &flags);
+            let scale = f32::from(draw.scale) / 4096.0;
+            legaia_engine_effects::summon::split_bank3_quads_kept(&mut mesh, &flags, |c| {
+                view.is_none_or(|v| !v.rejects(c, scale))
+            });
             mesh
         } else {
             legaia_tmd::mesh::tmd_to_vram_mesh(&g.tmd, &g.raw)

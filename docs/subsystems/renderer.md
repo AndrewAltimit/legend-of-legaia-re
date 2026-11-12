@@ -377,6 +377,22 @@ Structural facts, read from the raw table:
   bank-3 word found (`0xE9`, PROT 0903's fire tunnel) carries the double-sided
   bit `0x08`. The differential `quad_split` runs the leaf through the
   dispatcher against the port with the GTE seeded.
+  **The leaf rejects whole quads before it splits.** `RTPT` over corners
+  `0..=2` and `NCLIP`, masked by the dispatcher's word (`0x7FFFFFFF` for a word
+  carrying `0x08`, so a double-sided word never culls), drops a back-facing
+  quad (`0x80045C30..0x80045C54`); `RTPS` over corner `3` and `FUN_80044798`
+  then drop a quad whose four `SXY` all lie off one edge of the frame (every
+  `SY < 0`, every `SY >= 240`, every `SX <= 0` or every `SX >= 320`). The sixteen
+  `GT3`s of a kept quad take no winding test of their own, only the near reject.
+  Port: `prim_near_reject::bank3_quad_rejected` over the corners' GTE
+  projection (`gte_sxy`, `QuadView`), applied ahead of the split by
+  `effect_draws::part_seen_mesh` on both hosts; the group derail on a culled
+  quad is not ported, since no shipped word reaches it. The same differential
+  holds the reject against the leaf on quads scattered round and past the
+  frame. For a quad wholly in front of the eye the edge test drops only what
+  lies off screen, so it moves nothing a projection draws: on V-Windhash's
+  films it drops the trail quads that sweep above the frame and every film
+  scores as it did.
   Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
   `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
   nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
