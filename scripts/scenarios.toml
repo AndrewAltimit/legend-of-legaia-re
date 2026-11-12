@@ -7966,3 +7966,95 @@ expected_game_mode = 0x15
 expected_active_scene = "garmel"
 ram_poked = ["MAN region rows (formation pick) and party / monster HP at round prompts"]
 topics = ["battle", "party strike", "hyper art", "garmel", "harvest"]
+
+
+# Story-beat recordings: retail films of beats the engine sweeps could only
+# judge by eye. Each state is one frame of a recording made with
+# autorun_walk_route.lua (MASH / ACT lines page the beat's boxes), saved every
+# 30 vsyncs while the scene was loaded.
+
+[[scenarios]]
+label = "garmel_zeto_appears_rising"
+backup_fingerprint = "ba7f330af635036477e43264d5de9a41e1e8693fb78ab9d893faf0784690bb17"
+description = "garmel P2[12], Zeto's appearance: Zeto rising out of the teleport pad, record parked on its 270-frame wait (+0x544). RETAIL disc, pad only, no pokes: chapter2_garmel_pre_zeto played forward with Cross every 20 vsyncs, saved 990 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+topics = ["field", "story beat", "garmel", "Zeto", "cutscene"]
+
+[[scenarios]]
+label = "garmel_zeto_appears_taunt"
+backup_fingerprint = "2a7caf612ec432b62436acf5cbe709118d524e94bd7798725c3c82a506a238b8"
+description = "garmel P2[12], Zeto's appearance: his taunt box over the reverse shot from behind him. RETAIL disc, pad only, no pokes: chapter2_garmel_pre_zeto played forward with Cross every 20 vsyncs, saved 1110 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "garmel"
+topics = ["field", "story beat", "garmel", "Zeto", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "vozz_genesis_tree_gala_at_tree"
+backup_fingerprint = "5d6533a87973bb8d3d0c2d6c47650abb044f36451f9cb138e2a58a5f686c4749"
+description = "East Voz Forest's Genesis Tree beat (the walk-on approach record and P1[7]): Gala at the tree with his box open. RETAIL disc, pad only, no pokes: vozz_field_card_boot walked by autorun_walk_route.lua to the tree (13280, 12768), boxes paged with Cross, saved 2190 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+topics = ["field", "story beat", "vozz", "Genesis Tree", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "vozz_genesis_tree_songi"
+backup_fingerprint = "cfeade8441a5c5f5cb2664a78a6d28bda48dc8b53337687cec8f23e510126b68"
+description = "East Voz Forest's Genesis Tree beat, Songi's arrival: Songi and Gala face to face before the fight. RETAIL disc, pad only, no pokes: vozz_field_card_boot walked by autorun_walk_route.lua to the tree, boxes paged with Cross, saved 3870 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+topics = ["field", "story beat", "vozz", "Songi", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "vozz_ozma_hatching_hover"
+backup_fingerprint = "f80beaa06f1a04d967bc2740270f04b929cd5a2c2d47ccfa3dcba533c9ae27b0"
+description = "East Voz Forest P2[17], Ozma's hatching: Ozma hovering beside Noa at the tree, record parked at +0x39C. RETAIL disc, story flag 0x2C3 raised by poke: garmel_field_card_boot door-hopped garmel:20:8 into map01 with LEGAIA_FLAGS_SET=2C3 and walked into vozz, then Cross every 20 vsyncs; saved 630 vsyncs into the vozz film."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["system flag 0x2C3 raised (the vozz P2[17] gate)"]
+topics = ["field", "story beat", "vozz", "Ozma", "cutscene"]
+
+[[scenarios]]
+label = "vozz_ozma_hatching_crawl"
+backup_fingerprint = "d38df7a08a5ef8d90266730b16daf596302f7809310e1edd211ac4c2505ddc14"
+description = "East Voz Forest P2[17], Ozma's speech: the narration crawl (CC 06 80 17) on actor 0x06 scrolling over Ozma and Gala, record parked on its 590-frame wait (+0x7CE). RETAIL disc, story flag 0x2C3 raised by poke (as vozz_ozma_hatching_hover); saved 1530 vsyncs into the vozz film."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["system flag 0x2C3 raised (the vozz P2[17] gate)"]
+topics = ["field", "story beat", "vozz", "Ozma", "cutscene", "narration crawl"]
+
+[[scenarios]]
+label = "bylon_mist_gala_goes_ahead"
+backup_fingerprint = "16dad0057ec35df8854f500c861a04138d70ece38e88d4a765b88e9ed34329a0"
+description = "Biron Monastery P2[6], the Mist arrives: Gala's 'I'll go on ahead' box over the stair shot. RETAIL disc, story flags 0x2A2 / 0x2A6 / 0x2A7 cleared by poke on bylon_field_door_hop (autorun_door_hop.lua LEGAIA_FLAGS_CLEAR), then walked by autorun_walk_route.lua onto the P0[31] tile (34,38) and paged with Cross; saved 750 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "bylon"
+ram_poked = ["system flags 0x2A2, 0x2A6, 0x2A7 cleared (the mist beat's latches)"]
+topics = ["field", "story beat", "bylon", "Mist", "Gala", "cutscene", "dialog"]
+
+[[scenarios]]
+label = "bylon_mist_noa_vahn"
+backup_fingerprint = "d05687736166ce61dd9e03b520895f1c873e514f5ad9ed232bc4a9404075c879"
+description = "Biron Monastery P2[6]: 'Noa: Vahn!' on the follow pose the record's 45 C0 00 00 cut to (pitch 215, yaw -80, H 768), the room's dark wall at the left edge. RETAIL disc, the poked flags of bylon_mist_gala_goes_ahead; saved 1410 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "bylon"
+ram_poked = ["system flags 0x2A2, 0x2A6, 0x2A7 cleared (the mist beat's latches)"]
+topics = ["field", "story beat", "bylon", "Mist", "Noa", "cutscene", "dialog", "camera"]
+
+[[scenarios]]
+label = "vell_dead_genesis_tree"
+backup_fingerprint = "c85e8414827cc1c17c8d38bd9cef6644ad669c12901dfb7b9d34ff5721235813"
+description = "West Voz Forest: Vahn before the dead Genesis Tree (P1[3], tile (63,104)), drawn as a translucent green trunk, after the Bridge Grass took the Fertilizer (0x2AE raised by P0[1] in play). RETAIL disc with pokes: map01_field_door_hop with system flags 0x2A1 / 0x2A2 / 0x2A6 / 0x2A7 / 0x2AE / 0x2B0 cleared and item 169 (Fertilizer) x1 written into bag slot 32 (autorun_w5b_field_watch.lua LEGAIA_MEMPOKE), door-hopped map01:77:97 into vell, then walked by autorun_walk_route.lua (random fights fought) to the Bridge Grass and the tree."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vell"
+ram_poked = ["system flags 0x2A1, 0x2A2, 0x2A6, 0x2A7, 0x2AE, 0x2B0 cleared", "item 169 x1 in bag slot 32"]
+topics = ["field", "story beat", "vell", "Genesis Tree", "translucent"]
