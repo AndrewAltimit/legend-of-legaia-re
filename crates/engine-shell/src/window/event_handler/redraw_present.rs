@@ -250,6 +250,7 @@ impl PlayWindowApp {
         light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
+        r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
         r.set_frame_persist(self.session.host.world.cast_frame_persists());
         #[cfg(feature = "oracles")]
         self.record_audio_wav();

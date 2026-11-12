@@ -31,9 +31,11 @@
  * the wash has it hold a subtractive quad instead, so the frame's additive layers
  * sum over the frames before. Retail's earlier frame is the same display page two
  * game frames back, eight vsyncs at the frame step a heavy arm runs at, so a ring of
- * eight pictures stands behind the target: each persisting frame loads the oldest
- * and takes its slot. The native renderer's ring (`FRAME_PERSIST_VSYNCS`) is the same
- * one; docs/subsystems/renderer-port.md says why.
+ * eight pictures stands behind the target: while a cast module is resident every
+ * frame takes the oldest slot, and a persisting frame loads it. The ring fills
+ * before the wash arms, so an arm that arms it a pass late still builds on the
+ * frame before the arm (`Renderer::set_frame_ring_keep`). The native renderer's ring
+ * (`FRAME_PERSIST_VSYNCS`) is the same one; docs/subsystems/renderer-port.md says why.
  *
  * Classic script. */
 (function () {
@@ -79,12 +81,9 @@ void main() {
       this.ring = [];
       this.ringNext = 0;
       this.ringFbo = null;
-      /* The last frame's picture, kept while `keepLast` holds. */
-      this.last = null;
+      /* The ring holds the frames before this one, kept while `keepLast` holds. */
       this.lastValid = false;
-      /* The running frame loaded an earlier one, and the frame before it did. */
-      this.loaded = false;
-      this.persisting = false;
+      this.ringKept = false;
     }
 
     /* Point `null` at this framebuffer and start the frame on an empty picture,
@@ -101,8 +100,8 @@ void main() {
       gl.disable(gl.SCISSOR_TEST);
       gl.colorMask(true, true, true, true);
       gl.depthMask(true);
-      this.loaded = false;
       this.lastValid = !!keepLast && hadFrame && this._keepLast();
+      if (!keepLast) this.ringKept = false;
       gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
       gl.clearBufferfi(gl.DEPTH_STENCIL, 0, 1, 0);
     }
@@ -111,15 +110,7 @@ void main() {
      * says so; `false` leaves the caller to clear. */
     loadEarlierFrame() {
       if (!this.live || !this.lastValid) return false;
-      this._ensureRing();
-      if (!this.persisting) {
-        /* The frames before a persisting run are all the earlier frames it has. */
-        for (const slot of this.ring) this._copy(this.last, slot);
-        this.ringNext = 0;
-        this.persisting = true;
-      }
       this._copy(this.ring[this.ringNext], this.tex);
-      this.loaded = true;
       return true;
     }
 
@@ -129,13 +120,6 @@ void main() {
       if (!this.live) return;
       this.live = false;
       const gl = this.gl;
-      if (this.loaded) {
-        /* The presented frame takes the oldest slot of the ring. */
-        this._copy(this.tex, this.ring[this.ringNext]);
-        this.ringNext = (this.ringNext + 1) % this.ring.length;
-      } else {
-        this.persisting = false;
-      }
       const on = [gl.BLEND, gl.DEPTH_TEST, gl.CULL_FACE, gl.SCISSOR_TEST, gl.STENCIL_TEST,
         gl.SAMPLE_ALPHA_TO_COVERAGE, gl.SAMPLE_COVERAGE, gl.RASTERIZER_DISCARD]
         .filter((cap) => gl.isEnabled(cap));
@@ -204,10 +188,19 @@ void main() {
       this.bindReal(gl.FRAMEBUFFER, this.fbo);
     }
 
-    /* Hold what the target has before this frame clears it. `true` when it did. */
+    /* The last frame, still on the target before this one clears it, takes the
+     * oldest slot of the ring; a ring just started holds it in every slot, the
+     * one earlier frame it has. `true` when it did. */
     _keepLast() {
-      if (!this.last) this.last = this._colorTexture(this.w, this.h);
-      this._copy(this.tex, this.last);
+      this._ensureRing();
+      if (this.ringKept) {
+        this._copy(this.tex, this.ring[this.ringNext]);
+        this.ringNext = (this.ringNext + 1) % this.ring.length;
+      } else {
+        for (const slot of this.ring) this._copy(this.tex, slot);
+        this.ringNext = 0;
+        this.ringKept = true;
+      }
       return true;
     }
 
@@ -220,10 +213,8 @@ void main() {
       const gl = this.gl;
       for (const t of this.ring) gl.deleteTexture(t);
       this.ring = [];
-      if (this.last) gl.deleteTexture(this.last);
-      this.last = null;
       this.lastValid = false;
-      this.persisting = false;
+      this.ringKept = false;
     }
 
     _ensure(w, h) {

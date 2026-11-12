@@ -4403,9 +4403,16 @@ retail ordering table of arm 4 rasterised on black shows thin ribbons on a dark
 field, where the displayed frame holds a white cloud and a lavender wash, the
 ribbons of each pass's seed over the passes before. Built that way, arm 4 reads
 `.838`, `.835` and `.839` on the three Gilium films (`chitei2`, `jouind_lv3`,
-`noaru_lv2`) against `.58` on a cleared target. What remains is early in the
-arm, where the engine's frame stands brighter (`201` of luma against `158`).
-Grade `disassembly` + `capture`.
+`noaru_lv2`) against `.58` on a cleared target. Arm 3's exit pass draws on the
+opaque clear and arm 4's body arms the wash from the pass after, so the first pass
+that keeps the buffer builds on a page from before the arm: retail's frames
+alternate, the page arm 3's exit drew white and the other one dark. Read off
+`noaru_lv2`'s left edge, retail's passes go `208`, `144`, `160`, `52`, and the
+engine's held `214`, `231`, `165`, `136` while its frame ring was seeded from the
+last frame; with the ring kept from the module's residency
+([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)) the
+early pairs read `159` against `160` of luma and arm 4 `.862`. Grade `disassembly` +
+`capture`.
 
 <a id="prot-0959-megaton-press"></a>
 

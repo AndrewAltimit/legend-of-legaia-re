@@ -846,11 +846,21 @@ rather than building on the last one, which fills the buffer eight times too
 fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
+The ring is kept from the moment a cast module is resident, not from the first
+persisting frame (`Renderer::set_frame_ring_keep`, `World::cast_module_resident`).
+An arm that arms the wash does so from its own body, a pass after the arm before it
+set the phase, so the run's first persisting frame reads a page two passes back that
+predates the run. Seeded from the last frame instead, it read the run's own first
+frame: Thunder Storm's arm 4 stood its second pass on its first pass's white, where
+retail's other page still held the dark frame before the arm (luma `231` against
+`144` on the left edge). Kept, the two pages part as retail's do and arm 4 reads
+`.862` against `.839` on `noaru_gilium_lv2_thunder_storm`.
+
 The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
 ([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
 `renderAssembled` asks it for the picture at the scene's clear (after the frame's
 ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
-the last frame while one may be asked for. Bloom stands the frames down on both
+the ring filling while one may be asked for. Bloom stands the frames down on both
 hosts, since it reads the frame it adds to. The page's text layer is a canvas of
 its own, so a name plaque's letters do not enter the ring as the window's do. The
 window's own target and the browser's clean-rasterisation canvas still clear:

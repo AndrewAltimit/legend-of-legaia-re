@@ -203,9 +203,28 @@ impl Renderer {
     /// draws one frame a vsync, so each frame builds on the one
     /// [`FRAME_PERSIST_VSYNCS`] back: built on the last frame, an additive layer
     /// fills the buffer eight times too fast.
+    ///
+    /// A ring kept since before the run ([`Self::set_frame_ring_keep`]) already
+    /// holds the frames it reads; otherwise the run starts on copies of the
+    /// last frame.
     pub fn set_frame_persist(&self, on: bool) {
         let was = self.frame_persist.replace(on);
-        if on && !was && self.psx_mode.get() {
+        if on && !was && !self.frame_ring_keep.get() && self.psx_mode.get() {
+            self.seed_frame_ring();
+        }
+    }
+
+    /// Keep every presented frame in the ring while `keep` holds, persisting
+    /// or not. Retail's page two game frames back is whatever that frame
+    /// drew, armed wash or clear: a cast whose arm arms the wash on its
+    /// second pass builds that pass on the frame before the arm, not on the
+    /// arm's first. Seeded from the last frame, the run's first frames read
+    /// the one frame the target held (Thunder Storm's arm 4 stood its second
+    /// pass on its first pass's white). Hosts keep it while a cast module is
+    /// resident.
+    pub fn set_frame_ring_keep(&self, keep: bool) {
+        let was = self.frame_ring_keep.replace(keep);
+        if keep && !was && !self.frame_persist.get() && self.psx_mode.get() {
             self.seed_frame_ring();
         }
     }

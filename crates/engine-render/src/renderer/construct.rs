@@ -250,6 +250,7 @@ impl Renderer {
             blend_list: std::cell::RefCell::new(Vec::new()),
             depth_view,
             frame_persist: std::cell::Cell::new(false),
+            frame_ring_keep: std::cell::Cell::new(false),
             frame_ring: std::cell::RefCell::new(Vec::new()),
             frame_ring_next: std::cell::Cell::new(0),
             native: None,

@@ -164,6 +164,9 @@ pub struct Renderer {
     /// The next frames build on the last one's pixels instead of a clear
     /// ([`Renderer::set_frame_persist`]).
     pub(super) frame_persist: std::cell::Cell<bool>,
+    /// Every presented frame enters the ring, so a persisting run that starts
+    /// later reads the frames before it ([`Renderer::set_frame_ring_keep`]).
+    pub(super) frame_ring_keep: std::cell::Cell<bool>,
     /// The frames a persisting frame reads back from, oldest at
     /// [`Self::frame_ring_next`].
     pub(super) frame_ring: std::cell::RefCell<Vec<wgpu::Texture>>,
