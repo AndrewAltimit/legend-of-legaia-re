@@ -807,8 +807,9 @@ classes found there were each a few lines of the director:
 
 The step track had a seat's own defect: the pass applied the recording's step after
 the SM step that ran the module, so on every step change the module pass and the
-director read the step the last frame ran (`World::module_frame_step` now peeks the
-track). Nova's arm 16 drifted a tick a change before it, and missed one of its 83
+director read the step the last frame ran. The track now hands each step on as the
+step the next frame claims ([a frame's step belongs to its own pass](#a-frames-step-belongs-to-its-own-pass)),
+so the module reads the frame's own step (`World::module_frame_step`). Nova's arm 16 drifted a tick a change before it, and missed one of its 83
 passes. Over the 29 films the step seat's mean moved `.901` to `.909` (`0x99`
 `.857` to `.912`, Gola Gola's `0x8C` `.872` to `.909`). `0x9F` fell `.895` to `.863` on
 arms 9..11, and the lookahead was not the defect there: it moved arm 8's handing-over
