@@ -161,6 +161,17 @@ impl CastColourWash {
         self.alpha != 0
     }
 
+    /// Whether this frame's band wash covers what retail links into the
+    /// farthest bucket after it. The dispatchers' tail links the band's
+    /// opaque `G4`s at `ot + 0x3FFC` before the actor walk draws the scene,
+    /// and a bucket draws its last-linked primitive first, so every scene
+    /// primitive that links there later is painted under the wash. The bands
+    /// run from `y = -scroll` to `0xE0` across the whole width: nothing of
+    /// such a primitive shows.
+    pub fn covers_far_bucket(&self) -> bool {
+        self.armed() && self.mode == 0 && self.height != 0
+    }
+
     /// The scroll step the emitter opens with, for a frame step of `step`
     /// vsyncs (`0x801F2444..0x801F24DC`).
     pub fn step_scroll(&mut self, step: u8) {

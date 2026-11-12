@@ -686,6 +686,11 @@ pub enum SpawnAnchor {
     /// The victim seat's position (`a0 = victim + 0x34`) on the arm's zeroed
     /// angle trio: PROT 0917 arm 13's five calls (`0x801F7EB8..0x801F7F18`).
     VictimFlat,
+    /// The victim seat's position (`a0 = victim + 0x34`) on a literal angle
+    /// trio the arm left on its stack (`a1 = sp+0x20`): PROT 0918 arm 17's
+    /// first two calls (`0x801F85CC..0x801F8630`) take the trio its shot was
+    /// built on, yaw `0xC00` with the pitch zeroed.
+    VictimRot { rot: [i16; 3] },
     /// The caster seat's position on the creature's angle trio (`a0 =
     /// caster + 0x34`, `a1 = creature + 0x44`): PROT 0914 arm `0xB`
     /// (`0x801F7300..0x801F7324`).
@@ -870,6 +875,10 @@ pub fn spawn_anchor_point_with(
         SpawnAnchor::VictimFlat => {
             let v = victim?;
             ([v.x, v.y, v.z], [0; 3])
+        }
+        SpawnAnchor::VictimRot { rot } => {
+            let v = victim?;
+            ([v.x, v.y, v.z], rot)
         }
         SpawnAnchor::VictimBodyCasterRot => {
             let v = seats.victim_body?;

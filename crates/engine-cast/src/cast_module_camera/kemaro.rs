@@ -65,8 +65,8 @@ pub const KEMARO_ARM13_SPAWNS: [ModuleSpawn; 3] = [
 /// victim, three on `(0, 0, 0x400)`, all on the angle trio `(0, 0xC00, 0)`
 /// the arm's shot left with its pitch zeroed.
 pub const KEMARO_ARM17_SPAWNS: [ModuleSpawn; 5] = [
-    rec(0x801F_911C, SpawnAnchor::Victim),
-    rec(0x801F_9160, SpawnAnchor::Victim),
+    rec(0x801F_911C, SpawnAnchor::VictimRot { rot: [0, 0xC00, 0] }),
+    rec(0x801F_9160, SpawnAnchor::VictimRot { rot: [0, 0xC00, 0] }),
     rec(0x801F_91A4, lit([0, 0, 0x400], [0, 0xC00, 0])),
     rec(0x801F_9204, lit([0, 0, 0x400], [0, 0xC00, 0])),
     rec(0x801F_9264, lit([0, 0, 0x400], [0, 0xC00, 0])),
