@@ -1565,9 +1565,10 @@ pub fn terio_punch_camera(
             CaptureCamArm {
                 latch: Some(0),
                 charge_spawns,
-                // `li 3; sb 0x278` and `li 1; sb 0x21d(s4)` at `0x801F6C94`. A
-                // recording's cursor advances one a vsync under it, though the
-                // byte itself reads `4` there.
+                // `li 3; sb 0x278` and `li 1; sb 0x21d(s4)` at `0x801F6C94`.
+                // The same pass's commit of the staged clip `0xA` lifts the
+                // `1` to `4` (`0x8004B080..0x8004B090`), as a write watch on
+                // a retail recording reads, so the arms after run at `4`.
                 ctx_278: Some(3),
                 caster_write: CaptureSeatWrite {
                     rate: Some(1),

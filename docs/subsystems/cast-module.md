@@ -4469,9 +4469,13 @@ three units). The bodies without that store keep the half turn
   heading `caster[+0x46] + 0x800`. Arm 8 returns once the word is spent and every
   party seat has settled. The branches hold different caster stages (`0x5E` charge,
   `0x5D` punch). The punch's arm 0 stores the caster's rate `1`
-  (`0x801F6CA0`), and a retail recording's cursor advances one a vsync through arms
-  4 to 6, while its `+0x21D` reads `4` at every vsync: what holds the byte at `4` is
-  [open](../reference/open-rev-eng-threads.md).
+  (`0x801F6CA0`) beside its stage of clip `0xA` with the `+0x1DC` bump, and the
+  caster's own anim tick commits that clip on the same pass: the commit lifts any
+  rate but `8` to `4` (`0x8004B080..0x8004B090`), so the arm's `1` never reaches an
+  advance. A write watch on the caster's `+0x21D` reads both stores on the arm-0 vsync,
+  `1` from `0x801F6CA0` and then `4` from `0x8004B090` with the old `1` in `v1`, and the
+  cursor's `8` a step-`4` pass through arms 4 to 6 is rate `4`'s
+  ([battle-actor-rendering](battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)).
 
   Each branch seats its own records at the world origin on zero angles: the punch's
   arm 0 seven (`0x801F7BD0` .. `0x801F7A0C`, `0x801F6B0C..0x801F6BB0`), the charge's
