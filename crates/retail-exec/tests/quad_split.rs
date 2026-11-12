@@ -237,3 +237,95 @@ fn the_bank3_quad_split_matches_subdivide_quad() {
     }
     assert!(drawn > 10_000, "{drawn}");
 }
+
+const OFF_SCREEN: u32 = 0x8004_4798;
+
+/// The leaf's whole-quad rejects ahead of the split, against
+/// `prim_near_reject::bank3_quad_rejected`: quads scattered round and past
+/// the frame's edges, some turned away, under a single-sided word (the
+/// winding test runs) or a double-sided one (`0x08`, it does not). A quad
+/// the leaf keeps links its sixteen `GT3`s, one it rejects links nothing.
+/// The corners' `SXY` are the interpreter's own `RTPS` (`project`); the
+/// port's projection from a host's clip space is a separate statement.
+#[test]
+fn the_bank3_leaf_rejects_whole_quads_as_the_port_does() {
+    differential!(scus(DISPATCH), scus(LEAF), scus(OFF_SCREEN));
+    let Some(mut cpu) = scus_cpu() else {
+        return;
+    };
+    cpu.watched.insert(LEAF);
+    cpu.watched.insert(OFF_SCREEN);
+    let mut rng = Rng(0x5245_4A43);
+    let (mut kept, mut dropped) = (0, 0);
+    for case in 0..1500 {
+        seat(&mut cpu);
+        let (cx, cy) = (
+            rng.below(0xC00) as i16 - 0x600,
+            rng.below(0x900) as i16 - 0x480,
+        );
+        let (hw, hh) = (8 + rng.below(0x100) as i16, 8 + rng.below(0x100) as i16);
+        // Turn about half the quads away from the eye.
+        let flip = rng.below(2) == 1;
+        let sx = if flip { -hw } else { hw };
+        let corners_pos = [
+            [cx - sx, cy - hh, 0],
+            [cx + sx, cy - hh, 0],
+            [cx - sx, cy + hh, 0],
+            [cx + sx, cy + hh, 0],
+        ];
+        let single = rng.below(2) == 1;
+        let word = if single { 0x2000_0000u32 } else { 0x2800_0000 };
+        for (k, p) in corners_pos.iter().enumerate() {
+            let at = VERTS + 8 * k as u32;
+            cpu.mem.wr16(at, p[0] as u16);
+            cpu.mem.wr16(at + 2, p[1] as u16);
+            cpu.mem.wr16(at + 4, p[2] as u16);
+            cpu.mem.wr16(at + 6, 0);
+        }
+        cpu.mem.wr32(PRIMS_IN, 19 << 17 | 1);
+        cpu.mem.wr32(PRIMS_IN + 4, 0);
+        let prim = PRIMS_IN + 8;
+        for w in 0..7 {
+            cpu.mem.wr32(prim + 4 * w, 0x0040_4040);
+        }
+        cpu.mem.wr32(prim + 0x1C, 8 << 16);
+        cpu.mem.wr32(prim + 0x20, (2 * 8) | ((3 * 8) << 16));
+        cpu.mem.wr32(prim + 0x24, 0);
+        cpu.mem.wr32(prim + 0x28, 0);
+        cpu.mem.wr32(OBJECT, VERTS);
+        cpu.mem.wr32(OBJECT + 8, 0);
+        cpu.mem.wr32(OBJECT + 0xC, 0);
+        cpu.mem.wr32(OBJECT + 0x10, PRIMS_IN);
+        cpu.mem.wr32(OBJECT + 0x14, 1);
+        cpu.mem.wr32(OBJECT + 0x18, 0);
+        assert_eq!(
+            cpu.call(DISPATCH, &[OBJECT, word, 0x1000]),
+            Stop::Returned,
+            "case {case}"
+        );
+        let mut linked = 0;
+        for w in 0..OT_WORDS {
+            let mut p = cpu.mem.rd32(OT + 4 * w) & 0x00FF_FFFF;
+            while p != OT_END {
+                linked += 1;
+                p = cpu.mem.rd32(0x8000_0000 | p) & 0x00FF_FFFF;
+            }
+        }
+        let sxy = corners_pos.map(|p| {
+            let (x, y) = project(p);
+            [i32::from(x), i32::from(y)]
+        });
+        let rejected = legaia_render_kernels::prim_near_reject::bank3_quad_rejected(sxy, single);
+        assert_eq!(
+            linked,
+            if rejected { 0 } else { 16 },
+            "case {case}: corners {sxy:?} single-sided {single}"
+        );
+        if rejected {
+            dropped += 1;
+        } else {
+            kept += 1;
+        }
+    }
+    assert!(kept > 200 && dropped > 200, "kept {kept} dropped {dropped}");
+}

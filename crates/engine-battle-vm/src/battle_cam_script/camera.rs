@@ -301,6 +301,9 @@ pub struct BattleCamera {
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
     pub(super) last_action_state: u8,
+    /// The newest pass is the return `0x20`'s exit pass
+    /// ([`BattleCamera::observe_return_exit_pass`]).
+    pub(super) return_exit_pass: bool,
     /// The acting actor's body pair `+0x3C` / `+0x40` (live pair plus the
     /// facing-rotated pose centroid), which the summon close-up focuses.
     pub(super) acting_body: Option<[f32; 2]>,
@@ -526,6 +529,9 @@ pub struct BattleCamInputs {
     /// The action SM's newest pass ran `0x2A` and stored `0x2B`
     /// ([`BattleCamera::observe_chain_exit_pass`]).
     pub chain_exit_pass: bool,
+    /// The action SM's newest pass ran the return `0x20` and stored `0x50`
+    /// ([`BattleCamera::observe_return_exit_pass`]).
+    pub return_exit_pass: bool,
     pub active_commits: u32,
     /// The active actor's clip-**install** count
     /// (`BattleActionCtx::active_clip_installs`): the commits that change the
@@ -646,6 +652,7 @@ pub fn drive_on_stream(
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
     cam.observe_chain_exit_pass(inputs.chain_exit_pass);
+    cam.observe_return_exit_pass(inputs.return_exit_pass);
     cam.observe_active_commits(inputs.active_commits);
     cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);

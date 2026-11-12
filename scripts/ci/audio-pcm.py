@@ -22,6 +22,12 @@ Two channels per state:
            seeded into a battle state by the retail comparison corpus's child,
            its mix recorded from the seed's gate on with the music bus silent
            (`LEGAIA_DIAG_AUDIO_WAV`), over the cast's own seconds
+    cast_steps  the cast channel with the engine's cast run on the recording's own
+           frame steps (`<label>.steps` beside the WAV, mednafen's, from
+           `scripts/mednafen/drive-timeline.py --steps-out`): the battle frame
+           step is a measure of the emulated machine's frame cost, so this is
+           the cast's sound with the two emulators' costs taken out. Harness-only:
+           `cast` stays the engine's own clock
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
     scripts/ci/audio-pcm.py --capture --jobs 6    # the recordings side by side
@@ -101,6 +107,15 @@ CAST_STATES = [
     "swordie_summon_mid_cast",
     "gilium_summon_mid_cast",
 ]
+# Cast states whose recording carries its own frame steps (`<label>.steps`) for
+# the `cast_steps` channel, and how many mednafen frames the stepping logs: a
+# frame-advance key the emulator drops repeats a vsync, so this runs past the
+# cast's own length.
+CAST_STEP_STATES = {
+    "cort_guilty_cross_mid_cast": 1350,
+    "zenoir_summon_mid_cast": 1650,
+    "theeder_summon_mid_cast": 1900,
+}
 CAST_DONE_TAIL = 20
 CAST_RECORD_SECONDS = 40
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
@@ -215,6 +230,15 @@ def capture_missing(want, library: Path, manifest: dict, out: Path, disc: Path, 
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
         for f in [pool.submit(fn, label, state, wav) for fn, label, wav, state in tasks]:
             f.result()
+    # The frame steps step the emulator by hand, one at a time.
+    for label, frames in CAST_STEP_STATES.items():
+        steps = out / f"{label}.steps"
+        if want(label) and not steps.exists() and state_file(label, library, manifest):
+            with tempfile.TemporaryDirectory(prefix="audio-pcm-steps-") as t:
+                subprocess.run([sys.executable, str(REPO / "scripts" / "mednafen" / "drive-timeline.py"),
+                                label, "--frames", str(frames), "--settle", "0.15",
+                                "--display", str(next(_server_num)), "--out", str(Path(t) / "t.csv"),
+                                "--steps-out", str(steps)], check=True)
 
 
 def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dict:
@@ -230,12 +254,15 @@ def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dic
     return json.loads(out.read_text())
 
 
-def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path) -> Path | None:
+def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
+                    steps: Path | None = None) -> Path | None:
     """The engine's mix of a battle state's cast, the music bus silent.
 
     The retail comparison corpus seeds the state (its image child, kept with
     `LEGAIA_RC_CHILD_LOG=1`); the child is run again with its director on a
     device-less output, reading the disc's CD-XA, and records from its gate on.
+    With `steps`, the recorded run takes that frame-step track
+    (`LEGAIA_CAST_STEP_TRACK`) and writes `<label>.steps.cast.wav`.
     """
     rc = out / f"{label}.rc"
     extracted = REPO / "extracted"
@@ -262,8 +289,11 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path)
     if "--extracted-root" in args:
         j = args.index("--extracted-root")
         args[j : j + 2] = ["--disc", str(disc)]
-    wav = (out / f"{label}.cast.wav").resolve()
+    stem = f"{label}.steps.cast" if steps else f"{label}.cast"
+    wav = (out / f"{stem}.wav").resolve()
     wav.unlink(missing_ok=True)
+    if steps:
+        env["LEGAIA_CAST_STEP_TRACK"] = str(steps.resolve())
     env.update({
         "LEGAIA_AUDIO_DETACHED": "1",
         # The frame is not taken: the child plays on past its gate.
@@ -272,7 +302,7 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path)
         "LEGAIA_DIAG_AUDIO_WAV_SECONDS": str(CAST_RECORD_SECONDS),
         "LEGAIA_DIAG_AUDIO_WAV_DONE_TAIL": str(CAST_DONE_TAIL),
     })
-    log = out / f"{label}.cast.log"
+    log = out / f"{stem}.log"
     with log.open("w") as f:
         subprocess.run([str(exe), *args], cwd=work, env=env, stdout=f, stderr=subprocess.STDOUT,
                        timeout=900)
@@ -372,6 +402,17 @@ def main() -> int:
                   f"window {d['window'][0] / vs:+.1f}..{d['window'][1] / vs:+.1f} vsyncs")
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
+        steps = out / f"{label}.steps"
+        if steps.exists() and (sc := engine_cast_wav(exe, label, out, library, disc, steps)):
+            samples = (sc.stat().st_size - 44) // 4
+            c = max(
+                (score(exe, ["--label", label, "--pass", p, "--cast-wav", str(sc)], wav, samples,
+                       out / f"{label}.steps.cast.json")
+                 for p in ("0", "1", "2")),
+                key=lambda r: r["corr_median"],
+            )
+            results[label] |= {"cast_steps_corr": c["corr_median"],
+                               "cast_steps_level": c["level_db"]}
     for label in filter(want, CORE_STATES):
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"

@@ -170,6 +170,24 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_PARTY_STEP").is_ok_and(|v| v.trim() == "0") {
         toggles.battle_party_cost_step = false;
     }
+    // Opt-in: price each battle frame's GPU wait off the drawn table
+    // (`WorldToggles::battle_gpu_cost_step`).
+    if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.battle_gpu_cost_step = true;
+    }
+    // Which machine's CD response time the battle frame step reads
+    // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
+    // `pcsx-redux` names the default.
+    match std::env::var("LEGAIA_BATTLE_CD_TIMING")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("console") => toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::Console,
+        Ok("pcsx-redux") => {
+            toggles.battle_cd_timing = legaia_engine_core::world::CdTiming::PcsxRedux
+        }
+        _ => {}
+    }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
     }

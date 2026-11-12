@@ -1433,3 +1433,23 @@ fn a_broken_line_returns_to_the_shore_when_its_banner_ends() {
     assert_eq!(p.phase(), PondPhase::Idle);
     assert_eq!(p.take_events(), vec![PondEvent::Recast]);
 }
+
+/// State `0x1E` clears the catch-HUD word `DAT_801D9058` (`sw zero` at
+/// `0x801CFD44`), so the catch HUD goes with the catch. The landing frame
+/// still draws it: the lure tick lands the fish after the driver's tail drew
+/// that frame's HUD - the retail catch film shows the `LINE` / `POWER` /
+/// `DEPTH` block on the close-up's first frame and not after.
+#[test]
+fn the_catch_hud_goes_the_frame_after_the_landing() {
+    let mut p = pond();
+    p.phase = PondPhase::Hooked;
+    p.tick_entry = PondPhase::Hooked;
+    assert!(p.catch_hud().visible);
+    // The landing frame: the tick started hooked and ended landed.
+    p.phase = PondPhase::Landed;
+    assert!(p.catch_hud().visible, "the landing frame still draws it");
+    p.fight_species = Some(0);
+    p.tick(PondInput::default(), 1, CAST_POWER_STEP);
+    assert_eq!(p.phase(), PondPhase::Landed);
+    assert!(!p.catch_hud().visible, "gone through the close-up");
+}

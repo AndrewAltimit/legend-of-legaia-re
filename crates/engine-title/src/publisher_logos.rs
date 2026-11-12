@@ -125,6 +125,9 @@ pub const LEVEL_FULL: u16 = 0x80;
 pub struct LogoStep {
     /// Atlas index (`LOGO_PROKION` … `LOGO_WARNING`).
     pub logo: usize,
+    /// Black frames ahead of the fade-in: the sequencer's settles, which
+    /// draw nothing.
+    pub before: u16,
     /// Frames ramping the brightness level `0` → [`LEVEL_FULL`].
     pub fade_in: u16,
     /// Frames at [`LEVEL_FULL`].
@@ -136,7 +139,7 @@ pub struct LogoStep {
 impl LogoStep {
     /// Total frames this step occupies.
     pub const fn frames(&self) -> u16 {
-        self.fade_in + self.hold + self.fade_out
+        self.before + self.fade_in + self.hold + self.fade_out
     }
 }
 
@@ -148,33 +151,47 @@ impl LogoStep {
 ///   tracks `0x80 - t/2` (32 frames).
 /// - Contrail: state 7 runs one counter `0` → `0x441` at `8` per frame
 ///   with the level clamped at `0x80`, so 16 frames of ramp and 121 of
-///   hold; state 8 walks the same counter back down from `0x80`.
+///   hold; state 8 walks the same counter back down from `0x80`, and draws
+///   its last frame at `0`, so PROKION opens on two black frames.
 /// - PROKION: state 9 runs `0` → `0x351` at `8` per frame, again clamped
-///   (16 + 91). Its exit, state 10, is **not** a fade to black - it
+///   (16 frames of ramp, 92 at full with state 10's first). Its exit, state 10, is **not** a fade to black - it
 ///   holds PROKION at full while a full-screen blend quad
 ///   (`FUN_801D0460`) ramps the screen to white over `0x101` at
 ///   `4 × frame_delta` per tick. The port ramps the logo down over that
 ///   same 65-frame span instead of compositing the blend quad.
+/// - The settles draw nothing: states 0..2 ahead of SCEA (two `0x11`-tick
+///   counts either side of one frame, 35 frames), state 6 between SCEA and
+///   Contrail (17), and states 11 and 12 after PROKION ([`TAIL_FRAMES`]).
+///   Each step's `before` counts its black frames as the session shows them,
+///   ticked then drawn: the frame that rolls into a step is its first.
 pub const RETAIL_SEQUENCE: [LogoStep; 3] = [
     LogoStep {
         logo: LOGO_SCEA,
+        before: 35,
         fade_in: 16,
         hold: 131,
         fade_out: 32,
     },
     LogoStep {
         logo: LOGO_CONTRAIL,
+        before: 17,
         fade_in: 16,
         hold: 121,
         fade_out: 16,
     },
     LogoStep {
         logo: LOGO_PROKION,
+        before: 1,
         fade_in: 16,
-        hold: 91,
+        hold: 92,
         fade_out: 65,
     },
 ];
+
+/// Ticks after the one that ends PROKION's step, to the one the sequencer
+/// raises its done bit on (`_DAT_801F3EB0 |= 2`): state 11's one frame and
+/// state 12's `0x11`-tick settle, black throughout.
+pub const TAIL_FRAMES: u16 = 17;
 
 /// One logo's atlas placement: source rect `(x, y, w, h)` in atlas
 /// pixels.
@@ -261,6 +278,9 @@ pub fn build_atlas_from_init_pak(prot_0895_bytes: &[u8]) -> anyhow::Result<Logos
 /// Phase within a single logo, sized by that logo's [`LogoStep`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogoPhase {
+    /// A settle ahead of the logo: nothing drawn, over `LogoStep::before`
+    /// frames.
+    Black,
     /// Black → [`LEVEL_FULL`], over `LogoStep::fade_in` frames.
     FadeIn,
     /// Held at [`LEVEL_FULL`], over `LogoStep::hold` frames.
@@ -279,6 +299,8 @@ pub enum LogoPhase {
 pub struct PublisherLogosSession {
     step_idx: u8,
     frames_in_logo: u16,
+    /// Black ticks left after the last step, once it has ended.
+    tail: u16,
     done: bool,
     /// When true, caller has signalled "skip the rest" (Start pressed).
     /// On the next tick we advance straight to `done`.
@@ -296,6 +318,7 @@ impl PublisherLogosSession {
         Self {
             step_idx: 0,
             frames_in_logo: 0,
+            tail: TAIL_FRAMES,
             done: false,
             skip_requested: false,
         }
@@ -321,7 +344,11 @@ impl PublisherLogosSession {
             return None;
         }
         let Some(step) = self.current_step() else {
-            self.done = true;
+            // The settles after the last logo: black until the done bit.
+            self.tail = self.tail.saturating_sub(1);
+            if self.tail == 0 {
+                self.done = true;
+            }
             return None;
         };
         let phase = self.phase();
@@ -329,9 +356,6 @@ impl PublisherLogosSession {
         if self.frames_in_logo >= step.frames() {
             self.frames_in_logo = 0;
             self.step_idx += 1;
-            if (self.step_idx as usize) >= RETAIL_SEQUENCE.len() {
-                self.done = true;
-            }
         }
         Some(phase)
     }
@@ -364,9 +388,12 @@ impl PublisherLogosSession {
         let Some(step) = self.current_step() else {
             return LogoPhase::FadeOut;
         };
-        if self.frames_in_logo < step.fade_in {
+        let Some(f) = self.frames_in_logo.checked_sub(step.before) else {
+            return LogoPhase::Black;
+        };
+        if f < step.fade_in {
             LogoPhase::FadeIn
-        } else if self.frames_in_logo < step.fade_in + step.hold {
+        } else if f < step.fade_in + step.hold {
             LogoPhase::Hold
         } else {
             LogoPhase::FadeOut
@@ -384,13 +411,15 @@ impl PublisherLogosSession {
         // `checked_div` covers the zero-length ramps: a zero `fade_in`
         // is never entered (the phase test is `frames < 0`) and a zero
         // `fade_out` cuts straight to black.
+        let f = self.frames_in_logo.saturating_sub(step.before);
         match self.phase() {
-            LogoPhase::FadeIn => (LEVEL_FULL * self.frames_in_logo)
+            LogoPhase::Black => 0,
+            LogoPhase::FadeIn => (LEVEL_FULL * f)
                 .checked_div(step.fade_in)
                 .unwrap_or(LEVEL_FULL),
             LogoPhase::Hold => LEVEL_FULL,
             LogoPhase::FadeOut => {
-                let into_fadeout = self.frames_in_logo.saturating_sub(step.fade_in + step.hold);
+                let into_fadeout = f.saturating_sub(step.fade_in + step.hold);
                 let drop = (LEVEL_FULL * into_fadeout)
                     .checked_div(step.fade_out)
                     .unwrap_or(LEVEL_FULL);
@@ -424,7 +453,8 @@ mod tests {
                 break;
             }
             let logo = s.current_logo();
-            if seen.last() != Some(&logo) {
+            // The tail's settle shows no logo.
+            if logo != LOGO_COUNT && seen.last() != Some(&logo) {
                 seen.push(logo);
             }
             s.tick();
@@ -459,6 +489,11 @@ mod tests {
         let mut s = PublisherLogosSession::new();
         let step = RETAIL_SEQUENCE[0];
         assert_eq!(s.retail_level(), 0);
+        assert_eq!(s.phase(), LogoPhase::Black);
+        for _ in 0..step.before {
+            s.tick();
+            assert_eq!(s.alpha(), 0.0);
+        }
         assert_eq!(s.phase(), LogoPhase::FadeIn);
         for _ in 0..step.fade_in {
             s.tick();

@@ -574,10 +574,9 @@ impl PlayWindowApp {
         // = discard CCW under the pipelines' default Ccw front-face)
         // keeps them. The world map, battle and the minigame venues keep
         // both-sided draws (their per-pass winding parities differ).
-        let nclip_mode = legaia_engine_field::camera_frame::nclip_cull_mode(
-            cutscene_cam.is_some(),
-            self.session.host.world.mode,
-        );
+        let draw_mode = self.session.frame_draw_mode();
+        let nclip_mode =
+            legaia_engine_field::camera_frame::nclip_cull_mode(cutscene_cam.is_some(), draw_mode);
         r.set_backface_cull(nclip_mode);
         // Mesh primitives link at their own corners' depth
         // (`set_draw_order` per draw) on the field, the world map and in
@@ -585,7 +584,7 @@ impl PlayWindowApp {
         // effect parts around it sort by link, as retail's one ordering
         // table does. The minigame venues keep their own rules.
         r.set_field_prim_order(
-            legaia_engine_field::camera_frame::prim_link_order(self.session.host.world.mode)
+            legaia_engine_field::camera_frame::prim_link_order(draw_mode)
                 && std::env::var_os("LEGAIA_DIAG_NO_PRIM_ORDER").is_none(),
         );
         // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s

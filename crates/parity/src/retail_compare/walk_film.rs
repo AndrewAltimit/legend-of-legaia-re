@@ -119,13 +119,20 @@ impl WalkFilm {
             f,
             "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng"
         )?;
-        let n0 = session
-            .host
-            .scene
-            .as_ref()
-            .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
-            .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
-            .map_or(0, |mf| mf.header.partition_counts[0].max(0) as u16);
+        // A placement's flat MAN index is its channel slot past the scene's
+        // partition-0 count, which is the scene's own: a film that crosses a
+        // scene change re-reads it for the scene it is in.
+        let partition0 = |session: &NativeSession| {
+            session
+                .host
+                .scene
+                .as_ref()
+                .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+                .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
+                .map_or(0, |mf| mf.header.partition_counts[0].max(0) as u16)
+        };
+        let mut n0 = partition0(session);
+        let mut n0_scene = session.host.world.active_scene_label.clone();
         let mut actors = self.out.clone();
         actors.set_extension("actors.csv");
         let mut a = std::io::BufWriter::new(std::fs::File::create(&actors)?);
@@ -152,6 +159,10 @@ impl WalkFilm {
             // The pool's render step a play host runs from its draw pass: it
             // writes the live count the next tick's fog spawns read.
             session.fog_render_tick();
+            if session.host.world.active_scene_label != n0_scene {
+                n0 = partition0(session);
+                n0_scene = session.host.world.active_scene_label.clone();
+            }
             let world = &session.host.world;
             let Some(ms) = world
                 .player_actor_slot

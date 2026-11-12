@@ -361,9 +361,32 @@ pub struct UploadedVramMesh {
     /// PSX-faithful blend pass re-orders these per frame by projected
     /// depth, mirroring the retail ordering table.
     pub(super) semi_prims: Vec<psx_blend::SemiPrim>,
+    /// The upload's CPU streams, kept while [`Renderer::set_keep_cpu_meshes`]
+    /// is up (the frame-cost model prices the drawn triangles off them).
+    ///
+    /// [`Renderer::set_keep_cpu_meshes`]: super::Renderer::set_keep_cpu_meshes
+    pub(super) cpu: Option<std::sync::Arc<MeshCpuCopy>>,
+}
+
+/// The CPU streams of one uploaded mesh, what the frame-cost model reads
+/// (`legaia_engine_system::gpu_draw_cost`). A textured mesh carries its
+/// per-vertex `[cba, tsb]` words in `words`; an untextured one its blend
+/// words (`[0, blend]`, ABE in bit 15 of the second).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MeshCpuCopy {
+    pub positions: Vec<[f32; 3]>,
+    pub words: Vec<[u16; 2]>,
+    pub colors: Vec<[u8; 3]>,
+    pub indices: Vec<u32>,
+    pub textured: bool,
 }
 
 impl UploadedVramMesh {
+    /// The upload's CPU streams, when the renderer kept them.
+    pub fn cpu_copy(&self) -> Option<&MeshCpuCopy> {
+        self.cpu.as_deref()
+    }
+
     pub fn index_count(&self) -> u32 {
         self.index_count
     }
@@ -414,6 +437,15 @@ pub struct UploadedColorMesh {
     /// PSX-faithful blend pass re-orders these per frame by projected
     /// depth, mirroring the retail ordering table.
     pub(super) semi_prims: Vec<psx_blend::SemiPrim>,
+    /// As [`UploadedVramMesh::cpu_copy`].
+    pub(super) cpu: Option<std::sync::Arc<MeshCpuCopy>>,
+}
+
+impl UploadedColorMesh {
+    /// The upload's CPU streams, when the renderer kept them.
+    pub fn cpu_copy(&self) -> Option<&MeshCpuCopy> {
+        self.cpu.as_deref()
+    }
 }
 
 impl UploadedColorMesh {

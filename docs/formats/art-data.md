@@ -654,8 +654,8 @@ is not a direction, and its position varies (it can sit mid-combo).
 The string stores the **physical** direction, with the same
 `Left=1 / Right=2 / Down=3 / Up=4` codes as the art records. The logical action
 (Arms / Ra-Seru) depends on the character's handedness; Noa's are swapped. The
-disc corrects at least one walkthrough error: Vahn's *Hyper Elbow* is `L R L`,
-not `Arms / Ra-Seru / High`. Parser: `legaia_art::arts_table::parse_from_scus`;
+disc corrects a walkthrough error the curated `arts.toml` once carried: Vahn's
+*Hyper Elbow* is `L R L`, not `Arms / Ra-Seru / High`. Parser: `legaia_art::arts_table::parse_from_scus`;
 CLI `art arts-table`.
 
 ### Validation oracle
@@ -671,9 +671,13 @@ command sources:
   `parse_record`, and asserts the decode round-trips through the oracle. That
   pins the `1=L,2=R,3=D,4=U` command decode, not the rest of the prefix.
 - **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
-  `crates/gamedata/tests/arts_scus_oracle.rs` matches each curated art to its
-  SCUS row by name and asserts AP + directions agree, with an explicit
-  allowlist for documented walkthrough errors (*Hyper Elbow*).
+  `crates/gamedata/tests/arts_scus_oracle.rs` joins each regular, hyper and
+  miracle art to its SCUS row by action constant (`index = constant - 0x1B`)
+  and asserts name, AP, directions and the miracle flag, with every SCUS row
+  required to have a curated art. Each Super Art's directions must be the input
+  the retail tokenizer turns into its trigger pattern, and its AP the sum of
+  its chain's. There is no allowlist: each walkthrough error found is
+  corrected in the curated table.
 
 ## See also
 

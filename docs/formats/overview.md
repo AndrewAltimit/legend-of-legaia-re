@@ -193,8 +193,10 @@ Formats the port defines rather than decodes. They carry no disc bytes, so they 
 | [Expansion packs: battles](expansion-pack-battle.md) | `battle.toml` (derived monsters, formations and waves, encounter overrides, bosses) and `progression.toml`. |
 | [Expansion packs: quests](expansion-pack-quests.md) | `quests.toml`, challenges, `dialog.toml`, and the save's expansion block. |
 | [Expansion packs: cutscenes](expansion-pack-cutscenes.md) | `cutscenes.toml`: scripted scenes on the pack's own sequencer, their hooks, skips and validation. |
-| [Expansion packs: cutscenes](expansion-pack-cutscenes.md) | `cutscenes.toml`: scripted scenes on the pack's own sequencer, their hooks, skips and validation. |
 | [Expansion packs: maps](expansion-pack-maps.md) | `maps/<id>.toml`: tiles, tiers, props, NPCs, walls, zones and entrances. |
+| [Expansion packs: arts and spells](expansion-pack-arts.md) | `arts.toml` and `spells.toml`: pack arts on the heroes' retail clips, chains into finishers, pack Seru, capture learning. |
+| [Expansion packs: items](expansion-pack-items.md) | `items.toml`: consumables on the retail item handlers, equipment and sets, shops, the per-fight id aliases. |
+| [Expansion packs: audio](expansion-pack-audio.md) | `audio.toml` and map `[audio]`: WAV / Ogg tracks and sounds, loop points, cross-fading zones, positional ambient sources. |
 
 ## Video and streamed audio
 

@@ -1001,3 +1001,62 @@ at `0x801D1C20` (the count's number writer) and read `a2`, the pen's x.
 
 Whether the Japanese build's item names carry a count byte, which would make the arithmetic right there.
 
+## Hovering an Equip candidate clips current HP or MP
+
+**Status:** explained
+**Reported as:** not a community report. Found by running the candidate step against the port in the retail
+differential.
+
+On the Equip screen's candidate list, every hovered row is previewed by equipping it on the real character record for
+a moment. The preview runs the stat aggregator, and the aggregator lowers a current HP or MP that is above the new
+maximum. When the preview ends the old equipment goes back and the maximum returns, but the current value stays
+lowered. A character at full HP who wears an HP-boosting accessory loses the boost's worth of current HP by hovering
+the Remove row on that accessory's row, or another accessory there, and backing out without equipping anything.
+
+### Mechanism
+
+The candidate step `FUN_801D9C14` (PROT 0899, sub-screen `0x14`) runs its state-2 arm every frame the list is up. It
+copies the eight equip bytes to `0x801EF0C8`, writes the hovered candidate into the slot's byte (`sb v1,0x75e(v0)` at
+`0x801D9E94`; the Remove row stages `-1` and writes `0`), and calls the aggregator `FUN_80042558` (`0x801D9F68`). The
+aggregator rebuilds the maxima from the base window and the worn passives, then clamps: `+0x106` is lowered to `+0x104`
+when it exceeds it (`0x80042CE4..0x80042CFC`) and `+0x10A` to `+0x108` (`0x80042D00..0x80042D18`). The routine then
+sums the trial block, copies the saved bytes back (`0x801DA05C..0x801DA078`) and calls the aggregator again
+(`0x801DA080`). That second pass restores the maxima but has nothing to restore the current values from, so the clip
+stands.
+
+### Addresses
+
+| Address | What |
+|---|---|
+| `0x801D9C14` | The candidate step (menu overlay, PROT 0899). |
+| `0x801D9E94` | The trial write into the record's equip byte. |
+| `0x801D9F68` | The aggregator call over the trial equipment. |
+| `0x801DA080` | The aggregator call after the restore. |
+| `0x80042CE4..0x80042D18` | The current HP and MP clamps in `FUN_80042558` (`SCUS_942.54`). |
+| `0x80084708 + char * 0x414` | Character record; `+0x104` / `+0x106` HP max / current, `+0x108` / `+0x10A` MP. |
+
+### Scope
+
+Only a hover whose trial lowers a maximum: in practice an accessory row, since the HP and MP boosts are accessory
+passives. Being below the trial maximum already loses nothing. The shop's party compare column `FUN_801D4C28` runs the
+same trial dance per member, but it trial-equips only equipment-class pieces and none of those carries an HP or MP
+boost, so the shop does not clip. Evidence: the disassembly, and the retail routine run in the `crates/retail-exec`
+interpreter (`equip_candidates`), where browsing frames with a lowering trial clipped the record. Not yet observed on
+hardware or in an emulator.
+
+### In the port
+
+The port previews on a copy of the record (`aggregated_menu_block` in `engine-menus`), so the preview never touches
+the character, and it does not reproduce the clip. The differential keeps the retail behaviour as the one record change
+a browsing frame may make.
+
+### Verifying it
+
+Equip an HP-boosting accessory, heal to full and open Equip, then that accessory's row, and hover Remove. Back out and
+read the Status page: current HP is the unboosted maximum. In a debugger, put a write watch on `+0x106` of the
+character's record (Vahn: `0x8008480E`); it fires inside `FUN_80042558` at `0x80042CFC`, called from `0x801D9F68`.
+
+### Open questions
+
+Whether a console or emulator run shows the same, which the evidence above stops short of.
+

@@ -361,6 +361,7 @@
    "modules": [
     "disc_text",
     "drop_backend",
+    "folder_list",
     "game_exit",
     "icons",
     "placement",
@@ -2808,6 +2809,7 @@
     "fade",
     "fade_ramp",
     "gamepad",
+    "gpu_draw_cost",
     "incense_window",
     "input",
     "menu_input",
@@ -3202,6 +3204,8 @@
     "arts",
     "export",
     "extract_job",
+    "file_browser",
+    "gamepad",
     "launch",
     "library",
     "media",
@@ -3610,6 +3614,7 @@
    "dev_deps": [
     "actor-formats",
     "game-tables",
+    "gamedata",
     "overlay-images"
    ],
    "bins": [],

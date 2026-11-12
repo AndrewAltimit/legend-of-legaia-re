@@ -48,7 +48,7 @@ impl Renderer {
                     self.load_persisted_frame(&native.texture);
                 }
                 self.encode_frame(target, &native.view)?;
-                if persist {
+                if persist || (self.frame_ring_keep.get() && self.psx_mode.get()) {
                     self.store_persisted_frame();
                 }
                 self.present_native(native, &view);

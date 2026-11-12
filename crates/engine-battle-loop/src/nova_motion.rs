@@ -9,9 +9,9 @@ use legaia_engine_system::trig::trig12;
 pub const NOVA_CLOUD_CARRY_ARM: u8 = 0x0D;
 
 /// What PROT 0913 arm `0x13` turns the victim by a pass while it holds
-/// (`addiu v0,v0,-0x600` at `0x801F82B8`), per engine tick: a battle frame
-/// is two ticks.
-pub const NOVA_LANDING_SPIN_PER_TICK: u16 = 0x300;
+/// (`addiu v0,v0,-0x600` at `0x801F82B8`): a fixed step a **pass**, whatever
+/// the frame step, so the port takes it on the tick that opens the pass.
+pub const NOVA_LANDING_SPIN_PER_PASS: u16 = 0x600;
 
 /// The victim's height under PROT 0913 arm `0x10`'s climb for the countdown
 /// `w`: `-sin(w) * ctx[+0x6D0] >> 14` (`0x801F803C..0x801F8064`, the `+0x3FFF`
@@ -32,12 +32,15 @@ pub fn nova_landing_height(w: i32, depth: i16) -> i16 {
     (p >> 12) as i16
 }
 
-/// What arm `0x10` takes off the victim's heading a tick for countdown `w`:
-/// `sin(w) / 2` a battle frame (`0x801F8000..0x801F8038`), half of it on
-/// each of the frame's two engine ticks.
-pub fn nova_lift_spin_per_tick(w: i32) -> i16 {
+/// What arm `0x10` takes off the victim's heading a pass for countdown `w`:
+/// `sin(w) / 2` (`0x801F8000..0x801F8038`, `sra 1` of the rounded sine). The
+/// step is per pass, not scaled by the frame step: a pass of step `3` turns
+/// the victim as far as a pass of step `1`, so over the arm's game time the
+/// spin follows the number of passes retail ran.
+pub fn nova_lift_spin_per_pass(w: i32) -> i16 {
     let (sin, _) = trig12((w & 0xFFF) as u16);
-    sin / 4
+    let s = i32::from(sin);
+    ((s + i32::from(s < 0)) >> 1) as i16
 }
 
 #[cfg(test)]
@@ -49,6 +52,7 @@ mod tests {
         assert_eq!(nova_lift_height(0, 0xC00), 0);
         assert_eq!(nova_lift_height(0x400, 0xC00), -0x300);
         assert_eq!(nova_landing_height(0x400, 0xC00), -0xC00);
-        assert_eq!(nova_lift_spin_per_tick(0x400), 0x400);
+        assert_eq!(nova_lift_spin_per_pass(0x400), 0x800);
+        assert_eq!(nova_lift_spin_per_pass(0xC00), -0x800);
     }
 }

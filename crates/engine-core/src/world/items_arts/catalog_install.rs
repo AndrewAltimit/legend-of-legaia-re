@@ -51,6 +51,7 @@ impl World {
             catalog.apply_action_gauge_items(table);
             catalog.apply_arts_book_items(table);
             catalog.apply_point_card_items(table);
+            catalog.apply_summon_flute_items(table);
         }
         self.tables.item_catalog = catalog;
     }
@@ -65,6 +66,7 @@ impl World {
         self.tables.item_catalog.apply_action_gauge_items(&table);
         self.tables.item_catalog.apply_arts_book_items(&table);
         self.tables.item_catalog.apply_point_card_items(&table);
+        self.tables.item_catalog.apply_summon_flute_items(&table);
         self.tables.item_effects = Some(table);
     }
 

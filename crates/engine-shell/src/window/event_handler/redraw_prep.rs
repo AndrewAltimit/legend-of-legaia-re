@@ -313,6 +313,12 @@ impl PlayWindowApp {
                         .world
                         .seed_placement_seat(w.flat, w.x, w.z, w.heading);
                 }
+                for w in &sc.seat_headings {
+                    self.session
+                        .host
+                        .world
+                        .seed_placement_heading(w.flat, w.x, w.z, w.heading);
+                }
                 for w in &sc.seat_walkers {
                     self.session
                         .host
@@ -852,10 +858,21 @@ impl PlayWindowApp {
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.stand_on_pose(pose);
+                // A film opening mid shot walks on retail's table.
+                if let Some((end, left)) = sc.seat_module_shot.take() {
+                    let raw_z = (end.tr[2] * 160.0 / 256.0).ceil() as i32;
+                    cam.arm_module_shot(end, raw_z, u32::from(left));
+                }
             }
-            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
-                && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take()
-            {
+            // A gate film seats the acting body's clip cursor on the gate
+            // with the pose: the capture's own clip seeds are the displayed
+            // frame's, two passes behind the RAM the gate stands on.
+            let seat_cursor = if on_gate {
+                seat_now
+            } else {
+                matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+            };
+            if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
                 world.seat_battle_clip_cursor(slot, clip, cursor);
             }

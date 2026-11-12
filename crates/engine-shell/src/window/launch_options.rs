@@ -407,6 +407,11 @@ pub struct ScreenshotConfig {
     /// capture frame (`World::seed_placement_seat`: position only on a tile,
     /// with the heading on the park seat).
     pub seat_placements: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
+    /// `LEGAIA_SEAT_HEADINGS=<fields>`: placements a finished beat turned to
+    /// a compass literal on the seat the card load stands them on
+    /// (`legaia_parity::retail_compare::scripted_heading_seats`), turned on
+    /// the capture frame (`World::seed_placement_heading`).
+    pub seat_headings: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
@@ -533,10 +538,20 @@ pub struct ScreenshotConfig {
     /// `scripts/ci/cast-sequence.py`; taken once.
     pub cast_seq_seat_pose:
         std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
+    /// `LEGAIA_SEAT_MODULE_SHOT=pitch,yaw,x,y,z,fx,fy,fz,left`: retail's module
+    /// shot still walking at a `0x70` capture, its endpoints and the vsyncs
+    /// its table has left (`RetailBattle::module_shot_seat` in
+    /// `legaia-parity`). Re-armed from the pose a cast film seats
+    /// ([`Self::cast_seq_seat_pose`]); the replay built its own shot from
+    /// another pose. Taken once, with the pose.
+    pub seat_module_shot:
+        std::cell::Cell<Option<(legaia_engine_camera::projection::BattleCamPose, u16)>>,
     /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR=clip,cursor`: the caster's clip and
     /// cursor on the recording's cast begin, seated with the pose. A heal's
     /// `0x3D` waits out the idle the caster stands on, and the child's idle
-    /// has its own phase. Taken once.
+    /// has its own phase. A gate film (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`)
+    /// seats it on the gate's tick: the state's own RAM cursor, where the
+    /// capture's clip seeds stand the displayed frame's. Taken once.
     pub cast_seq_seat_cursor: std::cell::Cell<Option<(u8, i32)>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
@@ -1254,6 +1269,9 @@ impl ScreenshotConfig {
             seat_placements: std::env::var("LEGAIA_SEAT_PLACEMENTS")
                 .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
                 .unwrap_or_default(),
+            seat_headings: std::env::var("LEGAIA_SEAT_HEADINGS")
+                .map(|v| legaia_engine_capture::field_seeds::walkers_from_env(&v))
+                .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
                 .map(|v| legaia_engine_capture::field_seeds::morphs_from_env(&v))
                 .unwrap_or_default(),
@@ -1333,6 +1351,15 @@ impl ScreenshotConfig {
                         let (c, k) = v.split_once(',')?;
                         Some((c.trim().parse().ok()?, k.trim().parse().ok()?))
                     }),
+            ),
+            seat_module_shot: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_MODULE_SHOT").ok().and_then(|v| {
+                    let (pose, left) = v.rsplit_once(',')?;
+                    Some((
+                        legaia_engine_capture::camera_align::cam_pose_from_env(pose)?,
+                        left.trim().parse().ok()?,
+                    ))
+                }),
             ),
             cast_seq_seat_pose: std::cell::Cell::new(
                 std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_POSE")

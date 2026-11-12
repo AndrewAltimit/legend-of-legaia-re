@@ -179,8 +179,16 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_HIT_TRACE"] = "1"
     if a.ghost_trace:
         env["LEGAIA_GHOST_TRACE"] = "1"
+    if a.ribbon_trace:
+        env["LEGAIA_RIBBON_TRACE"] = "1"
+    if a.popup_trace:
+        env["LEGAIA_POPUP_TRACE"] = "1"
     if a.calc_clock:
         env["LEGAIA_CALC_CLOCK"] = "1"
+    if a.cd_trace:
+        env["LEGAIA_CD_TRACE"] = "1"
+    if a.gpu_cost:
+        env["LEGAIA_GPU_COST"] = "1"
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -189,7 +197,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace or a.ghost_trace or a.calc_clock):
+            or a.range_trace or a.hit_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -208,10 +216,28 @@ def run_retail(a, out: Path) -> bool:
     return True
 
 
+def rc_stream(report: Path, label: str) -> str | None:
+    """The battle stream retail-compare's seed used for `label` (its report's
+    `stream` detail), or None."""
+    try:
+        states = json.loads(report.read_text())["states"]
+    except (OSError, ValueError, KeyError):
+        return None
+    for s in states:
+        if s.get("label") == label:
+            return s.get("detail", {}).get("stream")
+    return None
+
+
 def child_cmd(a, out: Path) -> Path | None:
     """The retail-compare image child's command for the state."""
     kept = out / "rc" / "engine" / f"{a.state}.cmd.sh"
-    if kept.exists() and not a.reseed:
+    # The battle stream the seed was searched under: a kept command seeded
+    # under another pin (or none) names another stream, so it is re-seeded.
+    pin_file = out / "rc" / "pin-seed.txt"
+    pin = a.pin_seed or ""
+    pinned_as = pin_file.read_text().strip() if pin_file.exists() else ""
+    if kept.exists() and not a.reseed and pinned_as == pin:
         return kept
     library = REPO / "saves" / "library"
     if not library.is_dir():
@@ -220,11 +246,23 @@ def child_cmd(a, out: Path) -> Path | None:
     if not (extracted / "PROT.DAT").exists():
         extracted = main_checkout() / "extracted"
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error")
+    if pin:
+        # The film's own stream, tried ahead of the search list
+        # (`LEGAIA_RC_PIN_SEED`, retail-compare's pin): the first stream that
+        # reaches the phase moves with any change to the draws before it.
+        env["LEGAIA_RC_PIN_SEED"] = pin
     cmd = [str(EXE), "retail-compare", "--out", str(out / "rc"), "--library", str(library),
            "--extracted-root", str(extracted), "--manifest", str(REPO / "scripts" / "scenarios.toml"),
            "--images", "--filter", f"={a.state}"]
     print(f"[engine] seeding {a.state} through retail-compare")
     subprocess.run(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (out / "rc").mkdir(parents=True, exist_ok=True)
+    pin_file.write_text(pin + "\n")
+    if pin:
+        stream = rc_stream(out / "rc" / "report.json", a.state)
+        if stream is not None and int(stream, 16) != int(pin, 16):
+            print(f"[engine] pinned stream {pin} no longer reaches the phase; "
+                  f"the search dealt {stream}")
     if not kept.exists():
         print(f"[engine] FAILED: retail-compare kept no child command for {a.state} "
               f"(see {out / 'rc' / 'report.md'})")
@@ -287,11 +325,9 @@ def retail_opening_pose(out: Path, first_row: bool = False) -> str | None:
         pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
 
 
-def state_guard_seats(sstate: str) -> str | None:
-    """The party seats a PCSX-Redux state holds in the Spirit stance
-    (`+0x1DE == 4` on actor `(&DAT_801C9370)[seat]`), as a comma list, for a
-    recording older than the probe's `guard=` field. `None` when the state
-    cannot be read."""
+def state_ram(sstate: str) -> bytes | None:
+    """A PCSX-Redux state's main RAM `0x80000000..0x80200000`, or `None` when
+    the state cannot be read."""
     exe = REPO / "target" / PROFILE / "pcsxr-state"
     if not exe.exists() or not sstate:
         return None
@@ -301,29 +337,91 @@ def state_guard_seats(sstate: str) -> str | None:
         sstate = str(REPO / "saves" / "library" / "pcsx-redux" / Path(sstate).name)
         if not Path(sstate).exists():
             return None
-    base, top = 0x80000000, 0x80200000
-    tmp = REPO / "target" / "cast-sequence-guard-ram.bin"
-    r = subprocess.run([str(exe), "extract", sstate, "--start", hex(base), "--end", hex(top),
+    tmp = REPO / "target" / "cast-sequence-state-ram.bin"
+    r = subprocess.run([str(exe), "extract", sstate, "--start", hex(RAM_BASE), "--end", hex(RAM_TOP),
                         "--out", str(tmp)], capture_output=True)
     if r.returncode != 0 or not tmp.exists():
         return None
     ram = tmp.read_bytes()
     tmp.unlink()
+    return ram
 
-    def u32(va: int) -> int:
-        o = va - base
-        return int.from_bytes(ram[o:o + 4], "little") if 0 <= o <= len(ram) - 4 else 0
 
+RAM_BASE, RAM_TOP = 0x80000000, 0x80200000
+
+
+def ram_u32(ram: bytes, va: int) -> int:
+    o = va - RAM_BASE
+    return int.from_bytes(ram[o:o + 4], "little") if 0 <= o <= len(ram) - 4 else 0
+
+
+def state_guard_seats(sstate: str) -> str | None:
+    """The party seats a PCSX-Redux state holds in the Spirit stance
+    (`+0x1DE == 4` on actor `(&DAT_801C9370)[seat]`), as a comma list, for a
+    recording older than the probe's `guard=` field. `None` when the state
+    cannot be read."""
+    ram = state_ram(sstate)
+    if ram is None:
+        return None
     seats = []
     for s in range(3):
-        a = u32(0x801C9370 + 4 * s)
-        if not base <= a < top - 0x200:
+        a = ram_u32(ram, 0x801C9370 + 4 * s)
+        if not RAM_BASE <= a < RAM_TOP - 0x200:
             continue
-        o = a - base
+        o = a - RAM_BASE
         max_hp = int.from_bytes(ram[o + 0x14E:o + 0x150], "little")
         if max_hp > 0 and ram[o + 0x1DE] == 4:
             seats.append(str(s))
     return ",".join(seats)
+
+
+def state_opening_cursor(out: Path) -> str | None:
+    """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
+    anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. The film's gate tick is the state's
+    instant, while the capture's clip seeds stand each body on the displayed
+    frame, two passes older: seated so, `battle_geremi_ogre_strike`'s Ogre
+    walked two passes longer than retail's before its swing. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None:
+        return None
+    a = ram_u32(ram, 0x801C9370 + 4 * min(int(first["acting"]), 7))
+    if not RAM_BASE <= a < RAM_TOP - 0x300:
+        return None
+    node = ram_u32(ram, a + 0x22C)
+    if not RAM_BASE <= node < RAM_TOP - 0x80:
+        return None
+    o = node - RAM_BASE
+    return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
+
+
+def state_strike_queue(out: Path) -> str | None:
+    """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
+    own RAM, as the drive's `q` field, for a `--physical` film of a monster
+    strike. The picker drew those clips (`FUN_801E9FD4`) on a `rand()` stream
+    the replay does not share, and the still steers the queue only when no
+    stream reaches its gate, so a film whose replay reached the gate on
+    another pick plays another swing: `battle_geremi_ogre_strike`'s Ogre
+    swung `09` where retail's queue holds `07 07`. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None or int(first["acting"]) < 3:
+        return None
+    a = ram_u32(ram, 0x801C9370 + 4 * min(int(first["acting"]), 7))
+    if not RAM_BASE <= a < RAM_TOP - 0x300:
+        return None
+    return ram[a - RAM_BASE + 0x1DF:a - RAM_BASE + 0x1EF].hex()
 
 
 def engine_guard(a, out: Path, done: dict) -> str:
@@ -354,13 +452,21 @@ def engine_guard(a, out: Path, done: dict) -> str:
     return seats or ""
 
 
-def retail_opening_cursor(out: Path) -> str | None:
+def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
-    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose."""
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
+    `--physical` film (`first_row`) takes the recording's first row, seated on
+    the gate: the replay reached the state's instant on its own clip clock,
+    and a module that gates on its countdown leaves the caster's clip free to
+    run anywhere (Kiss of Death's lips opened `128` cursor units early).
+    The first row is a pass past the state's instant, so a physical film
+    takes `state_opening_cursor` first and this only when the state's RAM
+    cannot be read."""
     begin = (0x28, 0x3C)
+    keep = (lambda r: True) if first_row else (lambda r: int(r["st7"]) in begin)
     try:
         with open(out / "retail" / "body.csv") as f:
-            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+            body = next((r for r in csv.DictReader(f) if keep(r)), None)
     except OSError:
         return None
     return None if body is None else f"{body['clip']},{body['cursor']}"
@@ -405,17 +511,47 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
 
 def retail_step_track(out: Path) -> str:
     """`state phase step` per retail frame, in film order, for
-    `LEGAIA_CAST_STEP_TRACK`: a frame's row is its last, and the phase counts
-    only inside the module bands, as the pairing's key does."""
-    lines, last = [], None
+    `LEGAIA_CAST_STEP_TRACK`: the state a frame's pass opens on and the step
+    it drains by, the phase counted only inside the module bands, as the
+    pairing's key does.
+
+    A frame is one value of the frame counter (`gp+0x480`, bumped at the
+    head of `FUN_80016B6C`). Its pass's logic runs after the frame's first
+    row - no state change in a recording lands on a frame's first row - so
+    that row holds the state the pass opens on, which is the state the pass
+    before it left: the engine's key for the pass whose step it installs
+    next. The step is the frame's own (its last row, past the step store):
+    a countdown that drains by it ends each arm on the frame retail's does
+    (Water Crystals' arm 3 runs `33` frames, one of them at step `3`).
+    Keyed by the frame's last row instead, a frame's step went to the pass
+    after it."""
     with open(out / "retail" / "meta.csv") as f:
-        for r in csv.DictReader(f):
-            if last is not None and r["frame"] != last["frame"]:
-                lines.append(_step_row(last))
-            last = r
-    if last is not None:
-        lines.append(_step_row(last))
-    return "".join(lines)
+        return frame_step_rows(list(csv.DictReader(f)))
+
+
+def frame_step_rows(rows: list[dict]) -> str:
+    """The step track's lines off `meta.csv` rows ([`retail_step_track`]).
+
+    A recording that opens on a state's own instant can open on a frame whose
+    pass ran before the first row: no `rand()` draw lands in it (every battle
+    pass makes the frame driver's discarded draw, `FUN_80046A20`), and its
+    step belongs to no pass the engine runs from the gate. That frame is
+    left out; Lip King's Kiss of Death otherwise ran its first arm-1 pass on
+    the leftover frame's step `3` and arm 1 a pass long."""
+    frames, first, last = [], None, None
+    for r in rows + [None]:
+        if last is not None and (r is None or r["frame"] != last["frame"]):
+            frames.append((first, last, r))
+            first = None
+        if r is not None and first is None:
+            first = r
+        last = r
+    if frames and frames[0][2] is not None and "rand" in frames[0][0]:
+        f0, _, nxt = frames[0]
+        run0 = [r for r in rows if r["frame"] == f0["frame"]]
+        if all(r["rand"] == nxt["rand"] for r in run0):
+            frames = frames[1:]
+    return "".join(_step_row(f, l) for f, l, _ in frames)
 
 
 def retail_rand_track(out: Path) -> str:
@@ -444,10 +580,10 @@ def retail_rand_track(out: Path) -> str:
     return "".join(lines)
 
 
-def _step_row(r: dict) -> str:
-    st7 = int(r["st7"])
-    phase = int(r["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
-    return f"{st7} {phase} {r['step']}\n"
+def _step_row(first: dict, last: dict) -> str:
+    st7 = int(first["st7"])
+    phase = int(first["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
+    return f"{st7} {phase} {last['step']}\n"
 
 
 def traced_hit_words(out: Path) -> list[str] | None:
@@ -547,6 +683,14 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # A monster strike's drive (`action,<seat>,<state>,3,...`) plays the
+    # state's own queue unless the still already steered it.
+    drive = env.get("LEGAIA_BATTLE_DRIVE", "")
+    f = drive.split(",")
+    if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
+            and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
+            and (q := state_strike_queue(out))):
+        env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
@@ -602,7 +746,7 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if (pose := retail_opening_pose(out, first_row=a.physical)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
-    if not a.physical and (cursor := retail_opening_cursor(out)):
+    if (cursor := (state_opening_cursor(out) or retail_opening_cursor(out, first_row=True)) if a.physical else retail_opening_cursor(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     edir = out / "engine"
     env.update({
@@ -650,6 +794,12 @@ def run_engine(a, out: Path) -> bool:
         coins = retail_track_coins(out)
         if coins:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
+    if a.gpu_cost_step:
+        env["LEGAIA_BATTLE_GPU_COST"] = "1"
+    # The recordings are PCSX-Redux's, and so is the engine's default CD
+    # timing; `--console-cd` opts in to a console's response time
+    # (docs/subsystems/battle-stage-camera.md, "The CD stop watch").
+    env["LEGAIA_BATTLE_CD_TIMING"] = "console" if a.console_cd else "pcsx-redux"
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -810,6 +960,12 @@ def main() -> int:
                          "(breakpoint core)")
     ap.add_argument("--ghost-trace", action="store_true",
                     help="retail: each after-image ghost FUN_80049348 draws to retail/ghosts.csv (breakpoint core)")
+    ap.add_argument("--ribbon-trace", action="store_true",
+                    help="retail: each streak-ribbon call FUN_801E1D98 with its seed word, anchor, "
+                         "projected corners and GTE view registers to retail/ribbons.csv (breakpoint core)")
+    ap.add_argument("--popup-trace", action="store_true",
+                    help="retail: each damage numeral FUN_801DF6B8 projects, with its timer, anchor, corners, "
+                         "ordering-table depth and GTE view, to retail/popups.csv (breakpoint core)")
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")
@@ -819,6 +975,12 @@ def main() -> int:
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
+    ap.add_argument("--cd-trace", action="store_true",
+                    help="retail: cd.csv, every libcd command, CdSync span, CD interrupt and its callbacks "
+                         "with the CPU cycle, and each frame's CPU-done mark (breakpoint core)")
+    ap.add_argument("--gpu-cost", action="store_true",
+                    help="retail: also write gpu.csv, the frame-cost words and the GPU draw-time model "
+                         "of the table drawn each vsync (scripts/ci/frame-cost-agreement.py reads it)")
     ap.add_argument("--retail-parts", action="store_true",
                     help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
     ap.add_argument("--prim-calls", action="store_true",
@@ -839,6 +1001,13 @@ def main() -> int:
     ap.add_argument("--retail-steps", action="store_true",
                     help="engine: run on the recording's own frame steps (a harness seat: it takes the "
                          "frame's cost out of what the film scores, so a law residual reads alone)")
+    ap.add_argument("--gpu-cost-step", action="store_true",
+                    help="engine: a battle pass's frame cost is max(its CPU term, the GPU draw-time model "
+                         "of the frame drawn last) (LEGAIA_BATTLE_GPU_COST=1, opt-in; retail's "
+                         "max(cpu, dma + draw) entry, docs/subsystems/battle-stage-camera.md)")
+    ap.add_argument("--console-cd", action="store_true",
+                    help="engine: price a voice clip's CD stop watch at a console's response time (opt-in, "
+                         "LEGAIA_BATTLE_CD_TIMING=console), not the recording's and the default PCSX-Redux one")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")
@@ -849,6 +1018,10 @@ def main() -> int:
     ap.add_argument("--rerecord", action="store_true",
                     help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")
+    ap.add_argument("--pin-seed", metavar="HEX",
+                    help="the battle stream the seed tries first (LEGAIA_RC_PIN_SEED): a film set pins "
+                         "each film to the stream it was baselined on, so a change to the draws before "
+                         "the phase does not re-deal it")
     ap.add_argument("--engine-only", action="store_true", help="skip the retail stage (needs a cached capture)")
     ap.add_argument("--retail-only", action="store_true")
     ap.add_argument("--score-only", action="store_true")

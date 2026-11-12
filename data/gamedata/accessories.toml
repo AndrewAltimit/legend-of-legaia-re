@@ -197,17 +197,20 @@ effect_class = "ap_freeze_100"
 key = "life_source"
 name = "Life Source"
 price = 50000
-effect = "Slowly restores HP while walking (5 HP per step)."
+# The walk-regen tick FUN_801D0B90 adds 8 HP each time the walk counter
+# drains 0x20 (engine-field::walk_regen); the walkthrough had 5 per step.
+effect = "Slowly restores HP while walking (8 HP at a time)."
 effect_class = "hp_per_step"
-effect_value = 5
+effect_value = 8
 
 [[accessory]]
 key = "magic_source"
 name = "Magic Source"
 price = 50000
-effect = "Slowly restores MP while walking (1 MP per step)."
+# The same tick adds 2 MP; the walkthrough had 1 per step.
+effect = "Slowly restores MP while walking (2 MP at a time)."
 effect_class = "mp_per_step"
-effect_value = 1
+effect_value = 2
 
 [[accessory]]
 key = "mettle_source"
@@ -384,7 +387,9 @@ element = "water"
 
 [[accessory]]
 key = "light_ra_seru_egg"
-name = "Light Ra-Seru Egg"
+# The SCUS item-name table calls it "Light Egg" (beside the Earth and Water
+# Eggs); the walkthrough's "Light Ra-Seru Egg" is a description.
+name = "Light Egg"
 effect = "Light defense up; converted by Zalan to Light Talisman."
 effect_class = "elemental_def"
 element = "light"
@@ -467,9 +472,12 @@ effect_class = "last_attack"
 key = "crimson_book"
 name = "Crimson Book"
 price = 65000
-effect = "Earned XP +25%."
+# The victory spoils routine FUN_8004E568 adds the member's
+# EXP share a second time when record +0xF8 bit 0x8000 (passive 0x2F) is
+# set (0x8004F2E8): double EXP, not the walkthrough's +25%.
+effect = "Earned XP doubled."
 effect_class = "xp_pct"
-effect_value = 25
+effect_value = 100
 
 [[accessory]]
 key = "golden_book"
@@ -511,7 +519,9 @@ effect_class = "ambush_off_pct"
 key = "good_luck_bell"
 name = "Good Luck Bell"
 price = 12000
-effect = "Lowers random-encounter rate."
+# Low Encounter (passive 0x3C) shifts the step's encounter rate right by
+# one in FUN_801D9E1C (docs/formats/encounter.md): half the rate.
+effect = "Halves the random-encounter rate."
 effect_class = "encounter_pct"
 effect_value = -50
 
@@ -519,16 +529,19 @@ effect_value = -50
 key = "bad_luck_bell"
 name = "Bad Luck Bell"
 price = 13000
-effect = "Increases random-encounter rate."
+# High Encounter (passive 0x3B) shifts the rate left by two in FUN_801D9E1C:
+# four times the rate, not the walkthrough's +50%.
+effect = "Quadruples the random-encounter rate."
 effect_class = "encounter_pct"
-effect_value = 50
+effect_value = 300
 
 [[accessory]]
 key = "nemesis_gem"
 name = "Nemesis Gem"
-effect = "Increases random-encounter rate."
+# The same High Encounter passive as the Bad Luck Bell: four times the rate.
+effect = "Quadruples the random-encounter rate."
 effect_class = "encounter_pct"
-effect_value = 50
+effect_value = 300
 
 [[accessory]]
 key = "war_god_icon"

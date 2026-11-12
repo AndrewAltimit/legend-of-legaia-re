@@ -59,3 +59,16 @@ fn a_dearer_arm_raises_the_step_from_its_second_pass() {
     passes(&mut w, 5, 20);
     assert_eq!(passes(&mut w, 4, 3), vec![2, 4, 4]);
 }
+
+/// A replay's seeded step speaks for its own state alone: once the SM has
+/// left it, the band's arm tables time the cast. `theeder_summon_mid_cast`'s
+/// seed holds step `3` on `0x33`, and it held every band arm on
+/// the ordinary step while the seed sat in the clock.
+#[test]
+fn a_seed_for_another_state_leaves_the_arm_tables_their_step() {
+    let mut w = kiss_of_death_band();
+    w.seed_battle_frame_step(3, ActionState::SummonFadeIn.as_byte());
+    w.apply_battle_frame_step_seed();
+    let head = passes(&mut w, 4, 6);
+    assert!(head[1..].iter().all(|&s| s == 4), "{head:?}");
+}

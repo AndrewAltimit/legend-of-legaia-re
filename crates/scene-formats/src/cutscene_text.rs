@@ -12,18 +12,20 @@
 //! ## Wire format
 //!
 //! A narration **block** is introduced by a field-VM op `0x4C` in its
-//! outer-nibble-8 form with the cross-context extended target `0xF8`
-//! (`[0xCC 0xF8 0x80 N]`, where `0xCC = 0x80 | 0x4C` is the extended-bit
-//! opcode and `N` is the page count). Immediately after the op come exactly
-//! `N` **pages**, each encoded as:
+//! outer-nibble-8 form with an extended target (`[0xCC tt 0x80 N]`, where
+//! `0xCC = 0x80 | 0x4C` is the extended-bit opcode, `tt` the context the op
+//! runs on and `N` is the page count). The opening's crawls run on the
+//! cutscene context `0xF8`; `vozz` `P2[17]` opens Ozma's on actor `0x06`.
+//! Immediately after the op come exactly `N` **pages**, each encoded as:
 //!
 //! ```text
 //! 0x1F  <printable ASCII bytes...>  0x00
 //! ```
 //!
 //! `0x1F` (ASCII Unit Separator) marks the start of a page; `0x00` terminates
-//! it. The bytes between are plain 7-bit ASCII (the US English narration). A
-//! page typically corresponds to one rendered subtitle line.
+//! it. The bytes between are plain 7-bit ASCII (the US English narration),
+//! plus the dialog renderer's two-byte name escapes (`0xC1..=0xC7` and an
+//! operand). A page typically corresponds to one rendered subtitle line.
 //!
 //! For `opdeene` the timeline carries two blocks: a 14-page creation prologue
 //! and an 8-page Seru-history block. The page count in the introducing op
@@ -50,9 +52,18 @@ pub struct NarrationPage {
     /// Byte offset of the `0x1F` start marker, relative to the record body
     /// the parse was handed.
     pub offset: usize,
-    /// Decoded ASCII text of the page.
+    /// Decoded ASCII text of the page, with any name escape left out.
     pub text: String,
+    /// The page's bytes between the markers, name escapes included: a
+    /// `0xC1..=0xC7` byte and its operand (`C1 02`, the third roster
+    /// member's name, opens a line of Ozma's `vozz` crawl). A consumer that
+    /// has the live name tables resolves the page from these.
+    pub raw: Vec<u8>,
 }
+
+/// The name-escape families a page may carry (`0xC1` character, `0xC2` /
+/// `0xC4` item, ...), each followed by one operand byte.
+const NAME_ESCAPES: std::ops::RangeInclusive<u8> = 0xC1..=0xC7;
 
 /// How a narration block presents on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +92,11 @@ pub struct NarrationBlock {
     pub pages: Vec<NarrationPage>,
     /// Presentation form (crawl vs static card).
     pub kind: NarrationKind,
+    /// The context the introducing op runs on (its extended target byte):
+    /// `0xF8` for the opening's crawls, an actor's channel for others
+    /// (`vozz` `P2[17]` opens Ozma's crawl on `0x06`). The op halt-acquires
+    /// that context, and the roller frees it as it retires its last page.
+    pub target: u8,
 }
 
 impl NarrationBlock {
@@ -105,7 +121,7 @@ impl NarrationBlock {
             // A page is `[0x1F][text bytes][0x00]`; text is 7-bit ASCII, so
             // its byte length equals its `char` length. End is one past the
             // `0x00`: offset + 1 (start marker) + text + 1 (terminator).
-            Some(last) => last.offset + 2 + last.text.len(),
+            Some(last) => last.offset + 2 + last.raw.len(),
             None => {
                 self.op_offset
                     + match self.kind {
@@ -147,18 +163,29 @@ fn read_page(body: &[u8], start: usize) -> Option<(NarrationPage, usize)> {
     while let Some(&b) = body.get(j) {
         if b == PAGE_END {
             // Reject an empty page; the narration never emits a bare 1F 00.
-            if text.is_empty() {
+            if j == start + 1 {
                 return None;
             }
             return Some((
                 NarrationPage {
                     offset: start,
                     text,
+                    raw: body[start + 1..j].to_vec(),
                 },
                 j + 1,
             ));
         }
-        // Pages are plain 7-bit printable ASCII.
+        // A name escape and its operand byte, whatever it is (`C1 00` is
+        // the first roster member): the packet rule `FUN_8003CA38` steps a
+        // `0xCx` byte and the one after it together.
+        if NAME_ESCAPES.contains(&b) {
+            if j + 1 >= body.len() {
+                return None;
+            }
+            j += 2;
+            continue;
+        }
+        // Everything else is plain 7-bit printable ASCII.
         if !(0x20..0x7F).contains(&b) {
             return None;
         }
@@ -170,7 +197,7 @@ fn read_page(body: &[u8], start: usize) -> Option<(NarrationPage, usize)> {
 
 /// Parse every inline narration block in a cutscene-timeline record `body`.
 ///
-/// Scans for the introducing op (`[0xCC 0xF8 0x80 N]`) immediately followed
+/// Scans for the introducing op (`[0xCC tt 0x80 N]`, any target `tt`) immediately followed
 /// by a `0x1F` page marker, then reads up to `N` pages. Blocks whose op is
 /// present but whose pages do not frame cleanly are still returned (with
 /// whatever pages decoded), so [`NarrationBlock::count_matches`] can flag a
@@ -179,11 +206,13 @@ pub fn parse_narration(body: &[u8]) -> Vec<NarrationBlock> {
     let mut blocks = Vec::new();
     let mut i = 0usize;
     while i + 4 < body.len() {
-        if body[i] != OP_MENU_CTRL_EXT || body[i + 1] != EXT_TARGET_CUTSCENE {
+        if body[i] != OP_MENU_CTRL_EXT {
             i += 1;
             continue;
         }
-        // Crawl block: `[CC F8 80 N]` immediately followed by a page.
+        // Crawl block: `[CC tt 80 N]` immediately followed by a page. The
+        // op's arm (`0x801E1ECC..0x801E1FBC` in the field VM) never reads
+        // the target beyond halt-acquiring it, so any context opens one.
         if body[i + 2] == OP0_NARRATION && body[i + 4] == PAGE_START {
             let declared_pages = body[i + 3];
             let op_offset = i;
@@ -205,13 +234,14 @@ pub fn parse_narration(body: &[u8]) -> Vec<NarrationBlock> {
                 declared_pages,
                 pages,
                 kind: NarrationKind::Crawl,
+                target: body[op_offset + 1],
             });
             continue;
         }
         // Title-card block: `[CC F8 89 b1 b2]`, pages within a short scan
         // window (the op may interpose a placement word), read greedily (no
         // declared count).
-        if body[i + 2] == OP0_TITLE_CARD {
+        if body[i + 1] == EXT_TARGET_CUTSCENE && body[i + 2] == OP0_TITLE_CARD {
             let op_offset = i;
             let mut cursor = i + 5;
             let scan_end = (cursor + CARD_PAGE_SCAN).min(body.len());
@@ -231,6 +261,7 @@ pub fn parse_narration(body: &[u8]) -> Vec<NarrationBlock> {
                     declared_pages,
                     pages,
                     kind: NarrationKind::Card,
+                    target: EXT_TARGET_CUTSCENE,
                 });
                 continue;
             }
@@ -329,6 +360,26 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].pages.len(), 0);
         assert!(!blocks[0].count_matches());
+    }
+
+    #[test]
+    fn an_actor_targeted_crawl_with_a_name_escape_parses() {
+        // `CC 06 80 02`: a crawl opened on actor 0x06, its first page
+        // `C1 02 ","` (a roster name, then a comma), as vozz P2[17] has.
+        let mut body = vec![OP_MENU_CTRL_EXT, 0x06, OP0_NARRATION, 0x02];
+        body.extend_from_slice(&[PAGE_START, 0xC1, 0x02, b',', PAGE_END]);
+        body.extend_from_slice(&[PAGE_START, b'H', b'i', PAGE_END]);
+        body.push(0x4A);
+        let blocks = parse_narration(&body);
+        assert_eq!(blocks.len(), 1);
+        let b = &blocks[0];
+        assert!(b.count_matches());
+        assert_eq!(b.kind, NarrationKind::Crawl);
+        assert_eq!(b.target, 0x06);
+        assert_eq!(b.pages[0].raw, vec![0xC1, 0x02, b',']);
+        assert_eq!(b.pages[0].text, ",");
+        // The span still ends on the op after the pages.
+        assert_eq!(body[b.byte_span().1], 0x4A);
     }
 
     #[test]

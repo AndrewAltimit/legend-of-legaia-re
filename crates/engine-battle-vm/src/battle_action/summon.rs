@@ -139,12 +139,16 @@ fn summon_close_up<H: BattleActionHost + ?Sized>(
 
 // --- summon band ------------------------------------------------------------
 
-/// Passes `0x32` holds on the drive. The engine's drive is resident and has no
-/// read in flight, so this stands in for retail's: `14` or `16` vsyncs at step `2`
-/// on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (`capture`,
-/// a constant fitted to those recordings; the read itself is the emulator's CD model).
-/// It keeps the case-6 walk the arm runs on retail's length.
-pub const SUMMON_INVOKE_DRIVE_PASSES: u8 = 8;
+/// Vsyncs `0x32` holds on the drive. The engine's drive is resident and has no
+/// read in flight, so this stands in for retail's read, which runs on the wall
+/// clock and not on passes: `14` or `16` vsyncs at step `2` on every party
+/// summon recorded from `party_basic_attack_vs_gobu_gobu`, and `15` at step `3`
+/// on the full-party recordings from `battle_kor_spoon_strike` and
+/// `battle_tower_swordie_strike` (`capture`, a constant fitted to those
+/// recordings; the read itself is the emulator's CD model). Counted in passes,
+/// the hold ran a step-`3` party eight passes (`24` vsyncs) where retail's ran
+/// five. It keeps the case-6 walk the arm runs on retail's length.
+pub const SUMMON_INVOKE_DRIVE_VSYNCS: u8 = 15;
 
 pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     host: &mut H,
@@ -157,11 +161,13 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     }
     // `bne v0,zero` at `0x801E4994`: the arm holds while `FUN_8003DE7C(1)` reports
     // the drive's read in flight (`gp+0x988`). The framing above keeps walking.
-    ctx.summon_invoke_passes = ctx.summon_invoke_passes.saturating_add(1);
-    if ctx.summon_invoke_passes < SUMMON_INVOKE_DRIVE_PASSES {
+    // Each pass waits out its own step, so the read has had the passes' vsyncs.
+    let dt = host.frame_dt().clamp(1, 0xFF) as u8;
+    ctx.summon_invoke_vsyncs = ctx.summon_invoke_vsyncs.saturating_add(dt);
+    if ctx.summon_invoke_vsyncs < SUMMON_INVOKE_DRIVE_VSYNCS {
         return stay(ctx);
     }
-    ctx.summon_invoke_passes = 0;
+    ctx.summon_invoke_vsyncs = 0;
     let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
     let frame_idx = if param0 < 0x9A {
         // (param0 + 0x7F) * 3 + 0x80
@@ -222,7 +228,17 @@ pub fn sideband_slot_count(base: u8) -> u8 {
 /// Gilium, `4` on Swordie and at the arm's entry on Orb, which this value
 /// meets to within `5` on all four (the band ahead of the module is not
 /// the same length in every cast).
-pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 9;
+///
+/// The fit is against arm 1, so it carries the band's length ahead of the
+/// module: `0x34` ends on the pass after the invoke clip's natural end, which
+/// commits idle behind the advance that crosses it (`0x80047A48..0x80047B58`,
+/// then `lbu v0,0x1d9` / `bne` at `0x801E4AD4..0x801E4ADC`), and with that
+/// pass in place arm 1 opens two vsyncs sooner than it did with the end
+/// taken a pass late. The stage keeps its place against arm 1 at `7`:
+/// `zenoir_summon_mid_cast`'s flash-out age and its arm-3 step change fall on
+/// the same pass again (camera `.980` at `9`, `1.000` at `7`), as do
+/// `slippery_summon_mid_cast`'s (`.997`, `1.000`).
+pub const SIDEBAND_FIRST_SLOT_SEEK_VSYNCS: u16 = 7;
 
 /// The vsyncs the applier's stage byte stays up after a seed of `base`:
 /// [`sideband_slot_count`] reads of [`SIDEBAND_SLOT_READ_VSYNCS`] each, and

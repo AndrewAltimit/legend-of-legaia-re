@@ -755,3 +755,16 @@
   <h3>Verifying it</h3>
   <p>Open Items &gt; Throw Out, pick any stack, and read the window: the name's row holds the name alone. In a debugger, break at <code>0x801D1C20</code> and read <code>a2</code>, the count's pen x.</p>
 </section>
+
+<section class="doc-section" id="equip-preview-clips-hp">
+  <h2>Hovering an Equip candidate clips current HP or MP</h2>
+  <p>Not a community report: found by running the candidate step against the port in the <a href="../../tooling/retail-kernel-differential.html">retail differential</a>. On the Equip screen's candidate list, every hovered row is previewed by equipping it on the real character record for a moment. The preview runs the stat aggregator, which lowers a current HP or MP above the new maximum. When the preview ends the maximum comes back but the current value stays lowered: a character at full HP wearing an HP-boosting accessory loses the boost's worth of current HP by hovering Remove on that row and backing out.</p>
+  <h3>Mechanism</h3>
+  <p>The candidate step <code>FUN_801D9C14</code> (menu overlay) writes the hovered candidate into the record (<code>0x801D9E94</code>) and calls the aggregator <code>FUN_80042558</code> (<code>0x801D9F68</code>), whose clamps lower current HP and MP to the new maxima (<code>0x80042CE4..0x80042D18</code>). It then restores the equip bytes and runs the aggregator again (<code>0x801DA080</code>), which restores the maxima but not the current values. Only a hover that lowers a maximum loses anything; the shop's party column runs the same dance but only over pieces with no HP or MP boost.</p>
+  <h3>Evidence</h3>
+  <p>The disassembly, and the retail routine run in the project's R3000 interpreter, where browsing frames with a lowering trial clipped the record. Not yet observed on hardware or in an emulator.</p>
+  <h3>In the port</h3>
+  <p>The port previews on a copy of the record, so hovering never changes the character.</p>
+  <h3>Verifying it</h3>
+  <p>Equip an HP-boosting accessory, heal to full, open Equip and that accessory's row, hover Remove, back out and read the Status page. In a debugger, watch writes to the record's current HP (Vahn: <code>0x8008480E</code>); the write lands at <code>0x80042CFC</code> inside the aggregator called from <code>0x801D9F68</code>.</p>
+</section>

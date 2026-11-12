@@ -207,7 +207,18 @@ impl World {
     }
 
     /// The live battle's formation id, as the challenge checks key on.
+    ///
+    /// Tetsu's sparring tutorial is no challenge's battle: a challenge
+    /// applies to no battle without a formation (`ActiveChallenge::applies_to`),
+    /// so the tutorial reads as none. A "next battle" challenge with
+    /// `no_items` (the sample pack's Bare Hands) armed before the spar had
+    /// refused the Item chip, and the lesson rewinds on any other pick, so the
+    /// spar held its Item lesson for good. Its end books nothing either: the
+    /// sparring teardown clears the battle end before `finish_battle`.
     fn expansion_battle_formation(&self) -> Option<u16> {
+        if self.battle.tutorial.is_some() {
+            return None;
+        }
         self.battle
             .active_formation
             .as_ref()

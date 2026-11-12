@@ -1639,7 +1639,17 @@ quad takes the material with the highest weight at its centre - the four
 nearest tile centres' materials, bilinear - after a noise of `blend`
 width, so a boundary is a dithered, organic edge about a tile wide rather
 than the tile grid's step. Each tile turns and mirrors its cell one of
-eight ways (`rotate`, on by default) against visible repeats. A quad
+eight ways (`rotate`, on by default) against visible repeats.
+
+**Soft boundaries.** Where the runner-up material's weight is within
+`soften` (default `0.3`) of the winner's, the triangle also carries the
+runner-up's cell half-blended over it (`0.5B + 0.5F`, through an STP copy
+of its palette). The overlay lies on the ground's own vertices, so it is
+emitted ahead of the ground: two coplanar primitives resolve as retail's
+ordering table resolves them, the earlier one drawing on top, and the hosts'
+depth-tested coplanar pass follows the same rule. A cell index picks from
+the full 64-bit tile hash on every target, so the browser and the window
+paint one map alike. A quad
 steeper than `cliff.slope` (rise over run) takes the cliff material.
 
 **Depth.** `abyss = { from = -60, to = -700, shade = 0.06 }` darkens

@@ -53,6 +53,9 @@ pub struct Settings {
     pub theme: Theme,
     /// The UI zoom factor (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`); `None` is 1.0.
     pub zoom: Option<f32>,
+    /// The Browse view's Overview tab shows its technical details (archive
+    /// index, CDNAME block, sectors, chunk table) open.
+    pub overview_details: bool,
     /// Audio preview volume, percent of the full mixer output (View menu);
     /// `None` is [`legaia_engine_audio::DESKTOP_MASTER_VOLUME_DEFAULT`].
     pub volume: Option<u8>,

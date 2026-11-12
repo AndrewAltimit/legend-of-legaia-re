@@ -144,7 +144,15 @@ impl Camera {
             self.zone.prev_scripted = scripted;
             if !scripted && self.mode == CameraMode::Follow {
                 self.zone_follow_tick(world, dt);
-            } else if gliding && self.mode == CameraMode::Follow {
+            } else {
+                // Retail's scene-entry pieces run under a scripted shot too:
+                // the MAN load's block query and the arrival actor's tick.
+                if self.zone.reload_pending {
+                    self.load_scene_zone_block(world);
+                }
+                self.tick_arrival_under_script(world, dt);
+            }
+            if scripted && gliding && self.mode == CameraMode::Follow {
                 // A scripted glide in a free-roam scene drives these same
                 // globals from the zone pose it was primed with; the follow
                 // view keeps reading them rather than its fallback.

@@ -132,6 +132,10 @@ pub struct Automation {
     pub find: Option<String>,
     /// `LEGAIA_EXPLORER_PLAY`: press Play once the disc has loaded.
     pub play: bool,
+    /// `LEGAIA_EXPLORER_BROWSE`: open the in-app file browser at start, for
+    /// a disc (`disc`), an extracted folder (`folder`) or the extraction
+    /// output folder (`out`).
+    pub browse: Option<String>,
 }
 
 impl Automation {
@@ -153,8 +157,42 @@ impl Automation {
             search: std::env::var("LEGAIA_EXPLORER_SEARCH").ok(),
             find: std::env::var("LEGAIA_EXPLORER_FIND").ok(),
             play: std::env::var_os("LEGAIA_EXPLORER_PLAY").is_some_and(|v| !v.is_empty()),
+            browse: std::env::var("LEGAIA_EXPLORER_BROWSE").ok(),
         }
     }
+}
+
+/// A file dialog that comes back empty sooner than this never appeared (no
+/// player picks and cancels that fast); the in-app browser opens instead.
+const DIALOG_NEVER_SHOWN: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Where a controller's export lands when no export folder is remembered:
+/// `Legaia Explorer` in Pictures, else in Documents, else in the home
+/// folder.
+fn default_export_dir() -> PathBuf {
+    dirs::picture_dir()
+        .or_else(dirs::document_dir)
+        .or_else(dirs::home_dir)
+        .unwrap_or_default()
+        .join("Legaia Explorer")
+}
+
+/// `name` in `dir`, or `stem (2).ext`, `stem (3).ext`, ... when it is
+/// taken: an export without a dialog never writes over an earlier one.
+fn unused_name(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let p = Path::new(name);
+    let stem = p
+        .file_stem()
+        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy()));
+    (2..)
+        .map(|n| dir.join(format!("{stem} ({n}){}", ext.as_deref().unwrap_or(""))))
+        .find(|p| !p.exists())
+        .unwrap_or(first)
 }
 
 /// The width (points) the top bar's right-aligned View and About buttons
@@ -387,6 +425,22 @@ pub struct App {
     auto_extract_started: bool,
     settle_since: Option<std::time::Instant>,
     screenshot_requested: bool,
+    /// The controllers' input ([`crate::gamepad::spawn`]), turned into key
+    /// presses in `raw_input_hook`; `None` without a controller backend.
+    pad: Option<std::sync::mpsc::Receiver<crate::gamepad::PadInput>>,
+    /// A controller was the last thing pressed (a key or a mouse button
+    /// clears it): the file dialogs give way to [`Self::file_browser`],
+    /// which a controller can work, and an export goes straight into the
+    /// export folder.
+    pad_active: bool,
+    /// The in-app file browser while it is open (`crate::file_browser`).
+    file_browser: Option<crate::file_browser::FileBrowser>,
+    /// The disc the game itself boots, offered on the start page while it
+    /// is not on the recent list ([`crate::launch::engine_disc_offer`]).
+    game_disc: Option<PathBuf>,
+    /// [`Self::game_disc`] was found in the usual folders on a first run
+    /// ([`crate::launch::found_disc_offer`]), not chosen in the game.
+    game_disc_found: bool,
 }
 
 impl App {
@@ -494,7 +548,22 @@ impl App {
             auto_extract_started: false,
             settle_since: None,
             screenshot_requested: false,
+            pad: None,
+            pad_active: false,
+            file_browser: None,
+            game_disc: None,
+            game_disc_found: false,
         };
+        app.game_disc = crate::launch::engine_disc_offer(&app.explorer.settings.recent);
+        // A first run with nothing to open: look where a dump usually is.
+        if app.game_disc.is_none()
+            && app.explorer.settings.recent.is_empty()
+            && app.explorer.library.is_none()
+            && app.explorer.loading().is_none()
+        {
+            app.game_disc = crate::launch::found_disc_offer();
+            app.game_disc_found = app.game_disc.is_some();
+        }
         if let Some(t) = app.auto.tab.clone() {
             if t.eq_ignore_ascii_case("about") {
                 app.about_open = true;
@@ -628,6 +697,24 @@ impl App {
             let _ = std::fs::create_dir_all(dir);
             return Some(dir.join(default_name));
         }
+        // A controller cannot type a file name: the export goes into the
+        // export folder under its own name, and the status line says where.
+        if self.pad_active {
+            let dir = self
+                .explorer
+                .settings
+                .last_export_dir
+                .clone()
+                .filter(|d| d.is_dir())
+                .unwrap_or_else(default_export_dir);
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                self.explorer.error = Some(format!("Could not make {}: {e}", dir.display()));
+                return None;
+            }
+            self.explorer.settings.last_export_dir = Some(dir.clone());
+            self.explorer.save_settings();
+            return Some(unused_name(&dir, default_name));
+        }
         let mut d = rfd::FileDialog::new()
             .set_file_name(default_name)
             .add_filter(ext.to_uppercase(), &[ext]);
@@ -758,6 +845,15 @@ impl App {
             self.out_text = dir.display().to_string();
             self.start_extract();
         }
+        if let Some(what) = self.auto.browse.take() {
+            use crate::file_browser::Purpose;
+            let purpose = match what.as_str() {
+                "folder" => Purpose::ExtractedFolder,
+                "out" => Purpose::OutputFolder,
+                _ => Purpose::Disc,
+            };
+            self.open_file_browser(purpose);
+        }
         if self.auto.play && self.explorer.library.is_some() && self.explorer.loading().is_none() {
             self.auto.play = false;
             self.start_game();
@@ -851,27 +947,111 @@ impl App {
     // --- Panels ------------------------------------------------------------
 
     /// The native file dialog for a disc image, opened where the last one
-    /// was.
+    /// was; the in-app browser while a controller is in hand, or when the
+    /// dialog never appeared.
     fn pick_disc(&mut self) {
+        use crate::file_browser::Purpose;
+        if self.pad_active {
+            self.open_file_browser(Purpose::Disc);
+            return;
+        }
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose your Legend of Legaia disc image")
             .add_filter("PlayStation disc image", &["bin", "cue", "BIN", "CUE"]);
         if let Some(dir) = self.last_dir() {
             dialog = dialog.set_directory(dir);
         }
-        if let Some(p) = dialog.pick_file() {
-            self.open_path(&p);
+        let asked = std::time::Instant::now();
+        match dialog.pick_file() {
+            Some(p) => self.open_path(&p),
+            None => self.dialog_fallback(asked, Purpose::Disc),
         }
     }
 
-    /// The native folder dialog for a `legaia-extract` output folder.
+    /// The native folder dialog for a `legaia-extract` output folder (the
+    /// in-app browser, as [`Self::pick_disc`]).
     fn pick_folder(&mut self) {
+        use crate::file_browser::Purpose;
+        if self.pad_active {
+            self.open_file_browser(Purpose::ExtractedFolder);
+            return;
+        }
         let mut dialog = rfd::FileDialog::new().set_title("Choose a legaia-extract output folder");
         if let Some(dir) = self.last_dir() {
             dialog = dialog.set_directory(dir);
         }
-        if let Some(p) = dialog.pick_folder() {
-            self.open_path(&p);
+        let asked = std::time::Instant::now();
+        match dialog.pick_folder() {
+            Some(p) => self.open_path(&p),
+            None => self.dialog_fallback(asked, Purpose::ExtractedFolder),
+        }
+    }
+
+    /// The Extract view's *Choose...*: the folder the extraction writes
+    /// into (the in-app browser, as [`Self::pick_disc`]).
+    fn pick_out_folder(&mut self) {
+        use crate::file_browser::Purpose;
+        if self.pad_active {
+            self.open_file_browser(Purpose::OutputFolder);
+            return;
+        }
+        let asked = std::time::Instant::now();
+        match rfd::FileDialog::new()
+            .set_title("Choose the extraction output folder")
+            .pick_folder()
+        {
+            Some(p) => self.out_text = p.display().to_string(),
+            None => self.dialog_fallback(asked, Purpose::OutputFolder),
+        }
+    }
+
+    /// A file dialog that came back empty: when it came back at once it
+    /// never appeared (a desktop with no file-dialog service), so the in-app
+    /// browser opens in its place. A dialog the player closed takes longer.
+    fn dialog_fallback(
+        &mut self,
+        asked: std::time::Instant,
+        purpose: crate::file_browser::Purpose,
+    ) {
+        if asked.elapsed() < DIALOG_NEVER_SHOWN {
+            log::warn!("the desktop file dialog did not open; using the in-app browser");
+            self.open_file_browser(purpose);
+        }
+    }
+
+    /// Open the in-app file browser for `purpose`, where the last pick of
+    /// its kind was.
+    fn open_file_browser(&mut self, purpose: crate::file_browser::Purpose) {
+        use crate::file_browser::{FileBrowser, Purpose};
+        let start = match purpose {
+            Purpose::Disc | Purpose::ExtractedFolder => self.last_dir(),
+            Purpose::OutputFolder => {
+                let out = PathBuf::from(self.out_text.trim());
+                (!self.out_text.trim().is_empty())
+                    .then(|| out.ancestors().find(|d| d.is_dir()).map(Path::to_path_buf))
+                    .flatten()
+            }
+        };
+        self.file_browser = Some(FileBrowser::open(purpose, start.as_deref()));
+    }
+
+    /// Draw the open file browser and act on what it came to.
+    fn show_file_browser(&mut self, ctx: &egui::Context) {
+        use crate::file_browser::{Outcome, Purpose};
+        let Some(b) = self.file_browser.as_mut() else {
+            return;
+        };
+        let purpose = b.purpose;
+        match b.show(ctx) {
+            Outcome::Open => {}
+            Outcome::Cancelled => self.file_browser = None,
+            Outcome::Picked(p) => {
+                self.file_browser = None;
+                match purpose {
+                    Purpose::Disc | Purpose::ExtractedFolder => self.open_path(&p),
+                    Purpose::OutputFolder => self.out_text = p.display().to_string(),
+                }
+            }
         }
     }
 
@@ -1917,77 +2097,161 @@ impl App {
             ui.add(egui::Label::new(RichText::new(&text).monospace()).truncate())
                 .on_hover_text(text)
         };
-        let contents: Vec<String> = [
-            (a.tims.len(), "TIM"),
-            (a.tmds.len(), "TMD"),
-            (a.vabs.len(), "VAB"),
-            (a.seqs.len(), "SEQ"),
-            (a.mes.len(), "MES"),
-            (a.tim_sections.len(), "LZS sections"),
-        ]
-        .into_iter()
-        .filter(|(n, _)| *n > 0)
-        .map(|(n, what)| format!("{n} {what}"))
-        .collect();
-        egui::Grid::new("overview").num_columns(2).striped(true).show(ui, |ui| {
-            ui.label("PROT index");
-            value(ui, format!("{} (0x{:X})", e.index, e.index));
-            ui.end_row();
-            ui.label("Filename label");
-            value(ui, lib.label(e.index).unwrap_or("-").to_string());
-            ui.end_row();
-            ui.label("Retail CDNAME block")
-                .on_hover_text("CDNAME #define numbers are raw-TOC indices, two above extraction indices (docs/formats/cdname.md)");
-            value(ui, lib.retail_block(e.index).unwrap_or("-").to_string());
-            ui.end_row();
-            ui.label("Kind");
-            value(ui, crate::kind_of_class(a.class.name()).to_string());
-            ui.end_row();
-            ui.label("Category");
-            value(ui, a.class.name().to_string());
-            ui.end_row();
-            ui.label("Location");
-            value(ui, format!("PROT.DAT LBA {} (+0x{:X})", e.start_lba, e.byte_offset));
-            ui.end_row();
-            ui.label("Size");
-            value(
-                ui,
-                format!("{} ({} sectors, {} bytes)", human_size(e.size_bytes), e.size_sectors, e.size_bytes),
-            );
-            ui.end_row();
-            ui.label("Contents");
-            value(
-                ui,
-                if contents.is_empty() {
-                    "no recognised sub-assets".to_string()
-                } else {
-                    contents.join(", ")
-                },
-            );
-            ui.end_row();
-        });
-        if !a.chunks.is_empty() {
-            ui.add_space(8.0);
-            ui.label(RichText::new("DATA_FIELD chunks").strong());
-            egui::Grid::new("chunks").striped(true).show(ui, |ui| {
-                ui.label("#");
-                ui.label("offset");
-                ui.label("type");
-                ui.label("size");
+        // The plain half: what the entry is and holds, in a player's words,
+        // each row's technical name on its hover.
+        let kind = crate::kind_of_class(a.class.name());
+        let counts = crate::ContentCounts {
+            tims: a.tims.len(),
+            tmds: a.tmds.len(),
+            vabs: a.vabs.len(),
+            seqs: a.seqs.len(),
+            mes: a.mes.len(),
+            dialog: a.dialog.len(),
+            lzs: a.tim_sections.len(),
+        };
+        let holds = crate::contents_plain(&counts);
+        let block = lib.retail_block(e.index);
+        let place = block.and_then(crate::place_name);
+        ui.label(RichText::new(kind).strong().size(16.0));
+        ui.add(egui::Label::new(crate::kind_blurb(kind)).wrap());
+        ui.add_space(6.0);
+        egui::Grid::new("overview_plain")
+            .num_columns(2)
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Place").on_hover_text(
+                    "The scene this entry belongs to: the disc keeps each place's \
+                     files side by side. The technical details name its CDNAME block.",
+                );
+                let place_text = match (place, block) {
+                    (Some(p), Some(b)) => format!("{p} ({b})"),
+                    (None, Some(b)) => b.to_string(),
+                    _ => "-".to_string(),
+                };
+                ui.add(egui::Label::new(&place_text).truncate())
+                    .on_hover_text(place_text.clone());
                 ui.end_row();
-                for (i, c) in a.chunks.iter().enumerate() {
-                    ui.monospace(i.to_string());
-                    ui.monospace(format!("0x{:X}", c.header_offset));
-                    ui.monospace(c.type_name);
-                    ui.monospace(c.size.to_string());
-                    ui.end_row();
-                }
+                ui.label("Holds").on_hover_text(
+                    "What this program found inside: textures are TIM images, 3D models \
+                     TMD meshes, sound banks VAB, music tracks SEQ, text blocks MES, \
+                     compressed sections LZS. The tabs above show each.",
+                );
+                let holds_text = if holds.is_empty() {
+                    "nothing this program can show; the Hex tab has the bytes".to_string()
+                } else {
+                    holds.join(", ")
+                };
+                ui.add(egui::Label::new(&holds_text).wrap());
+                ui.end_row();
+                ui.label("Size");
+                ui.label(human_size(e.size_bytes)).on_hover_text(format!(
+                    "{} bytes, {} disc sectors of 2048 bytes",
+                    e.size_bytes, e.size_sectors
+                ));
+                ui.end_row();
+                ui.label("Entry").on_hover_text(
+                    "Its number in the game's archive (PROT.DAT), the file that \
+                     holds almost everything on the disc.",
+                );
+                ui.label(format!("{} of {}", e.index, lib.entries.len()))
+                    .on_hover_text(format!("PROT index {} (0x{:X})", e.index, e.index));
+                ui.end_row();
             });
+        ui.add_space(8.0);
+        // The technical half, behind a toggle the settings remember.
+        let details = self.explorer.settings.overview_details;
+        if ui
+            .button(if details {
+                "Hide technical details"
+            } else {
+                "Show technical details"
+            })
+            .on_hover_text(
+                "The archive index, CDNAME block, disc position and chunk table, as the \
+                 format pages and the command-line tools name them",
+            )
+            .clicked()
+        {
+            self.explorer.settings.overview_details = !details;
+            self.explorer.save_settings();
+        }
+        if self.explorer.settings.overview_details {
+            ui.add_space(4.0);
+            egui::Grid::new("overview").num_columns(2).striped(true).show(ui, |ui| {
+                ui.label("PROT index")
+                    .on_hover_text("The entry's index in PROT.DAT's table of contents");
+                value(ui, format!("{} (0x{:X})", e.index, e.index));
+                ui.end_row();
+                ui.label("Filename label")
+                    .on_hover_text("The name legaia-extract gives the entry's file");
+                value(ui, lib.label(e.index).unwrap_or("-").to_string());
+                ui.end_row();
+                ui.label("Retail CDNAME block")
+                    .on_hover_text("CDNAME #define numbers are raw-TOC indices, two above extraction indices (docs/formats/cdname.md)");
+                value(ui, block.unwrap_or("-").to_string());
+                ui.end_row();
+                ui.label("Category")
+                    .on_hover_text("legaia-disc-audit's class for the entry, behind the plain kind");
+                value(ui, a.class.name().to_string());
+                ui.end_row();
+                ui.label("Location")
+                    .on_hover_text("Its first sector (LBA) and byte offset in PROT.DAT");
+                value(ui, format!("PROT.DAT LBA {} (+0x{:X})", e.start_lba, e.byte_offset));
+                ui.end_row();
+                ui.label("Size");
+                value(
+                    ui,
+                    format!("{} ({} sectors, {} bytes)", human_size(e.size_bytes), e.size_sectors, e.size_bytes),
+                );
+                ui.end_row();
+                ui.label("Contents");
+                let contents: Vec<String> = [
+                    (a.tims.len(), "TIM"),
+                    (a.tmds.len(), "TMD"),
+                    (a.vabs.len(), "VAB"),
+                    (a.seqs.len(), "SEQ"),
+                    (a.mes.len(), "MES"),
+                    (a.tim_sections.len(), "LZS sections"),
+                ]
+                .into_iter()
+                .filter(|(n, _)| *n > 0)
+                .map(|(n, what)| format!("{n} {what}"))
+                .collect();
+                value(
+                    ui,
+                    if contents.is_empty() {
+                        "no recognised sub-assets".to_string()
+                    } else {
+                        contents.join(", ")
+                    },
+                );
+                ui.end_row();
+            });
+            if !a.chunks.is_empty() {
+                ui.add_space(8.0);
+                ui.label(RichText::new("DATA_FIELD chunks").strong()).on_hover_text(
+                    "The typed chunks a streamed entry is cut into (docs/formats/data-field.md)",
+                );
+                egui::Grid::new("chunks").striped(true).show(ui, |ui| {
+                    ui.label("#");
+                    ui.label("offset");
+                    ui.label("type");
+                    ui.label("size");
+                    ui.end_row();
+                    for (i, c) in a.chunks.iter().enumerate() {
+                        ui.monospace(i.to_string());
+                        ui.monospace(format!("0x{:X}", c.header_offset));
+                        ui.monospace(c.type_name);
+                        ui.monospace(c.size.to_string());
+                        ui.end_row();
+                    }
+                });
+            }
         }
         ui.add_space(8.0);
         let key = self.take_export_key();
         if ui
-            .button("Export raw entry (.BIN)...")
+            .button("Save the raw entry (.BIN)...")
             .on_hover_text(EXPORT_KEY_HINT)
             .clicked()
             || key
@@ -2900,11 +3164,8 @@ impl App {
                     if ui
                         .add_enabled(!running, egui::Button::new("Choose..."))
                         .clicked()
-                        && let Some(p) = rfd::FileDialog::new()
-                            .set_title("Choose the extraction output folder")
-                            .pick_folder()
                     {
-                        self.out_text = p.display().to_string();
+                        self.pick_out_folder();
                     }
                     let out = PathBuf::from(self.out_text.trim());
                     if !self.out_text.trim().is_empty()
@@ -3173,7 +3434,57 @@ impl App {
     }
 }
 
+impl App {
+    /// Read the controllers from `rx` ([`crate::gamepad::spawn`]).
+    pub fn with_gamepad(
+        mut self,
+        rx: Option<std::sync::mpsc::Receiver<crate::gamepad::PadInput>>,
+    ) -> Self {
+        self.pad = rx;
+        self
+    }
+}
+
 impl eframe::App for App {
+    /// A controller's presses join the frame's input as the keys a keyboard
+    /// user would press (`crate::gamepad`).
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        use crate::gamepad::PadInput;
+        let Some(rx) = &self.pad else { return };
+        // A key or a mouse button from the desktop hands the file dialogs
+        // back; the controller's own presses join below.
+        if raw_input.events.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key { pressed: true, .. }
+                    | egui::Event::PointerButton { pressed: true, .. }
+            )
+        }) {
+            self.pad_active = false;
+        }
+        let view = Mode::ALL.iter().position(|m| *m == self.mode).unwrap_or(0);
+        while let Ok(input) = rx.try_recv() {
+            match input {
+                PadInput::Key(k) => {
+                    self.pad_active = true;
+                    raw_input.events.extend(crate::gamepad::key_events(k, view));
+                }
+                PadInput::Scroll(dy) => raw_input.events.push(egui::Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0.0, -dy),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: egui::Modifiers::NONE,
+                }),
+                PadInput::Connected(name) => {
+                    self.explorer.status = Some(crate::gamepad::connected_line(&name));
+                }
+                PadInput::Disconnected(name) => {
+                    self.explorer.status = Some(format!("Controller disconnected: {name}"));
+                }
+            }
+        }
+    }
+
     /// Work that goes on whether or not the window is drawn (minimised,
     /// occluded): the background loads, the extraction and the started game
     /// are polled, and their ends announced, here.
@@ -3226,7 +3537,12 @@ impl eframe::App for App {
             }
         }
         self.run_automation(ui);
-        self.shortcuts(ui);
+        // The file browser takes the keys while it is open.
+        if self.file_browser.is_some() {
+            self.show_file_browser(ui.ctx());
+        } else {
+            self.shortcuts(ui);
+        }
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
             self.about_open = !self.about_open;
         }
@@ -3415,19 +3731,35 @@ impl App {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                egui::Grid::new("keys")
-                    .num_columns(2)
-                    .spacing([16.0, 3.0])
+                // The controller rows make the box taller than the smallest
+                // window: it scrolls there rather than run off the bottom.
+                let room = about_max_height(ctx.content_rect().height()) - ABOUT_CHROME_H;
+                egui::ScrollArea::vertical()
+                    .max_height(room)
                     .show(ui, |ui| {
-                        // Key names in the palette's key ink, as the
-                        // launcher's Controls panel and the play window's
-                        // F12 panel draw them.
-                        let ink = crate::theme::c(crate::theme::palette(ui).info);
-                        for (keys, what) in KEYS {
-                            ui.label(RichText::new(*keys).monospace().color(ink));
-                            ui.label(*what);
-                            ui.end_row();
-                        }
+                        egui::Grid::new("keys")
+                            .num_columns(2)
+                            .spacing([16.0, 3.0])
+                            .show(ui, |ui| {
+                                // Key names in the palette's key ink, as the
+                                // launcher's Controls panel and the play window's
+                                // F12 panel draw them.
+                                let ink = crate::theme::c(crate::theme::palette(ui).info);
+                                for (keys, what) in KEYS {
+                                    ui.label(RichText::new(*keys).monospace().color(ink));
+                                    ui.label(*what);
+                                    ui.end_row();
+                                }
+                                // A controller works the same views; its buttons
+                                // are named by position on a PlayStation pad.
+                                ui.label(RichText::new("Controller").strong());
+                                ui.end_row();
+                                for (keys, what) in crate::gamepad::PAD_ROWS {
+                                    ui.label(RichText::new(*keys).monospace().color(ink));
+                                    ui.label(*what);
+                                    ui.end_row();
+                                }
+                            });
                     });
             });
         self.keys_open = open;
@@ -3537,20 +3869,22 @@ impl App {
                             .size(15.0),
                         );
                         ui.add_space(gap - 2.0);
+                        // The button a controller's first press lands on.
+                        let mut first_focus: Option<egui::Response> = None;
                         ui.horizontal(|ui| {
                             let big = egui::vec2(230.0, 38.0);
-                            if ui
+                            let open = ui
                                 .add(
                                     crate::theme::primary_button("Open disc image...")
                                         .min_size(big),
                                 )
                                 .on_hover_text(
                                     "Your .bin (a raw dump, 2352-byte sectors) or its .cue. Ctrl+O",
-                                )
-                                .clicked()
-                            {
+                                );
+                            if open.clicked() {
                                 self.pick_disc();
                             }
+                            first_focus = Some(open);
                             if ui
                                 .add(egui::Button::new("Open extracted folder...").min_size(big))
                                 .on_hover_text("A folder legaia-extract (or Extract) wrote")
@@ -3559,19 +3893,67 @@ impl App {
                                 self.pick_folder();
                             }
                         });
-                        ui.label(
-                            RichText::new(
-                                "or drop the file (or folder) on this window, or type its \
-                                 path in the bar above",
-                            )
-                            .weak(),
-                        );
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(
+                                RichText::new(
+                                    "or drop the file (or folder) on this window, type its \
+                                     path in the bar above, or",
+                                )
+                                .weak(),
+                            );
+                            if ui
+                                .link("find it in this window")
+                                .on_hover_text(
+                                    "A folder list a controller can work, for when the \
+                                     desktop's file dialog is no use",
+                                )
+                                .clicked()
+                            {
+                                self.open_file_browser(crate::file_browser::Purpose::Disc);
+                            }
+                        });
                         if let Some(p) = self.explorer.loading() {
                             ui.add_space(10.0);
                             ui.horizontal(|ui| {
                                 ui.spinner();
                                 ui.label(format!("Opening {} ...", p.display()));
                             });
+                        }
+                        if let Some(disc) = self.game_disc.clone() {
+                            ui.add_space(gap - 4.0);
+                            let name = disc.file_name().map_or_else(
+                                || disc.display().to_string(),
+                                |n| n.to_string_lossy().into_owned(),
+                            );
+                            let (lead, why) = if self.game_disc_found {
+                                ("Found on this computer:", "a disc image named for the game")
+                            } else {
+                                (
+                                    "The disc the game uses:",
+                                    "the disc image you chose in the game",
+                                )
+                            };
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(lead);
+                                let offer = ui
+                                    .add(egui::Button::new(RichText::new(&name).strong()))
+                                    .on_hover_text(format!("Open {} - {why}", disc.display()));
+                                if offer.clicked() {
+                                    self.game_disc = None;
+                                    self.open_path(&disc);
+                                }
+                                first_focus = Some(offer);
+                            });
+                        }
+                        // With a controller and nothing focused, the D-pad
+                        // has nowhere to start from: put the focus on the
+                        // disc on offer, else on Open disc image.
+                        if self.pad_active
+                            && self.file_browser.is_none()
+                            && ui.memory(|m| m.focused().is_none())
+                            && let Some(r) = &first_focus
+                        {
+                            r.request_focus();
                         }
                         if !self.explorer.settings.recent.is_empty() {
                             ui.add_space(gap);

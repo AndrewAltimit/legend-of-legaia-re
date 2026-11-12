@@ -552,3 +552,55 @@ fn equipment_names_per_build() {
         "some PAL item name carries an accented letter"
     );
 }
+
+/// The Overview tab's plain words: every kind has a sentence, and the
+/// contents line counts in words, singular where one.
+#[test]
+fn overview_speaks_plainly() {
+    use legaia_explorer::{ContentCounts, contents_plain, kind_blurb, kind_of_class};
+    for class in [
+        "scene_asset_table",
+        "tim_pack",
+        "mips_overlay",
+        "no_such_class",
+    ] {
+        let blurb = kind_blurb(kind_of_class(class));
+        assert!(blurb.ends_with('.'), "{class}: {blurb}");
+        assert!(
+            !blurb.contains("TIM") && !blurb.contains("TMD"),
+            "{class}: {blurb}"
+        );
+    }
+    let counts = ContentCounts {
+        tims: 18,
+        tmds: 1,
+        dialog: 232,
+        ..Default::default()
+    };
+    assert_eq!(
+        contents_plain(&counts),
+        ["18 textures", "1 3D model", "232 lines of dialog"]
+    );
+    assert!(contents_plain(&ContentCounts::default()).is_empty());
+}
+
+/// A first run offers the USA dump (the disc Play boots) ahead of another
+/// region's named earlier in the folder.
+#[test]
+fn first_run_offer_prefers_the_usa_dump() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    for f in [
+        "Legend of Legaia (France).cue",
+        "Legend of Legaia (USA).cue",
+        "Legend of Legaia (USA).bin",
+    ] {
+        std::fs::write(root.join(f), b"x").unwrap();
+    }
+    let found = legaia_app_theme::folder_list::find_dumps(&[root.to_path_buf()], 8);
+    assert_eq!(
+        legaia_explorer::launch::pick_offer(found),
+        Some(root.join("Legend of Legaia (USA).cue"))
+    );
+    assert_eq!(legaia_explorer::launch::pick_offer(Vec::new()), None);
+}

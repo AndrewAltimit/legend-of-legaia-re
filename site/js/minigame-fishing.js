@@ -663,7 +663,35 @@ window.MgFishing = (function () {
      * fill, so each triangle takes its corners' mean packet colour;
      * semi-transparent packets add (the ring's texel is a system-page patch
      * this page does not stage - the fill colour is the modulation word). */
+    let partsCanvas = null;
     function drawRipples() {
+      /* The parts textured out of the pond's VRAM, added over the frame: the
+       * pond is on the WebGL canvas below, so it is first copied under this
+       * canvas's pixels. */
+      if (api.fishing_ripples_rgba) {
+        const PW = 320, PH = 240;
+        let px = null;
+        try { px = api.fishing_ripples_rgba(PW, PH); } catch (_) { px = null; }
+        if (px && px.length === PW * PH * 4) {
+          if (!partsCanvas) {
+            partsCanvas = document.createElement('canvas');
+            partsCanvas.width = PW;
+            partsCanvas.height = PH;
+          }
+          partsCanvas.getContext('2d').putImageData(
+            new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.length), PW, PH), 0, 0);
+          g.save();
+          if (scene && glCanvas) {
+            g.globalCompositeOperation = 'destination-over';
+            g.drawImage(glCanvas, 0, 0, canvas.width, canvas.height);
+          }
+          g.globalCompositeOperation = 'lighter';
+          g.imageSmoothingEnabled = false;
+          g.drawImage(partsCanvas, 0, 0, canvas.width, canvas.height);
+          g.restore();
+        }
+        return;
+      }
       if (!api.fishing_ripples_json) return;
       let tris = [];
       try { tris = JSON.parse(api.fishing_ripples_json()) || []; }
@@ -683,6 +711,32 @@ window.MgFishing = (function () {
         g.lineTo(t.p[4] * SCALE, t.p[5] * SCALE);
         g.closePath();
         g.fill();
+      }
+      g.restore();
+    }
+
+    /* The catch white-out (FUN_801D4948's two FUN_801D7964 fades): each
+     * live quad adds its colour over the pond and the HUD sprites, under the
+     * text, as the play hosts' GPU pass blends it. The pond is on the WebGL
+     * canvas below, so it is first copied under this canvas's own pixels;
+     * a frame with no flash leaves both canvases as they are. */
+    function drawCatchFlash() {
+      if (!api.fishing_catch_flash_json) return;
+      let quads = [];
+      try { quads = JSON.parse(api.fishing_catch_flash_json()) || []; }
+      catch (_) { quads = []; }
+      if (!quads.length) return;
+      const W = canvas.width, H = canvas.height;
+      g.save();
+      if (scene && glCanvas) {
+        g.globalCompositeOperation = 'destination-over';
+        g.drawImage(glCanvas, 0, 0, W, H);
+      }
+      for (const q of quads) {
+        /* ABR 1 is B + F; the white-out uses no other rate. */
+        g.globalCompositeOperation = q[3] === 1 ? 'lighter' : 'source-over';
+        g.fillStyle = 'rgb(' + q[0] + ',' + q[1] + ',' + q[2] + ')';
+        g.fillRect(0, 0, W, H);
       }
       g.restore();
     }
@@ -717,6 +771,7 @@ window.MgFishing = (function () {
       drawWaterOverlay(st);
       const sprites = !!hud && hudSpritesReady();
       if (sprites) drawHudSprites();
+      drawCatchFlash();
       if (hud) for (const it of hud) drawHudItem(it, sprites);
       drawFxParts(fx);
       drawHub();

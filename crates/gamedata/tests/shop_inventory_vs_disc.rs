@@ -17,6 +17,14 @@
 //! curated shops-table counterpart. The exception is asserted explicitly so it
 //! can't go vacuous.
 //!
+//! The scan covers both homes a stock record has: the LZS-packed MAN of a
+//! scene bundle and the raw field-script carrier entries (Drake Castle's
+//! shops in `dolk2`, Ashif at Usha). Every curated shop must match a disc
+//! record (except [`NOT_ON_DISC`]), and in **on-screen order**: the buy list
+//! builder `FUN_80030628` (case `0x0B`) hoists the record's last three slots -
+//! the Platinum Card stock - to the top, which is the walkthrough's order, and
+//! those hoisted rows are exactly the curated `featured` list.
+//!
 //! This oracle pinned a curated item-name error - the Gala helmet the disc
 //! names "Power Earring" (singular) was curated as "Power Earrings", breaking
 //! the Wind Cave and Biron-after-mist set joins until corrected to the disc
@@ -31,6 +39,14 @@ use std::path::PathBuf;
 use legaia_game_tables::item_names::{self, ItemNameTable};
 use legaia_gamedata::Database;
 use legaia_scene_formats::shop_stock;
+
+/// A curated shop no op-`0x49` stock record carries: Karisto Station's
+/// unmanned "Honest Person's Store".
+const NOT_ON_DISC: &[&str] = &["Honest Person's Store"];
+
+/// The tail slots the buy list hoists (`shop_buy_row_order` in
+/// `engine-menus::menu_list_rows`).
+const SHOP_TAIL_ROWS: usize = 3;
 
 fn workspace() -> Option<PathBuf> {
     Some(
@@ -48,6 +64,30 @@ fn norm(s: &str) -> String {
         .collect()
 }
 
+/// One disc stock record: where it is, its declared count, and its sellable
+/// item names in record order.
+struct DiscShop {
+    label: String,
+    count: usize,
+    items: Vec<String>,
+}
+
+impl DiscShop {
+    fn set(&self) -> BTreeSet<String> {
+        self.items.iter().cloned().collect()
+    }
+
+    /// The buy list's on-screen order: the rows at or past
+    /// `count - SHOP_TAIL_ROWS` first, then the rest (`FUN_80030628`).
+    fn screen_order(&self) -> (Vec<String>, Vec<String>) {
+        let split = self.count.saturating_sub(SHOP_TAIL_ROWS);
+        let tail: Vec<String> = self.items.iter().skip(split).cloned().collect();
+        let mut order = tail.clone();
+        order.extend(self.items.iter().take(split).cloned());
+        (order, tail)
+    }
+}
+
 #[test]
 fn curated_shop_inventories_match_the_disc() {
     let Some(ws) = workspace() else { return };
@@ -60,8 +100,8 @@ fn curated_shop_inventories_match_the_disc() {
         eprintln!("[skip] extracted/PROT missing");
         return;
     };
-
     let names = ItemNameTable::from_scus(&scus).expect("parse item-name table");
+
     // "id names a sellable item" mask: a > 0 SCUS shop price. Used both to
     // validate shop records and to trim the unsellable template-id padding.
     let mut valid = [false; 256];
@@ -71,80 +111,122 @@ fn curated_shop_inventories_match_the_disc() {
         }
     }
 
-    // Scan every PROT entry; dedup disc shops by (name, item-name set) - the
-    // same scene MAN is reachable from duplicate PROT entries and a shop op can
-    // appear more than once in one MAN.
     let mut paths: Vec<PathBuf> = entries
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().map(|x| x == "BIN").unwrap_or(false))
         .collect();
     paths.sort();
 
-    let mut disc: Vec<(String, BTreeSet<String>)> = Vec::new();
+    // Disc shops, deduplicated by (count, ordered stock): the same scene is
+    // reachable from duplicate PROT entries and a shop op can repeat in one
+    // script.
+    let mut disc: Vec<DiscShop> = Vec::new();
     for p in &paths {
         let Ok(bytes) = std::fs::read(p) else {
             continue;
         };
-        let Some(loc) = shop_stock::locate(&bytes, Some(&valid)) else {
-            continue;
+        // A scene bundle's packed MAN, else the entry itself as a raw script.
+        let (buf, records) = match shop_stock::locate(&bytes, Some(&valid)) {
+            Some(loc) => (loc.decoded, loc.records),
+            None => {
+                let records = shop_stock::scan(&bytes, Some(&valid));
+                (bytes, records)
+            }
         };
         let prot = p.file_name().unwrap().to_string_lossy().to_string();
-        for r in &loc.records {
-            let set: BTreeSet<String> = r
+        for r in &records {
+            let items: Vec<String> = r
                 .id_offsets
                 .iter()
-                .map(|&o| norm(names.name(loc.decoded[o]).unwrap_or("")))
+                .map(|&o| norm(names.name(buf[o]).unwrap_or("")))
                 .collect();
-            let label = format!("{prot} {}", r.name);
-            if !disc.iter().any(|(_, s)| *s == set) {
-                disc.push((label, set));
+            let count = usize::from(buf[r.count_off]);
+            if !disc.iter().any(|d| d.count == count && d.items == items) {
+                disc.push(DiscShop {
+                    label: format!("{prot} {}", r.name),
+                    count,
+                    items,
+                });
             }
         }
     }
 
     let db = Database::load();
+    let key_name = |k: &String| norm(db.resolve_key(k).expect("shop key resolves").name);
+
+    // Forward: every curated shop is a disc record, in on-screen order, with
+    // its `featured` rows the hoisted tail.
+    let mut fail: Vec<String> = Vec::new();
+    let mut matched = 0usize;
+    for s in db.shops() {
+        let label = format!(
+            "{} {}",
+            s.town,
+            s.name.as_deref().or(s.merchant.as_deref()).unwrap_or("")
+        );
+        let inventory: Vec<String> = s.inventory.iter().map(key_name).collect();
+        let featured: Vec<String> = s.featured.iter().map(key_name).collect();
+        let set: BTreeSet<String> = inventory.iter().cloned().collect();
+        if s.name.as_deref().is_some_and(|n| NOT_ON_DISC.contains(&n)) {
+            assert!(
+                !disc.iter().any(|d| d.set() == set),
+                "{label} now has a disc record; drop it from NOT_ON_DISC"
+            );
+            continue;
+        }
+        let candidates: Vec<&DiscShop> = disc.iter().filter(|d| d.set() == set).collect();
+        if candidates.is_empty() {
+            fail.push(format!("{label}: no disc stock record with {set:?}"));
+            continue;
+        }
+        if !candidates
+            .iter()
+            .any(|d| d.screen_order() == (inventory.clone(), featured.clone()))
+        {
+            let d = candidates[0];
+            fail.push(format!(
+                "{label}: curated order {inventory:?} featured {featured:?}, disc ({}) screen order {:?}",
+                d.label,
+                d.screen_order()
+            ));
+            continue;
+        }
+        matched += 1;
+    }
+
+    // Reverse: every disc shop is curated, except the one-item novelty and
+    // stub records (Soru's Bakery sells only Soru Bread; a lone-item record
+    // is not a town shop).
     let curated: Vec<BTreeSet<String>> = db
         .shops()
         .iter()
-        .map(|s| {
-            db.resolve_inventory(&s.inventory)
-                .iter()
-                .map(|e| norm(e.name))
-                .collect()
-        })
+        .map(|s| s.inventory.iter().map(key_name).collect())
         .collect();
-
-    // The one disc-only novelty shop (sells only "Soru Bread").
     let soru: BTreeSet<String> = std::iter::once(norm("Soru Bread")).collect();
-
-    let mut matched = 0usize;
     let mut soru_seen = false;
-    let mut unmatched: Vec<String> = Vec::new();
-    for (label, set) in &disc {
-        if curated.iter().any(|cs| cs == set) {
-            matched += 1;
-        } else if *set == soru {
+    for d in &disc {
+        let set = d.set();
+        if set == soru {
             soru_seen = true;
-        } else {
-            unmatched.push(format!("{label}: {set:?}"));
+        } else if set.len() > 1 && !curated.contains(&set) {
+            fail.push(format!(
+                "disc shop {} has no curated shop: {set:?}",
+                d.label
+            ));
         }
     }
 
     assert!(
-        disc.len() >= 20,
-        "expected 20+ unique disc shops located, got {}",
-        disc.len()
-    );
-    assert!(
-        unmatched.is_empty(),
-        "disc shop stock with no matching curated inventory (disc is authoritative): {unmatched:#?}"
+        fail.is_empty(),
+        "curated shops disagree with the disc stock records (disc is authoritative): {fail:#?}"
     );
     assert!(
         soru_seen,
         "Soru's Bakery did not appear; the disc-only exception went vacuous"
     );
-    assert!(
-        matched >= 20,
-        "expected 20+ disc↔curated set matches, got {matched}"
+    assert_eq!(
+        matched,
+        db.shops().len() - NOT_ON_DISC.len(),
+        "every curated shop matched"
     );
 }

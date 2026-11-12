@@ -14,7 +14,7 @@ and surfaces them through a stable API.
 | `magic_leveling` | Per-spell level-up XP thresholds + per-level damage scaling (a Rust module, not a TOML table; Meth962's guide). |
 | `items` | Consumables, key items, art books, fishing rods/lures with prices and effect text. |
 | `weapons` | Weapons with attack stat, primary user, alternate users. |
-| `armor` | Armor / helmets / shoes with UDF / LDF and equip restrictions. |
+| `armor` | Armor / helmets / shoes with the equipment record's stat bonuses and wearer. |
 | `accessories` | Accessories with structured `effect_class` taxonomy where pinned. |
 | `enemies` | Enemies with location, item drop, and steal item + `steal_chance` (the steal %, byte-exact from the `SCUS_942.54` steal table `DAT_80077828`). |
 | `bosses` | Boss HP estimates from walkthrough commentary (sanity-check data, not retail). |
@@ -34,10 +34,11 @@ Psycho Penguin 2001) and cross-validated; the `music` and `scenes` tables are se
 contributions by Stann0x. See
 [`data/gamedata/README.md`](../../data/gamedata/README.md) for full
 provenance. The curated tables are checked against the user's disc by a set
-of disc-gated oracles (item prices, equipment slots, enemy stats, magic,
-shop inventories, casino prizes) - each joins a curated table to its
-authoritative on-disc source and asserts the numeric fields byte-exact; the
-enumerated invariants are in
+of disc-gated oracles (arts, magic, item prices, equipment, accessory
+passives, enemies, bosses, the Muscle Dome, shop inventories, casino prizes,
+characters, music) - each joins a curated table to its authoritative on-disc
+source and asserts every field that has one exactly; the enumerated
+invariants are in
 [`docs/reference/gamedata.md`](../../docs/reference/gamedata.md).
 
 ## Library API
@@ -48,7 +49,7 @@ use legaia_gamedata::{Database, Character, ArtKind};
 let db = Database::load();
 
 // Look up an art by exact command sequence
-let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 4]).unwrap();
+let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 1]).unwrap();
 assert_eq!(art.name, "Hyper Elbow");
 assert_eq!(art.ap, 18);
 assert_eq!(art.kind, ArtKind::Regular);

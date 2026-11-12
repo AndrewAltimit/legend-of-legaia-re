@@ -422,9 +422,14 @@ impl Camera {
     /// shot and go cinematic" froze the camera on the terrain-less fallback
     /// pose (`H = 512`, the zone-miss depth) in every such scene.
     ///
-    /// A zero trigger arms the follow camera's snap, which composes, clamps
-    /// and copies on this frame's [`Camera::tick`]; a non-zero trigger
-    /// composes now and arms the mover toward that pose.
+    /// A zero trigger composes, clamps and copies now, as the arm does
+    /// inside the op: the follow camera's own snap waits for its tick, which
+    /// does not run while a record holds the shot, and `bylon` `P2[6]`'s
+    /// `45 C0 00 00` before "Noa: Vahn!" then kept the stair shot for the
+    /// whole box where a retail recording has cut to the follow pose
+    /// (pitch `215`, `H` `768`) twenty frames before it opens. The snap stays
+    /// armed for the follow tick as well. A non-zero trigger composes now
+    /// and arms the mover toward that pose.
     ///
     /// PORT: FUN_801DE084
     /// REF: FUN_801DAB90, FUN_801DAA50
@@ -436,8 +441,17 @@ impl Camera {
     ) {
         self.mode = CameraMode::Follow;
         self.script_owns_focus = false;
-        if apply_trigger == 0 || !zone_camera_scene(world) {
+        if !zone_camera_scene(world) {
             self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        }
+        if apply_trigger == 0 {
+            self.mover = None;
+            self.prime_zone_before_script(world);
+            if let Some((target, _)) = self.compose_follow_globals(world) {
+                self.globals.0 = target;
+            }
             self.zone.snap_pending = true;
             return;
         }
@@ -526,6 +540,81 @@ impl Camera {
         }
         if self.zone.snap_pending && self.mode == CameraMode::Follow && zone_camera_scene(world) {
             self.zone_follow_tick(world, 1);
+        }
+        // The block a compose reads is the one the MAN load queried, whatever
+        // the player is doing: an engaged player is not snapped above, so the
+        // follow tick has not run and the scene's block is still unloaded.
+        if self.zone.reload_pending && zone_camera_scene(world) {
+            self.load_scene_zone_block(world);
+        }
+    }
+
+    /// The MAN load's camera-zone query (`FUN_801DE3E0` at `0x8003B800`):
+    /// the block of the record covering the player's tile, loaded at scene
+    /// entry before any script runs. The port defers it to the first follow
+    /// tick ([`ZoneFollow::arm_scene_arrival`] raises `reload_pending`), and
+    /// a scene whose entry hands the shot to a script never reaches that tick
+    /// until the script lets go. Without the block a hand-back
+    /// ([`Self::apply_follow_shot`]) composed the reset pose - `H` and eye
+    /// depth `0` - and its glide shrank the scene to a point.
+    ///
+    /// REF: FUN_801DE3E0, FUN_801DBA20, FUN_801DBC20
+    pub(super) fn load_scene_zone_block<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        use crate::field_regions::{RegionTable, zone_query};
+        let Some((x, _, z)) = world.player_world_pos() else {
+            return;
+        };
+        let (tx, tz) = ((x - 0x40) >> 7, (z - 0x40) >> 7);
+        let table = RegionTable::parse(world.map_region_block());
+        let zone = &mut self.zone;
+        zone.attrs = world.region_attributes();
+        let hit = zone_query(world.zone_table(), table.as_ref(), &zone.attrs, tx, tz)
+            .and_then(|r| r.record)
+            .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
+        match hit {
+            Some(rec) => zone.load_record(&rec),
+            None => {
+                zone.config.load_zone_miss();
+                zone.loaded_record = None;
+                zone.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+            }
+        }
+        zone.reload_pending = false;
+    }
+
+    /// The arrival actor while a script holds the shot. `FUN_801DBE9C` is an
+    /// actor of its own and ticks every game pass whoever owns the camera:
+    /// with the player engaged it only counts `+0x54` down and retires at
+    /// `-1` without a snap (`0x801DC078..0x801DC0A4`). The port runs the
+    /// countdown inside [`Self::zone_follow_tick`], which a scripted shot
+    /// skips, so a scene that opened on a cutscene kept the arrival pending
+    /// for as long as the cutscene ran and the follow view read its
+    /// terrain-less fallback through the hand-back glide.
+    ///
+    /// REF: FUN_801DBE9C
+    pub(super) fn tick_arrival_under_script<W: CameraWorld + ?Sized>(
+        &mut self,
+        world: &W,
+        dt: i32,
+    ) {
+        if self.zone.arrival.is_none() || !world.field_player_movement_locked() {
+            return;
+        }
+        let zone = &mut self.zone;
+        zone.ease_credit += dt.clamp(1, 8);
+        let step = i32::from(world.camera_frame_step().max(1));
+        let passes = zone.ease_credit / step;
+        zone.ease_credit %= step;
+        if let Some(cd) = zone.arrival.as_mut() {
+            for _ in 0..passes {
+                *cd = cd.wrapping_sub(1);
+                if *cd == -1 {
+                    break;
+                }
+            }
+            if *cd == -1 {
+                zone.arrival = None;
+            }
         }
     }
 

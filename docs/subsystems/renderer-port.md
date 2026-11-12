@@ -206,6 +206,17 @@ canvas once: "the screen" is that framebuffer until the frame ends, reads inside
 the frame included. On the canvas itself the fill rule below would not hold, since
 a polygon edge resolves to a blend of partly covered samples. The native renderer
 is single-sample throughout, and the page's enhanced mode keeps its MSAA.
+That framebuffer runs bottom-up, so where a snapped edge lies exactly on a row
+of pixel centres its rasteriser hands the tie to the other row from the window's
+top-left rule: every flat 3D edge drew a row low. The page's vertex stage lifts
+the primitive a sixteenth of a row (`PSX_NATIVE_TIE_ROWS` in
+[`webgl-shaders.js`](../../site/js/webgl-shaders.js)), the smallest step its
+sub-pixel grid keeps, and reads the UV and the Gouraud colour that much lower
+again, so the texel and the shade are the pixel's. The lift also moves the tie of a sloped
+edge that crosses a pixel centre exactly, and of a centre within a sixteenth of a
+row of an edge, which the window's column rule decides: those are the hairline
+pixels the pair still reads. A finer lift is under the page's sub-pixel grid on a
+real GPU and moves nothing; drawing the pass top-down is what would settle both.
 
 At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
 at a window-sized target could. The snapped vertices move half a stage pixel
@@ -437,6 +448,27 @@ than its body; the hosts' eye push stands in), and the screen primitives' links,
 which composite over the 3D frame rather than among it. Clean rendering keeps
 per-pixel depth: a mean pops as the camera turns, which the retail frame shows
 and the clean frame need not.
+
+#### The far bucket under the cast wash
+
+The table holds `4096` words and `SZ` saturates at `0xFFFF`, so a quad whose four
+corners stand past that depth links in the last word: `AVSZ4` under `ZSF4 = 0x400 >> 2`
+is the sum over `16`, `0x3FFF`, and `& 0xFFFC` gives `ot + 0x3FFC`. No triangle reaches
+it (`ZSF3 = 0x555 >> 2`). The GPU walks that bucket first, last-linked first. While a
+cast module holds its band wash, the dispatchers' tail links the wash's opaque `G4`s
+there before the actor walk draws the scene (`FUN_801F2410`,
+[`cast_colour_wash`](../../crates/render-kernels/src/cast_colour_wash.rs)), so every scene
+quad linked there later is painted first and covered: nothing of it shows. The hosts
+draw the wash as a far-plane screen layer, under everything, so the same quad would
+draw over it at its own depth. The shared effect-draw list drops such quads from a
+draw-kind-4 node's mesh while the band wash covers the far bucket
+(`effect_draws::drop_far_bucket_quads`, `World::cast_wash_covers_far_bucket`), in clean
+and PSX mode alike, since retail shows none of it either way. Kemaro's arm-17 discs
+are the case ([cast module](cast-module.md#summon-creature-directors)): a retail
+table of arm `0x12` rasterised with and without their `32` packets is the same picture.
+
+Not modelled: a mesh part's quads in that bucket (no shipped part is known to reach
+it), and the scanline modes' links, which no capture has read.
 
 ## Enhanced lighting (enhancement, NOT retail)
 
@@ -846,11 +878,21 @@ rather than building on the last one, which fills the buffer eight times too
 fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
+The ring is kept from the moment a cast module is resident, not from the first
+persisting frame (`Renderer::set_frame_ring_keep`, `World::cast_module_resident`).
+An arm that arms the wash does so from its own body, a pass after the arm before it
+set the phase, so the run's first persisting frame reads a page two passes back that
+predates the run. Seeded from the last frame instead, it read the run's own first
+frame: Thunder Storm's arm 4 stood its second pass on its first pass's white, where
+retail's other page still held the dark frame before the arm (luma `231` against
+`144` on the left edge). Kept, the two pages part as retail's do and arm 4 reads
+`.862` against `.839` on `noaru_gilium_lv2_thunder_storm`.
+
 The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
 ([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
 `renderAssembled` asks it for the picture at the scene's clear (after the frame's
 ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
-the last frame while one may be asked for. Bloom stands the frames down on both
+the ring filling while one may be asked for. Bloom stands the frames down on both
 hosts, since it reads the frame it adds to. The page's text layer is a canvas of
 its own, so a name plaque's letters do not enter the ring as the window's do. The
 window's own target and the browser's clean-rasterisation canvas still clear:

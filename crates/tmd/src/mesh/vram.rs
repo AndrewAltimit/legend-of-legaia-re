@@ -155,6 +155,26 @@ pub fn tmd_to_vram_mesh_with_object_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec
 /// emitted triangle's source prim. Per-prim selections (the equipment item
 /// isolation) key on `(object id, prim ordinal)`.
 pub fn tmd_to_vram_mesh_with_prim_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>, Vec<u32>) {
+    let (mesh, object_ids, prim_ids, _) = vram_mesh_walk(tmd, buf);
+    (mesh, object_ids, prim_ids)
+}
+
+/// Same as [`tmd_to_vram_mesh`] plus each vertex's **group flags** - the
+/// `flags` halfword of the primitive group its prim came from, parallel to
+/// `mesh.positions`. The prim dispatcher `FUN_80043390` takes a prim's kind
+/// as `flags >> 1` (`srl s5,s7,0x11` at `0x800435A4`), so a caller that
+/// draws some kinds through another leaf (handler bank 3's quad split) keys
+/// on it.
+pub fn tmd_to_vram_mesh_with_group_flags(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u16>) {
+    let (mesh, _, _, flags) = vram_mesh_walk(tmd, buf);
+    (mesh, flags)
+}
+
+/// The walk behind [`tmd_to_vram_mesh_with_prim_ids`] and
+/// [`tmd_to_vram_mesh_with_group_flags`]: the mesh and its per-vertex object
+/// ids, prim ordinals and group flags.
+fn vram_mesh_walk(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u32>, Vec<u32>, Vec<u16>) {
+    let mut group_flags = Vec::new();
     let mut positions = Vec::new();
     let mut uvs = Vec::new();
     let mut cba_tsb = Vec::new();
@@ -194,6 +214,7 @@ pub fn tmd_to_vram_mesh_with_prim_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u
                     colors.push(prim_color(prim, uv_idx));
                     object_ids.push(o_idx as u32);
                     prim_ids.push(this);
+                    group_flags.push(g.header.flags);
                     i
                 };
                 match raw_idx.len() {
@@ -228,6 +249,7 @@ pub fn tmd_to_vram_mesh_with_prim_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u
         },
         object_ids,
         prim_ids,
+        group_flags,
     )
 }
 

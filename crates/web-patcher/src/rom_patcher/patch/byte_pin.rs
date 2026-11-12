@@ -188,8 +188,8 @@ fn cases() -> Vec<(&'static str, PatchOptions<'static>)> {
 const PINS: &[(&str, &str, &str)] = &[
     (
         "everything",
-        "758139f3d2d3f592d36adff48da8e9f14a41af3245897e23024b4d52f01fe7ad",
-        "65dcf645978d41c99b253005141fdf5b87a8fcc18e1d1a5994287fa5431886d2",
+        "ec15f8c60d3b3e170ce610f3fb4fac7c84fbbffc76e110216b127f5fe39e47ba",
+        "f776466b48092b8d827358e99aa24a9fc20049730555998255e69e8eb4bd0159",
     ),
     (
         "challenge",

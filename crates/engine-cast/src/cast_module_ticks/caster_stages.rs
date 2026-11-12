@@ -295,13 +295,17 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: Some(&[0]),
     },
-    // PROT 0963 Genocidal Cannon `0xB3`: `8` at `0x801F6EC8`.
+    // PROT 0963 Genocidal Cannon `0xB3`: `li v1,0x8; sb v1,0x1da(s3)` at
+    // `0x801F6EB8` / `0x801F6EC8` with the `+0x1DC` bump, in arm 2 (table
+    // word 2 at `0x801F69E0` -> `0x801F6D00`) behind its countdown gate
+    // (`bgtz v0,0x801F8178` at `0x801F6DB4`), after the arm's ten
+    // `FUN_80050ED4` seats.
     CasterStageRow {
         prot_entry: 963,
         action_ids: &[0xB3],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: false,
-        arms: None,
+        arms: Some(&[2]),
     },
     // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`, in arm 0
     // (`0x801F6B0C`, no gate) with the `+0x1DC` bump (`0x801F6B28..0x801F6B38`):

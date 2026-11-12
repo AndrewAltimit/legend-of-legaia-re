@@ -69,8 +69,12 @@ impl World {
         // retail state's live scroller rects, written after the engine's own
         // rotations as the field VRAM pass writes them.
         let seeded = self.apply_vram_rect_seed(vram);
+        // The fresh fight's intro timer (`0x0A` / `0x0B`, the plates and the
+        // banner) runs ahead of the seeded cast, where the state stood past it:
+        // a release on `0x0B` let the rects roll through the whole intro
+        // (Cort's shield page stood `72` rows on at the cast's `0x28`).
         if self.ambient.vram_rect_seed_until_action
-            && !matches!(self.battle_ctx.action_state, 0x00 | 0x0A)
+            && !matches!(self.battle_ctx.action_state, 0x00 | 0x0A | 0x0B)
         {
             self.ambient.vram_rect_seed.clear();
             self.ambient.vram_rect_seed_until_action = false;

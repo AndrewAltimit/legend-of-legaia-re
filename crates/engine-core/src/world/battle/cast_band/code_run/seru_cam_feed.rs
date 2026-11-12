@@ -72,5 +72,10 @@ impl World {
             let s = &self.casting.module_swordie;
             st.module_words = [s.hits as i32, s.progress[3] as i32];
         }
+        // PROT 0913's module countdown `0x801F9124` as the body last left it:
+        // arm `0x10`'s yaw add reads the word its pass climbs to.
+        if entry == 913 {
+            st.module_words = [self.casting.module_settle_countdown, 0];
+        }
     }
 }

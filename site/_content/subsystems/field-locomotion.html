@@ -162,6 +162,7 @@
   </table>
   <p>The <code>.MAP</code> is the first <code>0x12000</code> bytes, streamed by CD-DMA at scene load; a write-watchpoint on the live grid catches only the DMA writer. Scripts then paint story-conditional rectangles on top with <code>4C 7s</code> - Rim Elm's south gate stays painted shut until the story opens it.</p>
   <p>Pressing the action button runs a separate probe: a radius-64 compass point in the facing sector against a &plusmn;72 NPC box. A hit engages the NPC's script and turns the player toward it. Props divide into two classes on one authored bit: doors open on body contact, cupboards (which run <code>31 1E</code> in their spawn prologue) only on the button.</p>
+  <p>The spawn prologue is a real run of the script, so its class bits land in order: a door may raise the pass-through bit and drop it again on the arm its story flags pick. Biron Monastery&rsquo;s airtight-chamber door does exactly that until its lever is pulled, and the wing beyond the hall is an airlock: the hall door shuts the wing&rsquo;s south door as the party walks in, and the wing&rsquo;s switch opens it and shuts the hall door behind.</p>
 </section>
 
 <section class="doc-section" id="vertical-settle" data-doc="vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878">

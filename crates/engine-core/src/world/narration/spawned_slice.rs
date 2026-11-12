@@ -397,6 +397,7 @@ impl World {
                                 host.world.cutscene.narration_seed = seed;
                             }
                             host.world.open_cutscene_narration(pages);
+                            tl.narration_target = Some(site.target);
                             // Non-blocking: the roller scrolls on its own
                             // (`World::tick`); continue into the camera cuts.
                             tl.pc = site_end;
@@ -478,8 +479,11 @@ impl World {
                 // last page retires (per-vsync capture), while `opdeene`'s
                 // carries none and changes scene under its roller.
                 // REF: FUN_801DE840 (0x801E1ECC..0x801E1F58), FUN_80037174
+                // The crawl's target is whichever context its op ran on: `vozz`
+                // P2[17] opens Ozma's crawl on actor `0x06` and waits on
+                // `B3 06 0A` until it retires.
                 if opcode_byte == 0xB3
-                    && tl.bytecode.get(pc + 1) == Some(&0xF8)
+                    && tl.bytecode.get(pc + 1).copied() == Some(tl.narration_target.unwrap_or(0xF8))
                     && tl.bytecode.get(pc + 2) == Some(&0x0A)
                     && host.world.cutscene_narration_active()
                 {

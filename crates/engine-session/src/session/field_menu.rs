@@ -191,6 +191,22 @@ impl<S: AudioSink> BootSession<S> {
         self.field_menu.is_some()
     }
 
+    /// The mode the 3D frame draws under: the suspended scene's while the
+    /// pause menu holds [`SceneMode::Menu`], else the world's. Retail's field
+    /// keeps drawing through its own renderer under the pause wipe (back faces
+    /// culled, primitives at their links) until the menu covers it, and the
+    /// draw rules the hosts read off the mode (`camera_frame::nclip_cull_mode`,
+    /// `camera_frame::prim_link_order`) are the field's on those frames, not
+    /// the menu's.
+    pub fn frame_draw_mode(&self) -> SceneMode {
+        let mode = self.host.world.mode;
+        if mode == SceneMode::Menu && self.field_menu.is_some() {
+            self.field_menu_resume
+        } else {
+            mode
+        }
+    }
+
     /// Install the rack the Load / Save rows build their sub-session against,
     /// plus the block list behind each of its ports.
     ///

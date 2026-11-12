@@ -445,6 +445,7 @@ fn a_real_turn_films_its_done_tail_and_holds_it_for_the_next_actor() {
                     attack: None,
                     action_state: state,
                     chain_exit_pass: false,
+                    return_exit_pass: false,
                     active_commits: 0,
                     active_installs: 0,
                     swing_reseed: (0, 0),
@@ -534,6 +535,62 @@ fn a_setup_state_holds_the_action_framing_until_the_seed_rearms() {
     assert_eq!(cam.rand_state, drawn, "the seed draws no track coin");
     steps(&mut cam, 40);
     assert_eq!(cam.framing_pose().focus[0], -500.0);
+}
+
+/// The return `0x20`'s exit pass stores `0x50` and jumps to the state tail
+/// (`0x801E5590` -> `0x801E5F64`) without calling `FUN_801D5854`: it arms
+/// nothing, so a change the pass made to the framing's inputs reaches the
+/// camera only with the Done arm a pass later. Retail films of three party
+/// strikes hold the `0x20` pose through that pass
+/// (`battle_ropeway_party_gala_flying_knee_mid`: pitch `84` on the exit pass,
+/// `63` on the Done arm's).
+#[test]
+fn the_returns_exit_pass_arms_nothing() {
+    let actor = BattleCamActor {
+        facing: 0,
+        world: [100.0, 0.0, 200.0],
+        height: None,
+    };
+    let target = |x: f32| PostActionTarget {
+        world: [x, 0.0, 400.0],
+        display_y: 0.0,
+        party: false,
+        height: None,
+        monster_id: 1,
+        animating: true,
+        live: true,
+        facing: 0,
+        node_gone: false,
+        lone_defeat: false,
+    };
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_actor(actor);
+    cam.set_post_action_target(Some(target(300.0)));
+    cam.observe_action_state(0x20);
+    cam.set_phase_on_state(BattleCamPhase::Recover, 0x20);
+    steps(&mut cam, 40);
+    let held = cam.framing_pose();
+
+    // The exit pass: the target moved, but nothing re-arms.
+    let mut exit = cam.clone();
+    exit.set_post_action_target(Some(target(-900.0)));
+    exit.observe_action_state(0x50);
+    exit.observe_return_exit_pass(true);
+    exit.set_phase_on_state(BattleCamPhase::ActionEnd, 0x50);
+    steps(&mut exit, 1);
+    assert_eq!(exit.framing_pose().focus, held.focus);
+    assert_eq!(exit.phase(), BattleCamPhase::Recover);
+
+    // Any other pass that sees the move re-aims at once.
+    let mut other = cam.clone();
+    other.set_post_action_target(Some(target(-900.0)));
+    steps(&mut other, 1);
+    assert_ne!(other.framing_pose().focus, held.focus);
+
+    // The Done arm a pass later re-arms on the inputs as they now stand.
+    exit.observe_return_exit_pass(false);
+    exit.set_phase_on_state(BattleCamPhase::ActionEnd, 0x50);
+    assert_eq!(exit.phase(), BattleCamPhase::ActionEnd);
 }
 
 /// A round's first actor has no action framing to keep: the far framing the

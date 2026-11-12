@@ -188,6 +188,9 @@ pub fn resume_card_load(
     // the credits' field-init load.
     host.card_load_world().audio.credits_latch = false;
     host.card_load_world().field_init_hold = 0;
+    // The same reload takes the credits' records screen (op `49 0C`) and
+    // its park with it.
+    host.card_load_world().drop_field_submode_screen_for_title();
     host.card_load_world().load_story_flags(&save);
     let current = host.card_load_running_scene();
     let landing = land_save(save_scene, current.as_deref(), |scene| {

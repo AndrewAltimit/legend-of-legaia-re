@@ -222,7 +222,15 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
     if let Some(dir) = save.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    if std::fs::write(&save, cp.save.write()).is_err() || std::fs::write(&side, text).is_err() {
+    // The save names its own scene (the `LGX5` resume point), so a
+    // checkpoint resumes with `legaia-engine --resume-save` alone.
+    let resume = legaia_save::SaveResume {
+        scene: cp.scene.clone(),
+        location: String::new(),
+    };
+    if std::fs::write(&save, cp.save.write_with_resume(&resume)).is_err()
+        || std::fs::write(&side, text).is_err()
+    {
         eprintln!("    [checkpoint] could not write {}", save.display());
     }
 }
@@ -233,7 +241,8 @@ fn store_checkpoint(id: &str, cp: &Checkpoint, session: &NativeSession) {
 fn stored_checkpoint(id: &str) -> Result<(Checkpoint, u32), String> {
     let (save, side) = checkpoint_paths(id).ok_or("LEGAIA_FGL_CHECKPOINT_DIR is not set")?;
     let bytes = std::fs::read(&save).map_err(|e| format!("{}: {e}", save.display()))?;
-    let save = legaia_save::SaveFile::parse(&bytes).map_err(|e| format!("{e:#}"))?;
+    let (save, _) =
+        legaia_save::SaveFile::parse_with_resume(&bytes).map_err(|e| format!("{e:#}"))?;
     let text = std::fs::read_to_string(&side).map_err(|e| format!("{}: {e}", side.display()))?;
     let mut lines = text.lines();
     let scene = lines.next().unwrap_or_default().to_string();
@@ -528,7 +537,22 @@ fn part_c_continuous_run() {
             Some((m.scene.clone(), flags))
         });
         PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
-        NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        // An anchor that seeds nothing is a poke: it names the scene, not
+        // what the retail run had played on the way there, so the beats of
+        // its stretch steer by the save after it as well. `vell_fog_field`
+        // is a Rim Elm-era state; Biron's first-visit chain (`bylon`
+        // 0x297..0x2A0, every talk of which branches to the mist once the
+        // West Voz tree's 0x2A1 is up) is in PRO-01 and must play before
+        // the tree.
+        let next_flags = if spine[i + 1].seeds_next {
+            anchor_flags[i + 1].clone()
+        } else {
+            anchor_flags[i + 1].clone().map(|mut f| {
+                f.extend(anchor_flags.get(i + 2).into_iter().flatten().flatten());
+                f
+            })
+        };
+        NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = next_flags);
         CHESTS_AHEAD.with(|c| {
             let mut c = c.borrow_mut();
             c.clear();
@@ -666,7 +690,9 @@ fn part_c_continuous_run() {
                     break 'spine;
                 }
             };
-            let wiped = err.contains("party wiped");
+            // A scripted game over (`taiku`'s escape clock run out, `4C EA`)
+            // is a loss the player reloads from, as a wipe is.
+            let wiped = err.contains("party wiped") || err.contains("scripted game over");
             let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
             // A walking player stuck where the playthrough ran switches
             // Field Move to Run and reloads, once, and keeps running.

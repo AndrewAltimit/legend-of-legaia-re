@@ -481,7 +481,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     <li>The result banners last for the round-over hold, not retail&rsquo;s spawn template (no library capture holds a result screen).</li>
     <li>The play hosts draw the tally&rsquo;s digit strips as font glyphs, and the VITAL bars untextured with the system texel&rsquo;s grey folded into their colour.</li>
     <li>The minigames page draws the duel HUD page-side rather than through the shared builder.</li>
-    <li>The developer menu, keyframe editor and slot helpers are not ported.</li>
+    <li>The keyframe editor's tick is not ported; its slot helpers, the developer menu and the action-table dump are.</li>
   </ul>
 </section>
 
@@ -519,6 +519,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     <summary>Developer screens (unreachable on retail)</summary>
     <div class="disclosure-body">
       <p>Retail carries a developer menu (<code>0xC8</code>), an in-game action-table keyframe editor (<code>0x190</code> / <code>0x191</code>) and an action-table dump to <code>ot5stat.txt</code>. The pause-menu edge routes to the developer menu only when a word that boots to zero and is only ever cleared is non-zero, so none of them opens. The editor is linked, not dead: it is the callback of one of the overlay&rsquo;s eight actor prototypes.</p>
+      <p>The developer menu has five rows: resume (or, with a new stage picked, reload onto that rung), reboot the cabinet, a debug-mode word, the stage pick, and the keyframe editor. Circle confirms a row; Cross resumes from any row. Every pause edge seeds the stage pick from the current stage.</p>
     </div>
   </details>
   <details class="disclosure">

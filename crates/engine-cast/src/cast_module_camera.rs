@@ -125,6 +125,11 @@ pub struct ModuleCamState {
     /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`); PROT 0951 `0x5B`'s
     /// saved victim height (`0x801F89D6`).
     pub horns_lift: i16,
+    /// PROT 0918's arm-9 part height: arm `0xE`'s pass stores
+    /// `trunc(victim[+0x3E] * 4 / 3)` into the part `0x801F92CC` names
+    /// (`0x801F7F5C..0x801F7F7C`), and the shots of arms 16 and 17 focus on
+    /// its negation (`lhu v1,0x16(v1)` at `0x801F8280` / `0x801F83A8`).
+    pub part_height: i16,
     /// Which halves of [`Self::horns_pin`] an arm has saved, where a director
     /// writes back only what it saved (PROT 0951): bit 0 the victim's, bit 1
     /// the caster's.
@@ -335,6 +340,10 @@ pub struct ModuleCamState {
     /// victim onto the origin (`0x801F9354..0x801F935C`), which arm `0xF`'s
     /// exit puts back and frames.
     pub saved_victim: Option<ModuleSeat>,
+    /// PROT 0957's arm 6 widened its ribbon ring on this battle frame (the
+    /// word was still at most `0xC0` as the pass opened), so the frame's
+    /// ribbons stand for every tick of it.
+    pub ring_widening: bool,
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -681,6 +690,11 @@ pub enum SpawnAnchor {
     /// The victim seat's position (`a0 = victim + 0x34`) on the arm's zeroed
     /// angle trio: PROT 0917 arm 13's five calls (`0x801F7EB8..0x801F7F18`).
     VictimFlat,
+    /// The victim seat's position (`a0 = victim + 0x34`) on a literal angle
+    /// trio the arm left on its stack (`a1 = sp+0x20`): PROT 0918 arm 17's
+    /// first two calls (`0x801F85CC..0x801F8630`) take the trio its shot was
+    /// built on, yaw `0xC00` with the pitch zeroed.
+    VictimRot { rot: [i16; 3] },
     /// The caster seat's position on the creature's angle trio (`a0 =
     /// caster + 0x34`, `a1 = creature + 0x44`): PROT 0914 arm `0xB`
     /// (`0x801F7300..0x801F7324`).
@@ -865,6 +879,10 @@ pub fn spawn_anchor_point_with(
         SpawnAnchor::VictimFlat => {
             let v = victim?;
             ([v.x, v.y, v.z], [0; 3])
+        }
+        SpawnAnchor::VictimRot { rot } => {
+            let v = victim?;
+            ([v.x, v.y, v.z], rot)
         }
         SpawnAnchor::VictimBodyCasterRot => {
             let v = seats.victim_body?;
@@ -1183,8 +1201,8 @@ pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{
-    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN,
-    KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
+    KISS_OF_DEATH_ARM0_RECORDS, KISS_OF_DEATH_ARM0_SHOT_FRAMES, KISS_OF_DEATH_BODY,
+    KISS_OF_DEATH_COUNTDOWN, KISS_OF_DEATH_PASS_RECORD, kiss_of_death_camera,
 };
 pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{

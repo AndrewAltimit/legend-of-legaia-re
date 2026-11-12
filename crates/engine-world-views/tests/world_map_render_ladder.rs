@@ -72,12 +72,12 @@ mod packed {
     pub const TOGGLE_SHOULDERS: u16 = 0x0A;
     /// `0x801E7830` - the modifier that opens the camera bank.
     pub const CAM_MOD: u16 = 0x0004;
-    /// `0x801E7838` / `0x801E7860` - camera X.
-    pub const CAM_X_DEC: u16 = 0x1000;
-    pub const CAM_X_INC: u16 = 0x4000;
-    /// `0x801E7888` / `0x801E78A4` - camera Z.
-    pub const CAM_Z_DEC: u16 = 0x2000;
-    pub const CAM_Z_INC: u16 = 0x8000;
+    /// `0x801E7888` / `0x801E78A4` - camera X (`_DAT_80089118`).
+    pub const CAM_X_DEC: u16 = 0x2000;
+    pub const CAM_X_INC: u16 = 0x8000;
+    /// `0x801E7838` / `0x801E7860` - camera Z (`_DAT_80089120`).
+    pub const CAM_Z_DEC: u16 = 0x1000;
+    pub const CAM_Z_INC: u16 = 0x4000;
     /// `0x801E78C0` / `0x801E78E8` - azimuth.
     pub const AZ_INC: u16 = 0x0020;
     pub const AZ_DEC: u16 = 0x0080;

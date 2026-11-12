@@ -26,6 +26,15 @@
 //!   green, the original's own dim (`OptionRow::original_value`).
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
+//! - **Disc finder.** A controller cannot work the desktop's file dialog,
+//!   so Cross on *Choose disc* lists folders and `.bin` / `.cue` files on
+//!   the Recent page instead ([`launcher::list_disc_folder`]); the keyboard
+//!   reaches it as the Recent page's *Find a disc on this computer...*.
+//!   While a controller was pressed last, choosing a memory card or an
+//!   expansion pack past the remembered ones opens the same finder on those
+//!   files ([`FinderTarget`]) rather than the file dialog. A
+//!   first run also tries the discs Legaia Explorer opened
+//!   ([`launcher::explorer_disc`]) before it searches the usual folders.
 //! - **Recent.** The remembered discs, the saves on the game's own card and
 //!   on card 2, and the remembered memory cards, as one list: a disc or card
 //!   is picked or forgotten, a save starts the game on it
@@ -85,7 +94,9 @@ use winit::window::WindowId;
 /// Debug aid: when set, the launcher writes its first frame to this PNG and
 /// exits (lets a headless check see the screen without a human).
 const SCREENSHOT_ENV: &str = "LEGAIA_LAUNCHER_SCREENSHOT";
-/// With [`SCREENSHOT_ENV`]: open the right panel on `controls` or `recent`.
+/// With [`SCREENSHOT_ENV`]: open the right panel on `controls` or `recent`,
+/// or the finder for a disc (`finder`), a memory card (`card-finder`) or an
+/// expansion pack (`pack-finder`).
 const PANEL_ENV: &str = "LEGAIA_LAUNCHER_PANEL";
 /// With [`SCREENSHOT_ENV`]: focus option row N (0-based, clamped), so a
 /// capture can show the list scrolled.
@@ -98,6 +109,87 @@ const DIRECT_ENV: &str = "LEGAIA_LAUNCHER_DIRECT";
 const TITLE: &str = "Legend of Legaia";
 /// The help box's last line after a failed game: both ways to the report.
 const COPY_REPORT_HINT: &str = "Click or Ctrl+C: report";
+/// The help box's last line: the keys that work the screen.
+const KEY_HINT: &str = "Arrows, Enter, Tab, Esc";
+/// The disc finder's row to the folder above.
+const FINDER_UP: &str = "Up one folder";
+
+/// What the finder on the Recent page was opened to pick: the list a
+/// controller works where the desktop's file dialog wants a mouse or a
+/// keyboard. Cross on *Choose disc* opens it for the disc; with a
+/// controller in hand, the memory card and expansion pack choosers that
+/// would open the file dialog open it too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum FinderTarget {
+    #[default]
+    Disc,
+    Card,
+    Expansion,
+}
+
+impl FinderTarget {
+    /// The heading over the folder listing.
+    fn heading(self) -> &'static str {
+        match self {
+            Self::Disc => "Find your disc",
+            Self::Card => "Find a memory card",
+            Self::Expansion => "Find an expansion pack",
+        }
+    }
+
+    /// The file extensions the listing shows.
+    fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Self::Disc => &["bin", "cue"],
+            Self::Card => &launcher::CARD_EXTENSIONS,
+            Self::Expansion => &["lxpack", "toml"],
+        }
+    }
+
+    /// A file row's value column and its help line.
+    fn file_row(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Disc => (
+                "Disc image",
+                "Check this file and use it when it is the game's disc. A .cue and its .bin \
+                 are the same disc; either works.",
+            ),
+            Self::Card => (
+                "Memory card",
+                "Mount this emulator memory card as the save screen's card 2.",
+            ),
+            Self::Expansion => (
+                "Expansion",
+                "Load this expansion pack: an .lxpack file, or the pack.toml in a pack folder.",
+            ),
+        }
+    }
+
+    /// What a folder row's help adds after "Open the folder NAME.".
+    fn folder_hint(self) -> &'static str {
+        match self {
+            Self::Disc => "The disc image is a .bin or .cue file",
+            Self::Card => "An emulator's memory cards are .mcr, .mcd, .srm, .gme or .mcs files",
+            Self::Expansion => "A pack is an .lxpack file, or a folder with a pack.toml",
+        }
+    }
+
+    /// What the line under an empty folder says.
+    fn empty_line(self) -> &'static str {
+        match self {
+            Self::Disc => "No folders or disc images here.",
+            Self::Card => "No folders or memory cards here.",
+            Self::Expansion => "No folders or expansion packs here.",
+        }
+    }
+}
+
+/// The help box's last line while a controller was used last: what the
+/// buttons labelled `cross` and `circle` do on this screen (the D-pad moves,
+/// as the keyboard's arrows do; Start's Play is in the Play button's help).
+fn pad_key_hint(cross: &str, circle: &str) -> String {
+    format!("{cross} OK, {circle} back")
+}
 
 /// Run the launcher. Returns the argument list to run in-process (only
 /// under [`DIRECT_ENV`] with a good remembered disc), or `None` when the
@@ -458,6 +550,14 @@ enum RecentKind {
     Save(launcher::SaveRow),
     /// A line that does nothing (the empty note under a heading).
     Note,
+    /// The Recent page's way into the disc finder.
+    FindDisc,
+    /// The disc finder: a folder to open (or the one above).
+    Folder(PathBuf),
+    /// The finder: a file to try as what it was opened for
+    /// ([`FinderTarget`]): a `.bin` / `.cue` as the disc, a memory card, an
+    /// expansion pack.
+    FinderFile(PathBuf),
 }
 
 /// One row of the Recent page.
@@ -521,6 +621,16 @@ struct LauncherApp {
     recent_lines: Vec<RecentLine>,
     /// The Recent page's first visible line.
     recent_scroll: usize,
+    /// The folder the disc finder shows on the Recent page, while it is
+    /// open ([`Self::open_finder`]): the list a controller works, where the
+    /// desktop's file dialog wants a mouse or a keyboard.
+    finder: Option<PathBuf>,
+    /// What [`Self::finder`] was opened to pick.
+    finder_for: FinderTarget,
+    /// The controller pressed last, by the labels on its buttons; `None`
+    /// once a key or the mouse was used. The key reminder and the "press
+    /// to play" lines name its buttons while it is set.
+    pad_last: Option<legaia_engine_system::gamepad::GlyphSet>,
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
@@ -589,9 +699,10 @@ impl LauncherApp {
         settings_file: Option<PathBuf>,
     ) -> Self {
         let options = OptionsState::load_or_default(Path::new(launcher::OPTIONS_FILE));
-        let panel = match std::env::var(PANEL_ENV).as_deref() {
-            Ok("controls") => Panel::Controls,
-            Ok("recent") => Panel::Recent,
+        let panel_env = std::env::var(PANEL_ENV).ok();
+        let panel = match panel_env.as_deref() {
+            Some("controls") => Panel::Controls,
+            Some("recent") => Panel::Recent,
             _ => Panel::Options,
         };
         let focus = if disc.is_some() {
@@ -612,6 +723,9 @@ impl LauncherApp {
             recent: Vec::new(),
             recent_lines: Vec::new(),
             recent_scroll: 0,
+            finder: None,
+            finder_for: FinderTarget::Disc,
+            pad_last: None,
             expansion: settings
                 .expansion
                 .as_deref()
@@ -660,8 +774,14 @@ impl LauncherApp {
             && app.recent_offer.is_none()
             && matches!(app.problem, Some(DiscProblem::NotSet) | None)
         {
-            app.found_disc =
-                launcher::find_disc(&launcher::disc_search_dirs(), launcher::validate_disc);
+            // A disc opened in Legaia Explorer first, whatever its file is
+            // called; then a dump named for the game in the usual folders.
+            let explorer =
+                launcher::explorer_settings_path().and_then(|f| std::fs::read_to_string(f).ok());
+            app.found_disc = launcher::explorer_disc(explorer.as_deref(), launcher::validate_disc)
+                .or_else(|| {
+                    launcher::find_disc(&launcher::disc_search_dirs(), launcher::validate_disc)
+                });
             if let Some(found) = &app.found_disc {
                 log::info!("launcher: found a disc image at {}", found.path.display());
             }
@@ -677,6 +797,12 @@ impl LauncherApp {
             (None, None) => None,
         }
         .filter(|m| !m.is_empty());
+        match panel_env.as_deref() {
+            Some("finder") => app.open_finder(),
+            Some("card-finder") => app.open_finder_for(FinderTarget::Card),
+            Some("pack-finder") => app.open_finder_for(FinderTarget::Expansion),
+            _ => {}
+        }
         if let Some(n) = std::env::var(FOCUS_ENV)
             .ok()
             .and_then(|v| v.trim().parse::<i32>().ok())
@@ -775,7 +901,10 @@ impl LauncherApp {
         self.refresh_recent_offer();
         self.focus = Item::Play;
         self.status = Some(vec![(
-            format!("Disc ready: {name}, chosen before. Press Enter to play."),
+            format!(
+                "Disc ready: {name}, chosen before. Press {} to play.",
+                self.play_key()
+            ),
             GOOD,
         )]);
         self.win.request_redraw();
@@ -806,7 +935,10 @@ impl LauncherApp {
                 self.set_disc(Some(info));
                 self.refresh_recent_offer();
                 self.focus = Item::Play;
-                self.status = Some(vec![("Disc ready. Press Enter to play.".into(), GOOD)]);
+                self.status = Some(vec![(
+                    format!("Disc ready. Press {} to play.", self.play_key()),
+                    GOOD,
+                )]);
             }
             Err(p) => {
                 log::warn!("launcher: {p}");
@@ -988,6 +1120,11 @@ impl LauncherApp {
     }
 
     fn browse_expansion(&mut self) {
+        // A controller cannot work the file dialog: the finder instead.
+        if self.pad_last.is_some() {
+            self.open_finder_for(FinderTarget::Expansion);
+            return;
+        }
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose an expansion pack (.lxpack, or pack.toml in a pack folder)")
             .add_filter("Expansion pack", &["lxpack", "LXPACK", "toml", "TOML"]);
@@ -1014,6 +1151,13 @@ impl LauncherApp {
     /// Start the game; `online` opens its Multiplayer screen once the
     /// field is up (`--multiplayer`).
     fn play(&mut self, evl: &ActiveEventLoop, online: bool, resume: Option<&Path>) {
+        // Play on a first run takes the disc found in the usual folders, as
+        // *Use this disc* would: one press from a fresh install to the game.
+        if self.uses_found_disc()
+            && let Some(found) = self.found_disc.clone()
+        {
+            self.try_disc(&found.path);
+        }
         let Some(info) = self.disc.clone() else {
             self.status = Some(vec![(
                 "Choose your Legend of Legaia (USA) disc image first.".into(),
@@ -1180,6 +1324,11 @@ impl LauncherApp {
         if pressed == 0 {
             return;
         }
+        if let Some((_, glyphs)) = poll.capture {
+            self.pad_last = Some(glyphs);
+        } else if self.pad_last.is_none() {
+            self.pad_last = Some(legaia_engine_system::gamepad::GlyphSet::default());
+        }
         for nav in pad_nav(pressed) {
             match nav {
                 PadNav::Focus(d) => self.step_focus(d),
@@ -1190,9 +1339,16 @@ impl LauncherApp {
                         self.leave_page();
                     }
                 }
+                // The desktop's file dialog cannot be worked with a
+                // controller: Cross opens the launcher's own finder there.
+                PadNav::Activate(1)
+                    if self.focus == Item::ChooseDisc && !self.uses_found_disc() =>
+                {
+                    self.open_finder()
+                }
                 PadNav::Activate(d) => self.activate(self.focus, d, evl),
                 PadNav::Play => {
-                    if self.disc.is_some() {
+                    if self.can_play() {
                         self.activate(Item::Play, 1, evl);
                     }
                 }
@@ -1364,6 +1520,11 @@ impl LauncherApp {
     }
 
     fn browse_card(&mut self) {
+        // A controller cannot work the file dialog: the finder instead.
+        if self.pad_last.is_some() {
+            self.open_finder_for(FinderTarget::Card);
+            return;
+        }
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose a memory card from your emulator")
             .add_filter("PlayStation memory card", &launcher::CARD_EXTENSIONS)
@@ -1393,7 +1554,7 @@ impl LauncherApp {
             Item::Online => self.play(evl, true, None),
             Item::ChooseDisc if dir < 0 => self.step_recent_disc(),
             Item::ChooseDisc => match self.found_disc.clone() {
-                Some(found) if self.disc.is_none() => self.try_disc(&found.path),
+                Some(found) if self.uses_found_disc() => self.try_disc(&found.path),
                 _ => self.browse(),
             },
             Item::Expansion if dir < 0 => self.clear_expansion(),
@@ -1408,6 +1569,7 @@ impl LauncherApp {
                     }
                     Panel::Controls => Panel::Options,
                     Panel::Recent => {
+                        self.finder = None;
                         self.rebind = KeyRebindSession::new(Mapping::load_or_default(Path::new(
                             launcher::INPUT_FILE,
                         )));
@@ -1416,6 +1578,7 @@ impl LauncherApp {
                 };
             }
             Item::Recent => {
+                self.finder = None;
                 if self.panel == Panel::Recent {
                     self.panel = Panel::Options;
                 } else {
@@ -1530,6 +1693,7 @@ impl LauncherApp {
     /// Back from the Controls or Recent page to the options; a focus on one
     /// of its rows goes to the button that opened it.
     fn leave_page(&mut self) {
+        self.finder = None;
         self.panel = Panel::Options;
         match self.focus {
             Item::Bind(_) | Item::BindReset => self.focus = Item::Panel,
@@ -1538,11 +1702,222 @@ impl LauncherApp {
         }
     }
 
+    // --- The disc finder -------------------------------------------------
+
+    /// Whether the help box's first line is a success: what
+    /// [`Self::try_card`] and [`Self::try_expansion`] put up when they took
+    /// the file.
+    fn status_is_good(&self) -> bool {
+        self.status
+            .as_ref()
+            .and_then(|m| m.first())
+            .is_some_and(|(_, ink)| *ink == GOOD)
+    }
+
+    /// Whether Play can start the game: a disc is in use, or one was
+    /// found on a first run (Play then takes it, [`Self::play`]).
+    fn can_play(&self) -> bool {
+        self.disc.is_some() || self.uses_found_disc()
+    }
+
+    /// Whether *Choose disc* takes the disc found on a first run rather than
+    /// asking for one.
+    fn uses_found_disc(&self) -> bool {
+        self.disc.is_none() && self.found_disc.is_some()
+    }
+
+    /// Open the disc finder on the Recent page, in the folder of the disc
+    /// last used, else Downloads, else the home folder.
+    fn open_finder(&mut self) {
+        self.open_finder_for(FinderTarget::Disc);
+    }
+
+    /// Open the finder on the Recent page to pick `target`, in the folder of
+    /// the one used last (else Downloads, else the home folder).
+    fn open_finder_for(&mut self, target: FinderTarget) {
+        let remembered = match target {
+            FinderTarget::Disc => self
+                .disc
+                .as_ref()
+                .map(|d| d.path.as_path())
+                .or(self.settings.disc.as_deref()),
+            FinderTarget::Card => self.settings.card.as_deref(),
+            // A pack folder's pack.toml: start beside the folder.
+            FinderTarget::Expansion => self.settings.expansion.as_deref().map(|p| {
+                if p.ends_with("pack.toml") {
+                    p.parent().unwrap_or(p)
+                } else {
+                    p
+                }
+            }),
+        };
+        self.finder_for = target;
+        let start = launcher::disc_finder_start(remembered);
+        let Some(dir) = start else {
+            self.status = Some(vec![(
+                "No home folder to start from. Drop the disc image on this window, or type or \
+                 paste its path."
+                    .into(),
+                WARN,
+            )]);
+            return;
+        };
+        self.panel = Panel::Recent;
+        self.show_folder(dir);
+    }
+
+    /// Show `dir` in the disc finder and focus its first entry.
+    fn show_folder(&mut self, dir: PathBuf) {
+        self.finder = Some(dir);
+        self.status = None;
+        self.build_recent();
+        // The first folder or image, past the way up.
+        self.focus = self
+            .recent
+            .iter()
+            .position(|e| {
+                matches!(e.kind, RecentKind::Folder(_) | RecentKind::FinderFile(_))
+                    && e.label != FINDER_UP
+            })
+            .map_or_else(|| self.first_recent_row(), Item::RecentRow);
+        self.reveal_recent();
+    }
+
+    /// Backspace in the disc finder: the folder above.
+    fn finder_up(&mut self) {
+        if let Some(up) = self.finder.as_deref().and_then(Path::parent) {
+            self.show_folder(up.to_path_buf());
+        }
+    }
+
+    /// The disc finder's rows for `dir`: the way up, its folders and disc
+    /// images, then the places a dump usually is.
+    fn build_finder(&mut self, dir: &Path) {
+        let mut rows = Vec::new();
+        let mut lines = Vec::new();
+        let mut row = |entry: RecentEntry, lines: &mut Vec<RecentLine>| {
+            lines.push(RecentLine::Row(rows.len()));
+            rows.push(entry);
+        };
+        let target = self.finder_for;
+        lines.push(RecentLine::Heading(target.heading()));
+        row(RecentEntry::note(&dir.display().to_string()), &mut lines);
+        if let Some(up) = dir.parent() {
+            row(
+                RecentEntry {
+                    label: FINDER_UP.to_string(),
+                    value: "..".to_string(),
+                    value_ink: DIM,
+                    help: format!("Go up to {}.", up.display()),
+                    kind: RecentKind::Folder(up.to_path_buf()),
+                },
+                &mut lines,
+            );
+        }
+        match launcher::list_finder_folder(dir, target.extensions()) {
+            Ok(entries) if entries.is_empty() => {
+                row(RecentEntry::note(target.empty_line()), &mut lines);
+            }
+            Ok(entries) => {
+                for e in entries {
+                    let (value, ink, help, kind) = match e.kind {
+                        launcher::FolderEntryKind::Folder => (
+                            "Folder",
+                            DIM,
+                            format!(
+                                "Open the folder {}. {}; Backspace goes up a folder.",
+                                e.name,
+                                target.folder_hint()
+                            ),
+                            RecentKind::Folder(e.path),
+                        ),
+                        launcher::FolderEntryKind::File => (
+                            target.file_row().0,
+                            GOOD,
+                            target.file_row().1.to_string(),
+                            RecentKind::FinderFile(e.path),
+                        ),
+                    };
+                    row(
+                        RecentEntry {
+                            label: e.name,
+                            value: value.to_string(),
+                            value_ink: ink,
+                            help,
+                            kind,
+                        },
+                        &mut lines,
+                    );
+                }
+            }
+            Err(e) => {
+                row(
+                    RecentEntry::note(&format!("This folder cannot be read: {e}")),
+                    &mut lines,
+                );
+            }
+        }
+        lines.push(RecentLine::Heading("Places"));
+        let mut places = launcher::disc_finder_places();
+        if target == FinderTarget::Card {
+            places.splice(0..0, launcher::card_finder_places());
+        }
+        for (label, path) in places {
+            row(
+                RecentEntry {
+                    help: format!("Open {}.", path.display()),
+                    label,
+                    value: String::new(),
+                    value_ink: DIM,
+                    kind: RecentKind::Folder(path),
+                },
+                &mut lines,
+            );
+        }
+        self.recent = rows;
+        self.recent_lines = lines;
+        self.recent_scroll = 0;
+    }
+
+    /// The key that starts the game: Enter, or the controller's Start.
+    fn play_key(&self) -> String {
+        match self.pad_last {
+            None => "Enter".into(),
+            Some(glyphs) => self.pad_label("Start", glyphs),
+        }
+    }
+
+    /// The printed label of the controller button bound to the game's
+    /// `button`, on a pad with `glyphs`.
+    fn pad_label(&self, button: &str, glyphs: legaia_engine_system::gamepad::GlyphSet) -> String {
+        let style = legaia_engine_system::gamepad::PadStyle {
+            glyphs,
+            space: legaia_engine_system::gamepad::ButtonSpace::Standard,
+        };
+        self.rebind
+            .mapping()
+            .prompt_label(button, Some(style))
+            .unwrap_or_else(|| button.to_string())
+    }
+
+    /// The help box's last line: the keys that work the screen, or the
+    /// controller's buttons while one was used last.
+    fn key_hint(&self) -> String {
+        match self.pad_last {
+            None => KEY_HINT.to_string(),
+            Some(g) => pad_key_hint(&self.pad_label("Cross", g), &self.pad_label("Circle", g)),
+        }
+    }
+
     // --- The Recent page ------------------------------------------------
 
     /// Rebuild the Recent page's rows from the settings, the cards and the
     /// saves on them.
     fn build_recent(&mut self) {
+        if let Some(dir) = self.finder.clone() {
+            self.build_finder(&dir);
+            return;
+        }
         let mut rows = Vec::new();
         let mut lines = Vec::new();
         let mut row = |entry: RecentEntry, lines: &mut Vec<RecentLine>| {
@@ -1622,6 +1997,18 @@ impl LauncherApp {
         if discs.is_empty() {
             row(RecentEntry::note("No disc chosen yet."), &mut lines);
         }
+        row(
+            RecentEntry {
+                label: "Find a disc on this computer...".to_string(),
+                value: String::new(),
+                value_ink: DIM,
+                help: "Look through your folders for the disc image, in a list the arrow keys \
+                       and a controller can work."
+                    .to_string(),
+                kind: RecentKind::FindDisc,
+            },
+            &mut lines,
+        );
         for path in discs {
             let in_use = self.disc.as_ref().is_some_and(|d| d.path == path);
             let (value, ink, help) = if in_use {
@@ -1732,6 +2119,40 @@ impl LauncherApp {
         };
         match entry.kind.clone() {
             RecentKind::Note => {}
+            RecentKind::FindDisc => self.open_finder(),
+            RecentKind::Folder(dir) => self.show_folder(dir),
+            RecentKind::FinderFile(path) => {
+                // Taken: back to the options, focused where it shows.
+                let taken = match self.finder_for {
+                    FinderTarget::Disc => {
+                        self.try_disc(&path);
+                        self.disc
+                            .as_ref()
+                            .is_some_and(|d| d.path == path)
+                            .then_some(Item::Play)
+                    }
+                    // Each says so in a good first status line when it took
+                    // the file.
+                    FinderTarget::Card => {
+                        self.try_card(&path);
+                        self.status_is_good().then_some(Item::DataFolder)
+                    }
+                    FinderTarget::Expansion => {
+                        self.try_expansion(&path);
+                        self.status_is_good().then_some(Item::Expansion)
+                    }
+                };
+                match taken {
+                    Some(focus) => {
+                        self.finder = None;
+                        self.panel = Panel::Options;
+                        self.focus = focus;
+                    }
+                    // Not taken: the reason is in the help box, and the
+                    // finder keeps the row for the next try.
+                    None => self.focus = Item::RecentRow(index),
+                }
+            }
             RecentKind::Disc(path) => {
                 if self.disc.as_ref().is_some_and(|d| d.path == path) {
                     self.status = Some(vec![("This disc is already in use.".into(), DIM)]);
@@ -1795,7 +2216,12 @@ impl LauncherApp {
                 self.settings.recent_cards.retain(|p| *p != path);
                 self.save_settings();
             }
-            RecentKind::Save(_) | RecentKind::NewCard | RecentKind::Note => return,
+            RecentKind::Save(_)
+            | RecentKind::NewCard
+            | RecentKind::Note
+            | RecentKind::FindDisc
+            | RecentKind::Folder(_)
+            | RecentKind::FinderFile(_) => return,
         }
         self.after_recent_change(Item::Recent);
     }
@@ -2032,7 +2458,7 @@ impl LauncherApp {
             let r = button_rect(i);
             hits.push((*item, r));
             let focused = self.focus == *item;
-            let enabled = !matches!(item, Item::Play | Item::Online) || self.disc.is_some();
+            let enabled = !matches!(item, Item::Play | Item::Online) || self.can_play();
             let (bg, ink) = match (*item == Item::Play, enabled, focused) {
                 (true, true, false) => (PRIMARY, ON_GOLD),
                 (true, true, true) => (PRIMARY_FOCUS, ON_GOLD),
@@ -2090,6 +2516,7 @@ impl LauncherApp {
             y += 3;
         }
         let footer = hl.footer;
+        let key_hint = self.key_hint();
         if footer {
             c.text(
                 help.x + 6,
@@ -2097,7 +2524,7 @@ impl LauncherApp {
                 if self.failure_report.is_some() {
                     COPY_REPORT_HINT
                 } else {
-                    "Arrows, Enter, Tab, Esc"
+                    &key_hint
                 },
                 FAINT,
             );
@@ -2399,6 +2826,12 @@ impl LauncherApp {
                     "Start the game at the title screen. In game, F12 or Select+Start \
                      opens these options. Values in green differ from the original game."
                         .into()
+                } else if let Some(found) = self.found_disc.as_ref() {
+                    format!(
+                        "Start the game on {}, found in your folders. In game, F12 or \
+                         Select+Start opens these options.",
+                        file_name_of(&found.path)
+                    )
                 } else {
                     "Choose your disc image first.".into()
                 }
@@ -2408,6 +2841,16 @@ impl LauncherApp {
                 format!(
                     "Enter uses {}, found in your folders. Ctrl+O or Shift+Enter picks another.",
                     file_name_of(&found.path)
+                )
+            }
+            Item::ChooseDisc if self.pad_last.is_some() => {
+                let g = self.pad_last.unwrap_or_default();
+                format!(
+                    "{} lists your folders: open them until you reach the disc image (.bin or \
+                     .cue), then press {} on it. {} goes back.",
+                    self.pad_label("Cross", g),
+                    self.pad_label("Cross", g),
+                    self.pad_label("Circle", g),
                 )
             }
             Item::ChooseDisc => match (&self.disc, &self.recent_offer) {
@@ -2692,6 +3135,7 @@ impl ApplicationHandler for LauncherApp {
                 button,
                 ..
             } => {
+                self.pad_last = None;
                 // A click while the Controls page waits for a key calls it off.
                 if self.awaiting_key().is_some() {
                     self.capture_key(PhysicalKey::Code(winit::keyboard::KeyCode::Escape));
@@ -2740,6 +3184,7 @@ impl ApplicationHandler for LauncherApp {
                 is_synthetic: false,
                 ..
             } if event.state == ElementState::Pressed => {
+                self.pad_last = None;
                 log::debug!(
                     "launcher: key {:?} repeat {}",
                     event.logical_key,
@@ -2792,6 +3237,7 @@ impl ApplicationHandler for LauncherApp {
                         self.typed_tried = false;
                         self.typed.pop();
                     }
+                    Key::Named(NamedKey::Backspace) if self.finder.is_some() => self.finder_up(),
                     Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.reset_focused(),
                     Key::Named(NamedKey::ArrowUp) if !typing => self.step_focus(-1),
                     Key::Named(NamedKey::ArrowDown) if !typing => self.step_focus(1),
@@ -4382,6 +4828,95 @@ mod tests {
             lost.is_empty(),
             "the key reminder is pushed out:\n{}",
             lost.join("\n")
+        );
+    }
+
+    /// A controller's key reminder fits the help box's last line for every
+    /// maker's labels, and *Choose disc*'s controller help leaves it room.
+    #[test]
+    fn controller_key_reminder_fits_and_stays() {
+        use legaia_engine_system::gamepad::GlyphSet;
+        let mut cut = Vec::new();
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            let room = help_rect().w - 12;
+            for glyphs in [GlyphSet::Xbox, GlyphSet::PlayStation, GlyphSet::Nintendo] {
+                let mut app =
+                    LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+                app.status = None;
+                app.pad_last = Some(glyphs);
+                let hint = app.key_hint();
+                if c.width(&hint) > room {
+                    cut.push(format!("{name}: {glyphs:?} reminder {hint:?}"));
+                }
+                app.focus = Item::ChooseDisc;
+                if !help_layout(&c, &app.help_lines()).footer {
+                    cut.push(format!("{name}: {glyphs:?} Choose disc help"));
+                }
+                assert_eq!(app.play_key(), app.pad_label("Start", glyphs));
+            }
+        }
+        assert!(cut.is_empty(), "{}", cut.join("\n"));
+        assert_eq!(pad_key_hint("Cross", "Circle"), "Cross OK, Circle back");
+    }
+
+    /// The disc finder lists a folder's subfolders and disc images under
+    /// the way up, focuses the first of them, and Backspace goes up.
+    #[test]
+    fn disc_finder_walks_folders_to_a_disc_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join("Games")).unwrap();
+        std::fs::write(root.join("Legaia.cue"), b"x").unwrap();
+        std::fs::write(root.join("notes.txt"), b"x").unwrap();
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.panel = Panel::Recent;
+        app.show_folder(root.to_path_buf());
+        let kinds: Vec<_> = app.recent.iter().map(|e| e.kind.clone()).collect();
+        assert_eq!(kinds[0], RecentKind::Note, "the folder's own path");
+        assert_eq!(kinds[1], RecentKind::Folder(root.parent().unwrap().into()));
+        assert_eq!(kinds[2], RecentKind::Folder(root.join("Games")));
+        assert_eq!(kinds[3], RecentKind::FinderFile(root.join("Legaia.cue")));
+        assert!(!app.recent.iter().any(|e| e.label == "notes.txt"));
+        assert_eq!(
+            app.focus,
+            Item::RecentRow(2),
+            "the first entry, past the way up"
+        );
+        app.finder_up();
+        assert_eq!(app.finder.as_deref(), root.parent());
+        app.leave_page();
+        assert_eq!(app.finder, None);
+        assert_eq!(app.panel, Panel::Options);
+    }
+
+    /// With a controller in hand, the memory card chooser opens the finder
+    /// on memory cards instead of the file dialog.
+    #[test]
+    fn card_finder_lists_memory_cards_for_a_controller() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(root.join("Legaia.cue"), b"x").unwrap();
+        std::fs::write(root.join("slot1.mcr"), b"not a card").unwrap();
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.pad_last = Some(legaia_engine_system::gamepad::GlyphSet::default());
+        app.settings.card = Some(root.join("gone.mcr"));
+        app.browse_card();
+        assert_eq!(app.panel, Panel::Recent);
+        assert_eq!(app.finder_for, FinderTarget::Card);
+        assert_eq!(app.finder.as_deref(), Some(root));
+        let files: Vec<_> = app
+            .recent
+            .iter()
+            .filter_map(|e| match &e.kind {
+                RecentKind::FinderFile(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(files, [root.join("slot1.mcr")], "cards only, no disc image");
+        assert_eq!(
+            app.recent_lines[0],
+            RecentLine::Heading("Find a memory card")
         );
     }
 

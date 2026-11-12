@@ -437,9 +437,12 @@ fn plasma_strike_lands_the_flurry_total_and_runs_to_arm_0x10() {
 
     // The burst arm closes the caster and knocks the victim down.
     assert_eq!(ctx.phase, PLASMA_STRIKE_BURST_ARM);
+    let caster_bump = caster.restage;
     plasma_strike_tick(&mut ctx, &mut caster, &mut victim, Some(100));
     assert_eq!(victim.hp, 811);
     assert_eq!(caster.staged_anim, PLASMA_STRIKE_CLOSE_CLIP);
+    // The close is the byte alone: no bump, so `0x0D` plays out first.
+    assert_eq!(caster.restage, caster_bump);
     assert_eq!(victim.staged_anim, victim.knockdown_anim);
 
     // Arms 0x0E..=0x10 still busy; the band reports done past them.

@@ -44,7 +44,7 @@ exposes typed accessors.
 | `magic.toml` | 21 Seru spells + 8 Ra-Seru summons (name, MP, element, attack name, target shape); Seru spells additionally carry per-level absorb-chance fields |
 | `items.toml` | Consumables, key items, and special items (name, price, effect text) |
 | `weapons.toml` | Weapons (name, price, attack stat, primary user, alternate users) |
-| `armor.toml` | Body armor, helmets, shoes (name, type, price, UDF, LDF, equip restriction) |
+| `armor.toml` | Body armor, helmets, shoes (name, type, price, the equipment record's ATK / UDF / LDF / SPD / INT bonuses, wearer) |
 | `accessories.toml` | Accessories (name, price, effect text + structured effect class where pinned) |
 | `enemies.toml` | Enemies with location, drop / steal, and full per-enemy stat columns (HP / MP / EXP / Gold / ATK / SPD / UDF / LDF / INT / AGL / element) |
 | `bosses.toml` | Per-fight boss summaries: named attacks + MP cost, XP / gold / item rewards, recommended party level (18 main-story bosses + Lapis + Muscle Dome rounds) |
@@ -52,7 +52,7 @@ exposes typed accessors.
 | `casino.toml` | Sol/Vidna slot prizes + Muscle Dome courses + Baka Fighter |
 | `sol_tower.toml` | Sol Tower (the `kor*` / `koin*` CDNAME blocks) floor map + the named side-quest chains that don't fit any other table. Read by the site's minigames + world pages |
 | `fishing.toml` | Vidna/Buma fishing pond prizes |
-| `characters.toml` | Player-character profiles: elemental affinity (the 8 elements partitioned into strong / weak) + favorite-weapon class names |
+| `characters.toml` | Player-character profiles: the elements each takes less / more damage from + favorite-weapon class names |
 | `music.toml` | Music-track disambiguation: every BGM cue across its four naming spaces (debug sound-test id + title / in-game context / official OST title / proposed relocalization). Contributed by Stann0x; see [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md) |
 | `scenes.toml` | Scene display names: one row per CDNAME block (id, `#define` number, category, name, the disc's banner, the contributor's reading). The one table the site and CLIs name scenes by; identifications by Stann0x, banners pinned to the disc. See [`docs/reference/scene-names.md`](../../docs/reference/scene-names.md) |
 
@@ -65,13 +65,20 @@ enforce:
   through `legaia_art::tables` (or is annotated as a non-action-table
   art, e.g. some Hyper Arts that share an action constant).
 - Every `weapons.toml` `equip_best` / `equip_others` names one of
-  `Vahn`, `Noa`, or `Gala`; every `armor.toml` `equip` is one of those
-  or `None`, and its `slot` is `armor`, `helmet`, or `shoes`.
+  `Vahn`, `Noa`, or `Gala`; every `armor.toml` `equip` is one of those,
+  and its `slot` is `armor`, `helmet`, or `shoes`.
 - Every shop inventory item key matches a row in `items.toml`,
   `weapons.toml`, `armor.toml`, or `accessories.toml`. The casino,
   fishing, and enemy drop / steal keys resolve the same way.
 - Magic table covers exactly 21 Seru + 8 Ra-Seru entries, and each Seru
   spell carries its per-level absorb chances.
+
+The disc-gated `*_vs_disc` tests (and `arts_scus_oracle`) then pin every
+field that has a disc source to the user's disc - the executable's tables,
+the monster archive, the shop stock records, the minigame overlays - and
+skip when the extracted files are absent. A disagreement is corrected in the
+TOML with a comment naming the disc source; the enumerated checks are in
+[`docs/reference/gamedata.md`](../../docs/reference/gamedata.md).
 
 Run with `cargo test -p legaia-gamedata`.
 

@@ -1377,6 +1377,7 @@ fn from_tables_runs_the_strike_clock() {
         power: [0, 10, 10, 10, 0, 0, 0, 0, 0],
         keyframes: [0, 1, 1, 1, 2, 0, 0, 0, 0],
         speed: [16; 9],
+        head: [[0; 8]; 9],
         sub_keyframes: [
             vec![],
             vec![kf(4)],

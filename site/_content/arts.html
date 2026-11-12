@@ -202,7 +202,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
     <tbody>
       <tr><td><strong>Regular</strong></td><td>Learned by trying inputs in battle</td><td>Short combos; the AP cost grows with the number of inputs</td></tr>
       <tr><td><strong>Hyper</strong></td><td>Taught by the Fire / Wind / Thunder Books; the string does nothing until the book is read</td><td>Longer pre-set combos, entered as one chain; they play a fanfare instead of a voice shout</td></tr>
-      <tr><td><strong>Super</strong></td><td>Story unlock (Vahn: Cyclone Trigger, Noa: Music Box Trigger, Gala: Wind Cave and the Mystery Tree)</td><td>Fires automatically when the right chain of arts is entered in one bar; the chain pays the AP</td></tr>
+      <tr><td><strong>Super</strong></td><td>No unlock of its own: it is there once every art in its chain is learned</td><td>Fires automatically when the right chain of arts is entered in one bar; the chain pays the AP</td></tr>
       <tr><td><strong>Miracle</strong></td><td>One per character, from the Ra-Seru</td><td>The most powerful unique animation, at a fixed 99 AP</td></tr>
     </tbody>
   </table>
@@ -274,7 +274,7 @@ body.arts-live .art-card[data-art]:hover { outline: 1px solid #8C88EC; }
   const KIND_NOTE = {
     regular: 'Learned by use during normal play. AP cost rises with chain length.',
     hyper:   'Pre-set multi-art combos. Trigger by entering the full input as a single chain.',
-    super:   'Story-gated. Cyclone Trigger (Vahn), Music Box Trigger (Noa), Wind Cave + Mystery Tree (Gala).',
+    super:   'No story unlock: a Super fires when its chain of arts ends the input bar and every art in the chain was already learned before this turn.',
     miracle: 'One per character. Fixed 99 AP cost; unlocks the most powerful unique animation.',
   };
 

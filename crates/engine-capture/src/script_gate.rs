@@ -31,6 +31,16 @@ pub struct EngineContext {
     pub done: bool,
     /// The context is parked on an open dialog box.
     pub dialog_open: bool,
+    /// The `0x1F` lead of the page that box is on. A box chains its `0x24`
+    /// pages inside one panel, so the context's PC stays on the first page's
+    /// lead while retail's record PC (`+0x9E`) steps onto each page's: the
+    /// dialog SM runs the record past the box on the press
+    /// (`0x80039C5C..0x80039C74`) and loads the next line from there.
+    pub page_lead: Option<usize>,
+}
+
+fn page_lead(d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> Option<usize> {
+    d.row_leads().first().copied()
 }
 
 fn head_of(bytes: &[u8]) -> Vec<u8> {
@@ -49,6 +59,7 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             wait: tl.ctx.wait_accum,
             done: tl.done,
             dialog_open: tl.dialog.is_some(),
+            page_lead: tl.dialog.as_ref().and_then(page_lead),
         });
     }
     for (i, h) in world.field_vm.helper_contexts.iter().enumerate() {
@@ -59,6 +70,7 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             wait: h.ctx.wait_accum,
             done: h.done,
             dialog_open: h.dialog.is_some(),
+            page_lead: h.dialog.as_ref().and_then(page_lead),
         });
     }
     // A placed object's touched record runs on the same runner with a prop
@@ -72,6 +84,7 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             wait: id.ctx.wait_accum,
             done: id.done,
             dialog_open: id.panel.is_some(),
+            page_lead: id.panel.as_ref().and_then(page_lead),
         });
     }
     if let Some(man) = world.field_vm.channels_man.as_deref() {
@@ -86,6 +99,7 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
                 wait: c.ctx.wait_accum,
                 done: c.done,
                 dialog_open: false,
+                page_lead: None,
             });
         }
     }
@@ -136,6 +150,12 @@ pub struct ScriptGate {
     /// (`_DAT_801F2748`) of pager state `0x0B`. `None` for a page that is up
     /// and waits - the shape [`Self::met`] assumes otherwise.
     pub typing: Option<(u8, i32)>,
+    /// A text gate caught while the pager is between a page's press and its
+    /// wait in any arm but the typing one ([`Self::typing`]): the load of a
+    /// fresh box (`2`) or of a `0x24` page under the held rows (`5`), a
+    /// scroll (`0x0C`, `0x0E`, `0x0F`) or a page a press completes (`0x0D`).
+    /// `None` for a page that is up and waits.
+    pub pager: Option<PagerPhase>,
     /// A gate parked on the player's clip end-latch spin (`AD F8 08`): the
     /// player's clip cursor (`+0x68`) at the capture. The spin holds the
     /// record on its PC for the whole clip, so the PC alone meets the gate
@@ -149,6 +169,37 @@ pub struct ScriptGate {
     /// (`0x801DE90C..0x801DE944`), so the PC alone meets the gate on the
     /// leg's first frame.
     pub walk: Option<(u8, i16)>,
+    /// A gate parked on a walk wait (`B3 <t> 0A`) behind a walk-to-tile on
+    /// the same actor (`C7 <t> <x> <z> <mode>`): the target byte (`0xF8` the
+    /// player), the tile's position and the walker's distance left to it at
+    /// the capture, the larger axis. The wait holds the record on its PC
+    /// for the whole walk, so the PC alone meets the gate on the walk's
+    /// first frame.
+    pub tile_walk: Option<(u8, i32, i32, i32)>,
+}
+
+/// Where retail's pager stands inside a page ([`ScriptGate::pager`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PagerPhase {
+    /// `_DAT_801F2734`.
+    pub state: u8,
+    /// The row table `_DAT_801F3540[]` as record offsets of each row's
+    /// `0x1F` lead, top first (the non-null prefix).
+    pub rows: Vec<usize>,
+    /// The scroll word `_DAT_801F2738` (`<= 0`).
+    pub scroll: i32,
+    /// The reveal counter `_DAT_801F2748`. A press while a row types leaves
+    /// it where the press found it (`0x801D89B8..0x801D8A04`), so a `0x0D`
+    /// capture names how far the row had typed.
+    pub counter: i32,
+}
+
+impl PagerPhase {
+    /// The pager states this phase stands for: the mid-page arms other than
+    /// the typing one, which [`ScriptGate::typing`] carries.
+    pub fn applies(state: u8) -> bool {
+        matches!(state, 0x02 | 0x05 | 0x0C | 0x0D | 0x0E | 0x0F)
+    }
 }
 
 /// A retail camera mover's pair block as `LEGAIA_SEAT_GLIDE_PAIRS`:
@@ -188,8 +239,26 @@ impl ScriptGate {
             .walk
             .map(|(t, a)| format!(":w{t}.{a}"))
             .unwrap_or_default();
+        let pager = self
+            .pager
+            .as_ref()
+            .map(|p| {
+                let rows: Vec<String> = p.rows.iter().map(usize::to_string).collect();
+                format!(
+                    ":p{}.{}.{}.{}",
+                    p.state,
+                    p.scroll,
+                    p.counter,
+                    rows.join("-")
+                )
+            })
+            .unwrap_or_default();
+        let tile_walk = self
+            .tile_walk
+            .map(|(t, x, z, left)| format!(":m{t}.{x}.{z}.{left}"))
+            .unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}",
+            "{}:{hex}:{}:{}:{}{glide}{system}{typing}{latch}{walk}{pager}{tile_walk}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -207,8 +276,35 @@ impl ScriptGate {
         let mut typing = None;
         let mut latch = None;
         let mut walk = None;
+        let mut pager = None;
+        let mut tile_walk = None;
         for tail in it {
-            if let Some(w) = tail.strip_prefix('w') {
+            if let Some(m) = tail.strip_prefix('m') {
+                let mut f = m.split('.');
+                tile_walk = Some((
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ));
+            } else if let Some(p) = tail.strip_prefix('p') {
+                let mut f = p.splitn(4, '.');
+                let state = f.next()?.parse().ok()?;
+                let scroll = f.next()?.parse().ok()?;
+                let counter = f.next()?.parse().ok()?;
+                let rows = f
+                    .next()?
+                    .split('-')
+                    .filter(|r| !r.is_empty())
+                    .map(|r| r.parse().ok())
+                    .collect::<Option<Vec<usize>>>()?;
+                pager = Some(PagerPhase {
+                    state,
+                    rows,
+                    scroll,
+                    counter,
+                });
+            } else if let Some(w) = tail.strip_prefix('w') {
                 let (t, a) = w.split_once('.')?;
                 walk = Some((t.parse().ok()?, a.parse().ok()?));
             } else if let Some(c) = tail.strip_prefix('l') {
@@ -240,9 +336,24 @@ impl ScriptGate {
             system_pc,
             resumed_early: std::cell::Cell::new(false),
             typing,
+            pager,
             latch,
             walk,
+            tile_walk,
         })
+    }
+
+    /// A gate whose displayed frame the image child takes `display_lag`
+    /// ticks before the tick it meets the gate on
+    /// (`LEGAIA_CAPTURE_DISPLAY_LAG`): one on the player's clip latch, met on
+    /// the RAM's cursor, and a text gate mid-page, met on the RAM's pager
+    /// phase. Each tick since the engine took up the gate's record is a
+    /// frame retail drew too.
+    pub fn takes_displayed_frame(&self) -> bool {
+        self.latch.is_some()
+            || self.typing.is_some()
+            || self.pager.is_some()
+            || self.tile_walk.is_some()
     }
 
     /// The per-tick resume drive both seeds run: start the gate's record
@@ -315,29 +426,74 @@ impl ScriptGate {
     }
 
     /// The target's compass leg has spent as many units as the capture's,
-    /// for a gate held behind a walking placement ([`Self::walk`]); `true`
-    /// for any other gate, and once the engine's leg has landed.
+    /// for a gate held behind a walking placement ([`Self::walk`]), and the
+    /// walker stands as near its walk's tile as retail's did, for a gate on
+    /// a walk-to-tile's wait ([`Self::tile_walk`]); `true` for any other
+    /// gate, and once the engine's leg has landed.
     fn walk_reached(&self, world: &legaia_engine_core::world::World) -> bool {
         self.walk.is_none_or(|(target, accum)| {
             world
                 .npc_compass_walk_accum(target)
                 .is_none_or(|a| a as i16 >= accum)
+        }) && self.tile_walk.is_none_or(|(target, x, z, left)| {
+            let at = if target == 0xF8 {
+                world
+                    .player_actor_slot
+                    .and_then(|p| world.actors.get(usize::from(p)))
+                    .map(|a| {
+                        (
+                            i32::from(a.move_state.world_x),
+                            i32::from(a.move_state.world_z),
+                        )
+                    })
+            } else {
+                world
+                    .npc_position_for_target(target)
+                    .map(|(px, pz)| (i32::from(px), i32::from(pz)))
+            };
+            at.is_none_or(|(px, pz)| (x - px).abs().max((z - pz).abs()) <= left)
         })
     }
 
     /// The text the gate's box shows: the page up and waiting, or - for a
     /// capture caught mid-page ([`Self::typing`]) - the pager typing the same
-    /// window row with at least as many units revealed.
+    /// window row with at least as many units revealed, or - for a capture
+    /// in another arm of the page ([`Self::pager`]) - the engine's window in
+    /// the arm that mirrors it over the same rows, scrolled at least as far.
     fn text_shown(&self, d: &legaia_engine_dialog::dialog::OwnedDialogPanel) -> bool {
-        let Some((row, counter)) = self.typing else {
-            return Self::page_up(d);
-        };
-        Self::page_up(d)
-            || d.window().is_some_and(|w| {
+        if Self::page_up(d) {
+            return true;
+        }
+        if let Some((row, counter)) = self.typing {
+            return d.window().is_some_and(|w| {
                 w.phase.retail_state() == 0x0B
                     && w.rows.len() == usize::from(row) + 1
                     && w.pacer.counter >= counter
-            })
+            });
+        }
+        let Some(p) = self.pager.as_ref() else {
+            return false;
+        };
+        let Some(w) = d.window() else {
+            return false;
+        };
+        match p.state {
+            // A fresh box's load call: the window opens with the first line
+            // already in its slot (`RowWindow::open` runs state 2's load), so
+            // the first tick on the page is the nearest the engine comes.
+            0x02 => true,
+            // A `0x24` page's load under the held rows: the window has left
+            // the press call and still shows the previous page's rows.
+            0x05 => {
+                w.phase != legaia_engine_dialog::dialog_window::WindowPhase::PressTurn
+                    && d.window_row_leads() == p.rows
+            }
+            s => {
+                w.phase.retail_state() == s
+                    && d.window_row_leads() == p.rows
+                    && (s == 0x0D || w.scroll <= p.scroll)
+            }
+        }
     }
 
     /// Whether the engine's context for the record is on the gate's PC, at
@@ -382,13 +538,24 @@ impl ScriptGate {
             Some(g) => world.camera.state.glide_frames <= g,
             None => world.camera.state.glide_frames <= 0,
         } && self.latch_reached(world);
+        // A box chains its `0x24` pages in one panel and holds the context's
+        // PC on the first page's lead; retail's record PC steps onto each
+        // page's lead on the press that turns to it, so a text gate on a
+        // later page is met on that page (`concend` `P2[0]`'s `+0x73E`).
         let passed = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            let on_page = text
+                && tl
+                    .dialog
+                    .as_ref()
+                    .is_some_and(|d| page_lead(d) == Some(self.pc));
             head_of(&tl.bytecode) == self.head
-                && ((tl.pc == self.pc
+                && (((tl.pc == self.pc || on_page)
                     && tl.ctx.wait_accum >= self.wait
                     && glide_landed
                     && (!text || tl.dialog.as_ref().is_some_and(|d| self.text_shown(d))))
-                    || (tl.pc != self.pc && tl.visited.get(self.pc).copied().unwrap_or(false)))
+                    || (tl.pc != self.pc
+                        && !on_page
+                        && tl.visited.get(self.pc).copied().unwrap_or(false)))
         };
         if world.cutscene.timeline.as_ref().is_some_and(passed)
             || world.field_vm.helper_contexts.iter().any(passed)
@@ -526,8 +693,25 @@ impl ScriptGate {
             };
             return b.mask();
         }
+        // A capture whose page a press completed (`0x0D`, `0x0E`): the player
+        // pressed while it typed, so the seed presses on the gate's page
+        // once the engine's typing row has revealed as far as retail's had.
+        if let Some(p) = self
+            .pager
+            .as_ref()
+            .filter(|p| matches!(p.state, 0x0D | 0x0E))
+            && self.panel(world).is_some_and(|d| {
+                page_lead(d) == Some(self.pc)
+                    && d.window().is_some_and(|w| {
+                        w.phase == legaia_engine_dialog::dialog_window::WindowPhase::Typing
+                            && w.pacer.counter >= p.counter
+                    })
+            })
+        {
+            return legaia_engine_system::input::PadButton::Cross.mask();
+        }
         match self.context(world) {
-            Some(c) if c.dialog_open && c.pc != self.pc => {
+            Some(c) if c.dialog_open && c.pc != self.pc && c.page_lead != Some(self.pc) => {
                 legaia_engine_system::input::PadButton::Cross.mask()
             }
             _ => 0,
@@ -570,6 +754,27 @@ impl ScriptGate {
             world.camera.state.glide_frames,
             world.dialog.current.is_some()
         )
+    }
+
+    /// The dialog panel of the engine context running the gate's record: an
+    /// engaged talk's, else the timeline's or a concurrent context's.
+    fn panel<'a>(
+        &self,
+        world: &'a legaia_engine_core::world::World,
+    ) -> Option<&'a legaia_engine_dialog::dialog::OwnedDialogPanel> {
+        if let Some(id) = world.dialog.inline.as_ref()
+            && head_of(&id.bytecode) == self.head
+            && let Some(p) = id.panel.as_ref()
+        {
+            return Some(p);
+        }
+        world
+            .cutscene
+            .timeline
+            .iter()
+            .chain(world.field_vm.helper_contexts.iter())
+            .filter(|tl| head_of(&tl.bytecode) == self.head)
+            .find_map(|tl| tl.dialog.as_ref())
     }
 
     /// The engine context running the gate's record, if one is live. An
@@ -982,8 +1187,10 @@ mod tests {
             system_pc: Some(159),
             resumed_early: std::cell::Cell::new(false),
             typing: None,
+            pager: None,
             latch: None,
             walk: None,
+            tile_walk: None,
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {
@@ -991,6 +1198,28 @@ mod tests {
             typing: Some((1, 15)),
             latch: Some(-3),
             walk: Some((59, 8)),
+            tile_walk: Some((0xF8, 5952, 5952, 544)),
+            ..g
+        };
+        assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
+        let g = ScriptGate {
+            typing: None,
+            pager: Some(PagerPhase {
+                state: 0x0C,
+                rows: vec![0xC33, 0xC3C, 0xC5A],
+                scroll: -144,
+                counter: 0,
+            }),
+            ..g
+        };
+        assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
+        let g = ScriptGate {
+            pager: Some(PagerPhase {
+                state: 0x0D,
+                rows: Vec::new(),
+                scroll: 0,
+                counter: 7,
+            }),
             ..g
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g));

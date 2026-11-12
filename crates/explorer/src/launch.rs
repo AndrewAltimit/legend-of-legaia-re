@@ -82,6 +82,72 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
         .with_context(|| format!("writing {}", settings.display()))
 }
 
+/// The disc the game itself boots, from its launcher file's text
+/// (`launcher.toml`'s `disc` key, which [`record_disc_for_engine`] and the
+/// game's own disc picker write): what Explorer's start page offers on a
+/// first run, so a disc chosen in the game is not hunted for again.
+/// Anything that does not parse, or names no disc, gives `None`.
+pub fn engine_disc_from_settings(text: &str) -> Option<PathBuf> {
+    let table = text.parse::<toml::Table>().ok()?;
+    let disc = table.get("disc")?.as_str()?.trim();
+    (!disc.is_empty()).then(|| PathBuf::from(disc))
+}
+
+/// The game's disc ([`engine_disc_from_settings`] over
+/// [`engine_launcher_settings`]) when its file is still there and it is not
+/// already one of `recent`.
+pub fn engine_disc_offer(recent: &[PathBuf]) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(engine_launcher_settings()?).ok()?;
+    engine_disc_from_settings(&text).filter(|d| d.is_file() && !recent.contains(d))
+}
+
+/// The folders a first run looks in for a disc: the program's own folder,
+/// then Downloads, Desktop, Documents and the home folder (the game
+/// launcher's first-run search, `launcher::disc_search_dirs`).
+pub fn disc_search_dirs() -> Vec<PathBuf> {
+    let home = dirs::home_dir();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(std::path::Path::to_path_buf));
+    let mut out: Vec<PathBuf> = [
+        exe_dir,
+        dirs::download_dir().or_else(|| home.as_ref().map(|h| h.join("Downloads"))),
+        dirs::desktop_dir().or_else(|| home.as_ref().map(|h| h.join("Desktop"))),
+        dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents"))),
+        home.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    out.dedup();
+    out
+}
+
+/// A disc image named for the game in the usual folders
+/// ([`disc_search_dirs`], `legaia_app_theme::folder_list::find_dumps`), for
+/// a first run with nothing to open again: offered on the start page,
+/// never opened unasked.
+pub fn found_disc_offer() -> Option<PathBuf> {
+    pick_offer(legaia_app_theme::folder_list::find_dumps(
+        &disc_search_dirs(),
+        8,
+    ))
+}
+
+/// The dump to offer among `found` (a `.cue` ahead of its `.bin`, as
+/// `find_dumps` sorts them): one named for the USA release first, the disc
+/// Play boots, then the rest in order.
+pub fn pick_offer(found: Vec<PathBuf>) -> Option<PathBuf> {
+    let usa = |p: &PathBuf| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.to_ascii_lowercase().contains("usa"))
+    };
+    let mut found: Vec<PathBuf> = found.into_iter().filter(|p| p.is_file()).collect();
+    found.sort_by_key(|p| !usa(p));
+    found.into_iter().next()
+}
+
 /// The log file a Explorer-started game writes into.
 pub const GAME_LOG: &str = "legaia-explorer-game.log";
 
@@ -444,6 +510,19 @@ mod tests {
         assert!(!err.contains(STARTUP_RACE_FAILURE), "{err}");
         let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
         assert_eq!(text.matches("launched").count(), 1, "{text}");
+    }
+
+    /// The game's disc is read off its launcher file; a file without one,
+    /// or that does not parse, offers nothing.
+    #[test]
+    fn reads_the_games_disc_from_its_launcher_file() {
+        assert_eq!(
+            engine_disc_from_settings("disc = \"/g/Legaia.cue\"\nrecent_discs = []\n"),
+            Some(PathBuf::from("/g/Legaia.cue"))
+        );
+        assert_eq!(engine_disc_from_settings("recent_discs = []\n"), None);
+        assert_eq!(engine_disc_from_settings("disc = \"\"\n"), None);
+        assert_eq!(engine_disc_from_settings("not = = toml"), None);
     }
 
     /// The engine's launcher file gains the disc and keeps every other key;

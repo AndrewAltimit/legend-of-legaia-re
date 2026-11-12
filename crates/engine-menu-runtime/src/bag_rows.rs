@@ -161,6 +161,7 @@ pub(crate) fn item_applies_to_anyone(world: &World, id: u8) -> bool {
             | legaia_engine_menus::items::ItemEffect::ActionGauge
             | legaia_engine_menus::items::ItemEffect::ArtsBook
             | legaia_engine_menus::items::ItemEffect::PointCardStrike
+            | legaia_engine_menus::items::ItemEffect::SummonFlute
     ) {
         return true;
     }

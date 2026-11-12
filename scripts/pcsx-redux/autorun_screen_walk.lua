@@ -24,6 +24,8 @@
 --   mash:<BTN>:<every>:field        ... until the field runs with no box open
 --   sub:<hex>                wait for the sub-screen word to read hex
 --   mode:<hex>               wait for the game mode to read hex
+--   bflow:<hex>              wait for the battle flow state ctx[+0x06]
+--                            (ctx = *0x8007BD24) to read hex
 --   save:<name>              write <OUT_DIR>/<name>.rawsstate
 --
 -- A step that does not finish within LEGAIA_STEP_LIMIT (3000) vsyncs ends the
@@ -182,6 +184,10 @@ local handlers = {
     end,
     sub = function(s, v, p) return sub_now() == tonumber(p[2], 16) end,
     mode = function(s, v, p) return mode_now() == tonumber(p[2], 16) end,
+    bflow = function(s, v, p)
+        local c = probe.read_u32(0x8007BD24)
+        return ok_ptr(c) and (probe.read_u8(c + 0x06) or 0) == tonumber(p[2], 16)
+    end,
     save = function(s, v, p)
         save_state(p[2], v)
         return true

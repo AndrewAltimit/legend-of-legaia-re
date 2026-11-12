@@ -1277,6 +1277,14 @@ the staged shot and go cinematic" freezes such a scene's camera on the
 terrain-less fallback pose (`H = 512`, the zone-miss depth) instead of the
 region's own shot.
 
+A zero trigger copies inside the op, so the cut lands on the frame the record
+runs it, whoever holds the shot. The engine composes and copies there too:
+leaving the copy to the follow camera's snap waited for a tick that does not
+run while a record holds the camera, and `bylon` `P2[6]`'s `45 C0 00 00`
+opened "Noa: Vahn!" over the previous stair shot where a retail recording has
+cut to the follow pose (pitch `215`, yaw `-80`, `H` `768`) twenty frames
+earlier.
+
 A record that issues **no** `0x45` leaves the camera globals where the field
 camera put them, so its frame is the follow shot. The engine's scripted
 camera (`camera_view::cutscene_view`) therefore owns a frame only once some

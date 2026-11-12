@@ -347,6 +347,9 @@ impl World {
         }
         if commit_now {
             self.commit_staged_battle_anim_at_boundary(slot as usize);
+            if slot < 8 {
+                self.casting.module_bump_commits |= 1 << slot;
+            }
         }
         if cut_to_idle {
             self.cut_battle_reaction_to_idle(slot as usize);
@@ -397,5 +400,32 @@ mod tests {
         assert!(w.battle.status_effects.has(0, StatusKind::Stone));
         assert_eq!(w.actors[0].battle.field_flags, 0);
         assert_eq!(w.raw_status_word(0), 0x0004);
+    }
+
+    /// A rate an arm stores in the pass its tick bumps the acting seat's next
+    /// clip still meets the commit's decay, which retail runs in the anim tick
+    /// after the SM: PROT 0959's arm `0x0A` stores Che's `2` and bumps clip
+    /// `0x0B`, and she jumps at `4`. A pass with no bump keeps the store.
+    #[test]
+    fn a_rate_stored_beside_a_bump_commit_meets_the_commit_decay() {
+        use legaia_engine_cast::cast_module_camera::CaptureSeatWrite;
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, 2);
+        w.battle_ctx.active_actor = 0;
+        let rate_2 = CaptureSeatWrite {
+            rate: Some(2),
+            ..Default::default()
+        };
+        w.casting.module_bump_commits = 0;
+        w.apply_capture_seat_writes(0, rate_2);
+        assert_eq!(w.actors[0].battle.anim_rate.0, 2);
+        let mut v = w.cast_view(0);
+        v.staged_anim = 1;
+        v.restage |= 1;
+        w.write_cast_view(0, &v);
+        assert_eq!(w.casting.module_bump_commits, 1);
+        w.apply_capture_seat_writes(0, rate_2);
+        assert_eq!(w.actors[0].battle.anim_rate.0, 4);
     }
 }

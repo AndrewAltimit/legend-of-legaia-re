@@ -143,6 +143,7 @@
     <li>An empty slot is filled by the <em>first</em> eligible entry; ties keep the incumbent. The whole scan is a trial equip the routine undoes before returning.</li>
   </ul>
   <p>An item competes only when its record marks it equipment and its equip-character mask matches the character; the slot it competes for comes from the equipment record's slot bits, permuted weapon-first. Engine port: <code>equip_session::best_equipment_candidates</code>.</p>
+  <p>The candidate list previews each hovered row the same way: the candidate goes into the record, the stat aggregator runs, the compare block is summed, and the record is restored. Because the aggregator runs, an accessory&rsquo;s percent boosts show in the preview. Its clamp also runs: a current HP or MP above the previewed maximum is lowered and never raised back when the preview ends, so hovering a candidate that lowers a maximum clips the character&rsquo;s current value in retail. The port previews on copies and does not.</p>
 </section>
 
 <section class="doc-section" id="options-screen">

@@ -255,6 +255,21 @@ impl PlayWindowApp {
         // overlay keeps scrolling bright.
         legaia_engine_render::profile::draw_counts(draws.len(), color_draws.len());
         self.write_draw_census(&draws);
+        // The opt-in battle frame cost: this frame's table priced on the
+        // GPU model, handed to the world after the present.
+        let mut gpu_cost = self.gpu_cost_pricing().then(|| {
+            let frame_word = legaia_engine_field::camera_frame::nclip_cull_mode(
+                cutscene_cam.is_some(),
+                self.session.frame_draw_mode(),
+            );
+            super::redraw_gpu_cost::price_scene_draws(
+                &draws,
+                &color_draws,
+                &nclip_marks,
+                &color_nclip_marks,
+                frame_word,
+            )
+        });
         redraw_present::stage_draw_marks(
             r,
             draws.len(),
@@ -322,6 +337,10 @@ impl PlayWindowApp {
             fishing_line_prims,
             fx_cam,
         );
+        if let Some(c) = gpu_cost.as_mut() {
+            super::redraw_gpu_cost::price_screen_prims(c, &screen_prims);
+            super::redraw_gpu_cost::price_screen_prims(c, &light_prims);
+        }
         let capture_target = capture_layers
             .as_ref()
             .map(|(over, under)| present_target(&scene, over, under))
@@ -402,6 +421,9 @@ impl PlayWindowApp {
             self.notice = Some((text, std::time::Instant::now()));
         }
         self.present_frame(r, &scene, &screen_prims, &light_prims);
+        if let Some(c) = gpu_cost {
+            self.note_battle_gpu_cost(c);
+        }
     }
 }
 

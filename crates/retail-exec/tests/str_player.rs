@@ -453,3 +453,177 @@ fn the_slice_callback_install_matches_the_overlay() {
         assert_eq!(env.slice_callback_armed(), handler != 0);
     }
 }
+
+const PLAY: u32 = 0x801C_F098;
+const PLAY_END: u32 = 0x801C_F56C;
+const CD_SEARCH: u32 = 0x8005_DBB4;
+const CD_POS_TO_INT: u32 = 0x8005_C42C;
+const CD_INT_TO_POS: u32 = 0x8005_C328;
+const SET_DEF_DISP: u32 = 0x8005_731C;
+const PUT_DISP: u32 = 0x8005_89D0;
+const PAD_REBUILD: u32 = 0x8001_822C;
+const PAD_WORD: u32 = 0x8007_B850;
+const FMV_ID: u32 = 0x8007_BA78;
+
+/// What one run of the play loop handed its callees.
+#[derive(Default)]
+struct PlayLog {
+    seek: Vec<u32>,
+    init: Vec<(u32, u32, u32)>,
+    flags: Vec<u32>,
+    shown: Vec<(i16, i16, i16, i16)>,
+    pads: Vec<u32>,
+}
+
+/// The play loop `FUN_801CF098` whole, its CD, GPU and decode callees
+/// answered here, over generated slots, display contexts, pad words and
+/// stream lengths: the seek it asks the CD for, the decode init's VRAM-cell
+/// arguments, the MDEC output flags, the rect it puts on screen each frame
+/// and the frame the pad aborts on, against `seek_sector_offset`,
+/// `vram_units`, `mdec_control_flags`, `StrPlayer::display_rect` and
+/// `skip_requested`.
+#[test]
+fn the_play_loop_seeks_shows_and_skips_as_the_port() {
+    differential!(prot(970, PLAY));
+    use psx_mdec::str_player::{seek_sector_offset, skip_requested, vram_units};
+    let Some(mut cpu) = str_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.stub_outside = Some((PLAY, PLAY_END));
+    let log = Rc::new(RefCell::new(PlayLog::default()));
+    let lba = Rc::new(RefCell::new(0u32));
+    let script = Rc::new(RefCell::new(Vec::<u32>::new()));
+    let stop_at = Rc::new(RefCell::new(0usize));
+    cpu.hook(CD_SEARCH, |r, _| r.r[V0] = 1);
+    let l = lba.clone();
+    cpu.hook(CD_POS_TO_INT, move |r, _| r.r[V0] = *l.borrow());
+    let g = log.clone();
+    cpu.hook(CD_INT_TO_POS, move |r, _| g.borrow_mut().seek.push(r.r[A0]));
+    let g = log.clone();
+    cpu.hook(INIT, move |r, _| {
+        g.borrow_mut()
+            .init
+            .push((r.r[A1], r.r[psx_retail_exec::A2], r.r[psx_retail_exec::A3]))
+    });
+    let g = log.clone();
+    cpu.hook(OUTPUT_WORD, move |r, _| g.borrow_mut().flags.push(r.r[A1]));
+    let g = log.clone();
+    cpu.hook(SET_DEF_DISP, move |r, m| {
+        let h = m.rd32(r.r[psx_retail_exec::SP] + 0x10);
+        g.borrow_mut().shown.push((
+            r.r[A1] as i16,
+            r.r[psx_retail_exec::A2] as i16,
+            r.r[psx_retail_exec::A3] as i16,
+            h as i16,
+        ));
+    });
+    // The end latch, raised after the frame `stop_at` was put on screen.
+    let (g, s) = (log.clone(), stop_at.clone());
+    cpu.hook(PUT_DISP, move |_, m| {
+        if g.borrow().shown.len() == *s.borrow() {
+            m.wr32(END_LATCH, 1);
+        }
+    });
+    let (g, s) = (log.clone(), script.clone());
+    cpu.hook(PAD_REBUILD, move |_, m| {
+        let mut g = g.borrow_mut();
+        let pad = s.borrow().get(g.pads.len()).copied().unwrap_or(0);
+        m.wr32(PAD_WORD, pad);
+        g.pads.push(pad);
+    });
+    let mut rng = Rng(0x504C_4159);
+    let (mut skipped, mut ran_out) = (0, 0);
+    for round in 0..3000 {
+        let slot = FmvSlot {
+            colour: rng.below(2) == 0,
+            start_frame: 1 + rng.below(0x400),
+            end_frame: rng.below(0x800),
+            fb_x: rng.below(0x200),
+            fb_y: rng.below(0x200),
+            width: 16 + rng.below(0x140),
+            height: 16 + rng.below(0xF0),
+        };
+        write_slot(&mut cpu.mem, &slot);
+        *lba.borrow_mut() = 0x100 + rng.below(0x40000);
+        let rects: Vec<Rect> = (0..2)
+            .map(|_| Rect {
+                x: rng.below(0x400) as i16,
+                y: rng.below(0x200) as i16,
+                w: rng.next() as i16,
+                h: rng.next() as i16,
+            })
+            .collect();
+        for (b, rc) in rects.iter().enumerate() {
+            let at = CTX + 0x18 + 8 * b as u32;
+            cpu.mem.wr16(at, rc.x as u16);
+            cpu.mem.wr16(at + 2, rc.y as u16);
+            cpu.mem.wr16(at + 4, rc.w as u16);
+            cpu.mem.wr16(at + 6, rc.h as u16);
+        }
+        let active = rng.below(2);
+        cpu.mem.wr32(CTX + 0x28, active);
+        let fmv_id = [0i16, 0, 0, 1, 3, rng.next() as i16][rng.below(6) as usize];
+        cpu.mem.wr16(FMV_ID, fmv_id as u16);
+        let frames = 1 + rng.below(12) as usize;
+        *stop_at.borrow_mut() = frames;
+        *script.borrow_mut() = (0..frames)
+            .map(|_| {
+                if rng.below(6) == 0 {
+                    1 << (4 + rng.below(5))
+                } else {
+                    rng.next() & !0x1F0
+                }
+            })
+            .collect();
+        *log.borrow_mut() = PlayLog::default();
+        cpu.mem.wr32(END_LATCH, 0);
+        let wide = rng.below(2);
+        assert_eq!(
+            cpu.call(PLAY, &[wide, SLOT]),
+            Stop::Returned,
+            "round {round}"
+        );
+
+        let log = log.borrow();
+        let label = format!("round {round} {slot:?}");
+        // The seek: the file's sector plus the start frame's offset.
+        assert_eq!(
+            log.seek,
+            vec![(*lba.borrow() as i32 + seek_sector_offset(slot.start_frame)) as u32],
+            "{label}"
+        );
+        let x = vram_units(slot.fb_x as i32, slot.colour) as u32;
+        assert_eq!(log.init, vec![(x, slot.fb_y, x)], "{label}");
+        let mut player = StrPlayer::open(slot, Bitstream::Iki);
+        assert_eq!(
+            player.seek_sector_offset(),
+            seek_sector_offset(slot.start_frame)
+        );
+        player.env_mut().frame_buf = [rects[0], rects[1]];
+        player.env_mut().active_buf = active as usize;
+        let want = player.display_rect();
+        // Every frame shown, and the frame the pad ends it on.
+        let end = log
+            .pads
+            .iter()
+            .position(|&p| skip_requested(fmv_id, p))
+            .map_or(frames, |k| k + 1);
+        assert_eq!(log.shown.len(), end, "{label}: frames shown");
+        assert_eq!(log.flags.len(), end, "{label}");
+        for (k, s) in log.shown.iter().enumerate() {
+            assert_eq!(*s, (want.x, want.y, want.w, want.h), "{label}: frame {k}");
+            assert_eq!(
+                log.flags[k],
+                psx_mdec::str_player::mdec_control_flags(slot.colour),
+                "{label}"
+            );
+        }
+        if end < frames {
+            skipped += 1;
+        } else {
+            ran_out += 1;
+        }
+    }
+    assert!(skipped > 300 && ran_out > 300, "{skipped} {ran_out}");
+}

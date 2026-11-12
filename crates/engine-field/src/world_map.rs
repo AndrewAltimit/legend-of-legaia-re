@@ -12,8 +12,8 @@
 //! |---|---|---|
 //! | `view_mode` | `DAT_801F2B94` | `0` = normal walk, `1` = top-view debug |
 //! | `anim_flags` | `DAT_801F2B95` | bit 0 = anim-A enable, bit 1 = anim-B |
-//! | `camera_x` | `_DAT_80089118` | top-view X scroll; ±8 per D-pad frame |
-//! | `camera_z` | `_DAT_80089120` | top-view Z scroll; ±8 per D-pad frame |
+//! | `camera_x` | `_DAT_80089118` | top-view X scroll (stored negated); ±8 per Right / Left frame |
+//! | `camera_z` | `_DAT_80089120` | top-view Z scroll (stored negated); ±8 per Up / Down frame |
 //! | `azimuth` | `_DAT_8007B794` | top-view rotation; ±0x14 per frame |
 //! | `zoom` | `_DAT_8007B6F4` | top-view height; ±4 per frame |
 //!
@@ -40,10 +40,14 @@ use crate::world_map_panel_host::packed_pad;
 /// every bit that matters here: raw `0x1000` is Triangle, packed `0x1000` is
 /// D-pad Up. [`WorldMapController::tick`] converts on the way in
 /// ([`packed_pad`]), so the constants stay the retail literals.
-const CAM_X_DEC: u16 = 0x1000; // packed Up
-const CAM_X_INC: u16 = 0x4000; // packed Down
-const CAM_Z_DEC: u16 = 0x2000; // packed Right
-const CAM_Z_INC: u16 = 0x8000; // packed Left
+///
+/// Up and Down step the focus Z word `_DAT_80089120`, Right and Left the X
+/// word `_DAT_80089118` (`0x801E783C..0x801E78BC`). Both words are the focus
+/// as retail stores it, negated, so Up moves the view toward world `+Z`.
+const CAM_Z_DEC: u16 = 0x1000; // packed Up
+const CAM_Z_INC: u16 = 0x4000; // packed Down
+const CAM_X_DEC: u16 = 0x2000; // packed Right
+const CAM_X_INC: u16 = 0x8000; // packed Left
 const AZ_INC: u16 = 0x0020; // packed Circle → clockwise
 const AZ_DEC: u16 = 0x0080; // packed Square → counter-clockwise
 const ZOOM_DEC: u16 = 0x0008; // packed R1 - zoom out (height -)

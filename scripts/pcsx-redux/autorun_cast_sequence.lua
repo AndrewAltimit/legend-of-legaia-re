@@ -56,6 +56,11 @@
 --                seed word the hit's rolls draw from.
 --   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
 --                these bytes with its pc, ra and registers.
+--   cd.csv       with LEGAIA_CD_TRACE=1 (breakpoint core): libcd's command
+--                calls, CdSync, the CD response dispatcher and its callbacks,
+--                every exception and the frame's VSync-return / CPU-done
+--                marks, each with the CPU cycle: where a frame's CD time goes
+--                (scripts/ci/cd-poll-steps.py).
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -118,6 +123,10 @@
 --                        (the absolute vsync, as in meta.csv), and the whole
 --                        emulator state beside it as state_<vsync>.rawsstate
 --                        (VRAM included: sstate_vram.py); empty = none
+--   LEGAIA_GPU_COST      1 = also write gpu.csv, one row per vsync from the inject:
+--                        the frame-cost words gp+0x3A8 / gp+0x3AC and the GPU
+--                        draw-time model of the table the GPU was handed last
+--                        (lib/probe/gpu_cost.lua), in hblanks
 --   LEGAIA_CAST_PARTS    1 = also write parts.csv from the cast begin, one row per
 --                        vsync per live move-VM part (actor-list nodes on the
 --                        part tick FUN_80021DF4): the retail half of the engine
@@ -245,6 +254,30 @@ local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
     return v
+end
+-- gpu.csv (`LEGAIA_GPU_COST=1`): per vsync, the frame-cost words `gp+0x3A8`
+-- (CPU done) and `gp+0x3AC` (after `DrawSync`), and what the table the GPU was
+-- handed last costs to draw on the v2 GPU's measured costs (`probe.gpu_cost`,
+-- in hblanks). On the probe table: the frame body has no upvalue to spare.
+local GPU_COST = probe.getenv_num("LEGAIA_GPU_COST", 0) ~= 0
+function probe.gpu_cost_row(elapsed, st7, cx)
+    if not GPU_COST then return end
+    if probe.gpu_csv == nil then
+        probe.gpu_cost = require("probe.gpu_cost")
+        probe.gpu_csv = probe.csv_open(probe.out_path("gpu.csv"),
+            "vsync,frame,st7,phase,party,step,cpu,tot,cost,draw,dma,polys,pc,ra")
+    end
+    local function scratch_u16(a)
+        return (probe.read_scratch_u8(a) or 0) + 256 * (probe.read_scratch_u8(a + 1) or 0)
+    end
+    local draw, dma, polys = probe.gpu_cost.drawn_table(probe.read_u16, scratch_u16)
+    -- Where the CPU stood at the vsync: one PC sample a vsync, which over a
+    -- long pass says what the pass spends its time on.
+    local r = PCSX.getRegisters()
+    probe.gpu_csv:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%.1f,%.1f,%d,0x%08X,0x%08X", elapsed, u32(0x8007B798), st7,
+        u8(cx + 0x279), u8(cx), probe.read_scratch_u8(0x1F800393) or 0, u32(0x8007B6C0), u32(0x8007B6C4),
+        probe.frame_cost_newest(), draw, dma, polys, bit.band(tonumber(r.pc) or 0, 0xFFFFFFFF),
+        bit.band(tonumber(r.GPR.n.ra) or 0, 0xFFFFFFFF))
 end
 -- parts.csv: every live move-VM part, in list order. On the probe table: the
 -- frame body already sits at Lua's limit of 60 upvalues.
@@ -577,6 +610,62 @@ probe.run({
                 if (tonumber(R.GPR.n.a0) or 0) == 1 then calc_row("kon") end
             end)
         end
+        if probe.getenv_num("LEGAIA_CD_TRACE", 0) ~= 0 then
+            -- Where a frame's CD time goes (breakpoint core), each row with
+            -- the CPU cycle: libcd's command calls FUN_8005CF80 /
+            -- FUN_8005D0B8 / FUN_8005CCB4 (a0 the command, the first param
+            -- byte, ra), CdSync FUN_8005CA34's entry and its `jr ra`
+            -- (0x8005CCAC, v0 the result), the response dispatcher
+            -- FUN_8005DAB0's entry and exit (0x8005DB74), each interrupt
+            -- cause it reads (0x8005DAF0, s0), its data-ready and completion
+            -- callbacks (0x8005DB20 / 0x8005DB54, v0 the callback), and the
+            -- frame tail's CPU-done VSync(1) (0x800174CC).
+            local cd_csv = probe.csv_open(probe.out_path("cd.csv"), "vsync,st7,phase,kind,cycle,a0,a1,ra")
+            local function cd_row(kind, a0, a1)
+                local R = PCSX.getRegisters()
+                local c = u32(CTX_PTR)
+                local ok = c >= 0x80000000
+                cd_csv:row("%d,%d,%d,%s,%.0f,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
+                    ok and u8(c + 7) or -1, ok and u8(c + 0x279) or -1, kind,
+                    tonumber(PCSX.getCPUCycles()), a0, a1, tou32(R.GPR.n.ra))
+            end
+            for _, f in ipairs({ { 0x8005CF80, "ctl" }, { 0x8005D0B8, "ctlb" }, { 0x8005CCB4, "ctlf" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local n = PCSX.getRegisters().GPR.n
+                    local p = tou32(n.a1)
+                    cd_row(f[2], tou32(n.a0), ptr_ok(p) and u8(p) or 0)
+                end)
+            end
+            probe.arm_breakpoint(0x8005CA34, "Exec", 4, "sync", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("sync", tou32(n.a0), 0)
+            end)
+            probe.arm_breakpoint(0x8005CCAC, "Exec", 4, "sync_end", function()
+                cd_row("sync_end", tou32(PCSX.getRegisters().GPR.n.v0), 0)
+            end)
+            probe.arm_breakpoint(0x8005DAB0, "Exec", 4, "irq", function() cd_row("irq", 0, 0) end)
+            probe.arm_breakpoint(0x8005DB74, "Exec", 4, "irq_end", function() cd_row("irq_end", 0, 0) end)
+            probe.arm_breakpoint(0x8005DAF0, "Exec", 4, "cause", function()
+                cd_row("cause", tou32(PCSX.getRegisters().GPR.n.s0), 0)
+            end)
+            probe.arm_breakpoint(0x8005DB20, "Exec", 4, "ready", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("ready", tou32(n.v0), tou32(n.a0))
+            end)
+            probe.arm_breakpoint(0x8005DB54, "Exec", 4, "complete", function()
+                local n = PCSX.getRegisters().GPR.n
+                cd_row("complete", tou32(n.v0), tou32(n.a0))
+            end)
+            probe.arm_breakpoint(0x800174CC, "Exec", 4, "cpudone", function() cd_row("cpudone", 0, 0) end)
+            -- The frame end's VSync(n) return (0x800171C8, past `jal` at
+            -- 0x800171C0), where the cost words' window opens, and every
+            -- exception's entry at the vector 0x80000080 (a0 the cause).
+            probe.arm_breakpoint(0x800171C8, "Exec", 4, "vsyncret", function() cd_row("vsyncret", 0, 0) end)
+            probe.arm_breakpoint(0x80000080, "Exec", 4, "exc", function()
+                local ok, cause = pcall(function() return PCSX.getRegisters().CP0.n.Cause end)
+                cd_row("exc", ok and tou32(cause or 0) or 0, 0)
+            end)
+        end
         if probe.getenv_num("LEGAIA_PRIM_CALLS", 0) ~= 0 then
             -- Each entry of the prim dispatcher FUN_80043390: mesh a0, colour
             -- word a1, level a2, the caller, and the mesh's first group words;
@@ -674,6 +763,74 @@ probe.run({
             probe.arm_breakpoint(0x801EC878, "Exec", 4, "block", function()
                 local r = PCSX.getRegisters().GPR.n
                 blocks:row("%d,%d,%d,%d", last_elapsed, tou32(r.s0), tou32(r.s1), tou32(r.v0))
+            end)
+        end
+        if probe.getenv_num("LEGAIA_RIBBON_TRACE", 0) ~= 0 then
+            -- Each streak-ribbon call FUN_801E1D98 (breakpoint core), read at
+            -- 0x801E1E4C, just past its billboard projection (`jal
+            -- 0x800195A8`): the seed word its draws start from, the caller,
+            -- the anchor trio the routine copied to sp+0x20, the four
+            -- projected corners in the packet s2+0x08..+0x22, and the GTE
+            -- view the projection ran under (R, TR, OFX, OFY, H): the
+            -- inputs a ribbon's segment count, and so its rand() draws, read.
+            local ribbons = probe.csv_open(probe.out_path("ribbons.csv"),
+                "vsync,st7,phase,seed,ra,px,py,pz,x0,y0,x1,y1,x2,y2,x3,y3,"
+                .. "r0,r1,r2,r3,r4,trx,try,trz,ofx,ofy,h")
+            local ribbon_ra = 0
+            probe.arm_breakpoint(0x801E1D98, "Exec", 4, "ribbon_in", function()
+                ribbon_ra = tou32(PCSX.getRegisters().GPR.n.ra)
+            end)
+            probe.arm_breakpoint(0x801E1E4C, "Exec", 4, "ribbon", function()
+                local r = PCSX.getRegisters()
+                local sp = tou32(r.GPR.n.sp)
+                local pk = tou32(r.GPR.n.s2)
+                local cx = u32(CTX_PTR)
+                local c = {}
+                for i = 0, 26 do c[i] = -1 end
+                pcall(function()
+                    for i = 0, 26 do c[i] = tou32(r.CP2C.r[i]) end
+                end)
+                ribbons:row("%d,%d,%d,%d,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+                    .. "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                    last_elapsed, ptr_ok(cx) and u8(cx + 7) or -1,
+                    ptr_ok(cx) and u8(cx + 0x279) or -1, u32(0x80009010), ribbon_ra,
+                    s16(sp + 0x20), s16(sp + 0x22), s16(sp + 0x24),
+                    s16(pk + 0x08), s16(pk + 0x0A), s16(pk + 0x10), s16(pk + 0x12),
+                    s16(pk + 0x18), s16(pk + 0x1A), s16(pk + 0x20), s16(pk + 0x22),
+                    c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[24], c[25], c[26])
+            end)
+        end
+        if probe.getenv_num("LEGAIA_POPUP_TRACE", 0) ~= 0 then
+            -- Each damage numeral FUN_801DF6B8 projects (breakpoint core),
+            -- read at 0x801DF820, past its billboard projection: the ring
+            -- timer, the anchor trio at sp+0x20, the four projected corners
+            -- in the packet s1+0x08..+0x22, the ordering-table depth the
+            -- projection returned (v0) and the GTE view it ran under.
+            local popups = probe.csv_open(probe.out_path("popups.csv"),
+                "vsync,st7,phase,timer,ax,ay,az,x0,y0,x1,y1,x2,y2,x3,y3,depth,"
+                .. "r0,r1,r2,r3,r4,trx,try,trz,ofx,ofy,h")
+            probe.arm_breakpoint(0x801DF820, "Exec", 4, "popup", function()
+                local r = PCSX.getRegisters()
+                local sp = tou32(r.GPR.n.sp)
+                local pk = tou32(r.GPR.n.s1)
+                local slot = tou32(r.GPR.n.s0)
+                local cx = u32(CTX_PTR)
+                local c = {}
+                for i = 0, 26 do c[i] = -1 end
+                pcall(function()
+                    for i = 0, 26 do c[i] = tou32(r.CP2C.r[i]) end
+                end)
+                local v0 = tou32(r.GPR.n.v0) % 0x10000
+                if v0 >= 0x8000 then v0 = v0 - 0x10000 end
+                popups:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,"
+                    .. "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                    last_elapsed, ptr_ok(cx) and u8(cx + 7) or -1,
+                    ptr_ok(cx) and u8(cx + 0x279) or -1,
+                    ptr_ok(cx) and u32(cx + 0x85C + slot) or -1,
+                    s16(sp + 0x20), s16(sp + 0x22), s16(sp + 0x24),
+                    s16(pk + 0x08), s16(pk + 0x0A), s16(pk + 0x10), s16(pk + 0x12),
+                    s16(pk + 0x18), s16(pk + 0x1A), s16(pk + 0x20), s16(pk + 0x22), v0,
+                    c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[24], c[25], c[26])
             end)
         end
         if probe.getenv_num("LEGAIA_GHOST_TRACE", 0) ~= 0 then
@@ -896,6 +1053,7 @@ probe.run({
             probe.frame_cost_newest(), u8(cx + 0x26D))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
         probe.cast_parts_row(cast_seen, elapsed, st7, cx)
+        probe.gpu_cost_row(elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
         -- engine recorder's file of the same name.
         if cast_seen then

@@ -357,7 +357,19 @@ Structural facts, read from the raw table:
   `gimard_burning_attack`'s ordering table holds its rings as `GT3`s only.
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
-  word carries the bit; both hosts draw that emitter's mesh.
+  word carries the bit; both hosts draw that emitter's mesh. A mesh part's
+  model draw takes the same bank, so `World::part_draw_vram_mesh` splits the
+  part's kind-19 quads (group flags `>> 1`) on such a word and leaves its other
+  kinds whole (`summon::split_bank3_quads`). Each `GT3` is then its own
+  primitive to the near reject and the size limit, and maps its texels affinely
+  on its own: V-Windhash's trail (`0x801F79B8` / `0x801F79DC`, word `0xE9`) is
+  four quads that run from the blade's edge to tips past the screen, and drawn
+  as two triangles each its texture smeared across the frame (arm 3 `.686`
+  whole, `.730` split; `.901` with the pairs seated on the pass's drained focus,
+  [cast module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)). Against a
+  retail table of the arm, the newest pair already landed on
+  retail's sub-triangle corners, and the colours (corners `0` / `0x80` cued by the
+  level) matched packet for packet: the split was right, the older pairs' seat was not.
   The leaf lists each `GT3`'s corners in the reverse of the port's order
   (staged index bytes `0x50 0x30 0x00` and siblings at `0x80045BB4..0x80045BE0`);
   the port keeps the parent quad's winding for the host's face cull, and a
@@ -369,6 +381,22 @@ Structural facts, read from the raw table:
   bank-3 word found (`0xE9`, PROT 0903's fire tunnel) carries the double-sided
   bit `0x08`. The differential `quad_split` runs the leaf through the
   dispatcher against the port with the GTE seeded.
+  **The leaf rejects whole quads before it splits.** `RTPT` over corners
+  `0..=2` and `NCLIP`, masked by the dispatcher's word (`0x7FFFFFFF` for a word
+  carrying `0x08`, so a double-sided word never culls), drops a back-facing
+  quad (`0x80045C30..0x80045C54`); `RTPS` over corner `3` and `FUN_80044798`
+  then drop a quad whose four `SXY` all lie off one edge of the frame (every
+  `SY < 0`, every `SY >= 240`, every `SX <= 0` or every `SX >= 320`). The sixteen
+  `GT3`s of a kept quad take no winding test of their own, only the near reject.
+  Port: `prim_near_reject::bank3_quad_rejected` over the corners' GTE
+  projection (`gte_sxy`, `QuadView`), applied ahead of the split by
+  `effect_draws::part_seen_mesh` on both hosts; the group derail on a culled
+  quad is not ported, since no shipped word reaches it. The same differential
+  holds the reject against the leaf on quads scattered round and past the
+  frame. For a quad wholly in front of the eye the edge test drops only what
+  lies off screen, so it moves nothing a projection draws: on V-Windhash's
+  films it drops the trail quads that sweep above the frame and every film
+  scores as it did.
   Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
   `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
   nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
@@ -1225,7 +1253,12 @@ radius `actor+0x58 * 4 / 10` into `_DAT_8007B85C + 0x62400`. Its mode word is
 ([effect-vm.md](effect-vm.md#the-default-arms-draw)). `FUN_80043390` draws it
 with flag word `0x8A000000` - semi-transparent, blend mode 2, subtracted from
 the frame - only while the actor is neither pitched nor rolled
-(`+0x24 == 0 && +0x28 == 0`).
+(`+0x24 == 0 && +0x28 == 0`). In battle the node's angle trio is the battle
+actor's `+0x44..+0x48`, which the anim tick `FUN_80047430` copies across every
+pass (`0x800476AC..0x800476C4`, `0x80048088..0x800480A0`), so a body a cast
+module tips casts none: Kemaro's frozen victim (pitch `1`, `0x801F8388`),
+Mushura's banking creature (roll `+0x48`), Barra's diving pair. The port reads
+the battle pitch and roll there (`engine_world_views::battle_draws::battle_ground_shadow`).
 
 | Case | Centre / rim colour |
 |---|---|
@@ -3194,7 +3227,11 @@ world space by each host's own draw list (the `.MAP` placement + terrain
 layers through `placement_model`, the MAN scene-actor props at their spawn
 anchor) and clustered greedily (`CLUSTER_MERGE_DIST`; clusters wider than
 `CLUSTER_MAX_EXTENT` are dropped as sheets). A light sits `LIGHT_LIFT` above
-its geometry so it pools onto the floor. A prop's set follows the actor's
+its geometry so it pools onto the floor. A prop's set is read from its mesh
+posed on the first frame of its clip (`field_anim::record_frame_pose`), the
+pose the window draws before the clip player runs: unposed, a clip prop's
+parts all sit at its origin, and a lamp its clip lifts onto a post or a roof
+lit the ground under it. The set follows the actor's
 live anchor every frame (`World::field_npc_live_anchor`). The
 `MAX_SCENE_LIGHTS` (8) lights nearest the player shade each frame, scaled by
 the mood's lamp strength; attenuation is `(1 - (d/r)^2)^2` with a
@@ -3208,7 +3245,11 @@ opaque (cutout texels shadow solid), and the cone is a spot approximation:
 geometry above the light attenuates but is never shadowed. With the
 sub-toggle off the lamps keep shading unshadowed (each light's
 `color.w = 0`, no shadow pass). The browser page draws the same shadows into
-its own depth array.
+its own depth array. The window recovers each draw's model from its MVP
+(`view_proj^-1 * mvp`) for both the shading and the shadow pass, and both
+group the product the same way: regrouped as `(light_vp * view_proj^-1) *
+mvp`, the shadow pass rounded a ground draw under its own depth on some
+frames, and whole tiles under a lamp blinked dark.
 
 **Glow sprites (the bloom stand-in).** Around each picked light the host
 draws an additive camera-facing halo and a soft vertical shaft falling from

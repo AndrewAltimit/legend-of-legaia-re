@@ -288,7 +288,7 @@ The cell shape tells the two paths apart: the id path writes `[id, id, id, 0]` f
 
 Random encounters come from `FUN_801D9E1C`, in the world-map overlay and co-resident under the dance / fishing / slot-machine / cutscene / debug-menu overlays (same code each time). Provenance: `ghidra/scripts/funcs/overlay_world_map_801d9e1c.txt`.
 
-**Cadence.** State 0 of `FUN_801DA51C` calls it at `0x801DA5B0`, after a `DAT_8007B604` countdown and a non-zero rate setting `DAT_8007B5F8`. The actor pool fires once every `DAT_1F800393` vsyncs - 2 in a field scene, 3 on the overworld - so the tile is sampled per **game tick**, not per display frame (engine `FrameClock::game_tick_fired`).
+**Cadence.** State 0 of `FUN_801DA51C` calls it at `0x801DA5B0`, after the roll hold `DAT_8007B604` and a non-zero rate setting `DAT_8007B5F8`. While the hold is non-zero the state spends a tick of it instead (`0x801DA58C..0x801DA598`), so no step is sampled, counted or rolled and the reader's tile cache stands; the touch post `FUN_801D5B5C` arms `8` on every talk and prop touch, a record spawn `FUN_8003BDE0` arms `4` (engine `EncounterState::roll_hold`). The actor pool fires once every `DAT_1F800393` vsyncs - 2 in a field scene, 3 on the overworld - so the tile is sampled per **game tick**, not per display frame (engine `FrameClock::game_tick_fired`).
 
 **Step test.** The roll caches the player's tile (`world >> 7`) in `entity[+0x8E]` / `[+0x8F]` and leaves unless the new tile differs from the cached one by at most one on each axis (`slti 0x2` at `0x801D9EF0` / `0x801D9F08`). A scripted seat or warp landing is therefore not a step: it neither drains the counter nor rolls (engine `region_encounter::is_region_step`).
 

@@ -485,6 +485,16 @@ engine verdict:
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
   ([the npcs channel](#the-npcs-channel)).
+  A beat's last turn is seated where the card load already stands the
+  placement on retail's seat: a heading retail holds that is a compass
+  literal a partition-2 beat turns that flat to (a targeted `0x38` CAM_CFG's
+  `op0 & 0xF`, or a `4C 51` seat's `depth & 0xF`, through the SCUS
+  `0x80073F04` table) is taken over the record's facing
+  (`retail_compare::scripted_heading_seats`, `World::seed_placement_heading`,
+  the image child's `LEGAIA_SEAT_HEADINGS`). `son` `P2[5]` turns Luctes
+  (flat `10`) onto index `3`, `0x600`, with `B8 0A 83 12`, on the tile his
+  record `P1[4]` seats him on facing index `7` (`4C 51 92 BD 07 ..`), so a
+  state past the beat otherwise scores his record's `0xE00`.
   A walk-on beat's draw flags are seated too: an object actor whose `+0x74`
   word carries the semi-transparency bit (field-VM `4C D6`) hands its flag
   byte to the image child (`retail_object_draw_flags`,
@@ -904,11 +914,48 @@ every capture on a closing page (`garmel`'s Songi taunt), and the run
 sampled the settle window instead. A capture caught while the pager still
 types (`_DAT_801F2734` in state `0x0B`) is met on the typing row instead:
 the same window row (`_DAT_801F3530`) with the reveal counter
-`_DAT_801F2748` at least the capture's, taken two pager calls back for the
-displayed frame (each typing call adds `min(step, 4)` units).
+`_DAT_801F2748` at least the capture's.
 `casino_ticket_counter_dialog` shows "This is the P" with the rest of its
 page still to type; met on the page's wait, its frame showed the whole page
-and read `0.976`, met on the counter it reads `0.992`. A capture with no camera mover on its
+and read `0.976`, met on the counter it reads `0.992`.
+
+A capture in any other arm of a page is met on the arm too
+(`ScriptGate::pager`): the fresh box's load (`2`), the `0x24` page's load
+under the rows the last page left (`5`), a scroll (`0x0C`, `0x0E`, `0x0F`,
+with the scroll word `_DAT_801F2738` at least as far) and a page a press
+completed (`0x0D`). Each is met on the engine window's mirror arm over the
+same row table: retail's `_DAT_801F3540[]` pointers, taken as offsets into
+the record, against the window's row leads. A `0x0D` capture is one the
+player pressed through while it typed, so the seed presses once the engine's
+row has revealed as far as the capture's counter. The engine falls back to
+the waiting page when it never stands in the arm.
+
+**A later page of a box.** The dialog SM moves the record's PC onto each
+page as the press turns to it: on pager state `3` / `6` / `9` it walks the
+shown lines from `+0x9E` and stores the byte after them back in `+0x9E`
+(`0x80039BD4..0x80039C68`), `FUN_80038050` steps past the `0x24`, and the
+next line loads from that PC (`0x80039FA4..0x8003A000`). The engine pages a
+box's `0x24` chain inside one panel and holds its PC on the first page's
+lead, so a capture on a later page is met on the panel's current page and
+the seed stops paging once it is there. Met on the PC alone, none was:
+`concend` `P2[0]` parks on `+0x6E8` and `+0x73E`, `concnow` `P2[13]` on
+`+0x969` to `+0xC72`, and each scored the settle-window sample (image
+`.20`..`.36`, against `.94`..`.99` met on the page).
+
+**A walk-to-tile's wait.** `B3 <t> 0A` tests the halt bit a walk-to-tile
+on the same actor (`C7 <t> <x> <z> <mode>`) raised, so the record sits on
+that PC for the whole walk. On the player (`0xF8`) the arm halts the record
+and seats the op on the record's own `+0x94`; on a placement it halts and
+seats the placement. `ScriptGate::tile_walk` carries the target, the tile
+and the walker's distance left to it, and the gate is met once the engine's
+walker stands as near; a walker that landed on the capture's frame has
+dropped its halt bit with the record still on the test, and is met once the
+engine's lands too. Three `concend` checkpoints 60 vsyncs apart had all
+met on the player's first tick of the walk (position `.175`, `0`, `0`; met
+on the walk, `1`), and `concnow` `P2[13]`'s wait on flat `50` at `+0x399`
+read image `.34` on the PC alone and `.84` on the walk.
+
+A capture with no camera mover on its
 lists holds a landed shot (retail frees the mover when its glide ends), so
 there the record's context is met on the gate PC only once the engine's glide
 has landed too: `name_input_ui` is parked on the opening's `49 03` one op
@@ -923,7 +970,13 @@ double-buffers exactly as the battle does
 frames before the one the RAM holds, so the image child's gate takes
 `2 * step` vsyncs off the retail wait (`parity::retail_compare_script::displayed_script_gate_from_retail`,
 the step rebuilt from the frame-duration history). The state channels keep
-the RAM's wait. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
+the RAM's wait. A gate with no wait to take back - one on the player's clip
+latch, a text gate mid-page, a walk-to-tile's wait - keeps the RAM's phase,
+and the child takes its frame `display_lag` ticks before the tick it meets
+it on (`ScriptGate::takes_displayed_frame`, the `.retake` re-run). A box two
+pager calls into its first row was not drawn yet, which no reveal counter
+taken back names: `concend`'s box openings read `.79`..`.83` on the counter
+and `.99`..`1.00` on the retake. `minigame_dance_pcsx` is parked `21` vsyncs into the wait
 after `34 01 FF FF FF 1E`, a subtractive white walk-in (`27` vsyncs once a
 white blend-`2` target loses its eighth), on a step-`3` frame; gated on the
 RAM's wait the engine frame was darkened six vsyncs further than the one
@@ -1654,7 +1707,9 @@ The walk back steps those passes on the frame history's step, so it takes the sh
 The counter's reading comes off the tween table, since the accumulator counts from the walk's last loop re-commit and says nothing of the arrival. Case 7 aims `0x700` under the approach's case 6 and re-arms `ceil(gap / 0xC)` every pass, so the increments fall on one ladder (`150`, then by the step) and the table's increment names how many passes have run (`strike_passes_off_table`): `battle_nilboa_warfish_strike` sits on the first at accumulator `288`, `battle_map02_poisonous_worm_strike` on the second at `384`.
 The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
 The image child stands such a walker on the displayed frame's ring pair and seats its walk cursor at the displayed frame, as it does a struck body: the walk carries it `speed * scale / 8` a vsync, two game frames of which separate the screen from the RAM (`battle_korb2_warhalf_strike` `image` `.812` to `.824`, `battle_tunnelb_warman_strike` `.759` to `.801`).
-Its camera is walked back against the endpoint each earlier pass chased: case 7 focuses the midpoint of the two body pairs, and the pass before the RAM's framed the walker's pair one ring slot further back (`walker_end_shift`, the position ring's slot `2` with the pose at the cursor ring's slot `2`, against slot `1`), so its focus endpoint stood half the walk's step from the RAM's. The child, standing the walker on that slot, tests its framing against that endpoint rather than the RAM's (`RetailBattle::displayed_cam_end`), and every focus component takes the walked-back pose (`battle_retona_king_frog_strike` `.928` to `.984`, `battle_tunnelb_warman_strike` `.813` to `.848`, `battle_korb2_warhalf_strike` `.824` to `.846`).
+Its camera is walked back against the endpoint each earlier pass chased: case 7 focuses the midpoint of the two body pairs, and the pass before the RAM's framed the walker's pair one ring slot further back (`walker_end_shift`, the position ring's slot `2` with the pose at the cursor ring's slot `2`, against slot `1`), so its focus endpoint stood half the walk's step from the RAM's.
+The return state `0x20` re-arms the same way on each held pass, and when it arms case 8 (a knocked-down or dying target) the focus is the target's pair alone, so the pass before stood the target's whole step back (`return_target_end_shift`; a film of Gala's Flying Knee holds the endpoint on the target's pair at every return pass).
+The child, standing the walker on that slot, tests its framing against that endpoint rather than the RAM's (`RetailBattle::displayed_cam_end`), and every focus component takes the walked-back pose (`battle_retona_king_frog_strike` `.928` to `.984`, `battle_tunnelb_warman_strike` `.813` to `.848`, `battle_korb2_warhalf_strike` `.824` to `.846`).
 The strike loop's first arm chased another yaw. Case 7 subtracts the heading the pass before wrote, the loop re-faces onto the target's **body** pair and the walk states onto its **live** pair (`0x801E3568..0x801E3588` against `0x801E36F0..0x801E371C`), so where the frame on screen stood one arm into the loop (`walk_heading`), the walk back runs against that endpoint rather than the RAM's, and the body draws on the walk's heading.
 A monster whose nearest ring slot is `2` is that case: Warhalf's yaw `795`, where the RAM's endpoint gives `759`, on heading `1836` for the RAM's `1730` (`battle_korb2_warhalf_strike` `image` `.845` to `.971`, `battle_tunnelb_warman_strike` `.848` to `.982`, `battle_map02_mad_ogre_strike` `.984` to `.994`; a yaw sweep of the Warhalf child reads `.729`, `.845`, `.938`, `.785` at `700`, `759`, `800`, `850`). Nearest on slot `3` is a pass later and takes no shift: `12` units of it read `battle_noaru_gilium_lv2_strike` `.904` to `.585`.
 A walker the `+0x76` lock keeps on the walk clip is the exception: its loop passes back it off the target a ring step at a time (`battle_geremi_ogre_strike` stands `304`, `317`, `330` off on slots `3`, `2`, `1`), so nearest on slot `3` its displayed frame is still the walk's last pass and takes the shift. A yaw sweep of the Ogre child peaks at `190` where the RAM's endpoint gives `168`; the walk back on the shift lands on `189` (`image` `.878` to `.999`, `battle_vozz_twin_tomb_strike` `.957` to `.997`, `battle_map03_dark_ogre_strike` `.988` to `.999`, `battle_tunnelb_gel_frog_strike` `.991` to `.998`).
@@ -2668,6 +2723,8 @@ that holds the phase; a drive the headless side never completed is not imaged.
 | Members ahead of the capture's seat | a plain Attack: the ring's Left arm, `Auto`, the first target |
 | Members ahead of a menu capture's seat that committed Spirit | Spirit (the ring's Down arm), read off each seat's `+0x1DE = 4`: the commit log draws each member's committed command (`delilas_che_hammer_gaps_v3`'s Vahn and Noa) |
 | The capture's seat, menu capture | the arm that leads to the captured surface: Left then `Command` for the arts entry `0x50`, Up for the item window `0x3C`, Right for the magic window `0x46` |
+| The capture's seat, window target capture | the window's arm, then Down onto the row that holds the seat's `+0x1DF` (the bag item or spell under the cursor) and Cross, which raises the sub-cursor that row's target flags name (`0x5B..0x5E`, `0x64..0x67`, [battle-command-flow](../subsystems/battle-command-flow.md#the-window-target-sub-cursors)) |
+| The capture's seat, Attack cursor capture (`0x5A`) | Left then `Auto`, each press after the camera's glide has landed, then Right until the cursor rests on the monster the seat's `+0x1DD` names ([below](#the-attack-cursor-is-paced)) |
 | The capture's seat, action capture | the same Attack every round; Spirit when its committed category `+0x1DE` is `4` |
 | A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back), at the seat `+0x1DD` names whatever the record's shape says (Slime Divide's scripted arm stores the caster under an all-allies shape) |
 | The party, on such a monster-cast drive | Spirit instead of Attack, so the caster is still standing when its turn comes (Zeto's two mid-cast captures sit in a party that kills him in two swings) |
@@ -2675,6 +2732,22 @@ that holds the phase; a drive the headless side never completed is not imaged.
 
 Monster seats are translated from retail's fixed pool slots `3..` onto the
 engine's seating straight after the party.
+
+#### The Attack cursor is paced
+
+The cursor's case-1 shot turns the yaw to `0x800 - bearing(target -> focus)`
+off the camera's **live** focus (`0x801D5A6C..0x801D5AD0`,
+[battle-stage-camera](../subsystems/battle-stage-camera.md)), so the yaw it settles
+on depends on how far the ring's close-up had glided when the cursor opened.
+The screen walk that records a cursor capture idles between presses and the
+close-up has landed on the member; a drive pressing every other tick opened
+the cursor with the focus still a few hundred units short, and the shot
+stood some `0x700` round. The drive waits out each glide before it presses
+toward the cursor - a harness pacing, which no play path reads - and walks the
+cursor onto the captured monster (`BattleDrive::Menu`'s `pick`). On a
+three-monster rugi fight recorded for the cursor (Barra, Barra, Slippery)
+that moved the camera `.875` to `1.000` and the frame `.717` to `.996`; the
+Gaza cursor states are unchanged.
 
 **Arts strings.** A party seat whose committed queue `+0x1DF..+0x1EE` holds an
 art starter (`0x19` / `0x1A`) entered its turn through `Command`, so its drive
@@ -2883,6 +2956,22 @@ walk there for a charge body waiting in arm 3. The Koru mid-casts hold the
 table two units in, one step-`2` pass: walked back the lag's two passes their
 frames stood yaw `1970`, `198` units round of the shot's `2168` origin, and
 read `image` `.943` each at the origin.
+
+<a id="the-module-shots-walk-back"></a>
+The walk goes past the origin when the framing the arm cut from was still
+walking. Kiss of Death's arm 0 (PROT 0955) builds its shot over `0xC` units
+(`li a3,0xc` at `0x801F8808`, builder `jal 0x801D829C` at `0x801F883C`;
+`KISS_OF_DEATH_ARM0_SHOT_FRAMES`) out of the magic-capture fade `0x6F`, which
+re-arms case 6 on every pass. `battle_map01_lippian_kiss_of_death_mid_cast`
+holds the table two units in (pitch `3` a unit with `26` to go, TR z `301`
+with `3005`), so the RAM's pass built it and ran at step `2`: the history's
+newest entry (`0x2BC`) names the step-`4` pass to come, and a forward film
+then moves `4 * inc` a pass. The frame on screen stood one pass further back,
+on the fade's framing (`module_shot`, `prior_walks`), which walks on the
+shot's own increments at the older pass's step: the fade's case-6 endpoint is
+not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
+`image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
+on the table, `.950` on this walk; a sweep of the walk back peaks there.
 
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
@@ -4594,7 +4683,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `view_window` at `0` beside that selector pair | the same pass: each selector arm applies its own op `0x46` window, which the band hold now lands with the bit ([below](#the-region-selector-band-and-the-entry-order)) |
 | a room or selector bit down in the engine only, the system script's PC never moving off its loop head | the system context halted, or a record holding the player from the landing: a pre-fight flag ([below](#a-pre-fight-flag-runs-the-entrys-post-battle-branch)), or a halt nothing clears |
-| `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
+| `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes; the seed lowers what the entry head raised and retail holds down ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
@@ -4741,8 +4830,17 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   modulating it on its `B + F/4` path (`((t >> 2) * m) >> 7`,
   `getTextureTransColShade` in `gpu/soft/soft.cc`), so a texel channel
   under `4` adds nothing whatever its colour. The dark stem drops out and
-  the red lips keep a trace, which is the open faintness above: the residual
-  is the blend's arithmetic, not the ghost's pose or facing.
+  the red lips keep a trace, which is the open faintness above: the ghost's
+  faintness is the blend's arithmetic, not its pose or facing. That arithmetic
+  is the emulator's, not the console's: the GPU blends the **modulated**
+  texel, `min(B + (F >> 2), 31)` with `F = (t5 * c8) >> 7` (nocash PSX-SPX,
+  "GPU - Texture Color / Blending"; [the 5-bit table](../subsystems/renderer.md)),
+  so the port's game path keeps the console's rule and the PCSX-Redux texel
+  rule stays an instrument of the image child alone
+  (`PsxTexelRule::PcsxRedux`, already on for a PCSX-Redux state). Most of the
+  still's frame-wide residue was the camera instead: arm 0 built its `0xC`-frame
+  shot on the RAM's own pass, at step `2`, and the frame on screen stood a pass
+  earlier on the fade's framing ([the module shot's walk back](#the-module-shots-walk-back)).
 
 ### Which pose names a strike capture's ghost bits
 
@@ -5097,6 +5195,17 @@ and `P1[0]` spawns it (`44 60` at `+0xF7`) only while system flag `0x2C9` is
 up, which the beat clears as its first op. The gate word `0x8007B854` sits
 outside the save window at `0x80084140`, so a load of the post-beat save has
 the flag down, skips the beat and keeps the raise.
+
+The seed lowers that raise again once its settle has run
+(`hold_undone_entry_raises` in
+[`save_flags.rs`](../../crates/parity/src/retail_compare/save_flags.rs)), as
+it holds the region-selector band ([above](#the-band-is-held)). It walks the
+entry record from its first opcode to its first branch, wait or halt, takes
+the system flags that head sets and whether it issues `4C 30`, and lowers a
+flag only where retail's bitmap holds it down and the scene's bytecode clears
+it outside the head, and the gate only where retail's word is `0` and the
+scene carries a `4C 31`. A raise nothing in the scene undoes stays up, so an
+engine that never lowered a flag retail's script did still scores the miss.
 
 The Genesis tree in `rikuroa_post_caruban` is the same history from the other
 side. The tree's three objects (`P0[2..4]`) arm their withered vertex morph
@@ -6204,7 +6313,7 @@ every pass, so it moves with the phase of both clips):
   models' own, and the anchor went in unflipped: the run fell through the
   floor and left by the bottom of the stage, so no engine frame of a landed
   hit carried the figure retail's shows at row `32`
-  (`battle_numerals::popup_rect`). Its size was off the same way round: the
+  (`battle_numerals::popup_square`). Its size was off the same way round: the
   square's half-extent is half the ring timer in **view** units, added after
   the camera matrix has scaled the centre, and it went through the 4x stage
   scale with the anchor - at the 24-px cap from its fourth frame, where

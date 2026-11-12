@@ -959,9 +959,10 @@ impl RetailBattle {
             // module tick, then `0x71`), so once the module's arm 0 has
             // built its own shot (`ctx[+0x279]` past `0`) and that shot
             // is still walking, the table the RAM holds is the one the
-            // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
-            // `image` `.849` on the re-arm's walk, `.886` on the
-            // table's). Before arm 0 the table is the last one `0x6F` armed.
+            // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0,
+            // walked back past the shot's origin onto the fade's framing:
+            // `module_shot`). Before arm 0 the table is the last one `0x6F`
+            // armed.
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);

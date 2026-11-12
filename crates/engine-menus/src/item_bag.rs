@@ -134,6 +134,12 @@ impl ItemBag {
             .unwrap_or((0, 0))
     }
 
+    /// The window slot holding `id` (`FUN_80042EE0`'s scan), or `None`.
+    #[must_use]
+    pub fn find_slot(&self, id: u8) -> Option<usize> {
+        self.inv.find_slot(id)
+    }
+
     /// Take `amount` off a physical slot through retail's own **by-slot**
     /// consume helper, returning the count left in it.
     ///

@@ -392,7 +392,8 @@ pub const PLASMA_STRIKE_ARMS: u16 = 0x11;
 ///   `+0x14C != +0x172`) never opens.
 /// * Arm `0x0D` is the `FUN_801DD6B4(0x1C0)` burst at `0x801F8168` with the
 ///   shape-A clamp at `0x801F818C`, then the caster's close
-///   ([`PLASMA_STRIKE_CLOSE_CLIP`]) and the victim's knockdown from its
+///   ([`PLASMA_STRIKE_CLOSE_CLIP`], staged with no `+0x1DC` bump, so it goes
+///   in at the end of the playing `0x0D`) and the victim's knockdown from its
 ///   reaction map. `hit` is that roll; the engine folds the cast's outcome at
 ///   the band seam instead and passes `None`.
 ///
@@ -435,7 +436,10 @@ pub fn plasma_strike_tick(
             }
             let knockdown = victim.knockdown_anim;
             stage_clip(victim, knockdown);
-            stage_clip(caster, PLASMA_STRIKE_CLOSE_CLIP);
+            // `li v0,0xF; sb v0,0x1da(s2)` at `0x801F820C..0x801F8214`: the
+            // byte alone - the `+0x1DC` bump at `0x801F8208` is the victim's
+            // (`s3`) - so Lu plays `0x0D` out to its end before the close.
+            caster.staged_anim = PLASMA_STRIKE_CLOSE_CLIP;
             false
         }
         _ => false,

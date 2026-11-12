@@ -23,6 +23,14 @@
 #
 # Source: Meth962, "Legend of Legaia 100% Walkthrough" (GameFAQs FAQ
 # 53721), v1.11; HP values verified against v1.07 Sise_Neg correction.
+#
+# `crates/gamedata/tests/bosses_vs_disc.rs` pins each row against its
+# monster record (PROT 0867): HP, MP, the `item_reward` (a drop the record
+# gives at 100%), `gold_reward` (the spoils routine's payout without the
+# Golden Book), and each attack's MP against the SCUS spell table. The FAQ
+# misread four of those (Cort's MP, Mystic Shield, Spore Gas and Stone
+# Circle's costs) and gave Lapis the Golden Book gold. `exp_reward` is the
+# FAQ's per-member share and depends on the party size, so it is not pinned.
 
 # ---------------------------------------------------------------------------
 # Main-story bosses (chronological / Meth's B-code order)
@@ -88,9 +96,9 @@ hp_min = 5000
 hp_max = 5000
 mp = 850
 attacks = [
-  { name = "Spore Gas", mp = 55 },
+  { name = "Spore Gas", mp = 85 },
   { name = "Poisonous Gas", mp = 0 },
-  { name = "Stone Circle", mp = 185 },
+  { name = "Stone Circle", mp = 100 },
 ]
 exp_reward = 2500
 gold_reward = 1667
@@ -240,6 +248,8 @@ attacks = [
 ]
 exp_reward = 15000
 gold_reward = 15000
+# The monster record drops a Healing Fruit at 100%; the FAQ lists no item.
+item_reward = "healing_fruit"
 recommended_level = "28"
 notes = "Four-turn timed kill; failure is game over."
 
@@ -251,7 +261,7 @@ hp_min = 22422
 hp_max = 22422
 mp = 2000
 attacks = [
-  { name = "Darkness Typhoon", mp = 200 },
+  { name = "Dark Typhoon", mp = 200 },
   { name = "Glare", mp = 170 },
 ]
 exp_reward = 11250
@@ -295,9 +305,9 @@ location = "Jette's Fortress (deep)"
 meth_id = "B0011"
 hp_min = 50000
 hp_max = 50000
-mp = 1000
+mp = 1200
 attacks = [
-  { name = "Mystic Shield", mp = 170 },
+  { name = "Mystic Shield", mp = 130 },
   { name = "Guilty Cross", mp = 0 },
   { name = "Mystic Circle", mp = 100 },
   { name = "Evil Seru Magic", mp = 255 },
@@ -364,7 +374,7 @@ hp_max = 64800
 mp = 4000
 attacks = [{ name = "Lapis Wave", mp = 255 }]
 exp_reward = 47250
-gold_reward = 15625
+gold_reward = 12500
 item_reward = "evil_medallion"
 recommended_level = "42"
 notes = "Optional superboss; sole drop is Evil Medallion."
@@ -372,55 +382,55 @@ notes = "Optional superboss; sole drop is Evil Medallion."
 # ---------------------------------------------------------------------------
 # Muscle Dome tournament rounds (Master / Expert)
 #
-# Older fan-recorded HP-only estimates. Most match a corresponding L2/L3
-# variant in enemies.toml (Berserker Lv2, Caruban Lv2/Lv3, etc.).
+# The HP is the monster record the arena roster (PROT 0977) fights in that
+# round; the fan-recorded estimates these rows once carried were off.
 # ---------------------------------------------------------------------------
 
 [[boss]]
 name = "Berserker (Master)"
 location = "Muscle Dome"
 tournament = "Master"
-hp_min = 4500
-hp_max = 4500
+hp_min = 5000
+hp_max = 5000
 
 [[boss]]
 name = "Caruban (Expert)"
 location = "Muscle Dome"
 tournament = "Expert"
-hp_min = 0
-hp_max = 1200
+hp_min = 1024
+hp_max = 1024
 
 [[boss]]
 name = "Aluru (Expert)"
 location = "Muscle Dome"
 tournament = "Expert"
-hp_min = 0
-hp_max = 1200
+hp_min = 1028
+hp_max = 1028
 
 [[boss]]
 name = "Dark Ogre (Expert)"
 location = "Muscle Dome"
 tournament = "Expert"
-hp_min = 3500
-hp_max = 3500
+hp_min = 3350
+hp_max = 3350
 
 [[boss]]
 name = "Gold Bison (Expert)"
 location = "Muscle Dome"
 tournament = "Expert"
-hp_min = 3500
-hp_max = 3500
+hp_min = 3800
+hp_max = 3800
 
 [[boss]]
 name = "Ironman (Expert)"
 location = "Muscle Dome"
 tournament = "Expert"
-hp_min = 2500
-hp_max = 2500
+hp_min = 2300
+hp_max = 2300
 
 [[boss]]
 name = "Viguro Lv2 (Master)"
 location = "Muscle Dome"
 tournament = "Master"
-hp_min = 1200
-hp_max = 1200
+hp_min = 1280
+hp_max = 1280

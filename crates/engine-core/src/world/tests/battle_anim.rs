@@ -1367,8 +1367,10 @@ fn a_downed_actor_does_not_tween_or_step() {
         zs.push(world.actors[0].pose_frame.as_ref().unwrap().bone_outputs[0].0[2]);
     }
     // HP 0 fails the gate: the last frame blends toward itself, and the
-    // natural end moves nothing (no Seru staged).
-    assert_eq!(zs, vec![32, 64, 64, 64]);
+    // natural end moves nothing (no Seru staged). The pass that crosses the
+    // end commits the idle behind its advance and shows its first keyframe
+    // (`0x80047A48..0x80047B58`).
+    assert_eq!(zs, vec![32, 64, 64, 0]);
     assert_eq!(world.actors[0].move_state.world_z, z0);
 }
 
@@ -2060,4 +2062,37 @@ fn a_reaction_staged_after_the_seats_slice_slides_from_its_next_tick() {
     world.tick_battle_animations_walk(true);
     world.tick_battle_locomotion_dt(3);
     assert_ne!(pair(&world), stood, "the block slides from the next tick");
+}
+
+/// A clip a seat's own slice commits behind its advance - here the natural
+/// end of a one-shot swing installing the swing staged behind it - is drawn
+/// on its first keyframe on that pass: `FUN_8004AD80` zeroes the cursor
+/// (`0x8004B068`) and the draw decodes the new entry there, so the body pair
+/// the next pass's range law and separation read comes off the new swing's
+/// keyframe 0, not the outgoing swing's last pose
+/// (`battle_ropeway_party_gala_flying_knee_mid`: Gala's pair on clip `0x0F`
+/// at cursor `0`).
+#[test]
+fn an_attackers_in_slice_commit_shows_the_new_clips_first_keyframe() {
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    world.toggles.battle_sm_frame_cadence = true;
+    let swing = pose_test_clip(8, 2, 100);
+    world.actors[0].battle_animation =
+        legaia_engine_battle::battle_anim::MonsterAnimPlayer::new_one_shot(&swing);
+    world.actors[0].battle.current_anim = 8;
+    world.actors[0].battle.queued_anim = 9;
+    world.actors[0].battle_animation.as_mut().unwrap().step = 1024;
+    let commits = world.actors[0].battle_clip_commits;
+    world.battle.anim_pass_vsyncs = 1;
+    world.tick_battle_anim_pass();
+    assert_ne!(
+        world.actors[0].battle_clip_commits, commits,
+        "the slice committed the staged swing"
+    );
+    assert_eq!(world.actors[0].battle.current_anim, 9);
+    let pose = world.battle_stream_pose_translations(0).unwrap();
+    assert_eq!(pose[0][0], 200, "the new swing's keyframe 0, not 101");
+    let front = world.actors[0].battle_pose_history.front().unwrap();
+    assert_eq!(front.frame, 0);
 }

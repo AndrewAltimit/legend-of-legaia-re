@@ -23,6 +23,7 @@ psx-vab.workspace = true
 [dev-dependencies]
 legaia-actor-formats.workspace = true
 legaia-game-tables.workspace = true
+legaia-gamedata.workspace = true
 legaia-overlay-images.workspace = true
 
 [[test]]

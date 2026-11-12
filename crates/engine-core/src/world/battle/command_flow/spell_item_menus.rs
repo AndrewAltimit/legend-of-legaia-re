@@ -125,8 +125,73 @@ impl World {
                 self.open_battle_command(actor);
             }
             None => {
+                // Still browsing or targeting: the flow byte stands on the
+                // window or on the target sub-cursor its commit raised
+                // (`0x5C` / `0x5E` / `0x65` / `0x67`, the ladder at
+                // `0x801D1C50..0x801D1D7C`).
+                use legaia_engine_battle::battle_magic::SpellPhase;
+                use legaia_engine_battle::target_picker::CursorRow;
+                use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+                let flow = match &menu.phase {
+                    SpellPhase::Targeting { picker, .. } => {
+                        Flow::window_target(true, picker.kind().picks_enemy(), false)
+                    }
+                    SpellPhase::SweepConfirm { row, .. } => {
+                        Flow::window_target(true, *row == CursorRow::Enemy, true)
+                    }
+                    _ => Flow::MagicWindow,
+                };
+                self.seat_sweep_target(flow);
                 self.battle.spell_menu = Some(menu);
+                if self.battle.set_battle_flow(flow) {
+                    self.battle.spell_menu = None;
+                    let actor = self.battle_ctx.active_actor;
+                    self.open_battle_command(actor);
+                }
             }
+        }
+    }
+
+    /// The target byte `+0x1DD` on the window's sweep surfaces. Raising an
+    /// all-target sub-cursor writes the side's group code on the acting
+    /// member - `9` for `0x5D` / `0x5E` (`li v0,0x9` / `sb v0,0x1dd(v1)` at
+    /// `0x801D1CF8..0x801D1D00`, the item arm joining at `0x801D1CF0`), `8`
+    /// for `0x66` / `0x67` (`0x801D1D68..0x801D1D6C`, the item arm joining at
+    /// `0x801D1D50` after its own caster-seat store) - and a cancel off any of
+    /// the four re-picks the first living monster through `FUN_801DB8B4`
+    /// (`0x801D27A8..0x801D27D0`, `0x801D28DC`, `0x801D2DDC`, `0x801D2F1C`).
+    /// A confirm leaves the code standing for the commit.
+    ///
+    /// PORT: FUN_801D0748 (the sweep arms' `+0x1DD` stores)
+    /// REF: FUN_801DB8B4 (the cancel re-pick)
+    pub(in crate::world) fn seat_sweep_target(
+        &mut self,
+        next: legaia_engine_battle_menus::battle_flow::BattleFlowState,
+    ) {
+        use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+        use legaia_engine_battle_vm::battle_cue_group::{TARGET_ALL_ENEMIES, TARGET_PARTY_WIDE};
+        let code = match next {
+            Flow::ItemAllEnemies | Flow::SpellAllEnemies => Some(TARGET_ALL_ENEMIES),
+            Flow::ItemAllAllies | Flow::SpellAllAllies => Some(TARGET_PARTY_WIDE),
+            _ => None,
+        };
+        let was_sweep = matches!(
+            self.battle.flow,
+            Flow::ItemAllEnemies
+                | Flow::SpellAllEnemies
+                | Flow::ItemAllAllies
+                | Flow::SpellAllAllies
+        );
+        let target = match code {
+            Some(c) if self.battle.flow != next => c,
+            None if was_sweep && matches!(next, Flow::ItemWindow | Flow::MagicWindow) => {
+                crate::battle_round::BattleRound::first_living_monster(self)
+            }
+            _ => return,
+        };
+        let actor = self.battle_ctx.active_actor;
+        if let Some(a) = self.actors.get_mut(usize::from(actor)) {
+            a.battle.active_target = target;
         }
     }
 
@@ -345,12 +410,25 @@ impl World {
             }
             _ => {
                 // Still browsing / target-selecting - keep the menu open. The
-                // target step is retail's own state `0x64` (`0x801D1958`).
+                // target step is the sub-cursor the window's commit raised
+                // off the row's side and scope (`0x5B` one enemy, `0x5D` all
+                // enemies, `0x64` one ally, `0x66` all allies;
+                // `0x801D18E0..0x801D19F4`). The
+                // session's cursor for an offensive item walks only the
+                // enemy rows, a heal's only the party's, so the row under it
+                // names the side.
                 use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
                 let flow = match menu.state {
-                    InventoryUseState::TargetSelect { .. } => Flow::TargetConfirm,
+                    InventoryUseState::TargetSelect { cursor, .. } => Flow::window_target(
+                        false,
+                        menu.targets.get(cursor).is_some_and(|t| t.is_enemy),
+                        false,
+                    ),
+                    InventoryUseState::AllPartyConfirm { .. } => Flow::ItemAllAllies,
+                    InventoryUseState::AllEnemiesConfirm { .. } => Flow::ItemAllEnemies,
                     _ => Flow::ItemWindow,
                 };
+                self.seat_sweep_target(flow);
                 self.battle.item_menu = Some(menu);
                 if self.battle.set_battle_flow(flow) {
                     self.battle.item_menu = None;

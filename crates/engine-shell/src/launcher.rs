@@ -522,74 +522,227 @@ pub fn disc_search_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// How many entries of one folder [`find_disc`] reads, and how many of a
-/// root's subfolders it opens: a bound, so a huge Downloads folder never
-/// slows the launcher's first screen.
-const FIND_DISC_ENTRY_LIMIT: usize = 4096;
-const FIND_DISC_SUBFOLDER_LIMIT: usize = 256;
+/// How many entries of one folder the finder reads
+/// (`legaia_app_theme::folder_list::FIND_ENTRY_LIMIT`).
+const FIND_DISC_ENTRY_LIMIT: usize = legaia_app_theme::folder_list::FIND_ENTRY_LIMIT;
 /// How many candidates [`find_disc`] checks with `validate`.
 const FIND_DISC_CANDIDATE_LIMIT: usize = 8;
-
-/// Whether `path` can be a dump of this game by its name: a `.cue` or `.bin`
-/// with "legaia" in its own name or in the name of the folder holding it.
-fn looks_like_legaia_dump(path: &Path) -> bool {
-    let ext_ok = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("bin") || e.eq_ignore_ascii_case("cue"));
-    let legaia = |p: Option<&std::ffi::OsStr>| {
-        p.and_then(|n| n.to_str())
-            .is_some_and(|n| n.to_ascii_lowercase().contains("legaia"))
-    };
-    ext_ok && (legaia(path.file_name()) || legaia(path.parent().and_then(Path::file_name)))
-}
 
 /// A disc image in `dirs` (each folder and its direct subfolders) that passes
 /// `validate` ([`validate_disc`] in the binary). Offered, never adopted, on a
 /// first run, so a player who already has the dump in Downloads presses
 /// Enter instead of hunting through a file dialog. Only files named for the
-/// game are checked. A `.cue` is preferred to the `.bin` beside it.
+/// game are checked (`legaia_app_theme::folder_list::find_dumps`, the search
+/// Explorer's first run makes too). A `.cue` is preferred to the `.bin`
+/// beside it.
 pub fn find_disc(
     dirs: &[PathBuf],
     validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
 ) -> Option<DiscInfo> {
-    fn scan(dir: &Path, out: &mut Vec<PathBuf>, sub: Option<&mut Vec<PathBuf>>) {
-        let Ok(rd) = std::fs::read_dir(dir) else {
-            return;
-        };
-        let mut sub = sub;
-        for e in rd.flatten().take(FIND_DISC_ENTRY_LIMIT) {
-            let path = e.path();
-            if path.is_dir() {
-                if let Some(s) = sub.as_deref_mut()
-                    && s.len() < FIND_DISC_SUBFOLDER_LIMIT
-                {
-                    s.push(path);
-                }
-            } else if looks_like_legaia_dump(&path) {
-                out.push(path);
-            }
+    legaia_app_theme::folder_list::find_dumps(dirs, FIND_DISC_CANDIDATE_LIMIT)
+        .iter()
+        .find_map(|p| validate(p).ok())
+}
+
+/// What one row of the disc finder's folder listing is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FolderEntryKind {
+    /// A folder to open.
+    Folder,
+    /// A file the finder takes: a `.bin` or `.cue` to try as the disc, or
+    /// the memory card or expansion pack it was opened for.
+    File,
+}
+
+/// One row of [`list_disc_folder`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderEntry {
+    pub path: PathBuf,
+    pub name: String,
+    pub kind: FolderEntryKind,
+}
+
+/// The folders and disc images (`.bin`, `.cue`) in `dir`, for the
+/// launcher's own disc finder: the list a controller can work, where the
+/// desktop's file dialog takes a mouse or a keyboard. Folders come first,
+/// then the images, each by name ignoring case; hidden entries (a leading
+/// `.`) and every other file are left out. Reads at most as many entries as
+/// [`find_disc`] does from one folder.
+pub fn list_disc_folder(dir: &Path) -> std::io::Result<Vec<FolderEntry>> {
+    list_finder_folder(dir, &["bin", "cue"])
+}
+
+/// The folders and the files with one of `extensions` in `dir`, as
+/// [`list_disc_folder`] lists disc images: the finder's listing for a memory
+/// card or an expansion pack (`legaia_app_theme::folder_list`, the listing
+/// Explorer's file browser shares).
+pub fn list_finder_folder(dir: &Path, extensions: &[&str]) -> std::io::Result<Vec<FolderEntry>> {
+    use legaia_app_theme::folder_list;
+    Ok(folder_list::list(dir, extensions, FIND_DISC_ENTRY_LIMIT)?
+        .into_iter()
+        .map(|e| FolderEntry {
+            kind: match e.kind {
+                folder_list::EntryKind::Folder => FolderEntryKind::Folder,
+                folder_list::EntryKind::File => FolderEntryKind::File,
+            },
+            path: e.path,
+            name: e.name,
+        })
+        .collect())
+}
+
+/// The folder the disc finder opens on: the folder of the disc in use (or
+/// the one last remembered), else Downloads, else the home folder.
+pub fn disc_finder_start(remembered: Option<&Path>) -> Option<PathBuf> {
+    let home = dirs::home_dir();
+    remembered
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .filter(|d| d.is_dir())
+        .or_else(|| {
+            dirs::download_dir()
+                .or_else(|| home.as_ref().map(|h| h.join("Downloads")))
+                .filter(|d| d.is_dir())
+        })
+        .or(home)
+}
+
+/// The places the disc finder lists under its folder, each a folder that
+/// exists: the home folder, Downloads, Desktop, Documents, the program's own
+/// folder, then the top of every drive (`C:\` and on, on Windows; `/`, and
+/// the removable drives under `/media` and `/run/media`, elsewhere).
+pub fn disc_finder_places() -> Vec<(String, PathBuf)> {
+    let home = dirs::home_dir();
+    let mut places: Vec<(String, PathBuf)> = Vec::new();
+    let mut add = |label: &str, dir: Option<PathBuf>| {
+        if let Some(d) = dir.filter(|d| d.is_dir())
+            && !places.iter().any(|(_, p)| *p == d)
+        {
+            places.push((label.to_string(), d));
+        }
+    };
+    add("Home folder", home.clone());
+    add(
+        "Downloads",
+        dirs::download_dir().or_else(|| home.as_ref().map(|h| h.join("Downloads"))),
+    );
+    add(
+        "Desktop",
+        dirs::desktop_dir().or_else(|| home.as_ref().map(|h| h.join("Desktop"))),
+    );
+    add(
+        "Documents",
+        dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents"))),
+    );
+    add(
+        "This program's folder",
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(Path::to_path_buf)),
+    );
+    for (label, dir) in legaia_app_theme::folder_list::drive_places() {
+        add(&label, Some(dir));
+    }
+    places
+}
+
+/// The folders where the common emulators keep their memory cards, each
+/// one that exists, for the memory card finder's places: DuckStation's
+/// `memcards`, Mednafen's `sav`, RetroArch's `saves`, and ePSXe's
+/// `memcards` beside a Windows install in the usual place.
+pub fn card_finder_places() -> Vec<(String, PathBuf)> {
+    let home = dirs::home_dir();
+    let data = dirs::data_dir();
+    let config = dirs::config_dir();
+    let docs = dirs::document_dir().or_else(|| home.as_ref().map(|h| h.join("Documents")));
+    let candidates: [(&str, Option<PathBuf>); 7] = [
+        (
+            "DuckStation cards",
+            data.as_ref()
+                .map(|d| d.join("duckstation").join("memcards")),
+        ),
+        (
+            "DuckStation cards",
+            docs.as_ref()
+                .map(|d| d.join("DuckStation").join("memcards")),
+        ),
+        (
+            "DuckStation cards",
+            home.as_ref().map(|h| {
+                h.join("Library/Application Support/DuckStation")
+                    .join("memcards")
+            }),
+        ),
+        (
+            "Mednafen saves",
+            home.as_ref().map(|h| h.join(".mednafen").join("sav")),
+        ),
+        (
+            "RetroArch saves",
+            config.as_ref().map(|c| c.join("retroarch").join("saves")),
+        ),
+        (
+            "RetroArch saves",
+            data.as_ref().map(|d| d.join("RetroArch").join("saves")),
+        ),
+        (
+            "ePSXe cards",
+            cfg!(windows).then(|| PathBuf::from(r"C:\ePSXe\memcards")),
+        ),
+    ];
+    let mut out: Vec<(String, PathBuf)> = Vec::new();
+    for (label, dir) in candidates {
+        if let Some(d) = dir.filter(|d| d.is_dir())
+            && !out.iter().any(|(_, p)| *p == d)
+        {
+            out.push((label.to_string(), d));
         }
     }
-    let mut candidates = Vec::new();
-    for dir in dirs {
-        let mut sub = Vec::new();
-        scan(dir, &mut candidates, Some(&mut sub));
-        for s in &sub {
-            scan(s, &mut candidates, None);
-        }
-        if candidates.len() >= FIND_DISC_CANDIDATE_LIMIT {
-            break;
-        }
-    }
-    candidates.sort_by_key(|p| {
-        let bin = p
+    out
+}
+
+/// The disc images Legaia Explorer opened, newest first, from its settings
+/// file's text (`settings.json`: `last_source`, then `recent`): what a first
+/// run of the game tries before it searches the usual folders, so a disc
+/// opened in Explorer is not hunted for a second time. Extracted folders
+/// and anything that is not a `.bin` or `.cue` are left out.
+pub fn explorer_discs_from_json(text: &str) -> Vec<PathBuf> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(text) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = Vec::new();
+    let last = v.get("last_source").and_then(|s| s.as_str());
+    let recent = v
+        .get("recent")
+        .and_then(|r| r.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s.as_str());
+    for p in last.into_iter().chain(recent).map(PathBuf::from) {
+        let disc = p
             .extension()
             .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("bin"));
-        (bin, p.clone())
-    });
-    candidates
+            .is_some_and(|e| e.eq_ignore_ascii_case("bin") || e.eq_ignore_ascii_case("cue"));
+        if disc && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// Legaia Explorer's settings file (`<platform config dir>/legaia-explorer/
+/// settings.json`), the file [`explorer_discs_from_json`] reads.
+pub fn explorer_settings_path() -> Option<PathBuf> {
+    dirs::config_dir().map(|d| d.join("legaia-explorer").join("settings.json"))
+}
+
+/// The first disc Legaia Explorer opened that passes `validate`
+/// ([`validate_disc`] in the binary).
+pub fn explorer_disc(
+    settings_text: Option<&str>,
+    validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
+) -> Option<DiscInfo> {
+    explorer_discs_from_json(settings_text?)
         .iter()
         .take(FIND_DISC_CANDIDATE_LIMIT)
         .find_map(|p| validate(p).ok())
@@ -2045,6 +2198,68 @@ mod tests {
         });
         assert_eq!(none, None);
         assert_eq!(find_disc(&[Pb::from("/does/not/exist")], accept_all), None);
+    }
+
+    #[test]
+    fn disc_finder_lists_folders_then_disc_images() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for f in [
+            "zeta.CUE",
+            "alpha.bin",
+            "notes.txt",
+            ".hidden.bin",
+            "save.mcr",
+        ] {
+            std::fs::write(root.join(f), b"x").unwrap();
+        }
+        for d in ["Games", "apps", ".cache"] {
+            std::fs::create_dir(root.join(d)).unwrap();
+        }
+        let got: Vec<(String, FolderEntryKind)> = list_disc_folder(root)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.name, e.kind))
+            .collect();
+        use FolderEntryKind::*;
+        assert_eq!(
+            got,
+            [
+                ("apps".to_string(), Folder),
+                ("Games".to_string(), Folder),
+                ("alpha.bin".to_string(), File),
+                ("zeta.CUE".to_string(), File),
+            ]
+        );
+        assert!(list_disc_folder(Path::new("/does/not/exist")).is_err());
+        // The finder opens beside the remembered disc when its folder is there.
+        let disc = root.join("alpha.bin");
+        assert_eq!(disc_finder_start(Some(&disc)).as_deref(), Some(root));
+    }
+
+    #[test]
+    fn explorer_discs_are_tried_on_a_first_run() {
+        let json = r#"{"last_source": "/g/Legaia.cue",
+            "recent": ["/g/extracted", "/g/Legaia.cue", "/h/other.BIN", 3]}"#;
+        assert_eq!(
+            explorer_discs_from_json(json),
+            [Pb::from("/g/Legaia.cue"), Pb::from("/h/other.BIN")]
+        );
+        assert!(explorer_discs_from_json("not json").is_empty());
+        let only_other = |p: &Path| {
+            if p.ends_with("other.BIN") {
+                Ok(DiscInfo {
+                    path: p.to_path_buf(),
+                    bin: p.to_path_buf(),
+                    executable: USA_EXECUTABLE.into(),
+                })
+            } else {
+                Err(DiscProblem::Missing(p.to_path_buf()))
+            }
+        };
+        let found = explorer_disc(Some(json), only_other).expect("found");
+        assert_eq!(found.path, Pb::from("/h/other.BIN"));
+        assert_eq!(explorer_disc(None, only_other), None);
     }
 
     #[test]

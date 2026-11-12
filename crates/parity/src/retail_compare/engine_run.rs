@@ -385,6 +385,14 @@ fn seed_and_settle(
             .world
             .seed_placement_seat(w.flat, w.x, w.z, w.heading);
     }
+    // A beat's last turn on a seat the card load reproduces is the same
+    // history ([`scripted_heading_seats`]).
+    for w in &retail.scripted_headings {
+        session
+            .host
+            .world
+            .seed_placement_heading(w.flat, w.x, w.z, w.heading);
+    }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):
     // the session runs until its own context for the record holds retail's
@@ -512,6 +520,21 @@ fn seed_and_settle(
     }
     session.host.world.npcs.ambient_rng_detour = None;
     session.host.world.input.set_pad(0);
+    // What the entry head raised on the seed's load and a later beat of
+    // retail's visit lowered is history the card load cannot replay
+    // ([`hold_undone_entry_raises`]).
+    if matches!(retail.class, StateClass::Field)
+        && let (Some(save), Some(scene)) = (retail.save.as_ref(), session.host.scene.as_ref())
+        && let Ok(Some((bytecode, pc0))) = scene.field_man_entry_script(&session.host.index)
+    {
+        hold_undone_entry_raises(
+            &mut session.host.world,
+            &bytecode,
+            pc0,
+            save,
+            retail.fog_gate,
+        );
+    }
     let script = gate.as_ref().map(|g| ScriptPhase {
         pc: g.pc,
         wait: g.wait,

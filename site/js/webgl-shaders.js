@@ -262,9 +262,21 @@ const LOG_DEPTH_RANGE = 24.0;
  * takes an eighth: a 64th rounds back onto the tie on SwiftShader's coarser
  * sub-pixel grid, where every flat band (the ending vignettes' letterbox, the
  * slot machine's panels) drew a row low while a real GPU drew it right. The 3D
- * pass draws into a framebuffer object, which agrees with the window already. */
+ * pass on the native target takes its own nudge (PSX_NATIVE_TIE_ROWS). */
 const PSX_TIE_NDC_Y = 2 / 240 / 64;
 const PSX_TIE_FLAT_NDC_Y = 2 / 240 / 8;
+/* The 3D pass's tie nudge on the native 320 x 240 target, in stage rows.
+ * The snapped corners sit on the GPU's sample points there, so a flat edge
+ * lies exactly on a row of pixel centres and the rasteriser's fill rule
+ * decides the row. The window's rule gives a top edge its row and a bottom
+ * edge none, as the GPU does; this page's framebuffer runs bottom-up and
+ * hands the tie the other way, so every flat edge (a stair tread, a wall's
+ * top) drew one row low. A sixteenth of a row up moves the tie off the
+ * centre the GPU's way; a 32nd is under a real GPU's sub-pixel grid here and
+ * moves nothing. The varyings take the nudge back (psxSampleUv and main), so
+ * the texels and the Gouraud colour stay the ones the GPU reads at the
+ * pixel. */
+const PSX_NATIVE_TIE_ROWS = 0.0625;
 
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {
@@ -731,6 +743,8 @@ void main() {
   if (u_psx.z >= 1.5 && gl_Position.w > 0.0) {
     gl_Position.x += gl_Position.w / 320.0;
     gl_Position.y -= gl_Position.w / 240.0;
+    /* The fill rule's tie, a fraction of a row up (PSX_NATIVE_TIE_ROWS). */
+    gl_Position.y += gl_Position.w * (2.0 / 240.0) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
   }
   /* A rejected primitive parks every corner on one point outside the clip
    * volume: no area, nothing rasterised. */
@@ -1312,8 +1326,10 @@ float psxRowReach(vec4 bary, vec4 stp) {
 vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
   if (u_psx.z < 0.5) return uv;
   /* The native target (engine-render's psx_texel_uv): the UV is the GPU's at
-   * its sample point already, and the GPU rounds it to a texel. */
-  if (u_psx.z >= 1.5) return uv + vec2(0.5);
+   * its sample point already, and the GPU rounds it to a texel. The sample
+   * point is the pixel the tie nudge moved the primitive off
+   * (PSX_NATIVE_TIE_ROWS; GL's window y runs up, so that is +dFdy). */
+  if (u_psx.z >= 1.5) return uv + uv_dy * ${glslFloat(PSX_NATIVE_TIE_ROWS)} + vec2(0.5);
   float perRow = u_psx.y / 240.0;
   float rows = 0.5 * perRow;
   float margin = perRow / 64.0;
@@ -1338,6 +1354,8 @@ void main() {
   if (u_gbuf != 0) g_word = gbuf_word();
   v_uv = psxSampleUv(v_uv, uv_dy, v_prim_bary, bary_dy);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
+  /* The Gouraud colour at the pixel, not at the tie nudge's sub-row. */
+  if (u_psx.z >= 1.5) v_flat_rgba += dFdy(v_flat_rgba) * ${glslFloat(PSX_NATIVE_TIE_ROWS)};
   if (u_eclip_m.w > 0.5) {
     float ey = dot(u_eclip_m.xyz, v_obj_pos);
     if (ey < u_eclip_b.x || ey > u_eclip_b.y) discard;
@@ -1424,8 +1442,12 @@ void main() {
       flat_base = prologue_sepia_word(max(flat_base.r, max(flat_base.g, flat_base.b)));
     }
     /* Native's colour-mesh format carries no normals, so its untextured
-     * prims light off the facet normal alone - same here. */
-    flat_base = dyn_light(flat_base, vec3(0.0), geo_n, (tsb & 0x2000u) != 0u);
+     * prims light off the facet normal alone - same here. A baked stream's
+     * vertices sit in the page's world frame, not the object frame native
+     * takes that facet in, so it hands the object facet over as its normal
+     * (u_use_flat_colors 2). */
+    flat_base = dyn_light(flat_base, vec3(0.0), u_use_flat_colors == 2 ? v_normal : geo_n,
+                          (tsb & 0x2000u) != 0u);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
       emit(vec4(semi_out(psx_dither(flat_lit * u_palette.rgb)), 1.0));

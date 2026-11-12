@@ -315,6 +315,21 @@ on, not of rasterisation, draw order or a missing primitive.
 tables at `1.000` ([open threads](../reference/open-rev-eng-threads.md#zetos-big-wave-idle-one-pass-older)).
 The output is a picture of retail's frame and stays out of the repository.
 
+### Film what each battle frame cost
+
+```bash
+scripts/mednafen/frame-cost-film.py zenoir_summon_mid_cast --frames 500 --out zenoir.csv
+scripts/ci/frame-cost-agreement.py --mednafen zenoir.csv
+```
+
+Steps a library state frame by frame as `drive-timeline.py` does and logs, per frame, the
+frame-cost words `gp+0x3A8` (CPU done) and `gp+0x3AC` (after `DrawSync`, the ring's
+entry), the step, the action state and module phase, the GPU draw-time model
+([`gpu_cost.py`](../../scripts/mednafen/gpu_cost.py)) of the table the GPU was handed last
+and of the one the CPU builds, and the PC at the frame boundary. The agreement script runs
+the step law over the CPU word alone, over `max(cpu, model)` and over the entry, against
+the step mednafen stored ([a real console's frame cost](../subsystems/battle-stage-camera.md#what-a-real-consoles-frame-costs)).
+
 ### Byte-match a player battle file (`battle_data` block) against VRAM
 
 ```bash

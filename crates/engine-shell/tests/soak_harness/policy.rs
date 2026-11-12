@@ -182,6 +182,9 @@ pub(super) struct Policy {
     /// plan aims at steps on by one per visit from a random first row, so a
     /// picker that is asked again gets every answer within `n` visits.
     pub(super) picker_visits: HashMap<usize, (u32, u32)>,
+    /// The row a menu plan walks the cursor to and confirms: the Boss Rush
+    /// intermission's, or the Baka Fighter pause menu's.
+    pub(super) menu_row: Option<usize>,
 }
 
 impl Policy {
@@ -197,6 +200,7 @@ impl Policy {
             last: 0,
             picker_downs: None,
             picker_visits: HashMap::new(),
+            menu_row: None,
         }
     }
 
@@ -286,6 +290,43 @@ impl Policy {
             return self.tap(want);
         }
         self.menu_frames = 0;
+
+        // The Boss Rush screen between stages (or its result) takes the pad
+        // in place of the field: pick a row - "Next battle" half the time -
+        // walk the cursor there and confirm. The field policy's Cross landed
+        // wherever its walks had left the cursor, and a run spent its window
+        // buying supplies it could not afford.
+        if legaia_engine_session::run_rules::boss_rush_screen_up(w) {
+            let Some(m) = w.run_rules.intermission.as_ref() else {
+                return self.tap(b(PadButton::Cross));
+            };
+            let rows = legaia_engine_run_rules::boss_rush::Intermission::rows().len();
+            let target = match self.menu_row {
+                Some(r) => r,
+                None => {
+                    let r = if self.rng.chance(50) {
+                        0
+                    } else {
+                        self.rng.below(rows as u32) as usize
+                    };
+                    self.menu_row = Some(r);
+                    r
+                }
+            };
+            let want = if m.cursor == target {
+                b(PadButton::Cross)
+            } else {
+                DOWN
+            };
+            let out = self.tap(want);
+            if out & b(PadButton::Cross) != 0 {
+                self.menu_row = None;
+            }
+            return out;
+        }
+        if w.mode != SceneMode::BakaFighter {
+            self.menu_row = None;
+        }
 
         match w.mode {
             SceneMode::Battle => {
@@ -393,6 +434,15 @@ impl Policy {
             // directions, and now and then Start - the minigames' escape
             // (`World::poll_minigame_escape`), so the exit paths are soaked
             // too without cutting every session short.
+            SceneMode::BakaFighter if w.minigames.baka_fighter.is_some() => {
+                let c = w
+                    .minigames
+                    .baka_fighter
+                    .as_ref()
+                    .map(|f| f.cabinet())
+                    .expect("checked above");
+                self.baka_pad(c.state(), c.menu_cursor())
+            }
             _ => {
                 if self.rng.below(1500) == 0 {
                     return self.tap(b(PadButton::Start));
@@ -412,6 +462,75 @@ impl Policy {
                 } else {
                     self.chaos_mask
                 }
+            }
+        }
+    }
+
+    /// The Baka Fighter cabinet. The general minigame arm's random face
+    /// buttons open the in-duel menu (Triangle is half of its `0x110` edge)
+    /// every few seconds and take its Quit row a third of the time, so a run
+    /// never climbed past the first rung and the tally, the next-rung path
+    /// and the secret rungs went unsoaked. Here the duel strikes with Square
+    /// / Circle / Cross (the three attack bits, `FUN_801D3F44`) and opens the
+    /// menu rarely; the menu takes Continue four times in five; every other
+    /// cabinet screen mostly confirms, with the odd direction for the select
+    /// and tally cursors.
+    pub(super) fn baka_pad(&mut self, state: u32, cursor: i32) -> u16 {
+        use legaia_engine_minigames::baka_cabinet::{ST_DUEL, ST_HOWTO, ST_PAUSE_3};
+        if self.rng.below(20000) == 0 {
+            return self.tap(b(PadButton::Start));
+        }
+        match state {
+            ST_DUEL => {
+                if self.rng.below(3000) == 0 {
+                    return self.tap(b(PadButton::Triangle));
+                }
+                if self.rng.chance(25) {
+                    let want = match self.rng.below(3) {
+                        0 => b(PadButton::Square),
+                        1 => b(PadButton::Circle),
+                        _ => b(PadButton::Cross),
+                    };
+                    self.tap(want)
+                } else {
+                    0
+                }
+            }
+            ST_PAUSE_3 => {
+                let target = match self.menu_row {
+                    Some(r) => r,
+                    None => {
+                        let r = match self.rng.below(10) {
+                            0 => 1,
+                            1 => 2,
+                            _ => 0,
+                        };
+                        self.menu_row = Some(r);
+                        r
+                    }
+                };
+                let want = match (cursor as usize).cmp(&target) {
+                    std::cmp::Ordering::Equal => b(PadButton::Cross),
+                    std::cmp::Ordering::Less => DOWN,
+                    std::cmp::Ordering::Greater => UP,
+                };
+                let out = self.tap(want);
+                if out & b(PadButton::Cross) != 0 {
+                    self.menu_row = None;
+                }
+                out
+            }
+            ST_HOWTO => {
+                let want = self.random_face();
+                self.tap(want)
+            }
+            _ => {
+                let want = if self.rng.chance(80) {
+                    b(PadButton::Cross)
+                } else {
+                    self.random_dir()
+                };
+                self.tap(want)
             }
         }
     }
@@ -508,9 +627,9 @@ pub(super) fn fight_pad(s: &NativeSession, rng: &mut Rng) -> u16 {
                 }
             }
             InventoryUseState::Browsing { .. } => b(PadButton::Circle),
-            InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. } => {
-                b(PadButton::Cross)
-            }
+            InventoryUseState::TargetSelect { .. }
+            | InventoryUseState::AllPartyConfirm { .. }
+            | InventoryUseState::AllEnemiesConfirm { .. } => b(PadButton::Cross),
             _ => 0,
         };
     }

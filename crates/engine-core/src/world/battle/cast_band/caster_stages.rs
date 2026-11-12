@@ -308,54 +308,11 @@ impl World {
                 }
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
             }
-            // PROT 0957's arms 4 to 6: four pairs a pass, each pair on two
-            // draws (`0x801F70AC..0x801F713C`).
             if std::mem::take(&mut self.casting.module_scatter_pairs) && opens_pass {
-                let mut seated = Vec::with_capacity(usize::from(cmc::STORM_SCATTER_PAIRS) * 2);
-                for _ in 0..cmc::STORM_SCATTER_PAIRS {
-                    let x = 0x80 - (self.next_rand() % 255) as i16;
-                    let y = 0x80 - (self.next_rand() % 255) as i16;
-                    self.casting.module_scatter_y = y;
-                    for record in cmc::STORM_SCATTER_RECORDS {
-                        seated.push(cmc::ModuleSpawn {
-                            record: cmc::SpawnRecord::Module(record),
-                            anchor: cmc::SpawnAnchor::LiteralScaled {
-                                pos: [x, y, 0x100],
-                                rot: [0, 0, 0],
-                                scale: 0x1000,
-                            },
-                        });
-                    }
-                }
-                let first = self
-                    .casting
-                    .active_summon
-                    .as_ref()
-                    .map_or(0, |s| s.parts.len());
-                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
-                // Arm 6 seats its pairs (`jal 0x80050ED4` at `0x801F7834` /
-                // `0x801F784C`) ahead of its store of the fade word into every
-                // pooled part's level (`sh a0,0x78(v0)` at `0x801F78D4`), so a
-                // pair seated on the pass takes the fade over the level its
-                // own seat run set (`CTRL_74`'s `+0x78 = 0`).
-                if let Some(level) = self.casting.module_scatter_level.take()
-                    && let Some(scene) = self.casting.active_summon.as_mut()
-                {
-                    for part in scene.parts.iter_mut().skip(first) {
-                        part.seat_pokes.push((0x78, level));
-                    }
-                }
+                self.seat_storm_scatter_pairs(run.prot_entry, run.camera_shot);
             }
-            if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y)
-                && let Some(ring) = self.battle.cast_ribbons.as_mut()
-            {
-                for p in ring.points.iter_mut().take(usize::from(ring.count)) {
-                    p[1] = self.casting.module_scatter_y;
-                }
-                let ring = *ring;
-                if opens_pass {
-                    self.deal_cast_ribbon_rands(&ring);
-                }
+            if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y) {
+                self.deal_storm_ribbons(opens_pass);
             }
             if run.phase != arm || !run.busy {
                 // PROT 0957's table is Thunder Storm's arms: Death Game's stand
@@ -449,9 +406,15 @@ impl World {
                 }
             } else if !self.casting.module_debris.is_empty() {
                 // A director's per-pass calls on a held arm (PROT 0947's
-                // trail): one battle frame, one call.
+                // trail): one battle frame, one call. A call that reads the
+                // pass's drained state is seated from the pass's last tick.
                 let debris = std::mem::take(&mut self.casting.module_debris);
-                if opens_pass {
+                let seat_now = if std::mem::take(&mut self.casting.module_debris_at_pass_end) {
+                    self.module_tick_closes_pass()
+                } else {
+                    opens_pass
+                };
+                if seat_now {
                     self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
                 }
             }
@@ -485,6 +448,10 @@ impl World {
                 if let Some(shot) = run.camera_shot {
                     let (pose, raw_z) = shot.pose();
                     cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
+                }
+                if run.capture_pose_set.is_some() || run.camera_shot.is_some() {
+                    self.casting.module_tick_after_drift =
+                        Some((run.capture_pose_set, run.camera_shot));
                 }
             } else {
                 if let Some(shot) = run.camera_shot {
@@ -527,6 +494,67 @@ impl World {
         self.casting.capture_spell = None;
         self.casting.fatal_banner = None;
         false
+    }
+
+    /// PROT 0957's arms 4 to 6: four pairs a pass, each pair on two draws
+    /// (`0x801F70AC..0x801F713C`), each `0x80 - rand() % 257`: the
+    /// reciprocal `0x7F807F81` with `sra 7` is a divide by `257`, and
+    /// `(q << 8) + q` its product (`0x801F70B4..0x801F70D4`).
+    pub(in crate::world) fn seat_storm_scatter_pairs(
+        &mut self,
+        prot_entry: u32,
+        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
+    ) {
+        use legaia_engine_cast::cast_module_camera as cmc;
+        let mut seated = Vec::with_capacity(usize::from(cmc::STORM_SCATTER_PAIRS) * 2);
+        for _ in 0..cmc::STORM_SCATTER_PAIRS {
+            let x = 0x80 - (self.next_rand() % 257) as i16;
+            let y = 0x80 - (self.next_rand() % 257) as i16;
+            self.casting.module_scatter_y = y;
+            for record in cmc::STORM_SCATTER_RECORDS {
+                seated.push(cmc::ModuleSpawn {
+                    record: cmc::SpawnRecord::Module(record),
+                    anchor: cmc::SpawnAnchor::LiteralScaled {
+                        pos: [x, y, 0x100],
+                        rot: [0, 0, 0],
+                        scale: 0x1000,
+                    },
+                });
+            }
+        }
+        let first = self
+            .casting
+            .active_summon
+            .as_ref()
+            .map_or(0, |s| s.parts.len());
+        self.stage_module_arm_spawns(prot_entry, &seated, shot, None);
+        // Arm 6 seats its pairs (`jal 0x80050ED4` at `0x801F7834` /
+        // `0x801F784C`) ahead of its store of the fade word into every
+        // pooled part's level (`sh a0,0x78(v0)` at `0x801F78D4`), so a
+        // pair seated on the pass takes the fade over the level its
+        // own seat run set (`CTRL_74`'s `+0x78 = 0`).
+        if let Some(level) = self.casting.module_scatter_level.take()
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            for part in scene.parts.iter_mut().skip(first) {
+                part.seat_pokes.push((0x78, level));
+            }
+        }
+    }
+
+    /// PROT 0957's ribbon ring on the height the pass's scatter left, its
+    /// draws dealt on the tick that opens the pass.
+    pub(in crate::world) fn deal_storm_ribbons(&mut self, opens_pass: bool) {
+        let Some(ring) = self.battle.cast_ribbons.as_mut() else {
+            return;
+        };
+        for p in ring.points.iter_mut().take(usize::from(ring.count)) {
+            p[1] = self.casting.module_scatter_y;
+        }
+        let ring = *ring;
+        if opens_pass {
+            self.deal_cast_ribbon_rands(&ring);
+        }
     }
 
     /// Arm [`Self::capture_stager_tick`] for `spell_id`'s module - the pager

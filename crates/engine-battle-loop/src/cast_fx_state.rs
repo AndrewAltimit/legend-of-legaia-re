@@ -7,6 +7,23 @@ use std::sync::Arc;
 
 use crate::cast_band::{PendingCast, SummonStager};
 
+/// A capture arm's every-pass moves, read off a pass that held it: the seat
+/// writes that store no position of their own, `(slot, dz, dy)` for the caster
+/// and the victim, and the focus z drift. Retail's pass makes them once, scaled
+/// by its step, ahead of the arm's gate, so the pass an arm hands over on moves
+/// the whole step: PROT 0958's runs carry the caster `-8 s` a vsync through it.
+/// The held pass's moves are the arm's own; the handing-over pass's writes also
+/// carry its passing stores (a knockdown's shove), which do not repeat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModulePassMoves {
+    /// The module phase the arm ran on.
+    pub phase: u8,
+    /// `(slot, dz, dy)` of the caster's and the victim's writes.
+    pub seats: [Option<(u8, i16, i16)>; 2],
+    /// The arm's focus z drift.
+    pub focus_z: i16,
+}
+
 /// Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
 pub struct CastFxState {
     /// A capture body's store into a monster caster's size class (record
@@ -212,7 +229,14 @@ pub struct CastFxState {
     pub module_scatter_y: i16,
     /// This pass's ribbons take that height.
     pub module_ribbons_on_scatter_y: bool,
+    /// The pass's scatter and ribbons were already dealt ahead of the hit
+    /// that lands on it (PROT 0957's arm 5 draws both before its
+    /// `FUN_801DD4B0`), so the arm's later stage only takes their height.
+    pub module_storm_dealt: bool,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
+    /// The held arm's [`Self::module_debris`] is seated from the pass's last
+    /// module tick (`CaptureCamArm::spawns_at_pass_end`).
+    pub module_debris_at_pass_end: bool,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
     pub module_rumble_alternate: u32,
@@ -383,6 +407,24 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_camera::ArmDirection::rest_drift`]):
     /// what the rest of a handing-over pass repeats in place of the drift.
     pub module_tick_rest: Option<Option<legaia_engine_cast::cast_module_camera::CaptureDrift>>,
+    /// The newest module tick's pose stores and shot when its director runs
+    /// retail's drift-first order (drift, stores, shot): the rest of a
+    /// handing-over pass's drift lands ahead of them, so `World::module_pass`
+    /// stores and arms them again after it.
+    /// The seats (bit per slot) whose `+0x1DC` bump the newest module tick
+    /// committed at once (`World::write_cast_actor_state`). Retail commits it
+    /// in the anim tick after the action SM, so a rate the arm stores in the
+    /// same pass still meets the commit's decay (`0x8004B080`).
+    pub module_bump_commits: u8,
+    pub module_tick_after_drift: Option<(
+        Option<legaia_engine_cast::cast_module_camera::CapturePoseSet>,
+        Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
+    )>,
+    /// The every-pass seat moves and focus drift of the newest module tick
+    /// that held its arm ([`ModulePassMoves`]). An arm that hands over
+    /// mid-pass owes the rest of the pass's moves as it owes its drift
+    /// (`World::module_pass`).
+    pub module_held_moves: Option<ModulePassMoves>,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -575,7 +617,9 @@ impl CastFxState {
             module_scatter_level: None,
             module_scatter_y: 0,
             module_ribbons_on_scatter_y: false,
+            module_storm_dealt: false,
             module_debris: Vec::new(),
+            module_debris_at_pass_end: false,
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,
             module_settle_ticks: 0,
@@ -616,6 +660,9 @@ impl CastFxState {
             module_pass_repeat: false,
             module_tick_drift: None,
             module_tick_rest: None,
+            module_tick_after_drift: None,
+            module_bump_commits: 0,
+            module_held_moves: None,
             caster_stages: None,
             caster_size_store: None,
             pending_move_fx_spawn: None,

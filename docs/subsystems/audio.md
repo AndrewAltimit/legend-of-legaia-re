@@ -3488,7 +3488,16 @@ in Monaural folds each cue voice to its larger side in retail's key-on chain and
 the probe folds the port's registers to compare. What remains is not a defect:
 
 - A row past the end of a scene's runtime bank. Retail reads whatever follows the table, and the port
-  stops at its own bound, so the last row of a scene's run disagrees.
+  stops at its own bound, so the last row of a scene's run disagrees. Such a row often carries a voice
+  count near `0x1F` (`balden`'s `0x214` reads `01 00 E0 FF`): its empty tone slots (`vag 0`) key nothing
+  on either side, but where the count runs a sustained cue past tone `15` retail reads a tone beyond the
+  program's sixteen slots and keys it (voice `23`, pitch `0xB000`, a non-zero start address), where the
+  port's program holds sixteen slots and stops. No producer is known to push one of these rows.
+- `conc3_field_inn_night`, saved after the inn's night sequence. Its side-band request is `2070`
+  (`_DAT_8007BABC` and the acknowledge `_DAT_8007BAA0` both), which `conc3`'s P2[9] stores
+  (`36 01 80 16 08`); the entry script's own request is `2116` (P1[0], `36 01 80 44 08`). The seed
+  enters `conc3` on its entry script alone, so its category-`3` rows key `2116`'s bank where retail's
+  key `2070`'s: the state's history, not the cue path.
 - `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
 - The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
   ending theme overwrote hold stale tone data in retail's RAM.
@@ -3656,7 +3665,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.995` | `+0.00` dB | `-1070` | the cast fits `1.45` vsyncs before its gate ([a frame step](#the-cast-offset-reaches-a-frame-step)) |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-1910` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
-| `theeder_summon_mid_cast` | `0.712` | `+0.11` dB | `-1100` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
+| `theeder_summon_mid_cast` | `0.712` | `+0.47` dB | `-298` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the band runs on its arm table, which the seed's `0x33` step had held off; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
 | `zenoir_summon_mid_cast` | `0.855` | `+0.06` dB | `-5151` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); seconds `13..14` hold both struck seats' reaction cues ([settled](../reference/re-settled-threads/audio.md#what-sounds-at-the-end-of-zenoirs-cast)), the port's a few vsyncs late on the module's frame step |
 | `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `9.7` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
@@ -3667,9 +3676,34 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
 frame and charges a loading CD-XA clip from the pass after its cue, both fitted to PCSX-Redux recordings
 with cue-caller logs, where Guilty Cross ramps its arm step `3` then `4` and Zenoir `1`, `3` then `4`.
-These recordings are mednafen's, which prices those arms at other steps, and the channel holds one
-offset per cast: the Guilty Cross and Zenoir rows read low with the level within
-`0.06` dB and the per-second loss in timing, not level. It is the two emulators' frame costs, not a cue.
+These recordings are mednafen's, which prices those arms at other steps. Stepped frame by frame
+(`scripts/mednafen/drive-timeline.py`, the step byte `0x1F800393` beside the frame counter `gp+0x480`),
+mednafen runs Guilty Cross's arms `1` and `2` at `3` and arms `3` to `5` at `2` or `3`, and Zenoir's
+arms `5` to `12` at `2` or `3`, where the arm tables say `4` throughout. The frames run at their step
+in both recordings, so this is the emulator's cost, not an overrun.
+
+The sixth channel, **`cast_steps`**, runs the engine's cast on those steps: `--steps-out` writes them as
+a step track (`<label>.steps` beside the WAV), and the child takes it as the cast-sequence oracle's
+`--retail-steps` does (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`). It is harness-only and scores the
+cast's sound with the two emulators' frame costs taken out; `cast` stays the engine's own clock.
+
+| State | `cast` (the engine's steps) | `cast_steps` (mednafen's steps) |
+|---|---|---|
+| `cort_guilty_cross_mid_cast` | `0.859` | `0.981` |
+| `zenoir_summon_mid_cast` | `0.855` | `0.893` |
+| `theeder_summon_mid_cast` | `0.712` | `0.715` |
+
+Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
+or `2` against the table's `3` and `4`, and the score holds either way. Zenoir's row is not a clean reading. On the engine's own steps its band
+holds `0x35` to arm 11, as retail's does, but on mednafen's the action SM leaves `0x35` for `0x36`
+after one arm-4 pass: the band word (`ctx[+0x6D8]`, shared with PROT 0908's countdown) goes negative
+at the hand-over. Mednafen's arm 3 opens on eleven step-`3` frames and the engine's on the module's
+`1`, so the countdown the arm re-seeds stands elsewhere when arm 4 reads it. The track keys a frame by
+action state and arm, so arms 5 to 10 then run under keys mednafen never recorded and keep the step
+they had. Why the shared word ends the band under those steps and not under retail's is open. Which emulator a console agrees with is
+[open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
+a GPU wait on a CPU that costs less. The GPU wait is the table's drawing, and what moves Guilty Cross's
+arms is PCSX-Redux's CD command wait ([a real console's frame cost](battle-stage-camera.md#what-a-real-consoles-frame-costs)).
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 

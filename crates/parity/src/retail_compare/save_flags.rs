@@ -181,9 +181,168 @@ pub fn raised_band_bits(world: &legaia_engine_core::world::World) -> Vec<u16> {
         .collect()
 }
 
+/// What an entry record's straight-line head raises on every load: the
+/// system flags it sets (`50`..`57`) and whether it raises the ambient
+/// particle gate (`4C 30`), before its first branch, wait or halt.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntryHeadRaises {
+    pub flags: Vec<u16>,
+    pub particle_gate: bool,
+    /// One past the head's last byte.
+    pub end: usize,
+}
+
+/// The straight-line head of the entry record at `pc0`: every instruction
+/// the install slice runs unconditionally on a load.
+pub fn entry_head_raises(bytecode: &[u8], pc0: usize) -> EntryHeadRaises {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
+    let mut out = EntryHeadRaises {
+        end: pc0,
+        ..Default::default()
+    };
+    for insn in LinearWalker::new(bytecode, pc0) {
+        let Ok(insn) = insn else { break };
+        let flow = matches!(
+            insn.info,
+            InsnInfo::CondJmp { .. }
+                | InsnInfo::JmpRel { .. }
+                | InsnInfo::BBoxTest { .. }
+                | InsnInfo::InventoryCmp { .. }
+                | InsnInfo::Picker { .. }
+                | InsnInfo::Yield { .. }
+                | InsnInfo::WaitFrames { .. }
+                | InsnInfo::SceneChange { .. }
+                | InsnInfo::WarpOrInteract { .. }
+                | InsnInfo::LFlag {
+                    kind: FlagKind::Test,
+                    ..
+                }
+                | InsnInfo::GFlag {
+                    kind: FlagKind::Test,
+                    ..
+                }
+                | InsnInfo::CFlag {
+                    kind: FlagKind::Test,
+                    ..
+                }
+                | InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    ..
+                }
+        ) || insn.opcode == 0x21;
+        if flow {
+            break;
+        }
+        out.end = insn.pc + insn.size;
+        if insn.extended.is_some() {
+            continue;
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } if !out.flags.contains(&idx) => out.flags.push(idx),
+            InsnInfo::MenuCtrl {
+                op0: 0x30,
+                kind: MenuCtrlKind::Nibble3 { sub: 0 },
+            } => out.particle_gate = true,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The writes outside `head` that undo it: the system flags a `Clear`
+/// elsewhere in the scene's bytecode lowers, and whether a `4C 31` lowers
+/// the particle gate.
+fn undoers(bytecode: &[u8], head: &EntryHeadRaises, pc0: usize) -> (Vec<u16>, bool) {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, MenuCtrlKind};
+    let mut flags = Vec::new();
+    let mut gate = false;
+    for insn in LinearWalker::new(bytecode, 0).flatten() {
+        if (pc0..head.end).contains(&insn.pc) {
+            continue;
+        }
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } if head.flags.contains(&idx) && !flags.contains(&idx) => flags.push(idx),
+            InsnInfo::MenuCtrl {
+                op0: 0x31,
+                kind: MenuCtrlKind::Nibble3 { sub: 1 },
+            } => gate = true,
+            _ => {}
+        }
+    }
+    (flags, gate)
+}
+
+/// Lower what the entry head raised where retail's state shows a later beat
+/// of the same visit undid it.
+///
+/// A card load runs the entry record's straight-line head, so every flag and
+/// the particle gate it raises are up after the seed's settle. A capture
+/// taken later in the visit holds them down when a beat of the scene's own
+/// script lowered them since: `rikuroa` `P1[0]` raises the gate and flag
+/// `0x01F` (`4C 30`, `50 1F` at `+0x47`), and the Genesis Tree beat `P2[54]`
+/// lowers both (`4C 31`, `60 1F` at `+0x1FC`). The save carries the flag
+/// down and the gate word `0x8007B854` sits outside the save window, so the
+/// beat is history a card load cannot replay. Only a raise the scene's
+/// bytecode can undo elsewhere is lowered, and only where retail holds it
+/// down; returns what was lowered.
+pub fn hold_undone_entry_raises(
+    world: &mut legaia_engine_core::world::World,
+    bytecode: &[u8],
+    pc0: usize,
+    save: &legaia_save::SaveFile,
+    retail_gate: bool,
+) -> (Vec<u16>, bool) {
+    let head = entry_head_raises(bytecode, pc0);
+    let (clears, gate_clear) = undoers(bytecode, &head, pc0);
+    let raised = system_flag_ids(save);
+    let lowered: Vec<u16> = clears
+        .into_iter()
+        .filter(|idx| !raised.contains(idx) && world.system_flag_test(*idx))
+        .collect();
+    for &idx in &lowered {
+        world.system_flag_clear(idx);
+    }
+    let gate = head.particle_gate && gate_clear && !retail_gate && world.fog.gate;
+    if gate {
+        world.set_ambient_particles_enabled(false);
+    }
+    (lowered, gate)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{selector_arm_windows, selector_bands};
+    use super::{entry_head_raises, selector_arm_windows, selector_bands, undoers};
+
+    #[test]
+    fn the_head_stops_at_the_first_branch() {
+        // `rikuroa` `P1[0]`'s shape: `4C C1`, `4C 30`, `50 1F`, then a
+        // `0x42` branch, and a set behind it that is not the head's.
+        let bc = [
+            0x4C, 0xC1, 0x4C, 0x30, 0x50, 0x1F, 0x42, 0x00, 0x00, 0x04, 0x00, 0x50, 0x20,
+        ];
+        let head = entry_head_raises(&bc, 0);
+        assert_eq!(head.flags, vec![0x1F]);
+        assert!(head.particle_gate);
+        assert_eq!(head.end, 6);
+    }
+
+    #[test]
+    fn only_a_writer_outside_the_head_undoes_it() {
+        // Head raises `0x1F` and the gate; a later record lowers both.
+        let mut bc = vec![0x4C, 0x30, 0x50, 0x1F, 0x21];
+        let head = entry_head_raises(&bc, 0);
+        assert_eq!(undoers(&bc, &head, 0), (vec![], false));
+        bc.extend([0x4C, 0x31, 0x60, 0x1F, 0x21]);
+        assert_eq!(undoers(&bc, &head, 0), (vec![0x1F], true));
+    }
 
     #[test]
     fn a_run_of_clears_and_one_set_is_a_band() {

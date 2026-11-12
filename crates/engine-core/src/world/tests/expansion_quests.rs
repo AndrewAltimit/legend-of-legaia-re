@@ -35,6 +35,10 @@ rewards = { xp = 1000000, set_flags = ["fights_done"] }
 id = "bare"
 formation = 7
 rules = { no_items = true, no_magic = true }
+
+[[challenges]]
+id = "next_bare"
+rules = { no_items = true }
 "#
         .to_vec(),
     );
@@ -182,6 +186,34 @@ fn a_challenge_refuses_items_and_magic_only_in_its_battle() {
         |n| matches!(n, QuestNotice::ChallengeCleared { challenge, .. } if challenge == "bare")
     ));
     assert!(w.expansion.quests.challenge.is_none());
+}
+
+/// Tetsu's sparring tutorial is no challenge's battle: a "next battle"
+/// challenge with `no_items` armed before the spar had refused the Item chip
+/// the Item lesson needs, and the spar never let go.
+#[test]
+fn a_next_battle_challenge_leaves_the_sparring_tutorial_alone() {
+    use legaia_engine_battle::battle_tutorial::BattleTutorial;
+    let mut w = battle_world();
+    w.expansion.pack = Some(pack());
+    w.expansion_arm_challenge("next_bare").unwrap();
+    w.battle.active_formation = Some(FormationDef::new(3, vec![FormationSlot::new(1)]));
+    assert!(
+        !w.expansion_item_use_allowed(),
+        "the next battle is the challenge's"
+    );
+    w.battle.tutorial = Some(BattleTutorial::new());
+    assert!(w.expansion_item_use_allowed(), "the spar is not");
+    w.expansion_round_begun();
+    assert_eq!(
+        w.expansion.quests.challenge.as_ref().map(|c| c.rounds),
+        Some(0)
+    );
+    w.battle.tutorial = None;
+    assert!(
+        !w.expansion_item_use_allowed(),
+        "still armed for the battle after"
+    );
 }
 
 /// Drive the inline runner with a confirm on every other tick, choosing

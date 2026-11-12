@@ -484,9 +484,7 @@ fn fishing_casts_hooks_and_reels_to_a_resolution() {
 
 /// The hook cue and the celebration cues come off the **session's own
 /// events**, on the world's shared cue queue, so every host that ticks the
-/// world hears them. They used to live on `LineActorSim`, which only the
-/// native window drives, so the strike and the catch were silent in both
-/// browsers.
+/// world hears them - the celebration's on the line actor's stage frames.
 #[test]
 fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
     use legaia_engine_fishing::fishing::PondPhase;
@@ -520,10 +518,30 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
         fishing_frame(&mut world, mask);
     }
     assert_eq!(fishing_phase(&world), PondPhase::Landed);
+    // The landing frame is the celebration's first: its stage cue waits for
+    // the line actor's timer to pass `1`, two frames on.
     let cues = world.drain_minigame_sfx_cues();
     assert!(
-        cues.contains(&u16::from(CELEBRATE_CUE)),
-        "a landed fish queues the celebration cue, got {cues:?}"
+        !cues.contains(&u16::from(CELEBRATE_CUE)),
+        "the celebration cue is not the landing frame's, got {cues:?}"
+    );
+    let mut at = None;
+    for f in 1..8 {
+        fishing_frame(&mut world, 0);
+        if world
+            .drain_minigame_sfx_cues()
+            .contains(&u16::from(CELEBRATE_CUE))
+        {
+            at = Some(f);
+            break;
+        }
+    }
+    assert_eq!(
+        at,
+        Some(i32::from(
+            legaia_engine_fishing::fishing_actors::CELEBRATION_CUE_FRAME
+        )),
+        "a landed fish queues the celebration cue on the stage frame"
     );
 }
 

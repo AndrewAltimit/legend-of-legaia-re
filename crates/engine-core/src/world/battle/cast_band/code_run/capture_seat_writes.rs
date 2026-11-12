@@ -81,6 +81,21 @@ impl World {
         a.battle.facing_angle = facing;
     }
 
+    /// Seat `slot`'s display trio `+0x3C..+0x40` and heading `+0x46`, as a
+    /// module arm reads the body where its walk reads the live pair.
+    pub(in crate::world::battle::cast_band) fn module_body_seat(
+        &self,
+        slot: u8,
+    ) -> Option<legaia_engine_cast::cast_module_camera::ModuleSeat> {
+        let p = self.battle_display_trio(usize::from(slot))?;
+        Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+            x: p[0] as i16,
+            y: p[1] as i16,
+            z: p[2] as i16,
+            facing: self.actors.get(usize::from(slot))?.battle.facing_angle & 0xFFF,
+        })
+    }
+
     /// Fill the capture director inputs of `st` that the seats do not carry:
     /// both bodies' display trios, the lead party member's roster id
     /// `0x8007BD10[0]`, the frame step and whether this tick opens a battle
@@ -91,17 +106,8 @@ impl World {
         victim_slot: u8,
         st: &mut legaia_engine_cast::cast_module_camera::ModuleCamState,
     ) {
-        let body = |w: &World, slot: u8| {
-            let p = w.battle_display_trio(usize::from(slot))?;
-            Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
-                x: p[0] as i16,
-                y: p[1] as i16,
-                z: p[2] as i16,
-                facing: w.actors.get(usize::from(slot))?.battle.facing_angle & 0xFFF,
-            })
-        };
-        st.caster_body = body(self, caster_slot);
-        st.victim_body = body(self, victim_slot);
+        st.caster_body = self.module_body_seat(caster_slot);
+        st.victim_body = self.module_body_seat(victim_slot);
         st.lead_roster = (self.party_roster_slot(0) + 1) as u8;
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
@@ -231,6 +237,49 @@ impl World {
         }
     }
 
+    /// The every-pass move in a held arm's seat write - `(slot, dz, dy)` -
+    /// that the rest of a handing-over pass repeats (`World::module_pass`):
+    /// only a write that stores no position of its own.
+    pub(in crate::world::battle::cast_band) fn seat_move_of(
+        slot: u8,
+        w: &legaia_engine_cast::cast_module_camera::CaptureSeatWrite,
+    ) -> Option<(u8, i16, i16)> {
+        let dz = if w.z.is_none() { w.dz } else { 0 };
+        let dy = if w.y.is_none() { w.dy } else { 0 };
+        (dz != 0 || dy != 0).then_some((slot, dz, dy))
+    }
+
+    /// Repeat arm `phase`'s every-pass seat moves and focus drift, as its
+    /// last held tick made them, for the `ticks` of the pass it handed over
+    /// on that the port does not run (`World::module_pass`, beside the camera
+    /// drift it repeats). Retail's passing pass moves the whole step ahead of
+    /// the arm's gate.
+    pub(in crate::world::battle) fn repeat_module_seat_moves(&mut self, phase: u8, ticks: u8) {
+        let Some(moves) = self.casting.module_held_moves.take() else {
+            return;
+        };
+        if moves.phase != phase {
+            return;
+        }
+        for _ in 0..ticks {
+            for &(slot, dz, dy) in moves.seats.iter().flatten() {
+                self.apply_capture_seat_writes(
+                    slot,
+                    legaia_engine_cast::cast_module_camera::CaptureSeatWrite {
+                        dz,
+                        dy,
+                        ..Default::default()
+                    },
+                );
+            }
+            if moves.focus_z != 0
+                && let Some(cam) = self.battle.camera.as_mut()
+            {
+                cam.drift_module_focus_z(moves.focus_z);
+            }
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass
@@ -286,7 +335,20 @@ impl World {
             a.battle.render_flag = r;
         }
         if let Some(r) = w.rate {
-            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(r);
+            use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, commit_rate_decay};
+            // A seat the tick's own bump committed this pass: retail stores
+            // the rate in the SM and commits in the anim tick after it, so
+            // the commit's decay still lands on this store. PROT 0959's arm
+            // `0x0A` stores Che's `2` every pass (`0x801F7598`) and bumps her
+            // next clip on the last (`0x801F768C`); she jumps at `4`.
+            let bumped = w.stage.is_none()
+                && slot < 8
+                && self.casting.module_bump_commits & (1 << slot) != 0;
+            a.battle.anim_rate = if bumped {
+                commit_rate_decay(AnimRate(r))
+            } else {
+                AnimRate(r)
+            };
         }
         if let Some(floor) = w.seek_floor
             && let Some(p) = a.battle_animation.as_mut()

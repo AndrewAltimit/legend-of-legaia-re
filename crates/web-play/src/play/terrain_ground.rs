@@ -153,11 +153,12 @@ impl LegaiaRuntime {
     /// (`Renderer::set_field_prim_order`): the field frame, the world map
     /// and a battle, whose bodies, parts and backdrop all go through the
     /// same per-prim leaves (`camera_frame::prim_link_order`, the native
-    /// window's gate).
+    /// window's gate), under the mode the frame draws in
+    /// (`BootSession::frame_draw_mode`).
     pub fn play_field_prim_order(&self) -> bool {
-        self.scene_host
-            .host()
-            .is_some_and(|h| legaia_engine_field::camera_frame::prim_link_order(h.world.mode))
+        self.scene_host.session().is_some_and(|s| {
+            legaia_engine_field::camera_frame::prim_link_order(s.frame_draw_mode())
+        })
     }
 
     /// Per-terrain-draw `DRAW_ORDER_*` word (`1` = farthest corner), parallel

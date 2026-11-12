@@ -1161,6 +1161,8 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
   Because the pass is a VM run, a story-flag test in it picks the arm and its flag writes land: `korb3`'s stones (P0[3..9], P0[23], P0[24]) clear their flag, test `0x403` and either hold shut and park on the `0x21` the touch resumes from, or raise the flag and park in an idle loop.
   The port (`field_env::run_spawn_prologue`) takes the parked cursor, the flag writes and the clip words from that run, so a two-state prop poses from the arm its flag picks: Conkram's shell on `map03` (P0[0]) tests `0x4C8` over a `4C 35` arm (frame 0, the lid standing open behind the town) and a `4C 36` arm (its last frame), and a retail capture with the flag clear holds the actor at cursor `0`. The class bits come from the same run, so a door whose "already opened" arm sets `31 00` spawns solid while its flag says shut, and its touch body opens it; only a bank built without a world walks the prologue linearly.
 
+  The class bits land in run order: a `32 <bit>` the pass executes after a `31 <bit>` drops the bit again. `bylon`'s airtight-chamber door (P0[0]) runs `31 00`, tests `0x2A1` and `0x17F`, and with both clear runs `4C 35` / `32 00`, so it spawns solid; counting only the sets left it walk-through, and the party passed the door without the button's dialogue or the lever (P0[5]), so `0x293` was never raised.
+
   `rikuroa`'s barricade (P0[1]) is the case that showed it: only its `0x142` arm carries the `31 00`, so read off both arms it spawned exempt yet posed shut, the player walked through the closed gate before Caruban, and its touch body (the fade, the swing, the `31 00`) never ran. Disc-gated `engine-session/tests/rikuroa_barricade_disc.rs` pins it.
 
   Every bound object whose `31 00` hangs on a flag arm, from each prologue's disassembly (the test jumps when its flag is set). *Walk* objects open on body contact; *press* objects carry `31 1E` (the interact-gated class) and open only on the facing probe:
@@ -1168,7 +1170,10 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
   | Objects | Touch | Walk-through (`31 00`) when |
   |---|---|---|
   | `bylon` P0[3, 4, 22, 24..27], `edbylon` P0[3, 22, 24..27] | walk | `0x2A1` set and `0x2AC` clear |
+  | `bylon` P0[0] (the airtight-chamber door) | press | `0x2A1` or `0x17F` set (the lever P0[5] raises `0x17F` and opens it) |
+  | `bylon` P0[15], P0[17] (the wing rooms' north doors) | press | `0x2A1` set, or `0x180` (P0[15]) / `0x181` (P0[17]) set |
   | `bylon` P0[16], P0[18] (the wing rooms' south doors) | walk | `0x180` (P0[16]) / `0x181` (P0[18]) clear, or `0x2A1` set |
+  | `bylon` P0[19], P0[20] (the hall doors to the wings) | walk | `0x2A1` set; P0[19]'s touch opens it once `0x2A0` is up, P0[20]'s never does |
   | `cave01` P0[0] | walk | `0x15E` set |
   | `dolk` P0[15..18] (Sunrise and sister gates) | press | `0x270..0x273` set (the touch inserts the key) |
   | `jiji` P0[1] | walk | `0x206` set |
@@ -1179,6 +1184,8 @@ An actor is born with the placed-object template `DAT_80073E70`'s `+0x62 = 0x001
   | `taiku` P0[5] | walk | `0x519` set (and it parks off-map) |
   | `tower` P0[0] | press | `0x1C6` set |
   | `vell` P0[1] | press | `0x2AE` set |
+
+  `bylon`'s west wing is an airlock. Walking in through the hall door P0[19] raises `0x180`, opens P0[19] and the north door P0[15] and shuts the south door P0[16]; the wing switch P0[12] then shuts P0[19] and P0[15], clears `0x180` and opens P0[16], the way out to West Voz. Pressed with `0x180` clear it does the reverse.
 
   Another script can open an object too: a switch's body runs `B1 <object> 00`, the `31 00` aimed at that object's channel. `bylon`'s wing switches P0[12] / P0[13] open P0[16] / P0[18], the north entrance (`map01` P2[11]) having raised `0x180` / `0x181` and shut them; `jiji` P0[3] opens P0[1]; `cave01` P2[13] opens the rock P0[0]; `taiku` P2[12] opens P0[5]. The write lands on the object's channel word, and the port carries it to that placement's prop (`prop_interact::poke_object_prop_cflags`), from a field-VM run and from a cutscene timeline alike, so the opened object stops blocking at once.
 

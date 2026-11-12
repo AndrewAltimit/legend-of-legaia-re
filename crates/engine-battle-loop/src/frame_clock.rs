@@ -24,6 +24,8 @@
 //!
 //! REF: FUN_80016B6C
 
+pub use legaia_engine_cast::cast_module_frame_step::CdTiming;
+
 /// The engine's battle frame step: retail's step on an ordinary battle frame,
 /// the one the camera and the root-motion carry assume by default.
 pub const DEFAULT_BATTLE_FRAME_STEP: u8 = 2;
@@ -244,8 +246,11 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 /// A member adds about `0x7C` hblanks, and on this machine the entry is the CPU's
 /// alone: `gp+0x3A8` (CPU done) and `gp+0x3AC` (after `DrawSync`) read the same.
 /// It is a measurement of one emulated machine, like the cast arm tables, and no
-/// model of a frame's work: Mednafen reads a full party's action about `100` lower,
-/// with the GPU wait in it, and no real hardware has been measured.
+/// model of a frame's work: Mednafen reads a full party's action about `100` lower.
+/// That gap is the CPU's (PCSX-Redux charges two cycles an instruction), not the GPU's,
+/// whose wait only ever adds; the GPU's share of a real console's frame is modelled in
+/// `docs/subsystems/battle-stage-camera.md` ("What a real console's frame costs") and
+/// rarely passes this table's CPU figure. No real hardware has been measured.
 ///
 /// The strike states `0x1E..=0x20` of a lone member and a full party are the
 /// monster strike recordings' frames with no effect part live (the probe's
@@ -341,7 +346,21 @@ pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
 /// (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp;
 /// Amethyst's on a lone Vahn (`battle_nilboa_amethyst_heal_mid_cast`) costs
 /// `392` on the cue's pass, `507` on the next, then the clamp.
-pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16) -> u16 {
+///
+/// Those are PCSX-Redux's costs ([`CdTiming::PcsxRedux`]): the clip player's
+/// stop watch polls the drive from interrupt context for the whole clip, and
+/// `1063` is a frame of about `370` hblanks of work over the third of the CPU
+/// the polls leave there. On a console ([`CdTiming::Console`]) a pass from the
+/// cue's next on costs its base over the console's share
+/// ([`legaia_engine_cast::cast_module_frame_step::console_poll_cost`]).
+pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTiming) -> u16 {
+    if let CdTiming::Console = timing {
+        return if passes_since_cue == 0 {
+            base
+        } else {
+            legaia_engine_cast::cast_module_frame_step::console_poll_cost(base)
+        };
+    }
     match passes_since_cue {
         0 => base,
         1 => base.saturating_add(XA_STREAM_ONSET_COST),
@@ -558,8 +577,15 @@ impl BattleFrameClock {
 pub struct RetailStepTrack {
     /// `(action state, module phase)` to the step of each retail frame under it.
     frames: std::collections::BTreeMap<(u8, u8), Vec<u8>>,
-    /// Passes the engine has run under each key.
+    /// Passes the engine has run under each key since the film began.
     passes: std::collections::BTreeMap<(u8, u8), usize>,
+    /// Whether the film has begun ([`Self::arm`]). The recording's frames
+    /// start at its own first vsync, while the engine runs the whole fight up
+    /// to it: the rounds a drive replays and, for a state held mid-cast, the
+    /// cast's opening passes. Before the film begins the engine keeps its own
+    /// step, so those passes neither spend the recording's frames nor run on
+    /// them.
+    armed: bool,
 }
 
 impl RetailStepTrack {
@@ -582,15 +608,36 @@ impl RetailStepTrack {
         track
     }
 
-    /// The step of the pass just run under this key: retail's frame of the
-    /// same ordinal under the key, its last one past that, `None` for a key
-    /// the film never saw.
+    /// The step of the pass that opens after one just run under this key:
+    /// retail's frame of the same ordinal among those opening on the key (a
+    /// track line is the state a frame's pass opens on, which is the state
+    /// the pass before it left), its last one past that, `None` for a key
+    /// the film never saw. The step a pass leaves is the next pass's, which
+    /// both drains by it and spans it, as retail's frame does.
     pub fn next_step(&mut self, state: u8, phase: u8) -> Option<u8> {
+        if !self.armed {
+            return None;
+        }
         let frames = self.frames.get(&(state, phase))?;
         let n = self.passes.entry((state, phase)).or_default();
         let step = frames.get(*n).or(frames.last()).copied();
         *n += 1;
         step
+    }
+
+    /// The film began on a pass the engine has just run, which left the
+    /// action SM under `(state, phase)`: the recording's first frame opens
+    /// on that state, so its step is the next pass's, returned here for the
+    /// caller to hand on. Every key counts from there.
+    pub fn arm(&mut self, state: u8, phase: u8) -> Option<u8> {
+        self.passes.clear();
+        self.armed = true;
+        self.next_step(state, phase)
+    }
+
+    /// Whether the film has begun.
+    pub fn armed(&self) -> bool {
+        self.armed
     }
 }
 
@@ -665,6 +712,22 @@ impl RetailRandTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_step_track_counts_from_the_films_first_pass() {
+        let mut t = RetailStepTrack::parse("112 1 3\n112 1 4\n112 1 4\n81 0 2\n");
+        // The rounds and the cast's opening passes before the film run on
+        // the engine's own step and spend nothing.
+        assert_eq!(t.next_step(81, 0), None);
+        assert_eq!(t.next_step(112, 1), None);
+        // The film opens on a pass that left 112:1: the recording's first
+        // frame opens there, and its step is the next pass's.
+        assert_eq!(t.arm(112, 1), Some(3));
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(112, 1), Some(4));
+        assert_eq!(t.next_step(81, 0), Some(2));
+    }
 
     #[test]
     fn the_rand_track_hands_out_each_keys_words_in_order() {

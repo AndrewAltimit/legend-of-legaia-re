@@ -88,13 +88,28 @@ pub fn battle_ground_shadow(
     // slot `7`), and the after-image ghosts (`battle_afterimage`) cast
     // none.
     let skip = legaia_engine_battle_vm::battle_actor_draw::body_shadow_skip(plan.seat, false);
+    // The node's `+0x24` / `+0x28` the gate tests are the actor's pitch
+    // `+0x44` and roll `+0x48`, which the anim tick copies across every
+    // pass (`0x800476AC..0x800476C4`, `0x80048088..0x800480A0`): a body a
+    // cast module tips casts no shadow - Kemaro's frozen victim (pitch `1`,
+    // `0x801F8388`), Mushura's banking creature, Barra's diving pair.
+    let pitch = if actor.battle.render_pitch != 0 {
+        actor.battle.render_pitch as i16
+    } else {
+        m.render_24
+    };
+    let roll = if actor.battle.render_roll != 0 {
+        actor.battle.render_roll as i16
+    } else {
+        m.render_28
+    };
     let shadow = legaia_engine_battle_vm::battle_actor_draw::shadow_plan(
         skip,
         plan.draw_colour,
         m.world_y,
         plan.radius,
-        m.render_24,
-        m.render_28,
+        pitch,
+        roll,
     )?;
     if !shadow.drawn {
         return None;

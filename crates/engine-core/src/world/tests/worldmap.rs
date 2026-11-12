@@ -117,7 +117,8 @@ fn world_tick_drives_world_map_from_pad() {
     let _ = world.tick();
     world.set_pad(raw_pad(0x0004 | 0x1000));
     let _ = world.tick();
-    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_x, -8);
+    // Packed Up steps the focus Z word (`0x801E783C`).
+    assert_eq!(world.world_map.ctrl.as_ref().unwrap().camera_z, -8);
 }
 
 #[test]

@@ -12,6 +12,8 @@ mod keyboard;
 mod redraw;
 #[path = "event_handler/redraw_draws.rs"]
 mod redraw_draws;
+#[path = "event_handler/redraw_gpu_cost.rs"]
+mod redraw_gpu_cost;
 #[path = "event_handler/redraw_overlay.rs"]
 mod redraw_overlay;
 #[path = "event_handler/redraw_passes.rs"]
@@ -107,6 +109,12 @@ impl ApplicationHandler for PlayWindowApp {
             r.set_occlusion_fade(self.options_state.occlusion_fade);
             r.set_bloom(self.options_state.bloom);
             r.set_ssao(self.options_state.ssao);
+            // The opt-in battle frame cost prices the triangles each frame
+            // draws (`redraw_gpu_cost`), off a CPU copy of every upload.
+            r.set_keep_cpu_meshes(
+                self.session.host.world.toggles.battle_gpu_cost_step
+                    || redraw_gpu_cost::gpu_cost_diag_path().is_some(),
+            );
         }
         self.upload_assets();
         self.win.request_redraw();

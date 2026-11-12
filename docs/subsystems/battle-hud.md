@@ -865,7 +865,9 @@ hits store `0` into `DAT_8007B64C` beside each HP write
 (`0x801F7244` / `0x801F7AF4` / `0x801F7F18`) and its arm `0xF` raises it once
 as it passes, so Megaton Press opens the cluster on the barrage's last pass
 already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
-by `BattleState::combo_cluster_held`. The summon pre-hits do the same (PROT 0908, 0915, 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the band's fold.
+by `BattleState::combo_cluster_held`. PROT 0960's Plasma Strike burst does the same
+(`0x801F81BC`, raised by arm `0xF` at `0x801F84BC`): its one number goes up over the
+victim and the `DAMAGE` cluster follows on arm `0xF`'s pass. The summon pre-hits do the same (PROT 0908, 0915, 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the band's fold.
 
 **The cluster's word is the hit count's, not the action's.** The readout pass
 tests the action's damage-number push count `ctx[+0x273]` against `1`

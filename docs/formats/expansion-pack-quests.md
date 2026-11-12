@@ -122,7 +122,7 @@ score = { base = 1000, turn_bonus = 100 }
 rewards = { gold = 2000 }
 ```
 
-A challenge is armed (`World::expansion_arm_challenge`) and then applies to the next battle against its `formation`, or to the next battle at all when it names none. Arming is refused when the present party already breaks a party rule, or when a named formation does not resolve.
+A challenge is armed (`World::expansion_arm_challenge`) and then applies to the next battle against its `formation`, or to the next battle at all when it names none. Tetsu's sparring tutorial is no challenge's battle: its rules do not reach it and it does not use the challenge up, since a `no_items` rule there would refuse the Item chip the tutorial's Item lesson needs. Arming is refused when the present party already breaks a party rule, or when a named formation does not resolve.
 
 | Rule | Effect |
 |---|---|

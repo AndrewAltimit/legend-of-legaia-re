@@ -23,6 +23,10 @@ pub(super) const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
         "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
     ),
     (
+        "confined|korb3|tile(36,26)",
+        "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
+    ),
+    (
         "confined|dream|*",
         "dream's closing record returns the party to the scene it fell asleep in by a flag the sleep sets; entered by name, no branch matches and the record ends on the hidden party",
     ),
@@ -185,6 +189,20 @@ pub(super) fn write_report(
         *surfaces.entry(name).or_default() += 1;
     }
     let _ = writeln!(md, "- runs that reached each battle surface: {surfaces:?}");
+    let mut cabinet: BTreeMap<&String, u32> = BTreeMap::new();
+    for name in r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.stats.cabinet_states.iter())
+    {
+        *cabinet.entry(name).or_default() += 1;
+    }
+    if !cabinet.is_empty() {
+        let _ = writeln!(
+            md,
+            "- runs that reached each Baka Fighter cabinet state: {cabinet:?}"
+        );
+    }
     let revisits: u32 = r.outcomes.iter().map(|o| o.stats.minigame_revisits).sum();
     let _ = writeln!(
         md,

@@ -194,3 +194,103 @@ fn disc_head_is_helmets_not_accessories() {
         "accessories must not appear in the equip-stat table, found: {acc_in_equip:?}"
     );
 }
+
+/// Equip-mask bit of a curated character name (record `+6`).
+fn mask_bit(c: &str) -> u8 {
+    match c {
+        "Vahn" => 1,
+        "Noa" => 2,
+        "Gala" => 4,
+        other => panic!("unknown character {other:?}"),
+    }
+}
+
+/// Every curated weapon and armour piece carries the disc equipment record's
+/// stat bonuses (`+0..+4`: INT, ATK, UDF, LDF, SPD), its wearer mask (`+6`)
+/// and its slot (`+7`), byte-exact. Every curated piece must join a disc id.
+#[test]
+fn curated_equipment_stats_and_wearers_match_the_disc() {
+    let Some(scus) = scus_bytes() else {
+        eprintln!("[skip] extracted/SCUS_942.54 missing");
+        return;
+    };
+    let names = ItemNameTable::from_scus(&scus).expect("parse item-name table");
+    let equips = EquipStatTable::from_scus(&scus).expect("parse equip-stat table");
+    let mut by_name = std::collections::HashMap::new();
+    for id in 0u8..=u8::MAX {
+        if let (Some(name), Some(b)) = (names.name(id), equips.bonus(id))
+            && !name.is_empty()
+        {
+            by_name.insert(norm(name), b);
+        }
+    }
+    let db = Database::load();
+    let mut fail: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+    for w in db.weapons() {
+        let Some(b) = by_name.get(&norm(&w.name)) else {
+            fail.push(format!("weapon {} has no disc equipment record", w.name));
+            continue;
+        };
+        checked += 1;
+        let mask = w
+            .equip_others
+            .iter()
+            .fold(mask_bit(&w.equip_best), |m, c| m | mask_bit(c));
+        let want = [b.int_up(), b.attack(), b.def_up(), b.def_down(), b.spd_up()].map(u16::from);
+        let got = [0, w.attack, 0, 0, 0];
+        if want != got {
+            fail.push(format!("weapon {}: curated {got:?} disc {want:?}", w.name));
+        }
+        if b.equip_mask() != mask {
+            fail.push(format!(
+                "weapon {}: curated wearers {mask:#x} disc {:#x}",
+                w.name,
+                b.equip_mask()
+            ));
+        }
+        if b.slot() != EquipSlot::Weapon {
+            fail.push(format!("weapon {}: disc slot {:?}", w.name, b.slot()));
+        }
+    }
+    for a in db.armor() {
+        let Some(b) = by_name.get(&norm(&a.name)) else {
+            fail.push(format!("armor {} has no disc equipment record", a.name));
+            continue;
+        };
+        checked += 1;
+        let want = [b.int_up(), b.attack(), b.def_up(), b.def_down(), b.spd_up()].map(u16::from);
+        let got = [a.int, a.atk, a.udf, a.ldf, a.spd];
+        if want != got {
+            fail.push(format!(
+                "armor {}: curated [int, atk, udf, ldf, spd] {got:?} disc {want:?}",
+                a.name
+            ));
+        }
+        if b.equip_mask() != mask_bit(&a.equip) {
+            fail.push(format!(
+                "armor {}: curated wearer {} disc mask {:#x}",
+                a.name,
+                a.equip,
+                b.equip_mask()
+            ));
+        }
+        let slot = match a.slot.as_str() {
+            "armor" => EquipSlot::Body,
+            "helmet" => EquipSlot::Head,
+            _ => EquipSlot::Footwear,
+        };
+        if b.slot() != slot {
+            fail.push(format!("armor {}: disc slot {:?}", a.name, b.slot()));
+        }
+    }
+    assert!(
+        fail.is_empty(),
+        "curated equipment disagrees with the disc (disc is authoritative): {fail:#?}"
+    );
+    assert_eq!(
+        checked,
+        db.weapons().len() + db.armor().len(),
+        "every piece checked"
+    );
+}

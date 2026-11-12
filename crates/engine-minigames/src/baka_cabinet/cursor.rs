@@ -48,7 +48,7 @@ pub fn cursor_step_mod(
 
 /// The step both folds share: left decrements, right increments, and either
 /// edge counts as a move (both in one frame cancel out but still blip).
-fn cursor_raw(cursor: i32, pad_edge: u16, left: u16, right: u16) -> (i32, bool) {
+pub(super) fn cursor_raw(cursor: i32, pad_edge: u16, left: u16, right: u16) -> (i32, bool) {
     let mut c = cursor;
     let mut moved = false;
     if pad_edge & left != 0 {

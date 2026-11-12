@@ -94,6 +94,23 @@ path and pressing `Enter`, works as well. On Linux the dialog goes through the d
 file-chooser portal; where no portal runs, the drag-and-drop and typed-path
 routes still work.
 
+A controller cannot work the desktop's file dialog, so Cross on *Choose
+disc...* opens the launcher's own disc finder instead, in place of the
+options: the folder of the disc last used (else Downloads, else the home
+folder), its subfolders and its `.bin` / `.cue` files, then the usual places
+(home, Downloads, Desktop, Documents, the program's folder, and the top of each
+drive). Cross opens a folder or tries a disc image, and a disc that passes the
+check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
+`Esc` closes the finder. The keyboard reaches it too, as *Find a disc on this
+computer...* on the *Recent* page. With a controller in hand, choosing a
+memory card or an expansion pack past the remembered ones opens the same
+finder on those files (`.mcr` / `.mcd` / `.srm` / `.gme` / `.mcs`, or
+`.lxpack` / `pack.toml`) rather than the file dialog; the card finder's
+places start with the emulators' card folders that exist (DuckStation's
+`memcards`, Mednafen's `sav`, RetroArch's `saves`, ePSXe's `memcards`). While a controller was the last thing
+pressed, the help box's key reminder and the "press to play" lines name its
+buttons, by the labels its maker prints on them.
+
 On a Wayland desktop the launcher window opens through XWayland, because the
 windowing library has no Wayland drag-and-drop; the compositor carries a drag
 from a Wayland file manager across, so dropping works there too. Without
@@ -122,13 +139,16 @@ leaves out the streamed movie and voice sectors), a compressed `.chd`, an
 EBOOT `.pbp`, an ECM image, an archive, a patch file, or a `.cue` whose `.bin`
 was renamed - in which case the one `.bin` beside it is named.
 
-On a first run the launcher looks for a dump before asking for one: in its own
+On a first run the launcher looks for a dump before asking for one: first the
+discs Legaia Explorer opened (its `settings.json`, whatever the files are
+called), then in its own
 folder, Downloads, the Desktop, Documents and the home folder, and each of
 those folders' direct subfolders, for a `.bin` or `.cue` named for the game (or
 sitting in a folder named for it) that passes the check below. One that does is
 offered on the disc card (*Found your disc image*), with *Choose disc...*
 reading *Use this disc*: `Enter` adopts it, `Ctrl+O` or `Shift+Enter` picks
-another file. Nothing else on the machine is read and nothing is written unless
+another file. *Play* (or Start) adopts the found disc and starts the game in
+one press. Nothing else on the machine is read and nothing is written unless
 it is adopted.
 
 A disc that passes is remembered in `launcher.toml` in the platform config
@@ -181,6 +201,9 @@ started from Legaia Explorer (`legaia-engine launch --disc`).
 | Discs | every remembered disc: *In use*, *Ready* or *Not found* | switch to it | forget it |
 | Continue your game / Continue from card 2 | every save on that card, longest played first, by leader, level, place and play time | start the game on it, without the title screen (`play-window --resume-save`) | - |
 | Memory cards | every remembered card, and *Mount a memory card...* | mount it as card 2, or take it out | forget it |
+
+The Discs group ends with *Find a disc on this computer...*, the disc finder
+described under [Choosing the disc](#choosing-the-disc).
 
 `Esc`, Circle or the page's *Options* button goes back to the options.
 
@@ -545,7 +568,9 @@ boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
 Config table, and the mouse's camera controls.
-`Esc`, `F12`, Circle or Start close the panel. A state the original game does
+`Esc`, `F12`, Circle or Start close the panel. Each page's last line names its
+keys, or, while a controller was the last thing pressed, that controller's
+buttons by the labels its maker prints (*D-pad pick, change  B close*). A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
 stays hidden while the panel is up. In a multiplayer session, whose other

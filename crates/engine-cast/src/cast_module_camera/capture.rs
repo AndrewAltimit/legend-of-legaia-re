@@ -177,7 +177,7 @@ pub struct CaptureCamArm {
     pub party_shove: Option<i16>,
     /// The pass seats [`crate::cast_module_camera::STORM_SCATTER_PAIRS`] pairs of
     /// [`crate::cast_module_camera::STORM_SCATTER_RECORDS`] on `rand()` points
-    /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 255`, `z = 0x100`.
+    /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 257`, `z = 0x100`.
     pub scatter_pairs: bool,
     /// [`Self::ribbons`] take their height off the `y` the scatter's last pair
     /// drew: the two loops share one stack trio (PROT 0957's arm 5).
@@ -223,6 +223,12 @@ pub struct CaptureCamArm {
     /// The `FUN_80021B04` calls this pass makes at points the arm works out,
     /// held or not. Seated on the tick that opens a battle frame.
     pub pass_spawns: [Option<super::ModuleSpawn>; 5],
+    /// A held arm's [`Self::pass_spawns`] read the state the whole pass
+    /// leaves: retail makes the calls after the pass's one `scalar * delta`
+    /// drain (and drift), which the port's one-vsync ticks reach only on the
+    /// pass's last tick. The host seats them from that tick's call instead of
+    /// the first (PROT 0947's trail, which sits on the shot's focus).
+    pub spawns_at_pass_end: bool,
     /// A passing arm's larger run of the same calls (PROT 0948's arm 1).
     pub charge_spawns: [Option<super::ModuleSpawn>; 8],
     /// The arm stores `0x800` into both backdrop records' `+0x78`, the

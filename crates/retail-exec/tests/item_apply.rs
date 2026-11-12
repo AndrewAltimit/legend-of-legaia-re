@@ -18,7 +18,7 @@ const AGGREGATOR: u32 = 0x8004_2558;
 const VALIDATOR: u32 = 0x8003_FB10;
 const RAND: u32 = 0x8005_6798;
 
-fn seed(rng: &mut Rng) -> Vec<u8> {
+pub(crate) fn seed(rng: &mut Rng) -> Vec<u8> {
     let mut r = vec![0u8; STRIDE as usize];
     let mut w = |off: usize, v: u32| r[off..off + 2].copy_from_slice(&(v as u16).to_le_bytes());
     let hp = 1 + rng.below(9999);

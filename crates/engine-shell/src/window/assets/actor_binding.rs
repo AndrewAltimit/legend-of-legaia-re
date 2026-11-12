@@ -382,26 +382,16 @@ impl PlayWindowApp {
         let anim_id = world.field_npc_live_anim(p.index).unwrap_or(p.anim_id);
         let pose: Option<Vec<([i16; 3], [i16; 3])>> = match (anim_id, bundle) {
             (0, _) | (_, None) => None,
+            // The live clip player over the same record (the scene
+            // binding's) poses this NPC per frame; the rest pose below
+            // stays the frame-0 fallback / first frame.
             (id, Some(b)) => {
-                // The live clip player over the same record (the scene
-                // binding's) poses this NPC per frame; the rest pose below
-                // stays the frame-0 fallback / first frame.
-                let rec_idx = (id - 1) as usize;
-                b.record(rec_idx).ok().map(|rec| {
-                    let bones = rec.bone_count as usize;
-                    tmd.objects.truncate(bones);
-                    (0..bones)
-                        .map(|bi| match b.bone_transform(rec_idx, 0, bi) {
-                            Some(t) => (
-                                [t.t_x as i16, t.t_y as i16, t.t_z as i16],
-                                [t.r_x as i16, t.r_y as i16, t.r_z as i16],
-                            ),
-                            None => ([0; 3], [0; 3]),
-                        })
-                        .collect()
-                })
+                legaia_engine_field::field_anim::record_frame_pose(b, (id - 1) as usize, 0)
             }
         };
+        if let Some(p) = &pose {
+            tmd.objects.truncate(p.len());
+        }
         let mut vmesh = match &pose {
             Some(offsets) => legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&tmd, &raw, offsets),
             None => legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw),

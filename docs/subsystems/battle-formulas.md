@@ -1781,7 +1781,7 @@ fields inline in each monster record
 // A seat pays when +0x14C == 0 and +0x227 == 0: it died and was not captured,
 // so a Seru the Ra-Seru took pays nothing and neither does a monster that ran.
 gold = sum over paying seats (record.gold >> 1)              // 0x8004EFBC
-if a living member has +0xF4 bit 0x10000:  gold += gold >> 2 // Golden Book, 0x8004F094
+if a living member has +0xF8 bit 0x10000:  gold += gold >> 2 // Golden Book, 0x8004F094
 if _DAT_8007BAC0 != 0:  gold = 0                             // 0x8004F0AC
 gold = gold - (gold >> 1)                                    // second halving, 0x8004F0DC
 purse (0x8008459C) = min(purse + gold, 99,999,999)
@@ -1794,7 +1794,7 @@ if _DAT_8007BAC0 != 0:  share = 0                            // 0x8004F274
 each member:
   +0x14C == 0:  +0x14C = 1, next member                      // stood back up, no EXP (0x8004F390)
   Stoned:       next member                                  // 0x8004F248
-  otherwise:    xp = min(xp + share (twice with +0xF4 bit 0x8000), 9,999,999)
+  otherwise:    xp = min(xp + share (twice with +0xF8 bit 0x8000), 9,999,999)
                 level-up applier FUN_801E9504
 then the drop walk                                           // 0x8004F3D8
 ```

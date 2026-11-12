@@ -231,6 +231,50 @@ pub fn retail_front_faces(mesh: &mut legaia_tmd::mesh::VramMesh, mvp: &[f32; 16]
     mesh.indices = keep;
 }
 
+/// The local-space mesh a summon / move-FX part draws under the camera `cam`
+/// (column-major, the draw frame to clip space; the part's own matrix is
+/// [`FxPartModel::model`]), the faces retail's leaves reject already gone.
+/// Both hosts draw what comes back both-sided.
+///
+/// A battle part whose colour word sends its `GT4`s to handler bank 3
+/// (`ColourWord::split_quads`) takes the bank-3 leaf's whole-quad rejects
+/// ahead of the split, on each quad's own corners: its winding over corners
+/// `0..=2` (unless the word carries `0x08000000`) and all four corners off one
+/// screen edge
+/// ([`legaia_render_kernels::prim_near_reject::bank3_quad_rejected`]). Its
+/// sixteen triangles then take no winding test, only the near reject the
+/// vertex stage runs. Every other single-sided part drops its back faces
+/// triangle by triangle ([`retail_front_faces`]).
+///
+/// `None` when the part's mesh is not in the pool; with no `cam` (a host
+/// vantage) the mesh comes back with every face.
+pub fn part_seen_mesh(
+    world: &World,
+    p: &FxPartModel,
+    cam: Option<&[f32; 16]>,
+) -> Option<legaia_tmd::mesh::VramMesh> {
+    let Some(cam) = cam else {
+        return world.part_draw_vram_mesh(&p.draw);
+    };
+    let mvp = mat4_mul(cam, &p.model);
+    if world.mode == SceneMode::Battle && p.draw.colour.split_quads && p.draw.shatter == 0 {
+        let h = legaia_engine_field::camera_frame::BATTLE_GTE_H;
+        let view = legaia_render_kernels::prim_near_reject::QuadView {
+            mvp,
+            sz_per_w: 1.0,
+            h,
+            aspect_fix: legaia_render_kernels::prim_near_reject::projection_aspect_fix(cam, h),
+            cull_back: p.single_sided,
+        };
+        return world.part_draw_vram_mesh_viewed(&p.draw, Some(&view));
+    }
+    let mut m = world.part_draw_vram_mesh(&p.draw)?;
+    if p.single_sided {
+        retail_front_faces(&mut m, &mvp);
+    }
+    Some(m)
+}
+
 /// The live effect layer's 3D draws for this frame, by source.
 #[derive(Debug, Clone, Default)]
 pub struct FxModelDraws {
@@ -289,6 +333,58 @@ fn far_arm_node_mesh(
             nclip_area(eye, 256.0) >= 0.0
         })
     })
+}
+
+/// The byte offset of the ordering table's last entry, `ot + 0x3FFC`: the
+/// bucket the GPU walks first.
+pub const FAR_BUCKET_OTZ: i32 = 0x3FFC;
+
+/// The link a quad leaf computes off its four corners' eye depths: `SZ`
+/// saturated to `0..=0xFFFF`, then `AVSZ4` under the battle's `ZSF4 =
+/// 0x400 >> 2` (`0x80043568..0x8004357C`), which is the sum over `16`. The
+/// table holds `4096` words, so four saturated corners link at its last one
+/// (`0x3FFF & 0xFFFC`); no triangle's `AVSZ3` (`ZSF3 = 0x555 >> 2`) reaches it.
+pub fn quad_link_otz(eye_z: [f32; 4]) -> i32 {
+    let sum: i32 = eye_z.iter().map(|&z| z.clamp(0.0, 65535.0) as i32).sum();
+    (sum * 0x100) >> 12
+}
+
+/// Drop the quads of a draw-kind-4 node's mesh that link into the farthest
+/// bucket while the cast wash covers it
+/// ([`World::cast_wash_covers_far_bucket`]). Retail links them there and
+/// paints the wash over them; here the mesh would draw over the wash at its
+/// own depth. `eye_z` reads a mesh-space corner's eye depth (`SZ`). A quad is
+/// the default arm's four fresh corners (`[0, 1, 2]` + `[2, 1, 3]`); anything
+/// else stays.
+///
+/// Kemaro's arm-17 streak records (PROT 0918, `0x801F911C` / `0x801F9160`)
+/// are the case: discs `0x8000` out along their axis, turned by the shot's
+/// trio onto the view axis, whose corners stand past `SZ 0xFFFF`. A retail
+/// table of arm `0x12` holds their `32` `GT4`s in bucket `4095`, after the
+/// fill and before the wash's two `G4`s, and its raster with or without them
+/// is the same picture.
+pub fn drop_far_bucket_quads(
+    mesh: &mut legaia_tmd::mesh::VramMesh,
+    eye_z: impl Fn([f32; 3]) -> f32,
+) {
+    // Compacted in place: the kept indices never pass the ones still read.
+    let (ix, positions) = (&mut mesh.indices, &mesh.positions);
+    let (mut k, mut w) = (0, 0);
+    while k + 3 <= ix.len() {
+        let a = ix[k];
+        let quad = ix.get(k..k + 6) == Some(&[a, a + 1, a + 2, a + 2, a + 1, a + 3][..]);
+        let n = if quad { 6 } else { 3 };
+        let keep = !quad || {
+            let z = std::array::from_fn(|c| eye_z(positions[a as usize + c]));
+            quad_link_otz(z) & 0xFFFC != FAR_BUCKET_OTZ
+        };
+        if keep {
+            ix.copy_within(k..k + n, w);
+            w += n;
+        }
+        k += n;
+    }
+    ix.truncate(w);
 }
 
 /// Compose this frame's effect model draws. `part_cam` is the retail camera
@@ -351,6 +447,7 @@ pub fn effect_model_draws(
             })
             .collect();
     }
+    let wash_cam = part_cam.filter(|_| battle && world.cast_wash_covers_far_bucket());
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
@@ -360,6 +457,14 @@ pub fn effect_model_draws(
                 rb.mesh = far_arm_node_mesh(world, &rb, &model, part_cam, battle);
                 // The arm has run its own winding test on the quad.
                 rb.single_sided = false;
+            }
+            if let Some(cam) = wash_cam {
+                drop_far_bucket_quads(&mut rb.mesh, |p| {
+                    let d = std::array::from_fn(|i| {
+                        model[i] * p[0] + model[4 + i] * p[1] + model[8 + i] * p[2] + model[12 + i]
+                    });
+                    cam.eye_point(d, battle)[2]
+                });
             }
             FxMeshModel {
                 model: match part_cam.filter(|_| rb.tessellated) {
@@ -417,6 +522,44 @@ pub fn effect_model_draws(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Four corners past `SZ 0xFFFF` link in the table's last word; one
+    /// corner back inside the range does not, and a triangle never does.
+    #[test]
+    fn saturated_quads_link_in_the_far_bucket() {
+        assert_eq!(quad_link_otz([140_000.0; 4]) & 0xFFFC, FAR_BUCKET_OTZ);
+        assert_eq!(quad_link_otz([65535.0; 4]) & 0xFFFC, FAR_BUCKET_OTZ);
+        assert_ne!(
+            quad_link_otz([140_000.0, 140_000.0, 140_000.0, 60_000.0]) & 0xFFFC,
+            FAR_BUCKET_OTZ
+        );
+        assert_eq!(quad_link_otz([-5.0; 4]), 0);
+    }
+
+    /// The far quads go, the near quad and every triangle stay.
+    #[test]
+    fn far_bucket_quads_are_dropped() {
+        let quad = |z: f32| [[0.0, 0.0, z], [1.0, 0.0, z], [0.0, 1.0, z], [1.0, 1.0, z]];
+        let mut mesh = legaia_tmd::mesh::VramMesh {
+            positions: Vec::new(),
+            uvs: Vec::new(),
+            cba_tsb: Vec::new(),
+            indices: Vec::new(),
+            normals: Vec::new(),
+            colors: Vec::new(),
+        };
+        for z in [200_000.0, 100.0] {
+            let b = mesh.positions.len() as u32;
+            mesh.positions.extend(quad(z));
+            mesh.indices
+                .extend_from_slice(&[b, b + 1, b + 2, b + 2, b + 1, b + 3]);
+        }
+        let b = mesh.positions.len() as u32;
+        mesh.positions.extend(&quad(200_000.0)[..3]);
+        mesh.indices.extend_from_slice(&[b, b + 1, b + 2]);
+        drop_far_bucket_quads(&mut mesh, |p| p[2]);
+        assert_eq!(mesh.indices, [4, 5, 6, 6, 5, 7, 8, 9, 10]);
+    }
 
     /// Under the identity draw matrix a clockwise triangle (y up) is a
     /// retail front face and stays, its reverse winding goes, and a triangle

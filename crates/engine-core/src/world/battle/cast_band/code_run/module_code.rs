@@ -29,6 +29,7 @@ impl World {
             return Some(self.run_fatal_decision(entry));
         }
         self.casting.module_running_entry = Some(entry);
+        self.casting.module_bump_commits = 0;
         let mut ctx = self.cast_module_ctx();
         // The phase the tick enters on, before a state-touching stager below
         // steps it (PROT 0909's arm 0 is its stager's).
@@ -227,6 +228,15 @@ impl World {
                 let seats = self.module_cam_seats(caster_slot, latched);
                 let mut st = self.module_cam_with_yaw_base();
                 self.feed_seru_cam(entry, caster_slot, &mut st);
+                // The latched victim's display pair `+0x3C` / `+0x40`, which
+                // some arms frame instead of its live pair (PROT 0910's arm 9
+                // and settle, 0916's arms `0x13` / `0x14`, 0917's arm `0xF`).
+                st.victim_body = self.module_body_seat(latched);
+                // The battle frame this tick belongs to: an arm that steps a
+                // fixed amount once a pass (PROT 0913's arm `0x10` yaw) lands
+                // it on the tick that opens the frame.
+                st.frame_step = self.module_frame_step();
+                st.opens_pass = self.module_tick_opens_pass();
                 // A settle gate's row (`summon_holds::Gate::Settle`): every
                 // monster seat idle, or faded out once dead.
                 let pc = usize::from(self.party.party_count);
@@ -460,6 +470,7 @@ impl World {
                     .flatten()
                     .copied(),
             );
+            self.casting.module_debris_at_pass_end = arm.spawns_at_pass_end;
             self.casting.module_scatter = arm.scatter;
             self.casting.module_trail = arm.trail;
             self.casting.module_rock_burst = arm.rock_burst;
@@ -512,6 +523,21 @@ impl World {
             && self.casting.module_hit_arm != Some(phase_in)
         {
             self.casting.module_hit_arm = Some(phase_in);
+            // Thunder Storm's arm 5 seats its scatter pairs and calls its
+            // ribbons (`0x801F7330..0x801F7498`) ahead of the countdown test
+            // and the party's hit (`jal 0x801DD4B0` at `0x801F7514`), so on
+            // a pass that opens and lands the hit at once both draw first.
+            if entry == 957
+                && arm.scatter_pairs
+                && arm.ribbons_on_scatter_y
+                && self.module_tick_opens_pass()
+                && std::mem::take(&mut self.casting.module_scatter_pairs)
+            {
+                self.seat_storm_scatter_pairs(entry, arm.shot);
+                self.battle.cast_ribbons = arm.ribbons;
+                self.deal_storm_ribbons(true);
+                self.casting.module_storm_dealt = true;
+            }
             // Gigaton Press seats its debris ring - sixteen `rand() % 4`
             // picks - ahead of its `FUN_801DD4B0` (`0x801F717C..0x801F72B4`),
             // so the ring draws first.
@@ -940,8 +966,21 @@ impl World {
                     // landing: once it has landed here, the band's generic
                     // fold owes nothing. Folding as well rolled the
                     // `0x1C0` a second time through the catalog def.
-                    if hit.is_some() {
+                    if let Some(roll) = hit {
                         self.casting.module_skips_fold = true;
+                        // The popup `FUN_801F44A0(roll, 0)` on the raw roll
+                        // (`jal` at `0x801F817C`, `a0` the roll's low half)
+                        // ahead of the clamp, the `+0x10` accumulate and the
+                        // HP write: the burst's numeral over seat 0.
+                        // REF: FUN_801F44A0
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: 0,
+                                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                                is_heal: false,
+                                is_crit: false,
+                            });
                     }
                     Some(ticks::plasma_strike_tick(
                         &mut ctx,
@@ -2003,6 +2042,10 @@ impl World {
         self.battle.cast_ribbons = pass_ribbons;
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
+        if std::mem::take(&mut self.casting.module_storm_dealt) {
+            self.deal_storm_ribbons(false);
+            self.casting.module_ribbons_on_scatter_y = false;
+        }
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
@@ -2076,6 +2119,17 @@ impl World {
             }
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
+            if capture_held {
+                self.casting.module_held_moves =
+                    Some(legaia_engine_battle_loop::cast_fx_state::ModulePassMoves {
+                        phase: phase_in,
+                        seats: [
+                            Self::seat_move_of(caster_slot, &arm.caster_write),
+                            Self::seat_move_of(victim_slot, &arm.victim_write),
+                        ],
+                        focus_z: arm.focus_z,
+                    });
+            }
             if !arm.party_write.is_empty() {
                 for slot in 0..self.party.party_count {
                     let a = &self.actors[usize::from(slot)];
@@ -2201,6 +2255,17 @@ impl World {
             // PROT 0959's hits clear the readout flag and its arm `0x0F`
             // raises it as it passes: the cluster opens on that pass.
             if entry == 959 {
+                self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
+            }
+            // PROT 0960's Plasma Strike burst clears it beside its HP write
+            // (`sb zero,-0x49B4` at `0x801F81BC`) and arm `0x0F` raises it
+            // as it passes (`li v0,0x78` / `sb` at `0x801F84B8..0x801F84BC`):
+            // the burst's numeral goes up alone and the cluster opens on that
+            // pass. No earlier arm raises it, and the flurry's banked hits
+            // write neither the flag nor HP.
+            if entry == 960
+                && body == Some(legaia_engine_cast::cast_module_camera::PLASMA_STRIKE_BODY)
+            {
                 self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
             }
             // PROT 0958's clear the flag the same way and its arm 23 raises

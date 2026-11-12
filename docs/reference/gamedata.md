@@ -145,6 +145,11 @@ Each row has a stable snake_case `key` used by `shops.toml`,
 `casino.toml`, `fishing.toml`, and `enemies.toml`. The
 `shop_inventory_keys_resolve` test asserts every reference resolves.
 
+An armour row carries the equipment record's five stat bonuses: `udf` /
+`ldf` always, and `atk` / `spd` (footwear) and `int` (helmets) where
+non-zero. The walkthrough these were mined from printed two numbers per
+piece, which for helmets and footwear were not UDF and LDF.
+
 `accessories.toml` carries an informal `effect_class` taxonomy
 (`hp_max_pct`, `ap_accrual_pct`, `mp_cost_pct`, `attack_pct`,
 `speed_pct`, `revive_once`, `protect_status`, `elemental_def`,
@@ -156,10 +161,12 @@ be promoted to retail-confirmed data.
 
 ### Enemies
 
-Per enemy: `name`, `location`, optional `element` (for elemental
-Seru enemies), optional `boss = true`, and optional `drop` /
-`steal` item keys. The `enemy_drop_and_steal_keys_resolve` test
-asserts every drop/steal target exists in the item tables.
+Per enemy: `name`, `location`, optional `element` (absent for the
+neutral element), optional `boss = true`, optional `drop` / `steal` item
+keys with the `steal_chance` percent, and the stat columns. The
+`enemy_drop_and_steal_keys_resolve` test asserts every drop/steal target
+exists in the item tables; `enemy_stats_vs_disc` pins every field to the
+monster record.
 
 ### Shops
 
@@ -228,81 +235,85 @@ Run with `cargo test -p legaia-gamedata`. Enforced rules:
   `accessories.toml`.
 - Every enemy `drop` / `steal` key resolves.
 - Every armor `slot` is one of `armor` / `helmet` / `shoes`; every
-  `equip` is one of `Vahn` / `Noa` / `Gala` / `None`.
+  `equip` is one of `Vahn` / `Noa` / `Gala`.
 - Every item `category` is one of `consumable` / `permanent_stat`
   / `key` / `art_book` / `fishing_lure`.
 
-### Disc-gated cross-checks (skip when `extracted/SCUS_942.54` is absent)
+### Disc-gated cross-checks (skip when the extracted disc files are absent)
 
-These validate the curated tables against the real executable, so the disc
-is the tie-breaker when the two disagree:
+These join the curated tables to the disc record each field comes from, so
+the disc is the tie-breaker when the two disagree. A disagreement is fixed in
+the TOML (with a comment naming the disc source), not allow-listed; the few
+rows with no disc counterpart are named in the test that skips them.
 
-- `item_prices_vs_disc` - every priced weapon / armor / accessory whose name
-  resolves to a disc item id has a curated `price` equal to the authoritative
-  `SCUS` shop-price field (the `u16` at `+2` of the item-property record). 119+
-  cross-checks, **zero** mismatches. This oracle pinned three walkthrough price
-  errors that were corrected to the disc values (Forest / Magic Amulet
-  4000→2000, Evil Medallion 9998→9999).
-- `equip_slots_vs_disc` - the disc equip-stat table's four `+7` slot categories
-  map name-exactly to the four gamedata armour/weapon slots (body 20, head 15,
-  footwear 16), and none of the 77 accessories appear in that table (they are a
-  separate system). See [`equipment-table.md`](../formats/equipment-table.md).
-- `enemy_stats_vs_disc` - joins `enemies.toml` to the monster-stat archive
-  (`PROT 0867`) by name (unambiguous names only - multi-form bosses like Gaza
-  are skipped). The curated bestiary stats are the **in-battle** stats, not the
-  raw disc record: the combat fields are the record run through the battle
-  loader's **stat boost** (`FUN_80054cb0`, the **scripted-fight** profile - the one a
-  boss / story fight installs; a random encounter installs the other, `udf`/`ldf` ×7/4 (two truncating shifts),
-  `atk` ×1, `intel` ×5/4, see `MonsterRecord::battle_stats_random`) - `udf`/`ldf` ×2,
-  `atk` ×5/4, `intel` (the disc INT stat, `+0x18`) ×9/8 - while `hp`/`spd`/`agl`
-  (the disc AGL action gauge, `+0x0E`) are ×1, and `exp` ×3/4 / `gold` ×5/16 are the
-  separate victory-spoils reward scaling (`FUN_8004e568`). All exact, ±1 on the
-  fractional ones; the five combat factors match `MonsterRecord::battle_stats()`.
-  So the disc is the raw ground truth and the curated table is the boss-fight
-  view of every enemy - for a random native it overstates the in-battle defence
-  by 8/7 and ATK by 5/4; the test pins all nine fields across 120+ enemies. This
-  cross-region difficulty difference (NTSC-U retail vs. the raw record, which the
-  JP and PAL executables install unboosted) was first surfaced by **Zetopheonix**. See
-  [`battle.md`](../subsystems/battle.md#monster-record-source-layout) (the
-  *Battle-load stat boost* note),
-  [`battle-formulas.md`](../subsystems/battle-formulas.md) and
-  `legaia_actor_formats::monster_archive`.
-- `magic_vs_disc` - joins `magic.toml` to the static spell table in
-  `SCUS_942.54` (`legaia_game_tables::spell_names`) by spell name. All **21** Seru
-  spells (ids `0x81..=0x95`) and **7** of the 8 Ra-Seru summons (`0x9a..=0xa0`;
-  the hidden `Juggernaut` isn't in the contiguous named region) name-join, and
-  every one's **MP cost is byte-exact** against the disc `+2…+3` record. Target
-  shape (`+2` byte) agrees for all joins except the revive Ra-Seru `Horn` /
-  "Resurrector", whose byte is enemy-side though the effect revives all allies
-  (checked explicitly). The oracle pinned one curated target error - `Mushura` /
-  "Crazy Driver" is single-enemy, not all-enemies - corrected to the disc value.
-  See [`spell-table.md`](../formats/spell-table.md).
-- `shop_inventory_vs_disc` - scans every PROT entry for the gold-shop stock
-  records embedded inline in each scene MAN (`legaia_scene_formats::shop_stock`, op
-  `0x49` sub-op `0`), decodes each record's sellable item ids to names, and
-  joins disc shops to curated shops by the **item-name set** (order-independent;
-  the item set is far more distinctive than the shop title, which repeats as
-  "Arms Shop" / "Items Shop" across towns). Every located disc shop's stock
-  matches a curated inventory as an exact set, with one documented disc-only
-  exception - **Soru's Bakery**, which sells only the novelty "Soru Bread" and
-  has no curated counterpart (asserted explicitly). This oracle pinned a curated
-  item-name error: the Gala helmet the disc names **"Power Earring"** (singular)
-  was curated as "Power Earrings", which broke the Wind Cave and
-  Biron-after-mist joins until corrected to the disc spelling (the price oracle
-  missed it - a name-mismatch is a tolerated miss there). The shop-record format
-  is documented in `legaia_scene_formats::shop_stock`.
-- `casino_prizes_vs_disc` - joins `casino.toml` to the coin prize-exchange table
-  in the menu/save/shop overlay's data segment (PROT entry 0899, stored raw; the
-  canonical reader is `legaia_patcher::casino::CasinoExchange`). Each prize is an
-  8-byte record `[u16 item_id][u16 story_gate][u32 coin_price]` in `0x60`-byte
-  blocks; block 1 is the Vidna casino counter, block 0 the Sol Tower Muscle Dome
-  counter (high-value prizes story-gated via the `+2` word), and blocks 2/3 are
-  short pre-progression states (one cheap healing item each). Every curated
-  prize joins a disc record byte-exact on **(item name, coin price)** across both
-  full lists, and every disc record in those lists is a curated prize - with one
-  documented exception, **Earth Egg @ 100000 coins** (the Muscle Paradise
-  "Chicken King" easter egg), a separate hidden exchange that is not in the
-  four-block table (asserted explicitly).
+- `arts_scus_oracle` - every regular, hyper and miracle art joins the SCUS
+  arts-name table (`DAT_80075EC4`) at `index = action_constant - 0x1B`:
+  name, AP, directions and the miracle flag. Every Super Art joins the
+  trigger table by finisher: its directions are the input the retail
+  tokenizer (`legaia_art::derive_super_input`) turns into the `find`
+  pattern, and its AP is the sum of the chained arts' AP. Each Miracle Art
+  carries the trigger table's command. Every SCUS row has a curated art.
+- `magic_vs_disc` - every spell joins the SCUS spell table (`Juggernaut` is
+  id `0x99`, "Evil Seru Magic"): MP, target shape, the element plate its
+  name opens with, and each Seru's Lv1 / Lv2 / Lv3 absorb chance (the catch
+  rate of the monster records carrying its Seru id).
+- `item_prices_vs_disc` - every item, weapon, armour and accessory joins a
+  disc item id (except the walkthrough's "Soren Book of Arts", which names
+  no item) at the item record's `+2` price, an absent curated price meaning
+  `0`; consumables' "Restores N HP / MP" text is the item-effect table's
+  amount.
+- `equip_slots_vs_disc` - the equipment record (`DAT_80074F68`) slot
+  categories map one-to-one to the curated slots, and every weapon and
+  armour piece carries the record's five bonuses (`int`, `atk`, `udf`,
+  `ldf`, `spd`), wearer mask and slot. See
+  [`equipment-table.md`](../formats/equipment-table.md).
+- `accessory_passives_vs_disc` - every accessory joins and its structured
+  `effect_class` is the passive index its descriptor carries.
+- `enemy_stats_vs_disc` - every enemy joins its monster record (PROT 0867;
+  the archive's `$2` / `$3` level suffix reads as `Lv2` / `Lv3`, and the
+  multi-record bosses are pinned by id). The curated stats are the
+  **in-battle** stats: the record through the battle loader's
+  **scripted-fight** boost (`FUN_80054cb0`; `udf` / `ldf` x2, `atk` +1/4,
+  `intel` +1/8, `hp` / `mp` / `spd` / `agl` as recorded; a random encounter
+  installs the other profile, see `MonsterRecord::battle_stats_random`).
+  `exp` is the record's EXP less a quarter and `gold` the payout for one
+  enemy without the Golden Book (`h - (h >> 1)`, `h = gold >> 1`); element,
+  drop, steal item and steal chance are the record's and the SCUS steal
+  table's. All exact. The regional difference (the JP and PAL executables
+  install the record unboosted) was first surfaced by **Zetopheonix**; see
+  [`battle.md`](../subsystems/battle.md#monster-record-source-layout) and
+  [`battle-formulas.md`](../subsystems/battle-formulas.md#victory-spoils-rewards).
+- `bosses_vs_disc` - each boss row's HP, MP, 100% drop, gold payout and
+  attack MP costs (the spell table). The rewards a story script hands out
+  instead of the spoils (Gaza's Astral Sword, Tetsu's Mettle Gem and gold)
+  are named in the test; `exp_reward` is a per-member share and is not
+  pinned.
+- `muscle_dome_vs_disc` - the arena ladder (PROT 0977 `0x801D1920`) fixes
+  every course line-up and round; each `[[muscle_dome_boss]]` stat block is
+  its record under the scripted-fight boost (a dome leg is a scripted
+  fight), with the record's element, drop, steal, gold payout and catch
+  rate.
+- `shop_inventory_vs_disc` - every curated shop matches a gold-shop stock
+  record (op `0x49` sub-op `0`, `legaia_scene_formats::shop_stock`), found in
+  a scene MAN or a raw field-script carrier (Drake Castle, Usha), in
+  **on-screen order**: the buy list hoists the record's last three slots -
+  the Platinum Card stock - to the top, and those rows are the curated
+  `featured` list. Every disc shop is curated except Soru's Bakery (only
+  Soru Bread); Karisto's "Honest Person's Store" has no stock record.
+- `casino_prizes_vs_disc` - the coin prize-exchange table in PROT 0899
+  (`[u16 item_id][u16 story_gate][u32 coin_price]` records in `0x60`-byte
+  blocks; block 1 Vidna, block 0 the Sol Tower counter) and the curated
+  prizes join both ways on (item, price); the Earth Egg @ 100000 is a
+  separate hidden exchange.
+- `characters_vs_disc` - each character's element and strong / weak lists
+  are the battle overlay's element tables (PROT 0898): the cell of the
+  affinity matrix down the character's element column below / above 100.
+- `music_vs_disc` - each track's `id` and `debug_title_jp` are its row of the
+  music test in PROT 0974 ([`music-tracks.md`](music-tracks.md)).
+- `fishing_exchange_real` (in `legaia-minigame-formats`) - the curated
+  fishing prizes are the two venues' exchange rows.
+- `scene_name_table_banners_match_the_disc` (in `legaia-patcher`) - each
+  scene's `banner` is its MAN section-2 name.
 
 ## Library API
 
@@ -317,7 +328,7 @@ for art in db.arts_for(Character::Vahn) {
 }
 
 // Look up an art by direction-byte sequence
-let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 4]).unwrap();
+let art = db.find_art_by_directions(Character::Vahn, &[1, 2, 1]).unwrap();
 assert_eq!(art.name, "Hyper Elbow");
 
 // Map an action constant to AP cost (for runtime damage tooling)
@@ -336,7 +347,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
 cargo run -p legaia-gamedata --bin gamedata-tool -- list arts --character Noa
 cargo run -p legaia-gamedata --bin gamedata-tool -- list magic --element light
 cargo run -p legaia-gamedata --bin gamedata-tool -- find "Tornado Flame"
-cargo run -p legaia-gamedata --bin gamedata-tool -- arts-by-command Vahn "Arms,Ra-Seru,High"
+cargo run -p legaia-gamedata --bin gamedata-tool -- arts-by-command Vahn "Arms,Ra-Seru,Arms"
 cargo run -p legaia-gamedata --bin gamedata-tool -- shop "Sol"
 cargo run -p legaia-gamedata --bin gamedata-tool -- dump-json arts > arts.json
 ```

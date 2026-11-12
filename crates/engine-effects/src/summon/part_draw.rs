@@ -276,11 +276,18 @@ impl SummonPartDraw {
 
     /// [`Self::apply_render_state`] for the mesh's **untextured** prims - the
     /// `F*` / `G*` packets the colour pipeline draws
-    /// ([`legaia_tmd::mesh::ColorMesh`]). The dispatcher writes the same
-    /// state into every packet whatever its kind: the render scale, the
-    /// colour word's depth cue on the packet colour (an untextured prim has
-    /// no texel to modulate, so the cued colour is the fill) and its ABE /
-    /// ABR into the blend word, packed as the textured path packs its TSB.
+    /// ([`legaia_tmd::mesh::ColorMesh`]): the render scale, the colour word's
+    /// depth cue on the packet colour (an untextured prim has no texel to
+    /// modulate, so the cued colour is the fill) and its ABE, and **not** its
+    /// ABR. The dispatcher stages the two apart (`0x80043504..0x8004351C`:
+    /// ABR `<< 21` to `0x1F800030`, ABE `<< 25` to `0x1F800034`), and the
+    /// untextured leaves read only the ABE word, ORed into the code byte
+    /// (`lw v0,-0x2e0(t2)` / `or t8,t8,v0` at `0x800449B8` in the kind-12
+    /// leaf, `0x80044B94` in kind 13); only the textured leaves read the ABR
+    /// word into their page halfword. An `F*` / `G*` packet has no page, so
+    /// it blends on the draw mode the chain left, the PSX default mode `0`
+    /// here: the map display's pointer (`0xC9000000`, ABR `1`) is an average
+    /// over the ground in retail's packets, not an add.
     ///
     /// The shatter word is not applied here: no shipped part that carries
     /// one draws untextured prims, and the shatter kernel splits a
@@ -297,16 +304,10 @@ impl SummonPartDraw {
                 *c = self.colour.cue(*c);
             }
         }
-        let abr = u16::from(self.colour.abr) << 5;
-        let semi = if self.colour.semi {
-            legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT
-        } else {
-            0
-        };
-        if abr | semi != 0 {
+        if self.colour.semi {
             mesh.blend.resize(mesh.positions.len(), 0);
             for b in &mut mesh.blend {
-                *b |= abr | semi;
+                *b |= legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
             }
         }
     }
@@ -343,5 +344,199 @@ impl PartMorph {
     /// The armed lanes.
     pub fn lanes(&self) -> &[(u8, u16)] {
         &self.lanes[..usize::from(self.count)]
+    }
+}
+
+/// The prim kind handler bank 3 tessellates: `19`, the gouraud-textured quad
+/// (`GT4`), taken by the prim dispatcher as the group flags `>> 1`
+/// (`srl s5,s7,0x11` at `0x800435A4`).
+pub const BANK3_SPLIT_KIND: u16 = 19;
+
+/// Draw a part mesh's `GT4`s the way handler bank 3 draws them: a colour
+/// word carrying `0x20000000` (`ColourWord::split_quads`) sends the model
+/// draw's prims to bank 3, whose kind-19 leaf `FUN_80045BB4` splits each
+/// quad into sixteen `POLY_GT3`s
+/// ([`legaia_render_kernels::sprite_arm::subdivide_quad`]); every other kind
+/// takes bank 1's leaf and stays whole. Each `GT3` is then its own primitive
+/// to the near reject and the GPU's size limit, and is mapped affinely on its
+/// own: over a quad that spans a large depth range, retail's sixteen
+/// triangles follow the perspective where two would smear the texture.
+///
+/// `mesh` is a [`legaia_tmd::mesh::tmd_to_vram_mesh`] build (a quad is four
+/// fresh vertices indexed `0, 1, 2, 1, 3, 2`), `group_flags` its per-vertex
+/// group flags ([`legaia_tmd::mesh::tmd_to_vram_mesh_with_group_flags`]).
+/// Positions are the TMD's integer vertices, so the split's `sra` halvings
+/// see the words retail's leaf reads.
+///
+/// The split alone, every quad kept; the live draw takes
+/// [`split_bank3_quads_kept`].
+pub fn split_bank3_quads(mesh: &mut legaia_tmd::mesh::VramMesh, group_flags: &[u16]) {
+    split_bank3_quads_kept(mesh, group_flags, |_| true);
+}
+
+/// [`split_bank3_quads`] with the leaf's whole-quad rejects ahead of the
+/// split: `keep` sees each bank-3 quad's four corners (the mesh's local
+/// positions, corner order `0..=3`) and a quad it refuses is not drawn at
+/// all - retail's leaf drops it on its winding and on the four corners all
+/// lying off one screen edge before it splits anything
+/// ([`legaia_render_kernels::prim_near_reject::bank3_quad_rejected`]). The
+/// other kinds pass as they are.
+///
+/// PORT: FUN_80045BB4 (the model draw's kind-19 prims on bank 3)
+pub fn split_bank3_quads_kept(
+    mesh: &mut legaia_tmd::mesh::VramMesh,
+    group_flags: &[u16],
+    mut keep: impl FnMut(&[[f32; 3]; 4]) -> bool,
+) {
+    use legaia_render_kernels::sprite_arm::{SplitVertex, subdivide_quad};
+    let is_quad = |ix: &[u32], k: usize| {
+        let a = ix[k];
+        ix.get(k..k + 6) == Some(&[a, a + 1, a + 2, a + 1, a + 3, a + 2][..])
+    };
+    let splits = |ix: &[u32], k: usize| {
+        is_quad(ix, k) && group_flags.get(ix[k] as usize).map(|f| f >> 1) == Some(BANK3_SPLIT_KIND)
+    };
+    let corners_of = |m: &legaia_tmd::mesh::VramMesh, a: u32| -> [[f32; 3]; 4] {
+        std::array::from_fn(|c| m.positions[a as usize + c])
+    };
+    // The output's size, so the per-frame build allocates once.
+    let (mut verts, mut k) = (0, 0);
+    while k + 3 <= mesh.indices.len() {
+        let (n, step) = if splits(&mesh.indices, k) {
+            let kept = keep(&corners_of(mesh, mesh.indices[k]));
+            (if kept { 16 * 3 } else { 0 }, 6)
+        } else if is_quad(&mesh.indices, k) {
+            (4, 6)
+        } else {
+            (3, 3)
+        };
+        verts += n;
+        k += step;
+    }
+    let src = std::mem::replace(
+        mesh,
+        legaia_tmd::mesh::VramMesh {
+            positions: Vec::with_capacity(verts),
+            uvs: Vec::with_capacity(verts),
+            cba_tsb: Vec::with_capacity(verts),
+            indices: Vec::with_capacity(verts * 2),
+            normals: Vec::with_capacity(verts),
+            colors: Vec::with_capacity(verts),
+        },
+    );
+    // Copy vertex `i` and return its new index.
+    let copy = |m: &mut legaia_tmd::mesh::VramMesh, i: usize| -> u32 {
+        m.positions.push(src.positions[i]);
+        m.uvs.push(src.uvs[i]);
+        m.cba_tsb.push(src.cba_tsb[i]);
+        m.normals.push(src.normals[i]);
+        m.colors.push(src.colors[i]);
+        (m.positions.len() - 1) as u32
+    };
+    let ix = &src.indices;
+    let mut k = 0;
+    while k + 3 <= ix.len() {
+        let a = ix[k];
+        if splits(ix, k) {
+            if !keep(&corners_of(&src, a)) {
+                k += 6;
+                continue;
+            }
+            let a = a as usize;
+            let corners: [SplitVertex; 4] = std::array::from_fn(|c| SplitVertex {
+                pos: src.positions[a + c].map(|v| v as i16),
+                rgb: src.colors[a + c],
+                uv: src.uvs[a + c],
+            });
+            for tri in subdivide_quad(corners) {
+                for v in tri {
+                    mesh.indices.push(mesh.positions.len() as u32);
+                    mesh.positions.push(v.pos.map(f32::from));
+                    mesh.uvs.push(v.uv);
+                    mesh.cba_tsb.push(src.cba_tsb[a]);
+                    mesh.normals.push([0.0; 3]);
+                    mesh.colors.push(v.rgb);
+                }
+            }
+            k += 6;
+        } else if is_quad(ix, k) {
+            // A whole quad keeps its four shared corners, so the hosts still
+            // read it as one primitive.
+            let b = copy(mesh, a as usize);
+            for c in 1..4 {
+                copy(mesh, a as usize + c);
+            }
+            mesh.indices
+                .extend_from_slice(&[b, b + 1, b + 2, b + 1, b + 3, b + 2]);
+            k += 6;
+        } else {
+            for j in 0..3 {
+                let v = copy(mesh, ix[k + j] as usize);
+                mesh.indices.push(v);
+            }
+            k += 3;
+        }
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+
+    /// A `tmd_to_vram_mesh`-shaped quad (four fresh corners, `0, 1, 2, 1,
+    /// 3, 2`) followed by a triangle.
+    fn quad_and_tri() -> legaia_tmd::mesh::VramMesh {
+        let corner = |x: f32, y: f32| [x, y, 0.0];
+        legaia_tmd::mesh::VramMesh {
+            positions: vec![
+                corner(0.0, 0.0),
+                corner(64.0, 0.0),
+                corner(0.0, 64.0),
+                corner(64.0, 64.0),
+                corner(0.0, 0.0),
+                corner(8.0, 0.0),
+                corner(0.0, 8.0),
+            ],
+            uvs: vec![[0, 0], [32, 0], [0, 32], [32, 32], [0, 0], [1, 0], [0, 1]],
+            cba_tsb: vec![[1, 2]; 7],
+            indices: vec![0, 1, 2, 1, 3, 2, 4, 5, 6],
+            normals: vec![[0.0; 3]; 7],
+            colors: vec![
+                [0, 0, 0],
+                [128, 128, 128],
+                [128, 128, 128],
+                [64, 64, 64],
+                [9, 9, 9],
+                [9, 9, 9],
+                [9, 9, 9],
+            ],
+        }
+    }
+
+    #[test]
+    fn a_gt4_splits_into_sixteen_gt3s_and_other_kinds_stay_whole() {
+        let mut m = quad_and_tri();
+        split_bank3_quads(&mut m, &[0x26; 7]);
+        assert_eq!(m.indices.len(), 16 * 3 + 3);
+        // The split's centre: the corners' mean position and colour.
+        assert!(m.positions.contains(&[32.0, 32.0, 0.0]));
+        assert!(m.colors.contains(&[80, 80, 80]));
+        // The triangle passes through untouched.
+        assert_eq!(
+            m.positions[16 * 3..],
+            [[0.0, 0.0, 0.0], [8.0, 0.0, 0.0], [0.0, 8.0, 0.0]]
+        );
+
+        // A quad the leaf rejects whole draws nothing; the triangle stays.
+        let mut dropped = quad_and_tri();
+        split_bank3_quads_kept(&mut dropped, &[0x26; 7], |c| c[3] != [64.0, 64.0, 0.0]);
+        assert_eq!(dropped.indices.len(), 3);
+        assert_eq!(dropped.positions.len(), 3);
+
+        // A flat-textured quad (kind 15, flags `0x1E`) takes bank 1's leaf.
+        let mut flat = quad_and_tri();
+        split_bank3_quads(&mut flat, &[0x1E; 7]);
+        assert_eq!(flat.indices.len(), 9);
+        assert_eq!(flat.positions, quad_and_tri().positions);
     }
 }

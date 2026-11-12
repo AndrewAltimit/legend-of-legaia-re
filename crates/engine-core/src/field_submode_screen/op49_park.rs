@@ -176,6 +176,22 @@ impl World {
         self.close_field_submode_screen();
     }
 
+    /// The title took over: drop whatever op-`0x49` screen and park the field
+    /// left, back to the state a fresh boot starts in.
+    ///
+    /// Retail reaches the title from the credits through the soft reset's
+    /// executable reload (slot `0x33`, `FUN_80017714`), which takes the field
+    /// overlay's actor pool and the park word `_DAT_8007B450` with it. The
+    /// port keeps one `World` across the title, so a card load or a New Game
+    /// after the ending inherited the records screen still open in its
+    /// reload phase - the next helper record to reach an op `0x49` read it as
+    /// its own and parked for good, and the records screen kept drawing over
+    /// the field.
+    // REF: FUN_801EDF00 (state 2's reload), FUN_80017714
+    pub fn drop_field_submode_screen_for_title(&mut self) {
+        self.field_vm.submode_screen = crate::field_submode_screen::SubmodeScreen::default();
+    }
+
     /// Clear the park on resume - retail's `sw zero,-0x4bb0(s0)` at
     /// `0x801e08d8`, which runs on the Done edge before the PC advances.
     ///

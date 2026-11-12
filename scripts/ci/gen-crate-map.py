@@ -6,7 +6,7 @@ keep in step by hand:
 
 - every `crates/*/Cargo.toml` - the dependency edges and the binaries,
 - each `crates/*/src/lib.rs` - the crate's public modules,
-- `CLAUDE.md`'s crate tables - one line of scope per crate,
+- `crates/README.md`'s crate tables - one line of scope per crate,
 - `scripts/ci/crate-layering.toml` - kernel ranks, roles and the reasons the
   odd edges stand,
 - `scripts/ci/crate-map-layout.toml` - the only hand-written input here: which
@@ -21,7 +21,7 @@ This script joins them and writes
 
 It fails when the layout table and the workspace disagree: a crate in no band
 or in two, a band naming a crate that does not exist, a crate with no row in
-CLAUDE.md, or a dependency that points *up* the stack (a crate may depend only
+`crates/README.md`, or a dependency that points *up* the stack (a crate may depend only
 on crates in its own band or a band below it).
 
     python3 scripts/ci/gen-crate-map.py           # regenerate
@@ -42,7 +42,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 LAYOUT = REPO / "scripts" / "ci" / "crate-map-layout.toml"
 LAYERING = REPO / "scripts" / "ci" / "crate-layering.toml"
-CLAUDE_MD = REPO / "CLAUDE.md"
+CRATE_INDEX = REPO / "crates" / "README.md"
 OUT_JSON = REPO / "site" / "crate-map.json"
 OUT_ASSETS = REPO / "site" / "assets"
 REPO_BLOB = "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main"
@@ -96,7 +96,7 @@ ROW = re.compile(r"^\| \[`crates/([a-z0-9-]+)`\]\([^)]*\) \| ([^|]*) \| (.*) \|\
 
 
 def md_inline(text: str) -> str:
-    """CLAUDE.md cell -> small safe HTML: code spans and bold kept, links
+    """Crate-index cell -> small safe HTML: code spans and bold kept, links
     reduced to their text."""
     out = html.escape(text.strip(), quote=False)
     out = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", out)
@@ -105,9 +105,9 @@ def md_inline(text: str) -> str:
     return out
 
 
-def claude_scopes() -> dict[str, str]:
+def crate_index_scopes() -> dict[str, str]:
     scopes: dict[str, str] = {}
-    for line in CLAUDE_MD.read_text().splitlines():
+    for line in CRATE_INDEX.read_text().splitlines():
         m = ROW.match(line)
         if m:
             scopes[m.group(1)] = md_inline(m.group(3))
@@ -138,7 +138,7 @@ def build_model() -> tuple[dict, list[str]]:
     layering = tomllib.loads(LAYERING.read_text())
     lrows: dict[str, dict] = layering.get("crates", {})
     ranks = layering_ranks(lrows)
-    scopes = claude_scopes()
+    scopes = crate_index_scopes()
     errors: list[str] = []
 
     crates: dict[str, dict] = {}
@@ -183,7 +183,7 @@ def build_model() -> tuple[dict, list[str]]:
         errors.append(f"[crates] override for `{c}`, which does not exist")
     for c, info in sorted(crates.items()):
         if c not in scopes:
-            errors.append(f"`{c}` has no row in CLAUDE.md's crate tables")
+            errors.append(f"`{c}` has no row in crates/README.md's crate tables")
         info["scope"] = scopes.get(c, "")
         if c not in placed:
             continue

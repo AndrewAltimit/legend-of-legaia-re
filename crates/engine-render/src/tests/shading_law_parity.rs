@@ -1375,9 +1375,15 @@ fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
 /// `Renderer::set_native_resolution`): the fragment's UV is the GPU's at its
 /// integer sample point already, and both hosts take the texel the GPU's
 /// half-texel bias rounds it to - with no row move, wherever the fragment
-/// sits in its triangle.
+/// sits in its triangle. The page lifts its primitives by
+/// `PSX_NATIVE_TIE_ROWS` for its fill rule's tie, so its interpolated UV is
+/// the window's that far down the row step, and its sample takes it back.
 #[test]
 fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
+    let tie = match js_consts(&site_js("webgl-shaders.js")).get("PSX_NATIVE_TIE_ROWS") {
+        Some(super::page_glsl::JsConst::Num(v)) => *v as f32,
+        other => panic!("PSX_NATIVE_TIE_ROWS: {other:?}"),
+    };
     let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
     let page = parse_glsl(&page_fragment_glsl());
     let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
@@ -1410,11 +1416,14 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
             .flatten()
             .expect("native sample");
         let fpage = pm.function("psxSampleUv");
+        // The page's window y runs up: its row step is the negated one, and
+        // its lifted primitive puts the window's UV a `tie` row lower.
+        let page_uv = [uv[0] + uv_dy[0] * tie, uv[1] + uv_dy[1] * tie];
         let g = pm
             .call(
                 fpage,
                 vec![
-                    Val::f(&uv),
+                    Val::f(&page_uv),
                     Val::f(&[-uv_dy[0], -uv_dy[1]]),
                     Val::f(&b),
                     Val::f(&bdy.map(|x| -x)),
@@ -1425,7 +1434,11 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
             .expect("page sample");
         let want = [uv[0] + 0.5, uv[1] + 0.5];
         assert_eq!(n.floats(), &want[..], "native");
-        assert_eq!(g.floats(), &want[..], "page");
+        let got = g.floats();
+        assert!(
+            (got[0] - want[0]).abs() < 1e-4 && (got[1] - want[1]).abs() < 1e-4,
+            "page: {got:?} vs {want:?}"
+        );
     }
 }
 

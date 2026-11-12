@@ -562,6 +562,15 @@ impl World {
         out
     }
 
+    /// Whether the resident module's band wash is drawn this frame over the
+    /// ordering table's farthest bucket
+    /// ([`legaia_render_kernels::cast_colour_wash::CastColourWash::covers_far_bucket`]).
+    pub fn cast_wash_covers_far_bucket(&self) -> bool {
+        self.cast_module_resident()
+            && self.casting.module_pres.wash_live
+            && self.casting.module_pres.wash.covers_far_bucket()
+    }
+
     /// Whether this frame's picture depends on what the buffer still holds.
     /// A retail battle frame's farthest bucket holds an opaque black rect, and
     /// an arm that arms the wash (`FUN_8004695C`) has it hold the subtractive

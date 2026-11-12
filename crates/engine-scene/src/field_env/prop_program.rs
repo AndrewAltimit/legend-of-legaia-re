@@ -89,8 +89,9 @@ pub struct PropProgram {
     pub spawn: Vec<AnimCmd>,
     /// The touch pass, split at the end-latch spins.
     pub touch: Vec<AnimSegment>,
-    /// Actor `+0x10` bits the spawn prologue sets via own-context `0x31`
-    /// CFLAG_SET ops. `0` when the record has no `0x24`/`0x25` prologue marker
+    /// Actor `+0x10` bits the spawn prologue leaves set: its own-context
+    /// `0x31` CFLAG_SET and `0x32` CFLAG_CLR ops, in the order the pass runs
+    /// them. `0` when the record has no `0x24`/`0x25` prologue marker
     /// (retail then skips the spawn run entirely).
     pub spawn_cflags: u32,
 }
@@ -248,14 +249,18 @@ pub fn decode_prop_program_with(
                 prog.spawn.push(c);
             }
         } else if insn.extended.is_none()
-            && insn.opcode == 0x31
-            && let InsnInfo::CFlag {
-                kind: FlagKind::Set,
-                bit,
-            } = insn.info
+            && let InsnInfo::CFlag { kind, bit } = insn.info
         {
-            // Actor `+0x10` class bits (see [`PropProgram::spawn_cflags`]).
-            prog.spawn_cflags |= 1u32 << (bit & 0x1F);
+            // Actor `+0x10` class bits (see [`PropProgram::spawn_cflags`]),
+            // in run order: a `32 <bit>` the pass executes after a `31 <bit>`
+            // drops it again. `bylon`'s airtight-chamber door (P0[0]) raises
+            // `31 00` and, with `0x2A1` and `0x17F` both clear, runs `4C 35`
+            // and `32 00`: it spawns solid until its lever (P0[5]) opens it.
+            match (insn.opcode, kind) {
+                (0x31, FlagKind::Set) => prog.spawn_cflags |= 1u32 << (bit & 0x1F),
+                (0x32, FlagKind::Clear) => prog.spawn_cflags &= !(1u32 << (bit & 0x1F)),
+                _ => {}
+            }
         }
     }
     let mut seg = AnimSegment::default();

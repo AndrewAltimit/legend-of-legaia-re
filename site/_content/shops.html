@@ -304,10 +304,11 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
   <div class="about-body">
   <p>
     The prices and effects here are the project's <a href="reference/gamedata.html">curated
-    game-data tables</a>, mined from public walkthroughs. They are the <strong>ground truth</strong>
-    the reverse engineering checks itself against: on the disc a shop is just a list of item ids
-    and prices, and a trustworthy human-readable table is what confirms a decoded record. Each
-    item's panel names the table row it validates. With a disc loaded, the panel also shows what
+    game-data tables</a>, mined from public walkthroughs and then checked field by field against
+    the disc: every shop's stock and on-screen order, every price and every equipment bonus here
+    matches the game's own records, and where a walkthrough was wrong the table now carries the
+    disc's value. On the disc a shop is just a list of item ids and prices, so the readable table
+    and the decoded record confirm each other. Each item's panel names the table row it matches. With a disc loaded, the panel also shows what
     the executable says about the same item - its record in the item, equipment, item-effect and
     passive tables - so the two can be read side by side.
   </p>
@@ -614,7 +615,9 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
       rows.push(['Bonus', `<div class="stat-bars">${pill('ATK', `+${item.attack}`)}</div>`]);
     } else if (kind === 'armor') {
       if (item.slot) rows.push(['Slot', escapeHtml(item.slot)]);
-      const b = [['UDF', item.udf], ['LDF', item.ldf]].filter(([, v]) => v != null).map(([k, v]) => pill(k, `+${v}`)).join('');
+      /* armor.toml carries the equipment record's five bonuses; zero ones are omitted. */
+      const b = [['ATK', item.atk], ['UDF', item.udf], ['LDF', item.ldf], ['SPD', item.spd], ['INT', item.int]]
+        .filter(([, v]) => v).map(([k, v]) => pill(k, `+${v}`)).join('');
       if (b) rows.push(['Bonus', `<div class="stat-bars">${b}</div>`]);
     }
 
@@ -938,7 +941,7 @@ asset shop-stock --prot extracted/PROT.DAT --scus extracted/SCUS_942.54 \
 
   function townMeta(t, extra) {
     const sceneLink = t.scene_label
-      ? ` &middot; CDNAME <a href="viewer.html?scene=${t.scene_label}"><code>${t.scene_label}</code></a>` : '';
+      ? ` &middot; scene <a href="viewer.html?scene=${t.scene_label}" title="The scene's label on the disc"><code>${t.scene_label}</code></a>` : '';
     const counts = [];
     counts.push(`${t.shops.length} vendor${t.shops.length === 1 ? '' : 's'}`);
     if (t.casino.length)  counts.push(`${t.casino.length} slot prize${t.casino.length === 1 ? '' : 's'}`);

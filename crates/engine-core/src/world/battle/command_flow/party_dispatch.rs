@@ -186,7 +186,16 @@ impl World {
                 // reroute inside `action_seed` to the summon band, which the
                 // live loop's settle glue (`live_battle_tick`) walks to
                 // completion.
-                let target = if used_slots.len() > 1 {
+                // An all-target item commits on its side's group code - the
+                // byte its sweep surface wrote (`9` off `0x5D`, `8` off
+                // `0x66`; `World::seat_sweep_target`) - whatever the number
+                // of living seats on that side.
+                let retail_id = self.pack_alias_as_item(item_id).unwrap_or(item_id);
+                let catalog = &self.tables.item_catalog;
+                let all = catalog.is_all_party(retail_id);
+                let target = if all && catalog.is_enemy_side(retail_id) {
+                    legaia_engine_battle_vm::battle_cue_group::TARGET_ALL_ENEMIES
+                } else if all || used_slots.len() > 1 {
                     legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE
                 } else {
                     used_slots.first().copied().unwrap_or(actor)

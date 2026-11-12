@@ -1,184 +1,190 @@
-//! Disc-gated cross-validation of curated enemy stats against the static
-//! monster-stat archive (`PROT 0867`, parsed by `legaia_actor_formats::monster_archive`).
+//! Disc-gated cross-validation of the curated `enemies.toml` against the
+//! monster-stat archive (`PROT 0867`, parsed by
+//! `legaia_actor_formats::monster_archive`) and the `SCUS_942.54` steal table
+//! (`DAT_80077828`, `legaia_game_tables::steal_table`).
 //!
-//! Joining the curated `enemies.toml` to the disc records **by monster name**
-//! reveals that the curated bestiary stats are not raw copies of the disc
-//! record - they are the **in-battle stats**, i.e. the raw record run through
-//! the battle loader's stat boost (`FUN_80054cb0`; see
-//! `legaia_actor_formats::monster_archive` "Battle-load stat boost"). The combat-stat
-//! factors below are exactly that boost (gate-set profile B), which is why the
-//! curated numbers - mined from walkthroughs that recorded what the player
-//! *fights* - are higher than the disc bytes:
+//! The curated bestiary stats are not raw copies of the disc record - they
+//! are the **in-battle stats**, the raw record run through the battle
+//! loader's scripted-fight stat boost (`FUN_80054cb0`;
+//! [`MonsterRecord::battle_stats`]) - and the rewards are what the victory
+//! spoils routine `FUN_8004E568` pays for one enemy of the kind:
 //!
-//! | curated field | disc source (`MonsterRecord`) | factor |
+//! | curated field | disc source | relation |
 //! |---|---|---|
-//! | `hp`   | `hp`             | ×1 (exact) |
-//! | `spd`  | `speed()`        | ×1 (exact) |
-//! | `agl`  | `agility()`      | ×1 (exact) - both name the disc `+0x0E` action gauge |
-//! | `udf`  | `defense_high()` | ×2 (exact, the battle UDF boost) |
-//! | `ldf`  | `defense_low()`  | ×2 (exact, the battle LDF boost) |
-//! | `atk`  | `attack()`       | ×5/4 (±1 rounding; battle boost `+= atk>>2`) |
-//! | `exp`  | `exp`            | ×3/4 (±1 rounding; the victory-spoils EXP scale) |
-//! | `intel`| `intelligence()` | ×9/8 (±1 rounding; battle boost `+= int>>3`) - both name the disc `+0x18` stat (boosted) |
-//! | `gold` | `gold`           | ×5/16 (±1 rounding; the victory-spoils gold scale) |
+//! | `hp` / `mp` | record `hp` / `mp` | exact |
+//! | `spd` / `agl` | `speed()` / `agility()` | exact |
+//! | `atk` / `int` | `battle_stats()` ATK / INT | exact (`+= atk>>2`, `+= int>>3`) |
+//! | `udf` / `ldf` | `defense_high()` / `defense_low()` | exact, x2 |
+//! | `exp` | record `exp` | exact, `exp - (exp >> 2)` (`0x8004F0B8`) |
+//! | `gold` | record `gold` | exact, `h - (h >> 1)`, `h = gold >> 1` (`0x8004EFBC` / `0x8004F0DC`, no Golden Book) |
+//! | `element` | record `+0x1D` | exact (`7` = none) |
+//! | `drop` | record `+0x48` item, `+0x49` chance | item name; a `0%` drop is no drop |
+//! | `steal` / `steal_chance` | steal table `[chance, item]` | item name + chance |
 //!
-//! So the **disc record is raw ground truth**, and the curated table is the
-//! *boosted* in-battle view. The curated `agl` / `intel` labels match the disc
-//! `agility()` (`+0x0E`) and `intelligence()` (`+0x18`) accessors directly -
-//! this byte-exact join is what pins those two names to those two offsets. The
-//! five combat-stat factors
-//! match [`MonsterRecord::battle_stats`] exactly; `exp`/`gold` are the separate
-//! reward-scaling steps (`FUN_8004e568`), not stat boosts. This both validates
-//! the monster-archive parser (all nine stat fields relate by clean factors
-//! across 120+ enemies) and pins the cross-region difficulty difference first
-//! surfaced by Zetopheonix.
+//! Curated names join the disc by name with the archive's `$2` / `$3` level
+//! suffix read as the curated `Lv2` / `Lv3`. The boss names a plain name join
+//! cannot place (one name across several records) are pinned to their record
+//! id in [`ALIASES`]. Every curated enemy must join.
 //!
-//! Only **unambiguously-named** enemies are cross-checked: a few multi-form
-//! bosses (e.g. Gaza) share a name across several disc records, so a name join
-//! is ambiguous for them and they are skipped.
-//!
-//! Skips silently when `extracted/PROT/0867_battle_data.BIN` is missing.
+//! Skips silently when `extracted/PROT/0867_battle_data.BIN` or
+//! `extracted/SCUS_942.54` is missing.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use legaia_actor_formats::monster_archive::{self, MonsterRecord};
-use legaia_gamedata::{Database, Enemy};
+use legaia_game_tables::item_names::ItemNameTable;
+use legaia_game_tables::steal_table::StealTable;
+use legaia_gamedata::Database;
 
-fn entry_867() -> Option<Vec<u8>> {
-    for p in ["extracted/PROT", "../../extracted/PROT"] {
-        let f = PathBuf::from(p).join("0867_battle_data.BIN");
-        if let Ok(b) = std::fs::read(&f) {
-            return Some(b);
-        }
-    }
-    None
+/// Curated boss rows whose name the archive carries on several records,
+/// pinned to the record the walkthrough's numbers belong to. The five `Cort`
+/// records `180, 183..=186` are identical; `181` is the Juggernaut form.
+const ALIASES: &[(&str, u16)] = &[
+    ("Cort", 180),
+    ("Cort (Juggernaut)", 181),
+    ("Gaza", 165),
+    ("Gaza (Sim-Seru)", 166),
+    ("Songi (1st)", 76),
+    ("Songi (2nd)", 136),
+    ("Songi (3rd)", 179),
+    ("Tetsu (Rematch)", 175),
+    ("Tetsu (Training)", 79),
+];
+
+/// Record `+0x1D` element ids (`legaia_game_tables::element_affinity`).
+const ELEMENTS: [Option<&str>; 8] = [
+    Some("earth"),
+    Some("water"),
+    Some("fire"),
+    Some("wind"),
+    Some("thunder"),
+    Some("light"),
+    Some("dark"),
+    None,
+];
+
+fn workspace() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// Lowercase alphanumerics, with the archive's `$N` level suffix spelled as
+/// the curated `LvN`.
 fn norm(s: &str) -> String {
-    s.chars()
+    s.replace('$', "Lv")
+        .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
         .collect()
 }
 
-/// `round(v * num / den)`.
-fn scale(v: u16, num: u32, den: u32) -> u32 {
-    (v as u32 * num + den / 2) / den
-}
-
 #[test]
-fn curated_enemy_stats_are_scaled_disc_stats() {
-    let Some(entry) = entry_867() else {
+fn curated_enemies_match_the_disc() {
+    let ws = workspace();
+    let Ok(entry) = std::fs::read(ws.join("extracted/PROT/0867_battle_data.BIN")) else {
         eprintln!("[skip] extracted/PROT/0867_battle_data.BIN missing");
         return;
     };
+    let Ok(scus) = std::fs::read(ws.join("extracted/SCUS_942.54")) else {
+        eprintln!("[skip] extracted/SCUS_942.54 missing");
+        return;
+    };
     let recs = monster_archive::records(&entry).expect("archive walk");
+    let names = ItemNameTable::from_scus(&scus).expect("item-name table");
+    let steals = StealTable::from_scus(&scus).expect("steal table");
 
-    // Keep only names that map to exactly one disc record (drop multi-form
-    // boss name collisions, which a name join can't disambiguate).
-    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut by_name: HashMap<String, Vec<&MonsterRecord>> = HashMap::new();
     for r in &recs {
-        *counts.entry(norm(&r.name)).or_default() += 1;
+        by_name.entry(norm(&r.name)).or_default().push(r);
     }
-    let by_name: HashMap<String, &MonsterRecord> = recs
-        .iter()
-        .filter(|r| counts[&norm(&r.name)] == 1)
-        .map(|r| (norm(&r.name), r))
-        .collect();
+    let by_id: HashMap<u16, &MonsterRecord> = recs.iter().map(|r| (r.id, r)).collect();
 
     let db = Database::load();
+    let item_name = |key: &Option<String>| -> Option<String> {
+        key.as_ref().map(|k| {
+            db.resolve_key(k)
+                .unwrap_or_else(|| panic!("unresolved item key {k}"))
+                .name
+                .to_string()
+        })
+    };
 
+    let mut fail: Vec<String> = Vec::new();
     let mut checked = 0usize;
-    let mut exact_fail: Vec<String> = Vec::new();
-    let mut scaled_fail: Vec<String> = Vec::new();
-
-    let exact = |fail: &mut Vec<String>, name: &str, label: &str, gd: Option<u32>, disc: u32| {
-        if let Some(g) = gd
-            && g != disc
-        {
-            fail.push(format!("{name} {label}: curated={g} disc={disc}"));
-        }
-    };
-    let approx = |fail: &mut Vec<String>, name: &str, label: &str, gd: Option<u32>, pred: u32| {
-        if let Some(g) = gd
-            && (g as i64 - pred as i64).abs() > 1
-        {
-            fail.push(format!("{name} {label}: curated={g} pred={pred}"));
-        }
-    };
-
     for e in db.enemies() {
-        let Some(r) = by_name.get(&norm(&e.name)) else {
-            continue;
+        let r = match ALIASES.iter().find(|(n, _)| *n == e.name) {
+            Some(&(_, id)) => by_id[&id],
+            None => match by_name.get(&norm(&e.name)).map(Vec::as_slice) {
+                Some([r]) => r,
+                other => {
+                    fail.push(format!(
+                        "{}: joins {} disc records",
+                        e.name,
+                        other.map_or(0, <[_]>::len)
+                    ));
+                    continue;
+                }
+            },
         };
         checked += 1;
-        let e: &Enemy = e;
-        // Exact-factor fields.
-        exact(&mut exact_fail, &e.name, "hp", e.hp, r.hp as u32);
-        exact(&mut exact_fail, &e.name, "spd", e.spd, r.speed() as u32);
-        exact(
-            &mut exact_fail,
-            &e.name,
-            "agl=agility",
-            e.agl,
-            r.agility() as u32,
-        );
-        exact(
-            &mut exact_fail,
-            &e.name,
-            "udf*2",
-            e.udf,
-            r.defense_high() as u32 * 2,
-        );
-        exact(
-            &mut exact_fail,
-            &e.name,
-            "ldf*2",
-            e.ldf,
-            r.defense_low() as u32 * 2,
-        );
-        // Fractional-factor fields (±1 rounding).
-        approx(
-            &mut scaled_fail,
-            &e.name,
-            "atk*5/4",
-            e.atk,
-            scale(r.attack(), 5, 4),
-        );
-        approx(
-            &mut scaled_fail,
-            &e.name,
-            "exp*3/4",
-            e.exp,
-            scale(r.exp, 3, 4),
-        );
-        approx(
-            &mut scaled_fail,
-            &e.name,
-            "int=intelligence*9/8",
-            e.intel,
-            scale(r.intelligence(), 9, 8),
-        );
-        approx(
-            &mut scaled_fail,
-            &e.name,
-            "gold*5/16",
-            e.gold,
-            scale(r.gold, 5, 16),
-        );
+        let bs = r.battle_stats();
+        let h = u32::from(r.gold >> 1);
+        let exp = u32::from(r.exp - (r.exp >> 2));
+        let want: [(&str, Option<u32>, u32); 10] = [
+            ("hp", e.hp, r.hp.into()),
+            ("mp", e.mp, r.mp.into()),
+            ("spd", e.spd, r.speed().into()),
+            ("agl", e.agl, r.agility().into()),
+            ("atk", e.atk, bs[1].into()),
+            ("int", e.intel, bs[4].into()),
+            ("udf", e.udf, u32::from(r.defense_high()) * 2),
+            ("ldf", e.ldf, u32::from(r.defense_low()) * 2),
+            ("exp", e.exp, exp),
+            ("gold", e.gold, h - (h >> 1)),
+        ];
+        for (label, curated, disc) in want {
+            if curated != Some(disc) {
+                fail.push(format!(
+                    "{} {label}: curated={curated:?} disc={disc}",
+                    e.name
+                ));
+            }
+        }
+        let element = ELEMENTS[usize::from(r.element.min(7))];
+        if e.element.as_deref() != element {
+            fail.push(format!(
+                "{} element: curated={:?} disc={element:?}",
+                e.name, e.element
+            ));
+        }
+        let drop = (r.drop_item != 0 && r.drop_chance_pct != 0)
+            .then(|| names.name(r.drop_item).unwrap_or("").to_string());
+        if item_name(&e.drop) != drop {
+            fail.push(format!(
+                "{} drop: curated={:?} disc={drop:?}",
+                e.name, e.drop
+            ));
+        }
+        let steal = steals.entry(r.id).filter(|s| s.is_stealable());
+        let disc_steal = steal.map(|s| names.name(s.item_id).unwrap_or("").to_string());
+        if item_name(&e.steal) != disc_steal {
+            fail.push(format!(
+                "{} steal: curated={:?} disc={disc_steal:?}",
+                e.name, e.steal
+            ));
+        }
+        let disc_chance = steal.map(|s| u32::from(s.chance_pct));
+        if e.steal_chance != disc_chance {
+            fail.push(format!(
+                "{} steal_chance: curated={:?} disc={disc_chance:?}",
+                e.name, e.steal_chance
+            ));
+        }
     }
 
     assert!(
-        checked >= 100,
-        "expected 100+ unambiguous enemy name-joins, got {checked}"
+        fail.is_empty(),
+        "curated enemies disagree with the disc (disc is authoritative): {fail:#?}"
     );
-    assert!(
-        exact_fail.is_empty(),
-        "exact-factor enemy stats disagree with the disc: {exact_fail:#?}"
-    );
-    assert!(
-        scaled_fail.is_empty(),
-        "scaled-factor enemy stats off by >1 from the disc derivation: {scaled_fail:#?}"
-    );
+    assert!(checked >= 170, "expected 170+ enemy joins, got {checked}");
 }

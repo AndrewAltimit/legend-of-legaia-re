@@ -13,7 +13,7 @@
   const {
     padMaskOf, azimuthUnits, PLAYER_MESH_ID, A2R, TILE_MESH_BASE,
     DYN_ACTOR_MESH_BASE, BATTLE_FX_BILLBOARD_MESH, IDENTITY_MODEL,
-    FIELD_FX_PACK_MESH_BASE, BATTLE_FX_MODEL_BASE,
+    FIELD_FX_PACK_MESH_BASE, BATTLE_FX_MODEL_BASE, fxNormals,
   } = window.LegaiaPlayShared;
   const ScreenPrimPass = window.LegaiaScreenPrimPass;
 
@@ -1275,7 +1275,7 @@
         this.renderer.uploadSceneMesh(BATTLE_FX_BILLBOARD_MESH,
           rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
           rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
-          rt.play_battle_fx_flat_rgba());
+          rt.play_battle_fx_flat_rgba(), fxNormals(rt, 'play_battle_fx_normals', this.renderer));
         /* Both sides: what this mesh bakes - camera-facing billboards, the
          * draw-kind-4 nodes and the field parts with a colour word of their
          * own (opdeene's light cone) - draws under the double-sided word

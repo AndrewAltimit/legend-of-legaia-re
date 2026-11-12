@@ -244,3 +244,59 @@ fn no_seru_or_summon_tick_writes_hp_beside_its_fold() {
     eprintln!("[ok] {checked} Seru / summon casts tick without touching HP");
     assert!(checked >= 10, "only {checked} casts reached a module");
 }
+
+/// PROT 0960's Plasma Strike burst raises its numeral over seat 0: the popup
+/// `FUN_801F44A0(roll, 0)` (`jal` at `0x801F817C`) beside the HP write, the
+/// `271` retail's film draws through arm `0x0E`. The readout flag the burst
+/// clears (`0x801F81BC`) holds the cluster until arm `0x0F` raises it.
+#[test]
+fn plasma_strike_burst_pushes_its_popup_and_holds_the_cluster() {
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    const CASTER: u8 = 3;
+    const ID: u8 = 0x7B;
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.battle_ctx.active_actor = CASTER;
+    world.actors[CASTER as usize].battle_monster_id = Some(180);
+    world.actors[CASTER as usize].battle.active_target = 0;
+    world.battle.set_battle_attack(CASTER, 300);
+    for i in 0..8 {
+        world.actors[i].battle.hp = 9000;
+        world.actors[i].battle.max_hp = 9000;
+    }
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[ID as usize].class = CAPTURE_CLASS;
+    entries[ID as usize].sub_class = 0x19;
+    entries[ID as usize].mp = 40;
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    assert_eq!(world.cast_module_for(ID), Some(960));
+    world.arm_capture_cast_module(ID);
+    world.casting.module_phase = legaia_engine_cast::cast_module_ticks::PLASMA_STRIKE_BURST_ARM;
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
+        caster: CASTER,
+        spell_id: ID,
+        targets: vec![0],
+        on_flight: false,
+    });
+    world.battle.hit_fx.clear();
+    let hp = world.actors[0].battle.hp;
+    let run = world.run_cast_module_code(ID, world.casting.module_phase);
+    assert!(run.is_some());
+    let taken = hp - world.actors[0].battle.hp;
+    assert!(taken > 0, "the burst landed nothing");
+    let pops: Vec<_> = world
+        .battle
+        .hit_fx
+        .iter()
+        .filter(|f| f.target_slot == 0)
+        .collect();
+    assert_eq!(pops.len(), 1, "{:?}", world.battle.hit_fx);
+    assert_eq!(pops[0].amount, taken);
+    assert!(
+        world.battle.combo_cluster_held,
+        "the burst's cleared flag holds the cluster"
+    );
+}

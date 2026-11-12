@@ -1411,8 +1411,13 @@ pub struct TileRng(u64);
 
 impl TileRng {
     pub fn new(seed: u64, brush: usize, col: u16, row: u16) -> Self {
+        Self::new_keyed(seed, brush as u64, col, row)
+    }
+
+    /// [`Self::new`] with the brush key as a full 64-bit word.
+    pub fn new_keyed(seed: u64, brush: u64, col: u16, row: u16) -> Self {
         let key = seed
-            ^ (brush as u64).wrapping_mul(0xA24B_AED4_963E_E407)
+            ^ brush.wrapping_mul(0xA24B_AED4_963E_E407)
             ^ (u64::from(col) << 32 | u64::from(row)).wrapping_mul(0x9FB2_1C65_1E98_DF25);
         Self(splitmix64(key))
     }
@@ -1600,7 +1605,11 @@ impl crate::map::MapDef {
                         ((c + 1, r), [1.0, 0.0], 270.0),
                     ];
                     let reach = 64.0 - f32::from(edge.inset);
-                    let mut rng = TileRng::new(edge.seed, usize::MAX - e, mc, mr);
+                    // The edge runs key their streams from the top of a
+                    // 64-bit brush space on every target: `usize::MAX - e`
+                    // is a different key on the browser's 32-bit `usize`,
+                    // so the page laid every edge run out differently.
+                    let mut rng = TileRng::new_keyed(edge.seed, u64::MAX - e as u64, mc, mr);
                     let j = f32::from(edge.jitter);
                     for ((nc, nr), [px, pz], yaw) in sides {
                         if !wall(nc, nr) {

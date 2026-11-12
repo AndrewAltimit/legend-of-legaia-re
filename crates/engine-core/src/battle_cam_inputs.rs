@@ -226,6 +226,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         action_state: world.battle_camera_state(),
         chain_exit_pass: world.battle.sm_ran_state == Some(0x2A)
             && world.battle_ctx.action_state == 0x2B,
+        return_exit_pass: world.battle.sm_ran_state == Some(0x20)
+            && world.battle_ctx.action_state == 0x50,
         active_commits: world.battle_ctx.active_clip_commits,
         active_installs: world.battle_ctx.active_clip_installs,
         camera_option: world.toggles.battle_camera as u8,

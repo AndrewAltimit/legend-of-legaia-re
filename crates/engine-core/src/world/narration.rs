@@ -184,6 +184,33 @@ impl World {
         *glide = (*glide - steps as i32).max(0);
     }
 
+    /// A narration page's text with its name escapes resolved: the
+    /// dialog renderer's `0xC1..=0xC7` pairs read the same live tables a
+    /// box does ([`Self::dialog_substitutions`]), so Ozma's `vozz` crawl
+    /// greets the player's own name for Gala (`C1 02`).
+    pub fn narration_page_text(&self, raw: &[u8]) -> String {
+        let subs = self.dialog_substitutions(raw);
+        let mut out = String::new();
+        let mut i = 0;
+        while i < raw.len() {
+            let b = raw[i];
+            if (0xC1..=0xC7).contains(&b) && i + 1 < raw.len() {
+                let key = match b {
+                    0xC2 | 0xC4 => 2,
+                    k => k - 0xC0,
+                };
+                if let Some(name) = subs.as_ref().and_then(|m| m.get(&(key, raw[i + 1]))) {
+                    out.push_str(&String::from_utf8_lossy(name));
+                }
+                i += 2;
+                continue;
+            }
+            out.push(b as char);
+            i += 1;
+        }
+        out
+    }
+
     /// Install the opening-cutscene narration presenter with `pages` (the
     /// inline subtitle pages decoded from the scene MAN's cutscene-timeline
     /// script; see [`legaia_engine_field::man_field_scripts::collect_partition_narration`]).

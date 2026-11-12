@@ -145,10 +145,12 @@ pub fn swordie_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                         spawns: &SWORDIE_GLOW_SPAWNS,
                         ..on_creature(c, 0x60, 0x820, [0, 0x300, 0x2400], 0x80)
                     },
+                    // The victim's body pair (`lhu v0,0x3c(s3)` /
+                    // `lhu v0,0x40(s3)` at `0x801F7980` / `0x801F7990`).
                     9 => shot(
                         [0x40, yaw_from(0, c.facing)],
                         [0, 0x500, d / 2],
-                        focus_on(v),
+                        focus_on(st.victim_body.unwrap_or(v)),
                         1,
                     ),
                     // The settle arm's pass, ahead of the `0xFF` latch
@@ -172,7 +174,13 @@ pub fn swordie_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                     } else {
                         (0x40, [0, 0x500, d / 2])
                     };
-                    shot([pitch, yaw as i16], tr, focus_on(v), 0xC)
+                    // The body pair again (`0x801F7A9C` / `0x801F7AAC`).
+                    shot(
+                        [pitch, yaw as i16],
+                        tr,
+                        focus_on(st.victim_body.unwrap_or(v)),
+                        0xC,
+                    )
                 }
                 _ => ArmDirection::PASS,
             },

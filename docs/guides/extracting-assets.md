@@ -14,7 +14,13 @@ common cases with buttons:
    *Disc image...*, *Extracted folder...*, *Type a path...* and the recent
    list. The recent list (also on the start screen, when nothing is open)
    holds the last eight discs and folders you opened; *x* takes one off the
-   list, and one that has been moved or deleted drops off by itself.
+   list, and one that has been moved or deleted drops off by itself. On a
+   first run the start page offers a dump named for the game that it found
+   in Downloads, the Desktop, Documents or the home folder. With a
+   controller, the open buttons bring up Explorer's own file browser (the
+   desktop's file window wants a mouse): the D-pad moves, Cross opens a
+   folder or takes the file, Left goes up, Circle closes. The start page's
+   *find it in this window* link opens it from the keyboard.
 2. **Browse** the archive on the left: entries grouped under their CDNAME
    names and the place each scene is (`town01 - Rim Elm`), each entry with
    its category and size. The search (Ctrl+F) matches every word you type
@@ -29,13 +35,18 @@ common cases with buttons:
    row above the list has *Stop* and shows how far the sound is),
    *Text* (scene dialog and MES messages, with the accented letters of the
    French, German and Italian discs; *Find* keeps the lines holding every
-   word you type), *Hex* (*Go to* jumps to a hex offset).
+   word you type), *Hex* (*Go to* jumps to a hex offset). *Overview* says
+   what the entry is in plain words, the place it belongs to and what it
+   holds; *Show technical details* adds the PROT index, CDNAME block, disc
+   position and chunk table.
 4. **Export** what you are looking at: PNG, OBJ or textured glTF (`.glb`),
    WAV, the dialog as text, or the raw entry bytes. *Disc files* at the bottom
    of the list saves any file of the disc's own file system. `Ctrl+E` saves
    what the view shows without reaching for the button (on *3D model* it
    writes the textured `.glb`). After an export, *Show folder* on the status
-   line opens the folder it went to.
+   line opens the folder it went to. An export made with a controller skips
+   the save window and goes into the last export folder (at first
+   `Legaia Explorer` in Pictures) under its own name.
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder
    (it proposes one beside the disc image), open *Options* for the same skip options the
    command line offers, and start. The tab shows progress and the log, can be

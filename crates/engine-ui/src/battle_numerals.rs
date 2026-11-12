@@ -204,12 +204,17 @@ pub fn arts_banner_prims(
 /// through it with its Y negated. Fed unflipped, a numeral's rise
 /// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
 /// fall: the run sank through the floor and off the bottom of the stage.
-pub fn popup_rect(
+///
+/// Beside the rect it returns the square's view-space depth, the clip `w` of
+/// its centre: what `FUN_800195A8`'s ordering-table return is made of
+/// ([`vr::popup_ot_depth`]).
+pub fn popup_square(
     vp: &[f32; 16],
     world_scale: f32,
     anchor: [i32; 3],
     half: i32,
-) -> Option<(i32, i32, i32, i32)> {
+) -> Option<((i32, i32, i32, i32), i32)> {
+    let depth = |p: [f32; 3]| vp[3] * p[0] + vp[7] * p[1] + vp[11] * p[2] + vp[15];
     let stage = |p: [f32; 3]| -> Option<(f32, f32)> {
         let mut clip = [0.0f32; 4];
         for (i, c) in clip.iter_mut().enumerate() {
@@ -242,7 +247,8 @@ pub fn popup_rect(
     let hp = ((ex - cx).powi(2) + (ey - cy).powi(2)).sqrt();
     let (cx, cy) = (cx.round() as i32, cy.round() as i32);
     let hp = hp.round() as i32;
-    Some((cx - hp, cy - hp, cx + hp, cy + hp))
+    let sz = depth(c).round() as i32;
+    Some(((cx - hp, cy - hp, cx + hp, cy + hp), sz))
 }
 
 /// One landed hit's numeral, `age` frames after its push, as retail's
@@ -274,9 +280,10 @@ pub fn popup_value_cells_at_step(
         return Vec::new();
     }
     let (anchor, half) = vr::popup_anchor_at_step(trio.map(|v| v as i32), age, step);
-    let Some(rect) = popup_rect(vp, world_scale, anchor, half) else {
+    let Some((rect, sz)) = popup_square(vp, world_scale, anchor, half) else {
         return Vec::new();
     };
+    let rect = vr::popup_near_square(rect, vr::popup_ot_depth(sz));
     vr::popup_cells(amount, rect, vr::popup_timer_at_step(age, step))
 }
 
@@ -289,11 +296,12 @@ mod tests {
     #[test]
     fn popup_cells_grow_with_age_and_expire() {
         // x/z scaled to NDC over a fixed w: 1 world unit = 1/1000 NDC.
+        // `w` stands at a far view depth, past the near arm.
         let mut vp = [0.0f32; 16];
-        vp[0] = 0.001;
-        vp[5] = 0.001;
-        vp[10] = 0.001;
-        vp[15] = 1.0;
+        vp[0] = 4.096;
+        vp[5] = 4.096;
+        vp[10] = 4.096;
+        vp[15] = 4096.0;
         let small = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 0);
         let big = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 20);
         assert_eq!(small.len(), 1);
@@ -322,11 +330,44 @@ mod tests {
         let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
         let trio = [144.0, -112.0, -1173.0];
         let row = |age: u16| popup_value_cells(&vp, SCALE, trio, 16, age)[0].y;
-        let floor = popup_rect(&vp, SCALE, [144, 0, -1173], 1).unwrap().1;
+        let floor = popup_square(&vp, SCALE, [144, 0, -1173], 1).unwrap().0.1;
         assert!(row(0) < floor, "the push frame sits over the floor");
         assert!(row(8) < row(0), "and climbs: {} then {}", row(0), row(8));
         assert_eq!(row(21), vr::RESTING_TOP_Y);
         assert_eq!(popup_value_cells(&vp, SCALE, trio, 16, 21).len(), 2);
+    }
+
+    /// The square's depth is the anchor's view-space `Z`, the `MAC3` the
+    /// projection's ordering-table return is made of.
+    #[test]
+    fn the_square_depth_is_the_anchors_view_z() {
+        use legaia_engine_camera::projection::{BattleCamPose, battle_view_depth, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 64.0,
+            yaw: 2620.0,
+            tr: [0.0, 1024.0, 3283.0],
+            focus: [125.0, 0.0, -642.0],
+        };
+        let vp = battle_vp(&pose, 4.0, 4.0 / 3.0);
+        let anchor = [144, -112, -1173];
+        let (_, sz) = popup_square(&vp, 4.0, anchor, 16).unwrap();
+        let want = battle_view_depth(&pose, 4.0, anchor.map(|v| v as f32));
+        assert!((sz as f32 - want).abs() <= 1.0, "{sz} against {want}");
+    }
+
+    /// Under a close camera the square keeps its near corner and is laid out
+    /// `0x20` pixels from it (`FUN_801DF6B8`, `0x801DF820..0x801DF854`).
+    #[test]
+    fn a_near_square_is_laid_out_from_its_near_corner() {
+        let mut near = [0.0f32; 16];
+        near[0] = 0.5;
+        near[5] = 0.5;
+        near[15] = 1000.0;
+        let (rect, sz) = popup_square(&near, 1.0, [0, 0, 0], 400).unwrap();
+        assert!(vr::popup_ot_depth(sz) < vr::POPUP_NEAR_OT_DEPTH);
+        let seated = vr::popup_near_square(rect, vr::popup_ot_depth(sz));
+        assert_eq!((seated.0, seated.1), (rect.0, rect.1));
+        assert_eq!((seated.2 - seated.0, seated.3 - seated.1), (0x20, 0x20));
     }
 
     /// The numeral's size is the ring timer's, in view units.

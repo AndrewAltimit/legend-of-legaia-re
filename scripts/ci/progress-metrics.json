@@ -23,7 +23,7 @@
       "key": "port",
       "label": "Engine port",
       "pct": 99.5,
-      "headline": "1047 functions ported",
+      "headline": "1048 functions ported",
       "detail": "Of the retail functions identified as port sites, the share carrying a from-scratch Rust implementation. 5 remain on the worklist. Measured against what the project has identified, not against the whole game.",
       "denominator": "identified port sites",
       "href": "subsystems/engine.html"
@@ -32,7 +32,7 @@
       "key": "wiring",
       "label": "Port wiring",
       "pct": 100.0,
-      "headline": "967 of 967 ported functions reachable",
+      "headline": "968 of 968 ported functions reachable",
       "detail": "A ported function still needs a host that calls it. This is the share reachable from a real entry point; every port a host is owed for is reached. 80 further ports are excluded from the denominator entirely: the engine does their job by construction (CD DMA, memory-card device I/O, MDEC channel sync, GPU packet queues), so no host will ever call them and each says which mechanism replaced it.",
       "denominator": "ported functions a host is owed for",
       "href": "subsystems/engine.html"
@@ -42,13 +42,13 @@
     {
       "key": "differential",
       "label": "Retail kernel differential",
-      "pct": 96.6,
-      "covered": 1011,
-      "ported": 1047,
-      "routines": 1029,
-      "tests": 768,
-      "headline": "1011 of 1047 ported routines run against retail's bytes",
-      "detail": "Of the retail addresses a PORT tag names, the share a retail kernel differential runs: the routine executes off the user's disc in an R3000 interpreter beside the Rust kernel, on generated inputs, and the regions both wrote must match. Each test declares the routines it runs and fails unless the run entered exactly those bytes. 768 tests run 1029 retail routines in all; the rest are setup calls or helpers with no tag of their own. Counted from the declarations, so it needs no disc.",
+      "pct": 99.5,
+      "covered": 1043,
+      "ported": 1048,
+      "routines": 1061,
+      "tests": 797,
+      "headline": "1043 of 1048 ported routines run against retail's bytes",
+      "detail": "Of the retail addresses a PORT tag names, the share a retail kernel differential runs: the routine executes off the user's disc in an R3000 interpreter beside the Rust kernel, on generated inputs, and the regions both wrote must match. Each test declares the routines it runs and fails unless the run entered exactly those bytes. 797 tests run 1061 retail routines in all; the rest are setup calls or helpers with no tag of their own. Counted from the declarations, so it needs no disc.",
       "denominator": "PORT-tagged addresses",
       "href": "tooling/retail-kernel-differential.html"
     }

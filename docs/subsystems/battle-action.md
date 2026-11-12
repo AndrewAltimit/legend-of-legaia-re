@@ -377,7 +377,7 @@ Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the b
 
 `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`.
 
-The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu`. The port has no read, so `SUMMON_INVOKE_DRIVE_PASSES` holds the arm eight passes, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk.
+The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (step `2`), and `15` on the full-party recordings from `battle_kor_spoon_strike` and `battle_tower_swordie_strike` (step `3`, five passes). The read runs on the wall clock, not on passes. The port has no read, so `SUMMON_INVOKE_DRIVE_VSYNCS` holds the arm until its passes have waited out `15` vsyncs, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk, and counted as eight passes it ran a full party's arm `24` vsyncs.
 
 **Next:** `0x33`.
 

@@ -43,6 +43,7 @@ impl World {
         let creature = self.casting.summon_actor_slot.map(usize::from);
         let v = usize::from(victim);
         let depth = i32::from(self.battle.camera_frame_height);
+        self.kemaro_spear_writes(phase, passed, victim, countdown, depth);
         if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
             match phase {
                 6 => a.battle.facing_angle = ((ramp * 6) & 0xFFF) as u16,
@@ -197,6 +198,108 @@ impl World {
     }
 }
 
+/// The three records arm 9 seats on the creature and keeps by handle
+/// (`0x801F92CC..0x801F92D4`, `sw v0` at `0x801F78A4..0x801F78C4`): the spear
+/// arms 13 to 17 walk down the victim's line.
+const SPEAR_RECORDS: [u32; 3] = [0x801F_8ED8, 0x801F_8F48, 0x801F_8FB8];
+/// The record arm 7 seats and keeps at `0x801F92C8` (`0x801F7500`).
+const ARM7_RECORD: u32 = 0x801F_8E88;
+
+impl World {
+    /// The part writes PROT 0918's arms 13..17 make by handle, one module
+    /// tick at a time (a pass's `delta` ticks make retail's one
+    /// `scalar * delta` store). `countdown` is the module word after this
+    /// tick's drain, `depth` the frame height `ctx[+0x6D0]`. Draw only: no
+    /// seat, roll or clock reads these parts; the shots of arms 16 and 17
+    /// keep the height arm `0xE` stood the spear at
+    /// (`ModuleCamState::part_height`), which arm 17 reads ahead of its own
+    /// store (`0x801F83A8`).
+    ///
+    /// | arm | writes on the three spear records |
+    /// |---|---|
+    /// | 13 (`0x801F7C40..0x801F7CD4`, while the word is at or under `scalar << 5` and the first record's `z` is at least `-0x7FF`) | `z -= (scalar * step) << 5` |
+    /// | 13 pass (`0x801F7E04..0x801F7E28`) | `z = 0x1400` |
+    /// | 14 (`0x801F7E2C..0x801F7E80`, every pass) | `z = word * 32 - 0xA00` |
+    /// | 14 pass (`0x801F7EF0..0x801F7FC8`) | `z = ctx[+0x6D0] / 8 + 0x800`, `y = 4 * victim[+0x3E] / 3` |
+    /// | 15, 16 (`0x801F7FCC..0x801F805C`, `0x801F8124..0x801F81B4`, every pass) | `z -= (scalar * step) << 5` |
+    /// | 16 pass (`0x801F82D4..0x801F8300`) | `z = -0xB00`; arm 7's record at `y = 0x200` |
+    /// | 17 (`0x801F8408..0x801F8524`, its one pass) | `y` the victim's `+0x3E` scaled by its monster id ([`kemaro_spear_height`]) |
+    fn kemaro_spear_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        victim: u8,
+        countdown: i32,
+        depth: i32,
+    ) {
+        let s = legaia_engine_cast::cast_module_camera::SPEED_SCALAR;
+        let walk = (s << 5) as i16;
+        let body_y = self.module_body_seat(victim).map(|b| i32::from(b.y));
+        let monster = self
+            .actors
+            .get(usize::from(victim))
+            .and_then(|a| a.battle_monster_id);
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        let first_z = scene
+            .parts
+            .iter()
+            .find(|p| p.tag == Some(SPEAR_RECORDS[0]))
+            .map(|p| p.state.world_z);
+        for part in &mut scene.parts {
+            let Some(tag) = part.tag else {
+                continue;
+            };
+            let p = &mut part.state;
+            if tag == ARM7_RECORD && phase == 16 && passed {
+                p.world_y = 0x200;
+            }
+            if !SPEAR_RECORDS.contains(&tag) {
+                continue;
+            }
+            match phase {
+                13 if passed => p.world_z = 0x1400,
+                // The test reads the first record alone (`lw a0,0x8(a2)`).
+                13 if countdown <= s << 5 && first_z.is_some_and(|z| z >= -0x7FF) => {
+                    p.world_z = p.world_z.wrapping_sub(walk);
+                }
+                14 if passed => {
+                    p.world_z = (depth / 8 + 0x800) as i16;
+                    if let Some(h) = body_y {
+                        p.world_y = (h * 4 / 3) as i16;
+                    }
+                }
+                14 => p.world_z = (countdown * 32 - 0xA00) as i16,
+                16 if passed => p.world_z = -0xB00,
+                15 | 16 => p.world_z = p.world_z.wrapping_sub(walk),
+                17 => {
+                    if let Some(h) = body_y {
+                        p.world_y = kemaro_spear_height(h, monster);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The spear's height arm 17 stores off the victim's display height `h`
+/// (`+0x3E`): `5 h / 4`, or another fraction for the monster ids the switch
+/// at `0x801F8444` names (the jump table at the slot-B base `0x801F69D8`,
+/// indexed by `id - 1` under `0xA6`). Each divide rounds toward zero
+/// (`bgez` / `addiu` / `sra`).
+fn kemaro_spear_height(h: i32, monster: Option<u16>) -> i16 {
+    let y = match monster.unwrap_or(0) {
+        1..=3 | 0x2E..=0x30 => h * 7 / 8,
+        0x10..=0x12 | 0x19..=0x1E | 0x3D..=0x3F | 0x59..=0x5B | 0x9F..=0xA1 | 0xA6 => h,
+        0x53..=0x55 => h * 9 / 4,
+        0x6E..=0x70 => h * 3 / 4,
+        _ => h * 5 / 4,
+    };
+    y as i16
+}
+
 /// PROT 0918 arm 8's creature height for the module word `w`, stored while
 /// `w <= scalar << 6` (`0x801F7640..0x801F7674`):
 /// `-(6 * w + sin(4 * w) / 4)`, the sine the SCUS table entry at byte
@@ -206,4 +309,22 @@ impl World {
 fn kemaro_arm8_height(w: i32) -> i16 {
     let sin = i32::from(legaia_engine_system::trig::sin12((4 * w) as u16));
     (-(6 * w + sin / 4)) as i16
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Gobu Gobu's spear stands at five quarters of its height; the switch's
+    /// named ids take their own fractions, each rounded toward zero.
+    #[test]
+    fn the_spear_height_follows_the_victims_id() {
+        assert_eq!(kemaro_spear_height(-215, Some(0x08)), -268);
+        assert_eq!(kemaro_spear_height(-215, None), -268);
+        assert_eq!(kemaro_spear_height(-215, Some(0x02)), -188);
+        assert_eq!(kemaro_spear_height(-215, Some(0x1A)), -215);
+        assert_eq!(kemaro_spear_height(-215, Some(0x54)), -483);
+        assert_eq!(kemaro_spear_height(-215, Some(0x6F)), -161);
+        assert_eq!(kemaro_spear_height(-215, Some(0xA7)), -268);
+    }
 }

@@ -1,6 +1,8 @@
 //! GTE-style fixed-point math primitives.
 //!
-//! PORT: FUN_8002735C
+//! REF: FUN_8002735C (the renderer whose arithmetic this mirrors; the
+//! renderer's own decode is `legaia_tmd::descriptor`, and the coprocessor
+//! the hardware runs is `psx_retail_exec::gte`)
 //!
 //! The retail TMD renderer at `FUN_8002735c` (60 GTE coprocessor ops) uses
 //! signed 16-bit fixed-point matrix coefficients (`q12.4` in the rotation

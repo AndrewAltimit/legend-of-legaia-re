@@ -797,6 +797,12 @@ pub struct BattleState {
     pub frame_cost_ring: crate::frame_clock::FrameCostRing,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
+    /// The GPU's wait over the table the host drew last, in hblanks (draw
+    /// plus DMA, `legaia_engine_system::gpu_draw_cost`), which the host
+    /// notes after each battle frame it draws (`World::note_drawn_table_cost`)
+    /// while `WorldToggles::battle_gpu_cost_step` is up. `None` before the
+    /// first such frame.
+    pub drawn_table_cost: Option<u16>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -911,6 +917,10 @@ pub struct BattleState {
     /// accumulator's per-pass gains (`8 * step`) count them. Not a retail
     /// field.
     pub frame_step_seed_after_accum: Option<u32>,
+    /// Whether the last pass ran inside the seeded step's state, so the pass
+    /// that leaves it hands the frame back to the ordinary step once and the
+    /// passes after it to the arm tables and the ring. Not a retail field.
+    pub frame_step_seed_in_state: bool,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// (`World::battle_camera_state`).
@@ -987,8 +997,9 @@ pub struct BattleState {
     /// with `a0 = 1`) and never times it out - the next key-`1` registration
     /// reuses the node (the compare at `0x80035520`), and the only removals
     /// are the hook's `FUN_800319A8(0)` / `(1)` pair under a waiting box at
-    /// flow `0x5A` (`0x801F71BC..0x801F71D8`) and the teardown drain
-    /// `FUN_800355F0` - so it stays on screen over the surface it named
+    /// flow `0x5A` (`0x801F71BC..0x801F71D8`) and the drain `FUN_800355F0`
+    /// (the round's `0xFE` hand-off through `FUN_801D99BC`, and the
+    /// teardown) - so it stays on screen over the surface it named
     /// (`v0_1_battle_command_submenu`: the `[Begin]` arm's prompt over the
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
@@ -1547,6 +1558,7 @@ impl BattleState {
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
+            drawn_table_cost: None,
             frame_cost_state: None,
             pending_frame_step: None,
             pending_frame_step_from: 0,
@@ -1572,6 +1584,7 @@ impl BattleState {
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             frame_step_seed_after_accum: None,
+            frame_step_seed_in_state: false,
             sm_ran_state: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,

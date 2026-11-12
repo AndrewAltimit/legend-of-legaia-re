@@ -207,16 +207,42 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
     }
 }
 
+/// Where the per-actor dialog SM parks a talker's cursor once the pager has
+/// shown the text at `pc`: the state-`2` arm of `FUN_80039B7C`
+/// (`0x80039BD4..0x80039C68`). While the byte at the cursor is a yield byte
+/// (`b & 0x7F < 0x20`) it walks one line - every byte from there that is not
+/// below `0x1F`, a `0xC?` byte taking the next one with it - and steps past
+/// the byte that ends it. So a line ends at **any** byte below `0x1F`, an
+/// empty line (a bare terminator) is one byte, and the walk runs on over
+/// zero padding and `0x80..0x9F` bytes as well as over the next `0x1F` lead.
+/// The byte it stops on is the one `FUN_80038050` then judges.
+///
+/// Unlike [`pack_page`] it does not read the lines as MES (it has no codes
+/// with operands below `0x1F`) and does not stop at a non-lead yield byte.
+// PORT: FUN_80039B7C
+pub fn shown_text_end(buf: &[u8], pc: usize) -> usize {
+    let mut pc = pc;
+    while buf.get(pc).is_some_and(|&b| b & 0x7F < 0x20) {
+        let mut at = pc;
+        while let Some(&b) = buf.get(at) {
+            if b < 0x1F {
+                break;
+            }
+            at += if b & 0xF0 == 0xC0 { 2 } else { 1 };
+        }
+        pc = at + 1;
+    }
+    pc
+}
+
 /// Pack one dialog box starting at `pc`. `pc` should point at a `0x1F` lead;
 /// returns `None` if it doesn't. Collects up to [`LINES_PER_BOX`] consecutive
 /// `0x1F` lines and decodes the control byte that follows the last one.
 ///
-/// Ports the line-grouping + box-advance of the per-actor dialog SM: the
-/// state-`0x2` loop in `FUN_80039B7C` that walks a shown line (`for (; 0x1e <
-/// *pbVar4; ...)`, skipping `0xC?` 2-byte escapes) and stops at the next yield
-/// byte. `World::step_inline_dialogue`'s port of `FUN_80039B7C` drives the
-/// per-segment VM stepping; this is the box-packing half it doesn't cover.
-// PORT: FUN_80039B7C
+/// This is the window view of a conversation - which lines share the
+/// three-row window at once - not a walk retail makes: the dialog SM's own
+/// walk past shown text is [`shown_text_end`], which has no row cap.
+// REF: FUN_80039B7C
 //
 // The engine runtime types whole pages instead ([`pack_page`], in
 // `engine-dialog::dialog` over the `dialog_window` row window). The hosts of

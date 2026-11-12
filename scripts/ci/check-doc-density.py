@@ -62,6 +62,9 @@ def in_scope(path):
     # A top-level doc: no directory component at all.
     if "/" not in p:
         return True
+    # The crate index, and the nested CLAUDE.md maps that load per subtree.
+    if p == "crates/README.md" or p.endswith("/CLAUDE.md"):
+        return True
     # crates/<name>/README.md exactly (not a nested README in a subdir)
     parts = p.split("/")
     if len(parts) == 3 and parts[0] == "crates" and parts[2] == "README.md":
@@ -73,6 +76,8 @@ def corpus_files():
     files = list(glob.glob("docs/**/*.md", recursive=True))
     files += glob.glob("crates/*/README.md")
     files += glob.glob("*.md")
+    files += ["crates/README.md"] if os.path.exists("crates/README.md") else []
+    files += glob.glob("*/CLAUDE.md")
     return sorted(f for f in files if in_scope(f))
 
 

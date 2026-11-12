@@ -91,12 +91,23 @@
    * actor layer runs too. */
   const poseInto = window.LegaiaFieldActors.poseInto;
 
+  /* The FX batch's per-vertex normals (`play_battle_fx_normals` /
+   * `_far_normals`): the normals the native part pass lights each vertex
+   * with, in the part's object frame, which the renderer binds for the
+   * enhanced light instead of smoothing new ones over the baked batch. Read
+   * only while the light is on (nothing else reads a normal); null against a
+   * cached WASM without the export. */
+  function fxNormals(rt, name, renderer) {
+    if (!renderer || !renderer.dynLighting) return null;
+    return typeof rt[name] === 'function' ? rt[name]() : null;
+  }
+
   window.LegaiaPlayShared = {
     A2R, PLAYER_MESH_ID, NPC_MESH_BASE, TILE_MESH_BASE, BATTLE_MESH_BASE,
     BATTLE_FX_BILLBOARD_MESH, BATTLE_BACKDROP_SPUN_MESH, BATTLE_FX_FAR_MESH,
     BATTLE_FX_MODEL_BASE, FIELD_FX_PACK_MESH_BASE, DYN_ACTOR_MESH_BASE,
     IDENTITY_MODEL, VR_UNITS_PER_METER, VAHN_HEIGHT_M, VR_FP_EYE_HEIGHT_M,
     VR_FP_FALLBACK_MESH_HEIGHT, adoptPadBindings, padMaskOf, padTable,
-    azimuthUnits, poseInto,
+    azimuthUnits, poseInto, fxNormals,
   };
 })();

@@ -60,6 +60,12 @@ fn storm_ring(caster: ModuleSeat, word: i32) -> CastRibbonRing {
     }
 }
 
+/// The ring word's gain a battle frame: `+= *(0x1F800393)`, the frame step,
+/// once a pass (arm 5 `0x801F73D0..0x801F73E4`, arm 6 `0x801F76E4..0x801F76F0`).
+fn ring_step(st: &ModuleCamState) -> i32 {
+    i32::from(st.frame_step.max(1))
+}
+
 /// **Thunder Storm** (a `beq` / `slti` chain over `0..=6` and `0xFF`; caster
 /// `actor_table[ctx + 0x13]`). The word starts at `0x600` and drains
 /// `8 * delta` a pass, so a passing arm's seed over eight is its dwell:
@@ -71,12 +77,15 @@ fn storm_ring(caster: ModuleSeat, word: i32) -> CastRibbonRing {
 /// | 2 (`0x801F6D28`) | TR z `+0xC0`, TR y `-8` | `+= 0x100` |
 /// | 3 (`0x801F6D9C`) | gate; the living party hidden, the caster's rate `1`, the pool flushed, two records and the ring of rays | `+= 0x800` |
 /// | 4 (`0x801F7048`) | TR z `-32`, yaw `+8`, the scatter; then the caster's rate `8` and clip `0`, a cut: pitch `0x80`, yaw `0x800 - facing`, TR `(0, 0, 0x1000)`; the living party shown | `+= 0x200` |
-/// | 5 (`0x801F72D0`) | TR z `+128`, the scatter, the widening ribbons; then the party's hit | - |
-/// | 6 (`0x801F7658`) | every party rate `6`, TR z `+16`, the ribbons, the scatter; every part's level `+0x78` climbs `16` a vsync to `0x1000`, then the flush | `= 0x200` |
+/// | 5 (`0x801F72D0`) | TR z `+128`, the scatter, the widening ribbons; then the party's hit | ring `+= step` |
+/// | 6 (`0x801F7658`) | every party rate `6`, TR z `+16`, the ribbons while the ring word is at most `0xC0`, the scatter; every part's level `+0x78` climbs `16` a vsync to `0x1000`, then the flush | ring `+= step`; `= 0x200` |
 /// | `0xFF` (`0x801F78F0`) | every live seat shown at rate `8`; done | - |
 ///
 /// [`ModuleCamState::module_words`] holds `[ring word 0x801FA27C, fade word
-/// 0x801FA280]`. This director owns the phase: nothing else ports the body.
+/// 0x801FA280]`. The ring word gains the frame step once a battle frame
+/// ([`ring_step`]), so a step-`4` pass's ring stands four words out, and the
+/// ring's radius (`32` units a word) and with it each ribbon's projected
+/// segment count, and so its `rand()` draws, follow retail's. This director owns the phase: nothing else ports the body.
 /// The armed washes, the screen fades and the stage byte are the
 /// presentation decoder's (`legaia_overlay_images::cast_presentation`).
 ///
@@ -203,7 +212,9 @@ pub fn thunder_storm_camera(
         5 => {
             arm.drift = drift(128, 0, 0);
             arm.scatter_pairs = true;
-            st.module_words[0] += 1;
+            if st.opens_pass {
+                st.module_words[0] += ring_step(st);
+            }
             arm.ribbons = Some(storm_ring(c, st.module_words[0]));
             // The arm's ribbons take their height off the stack word its
             // scatter loop left (`sh v0,0x22(sp)` at `0x801F73A4`).
@@ -220,8 +231,13 @@ pub fn thunder_storm_camera(
         6 => {
             arm.party_write.rate = Some(PARTY_CLOSE_RATE);
             arm.drift = drift(16, 0, 0);
-            if st.module_words[0] <= RING_WIDEST {
-                st.module_words[0] += 1;
+            if st.opens_pass && st.module_words[0] <= RING_WIDEST {
+                st.module_words[0] += ring_step(st);
+                st.ring_widening = true;
+            } else if st.opens_pass {
+                st.ring_widening = false;
+            }
+            if st.ring_widening {
                 arm.ribbons = Some(storm_ring(c, st.module_words[0]));
             }
             arm.scatter_pairs = true;
@@ -326,5 +342,25 @@ mod tests {
         let (sin, cos) = legaia_engine_system::trig::trig12(0x80);
         assert_eq!(i32::from(r.points[0][0]), i32::from(c.x) + i32::from(sin));
         assert_eq!(i32::from(r.points[0][2]), i32::from(c.z) + i32::from(cos));
+    }
+
+    /// The ring word gains the frame step on the tick that opens a battle
+    /// frame and nothing on the rest of its ticks (`0x801F73D0..0x801F73E4`).
+    #[test]
+    fn the_ring_word_gains_the_step_once_a_frame() {
+        let mut st = ModuleCamState {
+            frame_step: 4,
+            ..Default::default()
+        };
+        st.countdown.0 = 0x7FFF_0000;
+        let seats = ModuleCamSeats::default();
+        for pass in 1..=3 {
+            for tick in 0..4 {
+                st.opens_pass = tick == 0;
+                let arm = thunder_storm_camera(&mut st, 5, seats);
+                assert!(arm.ribbons.is_some());
+                assert_eq!(st.module_words[0], 4 * pass);
+            }
+        }
     }
 }

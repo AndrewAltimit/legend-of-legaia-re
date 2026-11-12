@@ -752,6 +752,12 @@ impl World {
         if !self.clock.game_tick_fired {
             return;
         }
+        // The roll hold (`EncounterState::roll_hold`): the tick goes to the
+        // countdown and the reader, tile cache included, does not run.
+        if self.encounters.roll_hold != 0 {
+            self.encounters.roll_hold -= 1;
+            return;
+        }
         let Some(slot) = self.player_actor_slot else {
             return;
         };

@@ -60,7 +60,7 @@
   </tbody>
   </table>
   <h3 id="player-block">Player Seru-magic block (<code>0x81..=0x8B</code>)</h3>
-  <p>MP and target are byte-exact from the executable; element comes from the curated <a href="../reference/gamedata.html">game-data chart</a>, which matches on every MP value.</p>
+  <p>MP and target are byte-exact from the executable; the element is the plate the name opens with, and the curated <a href="../reference/gamedata.html">game-data chart</a> matches all three for every spell.</p>
   <table>
   <thead><tr><th>Id</th><th>Name</th><th>Element</th><th>MP</th><th>Target</th><th><code>+0</code></th><th><code>+1</code></th></tr></thead>
   <tbody>
@@ -213,7 +213,7 @@
       <tr><td>Melee kernel</td><td><code>FUN_801EC3E4</code></td><td>Returns early unless the queued action is a physical id - magic never reaches it</td><td><code>overlay_battle_action_801ec3e4.txt</code></td></tr>
       <tr><td>Summon damage kernels</td><td><code>FUN_801DD0AC</code> / <code>FUN_801DD864</code> / <code>FUN_801DDB30</code></td><td>Summon magnitude is battle-state-derived</td><td><code>overlay_battle_action_801dd0ac.txt</code> + siblings</td></tr>
       <tr><td>Overlay pager</td><td><code>FUN_8003EC70</code></td><td>Capture-class <code>sub + 0x28</code> and summon <code>id - 0x79</code> resolve to PROT 935.. / 903..</td><td><code>8003ec70.txt</code></td></tr>
-      <tr><td>Disc join</td><td>-</td><td>All 11 pinned targets + MP byte-exact; the curated chart joins on MP for 21 Seru + 7 Ra-Seru</td><td>-</td></tr>
+      <tr><td>Disc join</td><td>-</td><td>All 11 pinned targets + MP byte-exact; the curated chart joins on MP, target and element for all 29 spells</td><td>-</td></tr>
     </tbody>
   </table></div>
   </details>

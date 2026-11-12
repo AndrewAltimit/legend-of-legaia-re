@@ -650,6 +650,31 @@ pub const TARGET_SELECT_SLIDE_DX: i16 = 0x80;
 /// from its rest seat out to `328`, off the 320-wide display.
 pub const TARGET_SELECT_OUT_X: i16 = 328;
 
+/// Seats of a target-select plaque that shows a whole side: `(rest x, y,
+/// slide-in x)`, or `None` for an actor's name.
+///
+/// An all-target surface does not measure a name. Its HUD step copies a
+/// preset label record onto record `0x29` - seat A, `y`, width, seat B and the
+/// string - with `FUN_801D57E8(0x29, src)`: `0x3D` (`"  All"`) for the two
+/// all-enemies surfaces (`0x801D4410`), `0x3E` (`"All Allies"`) for the two
+/// all-allies ones (`0x801D4430`). The seats are those records' disc values
+/// in `SCUS_942.54` (`0x80076C10 + 0x18 * record`): `0x3D` rests at
+/// `(230, 162)`, `0x3E` at `(224, 122)`, both sliding in from `x = 328`.
+/// `battle_item_allparty_gaza2_retail` holds record `0x29` at exactly
+/// `0x3E`'s seats.
+///
+/// PORT: FUN_801D57E8 (the adopted seats)
+pub fn target_select_preset_seat(label: &str) -> Option<(i16, i16, i16)> {
+    use legaia_engine_battle_vm::battle_commit_log as log;
+    if label == log::ALL_ALLIES_LABEL {
+        Some((224, 122, TARGET_SELECT_OUT_X))
+    } else if label == log::ALL_ENEMIES_LABEL {
+        Some((230, TARGET_SELECT_Y, TARGET_SELECT_OUT_X))
+    } else {
+        None
+    }
+}
+
 /// Rest `x` of the target-select plaque's content box for a measured content
 /// width (`FUN_80035F04` over the target's name payload `actor[+0x1BC]`):
 /// centred on `0xE8`, pulled left so the box ends at or before `0x130`.
@@ -703,6 +728,12 @@ mod target_select_tests {
         // Captured: "Gobu Gobu" measures 55 and rests at x = 205
         // (party_basic_attack_vs_gobu_gobu, record 0x29 second seat).
         assert_eq!(target_select_plaque_x(55), 205);
+        assert_eq!(
+            target_select_preset_seat("All Allies"),
+            Some((224, 122, 328))
+        );
+        assert_eq!(target_select_preset_seat("  All"), Some((230, 162, 328)));
+        assert_eq!(target_select_preset_seat("Gobu Gobu"), None);
         // A box ending exactly on 0x130 stays centred ...
         assert_eq!(target_select_plaque_x(0x90), 0xE8 - 0x48);
         // ... one pixel wider and it is pulled back to end on 0x130.

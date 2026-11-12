@@ -78,6 +78,8 @@ const OZMA: u32 = 0x801F_92AC;
 /// PROT 0934's stager word: arms 1 and 2 step it (`0x801F9370..0x801F9394`).
 const OZMA_WORD: u32 = 0x801F_A410;
 const EARTHQUAKE: u32 = 0x801F_7FF0;
+const HYPER_CRUSH: u32 = 0x801F_7BD0;
+const HYPER_LIGHTNING: u32 = 0x801F_7850;
 const STEAL: u32 = 0x801F_7DB0;
 const POWER_UP: u32 = 0x801F_8118;
 const CURSE: u32 = 0x801F_769C;
@@ -372,6 +374,8 @@ fn cases() -> Vec<Case> {
             t::dead_end_crisis_stager_spawns(e.arm, e.caller, e.rand)
         }),
         case!(935, EARTHQUAKE, 0..1, enemy),
+        case!(936, HYPER_CRUSH, 0..1, enemy),
+        case!(937, HYPER_LIGHTNING, 0..1, enemy),
         case!(941, STEAL, 0..1, enemy),
         case!(942, POWER_UP, 0..1, enemy),
         case!(943, CURSE, 0..1, enemy),
@@ -819,6 +823,8 @@ fn the_capture_cell_stagers_seat_what_retail_seats() {
 fn the_enemy_cast_stagers_seat_what_retail_seats() {
     differential!(
         prot(935, EARTHQUAKE),
+        prot(936, HYPER_CRUSH),
+        prot(937, HYPER_LIGHTNING),
         prot(941, STEAL),
         prot(942, POWER_UP),
         prot(943, CURSE),
@@ -829,7 +835,7 @@ fn the_enemy_cast_stagers_seat_what_retail_seats() {
         prot(956, PARALYZING_WAVE),
         prot(964, ELEMENT_CHANGE)
     );
-    run(&[935, 941, 942, 943, 945, 951, 953, 955, 956, 964]);
+    run(&[935, 936, 937, 941, 942, 943, 945, 951, 953, 955, 956, 964]);
 }
 
 #[test]

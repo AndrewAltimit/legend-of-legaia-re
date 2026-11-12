@@ -81,7 +81,13 @@ const ITEM_COUNT: usize = 256;
 
 /// Flag bit: set on every populated descriptor (base / "has an effect").
 pub const FLAG_BASE: u8 = 0x80;
-/// Flag bit: the effect applies to the **whole party** (all-targets validator).
+/// Flag bit: the effect aims at the **enemy side** (the battle window's
+/// commit ladder `andi v0,v1,0x40` at `0x801D18E0`: set raises `0x5B` / `0x5D`,
+/// clear `0x64` / `0x66`).
+pub const FLAG_ENEMY_SIDE: u8 = 0x40;
+/// Flag bit: the effect applies to **every target on its side** (the
+/// all-targets validator; with [`FLAG_ENEMY_SIDE`] every enemy, else the whole
+/// party).
 pub const FLAG_ALL_PARTY: u8 = 0x20;
 /// Flag bit: the item is usable from the **battle** item menu.
 pub const FLAG_BATTLE_USABLE: u8 = 0x04;
@@ -201,6 +207,11 @@ impl ItemEffect {
     /// `true` if the effect targets the whole party.
     pub fn all_party(&self) -> bool {
         self.flags & FLAG_ALL_PARTY != 0
+    }
+
+    /// `true` if the effect aims at the enemy side ([`FLAG_ENEMY_SIDE`]).
+    pub fn enemy_side(&self) -> bool {
+        self.flags & FLAG_ENEMY_SIDE != 0
     }
 
     /// `true` if usable from the field item menu.

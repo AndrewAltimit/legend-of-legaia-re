@@ -218,6 +218,106 @@ pub fn gpu_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
     })
 }
 
+/// One corner's GTE `SXY` as `RTPS` writes it, from its clip coordinates:
+/// `IR1` / `IR2` saturated to `-0x8000..=0x7FFF`, `SZ` to `0..=0xFFFF`, the
+/// divide's quotient at `0x1FFFF` (`H / SZ` capped at `2`), `SX` / `SY` the
+/// integer part of `OF + IR * H / SZ` saturated to `-0x400..=0x3FF`.
+/// `aspect_fix` undoes the X correction a host's projection carries for a
+/// viewport that is not 4:3 ([`legaia_engine_camera::psx_camera::psx_projection`]),
+/// so `SX` is in retail's 320-wide frame whatever the window.
+pub fn gte_sxy(clip: [f32; 4], sz_per_w: f32, h: f32, aspect_fix: f32) -> [i32; 2] {
+    let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
+    let w = clip[3];
+    let ir_x = (clip[0] / aspect_fix.max(1e-6) * 160.0 * sz_per_w / h).clamp(-32768.0, 32767.0);
+    let ir_y = (-(clip[1] - bias * w) * 120.0 * sz_per_w / h).clamp(-32768.0, 32767.0);
+    let d = (w * sz_per_w).clamp(0.0, 65535.0).max(h * 0.5);
+    let ofy = 120.0 - bias * 120.0;
+    let s = |of: f32, ir: f32| ((of + h * ir / d).floor() as i32).clamp(-0x400, 0x3FF);
+    [s(160.0, ir_x), s(ofy, ir_y)]
+}
+
+/// `NCLIP` over three `SXY`: `MAC0 = SX0*SY1 + SX1*SY2 + SX2*SY0 - SX0*SY2
+/// - SX1*SY0 - SX2*SY1`, negative for a face that turns its back on the eye.
+pub fn nclip(a: [i32; 2], b: [i32; 2], c: [i32; 2]) -> i64 {
+    let [ax, ay] = a.map(i64::from);
+    let [bx, by] = b.map(i64::from);
+    let [cx, cy] = c.map(i64::from);
+    ax * by + bx * cy + cx * ay - ax * cy - bx * ay - cx * by
+}
+
+/// Whether all four corners of a quad lie off one edge of the 320x240
+/// frame: every `SY < 0`, every `SY >= 240`, every `SX <= 0` or every
+/// `SX >= 320` (the left edge counts a corner on `0` as off, the top edge
+/// does not).
+///
+/// PORT: FUN_80044798
+pub fn quad_off_screen(sxy: [[i32; 2]; 4]) -> bool {
+    sxy.iter().all(|p| p[1] < 0)
+        || sxy.iter().all(|p| p[1] >= 240)
+        || sxy.iter().all(|p| p[0] <= 0)
+        || sxy.iter().all(|p| p[0] >= 320)
+}
+
+/// Whether handler bank 3's kind-19 leaf drops a whole `GT4` before it
+/// splits it: `RTPT` over corners `0..=2` and `NCLIP`, the result masked by
+/// the dispatcher's word (`-0x2D8`: `0xFFFFFFFF`, or `0x7FFFFFFF` for a colour
+/// word carrying `0x08000000`, `0x80043520..0x80043540`) and the quad dropped
+/// when it is negative (`0x80045C30..0x80045C54`); then `RTPS` over corner
+/// `3` and [`quad_off_screen`] over the four (`0x80045C60..0x80045C70`).
+/// `cull_back` is the unlowered mask. The sixteen triangles a kept quad
+/// splits into take no winding test of their own, only the near reject
+/// ([`prim_near_rejected`], `AVSZ3` / `OTZ` at `0x80046000..0x8004601C`).
+///
+/// PORT: FUN_80045BB4 (the whole-quad rejects, 0x80045C30..0x80045C78)
+pub fn bank3_quad_rejected(sxy: [[i32; 2]; 4], cull_back: bool) -> bool {
+    (cull_back && nclip(sxy[0], sxy[1], sxy[2]) < 0) || quad_off_screen(sxy)
+}
+
+/// A draw's view for [`bank3_quad_rejected`]: the matrix that takes the
+/// mesh's local positions to clip space and the frame's GTE terms.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuadView {
+    /// Column-major local-to-clip matrix.
+    pub mvp: [f32; 16],
+    /// Eye-space units per GTE unit of depth (`1` in battle).
+    pub sz_per_w: f32,
+    /// The projection distance `H`.
+    pub h: f32,
+    /// [`projection_aspect_fix`] of the camera.
+    pub aspect_fix: f32,
+    /// The winding test runs (the colour word does not carry `0x08000000`).
+    pub cull_back: bool,
+}
+
+impl QuadView {
+    /// Whether the leaf drops the quad with these local corners, scaled by
+    /// `scale` (the part's render scale, which retail carries in its object
+    /// matrix).
+    pub fn rejects(&self, corners: &[[f32; 3]; 4], scale: f32) -> bool {
+        let m = &self.mvp;
+        let sxy = corners.map(|p| {
+            let p = p.map(|v| v * scale);
+            let c: [f32; 4] = std::array::from_fn(|r| {
+                m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]
+            });
+            gte_sxy(c, self.sz_per_w, self.h, self.aspect_fix)
+        });
+        bank3_quad_rejected(sxy, self.cull_back)
+    }
+}
+
+/// The `aspect_fix` a host's camera projection carries
+/// ([`gte_sxy`]): the ratio of its clip-`x` row to its `w` row, both scaled
+/// by the view's uniform scale, over `H / 160`. `vp` is column-major.
+pub fn projection_aspect_fix(vp: &[f32; 16], h: f32) -> f32 {
+    let row = |r: usize| (vp[r].powi(2) + vp[4 + r].powi(2) + vp[8 + r].powi(2)).sqrt();
+    let w = row(3);
+    if w <= 0.0 || h <= 0.0 {
+        return 1.0;
+    }
+    row(0) / w * 160.0 / h
+}
+
 /// Per-vertex primitive-corner records for a triangle list.
 ///
 /// A primitive is a triangle, or two consecutive triangles that share an
@@ -338,6 +438,54 @@ pub fn prim_corner_plan_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_quad_off_one_edge_is_dropped_and_one_across_two_is_not() {
+        let on = [[10, 10], [300, 10], [10, 200], [300, 200]];
+        assert!(!quad_off_screen(on));
+        assert!(quad_off_screen([[0, 10], [-5, 20], [0, 30], [-1, 40]]));
+        assert!(!quad_off_screen([[1, 10], [-5, 20], [0, 30], [-1, 40]]));
+        assert!(!quad_off_screen([[10, 0], [20, -5], [30, 0], [40, -1]]));
+        assert!(quad_off_screen([
+            [10, 240],
+            [20, 300],
+            [30, 241],
+            [40, 999]
+        ]));
+        assert!(quad_off_screen([
+            [320, 10],
+            [400, 20],
+            [330, 30],
+            [1023, 40]
+        ]));
+        // Off the top on two corners and off the left on the others: no one
+        // edge holds all four.
+        assert!(!quad_off_screen([[10, -5], [20, -5], [-5, 30], [-5, 40]]));
+    }
+
+    #[test]
+    fn the_winding_test_reads_corners_zero_to_two_and_honours_the_mask() {
+        // Screen Y down: 0 -> 1 -> 2 clockwise on screen is a front face.
+        let front = [[10, 10], [100, 10], [10, 100], [100, 100]];
+        assert!(nclip(front[0], front[1], front[2]) > 0);
+        assert!(!bank3_quad_rejected(front, true));
+        let back = [front[1], front[0], front[3], front[2]];
+        assert!(bank3_quad_rejected(back, true));
+        assert!(!bank3_quad_rejected(back, false));
+    }
+
+    #[test]
+    fn a_corner_on_screen_projects_where_the_gte_puts_it() {
+        let h = 256.0;
+        let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
+        // Eye-space (64, -32, 512): SX = 160 + 256 * 64 / 512, SY = 114 + 256 * -32 / 512.
+        let (ex, ey, ez) = (64.0f32, -32.0f32, 512.0f32);
+        let clip = [h * ex / 160.0, -h * ey / 120.0 + bias * ez, 0.0, ez];
+        assert_eq!(gte_sxy(clip, 1.0, h, 1.0), [192, 98]);
+        // Behind the eye the capped divide puts it at OF + 2 * IR.
+        let behind = [-(h * ex / 160.0), bias * -10.0, 0.0, -10.0];
+        assert_eq!(gte_sxy(behind, 1.0, h, 1.0)[0], 160 - 128);
+    }
 
     /// A field corner under `H = 608` (the `noaru` camera), eye offset
     /// `(x, y)` (Y down) and depth `z`, all in the engine's 1x eye units.

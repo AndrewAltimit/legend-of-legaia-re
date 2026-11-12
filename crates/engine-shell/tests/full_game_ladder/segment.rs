@@ -1051,6 +1051,14 @@ pub(super) fn rng_seed_override() -> Option<u32> {
         .map_or_else(|| s.parse().ok(), |h| u32::from_str_radix(h, 16).ok())
 }
 
+thread_local! {
+    /// The flags the next segment's pad pass steers its beats by in place of
+    /// its target anchor's, set by part B for a poke anchor
+    /// (`seeds_next = false`).
+    pub(super) static PAD_STEER: std::cell::RefCell<Option<BTreeSet<u16>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// Run segment `from -> to`.
 pub(super) fn run_segment(
     inp: &Inputs,
@@ -1233,7 +1241,17 @@ pub(super) fn run_segment(
                 let mut session = open_session(&inp.extracted);
                 let opts = live_opts(true);
                 seed(&mut session, from, from_anchor, &opts)?;
-                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                // The pad pass steers by [`PAD_STEER`] where the caller sets
+                // it (a poke anchor's stretch steers by the save after it as
+                // well, as the continuous run does), and a story chain of
+                // waypoints gets the continuous stretch's allowance for them.
+                if let Some(f) = PAD_STEER.with(|p| p.borrow().clone()) {
+                    NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = Some(f));
+                }
+                let vias = to.pad_via.as_ref().map_or(0, Vec::len) as u64;
+                PAD_DEADLINE.with(|d| {
+                    d.set(session.frames + PAD_SEGMENT_FRAMES + vias * PAD_SEGMENT_FRAMES / 4)
+                });
                 PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
                 // `LEGAIA_FGL_RNG_SEED=<u32>`: deal the pad tier another hand.
                 // Every random draw it meets comes off the world rand stream,
@@ -1344,6 +1362,23 @@ fn wait_out_story_timer(session: &mut NativeSession) -> Result<bool, String> {
         pad_budget(session)?;
         session.host.world.set_pad(0);
         session.tick().map_err(|e| format!("{e:#}"))?;
+    }
+    // The clock's expiry may carry the party on (`taiku`: P2[20] to
+    // `map03`, whose cruise P2[9] ends in the scripted game over `4C EA`
+    // on `0x616`). Play the arrival through before routing from it, so a
+    // game over reads as one and the run reloads instead of routing from a
+    // cutscene's landing tile.
+    let mut settle = 0;
+    while settle < 6000 && !released(session) && !session.host.world.game_over {
+        pad_budget(session)?;
+        session.host.world.set_pad(0);
+        session.tick().map_err(|e| format!("{e:#}"))?;
+        settle += 1;
+    }
+    if session.host.world.game_over {
+        return Err(format!(
+            "the escape clock ran out (0x{flag:03X}): scripted game over"
+        ));
     }
     Ok(session.host.world.system_flag_test(flag) || scene_name(session) != here)
 }

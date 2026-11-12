@@ -206,6 +206,10 @@ pub struct PondSession {
     /// actor (record `0x801D9024`, tick `FUN_801D5298`) off it, so the plate's
     /// counter runs only once this is `None`.
     pub(super) lift_timer: Option<i32>,
+    /// The phase the last [`PondSession::tick`] started in: the driver's
+    /// state word as its switch ran, ahead of the actor ticks that can move
+    /// it (the lure tick lands a catch after the driver's tail has drawn).
+    pub(super) tick_entry: PondPhase,
     /// The no-lure screen took its face-button edge: the session asks its
     /// host to leave the venue (state `200`, the exit fade).
     pub(super) exit_requested: bool,

@@ -37,6 +37,7 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
                 | CommandSurface::ItemBrowse
                 | CommandSurface::ItemTarget(_)
                 | CommandSurface::ItemAllAllies
+                | CommandSurface::ItemAllEnemies
         )
     ) || battle_begin_tab_alone(world)
 }
@@ -96,14 +97,41 @@ pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> 
         | CommandSurface::ArtsList => Some(BattleCommand::Attack.label().to_string()),
         // The dome's Ra-Seru list is its own projection (`dome_command_chips`
         // carries its arm word); the battle's resolver is not its source.
-        CommandSurface::SpellBrowse | CommandSurface::SpellTarget(_)
+        // The spell target steps (`0x19` / `0x1B` / `0x1F`) swap the chip for
+        // record `0x3B` holding the spell's label: the spell record's name
+        // below id `0x65`, and spell `0`'s - `Magic` - for every Seru spell
+        // from `0x65` up (`slti v0,a1,0x65` and the `0x800754D0` load at
+        // `0x801D42FC..0x801D4348`). `battle_magic_target_gaza2_retail`
+        // reads `Begin | Vahn | Magic` over Aluru (`0x8E`).
+        CommandSurface::SpellTarget(_)
+            if world.mode != legaia_engine_mode::mode::SceneMode::MuscleDome =>
+        {
+            use legaia_engine_battle::battle_magic::SpellPhase;
+            let spell = match &world.battle.spell_menu.as_ref()?.phase {
+                SpellPhase::Targeting { spell_id, .. }
+                | SpellPhase::SweepConfirm { spell_id, .. } => *spell_id,
+                _ => return None,
+            };
+            if spell >= SERU_SPELL_FIRST {
+                Some(SERU_SPELL_TAB.to_string())
+            } else {
+                world
+                    .tables
+                    .spell_catalog
+                    .get(spell)
+                    .map(|d| d.name.clone())
+            }
+        }
+        CommandSurface::SpellBrowse
             if world.mode != legaia_engine_mode::mode::SceneMode::MuscleDome =>
         {
             let slot = command_entry_actor(world)?;
             Some(battle_magic_chip(world, slot).0)
         }
         CommandSurface::ItemBrowse => Some(BattleCommand::Item.label().to_string()),
-        CommandSurface::ItemTarget(_) | CommandSurface::ItemAllAllies => {
+        CommandSurface::ItemTarget(_)
+        | CommandSurface::ItemAllAllies
+        | CommandSurface::ItemAllEnemies => {
             let model = crate::battle_item_menu_model(world)?;
             let row = model.view.cursor_row?;
             model.view.rows.get(row).map(|r| r.name.clone())
@@ -111,6 +139,14 @@ pub fn battle_breadcrumb_third_tab(world: &legaia_engine_core::world::World) -> 
         _ => None,
     }
 }
+
+/// The first spell id the spell target steps label with spell `0`'s name
+/// (`slti v0,a1,0x65` at `0x801D42FC`).
+const SERU_SPELL_FIRST: u8 = 0x65;
+
+/// Spell `0`'s name in the spell record table (`*(0x800754D0)`), the label a
+/// Seru spell's target step shows.
+const SERU_SPELL_TAB: &str = "Magic";
 
 /// The first action state past the item band's panels: the Done band's
 /// `0x51` hold sends them off as its countdown runs out (`ctx[+0x18] = 6`

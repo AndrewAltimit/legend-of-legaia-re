@@ -1078,9 +1078,22 @@ fn play_prop_beats(
                 continue;
             }
             stuck = false;
+            // A staged prop raised a flag its own record tests and never
+            // lowers, and lowered none: the next examine plays the next
+            // stage, as a staged talk does. `vell`'s Bridge Grass (P0[1])
+            // raises the first-visit `0x460` on the first examine and asks
+            // for the Fertilizer (`0x2AE`) only on the next. A dial lowers
+            // the old facing as it raises the new one, and a switch lowers
+            // what it raised on the next press (`taiku` P0 at (69, 46),
+            // `0x386`), so neither is staged.
+            let lowers = prop_lowered_flags(session, mf, man, anchor);
+            let staged = f0.is_subset(&f1)
+                && prop_tested_flags(session, mf, man, anchor)
+                    .iter()
+                    .any(|f| f1.contains(f) && !f0.contains(f) && !lowers.contains(f));
             if turn + 1 >= DIAL_TURNS
                 || !anchored
-                || dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f))
+                || (!staged && dial.iter().all(|&f| f1.contains(&f) == next_anchor_has(f)))
                 || !prop_beats(session, mf, man)
                     .iter()
                     .any(|(a, _, _)| *a == anchor)
@@ -1376,6 +1389,10 @@ pub(super) fn opener_beats_here(session: &NativeSession) -> Vec<PropBeat> {
 /// south doors (P0[16], P0[18]), and the walk to the East Voz exit stalls
 /// until the east room's switch (P0[13]) has opened P0[18].
 /// `Ok(Some(scene))` when a switch carried the party to another scene.
+///
+/// The pad hand walks to the levers, nearest first, and stops at the first
+/// press that opened or shut a door, so the crossing tries its walk again
+/// from beside that lever before the walk to the next one undoes it.
 pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<String>, String> {
     if session.host.world.mode != SceneMode::Field {
         return Ok(None);
@@ -1384,8 +1401,48 @@ pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<Strin
     let Some((mf, man, _)) = scene_man_and_triggers(session) else {
         return Ok(None);
     };
-    for (anchor, at, gated) in opener_beats(session, &mf, &man) {
+    let mut openers = opener_beats(session, &mf, &man);
+    let doors = |s: &NativeSession| -> BTreeSet<(u8, u8)> {
+        s.host
+            .world
+            .props
+            .bank
+            .props
+            .iter()
+            .filter(|(_, p)| p.collision_exempt())
+            .map(|(&a, _)| a)
+            .collect()
+    };
+    if pad_hand() {
+        let (px, pz) = player_xz(session);
+        let (tx, tz) = tile_of(px, pz);
+        openers.sort_by_key(|&(a, _, _)| (i16::from(a.0) - tx).abs() + (i16::from(a.1) - tz).abs());
+    }
+    for (anchor, at, gated) in openers {
+        // The pad hand walks up to the lever before it pulls it, and a lever
+        // it cannot walk to is not in reach. Pressed from wherever the walk
+        // stalled, `bylon`'s wing switch P0[12] toggled the west wing's
+        // airlock from outside it: the press shut the hall door P0[19] the
+        // party was to come in by, and walking in through it shut the south
+        // door P0[16] again. Walked to, the switch is reached through P0[19]
+        // (its touch moves the party into the wing and shuts P0[16]), so the
+        // press opens P0[16] with the party inside.
+        if pad_hand() {
+            let avoid = pad_avoid(session, None);
+            let goal = (i16::from(anchor.0), i16::from(anchor.1));
+            match pad_walk(session, goal, &avoid, 1) {
+                Ok(Walk::Arrived) => {}
+                Ok(Walk::Entered(s)) => return Ok(Some(s)),
+                Err(e) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [switch] {name} {anchor:?} out of reach: {e}");
+                    }
+                    continue;
+                }
+            }
+        }
         let f0 = flags_of_world(session);
+        let d0 = doors(session);
         let r = if gated {
             examine_prop(session, anchor, at, false)
         } else {
@@ -1400,6 +1457,9 @@ pub(super) fn press_switches(session: &mut NativeSession) -> Result<Option<Strin
             Run::Battle(b) => return Err(format!("switch {anchor:?}: {b}")),
             Run::Error(e) => return Err(e),
             Run::Parked(_) | Run::Released => {}
+        }
+        if pad_hand() && doors(session) != d0 {
+            break;
         }
     }
     Ok(None)
@@ -1436,6 +1496,32 @@ fn prop_tested_flags(
                 && s.clean
                 && !s.debug_menu
         })
+        .map(|s| s.flag)
+        .collect()
+}
+
+/// The system flags a placed object's record clears, by anchor.
+fn prop_lowered_flags(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    anchor: (u8, u8),
+) -> BTreeSet<u16> {
+    use legaia_engine_field::man_field_scripts::FlagBank;
+    let Some(rec) = session
+        .host
+        .world
+        .props
+        .bank
+        .props
+        .get(&anchor)
+        .map(|p| p.record)
+    else {
+        return BTreeSet::new();
+    };
+    walk_partition_gflag_sites(mf, man, 0)
+        .iter()
+        .filter(|s| s.record == rec && s.bank == FlagBank::System && s.kind == FlagKind::Clear)
         .map(|s| s.flag)
         .collect()
 }

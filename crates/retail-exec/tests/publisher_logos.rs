@@ -141,3 +141,156 @@ fn the_init_pak_carries_every_logo_the_port_draws() {
         }
     }
 }
+
+/// The sequencer `FUN_801CEFD4`, its body.
+const SEQUENCER: u32 = 0x801C_EFD4;
+/// The screen fade the PROKION fade-out draws over the held logo.
+const SCREEN_FADE: u32 = 0x801D_0460;
+/// The CD-load word state 5 raises and the Contrail state waits on.
+const LOAD_PENDING: u32 = 0x801F_3EA4;
+const COUNTER: u32 = 0x801F_3EA8;
+const DONE_WORD: u32 = 0x801F_3EB0;
+const BOOT_ACTOR: u32 = 0x8016_0000;
+
+/// What one sequencer frame drew: the logo, the level it handed the
+/// emitter, and the screen fade's level when one was drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Drawn {
+    logo: usize,
+    level: u32,
+    fade: Option<u32>,
+}
+
+/// The sequencer run frame by frame from its state `0` at frame step `1`,
+/// against `PublisherLogosSession` ticked then drawn as the front end does:
+/// the settles' black frames, the logo each frame shows and its level, and
+/// the frame the done bit rises. The CD-load word the Contrail state waits on
+/// is cleared each frame, the stand-in for the load callback.
+#[test]
+fn the_sequencer_paces_the_logos_as_the_session_does() {
+    differential!(prot(895, SEQUENCER));
+    use legaia_engine_title::publisher_logos::PublisherLogosSession;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(895).expect("PROT 0895"));
+    let frame = Rc::new(RefCell::new(Vec::<Drawn>::new()));
+    for (va, logo) in [(SCEA_PAIR, LOGO_SCEA), (PROKION_PAIR, LOGO_PROKION)] {
+        let frame = frame.clone();
+        cpu.hook(va, move |r, _| {
+            frame.borrow_mut().push(Drawn {
+                logo,
+                level: r.r[psx_retail_exec::A0],
+                fade: None,
+            })
+        });
+    }
+    {
+        let frame = frame.clone();
+        cpu.hook(EMIT, move |r, m| {
+            let level = m.rd32(r.r[psx_retail_exec::SP] + 0x10);
+            frame.borrow_mut().push(Drawn {
+                logo: LOGO_CONTRAIL,
+                level,
+                fade: None,
+            })
+        });
+    }
+    {
+        let frame = frame.clone();
+        cpu.hook(SCREEN_FADE, move |r, _| {
+            // Drawn ahead of the logo it covers; marked as a logo-less
+            // entry and folded onto the logo below.
+            frame.borrow_mut().push(Drawn {
+                logo: usize::MAX,
+                level: 0,
+                fade: Some(r.r[psx_retail_exec::A2] & 0xFF),
+            });
+        });
+    }
+    for va in [
+        0x8005_8068,
+        0x801D_0828,
+        0x8001_DAF8,
+        0x8005_8298,
+        0x8002_5CB4,
+        0x801C_FA78,
+        0x8003_F120,
+        0x801C_FF68,
+    ] {
+        cpu.stub(va, 0);
+    }
+    for o in (0..0x100).step_by(4) {
+        cpu.mem.wr32(BOOT_ACTOR + o, 0);
+    }
+    cpu.mem.wr16(BOOT_ACTOR + 0x1A, 0);
+    cpu.mem.wr32(COUNTER, 0);
+    cpu.mem.wr32(DONE_WORD, 0);
+    cpu.mem.wr8(0x1F80_0393, 1);
+    let mut port = PublisherLogosSession::new();
+    let mut frames = 0;
+    let mut seen = Vec::new();
+    loop {
+        frame.borrow_mut().clear();
+        cpu.mem.wr32(LOAD_PENDING, 0);
+        assert_eq!(cpu.call(SEQUENCER, &[BOOT_ACTOR]), Stop::Returned);
+        port.tick();
+        let state = cpu.mem.rd16(BOOT_ACTOR + 0x1A);
+        let mut drawn = Vec::new();
+        let mut fade = None;
+        for d in frame.borrow().iter() {
+            if d.logo == usize::MAX {
+                fade = d.fade;
+            } else {
+                drawn.push(Drawn { fade, ..*d });
+            }
+        }
+        let at = format!("frame {frames} state {state}");
+        let retail_done = cpu.mem.rd32(DONE_WORD) & 2 != 0;
+        assert_eq!(retail_done, port.is_done(), "the sequence's end, {at}");
+        if retail_done {
+            break;
+        }
+        let level = u32::from(port.retail_level());
+        let Some(&d) = drawn.first() else {
+            // A settle: nothing drawn, and the port's frame is black.
+            assert_eq!(level, 0, "a black frame, {at}");
+            frames += 1;
+            continue;
+        };
+        assert_eq!(drawn.len(), 1, "one logo a frame, {at}");
+        match d.fade {
+            // A logo at level `0` is a black frame, whichever logo each
+            // side names (the frame a logo's step rolls into the next).
+            None => {
+                assert_eq!(d.level, level, "level, {at}");
+                if level != 0 {
+                    assert_eq!(d.logo, port.current_logo(), "logo, {at}");
+                }
+            }
+            // State 10: PROKION held at full under the blend quad, which
+            // the port stands in for by fading the logo over the same span
+            // (`docs/subsystems/boot.md`); the quad's level and the port's
+            // drop run on one schedule.
+            Some(f) => {
+                assert_eq!((d.logo, d.level), (LOGO_PROKION, 0x80), "{at}");
+                assert_eq!(port.current_logo(), LOGO_PROKION, "{at}");
+                let drop = 2 * (0x80 - level);
+                assert!(
+                    drop.abs_diff(f.min(0x100)) <= 10,
+                    "blend {f:#x} against the port's drop {drop:#x}, {at}"
+                );
+            }
+        }
+        if d.level != 0 && seen.last() != Some(&d.logo) {
+            seen.push(d.logo);
+        }
+        frames += 1;
+        assert!(frames < 2000, "the sequence does not end");
+    }
+    assert_eq!(seen, [LOGO_SCEA, LOGO_CONTRAIL, LOGO_PROKION]);
+}

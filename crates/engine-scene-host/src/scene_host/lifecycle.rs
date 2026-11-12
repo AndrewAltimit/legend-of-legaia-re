@@ -255,12 +255,15 @@ impl SceneHost {
                 legaia_engine_vm::actor_tick::clip_end_ticks(frames, step)
             })
             .collect();
-        // The previous-scene label `0x80084558`: a scene change backs the
-        // active label up into it (`FUN_80056758(0x80084558, 0x80084548)`
-        // in `FUN_8001FD44` / `FUN_80021934`), and a card Save carries it. A
-        // card load restores its own after the entry.
-        if let Some(old) = self.scene.as_ref() {
-            self.world.party.previous_scene = Some(old.name.clone());
+        // The second scene label `0x80084558`. The packet copies the active
+        // buffer into it (`FUN_80056758(0x80084558, 0x80084548)` at
+        // `0x8001FDDC` in `FUN_8001FD44`) *after* the resolver `FUN_8001D7F8`
+        // has overwritten that buffer with the staged destination, so it is
+        // the destination's own label, lower-cased - every block on the
+        // library cards holds the active label here. A card Save carries it;
+        // a card load restores its own after the entry.
+        if self.scene.is_some() {
+            self.world.party.previous_scene = Some(name.to_ascii_lowercase());
         }
         self.scene = Some(scene);
         self.assets = Some(assets);

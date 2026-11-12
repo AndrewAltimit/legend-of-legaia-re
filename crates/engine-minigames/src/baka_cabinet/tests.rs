@@ -374,11 +374,11 @@ fn a_won_match_banks_the_prize_and_a_lost_one_forfeits_the_pot() {
     assert_eq!(cab.pot(), 0);
     assert_eq!(cab.stage(), 3);
     assert_eq!(cab.state(), ST_PERFECT);
-    assert_eq!(cab.rounds_dropped(), 0, "a shutout drops no rounds");
+    assert_eq!(cab.perfect_matches(), 1, "a shutout counts");
 
     // A match won 2-1 still reaches the flourish - the `state = 0x65`
     // store is in the delay slot of the shutout branch, so only the
-    // dropped-round tally is gated.
+    // shutout tally is gated.
     let mut messy = BakaCabinet::new();
     messy.enter_duel();
     let scrappy = CabinetInput {
@@ -390,7 +390,7 @@ fn a_won_match_banks_the_prize_and_a_lost_one_forfeits_the_pot() {
         messy.tick(&scrappy);
     }
     assert_eq!(messy.state(), ST_PERFECT);
-    assert_eq!(messy.rounds_dropped(), 1);
+    assert_eq!(messy.perfect_matches(), 0);
 
     // Now lose one with a pot on the table (the host mirrors the live
     // accumulator in, as the tally would have filled it).
@@ -531,8 +531,15 @@ fn the_duel_menu_edge_routes_to_the_dev_menu_only_when_enabled() {
         frame_step: 1,
         pad_edge: CABINET_DUEL_MENU,
         win_target: 2,
+        pause_ready: true,
         ..Default::default()
     };
+    // Mid-exchange the combat ticks hold the pause gate down.
+    cab.tick(&CabinetInput {
+        pause_ready: false,
+        ..menu
+    });
+    assert_eq!(cab.state(), ST_DUEL);
     cab.tick(&menu);
     assert_eq!(cab.state(), ST_PAUSE_3);
 
@@ -552,6 +559,7 @@ fn the_editor_state_dumps_the_installed_action_tables() {
         power: [1, 2, 3, 4, 5, 6, 7, 8, 9],
         keyframes: [0, 0, 1, 2, 3, 4, 0, 0, 0],
         speed: [0; 9],
+        head: [[0; 8]; 9],
         sub_keyframes: Default::default(),
     }];
     let mut cab = BakaCabinet::new().with_action_tables(tables);
@@ -569,7 +577,7 @@ fn the_editor_state_dumps_the_installed_action_tables() {
         .action_dump
         .expect("L1 dumps the table");
     assert!(dump.contains("ACT_TBL 0"));
-    assert_eq!(dump.lines().filter(|l| l.contains("act ")).count(), 9);
+    assert_eq!(dump.lines().filter(|l| l.starts_with("  {")).count(), 9);
     // Select leaves the editor.
     cab.tick(&CabinetInput {
         pad_edge: CABINET_DEV_EXIT,

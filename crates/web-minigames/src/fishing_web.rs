@@ -354,6 +354,7 @@ impl LegaiaMinigames {
         self.fishing_prizes.clear();
         self.fishing_lures_held = [MINIGAMES_TACKLE_HELD; 3];
         self.fishing_venue_actors = Default::default();
+        self.fishing_cues.reset();
         // The lead's two ambient-ripple part records, off the overlay image
         // the tables decoded from.
         self.fishing_venue_actors.ripple_records = self.fishing_overlay.as_deref().and_then(|ov| {
@@ -570,7 +571,6 @@ impl LegaiaMinigames {
             p,
             &events,
             0,
-            &mut self.fx,
             || scene.as_ref().and_then(|s| s.map.clone()),
         );
         self.fishing_catch_frame = if p.phase() == legaia_engine_fishing::fishing::PondPhase::Landed
@@ -604,12 +604,9 @@ impl LegaiaMinigames {
             hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
         }
         let mut out = hub_events;
-        // The hook and catch cues, through the kernel `World::tick` queues
-        // them with for the two play hosts. This page keyed neither.
-        let cues: Vec<u16> = events
-            .iter()
-            .flat_map(legaia_engine_minigame_scenes::minigame_state::pond_event_cues)
-            .collect();
+        // The hook and catch cues, through the clock `World::tick` drives
+        // for the two play hosts.
+        let cues = self.fishing_cues.frame(&events, p.strength(), 1);
         for cue in hub_cue.into_iter().chain(cues) {
             self.minigame_sfx_cue(cue);
         }
@@ -655,6 +652,19 @@ impl LegaiaMinigames {
             }
         }
         format!("[{}]", out.join(","))
+    }
+
+    /// The venue's move-VM parts (the ambient ripples and the catch
+    /// close-up's rings, sparks, halo and rainbow) rasterised onto a
+    /// `w x h` RGBA8 layer over black out of the pond's VRAM
+    /// (`FishingVenue::ripple_rgba`), for the page to add over its frame.
+    /// Empty when no part draws or the pond did not decode.
+    pub fn fishing_ripples_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        let Some(scene) = self.fishing_scene.as_ref() else {
+            return Vec::new();
+        };
+        self.fishing_venue_actors
+            .ripple_rgba(&scene.vram_words(), w as usize, h as usize)
     }
 
     /// This frame's ambient ripple rings as stage triangles - the overlay's

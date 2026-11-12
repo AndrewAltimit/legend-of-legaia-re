@@ -209,6 +209,8 @@ pub fn v_windhash_camera(
             });
             *blade = [focus[0].wrapping_neg(), focus[2].wrapping_neg()];
             arm.pass_spawns = trail(blade[0], blade[1], c.facing as i16, None);
+            // The trail sits on the focus the pass's whole drain leaves.
+            arm.spawns_at_pass_end = true;
             if held {
                 arm.hold = true;
             } else {
@@ -226,6 +228,8 @@ pub fn v_windhash_camera(
             blade[0] = blade[0].wrapping_add(s / 64);
             blade[1] = blade[1].wrapping_add(co / 64);
             arm.pass_spawns = trail(blade[0], blade[1], bearing as i16, None);
+            // The point the pass's whole walk leaves.
+            arm.spawns_at_pass_end = true;
             if st.countdown.drain_above(0) {
                 arm.hold = true;
             } else {
@@ -314,6 +318,26 @@ mod tests {
         assert!(held.hold);
         assert!(held.shot.is_some());
         assert_eq!(held.pass_spawns.iter().flatten().count(), 4);
+        // The trail sits on the shot's focus: both come off the drained word.
+        let focus = held.shot.unwrap().focus;
+        let Some(SpawnAnchor::LiteralScaled { pos: a, .. }) = held.pass_spawns[0].map(|s| s.anchor)
+        else {
+            panic!("the blade's first side");
+        };
+        let Some(SpawnAnchor::LiteralScaled { pos: b, .. }) = held.pass_spawns[2].map(|s| s.anchor)
+        else {
+            panic!("the blade's second side");
+        };
+        assert_eq!(
+            (i32::from(a[0]) + i32::from(b[0])) / 2,
+            -i32::from(focus[0])
+        );
+        assert_eq!(
+            (i32::from(a[2]) + i32::from(b[2])) / 2,
+            -i32::from(focus[2])
+        );
+        // ... so the host seats the call the pass's last tick makes.
+        assert!(held.spawns_at_pass_end);
         st.countdown.0 = 1;
         let pass = v_windhash_camera(&mut st, 3, seats());
         assert!(!pass.hold);

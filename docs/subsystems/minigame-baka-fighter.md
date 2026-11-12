@@ -304,7 +304,9 @@ stage == 0xD  && high_score > 0xAAE60 (700,000)  ->  override = 2
 
 The tally drains its rows in order, but each row's **fade** (`DAT_801DBEF4` / `..BEEC` / `..BEF0` / `..BEFC`, the brightness its row draws at, times ten) advances while the row *just above* it is empty, whatever the rows further up hold: each section tests only its neighbour (`0x801D26C4`, `0x801D274C`, `0x801D2800`). A zero score row therefore lets the row below it fade in while the first row is still counting, and that row starts draining the frame its turn comes, with no fade-in wait. A fade past `0x10` is held there (`0x801D28C0..0x801D292C`). Port: `BakaTally::tick`, run frame by frame against the routine by the retail kernel differential. **Confirmed.**
 
-Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed on use (the install state clears it, and `override == 2` additionally latches `DAT_801DBEB8 = 2`), so each bonus rung is served once per arming. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
+Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed by the win over its rung: the match-won arm clears it (`0x801D07A4`), `override == 2` latching `DAT_801DBEB8 = 2` first, and the stage steps on that win as on any other, so each bonus rung is served once per arming and the second ends the run in the all-clear. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
+
+The pause menu opens from the duel only while the gate `DAT_801DBEC4` is up: the player's combat tick raises it while the player stands on the idle clip, either tick drops it while a knockdown latch is set, and the round-over arm drops it on its own frame (`0x801D0638`). The tally state's two-second hold (`0x79`) counts only once the drain `FUN_801D239C` reports every row empty, and the flourish `0x65` hands it a zeroed word. Every opponent install clears the tally rows and the round index (`0x801CFCE4..0x801CFDB0`), so each match opens on round `0`. `DAT_801DBF28` counts shutouts: the match-won arm skips it when the opponent took a round.
 
 Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confirmed.**
 
@@ -319,7 +321,7 @@ The pot is the casino prize accumulator `_DAT_80084440`.
 
 The match-won arm also seeds the tally's first score row: `0x7530` (30,000) when the opponent won **no** round, else `0x4E20` (20,000) - a shutout bonus. Port: `baka_cabinet::match_bonus`. **Confirmed.**
 
-In that arm, the store that sets the next state to the victory flourish (`0x65`) sits in the **delay slot** of the "did the opponent take a round" branch, so it runs either way: any match win reaches the flourish, and the branch only skips the dropped-round tally `DAT_801DBF28`.
+In that arm, the store that sets the next state to the victory flourish (`0x65`) sits in the **delay slot** of the "did the opponent take a round" branch, so it runs either way: any match win reaches the flourish, and the branch only skips the shutout tally `DAT_801DBF28` when the opponent took a round. The player select zeroes the tally; nothing else reads it.
 
 There is no save point inside mode 24, so the coin bank is the only result that outlives a visit.
 
@@ -969,6 +971,14 @@ Retail carries three dev-kit screens it cannot reach: the developer menu (`0xC8`
 
 **Why they are unreachable.** The editor band is written in exactly one place, the developer menu arm (`0x801D19DC`, state `0xC8`). The cabinet enters `0xC8` only when `_DAT_8007B868` is non-zero (`0x801D08E8`, the pause-menu edge; otherwise state `0xBF`). A disc-wide `find-gp-relative-refs.py --va 0x8007b868 --prot` sweep finds two stores to that word in any image: the boot store of `FUN_8002B92C`'s result (`0x80015F18`), whose whole body is `jr ra; move v0, zero`, and a bit-clear (`0x8001E008`). The word boots to zero and is only ever cleared. The ports carry `REPLACED-BY:` tags saying so.
 
+### The developer menu
+
+State `0xC8` (`0x801D1648..0x801D19E4`) is five rows on Up / Down, each move cueing `0x21`. Left / Right edit two words: row `2` the debug-mode word `DAT_801DBF94` (non-zero enables the cabinet's debug traces, `2` the opponent's mirror mode), row `3` a stage pick `DAT_801DBF60`, which every pause-menu edge seeds from the stage counter (`0x801D08F4`, whichever menu then opens). The cursor, the stage pick and the mode word are wrapped unsigned every frame (`% 5`, `% 14`, `% 3`).
+
+Circle confirms the row; Cross resumes from any row, by writing the Circle bit into the shared edge word `_DAT_8007B874` and putting the cursor on row `0` (`0x801D192C..0x801D1940`). Row `0` resumes the duel, or, when the stage pick differs from the stage, stores it as the stage and runs the next-rung reload (`0x6E`, match phase `1`). Row `1` reboots the cabinet (state `0`, match phase `0`); row `4` opens the keyframe editor. A confirm raises no cue.
+
+State `0` zeroes the all-clear flag, the scene suppress and the shake (`0x801CF694..0x801CF6D0`) and leaves the high score and the blink phase alone, so a reboot keeps both until the player select zeroes the score. Port: `BakaCabinet`'s state `0xC8`; the cabinet differential raises the gate in one session in four and drives the menu, the reboot and both editor states.
+
 ### The developer keyframe editor
 
 `FUN_801D4FC8` is the in-game **action-table editor**. It is linked, not dead: its address is the callback of prototype record `0x801D766C` ([Actor prototypes](#actor-prototypes)), so it is spawnable through the ordinary actor path and it is the state band that never opens. Contrast `FUN_801D5C2C` in [`minigame-fishing.md`](minigame-fishing.md#scene-geometry-helpers), which has no reference of any form.
@@ -986,7 +996,7 @@ So `FUN_801D6E5C` has two callers: this editor and the combat tick. Only the sec
 
 **Slot helpers.** `FUN_801D57BC` ("add frame") rounds the incoming key toward zero by `>> 4`, scans the fighter's live slots (count at `+0x1C`, key at slot `+0x26`, `8` stride) for a match, rewrites that slot or appends a new one, zeroes the slot's three accumulators either way, and refuses once the block already holds 8 slots. It always returns `-1`. `FUN_801D58E0` is "delete frame".
 
-**Action-table dump.** `FUN_801D553C` writes a human-readable dump of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`), looping the `0x11` tables of 9 actions. It is reached from cabinet state `0x191` on the L1 edge. Port: `baka_cabinet::action_table_dump`.
+**Action-table dump.** `FUN_801D553C` writes a human-readable dump of the whole action table to a debug file (`ot5stat.txt`, "ot5" = `other5`), looping the `0x11` tables of 9 actions. It is reached from cabinet state `0x191` on the L1 edge. Per action it prints the record's eight leading words and the four halfwords of each live sub-keyframe. Port: `baka_cabinet::action_table_dump`, which prints the same numbers line for line under its own labels; the retail kernel differential holds it to the routine's buffer.
 
 ## RAM state
 
@@ -1008,14 +1018,14 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `DAT_801DBF84` | round-end banner sub-state |
 | `DAT_801DBF88` | round-over hold timer in `0x64` (runs to `0xB5`); the choice sheet draws only while it is zero |
 | `DAT_801DBF24` | player-untouched flag (PERFECT) |
-| `DAT_801DBF28` | dropped-round tally |
+| `DAT_801DBF28` | shutout tally (matches won without dropping a round) |
 | `DAT_801DC110` | displayed stage counter (the HUD draws it `+ 1`); `0xE` picks the final-stage all-clear line |
 | `DAT_801DC128` | the cabinet's scene clock: attract blink phase, round banner clock (zeroed by the round setup), the FIGHT flash's first-frame test |
 | `DAT_801DBE94` | title-card clock |
 | `DAT_801DC134` / `DAT_801DC138` | all-clear announcer state / timer |
 | `DAT_801DBEB4` | the all-clear's second fade (announcer gate `0x11`) |
 | `DAT_801DBEC0` | screen-shake amplitude the epilogue decays toward zero |
-| `DAT_801DBED4` | suppresses both epilogue draw passes |
+| `DAT_801DBED4` | suppresses both epilogue draw passes; raised by the tally's secret branch, it stands through `0x6D`, the next install and the banners until the spin arm `0x35` drops it |
 | `_DAT_8007B868` | non-zero routes the in-duel menu to the developer menu; retail boots it to zero and never sets it |
 | `DAT_801DBF94` | debug-verbosity / mode global (enables the `func_0x8001a068` traces; `== 2` = mirror input mode) |
 
@@ -1264,7 +1274,7 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
 - The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.
 - The minigames page draws the duel HUD page-side rather than through `baka_screen_prims`.
-- The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
+- The keyframe editor's tick `FUN_801D4FC8` is not ported (`REPLACED-BY:` tags); its slot helpers (`baka_fighter_chrome::anim_slot_install` / `anim_slot_delete`), the developer menu and the action-table dump are.
 
 **Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`.
 

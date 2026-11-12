@@ -35,6 +35,10 @@ pub(super) struct RunStats {
     /// Battle surfaces a run reached: each command-session phase it saw,
     /// and the item / spell / arts pickers it opened.
     pub(super) battle_surfaces: BTreeSet<String>,
+    /// Baka Fighter cabinet states a run reached (`FUN_801CF388`'s state
+    /// word, hex), plus `rung<n>` for each ladder stage it played: whether
+    /// the tally, the pause menus and the secret rungs were soaked at all.
+    pub(super) cabinet_states: BTreeSet<String>,
     pub(super) menu_opens: u32,
     pub(super) fmvs: u32,
     pub(super) save_commits: u32,
@@ -1069,6 +1073,11 @@ pub(super) fn run_one(
                 }
             }
         }
+        if let Some(f) = session.host.world.minigames.baka_fighter.as_ref() {
+            let c = f.cabinet();
+            stats.cabinet_states.insert(format!("{:#x}", c.state()));
+            stats.cabinet_states.insert(format!("rung{}", c.stage()));
+        }
         stats.modes.insert(mode);
         if session.host.world.game_over || session.host.world.game_over_hold {
             stats.wiped = true;
@@ -1317,7 +1326,13 @@ pub(super) fn run_one(
                     // player's own motion rides along for it too.
                     let repoll =
                         w.flags.story_flags & legaia_engine_core::world::WALK_ON_REPOLL_FLAG != 0;
-                    if (op == 0xC7 || repoll)
+                    // A player walk the context armed parks it on whichever
+                    // later op names the player, not only on the `0xC7`:
+                    // `cave01`'s "Come with me!" walks the player with
+                    // `C7 F8 C1 6D 33` and its `A3 F8` then waits for the
+                    // arrival, some 2000 frames from a far talk seat.
+                    let player_walk = c.walk_wait.is_some() || c.player_glide.is_some();
+                    if (op == 0xC7 || repoll || player_walk)
                         && let Some(a) = w.actors.get(player_slot(&session))
                     {
                         let m = &a.move_state;

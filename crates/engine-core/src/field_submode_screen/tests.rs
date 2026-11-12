@@ -181,6 +181,17 @@ fn the_soft_reset_slides_records_in_then_hands_off_to_the_title() {
     }
     assert!(w.game_over, "the reload raises the title hand-off");
     assert!(w.field_vm.submode_screen.is_open(), "the op stays parked");
+    // The reload is the executable's: the title's New Game (and its card
+    // load, `resume_card_load`) starts with no screen up, so the next
+    // credits' `49 0C` opens a fresh one instead of reading this one, stuck
+    // past its reload, as its own.
+    w.begin_new_game();
+    assert!(!w.field_vm.submode_screen.is_open());
+    assert!(
+        w.soft_reset_records_pen().is_none(),
+        "no records over the field"
+    );
+    assert_eq!(w.field_vm.submode_screen.soft_reset, Default::default());
 }
 
 #[test]

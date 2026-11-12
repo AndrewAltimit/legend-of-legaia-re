@@ -113,21 +113,26 @@ pub fn plate_fish_y(ramp: i32, hang: i16) -> i32 {
 /// base onto it once more (`MulMatrix2` through `MVMVA` at `sf = 1`, `lm = 0`),
 /// and each product element saturates at the 16-bit `IR` limit - so an
 /// axis-aligned pose (every disc pose is one) comes out at eight times, not
-/// thirty-six. The render scale `+0x72` scales it last (`0x801D68EC..`).
+/// thirty-six. The render scale `+0x72` scales it last (`0x801D68EC..`):
+/// `ScaleMatrix` (`FUN_8005B4E8`) takes each element times the scale `>> 12`
+/// and keeps the low halfword, so past `0x1000` a saturated element wraps.
+/// No hook strength reaches that (the plate fish's scale stays under
+/// `0x1000`); the port wraps as the routine does.
 ///
 /// PORT: FUN_801d67bc (the result actor's model matrix)
 /// REF: FUN_8001cf50 (the `0x400` camera-lock arm)
 pub fn camera_locked_linear(rot: [i16; 3], scale: u16) -> [[f32; 3]; 3] {
     let n = mul3(mul3(rot_y(rot[1]), rot_x(rot[0])), rot_z(rot[2]));
     let base = 6.0f64 * 4096.0;
-    let s = f64::from(scale) / 4096.0;
     n.map(|row| {
         row.map(|e| {
             // `6 * N` as the GTE holds it (q3.12), then `base * that >> 12`
-            // into a saturating IR, back to a ratio; over the base scale.
+            // into a saturating IR, then the scale's halfword product; back
+            // to a ratio over the base scale.
             let first = (6.0 * e * 4096.0).round();
-            let second = (base * first / 4096.0).clamp(-32768.0, 32767.0);
-            (second / 4096.0 * s / 6.0) as f32
+            let second = (base * first / 4096.0).clamp(-32768.0, 32767.0) as i32;
+            let scaled = (second * i32::from(scale)) >> 12;
+            (f64::from(scaled as i16) / base) as f32
         })
     })
 }

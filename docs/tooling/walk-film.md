@@ -50,7 +50,9 @@ A retail pass reads the pad the probe set one vsync earlier, and a pass is on a 
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.
 
-The placement report keys on the flat MAN index. A wanderer's heading and seat
+The placement report keys on the flat MAN index: the channel slot past the
+partition-0 count of the scene the film stands in, re-read when a film crosses
+a scene change. A wanderer's heading and seat
 are `rand()` history, so one that parts from retail after a few dozen vsyncs is
 not a finding by itself; a placement off retail from the first row is.
 
@@ -60,6 +62,7 @@ not a finding by itself; a placement off retail from the first row is.
 - A carried player reads as still, and its focus trails a pass (same page).
 - The d-pad remap reads the [authored octant](../subsystems/field-locomotion.md#gp0x2d8-is-authored-not-computed).
 - `kor3`'s placements, flats 15 and 20 among them, hold retail's headings for a whole film, with no spin.
+- The placements that turn without moving under an idle pad turn on both sides. `rugi_field_card_boot`'s flats `40..=43` (`64` a pass) and `cave01_attached_light`'s flats `4..=8` hold retail's heading on every vsync of a 300-vsync film; `vell_fog_field`'s flat `12` turns at retail's rate (`42` or `43` a pass) one vsync ahead, the pass parity of the seed rather than a spin. An engine-side sweep of every field state (`LEGAIA_RC_WALK_PAD` with an empty pad, 600 ticks) finds no other placement that turns in place; the rest that turn often are wanderers.
 - `kor3`'s stair warp lands the camera on the destination block. With the state's queued first pass replayed (`--pad "0-3:LEFT,3-120:UP" --run`) the engine walks retail's path into the kind-0 tile, lands a vsync apart, and stands on retail's shot from the landing on ([the timed warp](../subsystems/field-locomotion.md#the-timed-kind-0-warp)). The player turns on the landing too: the room selector's `4C 2x` runs under the landed sentinel and turns him by the octants it moves, to retail's `2048`. One thing still parts: the slide along the wall starts a step early, since the engine resolves the direction every vsync and retail once a pass.
 - `geremi_field_door_hop`'s flat `53` is not a facing defect. The scene's system script (`P1[0]`) loops back to `CC 35 85 00 00 37` every pass, a zero-budget face-at whose terminal snap (`0x80037EF8..0x80037F04`) turns placement `53` onto the bearing of placement `55`, a wanderer; retail's heading is that bearing one pass late on every vsync of the film, and the engine's tracks its own `55` the same way. The `facing` channel's `.99` there is `55`'s `rand()` history read through `53`.
 - An ambient stream's turns run at retail's rate and differ only in phase: `rikuroa_field_card_walk`'s flat `16` and `balden_field_route_walk`'s flat `26` repeat retail's ramps a fixed number of vsyncs early, the wait their streams were inside at the capture.
@@ -68,5 +71,7 @@ not a finding by itself; a placement off retail from the first row is.
 - Town placements hold retail's headings and seats for a 300-vsync film in `garmel`, `vozz` and `retona` (`off retail 0`); `town01_field_card_boot`'s seven that part are wanderers, each first off after `40` vsyncs or more.
 - A held walk's clip runs at retail's rate: `kor_field_route_walk` steps `16` a pass through the same ten frames on both sides.
 - A carried player's height glides as retail's does. `tower_field_walk`'s scripted stair walk reads `-32, -8, 0` a pass on both sides once the walker legs leave `+0x16` to the [settle](../subsystems/field-locomotion.md#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878); the step snap had landed it in one, and the camera fields off over its 61 passes went from pitch `33`, eye Y `35`, eye Z `34` to `1`, `4`, `1`. The leg itself now spends on the game-frame grid in a prop run as in a timeline (`8` a pass rather than `4` a vsync), so the follow focus trails it a whole pass as retail's does: focus Z off went from `54` to `7`, eye Y to `1`.
+
+- A beat's last turn holds when the engine plays the beat. `son` `P2[5]` turns Luctes (flat `10`) onto `0x600` at `(2432, 7936)` and the engine film from the mid-beat checkpoint ends on the same heading and seat; a checkpoint after the beat seeds through the card load, whose entry stands him on his record's `0xE00`, so its facing miss was the seed's, not the engine's; the comparison now seats the beat's turn ([retail-compare](retail-compare.md#the-seeding-model)).
 
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).

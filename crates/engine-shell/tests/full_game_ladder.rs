@@ -603,6 +603,20 @@ fn part_b_full_game_ladder() {
             Some((m.scene.clone(), flags))
         });
         continuous::PLAYED_AHEAD.with(|a| *a.borrow_mut() = played);
+        // A poke anchor (`seeds_next = false`) names its scene, not what the
+        // retail run had played on the way there: the pad pass steers by the
+        // save after it as well, as the continuous run does. `vell_fog_field`
+        // is a Rim Elm-era state, and Biron's first-visit chain
+        // (`bylon` 0x297..0x2A0), whose 0x2A0 lets the hall door P0[19] open
+        // on the way to West Voz, is only in PRO-01.
+        let pad_steer = (!to.seeds_next)
+            .then(|| {
+                let mut f = anchors[i + 1].as_ref()?.flags.clone();
+                f.extend(&anchors.get(i + 2)?.as_ref()?.flags);
+                Some(f)
+            })
+            .flatten();
+        segment::PAD_STEER.with(|p| *p.borrow_mut() = pad_steer);
         let rep = run_segment(
             &inp,
             &graph,
@@ -612,6 +626,7 @@ fn part_b_full_game_ladder() {
             anchors[i + 1].as_ref(),
             with_pad,
         );
+        segment::PAD_STEER.with(|p| *p.borrow_mut() = None);
         continuous::PLAYED_AHEAD.with(|a| *a.borrow_mut() = None);
         eprintln!(
             "[seg {i:2}] {:24} -> {:24} {:10} ({:.1}s){}",

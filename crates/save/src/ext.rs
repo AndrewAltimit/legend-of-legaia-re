@@ -380,8 +380,10 @@ pub struct SaveExtV2 {
     /// carries it in the optional `LGXB` block. `None` = the save was never
     /// a retail block (a New Game), and a block is written from zero.
     pub retail_window: Option<Vec<u8>>,
-    /// The previous scene's CDNAME label (retail `0x80084558`, SC `0x418`),
-    /// which every name-based scene change backs the active label up into.
+    /// The second scene label (retail `0x80084558`, SC `0x418`). The
+    /// scene-change packet `FUN_8001FD44` copies the active buffer into it
+    /// after the resolver has overwritten that buffer with the destination,
+    /// so a retail block holds the active label here too.
     /// An `LGSF` file carries it in the optional `LGXC` block. `None` = not
     /// known.
     pub previous_scene: Option<String>,

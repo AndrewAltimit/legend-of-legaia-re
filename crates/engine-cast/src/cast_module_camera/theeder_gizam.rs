@@ -446,7 +446,7 @@ pub fn gizam_sweep_exit_shot(
 /// | 14 | drain the settle word while positive, hold while it is (`0x801F7610..0x801F7640`) | the body's row poll follows |
 ///
 /// Arm 9 frames the creature's `+0x3C` / `+0x40` pair rather than its
-/// `+0x34` / `+0x38` seat; the port frames the seat.
+/// `+0x34` / `+0x38` seat, which arm 10 frames.
 ///
 /// PORT: FUN_801F69F4 (PROT 0906; the camera arms 0/1/7..13, the countdown gates of arms 3/5/7/9/10/12/13/14, the phase-5 stager record clock, the arm 6/7 captions, arm 13's caption clear and the arm 4/7/12 spawn calls)
 pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -505,7 +505,12 @@ pub fn gizam_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 = SPEED_SCALAR * GIZAM_CUT_WAIT;
-            ArmDirection::shot(on(creature, -0x40, 0x900, [0, 0x700, 0x300], 1))
+            // The creature's body pair (`lhu v0,0x3c(s4)` / `lhu v0,0x40(s4)`
+            // at `0x801F7058` / `0x801F7068`); arm 10 goes back to its seat.
+            let body = st
+                .creature_body
+                .map_or(creature, |(x, z)| ModuleSeat { x, z, ..creature });
+            ArmDirection::shot(on(body, -0x40, 0x900, [0, 0x700, 0x300], 1))
         }
         10 => {
             if drain_halfword(st) {

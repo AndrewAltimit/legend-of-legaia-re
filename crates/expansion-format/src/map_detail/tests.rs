@@ -390,3 +390,27 @@ fn an_emitter_draws_always_unless_it_rides_the_lighting() {
             .expect("emitter parses");
     assert!(e.resolved().with_lighting);
 }
+
+/// Every random stream a map's decorations draw is keyed from 64-bit words,
+/// so the browser's 32-bit `wasm32` build lays a map out as the window does.
+/// The sample village's first `[[edges]]` decoration pins the edge runs'
+/// stream: its key was `usize::MAX - e`, a different word on a 32-bit
+/// target, and the page drew every edge run elsewhere.
+#[test]
+fn an_edge_run_lays_out_alike_on_every_pointer_width() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packs/sample/maps/isles_village.toml"
+    ))
+    .unwrap();
+    let d = parse(&src).decorations().unwrap();
+    let x = &d[589];
+    assert_eq!(x.tile, [2, 2]);
+    assert_eq!(x.offset, [36.698784, 0.0, -15.432151]);
+    assert_eq!(x.rotation[1], 86.87106);
+    assert_eq!(x.scale, 0.13229378);
+    assert_eq!(
+        TileRng::new(7, 3, 1, 2).unit(),
+        TileRng::new_keyed(7, 3, 1, 2).unit()
+    );
+}

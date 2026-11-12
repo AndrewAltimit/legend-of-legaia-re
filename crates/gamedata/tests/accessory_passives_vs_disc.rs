@@ -134,12 +134,12 @@ fn accessory_passive_indices_match_curated_effects() {
 
     let mut matched = 0usize;
     for acc in db.accessories() {
-        let Some(&id) = by_name.get(&norm(&acc.name)) else {
-            // A few curated names differ from the disc spelling (e.g.
-            // "Light Ra-Seru Egg" vs disc "Light Egg") - skip, the count
-            // floor below keeps this honest.
-            continue;
-        };
+        // Every curated accessory carries its disc spelling, so every one
+        // joins (the walkthrough's "Light Ra-Seru Egg" is the disc's
+        // "Light Egg").
+        let &id = by_name
+            .get(&norm(&acc.name))
+            .unwrap_or_else(|| panic!("{} has no disc item of that name", acc.name));
         if let Some(expect) = expected_index(acc) {
             let got = passives
                 .passive_index(id)

@@ -1,7 +1,7 @@
 {
   "_comment": "Committed build input for site/_gen.py: per runtime code image, how many of the functions the disc places there carry a port. Counts and labels only. Refresh with scripts/ci/update-progress-metrics.py on a machine with the disc and the dump corpus; scripts/ci/check-progress-metrics-freshness.py warns when `inputs` no longer matches the tree.",
   "inputs": {
-    "ports": "a579ce5fbaa4268c",
+    "ports": "f58c1b9dc7560c20",
     "stems": "f53c071dc129bc81",
     "scoped": "aa538d84742b467d",
     "ignore": "b7f3aeb0f16f958d",
@@ -17,9 +17,9 @@
       "kind": "game",
       "prot": null,
       "functions": 1011,
-      "ported": 345,
+      "ported": 346,
       "replaced": 49,
-      "native": 616,
+      "native": 615,
       "no_behaviour": 49,
       "open": 1,
       "not_a_function": 47,

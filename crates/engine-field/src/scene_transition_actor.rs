@@ -52,11 +52,12 @@
 //! `FUN_8001EEF0` resolves **by index** only when `_DAT_8007B868 == 0 &&
 //! _DAT_8007B8C2 != 0` (`0x8001EEF0..0x8001EF3C`), and by path otherwise.
 //! This actor splits on the same `_DAT_8007B8C2`: state 2 issues the stream
-//! when it is non-zero, state 4 when it is zero. `_DAT_8007B8C2` lives past
-//! the loaded image (`dst + size = 0x8007B800`), i.e. in BSS, and no dump in
-//! the corpus writes it - so on a retail boot it reads `0` and **state 4 is
-//! the arm that runs**. State 2's stream is the dev/index arm and is inert
-//! on a shipped disc; state 2 still advances either way.
+//! when it is non-zero, state 4 when it is zero. `main` writes the word at
+//! boot (`0x80015F08 sh v0,0x5aa(gp)`, from `FUN_8003F084`) and a retail boot
+//! sets it, so **state 2's index arm is the one that runs**; state 4's path
+//! arm, with its name-buffer rotation, is the dev branch. Both arms reach the
+//! same hand-off on the same tick, so the hold's length does not depend on
+//! the word ([`docs/subsystems/boot.md`](../../../docs/subsystems/boot.md)).
 //!
 //! ## The path
 //!
@@ -140,7 +141,7 @@ pub struct SceneTransitionInput<'a> {
     pub dt: u8,
     /// `_DAT_8007BC20` - state 0 holds while this is non-zero.
     pub start_gate: i32,
-    /// `_DAT_8007B8C2 != 0` - the index-resolution arm. Zero on retail.
+    /// `_DAT_8007B8C2 != 0` - the index-resolution arm. Set on retail.
     pub index_mode: bool,
     /// `FUN_8003DE7C(1) != 0` - the CD queue is still working.
     pub stream_busy: bool,
@@ -305,7 +306,7 @@ impl HeldTransition {
 /// keeps it.
 ///
 /// The CD-queue and index-arm inputs are fixed at their retail-boot values
-/// (`stream_busy = false`, `index_mode = false`): the engine's `Scene` load is
+/// (`stream_busy = false`, `index_mode = true`): the engine's `Scene` load is
 /// synchronous, so the hold is the countdown plus the machine's own four
 /// state steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,7 +338,7 @@ impl SceneTransitionHold {
         let out = self.actor.tick(SceneTransitionInput {
             dt,
             start_gate: 0,
-            index_mode: false,
+            index_mode: true,
             stream_busy: false,
             staged_index: 0,
             pending_index: 0,
@@ -452,9 +453,9 @@ mod tests {
         }
     }
 
-    /// Retail (`_DAT_8007B8C2 == 0`) streams by path in state 4; a dev build
-    /// with the flag set streams by index in state 2 and state 4 only hands
-    /// off. Exactly one stream is issued either way.
+    /// Retail (`_DAT_8007B8C2 != 0`) streams by index in state 2 and state 4
+    /// only hands off; a dev build with the flag clear streams by path in
+    /// state 4. Exactly one stream is issued either way.
     #[test]
     fn the_two_resolution_arms_are_exclusive() {
         for index_mode in [false, true] {

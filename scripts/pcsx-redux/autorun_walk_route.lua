@@ -11,6 +11,9 @@
 --
 --   <scene> <x> <z> [tp]      walk to world (x, z) while <scene> is loaded
 --   <scene> WAIT <n> 0        stand still <n> vsyncs
+--   <scene> MASH <n> 0        stand still <n> vsyncs, pressing Cross
+--                             every 20 (a scripted beat's boxes that the
+--                             +0x62 box byte does not report)
 --   <scene> AVOID tx,tz;...   from here on, no press may carry the player
 --                             onto these tiles (the scene's other doors;
 --                             a sidestep near a door otherwise walks
@@ -43,10 +46,11 @@
 -- word field-VM op 0x4C nibble 2 writes; field-locomotion.md, "gp+0x2D8 is
 -- authored, not computed"), so the press walks that world direction in any
 -- scene. A push that stops the player out of range sidesteps for 16 vsyncs,
--- alternating sides. An open dialogue box (*0x801C6EA4 +0x62) is paged with
--- Cross. A random encounter (mode 0x14 / 0x15) is fought the harvester's
--- way - Attack at the command ring, Cross through every other prompt - and
--- the route resumes in the field; LEGAIA_FIGHT=0 ends the run there instead.
+-- alternating sides. An open dialogue box (*0x801C6EA4 +0x62, or the pager
+-- _DAT_801F2734 waiting on a page at 0x19) is paged with Cross. A random
+-- encounter (mode 0x14 / 0x15) is fought the harvester's way - Attack at
+-- the command ring, Cross through every other prompt - and the route
+-- resumes in the field; LEGAIA_FIGHT=0 ends the run there instead.
 --
 -- Checkpoints (<OUT_DIR>/<PREFIX>_...rawsstate):
 --   _scene_<label>_v<vsync>   once per scene, LEGAIA_SCENE_SETTLE (150)
@@ -155,6 +159,8 @@ do
                     route[#route + 1] = { scene = sc, avoid = set }
                 elseif a == "WAIT" then
                     route[#route + 1] = { scene = sc, wait = tonumber(b) or 60 }
+                elseif a == "MASH" then
+                    route[#route + 1] = { scene = sc, mash = tonumber(b) or 60 }
                 elseif a == "TALK" then
                     route[#route + 1] = { scene = sc, talk = true, dir = tonumber(b), n = tonumber(c) or 10 }
                 elseif a == "ACT" then
@@ -380,6 +386,9 @@ probe.run({
         -- A dialogue box: page it.
         local fc = probe.read_u32(FIELD_CTL)
         local dlg = ok_ptr(fc) and (probe.read_u8(fc + 0x62) or 0) or 0
+        -- A scripted beat's box leaves +0x62 clear; the pager's page wait
+        -- (_DAT_801F2734 = 0x19) is what it shows instead.
+        if dlg == 0 and (probe.read_u32(0x801F2734) or 0) == 0x19 then dlg = 0x19 end
         if dlg ~= 0 and route[wi] and route[wi].talk and not route[wi].opened then
             route[wi].opened = true
             logf("vsync=%d: talk %d opened", vsync, wi)
@@ -426,6 +435,12 @@ probe.run({
             set_pad({})
             w.w0 = w.w0 or vsync
             if vsync - w.w0 >= w.wait then wi = wi + 1; last_xy = nil end
+            return
+        end
+        if w.mash then
+            w.w0 = w.w0 or vsync
+            set_pad(((vsync - w.w0) % 20) < 4 and { BTN.CROSS } or {})
+            if vsync - w.w0 >= w.mash then wi = wi + 1; last_xy = nil end
             return
         end
         if w.talk then

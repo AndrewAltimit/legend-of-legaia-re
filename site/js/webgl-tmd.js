@@ -100,10 +100,15 @@ function overworldDecorationCue(vp, model, curve) {
  * upload their index list untouched. */
 function buildSemiTail(indices, cbaTsb) {
   const buckets = [[], [], [], []];
+  /* Each semi prim in mesh order: its mode, its slot in its bucket and its
+   * first index in the source list (the per-prim order's records). */
+  const prims = [];
   for (let i = 0; i + 2 < indices.length; i += 3) {
     const tsb = cbaTsb[indices[i] * 2 + 1];
     if ((tsb & 0x8000) === 0) continue;
-    buckets[(tsb >> 5) & 3].push(indices[i], indices[i + 1], indices[i + 2]);
+    const mode = (tsb >> 5) & 3;
+    prims.push(mode, buckets[mode].length, i);
+    buckets[mode].push(indices[i], indices[i + 1], indices[i + 2]);
   }
   let tailLen = 0;
   for (const b of buckets) tailLen += b.length;
@@ -111,15 +116,88 @@ function buildSemiTail(indices, cbaTsb) {
   const out = new Uint32Array(indices.length + tailLen);
   out.set(indices, 0);
   const ranges = [];
+  const bucketStart = [0, 0, 0, 0];
   let at = indices.length;
   for (let mode = 0; mode < 4; mode++) {
     const b = buckets[mode];
+    bucketStart[mode] = at;
     if (b.length === 0) continue;
     ranges.push({ mode, start: at, count: b.length });
     out.set(b, at);
     at += b.length;
   }
-  return { indices: out, ranges };
+  /* [mode, first tail index, first source index] per prim. */
+  const prim = new Uint32Array(prims.length);
+  for (let k = 0; k < prims.length; k += 3) {
+    prim[k] = prims[k];
+    prim[k + 1] = bucketStart[prims[k]] + prims[k + 1];
+    prim[k + 2] = prims[k + 2];
+  }
+  return { indices: out, ranges, prims: prim };
+}
+
+/* A scene mesh's `u_use_flat_colors` word: 0 with no untextured half, 1
+ * with one, 2 when its stream also carries the native pass's own normals
+ * (`uploadSceneMesh`'s `normals`, the baked FX parts): its untextured prims
+ * then light off that normal - their object-space facet - where every other
+ * mesh's take the screen-space facet of their own positions. */
+function flatColorsWord(m) {
+  return m.hasFlat ? (m.cpuNormals ? 2 : 1) : 0;
+}
+
+/* The single-mesh blend pass's per-prim order: the page twin of
+ * engine-render's psx_blend push_draw_prims / sort_blend_list /
+ * coalesce_sorted, which the native window's scene pass blends every semi
+ * prim through. Each prim is keyed by the clip w of its centroid (the GTE
+ * avg-Z its ordering-table bucket comes from) snapped to a whole SZ, drawn
+ * far to near, and an equal key (one bucket) draws later-submitted first.
+ *
+ * The window uploads a venue's textured and untextured halves as two
+ * draws, the textured one first, so its submission order is every textured
+ * prim and then every untextured one; `flatRgba` (alpha 0 = untextured)
+ * splits the one page mesh the same way. Ordering by mode bucket instead
+ * drew the Baka duel's additive floor glow under its fighters' subtractive
+ * shadows everywhere, where retail and the window blend the glow's near
+ * half after them: the glow saturated red and green, the shadow took the
+ * same amount off all three, and the near floor read grey.
+ *
+ * Returns { prims, seq, key, order } scratch for `orderSemiPrims`, or null. */
+function semiPrimOrder(tail, indices, flatRgba) {
+  if (!tail || !tail.prims || tail.prims.length === 0) return null;
+  const n = tail.prims.length / 3;
+  const seq = new Uint32Array(n);
+  const untex = (k) => !!(flatRgba && flatRgba.length && flatRgba[indices[tail.prims[k * 3 + 2]] * 4 + 3] < 128);
+  let next = 0;
+  for (let k = 0; k < n; k++) if (!untex(k)) seq[k] = next++;
+  for (let k = 0; k < n; k++) if (untex(k)) seq[k] = next++;
+  return { prims: tail.prims, seq, key: new Float64Array(n), order: new Uint32Array(n) };
+}
+
+const f32 = Math.fround;
+
+/* `psx_blend::snap_depth_key`: the nearest whole SZ, half away from zero. */
+function snapDepthKey(k) {
+  return Number.isFinite(k) ? Math.sign(k) * Math.round(Math.abs(k)) : k;
+}
+
+/* Key and sort a mesh's semi prims for this frame's `mvp` (column-major)
+ * over `positions`, in f32 as the window keys them; `o.order` holds the
+ * prim slots far to near. */
+function orderSemiPrims(o, indices, positions, mvp) {
+  const n = o.seq.length;
+  const mx = f32(mvp[3]), my = f32(mvp[7]), mz = f32(mvp[11]), mw = f32(mvp[15]);
+  for (let k = 0; k < n; k++) {
+    const i = o.prims[k * 3 + 2];
+    const a = indices[i] * 3, b = indices[i + 1] * 3, c = indices[i + 2] * 3;
+    const cx = f32(f32(f32(positions[a] + positions[b]) + positions[c]) / 3);
+    const cy = f32(f32(f32(positions[a + 1] + positions[b + 1]) + positions[c + 1]) / 3);
+    const cz = f32(f32(f32(positions[a + 2] + positions[b + 2]) + positions[c + 2]) / 3);
+    const w = f32(f32(f32(f32(mx * cx) + f32(my * cy)) + f32(mz * cz)) + mw);
+    o.key[k] = snapDepthKey(w);
+    o.order[k] = k;
+  }
+  const key = o.key, seq = o.seq;
+  o.order.sort((p, q) => (key[q] - key[p]) || (seq[q] - seq[p]));
 }
 
 /* Enhanced lighting's shadow maps - the native renderer's constants
@@ -373,6 +451,9 @@ class TmdRenderer {
      * CBA/TSB stream it was bucketed from, kept for `updateIndices`. */
     this.singleSemiRanges = null;
     this.singleCbaTsb = null;
+    /* The blend pass's per-prim order records (semiPrimOrder). */
+    this.singleSemiOrder = null;
+    this.singleFlatRgba = null;
 
     /* After-image trail for the single-mesh `render()` path (the arts page's
      * per-character tinted echoes). `{ passes: [{ positions, tint: [r,g,b],
@@ -625,8 +706,10 @@ class TmdRenderer {
     /* The original index range, then the per-ABR-mode semi tail the
      * two-pass draw blends from (the opaque pass draws the original range). */
     this.singleCbaTsb = cbaTsb;
+    this.singleFlatRgba = this.useFlatColors ? flatRgba : null;
     const tail = buildSemiTail(indices, cbaTsb);
     this.singleSemiRanges = tail ? tail.ranges : null;
+    this.singleSemiOrder = semiPrimOrder(tail, indices, this.singleFlatRgba);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
@@ -694,6 +777,7 @@ class TmdRenderer {
     const gl = this.gl;
     const tail = this.singleCbaTsb ? buildSemiTail(indices, this.singleCbaTsb) : null;
     this.singleSemiRanges = tail ? tail.ranges : null;
+    this.singleSemiOrder = semiPrimOrder(tail, indices, this.singleFlatRgba);
     gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.DYNAMIC_DRAW);
@@ -801,9 +885,34 @@ class TmdRenderer {
         gl.uniform1i(this.locSemiPass, 1);
         gl.enable(gl.BLEND);
         gl.depthMask(false);
-        for (const r of this.singleSemiRanges) {
-          this._setSemiBlend(r.mode, this.locSemiMode);
-          gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+        const o = this.singleSemiOrder;
+        const single = this.single;
+        if (o && single && single.cpuPositions && single.cpuIndices) {
+          /* Far to near per prim, a run per stretch of one mode contiguous
+           * in its bucket (semiPrimOrder). */
+          orderSemiPrims(o, single.cpuIndices, single.cpuPositions, mvp);
+          let bound = -1;
+          for (let j = 0; j < o.order.length;) {
+            const k = o.order[j];
+            const mode = o.prims[k * 3];
+            const start = o.prims[k * 3 + 1];
+            let count = 3;
+            for (j++; j < o.order.length; j++) {
+              const e = o.order[j];
+              if (o.prims[e * 3] !== mode || o.prims[e * 3 + 1] !== start + count) break;
+              count += 3;
+            }
+            if (mode !== bound) {
+              this._setSemiBlend(mode, this.locSemiMode);
+              bound = mode;
+            }
+            gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
+          }
+        } else {
+          for (const r of this.singleSemiRanges) {
+            this._setSemiBlend(r.mode, this.locSemiMode);
+            gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+          }
         }
         gl.blendEquation(gl.FUNC_ADD);
         gl.depthMask(true);

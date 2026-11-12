@@ -788,6 +788,9 @@ fn zenoir_drain_holds(st: &mut ModuleCamState) -> bool {
 /// PORT: FUN_801F69D8 (PROT 0908; every arm's camera, countdown and clip / range / height gate)
 pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
+    // The victim's display pair `+0x3C` / `+0x40`, which arms 9 and 10 frame
+    // and seat the creature on where the opening reads the live pair.
+    let victim_body = st.victim_body.unwrap_or(v);
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
     let (sin, cos) = trig12(h);
     let point = ModuleSeat {
@@ -927,10 +930,12 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         9 => {
             lift(st, -1);
             st.countdown.0 = SPEED_SCALAR * 60;
+            // The victim's body pair (`lhu v0,0x3c(s6)` / `lhu v0,0x40(s6)`
+            // at `0x801F7874` / `0x801F7888`).
             ArmDirection::shot(ModuleShot {
                 angles: [0, yaw_from(0x800, v.facing), 0],
                 tr: [0, 0x400, 0x800],
-                focus: focus_on(v),
+                focus: focus_on(victim_body),
                 frames: 0x3C,
             })
         }
@@ -942,13 +947,14 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             // `+0x34` / `+0x38` = the victim's body pair (`0x801F79E8..
             // 0x801F7A18`): the creature hangs over the victim.
             if let Some(c) = st.creature.as_mut() {
-                c.x = v.x;
-                c.z = v.z;
+                c.x = victim_body.x;
+                c.z = victim_body.z;
             }
+            // The cut frames the same pair (`0x801F7984` / `0x801F7994`).
             ArmDirection::shot(ModuleShot {
                 angles: [0, yaw_from(0x400, v.facing), 0],
                 tr: [0, 0x600, seats.depth_raw as i16],
-                focus: focus_on(v),
+                focus: focus_on(victim_body),
                 frames: 1,
             })
         }

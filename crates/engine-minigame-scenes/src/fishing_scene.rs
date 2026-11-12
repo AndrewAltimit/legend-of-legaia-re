@@ -459,6 +459,19 @@ pub struct SkyQuad {
 ///
 /// PORT: FUN_801d24ec
 pub fn sky_quads(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> [SkyQuad; 6] {
+    sky_quads_stored(view, -i32::from(lead_x), yaw_units)
+}
+
+/// [`sky_quads`] with the camera's stored focus word `_DAT_80089118` in
+/// place of the lead's `x`: the focus the strip scrolls by is the camera's,
+/// which the wind-up walks out over the water and the close-up sets on the
+/// landed fish.
+// PORT: FUN_801d24ec
+pub fn sky_quads_stored(
+    view: &FieldCameraView,
+    focus_x_stored: i32,
+    yaw_units: i16,
+) -> [SkyQuad; 6] {
     // The horizon point, projected with the yaw zeroed.
     let flat = FieldCameraView { yaw: 0.0, ..*view };
     let ahead = [flat.focus[0], flat.focus[1], flat.focus[2] + 4096.0];
@@ -475,7 +488,25 @@ pub fn sky_quads(view: &FieldCameraView, lead_x: i16, yaw_units: i16) -> [SkyQua
     } else {
         (SKY_OFX as i32, SKY_OFY as i32)
     };
-    sky_strip(sx, sy, -i32::from(lead_x), yaw_units)
+    sky_strip(sx, sy, focus_x_stored, yaw_units)
+}
+
+/// This frame's backdrop vertex positions when the strip's screen rects come
+/// from another camera than the one the frame draws with: `strip` projects
+/// the horizon (the globals the lead's tick saw, see
+/// `VenueCameraDriver::sky_camera`), `view` unprojects the rects so they
+/// land there under the frame's own camera.
+pub fn sky_positions_split(
+    view: &FieldCameraView,
+    strip: &FieldCameraView,
+    focus_x_stored: i32,
+    yaw_units: i16,
+) -> Vec<[f32; 3]> {
+    let mut out = sky_positions_clear(view).to_vec();
+    for q in sky_quads_stored(strip, focus_x_stored, yaw_units) {
+        out.extend(q.xy.map(|p| unproject(view, p[0], p[1], SKY_DEPTH)));
+    }
+    out
 }
 
 /// The six strip quads for a horizon point projected to `(sx, sy)`: the
@@ -853,12 +884,21 @@ impl FishingSurface {
         let (x, y, z, facing) = lead_pose.unwrap_or((seats[0].x, 0, seats[0].z, seats[0].facing));
         // The venue's scripted camera (shore view, cast dolly, in-water view,
         // catch close-up and showcase); the lead's shore view until it arms.
-        let (camera, yaw) = match (lead, crate::fishing_venue::venue_view(mg)) {
-            (Some(_), Some(view)) => (view, mg.fishing_venue.camera.camera().rot[1]),
-            _ => (venue_camera_view(x, y, z, facing), fa_yaw(facing)),
+        let (camera, sky) = match (lead, crate::fishing_venue::venue_view(mg)) {
+            (Some(_), Some(view)) => {
+                let sky = crate::fishing_venue::venue_sky_positions(
+                    &view,
+                    mg.fishing_venue.camera.sky_camera(),
+                );
+                (view, sky)
+            }
+            _ => {
+                let view = venue_camera_view(x, y, z, facing);
+                let sky = sky_positions(&view, x, fa_yaw(facing));
+                (view, sky)
+            }
         };
         scene.camera = camera;
-        let sky = sky_positions(&scene.camera, x, yaw);
         let base = scene.sky_base;
         scene.positions[base..base + sky.len()].copy_from_slice(&sky);
         if let Some((_, hf)) = assets.ground.as_ref() {

@@ -88,6 +88,7 @@ impl BattleCamera {
             action_yaw_drift: 0,
             pending_yaw_seed: None,
             last_action_state: 0,
+            return_exit_pass: false,
             acting_body: None,
             spell_cam: None,
             spell_shot: None,
@@ -236,6 +237,20 @@ impl BattleCamera {
             self.prologue_skip_pending = true;
         }
         self.chain_exit_pass = running;
+    }
+
+    /// The return `0x20`'s exit pass: it stores `0x50` (`0x801E5590`) and
+    /// branches to the state tail `0x801E5F64` without calling
+    /// `FUN_801D5854`, so it arms nothing, and the walker steps the
+    /// increments the last held pass armed. The Done arm re-arms a pass later.
+    /// `running` holds while that pass is the newest.
+    ///
+    /// The engine's camera reads the target after the pass's anim and tint
+    /// ticks, so a re-arm here would see the change that ended the return - a
+    /// get-up that finished, a defeat fade that reached black - one pass
+    /// before retail's Done arm does.
+    pub fn observe_return_exit_pass(&mut self, running: bool) {
+        self.return_exit_pass = running;
     }
 
     pub fn observe_action_state(&mut self, state: u8) {
@@ -1260,6 +1275,12 @@ impl BattleCamera {
     /// the prompt's: a round's first actor already stands on it, and is left
     /// as it was.
     pub fn set_phase_on_state(&mut self, phase: BattleCamPhase, action_state: u8) {
+        // The return's exit pass arms nothing
+        // ([`Self::observe_return_exit_pass`]): the post-strike framing
+        // stands for it, whatever the target's state now reads.
+        if self.return_exit_pass {
+            return;
+        }
         let held = phase == BattleCamPhase::Menu
             && FRAMING_HOLD_STATES.contains(&action_state)
             && matches!(
@@ -1817,6 +1838,12 @@ impl BattleCamera {
             self.pose.yaw = (self.pose.yaw - orbit).rem_euclid(4096.0);
         }
         // A setup state arms nothing: the last tween walks on to its endpoint.
+        // Nor does the return's exit pass (`0x801E5590` -> `0x801E5F64`): the
+        // walker steps the tween the last held pass armed.
+        if self.return_exit_pass {
+            self.step_front_glide();
+            return;
+        }
         if self.framing_held {
             self.step_front_glide();
             return;

@@ -29,7 +29,7 @@
     ['system',  'System files', 'SYSTEM.CNF, CDNAME.TXT'],
     ['archive', 'Archive header', 'PROT / DMY header and TOC'],
     ['iso',     'ISO9660 + padding', 'system area, directory extents, unclaimed sectors'],
-    ['filler',  'Filler', 'pochi slots, zero-filled and constant entries'],
+    ['filler',  'Filler', 'empty placeholder slots, zero-filled and constant entries'],
     ['unknown', 'Unidentified', 'no named detector claims these bytes yet'],
   ];
   const FAMILY_LABEL = Object.fromEntries(FAMILIES.map(f => [f[0], f[1]]));

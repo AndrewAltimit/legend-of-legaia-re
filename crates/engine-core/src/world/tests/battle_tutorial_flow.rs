@@ -931,6 +931,31 @@ fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
     );
 }
 
+/// The standing prompt goes when the round plays out: `0xFE`'s arm calls
+/// `FUN_801D99BC` (`0x801D31E8`), whose `FUN_800355F0` frees the whole
+/// text-actor list, key `1` included (`battle_town01_tetsu_strike`: no prompt
+/// over Tetsu's swing).
+#[test]
+fn the_standing_prompt_leaves_with_the_rounds_hand_off() {
+    let mut world = tutorial_battle_world();
+    world.battle.tutorial_boxes.clear();
+    world.battle.tutorial_standing =
+        Some(legaia_engine_battle_menus::battle_flow::ActiveTutorialBox {
+            text: "standing".to_string(),
+            style: 0,
+            waits_for_input: false,
+            frames_remaining: 0,
+            group: 0,
+            any_press_dismisses: false,
+            placed: None,
+            stands: true,
+        });
+    assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 1);
+    world.begin_round_execution();
+    assert!(world.battle.tutorial_standing.is_none());
+    assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 0);
+}
+
 /// The battle-open banner and the sparring caption are other actors: they
 /// leave the screen when they leave the queue.
 #[test]

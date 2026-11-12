@@ -426,6 +426,41 @@ pub(super) fn cross_over_inner(
                                 // from where the crossing let the player in
                                 // (its halves join on story state), or the
                                 // walk there stalled: any door.
+                                // The planned side may be shut by a door a switch
+                                // of this scene opens: try the switches before
+                                // settling for any door, and again from where
+                                // the walk stalled. `bylon`'s west wing is an
+                                // airlock: its switch (P0[12]) opens the south
+                                // door (P0[16]) and shuts the hall door (P0[19])
+                                // while `0x180` is up, and walking in through
+                                // P0[19] shuts P0[16] again, so the switch is
+                                // pressed from inside the wing.
+                                // The pad hand presses one lever a round
+                                // ([`press_switches`]), so it gets a round
+                                // more for each it may need.
+                                let rounds = if pad_hand() { 4 } else { 2 };
+                                for _ in 0..rounds {
+                                    if !(wanted.is_some()
+                                        && scene_name(session) == x
+                                        && r.is_err()
+                                        && walking(session)
+                                        && !opener_beats_here(session).is_empty())
+                                    {
+                                        break;
+                                    }
+                                    match press_switches(session) {
+                                        Ok(Some(s)) => r = Ok(s),
+                                        Ok(None) => {
+                                            WANT_LANDING.with(|w| *w.borrow_mut() = wanted);
+                                            r = pad_hop(session, graph, cur);
+                                            WANT_LANDING.with(|w| *w.borrow_mut() = None);
+                                        }
+                                        Err(e) => r = Err(e),
+                                    }
+                                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                                        eprintln!("    [cross] {x}: after the switches: {r:?}");
+                                    }
+                                }
                                 if wanted.is_some() && scene_name(session) == x && r.is_err() {
                                     r = pad_hop(session, graph, cur);
                                 }

@@ -418,7 +418,7 @@ The record's program:
 
 | Words | Op | Effect |
 |---|---|---|
-| `000C FF89 0000 0000 0000 0001` | `0x0C` | colour word `0xC9000000`, level `1`: ABE, ABR `1` (additive), double-sided |
+| `000C FF89 0000 0000 0000 0001` | `0x0C` | colour word `0xC9000000`, level `1`: ABE, ABR `1` (which no untextured packet takes, [below](#the-pointers-ink)), double-sided |
 | `0004 0000 0020 0000` | `0x04` | `+0x82 = 0x100`: a steady turn |
 | `0018 4000` / `0009 000F` / `0019` | loop | wait `15`, forever |
 
@@ -438,6 +438,27 @@ overworld bit. Its mesh is all `F*` / `G*` packets, so it draws through the
 field part pass's colour half. Disc pins:
 `engine-scene-host/tests/map_display_pointer_disc.rs` and the page's
 `web-play/tests/map_display_pointer_page.rs`.
+
+#### The pointer's ink
+
+The program's colour word asks for an add (ABR `1`), and the pointer does not
+draw as one. The dispatcher stages the word's two blend fields apart
+(`0x80043504..0x8004351C`): ABR `<< 21` into `0x1F800030`, ABE `<< 25` into
+`0x1F800034`. The untextured leaves read only the ABE word and OR it into the
+packet's code byte (`lw v0,-0x2e0(t2)` / `or t8,t8,v0` at `0x800449B8` in the
+kind-12 leaf, `0x80044B94` in kind 13); only the textured leaves read the ABR
+word, into their page halfword. An `F*` / `G*` packet has no page, so it blends
+on the draw mode the chain last set.
+
+Retail's newest ordering table on `world_map_display_map01_retail` shows it:
+the pointer is `0x22` / `0x2A` packets (flat, semi) whose reds are the mesh's
+baked face colours one depth-cue step down (`94` to `93`, `178` to `177`), with
+no `E1` among them and the textured packets around them leaving ABR `0`.
+Rasterised in chain order (`scripts/mednafen/ot-raster.py`) they are the dark
+red facets on screen: the baked shading, averaged over the ground. The port's
+colour half takes the word's ABE and not its ABR
+(`SummonPartDraw::apply_render_state_color`), so the untextured prims blend on
+the PSX default mode `0`.
 
 The retail visible tile window is not applied - the port draws the kingdom
 whole.

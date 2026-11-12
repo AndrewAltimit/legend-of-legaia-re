@@ -263,3 +263,34 @@ fn a_two_state_prop_poses_from_the_arm_its_flag_picks() {
         assert_eq!(anim.frame(), if up { 14 } else { 0 });
     }
 }
+
+#[test]
+fn a_spawn_prologue_clear_after_a_set_drops_the_class_bit() {
+    use legaia_scene_formats::field_disasm::FlagKind;
+    // The shape of `bylon`'s airtight-chamber door (P0[0]): `31 00` raises
+    // the walk-through bit, and with the story flag clear the pass goes on to
+    // `4C 35` / `32 00`, which drops it again, so the door spawns solid.
+    let rec: &[u8] = &[
+        0x00, 0x00, //
+        0x25, // prologue marker (2)
+        0x31, 0x1E, // interact class (3)
+        0x4C, 0x36, // end + hold (5)
+        0x31, 0x00, // walk-through (7)
+        0x72, 0xA1, 0x06, 0x00, // 0x2A1 set -> 17 (9)
+        0x4C, 0x35, // reset + hold (13)
+        0x32, 0x00, // solid again (15)
+        0x21, // park (17)
+        0x26, 0xFE, 0xFF, // idle loop (18)
+    ];
+    for (up, cflags) in [(false, 0x4000_0000), (true, 0x4000_0001)] {
+        let mut flags = |idx: u16, kind: FlagKind| {
+            assert_eq!((idx, kind), (0x2A1, FlagKind::Test));
+            up
+        };
+        let (p, at) = decode_prop_program_with(rec, 2, Some(&mut flags));
+        assert_eq!(at, 18, "0x2A1 up {up}");
+        assert_eq!(p.spawn_cflags, cflags, "0x2A1 up {up}");
+    }
+    // The linear walk runs both arms: the clear comes last.
+    assert_eq!(decode_prop_program(rec, 2).spawn_cflags, 0x4000_0000);
+}

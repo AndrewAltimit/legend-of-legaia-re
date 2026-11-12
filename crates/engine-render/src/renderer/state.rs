@@ -164,6 +164,9 @@ pub struct Renderer {
     /// The next frames build on the last one's pixels instead of a clear
     /// ([`Renderer::set_frame_persist`]).
     pub(super) frame_persist: std::cell::Cell<bool>,
+    /// Every presented frame enters the ring, so a persisting run that starts
+    /// later reads the frames before it ([`Renderer::set_frame_ring_keep`]).
+    pub(super) frame_ring_keep: std::cell::Cell<bool>,
     /// The frames a persisting frame reads back from, oldest at
     /// [`Self::frame_ring_next`].
     pub(super) frame_ring: std::cell::RefCell<Vec<wgpu::Texture>>,
@@ -172,6 +175,8 @@ pub struct Renderer {
     /// The texel rule of PSX mode on the native target
     /// ([`Self::set_psx_texel_rule`]).
     pub(super) psx_texel_rule: std::cell::Cell<PsxTexelRule>,
+    /// Keep each mesh upload's CPU streams ([`Self::set_keep_cpu_meshes`]).
+    pub(super) keep_cpu_meshes: std::cell::Cell<bool>,
     /// PSX-faithful rendering mode. When `true`, the VRAM-mesh shader uses
     /// affine (linear-in-screen-space) UV interpolation instead of
     /// perspective-correct, and snaps clip-space x/y to integer pixel
@@ -770,6 +775,14 @@ impl Renderer {
     /// corners' mean. Held until the next call.
     pub fn set_draw_order(&self, textured: Vec<u8>, color: Vec<u8>) {
         *self.draw_order.borrow_mut() = (textured, color);
+    }
+
+    /// Keep a CPU copy of every mesh uploaded from here on
+    /// ([`UploadedVramMesh::cpu_copy`]): the opt-in battle frame cost prices
+    /// the triangles a frame draws off them. Off by default; uploads made
+    /// before the call keep none.
+    pub fn set_keep_cpu_meshes(&self, on: bool) {
+        self.keep_cpu_meshes.set(on);
     }
 
     /// Stage a per-draw NCLIP word for the next scene render: `textured[i]`

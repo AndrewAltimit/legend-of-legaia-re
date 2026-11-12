@@ -46,6 +46,7 @@
 use legaia_engine_system::input::PadButton;
 use legaia_engine_title::publisher_logos::{
     LOGO_CONTRAIL, LOGO_COUNT, LOGO_PROKION, LOGO_QUADS, LOGO_SCEA, RETAIL_SEQUENCE, STAGE,
+    TAIL_FRAMES,
 };
 use legaia_web_play::runtime::LegaiaRuntime;
 
@@ -64,8 +65,13 @@ fn letterbox() -> (i32, i32) {
 }
 
 /// Frames the whole sequence takes at a neutral pad: every step's
-/// fade-in + hold + fade-out.
+/// settle + fade-in + hold + fade-out, then the tail's settle.
 fn sequence_frames() -> u32 {
+    steps_frames() + u32::from(TAIL_FRAMES)
+}
+
+/// Frames to the end of the last step; the tail after it shows no logo.
+fn steps_frames() -> u32 {
     RETAIL_SEQUENCE.iter().map(|s| s.frames() as u32).sum()
 }
 
@@ -143,8 +149,17 @@ fn rung2_sequence(rt: &mut LegaiaRuntime) -> Result<(), String> {
     let mut done = false;
     while frames < budget + 8 {
         let (rects, alpha) = frame_quads(rt);
-        if rects.is_empty() {
+        if rects.is_empty() && frames < steps_frames() {
             return Err(format!("logo frame {frames} composed no quads"));
+        }
+        if rects.is_empty() {
+            // The tail's settle: black until the sequence ends.
+            done = rt.boot_logos_step(0);
+            frames += 1;
+            if done {
+                break;
+            }
+            continue;
         }
         match logo_of(&rects) {
             Some(idx) => {

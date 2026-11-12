@@ -1090,6 +1090,7 @@ pub fn equip_draws(
         record: r,
         equip_info,
         item_effects: world.and_then(|w| w.tables.item_effects.as_ref()),
+        passives: world.map(|w| &w.tables.accessory_passives),
     });
     let mut model = ps::equip_screen_model(
         session,

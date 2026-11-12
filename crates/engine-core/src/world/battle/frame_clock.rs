@@ -53,13 +53,35 @@ impl World {
                 // An XA clip's read span: the frame runs on the CD interrupt
                 // path (`FUN_8005DAB0`) once the stream is up.
                 match xa_passes {
-                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(n, cost),
+                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
+                        n,
+                        cost,
+                        self.toggles.battle_cd_timing,
+                    ),
                     None => cost,
                 }
             },
             cost_of_step,
         );
+        let cost = match self.battle.drawn_table_cost {
+            Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
+            _ => cost,
+        };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+    }
+
+    /// Note the GPU's wait over the battle frame the host just drew, in
+    /// hblanks (draw plus DMA of its table,
+    /// `legaia_engine_system::gpu_draw_cost`). The next pass's cost is the
+    /// larger of its CPU term and this while
+    /// `WorldToggles::battle_gpu_cost_step` is up: retail's entry is
+    /// `max(cpu, dma + draw of the previous pass's table)`, the table the GPU
+    /// draws while the pass runs (`DrawOTag` at `0x80017288`, `DrawSync(0)`
+    /// at `0x800174D8`). A no-op outside a battle.
+    pub fn note_drawn_table_cost(&mut self, hblanks: u16) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.drawn_table_cost = Some(hblanks);
+        }
     }
 
     /// The passes since a loading battle CD-XA clip's cue, `None` while none
@@ -244,8 +266,18 @@ impl World {
         }
     }
 
-    /// Install a seeded step while the action SM sits in its state, and the
-    /// default outside it. Called after every action-SM step.
+    /// Whether the action state is the one a replay's seeded step speaks for.
+    /// A seed on the magic band's sustained state `0x2B` also opens on `0x2A`:
+    /// the pass after the clip commit is the `0x2A` pass storing `0x2B`, and it
+    /// runs on the step the capture's ring holds for it.
+    fn battle_frame_step_seed_holds(&self, state: u8) -> bool {
+        self.battle_ctx.action_state == state
+            || (state == 0x2B && self.battle_ctx.action_state == 0x2A)
+    }
+
+    /// Install a seeded step while the action SM sits in its state, and hand
+    /// the frame back to the ordinary step on the pass that leaves it. Called
+    /// after every action-SM step.
     pub(in crate::world) fn apply_battle_frame_step_seed(&mut self) {
         let Some((step, state)) = self.clock.battle_frame_step_seed else {
             return;
@@ -271,11 +303,17 @@ impl World {
                     .as_ref()
                     .is_some_and(|c| c.close_up_accum() >= hold)
             });
-        // A seed on the magic band's sustained state `0x2B` also opens on
-        // `0x2A`: the pass after the clip commit is the `0x2A` pass storing
-        // `0x2B`, and it runs on the step the capture's ring holds for it.
-        let in_state = self.battle_ctx.action_state == state
-            || (state == 0x2B && self.battle_ctx.action_state == 0x2A);
+        let in_state = self.battle_frame_step_seed_holds(state);
+        // Outside its state the seed hands the frame back once, on the pass
+        // that leaves it; from there the arm tables and the ring own the
+        // step (`Self::apply_cast_arm_frame_step`). Taking the ordinary step
+        // on every pass outside it overrode a summon band's arm steps for
+        // the whole cast (`theeder_summon_mid_cast`, seeded on `0x33`).
+        let left = !in_state && std::mem::take(&mut self.battle.frame_step_seed_in_state);
+        self.battle.frame_step_seed_in_state = in_state;
+        if !in_state && !left {
+            return;
+        }
         let want = if in_state && reached {
             step
         } else {
@@ -305,13 +343,29 @@ impl World {
     /// frames to stretch.
     pub(in crate::world) fn apply_cast_arm_frame_step(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
-        if !self.toggles.battle_sm_frame_cadence || self.clock.battle_frame_step_seed.is_some() {
+        if !self.toggles.battle_sm_frame_cadence {
             self.battle.pending_frame_step = None;
             return;
         }
-        if self.battle.retail_step_track.is_some() {
+        // A recording's own steps outrank a capture's seeded one: the track
+        // holds every frame the seed's one state does. Before the film begins
+        // the fight runs on its own rules.
+        if self
+            .battle
+            .retail_step_track
+            .as_ref()
+            .is_some_and(|t| t.armed())
+        {
             self.battle.pending_frame_step = None;
             self.apply_retail_step_track();
+            return;
+        }
+        if self
+            .clock
+            .battle_frame_step_seed
+            .is_some_and(|(_, state)| self.battle_frame_step_seed_holds(state))
+        {
+            self.battle.pending_frame_step = None;
             return;
         }
         let state = self.battle_ctx.action_state;
@@ -326,6 +380,7 @@ impl World {
                 legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
                     entry,
                     self.casting.module_phase,
+                    self.toggles.battle_cd_timing,
                 )
             });
         let measured = measured.or_else(|| {
@@ -336,6 +391,7 @@ impl World {
             legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
                 spell,
                 self.casting.module_phase,
+                self.toggles.battle_cd_timing,
             )
         });
         // `FUN_80016B6C` closes a pass by storing the step this frame's cost
@@ -351,9 +407,12 @@ impl World {
         // what the passes before left, so a cheaper arm after a dear one runs
         // the ring's step until the dear entries leave it (Kiss of Death's arm
         // 5 runs `3` for sixteen passes after arm 4's clamped frames, then `2`).
-        // A frame the XA stream loads overruns its step (`span_extra`); an
+        // A frame the XA stream loads overruns its step on PCSX-Redux
+        // (`span_extra`); a console's polls leave it inside its step, and an
         // arm table's step is the length its own frames ran.
         let extra = if measured.is_none()
+            && self.toggles.battle_cd_timing
+                == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
             && self.toggles.battle_party_cost_step
             && self.battle_xa_loads_frame()
         {
@@ -419,11 +478,58 @@ impl World {
         }
     }
 
-    /// A film's retail step for the frame this pass opens
-    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
+    /// Start a film's retail step track on the pass just run
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack::arm`]):
+    /// the recorder calls it on the tick its recording begins, the cast's
+    /// begin or the capture's gate. A harness seat.
+    pub fn arm_retail_step_track(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte()
+            || state == S::SummonReturn.as_byte()
+            || state == S::MagicCapturePhase2.as_byte();
+        let phase = if band { self.casting.module_phase } else { 0 };
+        let Some(track) = self
+            .battle
+            .retail_step_track
+            .as_mut()
+            .filter(|t| !t.armed())
+        else {
+            return;
+        };
+        // The recording's first frame opens on the state the arming pass
+        // left: its step is the next pass's, which both drains by it and
+        // spans it. It goes in as the step that pass's frame claims
+        // (`Self::take_pending_frame_step`); the recorder arms ahead of the
+        // tick after the arming pass, so any later claim is a later frame.
+        // A key the film never saw leaves the engine's own step in place.
+        if let Some(want) = track.arm(state, phase) {
+            self.battle.pending_frame_step = Some(want);
+            self.battle.pending_frame_step_from = u64::MAX;
+        }
+    }
+
+    /// The step of the battle frame this tick belongs to, as a module arm
+    /// that runs inside the pass reads it: the step the frame claimed when
+    /// it opened ([`Self::take_pending_frame_step`]). A film's retail step
+    /// track hands its step on through that same claim
+    /// ([`Self::apply_retail_step_track`]), so the module reads the
+    /// recording's step for the frame without looking ahead.
+    pub(in crate::world) fn module_frame_step(&self) -> u8 {
+        self.battle_frame_step().max(1)
+    }
+
+    /// A film's retail step for the frame the next pass opens
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]), the
+    /// step that pass drains by and the frame it spans. It goes in as the
+    /// pending step the next frame claims, the way an arm table's does: a
+    /// pass's step and its frame's length are one value. Re-timed onto this
+    /// pass's own frame instead, the frame lasted the next pass's step while
+    /// the next pass drained by this one's, so a seated film either kept
+    /// retail's wall timing and drained a frame late, or drained on time
+    /// and moved every step change's frame boundary by a pass.
     fn apply_retail_step_track(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
-        let tick = self.clock.display_frames;
         let Some(track) = self.battle.retail_step_track.as_mut() else {
             return;
         };
@@ -435,12 +541,8 @@ impl World {
         let Some(want) = track.next_step(state, phase) else {
             return;
         };
-        if self.battle.frame_clock.step != want {
-            self.battle.frame_clock.retime_frame(tick, want);
-            if let Some(cam) = self.battle.camera.as_mut() {
-                cam.set_frame_step(want);
-            }
-        }
+        self.battle.pending_frame_step = Some(want);
+        self.battle.pending_frame_step_from = self.battle_frame_id();
     }
 
     /// Start the capture band's CD wait on the state the SM just entered.
@@ -876,6 +978,23 @@ impl World {
                 == 0
     }
 
+    /// Whether this module tick is the last of its pass: on the battle-frame
+    /// cadence a pass runs its `delta` one-vsync ticks back to back
+    /// ([`Self::module_pass`]), and only the last has drained, drifted and
+    /// walked what retail's one `delta`-scaled call has when it makes its
+    /// calls. Off the cadence a pass is one tick, the frame-opening one.
+    pub(in crate::world) fn module_tick_closes_pass(&self) -> bool {
+        if !self.toggles.battle_sm_frame_cadence {
+            return self.module_tick_opens_pass();
+        }
+        self.casting.module_cam.countdown.1 == 0
+            && self
+                .battle
+                .frame_clock
+                .ticks_into_frame(self.clock.display_frames)
+                == 0
+    }
+
     /// One SM pass's call into a paged cast module (`FUN_801F1ED4` /
     /// `FUN_801F2160`), at retail's frame delta.
     ///
@@ -899,7 +1018,8 @@ impl World {
     pub(in crate::world) fn module_pass(&mut self, tick: fn(&mut World) -> bool) -> bool {
         let cadence = self.toggles.battle_sm_frame_cadence;
         let delta = if cadence {
-            self.battle_frame_step().max(1)
+            // The frame this pass opens ([`Self::module_frame_step`]).
+            self.module_frame_step()
         } else {
             if self.casting.module_handover_waits {
                 if self
@@ -919,6 +1039,7 @@ impl World {
             let phase = self.casting.module_phase;
             self.casting.module_pass_repeat = i != 0;
             self.casting.module_tick_drift = None;
+            self.casting.module_tick_after_drift = None;
             // The one-vsync ticks of the pass still owed after this one: an
             // arm leaving on this tick has drained `delta` ticks' worth by
             // retail's clock (the whole pass's product in one `subu`), and
@@ -935,6 +1056,7 @@ impl World {
                 // the one that hands over: the rest of the pass's drift.
                 if live && self.casting.module_phase != phase {
                     self.drift_rest_of_pass(delta - 1 - i);
+                    self.repeat_module_seat_moves(phase, delta - 1 - i);
                 }
                 break;
             }
@@ -944,10 +1066,20 @@ impl World {
 
     /// Re-apply the handing-over tick's camera drift for the `ticks` of its
     /// pass the port does not run ([`Self::module_pass`]).
+    ///
+    /// A director in retail's drift-first order (PROT 0959, 0960) drifts the
+    /// globals by the whole pass's `k * delta` and only then makes its pass
+    /// stores and its builder call, so the rest of the drift goes in ahead of
+    /// them: the stores and the shot the tick made are made again over it. A
+    /// cut then lands on its own endpoint, where drifting after it left
+    /// Plasma Strike's arm-7, 9 and `0x0B` cuts a step-`2` or `3` drift past
+    /// retail's (`yaw 496`, TR z `1075` against `512` / `819` on arm 8 of the
+    /// `--retail-steps` film).
     fn drift_rest_of_pass(&mut self, ticks: u8) {
         let Some(d) = self.casting.module_tick_drift else {
             return;
         };
+        let after = self.casting.module_tick_after_drift.take();
         let Some(cam) = self.battle.camera.as_mut() else {
             return;
         };
@@ -955,6 +1087,23 @@ impl World {
             cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
             if d.tr_x != 0 {
                 cam.drift_module_tr_x(d.tr_x);
+            }
+        }
+        if ticks == 0 {
+            return;
+        }
+        if let Some((set, shot)) = after {
+            if let Some(set) = set {
+                cam.set_module_pose(
+                    set.yaw.map(f32::from),
+                    set.tr_y.map(|v| v as f32),
+                    set.tr_z.map(|v| v as f32),
+                    set.focus_xz.map(|[x, z]| [f32::from(x), f32::from(z)]),
+                );
+            }
+            if let Some(shot) = shot {
+                let (pose, raw_z) = shot.pose();
+                cam.arm_module_shot(pose, raw_z, u32::from(shot.frames));
             }
         }
     }
@@ -1179,6 +1328,83 @@ mod tests {
         assert_eq!((after - before).rem_euclid(4096.0), 128.0);
     }
 
+    /// A drift-first director's handing-over pass drifts the globals by the
+    /// whole pass and only then cuts (PROT 0960's arms 7, 9 and `0x0B`): the
+    /// rest of the drift goes in ahead of the cut, which lands on its own
+    /// endpoint.
+    #[test]
+    fn a_drift_first_handover_cuts_after_the_whole_pass_drift() {
+        use legaia_engine_battle_vm::battle_cam_script::{
+            BattleCamPhase, BattleCamera, ModuleShot,
+        };
+        const CUT: ModuleShot = ModuleShot {
+            angles: [0, 512, 0],
+            tr: [0, 825, 0x200],
+            focus: [0, 0, 0],
+            frames: 1,
+        };
+        fn drift_then_cut(w: &mut World) -> bool {
+            let d = legaia_engine_cast::cast_module_camera::CaptureDrift {
+                yaw: -4,
+                tr_z: 64,
+                ..Default::default()
+            };
+            w.casting.module_tick_drift = Some(d);
+            if let Some(cam) = w.battle.camera.as_mut() {
+                cam.drift_module(d.pitch, d.yaw, d.tr_y, d.tr_z);
+                let (pose, raw_z) = CUT.pose();
+                cam.arm_module_shot(pose, raw_z, u32::from(CUT.frames));
+            }
+            w.casting.module_tick_after_drift = Some((None, Some(CUT)));
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(4);
+        w.battle.camera = Some(BattleCamera::new(BattleCamPhase::Menu, 0));
+        w.module_pass(drift_then_cut);
+        let (want, _) = CUT.pose();
+        let got = w.battle.camera.as_ref().unwrap().pose();
+        assert_eq!(got.yaw, want.yaw);
+        assert_eq!(got.tr[2], want.tr[2]);
+    }
+
+    /// An arm that hands over mid-pass moves its seats for the rest of the
+    /// pass by its held ticks' every-pass moves (PROT 0958's runs), and a
+    /// held pass of another arm owes nothing.
+    #[test]
+    fn a_handover_pass_moves_the_seats_for_its_whole_delta() {
+        use legaia_engine_battle_loop::cast_fx_state::ModulePassMoves;
+        fn hand_over(w: &mut World) -> bool {
+            w.actors[0].move_state.world_z -= 64;
+            w.casting.module_phase = w.casting.module_phase.wrapping_add(1);
+            true
+        }
+        let mut w = World::new();
+        w.toggles.battle_sm_frame_cadence = true;
+        w.set_battle_frame_step(4);
+        w.actors.push(crate::world::Actor::default());
+        w.casting.module_phase = 9;
+        w.casting.module_held_moves = Some(ModulePassMoves {
+            phase: 9,
+            seats: [Some((0, -64, 0)), None],
+            focus_z: 0,
+        });
+        w.module_pass(hand_over);
+        assert_eq!(w.actors[0].move_state.world_z, -256);
+        assert!(w.casting.module_held_moves.is_none());
+        // A record from another arm is not this one's.
+        w.actors[0].move_state.world_z = 0;
+        w.casting.module_held_moves = Some(ModulePassMoves {
+            phase: 3,
+            seats: [Some((0, -64, 0)), None],
+            focus_z: 0,
+        });
+        w.module_pass(hand_over);
+        assert_eq!(w.actors[0].move_state.world_z, -64);
+    }
+
     /// On the per-vsync cadence an arm that hands over leaves the next arm
     /// to the tick that opens the next battle frame: the band holds on the
     /// ticks between without entering the module.
@@ -1260,6 +1486,35 @@ mod tests {
             }
         }
         assert_eq!(passes, [10, 13, 16]);
+    }
+
+    /// Under `battle_gpu_cost_step` a pass costs the larger of its CPU term
+    /// and the GPU's wait over the frame the host drew last; off, the drawn
+    /// cost is stored and never read.
+    #[test]
+    fn the_drawn_table_raises_a_pass_only_under_the_gpu_toggle() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x1E;
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2);
+        // A drawn table over the step-3 threshold `0x1FF`.
+        w.note_drawn_table_cost(0x240);
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2, "the toggle is off");
+        w.toggles.battle_gpu_cost_step = true;
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 3);
+        // A table under the CPU term leaves the pass on its CPU cost.
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_gpu_cost_step = true;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x1E;
+        w.note_drawn_table_cost(20);
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 2);
     }
 
     #[test]
@@ -1452,9 +1707,10 @@ mod tests {
     }
 
     #[test]
-    fn an_xa_read_span_runs_overrunning_step_four_frames() {
-        use legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA;
+    fn an_xa_read_span_runs_overrunning_step_four_frames_on_pcsx_redux() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_SPAN_EXTRA};
         let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.audio.battle_xa_busy_frames = 60;
         w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
@@ -1491,8 +1747,9 @@ mod tests {
     /// the Amethyst Heal recording costs `392`, `507`, then the clamp.
     #[test]
     fn a_clips_stream_loads_the_frame_two_passes_after_its_cue() {
-        use legaia_engine_battle_loop::frame_clock::XA_STREAM_FRAME_COST;
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_FRAME_COST};
         let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.party.party_count = 1;
         w.battle_ctx.action_state = 0x3E;
         w.audio.battle_xa_busy_frames = 200;
@@ -1506,6 +1763,31 @@ mod tests {
         }
         assert!(costs[0] < 0x1FF && costs[1] < 0x1FF, "{costs:?}");
         assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
+    }
+
+    /// On a console the clip's stop watch takes a sixteenth of the CPU: the
+    /// frames after the cue cost their work over that, inside their step.
+    #[test]
+    fn a_console_clip_leaves_the_frame_near_its_own_cost() {
+        use legaia_engine_cast::cast_module_frame_step::{CdTiming, console_poll_cost};
+        let mut w = World::new();
+        w.toggles.battle_cd_timing = CdTiming::Console;
+        w.party.party_count = 1;
+        w.battle_ctx.action_state = 0x3E;
+        let base = legaia_engine_battle_loop::frame_clock::measured_frame_cost_at(1, 0x3E, 2);
+        w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+        let mut costs = Vec::new();
+        for _ in 0..3 {
+            w.push_frame_cost(None);
+            costs.push(w.battle.frame_cost_ring.newest());
+            w.clock.display_frames += w.battle.frame_clock.span();
+        }
+        assert_eq!(costs[2], console_poll_cost(base), "{costs:?}");
+        assert!(w.battle.frame_cost_step < 4);
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
 
     #[test]

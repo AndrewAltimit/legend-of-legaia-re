@@ -186,14 +186,14 @@ canvas.world-canvas {
     tables</a>; the map itself comes from your disc. Matching the two is a hand-made join: the
     walkthrough name and the disc label are not always obviously related (<code>balden</code> is
     Vidna, <code>geremi</code> is Jeremi), and a few disc labels have no walkthrough entry at all -
-    those cards say "CDNAME scene not yet pinned".
+    those cards say "disc scene not yet matched".
   </p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="world-overview.html">World map in 3D</a>
     <a href="shops.html">Shops &amp; vendors</a>
     <a href="npcs.html">NPC catalog</a>
-    <a href="formats/cdname.html">CDNAME map</a>
+    <a href="formats/cdname.html">Scene name map (CDNAME)</a>
     <a href="formats/scene-bundles.html">Scene bundles</a>
     <a href="subsystems/field-locomotion.html">Field locomotion</a>
   </div>
@@ -454,8 +454,8 @@ canvas.world-canvas {
     const sideStrip = sideLines.length ? `<div class="tile-tags">${sideLines.join('')}</div>` : '';
 
     const sceneInfo = scene
-      ? `<div class="tile-scene"><a href="viewer.html?scene=${scene.label}">CDNAME · <code>${scene.label}</code></a> &middot; <span class="tile-cat tile-cat-${scene.category}">${scene.category}</span></div>`
-      : `<div class="tile-scene tile-scene-unmapped">CDNAME scene not yet pinned</div>`;
+      ? `<div class="tile-scene"><a href="viewer.html?scene=${scene.label}" title="The scene's label on the disc">disc label · <code>${scene.label}</code></a> &middot; <span class="tile-cat tile-cat-${scene.category}">${scene.category}</span></div>`
+      : `<div class="tile-scene tile-scene-unmapped">disc scene not yet matched</div>`;
 
     /* The CTA renders the map on this page (the navigator above). It only
      * works once a disc is open, so it's a plain link to the map section when

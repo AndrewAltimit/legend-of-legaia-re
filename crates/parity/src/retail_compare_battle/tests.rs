@@ -983,6 +983,33 @@ fn a_charge_body_shot_walks_back_no_further_than_its_origin() {
     assert_eq!(shown.yaw, 2366.0 - 4.0 * 99.0);
 }
 
+/// Kiss of Death's arm-0 shot (PROT 0955, `0xC` frames) sets out from the
+/// magic-capture fade, which was still walking: the pass that armed it walked
+/// its own two units, and the pass before stood a further step on the fade's
+/// framing (`battle_map01_lippian_kiss_of_death_mid_cast`: TR z `4608`
+/// walking to `1603` at `301` a unit, frame on screen at `5812`).
+#[test]
+fn a_kiss_of_death_shot_walks_back_past_its_origin_on_the_older_step() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let lippian = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 5);
+    put8(&mut ram, ctx + 0x279, 1);
+    put32(&mut ram, ACTOR_TABLE + 5 * 4, lippian);
+    put8(&mut ram, lippian + 0x1DF, 0x6E);
+    put32(&mut ram, 0x8008_40C0, 4608);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 301);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 1603);
+    assert_eq!(module_shot_frames(&ram, ctx), Some(0xC));
+    let shown = displayed_module_cam_live(&ram, ctx, &[4, 2]);
+    assert_eq!(shown.tr[2], 4608.0 + 4.0 * 301.0);
+    // Off its arm-1 wait the shot is not one the reader knows.
+    put8(&mut ram, ctx + 0x279, 2);
+    assert_eq!(module_shot_frames(&ram, ctx), None);
+}
+
 /// The magic band rewrites a party-wide `8` to the lone member's slot
 /// (`ctx[+0x24A] - 1`, `0x801E431C`); the seed read `8`, so the reader hands
 /// the replay `8` back - only for an all-allies spell on that slot.

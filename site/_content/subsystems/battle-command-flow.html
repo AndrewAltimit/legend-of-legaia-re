@@ -113,7 +113,7 @@
   </div>
   <p>The &ldquo;leaves to&rdquo; column is the exhaustive set of byte stores to <code>ctx+6</code> inside each handler's address range, resolved by constant propagation. Two things in it are easy to get wrong:</p>
   <ul>
-    <li><strong>The target sub-cursors are two disjoint runs</strong>, <code>0x5B..0x5E</code> and <code>0x64..0x67</code>. Nothing handles <code>0x5F..0x63</code>.</li>
+    <li><strong>The target sub-cursors are two disjoint runs</strong>, <code>0x5B..0x5E</code> and <code>0x64..0x67</code>. Nothing handles <code>0x5F..0x63</code>. The row's target flags pick one: <code>0x40</code> the enemy side, <code>0x20</code> every target on it. Raising an all-target state writes the side's group code into the member's target byte <code>+0x1DD</code> (<code>9</code> for every monster, <code>8</code> for the whole party), and backing out re-picks the first living monster. The Spikefish Flute is the one consumable that reaches the all-enemies state <code>0x5D</code>.</li>
     <li><strong><code>0xFF</code> is not a case.</strong> Nothing tests for it; idle is reached by falling through to the default like any unlisted value. <code>0xFE</code> is the real &ldquo;round armed&rdquo; case.</li>
   </ul>
   <p>This byte and the action SM's <code>ctx[+0x07]</code> are cursors over the same struct and their value spaces collide: <code>ctx[7] == 0x64</code> is the start of a party run, <code>ctx[6] == 0x64</code> is a target confirm. Say which byte a state number belongs to.</p>

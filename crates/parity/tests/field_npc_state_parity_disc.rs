@@ -84,6 +84,61 @@ const CONC3_INN_ARRIVAL: &str = "post-arrival-record capture: the conc innkeeper
      as retail's own entry with that bank does. The engine's run of the arrival record parks \
      them (engine-scene-host conc3_inn_arrival_disc.rs)";
 
+/// garmel `P2[12]` (Zeto's appearance) stages the party on the player. Every
+/// capture below is inside that record: its bank holds `0x198` (the record's
+/// `51 98` at +0x12) and `0x363` (`53 63` at +0xBB) and not `0x199` (its tail
+/// `51 99` at +0x9C0). The record parks `0x1B` / `0x1C` (P1[3] / P1[4]) with
+/// `CC 1B 51 7F 7F 80 ..` / `CC 1C 51 7F 7F 80 ..` (+0xCE / +0xD5), then seats
+/// them on the player with `CC 1B 37` / `CC 1C 37` (+0xDC / +0xDF) and walks
+/// them out with `A2` ExecMove. Retail's nodes keep the same player-relative
+/// offsets in all three states ((+64, +192) and (-64, +64)); a cold entry
+/// holds their `(127,127)` header parks, as retail's own entry does
+/// (garmel_field_card_boot and chapter2_garmel_pre_songi park both).
+const GARMEL_P2_12_PARTY: &str = "mid-beat capture inside garmel P2[12]: 0x198 / 0x363 set, \
+     0x199 clear; the record seats 0x1B / 0x1C on the player (CC 1B 37 / CC 1C 37 at \
+     +0xDC / +0xDF) and walks them out, so retail holds them at fixed player-relative \
+     offsets while a cold entry holds the (127,127) header parks the fresh-entry \
+     garmel captures show. The 4C 37 player-coord copy is 0x801E0FB0; the staging is \
+     pinned by engine-scene man_midvisit_rearrangement_disc.rs";
+
+/// Zeto (`0x1D`, P1[5]) is seated by the same record.
+const GARMEL_P2_12_ZETO: &str = "mid-beat capture inside garmel P2[12]: the record seats Zeto \
+     (0x1D) with CC 1D 51 17 38 00 37 at +0x3E7, tile (23, 56) = (3008, 7232), exactly \
+     retail's node; the capture is parked at +0x544, before the record's +0x9A2 re-park. \
+     A cold entry holds the header park";
+
+const VOZZ_P2_17_SEATS: &str = "mid-beat capture inside vozz P2[17] (Ozma's hatching, gated \
+     by the poked 0x2C3 the record clears at +0x12): the record seats 0x06 / 0x07 / 0x09 / \
+     0x0B (P1[2] / P1[3] / P1[5] / P1[7]) with its own 4C 51 seats - +0x2AD (233, 100) = \
+     (13568, 12864) for 0x06, +0x541 / +0x548 / +0x54F = (15680, 12800) / (15808, 12864) / \
+     (16000, 13184) for 0x09 / 0x07 / 0x0B, each retail's node exactly in the crawl state, \
+     and the hover state's nodes within one step of the +0x32 / +0x40 seats after their \
+     ExecMoves. A cold entry holds the prologue arrangement";
+
+const VOZZ_P2_17_FLAG_1F: &str = "vozz P1[0]'s install slice sets 0x1F (50 1F at +0x49) on \
+     every load and P2[17] clears it (60 1F at +0x4F1); the crawl capture is parked at \
+     +0x7CE, past the clear, and the hover capture (+0x39C) still holds it set";
+
+const BYLON_P2_6_PARTY: &str = "mid-beat capture inside bylon P2[6] (the Mist arrives, 0x2A2 \
+     set by its +0x14): the record seats 0x48 / 0x35 (P1[37] / P1[18]) on the player with \
+     CC 48 37 / CC 35 37 at +0x96 / +0x99 and walks them out with A2 ExecMove, so retail \
+     holds them a step or two from the player; a cold entry holds their header parks";
+
+const NILBOA_P2_7_SEATS: &str = "mid-beat capture inside nilboa P2[7] (the Delilas \
+     introduction, parked at +0xC21 / +0xC6A): the record parks 0x30 (P1[22]) with \
+     A3 30 7F 7F at +0x53, seats 0x31 / 0x32 (P1[23] / P1[24]) with CC 31 51 DD 76 .. / \
+     CC 32 51 E6 7A .. at +0x9F / +0xA6 ((11968, 15168) before the landing arc, \
+     (13184, 15680) exactly) and 0x2E (P1[20]) with A3 2E 6D 76 at +0x700 ((14016, 15168), \
+     exactly retail's node). A cold entry holds the prologue seats";
+
+const NILBOA_RAVINE_BLOCKS: &str = "visit history, inferred: the two push blocks 0x27 / 0x28 \
+     (P1[13] / P1[14]) are already parked in the parent capture \
+     nivora_cutscene_delilas_intro, before P2[7] runs. The only parks of them on disc are \
+     the ravine-region arms P2[17] +0xCC (the 0x11 arm, run only while 0x0D is set) and \
+     P2[26] +0x0E; the family captures hold 0x0D clear (P2[7]'s 60 0D at +0x51), so \
+     neither runs from a cold entry with this bank, and the blocks stand on the pushed \
+     seat their prologue picks from 0x457 (A3 27 B1 41 / A3 28 32 3F)";
+
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "son_field_door_hop",
@@ -256,16 +311,188 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
         label: "chapter2_garmel_pre_zeto",
         key: "vis:3",
-        class: "c",
-        note: "pre-Zeto staging places P1[3]/P1[4] next to the player; cold entry parks \
-               them. Needs the garmel staging record traced (or a fresh-entry garmel \
-               capture) to decide whether a beat or the prologue seats them",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
     },
     KnownDivergence {
         label: "chapter2_garmel_pre_zeto",
         key: "vis:4",
-        class: "c",
-        note: "sibling of vis:3 - same staging cohort",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_rising",
+        key: "vis:3",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_rising",
+        key: "vis:4",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_rising",
+        key: "vis:5",
+        class: "b",
+        note: GARMEL_P2_12_ZETO,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_taunt",
+        key: "vis:3",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_taunt",
+        key: "vis:4",
+        class: "b",
+        note: GARMEL_P2_12_PARTY,
+    },
+    KnownDivergence {
+        label: "garmel_zeto_appears_taunt",
+        key: "vis:5",
+        class: "b",
+        note: GARMEL_P2_12_ZETO,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_hover",
+        key: "vis:2",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_hover",
+        key: "vis:3",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_hover",
+        key: "vis:5",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_crawl",
+        key: "vis:2",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_crawl",
+        key: "vis:3",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_crawl",
+        key: "vis:5",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_crawl",
+        key: "pos:7",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
+        label: "vozz_ozma_hatching_crawl",
+        key: "flag:31",
+        class: "b",
+        note: VOZZ_P2_17_FLAG_1F,
+    },
+    KnownDivergence {
+        label: "bylon_mist_gala_goes_ahead",
+        key: "vis:18",
+        class: "b",
+        note: BYLON_P2_6_PARTY,
+    },
+    KnownDivergence {
+        label: "bylon_mist_gala_goes_ahead",
+        key: "vis:37",
+        class: "b",
+        note: BYLON_P2_6_PARTY,
+    },
+    KnownDivergence {
+        label: "bylon_mist_noa_vahn",
+        key: "vis:37",
+        class: "b",
+        note: BYLON_P2_6_PARTY,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "vis:13",
+        class: "b",
+        note: NILBOA_RAVINE_BLOCKS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "vis:14",
+        class: "b",
+        note: NILBOA_RAVINE_BLOCKS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "vis:20",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "vis:22",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "pos:23",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_pose",
+        key: "pos:24",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "vis:13",
+        class: "b",
+        note: NILBOA_RAVINE_BLOCKS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "vis:14",
+        class: "b",
+        note: NILBOA_RAVINE_BLOCKS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "vis:20",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "vis:22",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "pos:23",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
+    },
+    KnownDivergence {
+        label: "nilboa_delilas_family_after_pose",
+        key: "pos:24",
+        class: "b",
+        note: NILBOA_P2_7_SEATS,
     },
     KnownDivergence {
         label: "cort_evolved_approach_cutscene",

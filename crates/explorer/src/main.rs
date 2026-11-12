@@ -115,7 +115,17 @@ fn main() -> eframe::Result {
     let app = eframe::create_native(
         "Legaia Explorer",
         options,
-        Box::new(move |_cc| Ok(Box::new(App::new(explorer, initial, auto)))),
+        Box::new(move |cc| {
+            // A scripted run's input is its script; a controller stays out.
+            let pad = auto
+                .screenshot
+                .is_none()
+                .then(|| legaia_explorer::gamepad::spawn(cc.egui_ctx.clone()))
+                .flatten();
+            Ok(Box::new(
+                App::new(explorer, initial, auto).with_gamepad(pad),
+            ))
+        }),
         &event_loop,
     );
     let mut probe = MonitorProbe { app, monitors };

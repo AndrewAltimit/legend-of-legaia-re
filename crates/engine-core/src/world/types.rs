@@ -670,6 +670,12 @@ pub struct Actor {
     /// [`crate::world::World::latch_battle_node_colours`].
     pub battle_node_colour_zero: Option<bool>,
 
+    /// Consecutive passes this monster has stood dead and idle outside the
+    /// defeat fade, with no reaction playing: the count the tint pass's
+    /// stand-in for the death arm waits on
+    /// ([`crate::world::World::tick_battle_impact_fx`]).
+    pub battle_dead_idle_passes: u8,
+
     /// Per-character **art-animation bank** clips (the player file's
     /// record[0] `+0x58` bank, each record's keyframe stream resolved
     /// through its `readef.DAT` `"ME"` archive and expanded so channel `i`
@@ -811,13 +817,19 @@ impl Actor {
 
     /// Initialise a freshly allocated pool actor the way the retail allocator
     /// `FUN_80020DE0` does before it hands the actor back
-    /// (`0x80020E34..0x80020F6C`): every per-actor state word is written - the
-    /// handler from the descriptor, the SM state `+0x54`, position, angles, the
-    /// clip id and cursor, the timers `+0x9C` / `+0x9E`, the scratch bytes
-    /// `+0x80..+0x8F` - so nothing a previous occupant left in the slot
-    /// survives. The port reaches the same end by starting from a fresh
-    /// [`Actor`]; of the non-zero defaults it stores, the render scale `+0x72 =
-    /// 0x1000` has a port field (the move state's `field_72`).
+    /// (`0x80020E34..0x80020F6C`): the handler from the descriptor, the SM
+    /// state `+0x54`, X and Z, angles, the clip id and cursor, the timers
+    /// `+0x9C` / `+0x9E`, the scratch bytes `+0x80..+0x8F`. The port starts
+    /// from a fresh [`Actor`] and stores the allocator's non-zero defaults the
+    /// move state models: the render scale `+0x72 = 0x1000`, the clip rate
+    /// `+0x6A = 0x10`, the neutral modulation colour `+0x74 = 0x808080` and
+    /// the `+0x10` bit `2` the allocator ORs onto the descriptor's flags.
+    ///
+    /// Retail does not clear the whole record: `+0x16` (Y), `+0x50`, the move
+    /// PC `+0x70`, `+0x7C` and everything past `+0x8F` keep the previous
+    /// occupant's bytes, and every spawn site writes the ones it reads. The
+    /// port's fresh actor zeroes them, which is the same for every site that
+    /// does.
     ///
     /// The scene pre-binds a slot may carry (its TMD binding and active
     /// animation, `World::ensure_actor`'s two survivors) are kept: they are
@@ -835,6 +847,9 @@ impl Actor {
         self.active_animation = active_animation;
         self.active = true;
         self.move_state.field_72 = 0x1000;
+        self.move_state.field_6a = 0x10;
+        self.move_state.field_74 = 0x0080_8080;
+        self.move_state.flags |= 2;
     }
 
     /// Mark this slot as active. Returns `&mut Self` for chaining.

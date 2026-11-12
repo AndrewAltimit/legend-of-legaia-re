@@ -85,7 +85,8 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags. A third is `dream`: a save whose flags arm one
+gated off by the save's flags; it signs as a `softlock` or, when the walks
+keep the pad moving, as `confined`. A third is `dream`: a save whose flags arm one
 of its vignettes plays it, and the closing record then picks the scene to
 return to (`3F` to `doman`, `bubu1`, `son`, ...) by a flag the sleep that
 leads there sets. Entered by name no branch matches, the record ends on its
@@ -213,7 +214,9 @@ front end instead (`soak_harness/front_end.rs`), stepping the same
 - `title+continue[@<save>]` mounts the library card in port 1, opens the
   title with Continue live, picks it, and walks the retail save-select
   (the session's `ContinueScreen`, the screen both play hosts step) onto the
-  named save's block, then
+  named save's cell - the save number its filename's two digits spell, which
+  is not its card block on a card written out of order
+  ([`save-screen.md`](../subsystems/save-screen.md)) - then
   resumes it through `BootSession::resume_save`. With no `@<save>` it takes
   the card's first save.
 
@@ -291,8 +294,10 @@ what holds the frame:
 | a script polls the held pad | the face button it polls, held - op `0x42` mode 1 reads the held word on one frame of its loop (`edlast`'s credits end on `4A 08 00 42 01 08`: wait eight frames, test a held Circle or Cross), which a tap reaches only by luck |
 | a picker is up | a random number of Down taps, then Cross - mashing confirm only ever takes a picker's first rows, and a conversation whose way out is its last option then reads as one that cannot be left. The plan waits for the box's slide to come to rest (`picker_takes_input`): a press during the slide moves nothing, and taps spent there biased every pick toward the first row. The row a plan aims at steps on by one each time the same picker comes back, from a random first row, so a quiz that asks again after a wrong answer (`cave01`'s Mist question) gets every answer within its option count. A plan under way runs to its confirm: a stray press drawn mid-plan confirmed the row the taps had reached, and `town01`'s panoramic map, whose one way out is its fourth row, kept landing above it |
 | pause menu | random taps for a random budget, then Circle until it closes |
-| battle | mostly a fighter (Begin, Attack, Auto, confirm the target, Cross any message box) that now and then takes Item, Magic, Spirit, a typed Command art or Run instead and goes through with the pick; otherwise random taps. The report lists the battle surfaces runs reached (command phases, item / spell pickers, arts entry). In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
+| battle | mostly a fighter (Begin, Attack, Auto, confirm the target, Cross any message box) that now and then takes Item, Magic, Spirit, a typed Command art or Run instead and goes through with the pick; otherwise random taps. The report lists the battle surfaces runs reached (command phases, item / spell pickers, arts entry), and for the Baka Fighter the cabinet states and ladder rungs. In the sparring tutorial it follows the lesson - Item, Spirit, then the `Up Down Up` drill in Command mode - since any other pick rewinds the lesson for as long as the player keeps making it, in retail as in the port |
 | minigame / other | random face buttons and held directions, and rarely Start - the minigames' escape |
+| Baka Fighter cabinet | in the duel, Square / Circle / Cross strikes (the three attack bits) and only rarely Triangle, half of the in-duel menu edge `0x110`; in the pause menu `0xBF`, Continue four times in five, else Quit or How to Play; on every other cabinet screen mostly Cross. The general minigame arm's Triangle opened the menu every few seconds and its Quit row ended the run, so no run climbed past rung 3 |
+| Boss Rush intermission | a row - "Next battle" half the time - the cursor walked there with Down, then Cross; the result screen takes Cross. Under the field policy the confirm landed wherever the walks had left the cursor |
 
 Every UI surface reads `just_pressed`, so a press is a tap: the wanted mask
 on one frame and neutral on the next.
@@ -305,7 +310,7 @@ on one frame and neutral on the next.
 | `tick_error` | `tick()` returns an error |
 | `hang` | one tick runs past `LEGAIA_SOAK_HANG_SECS` of wall time; the watchdog writes `HANG.txt` and exits, since a hung tick cannot be interrupted |
 | `softlock` | the progress digest is unchanged for a whole window while the pad took at least three distinct masks |
-| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
+| `script_stall` | the modal timeline (or first helper context) sits at one PC for a whole window of field frames, even while something else moves - except that a record whose scripted walkers are still stepping is progressing (a `0xC7` walk, or the `B3 <id> 0A` wait on one: `bylon`'s Zopu walks some 2400 frames; a player walk the context armed, whichever op waits on it: `cave01`'s "Come with me!" `A3 F8` waits some 2000 frames on its `C7 F8` from a far seat), and so is a walk-on record under the re-poll bit (`2E 13`), re-run from its top every tick while the player, free to walk off, stands on its tile |
 | `battle_loop` | three battles open from one parked timeline PC |
 | `menu_stuck` | the pause menu stays open through the Circle back-out |
 | `battle_endless` | one battle outlasts `LEGAIA_SOAK_BATTLE_FRAMES` - except a long fight (below) and a command prompt the pad has left alone for the window's last quarter, which waits on the player |
@@ -326,7 +331,8 @@ The **progress digest** hashes everything a player could see move: mode and
 scene, the player's position and heading, every script context's PC, the
 dialogue and menu state, shop and name-entry state, scripted NPC glides, the
 battle command session and every actor's HP, the running minigame's session,
-money and bag size. It is deliberately broad - a false "frozen" costs a
+the Boss Rush intermission (cursor, last line) and result screen, money and
+bag size. It is deliberately broad - a false "frozen" costs a
 triage, a false "moving" only a missed finding.
 
 A softlock is **located** by what holds the frame: `pause-menu:<row>:<phase>`,
@@ -408,6 +414,15 @@ ahead of its window: the window is evidence as the policy pressed it, and a
 stream cut down to confirming one looping option starves on a healthy
 conversation too.
 
+The neutral-pad control has one blind spot: under it, any screen that waits
+for a press reads as frozen. A softlock on a *stale* screen - one no press can
+move - then reduces to the same screen merely waiting, which keeps the
+signature and still fires once the stale screen is fixed. `edlast`'s credits
+records were such a case: the reduction cut the press that reloads to the
+title, and the first records screen idled under the same signature. Such a
+finding is reduced with `LEGAIA_SOAK_REDUCE_LIVE=1`, or cut by hand to the
+windows that walk the defect's path, and checked both ways (below).
+
 The replay format carries no scene field, so the start scene and seed ride in
 header comments (`# soak-scene`, `# soak-seed`, `# soak-signature`) that
 TOML ignores. A replay recorded under a non-default starve window carries it
@@ -457,6 +472,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
 | `LEGAIA_SOAK_EXPANSION` / `LEGAIA_SOAK_PACK` | `soak_expansion`'s long form / the pack its runs activate (default `packs/sample`) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
+| `LEGAIA_SOAK_REDUCE_LIVE` | reduce a softlock with the pad live in its window instead of under the neutral-pad control (below) |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
 soak is bounded by the minimiser, not the runs. Chunk long soaks with
@@ -578,6 +594,10 @@ regression.
 | `son_nook_seat_through_culled_npc` | `son+talk`: a talk seat in the camp's wall nook left the player `confined` | harness: the seat floods count culled placements as solid (the camera had not yet followed the seat) |
 | `kor3_warp_pad_parks_on_capped_screen` | `other7+rt@...:PRO-09`: the anti-hang cap ended `other7`'s modal `49 0A` with its screen up, and in `kor3` the Sol Tower warp pad's `49 04` read that stale screen as its own and parked for good | a record the cap ends takes the op-`0x49` screen it opened with it (`World::drop_capped_op49_screen`); retail has no cap |
 | `town01_hardcore_spar_item_lesson` | `town01+rules=hardcore`: Tetsu's sparring tutorial held its Item lesson for good, the Item chip refused by the hardcore rule | hardcore leaves the tutorial's Item lesson its window (`command_ring.rs`) |
+| `town01_spar_item_lesson_under_pack_challenge` | `xp:town01+seat=spiral-circuit`: with the sample pack's Bare Hands challenge armed ("win your next battle with no items"), Tetsu's spar refused the Item chip and held its Item lesson for good | the sparring tutorial is no challenge's battle: its formation reads as none to the challenge checks (`World::expansion_battle_formation`), as hardcore already leaves it the Item lesson |
+| `edlast_soft_reset_screen_survives_continue` | `edlast+rt`: after the credits' records screen reloaded to the title and the card's save was continued, the next credits' `49 0C` parked for good, and the records kept drawing | the title's card load and New Game drop the op-`0x49` screen and park (`World::drop_field_submode_screen_for_title`): retail reaches the title through the executable reload (`FUN_80017714`), which takes the field overlay's actor pool and `_DAT_8007B450` with it |
+| `cave01_come_with_me_player_walk` | `cave01+talk`: "Come with me!" parked on `A3 F8` for longer than the stall window | harness: a player walk the context armed (`walk_wait`, `player_glide`) puts the player's motion in the stall digest, whichever op waits on it - `C7 F8 C1 6D 33` from a far talk seat is some 2000 frames |
+| `town0b_boss_rush_intermission_unread` | `town01+rules=bossrush`: the party stood in `town0b` under the intermission for 1800 frames while the cursor moved and supplies were bought | harness: the progress digest reads the Boss Rush screen, and the policy confirms a planned row |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script);

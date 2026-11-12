@@ -171,6 +171,48 @@ pub struct EquipCompareCtx<'a> {
     /// Disc item-effect table, for the item record's class byte and the
     /// non-equipment arm of the category lookup (`0x800752C0 + row*4 + 3`).
     pub item_effects: Option<&'a legaia_game_tables::item_effect::ItemEffectTable>,
+    /// The accessory passive table (`World::tables.accessory_passives`). With
+    /// it, both blocks are taken off the record **after the stat aggregator
+    /// has run over the trial equipment** ([`aggregated_menu_block`]), as
+    /// retail's trial does; without it the record's live window stands and
+    /// a passive's percent boost never reaches the trial block.
+    pub passives: Option<&'a legaia_engine_battle::accessory_passives::AccessoryPassives>,
+}
+
+/// The eight-word menu block for `character` wearing `equip` (engine slot
+/// order, party slot `party_slot`), as retail's trial equip computes it:
+/// write the bytes into the record, run the stat aggregator `FUN_80042558`
+/// (the ability words off the worn passives, then the live window rebuilt
+/// with their percent boosts and the maxima clamps), then seed and sum the
+/// block (`FUN_801CF650`). The HP / MP words are the rebuilt record's maxima,
+/// so an accessory's HP or MP boost shows in the trial block.
+///
+/// REF: FUN_801D9C14 (`0x801D9E8C..0x801DA080`, the trial and its restore)
+/// REF: FUN_801D4C28 (`0x801D4ED4..0x801D515C`, the same dance per member)
+pub fn aggregated_menu_block(
+    character: &legaia_save::CharacterRecord,
+    equip: &[u8; 8],
+    party_slot: u8,
+    passives: &legaia_engine_battle::accessory_passives::AccessoryPassives,
+    table: &legaia_engine_battle::battle_stats::EquipmentTable,
+) -> [i32; 8] {
+    let mut rec = character.clone();
+    let mut slots = rec.equipment();
+    for (slot, &id) in equip.iter().enumerate() {
+        slots.slots[crate::equip_session::record_byte_for_engine_slot(slot as u8, party_slot)] = id;
+    }
+    rec.set_equipment(slots);
+    let words = passives.bits_for_equipment(&slots.slots);
+    let mut bytes = [0u8; legaia_save::ABILITY_BITS_LEN];
+    for (w, word) in words.iter().enumerate() {
+        bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
+    }
+    rec.set_ability_bits(bytes);
+    rec.rebuild_live_window();
+    let mut stat = super::stat_record_from_character(&rec);
+    stat.equip = *equip;
+    let hp_mp = rec.hp_mp_sp();
+    menu_stat_block(&stat, table, hp_mp.hp_max, hp_mp.mp_max)
 }
 
 /// Equip bytes the **menu** stat aggregator walks.
@@ -442,7 +484,8 @@ pub fn equip_screen_model(
     // Window 25's panel. Retail's renderer bails outright when nothing is
     // staged (`beq v0, zero` on `DAT_801E46B0` at `0x801D12BC`), so the
     // panel appears with the candidate list and goes with it - the same
-    // life-cycle as window 24 beside it.
+    // life-cycle as window 24 beside it. The Remove row stages `-1`, so the
+    // panel stays up on it.
     let compare = compare.as_ref().and_then(|ctx| {
         let staged = considered_id?;
         let hp_mp = ctx.record.hp_mp_sp();
@@ -456,8 +499,26 @@ pub fn equip_screen_model(
                 .get(char_slot as usize)
                 .cloned()
                 .unwrap_or_default(),
-            current: menu_stat_block(record, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
-            candidate: menu_stat_block(&trial, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
+            current: match ctx.passives {
+                Some(p) => aggregated_menu_block(
+                    ctx.record,
+                    &record.equip,
+                    char_slot,
+                    p,
+                    session.equipment(),
+                ),
+                None => menu_stat_block(record, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
+            },
+            candidate: match ctx.passives {
+                Some(p) => aggregated_menu_block(
+                    ctx.record,
+                    &trial.equip,
+                    char_slot,
+                    p,
+                    session.equipment(),
+                ),
+                None => menu_stat_block(&trial, session.equipment(), hp_mp.hp_max, hp_mp.mp_max),
+            },
             hp_max: hp_mp.hp_max,
             mp_max: hp_mp.mp_max,
             // Retail's browse ROW, not the engine's `EquipSlot` index. The
@@ -477,7 +538,16 @@ pub fn equip_screen_model(
             // would ever pass.
             slot_row: crate::equip_session::retail_slot_row_for_engine_slot(active_slot)
                 .unwrap_or(-1),
-            staged_id: i32::from(staged),
+            // The Remove row stages `-1`, not `0` (`li v0,-0x1` at
+            // `0x801D9DA4`, the class-`0x4000` row-0 arm of `FUN_801D9C14`):
+            // the trial writes `max(-1, 0)` into the slot, and the renderer's
+            // "nothing staged" fallback keys an accessory row's stat rows off
+            // the piece still worn.
+            staged_id: if staged == crate::equip_session::REMOVE_ROW_ID {
+                -1
+            } else {
+                i32::from(staged)
+            },
             staged_category: compare_category_for_item(staged, ctx),
             equipped_id,
             equipped_category: compare_category_for_item(equipped_id, ctx),

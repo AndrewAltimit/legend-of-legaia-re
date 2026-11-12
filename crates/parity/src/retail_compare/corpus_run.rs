@@ -420,9 +420,11 @@ pub(super) fn run_one(
         retail.memory_card = card.map(Path::to_path_buf);
     }
     if matches!(retail.class, StateClass::Field) {
-        retail.scripted_seats = scene_man(opts.extracted, &retail.scene)
-            .map(|man| scripted_seats(&beat_move_targets(&man), &retail.actor_facings))
+        let beats = scene_man(opts.extracted, &retail.scene)
+            .map(|man| beat_move_targets(&man))
             .unwrap_or_default();
+        retail.scripted_seats = scripted_seats(&beats, &retail.actor_facings);
+        retail.scripted_headings = scripted_heading_seats(&beats, &retail.actor_facings);
     }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
         Ok(e) => e,
@@ -481,10 +483,11 @@ pub(super) fn run_one(
                 Some(g) => {
                     let mut env = vec![("LEGAIA_SCRIPT_GATE", g.to_env())];
                     // A gate on the player's clip latch is met on the RAM's
-                    // cursor, which has no wait to take the lag off: the
+                    // cursor, and a text gate mid-page on the RAM's pager
+                    // phase, neither with a wait to take the lag off: the
                     // child takes the frame `display_lag` ticks back, while
                     // the record it replays already ran.
-                    if g.latch.is_some() {
+                    if g.takes_displayed_frame() {
                         env.push((
                             "LEGAIA_CAPTURE_DISPLAY_LAG",
                             retail.scripts.display_lag.to_string(),

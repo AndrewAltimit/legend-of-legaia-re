@@ -17,7 +17,8 @@
 -- logs REFUSED and ends the run with what it saved. An empty list only waits
 -- for the field and saves it (a state that plays forward into its scene).
 --
--- Between hops: an open dialogue box (*0x801C6EA4 +0x62) is paged with Cross,
+-- Between hops: an open dialogue box (*0x801C6EA4 +0x62, or the pager
+-- _DAT_801F2734 waiting on a page at 0x19) is paged with Cross,
 -- and a mode other than the field (a scripted fight, a talk screen) is mashed
 -- with Cross, so an arrival cutscene runs out. Saved per scene, once
 -- LEGAIA_SCENE_SETTLE (150) vsyncs after the field resumed in it; then a press
@@ -93,7 +94,10 @@ local function player_xz()
 end
 local function dialog_open()
     local c = probe.read_u32(FIELD_CTL)
-    return ok_ptr(c) and (probe.read_u8(c + 0x62) or 0) ~= 0
+    if ok_ptr(c) and (probe.read_u8(c + 0x62) or 0) ~= 0 then return true end
+    -- A scripted beat's box leaves +0x62 clear; its page wait shows on the
+    -- pager state _DAT_801F2734 (0x19).
+    return (probe.read_u32(0x801F2734) or 0) == 0x19
 end
 
 local function save_checkpoint(name, vsync)

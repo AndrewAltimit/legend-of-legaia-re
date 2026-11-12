@@ -13,16 +13,25 @@ fn the_battle_drive_round_trips_through_its_env_form() {
             flow: BattleFlowState::ArtsCommandEntry,
             seat: 2,
             spirit: 0,
+            pick: 0,
         },
         BattleDrive::Menu {
             flow: BattleFlowState::CommitBegin,
             seat: 1,
             spirit: 0,
+            pick: 0,
+        },
+        BattleDrive::Menu {
+            flow: BattleFlowState::SpellEnemyTarget,
+            seat: 0,
+            spirit: 0,
+            pick: 0x5E,
         },
         BattleDrive::Menu {
             flow: BattleFlowState::CategoryMenu,
             seat: 2,
             spirit: 0b11,
+            pick: 0,
         },
         BattleDrive::Action {
             seat: 3,

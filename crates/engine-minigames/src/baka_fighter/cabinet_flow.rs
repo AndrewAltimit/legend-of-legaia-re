@@ -87,6 +87,10 @@ impl BakaFight {
             // decided (a finisher flag or both HPs at zero) - in the port,
             // once the exchange that decided it has left the fight phase.
             round_clock: !matches!(self.phase, MatchPhase::Fighting),
+            tally_draining: self.tally.as_ref().is_some_and(|t| !t.done()),
+            // The pause gate the combat ticks leave: the player on the idle
+            // clip, no knockdown latch up.
+            pause_ready: self.motion[0].record == 0 && !self.motion[0].down && !self.motion[1].down,
             camera_hold,
         };
         self.cabinet_frame = self.cabinet.tick(&input);

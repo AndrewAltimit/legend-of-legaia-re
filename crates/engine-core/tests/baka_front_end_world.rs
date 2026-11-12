@@ -35,6 +35,7 @@ fn act(i: usize) -> BakaActionSet {
         power: [0, 10, 10, 10, 0, 0, 0, 0, 0],
         keyframes: [0, 1, 1, 1, 2, 0, 0, 0, 0],
         speed: [16; 9],
+        head: [[0; 8]; 9],
         sub_keyframes: Default::default(),
     }
 }

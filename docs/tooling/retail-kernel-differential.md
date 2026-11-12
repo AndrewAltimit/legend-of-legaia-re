@@ -866,8 +866,8 @@ when the string total is live, which the port's fragments did not compose. The d
 (`finisher`), called on its own with the two rolls, matches on the value, the Stone nullify, the strip, the rumble
 and the summon XP; its Spirit fill stores each add as the halfword `+0x170` and caps the halfword, so a percent past
 `0xFFFF` - a big hit on a tiny max HP - wraps under the cap, where the port saturated. The per-hit numeral
-`FUN_801DF6B8` (`popup_numeral`) matches, except an arm with no port: under an OT depth of `0x80` the projection's
-square is reseated `32` px from its near corner, and the host projection carries no OT depth.
+`FUN_801DF6B8` (`popup_numeral`) matches, its near arm included: under an OT depth of `0x80` the projection's
+square is reseated `32` px from its near corner (`popup_near_square`), and the test answers depths on both sides.
 
 Matched on their first run: the side-band tick `FUN_80056208` (`battle_sideband`); the battle floor's grid
 `FUN_801D02C0`, both passes and every packet, the GTE answered by the interpreter's (`ground_grid`); the per-actor
@@ -1331,3 +1331,72 @@ retail fills them from the right (one round owed lights the pip at column `0x40`
 dropping its units digit, which retail places unconditionally. Its init `FUN_801CEC94` expands the message bank
 as `parse_messages` reads it, each texel the nibble times four. The dance overlay's entry `FUN_801CEF54` stages
 what `dance_scene_entry` records.
+
+The publisher-logo sequencer `FUN_801CEFD4`, run frame by frame from its state `0`, shows 35 black frames
+before SCEA, 17 between SCEA and Contrail, two before PROKION and 18 after it. The port's session skipped
+every settle, so its pass ran 504 frames where retail's runs 575, Contrail cut in as SCEA faded, and the title
+opened early. The world-map controller `FUN_801E76D4` steps the focus Z word on Up / Down and X on Right /
+Left; the port had the banks the other way round and panned the stored, negated words as world units, so the
+top-view debug camera moved across the axis retail moves along.
+
+The fishing result actor's draw `FUN_801D67BC`, run to its part loop, found the scale step keeping the low
+halfword of each product, where the port grew past `i16`; no hook strength reaches a scale that wraps. Baka
+Fighter's developer dump `FUN_801D553C` prints every action record's eight leading words and each live
+sub-keyframe, where the port printed two columns; the port now prints the routine's numbers line for line.
+The ground emitter's cell loop `FUN_801F6D48`, the stage placement `FUN_801D6D60`, the tile board's install
+state of `FUN_801EF2B0`, the fishing session machine's power meter entered at `FUN_801CF3BC` and the Hyper
+Crush and Hyper Lightning stagers match.
+
+The party battle-mesh assembler `FUN_80052FA0`, run whole for three seats from the loader's stream table, matches the
+port's merged TMD, swing entries and texture uploads. Baka Fighter's cabinet `FUN_801CF388`, run over whole sessions
+from boot through the secret rungs and the all-clear, found a won secret rung never clearing its override (the ladder
+served the same secret opponent again with the stage frozen), the round index carried across matches (so a secret
+rung's first-round intro never played), the tally state leaving on its first frame where retail holds two seconds after
+the drain, the pause menu opening mid-exchange where the combat ticks gate it on the player standing idle, and the scene
+suppress, two menu latches and the shutout tally a frame or a sense out. The anim commit `FUN_8004AD80`, entered at its
+head, matches the cue-cursor seed and the tag ladder.
+
+The Equip screen's candidate step `FUN_801D9C14`, entered, armed and run one frame per candidate row with the stat
+aggregator live beneath it, found three defects. Window 25's trial block was summed off the record's live window as it
+stood, where retail writes the candidate into the record and runs the aggregator first, so an accessory's HP, MP or
+stat boost never showed as a rise on the Goods rows. The Remove row staged `0` where retail stages `-1`, so on an
+accessory row the panel did not fall back to the worn piece's stat rows. And taking the last of a stack through an
+equip left an `(id, 0)` stack in the bag where retail's by-slot consume empties the slot. The same run shows a retail
+oversight the port does not reproduce: the trial's aggregator lowers a current HP or MP above the trial maximum and the
+restore never raises it back, so hovering a candidate that lowers a maximum clips the character's current value. The
+shop's party column `FUN_801D4C28`, run with its summer and the aggregator, matches the port's members, notes and
+arrows, and the commit log's launch leaf `FUN_801DB7B0` matches the record the glide stepper then walks.
+
+The Items screen's apply screens `FUN_801D8308` and `FUN_801D7FF8`, run from the confirm through the applier, the
+aggregator, the bag's by-slot consume, the re-probe and the exhaustion timer against the field menu's Items session
+on a `World`, showed the port's target confirm testing only that the member was alive. Retail runs the action
+validator on the picked member, so the port spent a healing item on a member at full HP and an MP item on a full
+member, accepted any member for a Hyper-Art book, and refused a book's owner while that owner was down. The records,
+the bag, the cue and where the screen lands afterwards (the target rows again, the Use list or the command window)
+match.
+
+The summon installer `FUN_801F19EC`, run over every player cast's creature record off `summon.dat`, matches the record
+layout the port reads: the name, TMD and pool words become pointers off the record, each part word a pointer off the
+record or, for the seven big summons, off `*0x8007B85C + 0x44000` (where the previous slot's part pool lands, the pool
+the port reads those parts from), and each part's links resolve off the record's table. The seat's resets match
+`World::seat_summon_actor`, with the module's own seat-arm stores taken as the arm's.
+
+
+The name-based scene-change packet `FUN_8001FD44`, run with its resolver `FUN_8001D7F8` over the define table the loader
+builds, shows the buffer at `0x80084558` holding the destination's own label: on the shipped arm (`_DAT_8007B8C2 != 0`)
+the packet copies the active buffer into it after the resolver has overwritten that buffer with the staged name. Every
+block on the library cards carries the active label there, where the port wrote the scene the player had left. The pool
+allocator `FUN_80020DE0` showed `Actor::init_allocated` leaving the clip rate `+0x6A = 0x10`, the neutral colour
+`+0x74 = 0x808080` and the `+0x10` bit the allocator ORs onto every descriptor at zero; it also shows that retail does
+not clear the record whole (`+0x16`, `+0x50`, the move PC `+0x70` and the tail past `+0x8F` keep the last occupant's
+bytes). `main`'s mode loop `FUN_80015E90`, the object-table stamp `FUN_80024D78`, the three-actor talk spawner
+`FUN_801D2D38`, the TMD renderer's corner loads in `FUN_8002735C` over every TMD on the disc, the FMV play loop
+`FUN_801CF098`, the FMV master dispatch `FUN_801CEA3C` and the message-bar raise through `FUN_801D8DE8` match.
+
+The touch post `FUN_801D5B5C` showed an encounter roll hold the port did not have: `_DAT_8007B604`, which the system
+entity's idle state spends one game tick at a time in place of the region reader, so for eight ticks after a talk or a
+prop touch (four after a record spawn, `FUN_8003BDE0`) no step is sampled, counted or rolled. The dialog SM's state-2
+arm in `FUN_80039B7C`, over every text lead in the disc's records, showed the walk past shown text running on over zero
+padding and other yield bytes, where the runner resumed at the page's dispatch byte. The fishing line actor
+`FUN_801D4948` showed the catch celebration firing its stages off a stage word: the stage cue on the arm's second frame
+rather than with the bursts, each stage once at any frame step, and the hand-back to the tracking sub-state.
