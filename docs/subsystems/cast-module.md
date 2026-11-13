@@ -3689,15 +3689,15 @@ the cast. Grade `capture`.
 
 The leg labels are right: retail's roll on the `map01` film is `rand() = 20064`, even, the hit
 (probe at `0x801F8CC4`, `andi v0,v0,0x1` / `beq` to the hit leg at `0x801F8CC8`), from the seed
-word `0x4DE7668F`. `--rand-track` still hands the engine the miss because the engine's arm 4
-is two passes shorter. Arm 3's gate re-arms the countdown `0x801F9D28` by `scalar << 7`
-(`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8C98`,
-the step `0x1F800393`): retail's arm 4 runs `34` passes, the last five at step `3` as the frame
-cost falls from `700` to about `595` (step sum `131`), where the engine's table runs every pass
-at `4` (`32` passes). The track keys its words by pass within the phase, so the engine's
-gate pass takes retail's 33rd pass word (`0x6C5CC369`, then the discard), draws from
-`0x333F61EE` and rolls `19943`, odd. Retail's gate pass starts on `0x333F61EE` and draws
-the discard first. The engine's arm 3 gate also falls one pass later than retail's.
+word `0x4DE7668F`. The roll's draw is the pass count's. Arm 3's gate re-arms the countdown
+`0x801F9D28` by `scalar << 7` (`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass
+(`0x801F8C6C..0x801F8C98`, the step `0x1F800393`): retail's arm 4 runs `34` passes, the last ones at
+step `3` once the line's read stops loading the frame (vsync `445` on this film, `448` on Lip King's,
+`444` after the line's start), the frame cost falling from the clamp to about `595`. A table that ran
+every pass at `4` gave `32` passes, the coin two draws early, and the miss. The table drops the
+arm to `3` after `27` passes (`CAPTURE_ARM_READ_TAILS`); `26` to `28` roll retail's hit on both
+recordings, and both films read cue `1.000` ([the oracle](../tooling/cast-sequence-oracle.md#what-each-side-records)).
+Grade `capture` for the count, `disassembly` for the drain and the coin.
 This is the step table's per-arm reading ([the frame step](battle-stage-camera.md#the-frame-step)), not the
 roll. Grade `capture` + `disassembly`.
 

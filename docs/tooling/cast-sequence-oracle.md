@@ -254,7 +254,18 @@ The film therefore stands the party in the recording's stance exactly on its gat
 The gate is the state's instant, so both are the state's, and the replay's draws and commits before it stop mattering.
 `battle_chitei2_gilium_thunder_storm_mid_cast` had landed `147` / `157` / `130` on a guarded party against retail's unguarded `583` / `745` / `544`; seated it lands `583` / `745` / `544`, and its film reads `.893` to `.963`. `battle_tunnelc_xain_terio_punch_mid_cast` lands retail's `366` / `362` / `347` and reads `.857` to `.958`.
 `battle_korb2_ghost_knight_neo_windhash_mid_cast` reads `.893` to `.967`. Harness seats. Seated, its two streams agreed draw for draw through module phase 3, and the hit pass drew five `rand()` in retail and four in the engine: the engine lacked Neo Windhash's Curse roll ahead of the damage call ([cast module](../subsystems/cast-module.md#prot-0947-v-windhash-and-neo-windhash)). With it the hit lands retail's `771` (not `807`) and the film reads `.971`.
-Seated, the stream also names an arm's pass count. `battle_retona_lip_king_kiss_of_death_mid_cast`'s two streams agree draw for draw until its hit roll, but the engine's arm 4 runs `32` passes where retail's runs `34`, so the roll lands two draws early and misses where retail's hits (its cues `3 / 3` to `0 / 3`); on the replay's own stream it had rolled a hit by chance. The count is the frame step's: arm 3 arms the countdown `scalar << 7` and arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8CA4`), and retail's last seven passes run at step `3` (`27 x 4 + 7 x 3 = 129`) where the engine's run every pass at `4` ([the arm's cost](../subsystems/battle-stage-camera.md#the-frame-step)).
+Seated, the stream also names an arm's pass count. `battle_retona_lip_king_kiss_of_death_mid_cast`'s
+two streams agree draw for draw until its hit roll, and the roll is arm 4's coin: arm 3 arms the
+countdown `scalar << 7`, arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8CA4`), and the
+pass that runs it out draws `rand() & 1` (`0x801F8CBC`). Retail's last seven passes run at step `3`
+(`27 x 4 + 7 x 3 = 129`, `34` passes): the line's read stops loading the frame at vsync `448`, `444`
+after its start, and the arm's own frames cost step `3`. The Lippian recording drops at vsync `445`,
+after `28` passes at `4`. Run every pass at `4` the engine's arm took `32` passes, rolled two draws
+early and missed where retail's hit (cues `3 / 3` and `5 / 5` to `0`). Held on a step track, `26`,
+`27` or `28` passes at `4` roll retail's hit on both films and `25` or `29` up the miss, so the arm
+table carries the drop at `27` passes (`CAPTURE_ARM_READ_TAILS`, [the arm's
+cost](../subsystems/battle-stage-camera.md#the-frame-step)): both films read cue `1.000`, Lip King's
+image `.945` to `.982`.
 
 A monster's AI counter `0x801C8FE4` travels with the state
 (`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts

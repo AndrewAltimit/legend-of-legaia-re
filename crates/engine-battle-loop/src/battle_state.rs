@@ -820,6 +820,11 @@ pub struct BattleState {
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
+    /// The action state and module phase of the last cast-arm pass
+    /// (`World::apply_cast_arm_frame_step`) and the passes made under them
+    /// before it: the arm's pass, which a capture arm whose line stops
+    /// loading inside it reads (`cast_module_frame_step::CAPTURE_ARM_READ_TAILS`).
+    pub cast_arm_pass: Option<(u8, u8, u16)>,
     /// The step the last pass left for the next one, installed when that
     /// pass opens its frame (`World::battle_sm_pass_due`): retail waits a
     /// pass's frame out on the step the pass ran at and only then copies the
@@ -1576,6 +1581,7 @@ impl BattleState {
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
+            cast_arm_pass: None,
             pending_frame_step: None,
             pending_frame_step_from: 0,
             retail_step_track: None,

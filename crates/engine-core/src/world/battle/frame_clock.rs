@@ -416,14 +416,24 @@ impl World {
                     self.toggles.battle_cd_timing,
                 )
             });
+        // The pass of the arm this one runs, counted from the arm's first.
+        let phase = self.casting.module_phase;
+        let arm_pass = match self.battle.cast_arm_pass {
+            Some((s, p, n)) if s == state && p == phase => n.saturating_add(1),
+            _ => 0,
+        };
+        self.battle.cast_arm_pass = Some((state, phase, arm_pass));
         let measured = measured.or_else(|| {
             let spell = self
                 .casting
                 .capture_spell
                 .filter(|_| state == S::MagicCapturePhase2.as_byte())?;
-            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
+            // A capture arm whose own line stops loading the frame partway
+            // runs its own cost from there (Kiss of Death's arm 4).
+            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step_on_pass(
                 spell,
-                self.casting.module_phase,
+                phase,
+                arm_pass,
                 self.toggles.battle_cd_timing,
             )
         });

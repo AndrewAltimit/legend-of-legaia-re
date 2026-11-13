@@ -1584,9 +1584,10 @@ What falls, by cause:
   with the cast's own frames all but unchanged (`6` and `10` overrun ticks off and on on
   Glare): the drive that seeds the film reaches the cast `119` and `63` ticks later on the
   longer frames before it, and the cue's roll is dealt again. A harness re-deal, not the
-  law's frames. Kiss of Death's arm 4 is the law's own case besides: retail runs it `34`
-  passes, `27` at step `4` and the last `7` at `3`, where both clocks run `32` at `4`
-  (the arm's cost falls under the clamp inside the arm).
+  law's frames. Kiss of Death's arm 4 is the line's own case besides: retail runs it `34`
+  passes, `27` at step `4` and the last `7` at `3` once the line's read stops loading the
+  frame, which the arm table carries on both clocks
+  (`cast_module_frame_step::CAPTURE_ARM_READ_TAILS`).
 - **The polls' share over a cheap fight.** Spoon's Hyper Heal (`-.024`) runs its loaded frames at `8`
   where retail's run `5` and `6`: its fight costs some `150` under the table
   ([a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so the share over the table
@@ -2171,12 +2172,15 @@ its table, runs `3` for `45` vsyncs and then `2`; the engine runs one pass of `4
 fifteen of `3`, and the Kiss films' step agreement with retail rises from `.89` to `.94`.
 Gimard's arm 6 gains its `3` band (`45` vsyncs against retail's `46`). Over eighteen
 recorded casts (twelve enemy casts, six summons) the frame means hold (`.8861` to
-`.8863`). What the ring cannot hold is a cost that falls inside an arm: Kiss of Death's
-arm 4 runs its last five passes at `3` because the frame's cost drops from the clamp to
-about `595` (the recording's `cost` column) while no effect part changes, so the engine's
-arm 4 stays at `4` (`32` passes to retail's `34`). Gimard's arm 6 opens on `64` vsyncs of
-`4` the same way. Modelling those would take the frame's cost from the engine's own draw,
-which the table stands in for.
+`.8863`). What the ring cannot hold is a cost that falls inside an arm. Kiss of Death's
+arm 4 runs its last passes at `3` because the frame's cost drops from the clamp to about
+`595` (the recording's `cost` column) while no effect part changes: the line's CD-XA read
+stops loading the frame, at vsync `445` on this recording and `448` on Lip King's, `444`
+after the line's start (the drive word's clear on a `--watch` recording). The table carries
+that drop as a pass count inside the arm (`CAPTURE_ARM_READ_TAILS`: `4` for `27` passes,
+then `3`), since the default clock runs the loaded frames at their step and so reaches the
+read's end in wall time far later than retail's overrunning frames do. Gimard's arm 6 opens
+on `64` vsyncs of `4` the same way and keeps its table step.
 
 **The arms read as a cost.** The Seru recordings log the ring's newest entry, so each arm's
 frames have a cost as well as a step: the median over the arm's frames, `721` for a frame on the

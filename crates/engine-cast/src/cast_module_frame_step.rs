@@ -775,9 +775,61 @@ pub fn capture_arm_frame_step(spell: u8, phase: u8, timing: CdTiming) -> Option<
     steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s)
 }
 
+/// Capture-band arms whose step falls inside the arm when the module's own
+/// CD-XA line stops loading the frame: `(spell, phase, passes, step)`, the arm
+/// running its [`CAPTURE_ARM_STEPS`] step for its first `passes` passes and
+/// `step`, its own frames' cost, from there on. PCSX-Redux only: a console's
+/// table already reads the arm at its own cost.
+///
+/// Kiss of Death's arm 4 (PROT 0955) is the case. The line's read holds the
+/// drive word until `444` vsyncs after its start (a `--watch` recording), and
+/// both PCSX-Redux recordings (`battle_map01_lippian_kiss_of_death_mid_cast`,
+/// `battle_retona_lip_king_kiss_of_death_mid_cast`) drop from `4` to `3` at
+/// vsync `445` / `448`, with `28` / `27` of the arm's passes behind them at
+/// `4`. The arm drains its countdown `scalar * step` a pass
+/// (`0x801F8C6C..0x801F8CA4`) and its one `rand()` past the gate is the
+/// hit-or-miss coin (`0x801F8CBC`), so the pass count is the roll: run every
+/// pass at `4` the arm is two passes short and both films roll the miss where
+/// retail's hit (`26` to `28` passes at `4` roll retail's hit on both).
+pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
+
+/// [`capture_arm_frame_step`] on the `pass`-th pass (from `0`) of the arm,
+/// with a line's read ending inside it ([`CAPTURE_ARM_READ_TAILS`]).
+pub fn capture_arm_frame_step_on_pass(
+    spell: u8,
+    phase: u8,
+    pass: u16,
+    timing: CdTiming,
+) -> Option<u8> {
+    let tail = (timing == CdTiming::PcsxRedux)
+        .then(|| {
+            CAPTURE_ARM_READ_TAILS
+                .iter()
+                .find(|&&(s, p, n, _)| s == spell && p == phase && pass >= n)
+        })
+        .flatten();
+    tail.map(|&(.., step)| step)
+        .or_else(|| capture_arm_frame_step(spell, phase, timing))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kiss_of_death_arm_4_falls_to_its_own_step_when_the_line_stops_loading() {
+        let pcsx = CdTiming::PcsxRedux;
+        assert_eq!(capture_arm_frame_step_on_pass(0x6E, 4, 0, pcsx), Some(4));
+        assert_eq!(capture_arm_frame_step_on_pass(0x6E, 4, 26, pcsx), Some(4));
+        assert_eq!(capture_arm_frame_step_on_pass(0x6E, 4, 27, pcsx), Some(3));
+        assert_eq!(capture_arm_frame_step_on_pass(0x6E, 3, 40, pcsx), Some(4));
+        assert_eq!(capture_arm_frame_step_on_pass(0x6E, 5, 0, pcsx), Some(2));
+        // A console's table reads the arm at its own cost throughout.
+        assert_eq!(
+            capture_arm_frame_step_on_pass(0x6E, 4, 0, CdTiming::Console),
+            Some(3)
+        );
+    }
 
     #[test]
     fn a_whole_screen_arm_reads_four_and_the_band_opening_one() {
