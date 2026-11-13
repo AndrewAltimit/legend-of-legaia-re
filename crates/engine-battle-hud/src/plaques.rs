@@ -70,7 +70,7 @@ pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Opti
             // A module's panel raise (records 6 / `0x4E` / `0x4F`) takes the
             // seat the bar holds: the two are one seat's tenants, and Orb's
             // heal frames show the panel where the bar stood.
-            if world.battle.module_panels_glide.is_some() {
+            if world.battle.action_panels_glide.is_some() {
                 return None;
             }
             let a = world.battle_ctx.active_actor;
@@ -452,9 +452,10 @@ pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
 /// sub-draw step 0 starts when a round's prompt opens
 /// ([`legaia_engine_battle_loop::battle_state::BattleState::round_prompt_glide`]), and the sink step 1
 /// runs as the ring opens (`06/1 4E/1 4F/1`: seat B back down to seat A,
-/// [`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]), and the rise a cast
-/// module's own raise runs in an action
-/// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]). `0` once landed and
+/// [`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]), and the rise an
+/// action's opener runs (the seed's party-wide raise, the item band's, a cast
+/// module's)
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::action_panels_glide`]). `0` once landed and
 /// on every other surface that shows the panels.
 pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
@@ -465,7 +466,7 @@ pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -
         return (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1));
     }
     if battle_hud_phase(world) == BattleHudPhase::Action
-        && let Some(g) = world.battle.module_panels_glide.as_ref()
+        && let Some(g) = world.battle.action_panels_glide.as_ref()
     {
         return LogLaunch::seat_dy(Some(g), a, b);
     }

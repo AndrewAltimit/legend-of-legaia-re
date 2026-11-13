@@ -191,7 +191,7 @@ fn panels_still_open(s: u8) -> bool {
 /// arm 9's pass (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then
 /// `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`) puts them up under the heal,
 /// and the Done hold closes them like the others
-/// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::action_panels_glide`]).
 pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
     // The teardown's close of `ctx[+0x18] = 6` (`0x801E6188..0x801E61B0`).
     if let Some(c) = action_hud_closing(world) {
@@ -235,7 +235,7 @@ pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
                 let item_band =
                     cat == ActionCategory::Item.as_byte() && s >= ActionState::SpiritFire as u8;
-                let module_raise = world.battle.module_panels_glide.is_some();
+                let module_raise = world.battle.action_panels_glide.is_some();
                 open && (module_raise || (party_wide && (monster_seed || item_band)))
             })
         }

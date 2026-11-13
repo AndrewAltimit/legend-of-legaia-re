@@ -374,6 +374,16 @@ survivor's slot, so a party-wide cast on a solo Vahn keeps the panels up through
 the whole action, as `battle_rikuroa_caruban_fire_breath_mid_cast` shows
 (`+0x1DD = 0`, panel up). Its recording raises no `DAMAGE` readout either.
 
+Each opener calls `FUN_801D8DE8` with mode `0` (`a1 = 0` in the delay slot of
+each `jal`), so the panels rise from seat A on the tracked glide's sixteen
+vsyncs rather than standing at rest from the opener's pass. A monster's
+party-wide special shows them still rising through the capture band's reads:
+the Dead End Crisis recording draws the panel's top edge at row `173`, nine
+rows short of its seat, on the vsync the action reaches `0x6F`, and the
+seed-to-`0x6F` span (two vsyncs to `0x28`, fourteen in `0x6E`) is shorter than
+the glide. Port: the seed's and the item band's raise start
+`BattleState::action_panels_glide` (`World::note_action_plate_raise`).
+
 The close is the Done band's, so the panels hold through every band the action
 runs before it - including the capture band `0x6E..=0x71`, whose state bytes
 sit above `0x51` but which exits into `0x50`. A boss special is such an action:
@@ -394,7 +404,7 @@ same routine opens the target plaque (record 81) for a monster target, except
 for Theeder, Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down
 its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
 `battle_hud::battle_panels_visible` / `battle_target_plaque`; the module raise
-is `BattleState::module_panels_glide`.
+is `BattleState::action_panels_glide`.
 
 ### Numbers are cells, names are glyphs
 

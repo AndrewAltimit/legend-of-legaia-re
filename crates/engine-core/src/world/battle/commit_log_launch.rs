@@ -66,7 +66,7 @@ impl World {
             self.battle.action_hud_wiped = false;
             self.battle.counter_hud = None;
             // A module's panel raise belongs to the action that made it.
-            self.battle.module_panels_glide = None;
+            self.battle.action_panels_glide = None;
             // The seed's own record-7 open (`0x801E2F24..0x801E2F44`): the
             // Attack arm and the Magic arm past its item-class branch fall
             // into `sltiu v0,t2,3` on the target and raise the bar for a
@@ -75,6 +75,13 @@ impl World {
             self.battle.readout_bar_glide = self
                 .seed_raises_readout_bar()
                 .then(|| LogLaunch::new(false));
+        } else if element == ROSTER_PANEL_ELEMENT {
+            // The panels' mode-`0` raise: the seed's plate routine for a
+            // monster's party-wide action (`jal 0x801D8DE8` with `a0 = 6`,
+            // `a1 = 0` at `0x801E7058..0x801E7060`) or the item band's `0x3E`
+            // arm (`0x801E4054..0x801E405C`). Records `0x4E` / `0x4F` follow
+            // on the same pass and ride the one glide.
+            self.battle.action_panels_glide = Some(LogLaunch::new(false));
         } else if element == READOUT_BAR_ELEMENT {
             self.battle.readout_bar_glide = Some(LogLaunch::new(false));
         } else if element == legaia_engine_battle_vm::battle_action::SPIRIT_AP_BAR_ELEMENT {
@@ -192,6 +199,17 @@ impl World {
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
             [160 | 248, 64] | [204, 32 | 96] | [68, 12] | [208, 172] => {
                 self.battle.ring_open_glide.as_mut()
+            }
+            // The roster panels' raise inside an action (records 6 /
+            // `0x4E` / `0x4F`, seat B on row `168`), when an opener raised
+            // them on this replay too; outside one the row is the round
+            // prompt's.
+            [x, 168]
+                if x != 168
+                    && self.battle.command.is_none()
+                    && self.battle.action_panels_glide.is_some() =>
+            {
+                self.battle.action_panels_glide.as_mut()
             }
             [x, 168] if x != 168 => self.battle.round_prompt_glide.as_mut(),
             _ => None,

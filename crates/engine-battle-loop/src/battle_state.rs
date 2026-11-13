@@ -659,14 +659,17 @@ pub struct BattleState {
     /// `0x801E2FD4` / `0x801E2FE0`), so both walk one sixteen-vsync step
     /// together ([`BattleState::spirit_gauge_glide_offsets`]).
     pub spirit_gauge_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
-    /// The roster panels' raise glide when a cast module raises them
-    /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
-    /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
-    /// for the Done hold's close (`0x801F7E64..0x801F7ED4`). Mode `0`: the
-    /// panels rise from seat A to seat B (`y = 236 -> 170`) and take the
-    /// readout bar's seat. Cleared by the next action's seed
+    /// The roster panels' raise glide inside an action. Three openers call
+    /// `FUN_801D8DE8(6, 0)`, `(0x4E, 0)`, `(0x4F, 0)` and store
+    /// `ctx[+0x18] = 6` for the Done hold's close: the seed's plate routine
+    /// `FUN_801E6D84` for a monster's party-wide action
+    /// (`0x801E7058..0x801E7080`), the item band's `0x3E` arm for a
+    /// party-wide target (`0x801E4054..0x801E407C`), and PROT 0911 (Orb)
+    /// arm 9's pass (`0x801F7E64..0x801F7ED4`). Mode `0`: the panels rise
+    /// from seat A to seat B (`y = 236 -> 170`) over the same sixteen
+    /// vsyncs as every tracked widget. Cleared by the next action's seed
     /// (`legaia_engine_battle_hud::battle_panels_visible`).
-    pub module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    pub action_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The round prompt's open glide. The menu SM's round-start arm runs
     /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
     /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
@@ -1578,7 +1581,7 @@ impl BattleState {
             readout_bar_glide: None,
             message_bar_glide: None,
             spirit_gauge_glide: None,
-            module_panels_glide: None,
+            action_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
             surface_hold_glide: None,

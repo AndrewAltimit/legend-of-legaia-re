@@ -325,9 +325,13 @@ pub(super) fn spirit_band_glide_seats(ram: &[u8], ctx: u32, lag: u16) -> Vec<Hud
             let last = u16::from(game_anchors::u8_at(ram, r + 1));
             let (target, start) = (at(4), at(8));
             // The actor plaque (record 68) from above the screen, the target
-            // plaque (record 81) from below it onto the bar's row.
+            // plaque (record 81) from below it onto the bar's row, and the
+            // roster panels (records 6 / `0x4E` / `0x4F`) a monster's
+            // party-wide seed raises beside the actor plaque on one pass
+            // (`FUN_801E6D84`, `0x801E7058..0x801E7078`).
             let plaque = (target, start) == ([16, 12], [16, -26])
-                || (target[1] == 192 && start == [target[0], 234]);
+                || (target[1] == 192 && start == [target[0], 234])
+                || (target[1] == 168 && start == [target[0], 234]);
             (game_anchors::u8_at(ram, r) == 0 && plaque && shown <= last).then_some(HudGlideSeat {
                 target,
                 elapsed: shown as u8,
