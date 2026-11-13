@@ -694,6 +694,11 @@ div.play-vis-head { cursor: default; }
                 <span class="play-vis-tag is-retail">Retail look</span></label>
               <p class="play-vis-desc">The PS1&rsquo;s own 320&times;240 picture: chunky pixels, wobbling vertices and 15-bit colour dither. Off draws a clean image.</p>
             </li>
+            <li class="play-vis-row" title="Pixel-exact scaling: show the clean picture only at the largest whole multiple of 320x240 device pixels the page offers, the rest left as letterbox, so every stage pixel of the menus and text is one size (OptionsState::integer_scale, the native window's launcher row of the same name, persisted with the other options). PSX rasterisation is whole-step either way; off, a clean picture stretches to the layout.">
+              <label class="play-vis-head"><input type="checkbox" id="play-integer-scale"> <span class="play-vis-name">Pixel-exact scaling</span>
+                <span class="play-vis-tag is-enh">Display</span></label>
+              <p class="play-vis-desc">Keeps the picture at a whole multiple of 320&times;240, so every pixel is one size. PSX rasterisation always does.</p>
+            </li>
             <li class="play-vis-row" title="Retail's visible-tile crop: draw only the terrain tiles the PS1's camera window covers, the window widened to match when the camera sits further back (far / farther); a dragged, tilted or zoomed camera draws the whole map (the retail_view_window option, persisted like the native config). Off draws the whole scene.">
               <label class="play-vis-head"><input type="checkbox" id="play-retail-view-window" checked> <span class="play-vis-name">Retail tile crop</span>
                 <span class="play-vis-tag is-retail">Retail</span></label>
@@ -3348,6 +3353,7 @@ div.play-vis-head { cursor: default; }
   const dynShadowsEl = document.getElementById('play-dyn-shadows');
   const bloomEl = document.getElementById('play-bloom');
   const ssaoEl = document.getElementById('play-ssao');
+  const integerScaleEl = document.getElementById('play-integer-scale');
   function applyRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.set_enhanced_lighting === 'function') {
@@ -3357,6 +3363,7 @@ div.play-vis-head { cursor: default; }
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
         if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
         if (typeof rt.set_ssao === 'function') rt.set_ssao(!!ssaoEl.checked);
+        if (typeof rt.set_integer_scale === 'function') rt.set_integer_scale(!!integerScaleEl.checked);
       } catch (e) {}
     }
     /* PSX rasterisation is a remembered launch switch (the launcher's PSX
@@ -3383,11 +3390,16 @@ div.play-vis-head { cursor: default; }
    * pixels that fits the width its layout offers (which the layout already
    * caps by the window's height), and what is left over stays page or, in
    * fullscreen, black letterbox. The canvas border goes while it is on: the
-   * picture is the canvas's content box, and the overlay canvas spans the wrap. */
+   * picture is the canvas's content box, and the overlay canvas spans the wrap.
+   * The clean picture takes the same fit under *Pixel-exact scaling*
+   * (`OptionsState::integer_scale`, the window's launcher row): its 960 x 720
+   * canvas then lands on whole device pixels per stage pixel, as the window's
+   * stage rect does. */
   const PSX_STAGE_W = 320;
   const stageWrap = canvas.parentElement;
   function fitPixelExact() {
-    const on = !!(view && view.psxRender) && !document.body.classList.contains('xw-preview');
+    const whole = !!(view && view.psxRender) || integerScaleEl.checked;
+    const on = !!view && whole && !document.body.classList.contains('xw-preview');
     stageWrap.classList.toggle('is-pixel-exact', on);
     stageWrap.style.width = '';
     if (!on) return;
@@ -3451,10 +3463,13 @@ div.play-vis-head { cursor: default; }
         if (typeof rt.bloom === 'function') bloomEl.checked = !!rt.bloom();
         if (typeof rt.ssao === 'function') ssaoEl.checked = !!rt.ssao();
         if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
+        if (typeof rt.integer_scale === 'function') integerScaleEl.checked = !!rt.integer_scale();
       } catch (e) {}
     }
+    fitPixelExact();
   }
   psxRenderEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  integerScaleEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynShadowsEl.addEventListener('change', () => {

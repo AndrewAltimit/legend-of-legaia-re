@@ -395,7 +395,10 @@ those saves load and save in place - what the browser play page's card import
 does. `Delete` on the button removes it. The last few cards are remembered
 too (`recent_cards`): the same right-click steps through those that still
 read, newest first, then offers the file dialog, so moving between two
-emulators' cards takes no browsing. `LEGAIA_ENGINE_CONFIG_DIR` and
+emulators' cards takes no browsing. While the game runs, dropping a card
+file on the game window swaps it into card 2 for the rest of the session
+(the notice line names it, or says the file is not a card); the launcher's
+remembered card is left as it was. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 
@@ -599,9 +602,11 @@ percent to fit, rather than dropping to the step below with black around it.
 The *Pixel-exact scaling* row (`integer_scale`, also on the `F12` panel)
 turns that shrink off, for a player who wants every stage pixel the same size
 at the cost of the black border; PSX mode always scales in whole steps. So
-does the browser play page under PSX rasterisation: its picture takes the
-largest whole multiple of 320x240 device pixels the page offers, and the rest
-of the column, or of the screen in fullscreen, stays black.
+does the browser play page under PSX rasterisation, and under its own
+*Pixel-exact scaling* box (the same stored option) in the clean mode: its
+picture takes the largest whole multiple of 320x240 device pixels the page
+offers, and the rest of the column, or of the screen in fullscreen, stays
+black.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`

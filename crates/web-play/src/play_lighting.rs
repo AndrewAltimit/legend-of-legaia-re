@@ -171,6 +171,25 @@ impl LegaiaRuntime {
         self.options_state.occlusion_fade
     }
 
+    /// Turn *Pixel-exact scaling* on / off (`OptionsState::integer_scale`,
+    /// the window's launcher row and `F12` panel row, persisted with the
+    /// other options). Presentation only: the page then sizes a clean
+    /// picture to the largest whole multiple of `320 x 240` device pixels
+    /// its layout offers, as it always does under PSX rasterisation
+    /// (`fitPixelExact` in `play.html`).
+    pub fn set_integer_scale(&mut self, on: bool) {
+        if self.options_state.integer_scale != on {
+            self.options_state.integer_scale = on;
+            self.persist_and_apply_options();
+        }
+    }
+
+    /// Whether *Pixel-exact scaling* is on - the persisted option the page's
+    /// box reflects.
+    pub fn integer_scale(&self) -> bool {
+        self.options_state.integer_scale
+    }
+
     // --- lane L ---
     /// Turn bloom on / off (the page's "Bloom" box, `F10` on both hosts),
     /// persisted with the other options (`OptionsState::bloom`).

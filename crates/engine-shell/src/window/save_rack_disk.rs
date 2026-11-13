@@ -148,6 +148,40 @@ pub(crate) fn import_legacy_slots(
     imported
 }
 
+/// A memory-card image dropped on the play window, for **port 2**: the
+/// window's twin of the browser page's mid-session insert
+/// (`LegaiaRuntime::insert_card`). The container is validated before it
+/// takes the port - a file that does not mount never replaces the card
+/// there - and the card keeps the dropped file as its path, so a Save into
+/// port 2 writes back into it, as a `--card` mount does.
+pub(crate) fn mount_dropped_card(path: &Path) -> Result<MountedCard, String> {
+    MountedCard::open(path).map_err(|e| format!("{e:#}"))
+}
+
+impl PlayWindowApp {
+    /// Put a dropped card image into port 2 and say so on the notice line.
+    /// Port 1 stays the window's own `memcard1.mcr`. The save screen reads
+    /// its rack from the ports each time it opens, and the title rescans
+    /// both on its next open, as the page does after its insert.
+    pub(super) fn insert_dropped_card(&mut self, path: &Path) {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        match mount_dropped_card(path) {
+            Ok(card) => {
+                log::info!("play-window: {} mounted in card port 2", path.display());
+                self.card = Some(card);
+                self.show_notice(format!("Memory card 2: {name}"));
+            }
+            Err(e) => {
+                log::warn!("play-window: dropped {} not mounted: {e}", path.display());
+                self.show_notice(format!("Not a memory card: {name}"));
+            }
+        }
+    }
+}
+
 /// The window's save rack, the block read behind a port and the
 /// Continue-enable scan are the session's
 /// ([`legaia_engine_session::title_continue`]), decided once for both play
@@ -914,6 +948,21 @@ mod mounted_card_tests {
 
     /// With nothing mounted, port 2 is exactly what it was before the port
     /// existed - an empty port previewing fifteen free cells, never port 1's.
+    /// A card dropped on the window mounts with the dropped file as its
+    /// path, so port 2's saves write back into it; a file that is not a
+    /// card is refused and leaves the port as it was.
+    #[test]
+    fn a_dropped_card_mounts_and_a_stranger_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let card = dir.path().join("dropped.mcr");
+        std::fs::write(&card, legaia_save::card::formatted_card_image()).unwrap();
+        let mounted = super::mount_dropped_card(&card).expect("a formatted card mounts");
+        assert_eq!(mounted.path.as_deref(), Some(card.as_path()));
+        let junk = dir.path().join("notes.txt");
+        std::fs::write(&junk, b"not a memory card").unwrap();
+        assert!(super::mount_dropped_card(&junk).is_err());
+    }
+
     #[test]
     fn port_two_reads_empty_with_no_card_mounted() {
         let rack = card_port_rack([None, None]);
