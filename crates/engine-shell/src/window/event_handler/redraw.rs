@@ -282,6 +282,34 @@ impl PlayWindowApp {
                 );
             }
         }
+        // Every live ambient default-arm part (the overworld cutscenes' rings
+        // and walls), in the fields a retail actor-list walk prints: the
+        // `+0x9C` block the builder reads, the radii `+0xB4` / `+0xB6` and
+        // heights `+0xB8` / `+0xBA`.
+        for (i, p) in w.ambient.fx.iter().enumerate().filter(|(_, p)| !p.finished) {
+            let s = &p.state;
+            if legaia_engine_effects::effect_default_arm::call_args(s).is_none() {
+                continue;
+            }
+            let h = |o: usize| s.actor_u16(o) as i16;
+            eprintln!(
+                "capture default arm {i}: rec {:#x} at ({}, {}, {}) 9c {:#06x} 9e {:#06x} c8 {} col {:#010x}/{:#010x} r {}/{} h {}/{} 78 {}",
+                p.record_off,
+                s.world_x,
+                s.world_y,
+                s.world_z,
+                s.actor_u16(0x9C),
+                s.field_9e,
+                h(0xC8),
+                s.actor_u32(0xA0),
+                s.actor_u32(0xA4),
+                h(0xB4),
+                h(0xB6),
+                h(0xB8),
+                h(0xBA),
+                s.field_78,
+            );
+        }
         for c in w.field_vm.channels.iter().filter(|c| c.object_bind) {
             eprintln!(
                 "capture object channel {}: at ({}, {}, {}) scale {} flags {:#x}",

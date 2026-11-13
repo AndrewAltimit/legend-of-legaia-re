@@ -440,7 +440,7 @@ impl RetailObs {
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
-                retail_sprite_arms(ram)
+                retail_sprite_arms(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
                 Vec::new()
             },

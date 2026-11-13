@@ -159,6 +159,12 @@ pub struct SpriteArmSeed {
     pub colour: u32,
     pub level: u16,
     pub pose: Vec<[u8; 8]>,
+    /// For a default-arm node (no sprite-arm bit), the builder's growing
+    /// channels as the displayed frame drew them: the radii `+0xB4` /
+    /// `+0xB6`, the heights `+0xB8` / `+0xBA` and the length `+0xC8`, each
+    /// taken back the display lag along its own rate `+0xC0..+0xCA`. `None`
+    /// keeps the engine's own.
+    pub shape: Option<[i16; 5]>,
 }
 
 /// A turning ambient part's render banks `+0x24..+0x28` as a capture's
@@ -299,6 +305,16 @@ impl World {
             st.field_72 = seed.scale;
             if st.field_9e & 0x4000 != 0 {
                 st.field_74 = seed.colour;
+                st.field_78 = seed.level;
+            } else if let Some(shape) = seed.shape {
+                // A default-arm node's rings grow by their rates every pass
+                // from the spawn, and the spawn falls on the frame clock:
+                // where each ring stands is the frame-step history since the
+                // entry, which a child running at a steady step does not
+                // replay. Seated with the level the displayed frame drew.
+                for (off, v) in [0xB4, 0xB6, 0xB8, 0xBA, 0xC8].into_iter().zip(shape) {
+                    st.set_actor_u16(off, v as u16);
+                }
                 st.field_78 = seed.level;
             }
             seat_pose(st, &seed.pose);

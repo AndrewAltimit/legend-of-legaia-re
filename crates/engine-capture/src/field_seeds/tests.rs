@@ -80,7 +80,20 @@ fn sprite_arm_seeds_round_trip_through_their_env_form() {
             [1, 2, 3, 4, 5, 6, 7, 8],
             [0xF0, 0, 0x1F, 0, 0, 0x80, 0x40, 0x80],
         ],
+        shape: None,
     }];
+    assert_eq!(sprite_arms_from_env(&sprite_arms_env(&s)), s);
+    let ring = vec![legaia_engine_core::world::ambient::SpriteArmSeed {
+        record_off: 0x45C,
+        pos: [9536, -512, 7744],
+        rot: [0, 0xA00, 0],
+        scale: 0x1000,
+        colour: 0xC900_0000,
+        level: 1330,
+        pose: Vec::new(),
+        shape: Some([1508, 1508, -240, -40, 80]),
+    }];
+    assert_eq!(sprite_arms_from_env(&sprite_arms_env(&ring)), ring);
     assert_eq!(sprite_arms_from_env(&sprite_arms_env(&s)), s);
 }
 

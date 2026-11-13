@@ -669,14 +669,31 @@ engine verdict:
   Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
   `.988` / `.984` (`.954` / `.953`).
 
-  The other draw-kind-4 parts (no sprite-arm bit) take the same seat by
-  placement only, and keep the engine's own colour word and fade level: their
-  programs fade them every pass, so the RAM's level stands two passes past the
-  frame on screen. `vozz_ozma_hatching_crawl`'s sparkles round Ozma's egg are
-  `rand()` history like the mist, and the two the engine had put beside Gala
-  leave the frame (`.953` to `.975`); `garmel_zeto_appears_rising`'s light bars
-  stand where retail's do (`.965` to `.966`), where a level seated from RAM lit
-  the floor ring brighter than the frame shows (`.954`). A harness seat.
+  The seat is the displayed frame's, not the RAM's: the state's RAM stands the
+  display lag past the frame on screen (`display_lag_vsyncs`, two passes), so
+  each sheet's position is taken back along its heading and speed, and a
+  keyframe-pose node's packed entries are re-blended from the block's keyframe
+  records at the cursor `+0x22` less `+0xD0` a vsync
+  (`displayed_pose_entries`; at no lag the re-blend reproduces the block's own
+  entries on every pose node of `map01_tree_revival_cutscene`).
+
+  The other draw-kind-4 parts (no sprite-arm bit) are the default arm's
+  rings, walls and crowns. They take the same seat by placement, and also
+  their growing channels - the radii `+0xB4` / `+0xB6`, the heights `+0xB8` /
+  `+0xBA` and the length `+0xC8` - and their level `+0x78`, each taken back
+  the lag along its own rate (`+0xC0..+0xCA`, `+0x90`). Their spawns fall on
+  the frame clock, and retail's step on a busy frame is not the child's
+  steady one: `map01`'s Genesis Tree revival grows a ring of `32` columns
+  round each of four points every `81` vsyncs at a steady step, and retail's
+  spacing reads `84` to `104` vsyncs, so the ring through the camera stood
+  two passes past retail's while the far ones lagged it. Seated, the ring
+  bands lie on retail's packets (`.789` to `.835`, and `.926` with the
+  ridge's puff sheets taken back too). The engine's own colour word stays.
+  `vozz_ozma_hatching_crawl`'s sparkles round Ozma's egg are `rand()` history
+  like the mist, and the two the engine had put beside Gala leave the frame;
+  `garmel_zeto_appears_rising`'s light bars stand where retail's do, where a
+  level seated from RAM without the take-back lit the floor ring brighter
+  than the frame shows. A harness seat.
 
   A state that holds no sheet says so too (`LEGAIA_SEAT_SPRITE_ARMS=none` on
   every field and overworld state), and the install retires every sheet the
