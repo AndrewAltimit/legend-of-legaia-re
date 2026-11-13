@@ -637,11 +637,8 @@ pub struct HubTimers {
     pub prev_leg_open: bool,
     /// Last frame's "a contest is open".
     pub prev_contest_open: bool,
-    /// Vsyncs since the hub's last game tick ([`HUB_FRAME_STEP`]).
-    pub vsync_phase: u8,
-    /// Pad edges seen on vsyncs between two game ticks, held for the next
-    /// one as the pad pump's edge word holds them.
-    pub pending_pad: u16,
+    /// The vsync-to-game-tick cadence the arms run on ([`HubCadence`]).
+    pub cadence: HubCadence,
 }
 
 /// The hub's frame step. The screen routine `FUN_801CF870` stores `2` to
@@ -652,6 +649,84 @@ pub struct HubTimers {
 /// the resolver's deterministic arm, the floor itself, as it does the
 /// fishing pond's and the dance hall's.
 pub const HUB_FRAME_STEP: u8 = 2;
+
+/// The hub's vsync cadence: which vsyncs run the screen arms, on a step of
+/// [`HUB_FRAME_STEP`], and the pad edges held between two of them.
+///
+/// Every host steps the hub through this, once a display vsync: the play
+/// hosts inside [`HubTimers::tick`], the minigames page around its own
+/// screens. A host that replays a screen from a vsync count rather than
+/// stepping it reads the same rule off [`Self::ticks_through`] and
+/// [`Self::tick_reading_press`].
+///
+/// REF: FUN_801CF870 (the floor store at `0x801CF8DC..0x801CF8E0`)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HubCadence {
+    /// Vsyncs since the hub's last game tick.
+    pub phase: u8,
+    /// Pad edges seen on vsyncs between two game ticks, held for the next
+    /// one as the pad pump's edge word holds them.
+    pub pending_pad: u16,
+}
+
+impl HubCadence {
+    /// The cadence of a hub with no screen up: one vsync short of its tick,
+    /// so a screen armed on the next vsync takes its first step there.
+    pub const fn idle() -> Self {
+        Self {
+            phase: HUB_FRAME_STEP - 1,
+            pending_pad: 0,
+        }
+    }
+
+    /// One vsync with this vsync's pad edge. `Some(pad)` when the arms run
+    /// this vsync (on a step of [`HUB_FRAME_STEP`]), with every edge held
+    /// since the last tick folded in; `None` when they do not, the edge then
+    /// held for the next tick.
+    pub fn vsync(&mut self, pad: u16) -> Option<u16> {
+        let pad = pad | std::mem::take(&mut self.pending_pad);
+        self.phase = self.phase.saturating_add(1);
+        if self.phase >= HUB_FRAME_STEP {
+            self.phase = 0;
+            Some(pad)
+        } else {
+            self.pending_pad = pad;
+            None
+        }
+    }
+
+    /// Stand the cadence idle ([`Self::idle`]): no screen holds the frame.
+    pub fn rest(&mut self) {
+        *self = Self::idle();
+    }
+
+    /// How many game ticks a screen armed on an idle hub has run through its
+    /// `vsync`-th vsync, the arming vsync being the first (`0` before it).
+    pub const fn ticks_through(vsync: i32) -> i32 {
+        if vsync <= 0 {
+            0
+        } else {
+            (vsync + HUB_FRAME_STEP as i32 - 1) / HUB_FRAME_STEP as i32
+        }
+    }
+
+    /// The 0-based game tick that reads a press made on a screen's `vsync`-th
+    /// vsync: that vsync's own tick when it runs one, else the next.
+    pub const fn tick_reading_press(vsync: i32) -> i32 {
+        let v = if vsync < 1 { 1 } else { vsync };
+        (v - 1 + HUB_FRAME_STEP as i32 - 1) / HUB_FRAME_STEP as i32
+    }
+
+    /// The vsync (1-based, as [`Self::ticks_through`] counts) a screen's
+    /// `tick`-th game tick runs on; `0` for no tick.
+    pub const fn vsync_of_tick(tick: i32) -> i32 {
+        if tick <= 0 {
+            0
+        } else {
+            1 + (tick - 1) * HUB_FRAME_STEP as i32
+        }
+    }
+}
 
 /// What one [`HubTimers::tick`] reads off the simulation. The hub's own
 /// state is the timers; these four are the world's, sampled by the caller
@@ -717,17 +792,11 @@ impl HubTimers {
         // stands one vsync short of its tick, so a screen the edges above
         // (or an earlier vsync) armed takes its first step at once - the
         // ROUND card's line starts on the leg's first vsync.
-        let pad = pad | std::mem::take(&mut self.pending_pad);
-        self.vsync_phase = self.vsync_phase.saturating_add(1);
-        if self.vsync_phase >= HUB_FRAME_STEP {
-            self.vsync_phase = 0;
+        if let Some(pad) = self.cadence.vsync(pad) {
             self.game_tick(world, pad, volume_word, &mut out);
-        } else {
-            self.pending_pad = pad;
         }
         if !self.screen_up() {
-            self.vsync_phase = HUB_FRAME_STEP - 1;
-            self.pending_pad = 0;
+            self.cadence.rest();
         }
         out.next_leg = world.between_legs && !self.screen_up();
         out
@@ -1158,6 +1227,47 @@ mod tests {
         assert!(!in_fade, "the fade-in arm carries no pad test");
     }
 
+    /// The replay helpers a host that counts a screen's vsyncs reads
+    /// ([`HubCadence::ticks_through`], [`HubCadence::tick_reading_press`],
+    /// [`HubCadence::vsync_of_tick`]) agree with stepping the cadence itself
+    /// from idle, one vsync at a time.
+    #[test]
+    fn the_cadence_replay_helpers_agree_with_stepping_it() {
+        let mut c = HubCadence::idle();
+        let mut ticks = 0;
+        let mut tick_vsyncs = Vec::new();
+        for v in 1..=40 {
+            if c.vsync(0).is_some() {
+                ticks += 1;
+                tick_vsyncs.push(v);
+            }
+            assert_eq!(HubCadence::ticks_through(v), ticks, "vsync {v}");
+        }
+        for (i, &v) in tick_vsyncs.iter().enumerate() {
+            assert_eq!(HubCadence::vsync_of_tick(i as i32 + 1), v);
+        }
+        for v in 1..=39 {
+            // A press on vsync `v` is read by the first tick at or after it.
+            let mut c = HubCadence::idle();
+            let mut read = None;
+            for w in 1..=v + i32::from(HUB_FRAME_STEP) {
+                let pad = if w == v { 0x40 } else { 0 };
+                if let Some(p) = c.vsync(pad)
+                    && p & 0x40 != 0
+                    && read.is_none()
+                {
+                    read = Some(HubCadence::ticks_through(w) - 1);
+                }
+            }
+            assert_eq!(
+                read,
+                Some(HubCadence::tick_reading_press(v)),
+                "press on {v}"
+            );
+        }
+        assert_eq!(HubCadence::ticks_through(0), 0);
+    }
+
     /// The hub's arms run once every [`HUB_FRAME_STEP`] vsyncs on that step
     /// (`FUN_801CF870`'s floor store at `0x801CF8DC..0x801CF8E0`): a fade
     /// moves `dt * 4` every second vsync, the first visit lasts as many
@@ -1174,7 +1284,7 @@ mod tests {
         };
         // A first visit armed on an idle hub takes its first step at once.
         let mut t = HubTimers {
-            vsync_phase: HUB_FRAME_STEP - 1,
+            cadence: HubCadence::idle(),
             first_visit: Some(FirstVisitHub::new()),
             ..Default::default()
         };
@@ -1209,7 +1319,7 @@ mod tests {
         };
         let drain_vsyncs = || {
             let mut t = HubTimers {
-                vsync_phase: HUB_FRAME_STEP - 1,
+                cadence: HubCadence::idle(),
                 interval: Some(HubScreen::interval(4000)),
                 tally: Some((ScoreTallyRamp::arm(rows), 0)),
                 ..Default::default()
@@ -1236,7 +1346,7 @@ mod tests {
 
         // A press on the vsync between two ticks is held for the next one.
         let mut t = HubTimers {
-            vsync_phase: HUB_FRAME_STEP - 1,
+            cadence: HubCadence::idle(),
             interval: Some(HubScreen::interval(4000)),
             tally: Some((ScoreTallyRamp::arm(rows), 0)),
             ..Default::default()
@@ -1248,7 +1358,7 @@ mod tests {
             t.tick(idle, 0, 200);
         }
         // The fade-in ends on a tick: the next vsync is the one between.
-        assert_eq!(t.vsync_phase, 0);
+        assert_eq!(t.cadence.phase, 0);
         t.tick(idle, 0x40, 200);
         assert!(!t.tally_boost, "no tick ran on the press's vsync");
         t.tick(idle, 0, 200);

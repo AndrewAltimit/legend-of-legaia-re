@@ -166,11 +166,11 @@ window.MgMuscle = (function () {
     let magicWhy = '';         /* last Ra-Seru refusal name, '' when none */
     let pennantFx = [];        /* committed-pennant glides {cmd,slot,x,y,t,life} */
     let chipSlideT = 0;        /* frames since the direction entry opened */
-    let introT = 0;            /* ticks into the intro card */
+    let introT = 0;            /* vsyncs into the intro card (1 = its first) */
     let introLive = false;     /* the engine steps the first visit */
-    let introPress = false;    /* a press this tick, for the live visit */
+    let introPress = false;    /* a press this vsync, for the live visit */
     let introFvOk = false;     /* the live visit drew last frame */
-    let intervalT = 0;         /* ticks into the INTERVAL + tally screen */
+    let intervalT = 0;         /* vsyncs into the INTERVAL + tally screen (1 = its first) */
     let intervalHp = [0, 0];   /* [hp, hp_max] the leg ended on (still pick) */
     let tick = 0;
     let banner = null;         /* {text, sub, t, life, cls} */
@@ -430,17 +430,20 @@ window.MgMuscle = (function () {
      * so the caller can fall back to its procedural text). */
     const hubQuadCache = new Map();
     /* Retail's own fade / hold envelope for a hub screen, out of the shared
-     * `muscle_dome::HubScreen` kernel the native window ticks - so this page
-     * cannot pick a frame count or a brightness of its own. `screen`:
-     * 0 intro card, 1 ROUND banner, 2 opponent card, 3 INTERVAL.
-     * Returns {brightness, stage, done, total}; `brightness` is the emitter
-     * argument (0..0x80, where 0x80 is neutral - 0x100 draws at double). */
+     * `muscle_dome::HubScreen` kernel the native window ticks, on the hub's
+     * own cadence (`muscle_ringside::HubCadence`: a game tick every second
+     * vsync on a step of two) - so this page cannot pick a frame count, a
+     * frame rate or a brightness of its own. `t` is the screen's vsync, the
+     * vsync it went up on being 1. `screen`: 0 intro card, 1 ROUND banner,
+     * 2 opponent card, 3 INTERVAL. Returns {brightness, stage, done, total};
+     * `total` is in vsyncs, `brightness` the emitter argument (0..0x80,
+     * where 0x80 is neutral - 0x100 draws at double). */
     const hubEnvCache = new Map();
     const hubEnvTotals = {};
     function hubEnv(screen, t) {
       const fallback = { brightness: 0x80, stage: 1, done: false, total: 0 };
       if (!api || !api.muscle_hub_screen_json) return fallback;
-      /* The envelope is monotone and finishes, so past its total every tick
+      /* The envelope is monotone and finishes, so past its total every vsync
        * answers the same - clamp so a screen the player leaves up does not
        * grow the cache or the replay. */
       const tot = hubEnvTotals[screen] || 0;
@@ -919,7 +922,9 @@ window.MgMuscle = (function () {
              * count-up rows. The victory caption is the BATTLE's, so it plays
              * as a short beat over the KO and expires into the hub screen. */
             mode = 'interval';
-            intervalT = 0;
+            /* This vsync is the screen's first: the hub's cadence runs its
+             * first game tick on the vsync the leg closes (HubCadence). */
+            intervalT = 1;
             /* The leg's closing HP picks the ringside still the hub shows
              * (int.tim, or int2.tim below half HP) - latched here, as
              * retail's loader reads it once at the battle end. */
@@ -1678,15 +1683,16 @@ window.MgMuscle = (function () {
       drawIntervalStill();
       const env = hubEnv(3, intervalT);
       const heading = hudOk() && hubQuads(2, 0, env.brightness);
-      /* Screen 4 takes the interval tick as its argument: the six rows are
+      /* Screen 4 takes the interval vsync as its argument: the six rows are
        * the score roll `other_game_overlay::ScoreTallyRamp` replays to that
-       * tick, the same kernel the native window steps per frame. */
+       * vsync on the hub's cadence, the kernel the native window steps a
+       * game tick every second vsync. */
       const rows = hudOk() && hubQuads(4, intervalT, env.brightness);
       /* The tally's own voice. It names no cue id - `FUN_801D1288` resolves a
        * whole voice-attr set per drained lane - so it cannot come out of the
        * offline per-cue PCM path above; it needs the live SPU the engine owns
        * for this page (js/minigame-bgm.js `MgSpu`). Driven off the same screen
-       * tick the rows are, and the engine keys only the steps it has not. */
+       * vsync the rows are, and the engine keys only the steps it has not. */
       if (window.MgSpu) MgSpu.tallyVoice(api, intervalT);
       if (heading && rows) {
         if (legCaption) text(legCaption, 160, 200, 7, '#e8ecf2', 'center', '');
@@ -1737,7 +1743,9 @@ window.MgMuscle = (function () {
        * record 1, not the decimal readout's record 9, and its column is
        * digit*24 (FUN_801D15C8). */
       const round = /^ROUND (\d+)$/.exec(banner.text);
-      const roundEnv = hubEnv(2, banner.t);
+      /* banner.t is 0 on the vsync the banner goes up: that is the screen's
+       * vsync 1, which runs its first game tick. */
+      const roundEnv = hubEnv(2, banner.t + 1);
       /* The retail art carries the fade in its own emitter brightness, so the
        * canvas alpha steps out of the way for it - two ramps would compound. */
       if (round) g.globalAlpha = 1;

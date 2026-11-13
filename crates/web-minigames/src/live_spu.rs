@@ -172,13 +172,17 @@ impl LegaiaMinigames {
             .count() as u32
     }
 
-    /// Key the Muscle Dome tally's **voice-attr** cues for a screen tick.
+    /// Key the Muscle Dome tally's **voice-attr** cues through the INTERVAL
+    /// screen's `round`-th vsync.
     ///
     /// The dome page replays `ScoreTallyRamp` from the INTERVAL screen's own
-    /// tick rather than stepping it once per frame (`muscle_hub_quads_json`),
-    /// so this replays the same way and keys only the steps it has not keyed
-    /// yet - `muscle_tally_voiced_steps` is the high-water mark, cleared by
-    /// [`Self::muscle_tally_voice_reset`] when a new INTERVAL screen opens.
+    /// vsync rather than stepping it (`muscle_hub_quads_json`), on the hub's
+    /// cadence (`HubCadence::ticks_through`: a game tick every second vsync
+    /// on a step of two), so this replays the same way and keys only the
+    /// steps it has not keyed yet - `muscle_tally_voiced_steps` is the
+    /// high-water mark, cleared by [`Self::muscle_tally_voice_reset`] when a
+    /// new INTERVAL screen opens. The cue ring ages once a vsync, as the play
+    /// hosts' ring does, not once a game tick.
     ///
     /// Returns how many voices keyed. The attr set is the shared kernel's:
     /// `arena_voice_cue` resolves the whole tuple and advances the rotating
@@ -188,12 +192,18 @@ impl LegaiaMinigames {
             return 0;
         };
         let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
+        use legaia_engine_minigames::muscle_ringside::{HUB_FRAME_STEP, HubCadence};
         let (mut ramp, _) = run.tally_roll();
-        let target = round.max(0);
+        let vsync = round.clamp(0, 1 << 16);
+        let target = HubCadence::ticks_through(vsync);
         let from = self.muscle_tally_voiced_steps;
         let mut attrs = Vec::new();
         for step_idx in 0..target {
-            let step = ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
+            let step = ramp.tick(
+                HUB_FRAME_STEP,
+                self.muscle_tally_boost_at(step_idx),
+                volume_word,
+            );
             if step_idx >= from {
                 // Re-resolve through the kernel rather than reusing the
                 // replayed step's own cue: the replay restarts the ramp's
@@ -214,15 +224,17 @@ impl LegaiaMinigames {
                 break;
             }
         }
-        self.muscle_tally_voiced_steps = target;
+        self.muscle_tally_voiced_steps = self.muscle_tally_voiced_steps.max(target);
         let keyed = attrs
             .into_iter()
             .filter(|&cue| self.key_voice_cue(cue))
             .count() as u32;
-        // The ring's armed "ka-ching" cues age on this screen's own tick.
-        for _ in from..target {
+        // The ring's armed "ka-ching" cues age on this screen's own vsyncs.
+        let aged = self.muscle_tally_aged_vsyncs;
+        for _ in aged..vsync {
             self.audio_frame(&[], &[], Vec::new());
         }
+        self.muscle_tally_aged_vsyncs = aged.max(vsync);
         keyed
     }
 
@@ -234,6 +246,7 @@ impl LegaiaMinigames {
     /// (`0x801CFCAC..0x801CFCEC`).
     pub fn muscle_tally_voice_reset(&mut self) {
         self.muscle_tally_voiced_steps = 0;
+        self.muscle_tally_aged_vsyncs = 0;
         self.muscle_tally_boost_from = None;
         use legaia_engine_minigames::muscle_dome::{HUB_TALLY_CUE_STAGGER, HUB_TALLY_CUES};
         let ops: Vec<SfxRingOp> = HUB_TALLY_CUES

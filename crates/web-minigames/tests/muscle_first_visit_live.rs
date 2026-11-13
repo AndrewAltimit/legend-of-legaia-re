@@ -87,3 +87,48 @@ fn the_first_visit_is_owed_once_per_contest() {
     assert!(mg.muscle_contest_settle(0b001, 0b111, false));
     assert!(mg.muscle_first_visit_owed());
 }
+
+/// The page's live first visit runs on the hub's cadence - a game tick every
+/// second vsync on a step of two (`FUN_801CF870`'s floor store at
+/// `0x801CF8DC..0x801CF8E0`, `HubCadence`) - so, stepped once a vsync as the
+/// page steps it, its arms last what retail's do: `2` 34, `3` 14, `4` 52,
+/// `5` 182, `6` 34 and `0x14` 2 vsyncs, the lengths
+/// `autorun_hub_cadence.lua` reads off `minigame_muscle_dome_retail_welcome`.
+/// A step of one every vsync ran five of them a vsync short.
+#[test]
+fn the_live_first_visit_holds_each_arm_for_retails_vsyncs() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    mg.muscle_first_visit_reset();
+    let mut spans: Vec<(i64, u32)> = Vec::new();
+    let mut per_vsync = Vec::new();
+    for _ in 1..=8192u32 {
+        let v: serde_json::Value =
+            serde_json::from_str(&mg.muscle_first_visit_step(false, 0, 1)).unwrap();
+        let arm = v["arm_id"].as_i64().expect("arm_id");
+        per_vsync.push(arm);
+        match spans.last_mut() {
+            Some((a, n)) if *a == arm => *n += 1,
+            _ => spans.push((arm, 1)),
+        }
+        if v["done"] == true {
+            break;
+        }
+    }
+    eprintln!("[ran] first visit arms on the page cadence: {spans:?}");
+    let arm = |id: i64| spans.iter().find(|(a, _)| *a == id).map(|&(_, n)| n);
+    assert_eq!(
+        [2, 3, 4, 5, 6, 0x14].map(arm),
+        [34, 14, 52, 182, 34, 2].map(Some),
+        "arms 2..6 and 0x14 in vsyncs: {spans:?}"
+    );
+    // The no-input replay the page draws without a live hub agrees with
+    // the live walk vsync for vsync.
+    for (i, &live) in per_vsync.iter().enumerate().step_by(7) {
+        let replay: serde_json::Value =
+            serde_json::from_str(&mg.muscle_first_visit_json(i as i32 + 1, 0, 1)).unwrap();
+        assert_eq!(replay["arm_id"].as_i64(), Some(live), "vsync {}", i + 1);
+    }
+}
