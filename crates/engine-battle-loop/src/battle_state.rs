@@ -913,6 +913,12 @@ pub struct BattleState {
     /// that opens a battle frame, `0` on the ticks between, `1` on the
     /// per-vsync cadence.
     pub anim_pass_vsyncs: u8,
+    /// The effect-pool walker's sweeps this tick owes the battle draw tick:
+    /// retail walks the pool from the draw tick (`jal 0x801E0080` at
+    /// `0x80048128`), behind the frame driver's pass and ahead of the bodies'
+    /// draws, so on the battle frame cadence the mode tick leaves its sweeps
+    /// to the anim pass's draw preamble.
+    pub walker_sweeps_owed: u8,
     /// Whether this tick's battle pass reached the anim tick's slot (its
     /// root motion and hit walk), which on retail's cadence run after the
     /// pass (`World::tick_battle_anim_pass`).
@@ -1641,6 +1647,7 @@ impl BattleState {
             action_fx_pass_frame: None,
             summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
+            walker_sweeps_owed: 0,
             anim_slot_reached: false,
             cast_tick_due: false,
             draw_spawns: Vec::new(),

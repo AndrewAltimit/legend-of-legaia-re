@@ -1003,6 +1003,12 @@ impl World {
         // What a landing stages here commits on the victim's next node
         // tick, a pass on.
         // PORT: FUN_800480D8 (`0x800480FC..0x80048130`, the cast tick's seat in the pass)
+        //
+        // The effect-pool walker comes first (`jal 0x801E0080` at
+        // `0x80048128`), with the sweeps the mode tick left it.
+        for _ in 0..std::mem::take(&mut self.battle.walker_sweeps_owed) {
+            self.tick_effects();
+        }
         if cast_tick_due {
             self.tick_battle_cast_census();
             self.battle.cast_census_drawn = true;
