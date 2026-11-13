@@ -6625,6 +6625,56 @@ expected_active_scene = "town0b"
 topics = ["battle", "results", "retail-compare"]
 
 [[scenarios]]
+label = "battle_jou_gala_finisher_results_retail"
+backup_fingerprint = "95e2b529e76e30f923d7096eb9793c3008464a1d04470bcc190350a95614b380"
+description = "Results frame of a jou win Gala finished: ctx[+0x13] = 2, win pose 0x14 staged on Gala, yaw counter 0x780, 'Gala's team won the battle!'. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSA: Vahn and Noa Spirit, Gala attacks), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_gala_finisher_hold_retail"
+backup_fingerprint = "b7fbc4e2f24448f423b394c718d8bf37d0607a96b689da4409cf19b1b06df37c"
+description = "The same win 128 vsyncs into the results hold: Gala playing win pose 0x14 at dynamic slot 0x10 under the battle-over framing. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSA), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_noa_finisher_hold_retail"
+backup_fingerprint = "bbf5b050dc5f1eb22804ad764a306c7ab39b343d1607237c23965c1249cfd42b"
+description = "A jou win Noa finished, 128 vsyncs into the results hold: ctx[+0x13] = 1, win pose 0x11, yaw counter 0x800. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SAS: Noa attacks alone), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_party_wipe_results_retail"
+backup_fingerprint = "aa5140c214ede419ea90458835a811221d167dd78ffdd85cccde1ccaab9db584"
+description = "Results frame of a jou party wipe: ctx[+0x13] = 5, the monster that landed the wiping blow, framed by the in-fight arm; yaw counter 0x7C0, its +0x1FA = 2, 'Vahn's team was annihilated.'. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSS: the party Spirits), party HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing party HP written to 1 at round prompts (LEGAIA_WIPE)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_party_wipe_hold_retail"
+backup_fingerprint = "f5ac9859107ef49403c72dc739d908a8852376afd6c235d1a9f4f194bb2827dc"
+description = "The same wipe 128 vsyncs into the results hold, the loss window up over the killing monster. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSS), party HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing party HP written to 1 at round prompts (LEGAIA_WIPE)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
 label = "battle_item_window_gaza2_retail"
 backup_fingerprint = "247a3fb4bc23502058389d02e77ca21f6ff313727819f7d9bedc2c6201761306"
 description = "Gaza boss fight's item window, ctx[+0x06] 0x3C. CROSS 30, UP 50, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
