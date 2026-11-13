@@ -3889,7 +3889,9 @@ Arms 8 and `0x0A` also set the caster's anim node back: `lw v1,0x22c(s3)` then `
 0x68(v1)` (`0x801F73EC..0x801F73FC`, `0x801F75F4..0x801F7604`), frame `0x11` of the charge clip,
 from which it plays back up into the `0x15..0x17` loop. Without the store the engine's Songi
 stood in the loop through arms 9 and `0x0B` while retail's rose out of its crouch; with it the
-film reads `.981` to `.987`, arm 9 `.852` to `.997` and arm `0x0B` `.813` to `.998`. Grade
+mid-cast film reads `.981` to `.987`, arm 9 `.852` to `.997` and arm `0x0B` `.813` to `.998`;
+with both, the pre-cast film reads `.975` to `.987`. What is left is the fall of arm 3's exit
+fade into arm 6 (`.975`), which the engine brightens and darkens a pass ahead of retail. Grade
 `disassembly` (the store), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
