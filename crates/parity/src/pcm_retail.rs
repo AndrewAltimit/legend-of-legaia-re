@@ -18,7 +18,7 @@ use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::spu::ram::SpuRam;
 use legaia_engine_audio::spu::reverb::{RESAMPLE_IN_LEN, RESAMPLE_OUT_LEN};
 use legaia_engine_audio::spu::voice::SPU_INTERNAL_RATE;
-use legaia_engine_audio::spu::voice::VoiceResume;
+use legaia_engine_audio::spu::voice::{Voice, VoiceResume};
 use legaia_engine_audio::{OfflineMixer, Spu};
 use legaia_engine_scene_host::scene_host::BgmDirector;
 use legaia_engine_scene_host::scene_host::SceneHost;
@@ -201,6 +201,7 @@ pub fn render_aligned(
     stems: Option<&Path>,
     seq_vols: Option<&[u8]>,
     emitter: EmitterStaging,
+    reseat: Option<(&psx_mednafen::SaveState, usize)>,
 ) -> Result<Vec<i16>> {
     let fresh = || {
         let mut d = TraceBgmDirector::new();
@@ -276,13 +277,19 @@ pub fn render_aligned(
     for _ in 0..stepped {
         step(&mut d, &mut carry, None);
     }
+    if let Some((st, ahead)) = reseat {
+        let n = reseat_sounding_voices(d.spu_mut(), st, ahead)?;
+        if verbose {
+            println!("reseated {n} sounding voices from the state");
+        }
+    }
     if verbose {
         let at = d.sequencer().map(|s| (s.next_event(), s.pump_wait()));
         println!("engine stands at {at:?}");
         for (i, v) in d.spu().voices.iter().enumerate() {
             if !v.is_off() {
                 println!(
-                    "engine v{i}: {:?} env {:x} ctl {:04x}{:04x} pitch {:x} start {:x} vol {} {} rev {}",
+                    "engine v{i}: {:?} env {:x} ctl {:04x}{:04x} pitch {:x} start {:x} vol {} {} rev {} block {:x}",
                     v.adsr.phase,
                     v.adsr.level,
                     v.adsr_cfg.raw.1,
@@ -291,7 +298,8 @@ pub fn render_aligned(
                     v.start_addr,
                     v.vol_left,
                     v.vol_right,
-                    v.reverb_send
+                    v.reverb_send,
+                    v.block_addr()
                 );
             }
         }
@@ -713,6 +721,79 @@ pub fn spu_resumed_from_retail(st: &psx_mednafen::SaveState) -> Result<Spu> {
     Ok(spu)
 }
 
+/// Seat the state's sounding score voices onto a replay standing at the same
+/// instant: each replay voice takes the decoder position, pitch counter and
+/// envelope of the state's voice that sounds the same tone at the same pitch,
+/// `ahead` samples on (the replay's window opens that far into the recording,
+/// the track's lag). The replay plays the score from its top, and a held note
+/// can stand in the block the state's stands in yet not at its phase there: a
+/// low looped tone off by part of a block cancels what it should reinforce,
+/// for as long as it holds (`theeder_summon_mid_cast`'s pad, three voices of
+/// one tone, reads `0.40` against the recording where the state's own SPU
+/// resumed reads `0.92`). Returns how many voices took a place.
+fn reseat_sounding_voices(
+    spu: &mut Spu,
+    st: &psx_mednafen::SaveState,
+    ahead: usize,
+) -> Result<usize> {
+    let ram = st.main_ram()?;
+    let mut retail = spu_resumed_from_retail(st)?;
+    let mut skip = vec![0i16; ahead * 2];
+    retail.render_into(&mut skip);
+    let ours = |v: usize| {
+        let at = VOICE_RECORDS + v * VOICE_STRIDE + 0x10;
+        u16::from_le_bytes([ram[at], ram[at + 1]]) != CUE_OWNER
+    };
+    let same = |e: &Voice, r: &Voice| e.adsr_cfg.raw == r.adsr_cfg.raw && e.pitch == r.pitch;
+    // The bank's distance between the two SPU maps: the start shift most
+    // pairs of one tone at one pitch agree on.
+    let mut shifts: Vec<i64> = Vec::new();
+    for e in spu.voices.iter().filter(|v| !v.is_off()) {
+        for (i, r) in retail.voices.iter().enumerate() {
+            if !r.is_off() && ours(i) && same(e, r) {
+                shifts.push(i64::from(e.start_addr) - i64::from(r.start_addr));
+            }
+        }
+    }
+    shifts.sort_unstable();
+    let Some(shift) = shifts
+        .chunk_by(|a, b| a == b)
+        .max_by_key(|c| c.len())
+        .map(|c| c[0])
+    else {
+        return Ok(0);
+    };
+    let mut taken = [false; 24];
+    let mut seated = 0;
+    for e in spu.voices.iter_mut().filter(|v| !v.is_off()) {
+        let into = |r: &Voice| {
+            (i64::from(r.block_addr())
+                - i64::from(r.start_addr)
+                - (i64::from(e.block_addr()) - i64::from(e.start_addr)))
+            .abs()
+        };
+        let pick = retail
+            .voices
+            .iter()
+            .enumerate()
+            .filter(|&(i, r)| {
+                !taken[i]
+                    && !r.is_off()
+                    && ours(i)
+                    && same(e, r)
+                    && i64::from(e.start_addr) - i64::from(r.start_addr) == shift
+            })
+            .min_by_key(|(_, r)| into(r))
+            .map(|(i, _)| i);
+        if let Some(i) = pick {
+            taken[i] = true;
+            e.take_position_from(&retail.voices[i]);
+            seated += 1;
+        }
+    }
+    Ok(seated)
+}
+
 /// libsnd's per-voice driver records (24 x `0x36`), `+0x10` the note owner.
 const VOICE_RECORDS: usize = 0x1C_DB50;
 const VOICE_STRIDE: usize = 0x36;
@@ -995,7 +1076,9 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
                 .filter(|(_, v)| v.is_active())
             {
                 println!(
-                    "retail v{i}: phase {:?} env {:x?} ctl {:x?} pitch {:x?} start {:x?} vol {:?} {:?}",
+                    "retail v{i}: cur {:x?} cphase {:x?} phase {:?} env {:x?} ctl {:x?} pitch {:x?} start {:x?} vol {:?} {:?}",
+                    v.cur_addr.map(|a| a * 2),
+                    v.cur_phase,
                     v.adsr_phase,
                     v.adsr_env_level,
                     v.adsr_control,
@@ -1016,6 +1099,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.stems.as_deref(),
             None,
             emitter_staged,
+            None,
         )?;
         if args.cue_voices {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
@@ -1029,26 +1113,33 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             let lag = score_window(&retail, &pcm).lag;
             // The score under the cast's duck, as the engine child applied it
             // tick by tick: the state's own volume holds for none of a summon.
+            let st = psx_mednafen::SaveState::from_path(&path)?;
+            let mut vols = Vec::new();
             if let Ok(text) = std::fs::read_to_string(cast_path.with_extension("duck")) {
                 let levels: Vec<u8> = text.lines().filter_map(|l| l.trim().parse().ok()).collect();
-                let st = psx_mednafen::SaveState::from_path(&path)?;
                 let ram = st.main_ram()?;
                 let start =
                     i32::from_le_bytes(ram[0x7_B910..0x7_B914].try_into()?).clamp(0, 255) as u8;
-                let vols = duck_schedule(&levels, start, lag, args.vsync_samples);
-                if !vols.is_empty() {
-                    pcm = render_aligned(
-                        &track_bytes,
-                        &pos,
-                        args.samples,
-                        args.vsync_samples,
-                        args.pass,
-                        false,
-                        None,
-                        Some(&vols),
-                        emitter_staged,
-                    )?;
-                }
+                vols = duck_schedule(&levels, start, lag, args.vsync_samples);
+            }
+            // The score's held notes stand where the state's do, so what the
+            // cast channel scores is the cast ([`reseat_sounding_voices`]). A
+            // window that opens before the state's instant has nothing to
+            // seat them from.
+            let ahead = usize::try_from(-lag).ok();
+            if !vols.is_empty() || ahead.is_some() {
+                pcm = render_aligned(
+                    &track_bytes,
+                    &pos,
+                    args.samples,
+                    args.vsync_samples,
+                    args.pass,
+                    false,
+                    None,
+                    (!vols.is_empty()).then_some(vols.as_slice()),
+                    emitter_staged,
+                    ahead.map(|n| (&st, n)),
+                )?;
             }
             let lag = score_window(&retail, &pcm).lag;
             let cast = read_wav(cast_path)?;
