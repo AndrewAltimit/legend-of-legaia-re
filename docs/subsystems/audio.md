@@ -622,7 +622,7 @@ in this order:
 | `0x801D7164..0x801D716C` | `FUN_800266E0` + `FUN_80026520` on `0x8007052C` | the source is detached and closed, its notes killed at the level the ramp left |
 | later | the poller, op-`0x36` sub `1` | the next track's bank and the side-band bank arrive a CD read on |
 
-`see ghidra/scripts/funcs/overlay_0897_801d6704.txt`, `80062004.txt`,
+`see ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the complete dump), `80062004.txt`,
 `80061edc.txt`, `800657d0.txt`. On the battle return the ramp measures `129`
 vsyncs ([above](#the-battle-music-timeline)).
 
