@@ -201,6 +201,41 @@ impl World {
         }
     }
 
+    /// A module's stores into the bounds `+0x85` / `+0x86` of a monster
+    /// caster's action entry `clip`, the loop count `+0x84` kept
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_bounds`]).
+    pub(in crate::world::battle::cast_band) fn write_clip_loop_bounds(
+        &mut self,
+        caster: u8,
+        clip: u8,
+        bounds: [u8; 2],
+    ) {
+        use legaia_actor_formats::monster_archive::ENTRY_LOOP_WINDOW_OFFSET as AT;
+        if caster < self.party.party_count {
+            return;
+        }
+        let Some(a) = self.actors.get_mut(usize::from(caster)) else {
+            return;
+        };
+        if let Some(entry) = a
+            .battle_action_clips
+            .as_mut()
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(usize::from(clip)))
+            .and_then(Option::as_mut)
+            && let Some(bytes) = entry.effect_script.get_mut(AT + 1..AT + 3)
+        {
+            bytes.copy_from_slice(&bounds);
+        }
+        // The window test reads the committed entry on every tick
+        // (`FUN_80047430`), so a clip already playing loops on the new bounds
+        // at once.
+        if a.battle.current_anim == clip
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.set_loop_frames(bounds[0], bounds[1]);
+        }
+    }
+
     /// A module's store into the root speed `+0x0C` of a monster caster's
     /// action entry `clip`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_clip_speed`]).

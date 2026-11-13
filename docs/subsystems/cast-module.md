@@ -3837,13 +3837,25 @@ and seat its runs of records (three on arm 3, the same six on arms 7, 9 and `0x0
 rate swinging between `3` and `4`; arm `0x0C` hides the caster, shows the party and cuts on the
 origin; arm `0x0E` seats twelve records at the origin beside the party sweep; arm `0x0F` pulls
 back to TR z `0x3C00`; arm `0x10` shows the caster and hides the party again, and arm `0x11` shows
-them at rate `8`. Every gate drains the bare frame step. The retail film from
-`noaru_songi_pre_genocidal_cannon` reads `.543` against `.409` with the pager seating the whole
-image, its sound `1.000` against `.727` (the party's cues wait on arm `0x10`'s rate `0`). Not
-carried: the stage bytes `ctx[+0x27A..+0x286]`, the light words behind `0x800845C8`, the first
-monster record's node bytes, and arm `0x0C`'s hide of arm 0's second part; arms 2, 3, 6, `0x0F`
-and `0x10` still read under `.5`, where retail's frame is a starfield or a white flash and the
-engine's a red fill. Grade `disassembly` (the arms), `capture` (the film).
+them at rate `8`. Every gate drains the bare frame step. Arms 2 and 6 also rewrite the
+bounds `+0x85` / `+0x86` of clip 8's action entry (`record[+0x6C]`): `0x0C..0x11` for the
+charge, `0x15..0x17` once the cannon is up; the window test reads the committed entry every
+tick, so the playing clip loops on the new frames at once. The colour wash (scanline mode `1`,
+`ctx[+0x27A..+0x286]`), the armed wash `FUN_8004695C(0x202020)`, the fades and arm `0x0C`'s kill
+of arm 0's parked part come from the presentation decode; the words behind `0x800845C8` are
+rumble.
+
+The wash's starfield is the side-band page the turn streamed. The stream's base is
+`3 * record[+0x1C]`, and Songi's third form uses that byte as its cannon latch: the AI arm
+stores `0x17` (`0x801EBB84..0x801EBC34`), so a cannon turn streams group `0x17`, `readef.DAT` slot `0x45`,
+the starfield, where the record's own group `0x16` holds another page; the body's arm `0x11`
+stores `0x16` back (`0x801F80F8`). The engine streams the latch (`monster_ai_state.b3_armed`).
+
+Film from `noaru_songi_pre_genocidal_cannon`, per arm, with the director, then the records seated
+per arm, the latched stream and the loop bounds: arm 3 `.184` to `.995`, arm 6 `.484` to `.975`,
+arm `0x0F` `.201` to `.994`, arm `0x10` `.284` to `.996`, arm 2 `.392` to `1.000`; mean `.975`
+(the mid-cast `--physical` film `.974`), sound `1.000`. Arms 9 and `0x0B` (`.85`, `.81`) and the
+white of arms 8, `0x0A` and `0x0C` landing a few frames early are what is left. Grade `disassembly` (the arms), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
 

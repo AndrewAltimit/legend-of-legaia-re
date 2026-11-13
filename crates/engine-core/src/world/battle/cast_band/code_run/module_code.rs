@@ -448,6 +448,16 @@ impl World {
             if arm.skips_fold {
                 self.casting.module_skips_fold = true;
             }
+            if let Some(v) = arm.first_monster_record_1c
+                && let Some(first) = self.battle_seat_map().engine(3)
+                && let Some(b) = self
+                    .battle
+                    .monster_ai_state
+                    .b3_armed
+                    .get_mut(usize::from(first) % 8)
+            {
+                *b = v;
+            }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             run.capture_pose_set = arm.pose_set;
@@ -456,6 +466,9 @@ impl World {
             }
             if let Some((clip, window)) = arm.caster_clip_window {
                 self.write_clip_loop_window(caster_slot, clip, window);
+            }
+            if let Some((clip, bounds)) = arm.caster_clip_bounds {
+                self.write_clip_loop_bounds(caster_slot, clip, bounds);
             }
             if let Some((clip, speed)) = arm.caster_clip_speed {
                 self.write_clip_root_speed(caster_slot, clip, speed);

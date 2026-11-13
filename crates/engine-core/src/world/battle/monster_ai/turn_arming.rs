@@ -3,6 +3,11 @@
 
 use super::*;
 
+/// Songi's third form's party-wide cast (PROT 0963).
+const GENOCIDAL_CANNON: u8 = 0xB3;
+/// The record `+0x1C` value the `0xB3` AI arm latches the cannon with.
+pub(in crate::world) const CANNON_ARMED: u8 = 0x17;
+
 impl World {
     /// What the turn pick `FUN_801DABA4` decides for a monster it picks, with
     /// every draw that goes with it: the AI picker (`jal 0x801E9FD4` at
@@ -73,6 +78,20 @@ impl World {
         else {
             return;
         };
+        // The base is the record's live `+0x1C`, and Songi's third form
+        // (`0xB3`) rewrites that byte as its cannon latch: the AI's arm
+        // stores `0x17` (`0x801EBB84..0x801EBC34`), so every cannon turn streams group
+        // `0x17` - the starfield page Genocidal Cannon's scanline wash
+        // samples - and PROT 0963's last arm puts `0x16` back
+        // (`0x801F80F8`). The engine keeps the byte in `b3_armed`.
+        let latch = self
+            .battle
+            .monster_ai_state
+            .b3_armed
+            .get(usize::from(slot) % 8)
+            .copied()
+            .unwrap_or(0);
+        let group = if latch != 0 { latch } else { group };
         crate::battle_sideband_textures::write_readef_group_textures(
             &readef,
             group,
@@ -113,6 +132,16 @@ impl World {
                 spell_id,
                 mut targets,
             } => {
+                // Only an armed record casts the cannon (the `0x17` latch),
+                // so a cast seeded straight onto the turn carries the latch
+                // and its stream.
+                if spell_id == GENOCIDAL_CANNON {
+                    let i = usize::from(slot) % 8;
+                    if self.battle.monster_ai_state.b3_armed[i] != CANNON_ARMED {
+                        self.battle.monster_ai_state.b3_armed[i] = CANNON_ARMED;
+                        self.stream_monster_turn_sideband(slot);
+                    }
+                }
                 let group = self.monster_cast_def(spell_id).is_some_and(|d| {
                     matches!(
                         d.target,

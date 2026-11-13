@@ -72,6 +72,10 @@ const ARM_E_RECORDS: [u32; 12] = [
     0x801F_9248,
 ];
 
+/// The clip arm 2 stages on the caster (the chain's stage), whose action
+/// entry `record[+0x4C + 8 * 4]` (`lw v1,0x6c(v0)`) arms 2 and 6 rewrite.
+const CHARGE_CLIP: u8 = 8;
+
 /// The tint word a shown seat takes (`lui 0x2008; ori 0x200`).
 const SHOWN: u32 = 0x2008_0200;
 
@@ -159,11 +163,14 @@ fn at_point(records: &[u32], pos: [i16; 3], arm: &mut CaptureCamArm) {
 /// | `0x10` (`0x801F7ED0`) | party rate `0`; TR z `+32` | pool flushed; a cut on the caster: yaw `0x800 - facing`, TR `(0, 0x700, 0xA00)`; the caster shown and its loop released, the party hidden |
 /// | `0x11` (`0x801F80AC`) | TR z `+8` | the party shown at rate `8` |
 ///
-/// Every cut is one frame. Not carried: the stage-byte writes `ctx[+0x27A]`
-/// / `+0x27B..+0x27D` / `+0x286` / `+0x32C`, the light words behind
-/// `0x800845C8`, `FUN_8004695C(0x202020)` on arms 3 and 6, the first monster
-/// record's node bytes `+0x85` / `+0x86`, and arm `0x0C`'s hide of arm 0's
-/// second part through its handle.
+/// Every cut is one frame. Arms 2 and 6 also move clip 8's loop bounds
+/// (`+0x85` / `+0x86` of the action entry at `record[+0x6C]`) to `0x0C..0x11`
+/// and `0x15..0x17`, and arm `0x11` spends the cannon latch (record `+0x1C =
+/// 0x16`). The colour-wash bytes `ctx[+0x27A..+0x286]` / `+0x32C`, the armed
+/// wash `FUN_8004695C(0x202020)` on arms 3 and 6, the fades, the pool flushes
+/// and arm `0x0C`'s kill of arm 0's parked part are the presentation decode's
+/// (`World::fire_cast_presentation`); the rumble words behind `0x800845C8` are
+/// `cast_module_rumble`'s.
 ///
 /// PORT: overlay_cast_genocidal_cannon_0963_801f6a20 (PROT 0963 `0xB3`; the camera arms, the record runs and the seat hides)
 pub fn genocidal_cannon_camera(
@@ -233,7 +240,12 @@ pub fn genocidal_cannon_camera(
             arm.shot = cut(0, yaw_from(0x800, facing), [0, 0, 0x4E20], focus_on(turned));
         }
         1 => at_point(&[ARM1_RECORD], [0; 3], &mut arm),
-        2 => at_point(&ARM2_RECORDS, [0; 3], &mut arm),
+        2 => {
+            at_point(&ARM2_RECORDS, [0; 3], &mut arm);
+            // `record[+0x6C]`, clip 8's action entry: `+0x85 = 0x0C`,
+            // `+0x86 = 0x11` (`0x801F6ED4..0x801F6EF8`).
+            arm.caster_clip_bounds = Some((CHARGE_CLIP, [0x0C, 0x11]));
+        }
         3 => {
             arm.flushes_pool = true;
             arm.shot = cut(0, yaw_from(0x800, c.facing), [0, 0xB00, 0x600], focus_on(c));
@@ -248,6 +260,9 @@ pub fn genocidal_cannon_camera(
                 focus_on(c),
             );
             arm.caster_write.rate = Some(3);
+            // The same entry's window moved on: `0x15..0x17`
+            // (`0x801F71CC..0x801F71F4`).
+            arm.caster_clip_bounds = Some((CHARGE_CLIP, [0x15, 0x17]));
         }
         7 | 9 | 0x0B => {
             arm.caster_write.rate = Some(4);
@@ -293,6 +308,9 @@ pub fn genocidal_cannon_camera(
             arm.party_write = hide();
         }
         0x11 => {
+            // `sb 0x16, 0x1c(record)` on the first monster record
+            // (`0x801F80E8..0x801F80F8`): the cannon latch spent.
+            arm.first_monster_record_1c = Some(0x16);
             arm.party_write = CaptureSeatWrite {
                 rate: Some(8),
                 ..show()
@@ -339,6 +357,21 @@ mod tests {
         assert!(a1.hold, "arm 1 holds on the seed");
         assert_eq!(a1.drift.map(|d| d.tr_z), Some(-256));
         assert_eq!(a1.party_write.render_flag, Some(0xFF));
+    }
+
+    /// Arms 2 and 6 move clip 8's loop bounds; arm `0x11` spends the latch.
+    #[test]
+    fn the_charge_loop_moves_and_the_latch_is_spent() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = 0;
+        let a2 = genocidal_cannon_camera(&mut st, 2, seats());
+        assert_eq!(a2.caster_clip_bounds, Some((CHARGE_CLIP, [0x0C, 0x11])));
+        st.countdown.0 = 0;
+        let a6 = genocidal_cannon_camera(&mut st, 6, seats());
+        assert_eq!(a6.caster_clip_bounds, Some((CHARGE_CLIP, [0x15, 0x17])));
+        st.countdown.0 = 0;
+        let a11 = genocidal_cannon_camera(&mut st, 0x11, seats());
+        assert_eq!(a11.first_monster_record_1c, Some(0x16));
     }
 
     /// Arm 2's ten records and arm `0x0E`'s twelve all go in.

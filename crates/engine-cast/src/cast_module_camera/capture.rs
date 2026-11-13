@@ -97,6 +97,10 @@ pub struct CaptureCamArm {
     /// (`0x801C8FE0 + (ctx[+0x13] + 1) * 4`, the monster AI's ability
     /// cooldown `dat[m + 4]`), when the arm makes one.
     pub latch: Option<i32>,
+    /// A store into the first monster record's `+0x1C` (`*(0x801C9348) +
+    /// 0x1C`), the readef group byte the next turn's side-band stream reads:
+    /// PROT 0963's last arm spends Songi's cannon latch (`0x16`).
+    pub first_monster_record_1c: Option<u8>,
     /// The arm took a branch that applies no damage: the band's fold owes
     /// this cast nothing.
     pub skips_fold: bool,
@@ -128,6 +132,10 @@ pub struct CaptureCamArm {
     /// reads (PROT 0960's arm 5 zeroes Lu's `0x0D` so her charge stops
     /// where the arm leaves her).
     pub caster_clip_speed: Option<(u8, i16)>,
+    /// `(clip, [start, end])`: the arm's stores into the loop window's bounds
+    /// `+0x85` / `+0x86` alone, the count `+0x84` left as it stands (PROT
+    /// 0963's arms 2 and 6 move clip 8's loop through the cannon's charge).
+    pub caster_clip_bounds: Option<(u8, [u8; 2])>,
     /// The arm drifts ahead of its gate and shoots after it, so a pass's
     /// cut lands on its own endpoint (the drift is spent before the cut).
     pub drift_first: bool,
