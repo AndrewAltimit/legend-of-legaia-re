@@ -179,6 +179,9 @@
 
 /* Three hosts */
 .cm-hosts svg { display: block; width: 100%; height: auto; max-width: 880px; }
+/* On a phone the figure scrolls rather than shrinking its boxes - each box is
+   a link to its crate, and below this width the smallest is under a finger. */
+@media (max-width: 760px) { .cm-hosts { overflow-x: auto; } .cm-hosts svg { min-width: 760px; } }
 .cm-hosts .h-box { fill: var(--bg-card); stroke: var(--border-hi); stroke-width: 1.2; }
 .cm-hosts .h-host { fill: color-mix(in srgb, var(--cm-engine) 14%, var(--bg-card)); stroke: var(--cm-engine); stroke-width: 1.5; }
 .cm-hosts .h-shared { fill: color-mix(in srgb, var(--accent) 10%, var(--bg-card)); stroke: var(--accent); stroke-width: 1.5; }

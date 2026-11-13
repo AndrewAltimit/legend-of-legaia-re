@@ -402,6 +402,9 @@
   /* The frame (expansion-workbench-shell.js): area row, page row, the
      Build area's map picker, mode toolbar and catalog strip. */
   .wb-linkbtn { padding: 0; font: inherit; color: var(--accent-hi); background: none; border: none; text-decoration: underline; cursor: pointer; }
+  /* A finger, not a cursor: the inline link-buttons take a 40px hit area
+     without opening up the sentence's line box. */
+  @media (pointer: coarse) { .wb-linkbtn { padding-block: 0.6rem; margin-block: -0.6rem; } }
   .xw-has-pack .wb-header .lede { display: none; }
   .xw-crumbs { display: block; margin-top: 0.1rem; font-size: 0.82em; color: var(--text-muted); }
   .xw-crumbs:empty { display: none; }
