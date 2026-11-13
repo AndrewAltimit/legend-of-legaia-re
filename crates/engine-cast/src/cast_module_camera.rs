@@ -344,6 +344,16 @@ pub struct ModuleCamState {
     /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
     /// camera shake of its arms 5..9.
     pub ozma_shake: (u32, i32),
+    /// PROT 0918's parity halfword `0x801F92F8`: arm 4 bumps it and keeps
+    /// its low bit every pass its countdown is still above `scalar << 5`
+    /// (`0x801F7088..0x801F70A0`). Nothing in the module zeroes it, so a
+    /// cast opens on the image's `0`.
+    pub kemaro_shake: u16,
+    /// PROT 0922's alternation word `0x801FA0BC` as its arms 14 and 15 read
+    /// it for the camera: zeroed on arm 13's way out (`0x801F7988`), read
+    /// for its low bit and bumped once a pass (`0x801F7A0C..0x801F7A24`,
+    /// `0x801F7BDC..0x801F7BF4`). The host keeps the rumble's copy.
+    pub puera_shake: u32,
     /// PROT 0934's spray point `(x, y)` the pass drew last: the third
     /// record's `rand() % 0x101 - 0x80` pair, left at `sp+0x30` / `sp+0x32`
     /// by the spray loop (`0x801F8384..0x801F8504` on arm `0x15`), which arm

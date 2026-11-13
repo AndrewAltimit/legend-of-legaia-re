@@ -313,13 +313,12 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 /// | 24 (`0x801F90A4`) | the line cleared |
 ///
 /// The drifts are [`puera_drift`]'s; the halts are [`puera_arm_kills`]'.
-/// Not carried: the TR y shake arms 14 and 15 store absolutely on alternate
-/// passes (`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`) and arm 22's
-/// colour-wash writes. Arm 19's crystal re-seat and arm 20's fall are
+/// Arms 14 and 15's absolute TR y stores are [`puera_shake`]'s. Not
+/// carried: arm 22's colour-wash writes. Arm 19's crystal re-seat and arm 20's fall are
 /// [`puera_crystal_seats`] / [`puera_crystal_fall`], applied to the parts by
 /// the engine.
 ///
-/// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22 and the captions of arms 6, 9 and 24)
+/// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the TR y stores of arms 14 and 15, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22 and the captions of arms 6, 9 and 24)
 pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let before = st.countdown.0;
     let held = hold_step(PUERA, st, phase);
@@ -380,9 +379,54 @@ pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             3,
         ));
     }
-    match puera_drift(phase).filter(|_| before > 0) {
+    let base = match puera_drift(phase).filter(|_| before > 0) {
         Some(d) => base.drifted(d),
         None => base,
+    };
+    if phase == 13 && !held {
+        st.puera_shake = 0;
+    }
+    if matches!(phase, 14 | 15) {
+        return puera_shake(st, base, phase);
+    }
+    base
+}
+
+/// The TR y arms 14 and 15 store straight every pass
+/// (`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`): `0x400` when the
+/// alternation word [`ModuleCamState::puera_shake`] read odd, else `0x500`
+/// (arm 14) or `countdown * 8 / scalar + 0x400` off the drained countdown
+/// (arm 15); the word is bumped after the read. Retail runs it once a battle
+/// frame, so the port reads and bumps the word on the pass's last tick (or
+/// the tick that leaves the arm), where the countdown has drained the pass,
+/// and lands the store as a drift
+/// off the live TR y. The `0x94` recording holds `0x400` / `0x500` through
+/// arm 14 and `0x400` / `0x5E0`, `0x5A0`, .. through arm 15.
+fn puera_shake(st: &mut ModuleCamState, base: ArmDirection, phase: u8) -> ArmDirection {
+    // The store sits ahead of the arm's gate (`bgtz` at `0x801F7AA0`), so the
+    // pass that leaves the arm makes it too, on the tick it leaves.
+    if st.countdown.1 != 0 && base.hold {
+        return base;
+    }
+    let old = st.puera_shake;
+    st.puera_shake = old.wrapping_add(1);
+    let Some((_, tr)) = st.live_pitch_tr else {
+        return base;
+    };
+    let target = if old & 1 != 0 {
+        0x400
+    } else if phase == 14 {
+        0x500
+    } else {
+        st.countdown.0 * 8 / SPEED_SCALAR + 0x400
+    };
+    let rate = base.drift.unwrap_or_default();
+    let mut d = rate;
+    d.tr_y = d.tr_y.wrapping_add((target - tr[1]) as i16);
+    ArmDirection {
+        drift: Some(d),
+        rest_drift: Some(Some(rate)),
+        ..base
     }
 }
 
@@ -537,5 +581,36 @@ mod tests {
         let s = a.shot.unwrap();
         assert_eq!(s.tr, [0, 0x1200, 0x800]);
         assert_eq!(s.frames, 3);
+    }
+
+    #[test]
+    fn puera_arms_14_and_15_store_tr_y_on_alternate_passes() {
+        let seats = ModuleCamSeats::default();
+        let mut st = ModuleCamState {
+            countdown: ModuleCountdown(SPEED_SCALAR << 6, 0),
+            live_pitch_tr: Some((0, [0, 0x400, 0])),
+            puera_shake: 5,
+            ..Default::default()
+        };
+        st.countdown.0 = -1;
+        puera_direct(&mut st, 13, seats);
+        assert_eq!(st.puera_shake, 0, "arm 13's exit zeroes the word");
+        st.countdown.0 = SPEED_SCALAR << 6;
+        let a = puera_direct(&mut st, 14, seats);
+        assert_eq!(a.drift.unwrap().tr_y, 0x100, "even word: 0x500");
+        let a = puera_direct(&mut st, 14, seats);
+        assert_eq!(a.drift.unwrap().tr_y, 0, "odd word: 0x400");
+        // Arm 15's even pass: the drained countdown `* 8 / scalar`.
+        st.countdown.0 = 0x1E8;
+        let a = puera_direct(&mut st, 15, seats);
+        assert_eq!(
+            i32::from(a.drift.unwrap().tr_y),
+            st.countdown.0 * 8 / SPEED_SCALAR
+        );
+        // A tick that owes the pass more ticks reads nothing.
+        st.countdown.1 = 2;
+        let a = puera_direct(&mut st, 15, seats);
+        assert_eq!(a.drift.unwrap().tr_y, 0);
+        assert_eq!(st.puera_shake, 3);
     }
 }
