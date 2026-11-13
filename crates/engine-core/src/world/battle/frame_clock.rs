@@ -71,9 +71,14 @@ impl World {
             _ => cost,
         };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+        // A capture-band module's own line leaves its arms their table's
+        // length: retail's frames under one run anywhere from inside the step
+        // (Death Game, four vsyncs a step-`4` frame) to eight (Kiss of Death),
+        // which no one share of a table cost reads.
         match arm_step {
             None => cost,
-            Some(_) => loaded.unwrap_or(0),
+            Some(_) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
+            Some(_) => 0,
         }
     }
 
@@ -101,6 +106,14 @@ impl World {
             _ => 0,
         };
         self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
+        // The drive word `0x8007BC20` holds `2` from the start (`0x8003D65C`)
+        // until the stop `FUN_8003EE00` clears it once the read is done
+        // (`0x8003EE2C`), not for the span alone: a `--watch` recording of
+        // Medusa's Glare clears it `559` vsyncs after the start of its
+        // `539`-vsync line, and the shout fallback `0x290` plays inside that.
+        if tail != 0 {
+            self.audio.battle_xa_busy_frames = self.audio.battle_xa_load_frames;
+        }
     }
 
     /// The passes since a loading battle CD-XA clip's cue, `None` while none

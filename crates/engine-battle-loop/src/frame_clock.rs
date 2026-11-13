@@ -350,8 +350,10 @@ pub const XA_STREAM_FRAME_COST: u16 = 1063;
 /// `3.1`..`3.9` on the full party's heals (`ropeway_orb_pre_heal`,
 /// `deene_garnet_pre_heal`, `taiku_topaz_pre_hyper_heal`: frames of `8` and
 /// `9` vsyncs over the table's `595`), and `3.0`..`4.5` on Amethyst's on a lone
-/// Vahn (`5` and `6` over `345`); `3.4` reads all three.
-pub const XA_POLL_COST_RATIO_MILLI: u32 = 3400;
+/// Vahn (`5` and `6` over `345`). The player arts' loaded frames sit at `8`
+/// vsyncs at the median over some `620` (Super Ironhead's at `6` to `8`), so
+/// `3.1`, the low end the three share, takes the arts' typical frame.
+pub const XA_POLL_COST_RATIO_MILLI: u32 = 3100;
 
 /// What a frame of `work` hblanks costs while the clip's polls load it on
 /// PCSX-Redux ([`XA_POLL_COST_RATIO_MILLI`]), at least
@@ -375,8 +377,10 @@ pub const fn xa_loaded_frame_cost(work: u16) -> u16 {
 /// and the polls keep one pending nearly all the time. Flying Knee's polls
 /// (`--cd-trace`) run `18` vsyncs past its `90` from the cue, `3` of them the
 /// seek; the full party's heals' loaded frames end `10` to `17` past their
-/// `261`.
-pub const XA_READ_TAIL_VSYNCS: u16 = 15;
+/// `261`; and the stop that clears the drive word once the read is done
+/// (`FUN_8003EE00`, `sw zero` at `0x8003EE2C`) runs `20` past Medusa's Glare's
+/// `539` (`--watch 0x8007BC20`).
+pub const XA_READ_TAIL_VSYNCS: u16 = 20;
 
 /// Hblanks a vsync spans: the NTSC field's `263` lines, the unit of libetc's
 /// `VSync(1)` count (`FUN_8005FB84`, root counter 1 less its base at
@@ -1001,8 +1005,8 @@ mod frame_cost_tests {
         assert_eq!(frame_span(xa_loaded_frame_cost(595), 4), 8);
         // A lone member's: five over `345`.
         assert_eq!(frame_span(xa_loaded_frame_cost(345), 4), 5);
-        // Flying Knee's art frames: nine over some `630`.
-        assert_eq!(frame_span(xa_loaded_frame_cost(630), 4), 9);
+        // The player arts' typical eight over some `630`.
+        assert_eq!(frame_span(xa_loaded_frame_cost(630), 4), 8);
         assert_eq!(
             xa_stream_pass_cost(5, 630, CdTiming::PcsxRedux, true),
             xa_loaded_frame_cost(630)
