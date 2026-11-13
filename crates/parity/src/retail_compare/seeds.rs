@@ -925,10 +925,12 @@ fn retail_fog_stepped_back(
 /// part's `+0x48` points at its record inside it.
 pub(super) const STAGER_BUNDLE_PTR: u32 = 0x8007_B8D0;
 
-/// Every live draw-kind-4 sprite-arm sheet on a retail state's actor lists,
-/// in list order: a part ticked by `FUN_80021DF4` with `+0x56 == 4` and the
-/// sprite-arm bit `+0x9E & 0x4000`, not halted (`+0x10 & 0x8`)
-/// ([`legaia_engine_core::world::ambient::SpriteArmSeed`] names the fields).
+/// Every live draw-kind-4 part on a retail state's actor lists, in list
+/// order: a part ticked by `FUN_80021DF4` with `+0x56 == 4`, not halted
+/// (`+0x10 & 0x8`) ([`legaia_engine_core::world::ambient::SpriteArmSeed`]
+/// names the fields). The sprite-arm sheets (`+0x9E & 0x4000`) are seated
+/// whole; the other kind-4 parts by placement only
+/// (`World::install_sprite_arm_snapshot`).
 pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
     let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
     crate::retail_compare_script::actor_nodes(ram)
@@ -936,7 +938,6 @@ pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient:
         .filter(|&n| {
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u16_at(ram, n + 0x56) == 4
-                && game_anchors::u16_at(ram, n + 0x9E) & 0x4000 != 0
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
         })
         .filter_map(|n| {

@@ -254,10 +254,18 @@ impl World {
     /// breath puff (stager record 2, two record-8 sheets) at the player
     /// whenever its counter wraps, so a child that ran the scene from its
     /// entry holds puffs the captured frame had already lost.
+    ///
+    /// The draw-kind-4 parts without the sprite-arm bit - `vozz`'s sparkles
+    /// round Ozma's egg, `garmel`'s light bars round Zeto - are seated the
+    /// same way, record by record, but keep the engine's own colour word and
+    /// fade level: their programs fade them on every pass, so the RAM's level
+    /// stands two passes past the displayed frame, and a level seated from it
+    /// lit `garmel_zeto_appears_rising`'s floor ring brighter than retail's
+    /// frame shows (image `.966` placement only, `.954` with the level). Seated
+    /// and retired, the two sparkles the engine's own stream had put beside
+    /// Gala on `vozz_ozma_hatching_crawl` leave the frame (`.953` to `.975`).
     pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
-        let is_sheet = |p: &AmbientPart| {
-            !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
-        };
+        let is_sheet = |p: &AmbientPart| !p.finished && p.state.move_substate == 4;
         let mut used: std::collections::HashMap<usize, usize> = Default::default();
         for seed in seeds {
             let off = seed.record_off as usize;
@@ -289,8 +297,10 @@ impl World {
             st.world_y_mirror = seed.pos[1];
             [st.render_24, st.render_26, st.render_28] = seed.rot;
             st.field_72 = seed.scale;
-            st.field_74 = seed.colour;
-            st.field_78 = seed.level;
+            if st.field_9e & 0x4000 != 0 {
+                st.field_74 = seed.colour;
+                st.field_78 = seed.level;
+            }
             seat_pose(st, &seed.pose);
         }
         // Retire what retail does not hold: a seeded record's surplus, and

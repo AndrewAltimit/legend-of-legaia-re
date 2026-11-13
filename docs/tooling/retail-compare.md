@@ -650,7 +650,7 @@ engine verdict:
   (`garmel`'s cave mist, [field-ambient-fx](../subsystems/field-ambient-fx.md#a-spawned-sheet-drifts-along-its-spawners-yaw)),
   so the population matches retail's and the placement never does. The
   image child takes the state's live sheets (`retail_sprite_arms`: part tick
-  `FUN_80021DF4`, `+0x56 == 4`, `+0x9E & 0x4000`, keyed by their stager
+  `FUN_80021DF4`, `+0x56 == 4`, the sprite-arm bit `+0x9E & 0x4000`, keyed by their stager
   record `+0x48` less the bundle base `_DAT_8007B8D0`) as
   `LEGAIA_SEAT_SPRITE_ARMS` and seats the engine's sheets of the same
   record on them on the capture frame (`World::install_sprite_arm_snapshot`):
@@ -668,6 +668,15 @@ engine verdict:
   across the stair rail drawn where retail's frame has it, and the two other
   Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
   `.988` / `.984` (`.954` / `.953`).
+
+  The other draw-kind-4 parts (no sprite-arm bit) take the same seat by
+  placement only, and keep the engine's own colour word and fade level: their
+  programs fade them every pass, so the RAM's level stands two passes past the
+  frame on screen. `vozz_ozma_hatching_crawl`'s sparkles round Ozma's egg are
+  `rand()` history like the mist, and the two the engine had put beside Gala
+  leave the frame (`.953` to `.975`); `garmel_zeto_appears_rising`'s light bars
+  stand where retail's do (`.965` to `.966`), where a level seated from RAM lit
+  the floor ring brighter than the frame shows (`.954`). A harness seat.
 
   A state that holds no sheet says so too (`LEGAIA_SEAT_SPRITE_ARMS=none` on
   every field and overworld state), and the install retires every sheet the
