@@ -705,6 +705,8 @@ stateDiagram-v2
 
 Hit-arm details (`0x801E1844..0x801E1A6C`) that differ from the slot-B cast modules:
 
+- The roll does not ask what the cast is. `a0` is the byte the caster's `+0x1DF` indexes in the map at `0x801F4E63`, and a heal's entry is `0`, the table's all-zero row, so a monster's Heal flight still rolls the stat terms and strikes its ally (an Orb's Heal on a Killer Bee: `96 -> 46` at `0x801E1960` in `0x3E`, then `+200` at `0x3F`). Port: `World::land_spirit_band_flight_hit`.
+
 - The `+0x1DC` writes are bit **ORs** (`|= 4` on the reaction leg at `0x801E19D8`, `|= 1` on the face leg at `0x801E1A18`), not the `+= 1` bump the cast modules use.
 - The face store has no `+ 0x800` term (`0x801E1A54` writes the raw `FUN_80019B28` result), so the victim turns to **face** its attacker here, where every cast module's equivalent store faces it away.
 - The reaction pick has three legs: a dead victim takes `+0x1F1` regardless of the `+0x1F2` gate, and a zero `+0x1EF` falls on to `+0x1F0`.
