@@ -76,6 +76,12 @@ const ARM_E_RECORDS: [u32; 12] = [
 /// entry `record[+0x4C + 8 * 4]` (`lw v1,0x6c(v0)`) arms 2 and 6 rewrite.
 const CHARGE_CLIP: u8 = 8;
 
+/// The node cursor arms 8 and `0x0A` store into the caster's anim node
+/// (`li v0,0x110; sh v0,0x68(caster[+0x22C])`): frame `0x11` in 12.4, the
+/// charge's old loop end, from which the clip plays back up into the
+/// `0x15..0x17` loop arm 6 moved it to.
+const CHARGE_REWIND: u16 = 0x110;
+
 /// The tint word a shown seat takes (`lui 0x2008; ori 0x200`).
 const SHOWN: u32 = 0x2008_0200;
 
@@ -152,9 +158,9 @@ fn at_point(records: &[u32], pos: [i16; 3], arm: &mut CaptureCamArm) {
 /// | 3 (`0x801F6F4C`) | - | pool flushed; a cut on the caster: yaw `0x800 - facing`, TR `(0, 0xB00, 0x600)`; three records on it |
 /// | 6 (`0x801F7110`) | TR y `-2`, TR z `+8` | pool flushed; a cut on the caster: pitch `-0x100`, yaw `0xA00 - facing`, TR `(0, 0xA00, 0x400)`; caster rate `3` |
 /// | 7 (`0x801F7204`) | pitch `+11`, yaw `+24`, TR y `-4`, TR z `+64` | caster rate `4`; six records on it |
-/// | 8 (`0x801F73C0`) | - | caster rate `3`; a cut on it: pitch `0x100`, yaw `0x700 - facing`, TR `(0, 0x600, 0xC00)`; pool flushed |
+/// | 8 (`0x801F73C0`) | - | caster rate `3`, its anim node's cursor `+0x68` set to `0x110`; a cut on it: pitch `0x100`, yaw `0x700 - facing`, TR `(0, 0x600, 0xC00)`; pool flushed |
 /// | 9 (`0x801F7464`) | yaw `+2` | caster rate `4`; the six records again |
-/// | `0x0A` (`0x801F75A8`) | yaw `+2` | caster rate `3`; a cut on it: pitch `-0x20`, yaw `0x180 - facing`, TR `(0, 0x700, 0xA00)`; pool flushed |
+/// | `0x0A` (`0x801F75A8`) | yaw `+2` | caster rate `3`, cursor `0x110`; a cut on it: pitch `-0x20`, yaw `0x180 - facing`, TR `(0, 0x700, 0xA00)`; pool flushed |
 /// | `0x0B` (`0x801F7658`) | yaw `+1` | caster rate `4`; the six records again |
 /// | `0x0C` (`0x801F7838`) | yaw `+1` | pool flushed; the caster hidden, the party shown; a cut on the origin: yaw `0x800 - facing`, TR `(0, 0x400, 0x2000)` |
 /// | `0x0D` (`0x801F799C`) | pitch `-2`, TR y `+40` | - |
@@ -270,6 +276,9 @@ pub fn genocidal_cannon_camera(
         }
         8 => {
             arm.caster_write.rate = Some(3);
+            // `sh 0x110, 0x68(caster[+0x22C])` (`0x801F73EC..0x801F73FC`):
+            // the charge clip set back to frame `0x11`.
+            arm.caster_write.seek = Some(CHARGE_REWIND);
             arm.shot = cut(
                 0x100,
                 yaw_from(0x700, c.facing),
@@ -280,6 +289,8 @@ pub fn genocidal_cannon_camera(
         }
         0x0A => {
             arm.caster_write.rate = Some(3);
+            // The same rewind (`0x801F75F4..0x801F7604`).
+            arm.caster_write.seek = Some(CHARGE_REWIND);
             arm.shot = cut(
                 -0x20,
                 yaw_from(0x180, c.facing),
@@ -369,6 +380,12 @@ mod tests {
         st.countdown.0 = 0;
         let a6 = genocidal_cannon_camera(&mut st, 6, seats());
         assert_eq!(a6.caster_clip_bounds, Some((CHARGE_CLIP, [0x15, 0x17])));
+        st.countdown.0 = 0;
+        let a8 = genocidal_cannon_camera(&mut st, 8, seats());
+        assert_eq!(a8.caster_write.seek, Some(0x110));
+        st.countdown.0 = 0;
+        let aa = genocidal_cannon_camera(&mut st, 0x0A, seats());
+        assert_eq!(aa.caster_write.seek, Some(0x110));
         st.countdown.0 = 0;
         let a11 = genocidal_cannon_camera(&mut st, 0x11, seats());
         assert_eq!(a11.first_monster_record_1c, Some(0x16));
