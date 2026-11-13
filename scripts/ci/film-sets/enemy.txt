@@ -106,3 +106,5 @@ jou_viguro_v3_thunder_burst --physical --state battle_jou_viguro_v3_thunder_burs
 deroa_iota_v2_paralyzing_wave --physical --state battle_deroa_iota_v2_paralyzing_wave_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
 korb2_ghost_knight_neo_windhash --physical --state battle_korb2_ghost_knight_neo_windhash_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 nivora_duel_pre_plasma_strike__7B --spell 0x7B --state nivora_duel_pre_plasma_strike --caster 3 --target 0 --pin-seed 0x12345678
+noaru_songi_pre_genocidal_cannon__B3 --spell 0xB3 --state noaru_songi_pre_genocidal_cannon --caster 3 --target 8 --pin-seed 0x12345678
+noaru_songi_genocidal_cannon --physical --state battle_noaru_songi_genocidal_cannon_mid_cast --caster 3 --target 8 --pin-seed 0x12345678

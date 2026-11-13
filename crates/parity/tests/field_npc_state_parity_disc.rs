@@ -375,6 +375,12 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         note: VOZZ_P2_17_SEATS,
     },
     KnownDivergence {
+        label: "vozz_tree_revival_return",
+        key: "vis:5",
+        class: "b",
+        note: VOZZ_P2_17_SEATS,
+    },
+    KnownDivergence {
         label: "vozz_ozma_hatching_crawl",
         key: "vis:2",
         class: "b",

@@ -1167,6 +1167,7 @@ mod earthquake;
 mod element_change;
 mod evil_seru_magic;
 mod freed;
+mod genocidal_cannon;
 mod gilium_palma_horn;
 mod gola_mushura_barra;
 mod hyper_crush;
@@ -1252,6 +1253,7 @@ pub use element_change::{
 };
 pub use evil_seru_magic::*;
 pub use freed::*;
+pub use genocidal_cannon::{GENOCIDAL_CANNON_BODY, genocidal_cannon_camera};
 pub use gilium_palma_horn::*;
 pub use gola_mushura_barra::*;
 pub use hyper_crush::hyper_crush_camera;

@@ -424,7 +424,7 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 || entry == 935 || entry == 938 {
+            if entry == 944 || entry == 935 || entry == 938 || entry == 963 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             // PROT 0964's strike picks its opening record off the last roll.

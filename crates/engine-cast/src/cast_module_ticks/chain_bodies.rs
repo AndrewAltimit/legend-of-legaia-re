@@ -1241,14 +1241,12 @@ pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
 /// (`0x801F7D30`, [`ChainArm::hit_rate`]) and arm `0x0F` holds the party row
 /// there on every pass (`0x801F7DB0`, [`party_rate_sweep`]).
 ///
-/// Rates left out under the module's rate rule: arms 6..0x0B alternate the
-/// caster between `3` and `4` and the body leaves it at `4`. Also left out:
-/// arm `0x10`'s party `+0x21D = 0` on every pass (`0x801F7EFC`), which
-/// freezes a row the same arm hides, and arm `0x11`'s restore to `8` with the
-/// row shown (`0x801F8140..0x801F8158`): the hide is a presentation store the
-/// port does not carry, and a frozen row left in view reads worse than one
-/// still at `2`. Not ported: the packet arms, the lighting and camera-record
-/// writes, the party-row presentation stores. Countdowns:
+/// The caster's rates on arms 6..0x0B (`3` / `4`), arm `0x10`'s party
+/// `+0x21D = 0` on every pass (`0x801F7EFC`) beside its hide, and arm `0x11`'s
+/// restore to `8` with the row shown (`0x801F8140..0x801F8158`) are the
+/// director's (`cast_module_camera::genocidal_cannon_camera`), with the camera
+/// arms, the record runs and the seat hides. Not ported: the packet
+/// arms and the lighting writes. Countdowns:
 /// `capture_countdown::GENOCIDAL_CANNON`.
 ///
 /// PORT: FUN_801F6A20 (PROT 0963; phase table + caster staging; packet arms unported)

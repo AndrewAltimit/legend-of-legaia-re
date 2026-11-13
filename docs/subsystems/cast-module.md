@@ -3826,8 +3826,24 @@ along its facing `+0x46` (`x += trunc(sin f * 0xC0 / 4096)`, `z += trunc(cos f *
 0xC0 / 4096)`, `0x801F8214..0x801F82E0`); arm 1 seats `0x801F8940` and then
 `0x801F8984` there, arm 3 `0x801F8984` alone. Arm 2 writes the fade template
 `0x801C9070` (additive `(0xFF, 0xF0, 0xC0)` to black over `0x18` frames) and spawns
-it with `FUN_80024E80(.., 1)`. The body is not directed per arm yet, so its calls are
-dropped. The stager differential covers both images. Grade `disassembly`.
+it with `FUN_80024E80(.., 1)`. The body is directed arm by arm
+(`cast_module_camera::genocidal_cannon_camera`), so its parts' calls run. The stager
+differential covers both images. Grade `disassembly`.
+
+**PROT 0963's body** `0x801F6A20` opens on a one-frame cut `0x4E20` out on the caster,
+turned on the party row's centroid (`FUN_801DCEAC(8)`), and pulls in at `256` units of TR z a
+frame step through arms 1 and 2 with the party hidden. Arms 3 to `0x0B` cut close on the caster
+and seat its runs of records (three on arm 3, the same six on arms 7, 9 and `0x0B`), the caster's
+rate swinging between `3` and `4`; arm `0x0C` hides the caster, shows the party and cuts on the
+origin; arm `0x0E` seats twelve records at the origin beside the party sweep; arm `0x0F` pulls
+back to TR z `0x3C00`; arm `0x10` shows the caster and hides the party again, and arm `0x11` shows
+them at rate `8`. Every gate drains the bare frame step. The retail film from
+`noaru_songi_pre_genocidal_cannon` reads `.543` against `.409` with the pager seating the whole
+image, its sound `1.000` against `.727` (the party's cues wait on arm `0x10`'s rate `0`). Not
+carried: the stage bytes `ctx[+0x27A..+0x286]`, the light words behind `0x800845C8`, the first
+monster record's node bytes, and arm `0x0C`'s hide of arm 0's second part; arms 2, 3, 6, `0x0F`
+and `0x10` still read under `.5`, where retail's frame is a starfield or a white flash and the
+engine's a red fill. Grade `disassembly` (the arms), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
 
