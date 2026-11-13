@@ -1189,11 +1189,12 @@ impl App {
             // minimum width: the three buttons it replaces wrapped the bar.
             let mut picked: Option<PathBuf> = None;
             let mut action = None;
-            ui.menu_button("Open", |ui| {
-                if ui
-                    .add(egui::Button::new("Disc image...").shortcut_text("Ctrl+O"))
-                    .clicked()
-                {
+            pad_menu_button(ui, "Open", |ui, focus_first| {
+                let disc = ui.add(egui::Button::new("Disc image...").shortcut_text("Ctrl+O"));
+                if focus_first {
+                    disc.request_focus();
+                }
+                if disc.clicked() {
                     action = Some(0);
                     ui.close();
                 }
@@ -1249,10 +1250,10 @@ impl App {
                     if ui.button("About").on_hover_text("F1").clicked() {
                         self.about_open = !self.about_open;
                     }
-                    ui.menu_button("View", |ui| self.view_menu(ui));
+                    pad_menu_button(ui, "View", |ui, first| self.view_menu(ui, first));
                 });
             } else {
-                ui.menu_button("View", |ui| self.view_menu(ui));
+                pad_menu_button(ui, "View", |ui, first| self.view_menu(ui, first));
                 if ui.button("About").on_hover_text("F1").clicked() {
                     self.about_open = !self.about_open;
                 }
@@ -1505,11 +1506,16 @@ impl App {
     }
 
     /// The View menu: theme and UI zoom, both remembered.
-    fn view_menu(&mut self, ui: &mut egui::Ui) {
+    /// `focus_first`: the menu was opened from the keyboard or a
+    /// controller, and its first choice takes the focus.
+    fn view_menu(&mut self, ui: &mut egui::Ui, focus_first: bool) {
         ui.label(RichText::new("Theme").strong());
         let mut theme = self.explorer.settings.theme;
-        for t in crate::settings::Theme::ALL {
-            ui.radio_value(&mut theme, t, t.name());
+        for (i, t) in crate::settings::Theme::ALL.into_iter().enumerate() {
+            let r = ui.radio_value(&mut theme, t, t.name());
+            if focus_first && i == 0 {
+                r.request_focus();
+            }
         }
         if theme != self.explorer.settings.theme {
             self.explorer.settings.theme = theme;
@@ -2655,8 +2661,12 @@ impl App {
             // Ctrl+E takes the textured glTF, the export that keeps the
             // most of what the view shows.
             let mut wanted = self.take_export_key().then_some("glb");
-            ui.menu_button("Export", |ui| {
-                if ui.button("Wavefront OBJ (.obj)...").clicked() {
+            pad_menu_button(ui, "Export", |ui, focus_first| {
+                let obj = ui.button("Wavefront OBJ (.obj)...");
+                if focus_first {
+                    obj.request_focus();
+                }
+                if obj.clicked() {
                     wanted = Some("obj");
                     ui.close();
                 }
@@ -3871,6 +3881,52 @@ impl App {
     }
 }
 
+/// `ui.menu_button` that a keyboard or a controller can work: a menu opened
+/// with `Enter` (Cross) on its focused button takes the focus onto its
+/// first item, so the arrows (the D-pad) walk its items and `Enter`
+/// picks one. egui leaves the focus on the button, where `Down` jumped to
+/// whatever control lay nearest below the menu (the path field under the
+/// Open menu), and a controller could not reach the theme, the zoom, the
+/// export folder or the recent list at all.
+fn pad_menu_button<'a, R>(
+    ui: &mut egui::Ui,
+    title: impl egui::IntoAtoms<'a>,
+    add_contents: impl FnOnce(&mut egui::Ui, bool) -> R,
+) -> egui::InnerResponse<Option<R>> {
+    // The menu learns it was opened from the keyboard one frame late (the
+    // frame it first shows is the one its button reports focus in), so
+    // its first item takes the focus on the frame after.
+    let key = ui.id().with(("pad_menu", ui.next_auto_id()));
+    let (was_open, focus_first) = ui.ctx().data_mut(|d| {
+        (
+            d.get_temp::<bool>(key).unwrap_or(false),
+            d.remove_temp::<bool>(key.with("first")).unwrap_or(false),
+        )
+    });
+    let r = ui.menu_button(title, |ui| add_contents(ui, focus_first));
+    let open = r.inner.is_some();
+    ui.ctx().data_mut(|d| d.insert_temp(key, open));
+    if open && !was_open && r.response.has_focus() {
+        ui.ctx().data_mut(|d| {
+            d.insert_temp(key.with("first"), true);
+            d.insert_temp(key.with("keys"), true);
+        });
+        ui.ctx().request_repaint();
+    }
+    // A menu the keys opened gives the focus back to its button when it
+    // closes (Esc / Circle drops egui's focus altogether, and the next Tab
+    // or D-pad press then started over from the top of the window).
+    if !open && was_open {
+        let keys = ui
+            .ctx()
+            .data_mut(|d| d.remove_temp::<bool>(key.with("keys")).unwrap_or(false));
+        if keys {
+            r.response.request_focus();
+        }
+    }
+    r
+}
+
 /// The shortcuts box's rows: keys, then what they do.
 const KEYS: &[(&str, &str)] = &[
     ("Ctrl+O", "open a disc image"),
@@ -4480,6 +4536,68 @@ fn draw_wave(ui: &mut egui::Ui, peaks: &[u8], width: usize) {
 #[cfg(test)]
 mod layout_tests {
     use super::*;
+
+    /// A menu opened with `Enter` on its focused button (a controller's
+    /// Cross) puts the focus on its first item, `Down` walks the items, and
+    /// `Esc` (Circle) gives the focus back to the button.
+    #[test]
+    fn a_menu_opened_from_the_keys_takes_the_focus_and_gives_it_back() {
+        let ctx = egui::Context::default();
+        let first = std::cell::Cell::new(None);
+        let second = std::cell::Cell::new(None);
+        let button = std::cell::Cell::new(None);
+        let frame = |keys: &[egui::Key]| {
+            let events = keys
+                .iter()
+                .map(|&key| egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                })
+                .collect();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| {
+                let r = pad_menu_button(ui, "Menu", |ui, focus_first| {
+                    let a = ui.button("First");
+                    if focus_first {
+                        a.request_focus();
+                    }
+                    first.set(Some(a.id));
+                    second.set(Some(ui.button("Second").id));
+                });
+                button.set(Some(r.response.id));
+                if ui.ctx().memory(|m| m.focused()).is_none() && keys.is_empty() {
+                    r.response.request_focus();
+                }
+            });
+        };
+        let focused = || ctx.memory(|m| m.focused());
+        frame(&[]);
+        frame(&[]);
+        assert_eq!(focused(), button.get(), "the button starts focused");
+        frame(&[egui::Key::Enter]);
+        for _ in 0..3 {
+            frame(&[egui::Key::F24]);
+        }
+        assert_eq!(focused(), first.get(), "the first item takes the focus");
+        frame(&[egui::Key::ArrowDown]);
+        frame(&[egui::Key::F24]);
+        assert_eq!(focused(), second.get(), "Down walks the menu");
+        frame(&[egui::Key::Escape]);
+        for _ in 0..3 {
+            frame(&[egui::Key::F24]);
+        }
+        assert_eq!(focused(), button.get(), "Esc hands the focus back");
+    }
 
     #[test]
     fn hex_rows_halve_where_sixteen_bytes_do_not_fit() {
