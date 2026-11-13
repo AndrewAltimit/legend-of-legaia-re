@@ -139,7 +139,11 @@ fn a_landed_fish_is_lifted_then_hangs_on_the_plate() {
     for f in 0..2000 {
         frame(&mut host, &mut surface, 0);
         let s = host.world.minigames.fishing.as_ref().unwrap();
-        assert!(!s.catch_hud().visible, "state 0x1E clears the catch HUD");
+        // The landing ran on a game tick; the next one clears the HUD.
+        assert!(
+            f == 0 || !s.catch_hud().visible,
+            "state 0x1E clears the catch HUD"
+        );
         // The white-out (`FUN_801D7964` twice at the lift's second stage)
         // draws as additive full-screen quads over the HUD sprites.
         let flash = host.world.minigames.fishing_venue.catch_flash_prims();

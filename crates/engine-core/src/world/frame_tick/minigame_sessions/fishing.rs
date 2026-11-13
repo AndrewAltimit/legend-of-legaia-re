@@ -255,13 +255,13 @@ impl World {
         }
         // The venue's hub menu (Triangle / Select on the idle shore) owns the
         // frame while it is up, the exchange list it opens included.
-        if self.tick_fishing_hub() {
-            self.minigames.fishing_events.clear();
-            return;
-        }
-        // The point-exchange sub-screen owns the pad while it is open, as
-        // retail's shop branch owns the mode switch.
-        if self.minigames.fishing_exchange.is_some() {
+        if self.tick_fishing_hub() || self.minigames.fishing_exchange.is_some() {
+            // The point-exchange sub-screen owns the pad while it is open, as
+            // retail's shop branch owns the mode switch. The venue's game
+            // tick keeps its cadence under either.
+            if let Some(s) = self.minigames.fishing.as_mut() {
+                s.hold_vsync();
+            }
             self.minigames.fishing_events.clear();
             return;
         }
@@ -269,7 +269,8 @@ impl World {
         let (events, lure_down, spent_lures) = match self.minigames.fishing.as_mut() {
             Some(s) => {
                 let casts = s.persist().casts;
-                s.tick(pond_input, 1, FISHING_CAST_STEP);
+                // The venue's game tick, every `VENUE_FRAME_STEP` vsyncs.
+                s.vsync(pond_input, FISHING_CAST_STEP);
                 for _ in 0..s.take_rod_creaks() {
                     // The hooked rod's creak, `0x201` into ring slot 1.
                     self.audio.sfx_ring_ops.push(
@@ -348,9 +349,19 @@ impl World {
         // The hook and catch cues - one clock shared with the minigames
         // page, on the world's cue queue every host drains. The celebration's
         // cues land on the line actor's stage frames, not the landing frame.
-        let strength = self.minigames.fishing.as_ref().map_or(0, |s| s.strength());
-        let cues = self.minigames.fishing_cues.frame(&events, strength, 1);
-        self.minigames.pending_sfx.extend(cues);
+        // The clock steps with the pond's game tick, and stands between them.
+        let (strength, step) = self
+            .minigames
+            .fishing
+            .as_ref()
+            .map_or((0, 0), |s| (s.strength(), s.vsync_step()));
+        if step > 0 {
+            let cues = self
+                .minigames
+                .fishing_cues
+                .frame(&events, strength, step as i16);
+            self.minigames.pending_sfx.extend(cues);
+        }
         self.minigames.fishing_events = events;
     }
 }

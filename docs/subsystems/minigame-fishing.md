@@ -132,6 +132,18 @@ stateDiagram-v2
 | `0x96` | "You have lost the lure" / no-rod end screen; a button edge advances to `200`. |
 | `200` (`0xc8`) | Exit: ramps the fade to white and, once full, plays the leaving XA cue and tears the mode down. |
 
+### The venue's game tick
+
+The fishing init stores `2` to the frame-step floor `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at `0x801CF33C..0x801CF344`), so the master frame driver's resolver never writes a step under `2` to `DAT_1F800393` while the venue runs: the driver, the lure tick and the fish tick run once every two vsyncs or slower, each on that step. The dance hall's init does the same with `3` (`0x801CF068..0x801CF070` in PROT 0980). Every parked fishing capture reads a step of `3` or `4`, the resolver's measured arm above the floor *(captures)*.
+
+The step is in the cast itself. The spawn is `polar(facing, 200)` scaled by the step (`FUN_801D7BB8`, [The cast and the line](#the-cast-and-the-line)), and `minigame_fishing_retail_lure_cast` holds its spawn at `z = 4880` in front of a lead standing at `4480` facing `0x800`: `400` out, a cast thrown on a step of `2` *(capture)*.
+
+What does not scale is every roll made once a game tick: the strike draw, the band re-roll, the line-break roll at the ceiling and the fish tick's draws. A frame step of `1` makes twice as many of them a second as the floor allows.
+
+Port: `PondSession::vsync` runs a game tick every `VENUE_FRAME_STEP` (`2`) vsyncs on that step, the engine's deterministic arm of the resolver ([engine](engine.md#the-frame-model)), and every host drives the pond through it. A press between two game ticks is held for the next. The venue's actors (`tick_venue_actors`: the swell, the lead's wander, the camera, the line actor) and the pond's cue clock step on `PondSession::vsync_step`; the overlay's effect parts tick every vsync. Pinned by `fishing::tests::the_pond_ticks_every_second_vsync_and_holds_a_press_for_it` and `the_cast_spawns_the_lure_where_the_retail_cast_did`.
+
+Measured over the disc tables at Buma, three rods and sixty seeds each, a full-power cast held on reel A until a strike: the first strike comes `1461` vsyncs in on average where a step of `1` gave `860`; holding reel A from the hook breaks `40` of the `180` fights (`19` at a step of `1`), and reeling only under a gauge of `0x800` lands all of them in `520` vsyncs (`413`).
+
 ### Shared tail
 
 The tail at `LAB_801d01a4` runs every frame after the switch:
@@ -422,7 +434,7 @@ The swim offset moves the lure (`LureActor::water_step`): the lure tick adds hal
 A fish whose line record is at or past `0x899` strains the gauge by `step * 300` a frame after the reel arms (`TensionGauge::far_record_strain`, from `PondSession::tick` ahead of the ceiling test), so a slack reel that bleeds the gauge near the rod climbs it out there. The gate retail adds, `DAT_801d91b0 == 0`, is open for the whole fight: its one non-zero store is the line actor's landed-lift arm (`FUN_801d4948` state `4`, `0x801D4AEC`), which runs after the reel-in ends it. Pinned by `fishing::tests::a_fish_run_far_out_strains_the_line`.
 
 The line break is retail's: a hooked frame at the ceiling draws one `rand() % 10` off the session's BIOS-rand stream (the draw is made only there), and a zero breaks the line ahead of the reel-in test. The break consumes one of the equipped lure: `PondSession::take_spent_lures` hands the host `lure + 0x9D` per break, which the play hosts consume from the bag (`World::tick_fishing`, the window-bounded consume-by-id) and the minigames page from its per-row stand-in stock. The two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder.
-Measured over the ten disc species, three rods and twenty seeds per pair (hooked at record `0x500`, `fishing::tests` harness), holding reel A from the hook breaks 395 of 600 fights and reel B 538. Reeling only while the gauge is under `0x800` breaks none and lands all 600, in 706 frames on average. Retail's fight is one of letting go: a run's load is thirteen times the sink's. Pinned by `fishing::tests::the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure`; ladder `crates/web-play/tests/fishing_banner_ladder.rs`.
+Measured over the ten disc species, three rods and twenty seeds per pair (hooked at record `0x500`, `fishing::tests` harness, a frame step of `1`), holding reel A from the hook breaks 395 of 600 fights and reel B 538. Reeling only while the gauge is under `0x800` breaks none and lands all 600, in 706 frames on average. At the venue's own step the fights run as [its game tick](#the-venues-game-tick) reads them. Retail's fight is one of letting go: a run's load is thirteen times the sink's. Pinned by `fishing::tests::the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure`; ladder `crates/web-play/tests/fishing_banner_ladder.rs`.
 
 ## Per-species parameter table
 

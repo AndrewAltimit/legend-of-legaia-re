@@ -64,6 +64,22 @@ pub struct PondInput {
 }
 
 impl PondInput {
+    /// This vsync's input with an earlier vsync's edges folded in: the held
+    /// word stays this vsync's, and every edge either vsync saw stands. The
+    /// strike credit's nudge adds, capped at its three masks; a mask pressed,
+    /// released and pressed again inside one game tick counts once in
+    /// retail's word and twice here.
+    pub fn with_edges_of(self, earlier: PondInput) -> PondInput {
+        PondInput {
+            reel_edge: self.reel_edge | earlier.reel_edge,
+            cast_edge: self.cast_edge || earlier.cast_edge,
+            leave_edge: self.leave_edge || earlier.leave_edge,
+            face_edge: self.face_edge || earlier.face_edge,
+            edge_bonus: (self.edge_bonus + earlier.edge_bonus).min(3),
+            ..self
+        }
+    }
+
     /// One frame's input off the engine pad pair (PSX pad layout, this frame
     /// and the last) - the build `World::tick_fishing` runs for the play
     /// hosts.
@@ -231,6 +247,13 @@ pub struct PondSession {
     /// what stayed held through the last 32 vsyncs, every 8.
     pub(super) reel_held_for: [i32; 2],
     pub(super) reel_repeat_in: i32,
+    /// Vsyncs into the current game tick ([`PondSession::vsync`]).
+    pub(super) vsync_phase: i32,
+    /// The edges of the vsyncs the current game tick has not run yet.
+    pub(super) pending_input: Option<PondInput>,
+    /// The frame step the last [`PondSession::vsync`] ran the pond at, `0`
+    /// on a vsync that ran no game tick.
+    pub(super) vsync_step: i32,
     /// `DAT_801D9100` / `DAT_801D9104`: the fish's swim from last frame's tick.
     pub(super) last_swim: (i32, i32),
     /// The fish's surge `DAT_801D90F4`, which lowers the rod's bend clamp.
@@ -291,6 +314,18 @@ pub struct PondVenue {
     /// line's rod end is a vertex of ([`crate::fishing_actors::RodMesh`]).
     pub rod_mesh: Option<crate::fishing_actors::RodMesh>,
 }
+
+/// The venue's frame step: the fishing init stores `2` to the frame-step
+/// floor `_DAT_8007B9D8` (`li v0,2` / `sw v0,-0x4628(v1)` at
+/// `0x801CF33C..0x801CF344`), which the master frame driver's resolver writes
+/// to `DAT_1F800393` on every frame that keeps up with vsync. The pond runs a
+/// game tick every two vsyncs on a step of two ([`PondSession::vsync`]), the
+/// engine's deterministic arm of that resolver.
+///
+/// A cast reads it straight off the spawn: the lure starts `200 * step`
+/// units out (`FUN_801D7BB8`'s scale), and `minigame_fishing_retail_lure_cast`
+/// holds its spawn `400` in front of the lead (`z` `4880` against `4480`).
+pub const VENUE_FRAME_STEP: i32 = 2;
 
 /// Wind-up frames before the power meter opens: state `0xd` adds the frame
 /// step to `DAT_801D9054` and leaves once it exceeds `0xC` (`slti v0,v0,0xd`

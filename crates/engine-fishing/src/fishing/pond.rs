@@ -56,6 +56,11 @@ impl PondSession {
             lure_facing: 0,
             reel_held_for: [0; 2],
             reel_repeat_in: 8,
+            vsync_phase: VENUE_FRAME_STEP - 1,
+            pending_input: None,
+            // A session no vsync has driven yet steps its venue at the
+            // venue's own step.
+            vsync_step: VENUE_FRAME_STEP,
             last_swim: (0, 0),
             surge: 0,
             lure_probe: Default::default(),
@@ -483,10 +488,61 @@ impl PondSession {
         self.line
     }
 
+    /// One vsync of the venue: the pond runs a game tick every
+    /// [`VENUE_FRAME_STEP`] vsyncs, on that step, as the fishing init's
+    /// frame-step floor runs it. The first vsync after the session opens runs
+    /// one. A press on a vsync between game ticks is held for the next one,
+    /// as the pad pump's edge word holds it; the held bits are the newest
+    /// vsync's. Returns the step the pond ran at, `0` when this vsync ran no
+    /// game tick ([`Self::vsync_step`]).
+    ///
+    /// Every host drives the pond through this: the play hosts' world tick
+    /// and the minigames page, so a cast flies, bites and breaks at retail's
+    /// rate on all three.
+    pub fn vsync(&mut self, input: PondInput, cast_step: i32) -> i32 {
+        let input = match self.pending_input.take() {
+            Some(earlier) => input.with_edges_of(earlier),
+            None => input,
+        };
+        self.vsync_phase += 1;
+        if self.vsync_phase < VENUE_FRAME_STEP {
+            self.pending_input = Some(input);
+            self.vsync_step = 0;
+            return 0;
+        }
+        self.vsync_phase = 0;
+        self.tick(input, VENUE_FRAME_STEP, cast_step);
+        VENUE_FRAME_STEP
+    }
+
+    /// One vsync a sub-screen owns (the hub menu, the point exchange): the
+    /// game tick's cadence runs on, so the venue's actors keep their step,
+    /// but the pond itself stands and the held edges go to the sub-screen.
+    pub fn hold_vsync(&mut self) -> i32 {
+        self.pending_input = None;
+        self.vsync_phase += 1;
+        if self.vsync_phase < VENUE_FRAME_STEP {
+            self.vsync_step = 0;
+            return 0;
+        }
+        self.vsync_phase = 0;
+        self.vsync_step = VENUE_FRAME_STEP;
+        VENUE_FRAME_STEP
+    }
+
+    /// The step the pond last ran at: [`VENUE_FRAME_STEP`] on a vsync that
+    /// ran a game tick, `0` on one between them, and a direct
+    /// [`Self::tick`]'s own step. The venue's actors and the cue clock step
+    /// on it.
+    pub fn vsync_step(&self) -> i32 {
+        self.vsync_step
+    }
+
     /// Advance one frame. `frame_step` is the retail `DAT_1f800393` (1 at
     /// 60 fps); `cast_step` is the casting-power meter step per frame-step
     /// ([`CAST_POWER_STEP`]).
     pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
+        self.vsync_step = frame_step.max(1);
         // The hub menu owns the frame while it is up: retail's states
         // `0x64..=0x78` run instead of the pond's (`crate::fishing_hub`).
         if self.hub.is_some() {

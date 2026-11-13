@@ -33,7 +33,8 @@ fn cast(world: &mut World) {
         frame(world, 0);
     }
     frame(world, PadButton::Cross.mask());
-    while phase(world) == PondPhase::Flight {
+    // A press between two of the pond's game ticks locks on the next.
+    while matches!(phase(world), PondPhase::Power | PondPhase::Flight) {
         frame(world, 0);
     }
     assert_eq!(phase(world), PondPhase::Waiting);

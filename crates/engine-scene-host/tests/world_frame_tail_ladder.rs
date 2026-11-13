@@ -125,7 +125,8 @@ fn a_matched_reel_gesture_spawns_the_strike_splash_through_the_world_tick() {
     }
     frame(&mut world, PadButton::Cross.mask());
     let phase = |w: &World| w.minigames.fishing.as_ref().map(|s| s.phase());
-    while phase(&world) == Some(PondPhase::Flight) {
+    // A press between two of the pond's game ticks locks on the next.
+    while matches!(phase(&world), Some(PondPhase::Power | PondPhase::Flight)) {
         frame(&mut world, 0);
     }
     assert_eq!(phase(&world), Some(PondPhase::Waiting), "the lure settled");
