@@ -579,6 +579,14 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                 if (entry, phase) == (915, 0xC) {
                     st.creature = Some(seat_at(&mut cpu.mem, CREATURE, false));
                 }
+                // PROT 0934's spray loop opens the pass on six draws, x then
+                // y for each of its three records; the third point is what
+                // arm `0x15`'s exit cut aims at (`World::draw_ozma_spray`).
+                let spray = draws.borrow().clone();
+                if entry == 934 && (0x15..=0x18).contains(&phase) && spray.len() >= 6 {
+                    let point = |r: u32| (r % 0x101) as i16 - 0x80;
+                    st.ozma_spray_point = Some((point(spray[4]), point(spray[5])));
+                }
                 let arm = (profile.direct)(&mut st, phase, seats);
                 let mut port = t0;
                 port.apply(&arm);
@@ -662,7 +670,6 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
                                 max_roll = max_roll.max(sign12(retail.angles[2]).abs());
                                 retail.angles[2] = port.angles[2];
                             }
-                            Gap::Focus => retail.focus = port.focus,
                             Gap::ExitShot if !held => {
                                 retail = port;
                                 diffs.retain(|d| !d.starts_with("tween"));
@@ -719,27 +726,18 @@ fn the_summon_cameras_frame_and_pace_as_retail_does() {
 enum Gap {
     /// The roll angle `0x8007B794`: the engine's battle camera has no roll.
     Roll,
-    /// The focus trio.
-    Focus,
     /// The shot of the pass that leaves the arm, which another band makes.
     ExitShot,
 }
 
 /// The arms whose camera the port is known to leave a part of out, as
 /// `(entry, arms, the part, why)`; the rest of each pass is compared.
-const KNOWN_GAPS: [(u32, &[u8], Gap, &str); 3] = [
+const KNOWN_GAPS: [(u32, &[u8], Gap, &str); 2] = [
     (
         928,
         &[3, 4],
         Gap::Roll,
         "PROT 0928's sweep stores a roll the battle camera has no channel for",
-    ),
-    (
-        934,
-        &[0x15],
-        Gap::Focus,
-        "PROT 0934's arm 0x15 aims at its last random spawn's point; the port aims at \
-         (0, 0, 0x400) (documented on ozma_direct)",
     ),
     (
         925,

@@ -77,5 +77,15 @@ impl World {
         if entry == 913 {
             st.module_words = [self.casting.module_settle_countdown, 0];
         }
+        // PROT 0934's spray loop leaves its third record's point on the stack
+        // (`sp+0x30` / `sp+0x32`), which arm `0x15`'s exit cut aims at. The
+        // pass's six draws stand reversed (`World::draw_ozma_spray`): the
+        // third point's x is the fifth draw, its y the sixth.
+        if entry == 934
+            && let [y, x, ..] = self.casting.module_ozma_spray[..]
+            && self.casting.module_ozma_spray.len() == 6
+        {
+            st.ozma_spray_point = Some((x, y));
+        }
     }
 }

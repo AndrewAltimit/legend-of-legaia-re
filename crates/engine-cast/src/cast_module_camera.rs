@@ -344,6 +344,13 @@ pub struct ModuleCamState {
     /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
     /// camera shake of its arms 5..9.
     pub ozma_shake: (u32, i32),
+    /// PROT 0934's spray point `(x, y)` the pass drew last: the third
+    /// record's `rand() % 0x101 - 0x80` pair, left at `sp+0x30` / `sp+0x32`
+    /// by the spray loop (`0x801F8384..0x801F8504` on arm `0x15`), which arm
+    /// `0x15`'s exit cut aims at with `z = 0x400` (`sh v0,0x34(sp)` at
+    /// `0x801F8534`, `a2 = sp+0x30` into `FUN_801D829C`). Fed by the host
+    /// from the pass's draws; `None` before the first spray.
+    pub ozma_spray_point: Option<(i16, i16)>,
     /// The victim's seat as PROT 0917's arm 4 saved it before moving the
     /// victim onto the origin (`0x801F9354..0x801F935C`), which arm `0xF`'s
     /// exit puts back and frames.

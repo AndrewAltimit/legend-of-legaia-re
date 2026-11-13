@@ -485,8 +485,10 @@ fn live_tr_y(st: &ModuleCamState) -> i32 {
 /// | 0x19 | - | - | the word spent: the caption cleared, `ctx[+0x6DA] = 0`, the loop counter cleared; done |
 ///
 /// Arms 5..9's absolute TR y stores (a rise word with a one-frame shake) are
-/// [`ozma_shake_step`], their lightning [`ozma_bolt_ring`]. Arm 0x15's focus,
-/// the last random spawn's point, aims at `(0, 0, 0x400)`.
+/// [`ozma_shake_step`], their lightning [`ozma_bolt_ring`]. Arm 0x15's exit
+/// cut aims at the pass's last spray point at `z = 0x400`
+/// ([`ModuleCamState::ozma_spray_point`]), not at `(0, 0, 0x400)`: the focus
+/// the closing arms `0x16..0x18` hold.
 ///
 /// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; the whole phase chain's gates, camera writes, captions, creature seat and clips - the other seats are `World::apply_ozma_writes`; the hit ladder's earlier hits not carried)
 pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -630,12 +632,16 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             with_drift(ArmDirection::PASS, if phase == 0x13 { flare } else { sink })
         }
         0x14 => arm(st, 0x100, flare, ArmDirection::PASS),
-        0x15 => arm(
-            st,
-            0x80,
-            None,
-            cut([0x200, 0x800], [0, 0x1400, 0x1400], at, 1),
-        ),
+        0x15 => {
+            let (x, y) = st.ozma_spray_point.unwrap_or((0, 0));
+            let spray = [i32::from(x), i32::from(y), 0x400];
+            arm(
+                st,
+                0x80,
+                None,
+                cut([0x200, 0x800], [0, 0x1400, 0x1400], spray, 1),
+            )
+        }
         0x17 => arm(st, 0x80, sink, ArmDirection::PASS),
         OZMA_HIT_ARM => arm(st, 0x100, None, ArmDirection::PASS),
         OZMA_LAST_ARM => {
