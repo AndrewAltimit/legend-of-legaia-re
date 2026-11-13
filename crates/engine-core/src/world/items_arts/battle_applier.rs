@@ -85,6 +85,47 @@ impl World {
             }
             return;
         }
+        // A monster's heal or buff (a spell record class under `0x14`) runs
+        // the same band, and `0x3F` calls the applier for it with the
+        // record's pair: an Orb's Heal is `FUN_800402F4(0, 0, ..)`, the
+        // static heal table's `200`, written to `+0x14C` and the readout
+        // word with no popup (`0x800408AC`). That call is the cast's whole
+        // outcome, so the cast owes no fold at the band's exit.
+        if a.battle.action_category == ActionCategory::Magic.as_byte()
+            && actor >= self.party.party_count
+        {
+            if self
+                .casting
+                .pending_cast
+                .as_ref()
+                .is_some_and(|pc| pc.caster == actor)
+            {
+                self.casting.pending_cast = None;
+            }
+            // Class 1 walks a whole side, the monster rows when the target
+            // byte is the monster group `9` (`0x80040908..0x80040928`).
+            if class == 1 {
+                let seats = if target
+                    == legaia_engine_battle_vm::battle_target_group::TARGET_GROUP_ENEMIES
+                {
+                    self.party.party_count..8
+                } else {
+                    0..self.party.party_count
+                };
+                for seat in seats {
+                    if self
+                        .actors
+                        .get(usize::from(seat))
+                        .is_some_and(|a| a.battle.max_hp > 0)
+                    {
+                        self.applier_class_arm(class, tier, seat);
+                    }
+                }
+            } else {
+                self.applier_class_arm(class, tier, target);
+            }
+            return;
+        }
         if a.battle.action_category != ActionCategory::Item.as_byte() {
             return;
         }

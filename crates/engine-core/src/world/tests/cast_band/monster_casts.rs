@@ -230,3 +230,75 @@ fn megaton_press_folds_no_generic_roll_beside_its_sites() {
         drops.first().map(|d| d.0)
     );
 }
+
+/// A world with one party seat and monster seats 1 and 2: seat 1 an Orb
+/// mid-way through its Heal (`0x2E`) on seat 2, in the Spirit band.
+fn spirit_band_heal_world() -> World {
+    let mut world = World::default();
+    world.party.party_count = 1;
+    world.actors.push(Actor::default());
+    world.actors.push(Actor::default());
+    for (slot, hp) in [(0usize, 500u16), (1, 166), (2, 96)] {
+        let a = &mut world.actors[slot].battle;
+        a.max_hp = if slot == 2 { 288 } else { 500 };
+        a.hp = hp;
+        a.liveness = 1;
+        world.actors[slot].active = true;
+    }
+    world.battle_ctx.active_actor = 1;
+    world.battle_ctx.action_state =
+        legaia_engine_battle_vm::battle_action::ActionState::SpiritFire.as_byte();
+    world.actors[1].battle.action_category =
+        legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte();
+    world.actors[1].battle.params[0] = 0x2E;
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
+        caster: 1,
+        spell_id: 0x2E,
+        targets: vec![2],
+        on_flight: false,
+    });
+    world
+}
+
+/// The flight of a monster's Spirit-band cast lands the hit arm's own roll:
+/// `FUN_801DD0AC` on the row the caster's `+0x1DF` maps to, whatever the
+/// spell is. A heal's map entry is `0`, an all-zero row, so the roll is the
+/// stat terms alone and it still strikes the ally (retail's Killer Bee
+/// `96 -> 46` on the landing, `0x801E1960`). The cast stays owed to `0x3F`.
+#[test]
+fn a_spirit_band_flight_strikes_the_ally_it_heals() {
+    let mut world = spirit_band_heal_world();
+    world.land_spirit_band_flight_hit(1, 2);
+    let hp = world.actors[2].battle.hp;
+    assert!(hp < 96, "the landing takes HP off the patient ({hp})");
+    assert!(
+        world.casting.pending_cast.is_some(),
+        "no fold at the landing"
+    );
+    let fx = world.drain_battle_hit_fx();
+    assert!(fx.iter().any(|f| f.target_slot == 2 && !f.is_heal));
+}
+
+/// `0x3F` calls the applier for a monster's cast too, with the spell
+/// record's `(class, tier)`, and that call is the cast's outcome: the cast
+/// owes no fold at the band's exit, where the port once folded the spell
+/// catalog's heal with a popup. Class 4 (revive, tier 0) needs no disc table.
+#[test]
+fn the_applier_lands_a_monsters_spirit_band_cast() {
+    let mut world = spirit_band_heal_world();
+    world.actors[2].battle.hp = 0;
+    world.actors[2].battle.liveness = 0;
+    world.fold_battle_item_action(4, 0, 2);
+    assert_ne!(world.actors[2].battle.liveness, 0, "the applier revives");
+    assert!(
+        world.casting.pending_cast.is_none(),
+        "nothing is left to fold at 0x50"
+    );
+    // A party member's own cast still folds at its band.
+    let mut world = spirit_band_heal_world();
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.action_category =
+        legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte();
+    world.fold_battle_item_action(4, 0, 2);
+    assert!(world.casting.pending_cast.is_some());
+}
