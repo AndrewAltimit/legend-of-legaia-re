@@ -83,6 +83,7 @@ impl World {
     /// loaded ([`crate::world::AudioState::bgm_entry_latch`]).
     ///
     /// PORT: FUN_801D6704 (0x801D6B84..0x801D6BDC, 0x801D7154..0x801D7170, 0x801D7348)
+    // REF: FUN_80062004, FUN_80061EDC, FUN_800657D0, FUN_800653C8, FUN_800266E0, FUN_80026520
     pub fn release_field_init_voices(&mut self) {
         let keep = std::mem::take(&mut self.audio.keep_audio_across_field_init);
         self.audio.bgm_entry_latch = keep;
