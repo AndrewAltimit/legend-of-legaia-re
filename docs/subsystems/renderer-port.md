@@ -391,9 +391,15 @@ tile's cell (`World::seat_floor_sample_sort_bit`). That is how `dolk2` `P2[7]`
 seats King Drake in his throne and draws him there: the seated pose's pelvis
 stands inside the throne's back, and only the ten buckets put him in front of it.
 
-Not modelled: a walking NPC's `0x800000` (the sampler runs only for actors whose
-tick reaches it, which the port does not track per actor), a posed prop's record
-flag `0x800`, and the order inside one bucket (retail's last-linked-first).
+A placement takes it from its own floor too. The field actor tick `FUN_8003BC08`
+calls the sampler on every placement it does not cull and whose height it does not
+hold (`jal` at `0x8003BC98` for the snap, `0x8003BCBC` for the glide), so a walking
+NPC carries the bit of the cell it stands on, tick by tick
+(`World::tick_field_npc_heights`): it draws ten buckets nearer while it crosses a
+placed object's floor and drops back on a ground cell.
+
+Not modelled: a posed prop's record flag `0x800`, and the order inside one bucket
+(retail's last-linked-first).
 
 A clean frame keeps per-pixel depth with one exception, the near shift. A field
 actor carrying the near-bucket bit - the player on a cell without `0x1000`, an NPC
