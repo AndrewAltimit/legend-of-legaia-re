@@ -1286,7 +1286,7 @@ matching `node[+0xC] == handler && !(node[+0x10] & 8)`), not a kill function.
 
 | offset | role | default |
 |---|---|---|
-| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i` (`0x80037554..0x80037564`, `+0x10` per slot at `0x8003760C`), centred at `X = (0x140 - width) >> 1` past its lead byte (`0x80037588..0x800375AC`). | `0x40` (64) |
+| `+0x4C` | window **top Y**. Slot `i` draws at `Y = (+0x4C) - subscroll + 16*i` (`0x80037554..0x80037564`, `+0x10` per slot at `0x8003760C`), centred at `X = (0x140 - width) >> 1` past its lead byte (`0x80037588..0x800375AC`); see [the line's x](#the-crawl-lines-x). | `0x40` (64) |
 | `+0x4E` | **line-slot count** `n`. The roller keeps `n + 1` slot states at `actor+0x80…` (`0xFF` empty, `0xFE` blank page, `1` text; written at `0x800373A8`). | `0x08` (8) |
 | `+0x50` | scroll **divisor**. A per-actor accumulator (`actor+0x50`) gains the frame step `DAT_1F800393` each frame unless `+0x10 & 0x80000` (`0x80037228..0x80037250`); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps (`0x80037254..0x8003727C`). The first pass primes the sub-scroll at `0xF` and the accumulator at the divisor (`0x800371C4..0x800371DC`), so the first page enters at once. | `0x04` (4) |
 | `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 \|= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it (`0x800373BC..0x80037428`). Written only by the `word3 == 1` sub-mode. | `0` |
@@ -1298,6 +1298,18 @@ environment's area linked ahead of them (`0x80037434..0x800374D4`). A full 16-pi
 states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`.
 The block ends when the retired count reaches the page count: the roller clears its parent's
 `+0x10` bit `0x400` and kills itself.
+
+<a id="the-crawl-lines-x"></a>
+
+**The line's x.** The roller measures the whole page, its `0x1F` lead included (`jal 0x80035F04`
+with `a0 = s1` at `0x80037588`), and draws from the page's second byte (`a0 = s1 + 1` at
+`0x80037594`) at `x = (0x140 - width) >> 1`. The measure walks every byte to the `0x00`, so the
+lead adds `widths[0x1F] + DAT_800740E8 + 1`: the SCUS width byte for `0x1F` (`0x80073F3B`) is `0`
+and the glyph pad reads `0` under the crawl, one pixel in all. A line therefore sits one pixel left
+of `160 - advance / 2` whatever its advance's parity (`engine-ui::crawl_line_left_x`, held to
+`FUN_80035F04` by the retail differential `a_crawl_page_measures_its_lead`). Centred on `160`, every
+line of `vozz_ozma_hatching_crawl` stood one pixel right of retail's; placed this way the text
+columns coincide and the state's image reads `.942` to `.953`. Grade `disassembly` + `capture`.
 
 **Port.** [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs); its
 `RollerSeed` is read off the seed op before each block. Neither host scissors the text, so

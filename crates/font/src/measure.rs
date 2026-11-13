@@ -29,7 +29,11 @@
 //! The walk stops at `0x00` and at any other byte below `0x20` - the MES
 //! line terminators (`0x01..=0x1E`) and a `0x1F` line lead. Strip the lead
 //! before measuring a `0x1F` dialog line, as the pager does (it passes the
-//! row pointer `+ 1`).
+//! row pointer `+ 1`). `FUN_80035F04`'s own walk runs on to the `0x00`
+//! (`bnez` at `0x80036010`) and advances such a byte by its table width
+//! (`0` for `0x1F`) `+ glyph_pad + 1`; the narration crawl measures its
+//! pages with the lead on, and `engine-ui`'s `CRAWL_LEAD_ADVANCE` carries
+//! that pixel (the retail differential `a_crawl_page_measures_its_lead`).
 //!
 //! A width here is the pen advance, the number retail's own measurer
 //! `FUN_80035F04` returns. The last glyph's ink ends one pixel (the fixed

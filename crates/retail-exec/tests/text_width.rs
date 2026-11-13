@@ -105,6 +105,62 @@ fn a_measured_width_is_the_retail_width() {
     assert!(layout_off > 5000, "{layout_off}");
 }
 
+/// A narration crawl page with its `0x1F` lead, as the roller `FUN_80037174`
+/// measures it (`jal 0x80035F04` with `a0 = s1` at `0x80037588`): the walk
+/// runs to the `0x00`, so the lead advances `widths[0x1F] + pad + 1`, one
+/// pixel at the crawl's pad `0`, and the line drawn past it (`a0 = s1 + 1`)
+/// sits at `engine-ui`'s `crawl_line_left_x` of its own advance.
+#[test]
+fn a_crawl_page_measures_its_lead() {
+    differential!(scus(MEASURE));
+    let (Some(mut cpu), Some(disc), Some(scus)) = (scus_cpu(), disc(), scus()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let tim = disc
+        .read_prot_bytes(
+            legaia_font::FONT_TIM_PROT_DAT_OFFSET,
+            legaia_font::FONT_TIM_LEN,
+        )
+        .expect("font TIM");
+    let font = Font::from_disc_tim_and_scus(&tim, &scus).expect("font");
+    cpu.hook(0x8005_6788, |r, m| {
+        for i in 0..r.r[psx_retail_exec::A2] {
+            m.wr8(r.r[psx_retail_exec::A0] + i, r.r[psx_retail_exec::A1] as u8);
+        }
+    });
+    cpu.mem.wr32(PAD, 0);
+    let mut rng = Rng(0x4352_4157);
+    for round in 0..2_000 {
+        // Printable ASCII past `0x5E`'s author escape, as the crawl pages are.
+        let text: Vec<u8> = (0..1 + rng.below(40))
+            .map(|_| match 0x20 + rng.below(0x5C) as u8 {
+                0x5E => b' ',
+                b => b,
+            })
+            .collect();
+        let mut page = vec![0x1F];
+        page.extend(&text);
+        page.push(0);
+        cpu.mem.load(TEXT, &page);
+        assert_eq!(cpu.call(MEASURE, &[TEXT]), Stop::Returned, "round {round}");
+        let retail = cpu.regs.r[V0] as i32;
+        let advance = font
+            .layout_ascii(std::str::from_utf8(&text).unwrap())
+            .advance_x as i32;
+        assert_eq!(
+            retail,
+            advance + legaia_engine_ui::CRAWL_LEAD_ADVANCE,
+            "{text:02x?}"
+        );
+        assert_eq!(
+            (0x140 - retail) >> 1,
+            legaia_engine_ui::crawl_line_left_x(advance),
+            "{text:02x?}"
+        );
+    }
+}
+
 const EXPAND: u32 = 0x8003_6514;
 const OUT: u32 = 0x8015_0000;
 /// The name tables the substitution tokens read.
