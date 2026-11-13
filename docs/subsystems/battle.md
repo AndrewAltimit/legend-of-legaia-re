@@ -503,7 +503,9 @@ Engine: `legaia_engine_battle::battle_seats::rebuild_species_order` is the walk,
 
 The setup `FUN_800513F0` draws one `rand()` for each body it seats, the party's in seat order and then the monsters', and opens the body's anim cursor at a random frame of its first stream: `(rand() % frames) << 4` into the node's `+0x68`, `frames` being the stream's frame count `*(record[+0x88] + 1)` (`0x80051544..0x80051574` for a party seat, `0x800518D0..0x800518F8` for a monster's). So no two bodies idle in step, and three of the same monster do not breathe together. The draws come ahead of the formation roll `FUN_80051D84`, which the setup calls last.
 
-Engine: `World::enter_battle_from_formation` draws the same count in the same order and holds each draw on its actor (`Actor::battle_idle_phase_draw`) until the seat's first idle clip is installed, where `World::apply_battle_pose` seats the cursor. The differential `battle_setup` runs the setup whole against the entry: the seats of both tables with their family addends, the scripted-fight byte, the draws and the loader's fade-in.
+Engine: `World::enter_battle_from_formation` draws the same count in the same order and holds each draw on its actor (`Actor::battle_idle_phase_draw`) until the loader installs the seat's clips, where `World::seat_battle_setup_idle` seats clip `0` at that cursor: the party form's install, the scene host's monster install, and a monster seat that kept its clip set from an earlier fight.
+
+The phase lands with the fight, not on the action SM's first idle request. That request answers `FUN_801D5854`, whose stores go to the battle context's framing words and none to the actor's `+0x1D9..+0x1DC` or the node's `+0x68`, so retail's idle runs on through it; a seat installed without the idle marker restarted its loop at the phase on its first action, a snap on every body's first turn. The differential `battle_setup` runs the setup whole against the entry: the seats of both tables with their family addends, the scripted-fight byte, the draws and the loader's fade-in.
 
 ### The boss effect page
 

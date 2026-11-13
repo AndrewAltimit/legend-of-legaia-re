@@ -159,7 +159,7 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Why do setup frames at step `3` fit `4` yaw units below the walk back? | open (measured) | Over the `pre_*` states at step `2` the table's `inc * step` a pass fits exactly, and a recording's `0x51` to `0x0C` climbs `2` a pass. At step `3` the frame fits `-10` where re-armed passes give `-6` to `-9`, about `1.5` px. The endpoint climbs the counter's drift a pass, so inc alternates `1, 1, 2`, and a recording through `0x51`, `0x5A`, `0x0A` and `0x0C` at step `3` (`battle_doman_killer_wolf_strike`) reads the live yaw `7`, `8`, `9` behind the endpoint in turn, with the counter climbing `4` a pass into the setup states, so the walk back stands right on those rows and the frame's extra unit is unexplained. |
 | Which framing style did the earlier actor's Spirit leave? | open (narrowed) | The earlier actor is the RAM's: `DAT_8007BD00`, the member the gauge panel last named ([settled](re-settled-threads/battle.md#threads)). What `DISPLAYED_WALK_PINS` still holds is that action's style byte `ctx[+0xD]` (style `2` raises the pitch `0x80` and drops TR y `0x100`; the two Viguro Thunder Breaks and the Ghost Knight's Windhash read it) and, on five captures, a measured yaw. A `--watch` on `ctx[+0xD]` across a party Spirit's seed would name its writer and whether a later word keeps it. |
 | What is left of `minigame_dance_retail_go_out`'s `.985`? | open (measured) | The beams, the drop shadows and the clip phase are retail's ([dance](../subsystems/minigame-dance.md#the-halls-animated-props)). Of the `2836` pixels off by more than `32`, `1196` sit in the top `60` rows (score panels and stage lamps), retail `2` to `4` luma brighter, the rest on the dancers' outlines: the shape of a [PCSX-Redux capture](../tooling/retail-compare.md#a-pcsx-redux-frame-keeps-what-the-console-floors). Rasterising the hall's ordering table under both rules would say whether the top band is the emulator's; a film of the lamp cells' adds would split palette from geometry. |
-| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (narrowed) | A film of the cut shows the cut pass drawing the advanced cursor (`52`) on a camera already on its endpoint, so the fit's `48` is another residual. Two of the film's three passes ahead are the engine's: the cast begin's `pose(Idle)` restarts Zeto's playing idle at keyframe `0` (`World::apply_battle_pose`), which `FUN_801D5854` never does. Kept, the cut pair reads `.849` (was `.546`), one pass ahead, but the battle corpus moves both ways ([detail](#zetos-big-wave-idle-one-pass-older)). Next: the `super_queue_replace_*` drives on the kept idle. |
+| Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (narrowed) | A film of the cut shows the cut pass drawing the advanced cursor (`52`) on a camera already on its endpoint, so the fit's `48` is another residual. The engine's two extra passes are closed: battle setup now seats each idle at its drawn phase and the SM's idle requests keep it ([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)). Left: the one pass the engine's opening runs longer (`0x0A..0x28` in three passes where retail runs two), and the cut pair scored on a recording that opens on `0x28` ([detail](#zetos-big-wave-idle-one-pass-older)). |
 | Which capture-band bodies still run their arms in a pass each? | open (narrowed) | PROT 0963 is [directed arm by arm](../subsystems/cast-module.md#the-stagers-of-the-enemy-cells) (mid-cast film `.987`, every arm from 2 on `.975` or better, sound `1.000`). PROT 0936 and 0937 are directed arm by arm, and their ray-burst stagers seat per call (`retona_songi_hyper_crush` / `_lightning` arm 2 `.951` / `.939` on `--rand-track`). PROT 0954 is ported whole; its film differs on its roulette's random icons. [PROT 0958](../subsystems/cast-module.md#prot-0958-blazing-slash) is directed arm by arm; its six damage sites still fold once at the band's exit. |
 | What sheds the rest of Element Strike's burn? | open (narrowed) | Arms 6 and 7 read `.976` / `.977` on the Rogue Flame film; what is left is the burning bodies' shed. A rand-word watch tallies retail's arm 7 at `322` burning-body emits (`0x8004A61C`) over `49` passes, some six a pass to the arm's end, where the engine's draws fall from `61` a pass to `11` by its fourteenth ([Element Strike](../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame)). Next: a write watch on the party seats' `+0x04` / `+0x21F` through arm 7 names the store that keeps retail's bodies burning. |
 | What is left of Koru's Gigaton Press film? | open (narrowed to the frame span) | `koru_pre_gigaton_press` reads `.853`, `.914` on `--rand-track`. The column reaching the red ring early is the stream: seated only on the word retail's phase 3 ended on (`--rand-at 0x70:3`) phase 4 reads `.889` and draws retail's burst in order. The engine's stream parts inside the cast, one frame-driver draw short in `0x6E`, which is the [frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s ([the rand stream](../tooling/cast-sequence-oracle.md#the-rand-stream)). The gold ellipse in the `koru_*_mid_cast` stills is the walk's [floor rings](../tooling/retail-compare.md#a-turning-effect-parts-banks-are-a-clock). |
@@ -338,23 +338,20 @@ Two of the three were the engine's. A `--physical` film from
 loop budget `+0x176` spent as retail's), and Zeto then reads `224` on the
 `0x0C` pass and `12` on `0x28`'s, where retail runs `228`, `236`, `0`. Nothing
 committed a clip: the action seed's per-pass `pose(Idle)` request found no
-marker on a player a commit had installed and built a fresh idle player at
-keyframe `0`. The same request lands on every monster's cast begin and every
-party seat that asks for its idle again, so every fight's idle phases restart
-there. `FUN_801D5854` writes no anim field (its stores go to the
+idle marker on the player battle setup had installed and built a fresh idle
+player at keyframe `0`. Every body's first idle request after setup did the
+same, so every fight's idle phases restarted on each body's first turn. `FUN_801D5854` writes no anim field (its stores go to the
 battle context's framing words, none to the actor's `+0x1D9..+0x1DC` or the
 node's cursor `+0x68`), so retail's idle runs on.
-With a playing idle kept through the request (`World::apply_battle_pose`), the
-film reads `.874` (was `.824`), the cut pair `.849`, and Zeto stands at `90`
-on the cut pass against the recording's `78`, the one pass the engine's opening
-runs longer (`0x0A..0x28` in three passes where retail runs two). That change
-is not in the engine yet: over the battle corpus it lifts eleven frames
-(`delilas_gi_spirit_artifact` `.66` to `.97`, `battle_uru2_nurga_heal_mid_cast`
-`.973` to `.999`) and lowers nineteen, three of them to an unreached phase
-(the `super_queue_replace_*` states' `0x14`, camera `1.0` to `.803`) and
-`battle_tunnelc_xain_bloody_horns_mid_cast` `.855` to `.797`, which reads as
-drives and seats tuned on the restart. Grade
-`capture` (the film) and `disassembly` (`FUN_801D5854`'s stores, see
+With the idle kept through the request, the film reads `.874` (was `.824`),
+the cut pair `.849`, and Zeto stands at `90` on the cut pass against the
+recording's `78`: the one pass the engine's opening runs longer (`0x0A..0x28`
+in three passes where retail runs two). The engine now keeps it: battle setup
+seats each body's idle at the phase it drew (`World::seat_battle_setup_idle`),
+so the SM's requests find the loop playing; the film has not been re-shot on
+that seat
+([settled](re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
+Grade `capture` (the film) and `disassembly` (`FUN_801D5854`'s stores, see
 `ghidra/scripts/funcs/overlay_battle_action_801d5854.txt`).
 
 The cut has been filmed, and it draws neither an older cursor nor a

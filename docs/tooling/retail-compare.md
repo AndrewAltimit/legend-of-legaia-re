@@ -2998,6 +2998,17 @@ inside its state by retail's own clocks (`SpanGate`):
 | `0x00` / `0x0A` / `0x0B` | `SpanGate::Landed` | tween table `ctx[+0x118C]`, seat from `ctx[+0x274]` |
 | `0x70` under a directed module | module arm + countdown, or the arm alone (`PHASE_ONLY`) for a body that gates on no module word | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
 
+**The Attack arm's seed pass.** A `0x14` capture with the yaw counter still
+on the seed's `0x200` rung is the one pass after the seed, which the rung
+names, so its `SpanGate::Age` is met on entry (`accum` `0`). The capture's
+`ctx[+0x87C]` there is the acting seat's idle clock, not the action's: the
+anim commit zeroes the word at every re-commit of the looping idle
+(`0x8004BF50..0x8004BF78`), so it counts from the idle's last wrap, a phase
+battle setup drew under a stream a pinned replay does not share. Gated on
+the word, the `super_queue_replace_*` drives met `96` only while the engine
+restarted the seat's idle at the seed, which retail never does
+([settled](../reference/re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
+
 **A directed body with no module word.** PROT 0962's charge bodies wait on
 the caster's cursor, so `capture_countdown_va` names no word for them. Their
 `0x70` captures are still held to the capture's arm
