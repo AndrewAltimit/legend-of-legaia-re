@@ -673,6 +673,14 @@ past the edge that no scroller, closed `<details>` or fixed layer holds. The
 same pass opens the drawer with its list scrolled and fails a zone strip that
 sits under the top bar.
 
+Two shortcuts make that check blind, and both pass a page that is broken. A
+mobile viewport widens its layout viewport to the widest content and zooms
+the page out, so `innerWidth` grows with the defect and the screen's width has
+to be the constant the page is measured against. And the body's
+`overflow-x: hidden` is not a scroller: it holds nothing, it only cuts the
+overflow off where nobody can scroll to it, so an ancestor walk that counts it
+as one excuses every element on the page.
+
 Shoot both themes: set `localStorage['site-theme'] = 'light'` in an init
 script before navigation. A component that reads a literal colour looks
 correct in the dark screenshot and only shows in the light one.

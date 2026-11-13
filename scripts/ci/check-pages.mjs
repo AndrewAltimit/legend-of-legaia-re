@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Headless page checks over a built site: what a green `build-wasm.sh` does not say.
 //
-//   scripts/ci/check-pages.mjs [--site site] [--out dir] [--tabs 4] [--only play,modes]
+//   scripts/ci/check-pages.mjs [--site site] [--out dir] [--tabs 4] [--only phone,play,modes]
 //       [--gl swiftshader|egl] [--no-disc]
 //
 // Every generated page under `site/` loads with no uncaught exception, no console error
-// and no failed same-origin request. Then the pages that run the bundle run it: the loader
+// and no failed same-origin request, and lays out on a 360px phone with nothing wider than
+// the screen and the drawer's zone strip clear of the top bar (`phone`). Then the pages that run the bundle run it: the loader
 // instantiates and exposes each runtime's export, the modes page lists its cards, and, when
 // LEGAIA_DISC_BIN names an image, the play page takes the disc through its own file input,
 // enters town01 and draws frames that are not blank (a screenshot lands in --out; it holds
@@ -52,6 +53,60 @@ const BUNDLE_CHECKS = [
   { page: 'tooling/rom-patcher.html', from: '/wasm/legaia_web_viewer_bg.wasm', exports: ['patch_rom'] },
   { page: 'tooling/expansion-workbench.html', from: '/wasm/legaia_web_viewer_bg.wasm', exports: ['ExpansionWorkbench'] },
 ];
+// The narrowest phone the site is laid out for, and what the phone pass measures there:
+// the document's width with the outermost elements past the right edge that no scroller
+// or fixed layer holds, then the drawer's zone strip against the top bar.
+const PHONE = [360, 780];
+// The screen's width is passed in: a mobile viewport widens its layout viewport to
+// the widest content and zooms the page out, so `innerWidth` grows with the defect.
+const PHONE_PROBE = async (W) => {
+  const held = (el) => {
+    // The body's own `overflow-x: hidden` holds nothing: it only cuts the
+    // overflow off where a reader cannot scroll to it.
+    for (let a = el; a && a !== document.body; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.position === 'fixed') return true;
+      if (a !== el && /auto|scroll|hidden|clip/.test(cs.overflowX)) return true;
+    }
+    return !!el.closest('details:not([open]) > :not(summary)');
+  };
+  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : el.classList.length ? '.' + [...el.classList].slice(0, 2).join('.') : '');
+  const wide = [];
+  for (const el of document.querySelectorAll('body *')) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || r.right <= W + 1 || held(el)) continue;
+    const p = el.parentElement && el.parentElement.getBoundingClientRect();
+    if (p && p.right > W + 1 && !held(el.parentElement)) continue;
+    wide.push(`${name(el)} to ${Math.round(r.right)}px`);
+    if (wide.length >= 4) break;
+  }
+  let drawer = '';
+  const toggle = document.querySelector('.sidebar-toggle');
+  if (toggle && getComputedStyle(toggle).display !== 'none') {
+    // The slide is a transition, which a tab in the background does not run; the
+    // open drawer's resting place is what is under test.
+    document.querySelector('.sidebar').style.transition = 'none';
+    toggle.click();
+    await new Promise((r) => setTimeout(r, 100));
+    const bar = document.querySelector('.topbar').getBoundingClientRect().bottom;
+    const sb = document.querySelector('.sidebar');
+    const zones = sb.querySelector('.sidebar-zones');
+    const list = sb.querySelector('.sidebar-list');
+    const sr = sb.getBoundingClientRect();
+    if (!sb.classList.contains('open') || sr.left < -1 || sr.right > W + 1) drawer = `did not open on screen (${Math.round(sr.left)}..${Math.round(sr.right)})`;
+    else if (zones) {
+      // Whichever of the two scrolls: the list on the drawer as built, the drawer
+      // itself on one whose list has gone back to `display: contents`.
+      if (list) list.scrollTop = 400;
+      sb.scrollTop = 400;
+      await new Promise((r) => setTimeout(r, 50));
+      const top = zones.getBoundingClientRect().top;
+      if (top < bar - 1) drawer = `zone strip ${Math.round(bar - top)}px under the top bar`;
+    }
+    toggle.click();
+  }
+  return { W, docW: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth), wide, drawer };
+};
 // A uniform frame compresses to almost nothing; a drawn scene does not.
 const NOT_BLANK_BYTES = 20000;
 const TOWN_FRAMES = 120;
@@ -164,6 +219,36 @@ async function main() {
     }));
     await context.close();
     console.log(`[check-pages] loaded ${list.length} pages`);
+  }
+
+  // 1b. Every page at phone width: nothing makes the document wider than the screen
+  // (a wide element belongs inside its own scroller - a table wrap, a diagram frame, a
+  // `pre`), and the drawer opens with its zone strip under the top bar, also with the
+  // page list scrolled. Both failures read as fine at a desktop width.
+  if (want('phone')) {
+    const queue = list.slice();
+    const context = await browser.newContext({ viewport: { width: PHONE[0], height: PHONE[1] }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    await Promise.all(Array.from({ length: TABS }, async () => {
+      const page = await context.newPage();
+      let label = '';
+      watch(page, base, failures, () => `${label} (phone)`);
+      while (queue.length) {
+        label = queue.shift();
+        try {
+          await page.goto(base + label, { waitUntil: 'load', timeout: 120000 });
+          await page.waitForTimeout(300);
+          const got = await page.evaluate(PHONE_PROBE, PHONE[0]);
+          if (got.docW > got.W + 1 || got.wide.length) failures.push(`${label}: ${got.docW}px wide on a ${got.W}px phone (${got.wide.join('; ') || 'no single element'})`);
+          if (got.drawer) failures.push(`${label}: phone drawer ${got.drawer}`);
+        } catch (e) {
+          failures.push(`${label} (phone): ${e.message.split('\n')[0]}`);
+        }
+        await page.goto('about:blank').catch(() => {});
+      }
+      await page.close();
+    }));
+    await context.close();
+    console.log(`[check-pages] ${list.length} pages fit a ${PHONE[0]}px phone`);
   }
 
   // 2. The bundle runs.
