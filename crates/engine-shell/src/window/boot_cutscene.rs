@@ -615,6 +615,10 @@ impl PlayWindowApp {
                         pending_key,
                         &mut self.session.host.world,
                     );
+                    // A use or cast that raised window 7 / 8 leaves its
+                    // screen up; the runtime holds the notice over it.
+                    self.menu_runtime
+                        .arm_raised_notices(&mut self.session.host.world);
                     if active_sub.is_done() {
                         // Fold the outcome into the world through the one
                         // router every host shares; only the save rack and
@@ -1033,6 +1037,14 @@ impl PlayWindowApp {
                 };
                 // Window 7 - the spell level-up notice - overlays whichever
                 // menu screen is current while `MenuRuntime` holds the beat.
+                // Its window covers the screen's text under it; the text
+                // pass runs after every sprite, so the covered glyphs go.
+                legaia_engine_ui::pause_menu::occlude_under_menu_notices(
+                    &self.menu_ctx(surface_w, surface_h),
+                    self.menu_runtime.spell_level_notice().is_some(),
+                    self.menu_runtime.art_learned_notice().is_some(),
+                    &mut draws,
+                );
                 draws.extend(self.magic_level_notice_draws(surface_w, surface_h));
                 draws.extend(self.art_learned_notice_window_draws(surface_w, surface_h));
                 draws

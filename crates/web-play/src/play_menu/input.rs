@@ -182,12 +182,18 @@ impl LegaiaRuntime {
                 // title-opened Load has no scene yet, and no Status screen
                 // either, so it steps the session alone.
                 rebound = match self.scene_host.host_mut() {
-                    Some(host) => field_menu_dispatch::tick_open_subsession(
-                        session.as_mut(),
-                        edge,
-                        key.as_deref(),
-                        &mut host.world,
-                    ),
+                    Some(host) => {
+                        let rebound = field_menu_dispatch::tick_open_subsession(
+                            session.as_mut(),
+                            edge,
+                            key.as_deref(),
+                            &mut host.world,
+                        );
+                        // A use or cast that raised window 7 / 8 leaves its
+                        // screen up; the runtime holds the notice over it.
+                        self.menu.arm_raised_notices(&mut host.world);
+                        rebound
+                    }
                     None => {
                         session.tick_pad_edge_with_key(edge, key.as_deref());
                         session.take_rebound_mapping()

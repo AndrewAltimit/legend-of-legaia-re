@@ -456,3 +456,90 @@ fn a_pause_menu_book_use_composes_the_window_8_notice() {
     assert_eq!(skills(&bare, 1), vec![5], "the art is still taught");
     assert!(bare.menu.pending_art_notice.is_none());
 }
+
+/// Issue #618: a book used from the pause Items screen keeps that screen up
+/// under its window-8 notice. Retail's single-target apply sub-screen
+/// (`FUN_801D8308`) opens the notice itself (`0x801E4C60` at `0x801D8560`),
+/// stalls in phase 4 on the confirm | cancel masks, closes it (`0x801E4C68`)
+/// and steps back to its own list - the Items screen never closes. The port
+/// used to close the screen and draw the notice over the root command list.
+#[test]
+fn a_book_notice_draws_over_the_items_screen_not_the_root_list() {
+    use legaia_art::arts_table::ArtTableEntry;
+    use legaia_art::queue::Character;
+    use legaia_engine_menu_runtime::field_menu_dispatch::{
+        FieldMenuSubsession, build_pause_items_session, take_raised_notices, tick_open_subsession,
+    };
+    use legaia_engine_menus::pause_screens::MenuTextTables;
+    use legaia_engine_system::input::PadButton;
+
+    let mut world = world_with(&book_rows(), 3);
+    world.party.party_names = vec!["Vahn".into(), "Noa".into(), "Gala".into()];
+    world.party.inventory.insert(0x92, 1);
+    world.party.inventory.insert(0x77, 2);
+    for member in &mut world.party.roster.members {
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = 100;
+        hms.hp_max = 100;
+        member.set_hp_mp_sp(hms);
+    }
+    world.menu.text = Some(MenuTextTables {
+        arts: Some(vec![ArtTableEntry {
+            character: Character::Noa,
+            index: 5,
+            name: "Noa Five".into(),
+            ap: 0,
+            commands: Vec::new(),
+            is_miracle: false,
+            name_bytes: Vec::new(),
+            glyphs: Vec::new(),
+        }]),
+        ..Default::default()
+    });
+    let mut template = vec![0xC1, 0x00];
+    template.extend_from_slice(b" learns|");
+    template.extend_from_slice(&[0xCF, 0x06, 0xC5, 0x00, 0xCF, 0x07]);
+    template.push(b'!');
+    world.menu.notify_template = Some(template);
+
+    let mut sub = FieldMenuSubsession::Items(build_pause_items_session(&world));
+    let FieldMenuSubsession::Items(items) = &sub else {
+        unreachable!()
+    };
+    let row = items
+        .rows
+        .iter()
+        .position(|r| r.id == 0x92)
+        .expect("a Wind Book row");
+    let cross = PadButton::Cross.mask();
+    let _ = tick_open_subsession(&mut sub, cross, None, &mut world); // Use
+    for _ in 0..row {
+        let _ = tick_open_subsession(&mut sub, PadButton::Down.mask(), None, &mut world);
+    }
+    // The row opens the target panel; Wind Book I takes only its owner,
+    // Noa, on the second row.
+    let _ = tick_open_subsession(&mut sub, cross, None, &mut world);
+    let _ = tick_open_subsession(&mut sub, PadButton::Down.mask(), None, &mut world);
+    let mut raised = None;
+    for _ in 0..2 {
+        let _ = tick_open_subsession(&mut sub, cross, None, &mut world);
+        if let Some(n) = take_raised_notices(&mut world).art_learned_notice {
+            raised = Some(n);
+            break;
+        }
+    }
+    let notice = raised.expect("the book raised window 8 while the screen was open");
+    assert_eq!((notice.character, notice.art_id), (1, 5));
+    assert!(!sub.is_done(), "the Items screen stays up under the notice");
+    let FieldMenuSubsession::Items(items) = &sub else {
+        panic!("still the Items screen");
+    };
+    assert!(
+        items.rows.iter().all(|r| r.id != 0x92),
+        "the book is spent and its row is gone"
+    );
+    assert!(
+        world.menu.pending_art_notice.is_none(),
+        "the host took the notice; nothing is left for the finish path"
+    );
+}

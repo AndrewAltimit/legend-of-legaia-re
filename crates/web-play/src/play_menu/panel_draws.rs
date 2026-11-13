@@ -76,6 +76,14 @@ impl LegaiaRuntime {
         };
         sprites.extend(screen.sprites);
         texts.extend(screen.texts);
+        // A held notice's window covers the screen's text under it; the
+        // text pass runs after every sprite, so the covered glyphs go.
+        legaia_engine_ui::pause_menu::occlude_under_menu_notices(
+            &assets.menu_ctx(origin, scale),
+            self.menu.spell_level_notice().is_some(),
+            self.menu.art_learned_notice().is_some(),
+            &mut texts,
+        );
 
         // Window 7 - the spell level-up notice - overlays whichever menu
         // screen is current while the shared runtime holds the beat. Both

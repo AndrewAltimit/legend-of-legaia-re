@@ -52,6 +52,21 @@ impl MenuRuntime {
         }
     }
 
+    /// Arm the window-7 / window-8 notices a use or cast raised with its
+    /// screen still up ([`crate::field_menu_dispatch::take_raised_notices`]).
+    /// Hosts call it after every
+    /// [`crate::field_menu_dispatch::tick_open_subsession`]; the screen keeps
+    /// drawing under the notice, as retail's apply sub-screens leave it.
+    pub fn arm_raised_notices(&mut self, world: &mut World) {
+        let raised = crate::field_menu_dispatch::take_raised_notices(world);
+        if let Some(n) = raised.spell_level_notice {
+            self.arm_spell_level_notice(n);
+        }
+        if let Some(n) = raised.art_learned_notice {
+            self.arm_art_learned_notice(n);
+        }
+    }
+
     /// One frame of the window-8 hold: the confirm or cancel mask closes it.
     /// Returns `true` while the notice owns the pad.
     pub fn dismiss_art_learned_notice(

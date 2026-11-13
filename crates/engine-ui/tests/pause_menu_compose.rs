@@ -29,7 +29,8 @@ use legaia_engine_ui::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, MENU_WINDOW_FALLBACK, MagicScreenView,
     MenuRects, OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, art_learned_notice_draws, equip_screen_compose,
-    menu_notice_chrome, pause_screen_draws, spell_level_notice_draws, stage_transform,
+    menu_notice_chrome, occlude_under_menu_notices, pause_screen_draws, spell_level_notice_draws,
+    stage_transform,
 };
 use legaia_engine_ui::{
     ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, EquipDrawPhase, FieldMenuPartyView,
@@ -1110,4 +1111,38 @@ fn the_menu_notices_are_framed() {
     );
     // No frame where the text cannot draw.
     assert!(menu_notice_chrome(&fx.ctx_tableless(), true, true).is_empty());
+}
+
+/// Issue #618: the screen under a notice keeps its text out of the notice's
+/// window. Every host draws sprites before text, so without the cull the
+/// Items list printed straight through window 8's frame; a glyph whose
+/// centre lies inside the frame goes, one outside stays, and nothing is
+/// culled while no notice is held.
+#[test]
+fn a_notice_window_covers_the_text_under_it() {
+    let fx = Fixture::new(true);
+    let ctx = fx.ctx();
+    let (x, y, w, h) = MenuRects::new(Some(&fx.table)).frame_rect(8);
+    let s = ctx.scale as i32;
+    let at = |sx: i32, sy: i32| legaia_engine_ui::TextDraw {
+        dst: (
+            ctx.origin.0 + sx * s,
+            ctx.origin.1 + sy * s,
+            s as u32,
+            s as u32,
+        ),
+        src: (0, 0, 1, 1),
+        color: [1.0; 4],
+    };
+    let inside = at(x + w / 2, y + h / 2);
+    let outside = at(x + w + 4, y + h + 4);
+    let mut texts = vec![inside, outside];
+    occlude_under_menu_notices(&ctx, false, false, &mut texts);
+    assert_eq!(texts.len(), 2, "no notice held: nothing is covered");
+    occlude_under_menu_notices(&ctx, false, true, &mut texts);
+    assert_eq!(texts.len(), 1, "window 8 covers the glyph under it");
+    assert_eq!(texts[0].dst, outside.dst, "and keeps the one outside");
+    let mut texts = vec![inside];
+    occlude_under_menu_notices(&fx.ctx_tableless(), true, true, &mut texts);
+    assert_eq!(texts.len(), 1, "no frame draws, so nothing is hidden");
 }

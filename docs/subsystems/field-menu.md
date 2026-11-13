@@ -1584,6 +1584,17 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   (`legaia_engine_ui::pause_menu::menu_notice_chrome`, gated on the same
   painter check as the text, so a frame never stands around a notice whose
   text cannot draw).
+- **The notice opens over its own screen.** The apply sub-screen raises it
+  from inside its phase machine (`FUN_801D8308` opens window 8 at
+  `0x801D8560` and parks in phase 4; `FUN_801D9594` opens window 7 at
+  `0x801D97C8` and parks in phase 3), stalls on the confirm | cancel masks,
+  closes it and steps back to its own cursor, so the Items or Magic screen
+  stays under the notice and resumes after it. The port's
+  `field_menu_dispatch::resume_after_use` keeps the screen up and leaves the
+  notice for the host (`take_raised_notices`). The notice's body covers the
+  text below it; the hosts draw text after every sprite, so
+  `pause_menu::occlude_under_menu_notices` drops the screen's glyphs inside
+  the notice's frame.
 
 **Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
 (`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for

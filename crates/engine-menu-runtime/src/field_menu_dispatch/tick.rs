@@ -67,8 +67,12 @@ pub fn tick_open_subsession(
 /// cursor (`FUN_801D7FF8`, `FUN_801D8308`, `FUN_801D9280`, `FUN_801D9594`), so
 /// the Items and Magic screens outlive it. The session is rebuilt on the world
 /// the use left, which is what re-derives the rows' counts, dim bits and
-/// panel rows. A notice the use raised takes the session's finish path, whose
-/// return latches it for the host; retail draws window 7 over the screen.
+/// panel rows. A notice the use raised (window 7, window 8) stays parked on
+/// [`World::menu`] for the host to arm ([`take_raised_notices`]) while the
+/// screen stays up under it: retail opens the notice from inside the apply
+/// sub-screen (`0x801E4C60` at `0x801D8560`, `0x801E4D78` at `0x801D97C8`),
+/// stalls on the confirm | cancel masks, closes it and steps back to the
+/// same cursor - it never leaves the Items or Magic screen for the root list.
 ///
 /// REF: FUN_801D7FF8, FUN_801D8308, FUN_801D9280, FUN_801D9594
 fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
@@ -98,11 +102,7 @@ fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
             let mut next = build_pause_items_session(world);
             next.focus = s.focus;
             next.command_cursor = s.command_cursor;
-            if world.menu.pending_art_notice.is_some() {
-                next.close();
-            } else {
-                next.resume_use(slot, target_row);
-            }
+            next.resume_use(slot, target_row);
             *s = next;
         }
         FieldMenuSubsession::Spells(s) => {
@@ -121,21 +121,38 @@ fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
             let catalog = s.catalog().clone();
             let notice = apply_spell_outcome(s, world);
             let mut next = build_spell_session(world, &catalog);
-            match notice {
-                Some(notice) => {
-                    world.menu.pending_spell_notice = Some(notice);
-                    next.close();
-                }
-                None => next.resume_cast(
-                    caster_row.unwrap_or(0) as u8,
-                    spell_id,
-                    target_row.unwrap_or(0) as u8,
-                ),
+            if notice.is_some() {
+                world.menu.pending_spell_notice = notice;
             }
+            next.resume_cast(
+                caster_row.unwrap_or(0) as u8,
+                spell_id,
+                target_row.unwrap_or(0) as u8,
+            );
             *s = next;
         }
         _ => {}
     }
+}
+
+/// The window-7 / window-8 notices a use or cast raised while its screen
+/// stays up ([`resume_after_use`]), taken off [`World::menu`]. Every host
+/// calls this after [`tick_open_subsession`] and arms what it returns; the
+/// screen below keeps drawing, and the notice's pre-empt holds the pad.
+pub fn take_raised_notices(world: &mut World) -> RaisedNotices {
+    RaisedNotices {
+        spell_level_notice: world.menu.pending_spell_notice.take(),
+        art_learned_notice: world.menu.pending_art_notice.take(),
+    }
+}
+
+/// What [`take_raised_notices`] hands a host.
+#[derive(Debug, Default)]
+pub struct RaisedNotices {
+    /// Window 7: a menu cast leveled its spell.
+    pub spell_level_notice: Option<SpellLevelNotice>,
+    /// Window 8: a Hyper-Art book taught an art.
+    pub art_learned_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
 }
 
 /// The Equip character picker's Up / Down: walk the present party
