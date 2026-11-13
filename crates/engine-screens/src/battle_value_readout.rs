@@ -83,19 +83,17 @@ pub fn battle_value_readout_layout_with(
             None => newest.push(p),
         }
     }
-    // The renderer steps its timer by the battle frame's own step
-    // (`popup_value_cells_at_step`); a vsync a frame off retail's cadence.
-    let step = if world.toggles.battle_sm_frame_cadence {
-        world.battle_frame_step()
-    } else {
-        1
-    };
     let mut runs = Vec::new();
     for p in newest {
+        // The timer the renderer's last draw stepped, once a battle frame
+        // (`DamagePopup::step_timer`); a numeral no draw has reached yet
+        // stands nowhere.
+        let Some((age, step)) = p.drawn_age() else {
+            continue;
+        };
         let Some(trio) = trio_of(p.slot) else {
             continue;
         };
-        let age = p.frames_total.saturating_sub(p.frames_remaining);
         let cells = legaia_engine_ui::battle_numerals::popup_value_cells_at_step(
             vp,
             world_scale,

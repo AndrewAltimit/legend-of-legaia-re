@@ -255,6 +255,16 @@ impl PlayWindowApp {
                     .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
             {
                 p.frames_remaining = p.frames_total.saturating_sub(age);
+                // The renderer draws `0x10 * (age + step)` on a frame of
+                // `step` vsyncs, its anchor `0x10 * age`.
+                let w = &self.session.host.world;
+                let step = if w.toggles.battle_sm_frame_cadence {
+                    w.battle_frame_step()
+                } else {
+                    1
+                };
+                p.timer = (i32::from(age) + i32::from(step.max(1))) * 0x10;
+                p.drawn_step = step.max(1);
                 sc.popup_age_seated.set(true);
             }
             if due && let Some((page, slide)) = sc.seat_arts_list {
