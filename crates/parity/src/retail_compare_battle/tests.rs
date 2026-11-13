@@ -731,9 +731,8 @@ fn a_locked_walk_nearest_on_slot_three_chased_the_walks_heading() {
 }
 
 /// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
-/// so the walk back from Poisonous Breath's `3350` under `3368` lands between
-/// the second pass's two roots, `3320` (the one its frame fits best) and
-/// `3317`, where the RAM's endpoint alone gives `3296`.
+/// so the walk back from Poisonous Breath's `3350` under `3368` lands on the
+/// `3320` its frame fits best, where the RAM's endpoint alone gives `3296`.
 #[test]
 fn a_clip_clock_endpoint_walks_back_against_the_cursor() {
     let mut ram = vec![0u8; 0x20_0000];
@@ -763,7 +762,7 @@ fn a_clip_clock_endpoint_walks_back_against_the_cursor() {
         end_shift,
         false,
     );
-    assert_eq!(walked.yaw, 3318.0);
+    assert_eq!(walked.yaw, 3320.0);
 
     // Another shot's table: the endpoint is off the law.
     put16(&mut ram, rec(1) + 2, 3369);

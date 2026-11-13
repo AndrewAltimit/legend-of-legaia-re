@@ -719,19 +719,6 @@ pub(super) fn displayed_cam_live_steps(
             // pass stepped toward `-dir`, and the pose stood further on.
             let wide = g.abs() + moved + dir * end_shift[k as usize] * n as i32;
             let step = wide.signum() * ((wide.abs() + (d - fs_n) - 1) / (d - fs_n));
-            // The re-arm does not invert to one gap. A pass that stood `G`
-            // short of its endpoint left `G - fs * ceil(G / d)`, and every
-            // `wide` that leaves has a root on each of two increments,
-            // `step` and `hi` (at step `3` on `d = 6` it always has both):
-            // Caruban's Fire Breath stills draw the yaw on the upper root
-            // (`3565`) and the pitch on the lower. Neither is in the RAM, so
-            // a walk back with no earlier endpoint to meet takes their
-            // midpoint, the pose a pass back at most half a re-arm off.
-            let hi = wide.signum() * ((wide.abs() + d - 1) / (d - fs_n));
-            if prior_end[k as usize].is_none() {
-                moved += (fs_n * (step + hi) + 1) / 2;
-                continue;
-            }
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
             if let Some(p) = prior_end[k as usize]
