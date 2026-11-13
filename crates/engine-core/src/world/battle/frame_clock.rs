@@ -807,6 +807,9 @@ impl World {
             return false;
         }
         self.battle.sm_pass_frame = Some(frame);
+        let starts = &mut self.battle.frame_start_ticks;
+        starts.rotate_right(1);
+        starts[0] = Some(self.clock.display_frames);
         self.take_pending_frame_step();
         true
     }
@@ -1986,6 +1989,28 @@ mod tests {
                 "{earlier_cue_passes_back}"
             );
         }
+    }
+
+    /// A persisting cast frame reads the page of the frame two battle frames
+    /// back by the frames' own starts: twice the running span on even frames,
+    /// and the shorter frame's last vsync when the frame two back ran shorter.
+    #[test]
+    fn a_persisting_frame_reads_the_page_two_frames_back_by_their_starts() {
+        let mut w = World::new();
+        w.battle.frame_clock.step = 4;
+        w.battle.frame_start_ticks = [Some(108), Some(104), Some(100)];
+        w.clock.display_frames = 110;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 8);
+        // A five-vsync frame before last, then two of four.
+        w.battle.frame_start_ticks = [Some(109), Some(105), Some(100)];
+        w.clock.display_frames = 112;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 9);
+        // The frame two back ran four, this one is on its fifth vsync.
+        w.battle.frame_start_ticks = [Some(108), Some(104), Some(100)];
+        w.clock.display_frames = 112;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 9, "that frame's last vsync");
+        w.battle.frame_start_ticks = [None; 3];
+        assert_eq!(w.cast_frame_persist_vsyncs(), 8);
     }
 
     /// A priced frame's work is what it links: Tail Flare's flight state

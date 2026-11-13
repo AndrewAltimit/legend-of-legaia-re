@@ -907,6 +907,10 @@ pub struct BattleState {
     /// (`World::battle_sm_pass_due`) - one pass a battle
     /// frame, however many vsyncs it spans.
     pub sm_pass_frame: Option<u64>,
+    /// The display ticks the last three battle frames opened on, newest
+    /// first (`World::battle_sm_pass_due`): where the page two battle frames
+    /// back was drawn (`World::cast_frame_persist_vsyncs`).
+    pub frame_start_ticks: [Option<u64>; 3],
     /// The battle frame the actor anim tick last ran its pass on
     /// (`World::battle_anim_pass_vsyncs`).
     pub anim_pass_frame: Option<u64>,
@@ -1651,6 +1655,7 @@ impl BattleState {
             capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,
+            frame_start_ticks: [None; 3],
             anim_pass_frame: None,
             action_fx_pass_frame: None,
             summon_fx_pass_frame: None,

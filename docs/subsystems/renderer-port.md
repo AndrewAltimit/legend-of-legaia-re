@@ -925,7 +925,17 @@ arm runs at, ten when a streaming clip runs each pass a vsync past its step.
 Genocidal Cannon's arm 6 runs at that span, and read at a fixed eight its white
 decayed off a page one frame newer than retail's, a frame ahead of the
 recording: the mid-cast film's arm 6 reads `.975` at eight and `.993` at two
-spans. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
+spans. The page flips once a battle frame, whatever the frame spans: the frame-end pass
+`FUN_80016B6C` waits its `VSync` (`0x800171C0`), puts the display and draw environments of
+page `gp+0x434` (`PutDispEnv` at `0x80017230`, `PutDrawEnv` at `0x80017254`), toggles the
+page (`0x8001727C..0x80017284`) and draws the table (`0x80017288`). So the page two back is
+found by the frames' own starts (`BattleState::frame_start_ticks`), not twice the running
+frame's span: under the span law a frame after an overrun runs a vsync shorter than the one
+before, and twice its own span read the frame before last on its closing vsync. Thunder
+Storm's arms 4 to 6 showed the previous frame's white burst there
+(`battle_chitei2_gilium_thunder_storm_mid_cast` `.849` with the law and priced frames, `.960`
+read by the starts, `.965` by default). Grade `disassembly` for the flip, `capture` for the
+films. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
 The ring is kept from the moment a cast module is resident, not from the first

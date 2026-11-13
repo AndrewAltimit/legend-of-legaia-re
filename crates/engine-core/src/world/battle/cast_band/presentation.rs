@@ -606,8 +606,24 @@ impl World {
     /// clip spans its step and an overrun vsync, and Genocidal Cannon's arm 6
     /// runs at span `5`, where a fixed eight vsyncs read a page one frame
     /// newer than retail's and decayed the arm's white a frame ahead.
+    ///
+    /// The frames before need not have run this one's span: a frame after an
+    /// overrun spans a vsync less than the one before it, and twice its own
+    /// span read the frame *before* last on its closing vsync (Thunder Storm's
+    /// arms 4 to 6 under the span law showed the previous frame's white burst
+    /// there). So the page is found by the frames' own starts
+    /// (`BattleState::frame_start_ticks`): the same vsync of the frame two
+    /// back, or that frame's last when it ran shorter.
     pub fn cast_frame_persist_vsyncs(&self) -> u64 {
-        2 * self.battle.frame_clock.span()
+        let t = self.clock.display_frames;
+        match self.battle.frame_start_ticks {
+            [Some(s0), Some(s1), Some(s2)] if s2 < s1 && s1 <= s0 && s0 <= t => {
+                let into = t - s0;
+                let target = s2 + into.min(s1 - s2 - 1);
+                t - target
+            }
+            _ => 2 * self.battle.frame_clock.span(),
+        }
     }
 
     /// The armed wash as the drain draws it (`FUN_80046978`), for a host that
