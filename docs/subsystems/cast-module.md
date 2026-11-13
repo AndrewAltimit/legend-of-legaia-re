@@ -1284,9 +1284,9 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F800C` | 921 (`summon_iota`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F8078` | 905 (`summon_stager_x83`) | spawn stager, 2 spawn calls | PORT (spawn-only) |
 | `801F813C` | 962 (`cast_blade_breath`) | spawn stager, 3 spawn calls | PORT (spawn-only) |
-| `801F81A0` | 963 (`cast_genocidal_cannon`) | spawn stager, 4 spawn calls | DATA |
+| `801F81A0` | 963 (`cast_genocidal_cannon`) | spawn stager, 4 spawn calls; arm 2 a fade | PORT (spawn-only) |
 | `801F81E8` | 920 (`summon_slippery`) | null stager | SCOPE-IGNORE |
-| `801F8208` | 950 (`cast_rolling_flare`) | spawn stager, 1 spawn call | DATA |
+| `801F8208` | 950 (`cast_rolling_flare`) | spawn stager, 1 spawn call | PORT (spawn-only) |
 | `801F8250` | 959 (`cast_megaton_press`) | spawn stager, `sltiu a1, 6`, 11 spawn calls | DATA |
 | `801F82CC` | 940 (`cast_glare_divide`) | null stager | SCOPE-IGNORE |
 | `801F82D8` | 917 (`summon_barra`) | spawn stager, `sltiu a1, 5`, 3 spawn calls | PORT (spawn-only) |
@@ -1304,7 +1304,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 | `801F8B90` | 923 (`summon_gilium`) | spawn stager, 3 spawn calls; writes `ctx+0x278` | PORT |
 | `801F8BF8` | 964 (`cast_element_change`) | spawn stager, 2 spawn calls | DATA |
 | `801F8C30` | 929 (`summon_mule`) | spawn stager, `sltiu a1, 9`, 10 spawn calls | PORT (spawn-only) |
-| `801F8D30` | 958 (`cast_blazing_slash`) | spawn stager, 7 spawn calls | DATA |
+| `801F8D30` | 958 (`cast_blazing_slash`) | spawn stager, 7 spawn calls | PORT (spawn-only) |
 | `801F8D64` | 966 (`cast_evil_seru_magic`) | spawn stager, `sltiu a1, 9`, 7 spawn calls; damage roll (resist); writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F8E68` | 928 (`summon_palma`) | spawn stager, `sltiu a1, 7`, 12 spawn calls | PORT (spawn-only) |
 | `801F90E4` | 922 (`summon_puera`) | spawn stager, 0 spawn calls; writes `ctx+0x278` | PORT |
@@ -3797,10 +3797,32 @@ A part's op `0x20` reaches a module's stager. A charge record whose whole progra
 that call draws nothing itself: PROT 0942's Power Up glow and PROT 0941's column come
 from `FUN_801F8118` and `FUN_801F7DB0`, not from the record the arm seats. The table at
 `0x801F6734` names one stager per image; `enemy_cast_stager_spawns` carries PROT 0935,
-0941, 0942, 0951 and 0964, and `blazing_slash_stager_spawns` carries PROT 0958's
-([Blazing Slash](#prot-0958-blazing-slash)); `World::runs_part_stager_calls` names
-every image whose calls run. PROT 0950 and 0963 hold stagers of the same shape that do
-not run yet, and their parts' calls are dropped.
+0941, 0942, 0951 and 0964, `blazing_slash_stager_spawns` carries PROT 0958's
+([Blazing Slash](#prot-0958-blazing-slash)), and `rolling_flare_stager_spawns` /
+`genocidal_cannon_stager_spawns` carry PROT 0950's and 0963's;
+`World::runs_part_stager_calls` names every image whose calls run. A cell's calls run
+only under a body directed arm by arm; under a body the pager seats whole they are
+dropped, since the whole set already holds what they would seat.
+
+**PROT 0950's stager** `FUN_801F8208` has one arm: arm 0 seats `0x801F8610` on its
+caller at the caller's own scale `+0x72` (`lh a3,0x72(v0)` at `0x801F8224`), and
+every other arm returns. Under Shadow Break (`0xAB`, directed per arm) its parts call
+it over and over (the engine's film seats a stream of them while the record
+`0x801F85EC` lives), where the whole-set seat at arm 0 had stood one; `deroa_jette_shadow_break` reads
+`.937` to `.971` plain and `.952` to `.984` on `--retail-steps --rand-track` (arm 1
+`.737` to `.961`). Rolling Flare (`0x5A`) is paged whole and its film is unchanged
+(`.907`).
+
+**PROT 0963's stager** `FUN_801F81A0` (Genocidal Cannon) has four arms, each seat
+through `FUN_80050ED4` on the caller's `+0x24` angles at its scale `+0x72`. Arm 0
+seats `0x801F8678` on the caller's `+0x3C` trio. Arms 1 and 3 aim off battle slot 3
+(`lw v0,0xC(v1)` off `0x801C9370`): its `+0x34` trio with `y = -0x300`, pushed `0xC0`
+along its facing `+0x46` (`x += trunc(sin f * 0xC0 / 4096)`, `z += trunc(cos f *
+0xC0 / 4096)`, `0x801F8214..0x801F82E0`); arm 1 seats `0x801F8940` and then
+`0x801F8984` there, arm 3 `0x801F8984` alone. Arm 2 writes the fade template
+`0x801C9070` (additive `(0xFF, 0xF0, 0xC0)` to black over `0x18` frames) and spawns
+it with `FUN_80024E80(.., 1)`. The body is not directed per arm yet, so its calls are
+dropped. The stager differential covers both images. Grade `disassembly`.
 
 ### PROT 0948 (Cross Beam)
 
@@ -4811,7 +4833,11 @@ a frame, and the near arm, which the port lacked, decides where the second and t
 draws stand. With it ported ([the numeral renderer](battle-action-helpers.md#fun_801df6b8---damage-number-popup-renderer))
 the engine's numeral for that hit stands on the near square too (view Z `1137`), and
 the film's arms 13 and 14 read as before (`.43` / `.41`): what holds them is the
-scene, not the number. Grade `capture` (puffs) and `disassembly` + `capture` (the
+scene, not the number. The recording also pins the numeral's clock: every hit's first
+draw is at timer `0x10 * step` (`64` on step `4`, `48` on step `3`) and the next one a
+battle frame later, so the timer steps once a frame, in the draw. The engine had aged
+it a vsync at a time from `1`, drawing `0x50` on the push and rising between draws, up
+to a battle frame ahead; on the frame clock arms `0x0A..0x10` gain `.003..005`. Grade `capture` (puffs) and `disassembly` + `capture` (the
 popup's link and its near arm).
 
 <a id="prot-0960-plasma-strike"></a>

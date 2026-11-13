@@ -310,6 +310,8 @@ impl DamagePopup {
 
     /// Step the ring timer as one draw of `FUN_801DF6B8` does, on a battle
     /// frame of `step` vsyncs.
+    ///
+    /// REF: FUN_801DF6B8 (the timer step, `0x801DF7B8..0x801DF7C8`)
     pub fn step_timer(&mut self, step: u8) {
         let step = step.max(1);
         self.timer += i32::from(step) * 0x10;
