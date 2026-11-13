@@ -154,7 +154,7 @@ pub fn glare_divide_split_tick(
     let step = run_chain_tick(ctx, |c| match c.phase {
         0 => CastArmStep::Advance,
         1 => {
-            caster.render_flag = 10;
+            caster.render_flag = SPLIT_SHAKE_FLAG;
             CastArmStep::Advance
         }
         2 => {

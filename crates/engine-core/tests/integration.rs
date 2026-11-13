@@ -159,6 +159,7 @@ mod seru_ticks_0x81_0x86_ladder;
 mod seru_ticks_0x87_0x8b_ladder;
 mod set_equip_slot;
 mod sim_cadence_wall_speed;
+mod slime_divide_clone_disc;
 mod spirit_aura_morph_disc;
 mod steal_attack_round_disc;
 mod submode_screen_ladder;

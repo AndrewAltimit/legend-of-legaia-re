@@ -1218,6 +1218,19 @@ impl World {
                         self.casting.module_split_saved_target = Some(sp.saved_caster_target);
                         self.apply_glare_divide_split(caster_slot, &sp);
                     }
+                    // Arm 1's shake flag eases the caster toward white from
+                    // its own colour word, which in retail is the neutral
+                    // `0x20080200`. The engine's resting word is `0`, which
+                    // under a raised flag reads as retail's zero - a body
+                    // the tint pass blacks out and the draw tick skips - so
+                    // the shake would start from black.
+                    if caster.render_flag == arms::SPLIT_SHAKE_FLAG
+                        && let Some(a) = self.actors.get_mut(usize::from(caster_slot))
+                        && a.battle.render_color == 0
+                    {
+                        a.battle.render_color =
+                            legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
+                    }
                     Some(step)
                 }
                 (941, Some(arms::STEAL_TICK)) => {

@@ -144,6 +144,16 @@ pub struct ModuleCamState {
     pub pin_saved: u8,
     /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
     pub blade: [i16; 2],
+    /// PROT 0940's split point `(x, z)`, the module words `0x801F865C` /
+    /// `0x801F8660`: the caster's ground pair as arm 0 saw it, the centre
+    /// arm 2 shakes the caster about, and - pushed an eighth of the trig
+    /// scale along the caster's side axis on the arm's passing pass - the
+    /// spawn point the Divide clone is seated on. `None` before arm 0 runs.
+    pub split_point: Option<[i16; 2]>,
+    /// PROT 0940's shake counter, the module word `0x801F8650`: zeroed by
+    /// arm 1's exit, bumped by every pass of arm 2. Its parity picks the
+    /// side of each shake and of the split point's push.
+    pub split_passes: u32,
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
     /// The TR y of a cut on the row's middle: `-4 * +0x3E` averaged over the
