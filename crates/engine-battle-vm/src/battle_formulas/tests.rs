@@ -1429,3 +1429,53 @@ fn physical_rolls_match_retail_hits_with_retail_rolls() {
         assert_eq!(physical_rolls(&hit, &mut rand), (raw, guard), "hit {i}");
     }
 }
+
+/// Party strikes traced on retail (`cast-sequence.py --hit-trace`'s
+/// `damage.csv`): Gala's Flying Knee on the Ropeway Killer Bee and Vahn's
+/// chain ending in Charging Scorch on the Jou Theeder. The inputs the kernel
+/// held at the attacker draw (`0x801ECE7C`: folded ATK `s0`, defence half
+/// `s1`, scalar `0x801F64EC[sp+0x18]`, juggle `ctx[+0x0A]`, approach terms,
+/// attacker HP, clip `+0x1D9`), the BIOS seed word there, and the two sides
+/// at `0x801ED5CC`. The art arm (`+0x1D9 > 0x10`) and a non-neutral affinity
+/// take the hit into the hundreds, where a one-off in the order of the scales
+/// shows as a different numeral: Flying Knee's `60` / `172` and Charging
+/// Scorch's `958` are what retail drew on screen.
+///
+/// REF: FUN_801EC3E4
+#[test]
+fn physical_rolls_match_traced_party_strikes() {
+    // (atk, attacker hp, def, scalar, clip, juggle, angle, distance,
+    //  affinity, seed word at the attacker draw, raw, guard)
+    type Row = (u16, u16, u16, u8, u8, u8, i16, i16, u8, u32, u32, u32);
+    #[rustfmt::skip]
+    const HITS: [Row; 6] = [
+        (124, 1193, 154, 20, 0x0f, 1, 156, 54, 102, 3_283_689_636, 239, 179),
+        (175, 1193, 154, 22, 0x11, 1, 0, 0, 102, 562_042_205, 334, 162),
+        (522, 4984, 329, 20, 0x0e, 1, 112, 33, 100, 1_774_353_938, 693, 347),
+        (529, 4984, 259, 20, 0x0d, 2, 0, 0, 100, 137_953_028, 752, 288),
+        (621, 4984, 259, 22, 0x11, 1, 0, 0, 100, 1_156_456_159, 1237, 279),
+        (528, 4984, 259, 20, 0x0c, 1, 0, 0, 100, 1_877_951_911, 737, 278),
+    ];
+    for (i, &(atk, hp, def, power, clip, juggle, angle, dist, affinity, seed, raw, guard)) in
+        HITS.iter().enumerate()
+    {
+        let mut state = seed;
+        let mut rand = || {
+            state = state.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            ((state >> 16) & 0x7FFF) as u16
+        };
+        let hit = PhysicalHit {
+            attacker_atk: atk,
+            attacker_hp: hp,
+            defender_def: def,
+            command_scalar: power,
+            staged_anim: clip,
+            affinity_pct: affinity,
+            combo_scale: juggle,
+            attack_ramp: angle,
+            guard_ramp: dist,
+            ..PhysicalHit::default()
+        };
+        assert_eq!(physical_rolls(&hit, &mut rand), (raw, guard), "hit {i}");
+    }
+}
