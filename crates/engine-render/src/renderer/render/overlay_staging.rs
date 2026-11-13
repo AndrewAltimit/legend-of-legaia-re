@@ -195,9 +195,11 @@ impl Renderer {
         // PSX mode's blend rule rides each vertex's flags (the overlay shader
         // has no uniforms): bit 8 the GPU's 5-bit arithmetic, bit 9 the
         // PCSX-Redux instrument's, bit 10 that emulator's dither
-        // (`blend_out` in the overlay shader).
+        // (`blend_out` in the overlay shader), bit 11 the console's dither
+        // (a Gouraud quad's opaque write, `opaque_out`).
         let rule_bits = match self.psx_blend_rule() {
             0 => 0,
+            1 if dither >= 0.5 => SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_CONSOLE_DITHER,
             1 => SCREEN_FLAG_PSX_BLEND,
             _ if dither >= 1.5 => {
                 SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_PCSX_BLEND | SCREEN_FLAG_PCSX_DITHER
@@ -447,10 +449,11 @@ impl Renderer {
 /// Screen-vertex flag bits the renderer adds at staging for its overlay
 /// shader's blend entries, clear of `legaia_render_kernels::screen_prim`'s
 /// own bits: PSX mode's 5-bit blend, the PCSX-Redux rule, that emulator's
-/// dither.
+/// dither, the console's dither.
 const SCREEN_FLAG_PSX_BLEND: u32 = 0x100;
 const SCREEN_FLAG_PCSX_BLEND: u32 = 0x200;
 const SCREEN_FLAG_PCSX_DITHER: u32 = 0x400;
+const SCREEN_FLAG_CONSOLE_DITHER: u32 = 0x800;
 
 /// The texel offset a composited screen quad samples with under the
 /// PCSX-Redux texel rule: that emulator takes none, and this sliver only

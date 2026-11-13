@@ -164,6 +164,19 @@ pair's `cast` scene at a 4-level threshold the share of pixels apart fell from
 about 17% to under 3%. The instrument stays the window's alone: the page scores
 no PCSX-Redux capture.
 
+**The screen-space pass dithers its Gouraud quads too.** The GPU dithers a
+`POLY_G4` and a `POLY_GT4` as it writes them, opaque or not, and writes a flat
+quad undithered (PCSX-Redux: `drawPoly3Gi` through `getShadeTransColDither`,
+`drawPoly3TGEx4i` through `getTextureTransColShadeXDither`, both under the draw
+mode's dither bit). In PSX mode the overlay's opaque entries (`opaque_out` in
+the screen-overlay shader) do the same for a quad carrying
+`screen_prim::FLAG_GOURAUD`, on the console's table or the PCSX-Redux
+instrument's. The case is PROT 0898's band wash, two opaque `POLY_G4` a band
+behind every band-mode cast: undithered, its dim colours fell to the bin
+below (`(10, 5, 10)` drew `(8, 0, 8)`), and Big Wave's whole upper frame read
+`3..4` luma under retail. The play page leaves its opaque screen quads
+undithered.
+
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),
 and turns on the native target with it; the play page's "PSX rasterisation"

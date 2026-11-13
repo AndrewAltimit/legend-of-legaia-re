@@ -126,9 +126,46 @@ fn overlay_color(in: VsOut) -> vec4<f32> {
     return in.color;
 }
 
+// The GPU dithers a Gouraud primitive's shading as it writes it (`flags` bit
+// 2, a `POLY_G4` or `POLY_GT4`): an untextured quad's interpolated colour, a
+// textured one's modulated texel `(t5 * c8) >> 4`, each an 8-bit value, take
+// the 4x4 offset before the cut to 5 bits. A flat quad, textured or not, is
+// written undithered. PSX mode's staging sets bit 10 for the PCSX-Redux
+// instrument's table (`applyDither`, offsets `0..7`, what `drawPoly3Gi` and
+// `getTextureTransColShadeXDither` write with the dither bit up) and bit 11
+// for the console's (`-4..3`); neither bit is set off PSX mode or with the
+// draw mode's dither down.
+fn opaque_out(in: VsOut) -> vec4<f32> {
+    let c = overlay_color(in);
+    if (in.flags & 4u) == 0u || (in.flags & 0xC00u) == 0u {
+        return c;
+    }
+    var m = floor(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 255.0 + 0.001);
+    if (in.flags & 1u) != 0u {
+        let word = fetch_vram_word(in.uv, in.cba_tsb.x, in.cba_tsb.y);
+        let t5 = round(bgr555_to_rgba(word).rgb * 31.0);
+        let c8 = round(clamp(in.color.rgb, vec3<f32>(0.0), vec3<f32>(255.0 / 128.0)) * 128.0);
+        m = min(floor(t5 * c8 / 16.0), vec3<f32>(255.0));
+    }
+    var c5: vec3<f32>;
+    if (in.flags & 0x400u) != 0u {
+        c5 = min(floor((m + psx_pcsx_dither_offset(in.clip_pos.xy)) / 8.0), vec3<f32>(31.0));
+    } else {
+        var dm = array<f32, 16>(
+            -4.0,  0.0, -3.0,  1.0,
+             2.0, -2.0,  3.0, -1.0,
+            -3.0,  1.0, -4.0,  0.0,
+             3.0, -1.0,  2.0, -2.0,
+        );
+        let d = dm[(u32(in.clip_pos.y) & 3u) * 4u + (u32(in.clip_pos.x) & 3u)];
+        c5 = floor(clamp(m + d, vec3<f32>(0.0), vec3<f32>(255.0)) / 8.0);
+    }
+    return vec4<f32>((c5 * 8.0 + floor(c5 / 4.0)) / 255.0, c.a);
+}
+
 @fragment
 fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
-    return overlay_color(in);
+    return opaque_out(in);
 }
 
 // The STP bit of a textured fragment's VRAM word. A semi-transparent PSX
@@ -146,7 +183,7 @@ fn fs_semi_opaque(in: VsOut) -> @location(0) vec4<f32> {
     if (in.flags & 1u) == 0u || texel_stp(in) {
         discard;
     }
-    return overlay_color(in);
+    return opaque_out(in);
 }
 
 // Blend entries: emit the foreground term; the per-ABR fixed-function blend

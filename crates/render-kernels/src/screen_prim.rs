@@ -882,10 +882,12 @@ pub const FLAG_TEXTURED: u32 = 1;
 /// "nearer or equal", no depth write); this bit is the only thing that
 /// makes a quad take part.
 pub const FLAG_DEPTH_TESTED: u32 = 2;
-/// `flags` bit set on a textured quad drawn with per-corner colours (a
-/// `POLY_GT4`). The GPU splits it into two triangles where a flat
-/// `POLY_FT4` can be walked whole; only an emulator's texel rule tells the two
-/// apart (`PsxTexelRule::PcsxRedux` in `engine-render`). Shaders ignore it.
+/// `flags` bit set on a quad drawn with per-corner colours (a `POLY_GT4` or
+/// an untextured `POLY_G4`). The GPU dithers a Gouraud primitive's shading
+/// and writes a flat one undithered, so PSX mode's dither reads it. A
+/// textured one the GPU also splits into two triangles where a flat
+/// `POLY_FT4` can be walked whole, which only an emulator's texel rule tells
+/// apart (`PsxTexelRule::PcsxRedux` in `engine-render`).
 pub const FLAG_GOURAUD: u32 = 4;
 
 /// One contiguous run of quads sharing a [`BlendClass`], expressed as an
@@ -1090,7 +1092,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                         Some(g) => std::array::from_fn(|i| corner(g[i])),
                         None => [flat_gpu_color(q.color); 4],
                     },
-                    0,
+                    if q.gouraud.is_some() { FLAG_GOURAUD } else { 0 },
                     q.depth,
                     sw,
                     sh,
@@ -1408,6 +1410,33 @@ mod tests {
         let flat_v0 = geo.vertices[12];
         assert_eq!(flat_v0.flags, 0);
         assert_eq!(flat_v0.color, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// An untextured quad with per-corner colours is a `POLY_G4`: it carries
+    /// [`FLAG_GOURAUD`], which PSX mode's dither reads, and a flat one does not.
+    #[test]
+    fn untextured_gouraud_quad_carries_the_gouraud_flag() {
+        // The farther bucket draws first.
+        let quad = |gouraud, ot_index| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
+                color: [10, 5, 10, 255],
+                gouraud,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index,
+                depth: None,
+            })
+        };
+        let g = [
+            [10, 5, 10, 255],
+            [10, 5, 10, 255],
+            [10, 5, 20, 255],
+            [10, 5, 20, 255],
+        ];
+        let geo = build_geometry(&[quad(Some(g), 1), quad(None, 0)], 320, 240);
+        assert!(geo.vertices[..4].iter().all(|v| v.flags == FLAG_GOURAUD));
+        assert!(geo.vertices[4..].iter().all(|v| v.flags == 0));
     }
 
     #[test]
