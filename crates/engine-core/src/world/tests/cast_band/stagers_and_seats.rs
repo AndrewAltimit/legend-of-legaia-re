@@ -394,3 +394,59 @@ fn terra_walks_its_whirl_and_orbit_once_a_pass() {
     let k = 3 * i32::from(step);
     assert_eq!(world.casting.module_terra_orbit, (2 * k, k + 2 * k));
 }
+
+/// PROT 0913 (Nova) draws its whirlwind on the world `rand()` stream: arm
+/// `0x0D`'s pass one yaw a ring (`rand() % 0xFFF`), and every pass of arms
+/// `0x0E..=0x10` an `x` and a `z` jitter a ring (`rand() % 63 - 0x20` off the
+/// victim's plane pair), stored once the rings are seated.
+#[test]
+fn nova_draws_its_ring_yaws_and_jitters_on_the_world_stream() {
+    use legaia_engine_battle_loop::nova_motion::{nova_ring_jitter, nova_ring_yaw};
+    use legaia_engine_cast::cast_module_camera::NOVA_RING_RECORD;
+    let mut world = module_code_world();
+    world.actors[1].move_state.world_x = 100;
+    world.actors[1].move_state.world_z = -800;
+    world.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
+        &[],
+        &[],
+        0,
+        [0; 3],
+    ));
+    let mut state = world.rng_state;
+    let mut draw = || {
+        state = legaia_engine_system::rand::world_lcg_step(state);
+        legaia_engine_system::rand::bios_rand_shape(state)
+    };
+    // Arm 0x0D's pass draws the yaws before the rings are seated.
+    world.nova_victim_motion(0x0D, 0x0E, 0, 1);
+    let yaws: Vec<i16> = (0..16).map(|_| nova_ring_yaw(draw())).collect();
+    let scene = world.casting.active_summon.as_mut().unwrap();
+    for _ in 0..16 {
+        scene
+            .parts
+            .push(legaia_engine_effects::summon::SummonPartRuntime {
+                model_sel: -1,
+                reserved: 0,
+                buf: vec![0x08],
+                state: Default::default(),
+                finished: false,
+                origin: Some([0; 3]),
+                tag: Some(NOVA_RING_RECORD),
+                seat_pokes: Vec::new(),
+                seat_halve_speed: false,
+                halted_walks: 0,
+                walk_reached: false,
+            });
+    }
+    // Arm 0x0E's one pass jitters all sixteen, x then z, ring by ring.
+    world.nova_victim_motion(0x0E, 0x0F, 0, 1);
+    let parts = &world.casting.active_summon.as_ref().unwrap().parts;
+    for (k, part) in parts.iter().enumerate() {
+        let x = 100 + nova_ring_jitter(draw());
+        let z = -800 + nova_ring_jitter(draw());
+        assert_eq!(part.state.render_26, yaws[k], "ring {k} yaw");
+        assert_eq!((part.state.world_x, part.state.world_z), (x, z), "ring {k}");
+    }
+    // Nothing else drew: the world's next word is the stream's.
+    assert_eq!(world.next_rand(), draw());
+}

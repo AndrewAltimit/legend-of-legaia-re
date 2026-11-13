@@ -359,6 +359,14 @@ pub struct CastFxState {
     /// their hit and drain before they write `0xFF`
     /// (`legaia_engine_cast::seru_magic_ticks::SETTLE_DRAIN_PER_TICK`).
     pub module_settle_countdown: i32,
+    /// PROT 0913 (Nova)'s sixteen whirlwind-ring yaws, drawn off `rand()` on
+    /// arm `0x0D`'s pass (`0x801F7BBC`) and stored into the rings once they
+    /// are seated.
+    pub nova_ring_yaws: Option<[i16; 16]>,
+    /// The plane pairs PROT 0913's last ring jitter put the sixteen rings on,
+    /// held until the rings are seated: arm `0x0E` jitters on the pass after
+    /// arm `0x0D`'s seat, which the port's director hands over a tick late.
+    pub nova_ring_places: Option<[(i16, i16); 16]>,
     /// The resident player-Seru module's camera-arm state: its countdown
     /// word and the creature seat as the module placed it
     /// ([`legaia_engine_cast::cast_module_camera`]). Module-image words in
@@ -668,6 +676,8 @@ impl CastFxState {
             module_rain: Default::default(),
             module_orb: Default::default(),
             module_settle_countdown: 0,
+            nova_ring_yaws: None,
+            nova_ring_places: None,
             module_cam: Default::default(),
             module_pres: Default::default(),
             fade_block: None,

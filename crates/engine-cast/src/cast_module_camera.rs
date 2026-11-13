@@ -730,7 +730,8 @@ pub enum SpawnAnchor {
     VictimDepthScaled,
     /// Ring `index` of PROT 0913 arm 13's sixteen-ring whirlwind
     /// (`0x801F7B90..0x801F7C5C`): the victim's plane pair at
-    /// `y = -0x40 * index`, a random yaw (`rand() % 0xFFF`), and the scale
+    /// `y = -0x40 * index`, a random yaw (`rand() % 0xFFF`, the host's to
+    /// draw on the world stream), and the scale
     /// `(|cos(0x380 + 16 index)| + 0x800) * ctx[+0x6D0] >> 12` off the SCUS
     /// table `*0x8007B7F8` (`lh v0,0x700(v0)` over `index << 5`).
     VictimColumn { index: u8 },
@@ -909,8 +910,10 @@ pub fn spawn_anchor_point_with(
         SpawnAnchor::VictimColumn { index } => {
             let v = victim?;
             (
+                // The yaw is the ring's `rand() % 0xFFF`, which the host
+                // draws on the world stream and stores once it is seated.
                 [v.x, -0x40 * i16::from(index), v.z],
-                [0, nova_column_yaw(index), 0],
+                [0, 0, 0],
             )
         }
         SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
@@ -1023,15 +1026,6 @@ pub fn spawn_anchor_scale(
         SpawnAnchor::VictimBodyGround { scale } => scale,
         _ => 0x1000,
     }
-}
-
-/// The yaw PROT 0913 arm 13 gives whirlwind ring `index`: retail draws
-/// `rand() % 0xFFF` per ring (`0x801F7BBC..0x801F7BF4`); the port runs the
-/// BIOS `rand` shape from a fixed seed so the stack's spread is stable.
-pub fn nova_column_yaw(index: u8) -> i16 {
-    let mut state = 0x3039u32.wrapping_add(u32::from(index).wrapping_mul(0x9E37));
-    let r = legaia_engine_system::rand::psyq_rand_step(&mut state);
-    (u32::from(r) % 0xFFF) as i16
 }
 
 /// Which record one module spawn call hands `FUN_80021B04` as `a2`.
