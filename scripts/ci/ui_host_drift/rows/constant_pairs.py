@@ -30,10 +30,12 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "frames back at frame step 4); a shorter ring fills the additive arms "
         "faster on one host",
         "native": (
-            "crates/engine-render/src/renderer/native_target.rs",
-            "FRAME_PERSIST_VSYNCS",
+            "crates/render-kernels/src/frame_persist.rs",
+            "DEFAULT_PERSIST_VSYNCS",
         ),
-        "web": ("site/js/webgl-psx-target.js", "FRAME_PERSIST_VSYNCS"),
+        # The page reads the live depth from the engine (`play_cast_frame_persist_depth`);
+        # its fallback for a stale bundle must still be the kernel's default.
+        "web": ("site/js/webgl-psx-target.js", "FRAME_PERSIST_FALLBACK"),
     },
     # Two pause-menu rows used to sit at the head of this list - the pinned
     # window-descriptor rect table and the near-fullscreen sub-screen rect.
