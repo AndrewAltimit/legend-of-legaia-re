@@ -553,7 +553,7 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     // its Arts round (special, heal, Spirit, special, ...), and the foe
     // would never be dented.
     if boss_monster_id(w).is_some_and(|id| (0xA2..=0xA4).contains(&id)) {
-        return low;
+        return low && !duel_stalled(w);
     }
     let round = ROUND_HISTORY.with(|h| h.borrow().len());
     match DUEL_SPIRIT_ROUND.with(std::cell::Cell::get) {
@@ -564,6 +564,37 @@ pub(super) fn duel_wants_spirit(w: &legaia_engine_core::world::World, actor: u8)
     DUEL_SPIRIT_ROUND.with(|d| d.set(Some(round)));
     true
 }
+
+/// Whether a solo duel against a Delilas sibling has stopped going
+/// anywhere: [`DUEL_STALL_ROUNDS`] foe rounds without a dent. Once the bag's
+/// heals no longer outpace the foe's rounds the member sits below its heal
+/// line for good, and a turn spent on the stance or the bag on that alone
+/// heals and guards until the bag runs dry: Gi took Vahn from 1000 HP to a
+/// wipe that way with 1120 of its 10000 left, thirteen rounds without an
+/// Arts turn. A stalled duel swings until it dents the foe again.
+pub(super) fn duel_stalled(w: &legaia_engine_core::world::World) -> bool {
+    if !solo_duel(w) || !boss_monster_id(w).is_some_and(|id| (0xA2..=0xA4).contains(&id)) {
+        return false;
+    }
+    let round = ROUND_HISTORY.with(|h| h.borrow().len());
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let foe: u32 = w
+        .actors
+        .iter()
+        .skip(n)
+        .map(|a| u32::from(a.battle.hp))
+        .sum();
+    DUEL_DENT.with(|d| match d.get() {
+        Some((hp, r)) if hp <= foe => round.saturating_sub(r) >= DUEL_STALL_ROUNDS,
+        _ => {
+            d.set(Some((foe, round)));
+            false
+        }
+    })
+}
+
+/// Foe rounds without a dent that make a duel [`duel_stalled`].
+const DUEL_STALL_ROUNDS: usize = 3;
 
 /// The Delilas siblings (Gi, Che, Lu: monsters `0xA2..=0xA4`) cast their
 /// special on every round whose battle-mode counter `ctx[+0x28A]` reads `2`

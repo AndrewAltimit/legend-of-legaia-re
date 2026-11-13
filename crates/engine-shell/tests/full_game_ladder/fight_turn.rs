@@ -533,7 +533,9 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
             {
                 PadButton::Down.mask()
             }
-            CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
+            CommandPhase::Menu { .. } if lesson.is_none() && heal() && !duel_stalled(w) => {
+                PadButton::Up.mask()
+            }
             // Out of MP for its best spell in a boss fight: a drink.
             CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
             // A boss too big for spells and short strings: the turn that buys
@@ -794,6 +796,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     NO_HEAL_SPELL.with(|n| n.borrow_mut().clear());
     MAGIC_REFUSED.with(|n| n.borrow_mut().clear());
     DUEL_SPIRIT_ROUND.with(|d| d.set(None));
+    DUEL_DENT.with(|d| d.set(None));
     BIGGEST_HIT.with(|b| b.set(0));
     ROUND_LOSS.with(|r| r.set([0; 3]));
     ROUND_HISTORY.with(|h| h.borrow_mut().clear());
