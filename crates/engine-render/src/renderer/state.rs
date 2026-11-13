@@ -170,6 +170,9 @@ pub struct Renderer {
     /// The frames a persisting frame reads back from, oldest at
     /// [`Self::frame_ring_next`].
     pub(super) frame_ring: std::cell::RefCell<Vec<wgpu::Texture>>,
+    /// How many presented frames back a persisting frame reads
+    /// ([`Renderer::set_frame_persist_depth`]).
+    pub(super) frame_persist_depth: std::cell::Cell<usize>,
     pub(super) frame_ring_next: std::cell::Cell<usize>,
     pub(super) native: Option<super::native_target::NativeTarget>,
     /// The texel rule of PSX mode on the native target

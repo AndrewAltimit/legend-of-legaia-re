@@ -600,6 +600,16 @@ impl World {
         self.cast_armed_wash().is_some()
     }
 
+    /// How many vsyncs back a persisting frame's page was drawn: retail's
+    /// double buffer builds each frame on the page it drew two battle frames
+    /// before, so two spans of the running frame. A pass under a streaming
+    /// clip spans its step and an overrun vsync, and Genocidal Cannon's arm 6
+    /// runs at span `5`, where a fixed eight vsyncs read a page one frame
+    /// newer than retail's and decayed the arm's white a frame ahead.
+    pub fn cast_frame_persist_vsyncs(&self) -> u64 {
+        2 * self.battle.frame_clock.span()
+    }
+
     /// The armed wash as the drain draws it (`FUN_80046978`), for a host that
     /// keeps its target ([`Self::cast_frame_persists`]): subtractive, in the
     /// farthest bucket, the colour times the frame step. The arms that arm it

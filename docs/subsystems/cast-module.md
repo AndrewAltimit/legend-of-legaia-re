@@ -3928,9 +3928,17 @@ Arms 8 and `0x0A` also set the caster's anim node back: `lw v1,0x22c(s3)` then `
 from which it plays back up into the `0x15..0x17` loop. Without the store the engine's Songi
 stood in the loop through arms 9 and `0x0B` while retail's rose out of its crouch; with it the
 mid-cast film reads `.981` to `.987`, arm 9 `.852` to `.997` and arm `0x0B` `.813` to `.998`;
-with both, the pre-cast film reads `.975` to `.987`. What is left is the fall of arm 3's exit
-fade into arm 6 (`.975`), which the engine brightens and darkens a pass ahead of retail. Grade
-`disassembly` (the store), `capture` (the film).
+with both, the pre-cast film reads `.975` to `.987`. Grade `disassembly` (the store),
+`capture` (the film).
+
+Arm 6 arms the wash `0x202020` every pass (`0x801F6FA8..0x801F6FB0`), so its frames
+build on the page two frames back, and the white the arms before it raised decays off
+those pages. The arm's passes run under the cast's streaming clip at span `5`, a vsync
+past the step, and the engine had read its page a fixed eight vsyncs back: a page one
+frame newer than retail's, so the white brightened and fell a frame ahead. Read two
+spans back ([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)), the mid-cast
+film's arm 6 reads `.975` to `.993` and arm 3 `.995` to `.998`, mean `.987` to `.990`.
+Grade `disassembly` (the arm), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
 

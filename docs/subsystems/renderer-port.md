@@ -911,10 +911,16 @@ quad instead, so that frame's additive layers sum over the frames before
 reproduces it on the native target, which is the one target that outlives its
 frame: while `World::cast_frame_persists` holds, each frame loads an earlier
 frame instead of clearing, and a capture seeds from the same one. Retail's
-earlier frame is the same display page two game frames back, eight vsyncs at the
-frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
-rather than building on the last one, which fills the buffer eight times too
-fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
+earlier frame is the same display page two game frames back, so the renderer keeps
+a ring of presented frames and reads the one two battle frames back
+(`World::cast_frame_persist_vsyncs`, `Renderer::set_frame_persist_depth`) rather
+than building on the last one, which fills the buffer eight times too fast. Two
+frames are twice the running frame's span: eight vsyncs at the step `4` a heavy
+arm runs at, ten when a streaming clip runs each pass a vsync past its step.
+Genocidal Cannon's arm 6 runs at that span, and read at a fixed eight its white
+decayed off a page one frame newer than retail's, a frame ahead of the
+recording: the mid-cast film's arm 6 reads `.975` at eight and `.993` at two
+spans. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
 The ring is kept from the moment a cast module is resident, not from the first
