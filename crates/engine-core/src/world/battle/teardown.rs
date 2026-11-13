@@ -415,6 +415,7 @@ impl World {
         self.battle.result_windows_glide = None;
         self.battle.inflight_seed = None;
         self.battle.inflight_art_seed = None;
+        self.battle.formation_seed = None;
         self.battle.art_seed_ra_seru = false;
         self.battle.active_formation = None;
         self.battle.command = None;

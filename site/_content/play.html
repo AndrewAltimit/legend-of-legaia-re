@@ -2594,7 +2594,18 @@ div.play-vis-head { cursor: default; }
       } else {
         rt.debug_seed_inflight_cast(0, req.spell & 0xFF, target);
       }
+      /* Neither side surprised: a back attack would hand the monsters the
+       * first round and turn the party away from them. */
+      if (typeof rt.debug_seed_formation === 'function') rt.debug_seed_formation(0);
       if (!rt.debug_force_battle(-1)) console.warn('battle launch: no formation in ' + req.scene);
+      /* Straight to the action: the opening (the field, the transition, the
+       * camera's entry sweep, the enemy names, the prompt's open) runs off
+       * screen up to the caster's turn, so the first frame drawn is the art
+       * or the cast under way (`debug_run_to_inflight`). */
+      if (typeof rt.debug_run_to_inflight === 'function') {
+        rt.debug_run_to_inflight(1800);
+        if (view) view._simLast = performance.now();
+      }
     } catch (e) { console.warn('battle launch', e); }
     canvas.focus();
   }

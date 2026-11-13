@@ -61,6 +61,7 @@ mod rikuroa_rockfall_rock_page;
 mod rikuroa_summit_page;
 mod screen_effect_page_prims;
 mod shop_overlay_parity;
+mod showcase_skip_disc;
 mod soft_reset_records_page;
 mod status_marks_page;
 mod title_backdrop_parity;

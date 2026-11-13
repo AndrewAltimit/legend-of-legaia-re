@@ -483,6 +483,15 @@ pub struct BattleState {
     /// command prompt opens ([`InflightArtSeed`]). `None` on every ordinary
     /// fight; consumed (taken) by the live loop.
     pub inflight_art_seed: Option<InflightArtSeed>,
+    /// A debug seed that stands in for the next battle's formation roll
+    /// (`ctx+0x290`, `World::roll_battle_formation`): the roll still draws
+    /// its random numbers, and its result is replaced by this one. The art
+    /// and magic pages' showcase fights pin
+    /// [`FormationAdvantage::None`](legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None)
+    /// so a seeded action always opens its fight from the party's first
+    /// prompt, with nobody turned away. `None` on every ordinary fight;
+    /// consumed (taken) by the roll.
+    pub formation_seed: Option<legaia_engine_battle_vm::battle_formulas::FormationAdvantage>,
     /// Set by a dispatched [`InflightArtSeed`]: the builder reads the Ra-Seru
     /// marker as up for this fight, so a Miracle or Super string plays without
     /// its story gear. Cleared at battle teardown.
@@ -1526,6 +1535,7 @@ impl BattleState {
             round_flow: crate::round_flow::RoundFlow::default(),
             inflight_seed: None,
             inflight_art_seed: None,
+            formation_seed: None,
             art_seed_ra_seru: false,
             forced_monster_cast: None,
             seed_mp_unpaid: false,
