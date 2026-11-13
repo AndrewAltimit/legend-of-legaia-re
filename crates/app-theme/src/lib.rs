@@ -155,6 +155,11 @@ pub struct Palette {
     pub selection_stroke: Rgb,
     /// The outline of a widget under the pointer.
     pub hover_stroke: Rgb,
+    /// The ring round the control that has keyboard (or controller) focus:
+    /// a hue no fill uses, so a focused control never reads as the selected
+    /// one beside it (both of those are gold), at least 3:1 against every
+    /// surface it sits on.
+    pub focus: Rgb,
     /// Success lines.
     pub good: Rgb,
     /// Warnings.
@@ -188,6 +193,7 @@ pub const DARK: Palette = Palette {
     selection: Rgb(120, 92, 30),
     selection_stroke: Rgb(255, 209, 92),
     hover_stroke: Rgb(200, 160, 70),
+    focus: Rgb(179, 217, 255),
     good: Rgb(128, 219, 133),
     warn: Rgb(255, 148, 92),
     error: Rgb(255, 120, 120),
@@ -218,6 +224,7 @@ pub const LIGHT: Palette = Palette {
     selection: Rgb(246, 214, 140),
     selection_stroke: Rgb(110, 72, 0),
     hover_stroke: Rgb(190, 140, 40),
+    focus: Rgb(30, 90, 170),
     good: Rgb(30, 120, 40),
     warn: Rgb(170, 80, 10),
     error: Rgb(176, 32, 32),
@@ -491,6 +498,25 @@ mod tests {
                 p.on_accent.contrast(f) >= 7.0,
                 "{name}: primary button text"
             );
+        }
+        // The focus ring stands off every surface and every button state it
+        // rings, the selected (gold) row among them: WCAG's 3:1 for a
+        // control's boundary.
+        for s in [
+            p.ground,
+            p.band,
+            p.card,
+            p.stripe,
+            p.raised,
+            p.hover,
+            p.pressed,
+            p.selection,
+        ] {
+            assert!(p.focus.contrast(s) >= 3.0, "{name}: focus ring on {s:?}");
+        }
+        // ... and is not the gold of a selection or the pointer's outline.
+        for gold in [p.selection_stroke, p.hover_stroke, p.accent] {
+            assert_ne!(p.focus, gold, "{name}: focus ring is a gold");
         }
     }
 

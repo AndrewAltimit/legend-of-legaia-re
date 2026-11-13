@@ -3770,6 +3770,7 @@ impl App {
                 // last rows off the screen).
                 egui::ScrollArea::vertical()
                     .max_height(max_h - ABOUT_CHROME_H)
+                    .min_scrolled_height(max_h - ABOUT_CHROME_H)
                     .show(ui, |ui| {
                     ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
                     ui.label(
@@ -3822,17 +3823,24 @@ impl App {
     /// Every keyboard shortcut in one box (`?`, or the View menu).
     fn keys_window(&mut self, ctx: &egui::Context) {
         let mut open = self.keys_open;
+        let max_h = about_max_height(ctx.content_rect().height());
         egui::Window::new("Keyboard shortcuts")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .max_height(max_h)
             .show(ctx, |ui| {
                 // The controller rows make the box taller than the smallest
                 // window: it scrolls there rather than run off the bottom.
-                let room = about_max_height(ctx.content_rect().height()) - ABOUT_CHROME_H;
+                // Without a floor the scroll area took the half of the
+                // window below a centred box's pivot, and the controller
+                // rows sat behind a scroll bar in a window with room for
+                // every row.
+                let room = max_h - ABOUT_CHROME_H;
                 egui::ScrollArea::vertical()
                     .max_height(room)
+                    .min_scrolled_height(room)
                     .show(ui, |ui| {
                         egui::Grid::new("keys")
                             .num_columns(2)
