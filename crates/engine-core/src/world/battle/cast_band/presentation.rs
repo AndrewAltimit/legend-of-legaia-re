@@ -525,6 +525,18 @@ impl World {
                         } if f == field => Some(b),
                         _ => None,
                     });
+                    // The alpha ramps add the frame step `*(0x1F800393)`,
+                    // which the decoder folds at one vsync, the share of an
+                    // engine tick. A site on the arm's way out runs on the one
+                    // tick that passes, where retail's pass adds the whole
+                    // step: PROT 0946's Big Wave enters arm 6 on
+                    // `alpha += step` (`0x801F70EC..0x801F7100`), so at step
+                    // `4` a fold of `1` left the whole ramp three short.
+                    let d = if field == 0x27A && matches!(timing, SiteTiming::Pass) {
+                        d * i32::from(self.battle_frame_step().max(1))
+                    } else {
+                        d
+                    };
                     let w = &mut self.casting.module_pres.wash;
                     let v = w.load(field);
                     w.store(field, wash_add(field, v, d, bound));

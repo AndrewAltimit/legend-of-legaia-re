@@ -5826,7 +5826,14 @@ something behind (a fade actor, a VRAM copy, a parameter store) fires once:
 on the passing tick for a `Pass` site, on the arm's first tick otherwise. A
 per-frame call (the armed wash, an alpha ramp) fires on every tick its timing
 covers. A ramp's bound is the literal the arm stores behind its bound test
-(`if (alpha > 0x80) alpha = 0x80`). PROT 0905, 0954 and 0966 keep their
+(`if (alpha > 0x80) alpha = 0x80`). The alpha ramps add the frame step
+`*(0x1F800393)` (Kemaro's `scalar * step >> 3`), which the decoder folds at one
+vsync, an engine tick's share; a ramp on an arm's way out runs on the one tick
+that passes and stands for retail's whole pass, so it adds the battle frame
+step. Big Wave enters arm 6 on `alpha += step` (`0x801F70EC..0x801F7100`):
+folded at one, its wash ran three short of retail's at step `4` for the rest of
+the ramp (`battle_noaru_slippery_v2_big_wave_mid_cast` holds `28`, a multiple
+of the step, where the engine's displayed frame read `17` for retail's `20`). PROT 0905, 0954 and 0966 keep their
 hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
 spawned twice.
 

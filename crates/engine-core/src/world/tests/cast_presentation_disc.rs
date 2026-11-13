@@ -41,8 +41,8 @@ fn band_world() -> Option<World> {
 
 /// PROT 0918 (Kemaro): arm 5's pass writes the wash block
 /// (`0x801F729C..0x801F7304`: bands of `0xFF` lines, A `(0x3F, 0x3F, 0xFF)`,
-/// B `(0xBF, 0xBF, 0xFF)`) and starts the alpha ramp; arm 6 ramps it one per
-/// tick up to its `0x80` cap (`sltiu v0, 0x81` / `li v0, 0x80` at
+/// B `(0xBF, 0xBF, 0xFF)`) and starts the alpha ramp by the frame step; arm 6
+/// ramps it one per tick up to its `0x80` cap (`sltiu v0, 0x81` / `li v0, 0x80` at
 /// `0x801F7384..0x801F7390`), and the dispatchers' tail draws the bands.
 /// Arm 8 ramps it down only over the last `scalar << 7` of its countdown.
 #[test]
@@ -59,7 +59,12 @@ fn kemaro_ramps_its_colour_wash_to_the_cap() {
     assert_eq!(wash.height, 0xFF);
     assert_eq!(wash.colour_a, [0x3F, 0x3F, 0xFF]);
     assert_eq!(wash.colour_b, [0xBF, 0xBF, 0xFF]);
-    assert_eq!(wash.alpha, 1, "arm 5's own ramp step");
+    // The passing tick stands for a whole pass: it adds the step.
+    assert_eq!(
+        i32::from(wash.alpha),
+        i32::from(w.battle_frame_step().max(1)),
+        "arm 5's own ramp step"
+    );
     assert_eq!(w.cast_wash_prims().len(), 2);
     for _ in 0..300 {
         w.fire_cast_presentation(918, None, None, 6, 6, false);
@@ -88,6 +93,35 @@ fn kemaro_ramps_its_colour_wash_to_the_cap() {
     }
     assert_eq!(w.casting.module_pres.wash.alpha, 0);
     assert!(w.cast_wash_prims().is_empty());
+}
+
+/// PROT 0946 (Big Wave): the pass that leaves arm 5 for arm 6 writes the wash
+/// block (`0x801F707C..0x801F70E8`) and adds the frame step to the alpha
+/// (`0x801F70EC..0x801F7100`); arm 6 adds it again on every pass. The decoder
+/// folds the step at one vsync, an engine tick's share, so the arm-6 ticks add
+/// one each; the passing tick stands for retail's whole pass and adds the
+/// step. `battle_noaru_slippery_v2_big_wave_mid_cast` holds alpha `28` in arm
+/// 6 at step `4`, a multiple of the step.
+#[test]
+fn big_wave_enters_its_wash_ramp_on_a_whole_pass() {
+    let Some(mut w) = band_world() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    w.set_battle_frame_step(4);
+    // Arm 5 holds on its countdown before the pass that leaves it.
+    w.fire_cast_presentation(946, None, None, 5, 5, false);
+    assert_eq!(w.casting.module_pres.wash.alpha, 0);
+    w.fire_cast_presentation(946, None, None, 5, 6, false);
+    let wash = w.casting.module_pres.wash;
+    assert_eq!(wash.colour_a, [0x80, 0x40, 0x80]);
+    assert_eq!(wash.colour_b, [0x80, 0x40, 0xFF]);
+    assert_eq!(wash.height, 0x18);
+    assert_eq!(wash.alpha, 4, "the passing tick adds the step");
+    for _ in 0..4 {
+        w.fire_cast_presentation(946, None, None, 6, 6, false);
+    }
+    assert_eq!(w.casting.module_pres.wash.alpha, 8, "one a tick in arm 6");
 }
 
 /// PROT 0906 (Gizam) arm 12's pass spawns its fade (`0x801F72BC`): kind 1,
