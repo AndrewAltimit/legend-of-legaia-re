@@ -51,16 +51,25 @@ pub struct BattleDefeatBanner {
     pub slide_y: i32,
 }
 
-/// The party leader whose name opens the post-battle spoils line: the
-/// member in party slot 0, or `Vahn` when that record carries no name
-/// (a disc-free build's blank roster). Both hosts used to resolve it
-/// with a copy of this lookup each.
+/// The member whose name opens the post-battle spoils line, or `Vahn` when
+/// that record carries no name (a disc-free build's blank roster). Both
+/// hosts used to resolve it with a copy of this lookup each.
+///
+/// A lone lead is named by the solo build arm. A party's line is the team
+/// string, whose `0xC1` name escape the build arm points at the lead - and
+/// which the win's results frame re-points at the **pose actor** before it
+/// opens the window (`ctx[+0xAA] = DAT_8007BD10[ctx[+0x13]] - 1` behind the
+/// party-count test `ctx[+0] >= 2`, `0x8004F624..0x8004F658`): the member
+/// who finished the fight names the team ("Gala's team won the battle!",
+/// `battle_jou_gala_finisher_results_retail`).
+///
+/// PORT: FUN_8004E568 (`0x8004F624..0x8004F658`, the team-name re-point)
 pub fn battle_spoils_leader(world: &World) -> String {
     world
         .party
         .roster
         .members
-        .get(world.party_roster_slot(0))
+        .get(world.party_roster_slot(victory_name_seat(world)))
         .map(|m| m.name())
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| "Vahn".to_string())
@@ -179,12 +188,28 @@ pub fn level_up_line(world: &World, mask: u8) -> Option<String> {
     Some(world.expand_name_escapes(raw))
 }
 
+/// The seat whose character the victory line names: the pose actor on a
+/// party's win ([`battle_spoils_leader`]), the lead otherwise.
+fn victory_name_seat(world: &World) -> usize {
+    match world.battle.victory {
+        Some(v)
+            if v.cause == BattleEndCause::MonsterWipe
+                && world.party.party_count >= 2
+                && v.pose_actor < usize::from(world.party.party_count) =>
+        {
+            v.pose_actor
+        }
+        _ => 0,
+    }
+}
+
 /// Who the battle-result messages name: participant ids in panel order,
 /// `0` for an empty seat - the shape of retail's `0x8007BD10` list the
 /// two build arms of `FUN_801D84C0` key on.
 fn battle_result_subject(
     world: &World,
 ) -> legaia_engine_battle_vm::battle_party_panel::ResultSubject {
+    use legaia_engine_battle_vm::battle_party_panel::ResultSubject;
     let seats: [u8; 3] = std::array::from_fn(|i| {
         if i < usize::from(world.party.party_count) {
             (world.party_roster_slot(i) as u8).wrapping_add(1)
@@ -192,7 +217,18 @@ fn battle_result_subject(
             0
         }
     });
-    legaia_engine_battle_vm::battle_party_panel::result_subject(seats)
+    match legaia_engine_battle_vm::battle_party_panel::result_subject(seats) {
+        // The results frame's re-point of the team escape
+        // ([`battle_spoils_leader`]).
+        ResultSubject::LeadsTeam { .. } => ResultSubject::LeadsTeam {
+            escape_operand: seats
+                .get(victory_name_seat(world))
+                .copied()
+                .unwrap_or(seats[0])
+                .wrapping_sub(1),
+        },
+        lead => lead,
+    }
 }
 
 /// The loss window a host should be drawing this frame, or `None`.
@@ -265,6 +301,41 @@ mod tests {
             None,
             "no strings: the caller falls back"
         );
+    }
+
+    /// A party's win names the member who posed: the results frame re-points
+    /// the team string's name escape at `ctx[+0x13]`'s character
+    /// (`battle_jou_gala_finisher_results_retail` reads "Gala's team won the
+    /// battle!"). A lone lead and a wipe keep the lead.
+    #[test]
+    fn a_partys_win_names_the_posing_members_team() {
+        use legaia_engine_battle::victory::{VictoryPhase, VictorySequence};
+        use legaia_engine_battle_vm::battle_party_panel::ResultSubject;
+        let mut w = World::default();
+        w.party.roster = legaia_save::Party::zeroed(3);
+        for (k, name) in ["Vahn", "Noa", "Gala"].iter().enumerate() {
+            w.party.roster.members[k].set_name(name);
+        }
+        w.party.party_count = 3;
+        let seq = |cause, pose_actor| VictorySequence {
+            cause,
+            phase: VictoryPhase::Results { hold: 0 },
+            pose_actor,
+            pose_id: None,
+            voice_bank: None,
+            window_opened: true,
+        };
+        w.battle.victory = Some(seq(BattleEndCause::MonsterWipe, 2));
+        assert_eq!(battle_spoils_leader(&w), "Gala");
+        assert_eq!(
+            battle_result_subject(&w),
+            ResultSubject::LeadsTeam { escape_operand: 2 }
+        );
+        w.battle.victory = Some(seq(BattleEndCause::PartyWipe, 2));
+        assert_eq!(battle_spoils_leader(&w), "Vahn");
+        w.party.party_count = 1;
+        w.battle.victory = Some(seq(BattleEndCause::MonsterWipe, 0));
+        assert_eq!(battle_spoils_leader(&w), "Vahn");
     }
 
     /// The drop line is the template with its item escape spliced and the
