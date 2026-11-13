@@ -95,16 +95,20 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     // the Dialogue framing - for exactly the span its hold `ctx[+0x6B0]` is up.
     let caption_up = world.battle.stage_id == legaia_engine_battle::battle_sideband::STAGE_SPARRING
         && world.battle.sideband.hold != 0;
-    // The SM rests on `0x5A` through the next round's prompt, which is the
-    // far framing's: the gate's own arm is the executing round's pass only.
-    let phase_state = match world.battle_camera_state() {
-        script::END_OF_ACTION_STATE
-            if world.battle.round_flow.phase
-                != legaia_engine_battle_loop::round_flow::RoundPhase::Execute =>
-        {
-            0xFF
-        }
-        state => state,
+    // Outside the executing round no action runs: retail's state byte reads
+    // `0xFF` through the command band (the `0x5A` non-wipe arm's only write,
+    // `docs/subsystems/battle-action.md`), so the camera is the menu
+    // driver's. The engine's SM rests on whatever its round's last pass ran
+    // - the Done band's `0x51`, since the pass that claims `0x5A` rewrites
+    // the byte to `0x00` - and fed through, that leftover framed the Begin /
+    // Run prompt, the `Auto` target cursor and the commit confirm with the
+    // Done band's case 6 / case 8 instead of case 9 and case 1 (#598).
+    let phase_state = if world.battle.round_flow.phase
+        == legaia_engine_battle_loop::round_flow::RoundPhase::Execute
+    {
+        world.battle_camera_state()
+    } else {
+        0xFF
     };
     let phase = script::phase_for_state(
         world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
@@ -1271,5 +1275,88 @@ mod tests {
         // Cursor closed back onto the ring: the member's close-up again.
         world.battle.command = Some(BattleCommandSession::new(0, 0));
         assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Submenu);
+    }
+
+    /// The command band after a round frames from the menu driver, not from
+    /// the action state the round's last pass left behind (#598). The
+    /// engine's SM rests on the Done band's `0x51` through the next round's
+    /// prompt - the pass that claims `0x5A` rewrites the byte to `0x00` -
+    /// where retail's byte reads `0xFF`. Fed through, the leftover framed the
+    /// `Auto` target cursor with the Done band's slow case-6 orbit around the
+    /// member (and the Begin / Run prompt and the commit confirm with it),
+    /// while the arts entry's cursor, which opens under a member surface,
+    /// took case 1.
+    #[test]
+    fn the_command_band_ignores_the_last_rounds_action_state() {
+        use legaia_engine_battle::target_picker::{SlotState, TargetKind, TargetPickerSession};
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase};
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 1;
+        if world.actors.len() < 3 {
+            world.actors.resize_with(3, Default::default);
+        }
+        world.actors[0].move_state.world_z = -800;
+        world.actors[0].battle.hp = 100;
+        for (slot, x) in [(1usize, -600i16), (2, 600)] {
+            let a = &mut world.actors[slot];
+            a.move_state.world_x = x;
+            a.move_state.world_z = 800;
+            a.battle.liveness = 1;
+            a.battle.hp = 100;
+        }
+        run_entry_sweep_out(&mut world);
+        // A monster's strike closed the round: Done band, then the boundary.
+        world.battle_ctx.active_actor = 1;
+        world.battle_ctx.action_state = 0x51;
+        world.battle.sm_ran_state = Some(0x51);
+        world.battle.sm_ran_actor = Some(1);
+        world.battle.round_flow.phase = RoundPhase::Execute;
+        assert_ne!(
+            battle_cam_inputs(&world).phase,
+            BattleCamPhase::Menu,
+            "the executing round's Done band frames the action"
+        );
+        world.battle.round_flow.phase = RoundPhase::Command;
+        let mut session = BattleCommandSession::new(0, 0);
+        session.phase = CommandPhase::RoundPrompt { cursor: 0 };
+        world.battle.command = Some(session.clone());
+        assert_eq!(
+            battle_cam_inputs(&world).phase,
+            BattleCamPhase::Menu,
+            "the Begin / Run prompt is the far framing (case 9)"
+        );
+        let mut monsters = [SlotState::alive(false, false); 5];
+        monsters[0] = SlotState::alive(true, true);
+        monsters[1] = SlotState::alive(true, true);
+        session.phase = CommandPhase::Targeting {
+            command: BattleCommand::Attack,
+            picker: TargetPickerSession::new(
+                TargetKind::SingleEnemy,
+                0,
+                [
+                    SlotState::alive(true, true),
+                    SlotState::alive(false, false),
+                    SlotState::alive(false, false),
+                ],
+                monsters,
+            ),
+        };
+        world.battle.command = Some(session.clone());
+        assert_eq!(
+            battle_cam_inputs(&world).phase,
+            BattleCamPhase::TargetEnemy,
+            "the Auto cursor is case 1 on the member, toward the target"
+        );
+        session.phase = CommandPhase::CommitConfirm { cursor: 0 };
+        world.battle.command = Some(session);
+        assert_eq!(
+            battle_cam_inputs(&world).phase,
+            BattleCamPhase::Menu,
+            "the commit confirm is the far framing (case 9)"
+        );
     }
 }

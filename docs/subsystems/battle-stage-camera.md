@@ -778,9 +778,14 @@ actor's endpoints with the walker landed:
 | `taiku_topaz_pre_hyper_heal` | none this round | case 9: pitch `32`, `TR (0, 1280, 8712)` |
 
 Port: `battle_cam_script::end_of_action_phase` and
-`BattleCamera::set_phase_on_state`. The engine's SM rests on `0x5A` through the
-next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
-while the round is executing.
+`BattleCamera::set_phase_on_state`. Retail's state byte reads `0xFF` through the
+command band, and the engine's SM rests on its round's last pass instead (the
+Done band's `0x51` as the camera reads it, since the pass that claims `0x5A`
+rewrites the byte), so `battle_cam_inputs` hands any action state to the framing
+only while the round is executing. Fed the leftover, the Begin / Run prompt and
+the commit confirm took the Done band's framing instead of case 9, and the
+`Auto` target cursor - which opens under no member surface - its slow case-6
+orbit instead of case 1 (`the_command_band_ignores_the_last_rounds_action_state`).
 
 The gate's pass frames the seat it ran on, not the next one. The port's host
 can arm the next actor (state `0x00`, a new `ctx[+0x13]`) in the tick the
