@@ -1270,8 +1270,13 @@ impl RetailBattle {
             // there runs its own countdown and stages no clip on either seat,
             // so that cursor is time since the loop began -
             // `zeto_big_wave_mid_cast`'s caster idles through PROT 0946's band
-            // in a close-up the loop's sway fills. Elsewhere an idle seat in
-            // flight may have just come off the action's own clip.
+            // in a close-up the loop's sway fills. The band's entry `0x6E`
+            // too: a caster still idling there has staged nothing since the
+            // seed, and the replay's loop runs on the phase battle setup
+            // left it, which a pinned replay does not share with retail
+            // (`nivora_duel_mid_blazing_slash`'s Gala, `.985` to `.996`).
+            // Elsewhere an idle seat in flight may have just come off the
+            // action's own clip.
             //
             // So is a party target already on its reaction (the
             // `+0x1EF..+0x1F3` family `2, 3, 4, 5, 0x0B`): the reaction
@@ -1305,7 +1310,7 @@ impl RetailBattle {
                 let in_flight = !matches!(self.action_state, 0 | 0x0A | 0x0B | 0xFD | 0xFF)
                     && staged
                     && !(0x50..=0x5A).contains(&self.action_state);
-                let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
+                let capture_band_idle = clip == 0 && (0x6E..=0x71).contains(&self.action_state);
                 // So is a seat idling through a summon's invoke and freeze
                 // (`0x32..=0x34`): the band stages no clip on the victim
                 // before the module's hit, so its idle cursor is time since
