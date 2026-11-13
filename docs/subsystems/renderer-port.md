@@ -941,8 +941,11 @@ retail's other page still held the dark frame before the arm (luma `231` against
 The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
 ([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
 `renderAssembled` asks it for the picture at the scene's clear (after the frame's
-ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
-the ring filling while one may be asked for. Bloom stands the frames down on both
+ticks, through `play_cast_frame_persists`), reads it as deep as
+`play_cast_frame_persist_depth` says, and `play_cast_module_resident` keeps
+the ring filling while one may be asked for. The ring's size, the depth's clamp and
+the slot a read lands on are the shared kernel's (`render_kernels::frame_persist`),
+which the native ring reads too. Bloom stands the frames down on both
 hosts, since it reads the frame it adds to. The page's text layer is a canvas of
 its own, so a name plaque's letters do not enter the ring as the window's do. The
 window's own target and the browser's clean-rasterisation canvas still clear:

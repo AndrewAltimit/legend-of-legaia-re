@@ -252,10 +252,7 @@ impl PlayWindowApp {
         let target = |scene| present_target(scene, screen_prims, light_prims);
         r.set_frame_ring_keep(self.session.host.world.cast_module_resident());
         r.set_frame_persist(self.session.host.world.cast_frame_persists());
-        r.set_frame_persist_depth(
-            usize::try_from(self.session.host.world.cast_frame_persist_vsyncs())
-                .unwrap_or(usize::MAX),
-        );
+        r.set_frame_persist_depth(self.session.host.world.cast_frame_persist_vsyncs());
         #[cfg(feature = "oracles")]
         self.record_audio_wav();
         self.capture_cast_sequence_frame(r, &|| target(scene));

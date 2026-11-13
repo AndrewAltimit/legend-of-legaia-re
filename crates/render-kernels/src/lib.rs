@@ -34,6 +34,7 @@ pub mod drop_shadow;
 pub mod effect_billboard;
 pub mod field_light;
 pub mod fog_volume;
+pub mod frame_persist;
 pub mod gte;
 pub mod move_strip;
 pub mod overworld_curvature;

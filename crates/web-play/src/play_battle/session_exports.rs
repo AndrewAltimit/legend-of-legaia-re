@@ -16,6 +16,30 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.cast_frame_persists())
     }
 
+    /// How many presented frames back a persisting frame reads: retail's same
+    /// page two battle frames back (`World::cast_frame_persist_vsyncs`),
+    /// clamped to the ring (`frame_persist::persist_depth`). The native window
+    /// hands the same word to `Renderer::set_frame_persist_depth`; the page's
+    /// PSX target reads its ring this deep (`webgl-psx-target.js`). The default
+    /// depth outside a battle.
+    pub fn play_cast_frame_persist_depth(&self) -> u32 {
+        use legaia_render_kernels::frame_persist;
+        let depth = self
+            .scene_host
+            .host()
+            .map_or(frame_persist::DEFAULT_PERSIST_VSYNCS, |h| {
+                frame_persist::persist_depth(h.world.cast_frame_persist_vsyncs())
+            });
+        u32::try_from(depth).unwrap_or(u32::MAX)
+    }
+
+    /// How many earlier frames the page's PSX target keeps for a persisting
+    /// frame to read (`frame_persist::FRAME_RING_SLOTS`, the native ring's
+    /// size too).
+    pub fn play_frame_ring_slots(&self) -> u32 {
+        legaia_render_kernels::frame_persist::FRAME_RING_SLOTS as u32
+    }
+
     /// Whether a cast module is resident, so a frame may soon build on the
     /// ones before it (`World::cast_module_resident`): the PSX target keeps
     /// the last frame's picture while this holds.

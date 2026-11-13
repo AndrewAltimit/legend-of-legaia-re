@@ -508,7 +508,8 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.renderer.onPassUnavailable = (id) => this._passUnavailable(id);
       /* PSX rasterisation's frame goes through a single-sample framebuffer of
        * its own (webgl-psx-target.js). A skipped draw neither draws nor copies. */
-      this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl);
+      this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl,
+        typeof runtime.play_frame_ring_slots === 'function' ? runtime.play_frame_ring_slots() : 0);
       const drawFrame = this._frame;
       this._frame = (skipDraw) => {
         const psx = this.psxRender && !skipDraw && !this._movieCovers() && !(this.vr && this.vr.isActive());
@@ -522,10 +523,16 @@ void main() { o_color = texture(u_layer, v_uv); }
           this._fogDrew = false;
           this._psxTarget.begin(typeof rt.play_cast_module_resident === 'function'
             && rt.play_cast_module_resident(), !this.ssao && !this.bloom);
-          this.renderer.loadFrameHook = () => !this.bloom
-            && typeof rt.play_cast_frame_persists === 'function'
-            && rt.play_cast_frame_persists()
-            && this._psxTarget.loadEarlierFrame();
+          this.renderer.loadFrameHook = () => {
+            if (this.bloom || typeof rt.play_cast_frame_persists !== 'function'
+              || !rt.play_cast_frame_persists()) return false;
+            /* Two battle frames back, in presented frames: the native window's
+             * `set_frame_persist_depth` off the same world word. */
+            if (typeof rt.play_cast_frame_persist_depth === 'function') {
+              this._psxTarget.setPersistDepth(rt.play_cast_frame_persist_depth());
+            }
+            return this._psxTarget.loadEarlierFrame();
+          };
         }
         const r = drawFrame.call(this, skipDraw);
         if (psx) {

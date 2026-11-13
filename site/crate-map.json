@@ -4120,6 +4120,7 @@
     "effect_billboard",
     "field_light",
     "fog_volume",
+    "frame_persist",
     "gte",
     "move_strip",
     "overworld_curvature",
