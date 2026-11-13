@@ -850,9 +850,18 @@ pub struct BattleState {
     /// while `WorldToggles::battle_gpu_cost_step` is up. `None` before the
     /// first such frame.
     pub drawn_table_cost: Option<u16>,
+    /// The polygons the table the host drew last links
+    /// (`World::note_drawn_polys`), which a pass prices its work from while
+    /// `WorldToggles::battle_poly_frame_cost` is up. `None` before the first
+    /// priced frame, and on a host that does not price its frames.
+    pub drawn_polys: Option<u32>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
+    /// The work the last ring push priced the frame at, before a clip's polls
+    /// or an arm table's step (the state's measured base plus its draw load):
+    /// what the cast recorder logs beside the ring's entry.
+    pub frame_work: u16,
     /// The action state and module phase of the last cast-arm pass
     /// (`World::apply_cast_arm_frame_step`) and the passes made under them
     /// before it: the arm's pass, which a capture arm whose line stops
@@ -1617,6 +1626,8 @@ impl BattleState {
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
+            frame_work: 0,
+            drawn_polys: None,
             cast_arm_pass: None,
             pending_frame_step: None,
             pending_frame_step_from: 0,

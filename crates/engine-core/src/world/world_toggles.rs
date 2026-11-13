@@ -177,6 +177,15 @@ pub struct WorldToggles {
     /// (`docs/subsystems/battle-stage-camera.md`, "A frame's span").
     /// The native session raises it from `LEGAIA_BATTLE_FRAME_SPAN=1`.
     pub battle_frame_span_law: bool,
+    /// Opt-in, off by default: price a battle frame's work from the polygons
+    /// the host's last drawn table links (`World::note_drawn_polys`,
+    /// `frame_clock::polygon_frame_work`) in place of the action state's
+    /// measured base, the draw load and the cast arm tables, and a clip-loaded
+    /// frame at that work over the polls' share
+    /// (`frame_clock::xa_polled_work_cost`). Only a host that prices its
+    /// frames feeds it (the native window); without a count the tables stand.
+    /// The native session raises it from `LEGAIA_BATTLE_POLY_COST=1`.
+    pub battle_poly_frame_cost: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -459,6 +468,7 @@ impl WorldToggles {
             battle_gpu_cost_step: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: false,
+            battle_poly_frame_cost: false,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

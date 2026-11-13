@@ -468,6 +468,54 @@ pub const fn xa_stream_pass_cost(
     }
 }
 
+/// Hblanks of a battle frame's work that do not scale with what it draws, the
+/// intercept of [`polygon_frame_work`].
+pub const POLY_FRAME_BASE: u16 = 43;
+
+/// Hblanks a battle frame's work spends per polygon it links, in thousandths.
+/// Every polygon of a battle object runs through the per-primitive dispatcher
+/// `FUN_80043390` (its handler transforms the corners, culls on `NCLIP`, depth
+/// sorts and writes the packet into the ordering table), so the CPU half of a
+/// frame grows with what it links rather than with the action state. Read off
+/// the `--cd-trace` recordings of the enemy casts (the frame's cost from its
+/// `VSync` return to the CPU-done mark, less the CD interrupt spans,
+/// `scripts/ci/cd-poll-steps.py`) against the polygons the engine's host links
+/// for the same state and arm: `43 + .184` a polygon over `171` state-and-arm
+/// medians of `32` films, rms `89` hblanks where the action-state table reads
+/// `206`; fit on half the films and scored on the other, rms `50` to `114`.
+/// One emulated machine (PCSX-Redux, two cycles an instruction).
+pub const POLY_WORK_MILLI: u32 = 184;
+
+/// The work a battle frame that links `polys` polygons costs
+/// ([`POLY_FRAME_BASE`], [`POLY_WORK_MILLI`]), in hblanks.
+pub const fn polygon_frame_work(polys: u32) -> u16 {
+    let c = POLY_FRAME_BASE as u32 + (polys as u64 * POLY_WORK_MILLI as u64 / 1000) as u32;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
+/// What a frame the clip's polls load costs over its work, in thousandths,
+/// when the work is the frame's own ([`polygon_frame_work`]): the median of
+/// the `--cd-trace` recordings' polled state-and-arm medians, cost over cost
+/// less the CD interrupt spans (`2.78`, tenth to ninetieth percentile of the
+/// fully polled `2.70..2.85`). [`XA_POLL_COST_RATIO_MILLI`] is the same
+/// measurement over the action-state table, which reads such frames low.
+pub const XA_POLL_WORK_RATIO_MILLI: u32 = 2780;
+
+/// What a frame of `work` hblanks of its own costs under a clip's polls on
+/// PCSX-Redux ([`XA_POLL_WORK_RATIO_MILLI`]).
+pub const fn xa_polled_work_cost(work: u16) -> u16 {
+    let c = (work as u32 * XA_POLL_WORK_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What the pass after a clip's cue costs over its base: Amethyst's Heal's
 /// `507` against the lone member's `0x3E` frames near `385`.
 pub const XA_STREAM_ONSET_COST: u16 = 122;
@@ -898,6 +946,17 @@ mod frame_cost_tests {
     /// lone Vahn's breath frame (`0x2B`) to the step-`3` edge, and the
     /// breath's first pool children carry it over; an unknown body keeps the
     /// flat walk cost.
+    #[test]
+    fn a_frames_work_follows_its_polygons_and_the_polls_multiply_it() {
+        assert_eq!(polygon_frame_work(0), POLY_FRAME_BASE);
+        assert_eq!(polygon_frame_work(1000), 43 + 184);
+        // Tail Flare's flight (`3884` linked) reads retail's step `4`.
+        assert_eq!(step_of_cost(polygon_frame_work(3884)), 4);
+        // Kiss of Death's arm 4 under its line: an eight-vsync frame.
+        assert_eq!(frame_span(xa_polled_work_cost(665), 4), 8);
+        assert_eq!(polygon_frame_work(u32::MAX), u16::MAX);
+    }
+
     #[test]
     fn a_ghost_costs_its_bodys_triangles() {
         assert_eq!(ghost_draw_cost(Some(842)), 77);

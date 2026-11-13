@@ -119,6 +119,7 @@ impl ApplicationHandler for PlayWindowApp {
             // draws (`redraw_gpu_cost`), off a CPU copy of every upload.
             r.set_keep_cpu_meshes(
                 self.session.host.world.toggles.battle_gpu_cost_step
+                    || self.session.host.world.toggles.battle_poly_frame_cost
                     || redraw_gpu_cost::gpu_cost_diag_path().is_some(),
             );
         }
