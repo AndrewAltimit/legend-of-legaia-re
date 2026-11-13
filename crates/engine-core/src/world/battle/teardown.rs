@@ -472,14 +472,14 @@ impl World {
     }
 
     /// Active enemy actors in the current battle as `(actor_index,
-    /// monster_id, battle_slot)`, where `battle_slot` is the 0-based monster
-    /// index the battle texture loader keys VRAM placement on (feed it to
-    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`).
-    /// Empty unless the world is in [`SceneMode::Battle`].
+    /// monster_id, seat)`, where `seat` is the 0-based monster seat (the
+    /// actor index past the party). Empty unless the world is in
+    /// [`SceneMode::Battle`].
     ///
-    /// A renderer uses this to bridge each decoded monster mesh into its draw
-    /// list: the engine itself never loads the archive, so the actor only
-    /// carries the id - the host resolves it to a mesh.
+    /// The seat is not the texture slot: repeated species share one, and
+    /// slots follow the ids, not the seats - see
+    /// [`Self::battle_monster_texture_slots`], which a renderer feeds to
+    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`.
     pub fn battle_monster_slots(&self) -> Vec<(usize, u16, u8)> {
         if !matches!(self.mode, SceneMode::Battle) {
             return Vec::new();
@@ -493,6 +493,28 @@ impl World {
                 let slot = idx.checked_sub(first_monster)? as u8;
                 Some((idx, id, slot))
             })
+            .collect()
+    }
+
+    /// Active enemy actors as `(actor_index, monster_id, texture_slot)`: the
+    /// battle texture slot each monster's pool is uploaded into, the rank of
+    /// its id among the formation's distinct ids
+    /// ([`legaia_engine_battle::battle_party_form::monster_texture_slots`],
+    /// retail's loader `FUN_800542C8`). Keyed by seat, a formation's third
+    /// seat took slot `2`, which every summon creature's pool overwrites
+    /// (`FUN_801F19EC`), so a Seru cast in a `[Worm, Pump Bat, Pump Bat]`
+    /// fight repainted the second Pump Bat in the creature's texture (#599).
+    /// A renderer uses this to bridge each decoded monster mesh into its
+    /// draw list: the engine itself never loads the archive, so the actor
+    /// only carries the id - the host resolves it to a mesh.
+    pub fn battle_monster_texture_slots(&self) -> Vec<(usize, u16, u8)> {
+        let seats = self.battle_monster_slots();
+        let ids: Vec<u16> = seats.iter().map(|&(_, id, _)| id).collect();
+        let slots = legaia_engine_battle::battle_party_form::monster_texture_slots(&ids);
+        seats
+            .into_iter()
+            .zip(slots)
+            .map(|((actor, id, _), slot)| (actor, id, slot))
             .collect()
     }
 }

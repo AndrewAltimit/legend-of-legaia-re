@@ -116,7 +116,7 @@ Building the forms is an engine duty, not a host one, because retail's loader as
 - Its VRAM writes go to a `VramWriteLog`, not a live VRAM. A renderer reads `SceneHost::battle_party_forms`, replays the log into the battle VRAM it composes, and adds only the GPU upload, its own posing and the facial animator's registration.
 - A session that drives a bare `World` with no `SceneHost` has no disc index. It is the one explicit injection point and calls `install_party_battle_forms` itself after `World::enter_battle`.
 - The kernel falls back to PROT 1204 when the player file carries no idle stream (an assembled mesh with no pose source draws every piece at its object origin), and overlays the separator-default battle palette on a fallback mesh's rows only.
-- Monsters install their texture slot and idle clip through `World::install_monster_battle_form`. A mid-battle summon takes the slot one past the highest monster slot bound (`engine-battle::battle_party_form::monster_tex_slots_used`), since repeated species share a slot.
+- Monsters install their texture slot and idle clip through `World::install_monster_battle_form`. A monster's texture slot is the rank of its id among the formation's distinct ids, not its seat (`World::battle_monster_texture_slots`, [the loader's rule](battle.md#the-battle-heap-budget)); a mid-battle summon's creature always takes slot `2` (`battle_stage::SUMMON_CREATURE_TEX_SLOT`), so a seat-keyed slot put the third seat of a two-species fight under the creature's texture.
 
 #### Battle display list
 

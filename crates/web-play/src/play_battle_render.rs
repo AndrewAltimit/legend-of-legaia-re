@@ -437,7 +437,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host() else {
             return;
         };
-        let monsters = host.world.battle_monster_slots();
+        let monsters = host.world.battle_monster_texture_slots();
         if monsters.is_empty() {
             return;
         }

@@ -709,6 +709,33 @@ pub fn art_character(cslot: usize) -> Option<legaia_art::Character> {
     .copied()
 }
 
+/// The battle texture slot each seated monster's pool is uploaded into, by
+/// retail's loader rule: `slots[i]` belongs to `ids[i]`.
+///
+/// The loader `FUN_800542C8` walks monster ids upward and, for each id, the
+/// formation seats; only the first seat naming the id uploads its texture
+/// pool, through `FUN_80055468(pool, tmd, wide, s7)` (`jal 0x80054820`,
+/// `andi a3,s7,0xff` in its delay slot), and a later seat with the same id
+/// copies that seat's pointer and uploads nothing (`0x80054454..0x800544F0`).
+/// The slot `s7` starts at `0` (`clear s6; move s7,s6` at `0x800543C4`) and
+/// steps to the uploader's return, `slot + 1` (`addiu v0,s1,0x1` at
+/// `0x80055658`). So a monster's slot is the rank of its id among the
+/// formation's distinct ids, ascending - not its seat: a formation
+/// `[Pump Bat, Pump Bat, Worm]` puts the Worm (id `34`) in slot `0` and both
+/// Pump Bats (id `46`) in slot `1`, which leaves slot `2` - the one a summon
+/// creature's pool always overwrites (`FUN_801F19EC`, `li a3,0x2` at
+/// `0x801F1D14`) - to the third distinct species.
+///
+/// REF: FUN_800542C8 (the slot counter `s7`, `0x800543C4..0x800549F0`)
+pub fn monster_texture_slots(ids: &[u16]) -> Vec<u8> {
+    let mut distinct: Vec<u16> = ids.to_vec();
+    distinct.sort_unstable();
+    distinct.dedup();
+    ids.iter()
+        .map(|id| distinct.binary_search(id).map_or(0, |rank| rank as u8))
+        .collect()
+}
+
 /// How many of the battle texture slots a set of monster binds consumed:
 /// one past the highest slot bound. A mid-battle summon's creature texture
 /// goes into this slot next. Repeated species share a slot, so this is not
@@ -724,6 +751,16 @@ pub fn monster_tex_slots_used(bound_slots: impl IntoIterator<Item = u8>) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn texture_slots_rank_distinct_ids_ascending() {
+        // Rikuroa's formation 3: two Pump Bats (46) then a Worm (34).
+        assert_eq!(monster_texture_slots(&[46, 46, 34]), vec![1, 1, 0]);
+        // Seated order never matters, only the ids.
+        assert_eq!(monster_texture_slots(&[34, 46, 46]), vec![0, 1, 1]);
+        assert_eq!(monster_texture_slots(&[90, 12, 55, 12]), vec![2, 0, 1, 0]);
+        assert_eq!(monster_texture_slots(&[]), Vec::<u8>::new());
+    }
 
     #[test]
     fn repeated_species_share_their_slot() {
