@@ -208,6 +208,7 @@ impl World {
             // spawner takes a fresh pool actor per call.
             if r.kills_fades {
                 self.presentation.module_fades.clear();
+                self.presentation.module_fades_next_pass.clear();
             }
             for (t, id) in r.fades {
                 let mut seat = None;

@@ -52,6 +52,7 @@ impl World {
         {
             self.presentation.fade = None;
         }
+        self.presentation.join_next_pass_fades();
         self.presentation
             .module_fades
             .retain_mut(|f| f.step_vsyncs(n) || f.holds_at_end());
@@ -103,4 +104,32 @@ fn fade_draw(f: &legaia_engine_system::fade::FadeState) -> Option<(u32, u8, u32)
         f.kind.clamp(0, 3) as u8,
         f.mode[2].max(0) as u32,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+
+    /// A fade a part's stager call spawned joins the fades on the next pass
+    /// and first draws one step down its ramp (PROT 0963's stager arm 2).
+    #[test]
+    fn a_stager_fade_first_draws_a_pass_on() {
+        let mut w = World::new();
+        let t = legaia_engine_battle_vm::battle_action::summon_fade_template(
+            &legaia_engine_cast::cast_module_ticks::GENOCIDAL_CANNON_STAGER_FADE,
+        );
+        let mut seat = None;
+        legaia_engine_system::fade::spawn_fade(&mut seat, &t, 1);
+        let mut stepped = seat.expect("fade");
+        w.presentation.module_fades_next_pass.extend(seat);
+        assert!(w.screen_fade_draws().is_empty(), "not drawn on its pass");
+        w.lead_screen_fades(4);
+        stepped.step_vsyncs(4);
+        let draws = w.screen_fade_draws();
+        assert_eq!(draws.len(), 1);
+        let [r, g, b] = stepped.rgb();
+        let rgb = (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
+        assert_eq!(draws[0].0, rgb);
+        assert_ne!(rgb, 0x00FF_F0C0, "one step down the ramp");
+    }
 }

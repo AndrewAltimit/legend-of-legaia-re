@@ -3875,8 +3875,22 @@ stores `0x16` back (`0x801F80F8`). The engine streams the latch (`monster_ai_sta
 Film from `noaru_songi_pre_genocidal_cannon`, per arm, with the director, then the records seated
 per arm, the latched stream and the loop bounds: arm 3 `.184` to `.995`, arm 6 `.484` to `.975`,
 arm `0x0F` `.201` to `.994`, arm `0x10` `.284` to `.996`, arm 2 `.392` to `1.000`; mean `.975`
-(the mid-cast `--physical` film `.974`), sound `1.000`. Arms 9 and `0x0B` (`.85`, `.81`) and the
-white of arms 8, `0x0A` and `0x0C` landing a few frames early are what is left. Grade `disassembly` (the arms), `capture` (the film).
+(the mid-cast `--physical` film `.974`), sound `1.000`. Grade `disassembly` (the arms), `capture` (the film).
+
+The white over arms 8, `0x0A` and `0x0C` is the stager's arm 2 fade, spawned by a pulse record's
+op `0x20` inside the part tick. Retail's part walker runs after the pass has ticked its fade
+actors, so the fade first steps, and first draws, a pass after the call: retail's first white
+frame is already one step down the ramp, and the engine had drawn the template's own colour a
+pass earlier. A stager fade now joins the fades on the next pass
+(`ScreenFxState::module_fades_next_pass`): the mid-cast film reads `.974` to `.981`, arms 8,
+`0x0A` and `0x0C` `.926` / `.924` / `.962` to `.998` / `.994` / `.998`. Grade `capture`.
+
+Arms 8 and `0x0A` also set the caster's anim node back: `lw v1,0x22c(s3)` then `sh 0x110,
+0x68(v1)` (`0x801F73EC..0x801F73FC`, `0x801F75F4..0x801F7604`), frame `0x11` of the charge clip,
+from which it plays back up into the `0x15..0x17` loop. Without the store the engine's Songi
+stood in the loop through arms 9 and `0x0B` while retail's rose out of its crouch; with it the
+film reads `.981` to `.987`, arm 9 `.852` to `.997` and arm `0x0B` `.813` to `.998`. Grade
+`disassembly` (the store), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
 

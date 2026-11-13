@@ -167,7 +167,7 @@ impl World {
                         &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                         1,
                     );
-                    self.presentation.module_fades.extend(fade);
+                    self.presentation.module_fades_next_pass.extend(fade);
                 }
                 continue;
             }

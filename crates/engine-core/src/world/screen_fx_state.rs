@@ -31,6 +31,14 @@ pub struct ScreenFxState {
     /// [`crate::world::World::seat_map_install_tail`]). Stepped and drawn like
     /// [`Self::fade`], dropped as each lands; cleared with the battle.
     pub(crate) module_fades: Vec<legaia_engine_system::fade::FadeState>,
+    /// Fades a summon part's stager call spawned inside the part tick
+    /// (`FUN_80024E80` under the move VM's op `0x20`), joining
+    /// [`Self::module_fades`] on the next pass. Retail's part walker runs
+    /// after the pass has ticked its fade actors, so such a fade first steps,
+    /// and first draws, one pass on: Genocidal Cannon's white (PROT 0963's
+    /// stager arm 2) shows its first frame already one step down the ramp,
+    /// a pass after the call.
+    pub(crate) module_fades_next_pass: Vec<legaia_engine_system::fade::FadeState>,
     /// The live **screen-effect colour tween** the field VM's op `0x34`
     /// sub-0 arm installs - the pool slot retail keeps in `_DAT_8007B62C`.
     ///
@@ -142,6 +150,7 @@ impl ScreenFxState {
             fade: None,
             fade_spawn_step: 0,
             module_fades: Vec::new(),
+            module_fades_next_pass: Vec::new(),
             effect_tween_slot: None,
             effect_target_rgb: [0; 3],
             effect_blend: 0,
@@ -156,6 +165,12 @@ impl ScreenFxState {
             field_light: legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
             clear_ramp: None,
         }
+    }
+
+    /// The pass's fade step takes in the fades a stager call spawned on the
+    /// pass before ([`Self::module_fades_next_pass`]), ahead of the step.
+    pub(crate) fn join_next_pass_fades(&mut self) {
+        self.module_fades.append(&mut self.module_fades_next_pass);
     }
 }
 

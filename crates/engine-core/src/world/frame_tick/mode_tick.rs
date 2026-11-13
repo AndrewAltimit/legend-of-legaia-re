@@ -331,6 +331,7 @@ impl World {
             {
                 self.presentation.fade = None;
             }
+            self.presentation.join_next_pass_fades();
             self.presentation
                 .module_fades
                 .retain_mut(|f| f.step_vsyncs(pass_vsyncs) || f.holds_at_end());
