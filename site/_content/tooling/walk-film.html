@@ -52,15 +52,43 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <li>The d-pad remap reads the scene's <a href="../subsystems/field-locomotion.html#authored-octant">authored octant</a>, not the live camera angle.</li>
     <li><code>kor3</code>'s placements hold retail's headings for a whole film, with no spin.</li>
     <li>Placements that turn in place under an idle pad turn on both sides: <code>rugi_field_card_boot</code>'s four and <code>cave01_attached_light</code>'s five hold retail's heading on every vsync of a 300-vsync film, and <code>vell_fog_field</code>'s one turns at retail's rate a vsync ahead, the seed's pass parity rather than a spin. A sweep of every field state finds no other placement turning in place.</li>
-    <li>A player a script carries up a stair glides onto each step as retail's does, 24 units a pass, instead of landing on it at once; on <code>tower_field_walk</code> that brought the camera's pitch and eye height onto retail's for nearly every pass.</li>
+    <li>A player a script carries up a stair glides onto each step as retail's does, <code>-32, -8, 0</code> a pass, instead of landing on it at once, and the leg spends on the game-frame grid, so the follow focus trails it a whole pass; on <code>tower_field_walk</code> that brought the camera's pitch, eye height and focus onto retail's for nearly every pass.</li>
     <li>A placement at <code>geremi_field_door_hop</code> that looked mis-faced is not: the scene's system script turns it every pass onto the bearing of a wanderer, so its heading is that wanderer's <code>rand()</code> history one pass late, on both sides.</li>
     <li>An ambient script's turns run at retail's rate and differ only in phase: two placements repeat retail's ramps a fixed number of vsyncs early, the wait their scripts were inside at the capture.</li>
     <li><code>kor_field_route_walk</code>'s displayed frame is its pass-two-back pose exactly, filmed over the passes before the save by <code>autorun_walk_route.lua</code> with <code>LEGAIA_FILM_SCENE</code>.</li>
     <li>Town placements hold retail's headings and seats for a 300-vsync film in <code>garmel</code>, <code>vozz</code> and <code>retona</code>; <code>town01_field_card_boot</code>'s seven that part are wanderers, each first off after <code>40</code> vsyncs or more.</li>
     <li>A held walk's clip runs at retail's rate: <code>kor_field_route_walk</code> steps <code>16</code> a pass through the same ten frames on both sides.</li>
-    <li>The film starts on the vsync of retail's frame the state was saved on. The frame pacer waits each frame out with <code>VSync(step)</code>, which stores the vblank count on return, so the state's vblank counter less that store says how far into its frame the state stands; the engine seats its game-tick accumulators to match. Placements that had turned a vsync early or late now turn on retail's vsync: <code>conc</code>, <code>conc2</code> and <code>town01</code> read no placement off retail.</li>
-    <li>Idle 300-vsync films of ten more fields (<code>retock</code>, <code>taiku</code>, <code>nilboa</code>, <code>jou</code> and others) read no placement off retail. Where placements do part with nothing pressed, in <code>conc</code>, <code>conc2</code>, <code>dolk2</code> and <code>koin1</code>, each turns or steps at retail&rsquo;s rate one vsync early or late: the seed&rsquo;s pass parity, not a turn law. The rest that part are wanderers.</li>
+    <li><code>kor3</code>'s stair warp lands the camera on the destination block. With the state's queued first pass replayed, the engine walks retail's path into the warp tile, lands a vsync apart, stands on retail's shot from the landing on, and turns the player by the octants the room selector moves, to retail's heading. One thing still parts: the slide along the wall starts a step early, since the engine resolves the direction every vsync and retail once a pass.</li>
+    <li><code>concnow_field_door_hop</code>'s camera word climbs on both sides: the door-hop script's ramp is 240 steps long, where the engine had posted its end at once. The two still end apart, because each reads its footing on a different phase of the floor bob.</li>
+    <li>Idle 300-vsync films of ten more fields (<code>retock</code>, <code>taiku</code>, <code>nilboa</code>, <code>jou</code> and others) read no placement off retail. Where placements did part with nothing pressed, each turned or stepped at retail&rsquo;s rate one vsync early or late: the game frame's phase, which the film now seats (<a href="#the-game-frames-phase">below</a>). What still parts is <code>dolk2</code>'s flat <code>70</code> and wanderers.</li>
+    <li><code>dolk2_market_noa</code>'s flat <code>70</code> is the state's history, not a spawn defect: the spawner seats it on its header's tile, which is the engine's seat, and the state's position is where a scene script's NPC run left it. A film seeded from the scene's spawn does not replay that beat.</li>
+    <li>A beat's last turn holds when the engine plays the beat: in <code>son</code> the film from the mid-beat checkpoint ends on retail's heading and seat for Luctes.</li>
   </ul>
+</section>
+
+<section class="doc-section" id="the-game-frames-phase" data-doc="the-game-frames-phase">
+  <h2>The game frame's phase</h2>
+  <p>Retail's game pass runs once every frame step of vsyncs, and a save state is taken on one vsync of that frame - not necessarily the first. The frame pacer (<code>FUN_80016B6C</code>) waits each frame out with libetc's <code>VSync(step)</code>, which stores the vblank count when it returns. The state's live vblank counter less that store is therefore how far into its frame the state stands, and the next pass opens <code>step - phase</code> vsyncs into the film.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 640 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A row of vsyncs grouped in frames of three. The frame pacer's VSync return stamps the first vsync of a frame. The save state lands on the third vsync of a frame, phase 2, so the next game pass opens one vsync into the film.">
+      <defs><marker id="wf-ph" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="48" y="73">v0</text>
+      <rect class="dg-node" x="80" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="108" y="73">v1</text>
+      <rect class="dg-node-accent" x="140" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="168" y="73">v2</text>
+      <rect class="dg-node-ok" x="220" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="248" y="73">pass</text>
+      <rect class="dg-node" x="280" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="308" y="73">v1</text>
+      <rect class="dg-node" x="340" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="368" y="73">v2</text>
+      <rect class="dg-node-ok" x="420" y="50" width="56" height="36" rx="3"/><text class="dg-sub" x="448" y="73">pass</text>
+      <text class="dg-sub" x="48" y="36">VSync stamp</text>
+      <path class="dg-edge" d="M48 40 L48 48" marker-end="url(#wf-ph)"/>
+      <text class="dg-label" x="168" y="112">state saved: phase 2</text>
+      <path class="dg-edge" d="M168 100 L168 90" marker-end="url(#wf-ph)"/>
+      <text class="dg-sub" x="248" y="112">opens 1 vsync in</text>
+      <text class="dg-sub" x="560" y="73">frame step 3</text>
+    </svg>
+    <figcaption>The phase is the vblank counter less the pacer's stamp. The engine seats its game-tick accumulators one short of it, and on a phase of 0 it holds the first vsync.</figcaption>
+  </figure>
+  <p>Seating the phase is a change to the comparison harness, not to the game code. It is what moved the placements that had turned a vsync early or late onto retail's vsync: <code>conc_field_card_boot</code>, <code>conc2_field_route_walk</code> and <code>town01_field_card_boot</code> now read no placement off retail, and <code>dolk2_market_noa</code> is down to its flat <code>70</code>.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">
