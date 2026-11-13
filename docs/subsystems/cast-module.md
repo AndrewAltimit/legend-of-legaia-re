@@ -2826,8 +2826,29 @@ Kemaro's arm 8 lifts and lands the creature as its word drains: height
 `+0x44 = (w << 4) & 0xFFF` under `scalar << 5` (`0x801F7690..0x801F76A8`), height
 and pitch `0` on the pass (`World::apply_kemaro_writes`).
 
-Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
-stores on alternate passes), Kemaro's arm-12 absolute pose store and the
+**The TR y shakes are a frame's.** Kemaro's arm 4 and Puera's arms 14 and 15
+store TR y straight on every pass off a word they bump once a pass: Kemaro's
+parity halfword `0x801F92F8` (`0x801F7088..0x801F70C4`) gives `0x600` and
+`countdown / 2 + 0x600` on alternate passes while its countdown is above
+`scalar << 5`, and `0x600` below it; Puera's alternation word `0x801FA0BC`
+(zeroed on arm 13's way out, the word its rumble reads too) gives `0x400` on an
+odd read, else `0x500` on arm 14 and `countdown * 8 / scalar + 0x400` on arm 15
+(`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`), the store ahead of the
+arm's gate. Kemaro's arm 4 also takes `product / 4` off the **pitch** halfword
+`0x8007B790`, not the yaw (`lhu v0,-0x4870(a0)` at `0x801F710C`). PROT 0927's
+epilogue shake runs the same once a frame: the tick body steps its word
+`0x801F9C90` once a call, and the battle frame driver calls it once a frame.
+The directors (`kemaro_arm4_shake`, `puera_shake`) and
+`World::juggernaut_shake` take each word once a pass, on the pass's last tick
+or the tick that leaves the arm. Stepped on every vsync of a step-`4` pass,
+Juggernaut's twenty-frame swing on arm 12 ran out in five frames as a flat
+`-16` a frame. On the Gobu Gobu films the engine's camera now holds retail's
+pitch and TR y pass for pass through these arms (`camera.csv`), and the films
+read `0x90` `.950` to `.976` (arm 5 `.758` to `.967`), `0x94` `.930` to `.937`
+(arms 14 and 15 `.936` / `.898` to `1.000` / `.998`), `0x99` `.894` to `.899` (arm 12
+`.861` to `.889`). Grade `disassembly` + `capture`.
+
+Not carried: Kemaro's arm-12 absolute pose store and the
 heights its arms 13..17 walk the arm-9 parts through, and 0927's second,
 kill-capable hit at arm 26: the band folds the cast once.
 
