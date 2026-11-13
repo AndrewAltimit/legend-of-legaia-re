@@ -129,7 +129,11 @@ def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
     the cast begins. The capture-class wrappers read the attacker's HP into
     the roll (`hp >> 8` at `0x801DD728`), so Bloody Horns' `595` read `605` on
     the state's bars. A harness seat, like the ground. Party seats re-key as
-    `engine_ground` does; a seat at `0` HP on either side is left alone."""
+    `engine_ground` does. A party seat at `0` HP on either side is left
+    alone; a monster the recording holds at `0` is returned as `0` (the
+    party's turns killed it before the pick: `battle_garmel_zenoir_strike`'s
+    harvest rounds left seat 3 dead where the state stands it at `279`), and
+    the caller seats it dead and faded."""
     cast = int(done.get("cast", "-1"))
     if cast < 0:
         return {}
@@ -152,7 +156,7 @@ def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
     hp = {}
     for seat, slot in slots.items():
         v = row.get(f"hp{seat}")
-        if v and v.lstrip("-").isdigit() and int(v) > 0:
+        if v and v.lstrip("-").isdigit() and (int(v) > 0 or seat >= 3):
             hp[slot] = int(v)
     return hp
 
@@ -880,6 +884,12 @@ def run_engine(a, out: Path) -> bool:
             slot = int(f[0])
             if slot in cast_hp and int(f[1]) > 0:
                 f[1] = str(cast_hp[slot])
+                # A monster dead on retail's cast begin stands faded out
+                # (`d0`: the defeat fade's lanes at black), as the corpus
+                # seeds a monster a capture holds long dead.
+                if cast_hp[slot] == 0 and not any(t.startswith("d") for t in f[3:]):
+                    at = next((i for i, t in enumerate(f) if i >= 3 and t[:1].isalpha()), len(f))
+                    f.insert(at, "d0")
             return ":".join(f)
         env["LEGAIA_BATTLE_BARS"] = ",".join(seated(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
     if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
