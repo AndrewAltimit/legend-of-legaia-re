@@ -313,6 +313,9 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        // The `0xFE` arm's handle reset (`FUN_801D99BC` at `0x801D31E8`)
+        // drains the confirm's exit records with every other text actor.
+        self.battle.commit_exit = None;
         // An armed expansion challenge's turn limit counts rounds.
         self.expansion_round_begun();
         self.battle.commit_log_launch = None;
@@ -669,6 +672,19 @@ impl World {
         self.battle.command = None;
         self.battle.start_surface_hold();
         self.battle.round_armed = true;
+        // The step's own records: the confirm chips, the tab and the log
+        // leave the screen on the hold's glide (step `0x24` / `0x29`, or the
+        // flee confirm's `0x25`).
+        let escape = self.battle.round_flow.pending.iter().any(|p| {
+            matches!(
+                p,
+                Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Run)
+            )
+        });
+        self.battle.commit_exit = Some(legaia_engine_battle_loop::battle_state::CommitExit {
+            glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+            escape,
+        });
     }
 
     /// Raise the party-wide commit-confirm screen (retail `ctx[+0x06] =

@@ -1351,6 +1351,15 @@ impl RetailBattle {
                         seats.push(seat);
                     }
                 }
+                // The confirm's chips the `0xFE` arm drained, still leaving
+                // the screen on the displayed frame.
+                let mut steps = recent_pass_steps(ram);
+                steps[..2].copy_from_slice(&display_pass_steps(ram));
+                if let Some(seat) = commit_exit_pool_seat(ram, &steps)
+                    && !seats.iter().any(|s| s.target == seat.target)
+                {
+                    seats.push(seat);
+                }
                 seats
             },
             popup_cells: displayed_popup_cells(ram),

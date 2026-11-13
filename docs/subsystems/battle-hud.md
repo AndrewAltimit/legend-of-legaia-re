@@ -604,6 +604,7 @@ The steps the menu SM runs (`engine-battle::battle_hud_state::subdraw_steps` /
 | `0x78` -> `0x5A` cursor, or `0x28` -> `0x5A` under `Automatic` | `0x2D` / `0x30` | - | park | snap | leaves |
 | `0x28` / `0x78` -> `0x50` arts entry | 9 / `0x2C` | - | park (AP bar 15 takes the seat) | snap | snap |
 | `0x28` -> `0x6E` all committed | `0x23` | - | - | tab only | leaves |
+| `0x6E` / `0x32` -> `0xFE` round armed | `0x24` / `0x29` / `0x25` | - | - | tab leaves | - |
 
 So the roster panels belong to the round prompt and the browsed windows, the
 full-width bar to the ring, the attack-mode prompt and the target steps, and
@@ -672,6 +673,37 @@ round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
 | 7 | the bar | `y = 236 -> 194` |
 | `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
 | `0x52` | the AP plate | `x = 328 -> 208` |
+
+#### The round's confirm leaves on a glide
+
+`Begin` on the commit confirm `0x6E` stores `ctx[+0x06] = 0xFE` and runs step
+`0x24`, or `0x29` when no member is left to log (`0x801D31AC..0x801D31DC`);
+the flee confirm `0x32` runs step `0x25` (`0x801D1144..0x801D1150`). Every
+pair is the exit's own twin record, so the confirm leaves the screen instead
+of vanishing:
+
+| Record | Element | Seat the step starts from -> seat it lands on |
+|---|---|---|
+| `0x12` | the left chip, gold plate, record `0x10`'s `Begin` / `Escape` | `x = 92 -> -56`, off the left edge |
+| `0x14` | `Reselect`, blue plate | `x = 180 -> 328`, off the right edge |
+| `0x3F` / `0x40` | the `Begin` / `Run` tab | `y = 14 -> -24`, off the top edge |
+| `0x2B..` (mode `1`, step `0x24` only) | the commit log | one display width left of its rest seat |
+
+The gate holds the `0xFE` arm until the records land; the pass after, its
+handle reset (`FUN_801D99BC` at `0x801D31E8`) drains them with every text
+actor and the action SM starts. A capture on that pass reads an empty glide
+table and a running action while the displayed frame, two passes older,
+still shows the chips leaving: `nilboa_koru_pre_dead_end_crisis` (step `2`)
+draws them fourteen vsyncs in, `taiku_topaz_pre_hyper_heal` (step `3`)
+fifteen; the older ordering table of each holds them landed at `(-56, 88)`
+and `(328, 88)` and the log `320` left of its seats.
+
+Port: `World::arm_round_execution` raises `BattleState::commit_exit` beside the
+hold, `begin_round_execution` drains it, and `engine-battle-hud`'s chip, tab
+and log projections draw the exit off it (`battle_commit_exit`), so both
+hosts slide the confirm off. The hold itself is the surface hold's; the exit
+moves no input window. The retail-compare image child seats it from the
+older ordering table (`hud_glide::commit_exit_pool_seat`).
 
 #### A Spirit turn raises its gauge on a glide
 

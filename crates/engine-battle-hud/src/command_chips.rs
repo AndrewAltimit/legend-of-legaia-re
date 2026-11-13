@@ -25,6 +25,11 @@ pub fn battle_chip_highlight(
     cursor: usize,
 ) -> Option<usize> {
     use legaia_engine_system::option_values::BattleCommandOpt;
+    // The confirm's exit twin of the left chip (record `0x12`) ships frame
+    // style `2` under either option.
+    if crate::plaques::commit_exit(world).is_some() {
+        return Some(0);
+    }
     (world.toggles.battle_command == BattleCommandOpt::CrossButton).then_some(cursor)
 }
 
@@ -61,6 +66,29 @@ pub fn battle_command_chips(
         || world.battle.item_menu.is_some()
     {
         return None;
+    }
+    // The confirm's chips leaving off both edges as the round starts
+    // ([`legaia_engine_battle_loop::battle_state::CommitExit`]): records
+    // `0x12` (the record-`0x10` word, `Begin` or `Escape`) and `0x14`
+    // (`Reselect`), seated on the confirm's own pair.
+    if let Some(x) = crate::plaques::commit_exit(world) {
+        let label = |disc: BattleUiLabel, fallback: &'static str| {
+            let s = world.battle.ui_strings.get(disc).filter(|s| !s.is_empty());
+            (s.unwrap_or(fallback).to_string(), true)
+        };
+        let left = if x.escape {
+            label(BattleUiLabel::CommitEscape, "Escape")
+        } else {
+            label(BattleUiLabel::CommitBegin, CommitChoice::Begin.label())
+        };
+        return Some(BattleCommandChips {
+            chips: vec![
+                left,
+                label(BattleUiLabel::Reselect, CommitChoice::Reselect.label()),
+            ],
+            cursor: 0,
+            phase: CommandChipPhase::CommitConfirm,
+        });
     }
     let cmd = world.battle.command.as_ref()?;
     let no_escape = world.battle.no_escape;
@@ -225,17 +253,22 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
         return Vec::new();
     }
     // An outbound launch that has landed has the log off the left edge.
-    let slide_x = match world.battle.commit_log_launch {
+    // The confirm's exit sends the log one display width left on mode `1`
+    // (records `0x2B..` of step `0x24`, seat B to seat A), every committed
+    // member's row with it.
+    let exit = crate::plaques::commit_exit(world);
+    let slide_x = match exit.map(|x| x.glide).or(world.battle.commit_log_launch) {
         Some(l) if l.gone() => return Vec::new(),
         Some(l) => l.x_offset(),
         None => 0,
     };
     let pc = party_count(world) as u8;
-    let confirm = world
-        .battle
-        .command
-        .as_ref()
-        .is_some_and(|c| matches!(c.phase, CommandPhase::CommitConfirm { .. }));
+    let confirm = exit.is_some()
+        || world
+            .battle
+            .command
+            .as_ref()
+            .is_some_and(|c| matches!(c.phase, CommandPhase::CommitConfirm { .. }));
     let entering = world.battle_ctx.active_actor;
     let label = |disc: BattleUiLabel, fallback: &str| -> String {
         world

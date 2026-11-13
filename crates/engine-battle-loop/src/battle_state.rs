@@ -699,6 +699,13 @@ pub struct BattleState {
     /// `ctx[+0x06] = 0xFE` stored and its step's records still gliding: the
     /// `0xFE` arm (the action SM's start) runs on the first dispatched pass.
     pub round_armed: bool,
+    /// The confirm chips' exit slide ([`CommitExit`]): the `Begin` /
+    /// `Escape` confirm's sub-draw step sends the chips off both edges, the
+    /// tab up and the commit log off the left edge on one sixteen-vsync
+    /// glide. Raised with [`Self::round_armed`]; the `0xFE` arm's handle
+    /// reset clears it. Not a gating record here: the hold it shares is
+    /// [`Self::surface_hold_glide`]'s.
+    pub commit_exit: Option<CommitExit>,
     /// What the glide stepper returned on this tick's pass - retail's `s0`
     /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
     /// Non-zero while a tracked glide is in flight and on the pass it lands;
@@ -1610,6 +1617,7 @@ impl BattleState {
             target_plate_cleared: false,
             action_hud_wiped: false,
             action_hud_close: None,
+            commit_exit: None,
             counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
@@ -1835,4 +1843,29 @@ impl BattleState {
         }
         self.last_rewards.is_some()
     }
+}
+
+/// The round's confirm leaving the screen. The `Begin` confirm on `0x6E`
+/// stores `ctx[+0x06] = 0xFE` and runs sub-draw step `0x24` (`12/0 14/0
+/// 2B/1 2C/1 2D/1 3F/0`) or `0x29` (`12/0 14/0 3F/0`, no member left to
+/// log) at `0x801D31AC..0x801D31DC`; the flee confirm on `0x32` runs step
+/// `0x25` (`12/0 14/0 40/0`) at `0x801D1144..0x801D1150`. Records `0x12` and
+/// `0x14` are the confirm chips' exit twins: seat A on the chips' own seats
+/// `(92, 88)` / `(180, 88)`, seat B off the left and right edges
+/// (`(-56, 88)` / `(328, 88)`), the left one on the gold plate (style `2`)
+/// with the record-`0x10` word (`Begin` or `Escape`), the right one blue with
+/// `Reselect`. Records `0x3F` / `0x40` lift the `Begin` / `Run` tab from
+/// `(16, 14)` to `(16, -24)`, and the log rows ride mode `1` from their rest
+/// seat to one display width left. All of it glides on one sixteen-vsync
+/// step, and the `0xFE` arm's handle reset (`FUN_801D99BC` at `0x801D31E8`)
+/// drains it the pass after it lands.
+///
+/// REF: FUN_801D0748, FUN_801D8DE8
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommitExit {
+    /// The one glide every record rides (mode `0`, seat A to seat B).
+    pub glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch,
+    /// The flee confirm's exit (step `0x25`): the left chip reads `Escape`
+    /// and the tab `Run`.
+    pub escape: bool,
 }

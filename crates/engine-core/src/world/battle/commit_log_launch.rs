@@ -183,6 +183,20 @@ impl World {
         // plate are the records landing on the bar's seat and the ring
         // plate's.
         let spirit = self.spirit_gauge_view().is_some();
+        // The confirm chips' exit twins (records `0x12` / `0x14`, seat B off
+        // the left and right edges): drained with the handle list once the
+        // round starts, so a capture past the `0xFE` arm seats them afresh.
+        // Outside the stepper's return, like the hold they share.
+        if matches!(target, [-56 | 328, 86]) {
+            let x = self.battle.commit_exit.get_or_insert(
+                legaia_engine_battle_loop::battle_state::CommitExit {
+                    glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+                    escape: false,
+                },
+            );
+            x.glide.elapsed = elapsed.min(x.glide.total);
+            return true;
+        }
         let glide = match target {
             // The Done band's closing glides (mode `1`, seat B back to seat
             // A): the actor plaque leaving through the top edge, the bar,
@@ -209,6 +223,10 @@ impl World {
             [160 | 248, 64] | [204, 32 | 96] | [68, 12] | [208, 172] => {
                 self.battle.ring_open_glide.as_mut()
             }
+            // The commit log's exit (records `0x2B..` on mode `1`, one
+            // display width left of their rest seats on row `168`) is drawn
+            // off the confirm's exit glide.
+            [x, 168] if x < 0 => None,
             // The roster panels' raise inside an action (records 6 /
             // `0x4E` / `0x4F`, seat B on row `168`), when an opener raised
             // them on this replay too; outside one the row is the round

@@ -284,6 +284,17 @@ fn begin_chip_seat_names_the_prompt_glide_elapsed() {
     assert_eq!(round_prompt_pool_seat(&vec![0u8; 0x20_0000], 2), None);
 }
 
+/// The confirm's exit: the left chip's seat names the glide's `elapsed`
+/// (`92 -> -56` over sixteen vsyncs), landed at `-56` in
+/// `nilboa_koru_pre_dead_end_crisis`'s older ordering table.
+#[test]
+fn commit_exit_chip_seat_names_the_exit_glide_elapsed() {
+    assert_eq!(commit_exit_elapsed(-64 + 8), Some(16));
+    assert_eq!(commit_exit_elapsed(92 - 129), Some(14));
+    assert_eq!(commit_exit_elapsed(92), None, "the confirm's own chip");
+    assert_eq!(commit_exit_pool_seat(&vec![0u8; 0x20_0000], &[2; 16]), None);
+}
+
 /// `nivora_duel_mid_blazing_slash`'s tween table: yaw `4640` closing on
 /// `4051` by `59` a pass, TR z `4368` on `4915` by `55`, at frame step `2`.
 /// Two passes back the walker stood one table step (`2 * 59`) plus one

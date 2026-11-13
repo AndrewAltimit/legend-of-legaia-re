@@ -436,6 +436,44 @@ pub(super) const BEGIN_TAB_SEATS: ((i32, i32), (i32, i32)) = ((104, 88), (16, 14
 /// seat `(180, 88)` to the tab seat `(16, 14)`.
 pub(super) const RUN_TAB_SEATS: ((i32, i32), (i32, i32)) = ((180, 88), (16, 14));
 
+/// Seat A / seat B columns of the confirm chips' exit twins (records `0x12`
+/// / `0x14`: `x = 92 -> -56` and `180 -> 328` on row `88`), the left chip's
+/// first.
+pub(super) const COMMIT_EXIT_CHIP_SEATS_X: [(i32, i32); 2] = [(92, -56), (180, 328)];
+
+/// Seat A / seat B rows of the tab's exit twin (records `0x3F` / `0x40`:
+/// `(16, 14) -> (16, -24)`).
+pub(super) const COMMIT_EXIT_TAB_SEATS_Y: (i32, i32) = (14, -24);
+
+/// The confirm's exit glide while it is in flight
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::commit_exit`]).
+pub(super) fn commit_exit(
+    world: &legaia_engine_core::world::World,
+) -> Option<&legaia_engine_battle_loop::battle_state::CommitExit> {
+    (world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && world.battle.command.is_none()
+        && !world.battle.battle_entry_sweeping())
+    .then_some(world.battle.commit_exit.as_ref())
+    .flatten()
+    .filter(|x| !x.glide.settled())
+}
+
+/// Where a record leaving from seat A to seat B on `glide` sits relative to
+/// seat A: `FUN_801D9BBC`'s linear step, `(b - a) * elapsed / total`, the
+/// `div` truncating toward zero.
+pub(super) fn exit_offset(glide: &LogLaunch, a: i32, b: i32) -> i32 {
+    if glide.settled() {
+        return b - a;
+    }
+    (b - a) * i32::from(glide.elapsed) / i32::from(glide.total.max(1))
+}
+
+/// Is the confirm's exit up this frame, and is it the flee confirm's
+/// (`Escape` chip, `Run` tab)? `None` outside the exit.
+pub fn battle_commit_exit(world: &legaia_engine_core::world::World) -> Option<bool> {
+    commit_exit(world).map(|x| x.escape)
+}
+
 /// Seat A / seat B rows of the plaque behind the tab (record `0x1A`:
 /// `y = -24` -> `14`).
 pub(super) const TAB_PLAQUE_SEATS_Y: (i32, i32) = (-24, 14);
@@ -479,6 +517,12 @@ pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -
 /// cluster and once the glide has landed.
 pub fn battle_chip_offsets(world: &legaia_engine_core::world::World) -> [(i32, i32); 4] {
     let mut out = [(0, 0); 4];
+    if let Some(x) = commit_exit(world) {
+        for (o, (a, b)) in out.iter_mut().zip(COMMIT_EXIT_CHIP_SEATS_X) {
+            o.0 = exit_offset(&x.glide, a, b);
+        }
+        return out;
+    }
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = RING_ARM_SEATS_X;
         return [(LogLaunch::seat_dy(Some(g), a, b), 0); 4];
@@ -493,6 +537,10 @@ pub fn battle_chip_offsets(world: &legaia_engine_core::world::World) -> [(i32, i
 /// The `Begin` tab's offset from its seat this frame: record 1 walking from
 /// the round prompt's `Begin` seat as the ring opens. `(0, 0)` at rest.
 pub fn battle_begin_tab_offset(world: &legaia_engine_core::world::World) -> (i32, i32) {
+    if let Some(x) = commit_exit(world) {
+        let (a, b) = COMMIT_EXIT_TAB_SEATS_Y;
+        return (0, exit_offset(&x.glide, a, b));
+    }
     if let Some(g) = run_confirm_glide(world) {
         let ((ax, ay), (bx, by)) = RUN_TAB_SEATS;
         return (
@@ -531,6 +579,10 @@ pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> bool {
+    // The exit's records gate the `0xFE` arm; no state arm draws a glyph.
+    if commit_exit(world).is_some() {
+        return false;
+    }
     if ring_open_glide(world)
         .or(run_confirm_glide(world))
         .is_some()

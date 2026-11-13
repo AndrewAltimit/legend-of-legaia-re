@@ -152,6 +152,9 @@ impl BattleState {
         if let Some(c) = self.action_hud_close.as_mut() {
             c.glide.elapsed = c.glide.total;
         }
+        if let Some(x) = self.commit_exit.as_mut() {
+            x.glide.elapsed = x.glide.total;
+        }
         self.widget_glide_return = 0;
         self.widget_glide_latch = 0;
         self.pass_glide_live = false;
@@ -231,6 +234,12 @@ impl BattleState {
             }
         }
         self.widget_glide_return = ret;
+        // The confirm's exit records ride the same pass; the hold they would
+        // gate is the surface hold's, raised beside them, so they stay out of
+        // the return.
+        if let Some(x) = self.commit_exit.as_mut() {
+            x.glide.step(step);
+        }
     }
 
     /// Whether any tracked widget glide is still in flight: a record

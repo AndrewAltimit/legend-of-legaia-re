@@ -42,11 +42,26 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
     ) || battle_begin_tab_alone(world)
 }
 
+/// The lone tab's exit twin lifting off the top edge while the round is
+/// armed (records `0x3F` / `0x40`, [`battle_begin_tab_offset`]): `Some(true)`
+/// for the flee confirm's `Run`, `Some(false)` for `Begin`. Only under the
+/// hold: past the `0xFE` arm its seat is the action plaque's.
+fn commit_exit_tab(world: &legaia_engine_core::world::World) -> Option<bool> {
+    world
+        .battle
+        .round_armed
+        .then(|| battle_commit_exit(world))
+        .flatten()
+}
+
 /// Is the frame the flee confirm `0x32`, where `Run` (record 4) has taken the
 /// tab seat `(16, 14)` over the `Escape` / `Reselect` chips (step 3:
 /// `10/0 13/0 02/0 04/0 06/1 4E/1 4F/1`)?
 pub fn battle_run_tab_alone(world: &legaia_engine_core::world::World) -> bool {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
+    if let Some(escape) = commit_exit_tab(world) {
+        return escape;
+    }
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_command_surface(world) == Some(CommandSurface::Other)
         && world
@@ -60,6 +75,9 @@ pub fn battle_run_tab_alone(world: &legaia_engine_core::world::World) -> bool {
 /// stands at `(16, 14)` with no plaque beside it?
 pub fn battle_begin_tab_alone(world: &legaia_engine_core::world::World) -> bool {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
+    if let Some(escape) = commit_exit_tab(world) {
+        return !escape;
+    }
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_command_surface(world) == Some(CommandSurface::Other)
         && world

@@ -175,6 +175,83 @@ pub(super) fn round_prompt_pool_seat(ram: &[u8], step: u8) -> Option<HudGlideSea
     })
 }
 
+/// The confirm's exit: the left chip's twin (record `0x12`) leaves its seat
+/// `x = 92` for `-56` on row `88`, on the gold plate (style `2`) whose left
+/// cap is drawn eight pixels left of the seat, four rows up.
+const COMMIT_EXIT_START_X: i32 = 92;
+const COMMIT_EXIT_SEAT: [i16; 2] = [-56, 86];
+const COMMIT_EXIT_CAP_Y: i16 = 82;
+const COMMIT_EXIT_CAP_CLUT: u16 = 0x7FCC;
+const COMMIT_EXIT_CAP_UV: (u8, u8) = (208, 64);
+const COMMIT_EXIT_TOTAL: u8 = 16;
+
+/// The `elapsed` (`1..=16`) at which `FUN_801D9BBC` seats the exit's left
+/// chip on `x`; `None` for an `x` no step of the glide produces.
+pub(super) fn commit_exit_elapsed(x: i32) -> Option<u8> {
+    (1..=COMMIT_EXIT_TOTAL).find(|&e| {
+        COMMIT_EXIT_START_X
+            + (i32::from(COMMIT_EXIT_SEAT[0]) - COMMIT_EXIT_START_X) * i32::from(e)
+                / i32::from(COMMIT_EXIT_TOTAL)
+            == x
+    })
+}
+
+/// The confirm's exit slide as the **displayed** frame shows it, read off
+/// the packet pools once the `0xFE` arm has drained it.
+///
+/// The `Begin` confirm's step (`0x24` / `0x29`) glides the chips off both
+/// edges on records the menu SM's gate waits out; the pass after they land
+/// the `0xFE` arm resets the handle list and the glide table
+/// (`FUN_801D99BC` at `0x801D31E8`) and the action SM starts. A capture on
+/// that pass reads an empty table and a running action, while the older
+/// ordering table still holds the chips on their landing pass, at rest.
+/// The displayed frame is the pass before that one, whose `elapsed` is the
+/// sum of every pass's step since the spawn: the last sum under `total`
+/// that the landing pass's step carries past it. `steps` is the capture's
+/// pass history, newest first (the drain pass, the landing pass, ...):
+/// `nilboa_koru_pre_dead_end_crisis` runs step `2` (the screen shows the
+/// chips fourteen vsyncs in), `taiku_topaz_pre_hyper_heal` step `3`
+/// (fifteen). An older table that still shows the chips mid-glide is the
+/// landing pass's predecessor, and the screen one step behind it.
+pub(super) fn commit_exit_pool_seat(ram: &[u8], steps: &[u8; 16]) -> Option<HudGlideSeat> {
+    use psx_ram_image::extract::PSX_RAM_KSEG0;
+    use psx_ram_image::prim_pool::{self, Prim};
+    let oldest = prim_pool::find_ot_arrays(ram, PSX_RAM_KSEG0, 64)
+        .iter()
+        .filter_map(|ot| {
+            let head = ot.head.checked_sub(PSX_RAM_KSEG0)? as usize;
+            prim_pool::chain_walk(ram, PSX_RAM_KSEG0, head)
+                .iter()
+                .find_map(|c| match c.prim {
+                    Prim::Sprt { pos, uv, clut, .. }
+                        if clut == COMMIT_EXIT_CAP_CLUT
+                            && uv == COMMIT_EXIT_CAP_UV
+                            && pos.1 == COMMIT_EXIT_CAP_Y =>
+                    {
+                        commit_exit_elapsed(i32::from(pos.0) + BEGIN_CAP_DX)
+                    }
+                    _ => None,
+                })
+        })
+        .min()?;
+    let shown = if oldest < COMMIT_EXIT_TOTAL {
+        oldest.checked_sub(steps[1].max(1))?
+    } else {
+        let landing = steps[1].max(1);
+        let mut sum = 0u8;
+        steps[2..].iter().find_map(|&s| {
+            sum = sum.saturating_add(s.max(1));
+            (sum < COMMIT_EXIT_TOTAL && sum.saturating_add(landing) >= COMMIT_EXIT_TOTAL)
+                .then_some(sum)
+        })?
+    };
+    (shown < COMMIT_EXIT_TOTAL).then_some(HudGlideSeat {
+        target: COMMIT_EXIT_SEAT,
+        elapsed: shown,
+        total: COMMIT_EXIT_TOTAL,
+    })
+}
+
 /// The yaw counter `ctx[+0x6DA]`.
 const YAW_COUNTER: u32 = 0x6DA;
 /// The rung the action seed's Attack arm stands the counter on

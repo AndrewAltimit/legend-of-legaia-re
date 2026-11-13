@@ -268,3 +268,43 @@ fn seating_a_hud_glide_matches_the_widget_by_its_target_seat() {
         "a seat no engine glide owns is left alone"
     );
 }
+
+/// `Begin` sends the confirm's chips off both edges, the tab up and the log
+/// left on one sixteen-vsync glide (sub-draw step `0x24`: records `0x12` /
+/// `0x14` from `(92, 88)` / `(180, 88)` to `(-56, 88)` / `(328, 88)`, `0x3F`
+/// from `(16, 14)` to `(16, -24)`, `0x2B..` one display width left), and the
+/// `0xFE` arm's handle reset drains them once they land. The left chip keeps
+/// record `0x12`'s gold plate under either command option.
+#[test]
+fn begin_slides_the_confirm_off_the_screen() {
+    use legaia_engine_battle_hud::{
+        battle_begin_tab_alone, battle_begin_tab_offset, battle_chip_dpad_visible,
+        battle_chip_highlight, battle_chip_offsets, battle_commit_exit, battle_commit_log,
+        battle_run_tab_alone,
+    };
+    let mut world = party_world(1);
+    world.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Command;
+    commit_spirit(&mut world, 0);
+    assert!(on_confirm(&world));
+    press(&mut world, PadButton::Cross);
+    assert!(world.battle.command.is_none(), "Begin leaves the screen");
+    assert_eq!(battle_commit_exit(&world), Some(false));
+    let chips = battle_command_chips(&world).expect("the exit draws the chips");
+    assert_eq!(chips.phase, CommandChipPhase::CommitConfirm);
+    assert_eq!(battle_chip_highlight(&world, chips.cursor), Some(0));
+    assert!(!battle_chip_dpad_visible(&world));
+    assert!(battle_begin_tab_alone(&world) && !battle_run_tab_alone(&world));
+    let e = world.battle.commit_exit.unwrap().glide.elapsed;
+    let at = |e: i32| (-148 * e / 16, 148 * e / 16, -38 * e / 16, -320 * e / 16);
+    let (l, r, t, log) = at(i32::from(e));
+    assert_eq!(battle_chip_offsets(&world)[..2], [(l, 0), (r, 0)]);
+    assert_eq!(battle_begin_tab_offset(&world), (0, t));
+    assert_eq!(battle_commit_log(&world)[0].slide_x, log as i16);
+    // Fourteen vsyncs in: `92 - 129`, the displayed frame of
+    // `nilboa_koru_pre_dead_end_crisis`.
+    world.battle.commit_exit.as_mut().unwrap().glide.elapsed = 14;
+    assert_eq!(battle_chip_offsets(&world)[..2], [(-129, 0), (129, 0)]);
+    world.settle_battle_pad_hold();
+    assert!(world.battle.commit_exit.is_none(), "the 0xFE arm drains it");
+    assert!(battle_command_chips(&world).is_none());
+}
