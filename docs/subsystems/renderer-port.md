@@ -384,10 +384,25 @@ keep their own `(max SZ >> 5) + 14` bucket (`FUN_801F89B8`). The stage's `flags.
 carries the curvature scale on the world map, so the draw-order word rides in `flags.z`
 above the occlusion bit, and the near-bucket shift of `320` `SZ` is taken by that scale.
 
+An NPC takes `0x800000` where a seat samples the floor under it: op `4C 51` calls
+`FUN_80019278` on the seated actor (`jal` at `0x801E1938`, on the same `0x20200`
+gate as its height write), and the sampler sets or clears the bit from the new
+tile's cell (`World::seat_floor_sample_sort_bit`). That is how `dolk2` `P2[7]`
+seats King Drake in his throne and draws him there: the seated pose's pelvis
+stands inside the throne's back, and only the ten buckets put him in front of it.
+
 Not modelled: a walking NPC's `0x800000` (the sampler runs only for actors whose
 tick reaches it, which the port does not track per actor), a posed prop's record
-flag `0x800`, and the order inside one bucket (retail's last-linked-first). A
-clean frame keeps per-pixel depth.
+flag `0x800`, and the order inside one bucket (retail's last-linked-first).
+
+A clean frame keeps per-pixel depth with one exception, the near shift. A field
+actor carrying the near-bucket bit - the player on a cell without `0x1000`, an NPC
+a seat or a prologue gave it - tests each vertex's depth ten buckets nearer than it
+stands (`DRAW_ORDER_NEAR_CLEAN`, staged as `flags.w = -16`; the page's `meanDepth`
+word `7`). Those cells are the ones a placed object's mesh floors - a dais, a
+ledge, a bridge - and the actor on them overlaps the mesh around it by design:
+per-pixel depth alone buried King Drake in his throne and Vahn in the cliff behind
+`rikuroa2`'s chest ledge, where retail's link paints both over it.
 
 ### The battle sorts by each primitive's link
 

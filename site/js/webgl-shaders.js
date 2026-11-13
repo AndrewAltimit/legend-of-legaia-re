@@ -487,8 +487,17 @@ vec2 depthAffine(mat4 m) {
  * retail links it by, so one quad's whole area sorts as that mean. Twin of
  * engine-render's prim_mean_depth; -1 where it keeps the per-pixel depth. */
 uniform float u_prim_mean_depth;
-float primMeanW(mat4 m) {
-  if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
+float primMeanW(mat4 m, float vw) {
+  if (u_prim_mean_depth < 0.5) return -1.0;
+  int word = int(u_prim_mean_depth + 0.5) - 1;
+  /* A clean frame keeps per-pixel depth but for DRAW_ORDER_NEAR_CLEAN (bit 2,
+   * engine-render's clean arm of prim_mean_depth): each vertex tests depth ten
+   * buckets nearer, so a seated NPC paints over the furniture it sits in. */
+  if (u_psx.z < 0.5) {
+    if (u_curve > 0.0 || (word & 4) == 0) return -1.0;
+    return vw > 0.0 ? max(vw - 320.0 / 6.0, 1.0) : -1.0;
+  }
+  if (a_prim_c0.w < 2.5) return -1.0;
   float w0 = (m * vec4(a_prim_c0.xyz, 1.0)).w;
   float w1 = (m * vec4(a_prim_c1, 1.0)).w;
   float w2 = (m * vec4(a_prim_c2, 1.0)).w;
@@ -503,7 +512,7 @@ float primMeanW(mat4 m) {
   }
   /* u_prim_mean_depth - 1 is the draw's DRAW_ORDER_* word (engine-render's
    * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer. */
-  int order = int(u_prim_mean_depth + 0.5) - 1;
+  int order = word & 3;
   float w = (order == 1 || order == 3) ? far : sum / n;
   if (order >= 2) w = max(w - 320.0 / (u_curve > 0.0 ? u_curve : 6.0), 1.0);
   return w;
@@ -760,7 +769,7 @@ void main() {
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   /* A ground cell carries its own bucket (above, or the far bucket). */
-  if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model);
+  if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model, gl_Position.w);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   /* Off retail's vantage a bucketed cell is depth-tested as the level floor a
    * few units beyond it (fieldDroppedFloorScale); a plane is affine in 1/w on

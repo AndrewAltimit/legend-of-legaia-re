@@ -490,6 +490,7 @@ impl FieldHostImpl<'_> {
                     .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
                     as u16;
             }
+            self.world.seat_floor_sample_sort_bit(ctx, world_x, world_z);
             self.world
                 .play_object_prop_clip(record, move_id, ctx.local_flags, ctx.field_6a);
             return;
@@ -571,6 +572,7 @@ impl FieldHostImpl<'_> {
             self.world.script_npc_move(slot, move_id);
             self.bind_run_clip(ctx, slot, move_id);
             self.world.seat_npc_floor_resample(slot, ctx.flags);
+            self.world.seat_floor_sample_sort_bit(ctx, world_x, world_z);
             return;
         }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0).
@@ -671,6 +673,7 @@ impl FieldHostImpl<'_> {
                 self.world.script_npc_move(slot, move_id);
                 self.bind_run_clip(ctx, slot, move_id);
                 self.world.seat_npc_floor_resample(slot, ctx.flags);
+                self.world.seat_floor_sample_sort_bit(ctx, world_x, world_z);
             }
         }
     }
@@ -716,6 +719,57 @@ impl World {
     pub(crate) fn seat_npc_floor_resample(&mut self, slot: u8, ctx_flags: u32) {
         if ctx_flags & 0x2000_0000 == 0 {
             self.npcs.glide_y.remove(&slot);
+        }
+    }
+    /// The draw-order half of the seat's floor re-sample. The seat calls the
+    /// floor sampler `FUN_80019278` on the actor (`jal` at `0x801E1938`) on
+    /// the same gate as the height write - `+0x10` carrying a `0x20200` bit
+    /// and not `0x20000000` (`0x801E1904..0x801E1934`; the scene's
+    /// overworld byte `_DAT_8007B6A8` opens it too, and no field scene sets
+    /// it) - and the sampler rewrites the actor's near-bucket bit `0x800000`
+    /// before it reads any height (`0x800192F8..0x80019350`). The actor
+    /// draw links an actor carrying the bit ten ordering-table buckets
+    /// nearer ([`World::near_bucket_npcs`]).
+    ///
+    /// That is how a seated actor paints over the furniture it sits in:
+    /// `dolk2` `P2[7]` seats King Drake on his throne with
+    /// `CC 46 51 49 78 00 0C`, the throne tile `(73, 120)` lacks `0x1000`,
+    /// and the seated pose's pelvis stands inside the throne's back, so
+    /// without the bit the back buried him for the whole audience.
+    ///
+    /// REF: FUN_801DE840 (0x801E1904..0x801E1940), FUN_80019278
+    pub(crate) fn seat_floor_sample_sort_bit(
+        &self,
+        ctx: &mut legaia_engine_vm::field::FieldCtx,
+        world_x: u16,
+        world_z: u16,
+    ) {
+        if ctx.flags & 0x2000_0000 != 0 || ctx.flags & 0x0002_0200 == 0 {
+            return;
+        }
+        ctx.flags = self.floor_sampler_sort_flags(
+            ctx.flags,
+            i32::from(world_x as i16),
+            i32::from(world_z as i16),
+        );
+    }
+
+    /// `FUN_80019278`'s rewrite of the sampled actor's `+0x10`
+    /// (`0x800192F8..0x80019350`): a negative word takes the near-bucket bit
+    /// `0x800000` outright; otherwise the bit is cleared and set again when
+    /// the object-grid cell under `(x, z)` lacks `0x1000` (the `0x1800 ==
+    /// 0x800` re-test after it implies the same).
+    // PORT: FUN_80019278 (the +0x10 near-bucket rewrite, 0x800192F8..0x80019350)
+    pub(crate) fn floor_sampler_sort_flags(&self, flags: u32, x: i32, z: i32) -> u32 {
+        const NEAR: u32 = 0x0080_0000;
+        if flags & 0x8000_0000 != 0 {
+            return flags | NEAR;
+        }
+        let flags = flags & !NEAR;
+        if self.player_near_buckets(x, z) {
+            flags | NEAR
+        } else {
+            flags
         }
     }
 }
@@ -779,5 +833,43 @@ mod seat_and_cursor_tests {
         };
         field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut held, &op, 0);
         assert_eq!(w.npcs.glide_y.get(&34), Some(&-480));
+    }
+
+    /// The seat's floor sampler (`jal 0x80019278` at `0x801E1938`) rewrites
+    /// the actor's near-bucket bit `0x800000` from the object-grid cell under
+    /// the new tile: set where the cell lacks `0x1000`, cleared where it
+    /// carries it, always set on a negative word, untouched under a held
+    /// height (`0x20000000`) or without a `0x20200` bit. `dolk2` `P2[7]`'s
+    /// `CC 46 51 49 78 00 0C` seats King Drake on the throne's tile this way.
+    #[test]
+    fn a_seat_rewrites_the_near_bucket_bit_from_the_cell() {
+        const NEAR: u32 = 0x0080_0000;
+        let op = [0x4C, 0x51, 0x49, 0x78, 0x00, 0x0C];
+        let seat = |cell: u16, flags: u32| {
+            let mut w = World::new();
+            w.terrain.object_cells = vec![0x1000; 0x4000];
+            w.terrain.object_cells[0x78 * 128 + 0x49] = cell;
+            w.npcs.positions.insert(41, (6336, 4544));
+            w.field_vm.in_spawned_record_slice = true;
+            w.field_vm.executing_channel = Some(41);
+            let mut ctx = FieldCtx {
+                flags,
+                ..FieldCtx::default()
+            };
+            let r = field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut ctx, &op, 0);
+            assert!(matches!(r, StepResult::Advance { .. }));
+            assert_eq!(w.npcs.positions.get(&41), Some(&(9408, 15424)));
+            ctx.flags
+        };
+        // The throne's tile: an object-mesh floor, no `0x1000`.
+        assert_eq!(seat(0x0004, 0x0802_0882) & NEAR, NEAR);
+        // A ground cell clears a bit an earlier sample left.
+        assert_eq!(seat(0x1004, 0x0802_0882 | NEAR) & NEAR, 0);
+        // A negative word keeps it whatever the cell.
+        assert_eq!(seat(0x1004, 0x8802_0882) & NEAR, NEAR);
+        // No sampler call: a held height, or no `0x20200` bit.
+        assert_eq!(seat(0x0004, 0x2802_0882) & NEAR, 0);
+        assert_eq!(seat(0x0004, 0x0800_0882) & NEAR, 0);
+        assert_eq!(seat(0x1004, 0x0800_0882 | NEAR) & NEAR, NEAR);
     }
 }

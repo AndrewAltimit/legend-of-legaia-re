@@ -828,17 +828,32 @@
      * link"). PSX mode only; the engine's words, as the native window's
      * `set_draw_order` marks. */
     _stageFieldPrimOrder(rt, draws) {
-      if (!this.psxRender || typeof rt.play_field_prim_order !== 'function'
+      if (typeof rt.play_field_prim_order !== 'function'
           || !rt.play_field_prim_order()) return;
+      /* A clean frame keeps per-pixel depth, but an actor carrying the
+       * near-bucket bit (an NPC, or the player on a cell without object-grid
+       * bit 0x1000) still tests depth ten buckets nearer per vertex
+       * (DRAW_ORDER_NEAR_CLEAN, word 4): it paints over the placed object
+       * it stands on or sits in, as the native window draws it. */
+      if (!this.psxRender) {
+        if (typeof rt.play_npc_near_slots !== 'function') return;
+        const near = rt.play_npc_near_slots();
+        const playerNear = rt.play_player_near_buckets() ? 1 + 6 : 0;
+        for (const d of draws) {
+          if (d.npcSlot !== undefined) d.meanDepth = near.includes(d.npcSlot) ? 1 + 6 : 0;
+          else if (d.effectPlayer) d.meanDepth = playerNear;
+        }
+        return;
+      }
       const terrain = rt.field_terrain_draw_order();
       const placed = rt.field_placement_draw_order();
       const npcs = rt.play_npc_near_slots();
-      const playerNear = rt.play_player_near_buckets() ? 2 : 0;
+      const playerNear = rt.play_player_near_buckets() ? 6 : 0;
       for (const d of draws) {
         let order = 0;
         if (d.placeIdx !== undefined) order = placed[d.placeIdx] | 0;
         else if (d.terrainIdx !== undefined) order = terrain[d.terrainIdx] | 0;
-        else if (d.npcSlot !== undefined) order = npcs.includes(d.npcSlot) ? 2 : 0;
+        else if (d.npcSlot !== undefined) order = npcs.includes(d.npcSlot) ? 6 : 0;
         else if (d.effectPlayer) order = playerNear;
         else if (d.fxFarCorner) order = 1;
         d.meanDepth = 1 + order;
