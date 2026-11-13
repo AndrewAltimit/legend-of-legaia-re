@@ -59,10 +59,18 @@ impl World {
         // The frame's own work: what it links, when the host prices its
         // draw (`WorldToggles::battle_poly_frame_cost`), else the state's
         // measured base plus the draw load the world counts.
+        // A summon module's arms keep their table: their clips' polls and
+        // the engine's linked count part from retail's frames there (the
+        // Seru films read lower priced, `.9146` to `.889` on a partial set).
+        let summon_arm = arm_step.is_some()
+            && (state
+                == legaia_engine_battle_vm::battle_action::ActionState::SummonSustain.as_byte()
+                || state
+                    == legaia_engine_battle_vm::battle_action::ActionState::SummonReturn.as_byte());
         let poly = self
             .battle
             .drawn_polys
-            .filter(|_| self.toggles.battle_poly_frame_cost);
+            .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
         let work = match poly {
             Some(p) => polygon_frame_work(p),
             None => measured_frame_cost_at(self.party.party_count, state, passes)
