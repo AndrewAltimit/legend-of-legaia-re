@@ -7457,6 +7457,24 @@ expected_active_scene = "nilboa"
 topics = ["battle", "enemy attack", "nilboa", "harvest"]
 
 [[scenarios]]
+label = "battle_noaru_songi_genocidal_cannon_mid_cast"
+backup_fingerprint = "71b4c6af3e1f9b51677fc1359b2ba92af368f7b87a1aec86b66ae0e50c945ef1"
+description = "noaru battle, formation [179]: Songi's third form (seat 3, monster id 179) mid-cast Genocidal Cannon (spell 0xB3, module PROT 0963): category 2, action state 0x70, 40 vsyncs into the module band. RETAIL disc: noaru_field_card_walk played forward by autorun_battle_harvest.lua --turbo, formation row picked by LEGAIA_WANT=179 (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), Songi's HP cut to a third of its maximum at every round prompt (LEGAIA_WOUND=1, LEGAIA_WOUND_EVERY=1) so the AI's half-HP arm of the cannon is open, the party on Spirit; no write to the action queue. Saved at vsync 9070."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Songi", "Genocidal Cannon", "noaru", "harvest"]
+
+[[scenarios]]
+label = "noaru_songi_pre_genocidal_cannon"
+backup_fingerprint = "7002614379526cc4ab5b117984227fa056b1378a2204f3cd902b7ecc159a5fb1"
+description = "noaru battle: Songi's third form (monster id 179) is about to cast Genocidal Cannon (spell 0xB3, module PROT 0963) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: noaru_field_card_walk played forward by autorun_battle_harvest.lua --turbo, formation row picked by LEGAIA_WANT=179 (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), Songi's HP cut to a third of its maximum at every round prompt (LEGAIA_WOUND=1, LEGAIA_WOUND_EVERY=1) so the AI's half-HP arm of the cannon is open, the party on Spirit; no write to the action queue. Saved at vsync 9031."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Songi", "Genocidal Cannon", "noaru", "harvest", "pre-cast"]
+
+[[scenarios]]
 label = "battle_noaru_songi_strike"
 backup_fingerprint = "5bc174d4d66c19a5b780e415a2ebb7500d0b7072f9028ce4bebc8aa997b896b2"
 description = "noaru battle, formation [179]: monster id 179 mid physical attack: category 3, action state 0x1E. RETAIL disc: noaru_field_card_walk played forward (saved 7480 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
