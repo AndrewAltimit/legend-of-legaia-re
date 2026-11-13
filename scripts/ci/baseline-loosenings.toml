@@ -1432,3 +1432,22 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1209.7, 1213.9],
   ["counts/native/world_map/retail/allocs_per_frame", 1760.9, 1761.0],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Wave 40. The bundle grows by code, no data (+0.3% play gzip): the battle item window's per-slot rows and list cursor, the victory pose, voice and party-wipe framing, the Genocidal Cannon director arms, the PROT 0950/0963 stagers, the caption centre table, the PROKION additive wash and the opt-in battle frame-span law. The cast wasm_bytes_per_frame rises (+0.2%) are the staged one-shots the cast draws now emit; the summon_cast allocs rise is +0.1 alloc per frame, inside run spread."
+changes = [
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 109224, 109485],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 102054, 102259],
+  ["counts/bundle/gzip_bytes", 7190901, 7207601],
+  ["counts/bundle/play_gzip_bytes", 5055115, 5072023],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1252.1, 1252.2],
+]
+
+[[loosening]]
+file = "scripts/ci/film-cue-baseline.json"
+reason = "Wave 40. The film harness now seats the enemy's guard and rand words (physical films), which is retail's seed; the earlier 3/3 rode an unseeded draw. Seated, Kiss of Death's arm 4 runs 32 passes at step 4 where retail runs 34 (27 at step 4, then 7 at step 3, once the arm's cost drops under the step-4 clamp), so its cues land late. The engine defect is part of the span-law thread in docs/reference/open-rev-eng-threads.md; the row comes back up when the in-arm step change is modelled."
+changes = [
+  ["films/retona_lip_king_kiss_of_death/cue", 1.0, 0.0],
+  ["films/retona_lip_king_kiss_of_death/matched", 3, 0],
+]

@@ -334,6 +334,12 @@
     "battle_jou_freed_v3_water_crystals_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_jou_gala_finisher_hold_retail": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gala_finisher_results_retail": {
+      "battle_track": 1.0
+    },
     "battle_jou_gimard_v3_strike": {
       "battle_track": 1.0
     },
@@ -394,6 +400,9 @@
     "battle_jou_nighto_v3_strike": {
       "battle_track": 1.0
     },
+    "battle_jou_noa_finisher_hold_retail": {
+      "battle_track": 1.0
+    },
     "battle_jou_nova_v3_scythe_wind_mid_cast": {
       "battle_track": 1.0
     },
@@ -428,6 +437,12 @@
       "battle_track": 1.0
     },
     "battle_jou_party_vahn_tri_somersault_super_open": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_wipe_hold_retail": {
+      "battle_track": 1.0
+    },
+    "battle_jou_party_wipe_results_retail": {
       "battle_track": 1.0
     },
     "battle_jou_puera_v3_death_game_mid_cast": {
@@ -685,6 +700,9 @@
     "battle_melee_hit_spark": {
       "battle_track": 1.0
     },
+    "battle_menu_rugi_barra_retail": {
+      "battle_track": 1.0
+    },
     "battle_nilboa_aluru_v2_aluru_cannon_mid_cast": {
       "battle_track": 1.0
     },
@@ -770,6 +788,9 @@
       "battle_track": 1.0
     },
     "battle_noaru_songi_chaos_flare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_songi_genocidal_cannon_mid_cast": {
       "battle_track": 1.0
     },
     "battle_noaru_songi_strike": {
@@ -991,6 +1012,12 @@
     "battle_taiku_zora_strike": {
       "battle_track": 1.0
     },
+    "battle_target_cursor_rugi_barra_retail": {
+      "battle_track": 1.0
+    },
+    "battle_target_cursor_rugi_slippery_retail": {
+      "battle_track": 1.0
+    },
     "battle_teien_berserker_spore_gas_mid_cast": {
       "battle_track": 1.0
     },
@@ -1113,6 +1140,18 @@
       "track": 1.0
     },
     "bylon_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "bylon_mist_gala_goes_ahead": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "bylon_mist_noa_vahn": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1340,6 +1379,18 @@
       "battle_track": 1.0
     },
     "garmel_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "garmel_zeto_appears_rising": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "garmel_zeto_appears_taunt": {
+      "ambient": 1.0,
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -1591,6 +1642,12 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "map01_tree_revival_cutscene": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
     "map02_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -1657,6 +1714,18 @@
     "nilboa2_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nilboa_delilas_family_after_pose": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "nilboa_delilas_family_pose": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 0.0,
       "tempo": 1.0,
       "track": 1.0
     },
@@ -1743,6 +1812,9 @@
       "battle_track": 1.0
     },
     "noaru_slippery_v2_pre_poisonous_breath": {
+      "battle_track": 1.0
+    },
+    "noaru_songi_pre_genocidal_cannon": {
       "battle_track": 1.0
     },
     "nova_summon_mid_cast": {
@@ -2171,6 +2243,12 @@
       "playing": 1.0,
       "track": 1.0
     },
+    "vell_dead_genesis_tree": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "vell_fog_field": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -2184,6 +2262,36 @@
       "battle_track": 1.0
     },
     "vozz_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_genesis_tree_gala_at_tree": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_genesis_tree_songi": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_ozma_hatching_crawl": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_ozma_hatching_hover": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vozz_tree_revival_return": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,

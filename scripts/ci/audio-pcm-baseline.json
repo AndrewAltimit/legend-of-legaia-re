@@ -12,13 +12,29 @@
       "cast_corr": 0.995,
       "cast_level": 0.0032
     },
+    "door_warp_town01_to_map01": {
+      "track_corr": 0.9992,
+      "track_level": 0.0043
+    },
+    "ending_vignette_biron": {
+      "track_corr": 0.9995,
+      "track_level": 0.0059
+    },
     "ending_vignette_fullscreen": {
       "track_corr": 0.9997,
       "track_level": 0.0057
     },
     "gilium_summon_mid_cast": {
-      "cast_corr": 0.9913,
-      "cast_level": 0.0234
+      "cast_corr": 0.9908,
+      "cast_level": 0.0316
+    },
+    "karisto_overworld_resident": {
+      "track_corr": 0.9981,
+      "track_level": 0.0038
+    },
+    "keikoku_chest_open": {
+      "track_corr": 0.9987,
+      "track_level": 0.0027
     },
     "keikoku_chest_pre": {
       "core_corr": 1.0,
@@ -31,6 +47,10 @@
       "core_level": -0.0011,
       "track_corr": 0.9989,
       "track_level": 0.005
+    },
+    "menu_status_field": {
+      "track_corr": 0.9991,
+      "track_level": 0.0038
     },
     "menu_status_town": {
       "track_corr": 0.999,
@@ -48,47 +68,67 @@
       "track_corr": 0.9984,
       "track_level": 0.0049
     },
+    "name_input_ui": {
+      "track_corr": 0.9992,
+      "track_level": 0.0039
+    },
     "new_game_cutscene_intro_a": {
       "track_corr": 0.9996,
       "track_level": -0.0008
     },
     "nighto_summon_mid_cast": {
-      "cast_corr": 0.9825,
-      "cast_level": -0.0769
+      "cast_corr": 0.9818,
+      "cast_level": -0.0449
+    },
+    "noa_levelup_field_post": {
+      "track_corr": 0.9994,
+      "track_level": 0.0036
     },
     "noa_levelup_field_pre": {
       "track_corr": 0.999,
       "track_level": 0.0033
     },
     "orb_summon_mid_cast": {
-      "cast_corr": 0.9932,
-      "cast_level": -0.0071
+      "cast_corr": 0.9946,
+      "cast_level": -0.0059
     },
     "party_battle_gobu_gobu": {
       "track_corr": 0.9997,
       "track_level": 0.0013
     },
+    "rimelm_npc_press_tetsu": {
+      "emitter_corr": 0.9972,
+      "emitter_level": 0.007,
+      "track_corr": 0.8309,
+      "track_level": 1.5872
+    },
+    "rimelm_wall_press_down": {
+      "emitter_corr": 0.9976,
+      "emitter_level": 0.0062,
+      "track_corr": 0.9289,
+      "track_level": 0.5705
+    },
     "rimelm_wall_press_left": {
-      "emitter_corr": 0.9856,
-      "emitter_level": 0.005,
-      "track_corr": 0.9248,
-      "track_level": 0.494
+      "emitter_corr": 0.9971,
+      "emitter_level": 0.006,
+      "track_corr": 0.936,
+      "track_level": 0.493
     },
     "sebucus_overworld_resident": {
       "track_corr": 0.999,
       "track_level": 0.0037
     },
     "swordie_summon_mid_cast": {
-      "cast_corr": 0.9897,
-      "cast_level": 0.0411
+      "cast_corr": 0.9901,
+      "cast_level": 0.034
     },
     "terra_party_battle": {
       "track_corr": 0.9992,
       "track_level": 0.0004
     },
     "theeder_summon_mid_cast": {
-      "cast_corr": 0.7116,
-      "cast_level": 0.4045
+      "cast_corr": 0.7124,
+      "cast_level": 0.3845
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
@@ -96,9 +136,25 @@
       "track_corr": 0.9984,
       "track_level": 0.0114
     },
+    "v0_1_battle_command_menu": {
+      "track_corr": 0.9997,
+      "track_level": -0.0003
+    },
+    "v0_1_post_battle_tetsu_town": {
+      "emitter_corr": 0.9983,
+      "emitter_level": 0.0026,
+      "track_corr": 0.7771,
+      "track_level": 1.7343
+    },
+    "v0_1_pre_battle_tetsu": {
+      "emitter_corr": 0.9979,
+      "emitter_level": 0.0053,
+      "track_corr": 0.9822,
+      "track_level": 0.1742
+    },
     "zenoir_summon_mid_cast": {
-      "cast_corr": 0.8549,
-      "cast_level": 0.0623
+      "cast_corr": 0.854,
+      "cast_level": 0.0619
     },
     "zeto_big_wave_mid_cast": {
       "cast_corr": 0.986,
