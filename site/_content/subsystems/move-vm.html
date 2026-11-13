@@ -37,7 +37,7 @@
 <section class="doc-section" id="signature">
   <h2>How a frame runs</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two sources seat a move record into an actor's move buffer: the summon and cast stagers, and the per-scene prescript table. Each frame the actor tick runs the move VM, which reads the u16 opcode at the PC, dispatches it and adds its size, looping until HALT, a wait, or an opcode of 0x47 or more ends it. Three opcodes escape to other code: 0x2F to the field overlay's 61 sub-ops, 0x17 to the battle overlay, and 0x20 to the slot-B module hook.">
+    <svg viewBox="0 0 860 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two sources seat a move record into an actor's move buffer: the summon and cast stagers, and the per-scene prescript table. Each frame the actor tick runs the move VM, which reads the u16 opcode at the PC, dispatches it and adds its size, looping until HALT or a wait ends it; an opcode of 0x47 or more is stepped over by the previous instruction's width. Three opcodes escape to other code: 0x2F to the field overlay's 61 sub-ops, 0x17 to the battle overlay, and 0x20 to the slot-B module hook.">
       <defs><marker id="mvm-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect x="20" y="86" width="220" height="52" rx="4" class="dg-node"/>
       <text x="130" y="108" class="dg-label">summon / cast stagers</text><text x="130" y="126" class="dg-sub">part actors from overlays</text>
@@ -61,7 +61,7 @@
       <rect x="600" y="86" width="240" height="52" rx="4" class="dg-node-warn"/>
       <text x="720" y="108" class="dg-label">0x09 WAIT_SET</text><text x="720" y="126" class="dg-sub">tick drains +0x54, then resume</text>
       <rect x="600" y="152" width="240" height="52" rx="4" class="dg-node-warn"/>
-      <text x="720" y="174" class="dg-label">op &gt;= 0x47</text><text x="720" y="192" class="dg-sub">end of buffer, not an error</text>
+      <text x="720" y="174" class="dg-label">op &gt;= 0x47</text><text x="720" y="192" class="dg-sub">skipped, loop goes on</text>
       <rect x="600" y="230" width="240" height="110" rx="4" class="dg-group"/>
       <text x="720" y="252" class="dg-label">escapes</text>
       <text x="720" y="274" class="dg-sub">0x2F: field overlay, 61 sub-ops</text>
@@ -79,7 +79,8 @@
     <p>Operands, sizes and the PC all count in <strong>16-bit units</strong>. The other Legaia VMs use byte streams, so a disassembler that assumes bytes here decodes garbage from the second instruction on. Handlers that look like no-ops in decompiled C still advance the PC - the increment hides in a branch-delay slot.</p>
   </div>
   <p>Every record starts <code>[i16 model_sel][u16 reserved]</code> before its bytecode: <code>&minus;1</code> makes a transform node, <code>0x4000</code> / <code>0x4001</code> a render-mode node, <code>&ge; 0</code> a library mesh. Bytecode ends at op <code>0x08</code>.</p>
-  <p><strong>A part seated mid-walk.</strong> The per-frame list walk reads each node's <code>next</code> before it runs the node, and a new part is linked at the list's tail. So a part one part seats from inside its own tick runs on the same frame only when something already stood behind the seating part: an emitter that is the newest node seats parts that wait a frame, one with older parts behind it seats parts that move on the frame they appear. Barra's cloud stream is the second kind; the port models the rule on both hosts.</p>
+  <p><strong>An opcode past the table.</strong> A word of <code>0x47</code> or more (read signed, so <code>0x8000</code> and up too) does not end the frame. It branches to the dispatcher's epilogue, which adds the width the previous instruction left in its size register and loops on while the flag stands, so the stray word is stepped over by that width, the same way <code>0x0B</code> is. Ahead of a pass's first instruction the width is whatever the caller left. The port's <code>move_vm::FrameStep</code> carries the width across the frame, and the <a href="../tooling/retail-kernel-differential.html">retail-kernel differential</a> holds it to retail.</p>
+  <p><strong>A part seated mid-walk.</strong> The per-frame list walk reads each node's <code>next</code> before it runs the node, and a new part is linked at the list's tail. So a part one part seats from inside its own tick runs on the same frame only when something already stood behind the seating part: an emitter that is the newest node seats parts that wait a frame, one with older parts behind it seats parts that move on the frame they appear. Barra's cloud stream is the second kind. A part seated from a seater's own first run lands behind the nodes still to be walked as well: a new node runs its program once as it is seated, so an op <code>0x20</code> call it opens with seats parts the same walk reaches. Viguro's ring emitter (PROT 0909) calls its stager before its first wait, and retail's first ring shows one radius step on the frame it opens; an emitter that opens on <code>WAIT 0</code> seats from the walk instead. The port models the rule on both hosts.</p>
 </section>
 
 <section class="doc-section" id="opcode-table">
@@ -103,6 +104,7 @@
   </table>
   </div>
   <p>Per-opcode stores and sizes are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm.md" target="_blank" rel="noopener"><code>docs/subsystems/move-vm.md</code></a>; the format of a move record is on <a href="../formats/mdt.html">MDT</a>.</p>
+  <p><strong>Rates land a pass late.</strong> Ops <code>0x22</code> / <code>0x30</code> capture a VRAM rect for the CLUT-cell cycler, and the cycler's integrate runs in the actor tick <em>ahead</em> of the VM call. A rate an op stores therefore takes effect on the next pass: a program of <code>+32</code> / <code>-32</code> rate stores turns at the top and bottom of its triangle one pass after the op. The port integrates battle parts' cyclers in the same order.</p>
   <p><strong>Reading a program.</strong> <code>asset move-disasm</code> lists a move program without running it: every instruction's width, mnemonic, operands and the actor fields it stores, the <code>0x2F</code> sub-ops included, for one record, every record of a cast / summon module (<code>slot-b</code>) or a scene's prescript table. Loops and the ten conditional branches are reported, not followed. The widths come from the disassembly, and the engine's tests hold its executing VM to the same widths opcode by opcode.</p>
   <details class="disclosure">
     <summary>The loop pair, the child spawn and the render-mode-4 emitters</summary>
@@ -149,6 +151,10 @@
       <tr><td>letterbox</td><td><code>FUN_801F8A34</code></td><td>Two black bands plus two gradient feather strips</td></tr>
     </tbody>
   </table>
+  <ul class="bullets">
+    <li><strong>Sprite script waits.</strong> The handler tests a record's <code>0x40</code> wait byte once, on entry. A wait that passes loops back to dispatch the next record's sub-op without testing its first byte again, so a passed wait followed by a zero byte runs sub-op <code>0</code> and kills the widget.</li>
+    <li><strong>Panel tweens draw from their targets.</strong> There is no latch for a zero duration: a move with <code>dur = 0</code> shows at once, while the current values stay where the last tween left them, so the next tween starts from there.</li>
+  </ul>
   <p>On the disc only the ten ending-sequence (<code>ed*</code>) scenes invoke the family, through field-VM op <code>0x43</code> sub-ops <code>0x10..0x15</code>. The mask widget was once read as a summon-part renderer; a live capture of a Gimard cast showed the summon draws as an ordinary battle actor through the rigid-keyframe pipeline (<a href="battle-action.html#summon-overlay">battle action</a>).</p>
 </section>
 

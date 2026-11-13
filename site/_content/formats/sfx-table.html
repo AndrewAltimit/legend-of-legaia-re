@@ -38,7 +38,7 @@
       <tr><td><code>+5..7</code></td><td>Zero across the table; no reader</td></tr>
     </tbody>
   </table>
-  <p>Row <code>0x64</code> onward is unrelated rodata (a dev-path string), so the readers' <code>&lt; 0x200</code> gate is a bound, not the table size.</p>
+  <p>Row <code>0x64</code> onward is unrelated rodata (a dev-path string), so the readers' <code>&lt; 0x200</code> gate is a bound, not the table size. The drainer still indexes the table for every id below <code>0x200</code>, so an id past row <code>0x63</code> keys whatever the bytes after the table read, and about half of those rows carry a voice count. No shipped producer is known to push such an id; the port keys nothing for one.</p>
   <figure class="diagram">
     <svg viewBox="0 0 900 110" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cue id resolves through its descriptor's category byte to a mixer record, then to a VAB slot, then to a PROT entry">
       <defs><marker id="sfx-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
@@ -116,6 +116,10 @@
       <tr><td>Sustained (<code>n &amp; 0x20</code>)</td><td><code>7 .. 7 + count - 1</code>, ascending</td><td>The previous run is released first; the mixer record latches for the held run</td></tr>
     </tbody>
   </table>
+  <ul class="bullets">
+    <li><strong>A one-shot keeps only a voice's last pass.</strong> The stop before each reprogram raises the voice's key-off bit and clears its pending key-on, and nothing reaches the chip until the flush. So a voice the wrapping cursor visits twice in one cue keeps only its last pass: that pass's tone, or nothing but the stop when the tone does not resolve. Under the field's limit of 1 a four-voice row lands on voices 23 and 22 twice each, and a <code>jouina</code> row whose tone runs past its program's tones from the third voice on keys nothing at all in retail. The port resolves every pass first and keys afterwards (<code>SfxBank::play_entry</code>).</li>
+    <li><strong>A zero-voice sustained cue.</strong> The held-count write sits inside the key-on loop, so a sustained cue with no voices releases the old run but leaves the held count unchanged; <code>SfxBank::play_descriptor</code> does the same for a runtime row.</li>
+  </ul>
   <p>The mixer record's enable byte (<code>+0xB</code>) skips a cue before any voice work; while a global override is set every cue is forced onto channel 6.</p>
 </section>
 
