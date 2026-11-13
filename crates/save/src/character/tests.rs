@@ -415,3 +415,17 @@ fn auto_command_band_follows_the_gauge_compare() {
         AutoCommandBand::Secondary
     );
 }
+
+#[test]
+fn displayed_skills_dedup_keeps_first_positions() {
+    let mut list = DisplayedSkillList {
+        count: 5,
+        ..Default::default()
+    };
+    list.ids[..6].copy_from_slice(&[3, 3, 9, 3, 13, 0x55]);
+    assert!(list.dedup());
+    assert_eq!(list.count, 3);
+    // The freed slots inside the old count zero; past it stays verbatim.
+    assert_eq!(&list.ids[..6], &[3, 9, 13, 0, 0, 0x55]);
+    assert!(!list.dedup(), "a clean list is left alone");
+}

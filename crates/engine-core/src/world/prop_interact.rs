@@ -1517,6 +1517,29 @@ impl World {
                         map.entry((2, arg)).or_insert_with(|| name.into_bytes());
                     }
                 }
+                // `0xC3 xx` - a spell name off the static spell-name table
+                // `0x800754D0 + id * 0xC`.
+                0xC3 => {
+                    let name = self
+                        .menu
+                        .text
+                        .as_ref()
+                        .and_then(|t| t.spell_name(arg))
+                        .map(str::to_string);
+                    if let Some(name) = name {
+                        map.entry((3, arg)).or_insert_with(|| name.into_bytes());
+                    }
+                }
+                // `0xC5 xx` - an arts name: the arts-name table row for
+                // `[xx / 0x40, xx % 0x40]` (character, art). Drake Castle's
+                // "so you already know the ..." line splices it; with no arm
+                // here the name printed empty (issue #603).
+                // REF: FUN_80036044 (the `0xC5` arm, `0x80036308..0x80036384`)
+                0xC5 => {
+                    if let Some(name) = self.arts_name_token(arg) {
+                        map.entry((5, arg)).or_insert(name);
+                    }
+                }
                 // `0xC7 xx` - an inline 8-byte SCUS name (the Ra-Seru
                 // names), `FUN_80036044`'s `0x80073F24 + xx * 8`.
                 0xC7 => {
@@ -1965,6 +1988,53 @@ mod tests {
             .dialog_substitutions(&[0x1F, 0xC1, 0x63, 0x00])
             .expect("a name escape");
         assert_eq!(subs.get(&(1, 0x63)), Some(&b"Noa".to_vec()));
+    }
+
+    /// A synthetic arts-name table row (not disc text).
+    fn art_row(
+        character: legaia_art::Character,
+        index: u8,
+        name: &[u8],
+    ) -> legaia_art::arts_table::ArtTableEntry {
+        legaia_art::arts_table::ArtTableEntry {
+            character,
+            index,
+            name: String::from_utf8_lossy(name).into_owned(),
+            ap: 24,
+            commands: Vec::new(),
+            is_miracle: false,
+            name_bytes: name.to_vec(),
+            glyphs: Vec::new(),
+        }
+    }
+
+    /// Issue #603: the `0xC5` arts-name token splits its operand into
+    /// `[operand / 0x40, operand % 0x40]` - `0x49` is the second character's
+    /// art `9` - and splices that row's name. With no arm the line read
+    /// "so you already know the ." on the Drake Castle book.
+    #[test]
+    fn the_arts_name_escape_names_the_characters_art() {
+        use legaia_art::Character;
+        let mut w = World::new();
+        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+            arts: Some(vec![
+                art_row(Character::Vahn, 9, b"Wrong Row"),
+                art_row(Character::Noa, 9, b"Test Dive"),
+                art_row(Character::Gala, 0x0E, b"Test Knee"),
+            ]),
+            ..Default::default()
+        });
+        let record = [
+            0x1F, b'a', 0xCF, 0x06, 0xC5, 0x49, 0xCF, 0x07, 0xC5, 0x8E, 0x00,
+        ];
+        let subs = w.dialog_substitutions(&record).expect("arts escapes");
+        assert_eq!(subs.get(&(5, 0x49)), Some(&b"Test Dive".to_vec()));
+        assert_eq!(subs.get(&(5, 0x8E)), Some(&b"Test Knee".to_vec()));
+        // The page-text path resolves through the same map.
+        assert_eq!(
+            w.narration_page_text(&[b'x', 0xC5, 0x09, 0x00]),
+            "xWrong Row\u{0}"
+        );
     }
 
     #[test]

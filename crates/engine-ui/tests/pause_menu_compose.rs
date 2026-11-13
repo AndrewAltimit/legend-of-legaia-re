@@ -28,8 +28,8 @@ use legaia_engine_ui::menu::window_dispatch as dispatch;
 use legaia_engine_ui::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, MENU_WINDOW_FALLBACK, MagicScreenView,
     MenuRects, OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
-    StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
-    spell_level_notice_draws, stage_transform,
+    StatusScreenView, TopLevelView, art_learned_notice_draws, equip_screen_compose,
+    menu_notice_chrome, pause_screen_draws, spell_level_notice_draws, stage_transform,
 };
 use legaia_engine_ui::{
     ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, EquipDrawPhase, FieldMenuPartyView,
@@ -72,7 +72,7 @@ fn synthetic_table() -> MenuWindowTable {
             d.h = h as i16;
         }
     }
-    let renderers: [(usize, u32); 10] = [
+    let renderers: [(usize, u32); 11] = [
         // ...and window 25, the active character's stat compare.
         (
             legaia_engine_ui::pause_menu::WIN_EQUIP_COMPARE,
@@ -84,6 +84,7 @@ fn synthetic_table() -> MenuWindowTable {
         (window_ids::TAB_STATUS, dispatch::RENDERER_TAB_STATUS),
         (window_ids::TAB_OPTIONS, dispatch::RENDERER_TAB_OPTIONS),
         (7, dispatch::RENDERER_CHAR_PROMPT),
+        (8, dispatch::RENDERER_NOTIFY_PROMPT),
         (6, dispatch::RENDERER_LABEL_LIST),
         (5, dispatch::RENDERER_TWO_LINE_CHOICE_PANEL),
         // The Equip screen's candidate step adds window 24 - the shared
@@ -1084,4 +1085,29 @@ fn the_equip_party_hand_bobs_only_in_the_character_picker() {
         .rects
         .pen(legaia_game_tables::menu_windows::window_ids::EQUIP_MAIN);
     assert_eq!(browse[1], stage(mx + 3, my + 2 * 0xE));
+}
+
+/// Windows 7 and 8 are framed, not bare text over the screen below: the
+/// notice chrome draws a frame for each notice the runtime holds, gated on
+/// the same descriptor painter as the notice's text (the owner's report of
+/// a Wind Book's "learned" line printing with no window behind it).
+#[test]
+fn the_menu_notices_are_framed() {
+    let fx = Fixture::new(true);
+    let full = fx.ctx();
+    assert!(menu_notice_chrome(&full, false, false).is_empty());
+    let spell = menu_notice_chrome(&full, true, false);
+    let art = menu_notice_chrome(&full, false, true);
+    assert!(!spell.is_empty(), "window 7 is framed");
+    assert!(!art.is_empty(), "window 8 is framed");
+    assert!(
+        !art_learned_notice_draws(&full, &["Noa learned".into()]).is_empty(),
+        "and window 8's text draws over it"
+    );
+    assert_eq!(
+        menu_notice_chrome(&full, true, true).len(),
+        spell.len() + art.len()
+    );
+    // No frame where the text cannot draw.
+    assert!(menu_notice_chrome(&fx.ctx_tableless(), true, true).is_empty());
 }

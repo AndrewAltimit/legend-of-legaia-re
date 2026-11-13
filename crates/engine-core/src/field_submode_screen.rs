@@ -53,6 +53,7 @@ use crate::world::World;
 use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo, EquipSlot};
 
+mod art_notice;
 mod coin_counter;
 mod hub_env;
 mod op49_park;
@@ -61,6 +62,7 @@ mod panels;
 mod tests;
 mod tick;
 
+pub use art_notice::*;
 pub use coin_counter::*;
 pub use panels::*;
 

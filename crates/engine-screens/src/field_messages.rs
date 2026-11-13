@@ -1,7 +1,7 @@
 //! The **field message layer** both play hosts draw: the `4C E1` text
 //! balloon, the overworld map display's place labels and compass letters,
-//! the tile board's quit prompt, the Incense wear-off notice and the dialog
-//! reading box - composed once, in one order, under one set of gates.
+//! the tile board's quit prompt, the Incense wear-off notice, the art-learned
+//! notice and the dialog reading box - composed once, in one order, under one set of gates.
 //!
 //! Each host used to assemble this layer itself, and the two disagreed: the
 //! native window stacked the map labels under the tile-board prompt where
@@ -10,7 +10,8 @@
 //! was up while the page framed it only when its line resolved.
 //!
 //! **Order** (back to front, in both the sprite and the text half): balloon,
-//! map labels + compass, tile-board prompt, Incense notice, reading box.
+//! map labels + compass, tile-board prompt, Incense notice, art-learned
+//! notice, reading box.
 //! Retail's own stacking of these is not pinned: every one of them frames
 //! through the SCUS window emitter `FUN_8002C69C` and prints through
 //! `FUN_80036888`, and which OT depth each caller links at is not traced.
@@ -176,6 +177,27 @@ pub fn field_message_frame(
                 legaia_engine_core::incense_notice::notice_text_pen(),
                 &line,
             ));
+        }
+    }
+
+    // The art-learned notice (op `49 09`, window record `9`, `FUN_801E733C`):
+    // a framed two-line panel, drawn with the Incense notice's chrome and
+    // line helpers, which are a window frame and a line at a pen.
+    if world.art_notice_shown().is_some() {
+        use legaia_engine_core::field_submode_screen::{art_notice_frame_rect, art_notice_pens};
+        if let Some(rects) = chrome {
+            out.sprites.extend(ui::incense_notice_sprites_for(
+                rects,
+                art_notice_frame_rect(),
+                origin,
+                scale,
+            ));
+        }
+        if let Some(lines) = host.art_notice_lines() {
+            for (line, pen) in lines.iter().zip(art_notice_pens()) {
+                out.stage_texts
+                    .extend(ui::incense_notice_text_draws_for(font, pen, line));
+            }
         }
     }
 

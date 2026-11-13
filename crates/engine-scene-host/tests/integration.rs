@@ -9,6 +9,7 @@
 
 mod ambient_grab_part_disc;
 mod ambient_shatter_row_disc;
+mod art_notice_disc;
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;
 mod baka_duel_scene_real;

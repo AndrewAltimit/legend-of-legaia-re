@@ -92,6 +92,15 @@ impl World {
         }
         self.party.party_count = n as u8;
         self.party.roster = party;
+        // A record that lists one art twice (retail's arts-book insert does
+        // not check membership; issue #597) loads with the repeat dropped,
+        // so the battle Arts list and the learn checks see each art once.
+        for rec in &mut self.party.roster.members {
+            let mut list = rec.displayed_skills();
+            if list.dedup() {
+                rec.set_displayed_skills(list);
+            }
+        }
         // Hydrate the level-up tracker's per-slot cumulative XP and level
         // from the installed records. Without this the tracker keeps its
         // default 0-XP / level-1 state even when the record has the party

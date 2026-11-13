@@ -161,6 +161,14 @@ pub mod window {
     pub const TWO_OPTION: usize = 5;
     /// `FUN_801F1A1C` - the count-gated single label.
     pub const COUNT_GATED_LABEL: usize = 6;
+    /// `FUN_801E733C` - the two-line "learned an art" notice the prompt
+    /// screen ([`super::slot::PROMPT`], op `49 09`) installs: two field
+    /// overlay strings stacked `0x0F` apart, the first's `0xC1` operand
+    /// patched to the payload's `+2` byte (the character) and the second's
+    /// `0xC5` operand to `+3 + (+2) * 0x40` (the art). Its body lives in
+    /// `engine-core::field_submode_screen::art_notice`, not here: it reads
+    /// the parked payload, which no other painter does.
+    pub const ART_NOTICE: usize = 9;
     /// `FUN_801F16C0` - the stacked per-entry list.
     pub const ENTRY_LIST: usize = 7;
     /// `FUN_801F1890` - the three-line panel, which is what the **coin

@@ -276,3 +276,83 @@ fn a_capped_record_takes_its_op49_screen_with_it() {
     assert!(!s.is_open() && !s.is_done() && s.park_sub_op.is_none());
     assert!(!s.is_open_for(Op49ParkOwner::CutsceneTimeline));
 }
+
+/// Issue #603: `49 09 00 <char> <art>` (Drake Castle's book, every master's
+/// grant) opens the prompt screen, whose window record `9` names the
+/// character and the art (`FUN_801E733C`). The record had no painter, so the
+/// screen drew nothing; the notice now resolves its two lines from the
+/// parked payload, the `0xC1` operand patched to the character and the
+/// `0xC5` operand to `art + char * 0x40`.
+#[test]
+fn the_art_learned_prompt_names_the_character_and_the_art() {
+    use legaia_art::Character;
+    let mut w = world_with_driver();
+    w.party.party_names = vec!["Vahn".into(), "Noa".into(), "Gala".into()];
+    w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        arts: Some(vec![
+            art_row(Character::Vahn, 9, b"Wrong Row"),
+            art_row(Character::Noa, 9, b"Test Dive"),
+        ]),
+        ..Default::default()
+    });
+    assert_eq!(w.art_notice_shown(), None);
+    let instr = [0x49, 0x09, 0x00, 0x01, 0x09];
+    w.open_field_submode_screen(slot::PROMPT, None);
+    w.set_submode_board_entries(&instr);
+    w.tick_submode_screen(1);
+    assert_eq!(w.art_notice_shown(), Some((1, 9)));
+    // Synthetic stand-ins for the two overlay strings, in their shape: a
+    // name token, then an inked arts-name token.
+    let read = |va: u32| match va {
+        0x801F_2B5C => vec![0xC1, 0x00, b' ', b'u', b's', b'e', b's', 0x00, b'x'],
+        0x801F_2B6C => vec![b'[', 0xCF, 0x06, 0xC5, 0x00, 0xCF, 0x07, b']', 0x00, b'x'],
+        _ => Vec::new(),
+    };
+    let [first, second] = w.art_notice_lines(read).expect("notice lines");
+    assert_eq!(first, b"Noa uses".to_vec());
+    assert_eq!(second, b"[\xCF\x06Test Dive\xCF\x07]".to_vec());
+
+    // The confirm hands the screen back and the notice goes with it.
+    w.input.set_pad(legaia_engine_system::pad::retail_packed(
+        SUBMODE_ACCEPT_MASK as u16,
+    ));
+    for _ in 0..4 {
+        w.tick_submode_screen(1);
+    }
+    assert_eq!(w.art_notice_shown(), None);
+}
+
+/// The token patch steps over each `0xCx` pair's operand (`FUN_8003CBF8`),
+/// so an operand byte equal to the token is not mistaken for it.
+#[test]
+fn the_notice_token_patch_skips_escape_operands() {
+    let mut s = vec![0xCF, 0xC5, 0xC5, 0x00, 0x00];
+    patch_token_operand(&mut s, 0xC5, 0x49);
+    assert_eq!(s, vec![0xCF, 0xC5, 0xC5, 0x49, 0x00]);
+    let mut none = vec![b'a', 0x00];
+    patch_token_operand(&mut none, 0xC1, 1);
+    assert_eq!(none, vec![b'a', 0x00]);
+    // A zero operand is not the terminator.
+    assert_eq!(
+        token_cstr(&[0xC1, 0x00, b'a', 0x00, b'b']),
+        vec![0xC1, 0x00, b'a']
+    );
+}
+
+/// A synthetic arts-name table row (not disc text).
+fn art_row(
+    character: legaia_art::Character,
+    index: u8,
+    name: &[u8],
+) -> legaia_art::arts_table::ArtTableEntry {
+    legaia_art::arts_table::ArtTableEntry {
+        character,
+        index,
+        name: String::from_utf8_lossy(name).into_owned(),
+        ap: 24,
+        commands: Vec::new(),
+        is_miracle: false,
+        name_bytes: name.to_vec(),
+        glyphs: Vec::new(),
+    }
+}

@@ -123,6 +123,26 @@ impl SceneHost {
         })
     }
 
+    /// The art-learned notice's two lines while it is up (op `49 09`, window
+    /// record `9`): the field overlay's strings (extraction entry `0897`)
+    /// with the character and art patched in and expanded. `None` while no
+    /// notice is shown or the entry cannot be read. See
+    /// [`legaia_engine_core::field_submode_screen::ART_NOTICE_STRING_VAS`].
+    pub fn art_notice_lines(&self) -> Option<[Vec<u8>; 2]> {
+        self.world.art_notice_shown()?;
+        let bytes = self
+            .index
+            .entry_bytes(legaia_engine_core::incense_notice::FIELD_OVERLAY_PROT_INDEX)
+            .ok()?;
+        self.world.art_notice_lines(|va| {
+            let va = legaia_engine_field::field_overlay::resolve_va(&bytes, va);
+            va.checked_sub(legaia_engine_field::field_overlay::FIELD_OVERLAY_BASE)
+                .and_then(|off| bytes.get(off as usize..))
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default()
+        })
+    }
+
     /// First VAB-bearing entry in the scene, with the byte offset of the
     /// `pBAV` magic inside it. Mirrors the asset chain's "load the scene's
     /// bank before the first sound plays" pre-pass. Returns `None` when no

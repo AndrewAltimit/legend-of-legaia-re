@@ -44,6 +44,45 @@ mod tests {
         assert!(after.ids[..usize::from(after.count)].contains(&0x0F));
     }
 
+    /// Issue #597: a second grant of an art the record already lists (a
+    /// second copy of a book, or a book after the art was learned) leaves
+    /// the list as it was - retail's insert has no membership check and
+    /// listed the art twice in the battle Arts list.
+    #[test]
+    fn a_repeated_grant_does_not_list_the_art_twice() {
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        let first = w.teach_hyper_art(0x0B, 3);
+        let again = w.teach_hyper_art(0x0B, 3);
+        assert!(matches!(
+            again,
+            legaia_engine_menus::items::ItemOutcome::ArtLearned {
+                character: 0,
+                art_id: 3,
+                ..
+            }
+        ));
+        assert_eq!(first, again, "the repeat reports the art where it sits");
+        let list = w.party.roster.members[0].displayed_skills();
+        assert_eq!(&list.ids[..usize::from(list.count)], &[3]);
+    }
+
+    /// A save whose record already lists an art twice loads with the repeat
+    /// dropped and the rest in order.
+    #[test]
+    fn a_loaded_record_with_a_repeated_art_is_healed() {
+        let mut party = legaia_save::Party::zeroed(3);
+        let mut list = party.members[0].displayed_skills();
+        list.count = 4;
+        list.ids[..4].copy_from_slice(&[0x03, 0x03, 0x0A, 0x0D]);
+        party.members[0].set_displayed_skills(list);
+        let mut w = World::new();
+        w.load_party(party);
+        let list = w.party.roster.members[0].displayed_skills();
+        assert_eq!(list.count, 3);
+        assert_eq!(&list.ids[..4], &[0x03, 0x0A, 0x0D, 0x00]);
+    }
+
     fn op35(w: &mut World, id: u16, sub_op: u8) -> legaia_engine_vm::field::StepResult {
         let [lo, hi] = id.to_le_bytes();
         let mut ctx = FieldCtx::default();

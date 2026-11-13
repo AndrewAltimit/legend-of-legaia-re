@@ -273,24 +273,47 @@ impl World {
                 let e = table
                     .iter()
                     .find(|e| e.character == character && e.index == id)?;
-                let mut name = Vec::with_capacity(e.name_bytes.len());
-                let mut b = e.name_bytes.iter().copied();
-                while let Some(c) = b.next() {
-                    if c == 0xC1 {
-                        let who = b.next().unwrap_or(0);
-                        name.extend_from_slice(self.party_name(usize::from(who)).as_bytes());
-                    } else {
-                        name.push(c);
-                    }
-                }
                 Some(ArtsListRow {
-                    name,
+                    name: self.expand_art_name(&e.name_bytes),
                     ap: if halved { e.ap >> 1 } else { e.ap },
                     glyphs: e.glyphs.clone(),
                 })
             })
             .collect();
         Some(rows)
+    }
+
+    /// An arts-name table record's name bytes with its `0xC1 XX` party-name
+    /// splices expanded (the text kernel's expander `FUN_80036514`); the
+    /// `0xCF XX` ink escapes stay.
+    pub(crate) fn expand_art_name(&self, raw: &[u8]) -> Vec<u8> {
+        let mut name = Vec::with_capacity(raw.len());
+        let mut b = raw.iter().copied();
+        while let Some(c) = b.next() {
+            if c == 0xC1 {
+                let who = b.next().unwrap_or(0);
+                name.extend_from_slice(self.party_name(usize::from(who)).as_bytes());
+            } else {
+                name.push(c);
+            }
+        }
+        name
+    }
+
+    /// The text a dialog `0xC5 XX` token splices: the arts-name table record
+    /// for character `XX / 0x40`, art `XX % 0x40` (the arm peels `0x40` off
+    /// the operand per character, `0x80036310..0x80036328`, then scans the
+    /// 20-byte records for `[character, art]`), name escapes expanded. `None`
+    /// without the table or when no record matches.
+    ///
+    /// REF: FUN_80036044 (the `0xC5` arm)
+    pub fn arts_name_token(&self, operand: u8) -> Option<Vec<u8>> {
+        let table = self.menu.text.as_ref()?.arts.as_ref()?;
+        let (character, art) = (operand >> 6, operand & 0x3F);
+        let e = table
+            .iter()
+            .find(|e| e.character as u8 == character && e.index == art)?;
+        Some(self.expand_art_name(&e.name_bytes))
     }
 
     /// The `+0x16E` status word of the member the command ring is open for,
