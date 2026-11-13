@@ -96,6 +96,7 @@
   </ul>
   <h3 id="talk-facing">Talk-time facing is not this VM</h3>
   <p>The NPC turning to face you on the action button is easy to mis-attribute to Face target, and it is not that op. It is a save / snap / restore triple in the per-actor dialog state machine: the heading is saved aside, one store snaps it toward the player in a single frame (no ramp), and the exit paths write the saved heading back. It runs only for moving-class actors - static props never turn.</p>
+  <p>A talk record can also turn its talker with the pursue VM's facing op aimed at itself. The arm raises the talker's busy bit and moves on; the dispatcher then refuses any extended op whose target carries that bit, so the talker's own next op waits for the turn's terminal frame, while plain ops and text leads run under it. A wait op behind the turn counts on the leg's own timer, so it runs at twice the rate and the turn's last frame zeroes it.</p>
   <div class="notice warn">
     <p class="notice-title">Port trap</p>
     <p>The dialog snap calls the bearing helper with the <em>endpoints swapped</em> relative to Face target, and without Face target's <code>+0x800</code> half-turn - the swap <em>is</em> the half-turn, so the two agree. Copying the Face target convention here and keeping the <code>+0x800</code> faces the NPC exactly backwards.</p>
@@ -140,6 +141,40 @@
     <li><strong>The ambient facing ops have no shortest-arc override</strong>, so an authored idle turn can deliberately take the long way round.</li>
     <li><strong>The tint fade starts from whatever the actor wears.</strong> An actor has one tint record, which the field script and this op both write, and op <code>0x0C</code> ramps from it. In frozen Buma one of the frozen figures stands tinted blue from the scene&rsquo;s entry script, and once a story flag is up its stream pulses that blue between two strengths without ever dropping it.</li>
   </ul>
+  <h3 id="world-stream">The draws are the world's stream</h3>
+  <p>The two ops that roll dice - the <code>0x18</code> wander and the <code>0x06</code> home step - call the BIOS <code>rand()</code>, so they advance the one process-wide seed and nothing per actor. Which villager gets which draw is therefore set by the order the actors tick, and that is the order of the actor list: a tail-appended chain the tick walks from head to tail. So the tick order is <strong>spawn order</strong>, not slot order, and scripted seats reorder it.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The actor list in tick order. At scene entry placements P1 to P4 are linked in partition order, then the placed objects. A seat op on P2 unlinks it and links it back at the tail, so the list ticks P1, P3, P4, the objects, then P2, and the next rand draw that P2 used to take goes to P3.">
+      <defs><marker id="mv-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="30">scene entry: spawn order</text>
+      <rect class="dg-node" x="20" y="42" width="100" height="40" rx="4"/><text class="dg-label" x="70" y="67">P1</text>
+      <rect class="dg-node-accent" x="150" y="42" width="100" height="40" rx="4"/><text class="dg-label" x="200" y="67">P2</text>
+      <rect class="dg-node" x="280" y="42" width="100" height="40" rx="4"/><text class="dg-label" x="330" y="67">P3</text>
+      <rect class="dg-node" x="410" y="42" width="100" height="40" rx="4"/><text class="dg-label" x="460" y="67">P4</text>
+      <rect class="dg-node" x="540" y="42" width="120" height="40" rx="4"/><text class="dg-label" x="600" y="67">objects</text>
+      <path class="dg-edge" d="M120 62 L148 62" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M250 62 L278 62" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M380 62 L408 62" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M510 62 L538 62" marker-end="url(#mv-arrow)"/>
+      <text class="dg-sub dg-start" x="20" y="122">after a seat op places P2: unlinked, appended at the tail</text>
+      <rect class="dg-node" x="20" y="134" width="100" height="40" rx="4"/><text class="dg-label" x="70" y="159">P1</text>
+      <rect class="dg-node" x="150" y="134" width="100" height="40" rx="4"/><text class="dg-label" x="200" y="159">P3</text>
+      <rect class="dg-node" x="280" y="134" width="100" height="40" rx="4"/><text class="dg-label" x="330" y="159">P4</text>
+      <rect class="dg-node" x="410" y="134" width="120" height="40" rx="4"/><text class="dg-label" x="470" y="159">objects</text>
+      <rect class="dg-node-accent" x="560" y="134" width="100" height="40" rx="4"/><text class="dg-label" x="610" y="159">P2</text>
+      <path class="dg-edge" d="M120 154 L148 154" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M250 154 L278 154" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M380 154 L408 154" marker-end="url(#mv-arrow)"/>
+      <path class="dg-edge" d="M530 154 L558 154" marker-end="url(#mv-arrow)"/>
+    </svg>
+    <figcaption>Each tick walks the list head to tail, and each wanderer's roll takes the next draw of the one seed. A seat op relinks the actor it places at the tail, so a capture's tick order can run against the flat placement indices.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>What moves a node.</strong> At scene entry partition 1's records are seated in order; a re-seat allocates a fresh node at the tail; and the non-player arms of the field VM's <code>MOVE_TO</code> and <code>4C 51</code> seat ops unlink the actor and link it back at the tail. During a scene's spawn prologue the list is still being built, so a placement seating an earlier one puts it just behind the running slot.</li>
+    <li><strong>The engagement release lands mid-walk.</strong> The deferral gate reads the player's engaged bit on each stream's own tick, and the bit is cleared inside the walk, on the node of the context whose script ended the engagement. So on that pass the streams ahead of the owner skip one more tick and the streams behind it start.</li>
+    <li><strong>The spawner draws too.</strong> Binding a placement's header clip seats a random clip phase, <code>(rand() % frames) &lt;&lt; 4</code>, once per animated placement at scene entry and once per re-seat.</li>
+    <li><strong>In the port</strong> the channel borrows <code>World::rng_state</code> for each tick and hands it back; <code>FieldNpcState::ambient_order</code> keeps the list order and the seat ops move it. Seeded from a retail capture's seed and stream state, the engine's seed equals retail's and each draw names the same actor across the capture's free-walk stretch.</li>
+  </ul>
   <details class="disclosure">
     <summary>Stream binding, speed encoding, op 0x17 and the touch post</summary>
     <div class="disclosure-body">
@@ -170,6 +205,8 @@
       <tr><td>Pursue VM</td><td><code>FUN_8003774C</code></td><td>Op set, target idiom (<code>0xF8/0xFB</code>), bind-index match at <code>+0x50</code>, compass LUT at <code>0x80073F04</code></td><td><code>8003774c.txt</code></td></tr>
       <tr><td>Ambient VM</td><td><code>FUN_80038158</code></td><td>32-entry JT at <code>0x80010FE8</code>; the did-work loop; op-7 / op-8 flag writes</td><td><code>80038158.txt</code></td></tr>
       <tr><td>Stream binder</td><td><code>FUN_8003A9D4</code> / <code>FUN_8003AEB0</code></td><td>MAN tail-section-1 record chain; the <code>N0 + placement_index</code> bind law</td><td><code>8003a9d4.txt</code></td></tr>
+      <tr><td>Actor list</td><td><code>FUN_80020454</code> / <code>FUN_800204A4</code> / <code>FUN_8002519C</code></td><td>Tail append, unlink and the head-to-tail walk that orders the ticks and the draws</td><td><code>80020454.txt</code>, <code>8002519c.txt</code></td></tr>
+      <tr><td>Placement spawner</td><td><code>FUN_8003A1E4</code></td><td>The clip-phase draw per animated placement</td><td><code>8003a1e4.txt</code></td></tr>
       <tr><td>Dialog snap</td><td><code>FUN_80039B7C</code></td><td>Save / snap / restore triple; moving-class guard; swapped-endpoint bearing call</td><td><code>80039b7c.txt</code></td></tr>
       <tr><td>Touch post</td><td><code>FUN_8003D038</code></td><td>One-slot mailbox; the class-<code>0x8C</code> drop guard</td><td><code>8003d038.txt</code></td></tr>
       <tr><td>Walk-facing law</td><td>recomp cold-boot sample</td><td>Every on-field heading is a multiple of <code>0x200</code>; all eight compass points appear</td><td>recomp trace</td></tr>
