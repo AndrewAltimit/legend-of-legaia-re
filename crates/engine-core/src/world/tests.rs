@@ -346,6 +346,7 @@ mod battle_turn_handoff;
 mod battle_turns_items;
 mod battle_tutorial_flow;
 mod battle_ui_cue_routing;
+mod battle_victory_pose;
 mod battle_xp_attack;
 mod cast_band;
 mod cast_presentation_disc;

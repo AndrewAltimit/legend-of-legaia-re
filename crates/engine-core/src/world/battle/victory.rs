@@ -39,12 +39,21 @@
 //! fires at `0x43`. Measured: fade at v657 (= results + 255), exit at v723
 //! (= fade + 66).
 //!
-//! The pose actor is `ctx[+0x13]`. No writer in the battle overlay ever
-//! stores a seat there - every store is a zero at a round boundary or the
-//! magic menu's MP-cost scratch - and the one three-member capture of the
-//! results frame (`noa_levelup_banner`: Noa levelled, seat 0 carries the
-//! staged pose `0x14`, `ctx[+0x13] == 0`) agrees: **the party leader
-//! poses**, not the member who landed the last hit.
+//! The pose actor is `ctx[+0x13]` (`lbu s8,0x13(a0)` at `0x8004E5A4`, `a0` the
+//! battle context `*0x8007BD24`), the acting slot: the member who landed the
+//! last action poses, not the leader. The action SM's victory arm writes it
+//! last (`FUN_801E295C` runs with `s5 = ctx + 0x11`, so its `sb v1,0x2(s5)`
+//! stores are `ctx[+0x13]`): it keeps a living acting actor (`0x801E6690`),
+//! re-picks a dead one with `rand() % party_count` (`0x801E66EC`), and forces
+//! seat `2` when the formation's first monster is `0xB3` and seat `1` when it
+//! is `0xB4` (`0x801E6740` / `0x801E6760`) - Songi's fights - before it arms
+//! that seat's win-pose archive (`FUN_80055B4C(char * 3 - 1)`, `0x801E678C`).
+//! The engine runs that arm as `battle_action::end_of_action`'s
+//! `victory_pose_fixup`, which leaves the seat in `World::battle_ctx`'s
+//! `active_actor`; [`World::begin_battle_end_sequence`] seats the pose
+//! there. The three-member capture of the results frame
+//! (`noa_levelup_banner`: Noa levelled, seat 0 carries the staged pose
+//! `0x14`, `ctx[+0x13] == 0`) is a fight Vahn finished.
 //!
 //! # What the port does with it
 //!
@@ -107,7 +116,7 @@ impl World {
         let mut seq = VictorySequence {
             cause,
             phase,
-            pose_actor: 0,
+            pose_actor: self.victory_pose_seat(cause),
             pose_id: None,
             window_opened: false,
         };
@@ -138,6 +147,25 @@ impl World {
             }
         }
         self.battle.victory = Some(seq);
+    }
+
+    /// The seat the results sequencer poses: `ctx[+0x13]`, which the action
+    /// SM's victory arm leaves on the acting party member (kept while alive,
+    /// re-picked when dead, forced by the Songi formations) - the port's
+    /// `battle_ctx.active_actor`. Only a monster wipe runs that arm; a wipe
+    /// or an escape keeps the leader, and a seat outside the party (a
+    /// formation override on a party too small for it) falls back to the
+    /// leader rather than posing a monster.
+    ///
+    /// REF: FUN_8004E568 (`lbu s8,0x13(a0)` at `0x8004E5A4`), FUN_801E295C
+    /// (the victory arm's `ctx[+0x13]` stores, `0x801E66EC..0x801E6760`)
+    fn victory_pose_seat(&self, cause: BattleEndCause) -> usize {
+        let seat = self.battle_ctx.active_actor;
+        if cause == BattleEndCause::MonsterWipe && seat < self.party.party_count {
+            usize::from(seat)
+        } else {
+            0
+        }
     }
 
     /// Phase 0's pose pick (`0x8004E78C..0x8004EAF0`) for `seat`.

@@ -408,19 +408,21 @@ Owning page: [battle.md](../../subsystems/battle.md#how-the-tint-words-reach-the
 *Status:* resolved. Evidence: `disassembly` + `capture`.
 
 `FUN_8004E568` runs every frame the battle-end signal is `0xFE`, the battle exits on
-`ctx[+0x6CE] >= 0x43`, and the **leader** strikes the pose.
+`ctx[+0x6CE] >= 0x43`, and the **acting slot** `ctx[+0x13]` strikes the pose.
 
 - `FUN_80046A20` stops stepping the action SM once `DAT_8007BD71 == 0xFE` (`0x80047040`) and calls
   `FUN_8004E568` every frame (`0x800470D0..0x800470E8`); the exit test is `slti v0,v0,0x43` on
   `ctx[+0x6CE]` (`0x80046DAC`).
 - `_DAT_8007BD2C` doubles as the sequencer's phase word (jump table `0x800152FC`): `0 -> 2 -> 4 -> 5`
   through two CD loads for a victory; a wipe's `5` lands on the annihilated arm directly.
-- The results frame stages the pose into `+0x1DA` of the seat `ctx[+0x13]` names; no store in the
-  battle overlay writes a seat there.
+- The results frame stages the pose into `+0x1DA` of the seat `ctx[+0x13]` names. The action SM's
+  victory arm writes that seat last: `FUN_801E295C`'s `s5` is `ctx + 0x11` (`0x801E2994`), so its
+  `sb v1,0x2(s5)` stores (`0x801E66EC`, `0x801E6740`, `0x801E6760`) are `ctx[+0x13]` stores. An
+  earlier reading searched for `0x13(` offsets only, missed them, and concluded the leader poses.
 - Timeline on `rim_elm_gimard_victory` (PCSX-Redux poll, N = 1): signal v322, results v402, exit fade
   v657, exit v723.
 - The three-member `noa_levelup_banner` state reads `ctx[+0x13] == 0` with seat 0 carrying pose `0x14`
-  while Noa levelled.
+  while Noa levelled: Vahn landed that fight's last action.
 
 Port: `world::battle::victory`. Owning page:
 [battle.md](../../subsystems/battle.md#battle-end-retails-way---the-results-sequencer).

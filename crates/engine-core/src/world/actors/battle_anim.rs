@@ -1149,11 +1149,10 @@ impl World {
     /// Retail's acting slot `ctx[+0x13]` as the port holds it. Through the
     /// end-of-battle sequence it is the pose actor - the one field the
     /// sequencer's framing, the camera-ghost pass and the commit's camera
-    /// reset all read (`noa_levelup_banner`: `ctx[+0x13] == 0`, the posing
-    /// leader). The engine's acting mirror keeps the fight's last actor, so
-    /// a win landed by another seat would otherwise hand that seat's idle
-    /// loop the accumulator the battle-over script rides. An escape skips
-    /// the framing (`0x8004E720`) and keeps the mirror.
+    /// reset all read. On a win that is the seat the action SM's victory arm
+    /// left in `battle_ctx.active_actor` (the member who finished the fight);
+    /// a party wipe poses the leader. An escape skips the framing
+    /// (`0x8004E720`) and keeps the mirror.
     pub(in crate::world) fn retail_acting_slot(&self) -> u8 {
         match self.battle.victory {
             Some(seq)

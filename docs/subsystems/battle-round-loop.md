@@ -288,7 +288,9 @@ Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`script
 | `+336` | exit-fade template (kind 2, `0x40` frames, black -> white), phase halfword from 2 | `screen_fade` = the escape template, drawn by both hosts |
 | `+402` | `ctx[+0x6CE] >= 0x43`: `game_mode = 2` | `finish_battle`, windows come down |
 
-**The pose actor** is `ctx[+0x13]`, and the party leader poses: no store in the battle overlay writes a seat there (every store is a round-boundary zero or the magic menu's MP-cost scratch), and the three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose while Noa is the one who levelled. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`engine-battle::victory::victory_pose_tier` / `victory_pose_column`). The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`.
+**The pose actor** is `ctx[+0x13]`, the acting slot, so the member who finished the fight poses.
+The sequencer reads it at entry (`lbu s8,0x13(a0)` at `0x8004E5A4`, `a0 = *0x8007BD24`, the battle context), and the action SM's victory arm is its last writer: `FUN_801E295C` runs with `s5 = ctx + 0x11` (`0x801E2994`), so the arm's `sb v1,0x2(s5)` stores (`0x801E66EC`, `0x801E6740`, `0x801E6760`) land on `ctx[+0x13]` - the re-pick of a downed finisher and the Songi seats below.
+The three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose: Vahn finished that fight. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`engine-battle::victory::victory_pose_tier` / `victory_pose_column`). The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`.
 
 Port divergences in the pose:
 
@@ -658,7 +660,9 @@ The randomizer's enemy-ally ("charm") feature rides the stock `0x380` delegation
 
 **A different freeze class** lives in the done / cleanup band: state `0x51` refuses to decrement its exit countdown while a party actor's displayed HP `+0x172` disagrees with live HP `+0x14C`, permanently once the pending-bar-delta accumulator `+0x10` reaches zero. The symptom is an endless camera orbit, and the trigger is an HP write that skips the bar bookkeeping. See [battle-action-exit-gates.md](battle-action-exit-gates.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
-**Port.** `battle_action`'s `end_of_action` (`crates/engine-battle-vm/src/battle_action/done.rs`) carries the full gate. Both wipe scans mask `0x4`, `BattleActionCtx::charm_widen` models the `0x384` widen, and `victory_pose_fixup` ports the victory arm with the corrected invariant: the re-pick triggers whenever the acting slot is not a living party slot (dead, or a monster slot) and picks uniformly among eligible slots instead of rejection-sampling, so it cannot spin. The win-pose staging surfaces as `BattleActionHost::victory_stage(party_slot)` with a valid slot, and the Songi override as `BattleActionHost::first_monster_id`. Dump: `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`.
+**Port.** `battle_action`'s `end_of_action` (`crates/engine-battle-vm/src/battle_action/done.rs`) carries the full gate. Both wipe scans mask `0x4`, `BattleActionCtx::charm_widen` models the `0x384` widen, and `victory_pose_fixup` ports the victory arm with the corrected invariant.
+The re-pick triggers whenever the acting slot is not a living party slot (dead, or a monster slot) and picks uniformly among eligible slots instead of rejection-sampling, so it cannot spin.
+The arm leaves its seat in `World::battle_ctx`'s `active_actor`, which `World::begin_battle_end_sequence` takes as the pose actor; the Songi override reads `BattleActionHost::first_monster_id`, which the engine host answers from the formation's first slot. The archive request itself surfaces as `BattleActionHost::victory_stage(party_slot)`, which no host owes a body: the engine reads the whole side-band file at battle load. Dump: `ghidra/scripts/funcs/overlay_battle_action_801e295c.txt`.
 
 ## Seru capture + spell learning
 

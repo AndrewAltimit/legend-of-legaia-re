@@ -235,6 +235,7 @@ A row settles the way any audit row does, from the disassembly:
 | `BattleActionHost::pad_held_32` | `_DAT_8007B938`, `0x801E5978` / `0x801E6090` | a button held through a failed run's message or a level-up banner waited it out |
 | `CabinetInput::pad_edge_alt` | `_DAT_8007B938`, `0x801CFA6C` | a direction held on the Baka Fighter player select stepped the cursor once |
 | `BattleSidebandInputs::pad_edge` | `_DAT_8007B938`, `0x8005638C` | a button held through the sparring fight's opening caption waited it out |
+| `VictorySequence::pose_actor`, `BattleActionHost::first_monster_id` | `ctx[+0x13]`, stored by the victory arm (`0x801E66EC..0x801E6760`); `DAT_8007BD0C[0]` | the leader struck every win pose, whoever finished the fight, and Songi's two fights posed the wrong seat |
 
 The short-idle marker was not partial once its missing terms were read off
 the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
@@ -273,7 +274,6 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `WorldMapController::scene_base` | the kingdom falls back to the scene label, so a real base changes nothing |
 | `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
 | `CatchHudState::line_extent` | `DAT_801D9178`'s one writer stores zero (`sw zero` at `0x801CF894`, the fishing reset arm); retail's readout term is always `0` |
-| `VictorySequence::pose_actor` | `ctx[+0x13]` has no seat store in the battle overlay; the leader poses ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)) |
 | `slot_machine::roll_to_row` | the frame-free `stop_reel`'s collapsed roll-in, which no host calls; the per-frame port of `FUN_801d0554` is `SlotMachine::roll_reels`, so the helper carries `REF`, not `PORT` |
 | `LevelUpTracker::with_stat_gain`, `_gains` | scene entry installs `with_growth_tables` (`World::retail_progression`); the flat rate feeds only the fourth slot, which `DAT_800769CC` has no record for (`GROWTH_CHAR_COUNT = 3`) |
 | `EncounterEntry::with_min_gate` | the generic tracker's own rule; the live roll is `RegionEncounterTracker` (`FUN_801DA51C`), which has no minimum-step word |
@@ -287,6 +287,10 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `SubScreenInput::sellable_items_available`, `spinner_result` | the shop's mode select runs in the shop session (`shop_cues::shop_root_labels` greys Sell on the same bag scan); the save screen machine opens only the card contexts |
 | `StatusModifiers::immobilised_eva_mult`, `FieldLocomotion::action_params` | tuning defaults written by `Default`, which the tool reads as a zero; the values are the intended ones |
 | `SeqChannel::tempo_step`, `tempo_target`, `tempo_remaining` | the tempo slide `FUN_800649B0` is armed by flag bits `0x40` / `0x80` with `+0xA8` / `+0xAC` / `+0x4E`; SCUS only clears those bits (`0x80064A18`, `0x80064BA8`, `0x80064BC4`) and zeroes those fields (`0x80061E1C..0x80061E4C`, `0x800645F0..0x80064620`). The libsnd accelerando / ritardando setters are not linked, and the disc's ritardandos are tempo metas ([`seq.md`](../formats/seq.md)) |
+| `AmbientEmitter::actor_x`, `actor_y` | the emitter's point arm; its one spawn site (`0x801D6FD8`) stores the scene arm (`+0x1A = 1`), so `spawn_ambient_emitter_at` is a test driver |
+| `BattleActionCtx::charm_widen` | the randomizer's `0x801E6638` edit; retail's mask is `0x4`, which `false` is |
+| `Camera::follow_slot` | an engine framing choice, not a retail word; the field camera follows the player |
+| `FieldCtx::field_90` | op `0x49` sub-op 1 stores it into `_DAT_8007B44C` (`0x801E09C8`), and the save driver it opens overwrites that word with the scene name on its first step (`0x801DAF4C..0x801DAF58`), before either reader (`0x801E1A28`, `0x801E1D9C`) runs |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 ### Open rows
@@ -306,6 +310,23 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   ramped its lanes to zero and the grey gate draws it. Whether that frame is
   darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
   fade frame before anything is carried across frames.
+
+### Host hooks nothing implements
+
+The same shape hides behind a trait: a VM step calls a host hook whose default
+body does nothing, and no engine host overrides it. The call is live and the
+retail behaviour is not. A row settles on whether a shipped script reaches the
+hook, which `asset field-op-census --only '<op>'` answers for the field VM.
+
+| Hook | Op | Verdict |
+|---|---|---|
+| `BattleActionHost::first_monster_id` | victory arm | wired: the Songi pose seats (above) |
+| `FieldSceneHost::set_door_of_light_destination` | `4C 88` | no clean carrier on the disc; the Door of Light reads the region record's triple |
+| `FieldSceneHost::bgm_swap_pending` | `4C C9` | no clean carrier |
+| `FieldCameraMotionHost::op4c_ne_sub7_ramp_73ee4` | `4C E7` | no clean carrier |
+| `FieldActorSpawnHost::hsv_grade_resident_meshes` | `4C E6` | the prologue palette mode draws the same pixels (`primitive_colour_grade`'s `REPLACED-BY`) |
+| `FieldTerrainHost::refresh_collision_y` | `4C DA` | the player's `CC F8 DA` is routed to the player stand-in and snapped there; a placement's Y is re-sampled by the per-tick height arm (`tick_field_npc_heights`) |
+| `FieldSceneHost::reset_party_pack_load_state` | `4C E9` | open: `opurud` carries one; clearing `_DAT_8007B9C4` forces the party pack's reload, and whether the port owes that reload is unchecked |
 
 ## Analysis defects this triage found
 
