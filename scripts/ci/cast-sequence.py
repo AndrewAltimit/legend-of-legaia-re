@@ -564,6 +564,23 @@ def physical_film_guard(a, out: Path, done: dict) -> str | None:
     return state_guard_seats(manifest.get("sstate", ""))
 
 
+def retail_cast_already_paid(out: Path) -> bool:
+    """Whether the retail recording opens past the cast band's MP debit:
+    its first row's action state is above `0x28`, the state whose arm debits
+    the caster's MP (`0x801E458C`). `battle_nilboa_rock_lizard_earthquake_mid_cast`
+    opens at `0x70` with Rock Lizard's MP at `0` of `150`: left unpaid, the
+    engine's monster had nothing to cast with and struck instead."""
+    try:
+        with open(out / "retail" / "meta.csv") as f:
+            row = next(csv.DictReader(f), None)
+    except OSError:
+        return False
+    try:
+        return row is not None and int(row["st7"]) > 0x28
+    except (KeyError, ValueError):
+        return False
+
+
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
     `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
@@ -852,11 +869,15 @@ def run_engine(a, out: Path) -> bool:
         # The child takes its frame on the drive's gate and leaves: push the
         # frame past the recording, which exits on its own tail.
         env["LEGAIA_DIAG_CAPTURE_TICK"] = "40000"
-    else:
+    elif not retail_cast_already_paid(out):
         # The probe injects at the command state `0x0A`, ahead of the `0x28`
         # MP debit, so the seed credits no price back and the band's own
         # debit lands on the state's MP, wrapping as retail's halfword does
         # (`0x801E458C`): a Seru cast past the caster's MP reads `65518`.
+        # A state that already stands past the debit (a `*_mid_cast` state,
+        # whose recording opens in the cast band) holds the MP after it, and
+        # the seed credits the price back for the engine's own debit, as a
+        # still's mid-cast replay does.
         env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
     if a.physical:
         pass

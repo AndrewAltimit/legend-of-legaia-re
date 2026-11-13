@@ -263,6 +263,13 @@ must not, so the driver sets `LEGAIA_SEAT_SEED_MP_UNPAID` and the engine's own d
 which wraps as retail's does, lands on the state's figure. A harness seat for the
 credit; the wrap is the port's.
 
+A recording that opens past the debit is the exception: a `*_mid_cast` state
+already holds the paid figure, so the driver credits it back as a still does
+(`retail_cast_already_paid`: the recording's first action state above `0x28`).
+`battle_nilboa_rock_lizard_earthquake_mid_cast` opens at `0x70` with Rock Lizard
+at `0` of `150` MP; left unpaid, the engine's monster could not afford Earthquake,
+struck instead, and the recorder logged no cast frame.
+
 A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved (`.785`, `.821` with `--retail-steps --rand-at 0x2B:0`, the burst's `82` / `97` against retail's `91`), so the dead seat is not the film's residue. A harness seat.
 
 A `--physical` film keeps the state's drive, which commits Spirit for the whole party while a monster casts (`BattleDrive::Action`), so on its own its victims stand guarded whatever retail's party held.
