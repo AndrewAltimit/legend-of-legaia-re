@@ -1425,6 +1425,7 @@ a scratch directory only.
 |---|---|
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `inn`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, the `retock` innkeeper's stay, a fight to its results and back, a seeded summon |
 | `town_slope`, `town_seat` | town01 with the player seated at tile (30, 22) (`LEGAIA_SEAT` / `play_debug_seat`): the first with the follow knobs held at orbit 2.7, tilt -0.5 (`LEGAIA_DIAG_FOLLOW_KNOBS` / the page's knob setters), the view past the plateau ramp to the sea off retail's vantage; the second at retail's |
+| `cast_big_wave`, `cast_cannon`, `cast_thunder` | a seeded Seru cast in a map01 fight: Big Wave's opaque Gouraud band wash, Genocidal Cannon's persisting arm at span `5`, Thunder Storm's persisting arms. Under `--mode retail` with `--every 1` they pair the PSX target's ring frame for frame |
 | `battle_menus` | a fight's round prompt, the command ring's Item window and its cursor, the empty Magic window, an item used |
 | `menu_hold`, `shop_hold` | Down held on the pause menu's root list and on a shop's stock list: the cursor auto-repeat under a screen that owns its ticks |
 | `equip` | the pause menu's Equip row down a level at a time: the character picker, the slot browse with the worn item's panel beside each row, a slot's candidate list, and back out |

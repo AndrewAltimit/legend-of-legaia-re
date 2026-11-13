@@ -81,6 +81,12 @@ export const SCENES = {
   battle: { scene: 'map01', ticks: 900, every: 30, battle: 30, taps: every(300, 890, 40, 'Cross') },
   results: { scene: 'map01', ticks: 3600, every: 60, battle: 30, taps: every(300, 3590, 20, 'Cross') },
   cast: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3] },
+  /* Seru casts whose arms persist the frame under PSX mode (the armed wash, the ring two
+   * battle frames back) and whose band wash is opaque Gouraud quads: Big Wave (0x56),
+   * Genocidal Cannon (0xB3, an arm at span 5) and Thunder Storm (0x77). */
+  cast_big_wave: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0x56, 9] },
+  cast_cannon: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0xB3, 9] },
+  cast_thunder: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0x77, 9] },
   /* The round prompt's Begin, then the command ring's Item window (Up), its cursor,
    * back out, the Magic direction, and an item picked: engine-screens' battle windows. */
   battle_menus: { scene: 'map01', ticks: 640, every: 10, battle: 30, taps: [[380, 'Cross'], [420, 'Up'], [450, 'Down'], [470, 'Down'], [500, 'Circle'], [530, 'Right'], [560, 'Circle'], [590, 'Up'], [620, 'Cross']] },
