@@ -152,6 +152,16 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
     {
         return None;
     }
+    // The Done band's teardown wipes the element list before its closes
+    // (`FUN_801D99BC` at `0x801E6170`, unconditional under the `ctx[+0x17]`
+    // latch), and the label (records 76 / 77) is not among the elements it
+    // re-spawns on a closing glide (`0x801E6178..0x801E6204`), so it is gone
+    // from that pass to the next action's open. A wipe's results frame shows
+    // the target plaque with no label (`battle_jou_party_wipe_results_retail`,
+    // Thunder Blast's caster in `0x5A`).
+    if world.battle.action_hud_wiped {
+        return None;
+    }
     let a = world.battle_ctx.active_actor;
     let actor = world.actors.get(a as usize)?;
     let pc = party_count(world) as u8;
