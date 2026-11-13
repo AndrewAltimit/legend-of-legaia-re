@@ -18,6 +18,11 @@ pub struct DiscTables {
     /// shell (`legaia_game_tables::victory_pose`); `None` on a disc-free build,
     /// where the pose actor simply keeps its idle.
     pub victory_pose_table: Option<legaia_game_tables::victory_pose::VictoryPoseTable>,
+    /// The static `SCUS_942.54` victory-voice table (`0x80078880`): the
+    /// `monster.snd` bank each character's win pose streams into VAB slot 7
+    /// (`legaia_game_tables::victory_pose::victory_voice_bank`). `None` on a
+    /// disc-free build, where the pose plays without its voice.
+    pub victory_voice_table: Option<legaia_game_tables::victory_pose::VictoryVoiceTable>,
     /// The inline 8-byte names the dialog's `0xC7 XX` escape splices
     /// (`0x80073F24 + XX * 8`, `FUN_80036044`): the Ra-Seru names Meta /
     /// Terra / Ozma. Indexed by `XX`; read from the disc's executable at
@@ -292,6 +297,7 @@ impl DiscTables {
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             victory_pose_table: None,
+            victory_voice_table: None,
             inline_names: Vec::new(),
             rot_limb_table: None,
             rot_clut_windows: None,

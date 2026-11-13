@@ -71,3 +71,70 @@ fn the_songi_formations_force_their_seat() {
         assert_eq!(pose_seat(&mut world), seat, "formation {songi:#04x}");
     }
 }
+
+/// A party wipe stores no seat (`FUN_801E295C`'s wipe arm has no
+/// `ctx[+0x13]` store), so the sequencer's shared tail frames whoever acted
+/// last - here the monster that landed the wiping blow.
+#[test]
+fn a_party_wipe_frames_the_monster_that_landed_the_blow() {
+    let mut world = world_won_by(3);
+    world.actors[3].battle.hp = 100;
+    world.actors[3].battle.liveness = 1;
+    for i in 0..3 {
+        world.actors[i].battle.hp = 0;
+        world.actors[i].battle.liveness = 0;
+    }
+    for _ in 0..64 {
+        world.live_battle_tick();
+        if world.battle.victory.is_some() {
+            break;
+        }
+    }
+    let seq = world
+        .battle
+        .victory
+        .expect("the wiped party raised the loss");
+    assert_eq!(seq.cause, BattleEndCause::PartyWipe);
+    assert_eq!(seq.pose_actor, 3, "the killing monster is framed");
+    assert_eq!(seq.pose_id, None, "a wipe picks no win pose");
+    assert_eq!(seq.voice_bank, None, "and streams no victory voice");
+    assert_eq!(world.retail_acting_slot(), 3);
+}
+
+/// The win pose streams its voice over the formation's slot-7 bank: the
+/// SCUS voice table's byte for (character, pose), less one.
+#[test]
+fn the_win_pose_stages_its_voice_bank_in_slot_7() {
+    let mut world = world_won_by(0);
+    world.tables.victory_pose_table = Some([[0x14; 6]; 4]);
+    let mut voice = [[0u8; 8]; 4];
+    for (r, row) in voice.iter_mut().enumerate() {
+        for (c, b) in row.iter_mut().enumerate() {
+            *b = 0xB0 + (r * 8 + c) as u8;
+        }
+    }
+    world.tables.victory_voice_table = Some(voice);
+    world.battle.active_formation = Some(FormationDef::new(1, vec![FormationSlot::new(0x10)]));
+    pose_seat(&mut world);
+    let seq = world.battle.victory.expect("armed");
+    assert_eq!(seq.pose_id, Some(0x14));
+    let char_id = world.party_roster_slot(0) as u8 + 1;
+    let want = u16::from(voice[usize::from(char_id - 1)][3]) - 1;
+    assert_eq!(seq.voice_bank, Some(want));
+    let banks = world.battle_monster_sound_banks();
+    assert_eq!(
+        banks.iter().find(|(slot, _)| *slot == 7).map(|b| b.1),
+        Some(want),
+        "slot 7 answers the voice bank: {banks:?}"
+    );
+}
+
+/// Songi's formations force win pose `0x17` (`0x8004EB90..0x8004EBAC`).
+#[test]
+fn a_songi_win_forces_pose_0x17() {
+    let mut world = world_won_by(0);
+    world.tables.victory_pose_table = Some([[0x14; 6]; 4]);
+    world.battle.active_formation = Some(FormationDef::new(1, vec![FormationSlot::new(0xB3)]));
+    pose_seat(&mut world);
+    assert_eq!(world.battle.victory.and_then(|s| s.pose_id), Some(0x17));
+}

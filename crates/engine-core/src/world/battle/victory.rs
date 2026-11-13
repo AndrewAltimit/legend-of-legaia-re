@@ -64,8 +64,10 @@
 //! while the scene stays in [`SceneMode::Battle`]. The two CD-bound waits are
 //! one constant, `VICTORY_LOAD_FRAMES` - the engine streams nothing, so the
 //! measured span is kept as a hold rather than modelled as a drive. The hero
-//! voice clip (`monster.snd` tail entries) is **not** staged: no engine bank
-//! carries `monster.snd`, so the pose plays silent.
+//! voice clip is the pose's `monster.snd` bank
+//! ([`VictorySequence::voice_bank`]), which both hosts stage over slot 7
+//! from the sequence's arming (`World::battle_monster_sound_banks`); the pose
+//! clip's own cue track keys it (cue `0xA1`, category `7`).
 //!
 //! An **escape** (`0x66` -> `0x67`) takes the sequencer's `0x67` arm instead
 //! (`lbu v1,0x7(a0); li v0,0x67` at `0x8004E63C`): no results, the phase
@@ -74,11 +76,19 @@
 //! spawned, and the same `0x43` gate exits. A **party wipe** takes the
 //! annihilated arm: the loss window, the same `0x100` hold and fade,
 //! every member's HP floored at 1, then the MAIN INIT game-over gate that
-//! [`World::finish_battle`] folds.
+//! [`World::finish_battle`] folds. Its framing is the shared tail's
+//! `FUN_801D5854(ctx[+0x13], 6)` on whoever acted last - the monster that
+//! landed the wiping blow, which stages its `0x22` knockout taunt - with the
+//! yaw counter at `0x7C0`, and a boss formation barks once
+//! ([`party_wipe_bark`]).
 
 use super::*;
 use legaia_engine_battle::battle_events::BattleSfxCue;
 use legaia_engine_battle::victory::*;
+
+/// The yaw counter `ctx[+0x6DA]` the annihilated arm's results frame stores
+/// (`li v0,0x7c0` at `0x8004F920`).
+const WIPE_YAW_BASE: i32 = 0x7C0;
 
 impl World {
     /// Re-exported for hosts / tests that pace the sequence.
@@ -118,6 +128,7 @@ impl World {
             phase,
             pose_actor: self.victory_pose_seat(cause),
             pose_id: None,
+            voice_bank: None,
             window_opened: false,
         };
         match cause {
@@ -125,6 +136,8 @@ impl World {
                 // Phase 0: the pose pick. Retail reads the round count
                 // BEFORE the results frame bumps it.
                 seq.pose_id = self.pick_victory_pose(seq.pose_actor);
+                // ... and streams the pose's voice into VAB slot 7.
+                seq.voice_bank = self.victory_voice_bank(seq.pose_actor, seq.pose_id);
             }
             BattleEndCause::PartyWipe => {
                 self.open_battle_results_frame(&mut seq);
@@ -149,23 +162,48 @@ impl World {
         self.battle.victory = Some(seq);
     }
 
-    /// The seat the results sequencer poses: `ctx[+0x13]`, which the action
-    /// SM's victory arm leaves on the acting party member (kept while alive,
-    /// re-picked when dead, forced by the Songi formations) - the port's
-    /// `battle_ctx.active_actor`. Only a monster wipe runs that arm; a wipe
-    /// or an escape keeps the leader, and a seat outside the party (a
-    /// formation override on a party too small for it) falls back to the
-    /// leader rather than posing a monster.
+    /// The seat the results sequencer frames and poses: `ctx[+0x13]`, the
+    /// acting slot - the port's `battle_ctx.active_actor`.
+    ///
+    /// - A **victory** runs the action SM's victory arm first, which leaves
+    ///   the acting party member there (kept while alive, re-picked when
+    ///   dead, forced by the Songi formations); a seat outside the party (a
+    ///   formation override on a party too small for it) falls back to the
+    ///   leader rather than posing a monster.
+    /// - A **party wipe** stores nothing there (the wipe arm of `FUN_801E295C`
+    ///   has no `ctx[+0x13]` store), so the sequencer's shared tail
+    ///   (`0x8004FC80..0x8004FC90`, `FUN_801D5854(s8, 6)`) frames whoever
+    ///   acted last - usually the monster that landed the wiping blow, whose
+    ///   knockout taunt the annihilated arm then stages
+    ///   ([`Self::stage_wipe_taunt`]). A seat with no actor falls back to the
+    ///   leader.
+    /// - An **escape** skips the framing (`0x8004E720`); the leader stands in.
     ///
     /// REF: FUN_8004E568 (`lbu s8,0x13(a0)` at `0x8004E5A4`), FUN_801E295C
     /// (the victory arm's `ctx[+0x13]` stores, `0x801E66EC..0x801E6760`)
     fn victory_pose_seat(&self, cause: BattleEndCause) -> usize {
         let seat = self.battle_ctx.active_actor;
-        if cause == BattleEndCause::MonsterWipe && seat < self.party.party_count {
-            usize::from(seat)
-        } else {
-            0
+        match cause {
+            BattleEndCause::MonsterWipe if seat < self.party.party_count => usize::from(seat),
+            BattleEndCause::PartyWipe if usize::from(seat) < self.actors.len().min(8) => {
+                usize::from(seat)
+            }
+            _ => 0,
         }
+    }
+
+    /// The pose's voice bank (`0x8004ECAC..0x8004ECE4`): the SCUS voice table
+    /// row of the pose actor's character, column of the picked pose, less
+    /// one: the `monster.snd` bank phase 0 hands `FUN_8003E104` for slot 7.
+    /// Phase 2 installs it there (`FUN_8001E54C(7, ..)` at `0x8004ED68`),
+    /// over the formation's own slot-7 bank, and the pose clip's cue `0xA1`
+    /// keys it ([`World::battle_monster_sound_banks`]).
+    ///
+    /// PORT: FUN_8004E568 (`0x8004ECAC..0x8004ECE4`, the voice-clip pick)
+    fn victory_voice_bank(&self, seat: usize, pose: Option<u8>) -> Option<u16> {
+        let table = self.tables.victory_voice_table.as_ref()?;
+        let char_id = (self.party_roster_slot(seat) as u8).saturating_add(1);
+        legaia_game_tables::victory_pose::victory_voice_bank(table, char_id, pose?)
     }
 
     /// Phase 0's pose pick (`0x8004E78C..0x8004EAF0`) for `seat`.
@@ -183,7 +221,14 @@ impl World {
         // `DAT_8007BD10[seat]` is 1-based; the roster slot is 0-based.
         let char_id = (self.party_roster_slot(seat) as u8).saturating_add(1);
         let mut rng = || self.next_rand();
-        let pose = victory_pose_id(&table, char_id, tier, &mut rng);
+        let picked = victory_pose_id(&table, char_id, tier, &mut rng);
+        // The held-button select and the Songi override run on the pick
+        // (`0x8004EAF4..0x8004EBAC`), after its two draws.
+        let held = self.input.retail_pad().held;
+        let first_monster = self.formation_slot0_monster_id().unwrap_or(0);
+        let pose = picked.map(|p| {
+            victory_pose_formation_override(victory_pose_pad_select(p, held), first_monster)
+        });
         log::info!(
             "battle end: seat {seat} (char {char_id}) hp {hp}/{hp_max} round {round} \
              status {status:#06x} -> pose tier {tier}, win pose {pose:#04x?}"
@@ -338,8 +383,55 @@ impl World {
                 // waits for the fade frame.
                 self.battle.spoils_frames =
                     VICTORY_RESULTS_HOLD_FRAMES.saturating_add(VICTORY_EXIT_PHASE);
+                // The yaw counter the in-fight framing of the pose actor
+                // reads (`li v0,0x7c0; sh v0,0x4(s4)`, `s4 = ctx + 0x6D6`, at
+                // `0x8004F920`).
+                if let Some(cam) = self.battle.camera.as_mut() {
+                    cam.set_action_yaw_base(WIPE_YAW_BASE);
+                }
+                self.stage_wipe_taunt(seq.pose_actor);
+                // The boss bark (`0x8004F9FC..0x8004FAE8`), once.
+                let first_monster = self.formation_slot0_monster_id().unwrap_or(0);
+                let mut rng = || self.next_rand() as i32;
+                if let Some(cue) = party_wipe_bark(first_monster, &mut rng) {
+                    self.dispatch_battle_cue(cue);
+                }
             }
             BattleEndCause::Escaped => {}
+        }
+    }
+
+    /// The annihilated arm's taunt (`0x8004F928..0x8004F9C4`): when the pose
+    /// actor is a monster, its first action entry tagged `0x22` - the
+    /// knockout taunt the action SM withholds from the wiping blow
+    /// (`battle_action::attack::stage_ko_taunt`) - is staged there with the
+    /// stage latch (`sb s4,0x1da(s3)`, `+0x1DC |= 2`) unless it is already
+    /// the committed clip (`+0x1D9`). A monster with no such entry stays on
+    /// its clip. The arm also stores `+0x1FA = 2`, the counter the commit
+    /// counts down, which no end-sequence reader consults.
+    ///
+    /// Retail indexes the monster table with `ctx[+0x13] - 3` unguarded; a
+    /// party seat there would read past the table's head, so the port
+    /// stages nothing for one.
+    ///
+    /// PORT: FUN_8004E568 (`0x8004F928..0x8004F9C4`, the wipe taunt)
+    fn stage_wipe_taunt(&mut self, seat: usize) {
+        use legaia_engine_battle_vm::battle_action::{ActorFlags, KO_TAUNT_TAG};
+        let Ok(slot) = u8::try_from(seat) else {
+            return;
+        };
+        if self.battle_seat_map().is_party(slot) {
+            return;
+        }
+        let Some(taunt) = self.battle_monster_action_tags(slot).and_then(|tags| {
+            legaia_actor_formats::monster_archive::find_action_by_tag(&tags, KO_TAUNT_TAG)
+        }) else {
+            return;
+        };
+        let a = &mut self.actors[seat].battle;
+        if a.current_anim != taunt {
+            a.queued_anim = taunt;
+            a.flag_bits.set(ActorFlags::ADVANCE_DONE);
         }
     }
 

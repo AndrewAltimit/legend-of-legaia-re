@@ -401,14 +401,29 @@ impl World {
     /// only a non-zero count reaches `FUN_8003E104(max - 1, 8, ..)`
     /// (`0x80052360..0x8005236C`). `FUN_8003E104` indexes the archive's
     /// sector table with that bank number directly.
-    // REF: FUN_800520F0, FUN_8003E104
+    ///
+    /// A victory's results sequencer streams the pose's **voice** over slot
+    /// 7 (`FUN_8003E104(clip, 7, ..)` at `0x8004ECE4`, installed by
+    /// `FUN_8001E54C(7, ..)` at `0x8004ED68`): from the sequence's arming on,
+    /// slot 7 answers that bank, which the pose clip's cue `0xA1` (a party
+    /// cue below `0xA7`, so category `7`) keys.
+    // REF: FUN_800520F0, FUN_8003E104, FUN_8004E568
     pub fn battle_monster_sound_banks(&self) -> Vec<(u8, u16)> {
-        crate::world::monster_sound_banks(
+        let mut banks = crate::world::monster_sound_banks(
             self.battle_monster_slots()
                 .into_iter()
                 .map(|(_, id, _)| id)
                 .filter(|&id| id != 0),
-        )
+        );
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && let Some(voice) = self.battle.victory.and_then(|v| v.voice_bank)
+        {
+            match banks.iter_mut().find(|(slot, _)| *slot == 7) {
+                Some(b) => b.1 = voice,
+                None => banks.insert(0, (7, voice)),
+            }
+        }
+        banks
     }
 
     pub(in crate::world) fn battle_sound_category(&self, category: u8) -> u8 {

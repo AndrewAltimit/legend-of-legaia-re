@@ -1151,8 +1151,9 @@ impl World {
     /// sequencer's framing, the camera-ghost pass and the commit's camera
     /// reset all read. On a win that is the seat the action SM's victory arm
     /// left in `battle_ctx.active_actor` (the member who finished the fight);
-    /// a party wipe poses the leader. An escape skips the framing
-    /// (`0x8004E720`) and keeps the mirror.
+    /// a party wipe keeps whoever acted last, usually the monster that landed
+    /// the wiping blow. An escape skips the framing (`0x8004E720`) and keeps
+    /// the mirror.
     pub(in crate::world) fn retail_acting_slot(&self) -> u8 {
         match self.battle.victory {
             Some(seq)
