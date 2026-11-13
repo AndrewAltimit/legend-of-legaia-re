@@ -311,6 +311,8 @@ The hub's screen routine `FUN_801CF870` stores `2` to the frame-step floor `_DAT
 
 The port runs it there: `HubTimers::tick` is called every vsync, reads the leg and contest edges on each, and runs the arms once every `HUB_FRAME_STEP` (`2`) vsyncs on that step, holding a press made between two ticks for the next. The stepped envelopes keep their length in vsyncs, each fade moves at 30 frames a second, and the tally's rows, a scaled share of each lane's remainder a tick, come half as often as a step of `1` would draw them. An idle hub stands a vsync short of its tick, so a screen armed by a leg edge takes its first step on that edge's vsync. Pinned by `muscle_ringside::tests::the_hub_ticks_every_second_vsync_on_a_step_of_two`.
 
+A retail run from `minigame_muscle_dome_retail_welcome` ([`autorun_hub_cadence.lua`](../tooling/pcsx-redux-automation.md#minigames), five hundred vsyncs) reads a step of `2` on every vsync, the floor at `2`, and every counter moving once every two vsyncs. Its arms last `34` (`2`), `14` (`3`), `52` (`4`), `182` (`5`), `34` (`6`) and `2` (`0x14`) vsyncs, and the port's first visit lasts the same six to the vsync; a step of `1` every vsync ran five of them one vsync short *(capture)*.
+
 `DAT_801D1A80` is a **brightness level**, not a tick count: the emitter `FUN_801D050C` scales each stored channel by `c * a3 / 256` (`mult` then `sra 8`), and the counter clamps at `0x80` - a PSX textured primitive's neutral modulation. Drawing a hub screen at `0x100` is twice retail's brightness.
 
 | Screen | States | Fade in | Hold | Skippable | Fade out |
