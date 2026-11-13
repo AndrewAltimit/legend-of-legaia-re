@@ -134,6 +134,7 @@ impl World {
     /// |---|---|---|
     /// | 4 (`0x801F71E0`) | pass | victim `+0x21C = 0`: the band's hide eases out |
     /// | 7 (`0x801F74C0..0x801F74D0`) | pass | victim `+0x04 = 0x20080200` |
+    /// | 14 (`0x801F7994..0x801F79A8`) | pass | creature's running clip entry root speed `+0x0C = -16` |
     /// | 15 (`0x801F7B24..0x801F7B7C`) | pass | the arm-14 records ended; creature `+0x04 = 0`, `+0x21C = 0xFF` |
     /// | `0x11` (`0x801F7E8C`, `0x801F7E94`, `0x801F7CF4..0x801F7D08`) | pass | victim rate `1`, `+0x21C = 0xC8`, facing the creature's `+ 0x800` |
     /// | `0x12`, `0x13` (`0x801F81C0..0x801F81DC`) | every, while the victim's clip is `0` | the same rate and tint |
@@ -143,13 +144,15 @@ impl World {
     /// The word the `0xC8` state reads is the neutral `0x20080200` arm 7
     /// stored.
     ///
-    /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15 and the seat tints of arms 4, 7, 15, 0x11..0x13)
+    /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15, the arm-14 root speed and the seat tints of arms 4, 7, 15, 0x11..0x13)
     fn apply_aluru_seat_writes(&mut self, phase_in: u8, passed: bool, victim: u8, seat_slot: u8) {
         use legaia_engine_cast::cast_module_camera as cam;
         const ALURU_VICTIM_SHOWN_ARM: u8 = 7;
         const TINT_FLAT: u8 = 0xC8;
         const NEUTRAL_WORD: u32 = 0x2008_0200;
         const HIDDEN: u8 = 0xFF;
+        const ALURU_BACKOFF_ARM: u8 = 14;
+        const ALURU_BACKOFF_SPEED: i16 = -16;
         // Arm 4's pass seats the creature (`jal 0x801F19EC`), then lights it
         // white and points its node at deformation row 1, a sweep that
         // re-forms it from the floor up as its `+0x1BA` drains
@@ -219,6 +222,23 @@ impl World {
             if let Some(a) = self.actors.get_mut(usize::from(victim)) {
                 a.battle.shatter_row = Some(cam::ALURU_SHATTER_ROW);
             }
+        }
+        // Arm 14's pass stores the root speed `-16` straight into the
+        // creature's running clip entry (`lw v0,-0x6CA8(v0)` / `lw v1,0x50(v0)`
+        // / `sh v0,0xc(v1)` at `0x801F7994..0x801F79A8`), beside its fade spawn
+        // and the `scalar * 55` countdown. The disc's is `0`; a negative speed
+        // steps every pass with no range test (`bltz` at `0x80047D3C`), so the
+        // creature backs off along its facing from arm 15 on: a `--watch` of
+        // its `+0x38` reads `-24` a step-`3` pass from `0x80047DC0`.
+        if phase_in == ALURU_BACKOFF_ARM
+            && passed
+            && let Some(p) = self
+                .casting
+                .summon_actor_slot
+                .and_then(|s| self.actors.get_mut(usize::from(s)))
+                .and_then(|a| a.battle_animation.as_mut())
+        {
+            p.set_root_speed(ALURU_BACKOFF_SPEED);
         }
         if phase_in == cam::ALURU_RECORD_KILL_ARM && passed {
             if let Some(scene) = self.casting.active_summon.as_mut() {

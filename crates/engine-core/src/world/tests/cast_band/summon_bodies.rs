@@ -747,3 +747,33 @@ fn mushura_steps_its_victim_back_and_turns_it_down_the_lane() {
         "arm 7 turns the victim"
     );
 }
+
+/// Arm 14's pass stores root speed `-16` into the creature's running clip
+/// entry (`0x801F7994..0x801F79A8`), so the creature backs off along its
+/// facing from arm 15 on (`aluru_summon` film: `z` `-2307` to `-3075`).
+#[test]
+fn aluru_arm_14_backs_the_creature_off() {
+    let mut world = aluru_world(Some(false));
+    let clips: Vec<Option<MonsterAnimation>> = vec![Some(
+        crate::world::tests::battle_anim::pose_test_clip(0, 4, 0),
+    )];
+    world.set_actor_battle_action_clips(9, std::sync::Arc::new(clips));
+    world.apply_battle_pose(9, legaia_engine_battle_vm::battle_action::Pose::Idle as u8);
+    let speed = |w: &World| {
+        w.actors[9]
+            .battle_animation
+            .as_ref()
+            .map(|p| p.root_speed())
+    };
+    assert_eq!(speed(&world), Some(0), "the disc's entry carries no speed");
+    for _ in 0..20_000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(ALURU, phase) else {
+            break;
+        };
+        if phase > 14 || !run.busy {
+            break;
+        }
+    }
+    assert_eq!(speed(&world), Some(-16));
+}

@@ -4,7 +4,7 @@ use legaia_engine_mode::mode::SceneMode;
 // --- battle pose -> action-clip switching -----------------------------------
 
 /// Synthetic one-part action clip: `frames` keyframes translating from `tx`.
-fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
+pub(super) fn pose_test_clip(action_id: u8, frames: usize, tx: i16) -> MonsterAnimation {
     use legaia_actor_formats::monster_archive::PartPose;
     MonsterAnimation {
         variant_track: Default::default(),
