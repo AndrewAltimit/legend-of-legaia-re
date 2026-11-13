@@ -183,6 +183,11 @@ pub struct ScenarioArrival {
     /// The door's partition-2 record in `from`'s MAN.
     #[serde(default)]
     pub door: Option<u16>,
+    /// Story flags the arrival ran under that the destination's own beat
+    /// cleared before the capture: raised for the replay, so the
+    /// destination's entry script takes the branch it took on retail.
+    #[serde(default)]
+    pub flags: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

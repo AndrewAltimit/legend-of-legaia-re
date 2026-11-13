@@ -151,7 +151,8 @@ fn kor4s_own_door_keeps_its_music_in_koin6() {
         .expect("kor4 has the door");
     eprintln!("taken {taken:?}");
     let mut calls = Calls::default();
-    for _ in 0..600 {
+    // A cutscene record runs some 2700 ticks to its scene change.
+    for _ in 0..4000 {
         let _ = host.tick();
         host.route_bgm_events(&mut calls).expect("route");
         if host.scene.as_ref().is_some_and(|s| s.name == "koin6") {
@@ -185,7 +186,7 @@ fn enter_overworld(host: &mut SceneHost, scene: &str, frames: usize) -> Calls {
     calls
 }
 
-/// Take `map03`'s partition-2 entrance `record` into `dest` and route until
+/// Take the overworld's partition-2 entrance `record` into `dest` and route until
 /// the session holds `dest`, then `after` ticks more.
 fn take_overworld_door(host: &mut SceneHost, dest: &str, record: usize, after: usize) -> Calls {
     let taken = host
@@ -193,7 +194,8 @@ fn take_overworld_door(host: &mut SceneHost, dest: &str, record: usize, after: u
         .expect("map03 has the door");
     eprintln!("taken {taken:?}");
     let mut calls = Calls::default();
-    for _ in 0..600 {
+    // A cutscene record runs some 2700 ticks to its scene change.
+    for _ in 0..4000 {
         let _ = host.tick();
         host.route_bgm_events(&mut calls).expect("route");
         if host.scene.as_ref().is_some_and(|s| s.name == dest) {
@@ -230,4 +232,83 @@ fn map03s_son_entrance_keeps_the_overworld_theme() {
         calls.0
     );
     assert_eq!(host.bgm_track_word, Some(0x1000), "son's entry parks");
+}
+
+/// `map01`'s `P2[31]` is the cutscene its entry script spawns once flag
+/// `0x2C3` is up (`72 C3` at `P1[0]` `+0x107`): the Genesis Tree's revival
+/// seen from the overworld, which raises sub-op 6 at `+0x1E8` and changes
+/// to `vozz` at `+0x1F6`. Retail keeps the music the overworld brought
+/// across that change.
+#[test]
+fn map01s_tree_cutscene_keeps_its_music_into_vozz() {
+    let Some(mut host) = host() else { return };
+    let calls = enter_overworld(&mut host, "map01", 30);
+    eprintln!("map01: {:?}", calls.0);
+    let calls = take_overworld_door(&mut host, "vozz", 31, 30);
+    eprintln!("vozz behind P2[31]: {:?}", calls.0);
+    assert!(
+        !calls
+            .0
+            .iter()
+            .any(|c| matches!(c, Call::Stop | Call::Start(_))),
+        "the cutscene kept the overworld's music: {:?}",
+        calls.0
+    );
+}
+
+/// The same cutscene as the story spawns it: `map01`'s entry script tests
+/// `0x2C3` (raised by `vozz` `P1[7]` ahead of its own sub-op 6 and scene
+/// change) and spawns `P2[31]`, which runs to its scene change into `vozz`.
+#[test]
+fn map01s_entry_spawns_the_tree_cutscene_and_keeps_its_music() {
+    let Some(mut host) = host() else { return };
+    host.world.system_flag_set(0x2C3);
+    let calls = enter_overworld(&mut host, "map01", 30);
+    eprintln!("map01 with 0x2C3: {:?}", calls.0);
+    let mut calls = Calls::default();
+    for t in 0..4000 {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+        if host.scene.as_ref().is_some_and(|s| s.name == "vozz") {
+            eprintln!("vozz after {t} ticks");
+            break;
+        }
+    }
+    assert_eq!(host.scene.as_ref().map(|s| s.name.as_str()), Some("vozz"));
+    for _ in 0..30 {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+    }
+    eprintln!("vozz behind the spawned P2[31]: {:?}", calls.0);
+    assert!(
+        !calls
+            .0
+            .iter()
+            .any(|c| matches!(c, Call::Stop | Call::Start(_))),
+        "the cutscene kept the overworld's music: {:?}",
+        calls.0
+    );
+}
+
+/// The kingdom overworld is a field init too. `vozz` `P1[7]` (the Genesis
+/// Tree beat) raises sub-op 6 at `+0x46A` ahead of its scene change into
+/// `map01`: the retail chain played on from `vozz_genesis_tree_songi` holds
+/// `2035`, `vozz`'s theme, sounding in `map01` under the word `2000`.
+#[test]
+fn a_kept_door_into_the_overworld_plays_on_under_its_word() {
+    let Some(mut host) = host() else { return };
+    let calls = enter(&mut host, "vozz", 30);
+    eprintln!("vozz: {:?}", calls.0);
+    raise_music_not_change(&mut host);
+    let calls = enter_overworld(&mut host, "map01", 30);
+    eprintln!("map01 behind sub-op 6: {:?}", calls.0);
+    assert!(
+        !calls
+            .0
+            .iter()
+            .any(|c| matches!(c, Call::Stop | Call::Start(_))),
+        "the overworld kept the door's music: {:?}",
+        calls.0
+    );
+    assert_eq!(host.bgm_track_word, Some(2000), "map01's word");
 }

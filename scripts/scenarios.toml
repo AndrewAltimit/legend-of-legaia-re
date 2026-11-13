@@ -8106,6 +8106,7 @@ topics = ["field", "story beat", "vozz", "Songi", "cutscene", "dialog"]
 
 [[scenarios]]
 label = "vozz_ozma_hatching_hover"
+arrival = { from = "map01", door = 31, flags = [0x2C3] }
 backup_fingerprint = "f80beaa06f1a04d967bc2740270f04b929cd5a2c2d47ccfa3dcba533c9ae27b0"
 description = "East Voz Forest P2[17], Ozma's hatching: Ozma hovering beside Noa at the tree, record parked at +0x39C. RETAIL disc, story flag 0x2C3 raised by poke: garmel_field_card_boot door-hopped garmel:20:8 into map01 with LEGAIA_FLAGS_SET=2C3 and walked into vozz, then Cross every 20 vsyncs; saved 630 vsyncs into the vozz film."
 phase = "field"
@@ -8123,6 +8124,26 @@ expected_game_mode = 0x03
 expected_active_scene = "vozz"
 ram_poked = ["system flag 0x2C3 raised (the vozz P2[17] gate)"]
 topics = ["field", "story beat", "vozz", "Ozma", "cutscene", "narration crawl"]
+
+[[scenarios]]
+label = "map01_tree_revival_cutscene"
+backup_fingerprint = "a126e92851bc97c55b8486764d3a8084d3e10a0387c8d20de7af8f972f81c301"
+description = "map01 P2[31], the Genesis Tree's revival seen from the overworld, about 550 vsyncs before its sub-op 6 (+0x1E8) and scene change into vozz (+0x1F6); the record is the one map01's entry script spawns once flag 0x2C3 is up. RETAIL disc, pad only: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross / Circle through the boxes, Attack with arts through the fight), the tree touched again by autorun_walk_route.lua, then vozz P1[7] ran to its own sub-op 6 and scene change into map01. The one RAM write is the fight's: both monsters' HP written to 1 at round 2's prompt (LEGAIA_FINISH=2), gone with the fight. Sounds 2035 (vozz's theme, kept by P1[7]'s sub-op 6) under the word 2000; the engine's card-load seed has no P1 arrival and starts 2000."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map01"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "map01", "Genesis Tree", "cutscene", "sub-op 6", "BGM keep"]
+
+[[scenarios]]
+label = "vozz_tree_revival_return"
+backup_fingerprint = "11506f15a3e74ab6dfe1f7c60b48b49e42b0765992c48f3a718110b559b14705"
+description = "East Voz Forest after map01's P2[31] carried the party back: Ozma's hatching (P2[17]) under way, saved 630 vsyncs after the field resumed, the moment vozz_ozma_hatching_hover was saved at. The clean counterpart of that state: map01_tree_revival_cutscene played on by autorun_story_forward.lua, no further RAM write. Sounds 2035 under the word 2035: the music vozz P1[7] kept into map01 is kept again by P2[31]'s sub-op 6."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Ozma", "cutscene", "sub-op 6", "BGM keep"]
 
 [[scenarios]]
 label = "bylon_mist_gala_goes_ahead"
