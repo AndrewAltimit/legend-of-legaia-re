@@ -3565,10 +3565,15 @@ PROT 0947 films, on every seat. Grade `disassembly` + `capture`.
 
 Arm 3's hit bakes one power per action. The `bne` on `+0x1DF != 0xA7` at `0x801F73D8`
 carries `li a0,0x7b` in its delay slot and lands on the `jal 0x801DD4B0` at `0x801F7414`, so
-V-Windhash (`0x57`) rolls at `0x7B`. Neo Windhash falls through, rolls its 1-in-4 Slow
-(`rand() & 3`, `+0x16E |= 0x1000`) and loads `0xEA` at `0x801F7410`. `CAPTURE_SITE_POWERS`
+V-Windhash (`0x57`) rolls at `0x7B`. Neo Windhash falls through, rolls its 1-in-4 Curse
+(`jal rand` at `0x801F73E0`, `rand() & 3 == 0` sets `+0x16E |= 0x1000`) and loads `0xEA` at `0x801F7410`. `CAPTURE_SITE_POWERS`
 keys the two by action; the module-wide `0xEA` it held before dealt a Spirit-stance Vahn
 `120` to `133` where `battle_tower_guardian_v_windhash_mid_cast` takes `61`.
+The Curse draw comes ahead of the damage call, so the hit rolls one word later
+(`ticks::chain_pre_hit_roll`, drawn by the band just before the fold). Without it the
+seated `battle_korb2_ghost_knight_neo_windhash_mid_cast` film drew four words on the hit
+pass where retail draws five, and landed `807` against retail's `771`; with it the two
+streams agree through the Done band and the hit lands `771`. Grade `disassembly` + `capture`.
 
 ### PROT 0943, 0945, 0949 and 0956: a director, the arm tables and a stager
 

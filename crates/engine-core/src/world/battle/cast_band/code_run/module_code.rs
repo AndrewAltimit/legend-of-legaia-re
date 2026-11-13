@@ -788,6 +788,15 @@ impl World {
                 if marks {
                     self.casting.module_fold_quiet = true;
                 }
+                // A status the arm rolls ahead of its damage call draws first
+                // (PROT 0947's Neo Windhash Curse, `0x801F73E0`), so the
+                // damage rolls one draw later.
+                if let Some(roll) =
+                    chain.and_then(|c| ticks::chain_pre_hit_roll(entry, c.body, spell_id))
+                    && self.next_rand() & roll.mask == 0
+                {
+                    self.battle.status_effects.apply(victim_slot, roll.kind);
+                }
                 self.fold_pending_cast_at_rate(arm.hit_rate);
                 if marks {
                     self.casting.module_fold_quiet = false;
