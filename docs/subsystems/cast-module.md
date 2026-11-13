@@ -3798,9 +3798,9 @@ that call draws nothing itself: PROT 0942's Power Up glow and PROT 0941's column
 from `FUN_801F8118` and `FUN_801F7DB0`, not from the record the arm seats. The table at
 `0x801F6734` names one stager per image; `enemy_cast_stager_spawns` carries PROT 0935,
 0941, 0942, 0951 and 0964, and `blazing_slash_stager_spawns` carries PROT 0958's
-([Blazing Slash](#prot-0958-blazing-slash)). PROT 0936, 0937, 0943, 0945, 0950, 0953,
-0955, 0956, 0957 and 0963 hold stagers of the same shape that do not run yet, and their
-parts' calls are dropped (`World::runs_part_stager_calls`).
+([Blazing Slash](#prot-0958-blazing-slash)); `World::runs_part_stager_calls` names
+every image whose calls run. PROT 0950 and 0963 hold stagers of the same shape that do
+not run yet, and their parts' calls are dropped.
 
 ### PROT 0948 (Cross Beam)
 
