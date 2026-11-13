@@ -533,7 +533,9 @@ impl World {
                     // `alpha += step` (`0x801F70EC..0x801F7100`), so at step
                     // `4` a fold of `1` left the whole ramp three short.
                     let d = if field == 0x27A && matches!(timing, SiteTiming::Pass) {
-                        d * i32::from(self.battle_frame_step().max(1))
+                        let step = self.battle_frame_step().max(1);
+                        self.casting.module_pres.wash_pass_vsyncs = step;
+                        d * i32::from(step)
                     } else {
                         d
                     };

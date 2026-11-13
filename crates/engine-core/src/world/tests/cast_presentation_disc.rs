@@ -101,7 +101,8 @@ fn kemaro_ramps_its_colour_wash_to_the_cap() {
 /// folds the step at one vsync, an engine tick's share, so the arm-6 ticks add
 /// one each; the passing tick stands for retail's whole pass and adds the
 /// step. `battle_noaru_slippery_v2_big_wave_mid_cast` holds alpha `28` in arm
-/// 6 at step `4`, a multiple of the step.
+/// 6 at step `4`, a multiple of the step, and scroll `8`: seven passes of
+/// `4 * 2` wrapped into the `0x18`-line band, the arming pass's included.
 #[test]
 fn big_wave_enters_its_wash_ramp_on_a_whole_pass() {
     let Some(mut w) = band_world() else {
@@ -118,10 +119,18 @@ fn big_wave_enters_its_wash_ramp_on_a_whole_pass() {
     assert_eq!(wash.colour_b, [0x80, 0x40, 0xFF]);
     assert_eq!(wash.height, 0x18);
     assert_eq!(wash.alpha, 4, "the passing tick adds the step");
+    // The dispatchers' tail draws the wash on that same pass and steps its
+    // scroll by `step * rate` (`0x801F2444..0x801F24DC`, rate `2`).
+    assert_eq!(wash.scroll_rate, 2);
+    assert_eq!(wash.scroll, 8, "the arming pass scrolls the whole step");
     for _ in 0..4 {
         w.fire_cast_presentation(946, None, None, 6, 6, false);
     }
     assert_eq!(w.casting.module_pres.wash.alpha, 8, "one a tick in arm 6");
+    assert_eq!(
+        w.casting.module_pres.wash.scroll, 16,
+        "a rate a tick in arm 6"
+    );
 }
 
 /// PROT 0906 (Gizam) arm 12's pass spawns its fade (`0x801F72BC`): kind 1,

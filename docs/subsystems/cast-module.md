@@ -5848,7 +5848,13 @@ that passes and stands for retail's whole pass, so it adds the battle frame
 step. Big Wave enters arm 6 on `alpha += step` (`0x801F70EC..0x801F7100`):
 folded at one, its wash ran three short of retail's at step `4` for the rest of
 the ramp (`battle_noaru_slippery_v2_big_wave_mid_cast` holds `28`, a multiple
-of the step, where the engine's displayed frame read `17` for retail's `20`). PROT 0905, 0954 and 0966 keep their
+of the step, where the engine's displayed frame read `17` for retail's `20`).
+The dispatchers' tail draws the wash on that same pass and steps its scroll by
+`step * rate` (`0x801F2444..0x801F24DC`), so a wash armed by such a pass takes
+the whole step's scroll on its arming tick too
+(`CastFxState::finish_cast_wash_tick`): folded at one, Big Wave's bands ran
+`(4 - 1) * 2` lines under retail's for the rest of the cast (the state holds
+scroll `8`, seven passes of `8` wrapped into the `0x18`-line band). PROT 0905, 0954 and 0966 keep their
 hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
 spawned twice.
 
