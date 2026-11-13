@@ -1384,6 +1384,21 @@ adds its reaction-channel entry). What the recordings on
   segment runs on, so its wheel clicks read as extras past the cut. Both sides click every sixteen vsyncs.
 - **A roll on the wrong side.** Nighto's kill roll takes arm 14 in the engine and goes round it in
   the retail recording (`13` to `15`, HP unchanged), and its three extras are that hit.
+- **A shout on a busy drive.** Neo Star Slash's KO of Noa (`gaza2_card_pre_neo_star_slash`,
+  `--rand-track`, which deals retail's `92` / `0` / `330` HP) plays her death clip's shout as the
+  ring fallback `0x62` in the engine and as nothing on retail's ring: the shout takes the CD-XA
+  leg while the drive word `0x8007BC20` is clear and the ring cue `0x62` only while it is up
+  ([the shout band](../subsystems/audio.md#the-second-shout-trigger---the-animation-cue-track-fun_800508dc)). The cast's own
+  line clears the word on the wall clock, and retail's capture arms ran `583` vsyncs for `192` of
+  game time where the engine's run their step, so the engine's drive is still busy when the clip
+  commits. Unseeded, the same film deals other damage, Noa lives, and the clip's `0x10` reads
+  missing. The frame cost's, not a cue rule.
+- **A projectile state on a light step.** Tail Flare's `0x15` / `0x17` and `0x62` / `0x5C`
+  pairs land on one retail frame and three ticks apart in the engine
+  (`battle_jou_gimard_v3_tail_flare_mid_cast`): retail runs all of `0x2B` at step `4` (the
+  ring's newest entry on the clamp from the first frame), the engine at `3` on a cost of `537`
+  to `718` (the table's `534` and the flight's parts), so two homing slots that reach their
+  targets in one retail frame land in consecutive engine frames.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
