@@ -3427,6 +3427,10 @@ is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op o
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
+`vozz_ozma_hatching_hover` reads `track` `0`: retail sounds `map01`'s `2000` under the word `2035`,
+where the engine seeded into `vozz` starts `2035`
+([open](../reference/open-rev-eng-threads.md#does-a-walk-into-east-voz-forest-keep-the-overworld-theme)).
+
 The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
 emulator's `ENVX`, and its SPU runs on the host's audio clock
 ([above](#the-envelope-channel-is-not-on-emulated-time)), so a one-shot can read as still
@@ -3810,8 +3814,8 @@ correlation repeats at its pitch period, and a grid over it once moved Gilium's 
 on a cue tail `29` dB under it. `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
 never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
-the applier, not the drive. On the five summon states with a wait the voice lands `-9.0` vsyncs from the
-cast's offset on Theeder, `-9.7` on Nighto, `-8.4` on Orb, `-10.0` on Swordie and `-6.0` on Gilium. These
+the applier, not the drive. On the five summon states with a wait the voice lands `-6.5` vsyncs from the
+cast's offset on Theeder, `-7.7` on Nighto, `+3.2` on Orb, `0.0` on Swordie and `-7.8` on Gilium. These
 shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
 drive and of the band ahead of the module that the window covers, not emulator variance.
 
