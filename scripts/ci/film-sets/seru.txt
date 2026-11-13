@@ -24,7 +24,8 @@ s95 --spell 0x95 --state party_basic_attack_vs_gobu_gobu --target 9
 s99 --spell 0x99 --state party_basic_attack_vs_gobu_gobu --target 9
 s9A --spell 0x9A --state party_basic_attack_vs_gobu_gobu --target 9
 s9B --spell 0x9B --state party_basic_attack_vs_gobu_gobu --target 9
-s9C --spell 0x9C --state party_basic_attack_vs_gobu_gobu --target 8
+# Horn's recording held its drive poll (arm 3) two passes: its drive seeks in five vsyncs, not the driver's two.
+s9C --spell 0x9C --state party_basic_attack_vs_gobu_gobu --target 8 --engine-env LEGAIA_SEAT_DRIVE_SEEK=5
 s9D --spell 0x9D --state party_basic_attack_vs_gobu_gobu --target 9
 s9E --spell 0x9E --state party_basic_attack_vs_gobu_gobu --target 9
 s9F --spell 0x9F --state party_basic_attack_vs_gobu_gobu --target 9

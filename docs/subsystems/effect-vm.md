@@ -296,6 +296,19 @@ cursor `8` / wait `8` against retail's `12` / `8`, and reads `8` / `0` with
 it. The pass that remains is Vahn's reaction clip itself, `100` sixteenths
 on the engine's frame against retail's `104`.
 
+**In battle the walker sweeps from the draw preamble.** The draw tick's walk sits
+behind the frame driver's discarded `rand()` draw and every draw the state
+machines and the module tick make, and ahead of the bodies' draws, whose burning
+puffs draw six words each (`FUN_8004998C`, `0x8004A634..0x8004A884`). A `--watch`
+of the seed word `0x80009010` across Viguro's arm 12 reads one pass as the
+driver's word, the sixteen streak ribbons', the walker's two mirror draws
+(`0x801E01D4`), then two puffs' twelve. On the battle frame cadence the mode tick
+leaves its sweeps to `World::tick_battle_anim_pass`, which runs them ahead of the
+cast census (`jal 0x801E09F8` at `0x80048130`); swept at the head of the tick, the
+walker's draws came off the stream ahead of the pass, two to four words a pass off
+retail's in Viguro's arm 12 and Ozma's arms 18..25. A spawn the module tick makes
+(Earthquake's rock puff) is then walked in its own frame with no catch-up.
+
 Two deliberate port-side deltas, both invisible to retail behaviour: the
 retirement overrun is cut at retirement, and `master.field_14` (a retail dead
 lane) is bumped once per call per active master as an age counter for

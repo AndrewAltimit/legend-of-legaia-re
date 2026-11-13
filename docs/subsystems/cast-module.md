@@ -2321,8 +2321,19 @@ the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
 countdown fed through `module_words`), where it used to spread a step-`2`
 pass's turn over every tick. On retail's frame steps the camera's 83 yaw adds
 then match the recording's one for one and end on its `2587`, against `1506`;
-arm 16 reads `.724` against `.690`. What is left there is the jittered ring
-records and the victim's pose. Grade `disassembly` + `capture`.
+arm 16 reads `.724` against `.690`. Grade `disassembly` + `capture`.
+
+The sixteen whirlwind rings draw on the game's one `rand()` stream. Arm 13's pass
+gives each its yaw `rand() % 0xFFF` as it seats it (`0x801F7BBC..0x801F7C5C`), and
+arms 14, 15 and 16 each run the same loop over the sixteen handles at `0x801F9134`
+on every pass, ahead of the arm's countdown: `x = v.x + rand() % 63 - 0x20`, then
+`z` the same, ring by ring (`0x801F7C80`, `0x801F7D8C`, `0x801F7F48`). That is
+`32` words a pass, which the recording's per-frame seed words hold and which the port
+drew in arm 16 only, off a private seed. On the world stream
+(`World::nova_victim_motion`, the stores held until the director seats the rings)
+every pass of arms 13..17 draws retail's count on the rand track, and arm 16 reads
+`.785` against `.729`. What is left there is the victim's pose. Grade `disassembly`
++ `capture`.
 
 ### The shatter effect on monsters
 

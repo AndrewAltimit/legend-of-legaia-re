@@ -992,12 +992,48 @@ harness seat:
 | plain | `.9108` | `.9132` | `0x90` `.950` to `.976`, `0x8E` `.835` to `.864` (seat), `0x94` `.930` to `.937`, `0x99` `.894` to `.899` |
 | `--retail-steps` | `.9216` | `.9239` | `0x90` `.951` to `.977`, `0x8E` `.819` to `.849` (seat), `0x94` `.955` to `.963`, `0x99` `.913` to `.919` |
 
-What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
-and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
-the passes the rand track seats fall on other frames; Juggernaut's arm 26 reads `.44`
-against one retail recording and `.80` against another of the same cast, so its ring
-phase is the recording's; and Viguro's lightning, Spoon's rings and Terra's vortex part
-on phase rather than shape. The rest is listed in the
+What still held on every seat was read against the recordings' seed words. The words a
+pass draws are the LCG steps from the word the rand track seats to the frame's last one,
+on either side, so an arm that draws other words parts from one that draws the same words
+in another place; a `--watch 0x80009010` recording names each draw's caller (`ra`).
+
+- **Horn's arm 4** draws retail's words, a pass apart: the sparkle loop (stager arm 0,
+  every third frame at step `4`) falls a pass later against the wisp loop than retail's.
+  The wisp emitter is seated by arm 3, the drive poll, which the recording held two
+  passes and the seek seat one (`retail_live_wait` `6`). With
+  `LEGAIA_SEAT_DRIVE_SEEK=5` on this film arm 4 reads `.983` against `.694`; the seek
+  is the recording drive's, so the film set carries it for this cast. A harness seat.
+- **Horn's arm `0xB`** lacked the roster panel its heal raises
+  ([battle HUD](../subsystems/battle-hud.md#the-party-status-readout---and-it-has-no-gauge)).
+- **Viguro's arms 10..14** lost the target plaque when the module wrote the every-enemy
+  code back; retail's record keeps the lone survivor's name. Its arm 12 drew two words a
+  pass off retail's: the effect walker's mirror draws, which the port made ahead of the
+  pass ([effect VM](../subsystems/effect-vm.md#engine-port)), as in Ozma's arms 18..25.
+  With both, every pass of those arms draws retail's words in retail's order, and what
+  is left in arm 12 is the bolts' and the floor's brightness.
+- **Nova's arm 16** was missing `32` words a pass, the whirlwind rings' jitter
+  ([cast module](../subsystems/cast-module.md#body-paced-directors)).
+- **Spoon's arm 8** draws a burst of effect spawns every sixth frame, each with two leg
+  words (`0x801DFF6C` / `0x801DFFD4`) and a mirror word a child; the engine's bursts are
+  two to four words short, so one or two spawns a burst are missing.
+- **Ozma's arm 21** draws retail's words once the walker moved and reads as before: its
+  residue is the step's fall partway through the arm
+  ([open threads](../reference/open-rev-eng-threads.md#battle--rendering)).
+
+Over the ten films of the Gobu Gobu set that read lowest (the engine's changes, then the
+film set's Horn seat):
+
+| Seat | Before | After | With Horn's seat | Moved |
+|---|---|---|---|---|
+| plain | `.8868` | `.8888` | `.8886` | `0x9C` `.854` to `.866`, `0x87` `.898` to `.907` |
+| `--retail-steps` | `.8948` | `.8967` | `.8963` | `0x9C` `.856` to `.867`, `0x87` `.898` to `.907` |
+| `--retail-steps --rand-track` | `.9415` | `.9447` | `.9507` | `0x9C` `.901` to `.972`, `0x87` `.916` to `.930`, `0x8B` `.929` to `.937` |
+
+The sound channel holds `1.000` on all ten, on every seat.
+
+Juggernaut's arm 26 reads `.44` against one retail recording and `.80` against another of
+the same cast, so its ring phase is the recording's, and Terra's vortex parts on phase
+rather than shape. The rest is listed in the
 [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
 
 ## The game clock
@@ -1158,7 +1194,10 @@ another value overrides it. Over the ten lowest Seru films of
 
 On the rand seat Nova's arm 3 reads `.975`, Freed's `.995` and Viguro's `1.000`,
 each the white fall now leaving on the pass retail's does; the sound channel holds
-`1.000` on all ten.
+`1.000` on all ten. A recording whose drive took longer carries its own seat in the film
+set: Horn's (`0x9C`) held its poll two passes, so its line passes
+`LEGAIA_SEAT_DRIVE_SEEK=5`, and the wisp loop arm 3 seats then runs on retail's passes
+([the Seru set](#the-seru-set-on-three-seats)). A per-film seat, read off the recording's poll.
 
 A monster cast reached through the state's pad drive stages the clip the drive's
 replay picked, and the picker stores its clip bytes under draws the replay does not

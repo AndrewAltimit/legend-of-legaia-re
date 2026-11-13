@@ -309,8 +309,12 @@ digit after it draws. So a figure that fits is right-aligned, and one with more 
 than its field starts on the field's left edge and runs on past the right one. The case
 that shows it is a wrapped MP: the cast's debit is a halfword `subu` (`0x801E458C`) with
 no floor, so a Seru cast past the caster's MP reads `65518`, five cells from the MP
-field's left edge, over the `/`. Port: the HUD's `numerals` takes the field's
-`(right edge, cells)` pair (`HP_FIELD_CELLS`, `MP_FIELD_CELLS`).
+field's left edge, over the `/`. The `/` is a sprite of the panel's chain and the
+figures are number records drawn after it, so an overrunning figure covers the slash,
+which shows only through the digits' transparent texels: Horn's film reads
+`65363 27` with no slash on top. Port: the HUD's `numerals` takes the field's
+`(right edge, cells)` pair (`HP_FIELD_CELLS`, `MP_FIELD_CELLS`), and each row lays
+its separator down ahead of its figures.
 
 The current values are the displayed words, not the live ones: HP `+0x172` and
 MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
@@ -399,10 +403,17 @@ seed: `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at
 stores `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`): the panels glide up under
 the heal, in place of the readout bar, and the HP readout counts up in them;
 the Done hold closes them like the openers' ([cast-module.md](cast-module.md#module-stagers-and-spawn-reports)).
+PROT 0919 (Spoon) and PROT 0930 (Horn) make the same calls on their heal arms
+(`0x801F83E4..0x801F8450`, Horn's arm `0xA` at `0x801F7BF0..0x801F7C5C`): Horn's film
+holds the panel through arm `0xB`, its HP tally counting up.
 The
 same routine opens the target plaque (record 81) for a monster target, except
 for Theeder, Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down
-its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
+its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). An
+every-enemy code `9` opens it on the census's lone survivor `ctx[+0x24B]`, the
+record's name pointer that seat's `+0x1BC` (`0x801E6FC8..0x801E7008`), and the
+record keeps that name whatever the target byte reads later: Viguro's arm 10
+writes the code back, and retail's film holds `Gobu Gobu` to the Done band. Port:
 `battle_hud::battle_panels_visible` / `battle_target_plaque`; the module raise
 is `BattleState::action_panels_glide`.
 
