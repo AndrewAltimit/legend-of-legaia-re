@@ -220,6 +220,10 @@ canvas.ship-thumb.is-pending { opacity: 0.35; }
 .map-legend .lg-sub { display: block; color: var(--text-dim); font-size: 0.7rem; font-family: var(--font-mono); }
 .shop-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem; }
 #shop-npc-stage, #shop-item-stage { display: none; }
+/* A finger, not a cursor: each stock row clears 40px. */
+@media (pointer: coarse) {
+  .ship-row { min-height: 40px; }
+}
 </style>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>

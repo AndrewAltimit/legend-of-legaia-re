@@ -610,6 +610,7 @@
       'border:1px solid var(--border,#334);border-radius:3px;cursor:pointer;',
       'font-family:var(--font-mono,monospace);font-size:.66rem;',
       'padding:.16rem .45rem;text-decoration:none;display:inline-block;text-align:center;}',
+      '@media (pointer:coarse){.lgrb-btn{min-height:40px;padding:.5rem .7rem;font-size:.72rem;}}',
       '.lgrb-btn:hover:not([disabled]){border-color:var(--accent,#6cf);}',
       '.lgrb-btn[disabled]{opacity:.4;cursor:not-allowed;}',
       '.lgrb-btn.lgrb-primary{background:var(--accent,#6cf);',

@@ -703,6 +703,16 @@ function buildThemeToggle() {
 }
 
 /* ---------- Heading ID assignment (before anchors / TOC) ---------- */
+/* A heading's own words: a tooltip inside it (`.info-tip` and its pop-up, on the
+   patcher's option headings) is not part of the name, or the slug and the TOC
+   entry carry the whole tooltip. */
+function headingText(h) {
+  if (!h.querySelector('.info-tip, .tip-pop')) return (h.textContent || '').trim();
+  const c = h.cloneNode(true);
+  c.querySelectorAll('.info-tip, .tip-pop').forEach((e) => e.remove());
+  return (c.textContent || '').trim();
+}
+
 function assignHeadingIds() {
   const content = document.querySelector('.content');
   if (!content) return;
@@ -712,7 +722,7 @@ function assignHeadingIds() {
     if (h.tagName === 'H2' && sec && sec.id) {
       h.id = sec.id;
     } else {
-      h.id = slugify(h.textContent || '') || ('h-' + Math.random().toString(36).slice(2, 8));
+      h.id = slugify(headingText(h)) || ('h-' + Math.random().toString(36).slice(2, 8));
     }
   });
 }
@@ -742,7 +752,7 @@ function buildTocRail() {
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.href = '#' + h.id;
-    a.textContent = (h.textContent || '').trim();
+    a.textContent = headingText(h);
     a.dataset.target = h.id;
     if (h.tagName === 'H3') a.classList.add('h3');
     li.appendChild(a);
@@ -835,7 +845,7 @@ function buildTopbar(active, zone, depth) {
     '</nav>' +
     '<div class="tb-spacer"></div>' +
     '<button type="button" class="tb-search" id="open-search" aria-label="Open search">' +
-      '<span class="icon">⌕</span><span class="label">Search</span><span class="kbd">/</span>' +
+      railSvg('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>') + '<span class="label">Search</span><span class="kbd">/</span>' +
     '</button>' +
     '<button type="button" class="disc-chip" id="disc-chip" title="The disc is read locally and cached in this browser - nothing is uploaded.">' +
       '<span class="dot"></span><span class="txt">Checking disc…</span>' +

@@ -1177,10 +1177,15 @@
   .rom-art-advanced > summary { cursor: pointer; color: var(--text-dim); font-size: 0.88em; padding: 0.5rem 0; user-select: none; }
   .rom-art-advanced .rom-opt { border-top: none; padding-left: 0; padding-right: 0; }
 
+  @media (pointer: coarse) {
+    .rom-button, .rom-equip-presets button { min-height: 40px; }
+  }
   @media (max-width: 33rem) {
     .rom-opt { justify-content: flex-start; }
     .seg { width: 100%; }
-    .seg label { flex: 1; text-align: center; }
+    /* Each segment sizes to its word: an equal third broke "Randomize" in two
+       under the phone column's overflow-wrap. Finger-height rows too. */
+    .seg label { flex: 1 1 auto; text-align: center; overflow-wrap: normal; padding: 0.6rem 0.5rem; }
     .rom-form .art-row select { max-width: 100%; }
   }
 </style>

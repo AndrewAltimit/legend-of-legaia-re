@@ -185,6 +185,24 @@ drops the scroller and turns on `position: sticky` under the top bar; where it
 is too wide the wrapper keeps the horizontal scroller and a static header. It
 runs in the docs zone only, on load, on resize and once fonts settle.
 
+### A touch target clears 38px, a mouse target need not
+
+Below the drawer breakpoint every top-bar control clears 38px: the hamburger
+and the brand mark at 38, search, the disc chip, the theme toggle, the zone
+pills and the GitHub link at 40. Content
+controls keep their desktop size for a mouse and grow under
+`@media (pointer: coarse)`: disclosure summaries, the registers' *why* rows,
+the search box's close button (its keyboard hints go), the patcher's and the
+workbenches' `?` badges, which keep their drawn size and take a 12px wider hit
+area, and the dense lists on the crate map, disc map, shops and world overview,
+each in its own page's stylesheet. A width breakpoint is the wrong test for
+these: a narrow desktop window has a mouse, and a tablet in landscape is wide.
+
+The phone column sets `overflow-wrap: anywhere` (above), which a control's
+label inherits too: a segmented control of three equal thirds broke
+*Randomize* in two at 360px. A control row whose words must stay whole sets
+`overflow-wrap: normal` and sizes its segments to their words.
+
 ## One right edge per column
 
 On the docs column (1030px at a 1920px window, following the window above that)
@@ -647,6 +665,13 @@ invisible in a single-width screenshot. Render it:
 
 The last assertion is the one that catches a "tidy" mobile layout that has
 quietly dropped a destination.
+
+The first is gated: [`check-pages.mjs`](../../scripts/ci/check-pages.mjs)'s
+`phone` pass loads every generated page on a 360px touch phone and fails a
+page whose document is wider than the screen, naming the outermost elements
+past the edge that no scroller, closed `<details>` or fixed layer holds. The
+same pass opens the drawer with its list scrolled and fails a zone strip that
+sits under the top bar.
 
 Shoot both themes: set `localStorage['site-theme'] = 'light'` in an init
 script before navigation. A component that reads a literal colour looks

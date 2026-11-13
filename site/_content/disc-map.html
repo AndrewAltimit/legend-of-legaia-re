@@ -126,6 +126,11 @@ dl.dm-kv dd { margin: 0; font-family: var(--font-mono); color: var(--text); over
 .dm-list .dm-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dm-list .dm-s { color: var(--text-dim); }
 .dm-status { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.8rem; }
+/* A finger, not a cursor: legend and file rows clear 40px. */
+@media (pointer: coarse) {
+  .dm-legend button, .dm-list button { min-height: 40px; }
+}
+@media (pointer: coarse) { .dm-crumbs button { min-height: 40px; } }
 </style>
 <script src="js/disc-map.js"></script>
 -->
