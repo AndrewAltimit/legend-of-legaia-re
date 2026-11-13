@@ -95,23 +95,21 @@ impl World {
             self.casting.nova_ring_places = Some(places);
         }
         // The stores land on the seated rings, in seat order.
-        if let Some(scene) = self.casting.active_summon.as_mut() {
-            let mut rings: Vec<_> = scene
-                .parts
-                .iter_mut()
-                .filter(|p| p.tag == Some(NOVA_RING_RECORD) && !p.finished)
-                .collect();
-            if !rings.is_empty() {
-                if let Some(yaws) = self.casting.nova_ring_yaws.take() {
-                    for (part, yaw) in rings.iter_mut().zip(yaws) {
-                        part.state.render_26 = yaw;
-                    }
+        let is_ring = |p: &legaia_engine_effects::summon::SummonPartRuntime| {
+            p.tag == Some(NOVA_RING_RECORD) && !p.finished
+        };
+        if let Some(scene) = self.casting.active_summon.as_mut()
+            && scene.parts.iter().any(is_ring)
+        {
+            if let Some(yaws) = self.casting.nova_ring_yaws.take() {
+                for (part, yaw) in scene.parts.iter_mut().filter(|p| is_ring(p)).zip(yaws) {
+                    part.state.render_26 = yaw;
                 }
-                if let Some(places) = self.casting.nova_ring_places.take() {
-                    for (part, (x, z)) in rings.iter_mut().zip(places) {
-                        part.state.world_x = x;
-                        part.state.world_z = z;
-                    }
+            }
+            if let Some(places) = self.casting.nova_ring_places.take() {
+                for (part, (x, z)) in scene.parts.iter_mut().filter(|p| is_ring(p)).zip(places) {
+                    part.state.world_x = x;
+                    part.state.world_z = z;
                 }
             }
         }
