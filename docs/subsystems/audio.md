@@ -609,38 +609,49 @@ it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
 Without it the init closed the overworld theme and `son` played `2058`.
 Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
 
-### A direct entry fades the old scene out before the new bank loads
+### A scene change closes the old scene before the new bank loads
 
 Retail never uploads a scene's bank under a sounding note of the scene before
-it. With bit 2 clear the field init ramps the field score down while the map
-reads (`FUN_80062004(.., 0x78)`, `0x801D6AC0`; on the battle return it takes
-`129` vsyncs, [above](#the-battle-music-timeline)), keys off the cue voices
-`0x10..0x17` (`0x801D6B88`) and closes the source only then; the next bank
-arrives a CD read later. `see ghidra/scripts/funcs/overlay_0897_801d6704.txt`.
+it. With bit 2 clear (and no warp entry) the field init `FUN_801D6704` does,
+in this order:
 
-The engine's load is instant, so the ramp collapses into the close and the
-next scene's head start uploads its bank on the next frame. A door keeps that
-order. A **direct** entry - the scene picker on both hosts, a card load, a New
-Game, the prologue skip (`BootSession::enter_scene_live` and the page's
-`enter_field`) - has no fade on screen to hide it behind, and measured there
-the old scene's notes kept releasing at full level: a `retock -> town01` pick
-left all fifteen of `retock`'s voices sounding over `town01`'s freshly
-uploaded bank for up to 22 frames, the wrong instruments for the old notes,
-and a `town01 -> rikuroa` pick left `town01`'s ambient loop reading the
-side-band bank `rikuroa` staged in its place.
+| Address | Call | Effect |
+|---|---|---|
+| `0x801D6AC0` | `FUN_80062004(source, level, 0x78)` | a decrescendo: `FUN_80061EDC` clamps the amount to the sequence's current level and raises its flag `0x20`, so the field score ramps to silence over `0x78` ticks while the map reads (`FUN_8001F7C0` at `0x801D6AE8`) |
+| `0x801D6BB0..0x801D6BDC` | `FUN_800657D0(v, 0, 0)` then `FUN_800653C8(v)`, `v = 0x10..0x17` | each cue voice's shadow volume is written `0` (flags `\| 3`) before its key-off, so its release is unheard |
+| `0x801D7164..0x801D716C` | `FUN_800266E0` + `FUN_80026520` on `0x8007052C` | the source is detached and closed, its notes killed at the level the ramp left |
+| later | the poller, op-`0x36` sub `1` | the next track's bank and the side-band bank arrive a CD read on |
 
-`AudioDirector::begin_scene_switch` is the direct entry's audio. It fades the
-SPU and the CD input to silence over 30 ms (`AudioSink::fade_to_silence`),
-with the score's clock frozen so it keys nothing new, then cuts what was
-sounding when the fade began - score, voices, reverb tail, CD-XA stream - and
-brings the master back to full. Until the cut the director holds the BGM
-commands the new scene issues, leaves its emitters and directly keyed voices
-queued on the world, keeps the cue scheduler still and defers the side-band
-and shared-region refills; the frame after the cut replays them in order, so
-the new track starts about two frames later than it did. A voice the new
-scene keys during the fade sounds on. Nothing sounding, nothing is held. The
-cap is six audio frames, for a host whose output pulls no samples. Pinned by
-`engine-session/tests/picker_switch_audio_disc.rs` and the page's
+`see ghidra/scripts/funcs/overlay_0897_801d6704.txt`, `80062004.txt`,
+`80061edc.txt`, `800657d0.txt`. On the battle return the ramp measures `129`
+vsyncs ([above](#the-battle-music-timeline)).
+
+The engine's load is instant. Its close used to be a bare key-off of the score
+and of voices `0x10..0x17` at full level, and the next scene's head start
+uploaded its bank on the next frame under the release tails. A door
+`retock -> town01` left eight of `retock`'s voices reading `town01`'s freshly
+uploaded bank from the frame after the change, the last for 22 frames; a pick
+`retock -> town01` left all fifteen, and `town01 -> rikuroa` left `town01`'s
+ambient loop reading the side-band bank `rikuroa` staged in its place.
+
+Both kinds of scene change now take retail's order. The field init's voice
+teardown mutes before it keys off (`World::take_sfx_voice_mutes`,
+`AudioDirector::mute_sfx_voices`), and its close
+(`BgmDirector::close_field_source`) runs the ramp as a 30 ms fade of the SPU
+and the CD input (`AudioSink::fade_to_silence`), the score's clock frozen, then
+cuts what was sounding when it began - score, voices, reverb tail, CD-XA
+stream, which the map read would have taken the drive from - and brings the
+master back to full. Until the cut the director holds the BGM commands the new
+scene issues, leaves its emitters and directly keyed voices queued on the
+world, keeps the cue scheduler still and defers the side-band and
+shared-region refills; the frame after the cut replays them in order, so the
+new track starts about two frames later than it did. A **direct** entry (the
+scene picker on both hosts, a card load, a New Game, the prologue skip:
+`AudioDirector::begin_scene_switch`) takes the same fade and drops the cue
+queue too. A voice the new scene keys during the fade sounds on; nothing
+sounding, nothing is held; the cap is six audio frames, for a host whose output
+pulls no samples. A door behind sub-op 6 has no close and is untouched. Pinned
+by `engine-session/tests/picker_switch_audio_disc.rs` and the page's
 `a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads`.
 
 ### The overworld's story cutscenes are door records too
