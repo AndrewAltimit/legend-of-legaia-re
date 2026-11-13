@@ -206,6 +206,7 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
                 pos: [state.world_x, state.world_y, state.world_z],
                 rot: [state.render_24, state.render_26, state.render_28],
                 scale: state.field_72,
+                reached: state.walk_successor,
             },
         );
     }

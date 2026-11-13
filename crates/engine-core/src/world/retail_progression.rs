@@ -78,6 +78,8 @@ impl World {
         self.tables.victory_pose_table =
             legaia_game_tables::victory_pose::victory_pose_table_from_scus(scus);
         got.victory_pose = self.tables.victory_pose_table.is_some();
+        self.tables.victory_voice_table =
+            legaia_game_tables::victory_pose::victory_voice_table_from_scus(scus);
         self.audio.xa_cue_durations =
             legaia_game_tables::xa_cue_table::xa_cue_durations_from_scus(scus);
         got.xa_cue_durations = self.audio.xa_cue_durations.is_some();

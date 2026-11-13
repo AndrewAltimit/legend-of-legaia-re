@@ -483,7 +483,7 @@ impl PlayWindowApp {
         put(
             &mut out,
             &self.panel_controls(CONTROLS, PAD_CONTROLS),
-            (left, Y0 + height - HELP_H),
+            (left, super::settings_panel::controls_y(Y0, height)),
             heading,
         );
         out

@@ -3156,6 +3156,53 @@ mod tests {
         })
     }
 
+    /// Every card container the window mounts by extension is one the
+    /// browser pages' import pickers offer and their format sniff names: a
+    /// RetroArch `.srm` (a raw 128 KiB card) dropped on the launcher once
+    /// had no way onto the play page.
+    #[test]
+    fn the_pages_import_every_card_the_window_mounts() {
+        let pages = [
+            (
+                "play.html",
+                include_str!("../../../site/_content/play.html"),
+            ),
+            (
+                "legaia-saves.js",
+                include_str!("../../../site/js/legaia-saves.js"),
+            ),
+            (
+                "minigame-saves.js",
+                include_str!("../../../site/js/minigame-saves.js"),
+            ),
+        ];
+        for (name, src) in pages {
+            for ext in CARD_EXTENSIONS {
+                assert!(
+                    src.contains(&format!(".{ext},")) || src.contains(&format!(".{ext}'")),
+                    "{name}: no import picker offers .{ext}"
+                );
+            }
+        }
+        let play = pages[0].1;
+        let sniffs: Vec<&str> = play
+            .match_indices("/\\.(")
+            .map(|(i, _)| {
+                let rest = &play[i + 4..];
+                &rest[..rest.find(')').unwrap_or(0)]
+            })
+            .collect();
+        assert!(!sniffs.is_empty(), "play.html: no extension sniff found");
+        for sniff in sniffs {
+            for ext in CARD_EXTENSIONS {
+                assert!(
+                    sniff.split('|').any(|e| e == ext),
+                    "play.html: the sniff ({sniff}) does not name .{ext}"
+                );
+            }
+        }
+    }
+
     /// Every launcher row has its control on the browser play page, and every
     /// launch-switch row (the ones this file remembers) is one the page
     /// remembers too: its value lives in `PersistedSwitches`, which both

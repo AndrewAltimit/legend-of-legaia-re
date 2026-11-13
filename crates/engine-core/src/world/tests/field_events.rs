@@ -634,6 +634,51 @@ fn field_op_3c_party_add_reaches_battle_composition() {
     assert_eq!(world.party.party_leader_slot, Some(0));
 }
 
+/// The same join normalizes the bag once the list reads Vahn and Noa
+/// (`0x801E05B0..0x801E05D0`, `FUN_800423E0`): Noa's Healing Leaves, held in
+/// her upper half since her solo stretch, fold into Vahn's stack and her other
+/// items close up behind his. Without it the Caruban fight listed two Healing
+/// Leaf stacks, and emptying Vahn's moved the row (issue #590).
+#[test]
+fn field_op_3c_vahn_and_noa_join_normalizes_the_bag() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.set_active_party(vec![0]);
+    world.party.party_actor_slots = vec![Some(0)];
+    world.party.party_leader_slot = Some(0);
+    let mut slots = vec![(0u8, 0u8); 256];
+    slots[0] = (0x77, 2); // Vahn's Healing Leaf
+    slots[1] = (0x78, 1);
+    slots[128] = (0x77, 1); // Noa's Healing Leaf
+    slots[129] = (0x7A, 1);
+    world.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&slots);
+    world.load_field_script(vec![0x3C, 0x01]);
+    let _ = world.tick();
+    assert_eq!(world.party.active_party, vec![0, 1]);
+    let held: Vec<(u8, u8)> = world
+        .party
+        .inventory
+        .iter()
+        .map(|(&id, &n)| (id, n))
+        .collect();
+    assert_eq!(held, vec![(0x77, 3), (0x78, 1), (0x7A, 1)]);
+    assert_eq!(
+        world.party.inventory.slot(2),
+        (0x7A, 1),
+        "Noa's item closes up"
+    );
+
+    // Any other pair joins without touching the bag.
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.install_present_party_list(vec![0]);
+    world.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&slots);
+    world.load_field_script(vec![0x3C, 0x02]);
+    let _ = world.tick();
+    assert_eq!(world.party.active_party, vec![0, 2]);
+    assert_eq!(world.party.inventory.slot(128), (0x77, 1));
+}
+
 /// Retail keeps the list sorted (op 0x3C bubbles the new id down), and a
 /// New Game world - whose field list was never installed - joins onto the
 /// identity composition rather than onto an empty list.

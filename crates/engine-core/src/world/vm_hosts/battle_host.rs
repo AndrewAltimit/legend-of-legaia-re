@@ -244,6 +244,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn party_count(&self) -> u8 {
         self.world.party.party_count
     }
+    /// The formation cell's first byte `DAT_8007BD0C[0]`, which the victory
+    /// arm's Songi override reads (`0x801E672C`). A formation id that does
+    /// not fit the byte reads as no override.
+    fn first_monster_id(&self) -> u8 {
+        self.world.formation_slot0_monster_id().unwrap_or(0)
+    }
     /// The arena session's word ORed with the battle's own
     /// ([`World::special_battle_word`]) - what the special-battle wipe rule
     /// reads.

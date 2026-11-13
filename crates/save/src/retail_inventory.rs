@@ -87,8 +87,8 @@
 //! and the merge scan (`0x800421FC..0x80042238`) must find **no** existing stack
 //! of the incoming id, so `a2 == end` at the store. None of the add call sites
 //! pre-check inventory room - they load an item id and `jal 0x800421D4`
-//! directly (shop buy-confirm at `0x801C38A4` loads `a0 = rec+8`; battle-loot at
-//! `0x8004F380` / `0x8004F608`) - so the only thing that can stop the OOB is the
+//! directly (shop buy-confirm at `0x801C38A4` loads `a0 = rec+8`; battle-end
+//! refund / loot at `0x8004F380` / `0x8004F608`) - so the only thing that can stop the OOB is the
 //! scan itself running out of holes. It cannot, under normal play, for either
 //! window class:
 //!
@@ -377,8 +377,11 @@ pub enum AddOutcome {
 /// entries (`8004E568`, `801C36B0`, `801DABA4`, `801D0F60`, `8020E748`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddHelperCaller {
-    /// Battle-end reward resolution (`FUN_8004E568`, add at `0x8004F380` /
-    /// `0x8004F608`): awards the formation's drop items. Written id = drop id.
+    /// Battle-end reward resolution (`FUN_8004E568`, add at `0x8004F608`):
+    /// awards the formation's drop item. Written id = drop id. The same
+    /// routine's other add, `0x8004F380`, is the win arm's unspent-item
+    /// refund: a standing member whose committed Item turn never ran gets
+    /// `actor[+0x1DF]` back, quantity `1`.
     BattleLoot,
     /// Shop / exchange buy-confirm (`FUN_801C36B0`, overlay 0971): a priced,
     /// **variable-quantity** give of the selected catalog record's item.

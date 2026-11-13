@@ -705,6 +705,8 @@ stateDiagram-v2
 
 Hit-arm details (`0x801E1844..0x801E1A6C`) that differ from the slot-B cast modules:
 
+- The roll does not ask what the cast is. `a0` is the byte the caster's `+0x1DF` indexes in the map at `0x801F4E63`, and a heal's entry is `0`, the table's all-zero row, so a monster's Heal flight still rolls the stat terms and strikes its ally (an Orb's Heal on a Killer Bee: `96 -> 46` at `0x801E1960` in `0x3E`, then `+200` at `0x3F`). Port: `World::land_spirit_band_flight_hit`.
+
 - The `+0x1DC` writes are bit **ORs** (`|= 4` on the reaction leg at `0x801E19D8`, `|= 1` on the face leg at `0x801E1A18`), not the `+= 1` bump the cast modules use.
 - The face store has no `+ 0x800` term (`0x801E1A54` writes the raw `FUN_80019B28` result), so the victim turns to **face** its attacker here, where every cast module's equivalent store faces it away.
 - The reaction pick has three legs: a dead victim takes `+0x1F1` regardless of the `+0x1F2` gate, and a zero `+0x1EF` falls on to `+0x1F0`.
@@ -745,6 +747,9 @@ Draws a scaling decimal number sprite for one actor's accumulated damage `ctx[+0
 - Under an ordering-table depth of `0x80` (the projection's `(SZ3 >> 2) >> 2` in battle, a view-space Z under `0x800`) the square keeps its near corner and becomes `0x20` pixels wide and tall from it (`0x801DF820..0x801DF854`). A close camera's numeral is laid out from that corner rather than over the square's extent. Port: `battle_value_readout::popup_near_square` on the depth `engine-ui::battle_numerals::popup_square` reads off the clip `w`.
 - The rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px, clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`.
 - The value is zeroed once the timer passes `0x240` (37 frames).
+- The timer steps in the draw, once a battle frame. A numeral pushed on a frame is first drawn at `0x10 * step` and holds through the frame's other vsyncs; a `--popup-trace` recording of Blazing Slash draws each hit at `64` then `128` on step `4` and `48` then `96` on step `3`. Port: `DamagePopup::timer`, stepped by `BattleHud::tick_frame` on the vsync that opens a battle frame (`engine-session::battle_presentation`).
+- Every digit links at ordering-table bucket `1`, the HUD text's: `AddPrim(ot + 4, prim)` (`addiu a0,a0,4` in the delay slot of `jal 0x8003D2C4` at `0x801DFC14` / `0x801DFD4C`). Added after the HUD's packets, the digits draw first in the bucket and the plates and glyphs cover them: `battle_menu_rugi_barra_retail`'s ordering table heads bucket 1 with the three digit quads, and its frame shows the figure behind the `Run` plate.
+- The combo / multi-row value window (`FUN_801E805C`) and the Arts banner (`FUN_801E2650`) link at bucket `0`, over the text. The packets' tag `0x09000000` is the `POLY_FT4`'s nine-word length, not a bucket. Port: `engine-ui::battle_numerals::{POPUP_OT, COMBO_OT, ARTS_BANNER_OT}`; `engine-screens::screen_layers` puts the popups under the text layer and the window over it.
 
 Port: `engine-battle-vm::battle_value_readout::popup_cells` (layout) and `engine-ui::battle_numerals::popup_value_cells` (anchor + projection), which both hosts seat their numerals through.
 

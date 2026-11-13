@@ -581,9 +581,17 @@
       'background:transparent;border:1px solid var(--border,#272c37);border-radius:5px;',
       'padding:.05rem .5rem;}',
       '.disc-info-hash button:hover{border-color:var(--accent-line,rgba(61,132,255,.38));}',
+      '.disc-info-more{display:none;margin-left:auto;flex:none;cursor:pointer;font:inherit;',
+      'font-size:.78rem;color:var(--accent,#6ba3ff);background:transparent;',
+      'border:1px solid var(--border,#272c37);border-radius:6px;padding:.3rem .7rem;min-height:40px;}',
+      /* A phone shows the identification line and keeps the cover and the rows
+       * one tap away: open, the card took a screen and a half above the tool
+       * on every disc page. */
       '@media (max-width:560px){.disc-info-flex{flex-direction:column;}',
       '.disc-info-cover{width:104px;}',
-      '.disc-info-row{flex-direction:column;gap:.05rem;}.disc-info-row .k{flex:none;}}',
+      '.disc-info-row{flex-direction:column;gap:.05rem;}.disc-info-row .k{flex:none;}',
+      '.disc-info-more{display:inline-flex;align-items:center;}',
+      '.disc-info-card:not(.is-open) .disc-info-flex{display:none;}}',
     ].join('');
     document.head.appendChild(s);
   }
@@ -683,6 +691,15 @@
       b ? b.title : info.prot && !info.serial ? 'PROT.DAT archive' : 'Unidentified disc image'));
     if (info.serial) head.appendChild(el('span', 'disc-info-badge', info.serial));
     if (b && b.region) head.appendChild(el('span', 'disc-info-badge is-region', b.region));
+    var more = el('button', 'disc-info-more', 'Details');
+    more.type = 'button';
+    more.setAttribute('aria-expanded', 'false');
+    more.addEventListener('click', function () {
+      var open = panel.classList.toggle('is-open');
+      more.setAttribute('aria-expanded', String(open));
+      more.textContent = open ? 'Less' : 'Details';
+    });
+    head.appendChild(more);
     panel.appendChild(head);
 
     if (b) {

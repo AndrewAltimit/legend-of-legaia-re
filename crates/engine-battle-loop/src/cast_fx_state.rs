@@ -277,6 +277,11 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
     pub module_barra_counter: u16,
+    /// PROT 0917's backdrop scroll words `0x801F9360` (`u`) and
+    /// `0x801F9362` (`v`), which its tick epilogue turns into the scanline
+    /// wash's sample origin `ctx[+0x285]` / `+0x286` on every busy pass
+    /// (`World::barra_backdrop_scroll`); arm 0 zeroes both.
+    pub module_barra_scroll: (u16, u16),
     /// PROT 0942 `0xAA`'s party swirl: the words `0x801F88B8` (the pull) and
     /// `0x801F88BC` (the spin), and each party seat's plane pair arm 2 copied
     /// into `0x801F88C4 + 8 * seat` (`World::dark_typhoon_party_swirl`).
@@ -564,6 +569,13 @@ pub struct PendingBurst {
     pub pos: [i16; 3],
     pub rot: [i16; 3],
     pub scale: u16,
+    /// Whether the frame's part-list walk had a node after the calling part
+    /// when the op ran (its `ActorState::walk_successor`): the seater `FUN_80021B04`
+    /// appends each child at the list's tail, so the walk reaches the twelve
+    /// children on the same frame only when this is set. A trigger seated
+    /// last is the tail, and its children take their first part tick a frame
+    /// after the seat.
+    pub reached: bool,
 }
 
 impl CastFxState {
@@ -627,6 +639,7 @@ impl CastFxState {
             module_stager_calls: Vec::new(),
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
+            module_barra_scroll: (0, 0),
             dark_typhoon_swirl: (0, 0),
             dark_typhoon_marks: [(0, 0); 4],
             module_running_entry: None,

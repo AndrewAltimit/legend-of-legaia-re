@@ -224,6 +224,40 @@ impl Voice {
         }
     }
 
+    /// Whether the voice is sounding from a sample in `span` (byte addresses,
+    /// end exclusive): its decoder stands on a block there.
+    pub fn reads_from(&self, span: std::ops::Range<u32>) -> bool {
+        !self.is_off() && span.contains(&self.cur_block_addr)
+    }
+
+    /// Follow a sample that moved from `from` to `to_base` in SPU RAM: every
+    /// address the voice holds inside `from` (start, repeat, the block it
+    /// stands on) shifts by the same distance, so the voice carries on from
+    /// the same point of the moved copy. Engine-only: retail never moves a
+    /// bank under a sounding voice; the port's BGM-tail borrowers do
+    /// ([`crate::bgm_tail`]).
+    pub fn rebase(&mut self, from: std::ops::Range<u32>, to_base: u32) {
+        let shift = |a: u32| {
+            if from.contains(&a) {
+                a - from.start + to_base
+            } else {
+                a
+            }
+        };
+        self.start_addr = shift(self.start_addr);
+        self.loop_addr = self.loop_addr.map(shift);
+        self.cur_block_addr = shift(self.cur_block_addr);
+        self.resume_next = self.resume_next.map(shift);
+    }
+
+    /// Stop the voice at once, envelope and all - what is left when the
+    /// sample under it is gone and there is nothing to release over.
+    pub fn cut(&mut self) {
+        self.adsr.phase = Phase::Off;
+        self.adsr.level = 0;
+        self.has_block = false;
+    }
+
     /// How many times this voice has been keyed on. The sequencer stamps
     /// each of its notes with this value; a later mismatch means another
     /// client (an SFX cue) took the voice, so the note no longer owns it -
@@ -391,6 +425,38 @@ mod tests {
         }
         // Silence block + any envelope -> still silence.
         assert_eq!(sum, 0);
+    }
+
+    /// A rebased voice follows its sample to the new copy: it reads from the
+    /// moved span, and plays out to the copy's end flag although the old
+    /// span now holds a looping stream.
+    #[test]
+    fn a_rebased_voice_plays_out_from_the_moved_copy() {
+        let mut ram = SpuRam::new();
+        ram.write_at(0x1000, &synth_silence_stream(4, false));
+        // A held sustain (the shatter cue's tones), so only the stream ends it.
+        let mut v = Voice {
+            start_addr: 0x1000,
+            adsr_cfg: super::super::adsr::AdsrConfig::from_words(0x80FF, 0x5FD1),
+            ..Voice::default()
+        };
+        v.key_on(&ram);
+        for _ in 0..40 {
+            v.tick(&ram);
+        }
+        assert!(v.reads_from(0x1000..0x1040));
+        // The sample moves up; a looping stream lands where it was.
+        ram.write_at(0x2000, &synth_silence_stream(4, false));
+        let mut looping = synth_silence_stream(4, true);
+        looping[1] = 0x04;
+        ram.write_at(0x1000, &looping);
+        v.rebase(0x1000..0x1040, 0x2000);
+        assert!(v.reads_from(0x2000..0x2040));
+        assert_eq!(v.start_addr, 0x2000);
+        for _ in 0..200 {
+            v.tick(&ram);
+        }
+        assert!(v.is_off(), "the moved copy's end flag stops the voice");
     }
 
     /// End-flag without repeat halts the voice.

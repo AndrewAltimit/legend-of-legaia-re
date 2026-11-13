@@ -230,7 +230,7 @@ pub const CAPTURE_SITE_POWERS: &[(u32, &[u8], u16, u32)] = &[
     (946, &[BIG_WAVE_ACTION], 0x120, 0x801F_73DC),
     // V-Windhash keeps the `li a0,0x7b` in the delay slot of the `bne` on
     // `+0x1DF != 0xA7` (`0x801F73D8` / `0x801F73DC`) and jumps straight to the
-    // call; Neo Windhash falls through, rolls its Slow and loads `0xEA`
+    // call; Neo Windhash falls through, rolls its Curse (`chain_pre_hit_roll`) and loads `0xEA`
     // (`0x801F7410`).
     (947, &[0x57], 0x7B, 0x801F_7414),
     (947, &[0xA7], 0xEA, 0x801F_7414),

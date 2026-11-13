@@ -1691,15 +1691,17 @@ fn end_interaction_at_post_box_byte(
 }
 
 /// Whether the loop body `from..=to` (a backward jump's target up to the jump
-/// itself) carries an op-`0x42` mode-1 test - the held-pad poll. Walked on
-/// decoded op boundaries, so a `0x42` byte inside another op's operands does
-/// not count.
+/// itself) waits on the player: it carries an op-`0x42` mode-1 test (the
+/// held-pad poll) or a picker (`0x27..=0x2A`). Walked on decoded op
+/// boundaries, so a `0x42` byte inside another op's operands does not count.
 ///
-/// Such a loop is a record waiting on the player (retail's `0x42` mode-1 arm
-/// compares the packed held pad `_DAT_8007B850`; see `script-vm.md`), not a
-/// wrapped choreography, so the timeline's natural-termination rule must not
-/// end it.
-fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
+/// Such a loop is a record waiting on the player, not a wrapped
+/// choreography, so the timeline's natural-termination rule must not end it.
+/// Retail's `0x42` mode-1 arm compares the packed held pad `_DAT_8007B850`
+/// (see `script-vm.md`); a picker's arm that jumps back to ask again is the
+/// player saying No: `rikuroa` `P2[54]` asks Noa's question until the answer
+/// is Yes.
+fn loop_waits_on_player(bytecode: &[u8], from: usize, to: usize) -> bool {
     let mut pc = from;
     while pc <= to {
         let Ok(insn) = legaia_scene_formats::field_disasm::decode(bytecode, pc) else {
@@ -1711,6 +1713,7 @@ fn loop_polls_held_pad(bytecode: &[u8], from: usize, to: usize) -> bool {
         if matches!(
             insn.info,
             legaia_scene_formats::field_disasm::InsnInfo::CondJmp { mode: 1, .. }
+                | legaia_scene_formats::field_disasm::InsnInfo::Picker { .. }
         ) {
             return true;
         }

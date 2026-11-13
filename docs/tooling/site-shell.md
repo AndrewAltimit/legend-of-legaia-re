@@ -71,9 +71,11 @@ Two things the shell derives from `NAV` instead of trusting the page:
 - **The drawer's scroll position.** `revealActiveRow()` scrolls the current
   page's row into view after the saved scroll position is restored and every
   time the phone drawer opens. Without it the drawer opened on the two
-  always-expanded sections, with the reader's own page below its fold. The
-  zone strip is pinned at the top of the drawer, so it counts as covering the
-  rows under it here, and the scroll position never takes the strip away.
+  always-expanded sections, with the reader's own page below its fold. On a
+  phone the scroller is the drawer's `.sidebar-list`, not the drawer, so the
+  scroll position never takes the zone strip away; `sidebarScroller()` picks
+  whichever of the two scrolls at the current width, and the saved position is
+  the list's.
 
 ## Themes
 
@@ -132,11 +134,16 @@ only through the brand mark and could not reach Play, Mods or Browse at all -
 the docs sidebar deliberately omits them (`DOCS_SECTIONS` excludes the explore
 section, and the `home` key is skipped from the tree).
 
-The strip is `position: sticky` inside the drawer's scroller, because the drawer
-opens at its saved or revealed scroll position and a strip in normal flow is
-carried up behind the top bar with the list. A drawer `top` matching the bar says
-nothing about this: the bar and the drawer's own box agree at every width and only
-the strip's box moves, so the check is the strip's rectangle at a non-zero drawer
+The strip sits outside the drawer's scroller. Everything below it is wrapped in
+`.sidebar-list`, which is `display: contents` on a desktop (the sidebar scrolls,
+as before) and the scroller in the phone drawer, whose own box does not scroll.
+The drawer opens at its saved or revealed scroll position, and a strip that
+scrolls with the list is carried up behind the top bar. A `position: sticky`
+strip inside a scrolling drawer pinned in desktop engines and in emulated phone
+viewports, yet on Chrome and Firefox for Android it still went up under the top
+bar, so the pin is structural now. A drawer `top` matching the bar says nothing
+about this: the bar and the drawer's own box agree at every width and only the
+strip's box moves, so the check is the strip's rectangle at a non-zero list
 `scrollTop`.
 
 The hamburger lives *inside* the top bar rather than floating over the page.
@@ -177,6 +184,24 @@ it per table: where the table fits its column the wrapper takes `.fits`, which
 drops the scroller and turns on `position: sticky` under the top bar; where it
 is too wide the wrapper keeps the horizontal scroller and a static header. It
 runs in the docs zone only, on load, on resize and once fonts settle.
+
+### A touch target clears 38px, a mouse target need not
+
+Below the drawer breakpoint every top-bar control clears 38px: the hamburger
+and the brand mark at 38, search, the disc chip, the theme toggle, the zone
+pills and the GitHub link at 40. Content
+controls keep their desktop size for a mouse and grow under
+`@media (pointer: coarse)`: disclosure summaries, the registers' *why* rows,
+the search box's close button (its keyboard hints go), the patcher's and the
+workbenches' `?` badges, which keep their drawn size and take a 12px wider hit
+area, and the dense lists on the crate map, disc map, shops and world overview,
+each in its own page's stylesheet. A width breakpoint is the wrong test for
+these: a narrow desktop window has a mouse, and a tablet in landscape is wide.
+
+The phone column sets `overflow-wrap: anywhere` (above), which a control's
+label inherits too: a segmented control of three equal thirds broke
+*Randomize* in two at 360px. A control row whose words must stay whole sets
+`overflow-wrap: normal` and sizes its segments to their words.
 
 ## One right edge per column
 
@@ -640,6 +665,21 @@ invisible in a single-width screenshot. Render it:
 
 The last assertion is the one that catches a "tidy" mobile layout that has
 quietly dropped a destination.
+
+The first is gated: [`check-pages.mjs`](../../scripts/ci/check-pages.mjs)'s
+`phone` pass loads every generated page on a 360px touch phone and fails a
+page whose document is wider than the screen, naming the outermost elements
+past the edge that no scroller, closed `<details>` or fixed layer holds. The
+same pass opens the drawer with its list scrolled and fails a zone strip that
+sits under the top bar.
+
+Two shortcuts make that check blind, and both pass a page that is broken. A
+mobile viewport widens its layout viewport to the widest content and zooms
+the page out, so `innerWidth` grows with the defect and the screen's width has
+to be the constant the page is measured against. And the body's
+`overflow-x: hidden` is not a scroller: it holds nothing, it only cuts the
+overflow off where nobody can scroll to it, so an ancestor walk that counts it
+as one excuses every element on the page.
 
 Shoot both themes: set `localStorage['site-theme'] = 'light'` in an init
 script before navigation. A component that reads a literal colour looks

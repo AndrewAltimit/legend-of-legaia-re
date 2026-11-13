@@ -138,7 +138,7 @@ FAIL iff  not forced  and  (roll_p &lt; roll_e  or  ctx[+0x287] != 0)</code></pr
 <section class="doc-section" id="ai">
   <h2>AI picks and the turn budget</h2>
   <ul class="bullets">
-    <li><strong>The companion watches the wrong actor by design.</strong> <code>FUN_801EED1C</code>&rsquo;s character-id-4 arm reads seat 0&rsquo;s HP and status and writes seat 1&rsquo;s queue. Its physical leg redraws <code>rand() % monster_count + 3</code> until the seat is alive.</li>
+    <li><strong>The companion watches the wrong actor by design.</strong> <code>FUN_801EED1C</code>&rsquo;s character-id-4 arm reads seat 0&rsquo;s HP and status and writes seat 1&rsquo;s queue. All three of its spell records carry applier classes, so the action state lands a companion heal the way it lands an item. Its physical leg redraws <code>rand() % monster_count + 3</code> until the seat is alive.</li>
     <li><strong>Auto and Rage members</strong> get their queue from the auto arts-combo assembler <code>FUN_801F0450</code>, which fills the same byte string a player would enter.</li>
     <li><strong>Monsters</strong> queue several actions out of an agility budget (<code>FUN_801E9FD4</code>); a delegated or confused monster re-rolls its target through <code>FUN_801E7320</code> at the turn seed.</li>
   </ul>
@@ -162,6 +162,12 @@ FAIL iff  not forced  and  (roll_p &lt; roll_e  or  ctx[+0x287] != 0)</code></pr
     </tbody>
   </table>
   </div>
+  <ul class="bullets">
+    <li><strong>A burning body sheds only when it is drawn.</strong> The burn-puff loop lives in the per-body pose decode, which only the draw callback reaches, so a hidden body (colour word zero) or one rejected for standing at the lens sheds nothing and draws no <code>rand()</code>, whatever impact selector it keeps. The loop runs once per <em>draw</em>, and each after-image ghost is a draw: a burning body with two ghosts sheds three times a lone body's puffs, as Astral Wave's charge shows. The port gates its burn sprites on the draw plan's verdict.</li>
+    <li><strong>The projectile census runs in the draw tick's preamble</strong>, after every node's tick of the pass: the action state machine reads the census one pass later, and a landing's reaction commits on the victim's next node tick.</li>
+    <li><strong>A landed slot marks its victim on every pass.</strong> While a slot drains, each pass stores the record's impact selector and its tint on the victim, and every <code>0xFF</code> byte of the landing list draws a streak ribbon on the victim. A flying slot draws the same ribbons at its head from its flight list. Thunder Break is the visible case: its victim stays blue under four lightning columns from the landing until the hit. A landing-list byte of <code>0x64</code> spawns a screen fade instead.</li>
+    <li><strong>The damage number steps once a battle frame</strong>, in the draw, so a fresh numeral first appears at one step's size and holds through the frame's other vsyncs. Close to the camera its square keeps the near corner and becomes a fixed 32-pixel box. Every digit links into the HUD text's ordering-table bucket after the HUD's own packets, so the digits draw <em>first</em> and the plates and glyphs cover them; the combo window and the Arts banner link one bucket nearer, over the text.</li>
+  </ul>
   <p>The pool model is on the <a href="effect-vm.html">effect VM</a> page; what a paged module does is on <a href="cast-module.html">cast modules</a>.</p>
 </section>
 

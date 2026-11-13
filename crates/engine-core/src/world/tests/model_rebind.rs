@@ -155,3 +155,30 @@ fn an_object_stream_tints_its_record() {
     w.tick_field_npc_ambient();
     assert_eq!(w.object_draw_tints().get(&9), Some(&(0, 0x0640)));
 }
+
+/// A re-stage rebuilds the actor's render node from the new TMD
+/// (`FUN_80024D78`), so the bone count the slot's clips were bound with goes
+/// with the old model; re-issuing the same model keeps it.
+#[test]
+fn a_new_model_drops_the_slots_bound_bone_count() {
+    let mut w = World::new();
+    w.npcs.clip_bones.insert(10, 10);
+    w.set_field_npc_live_model(10, 133);
+    assert_eq!(
+        w.npcs.clip_bones.get(&10),
+        None,
+        "the new mesh's count binds next"
+    );
+    w.npcs.clip_bones.insert(10, 4);
+    w.set_field_npc_live_model(10, 133);
+    assert_eq!(
+        w.npcs.clip_bones.get(&10),
+        Some(&4),
+        "the same model is no re-size"
+    );
+    // Op `0x0E` re-stages through the same setter.
+    w.npcs.clip_bones.insert(5, 10);
+    with_ambient(&mut w, 5, vec![0x0E, 0x21, 0x00]);
+    w.tick_field_npc_ambient();
+    assert_eq!(w.npcs.clip_bones.get(&5), None);
+}

@@ -215,6 +215,7 @@
 <section class="doc-section" id="tests" data-doc="tests">
   <h2>Tests</h2>
   <p>A fixed set of entries is accounted off <code>extracted/PROT</code> with a floor asserted on each one's accounted share, plus the invariants that make the figure mean anything: claims stay inside the buffer, residue plus accounted equals the size, and <code>structural</code> never exceeds <code>accounted</code>. It skips and passes without disc data, like every other disc-dependent test here. The range algebra and the residue classifier are unit-tested on synthetic buffers, including the ordering traps above.</p>
+  <p>Every walker decodes LZS through one function, and <code>set_lzs_observer</code> lets a test see each input and expected size it is handed. A disc-gated test in <code>crates/disc-audit</code> uses that as a census of the disc&rsquo;s compressed streams, and holds the production decoder to the <a href="../formats/lzs.html">reference one</a> on every stream in it.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

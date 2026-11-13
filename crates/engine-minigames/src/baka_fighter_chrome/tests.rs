@@ -86,45 +86,115 @@ fn the_editor_band_is_an_unsigned_window_above_the_round_band() {
 
 #[test]
 fn outside_the_band_the_editor_retires_and_does_nothing() {
-    let mut slots = Vec::new();
-    let t = editor_tick(100, 5, 4, 2, 1, true, 8, &[0, 1, 2], &mut slots);
+    let mut g = EditorGlobals {
+        match_timer: 100,
+        action: 5,
+        ..Default::default()
+    };
+    let (mut ed, mut fi) = (EditorActor::default(), EditorActor::default());
+    let t = editor_tick(&mut g, &mut ed, &mut fi, &mut [], |_| 8, |_| {});
     assert!(t.retired);
-    assert_eq!(t.edit, EditorKeyEdit::None);
-    assert!(slots.is_empty());
+    assert_eq!((ed.flags, fi.flags), (8, 8));
+    assert_eq!(g.prev_action, 0, "nothing else ran");
+}
+
+fn editor_rows() -> Vec<EditorAction> {
+    vec![
+        EditorAction {
+            speed: 3,
+            power: 7,
+            keys: vec![
+                EditorKey {
+                    offset: [1, 2, 3],
+                    frame: 2,
+                },
+                EditorKey {
+                    offset: [4, 5, 6],
+                    frame: 5,
+                },
+            ],
+        };
+        2
+    ]
 }
 
 #[test]
-fn a_moved_frame_cursor_installs_or_removes_by_the_edit_mode() {
-    let mut slots = Vec::new();
-    let t = editor_tick(400, 0, 0, 2, 1, true, 8, &[0, 1, 2, 3], &mut slots);
-    assert_eq!(t.edit, EditorKeyEdit::Install);
-    assert_eq!(slots, vec![2]);
-    assert_eq!(t.keyframe, Some(2));
-
-    let t = editor_tick(400, 0, 0, 2, 1, false, 8, &[0, 1, 2, 3], &mut slots);
-    assert_eq!(t.edit, EditorKeyEdit::Remove);
-
-    // A still cursor edits nothing.
-    let t = editor_tick(400, 0, 0, 2, 2, true, 8, &[0, 1, 2, 3], &mut slots);
-    assert_eq!(t.edit, EditorKeyEdit::None);
-}
-
-#[test]
-fn the_editor_wraps_both_cursors() {
-    let mut slots = Vec::new();
-    let t = editor_tick(
-        400,
-        EDITOR_ACTION_COUNT,
-        0,
-        9,
-        9,
-        false,
-        4,
-        &[0, 1],
-        &mut slots,
+fn a_held_frame_cursor_on_a_keyframe_loads_its_offset() {
+    let mut g = EditorGlobals {
+        match_timer: EDITOR_PHASE_BASE,
+        frame: 5,
+        prev_frame: 1,
+        paused: 1,
+        ..Default::default()
+    };
+    let mut ed = EditorActor {
+        pos: [100, 200, 300],
+        ..Default::default()
+    };
+    let mut fi = EditorActor {
+        flags: 2,
+        ..Default::default()
+    };
+    let mut rows = editor_rows();
+    let t = editor_tick(&mut g, &mut ed, &mut fi, &mut rows, |_| 8, |_| {});
+    assert!(!t.retired);
+    assert_eq!((g.key, g.key_sel, g.has_key), (1, 1, 1));
+    assert_eq!(g.offset, [4, 5, 6]);
+    assert_eq!(fi.pos, [104, 205, 306]);
+    assert_eq!(fi.flags & 2, 0, "the fighter shows");
+    // Held still, the clip cursor follows the frame cursor.
+    assert_eq!((ed.cursor, ed.rate), (5 << 4, 0));
+    assert_eq!(
+        t.edit,
+        EditorKeyEdit::None,
+        "the stubbed menu edits nothing"
     );
-    assert_eq!(t.action, 0);
-    assert_eq!(t.frame, 0);
+}
+
+#[test]
+fn the_editor_wraps_its_cursors_as_retail_tests_them() {
+    let mut g = EditorGlobals {
+        match_timer: EDITOR_PHASE_BASE,
+        fighter: -1,
+        fighter_at_entry: -1,
+        frame: 7,
+        paused: 1,
+        ..Default::default()
+    };
+    let (mut ed, mut fi) = (EditorActor::default(), EditorActor::default());
+    let mut rows = editor_rows();
+    editor_tick(&mut g, &mut ed, &mut fi, &mut rows, |_| 8, |_| {});
+    // Unsigned: -1 wraps to 0, not 0x10; and leaving the entry fighter
+    // re-enters the editor.
+    assert_eq!(g.fighter, 0);
+    assert_eq!(g.match_timer, EDITOR_REENTRY_PHASE);
+    // `frame >= count - 1` resets the frame cursor.
+    assert_eq!(g.frame, 0);
+}
+
+#[test]
+fn a_menu_edit_of_the_mode_flag_installs_or_removes_the_key() {
+    let mut g = EditorGlobals {
+        match_timer: EDITOR_PHASE_BASE,
+        frame: 2,
+        prev_frame: 2,
+        paused: 1,
+        has_key: 1,
+        ..Default::default()
+    };
+    let (mut ed, mut fi) = (EditorActor::default(), EditorActor::default());
+    let mut rows = editor_rows();
+    let t = editor_tick(
+        &mut g,
+        &mut ed,
+        &mut fi,
+        &mut rows,
+        |_| 8,
+        |g| g.has_key = 0,
+    );
+    assert_eq!(t.edit, EditorKeyEdit::Remove);
+    assert_eq!(rows[0].keys.len(), 1);
+    assert_eq!(rows[0].keys[0].frame, 5);
 }
 
 #[test]
@@ -495,25 +565,6 @@ fn anim_slot_key_truncates_toward_zero_on_both_sides() {
     assert_eq!(anim_slot_key(-0x1F), -1);
     assert_eq!(anim_slot_key(-0x20), -2);
     assert_eq!(anim_slot_key(-1), 0);
-}
-
-#[test]
-fn editor_removes_the_keyframe_when_edit_mode_is_off() {
-    let mut slots = vec![0i16, 1, 2];
-    let t = editor_tick(
-        EDITOR_PHASE_BASE,
-        0,
-        0,
-        1,
-        0,
-        false,
-        8,
-        &[0, 0x10, 0x20],
-        &mut slots,
-    );
-    assert_eq!(t.edit, EditorKeyEdit::Remove);
-    // frame 1 << EDITOR_FRAME_SHIFT, taken back down by `>> 4`, is key 1.
-    assert_eq!(slots, vec![0, 2]);
 }
 
 #[test]

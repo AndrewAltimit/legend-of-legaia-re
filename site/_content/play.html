@@ -176,6 +176,19 @@ body.xw-preview .touch-pad { display: none; }
   border-radius: 6px; font-size: 0.75rem; }
 .touch-pad .tp-l2 { left: 3%; } .touch-pad .tp-l1 { left: calc(4% + clamp(44px, 10%, 72px)); }
 .touch-pad .tp-r2 { right: 3%; } .touch-pad .tp-r1 { right: calc(4% + clamp(44px, 10%, 72px)); }
+/* A phone held upright: the picture is too small to share with the pad, whose
+   shoulder buttons covered the party's HP readout and whose D-pad and face
+   buttons covered a third of the scene. The pad moves into a band under the
+   picture, START and SELECT between the shoulders; a landscape screen and
+   fullscreen keep it over the picture. */
+@media (orientation: portrait) and (max-width: 620px) {
+  .play-screen:not(:fullscreen) .play-canvas-wrap:has(> .touch-pad:not(.is-hidden)) { margin-bottom: 212px; }
+  .play-screen:not(:fullscreen) .touch-pad { inset: auto 0 auto 0; top: calc(100% + 8px); height: 200px; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-dpad { width: 148px; bottom: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-face { width: 152px; bottom: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-middle { bottom: auto; top: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
+}
 body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 /* The picture takes the frame's own shape: the workbench's view is as wide
    as its window, not 4:3. */
@@ -279,6 +292,10 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
              calc((100vh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
   max-width: none;
 }
+/* PSX rasterisation sizes the wrap to a whole multiple of the 320 x 240 stage
+   in device pixels (`fitPixelExact`), and the picture is the canvas's content
+   box, so the border that would take a pixel off each side goes. */
+.play-canvas-wrap.is-pixel-exact .play-canvas { border: 0; }
 /* No focus border in fullscreen: the accent outline framed the picture. */
 .play-screen:fullscreen .play-canvas,
 .play-screen:fullscreen .play-canvas:focus { border-color: transparent; }
@@ -390,6 +407,8 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   font-family: var(--font-mono); font-size: 0.76rem; color: var(--text);
 }
 div.play-vis-head { cursor: default; }
+/* An enhancement whose pass this browser could not build (PlayView._passUnavailable). */
+.play-vis-head.is-unavailable .play-vis-name { text-decoration: line-through; color: var(--text-dim, var(--text)); }
 .play-vis-head kbd { font-size: 0.68rem; padding: 0 0.3rem; }
 .play-vis-head select { font-family: var(--font-mono); font-size: 0.72rem; }
 .play-vis-name { font-weight: 600; }
@@ -446,6 +465,7 @@ div.play-vis-head { cursor: default; }
   cursor: pointer; margin: 0.12rem 0.25rem 0.12rem 0;
 }
 .play-save-status button:hover { border-color: var(--accent); }
+@media (pointer: coarse) { .play-report-btn { min-height: 40px; } }
 </style>
 <script src="js/audio-toggle.js"></script>
 <script src="js/rom-cache.js"></script>
@@ -551,7 +571,7 @@ div.play-vis-head { cursor: default; }
         </div>
         <div class="play-btn-row">
           <button id="play-recenter" type="button">Reset camera</button>
-          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (Esc to exit)">&#9974; Fullscreen</button>
+          <button id="play-fullscreen" class="btn-accent" type="button" title="Present the viewport full screen (F11; Esc to exit)">&#9974; Fullscreen</button>
           <button id="play-touch-pad" type="button" aria-pressed="false"
                   title="Show or hide the on-screen pad (D-pad, face buttons, shoulders, Start and Select) for a touch screen. Shown by default on a phone or tablet; remembered.">Touch pad</button>
           <label class="play-volume" title="Scene BGM output gain (the engine's SPU mixer runs into a WebAudio GainNode)">
@@ -987,7 +1007,7 @@ div.play-vis-head { cursor: default; }
             <button id="save-export" type="button" disabled>Export save</button>
           </div>
           <label class="play-save-import">Import save (.lgsf / memory card)
-            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.gme,.mcs" disabled>
+            <input type="file" id="save-import" accept=".lgsf,.mcr,.mcd,.srm,.gme,.mcs" disabled>
           </label>
           <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
         </div>
@@ -1037,6 +1057,7 @@ div.play-vis-head { cursor: default; }
             <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
             <kbd>Wheel</kbd><span>Zoom in / out</span>
             <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
+            <kbd>F11</kbd><span>Fullscreen on / off, as the Fullscreen button</span>
             <kbd>Touch</kbd><span>On-screen pad over the picture: the Touch pad button shows or hides it</span>
             <kbd>Pad</kbd><span>A controller plays by position (bottom Cross, right Circle, left Square, top Triangle); the left stick walks. Every connected pad drives the player</span>
             <kbd>Pad rebind</kbd><span>Pause menu, Options, Select: Key Config takes a key or a controller button on each row</span>
@@ -2180,6 +2201,16 @@ div.play-vis-head { cursor: default; }
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, menuCanvas.width, menuCanvas.height);
         if (ld && ld.sprites && logoBlit) logoBlit.blit(ctx, ld.sprites);
+        /* PROKION's exit: retail adds a flat grey quad over the logo (B + F). */
+        if (ld && ld.wash) {
+          const [wx, wy, ww, wh] = ld.wash.dst;
+          const g = ld.wash.level | 0;
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.fillStyle = `rgb(${g},${g},${g})`;
+          ctx.fillRect(wx, wy, ww, wh);
+          ctx.restore();
+        }
         if (done) {
           logos = false;
           startTitleBgm();
@@ -2789,7 +2820,7 @@ div.play-vis-head { cursor: default; }
     return file.arrayBuffer().then(buf => {
       importSaveBytes(new Uint8Array(buf), {
         name: file.name.replace(/\.[^.]+$/, ''),
-        format: (file.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1] || null,
+        format: (file.name.match(/\.(mcr|mcd|srm|gme|mcs)$/i) || [])[1] || null,
       });
     }).catch(err => {
       saveMsg(`Could not read ${file.name}: ${err.message || err}`, true);
@@ -2843,7 +2874,7 @@ div.play-vis-head { cursor: default; }
         heading: 'Your saves',
         wasm: saveTools,
         harvest: harvestPortraits,
-        acceptExts: '.lgsf,.mcr,.mcd,.gme,.mcs',
+        acceptExts: '.lgsf,.mcr,.mcd,.srm,.gme,.mcs',
         onAdd: addSaveFile,
         fixedTiles: browserCardTiles,
         primaryButton: (meta) => ({
@@ -3109,7 +3140,7 @@ div.play-vis-head { cursor: default; }
       saveMsg(`Could not read ${f.name}: ${err.message || err}`, true);
       return;
     }
-    const ext = (f.name.match(/\.(mcr|mcd|gme|mcs)$/i) || [])[1];
+    const ext = (f.name.match(/\.(mcr|mcd|srm|gme|mcs)$/i) || [])[1];
     importSaveBytes(bytes, {
       name: f.name.replace(/\.[^.]+$/, ''),
       format: ext ? ext.toLowerCase() : null,
@@ -3340,7 +3371,51 @@ div.play-vis-head { cursor: default; }
     if (view.setBloom) view.setBloom(!!bloomEl.checked);
     if (view.setSsao) view.setSsao(!!ssaoEl.checked);
     showQualitySteps(view.qualitySteps());
+    fitPixelExact();
   }
+  /* PSX rasterisation draws the frame at the native 320 x 240 and the browser
+   * magnifies it with square pixels. Stretched to whatever width the layout
+   * gives the stage, that magnification is a non-whole number of device pixels
+   * per stage pixel, so stage pixels come out one or two device pixels apart in
+   * size. The window presents its native target at the largest whole scale it
+   * holds, black around it (`Renderer::set_native_resolution`); the page does
+   * the same here: the wrap takes the largest whole multiple of 320 device
+   * pixels that fits the width its layout offers (which the layout already
+   * caps by the window's height), and what is left over stays page or, in
+   * fullscreen, black letterbox. The canvas border goes while it is on: the
+   * picture is the canvas's content box, and the overlay canvas spans the wrap. */
+  const PSX_STAGE_W = 320;
+  const stageWrap = canvas.parentElement;
+  function fitPixelExact() {
+    const on = !!(view && view.psxRender) && !document.body.classList.contains('xw-preview');
+    stageWrap.classList.toggle('is-pixel-exact', on);
+    stageWrap.style.width = '';
+    if (!on) return;
+    const dpr = window.devicePixelRatio || 1;
+    const offered = stageWrap.getBoundingClientRect().width * dpr;
+    const scale = Math.floor(offered / PSX_STAGE_W + 1e-6);
+    /* Narrower than the stage itself: no whole step fits, keep the stretch. */
+    if (scale >= 1) stageWrap.style.width = `${(PSX_STAGE_W * scale) / dpr}px`;
+  }
+  /* Re-fit when the width on offer moves: the column or the screen resizing
+   * (fullscreen included), and the device pixel ratio changing (browser zoom,
+   * a window dragged to another monitor), which leaves the CSS width alone. */
+  if (typeof ResizeObserver === 'function') {
+    let lastOffered = -1;
+    new ResizeObserver((entries) => {
+      const w = entries[entries.length - 1].contentRect.width;
+      if (w === lastOffered) return;
+      lastOffered = w;
+      fitPixelExact();
+    }).observe(stageWrap.parentElement);
+  }
+  window.addEventListener('resize', fitPixelExact);
+  (function watchDpr() {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    const again = () => { fitPixelExact(); watchDpr(); };
+    if (mq.addEventListener) mq.addEventListener('change', again, { once: true });
+  })();
   /* The automatic step-down's note: what is off, and that the saved options are
    * not. `?autoquality=0` leaves the ladder unarmed. */
   const qualityNoteEl = document.getElementById('play-quality-note');
@@ -4234,17 +4309,24 @@ div.play-vis-head { cursor: default; }
     fsBtn.disabled = true;
     fsBtn.title = 'This browser does not expose the Fullscreen API';
   }
-  fsBtn.addEventListener('click', () => {
+  /* The button and `F11` (play-view-input.js, the native window's key)
+   * share one toggle. Answers the state it asked for,
+   * or `null` where the browser has no Fullscreen API. */
+  function toggleFullscreen() {
+    if (!fsSupported) return null;
     if (fsElement()) {
       (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      return;
+      return false;
     }
     const req = canvasWrap.requestFullscreen || canvasWrap.webkitRequestFullscreen;
     /* Chrome rejects the promise if the gesture is stale; keep it non-fatal. */
     Promise.resolve(req.call(canvasWrap)).catch(() => {
       fsBtn.title = 'Fullscreen was blocked by the browser';
     });
-  });
+    return true;
+  }
+  fsBtn.addEventListener('click', toggleFullscreen);
+  window.__playToggleFullscreen = toggleFullscreen;
   /* Sync on every transition, including Esc and the browser's own controls. */
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((evt) => {
     document.addEventListener(evt, () => {

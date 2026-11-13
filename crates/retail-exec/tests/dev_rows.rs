@@ -1,9 +1,9 @@
-//! Four overlay rows the differential does not run, each settled by what the
-//! disc image shows about it: who reaches the routine and what it calls.
+//! Three overlay rows' reach, each settled by what the disc image shows about
+//! it: who reaches the routine and what it calls. Each routine also runs in a
+//! differential of its own.
 //!
 //! - `FUN_801D5C2C` (PROT 0972) has no reference anywhere on the disc.
 //! - `FUN_801D553C` (PROT 0976) hands its text to a stub retail ships empty.
-//! - `FUN_801D4FC8` (PROT 0976) is a template tick spawned by one cabinet arm.
 //! - `FUN_801D2050` (PROT 0972) is the lead angler's template tick, a
 //!   dispatcher over callees that run in their own differentials.
 
@@ -62,7 +62,7 @@ fn referenced(image: &[u8], base: u32, target: u32) -> Vec<u32> {
 #[test]
 fn the_segment_clip_is_reached_by_nothing_on_the_disc() {
     not_a_differential!(
-        "FUN_801D5C2C has no word, jump or lui pair naming it in any code image; retail never runs it"
+        "a reference census: no word, jump or lui pair names FUN_801D5C2C in any code image; the routine itself runs in fishing_line_clip"
     );
     let Some(d) = disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -88,7 +88,7 @@ fn the_segment_clip_is_reached_by_nothing_on_the_disc() {
 #[test]
 fn the_action_dump_hands_its_text_to_an_emptied_stub() {
     not_a_differential!(
-        "FUN_801D553C formats the action tables into a malloc'd buffer and hands it to FUN_8003E7F0, a stub retail ships empty, then frees it: nothing in retail is changed; the port returns its own text"
+        "a call census: FUN_801D553C hands its buffer to FUN_8003E7F0, a stub retail ships empty; the routine itself runs in baka_dump"
     );
     let Some(d) = disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -128,35 +128,9 @@ fn the_action_dump_hands_its_text_to_an_emptied_stub() {
 }
 
 #[test]
-fn the_keyframe_editor_is_one_cabinet_arms_template_tick() {
-    not_a_differential!(
-        "FUN_801D4FC8 is the tick word of actor template 0x801D766C, which the cabinet spawns at 0x801D1D90 in its developer editor arm; the port keeps the editor's pad steps, and no shipped play enters that arm"
-    );
-    let Some(d) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN unset");
-        return;
-    };
-    let overlay = d.read_entry(976).expect("PROT 0976");
-    assert_eq!(
-        referenced(&overlay, BAKA_BASE, 0x801D_4FC8),
-        vec![0x801D_7674],
-        "the template's tick word is the editor's only reference"
-    );
-    // The template is named once, by the arm that spawns it.
-    assert_eq!(
-        referenced(&overlay, BAKA_BASE, 0x801D_766C),
-        vec![0x801D_1D68]
-    );
-    assert_eq!(
-        calls_in(&overlay, BAKA_BASE, 0x801D_1D68, 0x801D_1D98),
-        vec![0x8002_0DE0]
-    );
-}
-
-#[test]
 fn the_lead_anglers_tick_dispatches_to_differential_run_callees() {
     not_a_differential!(
-        "FUN_801D2050 is the lead angler's template tick: it seats the actor once, runs the wander FUN_801D2278 and the sky strip FUN_801D24EC (each with its own differential), the clip driver, the showcase spawn and a debug readout"
+        "a call census of FUN_801D2050, the lead angler's template tick; the routine itself runs in fishing_leaves, its wander FUN_801D2278 and sky strip FUN_801D24EC in their own"
     );
     let Some(d) = disc() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");

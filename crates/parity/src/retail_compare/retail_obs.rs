@@ -170,6 +170,12 @@ pub struct RetailObs {
     /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
     /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
     pub fog_offset: i32,
+    /// Vsyncs since the frame pacer's last `VSync(step)` returned: libetc's
+    /// vblank counter `0x8007A894` less the count `FUN_8005FB84` stored on
+    /// return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`). The game frame opens
+    /// on that return, so this says which vsync of retail's frame the state
+    /// was saved on - the phase a walk film resumes on.
+    pub vsync_phase: u32,
     /// The live draw-kind-4 sprite-arm sheets ([`retail_sprite_arms`]),
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.
@@ -430,6 +436,8 @@ impl RetailObs {
                 Vec::new()
             },
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
+            vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
+                .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_sprite_arms(ram)
             } else {

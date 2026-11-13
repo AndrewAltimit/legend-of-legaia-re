@@ -185,9 +185,11 @@ fn the_pond_water_heaves_on_the_swell() {
     let sink = legaia_engine_scene::coplanar_draws::GROUND_SINK;
     for tick in 1..=64 {
         legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(&mut host);
-        // Frame `n` runs the swell at angle `(n - 1) * 0x10`.
+        // Frame `n` runs the swell at angle `(n - 1) * (step << 4)`, the
+        // venue's step: a session no vsync drives steps every call.
+        let step = legaia_engine_fishing::fishing::VENUE_FRAME_STEP;
         let ladder = host.world.minigames.fishing_venue.floor_ladder;
-        let (want, _) = water_swell(swell_sine_table(), (tick - 1) * 0x10, 1);
+        let (want, _) = water_swell(swell_sine_table(), (tick - 1) * (step << 4), step);
         assert_eq!(&ladder[..4], &want.rungs, "tick {tick}");
         let scene = surface
             .frame(&host.index, &host.world.minigames, true, [0; 3])

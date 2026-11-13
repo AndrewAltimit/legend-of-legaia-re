@@ -364,8 +364,10 @@ Each is an 18-byte move-VM program in 0898's tail,
 `1` at `0x801F5CF8`), one alignment word before the burst stager record its
 mode selects (`0x801F5DA4` / `0x801F5D0C`). Op `0x17` is the battle-overlay
 escape into the radial particle burst `FUN_801F30C4`, whose two arms are the
-same burst at two radii. The install of that address as a move buffer is
-inferred from the bytes; the call has not been traced through. Burst anatomy:
+same burst at two radii. A `--retail-parts` film lists the trigger as a part
+node on the pass the hit seats it, its twelve children beside it, and the trigger
+halted on the next pass, so the address does run as a move buffer. Burst anatomy
+and the pass each child first ticks on:
 [`functions/battle.md`](../reference/functions/battle.md#801f30c4).
 
 **`0x801E0088` - per-frame walker.** Pass 1 does spawn cadence plus child

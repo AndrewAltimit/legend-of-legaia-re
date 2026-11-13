@@ -328,19 +328,107 @@ pub const fn measured_frame_cost_at(party_count: u8, action_state: u8, passes: u
 /// the town01 fight) on the same CPU as the frame, and the ring's entry reads
 /// its clamp (`0x2BC`) for the whole read span (`1063` raw hblanks on an item
 /// use's clip, an arts swing's about `1200`, a Spirit's `1411`..`1660`). One
-/// emulated machine's measurement, like the table above.
+/// emulated machine's measurement, like the table above, and the floor of a
+/// loaded frame's cost: what a dearer frame costs is
+/// [`XA_POLL_COST_RATIO_MILLI`] times its unloaded cost.
 pub const XA_STREAM_FRAME_COST: u16 = 1063;
 
-/// The overrun of a frame the XA stream loads: the frame's raw cost past its
-/// step-`4` span, in vsyncs. `1` for the item's and art's `1063`..`1200`
+/// What a frame the clip's polls load costs on PCSX-Redux, in thousandths of the
+/// cost the same frame has outside them (the table's and the draw load's, what
+/// [`xa_stream_pass_cost`] is handed). The stop watch's polls run back to back
+/// from the CD interrupt (`FUN_8003D764` re-issuing `GetStat` / `GetlocL` from
+/// its completion callback), and the emulator answers each `0x800` cycles
+/// after it (`cdrom.cc`, `AddIrqQueue(m_cmd, 0x800)`). A `--cd-trace`
+/// recording of Gala's Flying Knee on a full party
+/// (`battle_ropeway_party_gala_flying_knee_mid`) spends `1.63` hblanks of each
+/// poll from the exception vector to the dispatcher's exit and leaves `.92`,
+/// so its loaded frames cost `2.75`..`2.87` times what runs outside those
+/// spans (`681`..`931` hblanks, `1952`..`2584` of cost). That remainder is
+/// more than the frame costs unloaded (`620`..`660` on the frames before the
+/// cue, `707`..`821` after it): part of each poll runs outside the traced
+/// span. Over the unloaded cost the spans read `3.1`..`3.6` times on that film,
+/// `3.1`..`3.9` on the full party's heals (`ropeway_orb_pre_heal`,
+/// `deene_garnet_pre_heal`, `taiku_topaz_pre_hyper_heal`: frames of `8` and
+/// `9` vsyncs over the table's `595`), and `3.0`..`4.5` on Amethyst's on a lone
+/// Vahn (`5` and `6` over `345`). The player arts' loaded frames sit at `8`
+/// vsyncs at the median over some `620` (Super Ironhead's at `6` to `8`), so
+/// `3.1`, the low end the three share, takes the arts' typical frame.
+pub const XA_POLL_COST_RATIO_MILLI: u32 = 3100;
+
+/// What a frame of `work` hblanks costs while the clip's polls load it on
+/// PCSX-Redux ([`XA_POLL_COST_RATIO_MILLI`]), at least
+/// [`XA_STREAM_FRAME_COST`].
+pub const fn xa_loaded_frame_cost(work: u16) -> u16 {
+    let c = (work as u32 * XA_POLL_COST_RATIO_MILLI + 500) / 1000;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else if c < XA_STREAM_FRAME_COST as u32 {
+        XA_STREAM_FRAME_COST
+    } else {
+        c as u16
+    }
+}
+
+/// Vsyncs a battle clip's polls load the frame past its span on PCSX-Redux. The
+/// clip player sets its end sector `span * 150 / 60` sectors on
+/// (`0x8003D698..0x8003D6D8`, the drive's double speed) and polls until the
+/// head passes it, but the emulator defers a sector while a command's
+/// interrupt is pending (`cdrom.cc` `readInterrupt`, `scheduleCDReadIRQ(irqReschedule)`),
+/// and the polls keep one pending nearly all the time. Flying Knee's polls
+/// (`--cd-trace`) run `18` vsyncs past its `90` from the cue, `3` of them the
+/// seek; the full party's heals' loaded frames end `10` to `17` past their
+/// `261`; and the stop that clears the drive word once the read is done
+/// (`FUN_8003EE00`, `sw zero` at `0x8003EE2C`) runs `20` past Medusa's Glare's
+/// `539` (`--watch 0x8007BC20`).
+pub const XA_READ_TAIL_VSYNCS: u16 = 20;
+
+/// Hblanks a vsync spans: the NTSC field's `263` lines, the unit of libetc's
+/// `VSync(1)` count (`FUN_8005FB84`, root counter 1 less its base at
+/// `0x800797D0`).
+pub const HBLANKS_PER_VSYNC: u32 = 263;
+
+/// Hblanks a frame spends past its cost word before its `VSync(n)` can see the
+/// next vertical blank: the vblank handler and the `VSync` return that open
+/// the frame (the counter's base `0x800797D0` is stored after both,
+/// `0x8005FCA4..0x8005FCB0`), and the ring update between `FUN_800173BC`'s
+/// return and the call (`0x80017044..0x800171C0`). Fit to two kinds of frame:
+/// PCSX-Redux's strike recordings' spans read it best at `20` (`.968` of
+/// `4145` frames), and the Flying Knee `--cd-trace` recording bounds it to
+/// `-4..38` from its ten loaded frames of `1952`..`2584` hblanks, `8` to `10`
+/// vsyncs long.
+pub const FRAME_END_HBLANKS: u32 = 20;
+
+/// The vsyncs a frame spans when it costs `raw` hblanks and waits on `step`.
+/// `VSync(n)` (`FUN_8005FB84`) waits for the vsync count to reach the last
+/// return's plus `n - 1` (`0x8005FBE8..0x8005FC18`), then for the next vertical
+/// blank after that (`0x8005FC2C..0x8005FC38`, the count plus one): a frame
+/// that has not finished by its step's last blank runs on to the first blank
+/// after its work. A step under `2` waits `VSync(0)`, the next blank. So
+/// the span is the larger of the step and the blanks the frame's cost and
+/// [`FRAME_END_HBLANKS`] run past.
+pub const fn frame_span(raw: u16, step: u8) -> u8 {
+    let need = (raw as u32 + FRAME_END_HBLANKS) / HBLANKS_PER_VSYNC + 1;
+    let step = if step < 1 { 1 } else { step as u32 };
+    let span = if need > step { need } else { step };
+    if span > u8::MAX as u32 {
+        u8::MAX
+    } else {
+        span as u8
+    }
+}
+
+/// The overrun of a frame the XA stream loads at the item's measured cost
+/// ([`XA_STREAM_FRAME_COST`]): the frame's raw cost past its step-`4` span, in
+/// vsyncs ([`frame_span`]). `1` for the item's and art's `1063`..`1200`
 /// (`5`-vsync passes on the capture), which an item use's passes read
-/// exactly; a Spirit's run longer (`6` and `7`), and this is a floor there.
-pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
+/// exactly.
+pub const XA_STREAM_SPAN_EXTRA: u8 = frame_span(XA_STREAM_FRAME_COST, 4) - 4;
 
 /// What a battle CD-XA clip adds to the frames after its cue. The cue's own
 /// pass carries none: the cue is issued inside it and the drive has yet to
 /// stream. The pass after it carries [`XA_STREAM_ONSET_COST`] over its base,
-/// and every pass from the second on runs at [`XA_STREAM_FRAME_COST`]. Two
+/// and every pass from the second on runs its work under the polls
+/// ([`xa_loaded_frame_cost`]). Two
 /// PCSX-Redux recordings of a monster's Heal read it: Orb's on a full party
 /// (`ropeway_orb_pre_heal`) dispatches the clip `0x20C` on the last `0x3D` pass
 /// (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp;
@@ -349,11 +437,16 @@ pub const XA_STREAM_SPAN_EXTRA: u8 = 1;
 ///
 /// Those are PCSX-Redux's costs ([`CdTiming::PcsxRedux`]): the clip player's
 /// stop watch polls the drive from interrupt context for the whole clip, and
-/// `1063` is a frame of about `370` hblanks of work over the third of the CPU
-/// the polls leave there. On a console ([`CdTiming::Console`]) a pass from the
+/// a frame's work runs in the third of the CPU the polls leave there. On a
+/// console ([`CdTiming::Console`]) a pass from the
 /// cue's next on costs its base over the console's share
 /// ([`legaia_engine_cast::cast_module_frame_step::console_poll_cost`]).
-pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTiming) -> u16 {
+pub const fn xa_stream_pass_cost(
+    passes_since_cue: u64,
+    base: u16,
+    timing: CdTiming,
+    poll_share: bool,
+) -> u16 {
     if let CdTiming::Console = timing {
         return if passes_since_cue == 0 {
             base
@@ -364,6 +457,7 @@ pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTim
     match passes_since_cue {
         0 => base,
         1 => base.saturating_add(XA_STREAM_ONSET_COST),
+        _ if poll_share => xa_loaded_frame_cost(base),
         _ => {
             if base > XA_STREAM_FRAME_COST {
                 base
@@ -884,6 +978,39 @@ mod frame_cost_tests {
         let id = clock.frame_of(100);
         assert_eq!(clock.frame_of(104), id, "frame spans the step + 1");
         assert_eq!(clock.frame_of(105), id + 1);
+    }
+
+    /// The spans the Flying Knee `--cd-trace` recording and the strike
+    /// recordings read: `VSync(n)` runs a frame past its step to the first
+    /// blank after its cost.
+    #[test]
+    fn a_frame_spans_the_larger_of_its_step_and_its_cost() {
+        assert_eq!(frame_span(630, 3), 3);
+        assert_eq!(frame_span(750, 3), 3);
+        assert_eq!(frame_span(796, 3), 4);
+        assert_eq!(frame_span(707, 4), 4);
+        assert_eq!(frame_span(1120, 4), 5);
+        assert_eq!(frame_span(1952, 4), 8);
+        assert_eq!(frame_span(2113, 4), 9);
+        assert_eq!(frame_span(2584, 4), 10);
+        assert_eq!(frame_span(200, 0), 1);
+        assert_eq!(frame_span(250, 1), 2);
+        assert_eq!(XA_STREAM_SPAN_EXTRA, 1);
+    }
+
+    #[test]
+    fn a_loaded_frame_costs_its_work_over_the_polls_share() {
+        assert_eq!(xa_loaded_frame_cost(282), XA_STREAM_FRAME_COST);
+        // A full party's heal: eight- and nine-vsync frames over the table's `595`.
+        assert_eq!(frame_span(xa_loaded_frame_cost(595), 4), 8);
+        // A lone member's: five over `345`.
+        assert_eq!(frame_span(xa_loaded_frame_cost(345), 4), 5);
+        // The player arts' typical eight over some `630`.
+        assert_eq!(frame_span(xa_loaded_frame_cost(630), 4), 8);
+        assert_eq!(
+            xa_stream_pass_cost(5, 630, CdTiming::PcsxRedux, true),
+            xa_loaded_frame_cost(630)
+        );
     }
 
     #[test]

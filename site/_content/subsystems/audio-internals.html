@@ -19,7 +19,7 @@
     </tbody>
   </table>
   </div>
-  <p>The victory-voice pick, in the results sequencer <code>FUN_8004E568</code>: a pose tier from the pose actor's HP (&ge; 3/4, &ge; 1/2, &ge; 1/4, below; a status in mask <code>0x107B</code> forces tier 4), a pose action id from the per-character table at <code>0x800788A0</code>, then a clip byte at <code>0x80078867 + action + char_id*8</code>. Per-character clip bands: Vahn <code>0xB8..0xBC</code>, Gala <code>0xBD..0xC3</code>, Noa <code>0xC4..0xCB</code>.</p>
+  <p>The victory-voice pick, in the results sequencer <code>FUN_8004E568</code>: a pose tier from the pose actor's HP (&ge; 3/4, &ge; 1/2, &ge; 1/4, below; a status in mask <code>0x107B</code> forces tier 4), a pose action id from the per-character table at <code>0x800788A0</code>, then a clip byte at <code>0x80078867 + action + char_id*8</code>. Per-character clip bands: Vahn <code>0xB8..0xBC</code>, Gala <code>0xBD..0xC3</code>, Noa <code>0xC4..0xCB</code>. The clip lands in VAB slot 7 over the formation's monster bank, and the win-pose clip's own cue track keys it: every pose fires cue <code>0xA1</code>, a party cue that sounds in slot 7.</p>
   <p class="hint">A third &ldquo;mode-aware extension dispatcher&rdquo; that turns up in call graphs is not a sound consumer at all - it is the character-mesh equipment group-transform swap (<a href="../formats/character-mesh.html">character mesh</a>).</p>
 </section>
 
@@ -204,6 +204,7 @@
   <ul class="bullets">
     <li><strong>A key-on&rsquo;s start.</strong> A key-on holds the voice silent for four samples with neither envelope nor counter running and plays one more at envelope zero, so its first sounding output is the seventh after the write, at stream sample <code>3 + pitch</code>, with real history behind it.</li>
     <li><strong>The flush&rsquo;s own cost.</strong> The sound driver writes the key-on mask after one register-writing call per voice it touched, so a chord keys later than a single note, about 1.2 samples a voice. A cue keys outside this flush and takes the fixed delay alone.</li>
+    <li><strong>An emitter&rsquo;s level rides the score&rsquo;s flush.</strong> A looping positional sound (a town&rsquo;s river) rewrites its voices&rsquo; volume every game frame through the same flush, so on those flushes the score&rsquo;s key-ons wait for the river&rsquo;s voices too, about <code>0.85</code> samples each. That was what made Rim Elm&rsquo;s theme score worse under its river than indoors: modelled, the five river states read <code>0.997</code> to <code>0.998</code>, where they read <code>0.985</code> to <code>0.991</code>.</li>
     <li><strong>A loop jump does not wait again.</strong> The Loop Start saves the cursor past the delta it read, and the arm that loops for good zeroes the wait, so the event behind the marker waits its delta on the first pass only (<a href="../formats/seq.html">seq</a>).</li>
     <li><strong>Inside the SPU.</strong> The repeat address latches at every block carrying the loop-start flag; the reverb&rsquo;s up-sampler reads on the tick that steps the network; rate <code>0x7F</code> holds a sustain outright.</li>
     <li><strong>How a score ends.</strong> Four scores play once and stop, and a loop&rsquo;s jump leaves the sounding voices alone. A pitch bend re-pitches what is sounding and is then forgotten.</li>

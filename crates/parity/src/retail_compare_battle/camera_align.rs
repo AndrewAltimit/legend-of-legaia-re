@@ -1413,7 +1413,12 @@ pub(super) const CASE7_YAW_BASE: i32 = 0x900;
 /// `ctx[+0x15]` still `0`) - holds case 6's table on slot `1`'s pair
 /// (`battle_map02_lip_kid_strike`: endpoint `(83, 224)`), and every pass
 /// before chased the walker a ring stride further back. The walk's stride is
-/// even, so pass `n` back stood `n` strides off.
+/// even, so pass `n` back stood `n` strides off. A walker whose anim tick has
+/// not committed the stage yet - all three record slots on the walk, `+0x1D9`
+/// still the walk clip - is on the same pass: the table is still case 6's on
+/// slot `1`, which the endpoint test below confirms
+/// (`battle_ropeway_curry_devil_strike`: endpoint `(51, 276)`, `image` `.933`
+/// on the RAM's endpoint alone, `.999` on the walk's).
 ///
 /// Walked back against the RAM's endpoint alone, the displayed frame stands
 /// short of the camera that was chasing the walk: `battle_map02_lip_kid_strike`
@@ -1451,10 +1456,13 @@ pub(super) fn arrival_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
         return None;
     }
     let record = |k: u32| game_anchors::u32_at(ram, actor + RING_RECORD + k * 4);
-    if record(0) == record(1)
-        || record(1) != record(2)
-        || game_anchors::u16_at(ram, actor + CURSOR_RING) != 0
-    {
+    let idle_committed = record(0) != record(1)
+        && record(1) == record(2)
+        && game_anchors::u16_at(ram, actor + CURSOR_RING) == 0;
+    let still_walking = game_anchors::u8_at(ram, actor + 0x1D9) == WALK_CLIP
+        && record(0) == record(1)
+        && record(1) == record(2);
+    if !idle_committed && !still_walking {
         return None;
     }
     let ring = |k: u32| {

@@ -67,12 +67,19 @@ pub enum VictoryPhase {
 pub struct VictorySequence {
     pub cause: BattleEndCause,
     pub phase: VictoryPhase,
-    /// Seat that poses (`ctx[+0x13]`; the leader - see the module docs).
+    /// Seat the sequencer frames and poses (`ctx[+0x13]`, the acting slot):
+    /// the member who finished a won fight, the actor that landed the
+    /// wiping blow - usually a monster - on a party wipe.
     pub pose_actor: usize,
     /// The chosen win-pose action id, `0x11..=0x18` (`gp+0xA4C`), once
     /// phase 0 has picked it. `None` for a wipe / escape or without the
     /// SCUS table.
     pub pose_id: Option<u8>,
+    /// The `monster.snd` bank phase 0 streams into VAB slot 7 for the pose -
+    /// the hero's victory voice ([`legaia_game_tables::victory_pose::victory_voice_bank`]),
+    /// which the pose clip's cue `0xA1` keys. `None` for a wipe / escape or
+    /// without the SCUS table.
+    pub voice_bank: Option<u16>,
     /// Whether the results frame opened its window - the result window
     /// `FUN_801D8DE8(0x41, 0)` on a win (`0x8004F65C`), the loss window
     /// `FUN_801D8DE8(0x42, 0)` on a wipe (`0x8004F900`). A non-zero
@@ -194,6 +201,75 @@ pub fn victory_pose_id(
     Some(row[victory_pose_column(tier, rng)])
 }
 
+/// Packed-pad bit that arms the held-button pose select (Start).
+pub const POSE_SELECT_ARM: u32 = 0x0800;
+
+/// The held-button pose select (`0x8004EAF4..0x8004EB8C`): with Start held
+/// (`_DAT_8007B850 & 0x800`) as the pose is picked, each held button below
+/// overwrites the pick in this order, so the last one held wins:
+/// Up `0x11`, Left `0x12`, Down `0x13`, Right `0x14`, L1 `0x15`, L2 `0x16`,
+/// R1 + Cross + Select together `0x17`, R2 `0x18`. `held` is the packed
+/// per-frame mask (`FUN_8001822C`'s layout). Runs after the table pick and
+/// its two `rand()` draws, which it does not undo.
+pub fn victory_pose_pad_select(pose: u8, held: u32) -> u8 {
+    if held & POSE_SELECT_ARM == 0 {
+        return pose;
+    }
+    let mut pose = pose;
+    for (mask, id) in [
+        (0x1000u32, 0x11u8),
+        (0x8000, 0x12),
+        (0x4000, 0x13),
+        (0x2000, 0x14),
+        (0x0004, 0x15),
+        (0x0001, 0x16),
+    ] {
+        if held & mask != 0 {
+            pose = id;
+        }
+    }
+    if held & 0x0148 == 0x0148 {
+        pose = 0x17;
+    }
+    if held & 0x0002 != 0 {
+        pose = 0x18;
+    }
+    pose
+}
+
+/// The formation override (`0x8004EB90..0x8004EBAC`): when the battle's first
+/// monster id `gp[+0x9F4]` (`0x8007BD0C`) is `0xB3` or `0xB4` - Songi's
+/// fights - the pose is forced to `0x17` (`(id + 0x4D) & 0xFF < 2`). Runs
+/// after [`victory_pose_pad_select`].
+pub fn victory_pose_formation_override(pose: u8, first_monster: u8) -> u8 {
+    if first_monster.wrapping_add(0x4D) < 2 {
+        0x17
+    } else {
+        pose
+    }
+}
+
+/// The boss bark the annihilated arm fires once on its results frame
+/// (`0x8004FA24..0x8004FAE8`, through the cue dispatcher `FUN_8004FCC8`, an
+/// id `>= 0x100` being a CD-XA voice): keyed on the battle's first monster id
+/// `gp[+0x9F4]`. `rand` is drawn only for `0xA9`, which picks one of two
+/// barks. `None` for every other formation.
+pub fn party_wipe_bark(first_monster: u8, rand: &mut dyn FnMut() -> i32) -> Option<u16> {
+    Some(match first_monster {
+        0x4C => 0x1A0,
+        0x88 => 0x19F,
+        0xA2 => 0x1A4,
+        0xA3 => 0x1A5,
+        0xA4 => 0x1A6,
+        0xA5 => 0x1A1,
+        0xA6 => 0x1AF,
+        // `rand() % 2` on the signed draw (`srl v1,v0,0x1f` .. `subu`).
+        0xA9 => (0x1A2 + rand() % 2) as u16,
+        0xB4 => 0x1A7,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,6 +281,7 @@ mod tests {
             phase,
             pose_actor: 0,
             pose_id: None,
+            voice_bank: None,
             window_opened: false,
         };
         let win = |frames_left| {
@@ -232,6 +309,36 @@ mod tests {
             !seq(BattleEndCause::PartyWipe, VictoryPhase::Results { hold: 0 })
                 .side_band_request_up()
         );
+    }
+
+    #[test]
+    fn the_pad_select_needs_start_and_the_last_held_button_wins() {
+        assert_eq!(victory_pose_pad_select(0x13, 0x1000), 0x13);
+        assert_eq!(victory_pose_pad_select(0x13, 0x0800 | 0x1000), 0x11);
+        assert_eq!(
+            victory_pose_pad_select(0x13, 0x0800 | 0x1000 | 0x0004),
+            0x15
+        );
+        // R1 + Cross + Select together, then R2 over it.
+        assert_eq!(victory_pose_pad_select(0x11, 0x0800 | 0x0148), 0x17);
+        assert_eq!(victory_pose_pad_select(0x11, 0x0800 | 0x0140), 0x11);
+        assert_eq!(
+            victory_pose_pad_select(0x11, 0x0800 | 0x0148 | 0x0002),
+            0x18
+        );
+    }
+
+    #[test]
+    fn songi_forces_pose_0x17_and_the_wipe_bark_keys_on_the_first_monster() {
+        assert_eq!(victory_pose_formation_override(0x12, 0xB3), 0x17);
+        assert_eq!(victory_pose_formation_override(0x12, 0xB4), 0x17);
+        assert_eq!(victory_pose_formation_override(0x12, 0xB5), 0x12);
+        assert_eq!(victory_pose_formation_override(0x12, 0xB2), 0x12);
+        let rng = |v: i32| move || v;
+        assert_eq!(party_wipe_bark(0xA4, &mut rng(0)), Some(0x1A6));
+        assert_eq!(party_wipe_bark(0xA9, &mut rng(7)), Some(0x1A3));
+        assert_eq!(party_wipe_bark(0xA9, &mut rng(8)), Some(0x1A2));
+        assert_eq!(party_wipe_bark(0x49, &mut rng(0)), None);
     }
 
     #[test]

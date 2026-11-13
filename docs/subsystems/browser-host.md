@@ -267,7 +267,12 @@ about a 45-degree wedge per diagonal), so a thumb rolls between directions witho
 lifting. A first touch focuses the canvas and unlocks audio, as a canvas click does.
 It shows by default where the only pointer is coarse (`(pointer: coarse)` without
 `(any-pointer: fine)`); the *Touch pad* button toggles it and the choice is stored
-under `legaia.touch-pad`. Hiding it releases whatever it held.
+under `legaia.touch-pad`. Hiding it releases whatever it held. On a phone held
+upright (portrait, at most 620px wide) and out of fullscreen the pad sits in a
+band under the picture instead, START and SELECT between the shoulders: over a
+picture that small its shoulder buttons covered the party's HP readout and its
+D-pad and face buttons a third of the scene. Landscape and fullscreen keep it over
+the picture.
 
 What only a browser has is driven headless by the `controls` step of
 [`check-pages.mjs`](../../scripts/ci/check-pages.mjs) on the built bundle: a
@@ -852,8 +857,16 @@ gate:
 | Load / Save rows | Closed. Both hosts browse the console's two memory-card ports, each a mounted card image (the page's port 1 in browser storage, the window's `memcard1.mcr` in its save directory), and every Save / Load goes through one card kernel (`write_save_into_card`, `save_at`); the slot is built from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
 | PSX mode's 15-bit readout | Closed. The PSX target's copy to the canvas reads the frame out as the 15-bit framebuffer on the window's gate (SSAO and bloom off, no fog drawn), the window's `fs_scanout15`; the pair is evaluated byte for byte in `engine-render`'s tests and pinned by two tier-17 rows ([renderer-port](renderer-port.md#semi-transparency)). |
+| Pixel-exact presentation | Closed for PSX rasterisation. The window presents its `320 x 240` target at the largest whole scale it holds; the page stretched its canvas to the layout's width, a non-whole number of device pixels per stage pixel. It now takes the largest whole multiple of `320` device pixels its layout offers (`fitPixelExact`, re-fitted on a resize, fullscreen or a `devicePixelRatio` change) and leaves the rest as letterbox. At a fractional ratio the overlay canvas can sit one device row off the 3D picture. The clean mode still stretches; its *Pixel-exact scaling* option is the window's alone ([`host-drift.md`](../tooling/host-drift.md#open-differences)). |
 | PCSX-Redux instrument | Open, by design. The window's `PsxTexelRule::PcsxRedux` (texel rule, flat-quad walk, that emulator's dither table and blend terms) is set only by a retail-compare image child scoring a PCSX-Redux capture; the page scores no capture, draws the console's rules only, and carries no half of the instrument. |
 | Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. The cast-cue band's voice (the item-use shout) resolves in the world onto the XA channel and plays through `play_xa` on both hosts. |
+| Memory-card containers | Closed. The page's import pickers and its format sniff take every container the window mounts by extension (`CARD_EXTENSIONS`: `.mcr`, `.mcd`, `.srm`, `.gme`, `.mcs`); a RetroArch `.srm` had no way onto the page. Pinned by `launcher::tests::the_pages_import_every_card_the_window_mounts`. |
+| Fullscreen keys | Closed for `F11`: it toggles the stage full screen as the window's `fullscreen_key` does, through the Fullscreen button's toggle, where the browser's own `F11` filled the screen with the whole document. Driven in `check-pages.mjs`'s `controls` section. The window's `Alt+Enter` stays native: `Enter` is a bindable pad key, and tier 5 keeps a page from keying on one. |
+| Bloom in the minigame venues | Closed. The window blooms every scene-target frame (`bloom_scene_target` asks no mode); the page tied bloom to the ground fog's field-and-battle flag, so a venue never bloomed. Fog and ambient occlusion keep their shared venue exclusion. |
+| A pass the driver cannot build | Closed on the page's side. Ambient occlusion, bloom or ground fog that fails to build turns off for the visit as before, and now the notice line says so and the control's label is struck through; the quality step-down no longer spends its ambient-occlusion rung on a pass that is not running. The window builds its pipelines against the adapter it requires. |
+| Movie sound without the engine output | Closed in part. The fallback movie output (no engine audio up yet) follows the volume slider and the site sound switch, where it played at the slider's default whatever they said. The Monaural row, the mono downmix and `F2` act on the engine output it stands in for, and it still ignores them. |
+| Camera gestures over a front-end screen | Equivalent. The window drops a drag, wheel or double-click under `boot_ui.is_active()`; the page's gestures reach `Camera::orbit_by` / `tilt_by` / `zoom_by`, whose `follow_knobs_live` gate refuses off the field, so a drag over the pause menu turns nothing on either host. |
+| Focus loss and a hidden tab | Equivalent. Neither host pauses; both drop held input on focus loss. A hidden tab stops the page's `requestAnimationFrame`, so the game halts while the audio worklet keeps the music playing. |
 
 The Options row deserves the sharpest statement, because it is the shape that
 recurs: the screen was *drawn* on both hosts and the gate was green, while one

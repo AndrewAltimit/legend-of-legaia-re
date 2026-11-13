@@ -245,7 +245,7 @@
       sessionLine: sessionLine,
       showCoins: true,
       fixedTiles: fixedTiles,
-      acceptExts: '.mcr,.mcd,.gme,.mcs,.lgsf',
+      acceptExts: '.mcr,.mcd,.srm,.gme,.mcs,.lgsf',
       onAdd: addFile,
       onDelete: onDelete,
       primaryButton: primaryButton,

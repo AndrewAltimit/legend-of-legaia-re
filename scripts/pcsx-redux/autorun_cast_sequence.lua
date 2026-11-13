@@ -54,6 +54,10 @@
 --                hit FUN_801EC3E4 resolves, at the head of its hit body
 --                (0x801EC5A8): the attacker, its target and the BIOS rand()
 --                seed word the hit's rolls draw from.
+--   wrappers.csv with LEGAIA_WRAPPER_TRACE=1 (breakpoint core): each call of
+--                the capture-class damage wrappers FUN_801DD4B0 / FUN_801DD6B4:
+--                power, slots, seed and stat words at the entry, the two roll
+--                words before and after the finisher.
 --   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
 --                these bytes with its pc, ra and registers.
 --   cd.csv       with LEGAIA_CD_TRACE=1 (breakpoint core): libcd's command
@@ -764,6 +768,49 @@ probe.run({
                 local r = PCSX.getRegisters().GPR.n
                 blocks:row("%d,%d,%d,%d", last_elapsed, tou32(r.s0), tou32(r.s1), tou32(r.v0))
             end)
+        end
+        if probe.getenv_num("LEGAIA_WRAPPER_TRACE", 0) ~= 0 then
+            -- Each capture-class damage roll (breakpoint core): the two
+            -- per-move wrappers FUN_801DD4B0 (respect) and FUN_801DD6B4
+            -- (bypass). `in` at the entry: the power a0, the attacker and
+            -- defender slots, the BIOS seed word and the stat words each
+            -- roll reads (attacker +0x14C / +0x158 / +0x168 / +0x16E,
+            -- defender +0x14C / +0x15C / +0x160 / +0x168 / +0x16E /
+            -- +0x1DE). `pre` at the finisher's jal (0x801DD678 /
+            -- 0x801DD828): the attacker and defender roll words sp+0x18 /
+            -- sp+0x1C after the scale stage and the bonus arm. `post` past
+            -- it (0x801DD680 / 0x801DD830): the same words after the
+            -- finisher, whose difference the wrapper returns.
+            local wraps = probe.csv_open(probe.out_path("wrappers.csv"),
+                "vsync,st7,phase,kind,ra,power,att,tgt,seed,ahp,aatk,aint,ast,dhp,dudf,dldf,dint,dst,dcat,atk,def")
+            local wrap_ra = 0
+            local function wrap_row(kind, r)
+                local cx = u32(CTX_PTR)
+                local sp = tou32(r.sp)
+                local head = string.format("%d,%d,%d,%s,0x%08X", last_elapsed,
+                    ptr_ok(cx) and u8(cx + 7) or -1, ptr_ok(cx) and u8(cx + 0x279) or -1, kind, wrap_ra)
+                if kind == "in" or kind == "in_b" then
+                    local att, tgt = tou32(r.a1) % 256, tou32(r.a2) % 256
+                    local a, d = actor(att), actor(tgt)
+                    local function st(x, o) return x ~= nil and u16(x + o) or -1 end
+                    wraps:row("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,,", head, tou32(r.a0),
+                        att, tgt, u32(0x80009010), st(a, 0x14C), st(a, 0x158), st(a, 0x168), st(a, 0x16E),
+                        st(d, 0x14C), st(d, 0x15C), st(d, 0x160), st(d, 0x168), st(d, 0x16E),
+                        d ~= nil and u8(d + 0x1DE) or -1)
+                else
+                    wraps:row("%s,,,,%d,,,,,,,,,,,%d,%d", head, u32(0x80009010), u32(sp + 0x18), u32(sp + 0x1C))
+                end
+            end
+            for _, w in ipairs({
+                {0x801DD4B0, "in"}, {0x801DD678, "pre"}, {0x801DD680, "post"},
+                {0x801DD6B4, "in_b"}, {0x801DD828, "pre_b"}, {0x801DD830, "post_b"},
+            }) do
+                probe.arm_breakpoint(w[1], "Exec", 4, "wrap_" .. w[2], function()
+                    local r = PCSX.getRegisters().GPR.n
+                    if w[2] == "in" or w[2] == "in_b" then wrap_ra = tou32(r.ra) end
+                    wrap_row(w[2], r)
+                end)
+            end
         end
         if probe.getenv_num("LEGAIA_RIBBON_TRACE", 0) ~= 0 then
             -- Each streak-ribbon call FUN_801E1D98 (breakpoint core), read at

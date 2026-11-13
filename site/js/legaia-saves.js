@@ -610,6 +610,7 @@
       'border:1px solid var(--border,#334);border-radius:3px;cursor:pointer;',
       'font-family:var(--font-mono,monospace);font-size:.66rem;',
       'padding:.16rem .45rem;text-decoration:none;display:inline-block;text-align:center;}',
+      '@media (pointer:coarse){.lgrb-btn{min-height:40px;padding:.5rem .7rem;font-size:.72rem;}}',
       '.lgrb-btn:hover:not([disabled]){border-color:var(--accent,#6cf);}',
       '.lgrb-btn[disabled]{opacity:.4;cursor:not-allowed;}',
       '.lgrb-btn.lgrb-primary{background:var(--accent,#6cf);',
@@ -826,10 +827,10 @@
       if (typeof opts.onAdd !== 'function') return;
       var add = el('button', 'lgrb-btn lgrb-primary', '+ Add save file');
       add.type = 'button';
-      add.title = 'Import a memory-card save (.mcr / .mcd / .gme / .mcs) or an engine .lgsf';
+      add.title = 'Import a memory-card save (.mcr / .mcd / .srm / .gme / .mcs) or an engine .lgsf';
       var picker = document.createElement('input');
       picker.type = 'file';
-      picker.accept = opts.acceptExts || '.mcr,.mcd,.gme,.mcs,.lgsf';
+      picker.accept = opts.acceptExts || '.mcr,.mcd,.srm,.gme,.mcs,.lgsf';
       picker.style.display = 'none';
       picker.addEventListener('change', function () {
         if (picker.files && picker.files[0]) {

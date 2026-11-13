@@ -261,6 +261,10 @@ pub struct ActionSteer {
     /// The capture shows the death-spoils caption (HUD element `0x5B`): the
     /// phase is met only on a stream whose kill rolled the steal too.
     pub spoils: bool,
+    /// A results-frame capture's drop outcome: the item its report's drop
+    /// row names, `0` for none (`RetailBattle::results_drop`), seeded into
+    /// the replay's roll (`BattleState::forced_drop`).
+    pub loot: Option<u8>,
     /// The capture is a monster parked in the approach poll `0x19` with its
     /// walk clip dead (`+0x1D9 == 0`; `docs/subsystems/battle-action-exit-gates.md`,
     /// the `0x19` park). The engine always walks an approach, so the replay
@@ -923,6 +927,9 @@ impl BattleDrive {
                 if steer.spoils {
                     s.push_str(",s");
                 }
+                if let Some(item) = steer.loot {
+                    s.push_str(&format!(",L{item}"));
+                }
                 if steer.park {
                     s.push_str(",h");
                 }
@@ -1024,6 +1031,8 @@ impl BattleDrive {
                 steer.arts = true;
             } else if last == "s" {
                 steer.spoils = true;
+            } else if let Some(item) = last.strip_prefix('L') {
+                steer.loot = Some(item.parse().ok()?);
             } else if last == "h" {
                 steer.park = true;
             } else if last == "w" {
@@ -1225,6 +1234,24 @@ impl BattleDrive {
             && steer.spoils
         {
             world.battle.forced_steal = true;
+        }
+        // A capture past the end signal names its pose seat, the acting slot
+        // the victory arm left (`ctx[+0x13]`). The replay seats the capture's
+        // beaten monster at the HP the capture reads, so the first action to
+        // end closes the fight on whoever acted: in `noa_levelup_banner` that
+        // was Gala, where retail's Vahn poses.
+        if let Self::Action { seat, end, .. } = *self
+            && seat < 3
+            && end.is_end()
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            world.battle.forced_victory_seat = Some(engine_seat(seat, pc));
+        }
+        // Likewise the drop a results-frame capture's report shows.
+        if let Self::Action { steer, .. } = *self
+            && let Some(item) = steer.loot
+        {
+            world.battle.forced_drop = Some(item);
         }
         // Likewise the absorb roll of a capture whose kill took a Seru.
         if let Self::Action { seat, absorbed, .. } = *self

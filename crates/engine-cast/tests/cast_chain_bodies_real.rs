@@ -16,15 +16,20 @@
 //!    the immediate the stored register was last loaded with;
 //! 4. every wrapper site is a `jal` into `FUN_801DD0AC` / `FUN_801DD4B0` /
 //!    `FUN_801DD6B4`, and the body holds no wrapper call the descriptors do
-//!    not name an arm for.
+//!    not name an arm for;
+//! 5. every pre-hit status roll is a `jal rand` tested under its mask, with
+//!    its flag's `ori` ahead of the wrapper call.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
 use legaia_engine_cast::cast_module_ticks::{
     CAST_MODULE_LINK_BASE, ChainBody, ChainClip, capture_trampoline_for, chain_bodies,
+    chain_pre_hit_roll,
 };
 use std::path::PathBuf;
 
+/// `rand()`.
+const RAND: u32 = 0x8005_6798;
 const WRAPPERS: [u32; 3] = [0x801D_D0AC, 0x801D_D4B0, 0x801D_D6B4];
 const BATTLE_BASE: u32 = 0x801C_E818;
 const TICK_TABLE: u32 = 0x801C_F4EC;
@@ -225,6 +230,34 @@ fn check(body: &ChainBody, img: &Image, battle: &Image) -> usize {
             );
             wrapper_arms.push(w);
             sites += 1;
+            // 5. A status roll ahead of the hit: `jal rand`, `andi v0,v0,mask`,
+            // and an `ori v0,v0,flag` before the wrapper call.
+            for &id in body.action_ids {
+                let Some(roll) = chain_pre_hit_roll(body.prot_entry, body.body, id) else {
+                    continue;
+                };
+                assert_eq!(
+                    jal_target(img.word(roll.site)),
+                    Some(RAND),
+                    "PROT {e} {:#x}: not a jal rand",
+                    roll.site
+                );
+                assert_eq!(
+                    img.word(roll.site + 8),
+                    0x3042_0000 | roll.mask,
+                    "PROT {e} {:#x}: andi v0,v0,mask",
+                    roll.site + 8
+                );
+                assert!(
+                    (roll.site..w)
+                        .step_by(4)
+                        .any(|va| img.word(va) == 0x3442_0000 | u32::from(roll.flag)),
+                    "PROT {e} {:#x}: no ori v0,v0,{:#x} before the hit",
+                    roll.site,
+                    roll.flag
+                );
+                sites += 1;
+            }
         }
     }
     // No wrapper call the descriptors leave unnamed for a whole arm.

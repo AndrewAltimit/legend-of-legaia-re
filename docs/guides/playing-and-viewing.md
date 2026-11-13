@@ -477,7 +477,9 @@ face buttons, L1 / L2 / R1 / R2 and Select / Start. It shows by default on a
 phone or tablet; the **Touch pad** button under the picture shows or hides it
 on any device, and the choice is remembered. Its presses reach the game as a
 controller's do, so every screen that takes a pad takes it; a drag on the
-picture outside the buttons still turns the camera.
+picture outside the buttons still turns the camera. On a phone held upright
+the pad sits under the picture rather than over it, so the HUD and the scene
+stay clear; turned sideways or in fullscreen it is back over the picture.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
@@ -503,7 +505,7 @@ enhancement has a retail-faithful off position
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
-| `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
+| `F11`, `Alt+Enter` | Borderless fullscreen (on the play page `F11` alone puts the picture full screen, as its Fullscreen button) | off, remembered | `--fullscreen` / `--windowed` |
 | `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
 **Screenshots.** `Print Screen` saves the picture on screen as a PNG, menus
@@ -596,7 +598,10 @@ about 960x699) draws the frame at that step and shows it shrunk by a few
 percent to fit, rather than dropping to the step below with black around it.
 The *Pixel-exact scaling* row (`integer_scale`, also on the `F12` panel)
 turns that shrink off, for a player who wants every stage pixel the same size
-at the cost of the black border; PSX mode always scales in whole steps.
+at the cost of the black border; PSX mode always scales in whole steps. So
+does the browser play page under PSX rasterisation: its picture takes the
+largest whole multiple of 320x240 device pixels the page offers, and the rest
+of the column, or of the screen in fullscreen, stays black.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`

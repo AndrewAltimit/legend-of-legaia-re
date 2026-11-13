@@ -55,6 +55,7 @@ scripts/ci/capture-coverage.py --summary      # the headline table only</code></
       <tr><td>Monsters</td><td>every populated record of the monster archive</td><td>the formation holds the id</td></tr>
       <tr><td>Enemy attacks</td><td>each monster's physical attack and every magic id its record carries</td><td>that monster is acting with that attack, on screen</td></tr>
       <tr><td>Player casts</td><td>the named summon-band spells of the <a href="../formats/spell-table.html">spell table</a></td><td>a party seat acts with that spell queued</td></tr>
+      <tr><td>Party strikes</td><td>each character's direction chain and Hyper Art</td><td>a party seat is in the attack band with a swing or the Hyper Art starter queued first</td></tr>
       <tr><td>Cast modules</td><td>the 64 slot-B images</td><td>an acting cast pages the module</td></tr>
       <tr><td>Menu screens</td><td>every reachable sub-screen, the title family and the map display</td><td>a menu state stands on it</td></tr>
       <tr><td>Battle screens</td><td>the command flow's surfaces and the results window</td><td>a battle state stands on it</td></tr>
@@ -93,6 +94,14 @@ scripts/ci/capture-coverage.py --summary      # the headline table only</code></
     </tbody>
   </table>
   </div>
+  <ul class="bullets">
+    <li><strong>A one-swing monster</strong> sits in the strike loop for a single pass: the loop stages its last byte and leaves together (<a href="../subsystems/battle-action.html#attack-walkthrough">battle action</a>), so the default hold of 8 vsyncs never sees it and the attack stays uncovered however often it swings. <code>LEGAIA_HOLD=1</code> saves it on the pass after the band opens. The sparring tutorial refuses Spirit, so its fight wants <code>LEGAIA_SPIRIT_ROUNDS=0</code>.</li>
+    <li><strong><code>LEGAIA_WANT</code> keeps each region's tile box</strong>, so a scene whose live <a href="../formats/encounter.html">condition group</a> covers only tiles the walk never reaches rolls nothing. <code>LEGAIA_WANT_WIDE=1</code> widens every box to the whole map, and the state's description says so. A source state whose player carries the movement-disabled bit (an event holds it) takes no step, so no roll fires either way.</li>
+    <li><strong>Party strikes</strong> are the thinnest dimension and where a harvest finds the most new reading. <code>LEGAIA_PARTY_ARTS</code> lists per seat the arts to enter as direction tokens, cycled over the rounds; the probe takes Attack, enters the art, commits, and captures each seat's strike loop at <code>LEGAIA_PARTY_HOLDS</code> vsyncs in. <code>LEGAIA_MONSTER_TOUGH=1</code> restores the monsters at each prompt so a fight outlasts the list, and <code>LEGAIA_PARTY_TRACE=1</code> writes a per-vsync trace of the attack chain (state, cursor, committed and staged clip, close-up accumulator, yaw). The states register as <code>battle_&lt;scene&gt;_party_&lt;char&gt;_&lt;art&gt;_{open,mid,late}</code>.</li>
+    <li><strong>A planned walk only attacks</strong>, so a story fight runs one battle-flow cycle a round for as long as it lasts; a long two-foe fight that cycles every couple of thousand vsyncs reads like a battle that restarts, but it is one fight. An <code>ACT</code> line's shot window does not fight at all.</li>
+    <li><strong>A scene change need not be a door.</strong> The inn-night variant of a town is loaded by the innkeeper from the Yes of the stay picker, so <code>asset scene-nav</code> lists it under the NPC's record with no door slot, and a route reaches it with a <code>TALK</code> line.</li>
+  </ul>
+  <p>A state is a valid run of the game whichever way it was reached, so state-making runs take <code>run_probe.sh --fast --turbo</code>: no display, several at once, well above 1x (<a href="pcsx-redux-automation.html#headless-runs">headless runs</a>).</p>
   <p>A harvested state is a candidate until its census row shows the seat, category and id its label claims, its retail frame shows that attacker (and the spell's name banner, for a cast), and it is backed up with its scenario block naming the source state, the probe, the vsync and any poke it inherits. The scores of that scratch run are what it adds to the corpus at the next reviewed baseline update.</p>
 </section>
 

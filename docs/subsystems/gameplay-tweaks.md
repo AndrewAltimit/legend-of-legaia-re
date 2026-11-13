@@ -111,7 +111,11 @@ That is what the patch's `jal` retarget does, and it swaps the whole roll, not o
 
 ### Battle freeze guard
 
-Before each frame of the HP-readout ramp (`World::tick_battle_hp_bars`, retail `FUN_80047430`), a party slot whose readout differs from its live HP while its pending accumulator is zero gets the difference re-seeded into the accumulator. That restores the invariant `display - live == pending`, the ramp counts the readout to live HP, and state `0x51`'s settle check opens. Retail re-syncs only on a poison or regen tick (`FUN_801E752C`); without one, every party-targeted action parks in `0x51` for good ([battle-action-exit-gates](battle-action-exit-gates.md#softlock-class-the-absorbing-readout)). Monster slots are untouched: their readout settles in one frame and the gate never waits on it.
+Before each frame of the HP-readout ramp (`World::tick_battle_hp_bars`, retail `FUN_80047430`), a party slot whose readout differs from its resting value while its pending accumulator is zero gets the difference re-seeded into the accumulator.
+
+The resting value is live HP less the melee combo total still banked on the slot (`actor[+0x00]`): `FUN_801EC3E4` adds each hit to both the bank and the readout accumulator (`0x801EDB34..0x801EDB58`) but writes live HP once, at the combo's end (`0x801EEA10..0x801EEA3C`), so mid-combo retail's readout sits below live HP with nothing pending. Re-seeding restores `display - pending == live - banked`, the ramp counts the readout to rest, and state `0x51`'s settle check opens.
+
+Retail re-syncs only on a poison or regen tick (`FUN_801E752C`); without one, every party-targeted action parks in `0x51` for good ([battle-action-exit-gates](battle-action-exit-gates.md#softlock-class-the-absorbing-readout)). Monster slots are untouched: their readout settles in one frame and the gate never waits on it. Measured against live HP alone, the guard would count the readout back up between a multi-hit attack's hits, so it would roll down, up and down again.
 
 ### Bonus equipment drops
 
@@ -145,7 +149,7 @@ Each switch has a disc-free test that it changes behaviour when on and that its 
 
 | Test | Crate |
 |---|---|
-| `shiny_toggle_off_takes_no_battle_entry_draw`, `flee_exp_banks_a_share_of_the_fled_formation`, `exp_rate_scales_the_victory_payout`, `fortress_fix_skips_the_stale_castle_group`, `hp_readout_guard_releases_the_absorbing_readout` (`world::tests::gameplay_tweaks`) | `engine-core` |
+| `shiny_toggle_off_takes_no_battle_entry_draw`, `flee_exp_banks_a_share_of_the_fled_formation`, `exp_rate_scales_the_victory_payout`, `fortress_fix_skips_the_stale_castle_group`, `hp_readout_guard_releases_the_absorbing_readout`, `hp_readout_guard_holds_a_readout_ahead_of_a_banked_combo` (`world::tests::gameplay_tweaks`) | `engine-core` |
 | `jewel_fix_makes_a_bypass_cast_respect_the_resist_ladder` (`casting::capture_bypass_tests`) | `engine-core` |
 | `damage_ap_scales_the_hit_charge`, `enemy_attack_count_scales_the_strike_budget`, `enemy_stat_scale_scales_the_seated_monster`, `bonus_drop_grants_equipment_and_retail_draws_nothing` (`world::tests::gameplay_tweaks`), `the_catch_rate_setting_replaces_the_records_chance` (`world::tests::seru_absorb`), `enemy_scales_match_the_patcher_arithmetic` (`world_toggles`) | `engine-core` |
 | `done_cleanup_pays_the_spirit_ap_setting` (`battle_action::tests::done`), `scaled_fill_is_retail_at_100_and_follows_the_patch_elsewhere` (`battle_formulas`) | `engine-battle-vm` |

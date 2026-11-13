@@ -592,10 +592,10 @@ pub fn run_engine_battle(
     // prompt. The caller asks for it ([`RetailBattle::action_victims`]) only
     // after the capture's phase was not reached with the HP as read.
     let pc_seed = session.host.world.party.party_count.clamp(1, 3) as usize;
-    let victims = if revive_victims {
-        battle.action_victims()
+    let (victims, party_victims) = if revive_victims {
+        (battle.action_victims(), battle.party_wipe_victims())
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     let ground = battle.seeded_ground();
     let facing = battle.seeded_facing();
@@ -628,7 +628,9 @@ pub fn run_engine_battle(
             .chain(battle.monsters.iter().enumerate().map(|(m, c)| (pc + m, c)))
             .filter_map(|(slot, c)| {
                 let c = c.as_ref()?;
-                let hp = if slot >= pc && victims.contains(&(slot - pc)) {
+                let hp = if slot >= pc && victims.contains(&(slot - pc))
+                    || slot < pc && party_victims.contains(&slot)
+                {
                     1
                 } else {
                     battle.pre_action_hp(retail_slot(pc, slot), c)
@@ -923,6 +925,11 @@ pub fn run_engine_battle(
         let world = &session.host.world;
         for &m in &victims {
             if let (Some(c), Some(a)) = (snap.monsters.get_mut(m), world.actors.get(pc_seed + m)) {
+                c.hp = a.battle.hp;
+            }
+        }
+        for &s in &party_victims {
+            if let (Some(c), Some(a)) = (snap.party.get_mut(s), world.actors.get(s)) {
                 c.hp = a.battle.hp;
             }
         }

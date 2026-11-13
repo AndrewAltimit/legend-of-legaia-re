@@ -117,6 +117,14 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// The module destroyed the move-name label's text window: an arm called
+    /// `FUN_800319A8(0x21)`, and `0x21` is the window id placement records
+    /// 76 / 77 open the label under (record 76's `+0x00` byte, `0x80077330`, read by
+    /// `FUN_801D8DE8` for a `(0x4C, 0)` open).
+    /// PROT 0957 (Death Game) does it on arm 2's face pass (`0x801F7F40`),
+    /// PROT 0966 (Evil Seru Magic) on arm 10's pass (`0x801F7058`); the label
+    /// stays off for the rest of the cast.
+    pub move_label_closed: bool,
     /// A module's saved seats `[caster x, caster z, victim x, victim z]`, which
     /// its arms write back each pass: PROT 0952 `0x5C`'s (`0x801F7BB8`,
     /// `0x801F7BB0`), PROT 0951 `0x5B`'s (`0x801F89DC`, `0x801F89D4`); PROT
@@ -336,6 +344,13 @@ pub struct ModuleCamState {
     /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
     /// camera shake of its arms 5..9.
     pub ozma_shake: (u32, i32),
+    /// PROT 0934's spray point `(x, y)` the pass drew last: the third
+    /// record's `rand() % 0x101 - 0x80` pair, left at `sp+0x30` / `sp+0x32`
+    /// by the spray loop (`0x801F8384..0x801F8504` on arm `0x15`), which arm
+    /// `0x15`'s exit cut aims at with `z = 0x400` (`sh v0,0x34(sp)` at
+    /// `0x801F8534`, `a2 = sp+0x30` into `FUN_801D829C`). Fed by the host
+    /// from the pass's draws; `None` before the first spray.
+    pub ozma_spray_point: Option<(i16, i16)>,
     /// The victim's seat as PROT 0917's arm 4 saved it before moving the
     /// victim onto the origin (`0x801F9354..0x801F935C`), which arm `0xF`'s
     /// exit puts back and frames.
@@ -519,6 +534,50 @@ pub enum ModuleCaption {
     /// (`lui a2,0x801F; addiu a2,a2,0x69D8` at `0x801F7708`). The host reads
     /// it off the resident image.
     ModuleString(u32),
+}
+
+/// Where a module's [`ModuleCaption`] puts its pen: the `a3` of its
+/// `FUN_8003541C` call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleCaptionPen {
+    /// `addiu a3,zero,C; ...; jal 0x8003541C; subu a3,a3,v0` with
+    /// `v0 = FUN_80035F04(str) >> 1`: the measured string centred on `C`.
+    Centred(i16),
+    /// `addiu a3,zero,X` with no measure: the string's pen at a typed-in `X`.
+    At(i16),
+}
+
+/// The pen of the caption PROT `prot_entry` prints as `caption`.
+///
+/// Every module measures its spell-name line and subtracts the half-width
+/// from a constant of its own, and the constant is not always `0xA0`:
+/// PROT 0903 / 0905 use `0xAC` (`0x801F6FDC`, `0x801F724C` ahead of the
+/// calls at `0x801F700C` / `0x801F727C`), PROT 0904 / 0924 / 0925 / 0926 /
+/// 0930..0934 use `0xA6` (Theeder `addiu a3,zero,0xa6` at `0x801F704C`, call
+/// `0x801F707C`). The record-name line of PROT 0966 / 0967 also centres on
+/// `0xA6` (`0x801F7E10`, call `0x801F7E28`). Every other measured caption of
+/// the band centres on `0xA0`.
+///
+/// Three module lines are not measured at all - the image's head string at
+/// a literal pen: PROT 0924's "Ultimate Rave" at `0x64`
+/// (`0x801F7508`), PROT 0927's attack name at `0x70` (`0x801F7710`), and
+/// PROT 0907's attack name at `0x6A` (`0x801F7980`). PROT 0907 draws the
+/// head string only when its init roll `rand() % 8` (`0x801F6B7C`, word
+/// `0x801F8534`) is non-zero; its zero arm draws the creature record name
+/// (the same text on the US disc) centred on `0xA0` at `y = 0xAA`
+/// (`0x801F799C..0x801F79E8`). The port does not model that roll and takes
+/// the seven-in-eight arm.
+pub fn module_caption_pen(prot_entry: u32, caption: ModuleCaption) -> ModuleCaptionPen {
+    use ModuleCaptionPen::{At, Centred};
+    match (caption, prot_entry) {
+        (ModuleCaption::SpellName, 903 | 905) => Centred(0xAC),
+        (ModuleCaption::SpellName, 904 | 924..=926 | 930..=934) => Centred(0xA6),
+        (ModuleCaption::AttackName, 966 | 967) => Centred(0xA6),
+        (ModuleCaption::AttackName, 907) => At(0x6A),
+        (ModuleCaption::ModuleString(_), 924) => At(0x64),
+        (ModuleCaption::ModuleString(_), 927) => At(0x70),
+        _ => Centred(0xA0),
+    }
 }
 
 /// Where one module spawn call seats its record (`a0` / `a1` of
@@ -1108,6 +1167,7 @@ mod earthquake;
 mod element_change;
 mod evil_seru_magic;
 mod freed;
+mod genocidal_cannon;
 mod gilium_palma_horn;
 mod gola_mushura_barra;
 mod hyper_crush;
@@ -1193,6 +1253,7 @@ pub use element_change::{
 };
 pub use evil_seru_magic::*;
 pub use freed::*;
+pub use genocidal_cannon::{GENOCIDAL_CANNON_BODY, genocidal_cannon_camera};
 pub use gilium_palma_horn::*;
 pub use gola_mushura_barra::*;
 pub use hyper_crush::hyper_crush_camera;

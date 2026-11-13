@@ -35,6 +35,8 @@ pub enum Purpose {
     ExtractedFolder,
     /// The folder the Extract view writes into.
     OutputFolder,
+    /// The folder exports go into (the View menu's *Export folder*).
+    ExportFolder,
 }
 
 impl Purpose {
@@ -43,6 +45,7 @@ impl Purpose {
             Self::Disc => "Find your disc image",
             Self::ExtractedFolder => "Find an extracted folder",
             Self::OutputFolder => "Choose where to extract to",
+            Self::ExportFolder => "Choose where exports go",
         }
     }
 
@@ -73,6 +76,10 @@ impl Purpose {
             Self::OutputFolder => {
                 "Open the folder the extraction should write into, then choose Use this \
                  folder. An empty folder is best."
+            }
+            Self::ExportFolder => {
+                "Open the folder your exported textures, models, sounds and frames should go \
+                 into, then choose Use this folder."
             }
         }
     }
@@ -537,6 +544,20 @@ mod tests {
         let mut b = FileBrowser::open_in(Purpose::OutputFolder, root.join("Games"), Vec::new());
         assert_eq!(b.rows()[0], Row::UseThisFolder);
         // No files in a folder pick: only Legaia/ under the way up.
+        assert!(!b.rows().iter().any(|r| matches!(r, Row::File { .. })));
+        b.nav(Nav::First);
+        assert_eq!(b.nav(Nav::Open), Outcome::Picked(root.join("Games")));
+    }
+
+    /// The export folder is chosen the way the extraction's is: folders
+    /// only, *Use this folder* first.
+    #[test]
+    fn the_export_folder_pick_lists_folders_only() {
+        let dir = tree();
+        let root = dir.path();
+        let mut b = FileBrowser::open_in(Purpose::ExportFolder, root.join("Games"), Vec::new());
+        assert!(Purpose::ExportFolder.picks_folder());
+        assert_eq!(b.rows()[0], Row::UseThisFolder);
         assert!(!b.rows().iter().any(|r| matches!(r, Row::File { .. })));
         b.nav(Nav::First);
         assert_eq!(b.nav(Nav::Open), Outcome::Picked(root.join("Games")));

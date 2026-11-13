@@ -117,15 +117,15 @@ fn drain_halfword(st: &mut ModuleCamState) -> bool {
 /// | 2 | hold while the band timer `ctx[+0x6D8]` is non-zero (`0x801F6C80`) | - |
 /// | 3 | - | pitch `0`, yaw `0x800 - h`, TR `(0, 0x400, 0x300)`, the same focus, over `0x46` frames (`0x801F6E24`); spawns [`THEEDER_RISE_SPAWNS`]; `ctx[+0x6D8] = scalar * 10` |
 /// | 4 | drain, hold while non-negative (`0x801F6E5C`) | four bolt ribbons a holding pass ([`theeder_bolt_hold`]); the creature seated; `ctx[+0x6D8] = scalar * 60` |
-/// | 5 | drain, hold while non-negative (`0x801F6FE8`) | four bolt ribbons a holding pass, higher; `ctx[+0x6D8] = scalar * 180` |
-/// | 6 | drain, hold while non-negative (`0x801F7138`) | snap: pitch `-0x80`, yaw `0x900 - facing`, TR `(0x60, 0x480, 0x200)`, focus the creature (`0x801F71A0`) |
+/// | 5 | drain, hold while non-negative (`0x801F6FE8`) | four bolt ribbons a holding pass, higher; `ctx[+0x6D8] = scalar * 180`; the spell name |
+/// | 6 | drain, hold while non-negative (`0x801F7138`) | snap: pitch `-0x80`, yaw `0x900 - facing`, TR `(0x60, 0x480, 0x200)`, focus the creature (`0x801F71A0`); the spell name cleared |
 /// | 7 | the body's: hold while the creature's `+0x21B` reads `0xFF` | [`theeder_attack_shot`], armed by the host |
-/// | 8 | - | pitch `0`, yaw `0x800 - facing`, TR `(0, 0x480, 0x300)`, focus the creature, over `scalar * 15` frames (`0x801F73A4`) |
+/// | 8 | - | pitch `0`, yaw `0x800 - facing`, TR `(0, 0x480, 0x300)`, focus the creature, over `scalar * 15` frames (`0x801F73A4`); the attack name (arm 7's exit, a tick late) |
 /// | 9 | the body's prong countdown | on its exit: snap pitch `0x300`, yaw `0xA00 - facing`, TR `(0xA0, 0x1A0, 0x680)`, focus the creature (`0x801F7454`) |
 /// | 11 | the body's ramp | on its exit: snap pitch `0x100`, yaw `-0x900 - facing`, TR `(0, 0, 0x2800)`, focus the creature (`0x801F7814`) |
 /// | 12 | the body's sweep | every pass: pitch `0x80`, yaw `-0x7C0 - facing`, TR `(0, 0, 0x2C00)`, focus the creature, over `0x10` frames (`0x801F7EE0`) |
 /// | 13 | the body's retract | the settle word `= scalar * 96` on the way out |
-/// | 14 | drain the settle word while positive, hold while it is | the body's row poll follows |
+/// | 14 | drain the settle word while positive, hold while it is | the caption cleared (arm 13's exit, a tick late); the body's row poll follows |
 /// | `0xFF` | - | case 8 on the caster (`jal 0x801D5854` with `(ctx[+0x13], 8)` at `0x801F80E4`) |
 ///
 /// Arm 1's `ctx[+0x276]` gate and arm 3's `FUN_8003F2B8(1)` stream poll
@@ -133,7 +133,7 @@ fn drain_halfword(st: &mut ModuleCamState) -> bool {
 /// 2 when the band timer is already spent costs one tick here (arm 2 then
 /// passes at once).
 ///
-/// PORT: FUN_801F69D8 (PROT 0904; the camera arms 0/3/6/8/9/11/12, the countdown gates of arms 2/4/5/6 and the settle word of arms 13/14)
+/// PORT: FUN_801F69D8 (PROT 0904; the camera arms 0/3/6/8/9/11/12, the countdown gates of arms 2/4/5/6, the settle word of arms 13/14 and the arm 5/6/7/13 captions)
 pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let h = heading(v, seats.caster).wrapping_add(0x800) & 0xFFF;
@@ -192,24 +192,40 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                 return theeder_bolt_hold(seated, THEEDER_BOLT_HEIGHT_SHOW);
             }
             st.countdown.0 = SPEED_SCALAR * THEEDER_STAGE_WAIT;
-            ArmDirection::PASS
+            // The spell name (`FUN_8003541C` at `0x801F707C`, measured by
+            // `FUN_80035F04` at `0x801F7024`).
+            ArmDirection {
+                caption: Some(ModuleCaption::SpellName),
+                ..ArmDirection::PASS
+            }
         }
         6 => {
             if drain_halfword(st) {
                 return ArmDirection::HOLD;
             }
-            ArmDirection::shot(on_creature(-0x80, 0x900, [0x60, 0x480, 0x200], 1))
+            // `FUN_800319A8(0)` clears the spell name (`0x801F7140`).
+            ArmDirection {
+                caption: Some(ModuleCaption::Cleared),
+                ..ArmDirection::shot(on_creature(-0x80, 0x900, [0x60, 0x480, 0x200], 1))
+            }
         }
         // The prong countdown the body seeds in arm 8 and drains in arm 9,
         // mirrored to place arm 9's exit shot.
+        // Arm 7's exit puts the attack name up (`FUN_8003541C` at
+        // `0x801F7218`, once the creature's `+0x21B` has left `0xFF`); the
+        // body paces arm 7, so it lands on arm 8's pass, a tick after
+        // retail's.
         8 => {
             st.countdown.0 = crate::seru_magic_ticks::THEEDER_PRONG_COUNT * SPEED_SCALAR;
-            ArmDirection::shot(on_creature(
-                0,
-                0x800,
-                [0, 0x480, 0x300],
-                (SPEED_SCALAR * 15) as u16,
-            ))
+            ArmDirection {
+                caption: Some(ModuleCaption::AttackName),
+                ..ArmDirection::shot(on_creature(
+                    0,
+                    0x800,
+                    [0, 0x480, 0x300],
+                    (SPEED_SCALAR * 15) as u16,
+                ))
+            }
         }
         9 => {
             st.countdown.0 = i32::from((st.countdown.0 - d) as i16);
@@ -245,7 +261,14 @@ pub fn theeder_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
             if drained && st.countdown.0 <= 0 {
                 st.countdown.drain_rest(MODULE_DRAIN_PER_TICK);
             }
-            gate(st.countdown.0 > 0)
+            // Arm 13's exit clears the attack name (`FUN_800319A8(0)` at
+            // `0x801F7FC4`, once the retract `FUN_801F8B84` reports done).
+            // The body paces arm 13, so the clear lands on arm 14's
+            // passes, the first of them the tick after retail's.
+            ArmDirection {
+                caption: Some(ModuleCaption::Cleared),
+                ..gate(st.countdown.0 > 0)
+            }
         }
         0xFF => ArmDirection {
             end_frame: true,
@@ -633,6 +656,27 @@ mod tests {
             .ribbons
             .expect("arm 5's bolts");
         assert_eq!(ring.points[3], [seat.x, THEEDER_BOLT_HEIGHT_SHOW, seat.z]);
+    }
+
+    /// The spell name goes up on arm 5's exit, arm 6's exit clears it, the
+    /// attack name follows arm 7 (on arm 8's pass) and arm 14 clears it.
+    #[test]
+    fn theeder_captions_follow_their_arms() {
+        let mut st = ModuleCamState::default();
+        let s = seats(0);
+        let pass = |arm: u8, st: &mut ModuleCamState| loop {
+            let d = theeder_direct(st, arm, s);
+            if !d.hold {
+                return d.caption;
+            }
+        };
+        st.countdown.0 = 0;
+        assert_eq!(pass(5, &mut st), Some(ModuleCaption::SpellName));
+        st.countdown.0 = 0;
+        assert_eq!(pass(6, &mut st), Some(ModuleCaption::Cleared));
+        assert_eq!(pass(8, &mut st), Some(ModuleCaption::AttackName));
+        st.countdown.0 = 0;
+        assert_eq!(pass(14, &mut st), Some(ModuleCaption::Cleared));
     }
 
     #[test]

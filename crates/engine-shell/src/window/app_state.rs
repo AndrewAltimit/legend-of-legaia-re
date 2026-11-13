@@ -104,6 +104,8 @@ pub(super) struct WindowedCutscene {
 pub(super) struct PublisherLogosAssets {
     /// Per-logo source rects in atlas pixels.
     pub(super) rects: [(u32, u32, u32, u32); legaia_engine_title::publisher_logos::LOGO_COUNT],
+    /// The atlas's white block, which the PROKION exit's wash samples.
+    pub(super) white: (u32, u32, u32, u32),
     /// GPU-resident sprite atlas (vertically stacked logos).
     pub(super) atlas: legaia_engine_render::UploadedSpriteAtlas,
 }

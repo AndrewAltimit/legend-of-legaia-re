@@ -907,11 +907,20 @@ pub fn battle_hud_draws_for(
         // A spell name's element plate counts in the width it centres on.
         let layout = font.layout(&crate::battle_hud_chrome::banner_line_bytes(name));
         let lead = name.as_bytes()[0];
-        let x = i32::from(crate::battle_name_banner::banner_x(
+        let centred = i32::from(crate::battle_name_banner::banner_x(
             layout.advance_x as i32,
             lead,
             0,
         ));
+        // A module line's pen is its module's: centred on its own constant
+        // (`0xA6` / `0xAC` for ten spell names) or typed in.
+        let x = match (frame.move_name_module_line, frame.move_name_pen) {
+            (false, _) => centred,
+            (true, crate::battle_name_banner::LabelPen::Centred(c)) => {
+                centred + c - crate::battle_name_banner::BANNER_CENTER_X
+            }
+            (true, crate::battle_name_banner::LabelPen::At(x)) => x,
+        };
         // A module's own line (`FUN_8003541C(.., 0x96, ..)`) puts its pen on
         // the row it is given, two rows under the label's.
         let y = if frame.move_name_module_line {

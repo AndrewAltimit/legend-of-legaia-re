@@ -112,7 +112,7 @@ impl ReadoutPacket {
 /// pool's leading packet - and the leading packet is exactly the one the
 /// cluster's `TOTAL` / `DAMAGE` label sits in. The readout's own packet shape
 /// is unambiguous enough to key on directly (`0x2C808080` at `+4`, the glyph
-/// CLUT at `+0x0E`, the glyph page at `+0x16`, the readout's OT bucket in the
+/// CLUT at `+0x0E`, the glyph page at `+0x16`, the packet's nine-word length in the
 /// tag's high byte), so this scans for that and dedupes the double buffer's
 /// two copies.
 fn readout_packets(ram: &[u8]) -> Vec<ReadoutPacket> {

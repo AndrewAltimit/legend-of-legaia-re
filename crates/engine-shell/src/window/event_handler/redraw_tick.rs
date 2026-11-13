@@ -575,22 +575,30 @@ impl PlayWindowApp {
                 .retail_step_track
                 .as_ref()
                 .is_some_and(|t| !t.armed());
-        let begin = waiting
-            && if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate") {
-                self.capture_gate_met()
-            } else {
-                // The recorder's seats are retail's: the party on `0..=2`, the
-                // monsters from `3`.
-                let pc = w.party.party_count.clamp(1, 3) as usize;
-                let a = usize::from(w.battle_ctx.active_actor);
-                let acting = if a < pc { a } else { 3 + a - pc };
-                let seat = std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
-                    .ok()
-                    .and_then(|v| v.parse::<usize>().ok());
-                matches!(w.battle_ctx.action_state, 0x28 | 0x3C) && seat.is_none_or(|s| s == acting)
-            };
-        if begin {
+        if waiting && self.cast_film_begun() {
             self.session.host.world.arm_retail_step_track();
+        }
+    }
+
+    /// Whether a cast film's recording has opened, by the recorder's own
+    /// rule: the capture's gate for a `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate` film,
+    /// else the acting seat's cast begin (`0x28`, or `0x3C`).
+    pub(super) fn cast_film_begun(&self) -> bool {
+        let w = &self.session.host.world;
+        if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate") {
+            self.capture_gate_met()
+        } else {
+            // The recorder's seats are retail's: the party on `0..=2`, the
+            // monsters from `3`.
+            let pc = w.party.party_count.clamp(1, 3) as usize;
+            let a = usize::from(w.battle_ctx.active_actor);
+            let acting = if a < pc { a } else { 3 + a - pc };
+            let seat = std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok());
+            w.mode == SceneMode::Battle
+                && matches!(w.battle_ctx.action_state, 0x28 | 0x3C)
+                && seat.is_none_or(|s| s == acting)
         }
     }
 

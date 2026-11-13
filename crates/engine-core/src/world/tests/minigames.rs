@@ -362,6 +362,9 @@ fn fishing_cast(world: &mut World) {
         fishing_frame(world, 0);
     }
     assert_eq!(fishing_phase(world), PondPhase::Power);
+    // The pond runs a game tick every second vsync: a press held across one
+    // is taken on it.
+    fishing_frame(world, cast);
     fishing_frame(world, cast);
     assert_eq!(fishing_phase(world), PondPhase::Flight);
     while fishing_phase(world) == PondPhase::Flight {
@@ -563,6 +566,8 @@ fn fishing_reel_buttons_are_cross_and_square_and_both_arms_add() {
         assert_eq!(fishing_phase(&world), PondPhase::Hooked);
         let before = world.minigames.fishing.as_ref().unwrap().tension();
         // Same BiosRand stream from here in every run, so the pull matches.
+        // One game tick of the fight: two vsyncs at the venue's step.
+        fishing_frame(&mut world, mask);
         fishing_frame(&mut world, mask);
         world.minigames.fishing.as_ref().unwrap().tension() - before
     };

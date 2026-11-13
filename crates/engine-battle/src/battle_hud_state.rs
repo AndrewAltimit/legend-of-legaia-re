@@ -680,10 +680,23 @@ impl BattleHud {
         self.log.clear();
     }
 
-    /// One-frame advance. Decrements every popup's `frames_remaining`
+    /// One-frame advance on a host that draws a battle frame every vsync
+    /// ([`Self::tick_frame`] with a step of one).
+    pub fn tick(&mut self) -> usize {
+        self.tick_frame(Some(1))
+    }
+
+    /// One-vsync advance. Decrements every popup's `frames_remaining`
     /// and drops popups that have expired. Returns the number of popups
     /// remaining after the tick.
-    pub fn tick(&mut self) -> usize {
+    ///
+    /// `pass_step` is the step of the battle frame this vsync opens, `None`
+    /// on a vsync inside one. Retail's numeral renderer `FUN_801DF6B8` runs
+    /// in the frame's draw tick, once a battle frame, and steps each live
+    /// entry's timer by `0x10 * DAT_1F800393` there, so a numeral pushed on
+    /// a frame is first drawn at `0x10 * step` and holds until the next
+    /// frame's draw ([`DamagePopup::step_timer`]).
+    pub fn tick_frame(&mut self, pass_step: Option<u8>) -> usize {
         // Keep the ring-slot record paired with the entries that survive.
         self.popup_ring_slots.resize(self.popups.len(), 0xFF);
         let slots = &mut self.popup_ring_slots;
@@ -699,6 +712,9 @@ impl BattleHud {
         });
         for p in self.popups.iter_mut() {
             p.frames_remaining = p.frames_remaining.saturating_sub(1);
+            if let Some(step) = pass_step {
+                p.step_timer(step);
+            }
         }
         if let Some(c) = &mut self.combo {
             c.age = c.age.saturating_add(1);

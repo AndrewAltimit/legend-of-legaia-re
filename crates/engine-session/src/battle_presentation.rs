@@ -146,7 +146,17 @@ impl<S: AudioSink> BootSession<S> {
         }
         let routed_effect_spawns = world.route_battle_effect_spawns();
         sync_battle_hud(hud, world);
-        hud.tick();
+        // The numerals' timer steps on the vsync that opens a battle frame,
+        // where retail's draw tick runs `FUN_801DF6B8`.
+        let pass_step = if world.mode == SceneMode::Battle && world.toggles.battle_sm_frame_cadence
+        {
+            let fc = &world.battle.frame_clock;
+            (fc.ticks_into_frame(world.clock.display_frames) == 0)
+                .then(|| world.battle_frame_step())
+        } else {
+            Some(1)
+        };
+        hud.tick_frame(pass_step);
         if let Some((frames, _)) = banner {
             *frames = frames.saturating_sub(1);
             if *frames == 0 {

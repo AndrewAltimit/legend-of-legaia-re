@@ -82,11 +82,11 @@
       <tr><td><a href="script-vm-menuctrl.html">Field VM MENU_CTRL</a></td><td>inline in the field VM</td><td>16 outer nibbles; two reach the error printer</td><td><code>field::step::menu_ctrl</code></td></tr>
       <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>FUN_801E0088</code></td><td><strong>none</strong> - see below</td><td><code>effect_vm</code></td></tr>
       <tr><td><a href="battle-action.html">Battle-action SM</a></td><td><code>FUN_801E295C</code></td><td>256-slot table <code>0x801CED44</code>, sparse bands, no default arm</td><td><code>battle_action</code></td></tr>
-      <tr><td><a href="world-map.html">World-map entity SM</a></td><td><code>FUN_801DA51C</code></td><td>5 states</td><td><code>world_map</code></td></tr>
+      <tr><td><a href="world-map.html">World-map entity SM</a></td><td><code>FUN_801DA51C</code></td><td>5 states</td><td><code>engine-field::world_map_entity</code></td></tr>
       <tr><td><a href="tile-board.html">Tile-board walk SM</a></td><td><code>FUN_801EF2B0</code></td><td>15 states, table <code>0x801CF65C</code></td><td><code>engine-minigames::tile_board</code></td></tr>
       <tr><td><a href="cast-module.html">Cast-module phase machine</a></td><td>one tick per PROT 0903..0966 image</td><td>per image: the <code>ctx+0x279</code> byte through a word table or a compare chain</td><td><code>cast_module_ticks</code></td></tr>
       <tr><td>Per-actor anim dispatch</td><td><code>FUN_80021DF4</code></td><td>7 dispatch bytes at <code>actor[+0x5A]</code></td><td><code>anim_vm</code></td></tr>
-      <tr><td>Title-screen tick</td><td><code>FUN_801DD35C</code></td><td>25-slot table <code>0x801CF244</code></td><td><code>title_overlay</code></td></tr>
+      <tr><td>Title-screen tick</td><td><code>FUN_801DD35C</code></td><td>25-slot table <code>0x801CF244</code></td><td><code>title_overlay</code>, owned by <code>engine-title::title::TitleSession</code></td></tr>
       <tr><td>Per-prim render dispatch</td><td><code>FUN_80043390</code></td><td>20 kind slots &times; 4 alpha banks</td><td><code>prim_dispatch</code></td></tr>
       <tr><td>Status-effect ticker</td><td><code>FUN_801E752C</code></td><td>per-actor condition set</td><td><code>status_effects</code></td></tr>
     </tbody>
@@ -107,7 +107,12 @@
 
 <section class="doc-section" id="inert">
   <h2>Ported but inert</h2>
-  <p>&ldquo;Inert&rdquo; is a reachability statement, not a correctness one. Two support modules stay inert today: the title sprite-emit primitives, and a standalone walker over the <code>0x2F</code> dispatcher. The second is owed no host - a disc-wide reference scan finds exactly one caller of that dispatcher, and the port hosts that caller.</p>
+  <p>&ldquo;Inert&rdquo; is a reachability statement, not a correctness one. Two support modules stay inert today, and neither is owed a host:</p>
+  <ul class="bullets">
+    <li><strong><code>engine-title::title_prim</code></strong> - the executable's sprite-emit dispatcher, beside two forwarding shims for libgpu wrappers. It is marked as replaced by the <code>engine-ui</code> title and save draw-list builders.</li>
+    <li><strong>A standalone walker over the <code>0x2F</code> dispatcher.</strong> A disc-wide reference scan finds exactly one caller of that dispatcher, and the port hosts that caller.</li>
+  </ul>
+  <p>A live arm whose host hook is still its trait default is inert too, and no reachability column shows it. And one module is not a port at all: <code>engine-system::movie::cutscene_trigger</code> is a static catalogue of the three retail writers of the movie game mode, read only by tests and docs; the triggers it names run through the field VM&rsquo;s op <code>0x4C</code> movie arm and the title&rsquo;s attract arm.</p>
 </section>
 
 <section class="doc-section" id="see-also">

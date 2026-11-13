@@ -254,6 +254,11 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
         ) {
             return None;
         }
+        // A module that destroyed the label's window (`FUN_800319A8(0x21)`:
+        // Death Game with its faces, Evil Seru Magic at arm 10) keeps it off.
+        if world.casting.module_cam.move_label_closed {
+            return None;
+        }
         let id = actor.battle.params[0];
         world
             .menu
@@ -304,6 +309,24 @@ pub fn battle_move_name_is_module_line(world: &legaia_engine_core::world::World)
             world.casting.module_caption,
             None | Some(ModuleCaption::Cleared)
         )
+}
+
+/// The pen of a summon module's own line, or `None` when
+/// [`battle_move_name_is_module_line`] is `false`: the module's centre
+/// constant or typed-in X for the caption it is printing
+/// ([`legaia_engine_cast::cast_module_camera::module_caption_pen`]).
+pub fn battle_move_name_module_pen(
+    world: &legaia_engine_core::world::World,
+) -> Option<legaia_engine_cast::cast_module_camera::ModuleCaptionPen> {
+    if !battle_move_name_is_module_line(world) {
+        return None;
+    }
+    let actor = world.actors.get(world.battle_ctx.active_actor as usize)?;
+    let entry = world.cast_module_for(actor.battle.params[0])?;
+    Some(legaia_engine_cast::cast_module_camera::module_caption_pen(
+        entry,
+        world.casting.module_caption?,
+    ))
 }
 
 /// The full-width message bar's line (HUD element `0x5B`, placement record

@@ -5,4 +5,5 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-minigames --test integration <name>::`.
 
+mod slot_spin_capture;
 mod slot_verify_fixture;

@@ -419,6 +419,9 @@ pub fn death_game_camera(
                     let face = CARD_RECORDS[usize::from(g.table[i].clamp(1, 4)) - 1];
                     arm.charge_spawns[i] = Some(seat(face, g.cards[i], [0, 0, 0]));
                 }
+                // `li a0,0x21; jal 0x800319A8` (`0x801F7F34..0x801F7F40`): the
+                // move-name label's window goes with the faces.
+                st.move_label_closed = true;
                 word.0 = 0x600;
                 arm.next = Some(3);
             }
@@ -687,6 +690,30 @@ mod tests {
             i += 1;
             v
         }
+    }
+
+    /// Arm 2's face pass closes the move-name label; the passes before it
+    /// leave it up.
+    #[test]
+    fn the_faces_close_the_move_label() {
+        let mut st = ModuleCamState::default();
+        let seats = ModuleCamSeats::default();
+        let mut phase = 0u8;
+        let mut closed_at = None;
+        for _ in 0..0x2000 {
+            let arm = death_game_camera(&mut st, phase, seats);
+            if st.move_label_closed && closed_at.is_none() {
+                closed_at = Some(phase);
+                assert!(!arm.hold, "closed on the pass, not while held");
+            }
+            if !arm.hold {
+                match arm.next {
+                    Some(n) if phase < 3 => phase = n,
+                    _ => break,
+                }
+            }
+        }
+        assert_eq!(closed_at, Some(2));
     }
 
     #[test]

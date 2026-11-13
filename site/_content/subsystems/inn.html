@@ -50,6 +50,7 @@
     <figcaption>Every step is a plain script instruction, so two inns in two towns differ only in the price literal. Some inns append a warp to a dream scene after the restore.</figcaption>
   </figure>
   <p>The No answer and the can't-afford skip both land on refusal lines inside the same record; a stay never leaves the script VM.</p>
+  <p>Nothing but the record's own text boxes is drawn during a stay. The rest is the colour fade, the rest cue and two waits, with no caption over the dark screen; then the record stops the cue, resumes the music, fades back and says good morning. The port's own fallback inn prompt follows suit: its rest beat holds for a moment and draws nothing.</p>
 </section>
 
 <section class="doc-section" id="trigger">
@@ -75,11 +76,19 @@ A2 F8 &lt;clip&gt;  AC F8 08  AD F8 08    ; play a player clip, clear its end la
 4E &lt;pp&gt; 30 &lt;cost u16&gt; &lt;skip u16&gt;    ; if gold &lt; cost, skip to the refusal
 3A &lt;sext24(-cost)&gt;                  ; take the money
 1F &lt;thank-you&gt; 00 1F &lt;good night&gt; 00
-35 / 34 / 4A / 36                   ; BGM release, fade, waits, cue
-4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot</code></pre>
+35 / 34 01 / 4A / 36 / 4A           ; BGM release, colour fade, wait,
+                                    ;   rest cue, wait
+4C 82 00  4C 82 01  4C 82 02        ; the restore, one op per party slot
+36 FFFF / 35 / 34 00 / 4A           ; cue stop, BGM resume, fade back
+1F &lt;good morning&gt; 00</code></pre>
       <p>The full Yes gesture is the door-swing shape aimed at the player: un-hold, poke the clip, clear + spin, un-clamp, wait, re-clamp, clear + spin again, then hand the player back to the locomotion move. Every operand is an animation bit of the player's <code>+0x62</code> word, not a local flag of the record.</p>
     </div>
   </details>
+</section>
+
+<section class="doc-section" id="conkram-night">
+  <h2>The night before, in Conkram</h2>
+  <p>One stay ends with a scene change instead of a fade. The Conkram innkeeper sets system flag <code>0x53C</code> and loads <code>CONC3</code>. That scene's entry script spawns a wake-up record only while <code>0x53C</code> is set and <code>0x5F7</code> is clear. The record fades back in, parks the innkeeper, Dr. Usha, his companion and the counter relay on an off-map tile, sets <code>0x3F9</code>, shows its wake-up page and sets <code>0x5F7</code> - so a later visit runs none of it and seats the four again. A disc-gated engine test pins both arms of the entry gate.</p>
 </section>
 
 <section class="doc-section" id="cost-source">

@@ -424,7 +424,7 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 || entry == 935 || entry == 938 {
+            if entry == 944 || entry == 935 || entry == 938 || entry == 963 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             // PROT 0964's strike picks its opening record off the last roll.
@@ -448,6 +448,16 @@ impl World {
             if arm.skips_fold {
                 self.casting.module_skips_fold = true;
             }
+            if let Some(v) = arm.first_monster_record_1c
+                && let Some(first) = self.battle_seat_map().engine(3)
+                && let Some(b) = self
+                    .battle
+                    .monster_ai_state
+                    .b3_armed
+                    .get_mut(usize::from(first) % 8)
+            {
+                *b = v;
+            }
             run.camera_shot = arm.shot;
             run.capture_drift = arm.drift;
             run.capture_pose_set = arm.pose_set;
@@ -456,6 +466,9 @@ impl World {
             }
             if let Some((clip, window)) = arm.caster_clip_window {
                 self.write_clip_loop_window(caster_slot, clip, window);
+            }
+            if let Some((clip, bounds)) = arm.caster_clip_bounds {
+                self.write_clip_loop_bounds(caster_slot, clip, bounds);
             }
             if let Some((clip, speed)) = arm.caster_clip_speed {
                 self.write_clip_root_speed(caster_slot, clip, speed);
@@ -769,18 +782,33 @@ impl World {
             if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
                 self.casting.module_hit_arm = Some(phase_in);
                 // A split cast's hits are its own, on their beat
-                // (PROT 0939's, PROT 0937's arm 7).
-                self.casting.module_skips_fold = ticks::split_hits_for(
+                // (PROT 0939's, PROT 0937's arm 7), and so are a hit-landing
+                // director's (PROT 0958 / 0959, below): its sites roll and
+                // write each hit, so the fold this arm opens owes the cast
+                // nothing. Left to the director's own store further down the
+                // pass, Megaton Press's arm 8 folded one generic roll ahead
+                // of its site-0 hit, 76 on top of retail's 67.
+                self.casting.module_skips_fold |= ticks::split_hits_for(
                     entry,
                     body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
                 )
-                .is_some();
+                .is_some()
+                    || director_lands_hits(entry);
                 // A hit whose arm marks its victim stages no reaction
                 // (`ticks::chain_hit_stages_no_reaction`, PROT 0956's `0x75`);
                 // a victim the hit downs takes the dead branch's knockdown.
                 let marks = ticks::chain_hit_stages_no_reaction(arm, &victim);
                 if marks {
                     self.casting.module_fold_quiet = true;
+                }
+                // A status the arm rolls ahead of its damage call draws first
+                // (PROT 0947's Neo Windhash Curse, `0x801F73E0`), so the
+                // damage rolls one draw later.
+                if let Some(roll) =
+                    chain.and_then(|c| ticks::chain_pre_hit_roll(entry, c.body, spell_id))
+                    && self.next_rand() & roll.mask == 0
+                {
+                    self.battle.status_effects.apply(victim_slot, roll.kind);
                 }
                 self.fold_pending_cast_at_rate(arm.hit_rate);
                 if marks {
@@ -2197,9 +2225,7 @@ impl World {
             // its popup pushed with the raw roll (`jal 0x801F44A0` ahead of
             // the clamp), then the shape-A clamp and the HP write. The fold
             // owes the cast nothing.
-            if legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
-                && matches!(entry, 958 | 959)
-            {
+            if director_lands_hits(entry) {
                 self.casting.module_skips_fold = true;
             }
             // A director that paces a split cast's hits names each as it
@@ -2503,6 +2529,15 @@ impl World {
         {
             ctx.ctx_278 = v;
         }
+        if entry == 917
+            && let Some(v) = legaia_engine_cast::cast_module_camera::barra_stage_byte(
+                phase_in,
+                ctx.phase != phase_in,
+                self.casting.module_cam.countdown.0,
+            )
+        {
+            ctx.ctx_278 = v;
+        }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
@@ -2768,4 +2803,12 @@ impl World {
             let _ = self.party.inventory.add(item, 1);
         }
     }
+}
+
+/// `true` for a capture director that lands the module's wrapper hits itself
+/// (PROT 0958's six sites, PROT 0959's three): each is `FUN_801DD6B4` at its
+/// own call site, so no generic fold may roll the cast as well.
+fn director_lands_hits(entry: u32) -> bool {
+    legaia_engine_cast::cast_module_ticks::damage_shape_for(entry).is_some()
+        && matches!(entry, 958 | 959)
 }

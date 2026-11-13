@@ -86,11 +86,13 @@
       <tr><td>Read the frame's display list</td><td><code>mednafen-state display-list &lt;state|ram.bin&gt;</code></td><td>Walks the libgpu ordering table in RAM; <code>display-list.py</code> wraps <code>.sstate</code></td></tr>
       <tr><td>Name every UI sprite in a frame</td><td><code>widget-draw-sweep.py &lt;state&gt;</code></td><td>Joins each <code>SPRT</code> packet's <code>(u,v,w,h)</code> to the SCUS widget-class table - exact, not heuristic</td></tr>
       <tr><td>Find a state in the corpus</td><td><code>state-index.py [--scene X] [--json]</code></td><td>Reads scene / mode / position anchors from the bytes; indexes both emulators into one table</td></tr>
+      <tr><td>Film what each battle frame cost</td><td><code>scripts/mednafen/frame-cost-film.py &lt;state&gt; --frames N --out f.csv</code></td><td>Per-frame cost words, step, phase and GPU-cost model; scored by <code>scripts/ci/frame-cost-agreement.py</code> (<a href="#frame-cost-film">below</a>)</td></tr>
       <tr><td>Byte-match a battle file against VRAM</td><td><code>mednafen-state clut-trace --pack ...</code></td><td>Slides a 32-byte window past each TMD; see <a href="../formats/battle-data-pack.html">battle-data pack</a></td></tr>
       <tr><td>Renderer dispatch tables</td><td><code>prim-dispatch-table</code>, <code>prim-dispatch-survey</code></td><td>Decodes the per-prim renderer tables; survey exits non-zero if the SCUS table drifts across saves</td></tr>
       <tr><td>Pin a save-block field</td><td><code>save-tool sc-diff card1 card2 --save-index N</code></td><td>Diffs SC blocks, annotated against the <a href="../formats/save-record.html#layout">save-record layout</a></td></tr>
     </tbody>
   </table>
+  <p id="frame-cost-film"><strong>Filming a battle frame's cost.</strong> <code>frame-cost-film.py</code> steps a library state frame by frame, as <code>drive-timeline.py</code> does, and logs per frame the two frame-cost words (<code>gp+0x3A8</code>, CPU work done, and <code>gp+0x3AC</code>, after <code>DrawSync</code> as the ring holds it), the step, the action state and module phase, the GPU draw-time model of both the table the GPU was handed last and the one the CPU is building, and the PC at the frame boundary. <code>frame-cost-agreement.py --mednafen</code> then runs the step law over the CPU word alone, over the larger of CPU word and model, and over the ring entry, and scores each against the step mednafen stored - which cost a real console's frame law reads (<a href="../subsystems/battle-stage-camera.html#a-frames-span">a frame's span</a>).</p>
   <details class="disclosure">
     <summary>Reading a display list: three properties that decide whether a report means anything</summary>
     <div class="disclosure-body">

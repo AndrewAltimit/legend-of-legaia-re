@@ -10,7 +10,7 @@
 //! | `+0x14C` | live HP - the authoritative value every liveness test reads | [`crate::battle_action::BattleActor::hp`] |
 //! | `+0x172` | **displayed** HP - what the readout draws | [`crate::battle_action::BattleActor::hp_display`] |
 //! | `+0x10` | signed **pending-delta accumulator** - how much `+0x172` still owes | [`crate::battle_action::BattleActor::hp_bar_pending`] |
-//! | `+0x00` | per-action accumulated damage total, committed to live HP at end-of-action | not modelled - see below |
+//! | `+0x00` | per-action accumulated damage total, committed to live HP at end-of-action | [`crate::battle_action::BattleActor::damage_accum`] |
 //!
 //! The pair only converges through the accumulator. Everything here is
 //! transcribed from the DISASSEMBLY, not the decompiled C:
@@ -74,11 +74,13 @@
 //! the `state_51_park_from_the_clamp_asymmetry` test in
 //! `crate::battle_action`.
 //!
-//! The `+0x00` end-of-action commit is **not** modelled: the port applies live
-//! HP at the moment a hit lands rather than banking a per-action total, so the
-//! second clamp has no separate commit point to disagree at. What the port
-//! does carry is the readout-side clamp itself, which is the half that
-//! produces the desync.
+//! The `+0x00` end-of-combo commit is modelled: the melee kernel banks each
+//! hit on [`crate::battle_action::BattleActor::damage_accum`] beside the
+//! readout seed and writes live HP once, at the combo's end
+//! (`World::apply_combo_total` in `engine-core`). Mid-combo the readout
+//! therefore runs ahead of live HP by the banked total with its accumulator
+//! drained - retail's own state, which a re-sync against live HP alone would
+//! count back up.
 
 use crate::battle_slot::RetailSlot;
 

@@ -127,9 +127,14 @@ const VRAM_MOVES_PORTED_BY_HAND: [u32; 1] = [903];
 /// arm's countdown and settle gates, on its way out; fired at the arm's
 /// entry it lit the stage back up under the strike's starfield while the
 /// party still reeled. Its director stores the `3`s and the clear.
-const STAGE_BYTES_PORTED_BY_HAND: [u32; 23] = [
-    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 918, 922, 923, 925, 927, 942, 953, 954, 959,
-    960, 961, 963, 965,
+///
+/// PROT 0917's arm-6 store of `3` (`0x801F71F4`) sits in the branch the
+/// arc's word takes from `0xA1` on, not at the arm's entry: fired there it
+/// took the ground away for the arm's first hundred-odd vsyncs, where
+/// retail's dimmed ground still shows ([`World::apply_barra_writes`]).
+const STAGE_BYTES_PORTED_BY_HAND: [u32; 24] = [
+    903, 904, 906, 907, 908, 909, 910, 911, 912, 913, 917, 918, 922, 923, 925, 927, 942, 953, 954,
+    959, 960, 961, 963, 965,
 ];
 
 /// PROT 0916's test ahead of the wash's end (`beq v1,zero` at `0x801F86B0`).

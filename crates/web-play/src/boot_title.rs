@@ -483,8 +483,11 @@ impl LegaiaRuntime {
     }
 
     /// Draw list for the current logo frame, in surface pixels:
-    /// `{ "active": true, "sprites": [...atlas quads...] }`, rendered over
-    /// black by the page.
+    /// `{ "active": true, "sprites": [...atlas quads...], "wash": null }`,
+    /// rendered over black by the page. `wash` is PROKION's exit,
+    /// `{ "dst": [x, y, w, h], "level": n }`: an additive flat grey the page
+    /// adds over the logo (`publisher_logos::screen_wash`, retail's `B + F`
+    /// quad).
     ///
     /// The quads come out of the shared
     /// `legaia_engine_ui::boot_logos::publisher_logo_sprite_draws` the
@@ -503,8 +506,17 @@ impl LegaiaRuntime {
             return r#"{"active":false,"sprites":[]}"#.to_string();
         };
         let idx = session.current_logo();
+        let wash = session.screen_wash().map(|w| {
+            let (x, y, w_, h) = legaia_engine_ui::boot_logos::publisher_logo_wash_rect(
+                w.rect,
+                STAGE,
+                surface_w.max(1),
+                surface_h.max(1),
+            );
+            serde_json::json!({ "dst": [x, y, w_, h], "level": w.level })
+        });
         if idx >= LOGO_COUNT {
-            return r#"{"active":true,"sprites":[]}"#.to_string();
+            return serde_json::json!({ "active": true, "sprites": [], "wash": wash }).to_string();
         }
         let quads: Vec<LogoQuadView> = session
             .current_quads()
@@ -532,7 +544,7 @@ impl LegaiaRuntime {
                 })
             })
             .collect();
-        serde_json::json!({ "active": true, "sprites": sprites }).to_string()
+        serde_json::json!({ "active": true, "sprites": sprites, "wash": wash }).to_string()
     }
 
     /// The title art atlas (RGBA8) the sprite bands sample. Empty when none.

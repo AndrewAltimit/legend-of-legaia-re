@@ -256,6 +256,11 @@ pub fn evil_seru_magic_camera(
             (0, None, None)
         }
     };
+    // Arm 10's pass destroys the move-name label's window
+    // (`jal 0x800319A8` / `addiu a0,zero,0x21`, `0x801F7058`).
+    if phase == 10 {
+        st.move_label_closed = true;
+    }
     st.countdown.0 += rearm;
     CaptureCamArm {
         shot,

@@ -246,6 +246,9 @@ fn seed_through_door(
             crate::audio_sweep::listen_frame(session, audio);
         }
     }
+    for &flag in &door.flags {
+        session.host.world.system_flag_set(flag);
+    }
     let taken = session
         .host
         .take_door_to(&retail.scene, door.door.map(usize::from))?;

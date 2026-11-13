@@ -1428,7 +1428,7 @@ impl World {
     /// Returns the last [`FieldStepResult`] the slice produced, or `None` when
     /// there is no bytecode / the PC already sits in the text band.
     ///
-    /// PORT: FUN_8003CF7C
+    /// REF: FUN_8003CF7C (the loop is `inline_dialogue::run_to_next_text`)
     /// REF: FUN_8003AB2C (the same loop, run once at scene-script install)
     ///
     /// The first slice after a field entry stands for the install's own
@@ -1507,52 +1507,47 @@ impl World {
         ) {
             self.sync_field_ctx_player_anchor();
         }
+        // The slice itself is retail's helper
+        // ([`legaia_engine_field::inline_dialogue::run_to_next_text`]): (1) the
+        // `0x21` NOP is the authored frame boundary; (2) a PC that did not
+        // move is a park (wait, halt, unimplemented op); (3) the next byte
+        // being a text segment ends the slice.
         let mut last = None;
-        for _ in 0..FIELD_FRAME_SLICE_BUDGET {
-            let pc = self.field_pc;
-            let Some(&opcode_byte) = self.field_bytecode.get(pc) else {
-                break;
-            };
-            last = self.step_field();
-            if last.is_none() {
-                break;
-            }
-            // Retail has no fourth condition here because a scene change tears
-            // the context down; the engine queues the request and drains it
-            // after the tick, so the loop has to stop itself or the ops after a
-            // `0x3F` run against the scene that is already going away. Same for
-            // a mode flip (a scripted battle) - the frame belongs to the new
-            // mode from that instruction on.
-            //
-            // No entry script exercises this today: a disassembly of `P1[0]` in
-            // all 124 CDNAME scenes finds zero `SceneChange` ops, and scene
-            // changes live in the partition-2 timeline records and the
-            // partition-1 interaction records that other steppers drive. It is
-            // here because the cost of being wrong is executing a dead scene's
-            // bytecode, and this is the only driver that runs a whole slice.
-            if self.mode != mode
-                || self.pending_named_scene_transition.is_some()
-                || self.pending_scene_transition.is_some()
-            {
-                break;
-            }
-            let next = self.field_pc;
-            // (1) the `0x21` NOP is the authored frame boundary; (2) a PC that
-            // did not move is a park (wait, halt, unimplemented op); (3) the
-            // next byte being a text segment ends the slice.
-            if opcode_byte == 0x21 {
-                // The pass ends: the runner clears the context's engaged bit
-                // on the executed `0x21` (`0x80039E68..0x80039E7C`).
-                self.field_vm.system_pass_open = false;
-                break;
-            }
-            if next == pc {
-                break;
-            }
-            match self.field_bytecode.get(next) {
-                Some(&b) if b & 0x7F >= 0x20 => {}
-                _ => break,
-            }
+        let slice = legaia_engine_field::inline_dialogue::run_to_next_text(
+            self,
+            self.field_pc,
+            FIELD_FRAME_SLICE_BUDGET,
+            |w, pc| w.field_bytecode.get(pc).copied(),
+            |w, _pc| {
+                last = w.step_field();
+                last.as_ref()?;
+                // Retail has no fourth condition here because a scene change
+                // tears the context down; the engine queues the request and
+                // drains it after the tick, so the loop has to stop itself or
+                // the ops after a `0x3F` run against the scene that is already
+                // going away. Same for a mode flip (a scripted battle) - the
+                // frame belongs to the new mode from that instruction on.
+                //
+                // No entry script exercises this today: a disassembly of
+                // `P1[0]` in all 124 CDNAME scenes finds zero `SceneChange`
+                // ops, and scene changes live in the partition-2 timeline
+                // records and the partition-1 interaction records that other
+                // steppers drive. It is here because the cost of being wrong is
+                // executing a dead scene's bytecode, and this is the only
+                // driver that runs a whole slice.
+                if w.mode != mode
+                    || w.pending_named_scene_transition.is_some()
+                    || w.pending_scene_transition.is_some()
+                {
+                    return None;
+                }
+                Some(w.field_pc)
+            },
+        );
+        if slice.end == legaia_engine_field::inline_dialogue::SliceEnd::FrameMark {
+            // The pass ends: the runner clears the context's engaged bit on
+            // the executed `0x21` (`0x80039E68..0x80039E7C`).
+            self.field_vm.system_pass_open = false;
         }
         last
     }

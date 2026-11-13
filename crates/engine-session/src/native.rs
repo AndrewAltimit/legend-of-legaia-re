@@ -175,6 +175,11 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
+    // Opt-in: each battle frame spans what retail's `VSync` law gives its
+    // cost (`WorldToggles::battle_frame_span_law`).
+    if std::env::var("LEGAIA_BATTLE_FRAME_SPAN").is_ok_and(|v| v.trim() == "1") {
+        toggles.battle_frame_span_law = true;
+    }
     // Which machine's CD response time the battle frame step reads
     // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
     // `pcsx-redux` names the default.

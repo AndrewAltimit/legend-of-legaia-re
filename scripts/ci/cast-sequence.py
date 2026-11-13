@@ -121,6 +121,46 @@ def engine_ground(retail: str) -> str:
     return ",".join(party + monsters)
 
 
+def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
+    """Each seat's HP on retail's cast begin, keyed by engine slot, for
+    `LEGAIA_BATTLE_BARS`. The child's bars are the state's HUD at its own
+    instant, but a `--monster-pick` recording plays the party's turns to the
+    monster's pick first, so the caster and its victims stand at other HP when
+    the cast begins. The capture-class wrappers read the attacker's HP into
+    the roll (`hp >> 8` at `0x801DD728`), so Bloody Horns' `595` read `605` on
+    the state's bars. A harness seat, like the ground. Party seats re-key as
+    `engine_ground` does. A party seat at `0` HP on either side is left
+    alone; a monster the recording holds at `0` is returned as `0` (the
+    party's turns killed it before the pick: `battle_garmel_zenoir_strike`'s
+    harvest rounds left seat 3 dead where the state stands it at `279`), and
+    the caller seats it dead and faded."""
+    cast = int(done.get("cast", "-1"))
+    if cast < 0:
+        return {}
+    row = None
+    try:
+        with open(out / "retail" / "meta.csv") as f:
+            for r in csv.DictReader(f):
+                if int(r["vsync"]) > cast:
+                    break
+                row = r
+    except (OSError, KeyError, ValueError):
+        return {}
+    if row is None:
+        return {}
+    toks = done.get("ground", "").split(",")
+    party = [s for s in range(3) if s < len(toks) and toks[s] not in ("", "-")]
+    slots = {s: e for e, s in enumerate(party)}
+    for m in range(5):
+        slots[3 + m] = len(party) + m
+    hp = {}
+    for seat, slot in slots.items():
+        v = row.get(f"hp{seat}")
+        if v and v.lstrip("-").isdigit() and (int(v) > 0 or seat >= 3):
+            hp[slot] = int(v)
+    return hp
+
+
 def run_retail(a, out: Path) -> bool:
     rdir = out / "retail"
     done = read_kv(rdir / "done.txt")
@@ -177,6 +217,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_RANGE_TRACE"] = "1"
     if a.hit_trace:
         env["LEGAIA_HIT_TRACE"] = "1"
+    if a.wrapper_trace:
+        env["LEGAIA_WRAPPER_TRACE"] = "1"
     if a.ghost_trace:
         env["LEGAIA_GHOST_TRACE"] = "1"
     if a.ribbon_trace:
@@ -197,7 +239,7 @@ def run_retail(a, out: Path) -> bool:
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
-            or a.range_trace or a.hit_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
+            or a.range_trace or a.hit_trace or a.wrapper_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -401,6 +443,57 @@ def state_opening_cursor(out: Path) -> str | None:
     return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
 
 
+def state_body_cursors(out: Path) -> str | None:
+    """Every other body's `slot:clip:cursor` in the state's own RAM, on engine
+    slots (the party packed ahead of the monsters), for a `--physical` film's
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS`. The capture's clip seeds are the
+    displayed frame's and land on the still's capture frame, which a film never
+    reaches, so its bodies idled on the replay's own phases:
+    `battle_rugi_caruban_2_fire_breath_mid_cast`'s party opened the film on
+    idle cursors `132`, `72`, `108` where the state holds `96`, `112`, `48`, and
+    a close camera shows the near bodies' sway. The engine lands loops only. A
+    harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            first = next(csv.DictReader(f), None)
+    except OSError:
+        return None
+    ram = state_ram(manifest.get("sstate", ""))
+    if first is None or ram is None:
+        return None
+    acting = int(first["acting"])
+    bodies = {}
+    for seat in range(8):
+        a = ram_u32(ram, 0x801C9370 + 4 * seat)
+        if not RAM_BASE <= a < RAM_TOP - 0x300:
+            continue
+        if seat < 3 and int.from_bytes(ram[a - RAM_BASE + 0x14E:a - RAM_BASE + 0x150], "little") == 0:
+            continue
+        node = ram_u32(ram, a + 0x22C)
+        if not RAM_BASE <= node < RAM_TOP - 0x80:
+            continue
+        o = node - RAM_BASE
+        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], int.from_bytes(ram[o + 0x68:o + 0x6A], "little"))
+    pc = max(1, sum(1 for s in bodies if s < 3))
+    seeds = [f"{s if s < 3 else pc + s - 3}:{c}:{k}" for s, (c, k) in sorted(bodies.items()) if s != acting]
+    return ",".join(seeds) or None
+
+
+def state_rand_word(out: Path) -> int | None:
+    """The BIOS `rand()` seed word `0x80009010` in the state's own RAM, for a
+    `--physical` film's `LEGAIA_FILM_RAND`. The film's gate tick is the
+    state's instant, but the replay reached it on its own draws, so every
+    roll past it - a cast's scatter, a strike's block roll - drew another
+    stream than the recording's. Seated on the state's word at the gate the
+    two streams leave the state's instant together. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    ram = state_ram(manifest.get("sstate", ""))
+    if ram is None:
+        return None
+    return ram_u32(ram, 0x80009010)
+
+
 def state_strike_queue(out: Path) -> str | None:
     """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
     own RAM, as the drive's `q` field, for a `--physical` film of a monster
@@ -450,6 +543,25 @@ def engine_guard(a, out: Path, done: dict) -> str:
     elif seats:
         print(f"[engine] guard {seats} from the state's +0x1DE (recording predates guard=)")
     return seats or ""
+
+
+def physical_film_guard(a, out: Path, done: dict) -> str | None:
+    """The stance a `--physical` film stands its party in at the gate
+    (`LEGAIA_FILM_GUARD`), exactly: a member out of it included. The film
+    keeps the state's drive, which commits Spirit for the whole party while a
+    monster casts (`BattleDrive::Action`), so without it the cast's victims
+    stood guarded whatever retail's party held:
+    `battle_chitei2_gilium_thunder_storm_mid_cast` landed `147` / `157` /
+    `130` where retail's unguarded party took `583` / `745` / `544`.
+    `--guard` wins, then the recording's `guard=` (the stance at cast begin),
+    then the state's own `+0x1DE` - the gate is the state's instant. `None`
+    when none can be read. A harness seat."""
+    if a.guard:
+        return "" if a.guard == "-" else a.guard
+    if "guard" in done:
+        return done["guard"]
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    return state_guard_seats(manifest.get("sstate", ""))
 
 
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
@@ -748,6 +860,8 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
     if (cursor := (state_opening_cursor(out) or retail_opening_cursor(out, first_row=True)) if a.physical else retail_opening_cursor(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
+    if a.physical and (bodies := state_body_cursors(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS"] = bodies
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
@@ -760,8 +874,24 @@ def run_engine(a, out: Path) -> bool:
     })
     if guard := engine_guard(a, out, done):
         env["LEGAIA_BATTLE_GUARD"] = guard
+    if a.physical and (film_guard := physical_film_guard(a, out, done)) is not None:
+        env["LEGAIA_FILM_GUARD"] = film_guard or "-"
     if a.learned and caster < 3:
         env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
+    if (cast_hp := retail_cast_hp(out, done)) and env.get("LEGAIA_BATTLE_BARS"):
+        def seated(e: str) -> str:
+            f = e.split(":")
+            slot = int(f[0])
+            if slot in cast_hp and int(f[1]) > 0:
+                f[1] = str(cast_hp[slot])
+                # A monster dead on retail's cast begin stands faded out
+                # (`d0`: the defeat fade's lanes at black), as the corpus
+                # seeds a monster a capture holds long dead.
+                if cast_hp[slot] == 0 and not any(t.startswith("d") for t in f[3:]):
+                    at = next((i for i, t in enumerate(f) if i >= 3 and t[:1].isalpha()), len(f))
+                    f.insert(at, "d0")
+            return ":".join(f)
+        env["LEGAIA_BATTLE_BARS"] = ",".join(seated(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
     if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
         # `slot:hp:mp[:..]`, engine slots: the party's first, `129+` empty seats.
         pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
@@ -771,6 +901,12 @@ def run_engine(a, out: Path) -> bool:
                 f[1] = str(a.monster_hp)
             return ":".join(f)
         env["LEGAIA_BATTLE_BARS"] = ",".join(raised(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
+    # A dealt strike seats the stream on every hit's own word, which is the
+    # finer seat: on top of it the gate's word re-dealt `battle_map02_mad_ogre_strike`'s
+    # verdicts onto the other swing (cues matched 4 -> 2 of 8).
+    if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
+            and (w := state_rand_word(out)) is not None):
+        env["LEGAIA_FILM_RAND"] = str(w)
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -969,6 +1105,10 @@ def main() -> int:
     ap.add_argument("--hit-trace", action="store_true",
                     help="retail: each melee hit's rand() seed word to retail/hits.csv (breakpoint core), "
                          "which --strike-deal then deals in place of the spark-burst reading")
+    ap.add_argument("--wrapper-trace", action="store_true",
+                    help="retail: each capture-class damage roll (FUN_801DD4B0 / FUN_801DD6B4) to "
+                         "retail/wrappers.csv (breakpoint core): power, slots, seed, stat words, the roll "
+                         "words before and after the finisher")
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
@@ -991,6 +1131,9 @@ def main() -> int:
     ap.add_argument("--guard", default="", metavar="SEATS",
                     help="engine: party seats in the Spirit stance at the cast (comma list, `-` = none; "
                          "default: the recording's guard=, retail's +0x1DE == 4 at cast begin)")
+    ap.add_argument("--no-state-rand", action="store_true",
+                    help="--physical: leave the world rand() stream on the replay's own draws at the gate "
+                         "(default without --strike-deal: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")

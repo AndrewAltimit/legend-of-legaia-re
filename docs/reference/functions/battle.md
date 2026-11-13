@@ -812,13 +812,15 @@ Gated on `_DAT_8007b868 == 0` (the same field-camera / mode gate `FUN_801dbe9c` 
 
 Callers - battle-loot reward writer `FUN_8004F0E8`, table item-give `FUN_8004AD80`, and the per-slot equip applier `FUN_801E5A08` (overlay 0897 - the `FUN_801D71F0` / `FUN_801D7210` dumps are its phantom `0xE818`-low prints, and nothing on the disc calls it) - do not visibly pre-check inventory room before the add, so the OOB is plausibly reachable via an item drop with a full bag (capture-confirm pending). NB this `FUN_801D71F0`/`_D7210` pair is the one earlier mis-cited as a "status-effect timer tick" on `FUN_80043048`; both are inventory item-give callers.
 
-The full set of unchecked call sites (each a candidate full-bag trigger) is catalogued as `legaia_save::retail_inventory::AddHelperCaller`: battle-loot reward `FUN_8004E568` (adds at `0x8004F380`/`0x8004F608`), shop buy-confirm `FUN_801C36B0` (variable quantity, catalog id `rec+8`), dead-slot Item refund in `FUN_801DABA4` (`actor[+0x1DF]`, `0x801DAC58`; catalogued under the stale name `CaptureItemPay` / phantom VA `801F138C`), one-shot minigame reward `FUN_801D0F60` (fixed id `0xCD`), and equip swap-back refund `FUN_8020E748`/`FUN_801E01F0`.
+The full set of unchecked call sites (each a candidate full-bag trigger) is catalogued as `legaia_save::retail_inventory::AddHelperCaller`: battle-end `FUN_8004E568` (the unspent-item refund at `0x8004F380`, the drop at `0x8004F608`), shop buy-confirm `FUN_801C36B0` (variable quantity, catalog id `rec+8`), dead-slot Item refund in `FUN_801DABA4` (`actor[+0x1DF]`, `0x801DAC58`; catalogued under the stale name `CaptureItemPay` / phantom VA `801F138C`), one-shot minigame reward `FUN_801D0F60` (fixed id `0xCD`), and equip swap-back refund `FUN_8020E748`/`FUN_801E01F0`.
 
 The from-scratch model surfaces the full-bag case as `AddOutcome::OobIdWrite { oob_target, written_id }`; the written byte is the added id and is **independent of quantity** (only the count store is guarded). Live confirmation probe: `scripts/pcsx-redux/autorun_inventory_oob_writer.lua` (watches `0x800859E8` for a store from the id-store PC `0x800422BC`).
 
 ### `8004E568`
 
-**Battle-end reward resolution** (5984 B, spans `0x8004E568..0x8004FCC8`). The post-battle spoils routine: it accumulates the formation's gold into the party purse `_DAT_8008459C` (saturating cap `99999999`) and awards item drops by calling the inventory-add helper `FUN_800421D4` (at `0x8004F380` and `0x8004F608`), reading the active actor record at `gp[+0xA0C]` and gating on `gp[+0x332]`. It drives its multi-step sub-overlay loads through `FUN_80025358`. After dividing the monster XP pool by the alive-party count (`divu` at `0x8004F198`) it calls the **level-up applier `FUN_801E9504`** at `0x8004F34C` (`jal`, arg = active-party slot − 1) per surviving member.
+**Battle-end reward resolution** (5984 B, spans `0x8004E568..0x8004FCC8`). The post-battle spoils routine: it accumulates the formation's gold into the party purse `_DAT_8008459C` (saturating cap `99999999`) and awards the item drop through the inventory-add helper `FUN_800421D4` (at `0x8004F608`), reading the active actor record at `gp[+0xA0C]` and gating on `gp[+0x332]`. It drives its multi-step sub-overlay loads through `FUN_80025358`. After dividing the monster XP pool by the alive-party count (`divu` at `0x8004F198`) it calls the **level-up applier `FUN_801E9504`** at `0x8004F34C` (`jal`, arg = active-party slot − 1) per surviving member.
+
+The same per-member loop (`0x8004F1B8..0x8004F3D4`) floors a downed member's HP at 1 (`0x8004F390`), skips a Stoned one (`0x8004F248`), and after the level-up hands a standing member's unspent item back: `+0x16C != 0` (its turn never came) and `+0x1DE == 1` (Item committed) call `FUN_800421D4(+0x1DF, 1)` at `0x8004F380`. Port: `World::refund_unacted_items`.
 
 The drop half (`0x8004F3D8..0x8004F5A0`) grants **at most one item per battle**: one `rand() % 100` per enemy seat against record `+0x49` (`+30` with Items Up), the last winning seat's `+0x48` decides, a seat whose actor has `+0x227` set is skipped, `_DAT_8007BAC0` skips the loop, and unless a seat reads 100 or Items Up applies a `rand() & 3` must be `0` (`0x8004F584`); nothing is granted at 99 held. Ported as `legaia_engine_battle_vm::battle_formulas::victory_drop_roll` - see [`battle-formulas.md`](../../subsystems/battle-formulas.md#the-victory-drop-roll).
 
@@ -1184,6 +1186,32 @@ whose record follows one alignment word later (`0x801F5D90` → mode `0`,
 to particle spawner `FUN_80050ED4`" - they are neither tables nor direct callers
 of the spawner. They are move programs, and it is the `0x17` inside them that
 reaches it.
+
+#### Which pass the children first tick on
+
+The trigger and the twelve children are part-list nodes, and the list walk
+`FUN_8002519C` reads a node's `next` before it calls the node's tick
+(`lw s1,0x0(s1)` at `0x800251D8`), while the allocator appends every new node at
+the list's tail. The effect spawner seats the trigger from a list-0 callback, so
+the walk reaches it on the same pass: its part tick drains the `WAIT_SET 0`
+(`0x80022B94..0x80022BA4` call the VM only once `+0x54` is negative), runs the
+`0x17`, and the children land behind a trigger that is itself the tail. The walk
+has already read that `next`, so on their seat pass the children draw what their
+own seat run left - the first `SPRITE_ADD` frame, at the parent's point - and
+take their first part tick a pass later. A `--retail-parts` film of
+`battle_ropeway_party_gala_flying_knee_mid` holds it: trigger and children both
+listed on one pass, the children at frame `0` (`+0xA8 = 0x00`) on the trigger's
+position, frame `1` and one motion step out on the next, and the trigger halted
+on that next pass. A child is then listed ten passes - eight frames, the pass
+its `HALT` runs, and the pass the walk flags it `0x2000000` before unlinking it
+(`FUN_800204A4`) - but draws on the first eight only: the part tick leaves for
+its epilogue when the VM halted (`andi v0,v0,0x8` / `bne` at `0x80022BB4`),
+before any draw, and the walk calls no tick on a halted node
+(`0x800251E8..0x800252A8`).
+
+The port queues the `0x17` with whether the caller's node had a successor
+(`PendingBurst::reached`, from `ActorState::walk_successor`), and
+`World::flush_battle_bursts` gives children of a tail caller only the seat run.
 
 `FUN_80050ED4` is **not** a boundary either: it is decoded (
 `see ghidra/scripts/funcs/80050ed4.txt`) - a 23-instruction scan of the 0x60-slot

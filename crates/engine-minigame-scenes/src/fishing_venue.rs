@@ -907,13 +907,10 @@ pub fn tick_venue_actors(
 ) -> VenueCameraWrites {
     let mut out = VenueCameraWrites::default();
     let phase = session.phase();
-    // The pond swell, from the driver's shared tail (`jal 0x801D03B0` at
-    // `0x801D037C`): every running frame, whatever the state or sub-screen.
-    // One venue frame is one vsync, so the step is `1` - the angle keeps
-    // retail's `0x10` per vsync (`DAT_1F800393 << 4` once per game frame).
-    let (swell, next) = fc::water_swell(swell_sine_table(), v.swell_angle, 1);
-    v.swell_angle = next;
-    swell.apply(&mut v.floor_ladder);
+    // The venue's actors run on the pond's game tick, at its step
+    // (`PondSession::vsync_step`): a vsync between two game ticks moves
+    // nothing but the effect parts, which tick every vsync.
+    let step = session.vsync_step();
     // One-time venue arm: the wander actor, the floor buffer, and the venue
     // camera reset.
     if v.wander.is_none() {
@@ -924,6 +921,21 @@ pub fn tick_venue_actors(
         v.floor = floor();
         out.reset = Some(fc::venue_camera_reset());
     }
+    if step == 0 {
+        v.catch_flash.retain_mut(|f| f.step());
+        v.tick_ripples();
+        if let Some(w) = v.wander.as_ref() {
+            out.publish = Some(w.camera());
+            out.camera = Some(*v.camera.camera());
+        }
+        return out;
+    }
+    // The pond swell, from the driver's shared tail (`jal 0x801D03B0` at
+    // `0x801D037C`): every running frame, whatever the state or sub-screen,
+    // the angle `DAT_1F800393 << 4` a game frame.
+    let (swell, next) = fc::water_swell(swell_sine_table(), v.swell_angle, step);
+    v.swell_angle = next;
+    swell.apply(&mut v.floor_ladder);
     // The wander runs while the cast is idle: the lead's tick `FUN_801D2050`
     // calls it only while his `+0x10` bit `0x80000` is clear
     // (`0x801D20DC..0x801D20F0`), and the cast press sets that bit until the
@@ -932,10 +944,10 @@ pub fn tick_venue_actors(
     if phase == PondPhase::Idle {
         let mut rng = v.rng;
         let rolled = v.wander.as_mut().and_then(|w| {
-            // One venue frame is one vsync, so the dwell steps by one; the
-            // draws keep `rand()`'s fifteen bits, which the dwell's signed
-            // `% 200` needs to stay non-negative.
-            w.tick(held_packed, 1, || {
+            // The dwell steps by the game tick's step; the draws keep
+            // `rand()`'s fifteen bits, which the dwell's signed `% 200` needs
+            // to stay non-negative.
+            w.tick(held_packed, step, || {
                 let mut x = rng;
                 x ^= x << 13;
                 x ^= x >> 17;
@@ -1017,7 +1029,7 @@ pub fn tick_venue_actors(
                 venue: session.venue,
                 close_up,
                 close_up_done: close_up.is_some_and(|t| t > last),
-                step: 1,
+                step,
             });
         out.camera = Some(*v.camera.camera());
     }
@@ -1038,7 +1050,7 @@ pub fn tick_venue_actors(
             legaia_engine_fishing::fishing_actors::LinePhase::from_raw(line.raw),
             legaia_engine_fishing::fishing_actors::LinePhase::Celebrate
         );
-        let f = line.tick(1);
+        let f = line.tick(step as i16);
         // The close-up's parts ride the line actor, which sits on the lure
         // and carries the lift's height - not the free-swimming fish the
         // venue also draws. The bursts' *cues* are not this actor's: the

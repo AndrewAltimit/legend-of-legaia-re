@@ -14,6 +14,11 @@ use legaia_engine_mode::mode::SceneMode;
 const DEALT_COIN_LOOKAHEAD: u64 = 8;
 const BATTLE_POSE_HISTORY_SLOTS: usize = legaia_engine_battle::battle_afterimage::HISTORY_DEPTH * 4;
 
+/// How far a cast film's opening seat moves a one-shot clip's cursor
+/// ([`World::seat_acting_clip_cursor`]): one step-`4` pass at the normal
+/// rate, in sixteenths of a keyframe.
+const ONE_SHOT_SEAT_REACH: i32 = 16;
+
 impl World {
     /// The engine slots behind retail's seven battle table seats (party
     /// `0..=2`, monsters from `3`), in seat order, for a walk retail bounds at
@@ -117,6 +122,21 @@ impl World {
     /// clock left it rather than retail's. `cursor` may sit below zero (the
     /// displayed frame from before the loop's last wrap).
     pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        self.seat_clip_cursor(slot, clip, cursor, false)
+    }
+
+    /// [`Self::seat_battle_clip_cursor`] that lands a one-shot clip too: a
+    /// cast film's opening seat (`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) stands
+    /// the acting body on the state's own RAM cursor, and the cast clip it
+    /// plays there is a one-shot the replay committed on its own clock.
+    /// Refused as a still's seat is, Caruban's Fire Breath clip `9` opened
+    /// its film a step-`2` pass ahead of retail's (`48` against `40`), and
+    /// case `0xA`'s yaw, which reads the cursor, ran `15` units ahead.
+    pub fn seat_acting_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        self.seat_clip_cursor(slot, clip, cursor, true)
+    }
+
+    fn seat_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32, one_shots: bool) -> bool {
         // A party member the capture holds downed plays entry `8`, the kneel
         // that re-commits itself at every natural end
         // ([`legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
@@ -156,7 +176,20 @@ impl World {
         // whole body in that time (`battle_gimard_tail_fire_b`'s Vahn, still
         // upright mid-fall on the displayed frame at `72` less two frames'
         // advance, sprawled on the RAM's).
-        if !player.is_looping() && !downed && !reacting {
+        if !player.is_looping() && !downed && !reacting && !one_shots {
+            return false;
+        }
+        // A one-shot moves only within a pass of where the replay stands
+        // ([`ONE_SHOT_SEAT_REACH`]): a state saved mid draw tick can hold an
+        // after-image's older cursor in the node word, and
+        // `cave01_theeder_thunderbolt`'s `8` stood its Thunderbolt `32` units
+        // behind the body retail's recording shows, the cast `9` ticks long.
+        if !player.is_looping()
+            && one_shots
+            && !downed
+            && !reacting
+            && (i32::from(player.cursor_sixteenths()) - cursor).abs() > ONE_SHOT_SEAT_REACH
+        {
             return false;
         }
         let total = (player.frame_count() * 16).max(1) as i32;
@@ -1116,11 +1149,11 @@ impl World {
     /// Retail's acting slot `ctx[+0x13]` as the port holds it. Through the
     /// end-of-battle sequence it is the pose actor - the one field the
     /// sequencer's framing, the camera-ghost pass and the commit's camera
-    /// reset all read (`noa_levelup_banner`: `ctx[+0x13] == 0`, the posing
-    /// leader). The engine's acting mirror keeps the fight's last actor, so
-    /// a win landed by another seat would otherwise hand that seat's idle
-    /// loop the accumulator the battle-over script rides. An escape skips
-    /// the framing (`0x8004E720`) and keeps the mirror.
+    /// reset all read. On a win that is the seat the action SM's victory arm
+    /// left in `battle_ctx.active_actor` (the member who finished the fight);
+    /// a party wipe keeps whoever acted last, usually the monster that landed
+    /// the wiping blow. An escape skips the framing (`0x8004E720`) and keeps
+    /// the mirror.
     pub(in crate::world) fn retail_acting_slot(&self) -> u8 {
         match self.battle.victory {
             Some(seq)

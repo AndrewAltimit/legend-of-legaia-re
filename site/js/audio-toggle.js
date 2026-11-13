@@ -64,7 +64,9 @@
       'padding:0.3rem 0.7rem;margin-left:auto;cursor:pointer;' +
       'font:inherit;font-size:0.82rem;border-radius:4px;' +
       'border:1px solid var(--border, #4a4668);' +
-      'background:transparent;color:var(--text-muted, #9a96b8);';
+      'background:transparent;color:var(--text-muted, #9a96b8);' +
+      /* A finger's target on a touch screen. */
+      (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'min-height:40px;' : '');
     btn.addEventListener('click', function () { set(!enabled); });
     paint(btn);
     buttons.push(btn);

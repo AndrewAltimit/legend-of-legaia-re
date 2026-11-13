@@ -52,6 +52,7 @@ impl PlayWindowApp {
     /// On the tick the capture's gate opens, stand the fight on the hand retail
     /// was dealt (`LEGAIA_STRIKE_DEAL`), once.
     pub(super) fn seat_strike_deal(&mut self) {
+        self.seat_film_guard();
         let Some(sc) = self.screenshot.as_ref() else {
             return;
         };
@@ -82,6 +83,35 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &deal,
             ),
+        }
+    }
+
+    /// On the tick the capture's gate opens, stand the film on what the
+    /// state held there, once: the party in the stance retail's recording
+    /// held (`LEGAIA_FILM_GUARD`; the drive's own Spirit commits are not
+    /// retail's) and the world stream on the state's `rand()` seed word
+    /// (`LEGAIA_FILM_RAND`; the replay reached the gate on its own draws).
+    fn seat_film_guard(&mut self) {
+        if self
+            .screenshot
+            .as_ref()
+            .is_none_or(|sc| sc.film_guard.is_none() && sc.film_rand.is_none())
+            || !self.capture_gate_met()
+        {
+            return;
+        }
+        let Some(sc) = self.screenshot.as_mut() else {
+            return;
+        };
+        let (guard, rand) = (sc.film_guard.take(), sc.film_rand.take());
+        let world = &mut self.session.host.world;
+        if let Some(seats) = guard {
+            eprintln!("film guard: {seats:?}");
+            legaia_engine_capture::strike_deal::stand_film_guard(world, seats);
+        }
+        if let Some(seed) = rand {
+            eprintln!("film rand: {seed:#010x} (was {:#010x})", world.rng_state);
+            world.rng_state = seed;
         }
     }
 

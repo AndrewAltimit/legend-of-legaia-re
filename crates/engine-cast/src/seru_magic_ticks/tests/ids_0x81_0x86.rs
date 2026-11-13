@@ -653,6 +653,25 @@ fn gizam_walks_through_the_phase_five_hole() {
     assert_eq!(ctx.phase, GIZAM_MISSING_ARM + 1);
 }
 
+/// Arm 4 hides the creature with its colour word as well as its flag
+/// (`sw zero,4(s4)` at `0x801F6D34`), so it neither draws nor ticks its node
+/// through the phase-5 hole.
+#[test]
+fn gizam_hide_clears_the_creature_colour_word() {
+    let mut seats = row();
+    let summon = WHO.summon as usize;
+    seats[summon].present_04 = 0x3FF0_0000;
+    let mut ctx = CastModuleCtx {
+        phase: GIZAM_HIDE_ARM,
+        ..Default::default()
+    };
+    gizam_tick(&mut ctx, &mut seats, WHO, |_| None);
+    assert_eq!(
+        (seats[summon].render_flag, seats[summon].present_04),
+        (GIZAM_HIDDEN_RENDER_FLAG, 0)
+    );
+}
+
 /// Arm 7's row relight skips a dead seat: both stores sit past the `beq`
 /// on its HP (`0x801F6F74`, delay slot `nop`), so a faded-out foe keeps its
 /// defeat-fade state and the zero colour word arm 14's poll waits on.

@@ -81,12 +81,18 @@ impl World {
     /// `legaia_engine_battle_vm::battle_hp_bar`)
     ///
     /// With [`crate::world::WorldToggles::hp_readout_guard`] on, a party
-    /// slot left in the absorbing state - displayed HP off live HP with a
-    /// zero accumulator, which retail's drain never moves - first gets the
-    /// difference re-seeded into the accumulator, restoring
-    /// `display - live == pending`. The ramp then counts the readout to live
-    /// HP and state `0x51`'s settle check opens. Off (retail mode), the ramp
-    /// runs exactly as retail's.
+    /// slot left in the absorbing state - displayed HP off its resting value
+    /// with a zero accumulator, which retail's drain never moves - first gets
+    /// the difference re-seeded into the accumulator. The ramp then counts
+    /// the readout to rest and state `0x51`'s settle check opens. Off (retail
+    /// mode), the ramp runs exactly as retail's.
+    ///
+    /// The resting value is live HP **less the combo total still banked**
+    /// ([`readout_rest`]): a melee combo seeds the readout hit by hit while
+    /// live HP waits for the one end-of-combo write, so mid-combo the readout
+    /// legitimately sits below live HP with its accumulator drained. Measured
+    /// against live HP alone, the guard would count that readout back up
+    /// between hits - a down / up / down roll on every multi-hit attack.
     pub(in crate::world) fn tick_battle_hp_bars(&mut self) {
         let seats = self.battle_seat_map();
         let guard = self.toggles.hp_readout_guard;
@@ -97,9 +103,11 @@ impl World {
                 && retail_slot.is_party()
                 && a.battle.hp_bar_pending == 0
                 && let Some(shown) = a.battle.hp_display
-                && shown != a.battle.hp
             {
-                a.battle.hp_bar_pending = i32::from(shown) - i32::from(a.battle.hp);
+                let rest = readout_rest(a.battle.hp, a.battle.damage_accum);
+                if shown != rest {
+                    a.battle.hp_bar_pending = i32::from(shown) - i32::from(rest);
+                }
             }
             a.battle.tick_hp_bar(retail_slot);
             a.battle.tick_mp_bar(retail_slot);
@@ -312,6 +320,7 @@ impl World {
 
         // The modelled CD drive: one clip read span elapses per frame.
         self.audio.battle_xa_busy_frames = self.audio.battle_xa_busy_frames.saturating_sub(1);
+        self.audio.battle_xa_load_frames = self.audio.battle_xa_load_frames.saturating_sub(1);
 
         // The battle template's tick runs in the actor pool on every battle
         // frame, whoever owns the rest of it, and ends in the passive sweep.
@@ -1027,7 +1036,9 @@ impl World {
         cue: legaia_engine_system::sound_state::XaVoiceClip,
     ) {
         self.audio.battle_xa_busy_frames = cue.duration_sectors.min(u16::MAX as u32) as u16;
+        self.arm_battle_xa_load_window();
         self.audio.battle_xa_frame_load = true;
+        self.audio.battle_xa_poll_load = true;
         self.audio.battle_xa_cue_frame = Some(self.battle_frame_id());
         self.audio.battle_xa_cues.push(cue);
     }
@@ -1219,6 +1230,16 @@ fn power_byte_of(ap: legaia_art::ArtPower) -> u8 {
         (true, PowerTarget::Ldf) => 0x11,
     };
     base + tier
+}
+
+/// Where a party seat's HP readout comes to rest: live HP (`+0x14C`) less
+/// the melee combo total still banked on the seat (`+0x00`), floored at zero
+/// as the end-of-combo write floors it (`0x801EEA10..0x801EEA3C`). With no
+/// combo in flight it is live HP.
+///
+/// REF: FUN_801EC3E4 (the bank the readout runs ahead of)
+fn readout_rest(hp: u16, banked: u32) -> u16 {
+    u16::try_from(u32::from(hp).saturating_sub(banked)).unwrap_or(0)
 }
 
 #[cfg(test)]

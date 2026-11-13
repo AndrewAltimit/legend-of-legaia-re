@@ -25,8 +25,9 @@
  *      engine's `MovieClock`, the pacing rule the native window runs
  *      (the picture follows the soundtrack, never a free-running timer). A
  *      page with no engine audio up falls back to `play_fmv_audio_pcm_i16`
- *      through its own context, trimmed by `LEGAIA_MASTER_TRIM` and the play
- *      page's own half (`PLAY_PAGE_GAIN_SCALE`, as on the engine path); a silent
+ *      through its own context, trimmed by `LEGAIA_MASTER_TRIM`, the play
+ *      page's own half (`PLAY_PAGE_GAIN_SCALE`, as on the engine path), the
+ *      volume slider and the site sound switch; a silent
  *      movie or a cursor that never moves falls back to the wall clock.
  *   3. When the clock passes the last frame, `play_fmv_finish()`. The engine
  *      releases the world on its next tick / title step and runs the
@@ -129,6 +130,18 @@
     letGo();
   }
 
+  /* The play page's output slider (`#play-volume`, the engine path's
+   * `audio_set_gain` units) behind the site-wide sound switch: the two
+   * controls the engine path's movie sits behind, so the fallback output
+   * honours a mute and a lowered level too instead of playing at the
+   * slider's default. */
+  function pageLevel() {
+    if (window.LegaiaSound && !window.LegaiaSound.isSoundOn()) return 0;
+    const el = document.getElementById('play-volume');
+    const v = el ? parseFloat(el.value) : 1;
+    return (v >= 0 && isFinite(v)) ? v : 1;
+  }
+
   function startAudio(rt) {
     st.audioStart = null;
     st.engineAudio = false;
@@ -164,7 +177,7 @@
        * path gives a movie at the slider's default 1x (web-play's
        * `PLAY_PAGE_GAIN_SCALE`). */
       const siteTrim = (typeof window.LEGAIA_MASTER_TRIM === 'number') ? window.LEGAIA_MASTER_TRIM : 0.25;
-      trim.gain.value = siteTrim * 0.5;
+      trim.gain.value = siteTrim * 0.5 * pageLevel();
       src.connect(trim);
       trim.connect(ctx.destination);
       src.start();

@@ -70,7 +70,7 @@
       <tr><td><code>+0x54</code></td><td>8 &times; 4</td><td>sound cues</td><td><code>[u16 frame][u16 cue]</code> pairs, truncated at the first zero cue</td></tr>
       <tr><td><code>+0x74</code></td><td>u8</td><td>AGL cost</td><td>Action cost</td></tr>
       <tr><td><code>+0x76</code></td><td>u8</td><td>event gate</td><td>Zero lets a queued clip commit mid-clip at the first beat</td></tr>
-      <tr><td><code>+0x77</code></td><td>u8</td><td>sub-id</td><td>Also the after-image ring id (<code>+0x10</code>)</td></tr>
+      <tr><td><code>+0x77</code></td><td>u8</td><td>sub-id</td><td>Also the after-image ring id (<code>+0x10</code>); on a monster seat, the move-name id (<a href="#move-name">below</a>)</td></tr>
       <tr><td><code>+0x78</code></td><td>u8</td><td>rate</td><td>Playback rate (1 or 2 across the retail corpus); a clip lasts <code>frames &times; 8 / rate</code> ticks</td></tr>
       <tr><td><code>+0x7A</code></td><td>u8</td><td>status / impact selector</td><td>Tint flash + status roll on the struck actor; the same enum as a <a href="move-power.html">move-power</a> record's <code>+0x0A</code></td></tr>
       <tr><td><code>+0x84</code></td><td>u8</td><td>loop hold</td><td>Seeds a finite loop-hold budget on the actor</td></tr>
@@ -104,6 +104,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
     <li><code>tx, ty, tz</code>: sign-extended 12-bit translation (<code>-2048..2047</code>) in model units.</li>
     <li><code>rx, ry, rz</code>: unsigned 12-bit Euler angles, <code>4096</code> = one full turn.</li>
     <li>One part = one TMD object. The part count equals the object count for over 98% of actions (one model carries an extra static object).</li>
+    <li><strong>A clip with fewer parts than the model</strong> leaves the extra objects where the last clip left them: the decoder <code>FUN_8004998C</code> writes the pose pool only as far as the stream&rsquo;s count. Some of Ozma&rsquo;s clips animate 15 parts of 21 objects, and the other six hold the previous clip&rsquo;s final pose throughout. The engine carries that tail the same way. Those poses are held but not drawn: the draw pass stops at the stream&rsquo;s part count too (<a href="../subsystems/battle-actor-rendering.html">battle actor rendering</a>).</li>
     <li>The transform is <strong>absolute model-space, not a delta</strong>: <code>world = Rz&middot;Ry&middot;Rx &middot; v_local + t</code>. Frame 0 is the assembled rest pose; a raw monster TMD drawn without it is a heap of parts piled at the origin.</li>
   </ul>
 </section>
@@ -145,6 +146,13 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <p>Because the capture modules hard-code entry indices, a module only lines up with the monsters built for it; some stage nothing on the caster, which then holds its idle through the cast in retail too. Melee bodies first walk the caster into reach and hold on the range poll; nothing walks it home afterwards. The port replays each body&rsquo;s staged clips at the head of the capture band, except where a body places its stores inside its arms - those clips go in on the tick the arm passes, as retail stages them (<code>legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES</code>).</p>
   <h3 id="anim-selection">The anim id is the entry index</h3>
   <p>Per actor, <code>+0x1DA</code> is the queued anim id and <code>+0x1D9</code> the current one. The id <em>is</em> the entry index - the commit routine installs <code>entry = offsets[id]</code> with no remap table. Retail's idle id is 0. Party ids <code>&ge; 0x10</code> take the dynamic-slot path of the <a href="battle-data-pack.html">player battle files</a>.</p>
+  <h3 id="move-name">A monster clip names its move</h3>
+  <p>The anim commit <code>FUN_8004AD80</code> gives a monster seat (never a party seat) a move-name label straight off the clip entries. For the outgoing clip <code>+0x1D9</code>, a non-zero <code>+0x77</code> destroys the label widget. For the incoming clip <code>+0x1DA</code>, a non-zero <code>+0x77</code> is a <a href="spell-table.html">spell-table</a> id: the commit measures that record&rsquo;s name, centres it on X <code>0xA0</code>, stores it in the label&rsquo;s two placement records and opens the label.</p>
+  <ul class="bullets">
+    <li><strong>Every commit runs it</strong>, the hand-off to idle included, so the label stands for exactly the clip that named it.</li>
+    <li><strong>A physical attack names its move this way</strong> with no spell queued; retail films show a monster&rsquo;s strike name at the label&rsquo;s seat for the length of its clip.</li>
+    <li><strong>The port</strong> sets <code>BattleState::monster_move_label</code> at the staged-anim commit boundary and the battle HUD reads it. A still saved on the pass a swing committed holds the label in its RAM but not yet on its frame, which lags two passes, so the retail comparison seats the label closed there.</li>
+  </ul>
   <details class="disclosure">
     <summary>A special attack can be a chain of entries</summary>
     <div class="disclosure-body">

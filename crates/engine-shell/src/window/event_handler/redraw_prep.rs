@@ -255,6 +255,16 @@ impl PlayWindowApp {
                     .min_by_key(|p| p.frames_total.saturating_sub(p.frames_remaining))
             {
                 p.frames_remaining = p.frames_total.saturating_sub(age);
+                // The renderer draws `0x10 * (age + step)` on a frame of
+                // `step` vsyncs, its anchor `0x10 * age`.
+                let w = &self.session.host.world;
+                let step = if w.toggles.battle_sm_frame_cadence {
+                    w.battle_frame_step()
+                } else {
+                    1
+                };
+                p.timer = (i32::from(age) + i32::from(step.max(1))) * 0x10;
+                p.drawn_step = step.max(1);
                 sc.popup_age_seated.set(true);
             }
             if due && let Some((page, slide)) = sc.seat_arts_list {
@@ -397,8 +407,14 @@ impl PlayWindowApp {
             // still behind the whole strike.
             // The gate itself, not the capture frame: a film forces its
             // capture tick past the run (`LEGAIA_DIAG_CAPTURE_TICK`).
-            if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
-                && self.capture_gate_met()
+            // A film from a pre-cast state lets go on the cast's begin, the
+            // recorder's own first frame: the state holds the angle the
+            // fresh fight's intro would otherwise have wound on, and held to
+            // the end it stood `rikuroa`'s horizon mist arc still through
+            // the whole Fire Breath, where retail's sweeps across the HP-bar
+            // settle `0x51`.
+            if std::env::var_os("LEGAIA_DIAG_CAST_SEQ").is_some()
+                && self.cast_film_begun()
                 && let Some(sc) = self.screenshot.as_mut()
             {
                 sc.battle_backdrop_yaw = None;
@@ -874,7 +890,16 @@ impl PlayWindowApp {
             };
             if seat_cursor && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take() {
                 let slot = usize::from(world.battle_ctx.active_actor);
-                world.seat_battle_clip_cursor(slot, clip, cursor);
+                world.seat_acting_clip_cursor(slot, clip, cursor);
+            }
+            // ... and every other body on its loop as the state's RAM holds it.
+            if on_gate
+                && seat_now
+                && let Some(seeds) = sc.cast_seq_seat_clips.take()
+            {
+                for s in seeds {
+                    world.seat_battle_clip_cursor(usize::from(s.slot), s.clip, s.cursor);
+                }
             }
         }
         // Colour the ground grid from this frame's battle ambient (a summon

@@ -186,7 +186,9 @@ Exactly two of the 125 are absolute rather than indexed, and both are the new-ga
 
 The menu's selected payload `_DAT_8007BB88` is a **bag slot index**. The pause item list hides empty slots, so the row ordinal and the slot agree only while nothing above the selection is a hole. Holes do reach the list, because nothing compacts the bag when a menu opens.
 
-The normalize helper `FUN_800423E0` has exactly one call site in the dump corpus: a field-VM arm at `0x801E05D0` in PROT 0897. It sits behind two equality tests on the dispatcher's own context register. The byte at `+0x454` must read `2` (`0x801E05B0..0x801E05B8`) and the halfword at `+0x458` must read `0x100` (`0x801E05C0..0x801E05C8`). Either mismatch jumps past the call.
+The normalize helper `FUN_800423E0` has exactly one call site in the dump corpus: the tail of field-VM op `0x3C` (party add) at `0x801E05D0` in PROT 0897. Its base is `0x80084140` (`0x801E0580..0x801E0584`), so the two equality tests read the present-party list: the member count `0x80084594` (`+0x454`) must read `2` (`0x801E05B0..0x801E05B8`) and the roster halfword `0x80084598` (`+0x458`) must read `0x0100`, Vahn then Noa (`0x801E05C0..0x801E05C8`). Either mismatch jumps past the call, and only the accepted arm reaches the tests.
+
+So the bag is normalized at one beat: the join that makes the party Vahn and Noa. That is where the two halves of the bag meet. Noa's solo stretch fills the upper half; her join on Mt. Rikuroa, one op before the Caruban fight, folds her stacks into Vahn's (a Healing Leaf held by both becomes one stack) and closes her items up behind his. Port: the field host's `party_add` runs the same tail (`World::refresh_bag_window`, then `ItemBag::normalize`).
 
 Measured on a bag holed at slots 1 / 3 / 6: the cursor stepped `0, 2, 4, 5, 7, 8` across six displayed rows, never rested on a zero-id slot, and `FUN_800423E0` ran zero times. The Throw Out confirm (`FUN_801D8734` phase 3) then zeroes `bag[cursor*2]`, the pair at the slot the row named.
 

@@ -48,7 +48,7 @@ use channel_math::*;
 pub use records::VoiceRecord;
 use voices::SILENT_RING_LEN;
 pub use voices::choose_voice;
-pub use voices::flush_key_on_lag;
+pub use voices::{flush_key_on_lag, flush_key_on_lag_with};
 
 /// Number of MIDI channels (the SsAPI dispatcher iterates 0..=15).
 pub const CHANNELS: usize = 16;
@@ -241,6 +241,9 @@ pub struct Sequencer {
     /// Voices holding a register write for this vsync's flush, by a volume or a
     /// pitch change since the last one.
     staged_voices: u32,
+    /// Voices a caller outside the score flagged since the last flush
+    /// ([`Self::stage_external_voices`]).
+    external_staged: u32,
     /// How many voices the last flush wrote registers for.
     last_flush_staged: u32,
 

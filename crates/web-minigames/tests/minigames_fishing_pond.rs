@@ -191,9 +191,11 @@ fn pond_session_hooks_a_lure_row_species_and_lands_it() {
             let st: serde_json::Value =
                 serde_json::from_str(&mg.fishing_pond_state_json()).unwrap();
             if st["phase"].as_str() == Some("idle") {
-                // Fully reeled in: cast again.
+                // Fully reeled in: cast again, as deep as the first (a
+                // short cast lands inside the empty-line gate and comes
+                // straight back).
                 tick(&mut mg, 0, true);
-                for _ in 0..40 {
+                for _ in 0..108 {
                     tick(&mut mg, 0, false);
                 }
                 tick(&mut mg, 0, true);

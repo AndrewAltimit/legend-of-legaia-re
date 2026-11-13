@@ -134,7 +134,7 @@ pub struct Automation {
     pub play: bool,
     /// `LEGAIA_EXPLORER_BROWSE`: open the in-app file browser at start, for
     /// a disc (`disc`), an extracted folder (`folder`) or the extraction
-    /// output folder (`out`).
+    /// output folder (`out`) or the export folder (`export`).
     pub browse: Option<String>,
 }
 
@@ -700,20 +700,7 @@ impl App {
         // A controller cannot type a file name: the export goes into the
         // export folder under its own name, and the status line says where.
         if self.pad_active {
-            let dir = self
-                .explorer
-                .settings
-                .last_export_dir
-                .clone()
-                .filter(|d| d.is_dir())
-                .unwrap_or_else(default_export_dir);
-            if let Err(e) = std::fs::create_dir_all(&dir) {
-                self.explorer.error = Some(format!("Could not make {}: {e}", dir.display()));
-                return None;
-            }
-            self.explorer.settings.last_export_dir = Some(dir.clone());
-            self.explorer.save_settings();
-            return Some(unused_name(&dir, default_name));
+            return self.export_into_folder(default_name);
         }
         let mut d = rfd::FileDialog::new()
             .set_file_name(default_name)
@@ -721,12 +708,31 @@ impl App {
         if let Some(dir) = &self.explorer.settings.last_export_dir {
             d = d.set_directory(dir);
         }
+        let asked = std::time::Instant::now();
         let picked = d.save_file();
         if let Some(p) = &picked {
             self.explorer.settings.last_export_dir = p.parent().map(Path::to_path_buf);
             self.explorer.save_settings();
+        } else if asked.elapsed() < DIALOG_NEVER_SHOWN {
+            // The save window never appeared (no file-dialog service): the
+            // export goes where a controller's would, rather than nowhere.
+            log::warn!("the desktop save dialog did not open; exporting into the export folder");
+            return self.export_into_folder(default_name);
         }
         picked
+    }
+
+    /// `default_name` in the export folder, made if need be, never over an
+    /// earlier file: an export with no save window to name it.
+    fn export_into_folder(&mut self, default_name: &str) -> Option<PathBuf> {
+        let dir = self.export_dir();
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.explorer.error = Some(format!("Could not make {}: {e}", dir.display()));
+            return None;
+        }
+        self.explorer.settings.last_export_dir = Some(dir.clone());
+        self.explorer.save_settings();
+        Some(unused_name(&dir, default_name))
     }
 
     /// Whether Ctrl+E was pressed this frame, clearing it: the one export
@@ -850,6 +856,7 @@ impl App {
             let purpose = match what.as_str() {
                 "folder" => Purpose::ExtractedFolder,
                 "out" => Purpose::OutputFolder,
+                "export" => Purpose::ExportFolder,
                 _ => Purpose::Disc,
             };
             self.open_file_browser(purpose);
@@ -1005,6 +1012,46 @@ impl App {
         }
     }
 
+    /// The folder exports go into: the one remembered, else
+    /// [`default_export_dir`]. A controller's export lands here; the save
+    /// window opens here.
+    fn export_dir(&self) -> PathBuf {
+        self.explorer
+            .settings
+            .last_export_dir
+            .clone()
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(default_export_dir)
+    }
+
+    /// The View menu's (and a controller export's) *Change...*: choose the
+    /// export folder (the in-app browser, as [`Self::pick_disc`]).
+    fn pick_export_folder(&mut self) {
+        use crate::file_browser::Purpose;
+        if self.pad_active {
+            self.open_file_browser(Purpose::ExportFolder);
+            return;
+        }
+        let asked = std::time::Instant::now();
+        let mut d = rfd::FileDialog::new().set_title("Choose where exports go");
+        let dir = self.export_dir();
+        if dir.is_dir() {
+            d = d.set_directory(&dir);
+        }
+        match d.pick_folder() {
+            Some(p) => self.set_export_dir(p),
+            None => self.dialog_fallback(asked, Purpose::ExportFolder),
+        }
+    }
+
+    /// Remember `dir` as the export folder and say so.
+    fn set_export_dir(&mut self, dir: PathBuf) {
+        self.explorer.status = Some(format!("Exports go to {}", dir.display()));
+        self.last_written = None;
+        self.explorer.settings.last_export_dir = Some(dir);
+        self.explorer.save_settings();
+    }
+
     /// A file dialog that came back empty: when it came back at once it
     /// never appeared (a desktop with no file-dialog service), so the in-app
     /// browser opens in its place. A dialog the player closed takes longer.
@@ -1031,6 +1078,13 @@ impl App {
                     .then(|| out.ancestors().find(|d| d.is_dir()).map(Path::to_path_buf))
                     .flatten()
             }
+            // The default export folder may not exist yet: its nearest
+            // existing parent.
+            Purpose::ExportFolder => self
+                .export_dir()
+                .ancestors()
+                .find(|d| d.is_dir())
+                .map(Path::to_path_buf),
         };
         self.file_browser = Some(FileBrowser::open(purpose, start.as_deref()));
     }
@@ -1050,6 +1104,7 @@ impl App {
                 match purpose {
                     Purpose::Disc | Purpose::ExtractedFolder => self.open_path(&p),
                     Purpose::OutputFolder => self.out_text = p.display().to_string(),
+                    Purpose::ExportFolder => self.set_export_dir(p),
                 }
             }
         }
@@ -1272,6 +1327,7 @@ impl App {
         });
         let mut dismiss = false;
         let mut show: Option<PathBuf> = None;
+        let mut change_export = false;
         // An informational line clears itself after `STATUS_TTL` (the clock
         // restarts while the pointer is on it); an error stays until it is
         // dismissed, and can be copied for a bug report.
@@ -1338,20 +1394,38 @@ impl App {
                 });
         } else if let Some(s) = &self.explorer.status {
             let green = crate::theme::good(ui);
+            // A button of the line holding the keyboard (or a pad's) focus
+            // holds the line up, as the pointer over it does.
+            let mut focused = false;
             let row = ui.horizontal(|ui| {
                 ui.colored_label(green, s);
-                if let Some(dir) = &self.last_written
-                    && ui
+                if let Some(dir) = &self.last_written {
+                    let b = ui
                         .small_button("Show folder")
-                        .on_hover_text(dir.display().to_string())
-                        .clicked()
-                {
-                    show = Some(dir.clone());
+                        .on_hover_text(dir.display().to_string());
+                    focused |= b.has_focus();
+                    if b.clicked() {
+                        show = Some(dir.clone());
+                    }
                 }
-                dismiss = ui.small_button("Dismiss").clicked();
+                // A controller's export had no save window to choose the
+                // folder in: the way to change it sits beside it.
+                if self.pad_active
+                    && self.last_written.is_some()
+                    && self.last_written == self.explorer.settings.last_export_dir
+                {
+                    let b = ui
+                        .small_button("Change folder...")
+                        .on_hover_text("Choose the folder exports go into");
+                    focused |= b.has_focus();
+                    change_export = b.clicked();
+                }
+                let b = ui.small_button("Dismiss");
+                focused |= b.has_focus();
+                dismiss = b.clicked();
             });
             if let Some((_, at)) = &mut self.status_seen {
-                if row.response.contains_pointer() {
+                if row.response.contains_pointer() || focused {
                     *at = now;
                 }
                 let left = STATUS_TTL.saturating_sub(now.duration_since(*at));
@@ -1369,6 +1443,9 @@ impl App {
         }
         if let Some(dir) = show {
             self.show_folder(&dir);
+        }
+        if change_export {
+            self.pick_export_folder();
         }
     }
 
@@ -1459,6 +1536,26 @@ impl App {
         {
             self.keys_open = true;
             ui.close();
+        }
+        ui.separator();
+        ui.label(RichText::new("Export folder").strong());
+        let dir = self.export_dir();
+        let name = dir.file_name().map_or_else(
+            || dir.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        ui.label(RichText::new(name).weak())
+            .on_hover_text(dir.display().to_string());
+        if ui
+            .button("Change...")
+            .on_hover_text(
+                "Where exports go: the save window opens here, and an export made with a \
+                 controller is written here",
+            )
+            .clicked()
+        {
+            ui.close();
+            self.pick_export_folder();
         }
         ui.separator();
         ui.label(RichText::new("Audio volume").strong());

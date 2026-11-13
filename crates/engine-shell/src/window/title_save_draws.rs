@@ -18,20 +18,23 @@ impl PlayWindowApp {
         &self,
         surface_w: u32,
         surface_h: u32,
-    ) -> Vec<legaia_engine_ui::SpriteDraw> {
-        use legaia_engine_title::publisher_logos::STAGE;
-        use legaia_engine_ui::boot_logos::{LogoQuadView, publisher_logo_sprite_draws};
+    ) -> (
+        Vec<legaia_engine_ui::SpriteDraw>,
+        Vec<legaia_engine_render::OverlayBlendSpan>,
+    ) {
+        use legaia_engine_title::publisher_logos::{STAGE, WASH_ABR};
+        use legaia_engine_ui::boot_logos::{
+            LogoQuadView, publisher_logo_sprite_draws, publisher_logo_wash_draw,
+        };
 
         let Some(session) = self.boot_ui.logos_session() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let Some(assets) = self.publisher_logos.as_ref() else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let idx = session.current_logo();
-        if idx >= legaia_engine_title::publisher_logos::LOGO_COUNT {
-            return Vec::new();
-        }
+        let rect = assets.rects.get(idx).copied().unwrap_or((0, 0, 0, 0));
         let quads: Vec<LogoQuadView> = session
             .current_quads()
             .iter()
@@ -40,14 +43,28 @@ impl PlayWindowApp {
                 dst: q.dst,
             })
             .collect();
-        publisher_logo_sprite_draws(
-            &quads,
-            assets.rects[idx],
-            STAGE,
-            session.alpha(),
-            surface_w,
-            surface_h,
-        )
+        let mut draws =
+            publisher_logo_sprite_draws(&quads, rect, STAGE, session.alpha(), surface_w, surface_h);
+        // PROKION's exit: the additive wash over the logo, after it in the
+        // vec so it draws on top (retail's ordering-table slot 0 over the
+        // pair's 0xA); then the tail's white stage.
+        let mut blend = Vec::new();
+        if let Some(wash) = session.screen_wash() {
+            blend.push(legaia_engine_render::OverlayBlendSpan {
+                start: draws.len() as u32,
+                count: 1,
+                abr: WASH_ABR,
+            });
+            draws.push(publisher_logo_wash_draw(
+                wash.rect,
+                STAGE,
+                assets.white,
+                wash.level,
+                surface_w,
+                surface_h,
+            ));
+        }
+        (draws, blend)
     }
 
     /// Canonical PSX-framebuffer (320×240) stage origin + scale, shared

@@ -424,22 +424,36 @@ pub fn battle_item_window_text(
         }
     }
 
-    // The description line lives in the description window, which closes
-    // with the list at target select (state 0x64 carries neither).
+    // The description lives in the description window, which closes with
+    // the list at target select (state 0x64 carries neither).
     if frame.targets.is_none()
         && let Some(desc) = frame.description
     {
-        emit(
-            &mut out,
-            font,
-            desc,
-            DESC_SEAT,
-            DESC_INK,
-            stage_origin,
-            scale,
-        );
+        for (i, line) in desc_lines(desc).enumerate() {
+            emit(
+                &mut out,
+                font,
+                line,
+                (DESC_SEAT.0, DESC_SEAT.1 + i as i32 * DESC_LINE_PITCH),
+                DESC_INK,
+                stage_origin,
+                scale,
+            );
+        }
     }
     out
+}
+
+/// The description's drawn lines. The disc string breaks its lines with the
+/// MES `0x7C` token, which the item-name reader hands over as `'\n'`; retail's
+/// string primitive takes `0x7C` as "x back to the pen, y down `0xE`"
+/// (`0x80036924..0x80036934`), and nothing else breaks or clips a line. A
+/// single-line draw of the string ran the second line on past the window's
+/// right edge (`Increase speed for` / `one battle. Ally.`, issue #586).
+///
+/// REF: FUN_80036888 (the `0x7C` arm)
+pub fn desc_lines(desc: &str) -> impl Iterator<Item = &str> {
+    desc.split(['\n', '|'])
 }
 
 // ------------------------------------------------------------ spell window
@@ -764,6 +778,48 @@ mod tests {
             targets: None,
         };
         assert_eq!(empty.pages(), 1);
+    }
+
+    /// A two-line description (the disc's `0x7C` break, handed over as
+    /// `'\n'`) draws its second line one `0xE` pitch under the first, back at
+    /// the pen's x - never on the first line's row (issue #586).
+    #[test]
+    fn description_break_starts_a_second_line_at_the_pen() {
+        let font = legaia_font::Font::placeholder();
+        let f = BattleItemMenuFrame {
+            description: Some("Increase speed for\none battle. Ally."),
+            ..Default::default()
+        };
+        let draws = battle_item_window_text(&font, &f, false, (0, 0), 1);
+        let row = |y: i32| -> Vec<i32> {
+            draws
+                .iter()
+                .filter(|d| d.dst.1 == y)
+                .map(|d| d.dst.0)
+                .collect()
+        };
+        let first = row(DESC_SEAT.1);
+        let second = row(DESC_SEAT.1 + DESC_LINE_PITCH);
+        let one_line = battle_item_window_text(
+            &font,
+            &BattleItemMenuFrame {
+                description: Some("Increase speed for"),
+                ..Default::default()
+            },
+            false,
+            (0, 0),
+            1,
+        )
+        .iter()
+        .filter(|d| d.dst.1 == DESC_SEAT.1)
+        .count();
+        assert_eq!(first.len(), one_line, "the first line stops at the break");
+        assert!(!second.is_empty(), "the rest draws one pitch down");
+        assert_eq!(
+            first.iter().min(),
+            second.iter().min(),
+            "both lines start at the pen"
+        );
     }
 
     /// Text half: rows land on the pinned pens, counts right-align to the

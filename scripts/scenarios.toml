@@ -6625,6 +6625,56 @@ expected_active_scene = "town0b"
 topics = ["battle", "results", "retail-compare"]
 
 [[scenarios]]
+label = "battle_jou_gala_finisher_results_retail"
+backup_fingerprint = "95e2b529e76e30f923d7096eb9793c3008464a1d04470bcc190350a95614b380"
+description = "Results frame of a jou win Gala finished: ctx[+0x13] = 2, win pose 0x14 staged on Gala, yaw counter 0x780, 'Gala's team won the battle!'. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSA: Vahn and Noa Spirit, Gala attacks), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_gala_finisher_hold_retail"
+backup_fingerprint = "b7fbc4e2f24448f423b394c718d8bf37d0607a96b689da4409cf19b1b06df37c"
+description = "The same win 128 vsyncs into the results hold: Gala playing win pose 0x14 at dynamic slot 0x10 under the battle-over framing. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSA), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_noa_finisher_hold_retail"
+backup_fingerprint = "bbf5b050dc5f1eb22804ad764a306c7ab39b343d1607237c23965c1249cfd42b"
+description = "A jou win Noa finished, 128 vsyncs into the results hold: ctx[+0x13] = 1, win pose 0x11, yaw counter 0x800. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SAS: Noa attacks alone), monster HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing monster HP written to 1 at round prompts (LEGAIA_FINISH)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_party_wipe_results_retail"
+backup_fingerprint = "aa5140c214ede419ea90458835a811221d167dd78ffdd85cccde1ccaab9db584"
+description = "Results frame of a jou party wipe: ctx[+0x13] = 5, the monster that landed the wiping blow, framed by the in-fight arm; yaw counter 0x7C0, its +0x1FA = 2, 'Vahn's team was annihilated.'. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSS: the party Spirits), party HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing party HP written to 1 at round prompts (LEGAIA_WIPE)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
+label = "battle_jou_party_wipe_hold_retail"
+backup_fingerprint = "f5ac9859107ef49403c72dc739d908a8852376afd6c235d1a9f4f194bb2827dc"
+description = "The same wipe 128 vsyncs into the results hold, the loss window up over the killing monster. RETAIL disc: battle_jou_party_gala_chain_mid played on by autorun_battle_end_film.lua (LEGAIA_PLAN=SSS), party HP cut to 1 at round prompts."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+ram_poked = ["MAN region rows (inherited) and every standing party HP written to 1 at round prompts (LEGAIA_WIPE)"]
+topics = ["battle", "results", "battle end", "jou"]
+
+[[scenarios]]
 label = "battle_item_window_gaza2_retail"
 backup_fingerprint = "247a3fb4bc23502058389d02e77ca21f6ff313727819f7d9bedc2c6201761306"
 description = "Gaza boss fight's item window, ctx[+0x06] 0x3C. CROSS 30, UP 50, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
@@ -7407,6 +7457,24 @@ expected_active_scene = "nilboa"
 topics = ["battle", "enemy attack", "nilboa", "harvest"]
 
 [[scenarios]]
+label = "battle_noaru_songi_genocidal_cannon_mid_cast"
+backup_fingerprint = "71b4c6af3e1f9b51677fc1359b2ba92af368f7b87a1aec86b66ae0e50c945ef1"
+description = "noaru battle, formation [179]: Songi's third form (seat 3, monster id 179) mid-cast Genocidal Cannon (spell 0xB3, module PROT 0963): category 2, action state 0x70, 40 vsyncs into the module band. RETAIL disc: noaru_field_card_walk played forward by autorun_battle_harvest.lua --turbo, formation row picked by LEGAIA_WANT=179 (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), Songi's HP cut to a third of its maximum at every round prompt (LEGAIA_WOUND=1, LEGAIA_WOUND_EVERY=1) so the AI's half-HP arm of the cannon is open, the party on Spirit; no write to the action queue. Saved at vsync 9070."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Songi", "Genocidal Cannon", "noaru", "harvest"]
+
+[[scenarios]]
+label = "noaru_songi_pre_genocidal_cannon"
+backup_fingerprint = "7002614379526cc4ab5b117984227fa056b1378a2204f3cd902b7ecc159a5fb1"
+description = "noaru battle: Songi's third form (monster id 179) is about to cast Genocidal Cannon (spell 0xB3, module PROT 0963) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: noaru_field_card_walk played forward by autorun_battle_harvest.lua --turbo, formation row picked by LEGAIA_WANT=179 (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), Songi's HP cut to a third of its maximum at every round prompt (LEGAIA_WOUND=1, LEGAIA_WOUND_EVERY=1) so the AI's half-HP arm of the cannon is open, the party on Spirit; no write to the action queue. Saved at vsync 9031."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Songi", "Genocidal Cannon", "noaru", "harvest", "pre-cast"]
+
+[[scenarios]]
 label = "battle_noaru_songi_strike"
 backup_fingerprint = "5bc174d4d66c19a5b780e415a2ebb7500d0b7072f9028ce4bebc8aa997b896b2"
 description = "noaru battle, formation [179]: monster id 179 mid physical attack: category 3, action state 0x1E. RETAIL disc: noaru_field_card_walk played forward (saved 7480 vsyncs in), formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
@@ -8056,6 +8124,7 @@ topics = ["field", "story beat", "vozz", "Songi", "cutscene", "dialog"]
 
 [[scenarios]]
 label = "vozz_ozma_hatching_hover"
+arrival = { from = "map01", door = 31, flags = [0x2C3] }
 backup_fingerprint = "f80beaa06f1a04d967bc2740270f04b929cd5a2c2d47ccfa3dcba533c9ae27b0"
 description = "East Voz Forest P2[17], Ozma's hatching: Ozma hovering beside Noa at the tree, record parked at +0x39C. RETAIL disc, story flag 0x2C3 raised by poke: garmel_field_card_boot door-hopped garmel:20:8 into map01 with LEGAIA_FLAGS_SET=2C3 and walked into vozz, then Cross every 20 vsyncs; saved 630 vsyncs into the vozz film."
 phase = "field"
@@ -8073,6 +8142,26 @@ expected_game_mode = 0x03
 expected_active_scene = "vozz"
 ram_poked = ["system flag 0x2C3 raised (the vozz P2[17] gate)"]
 topics = ["field", "story beat", "vozz", "Ozma", "cutscene", "narration crawl"]
+
+[[scenarios]]
+label = "map01_tree_revival_cutscene"
+backup_fingerprint = "a126e92851bc97c55b8486764d3a8084d3e10a0387c8d20de7af8f972f81c301"
+description = "map01 P2[31], the Genesis Tree's revival seen from the overworld, about 550 vsyncs before its sub-op 6 (+0x1E8) and scene change into vozz (+0x1F6); the record is the one map01's entry script spawns once flag 0x2C3 is up. RETAIL disc, pad only: vozz_genesis_tree_songi played forward by autorun_story_forward.lua (Cross / Circle through the boxes, Attack with arts through the fight), the tree touched again by autorun_walk_route.lua, then vozz P1[7] ran to its own sub-op 6 and scene change into map01. The one RAM write is the fight's: both monsters' HP written to 1 at round 2's prompt (LEGAIA_FINISH=2), gone with the fight. Sounds 2035 (vozz's theme, kept by P1[7]'s sub-op 6) under the word 2000; the engine's card-load seed has no P1 arrival and starts 2000."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map01"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "map01", "Genesis Tree", "cutscene", "sub-op 6", "BGM keep"]
+
+[[scenarios]]
+label = "vozz_tree_revival_return"
+backup_fingerprint = "11506f15a3e74ab6dfe1f7c60b48b49e42b0765992c48f3a718110b559b14705"
+description = "East Voz Forest after map01's P2[31] carried the party back: Ozma's hatching (P2[17]) under way, saved 630 vsyncs after the field resumed, the moment vozz_ozma_hatching_hover was saved at. The clean counterpart of that state: map01_tree_revival_cutscene played on by autorun_story_forward.lua, no further RAM write. Sounds 2035 under the word 2035: the music vozz P1[7] kept into map01 is kept again by P2[31]'s sub-op 6."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "vozz"
+ram_poked = ["monster HP written to 1 at round 2's prompt of the tree fight (formation 74 + 74), before this state"]
+topics = ["field", "story beat", "vozz", "Ozma", "cutscene", "sub-op 6", "BGM keep"]
 
 [[scenarios]]
 label = "bylon_mist_gala_goes_ahead"

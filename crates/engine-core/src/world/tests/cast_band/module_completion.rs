@@ -448,3 +448,69 @@ fn the_swordie_band_draws_its_split_and_streak() {
     assert_eq!(split, 3 + 32 + 65);
     assert!(world.swordie_draw().is_none());
 }
+
+/// Run PROT 0947 for `id` on `seed`: the draws its hit pass takes, and whether
+/// the victim came out of it Cursed.
+fn windhash_hit_pass(id: u8, seed: u32) -> (u32, bool) {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+    let mut world = module_code_world();
+    world.party.party_count = 3;
+    world.battle_ctx.active_actor = 3;
+    world.actors[3].battle_monster_id = Some(180);
+    world.actors[3].battle.active_target = 0;
+    let mut entries = vec![SpellEntry::default(); 0x100];
+    entries[id as usize].class = CAPTURE_CLASS;
+    entries[id as usize].sub_class = (947 - 935) as u8;
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        spell_names: Some(SpellNameTable::from_entries(entries)),
+        ..Default::default()
+    });
+    assert_eq!(world.cast_module_for(id), Some(947));
+    world.arm_capture_cast_module(id);
+    world.rng_state = seed;
+    for _ in 0..20_000 {
+        world.clock.display_frames += 1;
+        let phase = world.casting.module_phase;
+        let before = world.rng_state;
+        let hit_before = world.casting.module_hit_arm;
+        let busy = world
+            .run_cast_module_code(id, phase)
+            .is_some_and(|r| r.busy);
+        if hit_before.is_none() && world.casting.module_hit_arm.is_some() {
+            let mut s = before;
+            let mut draws = 0;
+            while s != world.rng_state {
+                s = legaia_engine_system::rand::world_lcg_step(s);
+                draws += 1;
+                assert!(draws < 1000, "the hit pass's stream did not close");
+            }
+            return (draws, world.battle.status_effects.has(0, StatusKind::Curse));
+        }
+        if !busy {
+            break;
+        }
+    }
+    panic!("PROT 0947 {id:#x} never reached its hit");
+}
+
+/// Neo Windhash rolls its Curse ahead of the damage call (`jal rand` at
+/// `0x801F73E0`, `rand() & 3 == 0` sets `+0x16E |= 0x1000`); V-Windhash
+/// branches past it. Without the draw the hit rolled one word early: 807
+/// where retail's `battle_korb2_ghost_knight_neo_windhash_mid_cast` lands 771.
+#[test]
+fn neo_windhash_draws_its_curse_ahead_of_the_hit() {
+    let mut cursed = 0;
+    for seed in 0..64u32 {
+        let seed = seed.wrapping_mul(0x9E37_79B9);
+        let (v_draws, v_cursed) = windhash_hit_pass(0x57, seed);
+        let (n_draws, n_cursed) = windhash_hit_pass(0xA7, seed);
+        assert_eq!(n_draws, v_draws + 1, "seed {seed:#x}");
+        assert!(!v_cursed, "V-Windhash curses nobody");
+        cursed += usize::from(n_cursed);
+    }
+    assert!(
+        (4..=28).contains(&cursed),
+        "a 1-in-4 roll cursed {cursed} of 64"
+    );
+}

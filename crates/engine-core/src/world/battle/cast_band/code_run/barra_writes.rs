@@ -51,6 +51,19 @@ impl World {
         // The word after the pass's step, ahead of any re-arm the pass made.
         let stepped = before + p / 8;
         let w = self.casting.module_cam.countdown.0;
+        // The backdrop words and the epilogue's sample origin, on every
+        // pass whatever the arm ([`legaia_engine_cast::cast_module_camera::barra_backdrop_scroll`]).
+        let wash_live = self.casting.module_pres.wash.alpha != 0;
+        let (words, (u, row)) = legaia_engine_cast::cast_module_camera::barra_backdrop_scroll(
+            phase,
+            passed,
+            wash_live,
+            self.casting.module_barra_scroll,
+            p,
+        );
+        self.casting.module_barra_scroll = words;
+        self.casting.module_pres.wash.u_base = u;
+        self.casting.module_pres.wash.v_base = row;
         let set_y_z = |a: &mut crate::world::Actor, y: i16, z: Option<i16>| {
             a.move_state.world_y = y;
             if let Some(z) = z {

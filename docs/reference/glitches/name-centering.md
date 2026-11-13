@@ -389,6 +389,13 @@ do they fit the names. Ten summon spell-name captions are centred on 166 or 172 
 Every other battle name path measures the string it draws (US, French) or centres on its length
 byte (Japanese).
 
+The port draws every summon module line on its module's own pen - the ten shifted centre constants
+and the three typed-in X values - from one table, `module_caption_pen` in
+`engine-cast::cast_module_camera`. Cast-sequence films of Gimard, Theeder, Nighto and Juggernaut
+put the port's white glyph pixels on retail's columns (Gimard's spell name 166..202 after its
+plate, Theeder's 157..198, "Hell's Music" from 106, "Dark Eclipse" from 112). Nighto's one-in-eight record-name arm is the
+exception: the port does not roll the outcome word and always draws the module head at X = 106.
+
 ### Verifying it
 
 Log `a2` (string), `a3` (X) and the word at `sp+0x10` (Y) at `0x8003541C` across one cast of each

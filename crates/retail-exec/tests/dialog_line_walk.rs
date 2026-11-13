@@ -27,6 +27,8 @@ const SCRIPT: u32 = 0x8011_0000;
 const CTX: u32 = 0x8012_0000;
 const SCENE: u32 = 0x8013_0000;
 const PLAYER: u32 = 0x8013_1000;
+const RUN_TO_TEXT: u32 = 0x8003_CF7C;
+const FIELD_VM: u32 = 0x801D_E840;
 
 #[test]
 fn the_shown_text_walk_parks_where_retail_parks() {
@@ -124,35 +126,85 @@ fn the_shown_text_walk_parks_where_retail_parks() {
 }
 
 /// `FUN_8003CF7C`, the run-to-next-text helper the SM's other states call,
-/// is not compared: the port has no kernel of its own for it.
-/// `World::step_inline_dialogue` runs the field VM in one loop with the
-/// SM's box, park and pass-end decisions, so where the helper returns a raw
-/// `0x21` and leaves the next text to the SM's next frame, the runner opens
-/// that box in the same call. What is checked is the helper's shape: one
-/// callee, the field VM, and the two ends the runner maps (the `0x21` compare
-/// and the stalled-cursor compare).
+/// against `inline_dialogue::run_to_next_text`. The field-VM dispatcher it
+/// calls is hooked to a scripted step: each PC's next PC is drawn once (a
+/// stay, a hop forward), and both sides read the same bytes, so the returned
+/// byte, the `+0x9E` the context is left on and the PCs stepped are compared.
+/// Every end is reached: text before the first step, text after one, the
+/// `0x21` frame mark and the park.
 #[test]
-fn the_run_to_text_helper_calls_only_the_field_vm() {
-    not_a_differential!(
-        "FUN_8003CF7C's loop is fused into World::step_inline_dialogue with the dialog SM's decisions; checks the helper calls only the field VM and carries the 0x21 and stalled-cursor ends"
-    );
-    let Some(scus) = crate::common::scus() else {
+fn the_run_to_text_helper_matches_retail() {
+    differential!(scus(RUN_TO_TEXT));
+    use legaia_engine_field::inline_dialogue::{SliceEnd, run_to_next_text};
+    let Some(mut cpu) = scus_cpu() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let at = |va: u32| {
-        let o = (va - 0x8001_0000) as usize + 0x800;
-        u32::from_le_bytes(scus[o..o + 4].try_into().unwrap())
-    };
-    let body: Vec<u32> = (0x8003_CF7Cu32..0x8003_D038).step_by(4).map(at).collect();
-    let calls: Vec<u32> = body
-        .iter()
-        .filter(|w| *w >> 26 == 3)
-        .map(|w| 0x8000_0000 | (w & 0x03FF_FFFF) << 2)
-        .collect();
-    assert_eq!(calls, vec![0x801D_E840]);
-    // `li s4,0x21` and the `beq s0,s4` it feeds; `beq s1,v0` on the cursor.
-    assert!(body.contains(&0x2414_0021));
-    assert_eq!(at(0x8003_CFE0) >> 16, 0x1214);
-    assert_eq!(at(0x8003_CFF0) >> 16, 0x1222);
+    const LEN: usize = 0x200;
+    let next: Rc<std::cell::RefCell<Vec<usize>>> = Rc::default();
+    let stepped: Rc<std::cell::RefCell<Vec<usize>>> = Rc::default();
+    {
+        let (next, stepped) = (next.clone(), stepped.clone());
+        cpu.hook(FIELD_VM, move |r, m| {
+            let pc = r.r[psx_retail_exec::A1] as i32 as usize;
+            assert_eq!(r.r[A2], CTX, "the context rides in a2");
+            assert_eq!(r.r[psx_retail_exec::A0], m.rd32(CTX + 0x90));
+            stepped.borrow_mut().push(pc);
+            r.r[psx_retail_exec::V0] = next.borrow()[pc] as u32;
+        });
+    }
+    let mut rng = crate::common::Rng(0x8003_CF7C);
+    let mut ends = std::collections::BTreeMap::<String, u32>::new();
+    for _ in 0..4000 {
+        // Mostly op bytes, with text and `0x21` mixed in.
+        let bytes: Vec<u8> = (0..LEN)
+            .map(|_| match rng.below(16) {
+                0 => rng.below(0x20) as u8 | (rng.below(2) as u8) << 7,
+                1 => 0x21,
+                _ => 0x20 + rng.below(0xE0) as u8,
+            })
+            .collect();
+        // A PC goes forward or stays; the last few always stay.
+        let table: Vec<usize> = (0..LEN)
+            .map(|pc| match rng.below(24) {
+                0 => pc,
+                _ if pc + 9 >= LEN => pc,
+                _ => pc + 1 + rng.below(8) as usize,
+            })
+            .collect();
+        let start = rng.below(LEN as u32 / 2) as usize;
+        *next.borrow_mut() = table.clone();
+        stepped.borrow_mut().clear();
+        cpu.mem.load(SCRIPT, &bytes);
+        cpu.mem.wr32(CTX + 0x90, SCRIPT);
+        cpu.mem.wr16(CTX + 0x9E, start as u16);
+        assert_eq!(cpu.call(RUN_TO_TEXT, &[CTX]), Stop::Returned);
+        let byte = cpu.regs.r[psx_retail_exec::V0] as u8;
+        let pc = cpu.mem.rd16(CTX + 0x9E) as usize;
+
+        let mut port_steps = Vec::new();
+        let slice = run_to_next_text(
+            &mut port_steps,
+            start,
+            usize::MAX,
+            |_, pc| bytes.get(pc).copied(),
+            |log, pc| {
+                log.push(pc);
+                Some(table[pc])
+            },
+        );
+        let at = format!("start {start:#x}");
+        assert_ne!(slice.end, SliceEnd::Stopped, "{at}");
+        assert_eq!(slice.byte, byte, "returned byte, {at}");
+        assert_eq!(slice.pc, pc, "+0x9E, {at}");
+        assert_eq!(port_steps, *stepped.borrow(), "PCs stepped, {at}");
+        let kind = match (slice.end, slice.steps) {
+            (SliceEnd::Text, 0) => "text at entry".to_string(),
+            (e, _) => format!("{e:?}"),
+        };
+        *ends.entry(kind).or_default() += 1;
+    }
+    for e in ["text at entry", "Text", "FrameMark", "Parked"] {
+        assert!(ends.get(e).copied().unwrap_or(0) > 50, "{e}: {ends:?}");
+    }
 }

@@ -549,8 +549,6 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>Line break.</strong> The ceiling roll, the spent lure, the far-record strain and the no-lure screen after the last lure are ported, and so is the off-screen latch: on a host drawing through the venue&rsquo;s own camera, a fish that drags the view far enough round that the cast&rsquo;s spawn point leaves the screen breaks the line.</li>
-        <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
-        <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
         <li><strong>State <code>0x2D</code></strong> has no writer anywhere on the disc; every store to the state word resolves to another value.</li>
       </ul>
     </div>
@@ -559,7 +557,8 @@ power % = power * 100 &gt;&gt; 12</code></pre>
 
 <section class="doc-section" id="cast-and-line" data-doc="the-cast-and-the-line">
   <h2>The cast and the line</h2>
-  <p>The cast releases at the power meter's lock: the lure spawns 200 units behind the angler's facing, and that spawn point stays as the line's anchor. The line record is the lure's distance from it, measured every frame, so a stronger cast really is a longer line.</p>
+  <p>The cast releases at the power meter's lock: the lure spawns 200 units per frame step behind the angler's facing, and that spawn point stays as the line's anchor. The line record is the lure's distance from it, measured every frame, so a stronger cast really is a longer line.</p>
+  <p>The venue never runs faster than one game tick every two vsyncs: its init sets the frame-step floor to 2, so the pond thinks 30 times a second at most, and a retail cast spawns its lure 400 units out. Every roll made once a tick (the bite, the band, the line break at the ceiling) comes half as often as it would at 60. The port runs the pond on the same step on every host; a press between two ticks waits for the next.</p>
   <p>In flight the lure travels on the locked power until the power is spent. In the water it moves by a pull that presses set: Cross and Square set different strengths, and the pull fades each frame until it drops out. A line reeled in below the landing distance returns the angler to the shore with nothing, which is why a weak throw comes straight back.</p>
 </section>
 

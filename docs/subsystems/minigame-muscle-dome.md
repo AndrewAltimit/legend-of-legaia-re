@@ -307,6 +307,8 @@ Port: `muscle_dome::{DomeContest, settle_contest}`, driven by `World::report_mus
 
 Each hub screen is a **fade-in at its own rate, a hold, and a fade-out**, and two of the holds end early on a pad press. The counter family `DAT_801D1A70 / 1A7C / 1A80 / 1A84 / 1A88 / 1A8C` lives entirely inside the PROT 0977 image, and every step is scaled by the adaptive frame-skip factor `_DAT_1F800393`, so the figures are ticks (frames at the normal cadence).
 
+The hub's screen routine `FUN_801CF870` stores `2` to the frame-step floor `_DAT_8007B9D8` on every call, ahead of its arm switch (`li v0,2` / `sw v0,-0x4628(v1)` at `0x801CF8DC..0x801CF8E0`), so the hub runs a game tick every two vsyncs or slower on that step; both parked hub captures read a step of `2` *(disassembly + captures)*. The port's `HubTimers::tick` runs every vsync on a step of `1`: the stepped envelopes come out the same length, but the steps a tick that are not scaled (the tally's row a tick) run twice as fast, and every fade moves at 60 frames a second where retail's moves at 30.
+
 `DAT_801D1A80` is a **brightness level**, not a tick count: the emitter `FUN_801D050C` scales each stored channel by `c * a3 / 256` (`mult` then `sra 8`), and the counter clamps at `0x80` - a PSX textured primitive's neutral modulation. Drawing a hub screen at `0x100` is twice retail's brightness.
 
 | Screen | States | Fade in | Hold | Skippable | Fade out |

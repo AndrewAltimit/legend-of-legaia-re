@@ -512,6 +512,10 @@ pub struct BattleHudFrame<'a> {
     /// `152` in `gimard_burning_attack` and Gilium's casts, where the
     /// label's stand at `150`).
     pub move_name_module_line: bool,
+    /// The pen of a module line ([`Self::move_name_module_line`]): its
+    /// module's centre constant or typed-in X. The placement-record label
+    /// ignores it.
+    pub move_name_pen: crate::battle_name_banner::LabelPen,
     /// The bottom-right target plaque (placement record 81): the monster a
     /// party member's action is aimed at and its element badge, on a blue
     /// plate whose right cap ends at `x = 312`, on the bar's row.
@@ -724,6 +728,36 @@ mod ink_tests {
             d.text.iter().map(|t| t.dst.1).min().unwrap_or(0)
         };
         assert_eq!(y_of(true) - y_of(false), 2);
+    }
+
+    /// A module line takes its module's pen: a centre constant shifts it
+    /// by the constant's distance from `0xA0`, a typed-in X pins it whatever
+    /// the name's width, and the placement-record label ignores the pen.
+    #[test]
+    fn a_module_line_takes_its_modules_pen() {
+        use crate::battle_name_banner::LabelPen;
+        let font = legaia_font::synthetic_for_tests();
+        let x_of = |name: &str, module: bool, pen: LabelPen| {
+            let d = battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    surface: (320, 240),
+                    move_name: Some(name),
+                    move_name_module_line: module,
+                    move_name_pen: pen,
+                    ..Default::default()
+                },
+                (0, 0),
+            );
+            d.text.iter().map(|t| t.dst.0).min().unwrap_or(0)
+        };
+        let base = x_of("Theeder", true, LabelPen::default());
+        assert_eq!(x_of("Theeder", true, LabelPen::Centred(0xA6)) - base, 6);
+        assert_eq!(x_of("Theeder", true, LabelPen::Centred(0xAC)) - base, 12);
+        assert_eq!(x_of("Theeder", false, LabelPen::Centred(0xAC)), base);
+        let pinned = x_of("Hell's Music", true, LabelPen::At(0x6A));
+        assert_eq!(x_of("Dark Eclipse", true, LabelPen::At(0x6A)), pinned);
+        assert_eq!(x_of("Dark Eclipse", true, LabelPen::At(0x70)) - pinned, 6);
     }
 
     /// Every caption the battle builder lays out - the actor plaque and the

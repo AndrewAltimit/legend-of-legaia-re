@@ -247,6 +247,7 @@
     </tbody>
   </table>
   </div>
+  <p><strong>Effect quads that split into triangles.</strong> A colour word on texture bank 3 sends an effect quad through a leaf that cuts it into sixteen <code>GT3</code>s. The leaf first rejects the whole quad - a back-facing one (unless the word is double-sided), or one whose four projected corners all lie off one edge of the frame - and then each kept triangle takes only the near reject, links on its own depth average and maps its texels affinely on its own. The port splits a mesh part's quads on such a word too: V-Windhash's blade trail is four quads that run past the screen, and drawn as two triangles each its texture smeared across the frame. Split, the newest pair lands on retail's sub-triangle corners with matching colours.</p>
   <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does an effect mesh (a procedural ring, disc or sprite quad, or a summon or move part's library mesh) whose colour word lacks the double-sided bit, in battle and in the field alike; the world map, the battle stage and the other minigame venues draw both sides. The word, not the winding, decides an effect sheet: the camera-facing steam sheets on the Sol Tower stairs carry the double-sided bit and keep both faces on both hosts, and a field light cone with the same bit is never dropped by the field pass's cull. The debug orbit camera is exempt from the near cuts.</p>
   <h3 id="on-screen-probes">Two &ldquo;is it on screen&rdquo; tests that are not the same test</h3>
   <p>Retail has two GTE-backed visibility probes, and they are not interchangeable. The field one projects a box around an actor and accepts any corner inside a real rectangle. The battle one tests only the box's <em>horizontal span</em> against the screen band - it reads no Y at all, so a body a full screen above the viewport still counts as visible. The battle probe also has no reference of any kind anywhere on the disc, so nothing consults its verdict; the port's lack of a cull there is parity.</p>
@@ -257,10 +258,11 @@
   <p>Monsters, the party and a summon's parts all go through one draw (<code>FUN_80048A08</code>) once per frame: compose the actor matrix under the camera, decode the pose, apply the render scale, then hand each object of the mesh to a primitive leaf.</p>
   <ul class="bullets">
     <li><strong>Rotted limbs draw dark.</strong> The colour word is reloaded for each object, because a party member's status can override it per object. Three Rot bits each map to an object range of that character's battle mesh through a five-byte row per character; a dimmed object draws with red and green quartered and blue halved, pushed three quarters of the way toward a blue-black by the depth cue. It is the only per-object colour rule in the draw.</li>
-    <li><strong>The battle shadow is procedural.</strong> Unless the body is an after-image ghost, the draw ends with a disc under the actor: a 24-column ring of outer radius four tenths of the actor's size, built in the XZ plane at height zero and <em>subtracted</em> from the frame. It is drawn only while the actor is neither pitched nor rolled, and it dims when the actor is airborne.</li>
+    <li><strong>The battle shadow is procedural.</strong> Unless the body is an after-image ghost, the draw ends with a disc under the actor: a 24-column ring of outer radius four tenths of the actor's size, built in the XZ plane at height zero and <em>subtracted</em> from the frame. It is drawn only while the actor is neither pitched nor rolled, and it dims when the actor is airborne. In battle the angles it tests are the battle actor's own, copied across every animation pass, so a body a cast module tips casts no shadow: Kemaro's frozen victim, Mushura's banking creature, Barra's diving pair.</li>
     <li><strong>The field shadow is a texture.</strong> A field actor's blob is a different routine (<code>FUN_8001C394</code>): a 3&times;3 grid of points 32 units apart is projected at the actor's feet and its four cells are drawn as textured quads, tiling one 16&times;16 dark blob from the menu-glyph page at half-and-half blend. A depth bias sorts the blob behind the actor standing on it and over the ground. Jumping and scripted vanishes switch it off through one flag bit.</li>
   </ul>
-  <p>Both shadows are checked against retail captures packet for packet. In the port each sits a few units above the floor so a depth test does the job retail's ordering does.</p>
+  <p>Both shadows are checked against retail captures packet for packet. In the port the field blob's corners take their depth six units nearer the eye along the view axis, so a depth test does the job retail's ordering does: under the actor, over the ground. The pull runs along the eye ray because a height lift fails under a level camera: in the dance hall six units of height came to under a unit of depth and the stage floor covered every blob. Retail links that floor's quad under a dancer into the blob's own ordering-table slot and draws the floor first.</p>
+  <p><strong>The blob's darkening is blend arithmetic, not its texel.</strong> The blob texel is a grey of <code>3</code> on the 5-bit scale under the half-and-half mode, and the GPU averages in 5 bits, <code>(B + F) &gt;&gt; 1</code>: a floor at <code>3</code> stays <code>3</code> and one at <code>4</code> reads <code>3</code>. On the dance hall's dark floor the blob is all but invisible, on the console and on the emulator the states were captured with.</p>
 </section>
 
 <section class="doc-section" id="shatter">
@@ -316,13 +318,13 @@
       <text class="dg-edge-label" x="595" y="302" text-anchor="middle">PlayStation (opt-in)</text>
       <text class="dg-edge-label" x="744" y="322" text-anchor="end">rasterisation</text>
     </svg>
-    <figcaption>Two switches, not one slider. The simulation does not move with either: damage, RNG and scripts are the same in all four. Semi-transparency and affine texturing are the same in all four too, because they are retail in every cell.</figcaption>
+    <figcaption>Two switches, not one slider. The simulation does not move with either: damage, RNG and scripts are the same in all four. The semi-transparency equations and affine texturing are the same in all four too, because they are retail in every cell; PSX mode adds only the GPU's 5-bit blend precision.</figcaption>
   </figure>
   <div class="table-wrap">
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Retail is</th><th>What it gates</th></tr></thead>
     <tbody>
-      <tr><td><code>set_psx_mode</code> (<code>--psx-render</code>, <code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>the GTE register limits, sub-pixel vertex snap, each field primitive's draw at its <a href="renderer-port.html#field-link-order">ordering-table link</a> and 4&times;4 ordered 15-bit dither, nothing else</td></tr>
+      <tr><td><code>set_psx_mode</code> (<code>--psx-render</code>, <code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>the GTE register limits, sub-pixel vertex snap, each field and battle primitive's draw at its <a href="renderer-port.html#field-link-order">ordering-table link</a>, 4&times;4 ordered 15-bit dither and the GPU's 5-bit blend arithmetic, nothing else</td></tr>
       <tr><td><code>set_semi_blend</code></td><td>on</td><td>on</td><td>semi-transparency; off draws water and glows solid</td></tr>
       <tr><td>Affine UVs</td><td>always</td><td>always</td><td>a static shader qualifier, not a switch</td></tr>
       <tr><td>Enhanced lighting (<code>I</code>)</td><td>on in both play hosts</td><td>off</td><td>time-of-day mood, lamp lights at glowing props, emissive primitives, halos</td></tr>
@@ -331,9 +333,24 @@
     </tbody>
   </table>
   </div>
+  <p><strong>Where the enhanced lamps sit.</strong> A prop's lamp lights are read from its mesh posed on the first frame of its clip, the pose the window draws before the clip player runs: read unposed, a clip prop's parts all sit at its origin, and a lamp the clip lifts onto a post or a roof would light the ground under it. The lamp shadow pass recovers each draw's model the same way the shading does, grouping the matrix product identically; grouped differently, it rounded ground under its own depth on some frames and tiles under a lamp blinked dark.</p>
   <p><strong>Retail dithers.</strong> The draw-environment initialiser stamps the GPU's dither bit to 0, but the frame driver re-stamps it every frame from a global that boots at 1 and a script opcode can change. The port's clean default is a choice about the look, not a reading of the executable.</p>
   <p><strong>A battle frame can lose it.</strong> The dither bit lives in the GPU's draw mode, so a draw-mode packet in the ordering table moves it for everything drawn after. The wash a cast arms is drawn through the fade quad, whose packet clears the bit in the farthest bucket; the ground grid's own pair of packets sets it again. A frame that arms the wash over a stage the grid does not draw, such as the closing arms of the Ozma summon, is drawn with no dither at all. The port follows the same rule in PSX mode on both hosts.</p>
   <p><strong>Semi-transparency</strong> is per texel on a textured primitive: palette entries with the STP bit blend, others draw opaque. The four blend equations are on <a href="shading.html#chain">shading</a>.</p>
+  <h3 id="psx-blend">PSX mode blends at the GPU's 5-bit precision</h3>
+  <p>The GPU blends on 5-bit channels and truncates, so a float blend over the same two pixels keeps the half step that mode 0's average drops and the fraction that mode 3's quarter drops. A fixed-function blend cannot floor, and it does not need to: every PSX-mode write leaves a channel whose 5-bit value is its top five bits, so a blend only has to land its result in the right 8-wide bin. Each blend mode's fragment entry writes the term that does that, and the background brings its own low bits:</p>
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead><tr><th>Mode</th><th>Console</th><th>Term the port writes</th></tr></thead>
+    <tbody>
+      <tr><td>0, half and half</td><td><code>(B + F) &gt;&gt; 1</code></td><td><code>4F</code> over a background factor a hair under one half</td></tr>
+      <tr><td>1, add</td><td><code>min(B + F, 31)</code></td><td><code>8F</code></td></tr>
+      <tr><td>2, subtract</td><td><code>max(B &minus; F, 0)</code></td><td><code>8F</code></td></tr>
+      <tr><td>3, add a quarter</td><td><code>min(B + (F &gt;&gt; 2), 31)</code></td><td><code>8 &times; (F &gt;&gt; 2)</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Mode 0's factor sits just under one half so a background at the top of an odd bin does not round into the next. A second rule set matches the PCSX-Redux software GPU the retail captures come from, which differs in places (it halves untextured flat polygons and sprites as <code>(B &gt;&gt; 1) + (F &gt;&gt; 1)</code> and sums a Gouraud foreground before its dither). Because a blended channel can sit anywhere in its bin, the native target's present and capture read the frame as the 15-bit framebuffer it models, unless an enhancement pass (SSAO, bloom, fog) has laid a smooth term over it. The browser play page writes the console's terms.</p>
 </section>
 
 <section class="doc-section" id="vram-emulation">

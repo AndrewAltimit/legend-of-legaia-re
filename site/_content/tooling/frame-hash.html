@@ -49,7 +49,7 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
   </table>
   </div>
   <p>Two modes: <code>retail</code> ticks the page&rsquo;s own Retail-faithful and PSX rasterisation boxes (a 320x240 canvas), and <code>enhanced</code> is a fresh browser profile&rsquo;s defaults. The scene is entered and the page&rsquo;s animation loop stopped in one task, so no frame runs on the wall clock. Each frame is then the page&rsquo;s own single step: <code>PlayView.step()</code>, then <code>_frame()</code>, which runs one sim tick and resyncs the sim clock.</p>
-  <p>Each line holds three hashes. <code>gl</code> is the default framebuffer read back, <code>ov</code> the 2D overlay canvas the menus and dialogue draw on, and <code>st</code> the engine&rsquo;s <code>state_json</code>. A difference in <code>st</code> is the simulation; one in <code>gl</code> alone is the renderer. DOM text and a movie&rsquo;s own canvas are not in it.</p>
+  <p>Each line holds three hashes. <code>gl</code> is the default framebuffer read back, <code>ov</code> the 2D overlay canvas the menus, dialogue and HUD text draw on, and <code>st</code> the engine&rsquo;s <code>state_json</code>. A difference in <code>st</code> is the simulation; one in <code>gl</code> alone is the renderer. Two further fields, <code>lit</code> and <code>col</code>, are the share of non-black pixels and the count of colours off a sample of the frame, which the vacuity check below reads. DOM text on the page and a movie&rsquo;s own canvas are not in it. The Muscle Dome&rsquo;s hub screens are: they draw in the GL frame, through the screen-primitive pass.</p>
 </section>
 
 <section class="doc-section" id="what-makes-agreeing-mean-something" data-doc="what-makes-agreeing-mean-something">
@@ -73,6 +73,7 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
 <section class="doc-section" id="what-was-not-repeatable-and-what-was" data-doc="what-was-not-repeatable-and-what-was">
   <h2>What was not repeatable, and what was</h2>
   <p><strong>A hardware GPU&rsquo;s MSAA resolve.</strong> On the real driver, the same frame on the same bundle comes back now and then with a few pixels off by a little, a different frame each run, in both modes and with every enhancement off. Ask for a context without MSAA and it stops; SwiftShader, which keeps the page&rsquo;s context as it stands, never does it. So the default is SwiftShader and <code>--gl egl --no-msaa</code> is the fast form. No tolerance is applied to either.</p>
+  <p>PSX mode draws into a single-sample framebuffer of its own on either form, so its frames do not depend on the context&rsquo;s MSAA (<a href="../subsystems/renderer-port.html#psx">PSX mode</a>): a retail run with <code>--no-msaa</code> and one without agree.</p>
   <p><strong>A 2D canvas&rsquo;s raster.</strong> Read back every frame, the browser moves the overlay from GPU to software raster at a point that depends on how much was drawn between reads, and the two differ by a few pixels on a scaled quad. So the driver asks every 2D context for <code>willReadFrequently</code>, and the hash reads the software raster on both sides.</p>
   <p><strong>Nothing else moved a frame.</strong> Each of these changes when things happen against the ticks, and hashes stayed line for line:</p>
   <div class="table-wrap">

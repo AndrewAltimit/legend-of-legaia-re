@@ -131,7 +131,8 @@ clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
 `FUN_8001DCF8`). The first tick in range keys the descriptor's voices through
 `FUN_80065034` with that volume `>> 7`; every later tick writes it straight to
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
-the key-on chain; leaving the box, or the side-band request going unsettled,
+the key-on chain, and the write goes out in the score's flush, ahead of its key-ons
+([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)); leaving the box, or the side-band request going unsettled,
 releases them (`FUN_800250D4`). The arm keys only in the field mode and
 behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
 `World::tick_ambient_fx` with the focus the camera stored
@@ -244,9 +245,10 @@ Selection, all in the results sequencer `FUN_8004E568` (see `ghidra/scripts/func
 
 1. **Pose tier** from the pose actor's HP: `cur >= 3/4·max` → tier 0, `>= 1/2` → 1, `>= 1/4` → 2, below → 3; any status in mask `0x107B` at `+0x16E` forces tier 4. Tiers 2-3 roll into the weak arm with probability 1/2 and 3/4.
 2. **Pose action id** (`0x11..=0x18`) from the per-character 6-byte table at SCUS `0x800788A0`: columns 0-1 the healthy pair, 2-3 the alternate pair, 4-5 the weak pair. Action id − `0x11` = the entry index in the character's base "ME" win-pose archive (readef slot `3·char + 2`); the weak entries 4/5 are the near-static breathing streams the sequencer **loops**, the others play one-shot.
-3. **Voice clip byte** at SCUS `0x80078867 + action + char_id·8` (clip = byte − 1), fed to `FUN_8003E104(clip, 7, dst)`. Per-character clip bands: Vahn `0xB8..=0xBC`, Gala `0xBD..=0xC3`, Noa `0xC4..=0xCB`, fourth-slot `0xCC` (constant row).
+3. **Voice clip byte** at SCUS `0x80078867 + action + char_id·8` (clip = byte − 1), fed to `FUN_8003E104(clip, 7, dst)`. The bytes are a 4 × 8 table at `0x80078880`, directly below the pose table (`legaia_game_tables::victory_pose::victory_voice_bank`). Per-character clip bands: Vahn `0xB8..=0xBC`, Gala `0xBD..=0xC3`, Noa `0xC4..=0xCB`, fourth-slot `0xCC` (constant row).
+4. **Install and key.** Phase 2 opens the streamed bank as VAB slot 7 (`FUN_8001E54C(7, dst, 0x19000)` at `0x8004ED68`), over the formation's slot-7 bank. The sequencer plays nothing itself: every win-pose record's cue track fires cue `0xA1` at its own frame, a party cue below `0xA7`, so the funnel keys `bse.dat` row `0x23D` (program `0`, note `0x3C`) in the actor's category `7` - the voice. Both hosts stage the bank for slot 7 while the sequence runs (`World::battle_monster_sound_banks`); `crates/engine-session/tests/victory_voice_disc.rs` keys the row in Vahn's bank and hears it.
 
-The `gp+0x9F4`-keyed bark jukebox inside the same function (ids `0x19F`-`0x1AF` → `XA20`/`XA21`/`XA22`) is a **different, special-sequence path**: in captured ordinary victories `gp+0x9F4` is never written and no XA plays at pose time.
+The `gp+0x9F4`-keyed bark jukebox inside the same function (ids `0x19F`-`0x1AF` → `XA20`/`XA21`/`XA22`) is a **different path**: `gp+0x9F4` is the battle's first monster id (`0x8007BD0C`, written at battle load), and the jukebox is the party-wipe arm's boss bark, once on the loss's results frame ([battle-round-loop.md](battle-round-loop.md#the-wipe-frames-the-killing-monster)). No XA plays at a victory's pose time.
 
 ## BGM dispatch
 
@@ -606,6 +608,40 @@ replays the record's flag writes) and raises bit 2 when a sub-op 6 lies on
 it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
 Without it the init closed the overworld theme and `son` played `2058`.
 Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
+
+### The overworld's story cutscenes are door records too
+
+`map01`'s entry script `P1[0]` tests a run of story flags and spawns one
+partition-2 record per flag: `0x2C1` spawns flat `0x31` (`P2[28]`, into
+`town0b`), `0x2C2` `P2[29]` (`dolk`), `0x2C4` `P2[30]` (`vell`), `0x2C3`
+`P2[31]` (`vozz`) and `0x2C5` `P2[32]` (`garmel`) (`72 C3 F3 00` at `+0x107`,
+`44 34` at `+0x201`). Each runs camera moves and waits, then sub-op 6 and its
+`0x3F` (`P2[31]`: `35 00 00 06` at `+0x1E8`, the `0x3F` at `+0x1F6`); the
+debug labels of `P2[29]` and `P2[31]` name a tree's revival. No walk-on
+trigger tile names them, so the overworld crossing never reads them; the field
+VM runs them like any spawned record, and its sub-op 6 arm raises bit 2.
+`map02`'s `P2[11]` (into `dohaty`) and `map03`'s `P2[16]` (into `station3`)
+are spawned by their scenes' entry scripts too (flat `0x34` at `map02` `P1[0]`
+`+0x72`, flat `0x3D` at `map03` `P1[0]` `+0xEA`).
+
+`vozz`'s Genesis Tree beat (`P1[7]`) raises `0x2C3` and sub-op 6 together
+before its own change into `map01` (`+0x468`..`+0x478`), and `P2[17]` in `vozz`
+clears `0x2C3` (`62 C3` at `+0x12`). So the story crosses two kept doors in a
+row, and the track that sounds is the one the first door brought. Played on
+from `vozz_genesis_tree_songi` with the pad (`autorun_story_forward.lua`), the
+retail chain logs bit 2 at the `vozz` -> `map01` change and again at
+`P2[31]`'s, and holds `2035`, `vozz`'s theme, under `map01`'s word `2000`
+(`map01_tree_revival_cutscene`) and under `vozz`'s own `2035` afterwards
+(`vozz_tree_revival_return`). The state `vozz_ozma_hatching_hover` sounds `2000`
+instead because it reached `map01` through `garmel`'s plain door with `0x2C3`
+poked: that door started `2000` afresh and `P2[31]` kept it.
+
+The engine runs the same chain: `door_keep_bgm_disc.rs` keeps the music across
+`P2[31]` taken as a door, across the entry script's own spawn of it, and across
+a kept door into the overworld. A door replay that seeds a captured bank has to
+raise `0x2C3` again (`arrival.flags` in `scripts/scenarios.toml`), since
+`P2[17]` cleared it before the capture and `vozz`'s entry script reads it to
+issue its start inside the latch window (`72 C3` at `+0x8C`).
 
 ### The control words: stop, pause, replay
 
@@ -2426,6 +2462,22 @@ retail's side-band request does.
 The director calls `observe_bgm_end` after every track upload and before each
 tail placement; the call is idempotent.
 
+**A voice follows its bank up the tail.** A borrower's sample can still be
+sounding when a track lands on it. `rikuroa`'s entry script, with flag `0x289`
+up after the Caruban fight, requests side-band `2012`, starts track `2025` and
+spawns P2[50], which shatters Caruban and rings cue `0x20D`. That cue is a
+side-band one-shot whose sample ends on an end flag with no repeat, and the
+track loads a few frames after it. Retail's slot `3` has its own base, so
+the sample plays out. In the port the track overruns the bank, and a voice
+left on the old span reads the track's instruments: a looped one holds for
+good, which players heard as a horn looping over the scene. `observe_track`
+records every voice reading a dropped span (`BgmTail::observe_bgm_end_spans`)
+with its key-on count. A re-stage of the same bank in that slot moves those
+voices onto the new copy at the same offset (`Voice::rebase`), so the cue
+ends where retail's does. Any voice no re-stage claims is cut once the frame's
+SFX routing ends, because its sample is gone.
+Pinned by `engine-session/tests/rikuroa_caruban_aftermath_audio_disc.rs`.
+
 ### The scheduler under a menu-overlay screen
 
 Retail runs the pause menu, a shop and the prize exchange at game mode `0x17`,
@@ -3410,6 +3462,12 @@ is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op o
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
+`vozz_ozma_hatching_hover` sounds `map01`'s `2000` under the word `2035`. Its arrival names
+`map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
+the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
+`map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
+the card-load seed has no arrival through a partition-1 beat.
+
 The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
 emulator's `ENVX`, and its SPU runs on the host's audio clock
 ([above](#the-envelope-channel-is-not-on-emulated-time)), so a one-shot can read as still
@@ -3560,23 +3618,51 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
 | `minigame_baka_fighter` | | `0.9972` | `-23` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and [the keying differential](#the-keying-differential) has these keyed alike, so the fit is locking on that tone's period |
-| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
+| `rimelm_wall_press_left` | | `0.936` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
+| `door_warp_town01_to_map01` | | `0.9992` | `-29` dB | `0.00` dB | |
+| `keikoku_chest_open` | | `0.9987` | `-26` dB | `0.00` dB | |
+| `karisto_overworld_resident` | | `0.9981` | `-24` dB | `0.00` dB | |
+| `menu_status_field` | | `0.9991` | `-28` dB | `0.00` dB | |
+| `name_input_ui` | | `0.9992` | `-28` dB | `0.00` dB | |
+| `noa_levelup_field_post` | | `0.9994` | `-29` dB | `0.00` dB | |
+| `ending_vignette_biron` | | `0.9995` | `-30` dB | `+0.01` dB | `2068` on the ending source |
+| `v0_1_battle_command_menu` | | `0.9997` | `-32` dB | `0.00` dB | a fight's command menu |
 | `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | the cast's CD-XA voice, which this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window. The [`cast` channel](#the-cast-channel) renders it |
+
+The other mednafen states the channel was run over stay out of it, each for a reason the score does
+not carry. `rim_elm_zoom_intro`, `vahn_walks_out` and `minigame_dance_noa` stand before their
+score's first event (cursor on event `0`, no wait), where no pass of the render is the state's;
+`minigame_muscle_dome` holds no open sequence. `rim_elm_gimard_seru_capture_before`,
+`ending_vignette_rimelm_walkaway` and `noa_levelup_fight_pre` read `0.99` to `1.00` second by
+second until their script stops or changes the score (`15`, `12` and `17` s in), which this channel
+does not run. `battle_gimard_tail_fire_a`, `player_steal_skeleton_pre`, `evil_medallion_rage_battle`
+and `zora_glare_petrify_pre` read `0.991` to `0.999` with `+0.6` to `+3.5` dB of their own cues in
+the recording.
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
 **`emitter`** (`--cue-voices`), mixes the track with the state's cue voices resumed from its SPU
-(voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
-level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
-window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
-windows and near `-11` dB in others, and the split is the score's, not the river's: in each
-second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after the first second
-while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
-against the resumed SPU, river included
-([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
+(voice records owned `0x21`: voices 16..18 here, nothing else stood up). An offset scan between
+the two halves has its best residual at `0` in every window, so the river is right to the sample.
+
+What the river does to the score is its flush: the emitter's voices delay the score's key-ons
+([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)). With
+that in the render the channel reads:
+
+| State | Track | `emitter` corr | Level |
+|---|---|---|---|
+| `rimelm_wall_press_left` | `2016` | `0.997` | `+0.01` dB |
+| `rimelm_wall_press_down` | `2016` | `0.998` | `+0.01` dB |
+| `rimelm_npc_press_tetsu` | `2016` | `0.997` | `+0.01` dB |
+| `v0_1_post_battle_tetsu_town` | `2016` | `0.998` | `+0.00` dB |
+| `v0_1_pre_battle_tetsu` | `2016` | `0.998` | `+0.01` dB |
+
+The same track reads `0.999` in `mei_house_inside` and `menu_status_town`, where no emitter
+sounds. The plain `track` rows of these states keep the river's energy (`0.78` to `0.98`,
+`+0.2` to `+1.7` dB): they guard the score's place, not its sound.
 
 <a id="the-cast-channel"></a>
 **The cast channel.** A battle state mid-cast keeps sounding what the cast keys after its instant:
@@ -3765,8 +3851,8 @@ correlation repeats at its pitch period, and a grid over it once moved Gilium's 
 on a cue tail `29` dB under it. `audio-pcm.py` prints each
 state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
 never silent. The seek arm's passes held on the side-band stage are not part of the wait: they wait on
-the applier, not the drive. On the five summon states with a wait the voice lands `-9.0` vsyncs from the
-cast's offset on Theeder, `-9.7` on Nighto, `-8.4` on Orb, `-10.0` on Swordie and `-6.0` on Gilium. These
+the applier, not the drive. On the five summon states with a wait the voice lands `-6.5` vsyncs from the
+cast's offset on Theeder, `-7.7` on Nighto, `+3.2` on Orb, `0.0` on Swordie and `-7.8` on Gilium. These
 shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of the port's
 drive and of the band ahead of the module that the window covers, not emulator variance.
 
@@ -3916,6 +4002,27 @@ staged-voice mask, at the recordings' `1.2` (the emulator-specific cycle cost of
 fitted number here, and the score is against mednafen). The port does not add the `7.4` itself: it
 moves all music alike against nothing the port keys it to. A cue keys as the port's frame reaches it,
 outside this flush, and takes the fixed delay alone.
+
+<a id="an-emitters-level-rides-the-scores-flush"></a>
+**An emitter's level rides the score's flush.** A positional emitter re-volumes its voices every
+part tick through `FUN_800657D0`, which stores the pair in the voice's shadow registers and raises
+its flag (`0x801CE060[v] |= 3`, `0x80065800..0x8006582C`); the flush's per-voice loop
+(`0x80065E0C..0x80065F34`) calls `FUN_8006C048` for every flagged voice, the score's or not, and
+writes the KON after it. So under Rim Elm's river every key-on of the score on the frame's flush
+trails by the river's three voices as well. The field runs at frame step `2` (`0x1F800393`), so
+the writes land on every second flush, and which one is fixed by the main loop that started the
+score: over five recordings under the river, staging them on every second calc from the score's
+first reads `0.997..0.998`, the other phase `0.96..0.97`, and staging them on every calc changes
+nothing (a constant delay the alignment absorbs). A volume-only voice costs less than a keyed one:
+the score's correlation peaks at `0.80..0.90` samples a voice (`0.85` taken), and both `1.2` and
+`0.5` read lower. Before it, the note fit moved the score's percussive tones (`18DC0`, `1EC60` in
+the render's SPU map) two to three samples late in the river states and within a sample in
+`mei_house_inside`, and the slow-attack pads its "vsync off" lines named fitted alike in both, as
+the open question had found. Port: `Sequencer::stage_external_voices` and
+`flush_key_on_lag_with` (`FLUSH_VOLUME_VOICE_Q8`), staged from the emitter's volume arm
+(`AudioDirector::drive_sfx_emitters` through `AudioSink::stage_bgm_volume_writes`); the oracle
+reads the emitter parts off the state (`pcm_retail::EmitterStaging`). Grade `disassembly` for the
+path, `capture` for the cost, which is mednafen's timing model.
 
 <a id="a-loop-jump-does-not-wait-again"></a>
 **A loop's later passes do not wait the delta behind the Loop Start.** With those two gone, `11` of

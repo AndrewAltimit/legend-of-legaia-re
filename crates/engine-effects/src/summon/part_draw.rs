@@ -136,10 +136,18 @@ impl SummonPartRuntime {
     /// arm writes into a part it seated: `+0x14..+0x18` (position), `+0x28`
     /// (roll), `+0x3C..+0x40` (velocity), `+0x42`, `+0x54` (wait), `+0x72`
     /// (scale), `+0x84`, `+0x96` (heading), `+0x98` (speed) and the
-    /// `+0x9C..` block.
+    /// `+0x9C..` block - and, for a capture's snapshot of a part standing
+    /// inside its program, the program counter `+0x70`, the colour word
+    /// `+0x74` (two halves) and the per-tick rates `+0x90..+0x94`.
     pub fn poke(&mut self, off: u16, value: u16) {
         let s = &mut self.state;
         match off {
+            0x70 => s.pc = value as i16,
+            0x74 => s.field_74 = (s.field_74 & 0xFFFF_0000) | u32::from(value),
+            0x76 => s.field_74 = (s.field_74 & 0xFFFF) | (u32::from(value) << 16),
+            0x90 => s.tween_src_x = value as i16,
+            0x92 => s.tween_src_y = value as i16,
+            0x94 => s.tween_src_z = value as i16,
             0x14 => s.world_x = value as i16,
             0x16 => s.world_y = value as i16,
             0x18 => s.world_z = value as i16,

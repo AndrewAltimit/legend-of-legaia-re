@@ -77,6 +77,55 @@ impl World {
         self.casting.homing_holds_lists = fold_pending.then_some(caster as u8);
     }
 
+    /// Whether a landed flight belongs to a monster's cast in the action SM's
+    /// Spirit / Item band (`0x3C..=0x40`), the band a monster's heal or buff
+    /// (a spell record class under `0x14`) runs through. That band owes no
+    /// cast fold: its outcome is `0x3F`'s applier call
+    /// ([`Self::fold_battle_item_action`]), and the flight's hit is the hit
+    /// arm's own damage roll.
+    fn spirit_band_flight(&self, caster: u8) -> bool {
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        caster >= self.party.party_count
+            && (ActionState::SpiritPreArm.as_byte()..=ActionState::SpiritPostDamage.as_byte())
+                .contains(&self.battle_ctx.action_state)
+    }
+
+    /// The effect-child hit arm on a Spirit-band flight's victim. The arm
+    /// does not ask what the cast is: it rolls `FUN_801DD0AC` on the move-power
+    /// row the caster's `+0x1DF` maps to (`0x801F4E64`, `lbu a0,-0x1(v1)` /
+    /// `jal 0x801DD0AC` at `0x801E1888..0x801E188C`) and takes the roll off
+    /// the victim's HP through the safe applier (`0x801E1924..0x801E1960`),
+    /// pushing the number onto the readout ring (`0x801E18B0..0x801E1918`).
+    /// So an Orb's Heal strikes the ally it is about to heal: retail's Killer
+    /// Bee goes `96 -> 46` on the landing, then `+200` at `0x3F`.
+    ///
+    /// PORT: FUN_801E09F8 (`0x801E1844..0x801E1A68`, the hit arm's damage roll)
+    /// REF: FUN_801DD0AC (the roll, through `World::enemy_move_predamage`)
+    pub(in crate::world) fn land_spirit_band_flight_hit(&mut self, caster: u8, victim: u8) {
+        let spell = self
+            .actors
+            .get(usize::from(caster))
+            .map(|a| a.battle.params[0])
+            .unwrap_or(0);
+        // A heal's map entry is `0`, and row `0` of the table is all zeros:
+        // retail rolls it as power `0` (the stat terms alone), where the
+        // port's map lookup reads `0` as "no record".
+        let power = self.enemy_move_power(caster, spell).unwrap_or(0);
+        let Some(amount) = self.enemy_move_predamage(caster, victim, power, spell) else {
+            return;
+        };
+        let stoned = self.battle.actor_is_petrified(victim);
+        self.fold_spell_outcome(legaia_engine_battle::spells::SpellOutcome::Damage {
+            target: victim,
+            amount,
+            element: legaia_engine_battle::spells::SpellElement::Neutral,
+            weakness: false,
+        });
+        if !stoned {
+            self.turn_victim_to_caster(victim, caster);
+        }
+    }
+
     /// The terminator's own spawns, the run of bytes from record `+0x0E` up to
     /// the first zero: a bit-7 byte goes to the 2D pool `FUN_801DFDF0` at slot
     /// `k`'s position and heading, any other to the `0x801F6324` prototype at
@@ -289,6 +338,12 @@ impl World {
             for child in homing.hits {
                 if let Some(victim) = child.checked_sub(1) {
                     self.fold_pending_cast_target(victim);
+                }
+            }
+        } else if self.spirit_band_flight(caster) {
+            for child in homing.hits {
+                if let Some(victim) = child.checked_sub(1) {
+                    self.land_spirit_band_flight_hit(caster, victim);
                 }
             }
         }

@@ -261,10 +261,16 @@
        * only - never over a minigame venue, which owns its own VRAM and
        * camera. Raised by the two branches below after their scene draw. */
       this._fogFrameOk = false;
+      /* Bloom covers every 3D frame the native renderer draws as a scene
+       * target - field, battle and the minigame venues alike (its
+       * `bloom_scene_target` asks no mode). It used to ride the fog's
+       * field-and-battle flag, so a venue never bloomed on this page. */
+      this._venueFrame = false;
       /* The expansion editor's volumes (play-view-editor-overlay.js) go
        * over field frames only; the field branch raises this. */
       this._editorFrame = false;
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
+        this._venueFrame = true;
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
          * before the battle branch: it also handles the VRAM restore on
@@ -673,7 +679,7 @@
       if (!skipDraw && this._fogFrameOk) this._drawFogVolume(rt);
       /* Bloom (an enhancement, off by default - the native renderer's bloom
        * pass twin): over the fogged 3D frame, under the screen prims and HUD. */
-      if (!skipDraw && this._fogFrameOk && this.bloom) this._drawBloom(rt);
+      if (!skipDraw && (this._fogFrameOk || this._venueFrame) && this.bloom) this._drawBloom(rt);
       /* The expansion workbench preview's editor volumes, over the finished
        * field picture and under the screen prims (a no-op elsewhere). */
       if (this._editorFrame && this.editorOverlayOn) this._drawEditorOverlay();
@@ -1092,6 +1098,30 @@
       } catch (e) {
         this._fogBroken = true;
         try { console.warn('fog volume pass disabled:', e); } catch (_) { /* no console */ }
+        this._passUnavailable('volumetric_fog');
+      }
+    }
+
+    /* An enhancement pass this browser's driver could not build: it is off
+     * for the session, and the player is told once - on the notice line and
+     * on the control's own label - rather than left with a ticked box that
+     * draws nothing. The native window has no such failure: its wgpu
+     * pipelines are built against the adapter it requires. */
+    _passUnavailable(id) {
+      if (!this._passesUnavailable) this._passesUnavailable = new Set();
+      if (this._passesUnavailable.has(id)) return;
+      this._passesUnavailable.add(id);
+      const name = { ssao: 'Ambient occlusion', bloom: 'Bloom', volumetric_fog: 'Ground fog' }[id] || id;
+      const box = { ssao: 'play-ssao', bloom: 'play-bloom', volumetric_fog: 'play-ground-fog' }[id];
+      if (typeof this._hotkeyNotice === 'function') {
+        this._hotkeyNotice(`${name}: not available in this browser`);
+      }
+      const el = box && document.getElementById(box);
+      const label = el && el.closest('label');
+      if (label) {
+        label.title = `${name} could not start on this browser's graphics driver; it stays off for this visit. `
+          + (label.title || '');
+        label.classList.add('is-unavailable');
       }
     }
 
@@ -1108,6 +1138,7 @@
       } catch (e) {
         this._bloomBroken = true;
         try { console.warn('bloom pass disabled:', e); } catch (_) { /* no console */ }
+        this._passUnavailable('bloom');
       }
     }
 

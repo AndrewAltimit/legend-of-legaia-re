@@ -248,11 +248,21 @@ pub(super) const PANEL_SCRIM: f32 = 0.94;
 /// foot, so the controls never read as one more line of help.
 const FOOTER_GAP: i32 = legaia_app_theme::spacing::CHROME_LINE_GAP;
 
+/// How far the font's ink reaches below a line's origin: its descenders
+/// (`p`, `g`, `y`) end 14 px down, two below the `HELP_H` line pitch.
+const INK_H: i32 = 14;
+
 /// The height of a Settings / Cheats plate: the heading, `rows` rows, a
 /// `lines`-line help budget, the gap, and the controls line. The controls
-/// line is the plate's last `HELP_H`.
+/// line is the plate's last `INK_H`, so its descenders stay on the plate.
 pub(super) const fn plate_height(rows: usize, lines: usize) -> i32 {
-    15 + rows as i32 * ROW_H + 3 + lines as i32 * HELP_H + FOOTER_GAP + HELP_H
+    15 + rows as i32 * ROW_H + 3 + lines as i32 * HELP_H + FOOTER_GAP + INK_H
+}
+
+/// Where a page's controls line starts, for a plate at `y0` of `height`
+/// ([`plate_height`]).
+pub(super) const fn controls_y(y0: i32, height: i32) -> i32 {
+    y0 + height - INK_H
 }
 
 impl PlayWindowApp {
@@ -749,7 +759,7 @@ impl PlayWindowApp {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
-        y = Y0 + height - HELP_H;
+        y = controls_y(Y0, height);
         match self.options_save_error.borrow().as_deref() {
             Some(e) => put(&mut out, e, (left, y), heading),
             None => put(
@@ -1026,14 +1036,13 @@ mod tests {
     #[test]
     fn the_plate_fits_the_stage_with_a_gap_above_the_controls() {
         let h = plate_height(SHOWN_ROWS, HELP_LINES);
-        // The font's descenders reach 14 px below a line's origin.
-        let controls_y = Y0 + h - HELP_H;
-        assert!(
-            controls_y + 14 <= legaia_engine_ui::BOOT_UI_STAGE_H as i32,
-            "{h}"
-        );
+        // The controls line's descenders end on the plate's last row, and
+        // the plate on the stage.
+        let foot = controls_y(Y0, h);
+        assert_eq!(foot + INK_H, Y0 + h);
+        assert!(Y0 + h <= legaia_engine_ui::BOOT_UI_STAGE_H as i32, "{h}");
         let help_end = Y0 + 15 + SHOWN_ROWS as i32 * ROW_H + 3 + HELP_LINES as i32 * HELP_H;
-        assert!(Y0 + h - HELP_H - help_end >= FOOTER_GAP);
+        assert!(foot - help_end >= FOOTER_GAP);
     }
 
     #[test]

@@ -549,6 +549,10 @@ body:has(> .app.no-chrome) { padding-top: 0; }
 .sidebar-foot a { color: var(--text-muted); }
 .sidebar-foot a:hover { color: var(--accent); }
 
+/* The page list below the zone strip: transparent to layout on a desktop,
+   where the sidebar scrolls; the drawer section turns it into the scroller. */
+.sidebar-list { display: contents; }
+
 /* Zone shortcuts inside the drawer: the icon rail's destinations, which are a
    different set from the page list below them. Hidden while the rail itself is
    on screen; the responsive shell section at the end of this file turns it on
@@ -3316,6 +3320,7 @@ kbd {
   transition: border-color var(--transition), color var(--transition);
 }
 .tb-search:hover { border-color: var(--border-hi); color: var(--text); }
+.tb-search svg { width: 17px; height: 17px; flex: none; }
 .tb-search .kbd {
   font-family: var(--font-mono);
   font-size: 0.68rem;
@@ -4021,19 +4026,30 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
   }
   .sidebar.open { transform: translateX(0); }
   /* The rail's destinations, which the hidden rail no longer provides. They
-     stay pinned: the drawer opens wherever its saved or revealed scroll
-     position left it, and a strip that scrolled with the list went up under
-     the top bar, out of reach. `scroll-padding-top` keeps a keyboard-focused
-     row out from under the pinned strip. The drawer's top padding moves onto
-     the strip, or the list would show through that band above it. */
-  .sidebar { padding-top: 0; scroll-padding-top: 6rem; }
+     stay pinned by structure, not by `position: sticky`: the drawer itself
+     does not scroll, the page list under the strip does. A sticky strip in a
+     scrolling drawer went up under the top bar on phone browsers (Chrome and
+     Firefox on Android). The drawer's padding moves onto the strip and the
+     list, or the list would scroll under a band of the drawer's own. */
+  .sidebar {
+    overflow: hidden;
+    padding: 0;
+  }
   .sidebar-zones {
     display: grid;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    padding-top: 0.9rem;
+    flex: none;
+    padding: 0.9rem 0.85rem 0.75rem;
+    margin: 0;
     background: var(--bg-raised);
+  }
+  .sidebar-list {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.6rem 0.85rem 2rem;
   }
 
   .sidebar-toggle { display: inline-flex; }
@@ -4044,12 +4060,14 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
   .tb-name { display: none; }
   .tb-search .label { display: none; }
   .tb-zones { padding: 2px; }
-  .tb-zone { padding: 0.32rem 0.7rem; }
-  .disc-chip { max-width: 190px; min-width: 0; padding: 0.55rem 0.95rem; }
+  .tb-zone { padding: 0.55rem 0.8rem; }
+  .disc-chip { max-width: 190px; min-width: 0; min-height: 40px; padding: 0.55rem 0.95rem; }
 
   /* Finger-sized: every bar control and every drawer row clears 38px. */
   .tb-mark { width: 38px; height: 38px; border-radius: 9px; }
-  .tb-search { padding: 0.5rem 0.7rem; min-width: 38px; justify-content: center; }
+  .tb-search { padding: 0.5rem 0.7rem; min-width: 40px; min-height: 40px; justify-content: center; }
+  .tb-theme { width: 40px; height: 40px; }
+  .tb-gh { width: 40px; height: 40px; justify-content: center; }
   .sidebar-section-toggle { padding: 0.6rem 0.5rem; }
   .sidebar-nav a { padding: 0.55rem 0.5rem 0.55rem 1.4rem; }
   .sidebar-nav a.nav-child { padding-left: 2.3rem; }
@@ -4078,6 +4096,9 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
      wrapped and keep `anywhere`. */
   .content .table-wrap > table { overflow-wrap: break-word; }
   .content .table-wrap > table th { white-space: nowrap; }
+  /* A first-column identifier (a CLI flag, an opcode) keeps its line:
+     `--images` broke after its dashes. */
+  .content .table-wrap > table td:first-child > code:only-child { white-space: nowrap; }
 }
 
 /* Small phone: the zone pills and the GitHub link both live in the drawer, so
@@ -4090,10 +4111,34 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
 
 @media (max-width: 420px) {
   /* Chip collapses to its status dot - still the "insert disc" control, and
-     still a 34px tap target. */
-  .disc-chip { width: 34px; height: 34px; padding: 0; justify-content: center; }
+     still a 40px tap target. */
+  .disc-chip { width: 40px; height: 40px; padding: 0; justify-content: center; }
   .disc-chip .txt { display: none; }
   .tb-search .kbd { display: none; }
+}
+
+/* A phone's search: the box opens near the top so the results stay above the
+   on-screen keyboard. */
+@media (max-width: 620px) {
+  .search-overlay { padding-top: 0.75rem; }
+  .search-results { max-height: calc(100dvh - 8rem); }
+}
+
+/* A finger, not a cursor. Content controls whose desktop size suits a mouse
+   grow to a 40px target on a touch screen; the keyboard hints of the search
+   box go, since there is no keyboard to press them on. `.info-tip` (the
+   patcher and workbench "?" badges) keeps its drawn size and takes a wider
+   hit area. */
+@media (pointer: coarse) {
+  .search-close { min-width: 40px; min-height: 40px; }
+  .search-foot { display: none; }
+  .content details:not(.disclosure) > summary { padding-block: 0.55rem; }
+  .content details.disclosure > summary { padding-block: 0.65rem; }
+  .info-tip::after { content: ""; position: absolute; inset: -12px; }
+  /* Form fields: a select or a text box is a target wherever it sits. */
+  .content :is(select, input[type=text], input[type=search], input[type=number], input:not([type])) { min-height: 40px; }
+  .disc-slot .browse { min-height: 40px; }
+  .enemy-toggle { min-height: 40px; }
 }
 
 /* ---- Doc diagrams -------------------------------------------------------

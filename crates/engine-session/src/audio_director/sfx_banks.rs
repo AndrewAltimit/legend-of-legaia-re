@@ -109,6 +109,7 @@ impl<S: AudioSink> AudioDirector<S> {
             .with_spu(|spu| legaia_engine_audio::bgm_tail::upload_at(spu, base, &report, body));
         let end = legaia_engine_audio::spu_layout::bank_used_end(&bank).unwrap_or(base);
         self.sfx_vabs.insert(slot, bank);
+        self.rebase_evicted_voices(slot, base, end);
         Some(TailBorrow { slot, base, end })
     }
 

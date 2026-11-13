@@ -126,7 +126,11 @@ impl FrontEnd {
     /// The front end on its publisher-logo stage.
     pub fn logos() -> Self {
         Self {
-            screen: FrontEndScreen::Logos(PublisherLogosSession::new()),
+            screen: FrontEndScreen::Logos(PublisherLogosSession::after_read_init(
+                &legaia_engine_title::publisher_logos::read_init(
+                    legaia_engine_title::publisher_logos::ReadInitFlags::RETAIL,
+                ),
+            )),
         }
     }
 

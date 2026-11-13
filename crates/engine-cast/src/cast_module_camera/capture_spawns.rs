@@ -922,6 +922,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         938 if body == Some(super::CHAOS_BREATH_BODY) => true,
         950 if body == Some(super::SHADOW_BREAK_BODY) => true,
         964 => true,
+        963 => body == Some(super::GENOCIDAL_CANNON_BODY),
         947 | 948 => true,
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
         949 => true,
@@ -999,6 +1000,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         ),
         942 => matches!(body, Some(super::POWER_UP_BODY | super::DARK_TYPHOON_BODY)),
         958 => body == Some(super::BLAZING_SLASH_BODY),
+        963 => body == Some(super::GENOCIDAL_CANNON_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,

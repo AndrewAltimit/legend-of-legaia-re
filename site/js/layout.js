@@ -480,10 +480,18 @@ function buildSidebar(active, depth, zone) {
      top-level destination. Hidden by CSS while the rail is on screen. */
   sidebar.appendChild(buildZoneShortcuts(active, zone, depth));
 
+  /* Everything below the strip. On a desktop it is `display: contents` and
+     the sidebar itself scrolls; in the phone drawer it is the scroller, so
+     the strip above it stays put without relying on `position: sticky`,
+     which some phone browsers let scroll up under the top bar. */
+  const list = document.createElement('div');
+  list.className = 'sidebar-list';
+  sidebar.appendChild(list);
+
   const head = document.createElement('div');
   head.className = 'sidebar-head';
   head.textContent = zone === 'explore' ? 'Explore' : 'Documentation';
-  sidebar.appendChild(head);
+  list.appendChild(head);
 
   const sections = zone === 'explore'
     ? exploreNavSections()
@@ -559,7 +567,7 @@ function buildSidebar(active, depth, zone) {
       tog.setAttribute('aria-expanded', 'false');
     }
 
-    sidebar.appendChild(sec);
+    list.appendChild(sec);
   }
 
   const foot = document.createElement('div');
@@ -568,7 +576,7 @@ function buildSidebar(active, depth, zone) {
     '<a href="https://github.com/AndrewAltimit/legend-of-legaia-re" target="_blank" rel="noopener">GitHub →</a><br>' +
     'Tooling: MIT or Unlicense.<br>' +
     'No Sony bytes shipped.';
-  sidebar.appendChild(foot);
+  list.appendChild(foot);
 
   return sidebar;
 }
@@ -695,6 +703,16 @@ function buildThemeToggle() {
 }
 
 /* ---------- Heading ID assignment (before anchors / TOC) ---------- */
+/* A heading's own words: a tooltip inside it (`.info-tip` and its pop-up, on the
+   patcher's option headings) is not part of the name, or the slug and the TOC
+   entry carry the whole tooltip. */
+function headingText(h) {
+  if (!h.querySelector('.info-tip, .tip-pop')) return (h.textContent || '').trim();
+  const c = h.cloneNode(true);
+  c.querySelectorAll('.info-tip, .tip-pop').forEach((e) => e.remove());
+  return (c.textContent || '').trim();
+}
+
 function assignHeadingIds() {
   const content = document.querySelector('.content');
   if (!content) return;
@@ -704,7 +722,7 @@ function assignHeadingIds() {
     if (h.tagName === 'H2' && sec && sec.id) {
       h.id = sec.id;
     } else {
-      h.id = slugify(h.textContent || '') || ('h-' + Math.random().toString(36).slice(2, 8));
+      h.id = slugify(headingText(h)) || ('h-' + Math.random().toString(36).slice(2, 8));
     }
   });
 }
@@ -734,7 +752,7 @@ function buildTocRail() {
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.href = '#' + h.id;
-    a.textContent = (h.textContent || '').trim();
+    a.textContent = headingText(h);
     a.dataset.target = h.id;
     if (h.tagName === 'H3') a.classList.add('h3');
     li.appendChild(a);
@@ -827,7 +845,7 @@ function buildTopbar(active, zone, depth) {
     '</nav>' +
     '<div class="tb-spacer"></div>' +
     '<button type="button" class="tb-search" id="open-search" aria-label="Open search">' +
-      '<span class="icon">⌕</span><span class="label">Search</span><span class="kbd">/</span>' +
+      railSvg('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>') + '<span class="label">Search</span><span class="kbd">/</span>' +
     '</button>' +
     '<button type="button" class="disc-chip" id="disc-chip" title="The disc is read locally and cached in this browser - nothing is uploaded.">' +
       '<span class="dot"></span><span class="txt">Checking disc…</span>' +
@@ -1027,22 +1045,36 @@ function buildSearchOverlay(depth) {
    while only the middle/right panels change. */
 const SIDEBAR_SCROLL_KEY = 'sidebar-scroll';
 
+/* The element that scrolls the page list: the drawer's list on a phone, the
+   sidebar itself where the list is `display: contents`. */
+function sidebarScroller(sidebar) {
+  const list = sidebar.querySelector('.sidebar-list');
+  if (list && /auto|scroll/.test(getComputedStyle(list).overflowY)) return list;
+  return sidebar;
+}
+
 function restoreSidebarScroll(sidebar) {
   try {
     const saved = parseInt(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || '', 10);
-    if (!isNaN(saved)) sidebar.scrollTop = saved;
+    if (!isNaN(saved)) sidebarScroller(sidebar).scrollTop = saved;
   } catch (e) {}
 
+  /* Both candidates listen: the viewport can cross the drawer breakpoint
+     (a phone rotating) after the page loads. */
   let raf = 0;
-  sidebar.addEventListener('scroll', () => {
+  const save = (ev) => {
     if (raf) return;
+    const el = ev.currentTarget;
     raf = requestAnimationFrame(() => {
       raf = 0;
       try {
-        sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebar.scrollTop));
+        sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
       } catch (e) {}
     });
-  }, { passive: true });
+  };
+  sidebar.addEventListener('scroll', save, { passive: true });
+  const list = sidebar.querySelector('.sidebar-list');
+  if (list) list.addEventListener('scroll', save, { passive: true });
 }
 
 /* The current page's row, scrolled into the sidebar's view when the restored
@@ -1055,15 +1087,13 @@ function revealActiveRow(sidebar) {
      active too, and that one is always at the top. */
   const row = sidebar.querySelector('.sidebar-nav a.active');
   if (!row) return;
-  const box = sidebar.getBoundingClientRect();
+  const scroller = sidebarScroller(sidebar);
+  const box = scroller.getBoundingClientRect();
   const r = row.getBoundingClientRect();
-  /* The phone drawer pins the zone strip over the list's top edge, so a row
-     under it is as hidden as one above the box. The strip has no height where
-     the rail replaces it. */
-  const strip = sidebar.querySelector('.sidebar-zones');
-  const floor = strip && strip.offsetHeight ? strip.getBoundingClientRect().bottom : box.top;
-  if (r.top < floor || r.bottom > box.bottom) {
-    sidebar.scrollTop += (r.top - floor) - (box.bottom - floor) / 3;
+  /* Where the sidebar itself scrolls (desktop), the zone strip has no
+     height; in the phone drawer the strip sits outside the scroller. */
+  if (r.top < box.top || r.bottom > box.bottom) {
+    scroller.scrollTop += (r.top - box.top) - box.height / 3;
   }
 }
 

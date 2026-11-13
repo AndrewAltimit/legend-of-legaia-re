@@ -42,8 +42,9 @@ pub struct LogoQuadView {
 /// * `alpha` - the session's fade level, `0.0 ..= 1.0`.
 ///
 /// The stage is fitted into the surface **integer-scaled** so the logos stay
-/// crisp, then centred; `max(1)` keeps a surface smaller than the stage
-/// rendering at native size. Each source rect is clipped to the decoded TIM -
+/// crisp, then centred; a surface smaller than the stage (the 320x240 native
+/// target) takes the exact ratio, so the whole 640x480 boot frame fits it as
+/// it fits a 320x240 display. Each source rect is clipped to the decoded TIM -
 /// a descriptor's `w`/`h` can name the last row of a strip that is not there.
 pub fn publisher_logo_sprite_draws(
     quads: &[LogoQuadView],
@@ -57,9 +58,7 @@ pub fn publisher_logo_sprite_draws(
     if quads.is_empty() || atlas_w == 0 || atlas_h == 0 || stage.0 == 0 || stage.1 == 0 {
         return Vec::new();
     }
-    let scale = (surface_w / stage.0).min(surface_h / stage.1).max(1);
-    let stage_x0 = (surface_w as i32 - (stage.0 * scale) as i32) / 2;
-    let stage_y0 = (surface_h as i32 - (stage.1 * scale) as i32) / 2;
+    let fit = StageFit::new(stage, surface_w, surface_h);
     let color = [1.0, 1.0, 1.0, alpha.clamp(0.0, 1.0)];
     let mut out = Vec::with_capacity(quads.len());
     for q in quads {
@@ -71,17 +70,104 @@ pub fn publisher_logo_sprite_draws(
         }
         let (dx, dy, dw, dh) = q.dst;
         out.push(SpriteDraw {
-            dst: (
-                stage_x0 + dx * scale as i32,
-                stage_y0 + dy * scale as i32,
-                dw * scale,
-                dh * scale,
-            ),
+            dst: fit.rect((dx, dy, dw, dh)),
             src: (atlas_x + sx, atlas_y + sy, sw, sh),
             color,
         });
     }
     out
+}
+
+/// How the stage lands on the surface: `v * num / den` from a centred origin.
+///
+/// A surface at least the stage's size takes the largest **integer** scale,
+/// so the logos stay crisp. A smaller one - the 320x240 native target the
+/// PSX render mode draws into - takes the exact ratio instead, which is what
+/// the 640x480 boot frame is on a 320x240 display: drawn at the stage's own
+/// size it would overflow the surface and show only its middle.
+#[derive(Debug, Clone, Copy)]
+struct StageFit {
+    num: i64,
+    den: i64,
+    x0: i64,
+    y0: i64,
+}
+
+impl StageFit {
+    fn new(stage: (u32, u32), surface_w: u32, surface_h: u32) -> Self {
+        let (st_w, st_h) = (i64::from(stage.0.max(1)), i64::from(stage.1.max(1)));
+        let (sw, sh) = (i64::from(surface_w), i64::from(surface_h));
+        let (num, den) = if sw >= st_w && sh >= st_h {
+            ((sw / st_w).min(sh / st_h), 1)
+        } else if sw * st_h <= sh * st_w {
+            (sw.max(1), st_w)
+        } else {
+            (sh.max(1), st_h)
+        };
+        Self {
+            num,
+            den,
+            x0: (sw - st_w * num / den) / 2,
+            y0: (sh - st_h * num / den) / 2,
+        }
+    }
+
+    fn at(&self, v: i64) -> i64 {
+        (v * self.num).div_euclid(self.den)
+    }
+
+    /// A stage rect on the surface; the far edge maps on its own, so
+    /// abutting rects stay abutting.
+    fn rect(&self, (x, y, w, h): (i32, i32, u32, u32)) -> (i32, i32, u32, u32) {
+        let (x, y) = (i64::from(x), i64::from(y));
+        let (x1, y1) = (x + i64::from(w), y + i64::from(h));
+        (
+            (self.x0 + self.at(x)) as i32,
+            (self.y0 + self.at(y)) as i32,
+            (self.at(x1) - self.at(x)) as u32,
+            (self.at(y1) - self.at(y)) as u32,
+        )
+    }
+}
+
+/// Where the publisher pass's screen wash lands on the surface: `rect`
+/// (`publisher_logos::WASH_RECT`, in the stage) through the same fit as the
+/// logo quads.
+pub fn publisher_logo_wash_rect(
+    rect: (i32, i32, u32, u32),
+    stage: (u32, u32),
+    surface_w: u32,
+    surface_h: u32,
+) -> (i32, i32, u32, u32) {
+    StageFit::new(stage, surface_w, surface_h).rect(rect)
+}
+
+/// The publisher pass's screen wash as one sprite over the atlas's white
+/// block (`LogosAtlas::white`), for a host that draws it through its sprite
+/// overlay under an `abr = 1` (`B + F`) blend span
+/// (`publisher_logos::WASH_ABR`).
+///
+/// Retail's quad is untextured, so `F` is its grey `level` itself. The tint
+/// that reproduces it over a white texel is the grey's 5-bit value over 31:
+/// the overlay's 5-bit modulation (`ui_tint`) then lands on exactly
+/// `level >> 3`, the colour the GPU blends.
+pub fn publisher_logo_wash_draw(
+    rect: (i32, i32, u32, u32),
+    stage: (u32, u32),
+    white: (u32, u32, u32, u32),
+    level: u8,
+    surface_w: u32,
+    surface_h: u32,
+) -> SpriteDraw {
+    let g = f32::from(level >> 3) / 31.0;
+    let (wx, wy, ww, wh) = white;
+    // The block's interior texel, so no filter reaches past it.
+    let src = (wx + ww / 2 - 1, wy + wh / 2 - 1, 2, 2);
+    SpriteDraw {
+        dst: publisher_logo_wash_rect(rect, stage, surface_w, surface_h),
+        src,
+        color: [g, g, g, 1.0],
+    }
 }
 
 #[cfg(test)]
@@ -126,12 +212,21 @@ mod tests {
         assert_eq!(d[0].dst.1, (700 - 480) / 2 + 192);
     }
 
-    /// A surface smaller than the stage still renders at native size rather
-    /// than collapsing to a zero scale.
+    /// A surface smaller than the stage - the 320x240 native target - takes
+    /// the whole stage at its exact ratio rather than showing the middle of
+    /// it at native size; the pair still meets on the centre line.
     #[test]
-    fn a_sub_stage_surface_keeps_native_size() {
+    fn a_sub_stage_surface_takes_the_whole_stage() {
         let d = publisher_logo_sprite_draws(&scea(), (0, 0, 253, 128), STAGE, 1.0, 320, 240);
-        assert_eq!(d[0].dst.2, 252);
+        assert_eq!(d[0].dst, (34, 96, 126, 32));
+        assert_eq!(d[1].dst, (160, 96, 126, 32));
+        // A sub-stage surface of another aspect letterboxes the ratio.
+        let d = publisher_logo_sprite_draws(&scea(), (0, 0, 253, 128), STAGE, 1.0, 320, 400);
+        assert_eq!(d[0].dst.1, (400 - 240) / 2 + 96);
+        assert_eq!(
+            publisher_logo_wash_rect((0, 24, 640, 436), STAGE, 320, 240),
+            (0, 12, 320, 218)
+        );
     }
 
     /// The source rect is clipped to the decoded TIM: a descriptor naming a
@@ -143,6 +238,27 @@ mod tests {
         let d = publisher_logo_sprite_draws(&scea(), (0, 0, 253, 100), STAGE, 1.0, 640, 480);
         assert_eq!(d[0].src.3, 64);
         assert_eq!(d[1].src.3, 36);
+    }
+
+    /// The wash rides the logo quads' fit, and its tint is the grey's
+    /// 5-bit step.
+    #[test]
+    fn the_wash_takes_the_stage_fit_and_the_5_bit_grey() {
+        let rect = (0, 24, 640, 436);
+        assert_eq!(publisher_logo_wash_rect(rect, STAGE, 640, 480), rect);
+        assert_eq!(
+            publisher_logo_wash_rect(rect, STAGE, 1280, 960),
+            (0, 48, 1280, 872)
+        );
+        assert_eq!(
+            publisher_logo_wash_rect(rect, STAGE, 1000, 700).1,
+            (700 - 480) / 2 + 24
+        );
+        let d = publisher_logo_wash_draw(rect, STAGE, (0, 500, 4, 4), 0xFF, 640, 480);
+        assert_eq!(d.color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(d.src, (1, 501, 2, 2));
+        let d = publisher_logo_wash_draw(rect, STAGE, (0, 500, 4, 4), 0x14, 640, 480);
+        assert_eq!(d.color[0], 2.0 / 31.0);
     }
 
     /// The fade level becomes the tint alpha and is clamped, and an empty

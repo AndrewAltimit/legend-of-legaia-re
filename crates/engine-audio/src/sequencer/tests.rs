@@ -1,4 +1,4 @@
-use super::voices::flush_key_on_lag;
+use super::voices::{flush_key_on_lag, flush_key_on_lag_with};
 use super::*;
 use crate::Spu;
 use crate::spu::adsr::Phase;
@@ -637,6 +637,22 @@ fn the_kon_write_trails_the_flush_by_its_staged_voices() {
     assert_eq!(flush_key_on_lag(2), 1);
     assert_eq!(flush_key_on_lag(6), 6);
     assert_eq!(flush_key_on_lag(11), 12);
+}
+
+/// A positional emitter's three voices, re-volumed on the frame's vsync, put
+/// `0.85` samples each on that flush's key-ons, and nothing on a flush with
+/// no key-on.
+#[test]
+fn an_emitters_volume_writes_delay_the_scores_key_ons() {
+    assert_eq!(flush_key_on_lag_with(1, 3), 3);
+    assert_eq!(flush_key_on_lag_with(2, 3), 4);
+    assert_eq!(flush_key_on_lag_with(4, 0), flush_key_on_lag(4));
+
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    seq.stage_external_voices(0x7_0000);
+    seq.flush_key_ons(&mut spu);
+    assert_eq!(seq.last_flush_staged(), 0, "nothing keyed: the mask clears");
 }
 
 /// A finite count jumps back until it runs out: `3` plays the body three times.

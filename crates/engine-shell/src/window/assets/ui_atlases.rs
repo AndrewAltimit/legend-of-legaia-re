@@ -29,6 +29,7 @@ impl PlayWindowApp {
                     );
                     self.publisher_logos = Some(PublisherLogosAssets {
                         rects: atlas_data.rects,
+                        white: atlas_data.white,
                         atlas,
                     });
                 }

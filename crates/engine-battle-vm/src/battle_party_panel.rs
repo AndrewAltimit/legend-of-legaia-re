@@ -607,8 +607,11 @@ pub enum ResultSubject {
     /// The roster arm: the fixed team string, whose `0xC1` escape operand is
     /// patched to the **lead's** index - every one of the four patches reads
     /// the first slot (`lbu -0x42f0(s2)` at `0x801D86B4` / `0x801D86DC` /
-    /// `0x801D8704` / `0x801D8728`), so the team is always named after the
-    /// lead, never after the member in that seat.
+    /// `0x801D8704` / `0x801D8728`), so the team is named after the lead,
+    /// never after the member in that seat. A win's results frame then
+    /// re-points the victory buffer's operand at the pose actor
+    /// (`0x8004F624..0x8004F658`, `legaia_engine_battle_hud`'s
+    /// `battle_spoils_leader`).
     LeadsTeam { escape_operand: u8 },
 }
 

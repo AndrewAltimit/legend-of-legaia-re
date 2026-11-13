@@ -319,6 +319,25 @@ pub fn cutscene_narration_draws_for(
 
 /// Stage-space centre column of the narration crawl and the title card.
 pub const CUTSCENE_TEXT_CENTER_X: i32 = 160;
+
+/// What a crawl line's `0x1F` lead adds to retail's measure of it. The roller
+/// measures the whole page, lead included (`jal 0x80035F04` with `a0 = s1` at
+/// `0x80037588`), and `FUN_80035F04` walks every byte up to the `0x00`, so the
+/// lead advances `widths[0x1F] + DAT_800740E8 + 1`: the SCUS width table's
+/// byte for `0x1F` (`0x80073F3B`) is `0`, and the glyph pad reads `0` under
+/// the crawl (`vozz_ozma_hatching_crawl`'s RAM).
+pub const CRAWL_LEAD_ADVANCE: i32 = 1;
+
+/// The left edge retail draws a crawl line at, from the advance of the
+/// line's text (the page past its lead). The roller draws from the page's
+/// second byte (`a0 = s1 + 1` at `0x80037594`) at
+/// `x = (0x140 - width) >> 1` (`0x8003759C..0x800375AC`), `width` being the
+/// whole page's measure, so the line sits one pixel left of the text's own
+/// centre on `0xA0` and the halving floors.
+// PORT: FUN_80037174 (the line's x, 0x80037588..0x800375AC)
+pub const fn crawl_line_left_x(text_advance: i32) -> i32 {
+    (0x140 - (text_advance + CRAWL_LEAD_ADVANCE)) >> 1
+}
 /// Stage-space top row of the title card's first page (the capture-pinned
 /// band `y = 92..130`).
 pub const CUTSCENE_CARD_TOP_Y: i32 = 92;
@@ -331,8 +350,9 @@ pub const CUTSCENE_CARD_PITCH: i32 = 16;
 ///
 /// `crawl` is each visible roller line as `(text, top_y)` with `top_y` in the
 /// PSX framebuffer's 240 lines (`NarrationLine::y`); `card` is the title
-/// card's pages in order. Every line is centred on
-/// [`CUTSCENE_TEXT_CENTER_X`] at the font's own 1x glyph size - the retail
+/// card's pages in order. A crawl line sits where the roller draws it
+/// ([`crawl_line_left_x`]); a card page is centred on
+/// [`CUTSCENE_TEXT_CENTER_X`]. Both draw at the font's own 1x glyph size - the retail
 /// crawl (`FUN_80037174`) prints one 16-line-pitch row of stage-sized glyphs,
 /// so a host that scales only the row's Y into its surface draws the glyphs a
 /// fraction of retail's size and the rows further apart than 16 stage lines.
@@ -344,16 +364,12 @@ pub fn cutscene_text_stage_draws(
 ) -> Vec<TextDraw> {
     let mut out = Vec::new();
     for &(text, y) in crawl {
-        if !(0..=240 - 8).contains(&y) {
+        if !(0..=240 - 8).contains(&y) || text.is_empty() {
             continue;
         }
-        out.extend(cutscene_narration_draws_for(
-            font,
-            text,
-            CUTSCENE_TEXT_CENTER_X,
-            y,
-            color,
-        ));
+        let layout = font.layout_ascii(text);
+        let left_x = crawl_line_left_x(layout.advance_x as i32);
+        out.extend(text_draws_for(&layout, (left_x, y), color));
     }
     for (i, text) in card.iter().enumerate() {
         let y = CUTSCENE_CARD_TOP_Y + CUTSCENE_CARD_PITCH * i as i32;
@@ -380,10 +396,7 @@ mod cutscene_text_tests {
         let draws = cutscene_text_stage_draws(&font, &[(text, 100), (text, 116)], &[], [1.0; 4]);
         assert!(!draws.is_empty());
         let lefts: Vec<i32> = draws.iter().map(|d| d.dst.0).collect();
-        assert_eq!(
-            *lefts.iter().min().unwrap(),
-            CUTSCENE_TEXT_CENTER_X - width / 2
-        );
+        assert_eq!(*lefts.iter().min().unwrap(), crawl_line_left_x(width));
         // Two rows, one retail line pitch apart, at their own stage Ys - no
         // surface scale applied here; the host's stage transform does it.
         let mut tops: Vec<i32> = draws.iter().map(|d| d.dst.1).collect();
@@ -391,6 +404,24 @@ mod cutscene_text_tests {
         tops.dedup();
         assert_eq!(tops.first().copied(), Some(100));
         assert_eq!(tops.last().copied(), Some(116));
+    }
+
+    /// The roller measures the page with its `0x1F` lead and draws past it,
+    /// floored: a line sits one pixel left of `160 - advance / 2`, whatever
+    /// the advance's parity (`vozz_ozma_hatching_crawl` drew every line one
+    /// pixel right of retail).
+    #[test]
+    fn a_crawl_line_sits_where_the_roller_draws_it() {
+        assert_eq!(crawl_line_left_x(100), (0x140 - 101) >> 1);
+        assert_eq!(crawl_line_left_x(100), 109);
+        assert_eq!(crawl_line_left_x(101), 109);
+        for w in 0..300 {
+            assert_eq!(
+                crawl_line_left_x(w),
+                CUTSCENE_TEXT_CENTER_X - w / 2 - 1,
+                "{w}"
+            );
+        }
     }
 
     #[test]

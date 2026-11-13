@@ -4,6 +4,34 @@
 use super::*;
 
 impl World {
+    /// The inline narration blocks (crawls and title cards) a record's body
+    /// carries, with each page's name escapes resolved through the live
+    /// tables: the sites the slice runner opens when its PC reaches them.
+    fn record_narration_sites(
+        &self,
+        body: &[u8],
+    ) -> Vec<legaia_engine_field::cutscene_timeline::NarrationSite> {
+        legaia_scene_formats::cutscene_text::parse_narration(body)
+            .into_iter()
+            .filter(|b| b.count_matches() && !b.pages.is_empty())
+            .map(|b| {
+                let (start, end) = b.byte_span();
+                debug_assert_eq!(start, b.op_offset);
+                legaia_engine_field::cutscene_timeline::NarrationSite {
+                    op_offset: b.op_offset,
+                    end: end.min(body.len()),
+                    pages: b
+                        .pages
+                        .iter()
+                        .map(|p| self.narration_page_text(&p.raw))
+                        .collect(),
+                    kind: b.kind,
+                    target: b.target,
+                }
+            })
+            .collect()
+    }
+
     /// Install a field-VM op-`0x44` SPAWN_RECORD request: re-base the GLOBAL
     /// record index into partition 2 (`global - N0 - N1`, retail
     /// `FUN_8003BDE0`), check the record's C1/C2 story-flag gates, and install
@@ -106,8 +134,8 @@ impl World {
     /// Unlike [`Self::install_cutscene_timeline_record`] this does NOT
     /// re-spawn the per-actor channels (an ordinary scene's channels are
     /// seeded at entry by [`Self::seed_field_channels`] and must keep their
-    /// state) and does not parse inline narration blocks (the crawl roller is
-    /// a modal-timeline presentation).
+    /// state). It does parse the record's inline narration blocks: a crawl
+    /// op opens its roller from any context.
     // REF: FUN_8003BDE0
     pub fn install_helper_record(
         &mut self,
@@ -138,9 +166,17 @@ impl World {
         let Some(body) = man.get(script_start..script_start + body_len) else {
             return false;
         };
-        self.field_vm.helper_contexts.push(
-            legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body.to_vec(), pc0),
-        );
+        // The crawl op (`4C 80` / `CC <id> 80`) spawns its roller from
+        // whichever context runs it (`0x801E1ECC..0x801E1FBC` halt-acquires
+        // the op's target and allocates `FUN_80037174` over the pages), so a
+        // helper record opens its crawls exactly as a modal timeline does:
+        // `rikuroa` `P2[54]`, which the entry script spawns with `44 60`
+        // once `0x2C9` is up, carries Terra's crawl to Noa on actor `0x05`.
+        let narration_blocks = self.record_narration_sites(body);
+        let mut tl =
+            legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body.to_vec(), pc0);
+        tl.narration_blocks = narration_blocks;
+        self.field_vm.helper_contexts.push(tl);
         // The same spawn tail as `Self::install_gated_p2_record`: the kick at
         // `0x8003C0D4` and the four-tick roll hold at `0x8003C0E4`.
         self.kick_field_npc_motion_pause();
@@ -250,26 +286,7 @@ impl World {
             return false;
         };
         let body = body.to_vec();
-        let narration_blocks: Vec<legaia_engine_field::cutscene_timeline::NarrationSite> =
-            legaia_scene_formats::cutscene_text::parse_narration(&body)
-                .into_iter()
-                .filter(|b| b.count_matches() && !b.pages.is_empty())
-                .map(|b| {
-                    let (start, end) = b.byte_span();
-                    debug_assert_eq!(start, b.op_offset);
-                    legaia_engine_field::cutscene_timeline::NarrationSite {
-                        op_offset: b.op_offset,
-                        end: end.min(body.len()),
-                        pages: b
-                            .pages
-                            .iter()
-                            .map(|p| self.narration_page_text(&p.raw))
-                            .collect(),
-                        kind: b.kind,
-                        target: b.target,
-                    }
-                })
-                .collect();
+        let narration_blocks = self.record_narration_sites(&body);
         let mut tl = legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(body, pc0);
         tl.narration_blocks = narration_blocks;
         if trace || std::env::var_os("LEGAIA_DIAG_TIMELINE").is_some() {

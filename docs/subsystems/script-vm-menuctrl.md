@@ -1007,7 +1007,15 @@ below `0xF0`, clearing ctx flag `0x01000000`) or the player bank
 `FUN_80024E08(ctx, model)`: `+0x5C = 0`, `+0x64 = model`,
 `+0x10 &= ~0x1000`, the `+0x60` mirror on the world map, then the re-stage
 `FUN_80020F88`, which binds the actor's render node to the TMD at pool slot
-`+0x64` - the actor starts drawing the new mesh. The census counts hundreds of
+`+0x64` - the actor starts drawing the new mesh. The re-stage re-sizes the
+render node too: `FUN_80024D78` writes the new TMD's object count into it
+(`0x80024D94..0x80024D9C`) and one part pointer per object, so the clip bound
+next poses the new mesh's parts, whatever the old model's count was. `dolk`
+`P2[11]`, the pens beat after the Genesis Tree revives, turns a ten- and a
+seven-part monster into four-part people (`CC 24 50 85 00` then `A2 24 1B`,
+`CC 25 50 86 00` then `A2 25 1C`); the port drops the slot's bound bone count
+on a new model (`World::set_field_npc_live_model`), which had refused the
+four-bone clips and drawn each person under the monster's pose. The census counts hundreds of
 clean sites across most field scenes. Aimed at the player (`CC F8 50 ..`, four
 sites: `jagaroom` twice with `0x26`, `urudre1` with `0x5D` and then `0xF0`) it
 resolves through `FUN_8003C83C` to the player object, so the party-bank bit and
@@ -1042,6 +1050,10 @@ executing context, or the `CC <t> 51` target):
    `+0x26`, and a floor re-sample (`FUN_80019278`) into `+0x16` when
    `+0x10` carries a `0x20200` bit or `_DAT_8007B6A8` is set, never under
    `0x20000000` (`0x801E1904..0x801E1940`). No walk kernel is armed: it is a teleport.
+   The parked-sentinel tile `(0x7F, 0x7F)` seats the player in the hide box like
+   anyone else: `map01` `P2[29]` hides Vahn with `CC F8 51 7F 7F 80 02` before its
+   pan from the Genesis Tree's light to Drake Castle, and the player arm then
+   re-centres on that tile.
 4. **Clip.** On the player (`0x801E1954..0x801E1A3C`) the `move_id` is the
    clip base `_DAT_8007BDD8`, picked and bound at once
    ([`field-locomotion.md`](field-locomotion.md#the-clip-base-and-the-settle-tail)).

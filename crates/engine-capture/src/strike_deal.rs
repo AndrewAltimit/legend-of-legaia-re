@@ -79,7 +79,55 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
             *slot = atk;
         }
     }
+    stand_dealt_guard(world);
     deal_hit_words(world, deal);
+}
+
+/// The party seats retail held in the Spirit stance (`+0x1DE == 4`) when the
+/// strike began (`LEGAIA_BATTLE_GUARD`, the probe's `guard=`), standing in it.
+///
+/// The block roll scales the defender's side by `3 / 2` for that stance
+/// (`0x801EC6C0..0x801EC6D4`), and the damage roll halves a guarded hit, so a
+/// struck member's stance decides the swing's verdict as much as the seed
+/// word does. The replay's drive commits a plain Attack for every member but
+/// on a whole-party Spirit round, so a capture whose round mixed the two
+/// (`battle_korb2_warhalf_strike`: Vahn and Gala on Spirit, Noa on Attack)
+/// replayed an unguarded Vahn: its second swing landed where retail's roll
+/// read `683 < 978` and blocked.
+fn stand_dealt_guard(world: &mut World) {
+    let forced = world.battle.forced_guard;
+    for (g, f) in world.battle.guarding.iter_mut().zip(forced) {
+        *g |= f;
+    }
+}
+
+/// `LEGAIA_FILM_GUARD=seat[,seat..]`: the party seats a film's recording held
+/// in the Spirit stance (`+0x1DE == 4`) when its cast began, the stance every
+/// other seat is taken out of; `-` or an empty list is a party out of it. A
+/// malformed seat is ignored.
+pub fn film_guard_from_env(v: &str) -> [bool; 3] {
+    let mut seats = [false; 3];
+    for s in v.split(',').filter_map(|t| t.trim().parse::<usize>().ok()) {
+        if let Some(g) = seats.get_mut(s) {
+            *g = true;
+        }
+    }
+    seats
+}
+
+/// Stand the party in exactly the recording's stance (`LEGAIA_FILM_GUARD`).
+///
+/// A `--physical` film keeps the state's drive, and the drive commits Spirit
+/// for every member while a monster casts (`BattleDrive::Action`), so the
+/// cast's victims stood guarded whatever retail's party held: Gilium's
+/// Thunder Storm from `battle_chitei2_gilium_thunder_storm_mid_cast` landed
+/// `148` / `235` / `148` on a guarded party where retail's unguarded one took
+/// `583` / `745` / `544`. The wrappers double the defender roll on the stance
+/// and the finisher halves the hit (`0x801EC6C0..0x801EC6D4`), so the stance
+/// is as much the hit's input as the seed word. A harness seat: a play host
+/// never sets it.
+pub fn stand_film_guard(world: &mut World, seats: [bool; 3]) {
+    world.battle.guarding = seats;
 }
 
 /// Arm the hit words alone: the deal of a cast whose hits are the melee
@@ -156,6 +204,28 @@ mod tests {
         b.current_anim = 7;
         restage_dealt_byte(&mut b, &[8, 7, 6]);
         assert_eq!(b.queued_anim, 7);
+    }
+
+    #[test]
+    fn the_deal_stands_the_captured_guards_in_the_spirit_stance() {
+        let mut world = World::new();
+        world.battle.forced_guard = [true, false, true];
+        world.battle.guarding = [false, true, false];
+        stand_dealt_guard(&mut world);
+        // A seat the replay put on Spirit itself keeps it.
+        assert_eq!(world.battle.guarding, [true, true, true]);
+    }
+
+    #[test]
+    fn the_film_guard_stands_exactly_the_recorded_stance() {
+        let mut world = World::new();
+        // The drive committed Spirit for the whole party; retail's held none.
+        world.battle.guarding = [true, true, true];
+        stand_film_guard(&mut world, film_guard_from_env("-"));
+        assert_eq!(world.battle.guarding, [false, false, false]);
+        stand_film_guard(&mut world, film_guard_from_env("0,2,9,x"));
+        assert_eq!(world.battle.guarding, [true, false, true]);
+        assert_eq!(film_guard_from_env(""), [false; 3]);
     }
 
     #[test]

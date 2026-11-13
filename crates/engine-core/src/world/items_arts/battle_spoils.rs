@@ -329,6 +329,9 @@ impl World {
             no_reward,
             || self.next_rand(),
         );
+        // A capture's own outcome where the corpus seeds one
+        // (`BattleState::forced_drop`); the draws above still ran.
+        let item = self.battle.forced_drop.take().unwrap_or(item);
         let mut drops: Vec<u8> = Vec::new();
         // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
         if item != 0 && self.held_count_by_id(item) != legaia_engine_battle::battle_steal::HELD_CAP

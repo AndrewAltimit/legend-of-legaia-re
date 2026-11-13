@@ -195,6 +195,52 @@ fn hp_readout_guard_releases_the_absorbing_readout() {
     assert!(!t.hp_readout_guard);
 }
 
+/// The guard leaves a readout that runs ahead of a banked melee combo
+/// alone: mid-combo the hits have drained into the readout while live HP
+/// waits for the end-of-combo write, so readout below live HP with an empty
+/// accumulator is retail's own state there. Measured against live HP alone,
+/// the guard counted the readout back up between hits (issue #589's down /
+/// up / down roll in the Caruban fight).
+#[test]
+fn hp_readout_guard_holds_a_readout_ahead_of_a_banked_combo() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.toggles.hp_readout_guard = true;
+    let a = &mut world.actors[0].battle;
+    a.max_hp = 500;
+    a.hp = 426;
+    a.hp_display = Some(426);
+    a.hp_bar_pending = 0;
+    // Two banked hits, each seeding the readout the way FUN_801EC3E4 does.
+    for dmg in [29u16, 22] {
+        let a = &mut world.actors[0].battle;
+        a.damage_accum += u32::from(dmg);
+        a.accumulate_hp_bar(i32::from(dmg));
+        for _ in 0..64 {
+            world.tick_battle_hp_bars();
+        }
+        let a = &world.actors[0].battle;
+        assert_eq!(a.hp, 426, "live HP waits for the combo's end");
+        assert_eq!(
+            a.hp_display,
+            Some(426 - a.damage_accum as u16),
+            "the readout rests on the banked total, never back up"
+        );
+        assert_eq!(a.hp_bar_pending, 0);
+    }
+    world.apply_combo_total(0);
+    for _ in 0..64 {
+        world.tick_battle_hp_bars();
+    }
+    let a = &world.actors[0].battle;
+    assert_eq!((a.hp, a.hp_display, a.hp_bar_pending), (375, Some(375), 0));
+}
+
 /// Enemy-damage AP (`WorldToggles::damage_ap`): a hit taking a quarter of
 /// max HP charges 25 AP at retail's x100, 50 at x200, and drains at a
 /// negative scale.

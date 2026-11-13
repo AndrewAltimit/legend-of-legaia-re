@@ -158,6 +158,14 @@ pub const EFFECT_DIRECT_BIT: u8 = 0x80;
 /// `jal 0x80050ED4` at `0x801DEF08`): a floor ring on the actor's body pair.
 pub const FLOOR_PART_RECORD: u32 = 0x801F_5EB0;
 
+/// The HP-restore cue's two prototypes (`0x801F6324[12]` / `[13]`, the
+/// counter-turning pillar pair `FUN_801E22C8` seats on each healed seat).
+/// Their programs end on a long wait (`pc 25`, `+0x54 = 192`), so a capture
+/// taken at the prompt after a heal holds them standing while the replay,
+/// which opens on that prompt, has spawned none: the capture snapshot seats
+/// them ([`crate::summon::CastPartSeed`]).
+pub const HEAL_CUE_RECORDS: [u32; 2] = [0x801F_598C, 0x801F_59C8];
+
 /// Whether a direct record's whole `+0x01` byte (bit 7 included) also seats
 /// [`FLOOR_PART_RECORD`]: `addiu v0,v0,0x7f` / `andi 0xff` / `sltiu v0,v0,3`
 /// at `0x801DEEAC..0x801DEEB4` holds for `0x81`, `0x82` and `0x83`.

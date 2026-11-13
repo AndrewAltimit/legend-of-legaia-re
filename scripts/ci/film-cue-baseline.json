@@ -379,8 +379,8 @@
       "recording": "062a2cddde8d"
     },
     "kor_gaza_165_astral_slash": {
-      "cue": 0.375,
-      "matched": 3,
+      "cue": 1.0,
+      "matched": 8,
       "retail_cues": 8,
       "recording": "2df56c39e348"
     },
@@ -475,8 +475,8 @@
       "recording": "163bc9a07f3d"
     },
     "korb2_warhalf_strike": {
-      "cue": 0.7143,
-      "matched": 5,
+      "cue": 1.0,
+      "matched": 7,
       "retail_cues": 7,
       "recording": "9e326b1b0e84"
     },
@@ -502,7 +502,7 @@
       "cue": 0.0,
       "matched": 0,
       "retail_cues": 5,
-      "recording": "3392c7cf1cf1"
+      "recording": "dc2ef30fe41a"
     },
     "map02_demon_fly_strike": {
       "cue": 1.0,
@@ -672,6 +672,18 @@
       "retail_cues": 8,
       "recording": "8be382f28bc2"
     },
+    "noaru_songi_genocidal_cannon": {
+      "cue": 1.0,
+      "matched": 11,
+      "retail_cues": 11,
+      "recording": "8ae7320e400c"
+    },
+    "noaru_songi_pre_genocidal_cannon__B3": {
+      "cue": 1.0,
+      "matched": 11,
+      "retail_cues": 11,
+      "recording": "6b4f9298e9ee"
+    },
     "retockin_evil_shadow_strike": {
       "cue": 1.0,
       "matched": 8,
@@ -703,8 +715,8 @@
       "recording": "602cbe31d374"
     },
     "retona_lip_king_kiss_of_death": {
-      "cue": 1.0,
-      "matched": 3,
+      "cue": 0.0,
+      "matched": 0,
       "retail_cues": 3,
       "recording": "d1c719092c4c"
     },

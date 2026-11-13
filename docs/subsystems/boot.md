@@ -1528,9 +1528,15 @@ after the display env is up. The routine also:
 - selects the **640×480** wide display mode (`FUN_8001DAF8(0x400)`);
 - clears VRAM `(0, 0, 640, 500)` to black through `FUN_80058298` with the RECT
   at file `+0x08`;
-- loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00`;
+- loads a 16-entry CLUT to VRAM `(0, 500)` from the RECT at file `+0x00`, of which it sets
+  only the first two entries (`0x0000`, `0x5294`): the other fourteen come off the routine's
+  uninitialised stack;
 - raises the front-end entry word `_DAT_8007BB00` (`0x801CEB84`);
 - spawns the two boot actors and stores game mode `0x11` (`0x801CEC94`).
+
+The port carries the placements as `publisher_logos::LOGO_VRAM` in `LOGO_UPLOAD_ORDER`, and
+the body's skip arms as `publisher_logos::read_init`, which the front end opens the logo
+session through; the retail differential runs the body against both.
 
 **The logo CLUT rows stay resident after boot.** Nothing re-uploads
 `(320..575, 507)` until a scene's own TIM claims the cells, so PROKION's palette
@@ -1637,12 +1643,19 @@ order.
 | 3, 4, 5 | SCEA | level `+8`/frame to `0x80` (16), hold `0x83` frames, level `0x80 - t/2` as `t` runs `+8` to `0x100` (32) |
 | 6 | - | `0x11`-tick settle |
 | 7, 8 | Contrail | one counter `0` → `0x441` at `+8`/frame with the level clamped at `0x80` (16 up, 121 held), then back down from `0x80` at `-8` (16) |
-| 9, 10 | PROKION | counter `0` → `0x351` at `+8`/frame, clamped (16 up, 91 held); state 10 holds the logo at full while a full-screen blend quad ramps the screen to white over `0x101` at `4 × frame_delta` per tick |
-| 11, 12 | - | back to the 320-wide display env, both `DRAWENV` backgrounds to white, and a 320×8 black strip cleared at `(0, 232)` - the loading bar |
+| 9, 10 | PROKION | counter `0` → `0x351` at `+8`/frame, clamped (16 up, 92 at full); state 10 holds the logo at full under an additive grey quad rising `4 × frame_delta` a tick to `0xFF` (65 frames) |
+| 11, 12 | - | back to the 320-wide display env, both `DRAWENV` backgrounds to white (one more `0xFFFFFF` quad on state 11), and a 320×8 black strip cleared at `(0, 232)` |
 
-State 10's blend quad is `FUN_801D0460(ot_slot, abr, rgb)`, a full-screen
-semi-transparent flat quad (GP0 `0x2B`) sized from the scratchpad draw-context
-extents, with its blend mode set by `FUN_80059010`. The sequencer's tail
+State 10's blend quad is `FUN_801D0460(ot_slot, abr, rgb)`, a semi-transparent
+flat quad (GP0 `0x2B`) spanning `x = 0 .. width`, `y = 0x18 .. height - 0x14` of
+the scratchpad draw extents `0x1F80038C` / `0x1F80038E` (`640 x 480` in the boot
+pass, so rows 24..459), with its blend mode set by `FUN_80059010` from
+`(abr << 5) | 0xE`. State 10 calls it with slot `0`, `abr = 1` (`B + F`) and the
+grey `s | s << 8 | s << 16`, where `s` is the counter `0x801F3EA8` after its
+`frame_delta << 2` step, clamped at `0xFF` (`0x801CF2B4..0x801CF33C`). The
+PROKION pair links at slot `0xA`, so the ordering table draws the quad after
+it: the logo stays at full and the screen adds the grey to it, `4, 8, ..` up to
+white. The sequencer's tail
 (`0x801CF490..0x801CF4E8`) leaves game mode `0x16` (CARD INIT) when
 `_DAT_8007BB00` is set and `0` otherwise.
 
@@ -1650,13 +1663,19 @@ extents, with its blend mode set by `FUN_80059010`. The sequencer's tail
 `LOGO_QUADS` holds the quad table, `RETAIL_SEQUENCE` the order and frame counts,
 `LEVEL_FULL` the `0x80` neutral point, and each step's `before` and `TAIL_FRAMES`
 the settles' black frames, so the pass lasts as many frames as retail's, from
-state 0 to the frame the done bit rises. One deviation: state 10 is modelled as a
-fade-down of the logo over the same 65 frames rather than compositing the white
-blend quad. The retail kernel differential runs the sequencer frame by frame
-against the session. Both hosts play the pass - the native `play-window --boot-ui` chain
+state 0 to the frame the done bit rises. `PublisherLogosSession::screen_wash`
+carries state 10's quad (`WASH_RECT`, `WASH_STEP`, `WASH_ABR`) and the tail's
+white background, as a whole-stage `0xFF` wash; each host draws it after the
+logo under the `B + F` equation, the native window as a sprite over the atlas's
+white block. The retail kernel differential runs the sequencer frame by frame
+against the session: the logo, its level, the wash's grey and the tail's white
+are exact on every frame. Both hosts play the pass - the native `play-window --boot-ui` chain
 and the browser play page, which opens its logo stage ahead of the title card -
 through the shared quad builder
-`legaia_engine_ui::boot_logos::publisher_logo_sprite_draws`.
+`legaia_engine_ui::boot_logos::publisher_logo_sprite_draws`. A surface at
+least the stage's size takes it at an integer scale; a smaller one - the
+320x240 native target of the PSX render mode - takes it at the exact ratio, so
+the whole 640x480 frame lands on the surface as it lands on a 320x240 display.
 
 ### The code region, and where it ends
 

@@ -39,17 +39,30 @@ use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 
 use vr::{GLYPH_CLUT, GLYPH_TPAGE};
 
-/// Ordering-table bucket the readout links at - **retail's own**, not a
-/// chosen one.
+/// Ordering-table bucket a struck actor's popup numeral links at: the damage
+/// popup renderer `FUN_801DF6B8` calls `AddPrim(ot + 4, prim)` for every
+/// digit (`lw a0,0xe0(s7)` with `s7 = 0x1F800314`, then `addiu a0,a0,4` in
+/// the delay slot of `jal 0x8003D2C4` at `0x801DFC14` / `0x801DFD4C`), so the
+/// popup shares bucket `1` with the HUD's glyphs and plates. It is linked
+/// after them, so it draws first in the bucket and they cover it: in
+/// `battle_menu_rugi_barra_retail`'s ordering table the three digit quads head
+/// bucket 1, ahead of the `Begin` / `Run` plates, and the frame on screen shows
+/// the figure behind the `Run` plate.
 ///
-/// Every readout packet in the captured display lists carries the OT tag
-/// [`vr::OT_TAG`] = `0x09000000`, whose high byte is the bucket, so the
-/// numerals sit at `9`: behind the cinematic bars
-/// ([`legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT`] = `8`, which retail links one
-/// bucket in front of everything) and ahead of the weapon trails (`0x20`) and
-/// the move-FX streak (`0x18`). Picking `0` instead would put a damage figure
-/// over a full-screen fade the summon band raises, which retail never does.
-pub const VALUE_READOUT_OT: u32 = vr::OT_TAG >> 24;
+/// The `0x09` of the packets' tag word [`vr::OT_TAG`] is not a bucket: a
+/// packet tag's high byte is its length in words, and a `POLY_FT4` is nine.
+pub const POPUP_OT: u32 = 1;
+
+/// Ordering-table bucket the combo / multi-row value window links at:
+/// `FUN_801E805C` calls `AddPrim(ot, prim)` (`lw a0,0xe0(s5)` with
+/// `s5 = 0x1F800314`, `0x801E82AC..0x801E887C`), bucket `0`, over the HUD
+/// text.
+pub const COMBO_OT: u32 = 0;
+
+/// Ordering-table bucket of the Arts announcement banner: `FUN_801E2650`
+/// links both quads of a layer at `ot` itself (`lw a0,0xe0(s0)` before each
+/// `jal 0x8003D2C4` at `0x801E2934` / `0x801E2940`), bucket `0`.
+pub const ARTS_BANNER_OT: u32 = 0;
 
 /// The modulation colour word every readout quad carries (`0x808080`, the
 /// passthrough level of the PSX texture blend `texel * colour / 128`).
@@ -144,8 +157,7 @@ pub fn combo_cluster_prims(cluster: &vr::ComboCluster, ot_index: u32) -> Vec<Scr
 /// re-shape, not a second layout: the banner's geometry lives in the VM
 /// kernel and neither renderer re-derives it.
 ///
-/// The banner shares the value readout's ordering bucket
-/// ([`VALUE_READOUT_OT`]) because it shares its page.
+/// The banner links at [`ARTS_BANNER_OT`].
 pub fn arts_banner_prims(
     quads: &[legaia_engine_battle_vm::battle_action::FlashQuad],
     ot_index: u32,
@@ -406,20 +418,24 @@ mod tests {
         }
     }
 
-    /// The readout's bucket is retail's own OT tag, not a chosen layer: the
-    /// packets carry `0x09000000` and the bucket is its high byte. Pinned
-    /// against the cinematic bars' own retail bucket so the two cannot be
-    /// re-ordered by accident.
+    /// The popup shares the HUD text's bucket (so it stays under it), the
+    /// value window and the Arts banner link one in front of it (so they
+    /// cover it), and every one of them draws over the cinematic bars, the
+    /// weapon trails and the move-FX streak.
     #[test]
-    fn the_ot_bucket_is_the_retail_tags_high_byte() {
-        assert_eq!(VALUE_READOUT_OT, 9);
-        assert_eq!(VALUE_READOUT_OT, vr::OT_TAG >> 24);
-        // Larger bucket = farther = drawn earlier, so the bars sit in front.
+    fn the_readout_buckets_are_the_add_prim_slots() {
+        use legaia_render_kernels::screen_prim::{TEXT_OT_BUCKET, push_covers_text};
+        assert_eq!(POPUP_OT, TEXT_OT_BUCKET as u32);
+        assert!(!push_covers_text(POPUP_OT as i16));
+        assert!(push_covers_text(COMBO_OT as i16));
+        assert!(push_covers_text(ARTS_BANNER_OT as i16));
         const {
-            assert!(VALUE_READOUT_OT > legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT);
-            assert!(VALUE_READOUT_OT < legaia_render_kernels::battle_trail::WEAPON_TRAIL_OT);
-            assert!(VALUE_READOUT_OT < legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT);
+            assert!(POPUP_OT < legaia_render_kernels::screen_prim::CINEMATIC_BAR_OT);
+            assert!(POPUP_OT < legaia_render_kernels::battle_trail::WEAPON_TRAIL_OT);
+            assert!(POPUP_OT < legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT);
         }
+        // The tag's `0x09` is the packet's length in words.
+        assert_eq!(vr::OT_TAG >> 24, (vr::PRIM_BYTES as u32 - 4) / 4);
     }
 
     /// Every quad names the battle effect atlas's glyph page through its CLUT,
@@ -429,13 +445,13 @@ mod tests {
     #[test]
     fn quads_are_opaque_neutral_glyph_page_samples() {
         let cells = vr::value_cells(250, 160, 120, vr::POP_FRAMES);
-        for p in digit_run_prims(&cells, VALUE_READOUT_OT) {
+        for p in digit_run_prims(&cells, POPUP_OT) {
             let q = quad(&p);
             assert_eq!(q.tpage, GLYPH_TPAGE);
             assert_eq!(q.clut, GLYPH_CLUT);
             assert_eq!(q.color, READOUT_COLOUR);
             assert!(!q.semi_transparent);
-            assert_eq!(q.ot_index, VALUE_READOUT_OT);
+            assert_eq!(q.ot_index, POPUP_OT);
         }
     }
 
@@ -487,7 +503,7 @@ mod tests {
     #[test]
     fn the_cluster_emits_its_word_cells_and_its_digits() {
         let cluster = vr::combo_cluster(vr::ComboStyle::HitTotal, 5, 72, 0);
-        let prims = combo_cluster_prims(&cluster, VALUE_READOUT_OT);
+        let prims = combo_cluster_prims(&cluster, COMBO_OT);
         assert_eq!(prims.len(), cluster.labels.len() + cluster.cells.len());
         // The two word cells sample the label rects the sheet carries.
         let uvs: Vec<_> = prims.iter().take(2).map(|p| quad(p).uv[0]).collect();

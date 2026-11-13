@@ -144,6 +144,16 @@ impl<K: Copy + PartialEq> BgmTail<K> {
     /// the track's samples reached and returns their slots (the host forgets
     /// the matching banks); keeps every other. Idempotent.
     pub fn observe_bgm_end(&mut self, bgm_end: u32) -> Vec<u8> {
+        self.observe_bgm_end_spans(bgm_end)
+            .into_iter()
+            .map(|b| b.slot)
+            .collect()
+    }
+
+    /// [`Self::observe_bgm_end`], returning the span each dropped borrower
+    /// occupied - the SPU range the track's samples now hold, where a voice
+    /// still sounding the borrower's sample would read the track's instead.
+    pub fn observe_bgm_end_spans(&mut self, bgm_end: u32) -> Vec<TailBorrow> {
         let mut dropped = Vec::new();
         if bgm_end != self.bgm_end {
             self.bgm_end = bgm_end;
@@ -152,24 +162,28 @@ impl<K: Copy + PartialEq> BgmTail<K> {
         if let Some(r) = self.reward
             && bgm_end > r.base
         {
-            dropped.extend(self.drop_reward());
+            dropped.push(r);
+            self.drop_reward();
         }
         if let Some((_, b)) = self.side_band
             && bgm_end > b.base
         {
-            dropped.extend(self.drop_side_band());
+            dropped.push(b);
+            self.drop_side_band();
         }
         if self
             .monsters
             .as_ref()
             .is_some_and(|(_, bs)| bs.iter().any(|b| bgm_end > b.base))
         {
-            dropped.extend(self.drop_monsters());
+            dropped.extend(self.monsters.iter().flat_map(|(_, bs)| bs.iter().copied()));
+            self.drop_monsters();
         }
         if let Some(b) = self.shared_spill
             && bgm_end > b.base
         {
-            dropped.extend(self.drop_shared_spill());
+            dropped.push(b);
+            self.drop_shared_spill();
         }
         dropped
     }
@@ -363,6 +377,21 @@ mod tests {
 
     fn b(slot: u8, base: u32, end: u32) -> TailBorrow {
         TailBorrow { slot, base, end }
+    }
+
+    /// The span form of the drop names what each dropped borrower held, so a
+    /// host can find the voices still sounding from it.
+    #[test]
+    fn a_drop_reports_the_span_the_borrower_held() {
+        let mut t = BgmTail::<i32>::default();
+        t.observe_bgm_end(0x20000);
+        t.commit_side_band(7, b(3, 0x20000, 0x28000));
+        assert!(t.observe_bgm_end_spans(0x20000).is_empty());
+        assert_eq!(
+            t.observe_bgm_end_spans(0x20010),
+            vec![b(3, 0x20000, 0x28000)]
+        );
+        assert!(t.side_band().is_none());
     }
 
     /// A shared-region spill is a tail borrower like any other: others stack

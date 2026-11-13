@@ -681,6 +681,41 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
     ],
 };
 
+/// A status roll a chain body draws ahead of its hit: `rand() & mask == 0`
+/// ORs `flag` into the victim's `+0x16E`, then the arm calls the damage
+/// wrapper, so the damage rolls one draw later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreHitRoll {
+    /// The mask the draw is tested under (`andi v0,v0,mask`).
+    pub mask: u32,
+    /// The `+0x16E` bit a zero draw sets.
+    pub flag: u16,
+    /// The status that bit is.
+    pub kind: legaia_engine_battle_vm::status_effects::StatusKind,
+    /// Retail VA of the `jal rand`.
+    pub site: u32,
+}
+
+/// The [`PreHitRoll`] a chain body's hit arm draws for a cast of
+/// `action_id`, if it draws one.
+///
+/// PROT 0947's arm 3 forks on the caster's `+0x1DF` (`bne v1,0xA7` at
+/// `0x801F73D8`): V-Windhash (`0x57`) jumps straight to the damage call, and
+/// Neo Windhash (`0xA7`) falls through to `jal 0x80056798` at `0x801F73E0`,
+/// `andi v0,v0,0x3` / `bne` past the store, and `+0x16E |= 0x1000` (Curse) at
+/// `0x801F73F4..0x801F7400`, then `FUN_801DD4B0(0xEA)` at `0x801F7414`.
+pub fn chain_pre_hit_roll(entry: u32, body: u32, action_id: u8) -> Option<PreHitRoll> {
+    match (entry, body, action_id) {
+        (947, 0x801F_69F0, 0xA7) => Some(PreHitRoll {
+            mask: 3,
+            flag: 0x1000,
+            kind: legaia_engine_battle_vm::status_effects::StatusKind::Curse,
+            site: 0x801F_73E0,
+        }),
+        _ => None,
+    }
+}
+
 /// An arm no body reaches.
 pub const NO_ARM: u8 = 0xFE;
 
@@ -918,7 +953,7 @@ pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
 /// `sltiu 6` through the table at `0x801F69D8`. Arm 0 stages caster clip
 /// `0x0A` with a bump; arm 1 clears it (no bump). Arm 3 is the hit:
 /// `FUN_801DD4B0` at `0x801F7414` with power `0x7B` (set in a delay slot at
-/// `0x801F73DC`), or `0xEA` plus a 1-in-4 `+0x16E |= 0x1000` for `0xA7`;
+/// `0x801F73DC`), or `0xEA` plus a 1-in-4 Curse `+0x16E |= 0x1000` for `0xA7` ([`chain_pre_hit_roll`]);
 /// shape A, the victim staged with its reaction. Arm 5 is terminal: it waits
 /// for the victim to settle, zeroes `ctx[+0x0D]` and clears the busy word.
 ///
@@ -1206,14 +1241,12 @@ pub const DEAD_END_CRISIS_CHAIN: ChainBody = ChainBody {
 /// (`0x801F7D30`, [`ChainArm::hit_rate`]) and arm `0x0F` holds the party row
 /// there on every pass (`0x801F7DB0`, [`party_rate_sweep`]).
 ///
-/// Rates left out under the module's rate rule: arms 6..0x0B alternate the
-/// caster between `3` and `4` and the body leaves it at `4`. Also left out:
-/// arm `0x10`'s party `+0x21D = 0` on every pass (`0x801F7EFC`), which
-/// freezes a row the same arm hides, and arm `0x11`'s restore to `8` with the
-/// row shown (`0x801F8140..0x801F8158`): the hide is a presentation store the
-/// port does not carry, and a frozen row left in view reads worse than one
-/// still at `2`. Not ported: the packet arms, the lighting and camera-record
-/// writes, the party-row presentation stores. Countdowns:
+/// The caster's rates on arms 6..0x0B (`3` / `4`), arm `0x10`'s party
+/// `+0x21D = 0` on every pass (`0x801F7EFC`) beside its hide, and arm `0x11`'s
+/// restore to `8` with the row shown (`0x801F8140..0x801F8158`) are the
+/// director's (`cast_module_camera::genocidal_cannon_camera`), with the camera
+/// arms, the record runs and the seat hides. Not ported: the packet
+/// arms and the lighting writes. Countdowns:
 /// `capture_countdown::GENOCIDAL_CANNON`.
 ///
 /// PORT: FUN_801F6A20 (PROT 0963; phase table + caster staging; packet arms unported)

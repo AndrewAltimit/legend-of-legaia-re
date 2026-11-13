@@ -78,6 +78,34 @@ fn hud_push_damage_appends_popup_with_default_lifetime() {
     assert_eq!(h.popups[0].frames_remaining, DEFAULT_POPUP_FRAMES);
 }
 
+/// `FUN_801DF6B8` steps the timer in the frame's draw, once a battle frame:
+/// a numeral pushed on a step-4 frame is drawn at `0x40` on that frame and
+/// holds there through the frame's other vsyncs (the `--popup-trace`
+/// recording of Blazing Slash: `64`, then `128` a frame later).
+#[test]
+fn a_popup_timer_steps_once_a_battle_frame() {
+    let mut h = BattleHud::new();
+    h.push_damage(0, 27);
+    assert_eq!(h.popups[0].drawn_age(), None, "no draw has reached it");
+    h.tick_frame(Some(4));
+    assert_eq!(
+        (h.popups[0].timer, h.popups[0].drawn_age()),
+        (0x40, Some((0, 4)))
+    );
+    for _ in 0..3 {
+        h.tick_frame(None);
+    }
+    assert_eq!(h.popups[0].timer, 0x40, "held between draws");
+    h.tick_frame(Some(3));
+    assert_eq!(
+        (h.popups[0].timer, h.popups[0].drawn_age()),
+        (0x70, Some((4, 3)))
+    );
+    // A host that draws every vsync steps it by one each tick.
+    h.tick();
+    assert_eq!(h.popups[0].timer, 0x80);
+}
+
 #[test]
 fn a_ninth_simultaneous_popup_overwrites_the_first_and_len_is_ring_bounded() {
     let mut h = BattleHud::new();

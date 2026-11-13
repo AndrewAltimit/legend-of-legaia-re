@@ -78,6 +78,18 @@ STATES = [
     "zeto_call_wave_mid_cast",
     "new_game_cutscene_intro_a",
     "ending_vignette_fullscreen",
+    "rimelm_wall_press_down",
+    "rimelm_npc_press_tetsu",
+    "v0_1_post_battle_tetsu_town",
+    "v0_1_pre_battle_tetsu",
+    "door_warp_town01_to_map01",
+    "keikoku_chest_open",
+    "karisto_overworld_resident",
+    "menu_status_field",
+    "name_input_ui",
+    "noa_levelup_field_post",
+    "ending_vignette_biron",
+    "v0_1_battle_command_menu",
 ]
 CORE_STATES = ["mei_house_inside", "keikoku_chest_pre", "title_screen_new_game"]
 # The title screen times out into the attract sequence past this.
@@ -89,7 +101,13 @@ SHORT_WINDOWS = {"title_screen_new_game": 10}
 XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35891, 11025)}
 # A state a looping emitter sounds through: the track alone reads its energy as
 # level and correlation.
-EMITTER_STATES = ["rimelm_wall_press_left"]
+EMITTER_STATES = [
+    "rimelm_wall_press_left",
+    "rimelm_wall_press_down",
+    "rimelm_npc_press_tetsu",
+    "v0_1_post_battle_tetsu_town",
+    "v0_1_pre_battle_tetsu",
+]
 # Mid-cast battle states for the `cast` channel. The engine's recording runs from
 # the seed's gate to `CAST_DONE_TAIL` vsyncs past the action SM's Done band, where
 # the child plays on into its own next turn; the score is over that span. A state

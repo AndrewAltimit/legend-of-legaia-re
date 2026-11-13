@@ -37,7 +37,14 @@ impl World {
     /// frame's cost is its party and action state's measured base plus the
     /// draw load the frame carries ([`Self::battle_frame_load`],
     /// [`frame_load_cost`](legaia_engine_battle_loop::frame_clock::frame_load_cost)).
-    fn push_frame_cost(&mut self, arm_step: Option<u8>) {
+    ///
+    /// Returns what the frame's own length follows
+    /// ([`frame_span`](legaia_engine_battle_loop::frame_clock::frame_span)): the
+    /// cost an ordinary frame pushed, and on an arm the cost of the state's work
+    /// under a loading clip's polls. An arm table's step is its frames' own
+    /// measurement and no cost, so an arm no clip loads returns `0`, a frame
+    /// inside its step.
+    fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
         use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost_at};
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -46,28 +53,33 @@ impl World {
         };
         self.battle.frame_cost_state = Some((state, passes));
         let xa_passes = self.battle_xa_passes_since_cue();
-        let cost = arm_step.map_or_else(
-            || {
-                let cost = measured_frame_cost_at(self.party.party_count, state, passes)
-                    .saturating_add(self.battle_frame_load_cost());
-                // An XA clip's read span: the frame runs on the CD interrupt
-                // path (`FUN_8005DAB0`) once the stream is up.
-                match xa_passes {
-                    Some(n) => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
-                        n,
-                        cost,
-                        self.toggles.battle_cd_timing,
-                    ),
-                    None => cost,
-                }
-            },
-            cost_of_step,
-        );
+        let work = measured_frame_cost_at(self.party.party_count, state, passes)
+            .saturating_add(self.battle_frame_load_cost());
+        // An XA clip's read span: the frame runs on the CD interrupt path
+        // (`FUN_8005DAB0`) once the stream is up.
+        let loaded = xa_passes.map(|n| {
+            legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
+                n,
+                work,
+                self.toggles.battle_cd_timing,
+                self.toggles.battle_frame_span_law && self.audio.battle_xa_poll_load,
+            )
+        });
+        let cost = arm_step.map_or(loaded.unwrap_or(work), cost_of_step);
         let cost = match self.battle.drawn_table_cost {
             Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
             _ => cost,
         };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+        // A capture-band module's own line leaves its arms their table's
+        // length: retail's frames under one run anywhere from inside the step
+        // (Death Game, four vsyncs a step-`4` frame) to eight (Kiss of Death),
+        // which no one share of a table cost reads.
+        match arm_step {
+            None => cost,
+            Some(_) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
+            Some(_) => 0,
+        }
     }
 
     /// Note the GPU's wait over the battle frame the host just drew, in
@@ -84,10 +96,30 @@ impl World {
         }
     }
 
+    /// Open the window a clip just started loads the frame for
+    /// ([`crate::world::AudioState::battle_xa_load_frames`]): its span, plus
+    /// PCSX-Redux's read tail.
+    pub(in crate::world) fn arm_battle_xa_load_window(&mut self) {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_READ_TAIL_VSYNCS};
+        let tail = match self.toggles.battle_cd_timing {
+            CdTiming::PcsxRedux if self.toggles.battle_frame_span_law => XA_READ_TAIL_VSYNCS,
+            _ => 0,
+        };
+        self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
+        // The drive word `0x8007BC20` holds `2` from the start (`0x8003D65C`)
+        // until the stop `FUN_8003EE00` clears it once the read is done
+        // (`0x8003EE2C`), not for the span alone: a `--watch` recording of
+        // Medusa's Glare clears it `559` vsyncs after the start of its
+        // `539`-vsync line, and the shout fallback `0x290` plays inside that.
+        if tail != 0 {
+            self.audio.battle_xa_busy_frames = self.audio.battle_xa_load_frames;
+        }
+    }
+
     /// The passes since a loading battle CD-XA clip's cue, `None` while none
     /// plays ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
     fn battle_xa_passes_since_cue(&self) -> Option<u64> {
-        if self.audio.battle_xa_busy_frames == 0 || !self.audio.battle_xa_frame_load {
+        if self.audio.battle_xa_load_frames == 0 || !self.audio.battle_xa_frame_load {
             return None;
         }
         Some(
@@ -95,12 +127,6 @@ impl World {
                 .battle_xa_cue_frame
                 .map_or(u64::MAX, |f| self.battle_frame_id().saturating_sub(f)),
         )
-    }
-
-    /// Whether the clip's stream has reached the frame's full load
-    /// ([`Self::battle_xa_passes_since_cue`] two or more).
-    fn battle_xa_loads_frame(&self) -> bool {
-        self.battle_xa_passes_since_cue().is_some_and(|n| n >= 2)
     }
 
     /// What a battle frame draws past its state's base: the live move-VM
@@ -356,7 +382,11 @@ impl World {
             .as_ref()
             .is_some_and(|t| t.armed())
         {
+            // A harness seat runs the recording's own steps whole: no overrun.
             self.battle.pending_frame_step = None;
+            self.battle
+                .frame_clock
+                .retime_span(self.clock.display_frames, 0);
             self.apply_retail_step_track();
             return;
         }
@@ -366,6 +396,9 @@ impl World {
             .is_some_and(|(_, state)| self.battle_frame_step_seed_holds(state))
         {
             self.battle.pending_frame_step = None;
+            self.battle
+                .frame_clock
+                .retime_span(self.clock.display_frames, 0);
             return;
         }
         let state = self.battle_ctx.action_state;
@@ -401,21 +434,31 @@ impl World {
         // first times the next pass, which also drains its timers by it
         // (`battle-stage-camera.md`, the frame step). An arm table's step is
         // the cost retail's frames ran under the arm, pushed like any other.
-        self.push_frame_cost(measured);
+        let span_cost = self.push_frame_cost(measured);
         // An arm table names the cost of the arm's own frames, which the push
         // above stored: the ring's step after it is the larger of the arm's and
         // what the passes before left, so a cheaper arm after a dear one runs
         // the ring's step until the dear entries leave it (Kiss of Death's arm
         // 5 runs `3` for sixteen passes after arm 4's clamped frames, then `2`).
-        // A frame the XA stream loads overruns its step on PCSX-Redux
-        // (`span_extra`); a console's polls leave it inside its step, and an
-        // arm table's step is the length its own frames ran.
-        let extra = if measured.is_none()
+        // The frame this pass opened runs out on the step the pass ran at and
+        // spans the blanks its cost runs past (`VSync(n)`, `frame_span`): a
+        // dear first pass on a cheap step, and every frame a clip's polls load
+        // (`XA_POLL_COST_RATIO_MILLI`), arm or not.
+        let step = self.battle.frame_clock.step;
+        let law = self.toggles.battle_frame_span_law;
+        let extra = if !self.toggles.battle_party_cost_step
+            || (law && self.battle.frame_stretch.is_some())
+        {
+            0
+        } else if law {
+            legaia_engine_battle_loop::frame_clock::frame_span(span_cost, step)
+                .saturating_sub(step.max(1))
+        } else if measured.is_none()
             && self.toggles.battle_cd_timing
                 == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
-            && self.toggles.battle_party_cost_step
-            && self.battle_xa_loads_frame()
+            && self.battle_xa_passes_since_cue().is_some_and(|n| n >= 2)
         {
+            // Off the law: a loaded ordinary frame runs one vsync past its step.
             legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
             0
@@ -1574,14 +1617,18 @@ mod tests {
         let mut w = World::new();
         w.mode = legaia_engine_mode::mode::SceneMode::Battle;
         w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_frame_span_law = true;
         w.party.party_count = 3;
         w.battle_ctx.action_state = 0x1E;
         w.clock.display_frames = 10;
         assert!(w.battle_sm_pass_due());
         assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
         w.apply_cast_arm_frame_step();
-        // The pass at tick 10 keeps its two-vsync frame ...
+        // The pass at tick 10 keeps its step-2 frame, which its 622 hblanks
+        // run on to a third vsync (`VSync(2)` returns at the blank after the
+        // work) ...
         assert_eq!(w.battle_frame_step(), 2);
+        assert_eq!(w.battle.frame_clock.span(), 3);
         let mut passes = vec![10];
         for t in 11..20u64 {
             w.clock.display_frames = t;
@@ -1589,9 +1636,10 @@ mod tests {
                 passes.push(t);
                 // ... and the frame it hands over opens on step 3.
                 assert_eq!(w.battle_frame_step(), 3);
+                w.apply_cast_arm_frame_step();
             }
         }
-        assert_eq!(passes, [10, 12, 15, 18]);
+        assert_eq!(passes, [10, 13, 16, 19]);
     }
 
     /// A frame's live effect parts and after-image ghosts lift its cost: a
@@ -1711,15 +1759,62 @@ mod tests {
         use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_SPAN_EXTRA};
         let mut w = World::new();
         w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+        w.party.party_count = 1;
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_cost_step, 4);
+        w.battle.frame_clock.step = 4;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, XA_STREAM_SPAN_EXTRA);
         w.audio.battle_xa_busy_frames = 0;
+        w.audio.battle_xa_load_frames = 0;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    /// A full party's loaded frame runs its work under the polls: Gala's
+    /// Flying Knee frames of `745`..`930` hblanks of work span `9` and `10`
+    /// vsyncs, where an item's on a lone member spans `5`.
+    #[test]
+    fn a_full_partys_loaded_frame_spans_its_work_under_the_polls() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, frame_span, xa_loaded_frame_cost};
+        let mut w = World::new();
+        w.toggles.battle_frame_span_law = true;
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x20;
+        w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
+        w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_poll_load = true;
+        w.battle.frame_clock.step = 4;
+        w.apply_cast_arm_frame_step();
+        let work = legaia_engine_battle_loop::frame_clock::measured_frame_cost(3, 0x20);
+        let span = frame_span(xa_loaded_frame_cost(work), 4);
+        assert!(span >= 7, "{span}");
+        assert_eq!(u64::from(span), w.battle.frame_clock.span());
+    }
+
+    /// A dear frame on a cheap step runs on to the blank after its work, and
+    /// a frame inside its step does not.
+    #[test]
+    fn an_ordinary_frame_spans_what_its_cost_runs_past() {
+        let mut w = World::new();
+        w.toggles.battle_frame_span_law = true;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.battle.frame_clock.step = 2;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(
+            w.battle.frame_clock.span(),
+            3,
+            "a 622-hblank frame on step 2"
+        );
+        w.battle.frame_clock.step = 3;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_clock.span(), 3);
     }
 
     /// A replay's stretched frame keeps its step for the pass after it: the
@@ -1753,6 +1848,7 @@ mod tests {
         w.party.party_count = 1;
         w.battle_ctx.action_state = 0x3E;
         w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_load_frames = 200;
         w.audio.battle_xa_frame_load = true;
         w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
         let mut costs = Vec::new();
@@ -1763,6 +1859,34 @@ mod tests {
         }
         assert!(costs[0] < 0x1FF && costs[1] < 0x1FF, "{costs:?}");
         assert_eq!(costs[2], XA_STREAM_FRAME_COST.min(0x2BC));
+    }
+
+    /// A capture-band module's own line loads the frame from its cue's pass,
+    /// whatever clip cued before it: the band's voiced casts film lower on
+    /// the cue funnel's onset ramp (Call Wave `.784` to `.545`).
+    #[test]
+    fn a_capture_modules_line_loads_the_frame_from_its_cue() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_FRAME_COST};
+        for earlier_cue_passes_back in [0u64, 1, 300] {
+            let mut w = World::new();
+            w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+            w.party.party_count = 3;
+            w.battle_ctx.action_state = 0x70;
+            let mut spans = vec![0u16; 0x60];
+            spans[0x58] = 527;
+            w.audio.xa_cue_durations = Some(spans);
+            // Another clip cued this many display ticks ago.
+            w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
+            w.clock.display_frames += earlier_cue_passes_back;
+            w.emit_battle_xa_cue(0x158);
+            assert!(w.audio.battle_xa_frame_load, "a band module seeks no file");
+            w.push_frame_cost(None);
+            assert_eq!(
+                w.battle.frame_cost_ring.newest(),
+                XA_STREAM_FRAME_COST.min(0x2BC),
+                "{earlier_cue_passes_back}"
+            );
+        }
     }
 
     /// On a console the clip's stop watch takes a sixteenth of the CPU: the
@@ -1776,6 +1900,7 @@ mod tests {
         w.battle_ctx.action_state = 0x3E;
         let base = legaia_engine_battle_loop::frame_clock::measured_frame_cost_at(1, 0x3E, 2);
         w.audio.battle_xa_busy_frames = 200;
+        w.audio.battle_xa_load_frames = 200;
         w.audio.battle_xa_frame_load = true;
         w.audio.battle_xa_cue_frame = Some(w.battle_frame_id());
         let mut costs = Vec::new();
@@ -1796,11 +1921,13 @@ mod tests {
         // module's clip still reads: the clip does not load the frame.
         let mut w = World::new();
         w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = false;
         for _ in 0..16 {
             w.push_frame_cost(None);
         }
         assert!(w.battle.frame_cost_step < 4);
+        w.battle.frame_clock.step = w.battle.frame_cost_step;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
     }

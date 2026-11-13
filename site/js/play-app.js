@@ -473,6 +473,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* The page may have built it while idle (`play.html`, `prewarmFirstEntry`):
        * the same object on the same canvas, its shaders already compiled. */
       this.renderer = (opts && opts.renderer) || new window.TmdRenderer(canvas);
+      this.renderer.onPassUnavailable = (id) => this._passUnavailable(id);
       /* PSX rasterisation's frame goes through a single-sample framebuffer of
        * its own (webgl-psx-target.js). A skipped draw neither draws nor copies. */
       this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl);
@@ -1240,7 +1241,9 @@ void main() { o_color = texture(u_layer, v_uv); }
   /* The rungs, in the order the ladder spends them; see browser-host.md for
    * what each is measured to pay. `applicable` skips a rung already off. */
   const QUALITY_RUNGS = [
-    { id: 'ssao', applicable: (v) => !!v.ssao },
+    /* A pass the driver could not build is already off; spending a rung on
+     * it would buy nothing. */
+    { id: 'ssao', applicable: (v) => !!v.ssao && !(v.renderer && v.renderer._ssaoBroken) },
     { id: 'scale75', applicable: (v) => !v.psxRender },
     { id: 'scale50', applicable: (v) => !v.psxRender },
     { id: 'shadows', applicable: (v) => !!v.dynLighting && v._dynShadowsWanted !== false },

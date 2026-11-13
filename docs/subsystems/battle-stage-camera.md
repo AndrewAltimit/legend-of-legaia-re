@@ -1384,6 +1384,19 @@ holds endpoint `3368` under cursor `72`, and `3368` is `60 * 2 + 0x700 - 2640`.
 Rounding the cursor down to a keyframe aims up to `30` units short
 (`battle_rugi_slippery_poisonous_breath_mid_cast`).
 
+The driver's shots are re-armed like every other framing: each pass of the magic
+band rebuilds the table from the live pose, and the walker adds
+`ceil(gap / frames) * frame_step` a pass, clamping on the endpoint. So a six-frame
+shot covers two thirds of its gap on a step-`4` pass, not all of it, and a group
+shot that takes over from case `0xA` walks in over several passes.
+Caruban's Fire Breath on a full party shows it: case `0xA` hands on to the group
+shot `0xB` on the first hit, on step `4`, and retail's table reads yaw `26` and TR z
+`825` a vsync over gaps of `156` and `4950`, the camera landing four passes later
+(`battle_rugi_caruban_2_fire_breath_mid_cast`'s film). Port:
+`BattleCamera`'s magic-band arm steps the shot as a `Glide::chase`; stepped as a
+glide over `frames / step` passes, the step-`4` pass halved six frames to one step
+and cut straight to the group shot.
+
 ### The Battle Camera option
 
 The options screen's Battle Camera row (Close / Normal / Far, config word
@@ -1458,8 +1471,9 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. That is PCSX-Redux's
 [CD stop watch](#the-cd-stop-watch), and a console's frames cost about a sixteenth over their
-work. Port, on the default PCSX-Redux timing: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`.
-The overrun is the lightest measured, so Spirit bands run short of that recording. The load does not start on the cue's own frame: the cue is issued inside it and the
+work. Port, on the default PCSX-Redux timing: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`,
+the lightest overrun measured, so Spirit bands run short of that recording; the span law
+over the work is an opt-in ([a frame's span](#a-frames-span)). The load does not start on the cue's own frame: the cue is issued inside it and the
 drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
 (`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
 (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
@@ -1471,6 +1485,15 @@ their gate a step-`4` pass early, at accumulator `48`, with the camera's yaw `20
 with no charge on the pass after it, a full party's Spirit rounds ran a pass at step `3` where
 retail's run `4`, and five stills that replay Spirit rounds reached their gates three ticks
 early.
+
+A capture-band module's own line takes no such ramp: the port loads the frame from the cue's
+pass (`World::emit_battle_xa_cue` clears the cue frame). On the funnel's ramp the voiced band
+casts film lower: Call Wave `.784` to `.545`, Lapis Wave `.919` to `.869`, Terio Punch `.860`
+to `.837`, Bull Charge `.968` to `.956`. Grade `capture`. The line is timed on vsyncs, so it
+runs out against the band's wall clock: retail's frames under it run past their step (Bloody
+Horns' arms 3 to 5 at seven vsyncs a step-`4` frame), the port's table arms at their step, and
+Bloody Horns' arm-2 line `0x158` ends before retail's arm 6 and some `100` ticks into the
+port's ([the open thread](../reference/open-rev-eng-threads.md#xains-frame-at-bloody-horns-band-entry)).
 
 A summon module's own voice clip does not. The module seeks the drive to the
 clip's file on an arm ahead of its cue ([CD-seek waits](../tooling/cast-sequence-oracle.md#cd-seek-waits)),
@@ -1491,6 +1514,91 @@ with no seek arm load the frame; a summon module's voice
 An overrun lengthens the frame, not the step: the camera walker runs once a frame,
 scaled by the step (`BattleCamera::sync_step_phase`), so an overrunning frame still
 steps it once.
+
+<a id="a-frames-span"></a>
+
+**A frame's span.** `VSync(n)` (`FUN_8005FB84`) waits for the vsync count to reach the
+last return's plus `n - 1` (`0x8005FBE8..0x8005FC18`), then for the next vertical blank
+(`0x8005FC2C..0x8005FC38`), and only then stores the root counter as the next frame's
+base (`0x8005FCA4..0x8005FCB0`); a step under `2` waits `VSync(0)`, the next blank. A
+frame still running at its step's last blank therefore runs on to the first blank
+after its work, and its span is `max(step, (cost + 20) / 263 + 1)` vsyncs. The `20`
+hblanks are what a frame spends past its cost word: the vblank handler and `VSync`'s
+return ahead of the base, and the ring update between `FUN_800173BC` and the call
+(`0x80017044..0x800171C0`). PCSX-Redux's strike recordings' spans read it best at `20`
+(`.968` of `4145` frames), and the ten loaded frames of the Flying Knee `--cd-trace`
+recording bound it to `-4..38`. Grade `disassembly` for the law, `capture` for the
+constant.
+
+Under a clip's polls the cost is the frame's work at what the polls leave of the CPU.
+The Flying Knee trace (`battle_ropeway_party_gala_flying_knee_mid`) spends `1.63`
+hblanks of each poll from the exception vector to the dispatcher's exit and `.92`
+outside it, so its loaded frames cost `2.75`..`2.87` times what runs outside the traced
+spans. That remainder (`681`..`931` hblanks) is more than the same art's frames cost
+unloaded (`620`..`660` before the cue, `707`..`821` after it), so part of each poll
+runs outside the span. Read over the unloaded cost, the spans give `3.1`..`3.6` on
+that film, `3.1`..`3.9` on a full party's heals (`ropeway_orb_pre_heal` runs its
+loaded frames at `9` vsyncs, `deene_garnet_pre_heal` at `8` and `9`,
+`taiku_topaz_pre_hyper_heal` at `8`, over the table's `595`) and `3.0`..`4.5` on
+Amethyst's on a lone Vahn (`5` and `6` over `345`); the player arts' loaded frames sit at
+`8` at the median, and `3.1`, the low end the three share, reads them. The clip's
+read window runs past its span: the heals' loaded frames end `10` to `17` vsyncs after
+the clip's `261`, Flying Knee's polls `18` after its `90` (`3` of them the seek).
+
+Port: `frame_clock::frame_span`, `xa_loaded_frame_cost` (`XA_POLL_COST_RATIO_MILLI`,
+at least the item's measured `1063`) and the read window (`XA_READ_TAIL_VSYNCS`, the
+emulator deferring each sector while a poll's interrupt is pending, `cdrom.cc`
+`readInterrupt`), behind `WorldToggles::battle_frame_span_law`, opt-in
+(`LEGAIA_BATTLE_FRAME_SPAN=1` on a native session, `--engine-env` on a film).
+`World::apply_cast_arm_frame_step` re-times each pass's frame by the span its cost
+reads. An arm table names its frames' step and no cost, so an arm takes the law only
+while a clip loads it; a capture-band module's line loads at the floor only, since
+retail's frames under one run from no overrun (Death Game's `425`-vsync line, four
+vsyncs a step-`4` frame) to five and more (Bloody Horns, Lapis Wave). The harness's
+retail step track and a replay's seeded state run their steps exact. Off, an ordinary
+frame runs its step and a loaded one a single vsync past it.
+
+The drive word `0x8007BC20` runs on the same read. A `--watch` recording of Medusa's
+Glare (`battle_korb2_medusa_glare_mid_cast`) reads it set to `2` at the clip's start
+(`0x8003D65C`) and cleared by the stop `FUN_8003EE00` (`sw zero` at `0x8003EE2C`) `559`
+vsyncs on, `20` past the line's `539`; Kiss of Death's clears at `444`. Under the law the
+engine holds its drive word and its load window for the span plus that tail
+(`XA_READ_TAIL_VSYNCS`), and a capture-band line leaves its arms their table's length.
+
+On, the films' wall clock comes to retail's and their game clock holds; the sets, one
+binary run both ways:
+
+| Set | Films | Off | On | Cues off | Cues on |
+|---|---:|---:|---:|---:|---:|
+| Player arts | 17 | `.8718` | `.8677` | `.9976` | `.9976` |
+| Enemy casts | 103 | `.9152` | `.9122` | `.9832` | `.9650` |
+
+What falls, by cause:
+
+- **The replay's lead-in.** Medusa's Glare and Lip King's Kiss of Death lose their one cue
+  with the cast's own frames all but unchanged (`6` and `10` overrun ticks off and on on
+  Glare): the drive that seeds the film reaches the cast `119` and `63` ticks later on the
+  longer frames before it, and the cue's roll is dealt again. A harness re-deal, not the
+  law's frames. Kiss of Death's arm 4 is the law's own case besides: retail runs it `34`
+  passes, `27` at step `4` and the last `7` at `3`, where both clocks run `32` at `4`
+  (the arm's cost falls under the clamp inside the arm).
+- **The polls' share over a cheap fight.** Spoon's Hyper Heal (`-.024`) runs its loaded frames at `8`
+  where retail's run `5` and `6`: its fight costs some `150` under the table
+  ([a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so the share over the table
+  overshoots. Aluru's Cannon and Astral Wave read the same way.
+- **The item's floor on a line that does not load.** Death Game's frames under its
+  `425`-vsync line run their step on retail, where the floor runs every one to five vsyncs
+  (`136` overrun ticks off, `347` on).
+- **The law on a dear first pass.** Element Change (`-.148`) adds five overrun ticks at a
+  step change and pairs a pass off, and Super Ironhead (`-.098`, cues intact at the share
+  of `3.1`) runs its close-up accumulator a step out from the load's end on.
+
+So the law stays opt-in. What it needs: the fight's offset in the loaded cost, a per-line
+load (Death Game none, Glare five, Kiss of Death eight), and a film seed that does not
+re-deal on its lead-in. What the law cannot reach is a frame whose cost the engine does
+not hold: the capture band's and the summons' heavy arms, whose PCSX-Redux frames run `5`
+to `17` vsyncs with no clip (Water Crystals `13` to `16`, Thunder Storm `6` to `9`), run
+their table's step.
 
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
@@ -1808,8 +1916,9 @@ where PCSX-Redux reads `594`, and no real hardware has been measured.
 
 The gap between the vsyncs a pass and the mean step is frames that ran past their
 step, a fifth of a full party's fight: its timers still drain one step, so retail's
-fight runs that much longer on the wall than its game clock, and the engine, which
-does not overrun, plays it that much shorter. Run over retail's own sequence of states,
+fight runs that much longer on the wall than its game clock. The engine runs its
+frames on their step, a loaded frame one vsync past it; retail's span law over the
+engine's costs is an opt-in ([a frame's span](#a-frames-span)). Run over retail's own sequence of states,
 the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes. The
 table was read off these same fights, so that is a fit, and no held-out score. The
 Vahn and Noa fight stands on a state reached by a door-tile poke from
@@ -1874,6 +1983,35 @@ A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
 gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
 the ring they stand under `.5`.
+
+<a id="a-heavy-fights-hit-frames"></a>
+
+**A heavy fight's hit frames.** A step moves bodies as well as the camera: a reaction
+clip's root motion runs `step` times its rate a pass, so a knockback carried on a step-`4`
+pass ends further back than on a step-`3` one. `battle_nilboa_neo_grude_strike`'s retail
+frames cost `694` to `719` through the strike loop, on the edge of the step-`4` reading,
+and two of its hit frames run at `4`; the engine's cost those frames at `659` to `685` and
+runs them at `3`. Each hit then leaves Vahn a few units short of retail's (`(-207, -249)`
+against `(-212, -268)` after the third swing), the striker's re-face onto his body pair turns
+on that, and by the return state `0x20` the striker stands on heading `2620` against retail's
+`2602`. Case 7's yaw is `counter - heading`, so the camera sits about `20` units off
+retail's for the rest of the action and the backdrop slides some ten pixels across the
+frame (film `.879`, `0x1E..0x20` segments `.86` to `.89`), with every clip on retail's cursor
+pass for pass.
+
+What the engine under-prices there is the fight, not a per-frame load. Over the 54
+full-party strike recordings, each film's strike frames (`0x1E..0x20`, ring entries under
+the clamp) sit a steady offset over the table: `+25` on average, `-85` to `+85` from film to
+film, and within one film the three states' offsets part by `13` at the median. Neo
+Grude's is `+71`, and its frames hold near `700` whether `7` or `44` effect parts are live,
+so no part, ghost or pool term reaches it. The offset is not the formation's polygons: the
+alive monsters' triangle sum (the engine's `battle body` log) explains none of it (slope
+`.02` hblanks a triangle, `r` `.16`, held out no better than a flat offset). Within a film the
+cost follows what the frame links: on `rugi2`'s Fire Breath (`--gpu-cost`) the breath's
+`0x2B` frames hold `700..712` at `2250` linked polygons, and the frame that crosses `0x2D0`
+(vsync `71`, exactly `720`, then `759`, `807`) is the one whose polygons rise to `2518` and
+`3622`; a pass early is where the engine's own load crosses. A per-fight term would need the
+stage and framing's linked polygons, which only the hosts hold. Grade `capture`.
 
 What a ghost costs inside a full party's frame stays open. Over 61 recorded monster
 strikes (the `battle_*_strike` states' cast-sequence recordings, retail's step every vsync) the mesh

@@ -92,6 +92,7 @@
     <summary>Class 14: the Point Card strike, reached by item id</summary>
     <div class="disclosure-body">
       <p>The class-14 arm of the apply handler takes <code>min(points_bank, 9999)</code> off the Point Card bank and applies it as battle damage - a strike scaling with how much the player has shopped. Decoding all 256 item records finds no item carrying class 14, but the arm is live: the battle action state machine tests for item <code>0xFE</code> at <code>0x801E4080</code> and forces the selector to <code>0x0E</code> at <code>0x801E40C0</code>, so the Point Card itself runs it.</p>
+      <p>The apply band reads the overwritten selector, not the descriptor (whose class 1 arm would serve the whole party), so the strike takes its one target byte. The port seeds the card by id (<code>ItemCatalog::apply_point_card_items</code>) and aims it at the enemy rows only, which closes the way into the retail hang when the card is aimed at a living ally.</p>
     </div>
   </details>
 </section>
@@ -134,7 +135,7 @@
       </tbody>
       </table>
       <p id="stat-up-base-window">The handler writes the <strong>base</strong> window (<code>+0x11C..+0x12C</code>) and nothing else. The live window follows because the menu's use routine (<code>FUN_801D8308</code>) calls the stat aggregator straight after it. The aggregator copies each base value over its live one, adds the equipment's percent boosts off the base (ability bit 0 a tenth of base Max HP, bit 1 a quarter, bits 2 and 3 the same two for Max MP), clamps to <code>9999</code> / <code>999</code>, and lowers a current value that now exceeds its maximum. So a raised maximum is the base plus whatever boost is worn, and the gain is not refilled: current HP / MP stay where they were.</p>
-      <p>Port: <code>World::apply_stat_up_item</code> raises the base window and <code>World::rebuild_record_live_hp_mp</code> rebuilds the two maxima from it - the same rebuild <code>World::refresh_party_ability_bits</code> runs for every party member, so an equipment change moves the maxima with the accessory. The combat stats take the base raise and the same increment on the live value, which the battle seed re-derives from the base.</p>
+      <p>Port: <code>World::apply_stat_up_item</code> raises the base window and <code>World::rebuild_record_live_hp_mp</code> rebuilds the live window from it - the same rebuild <code>World::refresh_party_ability_bits</code> runs for every party member, since the aggregator is one pass, so an equipment change (the equip screen, a shop's equip-now, the field VM's <code>0x3B</code>) moves the live stats with the accessory. A library save shows the rebuild on its own: a record with base Max HP 521 under a +10% accessory carries a live maximum of 573.</p>
       <h4>Class 7 - one-battle buff (battle-use, flag <code>0x84</code>)</h4>
       <p>Multiplies the <strong>battle-actor</strong> stat halfwords by <code>6/5</code> (the handler's <code>uVar + uVar/5</code>), clamped to <code>0xFFFF</code>, for the rest of the battle:</p>
       <table>
@@ -174,7 +175,7 @@
 
 <section class="doc-section" id="parser">
   <h2>In the port</h2>
-  <p><code>legaia_game_tables::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image; <code>engine-menus::items::ItemCatalog</code> installs the usability and all-party flags and seeds the stat-up, buff and Fury Boost items from it, and <code>engine-menus::inventory_use</code> mirrors the retail menu-usability gate (a heal greys out when nobody would benefit). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
+  <p><code>legaia_game_tables::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image; <code>engine-menus::items::ItemCatalog</code> installs the usability and all-party flags and seeds the stat-up, buff and Fury Boost items from it, and the retail menu-usability gate runs as retail runs it: <code>menu_validator::item_affects_anyone</code> broadcasts the descriptor over the present party through the ported validator <code>FUN_8003fb10</code>, and both the Use list's dim bit and the Items screen's confirm read it. So an MP restore refuses a fallen member, a stat seed a member already at that stat's cap, and an arts book (classes <code>0x0B..0x0D</code>, valid only on its own reader) any party without its reader. Without the table, <code>inventory_use::item_has_valid_target</code> stands in, answering from the catalog effect. Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

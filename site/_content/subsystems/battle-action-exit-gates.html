@@ -16,7 +16,7 @@
       <tr><td>Retail trigger</td><td>a restore's assigning seed landing on a drain still in flight</td><td>Kemaro putting a walk-less monster back with the flag still set, then that monster's out-of-reach melee inside one idle cycle</td></tr>
       <tr><td>Caught in unmodified play</td><td>no capture; a pad-reachable trigger is read from the code</td><td>yes - the second Gaza fight</td></tr>
       <tr><td>Self-recovers</td><td>on a poison or regen tick of the affected member</td><td>never</td></tr>
-      <tr><td>Disc patch</td><td>none</td><td><code>legaia-patcher --approach-softlock-fix</code></td></tr>
+      <tr><td>Disc patch</td><td>none</td><td><code>legaia-patcher randomize --approach-softlock-fix</code></td></tr>
       <tr><td>Port</td><td>same conventions, seeds paired at every call site</td><td>cannot park: the approach drive does not depend on a live clip</td></tr>
     </tbody>
   </table>
@@ -66,6 +66,13 @@
   <p>The one re-sync in the battle code is the per-round status ticker, which force-assigns displayed HP to live HP after each of its own writes. A poison or regen tick on the affected member clears the park.</p>
   <h3>The exit tests the value, not the crossing</h3>
   <p>Nothing records &ldquo;the countdown crossed zero this frame&rdquo;. The exit reads the countdown fresh every pass and holds while the menu flag is up, which also pins a floor of twelve frames. A port that conditions the exit on the crossing loses it for good if the menu flag is up on that one frame.</p>
+  <h3 id="sideband-stage">The side-band stage sets the band's length</h3>
+  <p>An ordinary action's <code>0x51</code> runs 76 vsyncs at frame step 2, not the 62 the countdown alone gives. The difference is the next turn's pick: state <code>0x50</code> picks the next actor and raises a side-band stage byte, and the side-band loader then reads that actor's two side-band slots off the disc, one CD read a slot. The countdown reaches the twelve-frame floor while the read is still running, waits there, and its last twelve frames run after the stage drops.</p>
+  <ul class="bullets">
+    <li>A pick with no live key (the round's last actor) keeps the stale base and still raises the stage, so the round's last <code>0x51</code> is the same length.</li>
+    <li>A pick with a side wiped out drops the seed, and only the plain countdown remains.</li>
+    <li>The port has no read to wait on, since its side-band is resident, but it keeps the time: the pick raises the stage for the measured slot time, and the band's dwell and the holds downstream wait on it.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="approach-park">
@@ -83,7 +90,7 @@
   <p>An ordinary hit cannot do this: the action that lands it waits until the struck actor's reaction has ended, and that end clears the bit. Of the cast and summon modules, only Kemaro puts its target back in a way that keeps the bit. The bit then lasts one idle cycle - 360 vsyncs for Gaza 2, whose idle loop is the longest and whose five-frame Move loop is the shortest of the 180 walk-less monsters, which is why the park is met in his fight and almost nowhere else. A parked save reads the flag byte as zero: the commit that killed the clip consumed the bit, so the stale flag is visible only in flight. The causal check re-arms the bit by hand and the clip dies at its first natural end; without it the same re-stage walks in and strikes.</p>
   <p>A party attacker's reach comes from a three-entry static table; a monster's is size-scaled. The range check returns &ldquo;out of range&rdquo; for any target code of 8 or more, so an all-target action can never satisfy a range poll.</p>
   <h3>The disc patch</h3>
-  <p><code>legaia-patcher --approach-softlock-fix</code> (off by default; also offered by the <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a>) replaces nine redundant words in the <code>0x19</code> arm - a per-frame facing re-derivation the neighbouring states already do - with a guard: if the staged clip is dead while the poll still fails, set the state back to <code>0x14</code>. Retail's own arm then re-stages the clip and the monster resumes walking. Healthy approaches never see a dead clip and are unaffected.</p>
+  <p><code>legaia-patcher randomize --approach-softlock-fix</code> (off by default; also offered by the <a href="../tooling/rom-patcher.html">in-browser ROM patcher</a>) replaces nine redundant words in the <code>0x19</code> arm - a per-frame facing re-derivation the neighbouring states already do - with a guard: if the staged clip is dead while the poll still fails, set the state back to <code>0x14</code>. Retail's own arm then re-stages the clip and the monster resumes walking. Healthy approaches never see a dead clip and are unaffected.</p>
   <h3>The port</h3>
   <p>The engine walks and cannot reproduce this park. Its approach drive is the same root-motion term, run in every approach state whether or not a clip is playing. Every tag search in the action state machine runs over the monster's real action table, so the 180 records without tag <code>0x20</code> take <code>0x19</code> as in retail and the six that carry one play their own approach clips. A disc-gated sweep fights every one of the 186 records.</p>
 </section>

@@ -66,6 +66,60 @@ pub fn victory_pose_table_from_scus(scus: &[u8]) -> Option<VictoryPoseTable> {
     Some(table)
 }
 
+/// `0x80078880` - the **victory voice** table: four 8-byte rows (one per
+/// character slot), one byte per win-pose action `0x11..=0x18`. The results
+/// sequencer's phase 0 reads `0x80078867 + action + char_id * 8`
+/// (`0x8004ECB0..0x8004ECD8`: `DAT_8007BD10[seat] * 8 - 0x19 + gp[+0xA4C]` off
+/// `0x80078880`), which is row `char_id - 1`, column `action - 0x11` here, and
+/// streams `monster.snd` bank `byte - 1` into VAB slot 7
+/// (`FUN_8003E104(byte - 1, 7, ..)` at `0x8004ECE4`).
+pub const VICTORY_VOICE_TABLE_VA: u32 = 0x8007_8880;
+
+/// Columns per voice row: one per win-pose action id.
+pub const VICTORY_VOICE_COLS: usize = 8;
+
+/// The parsed voice table: `table[char_id - 1][action - 0x11]` is the
+/// 1-based `monster.snd` bank byte.
+pub type VictoryVoiceTable = [[u8; VICTORY_VOICE_COLS]; VICTORY_POSE_ROWS];
+
+/// Parse the voice table out of a `SCUS_942.54` image. `None` when the image
+/// is not a PS-X EXE, the address falls outside its text segment, or a byte
+/// is zero (no bank `-1`: a wrong executable, not a table).
+pub fn victory_voice_table_from_scus(scus: &[u8]) -> Option<VictoryVoiceTable> {
+    if scus.len() < 0x800 || &scus[0..8] != b"PS-X EXE" {
+        return None;
+    }
+    let t_addr = u32::from_le_bytes(scus[0x18..0x1C].try_into().ok()?);
+    let t_size = u32::from_le_bytes(scus[0x1C..0x20].try_into().ok()?);
+    let end = t_addr.checked_add(t_size)?;
+    let len = (VICTORY_POSE_ROWS * VICTORY_VOICE_COLS) as u32;
+    if VICTORY_VOICE_TABLE_VA < t_addr || VICTORY_VOICE_TABLE_VA + len > end {
+        return None;
+    }
+    let off = (VICTORY_VOICE_TABLE_VA - t_addr) as usize + 0x800;
+    let bytes = scus.get(off..off + len as usize)?;
+    let mut table = [[0u8; VICTORY_VOICE_COLS]; VICTORY_POSE_ROWS];
+    for (r, row) in table.iter_mut().enumerate() {
+        for (c, cell) in row.iter_mut().enumerate() {
+            let b = bytes[r * VICTORY_VOICE_COLS + c];
+            if b == 0 {
+                return None;
+            }
+            *cell = b;
+        }
+    }
+    Some(table)
+}
+
+/// The `monster.snd` bank the results sequencer streams into VAB slot 7 for
+/// `char_id` (1-based) striking win pose `action`: the table byte less one.
+/// `None` for an id or action outside the table.
+pub fn victory_voice_bank(table: &VictoryVoiceTable, char_id: u8, action: u8) -> Option<u16> {
+    let row = table.get(usize::from(char_id.checked_sub(1)?))?;
+    let byte = *row.get(usize::from(action.checked_sub(VICTORY_POSE_ID_MIN)?))?;
+    Some(u16::from(byte) - 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +148,29 @@ mod tests {
         ];
         let exe = synthetic_scus(&rows);
         assert_eq!(victory_pose_table_from_scus(&exe), Some(rows));
+    }
+
+    #[test]
+    fn the_voice_table_sits_one_row_block_below_the_pose_table() {
+        // 32 bytes: the four 8-byte voice rows end where the pose rows start.
+        assert_eq!(
+            VICTORY_VOICE_TABLE_VA + (VICTORY_POSE_ROWS * VICTORY_VOICE_COLS) as u32,
+            VICTORY_POSE_TABLE_VA
+        );
+        let mut exe = synthetic_scus(&[[0x11; 6]; 4]);
+        let t_addr = 0x8001_0000u32;
+        let off = (VICTORY_VOICE_TABLE_VA - t_addr) as usize + 0x800;
+        for (i, b) in exe[off..off + 32].iter_mut().enumerate() {
+            *b = 0xB0 + i as u8;
+        }
+        let t = victory_voice_table_from_scus(&exe).expect("voice table");
+        // Row `char_id - 1`, column `action - 0x11`, bank = byte - 1.
+        assert_eq!(victory_voice_bank(&t, 1, 0x11), Some(0xAF));
+        assert_eq!(victory_voice_bank(&t, 2, 0x14), Some(0xB0 + 8 + 3 - 1));
+        assert_eq!(victory_voice_bank(&t, 0, 0x11), None);
+        assert_eq!(victory_voice_bank(&t, 1, 0x19), None);
+        exe[off] = 0;
+        assert_eq!(victory_voice_table_from_scus(&exe), None);
     }
 
     #[test]

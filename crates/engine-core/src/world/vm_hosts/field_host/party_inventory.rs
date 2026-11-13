@@ -50,6 +50,8 @@ impl FieldHostImpl<'_> {
         }
     }
 
+    // PORT: FUN_801DE840 (op `0x3C`, `0x801E04D8..0x801E05DC`)
+    // REF: FUN_800423E0
     pub(super) fn party_add(&mut self, char_id: u8) -> bool {
         // Retail (`FUN_801DE840` op `0x3C`): a linear search of the
         // present-party list `0x80084598` for `count = DAT_80084594`
@@ -79,7 +81,19 @@ impl FieldHostImpl<'_> {
             if list.len() == 1 {
                 self.world.party.party_leader_slot = list.first().copied();
             }
+            // The tail of the accepted arm: once the list reads exactly
+            // Vahn and Noa (count `2`, roster halfword `0x0100`), the bag is
+            // normalized (`0x801E05B0..0x801E05D0`, `FUN_800423E0`, which
+            // reselects the window first). That is the beat where the two
+            // halves of the bag meet: Noa's Healing Leaves fold into Vahn's
+            // stack and her items close up behind his, so the pair's battle
+            // Item window lists one stack per id (issue #590).
+            let vahn_and_noa = list == [0, 1];
             self.world.install_present_party_list(list);
+            if vahn_and_noa {
+                self.world.refresh_bag_window();
+                self.world.party.inventory.normalize();
+            }
         }
         self.world
             .pending_field_events

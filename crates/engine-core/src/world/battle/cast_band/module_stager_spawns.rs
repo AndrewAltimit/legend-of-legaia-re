@@ -2,7 +2,7 @@
 //! modules whose stager arms only seat more records: PROT 0905 (Vera), 0906
 //! (Gizam), 0907 (Nighto), 0908 (Zenoir), 0910 (Swordie), 0911 (Orb), 0912
 //! (Freed), 0913 (Nova), the summon-creature modules 0914, 0915, 0917, 0921,
-//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0961, 0962 and 0965
+//! 0928..0933, and the capture cells PROT 0938, 0944, 0946, 0950, 0958..0963 and 0965
 //! (PROT 0940's stager is a bare `jr ra`). PROT 0909's stager also steps the
 //! module's phase and runs through [`World::run_viguro_stager_calls`].
 
@@ -17,8 +17,9 @@ use legaia_engine_cast::cast_module_ticks::{
     swordie_stager_spawns, theeder_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
-    MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
-    plasma_strike_stager_spawns,
+    GENOCIDAL_CANNON_STAGER_FADE, GenocidalCannonMuzzle, MEGATON_PRESS_HELD_WHITE,
+    MEGATON_PRESS_WHITE_OUT, blazing_slash_stager_spawns, genocidal_cannon_stager_spawns,
+    megaton_press_stager_spawns, plasma_strike_stager_spawns, rolling_flare_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     barra_stager_spawns, gola_gola_stager_spawns, iota_stager_spawns, jedo_stager_spawns,
@@ -80,10 +81,13 @@ impl World {
                 | 940
                 | 944
                 | 946
+                | 950
+                | 958
                 | 959
                 | 960
                 | 961
                 | 962
+                | 963
                 | 965
         )
     }
@@ -118,7 +122,7 @@ impl World {
         // which already holds the records the stager would seat.
         if matches!(
             entry,
-            938 | 940 | 941 | 942 | 944 | 945 | 951 | 953 | 955 | 959 | 960 | 962
+            938 | 940 | 941 | 942 | 944 | 945 | 950 | 951 | 953 | 955 | 958 | 959 | 960 | 962 | 963
         ) && self
             .casting
             .capture_spell
@@ -152,6 +156,7 @@ impl World {
                 (916, 1) => std::slice::from_ref(&ALURU_STAGER_FADE_IN),
                 (916, 2) => std::slice::from_ref(&ALURU_STAGER_FADE_OUT),
                 (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,
+                (963, 2) => std::slice::from_ref(&GENOCIDAL_CANNON_STAGER_FADE),
                 _ => &[],
             };
             if !stager_fades.is_empty() {
@@ -186,6 +191,20 @@ impl World {
                     .filter(|p| p.tag == Some(CALL_WAVE_WAVE_RECORD))
                     .count()
             });
+            // PROT 0963's arms 1 and 3 aim off battle slot 3
+            // (`lw v0,0xC(v1)` off `0x801C9370`).
+            let muzzle = self
+                .actors
+                .get(3)
+                .map(|a| GenocidalCannonMuzzle {
+                    pos: [
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                    ],
+                    facing: a.battle.facing_angle as i16,
+                })
+                .unwrap_or_default();
             let phase = self.casting.module_phase;
             let mut barra_counter = self.casting.module_barra_counter;
             let mut ozma_word = self.casting.module_ozma_word;
@@ -220,6 +239,9 @@ impl World {
                 940 => Vec::new(),
                 944 => guilty_cross_cell_stager_spawns(arm, caller),
                 959 => megaton_press_stager_spawns(arm, caller, &mut rand),
+                958 => blazing_slash_stager_spawns(arm, caller),
+                950 => rolling_flare_stager_spawns(arm, caller),
+                963 => genocidal_cannon_stager_spawns(arm, caller, muzzle),
                 960 => plasma_strike_stager_spawns(arm, caller),
                 946 => call_wave_stager_spawns(arm, caller, phase, waves, &mut rand),
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),

@@ -1354,17 +1354,6 @@ machines, each with its own tables, and this one shares none of them.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/narration.rs:8002519c"
-reason = """
-Partial, the retire arm. The SCUS dump walks the list at *a0 and, per node, tests
-`andi v0,a0,0x8` on +0x10 (0x800251E8): set, it unlinks (`jal 0x80024DFC`), frees
-(`jal 0x800204A4`) and raises 0x02000000; clear, it calls the node's +0x0C tick
-(`jalr v0` at 0x800252B4). The Rust is that retire test over the placement
-contexts with CONTEXT_RETIRE_BIT = 0x8. The module's siblings are the motion VMs,
-which share no data or callee with an actor-list sweep.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f8eac"
 reason = """
 Full, against PROT 0904's dump: `bne a1,zero` at 0x801F8EB4 returns on any arm but

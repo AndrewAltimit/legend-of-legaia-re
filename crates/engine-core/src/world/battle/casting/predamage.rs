@@ -452,7 +452,7 @@ impl World {
     /// rather than the MP-scaled spell placeholder). Only fires when the
     /// move-power table is installed (disc-real battles), keeping disc-free /
     /// synthetic battles on the placeholder path with an unchanged RNG stream.
-    pub(super) fn enemy_move_power(&self, caster: u8, move_id: u8) -> Option<i32> {
+    pub(in crate::world) fn enemy_move_power(&self, caster: u8, move_id: u8) -> Option<i32> {
         if (caster as usize) < self.party.party_count as usize {
             return None;
         }

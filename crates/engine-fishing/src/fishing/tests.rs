@@ -1453,3 +1453,61 @@ fn the_catch_hud_goes_the_frame_after_the_landing() {
     assert_eq!(p.phase(), PondPhase::Landed);
     assert!(!p.catch_hud().visible, "gone through the close-up");
 }
+
+/// The pond runs a game tick every [`VENUE_FRAME_STEP`] vsyncs, on that step:
+/// the fishing init's frame-step floor. A press on a vsync between two game
+/// ticks is held for the next.
+#[test]
+fn the_pond_ticks_every_second_vsync_and_holds_a_press_for_it() {
+    let mut p = pond();
+    let press = PondInput {
+        cast_edge: true,
+        ..Default::default()
+    };
+    assert_eq!(p.vsync(PondInput::default(), 0x20), VENUE_FRAME_STEP);
+    // The press lands between two game ticks: nothing runs on it ...
+    assert_eq!(p.vsync(press, 0x20), 0);
+    assert_eq!(p.phase(), PondPhase::Idle);
+    assert_eq!(p.vsync_step(), 0);
+    // ... and the next game tick takes it, the button already up.
+    assert_eq!(p.vsync(PondInput::default(), 0x20), VENUE_FRAME_STEP);
+    assert_eq!(p.phase(), PondPhase::WindUp);
+    // The wind-up counts frame steps: thirteen of them at step 2 is seven
+    // game ticks, fourteen vsyncs.
+    let mut vsyncs = 0;
+    while p.phase() == PondPhase::WindUp {
+        p.vsync(PondInput::default(), 0x20);
+        vsyncs += 1;
+    }
+    assert_eq!(vsyncs, 14);
+}
+
+/// The cast spawns the lure `200 * step` units out of the lead
+/// (`FUN_801D7BB8`'s scale): at the venue's step, `400`, where
+/// `minigame_fishing_retail_lure_cast` holds it (`z` `4880` against the
+/// lead's `4480`, facing `0x800`).
+#[test]
+fn the_cast_spawns_the_lure_where_the_retail_cast_did() {
+    let mut p = pond();
+    p.attach_venue(PondVenue {
+        map: Vec::new(),
+        region_block: None,
+        anchor_x: 5888,
+        anchor_z: 4480,
+        anchor_y: -64,
+        facing: 0x800,
+        rod_mesh: None,
+    });
+    let press = PondInput {
+        cast_edge: true,
+        ..Default::default()
+    };
+    p.vsync(press, 0x20);
+    while p.phase() != PondPhase::Power {
+        p.vsync(PondInput::default(), 0x20);
+    }
+    // Lock on a game tick.
+    while p.vsync(press, 0x20) == 0 {}
+    let lure = p.lure_actor().expect("the lock spawns the lure");
+    assert_eq!(lure.spawn, (5888, 4880));
+}

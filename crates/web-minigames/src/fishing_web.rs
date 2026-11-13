@@ -538,7 +538,9 @@ impl LegaiaMinigames {
             _ => {}
         }
         let casts = p.persist().casts;
-        p.tick(
+        // The venue's game tick, every `VENUE_FRAME_STEP` vsyncs, as the play
+        // hosts' world tick runs it.
+        p.vsync(
             PondInput {
                 reel_mask,
                 // Retail's cast edge is the reel pair's press (`& 0xC0`); the
@@ -549,7 +551,6 @@ impl LegaiaMinigames {
                 reel_edge: pressed_mask & 0xC0,
                 face_edge: pressed_mask & 0xF0 != 0,
             },
-            1,
             fishing::CAST_POWER_STEP,
         );
         let events = p.take_events();
@@ -606,7 +607,12 @@ impl LegaiaMinigames {
         let mut out = hub_events;
         // The hook and catch cues, through the clock `World::tick` drives
         // for the two play hosts.
-        let cues = self.fishing_cues.frame(&events, p.strength(), 1);
+        let step = p.vsync_step();
+        let cues = if step > 0 {
+            self.fishing_cues.frame(&events, p.strength(), step as i16)
+        } else {
+            Vec::new()
+        };
         for cue in hub_cue.into_iter().chain(cues) {
             self.minigame_sfx_cue(cue);
         }

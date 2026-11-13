@@ -446,6 +446,8 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 `FUN_801D5854(target, 6)` on the stacked `+0x1DD` (`lw a0,0x20(sp)` at `0x801E40D8`), so the camera turns from the caster to its patient here, on the same arm `0x40` runs. Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**, and the moment a committed item takes effect (port `World::fold_battle_item_action`). Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
 
+The call does not test the actor's side: a monster's heal or buff (a spell record class under `0x14`) runs this band too, and the applier with the record's pair is its whole outcome. An Orb's Heal is `FUN_800402F4(0, 0, ..)`, `+200` with no popup, after its flight has already struck the same ally in `0x3E` ([the hit arm](battle-action-helpers.md#fun_801e09f8---cast-effect-census--projectile-flight--impact)).
+
 **Next:** `0x40`.
 
 #### State `0x40` - Spirit - post-damage

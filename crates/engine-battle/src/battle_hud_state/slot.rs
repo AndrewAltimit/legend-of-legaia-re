@@ -261,6 +261,13 @@ pub struct DamagePopup {
     pub frames_remaining: u16,
     /// Total lifetime - used by the renderer to compute the fade alpha.
     pub frames_total: u16,
+    /// The ring timer `ctx[+0x85C]` as the renderer `FUN_801DF6B8` left it
+    /// on its last draw: zeroed on push, stepped `0x10 * DAT_1F800393` by
+    /// each draw (`0x801DF7B8..0x801DF7C8`), once a battle frame.
+    pub timer: i32,
+    /// The frame step the last draw stepped [`Self::timer`] by; `0` until
+    /// the first draw.
+    pub drawn_step: u8,
 }
 
 impl DamagePopup {
@@ -273,6 +280,8 @@ impl DamagePopup {
             status: None,
             frames_remaining: DEFAULT_POPUP_FRAMES,
             frames_total: DEFAULT_POPUP_FRAMES,
+            timer: 0,
+            drawn_step: 0,
         }
     }
 
@@ -297,6 +306,26 @@ impl DamagePopup {
         self.frames_remaining = frames;
         self.frames_total = frames;
         self
+    }
+
+    /// Step the ring timer as one draw of `FUN_801DF6B8` does, on a battle
+    /// frame of `step` vsyncs.
+    ///
+    /// REF: FUN_801DF6B8 (the timer step, `0x801DF7B8..0x801DF7C8`)
+    pub fn step_timer(&mut self, step: u8) {
+        let step = step.max(1);
+        self.timer += i32::from(step) * 0x10;
+        self.drawn_step = step;
+    }
+
+    /// The timer the last draw read before its step - what the anchor's
+    /// rise reads - in vsyncs of [`POPUP_TIMER_STEP`](legaia_engine_battle_vm::battle_value_readout::POPUP_TIMER_STEP),
+    /// with that draw's step: `None` before the first draw.
+    pub fn drawn_age(&self) -> Option<(u16, u8)> {
+        (self.drawn_step != 0).then(|| {
+            let before = self.timer / 0x10 - i32::from(self.drawn_step);
+            (before.max(0) as u16, self.drawn_step)
+        })
     }
 
     /// Fade alpha in 0..=1, computed from frames_remaining / frames_total.
