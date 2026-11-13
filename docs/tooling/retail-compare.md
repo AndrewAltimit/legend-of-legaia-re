@@ -4603,6 +4603,24 @@ off the cursor ring when the RAM's endpoint fits the case's law, and the walk ba
 runs against it (`displayed_cam_live_steps`'s `end_shift`). This is a read of the
 capture and changes no game state.
 
+#### Two gaps leave the same pass
+
+The re-arm does not invert to one pose. A pass that stood `G` short of its
+endpoint leaves `G - step * ceil(G / d)`, so a gap left after it has a root on
+each of two increments wherever `step` exceeds the remainder (at step `3` on
+`d = 6`, everywhere): the walk back's second pass is ambiguous by `step` units
+per component. `battle_rugi_caruban_2_fire_breath_mid_cast` shows both roots in
+one frame: its yaw stands on the upper one (`3565`, `.987`; the lower `3562`
+reads `.931`), its pitch on the lower one (`22`; the upper `19` takes the frame
+to `.938`). Poisonous Breath's yaw stands on the lower root. The RAM keeps
+neither, so where no earlier endpoint bounds the walk the walk back takes the
+midpoint of the two, at most half a re-arm off either way: the Caruban stills
+read `.931` / `.938` to `.966` / `.977`, `battle_balden_orb_v2_strike` and
+`battle_ropeway_orb_strike` rise about `.02`, and three captures whose frames
+stood on the lower root fall `.022` (`battle_noaru_gilium_lv2_strike`,
+`battle_deene_ironman_jagged_earth_mid_cast`,
+`battle_ropeway_party_vahn_slash_kick_mid`).
+
 #### A shot that re-aims every pass
 
 The alignment takes only the components whose endpoint the replay's framing agrees
