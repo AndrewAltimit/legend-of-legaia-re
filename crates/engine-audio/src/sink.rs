@@ -314,6 +314,27 @@ pub trait AudioSink {
         self.with_core(|s| s.fade_out_sequencer(fade_samples));
     }
 
+    /// Fade the SPU and the CD input to silence over `fade_samples`, then cut
+    /// what was sounding when the fade began - score, voices, reverb tail,
+    /// CD-XA stream - and bring the master back to full. A scene switch the
+    /// engine loads instantly runs this before the next scene's bank is
+    /// uploaded, so no note of the old scene releases over the new bank's
+    /// samples. At once with `0` or nothing sounding. Any attach, swap,
+    /// detach or cross-fade issued meanwhile ends the fade first.
+    fn fade_to_silence(&self, fade_samples: u32) {
+        self.with_core(|s| s.fade_to_silence(fade_samples));
+    }
+
+    /// Whether a [`Self::fade_to_silence`] is still ramping.
+    fn silence_pending(&self) -> bool {
+        self.with_core(|s| s.switch_fade.is_some())
+    }
+
+    /// End a [`Self::fade_to_silence`] now, wherever its ramp stands.
+    fn finish_silence(&self) {
+        self.with_core(|s| s.finish_silence());
+    }
+
     /// Run `f` on the PCM bus ([`crate::pcm_bus`]): an expansion pack's own
     /// music, sounds and ambient loops.
     fn with_pcm_bus<R>(&self, f: impl FnOnce(&mut crate::PcmBus) -> R) -> R {

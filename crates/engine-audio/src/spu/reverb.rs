@@ -418,6 +418,15 @@ impl Reverb {
         }
     }
 
+    /// Empty the tank and both resampler histories, keeping the mode: the
+    /// wet tail of whatever was sent ends here. Engine-only (a scene switch's
+    /// cut, [`crate::AudioSink::fade_to_silence`]).
+    pub fn clear_tail(&mut self) {
+        self.buf.iter_mut().for_each(|h| *h = 0);
+        self.in_hist = [[0; RESAMPLE_IN_LEN]; 2];
+        self.out_hist = [[0; RESAMPLE_OUT_LEN]; 2];
+    }
+
     /// Override the reverb output volume (`vLOUT`/`vROUT`, signed Q15). The
     /// engine's mode byte doesn't carry depth; the host can set it from the
     /// retail `REVERB_VOL_L/R` registers if it has them.
