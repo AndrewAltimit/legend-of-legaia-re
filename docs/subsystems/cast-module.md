@@ -3024,9 +3024,13 @@ arm `0xD` pass jolts the controller through arm 18's tail (`j 0x801F880C` at
 arm 8 and Slippery's arm 9 push the camera ahead of the gate, so an exit with
 a cut carries no push and one without carries it. Mushura's arm `0xC` turns
 the creature before it frames it, so the host runs the chase ahead of the
-director (`World::mushura_chase_ahead`). Two parts stay out: Palma's sweep
-rolls the camera (by up to `0x80`), which the battle camera has no channel
-for, and Ozma's arm `0x15` aims at its last random spawn's point.
+director (`World::mushura_chase_ahead`). Ozma's arm `0x15` aims its exit cut
+at its spray's last point: the loop leaves the third record's `rand()` pair at
+`sp+0x30` / `sp+0x32`, the exit stores `z = 0x400` over the third word
+(`0x801F8534`) and hands `sp+0x30` to `FUN_801D829C` as the focus, which arms
+`0x16..0x19` keep (`ModuleCamState::ozma_spray_point`). One part stays out:
+Palma's sweep rolls the camera (by up to `0x80`), which the battle camera has
+no channel for.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
