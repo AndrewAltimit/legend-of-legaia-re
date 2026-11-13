@@ -67,6 +67,11 @@ pub struct InflightCastSeed {
 /// monster seats.
 pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
+/// One op-`0x30` hand-back: the captured rect `(x, y, w, h)` and its texels,
+/// or `None` when the engine had not captured the rect yet
+/// (`BattleState::cell_restores`).
+pub type CellRestore = ((u16, u16, u16, u16), Option<Vec<u16>>);
+
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
     /// The loaded scene's **map id** - retail's `_DAT_80084540`, the scene's
@@ -811,6 +816,15 @@ pub struct BattleState {
     /// buffer every frame's recolour reads from. Dropped once no live part
     /// recolours the rect.
     pub cell_captures: std::collections::BTreeMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// The captures a live part's move-VM op `0x30` handed back this frame,
+    /// each with its rect: `FUN_800583C8(actor + 0xA0, buf)` (`jal` at
+    /// `0x80023B04` in `FUN_80023070`) `LoadImage`s the op-`0x2C` capture
+    /// onto its rect, undoing the recolour. `None` when the op ran before the
+    /// rect's first upload took its capture: the applier reads the capture
+    /// that upload takes. Applied after [`Self::cell_fx`] by
+    /// `World::apply_battle_vram_moves`, as retail's packet follows the
+    /// mode-3 arm's in the same frame; cleared at battle entry.
+    pub cell_restores: Vec<CellRestore>,
     /// How the engine's one-vsync ticks group into battle frames - the unit
     /// the root-motion carry truncates over and the camera steps on
     /// (`World::set_battle_frame_step`).
@@ -1592,6 +1606,7 @@ impl BattleState {
             vram_scrolls: Vec::new(),
             cell_fx: Vec::new(),
             cell_captures: Default::default(),
+            cell_restores: Vec::new(),
             frame_clock: Default::default(),
             frame_stretch: None,
             cast_arm_step_on: false,

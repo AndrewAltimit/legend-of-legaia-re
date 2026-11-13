@@ -192,6 +192,33 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         }
     }
 
+    /// Op `0x30` - `FUN_800583C8(actor + 0xA0, buf)` (`jal` at `0x80023B04`;
+    /// `buf` is `+0xA8`, or the inline `+0xAC` when that is zero, chosen at
+    /// `0x80023AF0..0x80023B00`): the libgpu `LoadImage` of the op-`0x2C`
+    /// capture back onto its rect, which undoes the mode-3 recolour. The VM
+    /// clears `+0x9C` itself (`0x80023B0C`), so the cycler stops with it.
+    /// Queued for the VRAM applier both hosts run - the battle queue while a
+    /// battle's parts run, the ambient one otherwise.
+    ///
+    /// REF: FUN_800583C8 (op `0x30`'s `LoadImage` in `FUN_80023070`,
+    /// `0x80023AF0..0x80023B10`)
+    fn keyframe_free(&mut self, state: &mut vm::move_vm::ActorState, _buffer_ptr: i32) {
+        // The texels are taken now, so a retire or a fresh op `0x2C` later
+        // in the frame cannot lose or overwrite them. The engine captures a
+        // rect lazily, at its first upload; an op `0x30` in the same tick as
+        // that upload finds no texels yet and the applier reads the capture
+        // the upload takes. The applier frees the cached capture.
+        let d = state.keyframe_desc;
+        let rect = (d[0], d[1], d[2], d[3]);
+        if self.world.mode == SceneMode::Battle {
+            let src = self.world.battle.cell_captures.get(&rect).cloned();
+            self.world.battle.cell_restores.push((rect, src));
+        } else {
+            let src = self.world.ambient.cell_captures.get(&rect).cloned();
+            self.world.ambient.cell_restores.push((rect, src));
+        }
+    }
+
     /// Op `0x17` - the battle-overlay escape `FUN_801F30C4(actor, mode)`,
     /// queued with what the burst reads off the parent (its `+0x14` position,
     /// `+0x24` rotation trio and `+0x72` scale) for

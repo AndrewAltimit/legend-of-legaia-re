@@ -1120,7 +1120,10 @@ impl World {
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
-        if self.ambient.fx.is_empty() && self.ambient.cell_fx_seed.is_empty() {
+        if self.ambient.fx.is_empty()
+            && self.ambient.cell_fx_seed.is_empty()
+            && self.ambient.cell_restores.is_empty()
+        {
             return false;
         }
         let mut wrote = false;
@@ -1134,6 +1137,19 @@ impl World {
         // Whatever a headless tick banked up (a host that ticked without a
         // VRAM surface) still lands, in queue order.
         wrote |= self.apply_ambient_scrolls(vram);
+        // A part whose op `0x30` ran has cleared its own `+0x9C`: its mode-3
+        // arm no longer uploads, so its last recolour is not redrawn.
+        let restores = std::mem::take(&mut self.ambient.cell_restores);
+        if !restores.is_empty() {
+            for p in self.ambient.fx.iter_mut() {
+                if p.state.field_9c == 0
+                    && p.cell_fx
+                        .is_some_and(|f| restores.iter().any(|(r, _)| *r == f.rect))
+                {
+                    p.cell_fx = None;
+                }
+            }
+        }
         let mut fx: Vec<ClutCellFx> = self
             .ambient
             .fx
@@ -1185,6 +1201,23 @@ impl World {
             if cur != out {
                 write_rect(vram, x, y, w, &out);
                 wrote = true;
+            }
+        }
+        // Op `0x30`'s `LoadImage` of the capture, after the recolours as its
+        // packet follows the mode-3 arm's.
+        // REF: FUN_800583C8
+        // A rect another live part still cycles keeps that part's recolour.
+        for (rect, src) in restores {
+            if !self
+                .ambient
+                .fx
+                .iter()
+                .any(|p| p.cell_fx.is_some_and(|f| f.rect == rect))
+            {
+                let cached = self.ambient.cell_captures.remove(&rect);
+                if let Some(src) = src.or(cached) {
+                    wrote |= restore_rect(vram, rect, &src);
+                }
             }
         }
         wrote
@@ -1344,6 +1377,23 @@ pub(crate) fn write_rect(vram: &mut psx_tim::Vram, x: u16, y: u16, w: u16, texel
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);
     }
+}
+
+/// Write an op-`0x2C` capture back over its rect (op `0x30`); `true` when a
+/// texel changed.
+pub(crate) fn restore_rect(
+    vram: &mut psx_tim::Vram,
+    (x, y, w, h): (u16, u16, u16, u16),
+    src: &[u16],
+) -> bool {
+    if w == 0 || h == 0 || src.len() != usize::from(w) * usize::from(h) {
+        return false;
+    }
+    if read_rect(vram, x, y, w, h) == src {
+        return false;
+    }
+    write_rect(vram, x, y, w, src);
+    true
 }
 
 #[cfg(test)]

@@ -126,6 +126,15 @@ impl World {
                 wrote = true;
             }
         }
+        // Op `0x30`'s `LoadImage` of the capture, queued behind the mode-3
+        // arm's upload in the same frame (the arm runs ahead of the part's
+        // VM call), so the capture is what the frame ends on.
+        for (rect, src) in std::mem::take(&mut self.battle.cell_restores) {
+            let cached = self.battle.cell_captures.remove(&rect);
+            if let Some(src) = src.or(cached) {
+                wrote |= super::super::ambient::restore_rect(vram, rect, &src);
+            }
+        }
         wrote
     }
 
@@ -238,6 +247,7 @@ impl World {
         self.battle.vram_moves.clear();
         self.battle.vram_scrolls.clear();
         self.battle.cell_fx.clear();
+        self.battle.cell_restores.clear();
         self.battle.vram_loads = Default::default();
     }
 }
