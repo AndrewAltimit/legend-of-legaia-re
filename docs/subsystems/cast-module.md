@@ -4051,6 +4051,13 @@ hosts:
 | `3` (`0x801F9390`) | Each loses `(hp + 3) >> 2` with a number pop (`FUN_801F44A0`) and staged `+0x1F1`; the victim brought before the caster on rate `4` | 12: the focus between them, TR z `+8`, until both settle |
 | `4` (`0x801F95D0`) | Each gains `(max + 3) >> 2`, capped at what it is missing, with `FUN_801E22C8(0x808080, 0xFFFFF, seat, 2)` and cue `0x20F`; the victim brought before the caster | 13: TR z `+8`, word `+= 0x800` |
 
+**The move-name label** goes with the faces: arm 2's face pass calls
+`FUN_800319A8(0x21)` (`0x801F7F34..0x801F7F40`), which destroys the text window
+`0x21`, the id placement record 76 opens the monster cast's label under. The port
+raises `ModuleCamState::move_label_closed` there, and the battle HUD leaves the label
+off for the rest of the cast. PROT 0966 (Evil Seru Magic) makes the same call on arm
+10's pass (`0x801F7058`).
+
 `0x801FA2B8`'s four handles, the deal and the swap words are
 `cast_module_camera::DeathGame`; `World::feed_death_game` makes the draws and reads
 the pad ahead of a pass, and `carry_death_game_pass` plays the cues and writes through

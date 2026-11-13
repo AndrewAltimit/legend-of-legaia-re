@@ -117,6 +117,14 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// The module destroyed the move-name label's text window: an arm called
+    /// `FUN_800319A8(0x21)`, and `0x21` is the window id placement records
+    /// 76 / 77 open the label under (record 76's `+0x00` byte, `0x80077330`, read by
+    /// `FUN_801D8DE8` for a `(0x4C, 0)` open).
+    /// PROT 0957 (Death Game) does it on arm 2's face pass (`0x801F7F40`),
+    /// PROT 0966 (Evil Seru Magic) on arm 10's pass (`0x801F7058`); the label
+    /// stays off for the rest of the cast.
+    pub move_label_closed: bool,
     /// A module's saved seats `[caster x, caster z, victim x, victim z]`, which
     /// its arms write back each pass: PROT 0952 `0x5C`'s (`0x801F7BB8`,
     /// `0x801F7BB0`), PROT 0951 `0x5B`'s (`0x801F89DC`, `0x801F89D4`); PROT

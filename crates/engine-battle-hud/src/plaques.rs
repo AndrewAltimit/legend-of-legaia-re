@@ -254,6 +254,11 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
         ) {
             return None;
         }
+        // A module that destroyed the label's window (`FUN_800319A8(0x21)`:
+        // Death Game with its faces, Evil Seru Magic at arm 10) keeps it off.
+        if world.casting.module_cam.move_label_closed {
+            return None;
+        }
         let id = actor.battle.params[0];
         world
             .menu
