@@ -7,6 +7,12 @@
 <section class="doc-section" id="explorer">
   <h2>Without a terminal: Legaia Explorer</h2>
   <p>The release archive's <code>Legaia Explorer</code> (<code>Legaia Explorer.exe</code> on Windows, <code>Legaia Explorer.app</code> on macOS, <code>legaia-explorer</code> in a source build) does the common cases of this page with buttons: open your disc image, browse and search the archive by place name, preview textures, 3D models, audio and dialog, export PNG, OBJ, textured <code>.glb</code> or WAV, view the party and every monster with their animations, play the movies and voice audio, and run the whole-disc extraction from its <em>Extract</em> tab - which writes exactly what the <code>legaia-extract</code> command below produces. Its <em>Play</em> button starts the game on the disc it has open.</p>
+  <ul class="bullets">
+    <li><strong>Opening.</strong> On a first run the start page offers a dump named for the game that it finds in Downloads, the Desktop, Documents or the home folder. With a controller, the open buttons bring up Explorer&rsquo;s own file browser: the D-pad moves, Cross opens a folder or takes the file, Left goes up, Circle closes.</li>
+    <li><strong>Previewing.</strong> <em>Overview</em> says what an entry is in plain words and the place it belongs to; <em>Show technical details</em> adds the PROT index, CDNAME block, disc position and chunk table. Textures have <em>Fit</em>, Ctrl + scroll zoom and drag-to-move; audio has <em>Stop</em> and a progress readout; the text view&rsquo;s <em>Find</em> keeps the lines holding every word you type; the hex view&rsquo;s <em>Go to</em> jumps to an offset. Each movie names where in the game it plays.</li>
+    <li><strong>Exporting.</strong> <code>Ctrl+E</code> saves what the view shows (on <em>3D model</em>, the textured <code>.glb</code>). An export made with a controller skips the save window and lands in the export folder - at first <code>Legaia Explorer</code> in Pictures - which the View menu&rsquo;s <em>Export folder</em> row changes.</li>
+    <li><strong>Extracting.</strong> The skip options sit under <em>Options</em>. <em>Every texture as PNG</em> is ticked unless you clear it, and it is what puts the disc&rsquo;s textures under <code>tim_scan/</code> - the same files as <code>legaia-extract --all-textures</code>; left out, a run writes only a few images.</li>
+  </ul>
   <p><a href="desktop-apps.html#explorer">Desktop apps: Legaia Explorer</a> walks through it with screenshots, including the download and the first start on each system. Explorer ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it. The rest of this page is the command-line route, one scenario per asset type.</p>
 </section>
 
@@ -39,7 +45,7 @@
 
 <section class="doc-section" id="textures">
   <h2>Textures &rarr; PNG</h2>
-  <p>Every texture on the disc is a PSX TIM image, and most of them are buried inside compressed containers. The bulk texture path is a two-command chain: sweep every PROT entry for TIM images (raw and inside LZS compression), then convert the hits.</p>
+  <p>Every texture on the disc is a PSX TIM image, and most of them are buried inside compressed containers. The bulk texture path is a two-command chain: sweep every PROT entry for TIM images (raw and inside LZS compression), then convert the hits. <code>legaia-extract --all-textures</code> (or Explorer&rsquo;s <em>Every texture as PNG</em> box) runs both as one step and writes the same tree.</p>
   <div class="cli"><code>./asset tim-scan extracted/PROT --out extracted/tim_scan</code></div>
   <div class="cli"><code>./tim convert-dir extracted/tim_scan</code></div>
   <p><code>tim_scan/</code> gets one directory per PROT entry, holding files named <code>&lt;source&gt;_off&lt;OFFSET&gt;_&lt;W&gt;x&lt;H&gt;_&lt;BPP&gt;bpp.tim</code>. <code>&lt;source&gt;</code> is <code>raw</code> (found in the entry's raw bytes) or <code>lzs&lt;i&gt;</code> (found inside LZS section <code>i</code>), and <code>&lt;OFFSET&gt;</code> is the byte offset in that source, upper-case hex zero-padded to six digits. <code>convert-dir</code> writes a <code>.png</code> next to each. For a single texture:</p>
