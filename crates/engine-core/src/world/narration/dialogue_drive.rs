@@ -1961,6 +1961,16 @@ impl World {
             {
                 rec.entry_pc = pc;
                 rec.resume = true;
+                // One retail cursor: an engagement of the context
+                // (`B1 <id> 08`, the interaction timeline) resumes here too.
+                if let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                {
+                    c.pc = pc;
+                }
             }
             // A talk that ended on an executed raw `0x21` leaves the actor's
             // own context there too: the talk and the placement are one
