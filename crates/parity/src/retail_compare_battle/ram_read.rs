@@ -1576,6 +1576,14 @@ impl RetailBattle {
                 .collect(),
             turn_owner: game_anchors::u8_at(ram, ctx + NEXT_ACTOR),
             formation_latch: game_anchors::u8_at(ram, ctx + 0x291),
+            gauge_actor: {
+                let char_index = game_anchors::u8_at(ram, 0x8007_BD00);
+                (0..3u32)
+                    .find(|&seat| {
+                        game_anchors::u8_at(ram, 0x8007_BD10 + seat).wrapping_sub(1) == char_index
+                    })
+                    .map(|seat| seat as u8)
+            },
             init_keys: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

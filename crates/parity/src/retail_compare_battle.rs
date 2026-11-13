@@ -811,6 +811,14 @@ pub struct RetailBattle {
     /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), so a living combatant reading
     /// `0` has already acted in the capture's round.
     pub init_keys: Vec<Option<u16>>,
+    /// The party seat whose character index `DAT_8007BD00` holds: the actor
+    /// of the last action that raised or tore down HUD element `0x52`, the
+    /// spirit-gauge panel (`FUN_801D8DE8`'s case `0x52`, `sb v0,-0x4300(v1)`
+    /// at `0x801D9094`, `DAT_8007BD10[ctx[+0x13]] - 1`). The action seed's
+    /// Spirit arm raises it (`0x801E2FDC`), so after a party Spirit it names
+    /// that member: the earlier actor a monster's case-6 walk sets out from.
+    /// `None` when the byte names no seated member.
+    pub gauge_actor: Option<u8>,
     /// `ctx[+0x291]`: the formation advantage state `0x00` latched off `+0x290`
     /// for the round it rolled on.
     pub formation_latch: u8,

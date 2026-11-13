@@ -531,9 +531,11 @@ impl RetailBattle {
     /// Where the case-6 walk of this capture's actor set out: the framing the
     /// earlier actor's `0x5A` armed, or the prompt's far framing on a round's
     /// first actor. The selector `FUN_801DABA4` leaves no battle order behind,
-    /// only spent keys, and the style byte `ctx[+0xD]` of that action is gone,
-    /// so the seat and the style come from a pin, or else the last spent party
-    /// seat on the plain style. A party seat's Spirit frames it at the party's
+    /// only spent keys, but the gauge panel's raise names the last party
+    /// member to act on a Spirit ([`RetailBattle::gauge_actor`]); the style
+    /// byte `ctx[+0xD]` of that action is gone, so the style comes from a pin,
+    /// or else the plain one. A capture whose byte names no member falls back
+    /// on the last spent party seat. A party seat's Spirit frames it at the party's
     /// depth `0x800`. `None` where the earlier action is one whose framing the
     /// RAM does not name.
     fn walk_start(&self, pin: Option<DisplayedWalkPin>) -> Option<WalkStart> {
@@ -574,9 +576,9 @@ impl RetailBattle {
                 ],
             });
         }
-        let seat = match pin {
-            Some(p) => usize::from(p.seat),
-            None => party.clone().rfind(spent)?,
+        let seat = match self.gauge_actor {
+            Some(s) if s != self.active_actor => usize::from(s),
+            _ => party.clone().rfind(spent)?,
         };
         // Style `2` raises the pitch `0x80` and drops TR y `0x100`.
         let (pitch, tr_y) = match pin.map(|p| p.style) {
@@ -2255,12 +2257,12 @@ pub fn strike_passes_off_table(inc: u16, step: u8) -> u16 {
 
 /// What a capture's RAM cannot say about the walk its displayed frame stands on,
 /// read off that retail frame by scoring the law's discrete candidates: the
-/// earlier actor and its style. `yaw` is a measured angle, for a shot that does
+/// earlier actor's style. The earlier actor itself is the RAM's
+/// ([`RetailBattle::gauge_actor`]). `yaw` is a measured angle, for a shot that does
 /// not turn and whose caster held a heading the seed's arm read and nothing
 /// kept. It reads the capture and moves no game state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisplayedWalkPin {
-    pub seat: u8,
     pub style: u8,
     pub yaw: Option<u16>,
 }
@@ -2272,7 +2274,6 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
         // Spirit's framing rather than up across the wrap.
         "battle_kor_gaza_166_astral_wave_mid_cast",
         DisplayedWalkPin {
-            seat: 1,
             style: 0,
             yaw: Some(440),
         },
@@ -2282,26 +2283,13 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
         // seat does not enter on that start.
         "battle_rugi_barra_windcutter_mid_cast",
         DisplayedWalkPin {
-            seat: 0,
             style: 0,
             yaw: Some(3260),
         },
     ),
     (
-        // Seats 1 and 2 both spent a Spirit; the walk set out from seat 1's.
-        // Off seat 2's, the focus stands 94 units nearer Gala on the shot's
-        // axis and she clears the near gate, filling the frame.
-        "battle_doman_boogie_pump_windcutter_mid_cast",
-        DisplayedWalkPin {
-            seat: 1,
-            style: 0,
-            yaw: None,
-        },
-    ),
-    (
         "battle_stone_zenoir_v2_fire_claw_mid_cast",
         DisplayedWalkPin {
-            seat: 2,
             style: 0,
             yaw: Some(3923),
         },
@@ -2309,7 +2297,6 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         "battle_vozz_viguro_thunder_break_mid_cast",
         DisplayedWalkPin {
-            seat: 1,
             style: 2,
             yaw: None,
         },
@@ -2317,7 +2304,6 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         "battle_retona_viguro_lv2_thunder_break_mid_cast",
         DisplayedWalkPin {
-            seat: 1,
             style: 2,
             yaw: None,
         },
@@ -2325,23 +2311,13 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         "battle_korb2_ghost_knight_windhash_mid_cast",
         DisplayedWalkPin {
-            seat: 1,
             style: 2,
-            yaw: None,
-        },
-    ),
-    (
-        "battle_tower_guardian_windhash_mid_cast",
-        DisplayedWalkPin {
-            seat: 0,
-            style: 0,
             yaw: None,
         },
     ),
     (
         "battle_bylon_theeder_v2_thunderbolt_mid_cast",
         DisplayedWalkPin {
-            seat: 1,
             style: 0,
             yaw: Some(1215),
         },
@@ -2349,7 +2325,6 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         "battle_jou_slippery_v3_moldy_breath_mid_cast",
         DisplayedWalkPin {
-            seat: 2,
             style: 0,
             yaw: Some(102),
         },
