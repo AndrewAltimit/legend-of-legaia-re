@@ -576,6 +576,13 @@ impl World {
                 set(a, hidden);
             }
         }
+        // Arm `0xA`'s pass raises the roster panels the heal's tally reads
+        // on: `FUN_801D8DE8(6, 0)`, then `(0x4E + i, 0)` for `i` below
+        // `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7BF0..0x801F7C5C`),
+        // Orb's arm-9 call shape.
+        if phase_in == 0xA {
+            self.battle.raise_module_roster_panels();
+        }
     }
 
     /// PROT 0929's (Mule) monster-row visibility. Arm 1 shows every living
