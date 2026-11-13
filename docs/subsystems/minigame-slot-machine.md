@@ -541,6 +541,10 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 
 Disc-gated `slot_minigame_real` drives real-table spins through the World pad path.
 
+**A retail spin, replayed.** `minigame_slot_machine_retail_spin_decided` is recorded from `minigame_slot_machine_retail_reels` by a press train: Square, Circle, Cross, Square, Circle, one every 20 vsyncs from vsync 20, each held four. The machine's animation counter `DAT_801D3C9C` moves `178` to `282` between the two states, so the machine runs a frame a vsync.
+A machine racked off the init literal stands on the at-rest LCG word (`0x5C2E0B36`) after `177` idle frames. Seated on the at-rest BIOS `rand` word (`0x80009010`, `0xBE4DCD5A`) and fed the train two frames after the script raised it, the port decides the spin on vsync `102`, the one the capture's watch fired on: reels on raw rows `9`, `11`, `3`, claims `4`, `8`, `1`, net take `6`, balance down three, no line, and both generators on the capture's words *(capture)*.
+The Circle at vsync 40 falls in the spin-up and stops nothing. Pinned disc-free by `crates/engine-minigames/tests/slot_spin_capture.rs`.
+
 ## Rendering - a 3D scene
 
 Every element on the machine's face is a quad in a 3D scene, projected through the GTE and depth-sorted into the ordering table. The slot overlay contains **no `cop2` instruction of its own**; it reaches the GTE entirely through SCUS wrappers, so a sweep for GTE ops inside the overlay wrongly reports the machine as 2D.

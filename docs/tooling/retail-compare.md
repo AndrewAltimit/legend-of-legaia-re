@@ -3807,7 +3807,11 @@ What stays unseeded, and what each needs:
 
 - **A decided spin** (`minigame_slot_machine_retail_spin_decided`, state
   `4`): the reel stops and feature rolls are `rand()` history after entry.
-  Seeding it means writing the reel positions `DAT_801D3CC0..` and the
+  The spin itself replays: from the at-rest state's LCG and `rand` words and
+  the recording's press train the engine lands every one of the capture's
+  words on its vsync ([slot machine](../subsystems/minigame-slot-machine.md#engine-port)).
+  Seeding the image means carrying those two words and the train into the
+  image child, or writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
 - **A played phase**: a Baka Fighter round (pad input and the AI's `rand()`
   picks), a cast's flight and bite rolls, the chart's presses, the hub's legs.
