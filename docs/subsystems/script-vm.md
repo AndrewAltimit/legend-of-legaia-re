@@ -3062,6 +3062,16 @@ which retail never sees (`rayman` `P1[44..=46]` bbox-test the player before
 they speak, and the full-game ladder's hand talks from where it stands). Pinned
 disc-wide by `engine-scene-host/tests/field_pickup_once_disc.rs`.
 
+The engine keeps that one cursor in two places - the placement channel's, which
+an engagement and the return from a talk-staged battle run as the interaction
+timeline, and the talk record's - and every end writes both. `town01`'s Tetsu
+(`P1[10]`) needs it: the spar's return runs his context from `+0x7FB` through
+`72 27 05 00` / `26 04 00` / `52 0C` (raise `0x20C` only once the measuring's
+`0x227` is up) to the `21` at `+0xA47`, and the next talk resumes past it. A
+talk copy left on `+0x7FB` takes the raise after the measuring, which retail
+never does ([the spar-order softlock](../reference/glitches/field-sequence-breaks.md#sparring-with-tetsu-before-the-measuring);
+pinned by `engine-shell` `rim_elm_opening_issues::tetsu_spar_before_the_measuring`).
+
 **The halt-acquire that opens a talk.** `retock`'s innkeeper opens its
 interaction with `CC F8 85`, a halt-acquire on the player. Retail's acquire
 for sub `5` is the arm at `0x801E2148..0x801E21DC` (jump table `0x801CEF48`,
