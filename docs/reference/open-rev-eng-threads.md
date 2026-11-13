@@ -64,10 +64,18 @@ section after the table.
 
 ## Recently corrected
 
-Readings a re-audit against the disassembly or a capture overturned. They are
-listed here as well as in the registers, because a claim that was wrong once is
-the cheapest place to look for a claim that is still wrong.
+Readings a re-audit against the disassembly or a capture recently overturned.
+They are listed here as well as in the registers, because a claim that was wrong
+once is the cheapest place to look for a claim that is still wrong. The list
+stays short: an older correction leaves it and keeps its row in the
+[settled](re-settled-threads.md) or [falsified](re-do-not-re-walk.md) register.
 
+- **The member who finished the fight strikes the victory pose, not the leader.**
+  The action SM's victory arm writes the acting slot `ctx[+0x13]` last:
+  `FUN_801E295C`'s `s5` is `ctx + 0x11` (`0x801E2994`), so its `sb v1,0x2(s5)`
+  stores (`0x801E66EC`, `0x801E6740`, `0x801E6760`) are `ctx[+0x13]` stores. A
+  search for `0x13(` offsets missed them and read the leader as the poser
+  ([settled](re-settled-threads/battle.md#battle-end---the-results-sequencers-timeline-and-who-strikes-the-pose)).
 - **Worn gear teaches a summon, and the port never ran it.** The stat aggregator's
   grant and revoke scans were documented and tagged, but no code wrote the spell
   list: a Talisman taught nothing and a final-form Ra-Seru no Meta, Terra or Ozma.
@@ -128,108 +136,6 @@ the cheapest place to look for a claim that is still wrong.
   cursor carry - the commit zeroes the cursor at `0x8004B068`
   ([settled](re-settled-threads/battle.md),
   [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **The commit's "counter / guard window" is a sound-cue skip.** The anim
-  commit's read of the juggle byte at `0x8004AFD4` seeds the cue-track
-  cursor `+0x1F6` at `1` for a flinch (or block) re-staged inside its own
-  window, so the restarted clip skips its first cue; nothing there parries
-  or guards, and it reads the same `+0x1F7` as the juggle counter
-  ([settled](re-settled-threads/battle.md),
-  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **The ability-bit rebuild walks all three character records.** The stat
-  aggregator `FUN_80042558` loops `k < 3` over `0x80084708 + k*0x414`
-  (`0x80042D8C`) with no membership test, so a member who has left the
-  party still feeds the global passive mask; the format page had said
-  "each active party member", and the port walked only the active party
-  ([settled](re-settled-threads/battle.md)).
-- **The action seed's "camera bounds" walk moves the combatants.**
-  `FUN_801EFE44` recentres the formation on the action's box - an
-  Attack's target alone - so a melee opens with its target on the stage
-  origin, and state `0x14` steps the bystanders out of the attacker's lane;
-  the port had carried the routine as an inert event
-  ([settled](re-settled-threads/battle.md),
-  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **The party body radius is the seat stager's `0x280`.** `FUN_800513F0`
-  writes it, `0x400` for Terra (`0x8005151C..0x80051538`); the port had
-  used a guessed `448`, and ran the separation pass on every vsync where
-  retail runs it once a battle frame
-  ([settled](re-settled-threads/rendering-camera.md)).
-- **The prologue's gold CLUTs are effect-script cyclers, and the law bends at
-  the top.** Four mode-3 CLUT-cell cyclers grey and re-tint the CLUT rects
-  `(0, 473, 320, 2)` / `(0, 476, 320, 34)`; green is `(L * 247) >> 8`, not
-  `L - 1`, which parts company for `L >= 29`, and rows outside the rects stay
-  ungraded ([settled](re-settled-threads/rendering-camera.md)).
-- **A plain monster swing is elemental, and Astral Slash is one.** The
-  melee kernel's guard ladder keys on the attacking monster's record element
-  `+0x1D`, so a matching jewel halves an ordinary monster strike; the port had
-  passed "non-elemental" for every swing. Astral Slash's module rolls no
-  wrapper: its damage is Gaza's staged clip `0x0A`, four melee beats, which is
-  why a Luminous Jewel halves it ([settled](re-settled-threads/battle.md)).
-- **The "pre-`init_data` gap" is `init_data`, and only half of it boots.**
-  Raw TOC entries 0 and 1 are CDNAME's `init_data` and `gameover_data`.
-  `init.pak`'s `FUN_801CECD0` reads raw 0 and uploads it; raw 1 is the GAME
-  OVER overlay's load, so the port no longer puts it in every scene's VRAM.
-  The `title.pak` dev string is a load operand whose retail twin is
-  extraction entry 0 ([settled](re-settled-threads/title-boot-overlays.md),
-  [falsified](re-do-not-re-walk.md#title--boot--overlays)).
-- **The `0x02018B0C` "effect bundle" is a pack of 29 TMDs.** The word is a
-  type-`0x02` chunk header and its "schema offsets" are the pack's word
-  offsets; the GAME OVER overlay registers the meshes
-  ([falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
-- **A save point opens the pause menu by itself.** Op `0x49`'s `-1` rows
-  (sub-ops `1` and `0x0D`) are a scripted menu-button press: the enter half
-  stores handler `7` before it reads the table, so the "the park simply
-  stands until Start" reading was wrong, and so was the menu-teardown leaf
-  said to clear the park - it has no reference on the disc. A capture at the
-  `town01` save point pins the chain and its release; every one of the
-  disc's save points had saved nothing in the port
-  ([settled](re-settled-threads/field.md),
-  [falsified](re-do-not-re-walk.md#menus--ui)).
-- **A shipped move program does keep the camera yaw factor.** The census
-  that said none does walked each program to its first `HALT`, and every
-  ext `0x37` is a pool-headroom guard that jumps that `HALT`; `urudre1`
-  stager record 14 writes `0x0080` behind one. The port had also read the
-  guard's operand against a constant "pool full", so every guarded field
-  effect halted ([settled](re-settled-threads/measurement-corpus.md),
-  [falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The slot machine's `rand % 5` picks a payline, not a sub-row nudge.**
-  The `* 0x10` is the row stride of a landing-line table; forced stops land
-  on any of the five lines ([settled](re-settled-threads/battle.md),
-  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
-- **BGM sub-op 3 pauses and sub-op 4 re-attaches.** The field VM's op-`0x35`
-  arm table at `0x801CEE00` gives 3 = set pause bit 1 + `FUN_80026740` and
-  4 = clear it + `FUN_80026478`, which replays the sequence from its start;
-  the port had routed them the other way round, silencing the score at every
-  sub-op-4 site ([falsified](re-do-not-re-walk.md#audio--sound-driver)).
-- **Sub-op 2 stops and rewinds; sub-op 3 is the key-off pause.** Nothing a
-  script writes resumes a track mid-phrase
-  ([settled](re-settled-threads/audio.md)).
-- **The menu refusal after a Door of Light arrival on `map01` is bounded.**
-  The arrival tile is the cave mouth's walk-on trigger, and the menu opens on
-  the first press after its script closes
-  ([settled](re-settled-threads/field.md)).
-- **`FUN_801E0418` redraws the title's strips behind the Load window**, from
-  the title TIM (PROT 0890) - not memory-card messages from an unknown page
-  ([falsified](re-do-not-re-walk.md#menus--ui)).
-- **Nearer terrain hides about 1% of the overworld fog, not a fifth**, and
-  the ground's bucket key is `FUN_801F89B8`'s, not the mesh leaves'
-  ([falsified](re-do-not-re-walk.md#rendering--camera)).
-- **The Rim Elm ambush seats its monsters from row 8, not the origin**, and
-  allows Run: the formation row's header byte is `0`
-  ([settled](re-settled-threads/battle.md)).
-- **A dialog picker slides in; it does not resize.** The odd pager states
-  count 24 frame-step units from off screen, and input opens only at count 0,
-  26 vsyncs after the press ([falsified](re-do-not-re-walk.md#menus--ui)).
-- **Motion ops `0x37` / `0x41` are one compass walk**, not two translate ops,
-  and map01's cave-mouth walk-out is `B7 F8 00 81`, not `A2 F8 01`
-  ([falsified](re-do-not-re-walk.md#field--locomotion)).
-
-- **The text-actor walker has no glyph-stream ops.** `FUN_80031D00` was
-  said to recognise `0xCC..=0xCF` inside a glyph stream; its disassembly
-  compares no byte against them. It is the per-frame walker of the
-  `gp+0x148` drawable list, dispatching on the node's `+0x1C` byte
-  (clamped to `0x23`) through the jump table at `0x80010DC0` (`jr v0` at
-  `0x800321AC`)
-  ([falsified](re-do-not-re-walk.md#menus--ui)).
 
 ## Field / locomotion
 
