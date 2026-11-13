@@ -553,6 +553,12 @@ pub struct BattleState {
     /// fight, so the pose stands on the capture's seat instead. `None` on
     /// every ordinary fight.
     pub forced_victory_seat: Option<u8>,
+    /// The same kind of seed for a capture on the results frame or past it:
+    /// the item the report's drop row names (`0` for a report with none),
+    /// which the replay's own drop roll `rand()` draws do not share. The
+    /// roll still draws; the outcome is the capture's. `None` on every
+    /// ordinary fight; consumed (taken) by the roll.
+    pub forced_drop: Option<u8>,
     /// The same kind of seed for a capture inside a melee action: the
     /// pushes its landed hits left on the damage-number ring
     /// (`ctx[+0x83C + i*4]`, struck slot at `ctx[+0x318 + i*2]`), as
@@ -1519,6 +1525,7 @@ impl BattleState {
             forced_guard: [false; 3],
             combo_cluster_held: false,
             forced_steal: false,
+            forced_drop: None,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
             forced_melee_own_clip: None,

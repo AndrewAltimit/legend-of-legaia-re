@@ -101,10 +101,13 @@ pub(super) fn run_battle(
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     // A replayed cast tries its victims revived first: unlike a pad-driven
     // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
-    // run would always win and the kill would never be replayed.
-    let revive: &[bool] = if battle.action_victims().is_empty() {
+    // run would always win and the kill would never be replayed. A party
+    // wipe does too: on the party's read `0` the fight ends on the first
+    // member's wipe gate, which no stream frames on the monster.
+    let party_wipe = !battle.party_wipe_victims().is_empty();
+    let revive: &[bool] = if battle.action_victims().is_empty() && !party_wipe {
         &[false]
-    } else if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Cast {
+    } else if party_wipe || battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Cast {
         &[true, false]
     } else {
         &[false, true]

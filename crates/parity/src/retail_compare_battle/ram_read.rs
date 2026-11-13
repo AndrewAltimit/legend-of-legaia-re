@@ -221,6 +221,19 @@ const DEFAULT_ARM_CHANNEL_OFFSETS: [u16; 5] = [0xB4, 0xB6, 0xB8, 0xBA, 0xC8];
 
 const FLOOR_RING_RECORD: u32 = 0x801F_5EB0;
 
+use legaia_engine_effects::action_effect_script::HEAL_CUE_RECORDS;
+
+/// What a heal cue pillar's seed carries beyond
+/// [`CAST_PART_SEED_OFFSETS`](legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS):
+/// the program counter `+0x70`, the scale `+0x72`, the colour word
+/// `+0x74` / `+0x76`, the level `+0x78`, the turn rates `+0x80..+0x84` and the
+/// level / scale rates `+0x90..+0x94`, with the counters `+0x96..+0x9A`.
+/// `battle_menu_rugi_barra_retail` holds four, `pc 25` on a `192` wait,
+/// turning `+-1872` about Y with the level ramp `-2048` holding `0`.
+const HEAL_CUE_PROGRAM_OFFSETS: [u16; 14] = [
+    0x70, 0x72, 0x74, 0x76, 0x78, 0x80, 0x82, 0x84, 0x90, 0x92, 0x94, 0x96, 0x98, 0x9A,
+];
+
 /// The art speed lines: the effect-script table arm's codes `10`, `45`,
 /// `46` and `47` (`0x801F6324[10]`, `[45..=47]`), each a library mesh `13`
 /// ray fan seated by `FUN_801DEA50` on the acting actor's facing turned
@@ -395,6 +408,7 @@ pub(super) fn retail_action_fx_parts(
                     || fan_fading_through_lag(ram, n, lag))
                 && overlay.contains(&rec)
                 && (is_burst_child(rec)
+                    || HEAL_CUE_RECORDS.contains(&rec)
                     || SPEED_LINE_RECORDS.contains(&rec)
                     || is_growing_default_arm(ram, n)
                     || is_ray_burst(ram, n)
@@ -404,6 +418,19 @@ pub(super) fn retail_action_fx_parts(
         })
         .map(|n| {
             let tag = game_anchors::u32_at(ram, n + 0x48);
+            // A heal cue pillar stands on its program's last wait: the seed
+            // carries its program state with it and seats the part itself
+            // (`World::install_action_fx_part_snapshot`).
+            if HEAL_CUE_RECORDS.contains(&tag) {
+                return legaia_engine_effects::summon::CastPartSeed {
+                    tag,
+                    pokes: legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
+                        .iter()
+                        .chain(&HEAL_CUE_PROGRAM_OFFSETS)
+                        .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
+                        .collect(),
+                };
+            }
             let offsets: Vec<u16> = if is_burst_child(tag) {
                 legaia_engine_effects::summon::CAST_PART_SEED_OFFSETS
                     .iter()
@@ -1387,8 +1414,11 @@ impl RetailBattle {
                 )
             }),
             span_gate: span_gate(ram, ctx),
-            win_pose: span_gate(ram, ctx)
-                .is_end()
+            // A win's pose byte: on a party wipe the sequencer frames the
+            // monster that landed the blow and picks no pose (the pick is
+            // phase 0's, which only a monster wipe runs), so the monster's
+            // `+0x1DB` is no pose the engine's twin can match.
+            win_pose: (span_gate(ram, ctx).is_end() && active_actor < 3)
                 .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
@@ -1611,6 +1641,7 @@ impl RetailBattle {
                 (hold > 0 && va != 0).then_some((va, hold.min(i32::from(i16::MAX)) as i16))
             },
             target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
+            results_drop: results_drop(ram, ctx),
             spoils_caption: game_anchors::u8_at(ram, ctx + 0x18)
                 == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT,
             target_fade_lane: active.and_then(|p| {
@@ -1732,3 +1763,40 @@ pub(super) fn arrival_columns(ram: &[u8]) -> Option<Option<u16>> {
 /// PROT 0957's dealt card table (`lui 0x8020` / `-0x5D78`, `0x801F7BBC`): four
 /// words, cleared and dealt by Death Game's arm 0.
 const DEATH_GAME_TABLE: u32 = 0x801F_A288;
+
+/// The results report's text buffer `ctx + 0xA9`, and how far it is read.
+const REPORT_TEXT: u32 = 0xA9;
+const REPORT_TEXT_LEN: u32 = 0x80;
+/// The report's item escape: `0xC2 <item>`, the byte the results frame
+/// patches into the drop row's template (`0x8004F5C4..0x8004F600`).
+const ITEM_ESCAPE: u8 = 0xC2;
+/// The name escape `0xC1 <character>` the report opens with.
+const NAME_ESCAPE: u8 = 0xC1;
+
+/// The drop a won fight's results report shows ([`RetailBattle::results_drop`]):
+/// on the results frame or past it, the report buffer `ctx + 0xA9` ends on
+/// `G.` with no drop, or carries a third row whose item escape names the
+/// item. The drop roll draws `rand()` once a monster seat behind the
+/// members' level-ups (`0x8004F3D8..0x8004F5A0`), on a stream the replay does
+/// not share, so the outcome is seeded rather than searched for
+/// (`battle_jou_gala_finisher_hold_retail`: no drop in retail's report, a
+/// Healing Flower on the replay's).
+pub(super) fn results_drop(ram: &[u8], ctx: u32) -> Option<u8> {
+    let won = game_anchors::u8_at(ram, seed_plan::END_SIGNAL) == 0xFE
+        && game_anchors::u32_at(ram, seed_plan::END_PHASE_WORD) == 5
+        && game_anchors::u16_at(ram, ctx + 0x6CE) >= 1;
+    if !won {
+        return None;
+    }
+    let mut at = ctx + REPORT_TEXT;
+    let end = at + REPORT_TEXT_LEN;
+    while at < end {
+        match game_anchors::u8_at(ram, at) {
+            0 => return Some(0),
+            NAME_ESCAPE => at += 2,
+            ITEM_ESCAPE => return Some(game_anchors::u8_at(ram, at + 1)),
+            _ => at += 1,
+        }
+    }
+    None
+}

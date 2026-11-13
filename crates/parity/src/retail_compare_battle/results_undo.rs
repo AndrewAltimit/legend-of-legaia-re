@@ -4,6 +4,11 @@ use super::*;
 /// (`sw s6,0xA04(gp)` at `0x8004F684`).
 pub(super) const END_XP_SHARE: u32 = 0x8007_BD1C;
 
+/// The sequencer's per-character level-up bytes `ctx[+0xE..=+0x10]` (bit `k`
+/// of the level-up window's mask is character `k`'s byte,
+/// `0x8004F6F8..0x8004F728`).
+const LEVEL_UP_BYTES: u32 = 0x0E;
+
 /// Take a results-frame capture's rewards back off the party it seeds.
 ///
 /// The results sequencer `FUN_8004E568` grants the fight's EXP and runs the
@@ -15,7 +20,8 @@ pub(super) const END_XP_SHARE: u32 = 0x8007_BD1C;
 /// engine frame carried no "level increased" line.
 ///
 /// Every living member (`+0x14C > 0` on its seat) loses the share. A member
-/// the applier levelled is recognised by its record stat window
+/// the applier levelled (its level-up byte `ctx[+0xE + k]` raised) is
+/// recognised by its record stat window
 /// (`+0x11C` HP max, `+0x11E` MP max, `+0x122..+0x12D` the six stats)
 /// standing apart from the live window it is mirrored into one phase later
 /// (`+0x104`, `+0x108`, `+0x110..+0x11B` -
@@ -35,6 +41,7 @@ pub fn ungrant_results_rewards(
         return;
     }
     let share = game_anchors::u32_at(ram, END_XP_SHARE);
+    let ctx = game_anchors::u32_at(ram, BATTLE_CTX);
     for (seat, &char_id) in battle.seat_chars.iter().enumerate() {
         let alive = battle
             .party
@@ -62,7 +69,24 @@ pub fn ungrant_results_rewards(
             (0x12C, 0x11A),
         ];
         let raw = &mut rec.raw;
-        if raw.len() < 0x130 || PAIRS.iter().all(|&(r, l)| raw[r..r + 2] == raw[l..l + 2]) {
+        // Only a member the sequencer marked levelled: its level-up byte
+        // `ctx[+0xE + k]` (character `k`, the mask the level-up window is
+        // built from, `0x8004F6F8..0x8004F728`). The windows alone part for
+        // good on a member the applier never touched: the live window
+        // carries what the record's never sees
+        // (`battle_jou_noa_finisher_hold_retail`'s Noa, level 99, holds
+        // `+0x124 = 398` against the live `+0x112 = 477` from the fight's
+        // opening on), and reading that as a level-up took her to 98 for the
+        // replay to level again, under a "level increased" line retail's
+        // frame never showed.
+        let levelled = usize::from(char_id)
+            .checked_sub(1)
+            .filter(|&k| k < 3)
+            .is_some_and(|k| game_anchors::u8_at(ram, ctx + LEVEL_UP_BYTES + k as u32) != 0);
+        if !levelled
+            || raw.len() < 0x130
+            || PAIRS.iter().all(|&(r, l)| raw[r..r + 2] == raw[l..l + 2])
+        {
             continue;
         }
         for (r, l) in PAIRS {

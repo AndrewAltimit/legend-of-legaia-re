@@ -96,6 +96,36 @@ impl RetailBattle {
             .collect()
     }
 
+    /// Party seats a monster's wiping blow left at `0` HP, on a capture past
+    /// the end signal whose results sequencer frames that monster
+    /// ([`SeedPlan::Action`] on a monster seat, a [`SpanGate`] past the
+    /// signal, every seated member down): the party twin of
+    /// [`Self::action_victims`]. Seeded at `0`, the replay's first `0x5A`
+    /// wipe gate ends the fight on whichever party seat acts first, so the
+    /// sequencer's pose actor is that member and never the monster retail
+    /// frames (`battle_jou_party_wipe_results_retail`: seat `5`, the wipe's
+    /// Spirit round). Seeded at `1`, with the party on Spirit
+    /// ([`BattleDrive::Action`]'s `spare`), the monster's replayed action
+    /// makes the wipe. Empty on any other capture.
+    pub fn party_wipe_victims(&self) -> Vec<usize> {
+        if !matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            || !self.span_gate.is_end()
+        {
+            return Vec::new();
+        }
+        let seated: Vec<usize> = self
+            .party
+            .iter()
+            .enumerate()
+            .filter_map(|(s, c)| c.filter(|c| c.hp_max != 0).map(|c| (s, c)))
+            .map(|(s, c)| if c.hp == 0 { s } else { usize::MAX })
+            .collect();
+        if seated.is_empty() || seated.contains(&usize::MAX) {
+            return Vec::new();
+        }
+        seated
+    }
+
     /// `c`'s HP before the action in flight landed its hits on pool slot
     /// `slot` ([`Self::action_hits`]): the replay plays that action from its
     /// prompt and deals them again, so a bar seeded with the capture's HP
@@ -208,10 +238,23 @@ impl RetailBattle {
                 SeedPlan::Action { seat, .. } => match self.span_gate {
                     SpanGate::Age { .. } => seat < 3 || self.retake_on_shot_only(),
                     SpanGate::CaptureFade { .. } => !self.walk_in_shot_aligned(),
+                    SpanGate::Results { .. } => self.results_opened_inside_lag(),
                     _ => false,
                 },
                 _ => false,
             }
+    }
+
+    /// A results-frame capture taken within the display lag of the
+    /// sequencer's results open ([`SpanGate::Results`] with its hold `gp+0xA54`
+    /// under [`Self::display_lag`]): the RAM has opened the results (the loss
+    /// or spoils window, the HUD dismissed) while the display still shows a
+    /// frame from before it, the party HUD up and the target plaque over it.
+    /// The image child then retakes across the state's entry
+    /// ([`Self::retake_across_band_entry`]). `battle_jou_party_wipe_results_retail`
+    /// holds `3` against a lag of `6`.
+    pub fn results_opened_inside_lag(&self) -> bool {
+        matches!(self.span_gate, SpanGate::Results { hold } if hold < self.display_lag)
     }
 
     /// A monster's magic-band capture ([`SpanGate::Age`] on a monster seat,
@@ -608,7 +651,7 @@ impl RetailBattle {
         matches!(
             (self.seed_plan(), self.span_gate),
             (SeedPlan::Action { seat, .. }, SpanGate::CaptureFade { .. }) if seat >= 3
-        )
+        ) || self.results_opened_inside_lag()
     }
 
     /// The display lag in the image child's own ticks: two of its passes,
@@ -1814,7 +1857,9 @@ impl RetailBattle {
                 state,
                 category: self.queued_category,
                 queued: self.queued_action,
-                spare: !self.action_victims().is_empty() || self.party_spirit_round(),
+                spare: !self.action_victims().is_empty()
+                    || !self.party_wipe_victims().is_empty()
+                    || self.party_spirit_round(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
                 end: self.span_gate,
                 style: Some(self.cam_style),
@@ -2005,6 +2050,7 @@ impl RetailBattle {
                     // The caption is the steal roll's outcome, a draw: a
                     // stream whose kill rolls no steal shows another frame.
                     spoils: seat < 3 && self.spoils_caption,
+                    loot: self.results_drop,
                     walk_clock: self.walk_clock_capture(),
                     arrival: self.walk_clock_arrival(),
                     strike_aim: self.strike_aim_steer,

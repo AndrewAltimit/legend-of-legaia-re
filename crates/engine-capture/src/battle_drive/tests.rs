@@ -127,6 +127,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 latched: Some(0x27),
                 fading: Some((3, 0xF0)),
                 spoils: true,
+                loot: Some(0x1D),
                 park: true,
                 harvest_pacing: true,
                 approach_idle: Some((3, 208)),

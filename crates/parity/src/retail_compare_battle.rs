@@ -848,6 +848,11 @@ pub struct RetailBattle {
     /// The death-spoils caption is up: `ctx[+0x18]` holds HUD element
     /// `0x5B`, which the steal / thief's-loot arm of `FUN_8004AD80` raises.
     pub spoils_caption: bool,
+    /// On a capture on the results frame or past it ([`SpanGate::Results`] /
+    /// [`SpanGate::Exit`]) of a won fight, the item the report's drop row
+    /// names, `0` for a report without one; `None` elsewhere
+    /// ([`results_drop`](ram_read::results_drop)).
+    pub results_drop: Option<u8>,
 }
 
 mod results_undo;

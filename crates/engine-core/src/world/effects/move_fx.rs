@@ -255,6 +255,13 @@ impl World {
     /// with no part left is skipped - the snapshot re-poses parts the
     /// replay spawned and retires none.
     ///
+    /// The HP-restore cue's pillars
+    /// ([`legaia_engine_effects::action_effect_script::HEAL_CUE_RECORDS`])
+    /// are seated the same way as the floor ring below: a capture at the
+    /// prompt after a heal holds them on their program's last wait, and the
+    /// replay opens on that prompt with none. Their seed carries the program
+    /// counter, colour word, level and rates, which go over the seated part.
+    ///
     /// The one exception is the effect script's floor ring
     /// ([`legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD`]):
     /// a seed carrying the ring's ground point and scale `+0x72` seats a
@@ -269,29 +276,27 @@ impl World {
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],
     ) {
-        use legaia_engine_effects::action_effect_script::FLOOR_PART_RECORD;
-        let live_rings = self
-            .casting
-            .active_action_fx
-            .iter()
-            .flat_map(|s| s.parts.iter())
-            .filter(|p| !p.finished && p.tag == Some(FLOOR_PART_RECORD))
-            .count();
+        use legaia_engine_effects::action_effect_script::{FLOOR_PART_RECORD, HEAL_CUE_RECORDS};
         let mut seated = false;
-        for seed in seeds
-            .iter()
-            .filter(|s| s.tag == FLOOR_PART_RECORD)
-            .skip(live_rings)
-        {
-            let word = |o: u16| seed.pokes.iter().find(|&&(k, _)| k == o).map(|&(_, v)| v);
-            if let (Some(x), Some(z), Some(scale)) = (word(0x14), word(0x18), word(0x72)) {
-                let y = word(0x16).unwrap_or(0);
-                seated |= self.spawn_battle_record_posed(
-                    FLOOR_PART_RECORD,
-                    [x as i16, y as i16, z as i16],
-                    [0; 3],
-                    scale,
-                );
+        for record in std::iter::once(FLOOR_PART_RECORD).chain(HEAL_CUE_RECORDS) {
+            let live = self
+                .casting
+                .active_action_fx
+                .iter()
+                .flat_map(|s| s.parts.iter())
+                .filter(|p| !p.finished && p.tag == Some(record))
+                .count();
+            for seed in seeds.iter().filter(|s| s.tag == record).skip(live) {
+                let word = |o: u16| seed.pokes.iter().find(|&&(k, _)| k == o).map(|&(_, v)| v);
+                if let (Some(x), Some(z), Some(scale)) = (word(0x14), word(0x18), word(0x72)) {
+                    let y = word(0x16).unwrap_or(0);
+                    seated |= self.spawn_battle_record_posed(
+                        record,
+                        [x as i16, y as i16, z as i16],
+                        [0; 3],
+                        scale,
+                    );
+                }
             }
         }
         // The seater runs a new ring's program before it returns (its colour

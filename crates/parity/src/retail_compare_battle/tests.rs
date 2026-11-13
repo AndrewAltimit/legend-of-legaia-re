@@ -3142,3 +3142,31 @@ fn a_floor_ring_is_seeded_with_its_ground_point_and_scale() {
     assert_eq!(poke(0x18), Some(75));
     assert_eq!(poke(0x72), Some(3072));
 }
+
+/// The results report's drop row: a won capture on the results frame reads
+/// the item escape `0xC2 <item>` off `ctx + 0xA9`, `0` for a report that ends
+/// on its gold, and nothing before the results frame or on a loss.
+#[test]
+fn results_drop_reads_the_report_row() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let report = |ram: &mut Vec<u8>, text: &[u8]| {
+        for (i, &b) in text.iter().enumerate() {
+            put8(ram, ctx + 0xA9 + i as u32, b);
+        }
+    };
+    // Before the end signal: no reading.
+    report(&mut ram, &[0xC1, 0x02, b'G', b'.', 0]);
+    assert_eq!(ram_read::results_drop(&ram, ctx), None);
+    put8(&mut ram, seed_plan::END_SIGNAL, 0xFE);
+    put32(&mut ram, seed_plan::END_PHASE_WORD, 5);
+    put16(&mut ram, ctx + 0x6CE, 1);
+    // The name escape's argument is not an item escape.
+    report(&mut ram, &[0xC1, 0xC2, b'G', b'.', 0]);
+    assert_eq!(ram_read::results_drop(&ram, ctx), Some(0));
+    report(
+        &mut ram,
+        &[0xC1, 0x02, b'.', 0x7C, b'Y', 0xC2, 0x1D, b'.', 0],
+    );
+    assert_eq!(ram_read::results_drop(&ram, ctx), Some(0x1D));
+}

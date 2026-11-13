@@ -2126,6 +2126,24 @@ The engine's own walk stomps the same rings (a cast-sequence film of
 `koru_pre_gigaton_press` shows them from arm 2 on), so the gap was the seat's,
 not the game's.
 
+The HP-restore cue's pillars are seated outright the same way. `FUN_801E22C8`
+seats prototypes `12` / `13` of `0x801F6324` (records `0x801F598C` /
+`0x801F59C8`) on each healed seat: a counter-turning pair on library mesh `3`,
+whose program (`asset move-disasm file`) turns it `+-1872` about Y, sets the
+colour word and two morph lanes, ramps the level to `0` (`+0x90 = -2048`) and
+waits `472` before fading out. A capture at the prompt after a heal holds them
+on that wait while the replay, which opens on the prompt, spawns none, so the
+seed carries them whole: position, banks, wait and channel block, with the
+program counter `+0x70`, scale, colour word `+0x74`, level, turn and ramp rates
+and counters (`HEAL_CUE_RECORDS`, `HEAL_CUE_PROGRAM_OFFSETS`). The snapshot seats
+each past the replay's count through `World::spawn_battle_record_posed` and pokes
+the words over it. `battle_menu_rugi_barra_retail` holds four (`pc 25`, wait
+`192`) on Vahn and Gala; seated, the engine frame shows them where the HUD's
+`1595` is still rolling to `1614`, but its ring and pillars draw wider and taller
+than retail's at the same lane weights (`image` `.956` to `.954`), a residue of
+the part's morphed mesh rather than of the seat
+([open](../reference/open-rev-eng-threads.md)).
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
@@ -2485,11 +2503,28 @@ replays the fight, which grants again, so `RetailObs` takes the grant back first
 
 | Grant | How the capture shows it | Take-back |
 |---|---|---|
-| EXP + level-up | every living member holds the share `gp+0xA04`; a levelled member's record stat window `+0x11C..+0x12D` differs from the live window it is mirrored into one phase later | `retail_compare_battle::ungrant_results_rewards`: remove the share, restore the live values, lower the level byte by one (`noa_levelup_banner`) |
+| EXP + level-up | every living member holds the share `gp+0xA04`; a levelled member carries its level-up byte `ctx[+0xE + k]` (the level-up window's mask) and a record stat window `+0x11C..+0x12D` apart from the live window it is mirrored into one phase later | `retail_compare_battle::ungrant_results_rewards`: remove the share; on a member with its byte raised, restore the live values and lower the level byte by one (`noa_levelup_banner`) |
 | Magic level-up | the summon return's level check `FUN_801E70BC` bumps the cast spell's level byte and stores the banner element `0x65` on `ctx[+0x26]` (`0x801E723C`), which the next action seed clears | `retail_compare_battle::ungrant_magic_level_up`: lower that spell's level on the acting member's record by one, leave its XP so the replayed cast levels it again (`shiny_refactor_gimard_levelup`) |
 
 Without the take-back the replay grants nothing the second time and the engine
-frame shows no "level increased" line or banner.
+frame shows no "level increased" line or banner. The windows alone are no
+witness: they part for good on a member the applier never touched, whose live
+window carries what the record's never sees.
+`battle_jou_noa_finisher_hold_retail`'s Noa, level 99, holds `+0x124 = 398`
+against the live `+0x112 = 477` from the fight's opening on, and read off the
+windows she went back to 98 for the replay to level again, under a "Noa's level
+increased!" line retail's frame never showed.
+
+The drop is the report's own: the drop roll draws `rand()` behind the members'
+level-ups (`0x8004F3D8..0x8004F5A0`), on a stream the replay does not share. A
+won capture on the results frame or past it reads the report buffer
+`ctx + 0xA9` for the drop row's item escape `0xC2 <item>`, or the `G.` it ends on
+without one (`RetailBattle::results_drop`), and the drive seeds that outcome
+(`ActionSteer::loot`, `BattleState::forced_drop`): the roll still draws. Rolled on
+the replay's own stream, `battle_jou_gala_finisher_hold_retail` showed a Healing
+Flower row retail's report does not have. With the level-up gate the two
+finisher holds read `image` `.841` to `.991` (Gala) and `.861` to `.994` (Noa),
+harness only.
 
 ### Field script state and surprise openings
 
@@ -3274,6 +3309,7 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 |---|---|---|
 | Taken on the killing blow | a party action in flight whose target already reads `0` HP. Seeded so, the fight ends at the first `0x5A` wipe gate before the swing starts | When no seed reaches it with the HP as read, the search re-runs with each such victim at `1` HP (`RetailBattle::action_victims`); the victim's HP is then read at the phase. The other members commit Spirit (`BattleDrive::Action`'s `spare`), since any swing kills a `1`-HP victim |
 | The killing blow's body | a `0`-HP victim is no target, so the auto-target picks the next standing monster | The phase is held only with the acting seat on that target (`ActionSteer::target`); otherwise the search moves on to the `1`-HP re-run |
+| A party wipe | a monster's action past the end signal with every seated member at `0` HP; the sequencer frames that monster (`ctx[+0x13]`). Seeded so, the first member to act ends the fight on its own wipe gate, and the results frame the member | The search runs first with the party at `1` HP (`RetailBattle::party_wipe_victims`) and the party on Spirit (`spare`), so the monster's replayed action makes the wipe; the party's HP is read at the phase. A wipe picks no win pose, so the monster's `+0x1DB` is not compared as one. `battle_jou_party_wipe_hold_retail` `phase` `0` to `1`, `image` unscored to `.996` |
 | An absorbed Seru | the Done band's banner hold `0x52` carries the absorbed Seru in `ctx[+0x269]`, and the grant already prepended spell `seru + 0x80` to the acting character's list | The drive takes the spell back off that list on its first battle tick (`absorbed`), so the replayed kill's absorb lookup stages the banner instead of leaving `0x51` for `0x5A` |
 | A strike past the self-heal gate | a monster Attack on HP `<= max / 3` with the latch `DAT_801C8FE0[i + 4]` clear, which the picker (`0x801EAD38`) answers with a `0x52` heal for ids `0x47`, `0x48`, `0x68`..`0x6A`. A harvest probe cut the HP at the prompt, after the round's setup had picked; live play cannot stand here. | The bars raise the latch (`RetailBattle::heal_gate_passed`, `:v`). Left clear, `battle_map03_heavy_grude_strike` healed on all forty streams and the next strike killed its lone Vahn: `phase` `0` to `1`, `camera` `.604` to `1.0`, `image` `1.0` |
 | A landed roll | the steal caption (HUD element `0x5B`) or an absorbed Seru: the outcome of a `rand() % 100` the replay's stream does not share | The drive seeds the outcome (`BattleState::forced_steal` / `forced_absorb`): the roll still draws, and lands. Searched for across streams instead, any change to the swing's own draws (a damage term) decided whether the phase was reachable (`player_steal_skeleton_banner`) |
@@ -4278,7 +4314,14 @@ the parent runs the child again with `LEGAIA_DIAG_CAPTURE_TICK` set to it.
 The child is tick-locked, so the re-run walks the same frames. A party seat's
 clip-age gate and every capture-band hold take it, and a monster's
 magic-band clip age takes it where the gate shows another shot
-([below](#a-shot-armed-after-the-displayed-frame)); the rest keep the gate's
+([below](#a-shot-armed-after-the-displayed-frame)). A results frame opened
+inside the lag (`SpanGate::Results` with its hold `gp+0xA54` under the lag,
+`RetailBattle::results_opened_inside_lag`) takes it across the entry: the RAM
+has opened the report or loss window and dismissed the HUD, while the screen
+still shows the frame before, the party HUD up and the target plaque over it.
+`battle_jou_party_wipe_results_retail` (hold `3`, lag `6`) reads `.638` to
+`.755`; the residue is the engine's spell label on that frame
+([open](../reference/open-rev-eng-threads.md)). The rest keep the gate's
 own frame:
 
 | Gate | Why it keeps the RAM's frame |
