@@ -263,19 +263,20 @@ impl<S: AudioSink> BootSession<S> {
         }
     }
 
-    /// The audio half of a **direct** scene entry (dev warp, prologue skip,
-    /// save load) - the browser play page's `enter_field` makes the same
-    /// three moves. A deliberate scene boot restages BGM from scratch: SFX
-    /// cues queued against the old scene are dropped, the dedupe latch is
-    /// cleared so the scene's own op-`0x35` start is honoured even when it
-    /// names the track already playing (which re-stages that track's bank).
-    /// A door does not come through here; [`Self::after_scene_swap`] keeps
-    /// the latch so a carried track keeps its playhead. No-op until audio is
-    /// up.
+    /// The audio half of a **direct** scene entry (dev warp, the scene
+    /// picker, prologue skip, save load) - the browser play page's
+    /// `enter_field` makes the same call. A deliberate scene boot restages
+    /// BGM from scratch: SFX cues queued against the old scene are dropped,
+    /// the dedupe latch is cleared so the scene's own op-`0x35` start is
+    /// honoured even when it names the track already playing (which
+    /// re-stages that track's bank), and whatever the old scene still has
+    /// sounding fades to silence before the new scene's bank is uploaded
+    /// ([`crate::audio_director::AudioDirector::begin_scene_switch`]). A door
+    /// does not come through here; [`Self::after_scene_swap`] keeps the latch
+    /// so a carried track keeps its playhead. No-op until audio is up.
     fn restage_audio_for_direct_entry(&mut self) {
         if let Some(bgm) = self.bgm.as_mut() {
-            bgm.clear_sfx();
-            bgm.last_started = None;
+            bgm.begin_scene_switch();
         }
     }
 

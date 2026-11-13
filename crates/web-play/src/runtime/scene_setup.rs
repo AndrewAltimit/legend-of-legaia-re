@@ -151,11 +151,12 @@ impl LegaiaRuntime {
         // its track's bank) even if it names the track already playing. No
         // scene bank is staged: retail loads a bank only with its track
         // (`legaia_engine_scene_host::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
-        // New scene -> drop any SFX cues still queued for the old one (the
-        // native boot's `clear_sfx` on scene entry).
-        self.on_scene_change_audio();
+        // New scene -> drop any SFX cues still queued for the old one, and
+        // fade out what the old scene still has sounding before the new
+        // scene's bank is uploaded (`AudioDirector::begin_scene_switch`, the
+        // native direct entry's call too).
         if let Some(d) = self.scene_host.director_mut() {
-            d.last_started = None;
+            d.begin_scene_switch();
         }
         // A card Load's score hand-off lands here: stop whatever was
         // sounding (the title theme), then restore the track the entry

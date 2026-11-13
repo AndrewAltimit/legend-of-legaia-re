@@ -44,6 +44,7 @@ mod npc_run_clip_bind_disc;
 mod pack_audio_disc;
 mod pause_menu_slide_lock_disc;
 mod picker_party_disc;
+mod picker_switch_audio_disc;
 mod player_one_shot_clip_disc;
 mod player_tilt_live_disc;
 mod rayman_collapse_audio_disc;

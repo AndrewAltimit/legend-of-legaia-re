@@ -171,4 +171,64 @@ mod tests {
             "the script's own stop leads: {after:?}"
         );
     }
+
+    /// The page's picker is a direct entry too: a scene picked while the
+    /// last one is sounding fades that sound out and cuts it before the new
+    /// scene's bank is uploaded (`AudioDirector::begin_scene_switch`, the
+    /// native window's `enter_scene_live` call). Before, `retock`'s fifteen
+    /// voices released over `town01`'s bank for up to 22 frames.
+    #[test]
+    fn a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&disc) else {
+            eprintln!("[skip] disc unreadable (disc-gated)");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("load_disc");
+        let frame = |rt: &mut LegaiaRuntime| {
+            rt.tick_frame().expect("tick");
+            let sink = rt.scene_host.director().expect("director").audio().clone();
+            sink.render_video_frame();
+        };
+        rt.enter_field_core("retock", false).expect("enter retock");
+        for _ in 0..240 {
+            frame(&mut rt);
+        }
+        let sounding = |rt: &LegaiaRuntime| -> Vec<(usize, u32)> {
+            let sink = rt.scene_host.director().expect("director").audio().clone();
+            legaia_engine_audio::AudioSink::with_spu(&*sink, |spu| {
+                spu.voices
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| !v.is_off())
+                    .map(|(i, v)| (i, v.key_on_count()))
+                    .collect()
+            })
+        };
+        let before = sounding(&rt);
+        assert!(!before.is_empty(), "retock is sounding at the pick");
+        rt.enter_field_core("town01", false).expect("enter town01");
+        assert!(
+            rt.scene_host
+                .director()
+                .expect("director")
+                .scene_switch_holding(),
+            "the pick holds the new scene's music behind the fade"
+        );
+        for _ in 0..3 {
+            frame(&mut rt);
+        }
+        let held: Vec<_> = sounding(&rt)
+            .into_iter()
+            .filter(|v| before.contains(v))
+            .collect();
+        assert!(held.is_empty(), "retock's voices are cut: {held:?}");
+        let d = rt.scene_host.director().expect("director");
+        assert!(!d.scene_switch_holding());
+        assert!(d.last_started.is_some(), "town01's own track has started");
+    }
 }

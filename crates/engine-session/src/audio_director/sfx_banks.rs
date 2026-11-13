@@ -199,6 +199,12 @@ impl<S: AudioSink> AudioDirector<S> {
             // re-stage (`reclaim_sfx_region`), which re-arms this sync.
             return false;
         }
+        if self.scene_switch_holding() && self.shared_region != want {
+            // A scene switch's fade is still cutting the voices the region's
+            // bank may be sounding: the refill waits for the cut
+            // ([`Self::begin_scene_switch`]).
+            return false;
+        }
         if self.shared_region == want {
             let resident = want.is_none_or(|b| self.sfx_vabs.contains_key(&b.slot));
             // A bank that did not fit is retried once the tail has moved -

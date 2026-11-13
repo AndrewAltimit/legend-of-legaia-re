@@ -372,6 +372,12 @@ impl<S: AudioSink> AudioDirector<S> {
         if field_family && let Some(slot) = self.tail.drop_reward() {
             self.sfx_vabs.remove(&slot);
         }
+        // A scene switch's fade is still cutting the old scene's voices, some
+        // of them reading the side-band bank this would replace: the next
+        // scene's bank waits for the cut ([`Self::begin_scene_switch`]).
+        if self.scene_switch_holding() {
+            return;
+        }
         self.observe_track();
         let Some(want) = side_band else {
             if let Some(slot) = self.tail.drop_side_band() {
@@ -515,6 +521,14 @@ impl<S: AudioSink> AudioDirector<S> {
                 .ok()
         });
         self.stop_sfx_voices(&world.take_sfx_voice_stops());
+        // While a scene switch's fade runs, the next scene's directly keyed
+        // voices and emitters stay queued on the world: they key once the
+        // old scene's voices are cut and its banks restaged
+        // ([`Self::begin_scene_switch`]).
+        if self.scene_switch_holding() {
+            self.settle_evicted_voices();
+            return;
+        }
         // A minigame's directly keyed voices (the slot machine's reel motor).
         for k in world.take_sfx_voice_keys() {
             let keyed = self.key_on_voice_attr(legaia_engine_audio::VoiceAttr::from_cue_words(
@@ -663,6 +677,13 @@ impl<S: AudioSink> AudioDirector<S> {
         self.set_duck_reference(configured_level);
         self.tick_duck();
         self.tick_pack_deferred();
+        // A scene switch's hold keeps the cue scheduler still, through the
+        // frame it ends on: the next frame's routing restages the new scene's
+        // banks before any of its cues fire.
+        if self.scene_switch_holding() {
+            self.tick_scene_switch();
+            return SfxFrameReport::default();
+        }
         self.tick_sfx_frame()
     }
 
