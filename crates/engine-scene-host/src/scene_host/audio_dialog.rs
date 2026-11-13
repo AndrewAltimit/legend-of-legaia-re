@@ -392,6 +392,21 @@ impl SceneHost {
                             director.resume();
                             acted += 1;
                         }
+                        // 5 = the timed release (`FUN_800267A8`): the world
+                        // armed its deadline when the op ran; the director
+                        // fades the field-BGM source's occupant over it. The
+                        // ending theme sounds from source 10, which the arm
+                        // does not address.
+                        // REF: FUN_800267A8
+                        5 => {
+                            if !self.bgm_ending_source {
+                                director.timed_release_fade(text_id as i16);
+                            }
+                            // Consumed here: a word put back on the queue
+                            // is routed again by the next drain, which would
+                            // re-arm the fade.
+                            acted += 1;
+                        }
                         super::BGM_SUB_OP_ENGINE_STOP => {
                             self.bgm_latched = None;
                             self.bgm_ending_source = false;
@@ -456,7 +471,7 @@ impl SceneHost {
                             acted += 1;
                         }
                         _ => {
-                            // Other sub-ops (5/6/7/11) are control words -
+                            // Other sub-ops (6/7/11) are control words -
                             // surface them back on the queue for richer engines.
                             leftover.push(legaia_engine_field::field_events::FieldEvent::Bgm {
                                 text_id,

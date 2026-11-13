@@ -146,6 +146,9 @@ impl BgmDirector for Log {
     fn unhalt_pause(&mut self) {
         self.0.push("unhalt".into());
     }
+    fn timed_release_fade(&mut self, deadline: i16) {
+        self.0.push(format!("fade {deadline}"));
+    }
 }
 
 fn route(host: &mut SceneHost, d: &mut Log, events: &[(u16, u8)]) {
@@ -193,6 +196,33 @@ fn the_commit_starts_the_track_the_select_chose() {
     // A commit with no select pending is the plain unhalt.
     route(&mut host, &mut d, &[(0, 2), (0, 0xA)]);
     assert_eq!(&d.0[3..], ["pause", "unhalt"]);
+}
+
+/// `nilboa`'s `P2[7]` (the Delilas siblings' introduction) runs `9 (2028) ·
+/// 5 (60) · 0xA`: the timed release inside the window fades the outgoing
+/// `2032`, which the retail state `nilboa_delilas_family_pose` holds at
+/// sequence volume `83` with flag `0x20` (the decrescendo) up, `24` vsyncs
+/// into the fade. The commit then releases it and starts the selected track.
+#[test]
+fn a_timed_release_inside_the_window_fades_the_outgoing_track() {
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.load_scene("nilboa").expect("load nilboa");
+    let mut d = Log::default();
+    route(&mut host, &mut d, &[(2032, 1)]);
+    host.world.audio.set_start_pending_commit(true);
+    route(&mut host, &mut d, &[(2028, 9), (60, 5)]);
+    assert_eq!(d.0, ["start 2032", "fade 60"]);
+    host.world.audio.set_start_pending_commit(false);
+    route(&mut host, &mut d, &[(0, 0xA)]);
+    assert_eq!(&d.0[2..], ["stop", "start 2028"]);
+    assert_eq!(
+        legaia_engine_scene_host::scene_host::timed_release_fade_args(215, 60),
+        (107, 61),
+        "the cold level halved, over the deadline with its low bit raised"
+    );
 }
 
 /// A select its scene never commits is attached when the window ends -

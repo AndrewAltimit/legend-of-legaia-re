@@ -1011,6 +1011,30 @@ slot's sequence handle (`lh 0x536` = slot `+0xA`), the audio level
 `FUN_80062004` (`0x800267E4`), the `SsSeqSetVol`-ramp shim. So sub-op `5`
 fades the slot's occupant over the deadline and then stops it.
 
+The ramp is a libsnd decrescendo. `FUN_80061EDC` clamps the amount to the
+sequence's live volume (`0x80061F3C..0x80061F5C`), arms the slide through
+`FUN_8006206C` and raises flag `0x20`; the installer stores the amount as the
+slide's span and level counter and the tick count as its total and remaining
+count, and picks the rate by which is larger: one unit every
+`ticks / amount` calcs, or `amount / ticks` units a calc. Every vsync's
+`SsSeqCalc` then runs the descending slide `FUN_8006352C`, whose each move is a
+sequence-volume set that re-volumes the held notes. At the cold level the
+amount is `107`, the whole volume, so a release of `60` (`61` ticks) takes the
+score down one unit a vsync and the expiry cuts it under `50`; a release of `106`
+or more steps one unit every one or more vsyncs and reaches `1`, the slide's
+last unit being the level counter's zero, which moves nothing. The retail
+state `nilboa_delilas_family_pose`, inside `nilboa` `P2[7]`'s `9 (2028) · 5
+(60) · 0xA`, holds `2032` at `83` with flag `0x20` up: twenty-four calcs in.
+
+The port runs the same slide on the sequencer's own record
+(`legaia_engine_audio::seq_calc::set_decrescendo`, ticked by
+`Sequencer::tick_vol_slide` at each flush behind the pump): the field VM's
+sub-op `5` reaches the director as `BgmDirector::timed_release_fade`, with the
+live level halved and the deadline's low bit raised
+(`scene_host::timed_release_fade_args`), on the field-BGM source only (the
+ending theme on source `10` is not the slot the arm names). The installer and
+the setter are checked against retail in `retail-exec/tests/seq_calc.rs`.
+
 Which track that is depends on the swap window. A cutscene's commonest
 music change is `9 · 5 · 0xA`: sub-op `9` raises sound-flag bit 0, the poller
 keeps the **outgoing** track in the slot until the `0xA` commit
@@ -3512,6 +3536,12 @@ activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
 `map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
 the card-load seed has no arrival through a partition-1 beat.
+
+The engine's sequence volume is read where a state is saved: at the vblank, after the frame
+body and before that vsync's `SsSeqCalc`, so the listener takes it ahead of the tick's mix.
+A ramp reads one calc apart on the two sides of that order; `nilboa_delilas_family_pose`,
+captured inside a [timed release's](#the-timed-release-is-a-scheduled-bgm-pause) fade, reads
+`83` on both, where the reading after the mix is `82`.
 
 The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
 emulator's `ENVX`, and its SPU runs on the host's audio clock

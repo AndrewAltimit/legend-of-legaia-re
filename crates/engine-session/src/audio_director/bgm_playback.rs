@@ -329,6 +329,20 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
         self.fade_out_for_field_close();
     }
 
+    /// Sub-op `5`'s fade: the live audio level halved, clamped to the
+    /// sequence's volume, taken off over `deadline | 1` vsyncs
+    /// ([`legaia_engine_audio::Sequencer::set_decrescendo`]).
+    fn timed_release_fade(&mut self, deadline: i16) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::TimedReleaseFade(deadline)) {
+            return;
+        }
+        let (amount, ticks) = legaia_engine_scene_host::scene_host::timed_release_fade_args(
+            i32::from(self.duck_level),
+            deadline,
+        );
+        self.audio.sequencer_decrescendo(amount, ticks);
+    }
+
     fn unhalt_pause(&mut self) {
         if self.hold_for_switch(|| super::scene_switch::HeldCommand::UnhaltPause) {
             return;

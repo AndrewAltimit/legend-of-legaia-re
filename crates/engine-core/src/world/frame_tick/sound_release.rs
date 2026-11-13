@@ -13,8 +13,9 @@ impl World {
     /// into `gp+0x80C`), then tail-calls the libsnd volume shim
     /// `FUN_80062004(*(i16*)0x80070536, (level << 15) >> 16, deadline | 1)`
     /// (`0x800267E4`). Those two extra cells land in [`crate::world::AudioState::sound_arm`] so a
-    /// host driving the shim has the exact arguments; the engine has no live
-    /// field-mode volume ramp of its own, so the latched level is the value
+    /// host driving the shim has the exact arguments. The ramp itself is the
+    /// director's (`BgmDirector::timed_release_fade`, the decrescendo on the
+    /// field-BGM slot's sequencer); the latched level here is the value
     /// retail's MAN loader rests `_DAT_8007B910` on at every scene load - the
     /// configured level `_DAT_8008457C` ([`crate::world::AudioState::levels`]),
     /// `0xD7` from a cold boot and a loaded save's own word after a load.
