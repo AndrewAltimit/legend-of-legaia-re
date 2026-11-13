@@ -1606,6 +1606,77 @@ not hold: the capture band's and the summons' heavy arms, whose PCSX-Redux frame
 to `17` vsyncs with no clip (Water Crystals `13` to `16`, Thunder Storm `6` to `9`), run
 their table's step.
 
+<a id="a-frames-work-is-what-it-links"></a>
+
+**A frame's work is what it links.** Every polygon of a battle object goes through the
+per-primitive dispatcher `FUN_80043390`, which jumps per group to its handler from the table
+at `0x8007657C` (`jr t8` at `0x80043614`); the handler transforms, culls, depth-sorts and
+links each primitive. So a frame's CPU work grows with what it links, not with its action
+state. The enemy casts' `--cd-trace` recordings give each frame's work (its cost from the
+`VSync` return to the CPU-done mark, less the CD interrupt spans,
+[`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)); against the polygons the engine's
+window links for the same state and arm (`LEGAIA_DIAG_GPU_COST`), over `171` state-and-arm
+medians of `32` films:
+
+| Work model | rms (hblanks) | Step read right | Ordinary frames' rms |
+|---|---:|---:|---:|
+| Action-state table plus draw load | `206` | `.42` | `143` |
+| `43 + .184` a linked polygon | `89` | `.78` | `55` |
+
+Fit on half the films and scored on the other, the polygon line reads rms `50` and `114`.
+Under a clip's polls the same frames cost `2.78` times that work (tenth to ninetieth
+percentile `2.70..2.85` on the fully polled arms), the stop watch's share over the frame's
+own work rather than over the table. That reads the per-line loads the table could not:
+Death Game's arms do `241..349` hblanks of work and their polled frames fit inside step
+`4`, Kiss of Death's arm 4 does `665` and its polled frames span eight vsyncs, Glare's sit
+between. Grade `disassembly` for the per-polygon path, `capture` for the coefficients.
+
+Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
+`xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
+`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`, on top of the span
+law). The native window prices each battle frame's table and hands its count over
+(`World::note_drawn_polys`); a host that does not price its frames keeps the tables. A priced
+frame's work replaces the state's base and draw load, a capture-band module's line loads it
+like the funnel's, and a capture arm's table step no longer stands in for its cost: the ring
+reads the priced cost. A summon module's arms keep their table: their clips poll on
+PCSX-Redux too (`84` to `676` polls a frame from the line's arm on), but the engine's linked
+count overshoots retail's work under them, and the Seru films read lower priced. The cast
+recorder's `meta.csv` carries each pass's `work`.
+
+The three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
+`3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's
+ring holds it), so its two homing slots land on one frame and the film's cues read `1.0`
+from `.933`. Neo Star Slash's capture arms run retail's long frames under the line, the
+drive word clears where retail's does, and Noa's death shout plays as the CD clip (`.957` to
+`1.0`). Kiss of Death's arm 4 drops from `4` to `3` within two passes of retail's when the
+line's read ends, with no per-arm pass count (`CAPTURE_ARM_READ_TAILS` still serves the
+unpriced clock). The film sets, one binary run three ways (film mean, then cue mean):
+
+| Set | Films | Default | Span law | Law and priced frames |
+|---|---:|---:|---:|---:|
+| Enemy casts | 107 | `.9166` / `.9982` | `.9134` / `.9935` | `.9144` / `.9844` |
+| Seru casts | 29 | `.9144` / `1.0` | `.9143` / `1.0` | `.9124` / `.9754` |
+| Player arts | 17 | `.8751` / `.9976` | `.8678` / `.9976` | `.8892` / `.9923` |
+
+Priced, the arts gain most: their strike states run retail's slow frames (Tri-Somersault's
+`0x1E` takes `720` ticks for retail's `734` vsyncs, `582` on the table; Vahn's chain `106` for
+`121`, `89`), and the chain films rise `.03` to `.09`. Pricing also takes back what the law
+alone loses on Element Change (`.954` by default, `.807` under the law, `.960` priced) and
+Death Game (`.933`, `.838`, `.935`). Against
+the default the enemy casts drop six cues and gain two, the Seru casts drop one (`0x8E`, `1.0` to `.286`, its
+close-up and flash frames now priced; not read further), and the arts two (Super Ironhead, Tri-Somersault), so the pricing stays opt-in.
+
+What still loses is a frame that overruns under a capture arm. The three Thunder Storm films
+fall `.09` to `.12`: their arms 4 to 6 overrun as retail's do, every pass reaches the same
+countdown, seat count and yaw as unpriced, yet on the frame after an overrun the image takes
+the white burst of the frame before on its last vsync, so something drawn keys on the display
+tick rather than the pass. Terio Punch (`-.165`, a cue lost) prices its arm 7 at `765` where
+retail's work is `1204`: the band's heavy arms draw more than the engine links. The other
+cue drops sit in capture arms that now overrun, and none is read further: Astral Slash's arm
+4 hits pair five of eight cues off retail's frames, Megaton Press's knockdown `0x17` lands
+seven ticks late in arm 9, Plasma Strike's arm 5 hits two more cues off, and Fatal
+Decision's arm 12 plays three extras. Grade `capture`.
+
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
 restarts somewhere no `SCUS_942.54` store shows (only its increment at

@@ -1492,13 +1492,16 @@ adds its reaction-channel entry). What the recordings on
   line clears the word on the wall clock, and retail's capture arms ran `583` vsyncs for `192` of
   game time where the engine's run their step, so the engine's drive is still busy when the clip
   commits. Unseeded, the same film deals other damage, Noa lives, and the clip's `0x10` reads
-  missing. The frame cost's, not a cue rule.
+  missing. The frame cost's, not a cue rule: with the frames priced from what they link
+  ([a frame's work](../subsystems/battle-stage-camera.md#a-frames-work-is-what-it-links)) the
+  capture arms run retail's long frames, the word clears in time and the clip plays.
 - **A projectile state on a light step.** Tail Flare's `0x15` / `0x17` and `0x62` / `0x5C`
   pairs land on one retail frame and three ticks apart in the engine
   (`battle_jou_gimard_v3_tail_flare_mid_cast`): retail runs all of `0x2B` at step `4` (the
   ring's newest entry on the clamp from the first frame), the engine at `3` on a cost of `537`
   to `718` (the table's `534` and the flight's parts), so two homing slots that reach their
-  targets in one retail frame land in consecutive engine frames.
+  targets in one retail frame land in consecutive engine frames. Priced from what the flight
+  links, the state reads `4` from its first frame and both pairs land together.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
