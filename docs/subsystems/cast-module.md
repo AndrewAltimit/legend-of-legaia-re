@@ -2499,6 +2499,21 @@ colour-word stores and waives the fold, and `World::aluru_band_draw` hands
 the spread to `legaia_render_kernels::cast_aluru` in both hosts' screen
 layers.
 
+**Arm 4 holds the band in `0x35`.** Arm 3's countdown is the band word itself: the pass
+that hears the drive idle stores `ctx[+0x6D8] = scalar * 20` (`0x801F703C`), and arm 4
+drains it by `step * scalar` (`0x801F7058..0x801F7064`) on top of the action SM's own
+`step` a pass. `0x35` re-reads the word after the stager call and leaves only once it is
+negative, so retail runs arms 3 and 4 in `0x35` and enters `0x36` on the pass arm 5
+opens (`160`, `133`, .. `25`, then `-2` at step `3` on the `0x8E` film). The port kept
+the countdown on the director alone, so the SM's word stood at `0` from arm 3 on and the
+band left for `0x36` on arm 4's first pass, which also put arm 4 under another key than
+the recording's: on the recording's own steps it ran a vsync a pass where retail runs
+step `3`, and its white flare (`0x801F8B3C`) stopped at level `4096` where retail's last
+pass lands `4864` and draws on. PROT 0916 now shares the word
+(`BAND_WORD_MODULES`, [the band word](#summon-band-camera)), and arm 5 reads `.662` to
+`.979` on `--retail-steps --rand-track`, the film `.930` to `.978` (plain `.942` to
+`.965`). Grade `disassembly` + `capture`.
+
 The wash over the blast is a held fade arm 15 parks at `ctx[+0x102C]`
 (`0x801F7BC4..0x801F7C24`). Arms `0x12` and `0x13` share their tail, and its end sits
 behind `word > 3 * scalar << 6` (`slt` at `0x801F86AC`): the kill of the parked fade

@@ -4,8 +4,10 @@
 //! and drains it by the frame step at `0x35`, and three player-Seru modules
 //! keep their arm countdown in the same word: PROT 0904 (Theeder,
 //! `sh v0,0x6d8(s1)` at `0x801F6DE8`, drains at `0x801F6FD4..0x801F6FE0`),
-//! PROT 0907 (Nighto, `0x6d8(s5)` from `0x801F7444`) and PROT 0908 (Zenoir,
-//! `addiu s8,v1,0x6d8` at `0x801F6A44`, every `0x0(s8)` access after it).
+//! PROT 0907 (Nighto, `0x6d8(s5)` from `0x801F7444`), PROT 0908 (Zenoir,
+//! `addiu s8,v1,0x6d8` at `0x801F6A44`, every `0x0(s8)` access after it) and
+//! PROT 0916 (Aluru: arm 3 stores `scalar * 20` at `0x801F703C`, arm 4 drains
+//! it at `0x801F7058..0x801F7064`).
 //! `0x35` re-reads the word after the stager call and leaves only once it is
 //! negative, so each re-seed keeps the band in `0x35`
 //! ([`legaia_engine_battle_vm::battle_action`]'s `summon_sustain`).
@@ -18,11 +20,14 @@
 use super::*;
 
 /// The slot-B modules whose arm countdown is `ctx[+0x6D8]` in the arms that
-/// run while the band sits in `0x35`. PROT 0906 / 0909 / 0910 / 0916 also
-/// store to the word, but their retail captures show no `0x35` / `0x36`
-/// split against the engine and their engine countdowns are not yet checked
-/// against the word, so they keep the SM's own value.
-pub(in crate::world) const BAND_WORD_MODULES: [u32; 3] = [904, 907, 908];
+/// run while the band sits in `0x35`. Aluru's film shows the split: retail
+/// stays in `0x35` through arm 4's drain (`160` to `-2` at step `3`, the SM's
+/// step and the arm's `step * scalar` a pass) and leaves for `0x36` as arm 5
+/// opens, where the engine's own countdown left the SM's word at `0` and the
+/// band left on arm 4's first pass. PROT 0906 / 0909 / 0910 also store to
+/// the word, but their engine countdowns are not yet checked against it, so
+/// they keep the SM's own value.
+pub(in crate::world) const BAND_WORD_MODULES: [u32; 4] = [904, 907, 908, 916];
 
 impl World {
     /// Whether the resident summon module keeps its countdown in the band

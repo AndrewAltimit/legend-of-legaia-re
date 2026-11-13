@@ -110,7 +110,7 @@
     <li><b><code>0x32</code> invoke</b><span>Waits for the drive while the framing keeps walking, then stages clip <code>9</code> on the caster.</span></li>
     <li><b><code>0x33</code> fade in</b><span>The summon close-up camera; on the clip's first effect record, the white flash-in and cue <code>0x63</code>.</span></li>
     <li><b><code>0x34</code> freeze</b><span>Hides the party and the living monsters and calls the summon dispatch <code>FUN_801F1ED4</code>, whose phase 0 seats the creature in seat 7.</span></li>
-    <li><b><code>0x35</code> sustain</b><span>Drains a band word, ducks the music to 75% (50% for the high spells), and calls the module every frame. It re-reads the word after the call, so a module that keeps re-seeding it holds the band: Theeder, Nighto and Zenoir leave on an arm of their own, not after the word's <code>0x78</code> frames.</span></li>
+    <li><b><code>0x35</code> sustain</b><span>Drains a band word, ducks the music to 75% (50% for the high spells), and calls the module every frame. It re-reads the word after the call, so a module that keeps re-seeding it holds the band: Theeder, Nighto, Zenoir and Aluru leave on an arm of their own, not after the word's <code>0x78</code> frames.</span></li>
     <li><b><code>0x36</code> return</b><span>Holds while the module returns busy, un-hides the actors, and runs the Seru-magic level check.</span></li>
     <li><b><code>0x37</code>, <code>0x38</code></b><span>Wait for every actor to settle, write the fade sentinel, kill the fade primitive.</span></li>
   </ol>
