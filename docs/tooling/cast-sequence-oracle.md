@@ -962,6 +962,20 @@ Barra's arm 7 reads `.995` on retail's steps and `.75` on the engine's own: its 
 pulses are a four-record cloud cycle stepped once a pass, so where they fall is the
 frame cadence, not the module.
 
+The camera's TR y shakes were the next class, each a module word the tick body steps
+once a battle frame: Kemaro's arm-4 parity halfword, Puera's arms-14 / 15 alternation
+word and Juggernaut's epilogue shake word, which the port stepped on every vsync of the
+pass or not at all ([cast module](../subsystems/cast-module.md#the-tr-y-shakes-are-a-frames)).
+Kemaro's arm 4 also drifted the yaw where retail drifts the pitch. With the three in,
+`camera.csv` holds retail's pitch and TR y pass for pass through those arms. Aluru's
+film takes its kill verdict on retail's word ([the rand stream](#the-rand-stream)), a
+harness seat:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9108` | `.9132` | `0x90` `.950` to `.976`, `0x8E` `.835` to `.864` (seat), `0x94` `.930` to `.937`, `0x99` `.894` to `.899` |
+| `--retail-steps` | `.9216` | `.9239` | `0x90` `.951` to `.977`, `0x8E` `.819` to `.849` (seat), `0x94` `.955` to `.963`, `0x99` `.913` to `.919` |
+
 What still holds on every seat is mostly not a rule a director misses. Horn's arm 4
 and Ozma's arms 6..9 overrun their frames by half again (`+196` and `+274` vsyncs), so
 the passes the rand track seats fall on other frames; Juggernaut's arm 26 reads `.44`

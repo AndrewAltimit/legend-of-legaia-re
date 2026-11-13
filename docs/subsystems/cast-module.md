@@ -2826,6 +2826,8 @@ Kemaro's arm 8 lifts and lands the creature as its word drains: height
 `+0x44 = (w << 4) & 0xFFF` under `scalar << 5` (`0x801F7690..0x801F76A8`), height
 and pitch `0` on the pass (`World::apply_kemaro_writes`).
 
+<a id="the-tr-y-shakes-are-a-frames"></a>
+
 **The TR y shakes are a frame's.** Kemaro's arm 4 and Puera's arms 14 and 15
 store TR y straight on every pass off a word they bump once a pass: Kemaro's
 parity halfword `0x801F92F8` (`0x801F7088..0x801F70C4`) gives `0x600` and
