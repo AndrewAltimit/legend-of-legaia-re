@@ -17,6 +17,7 @@ mod battle_vram_channel;
 mod boot_logos_ladder;
 mod commit_log_all_target_page;
 mod dev_menu_equip_ladder;
+mod dream_mother_light_page_prims;
 mod dream_yaw_part_page_ladder;
 mod expansion_map_over_scene;
 mod expansion_map_page;

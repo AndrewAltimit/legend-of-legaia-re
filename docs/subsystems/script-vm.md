@@ -763,6 +763,13 @@ steps once per drawn frame: `0x02` records `[dur][ext_w][ext_h][A rgb][B rgb]
 [lift]` interpolated by `t / dur`, `0x40` block headers stepped over, `0x01`
 restart, `0x00` retire - the lamp pools breathe.
 
+The tick reads two bits of the parent's `+0x10` and nothing else of its state
+(`0x801E4490..0x801E44B8`): `8` retires the light, `2` - the visibility cull
+`FUN_801D79E8` - skips its frame. A parent's zero render scale is not a test, so a
+light may hang on an invisible marker: `dream` `P2[1]`, Noa's first dream, hangs
+her mother's voice, the light she follows, on `P1[2]` (`B4 08 10 ..`), whose
+prologue zeroes its scale (`4C 40 00 00`).
+
 The engine seats the light on the op's target (the player for channel `0xF8`,
 else the running placement's NPC) in `World::script_actors`
 (`engine-core::world::field_script_actors`) and both play hosts draw it
