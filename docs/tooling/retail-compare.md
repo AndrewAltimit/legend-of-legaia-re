@@ -3009,6 +3009,13 @@ the word, the `super_queue_replace_*` drives met `96` only while the engine
 restarted the seat's idle at the seed, which retail never does
 ([settled](../reference/re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
 
+**A caster idling into the capture band.** The image child seats a body
+idling in the band `0x6F..=0x71` on the capture's own cursor, since the band
+stages no clip on it. The band's entry `0x6E` is seated the same way: a caster
+still on its idle there has staged nothing since the seed, and on a pinned
+replay its loop's phase is the replay's. `nivora_duel_mid_blazing_slash`'s Gala
+goes from `.985` back to `.996` (harness-only).
+
 **A directed body with no module word.** PROT 0962's charge bodies wait on
 the caster's cursor, so `capture_countdown_va` names no word for them. Their
 `0x70` captures are still held to the capture's arm
