@@ -597,6 +597,34 @@ fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
     assert_eq!(battle_move_name(&w), None);
 }
 
+/// An every-enemy cast (`9`) on a lone survivor opens the target plaque on the
+/// survivor the census latched (`ctx[+0x24B]`, `0x801E6FC8..0x801E7008`), and
+/// the record keeps that name when a module writes the code back (Viguro's
+/// arm 10).
+#[test]
+fn an_every_enemy_cast_on_a_lone_survivor_keeps_its_plaque() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
+    let mut w = battle_world(1);
+    arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 9);
+    w.actors[0].battle.params[0] = 0x87;
+    w.battle_ctx.item_target_b = 3;
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    w.note_action_plate_raise(HUD_TARGET_BANNER, 0);
+    w.battle.land_battle_hud_glides();
+    // `0x28` rewrites the code to the survivor, and the module writes it back.
+    w.actors[0].battle.active_target = 3;
+    assert_eq!(
+        battle_target_plaque(&w).map(|(n, _)| n),
+        Some("Gimard".into())
+    );
+    w.actors[0].battle.active_target = 9;
+    assert_eq!(
+        battle_target_plaque(&w).map(|(n, _)| n),
+        Some("Gimard".into())
+    );
+}
+
 /// The Done band's teardown wipes the handle list and re-spawns the target
 /// plaque on its closing glide: it slides from its row back under the
 /// screen over sixteen vsyncs and is then gone until the next action's seed.
