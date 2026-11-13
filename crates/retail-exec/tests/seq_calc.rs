@@ -21,7 +21,8 @@
 
 use crate::common::{Rng, diff_offsets, scus_cpu};
 use legaia_engine_audio::seq_calc::{
-    SeqChannel, SlideDir, TrackEnd, flag, tempo_slide_tick, track_end, volume_slide_tick,
+    SeqChannel, SlideDir, TrackEnd, flag, install_volume_slide, set_decrescendo, tempo_slide_tick,
+    track_end, volume_slide_tick,
 };
 use legaia_engine_audio::seq_events::{
     SeqEvent, decode_event, handler_operand_bytes, pump_delta_time, restart_channel, start_channel,
@@ -42,6 +43,8 @@ const DECODE: u32 = 0x8006_3CEC;
 const PUMP: u32 = 0x8006_3974;
 const PUMP_BODY: u32 = 0x8006_39A0;
 const NOTE_KILL: u32 = 0x8006_84CC;
+const SLIDE_INSTALL: u32 = 0x8006_206C;
+const DECRESCENDO: u32 = 0x8006_1EDC;
 
 const SLOT_TABLE: u32 = 0x801C_D2C0;
 const DIVISOR: u32 = 0x801C_D2BC;
@@ -319,6 +322,101 @@ fn the_volume_slides_match_retail() {
     assert!(
         commits > 2000 && saturated > 500 && settled > 2000,
         "{commits} {saturated} {settled}"
+    );
+}
+
+/// The slide installer `FUN_8006206C` and the decrescendo setter
+/// `FUN_80061EDC` over it (the getter `FUN_800683D8` runs for real), from
+/// random records with an amount and a tick count drawn around the shapes a
+/// timed release passes (`107` over `deadline | 1`). A tick count of zero
+/// under a non-zero amount is retail's divide-by-zero `break`; it is not
+/// drawn where the installer would reach the divide.
+#[test]
+fn the_slide_installer_and_decrescendo_match_retail() {
+    differential!(scus(SLIDE_INSTALL), scus(DECRESCENDO));
+    let Some((mut cpu, _)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x4445_4352);
+    let (mut fails, mut armed, mut fine, mut coarse) = (Vec::new(), 0, 0, 0);
+    for run in 0..60_000 {
+        let (slot, chan) = (rng.below(4) as u8, rng.below(16) as u8);
+        let seed = gen_record(&mut rng);
+        let amount: i16 = match rng.below(5) {
+            0 => 107,
+            1 => 0,
+            2 => rng.below(0x80) as i16,
+            3 => -(rng.below(0x80) as i16),
+            _ => rng.next() as i16,
+        };
+        let ticks: i32 = match rng.below(5) {
+            0 => (rng.below(400) as i32) | 1,
+            1 => 61,
+            2 => -(rng.below(200) as i32) - 1,
+            3 => rng.below(4) as i32,
+            _ => rng.next() as i32,
+        };
+        let decr = rng.below(2) == 0;
+        let mut c = lift(&seed, 0);
+        // The amount the installer sees, to keep the divide-by-zero out.
+        let seen = if decr {
+            let a = i32::from(amount);
+            if i32::from(c.vol.0) < a {
+                c.vol.0 as i16
+            } else if i32::from(c.vol.1) < a {
+                c.vol.1 as i16
+            } else {
+                amount
+            }
+        } else {
+            amount
+        };
+        if ticks == 0 && seen != 0 && c.flags & (flag::REWIND | flag::BUSY) == 0 {
+            continue;
+        }
+        load_record(&mut cpu, slot, chan, &seed);
+        let entry = if decr { DECRESCENDO } else { SLIDE_INSTALL };
+        let args = [
+            slot.into(),
+            chan.into(),
+            i32::from(amount) as u32,
+            ticks as u32,
+        ];
+        assert_eq!(cpu.call(entry, &args), Stop::Returned);
+        let retail = cpu.mem.read(rec_addr(slot, chan), STRIDE as usize);
+
+        let did = if decr {
+            let before = c.slide_remaining;
+            set_decrescendo(&mut c, amount, ticks);
+            c.slide_remaining != before || seen != 0
+        } else {
+            install_volume_slide(&mut c, amount, ticks)
+        };
+        if did && c.slide_step > 0 {
+            fine += 1;
+        } else if did && c.slide_step < 0 {
+            coarse += 1;
+        }
+        armed += u32::from(did);
+        let mut port = seed.clone();
+        seat(&mut port, &c, 0);
+        check(
+            if decr { "decrescendo" } else { "install" },
+            run,
+            &seed,
+            &retail,
+            &port,
+            &mut fails,
+        );
+        if fails.len() > 4 {
+            break;
+        }
+    }
+    assert!(fails.is_empty(), "{}", fails.join("\n"));
+    assert!(
+        armed > 5000 && fine > 1000 && coarse > 1000,
+        "{armed} {fine} {coarse}"
     );
 }
 

@@ -6,6 +6,9 @@
 //! PORT: FUN_8006320c - the ascending volume slide.
 //! PORT: FUN_8006352c - the descending volume slide.
 //! PORT: FUN_80063aa8 - the track-end / loop-repeat handler.
+//! PORT: FUN_8006206c - the volume-slide installer.
+//! PORT: FUN_80061edc - the decrescendo setter that arms it.
+//! REF: FUN_80062004 - the shim that reaches the setter on channel `0`.
 //!
 //! [`crate::Sequencer`] is the engine's port-side replacement for this tier
 //! and drives *playback* on its own integer-SPU-sample clock, so nothing on the
@@ -541,6 +544,64 @@ pub struct SlideTick {
     /// `true` when the tick's tail cleared the slide flag (remaining hit zero
     /// or the level counter ran out).
     pub settled: bool,
+}
+
+/// Arm a volume slide (`FUN_8006206C`, `_SsSetSlideVolume`): `amount` units
+/// over `ticks` calls of the slide tick.
+///
+/// Declines while [`flag::REWIND`] or [`flag::BUSY`] is up, or for an
+/// `amount` of zero (`0x800620A8..0x800620C8`). Otherwise both the span
+/// `+0x48` and the level counter `+0x4A` take `amount`, both the total
+/// `+0x9C` and the remaining count `+0xA0` take `ticks`, and the step `+0x4C`
+/// picks the rate mode by which is larger: `ticks / |amount|` (one unit every
+/// that many ticks) when `ticks >= |amount|`, else `-(|amount| / ticks)` (that
+/// many units a tick). Both divides are signed and truncate toward zero.
+/// A `ticks` of zero below a non-zero amount is retail's `break 0x1C00`
+/// (divide by zero); no caller passes one, and the port leaves the step as
+/// it was.
+///
+/// Returns `true` when the slide was armed.
+pub fn install_volume_slide(ch: &mut SeqChannel, amount: i16, ticks: i32) -> bool {
+    if ch.flags & (flag::REWIND | flag::BUSY) != 0 || amount == 0 {
+        return false;
+    }
+    let mag = i32::from(amount).abs();
+    ch.slide_span = amount;
+    ch.slide_total = ticks as u32;
+    ch.slide_level = amount as u16;
+    ch.slide_remaining = ticks;
+    if ticks < mag {
+        if let Some(q) = mag.checked_div(ticks) {
+            ch.slide_step = q.wrapping_neg() as i16;
+        }
+    } else {
+        ch.slide_step = (ticks / mag) as i16;
+    }
+    true
+}
+
+/// The decrescendo setter (`FUN_80061EDC`, reached through the shim
+/// `FUN_80062004(seq, vol, ticks)` with channel `0`): lower the sequence by
+/// `amount` over `ticks` slide ticks.
+///
+/// The amount is clamped to the live volume first: the left side when it
+/// reads under `amount`, else the right side when that does
+/// (`0x80061F3C..0x80061F5C`, a signed compare of the getter's halfwords).
+/// Then the slide is armed ([`install_volume_slide`]) and, whether or not it
+/// armed, [`flag::VOL_DOWN`] is raised and [`flag::VOL_UP`] cleared
+/// (`0x80061FBC..0x80061FDC`).
+pub fn set_decrescendo(ch: &mut SeqChannel, amount: i16, ticks: i32) {
+    let a = i32::from(amount);
+    let clamped = if i32::from(ch.vol.0) < a {
+        ch.vol.0 as i16
+    } else if i32::from(ch.vol.1) < a {
+        ch.vol.1 as i16
+    } else {
+        amount
+    };
+    install_volume_slide(ch, clamped, ticks);
+    ch.flags |= flag::VOL_DOWN;
+    ch.flags &= !flag::VOL_UP;
 }
 
 /// One volume-slide tick (`FUN_8006320C` / `FUN_8006352C`).

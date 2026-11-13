@@ -273,6 +273,17 @@ pub trait AudioSink {
         });
     }
 
+    /// Arm a decrescendo on the attached sequencer: `amount` units of
+    /// sequence volume over `ticks` vsyncs ([`Sequencer::set_decrescendo`]).
+    /// No-op with none attached.
+    fn sequencer_decrescendo(&self, amount: i16, ticks: i32) {
+        self.with_core(|s| {
+            if let Some(seq) = s.sequencer.as_mut() {
+                seq.set_decrescendo(amount, ticks);
+            }
+        });
+    }
+
     /// Stage a volume write on `mask`'s voices into the score's next flush: a
     /// positional emitter's per-tick level reaches the SPU through the same
     /// flush that keys the score (`FUN_800657D0` raises the voice's flag), so

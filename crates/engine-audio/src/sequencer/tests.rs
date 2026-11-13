@@ -836,6 +836,48 @@ fn sequence_volume_change_revolumes_the_sounding_voice_at_the_flush() {
     assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
 }
 
+/// A timed release's decrescendo (`FUN_80061EDC`): `107` units over
+/// `61` vsyncs is the coarse arm, one unit a vsync from the next flush on,
+/// until the tick count runs out; `nilboa_delilas_family_pose` reads `83`
+/// twenty-four vsyncs in.
+#[test]
+fn a_decrescendo_steps_the_sequence_volume_once_a_vsync() {
+    let mut spu = Spu::new();
+    let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+    seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+    // A score that loops, so the play arm the slide runs in stays open.
+    seq.set_loop_to(0);
+    seq.set_decrescendo(107, 61);
+    assert!(seq.vol_slide_active());
+    let mut vsyncs = |seq: &mut Sequencer, n: u64| {
+        for _ in 0..n * FLUSH_SAMPLES {
+            seq.tick_sample(&mut spu);
+        }
+    };
+    vsyncs(&mut seq, 24);
+    assert_eq!(seq.master_vol(), 83);
+    vsyncs(&mut seq, 37);
+    assert_eq!(seq.master_vol(), 46);
+    assert!(!seq.vol_slide_active());
+    vsyncs(&mut seq, 10);
+    assert_eq!(seq.master_vol(), 46, "a settled slide moves nothing");
+}
+
+/// The fine arm: more ticks than units moves one unit every
+/// `ticks / amount` vsyncs, on the remaining count's multiples.
+#[test]
+fn a_long_decrescendo_steps_one_unit_every_few_vsyncs() {
+    let mut spu = Spu::new();
+    let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+    seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+    // 481 / 107 = 4: a move where the remaining count is a multiple of 4.
+    seq.set_decrescendo(107, 481);
+    for _ in 0..8 * FLUSH_SAMPLES {
+        seq.tick_sample(&mut spu);
+    }
+    assert_eq!(seq.master_vol(), 105);
+}
+
 #[test]
 fn cc10_pan_repans_the_sounding_voice() {
     let mut spu = Spu::new();

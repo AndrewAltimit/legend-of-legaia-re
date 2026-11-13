@@ -84,6 +84,7 @@ impl Sequencer {
         if !self.exact_tempo {
             self.pump_vsync(spu);
         }
+        self.tick_vol_slide();
         if self.master_vol_dirty {
             self.master_vol_dirty = false;
             self.remix_all(spu);

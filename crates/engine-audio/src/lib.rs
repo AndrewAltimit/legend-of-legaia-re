@@ -57,7 +57,8 @@ pub use battle_voice::{
 pub use pcm_bus::{PcmBus, PcmBusKind, PcmClip};
 pub use seq_calc::{
     SeqCalcState, SeqCall, SeqChannel, SlideDir, SlideTick, TempoTick, TrackEnd, dispatch_channel,
-    seq_calc, tempo_slide_tick, tick_budget, track_end, volume_slide_tick,
+    install_volume_slide, seq_calc, set_decrescendo, tempo_slide_tick, tick_budget, track_end,
+    volume_slide_tick,
 };
 pub use seq_events::{
     PumpOutcome, SeqEvent, decode_event, handler_operand_bytes, pump_delta_time, read_delta,

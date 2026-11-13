@@ -256,6 +256,12 @@ pub struct Sequencer {
     /// [`Self::set_master_vol`] changed the volume since the last flush: the
     /// flush re-volumes every sounding note ([`Self::remix_all`]).
     master_vol_dirty: bool,
+    /// The sequence's volume-slide fields (`+0x48` / `+0x4A` / `+0x4C` /
+    /// `+0x9C` / `+0xA0` and the slide bits of `+0x98`), on the retail
+    /// channel record's own layout so the slide runs through
+    /// [`crate::seq_calc::volume_slide_tick`]. Armed by
+    /// [`Self::set_decrescendo`], ticked once a vsync by the flush.
+    vol_slide: crate::seq_calc::SeqChannel,
     /// Monotonic count of loop rewinds. Bumped on every [`Self::rewind_to`],
     /// so an outside observer can detect a loop-back even when the playhead
     /// tick peaks and resets within a single sample (a marker-less EOT whose
