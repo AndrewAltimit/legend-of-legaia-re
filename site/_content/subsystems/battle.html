@@ -296,6 +296,7 @@
     </tbody>
   </table>
   <p>Two things about the wipe catch people out. A scripted-loss battle (the Rim Elm ambush) raises a story-flag latch first, so its wipe returns to the field like a win; the same gate sets a second flag on the survived path, which is how a scene script can score a scripted battle. And the game-over artwork overlay that exists on the disc (mode 18/19) has no writer anywhere - it is a dev harness. Latches and stores on <a href="battle-internals.html#wipe-path">internals</a>.</p>
+  <p>The end sequence frames whoever acted last. On a win that is the member who finished the fight: they strike the win pose, the result window names their team ("Gala's team won the battle!"), and the pose's own voice line plays - each pose streams one of the heroes' clips out of <code>monster.snd</code> into the sound slot the formation's monster bank had, and the pose's animation keys it. Holding Start with a direction, L1, L2 or R2 as the fight ends picks the pose; Songi's fights always end on the same one. On a wipe the camera stays on the monster that landed the last blow, which plays its knockout taunt, and a few bosses get a voiced line over the loss.</p>
   <p>After every battle retail reloads the field scene and re-runs its entry script, which is what dispatches post-battle beat records (the rikuroa progression gate, for one).</p>
   <details class="disclosure" id="charm-softlock">
     <summary>Details: the charm battle softlock (randomizer interaction)</summary>

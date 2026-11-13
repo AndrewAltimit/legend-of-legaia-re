@@ -19,7 +19,7 @@
     </tbody>
   </table>
   </div>
-  <p>The victory-voice pick, in the results sequencer <code>FUN_8004E568</code>: a pose tier from the pose actor's HP (&ge; 3/4, &ge; 1/2, &ge; 1/4, below; a status in mask <code>0x107B</code> forces tier 4), a pose action id from the per-character table at <code>0x800788A0</code>, then a clip byte at <code>0x80078867 + action + char_id*8</code>. Per-character clip bands: Vahn <code>0xB8..0xBC</code>, Gala <code>0xBD..0xC3</code>, Noa <code>0xC4..0xCB</code>.</p>
+  <p>The victory-voice pick, in the results sequencer <code>FUN_8004E568</code>: a pose tier from the pose actor's HP (&ge; 3/4, &ge; 1/2, &ge; 1/4, below; a status in mask <code>0x107B</code> forces tier 4), a pose action id from the per-character table at <code>0x800788A0</code>, then a clip byte at <code>0x80078867 + action + char_id*8</code>. Per-character clip bands: Vahn <code>0xB8..0xBC</code>, Gala <code>0xBD..0xC3</code>, Noa <code>0xC4..0xCB</code>. The clip lands in VAB slot 7 over the formation's monster bank, and the win-pose clip's own cue track keys it: every pose fires cue <code>0xA1</code>, a party cue that sounds in slot 7.</p>
   <p class="hint">A third &ldquo;mode-aware extension dispatcher&rdquo; that turns up in call graphs is not a sound consumer at all - it is the character-mesh equipment group-transform swap (<a href="../formats/character-mesh.html">character mesh</a>).</p>
 </section>
 

@@ -274,7 +274,7 @@ The battle does not exit on the frame the `0x5A` gate raises the signal. Retail'
 `_DAT_8007BD2C` is both the wipe cause and the sequencer's phase word:
 
 - **Victory** (`0`) walks the jump table at `0x800152FC` as `0 -> 2 -> 4 -> 5` while the hero's `monster.snd` voice clip (slot 7) and PROT 0889 (the level-up jingle bank, slot 11) stream in, with the pose actor framed at `FUN_801D5854(seat, 8)`.
-- **Party wipe** (`5`) lands on phase 5 at once with `DAT_8007BD60 & 0x80` clear, which selects the annihilated arm: the same `0x100` hold and fade, every seat below the party count floored at 1 HP on the fade frame, unconditionally (`0x8004FB94..0x8004FBA4`, with the roster record's HP / MP written beside it - so a scripted loss returns to the field standing). The win arm's floor (`0x8004F390`) touches only a seat at 0 HP.
+- **Party wipe** (`5`) lands on phase 5 at once with `DAT_8007BD60 & 0x80` clear, which selects the annihilated arm: the same `0x100` hold and fade, every seat below the party count floored at 1 HP on the fade frame, unconditionally (`0x8004FB94..0x8004FBA4`, with the roster record's HP / MP written beside it - so a scripted loss returns to the field standing). The win arm's floor (`0x8004F390`) touches only a seat at 0 HP. The arm's framing is [the wipe's own](#the-wipe-frames-the-killing-monster).
 - **Escape** runs the `0x67` arm: no results, the phase halfword counts up from the fade the SM's `0x66` teardown spawned, same `0x43` gate.
 
 Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`scripts/pcsx-redux/autorun_victory_timeline.lua`):
@@ -290,18 +290,33 @@ Victory timeline, measured on `rim_elm_gimard_victory` under PCSX-Redux (`script
 
 **The pose actor** is `ctx[+0x13]`, the acting slot, so the member who finished the fight poses.
 The sequencer reads it at entry (`lbu s8,0x13(a0)` at `0x8004E5A4`, `a0 = *0x8007BD24`, the battle context), and the action SM's victory arm is its last writer: `FUN_801E295C` runs with `s5 = ctx + 0x11` (`0x801E2994`), so the arm's `sb v1,0x2(s5)` stores (`0x801E66EC`, `0x801E6740`, `0x801E6760`) land on `ctx[+0x13]` - the re-pick of a downed finisher and the Songi seats below.
-The three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose: Vahn finished that fight. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`engine-battle::victory::victory_pose_tier` / `victory_pose_column`). The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`.
+The three-member `noa_levelup_banner` capture reads `ctx[+0x13] == 0` with seat 0 carrying the staged pose: Vahn finished that fight. `battle_jou_gala_finisher_results_retail` and `battle_jou_noa_finisher_hold_retail` read `2` and `1` on wins Gala and Noa finished, each posing. The pose id comes from the SCUS table at `0x800788A0` through the HP-quarter tier, aged by the round count and forced weak by the `0x107B` status mask (`engine-battle::victory::victory_pose_tier` / `victory_pose_column`). Two overrides follow the pick and its two `rand()` draws:
 
-Port divergences in the pose:
+- **Held buttons** (`0x8004EAF4..0x8004EB8C`): with Start held in the per-frame mask `_DAT_8007B850`, Up / Left / Down / Right / L1 / L2 pick `0x11..=0x16`, R1 + Cross + Select together `0x17` and R2 `0x18`, the last one held winning (`victory_pose_pad_select`).
+- **Songi** (`0x8004EB90..0x8004EBAC`): a first monster id `gp+0x9F4` (`0x8007BD0C`) of `0xB3` or `0xB4` forces `0x17` (`victory_pose_formation_override`).
 
-- The port commits the record as a one-shot that hands back to the idle loop, so the pose is struck once on the results frame rather than held for the `0x100` hold. Holding it needs the record's loop window (`+0x85..+0x86`), which `MonsterAnimation` does not model.
-- The hero's voice line (`monster.snd` tail clips) is not staged; no engine bank carries `monster.snd`.
+The clip is one of the eight base-archive records the art-bank ladder resolves for ids `0x11..=0x18`. Each record carries a loop window of `255` cycles (`+0x84..+0x86`), so the pose plays to the window's end and loops there for the rest of the hold and through the exit fade. On `rim_elm_gimard_victory` Vahn's `0x12` advances half a keyframe a vsync from the results frame and rewinds `49 -> 20` every 58 vsyncs, the fade included (`autorun_battle_end_film.lua`'s node cursor). The port's player runs the same window at the same rate, and the authored loop points of Vahn's eight records sit within `47` angle units of each other, so the rewind does not jump.
+
+**The voice.** Phase 0 picks the pose's voice from a second SCUS table, `0x80078880`, four 8-byte rows (row `char_id - 1`, column `pose - 0x11`; the sequencer forms `0x80078867 + pose + char_id * 8`, `0x8004ECAC..0x8004ECD8`), and streams `monster.snd` bank `byte - 1` into VAB slot 7 (`FUN_8003E104(bank, 7, ..)` at `0x8004ECE4`). Phase 2 installs it there over the formation's own slot-7 bank (`FUN_8001E54C(7, ..)` at `0x8004ED68`).
+Nothing in the sequencer keys it: every one of the 24 win-pose records' cue track (`+0x54`) fires cue `0xA1`, and a party cue below `0xA7` keys the actor's render-node category `7` ([audio.md](audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)). The port's `VictorySequence::voice_bank` carries the bank and `World::battle_monster_sound_banks` answers it for slot 7 while the sequence runs, which both hosts stage.
+
+**The result window's name** follows the pose. A party's victory buffer opens with the `0xC1` name escape the build arm pointed at the lead, and the results frame re-points its operand at the pose actor before it opens the window (`ctx[+0xAA] = DAT_8007BD10[ctx[+0x13]] - 1` behind `ctx[+0] >= 2`, `0x8004F624..0x8004F658`): "Gala's team won the battle!". A lone lead is named by the solo arm and stays.
 
 After an unscripted wipe retail is in CARD INIT, so the port runs no further battle frame while it holds the frozen scene for the [game-over hand-off](#the-ports-hand-off).
 
 **The exit fade** is a fade to black. The template's kind word (`2`) is also the quad's blend: the fade actor's tick `FUN_80025000` hands it to the quad emitter `FUN_80024EE4` as the second argument, which folds it into the draw-mode packet's ABR bits (`sll a3,a1,0x5; ori a3,a3,0xe` at `0x80024FB0`) - the law the battle-intro styles obey (`abr == 1` brightens to a white-out, `abr == 2` darkens). Kind 2 is `B - F`, so the black -> white ramp subtracts more each frame, over the scene and the result windows alike.
 
 The template's trailing id word, `0`, is the quad's OT bucket (the nearest). Its hold word is `-1`, so the black holds until `finish_battle` tears the battle down with its fade actor. Both hosts draw `World::presentation.fade` through `screen_prim::screen_fade_prim` (`crates/render-kernels`) in their screen-overlay pass.
+
+#### The wipe frames the killing monster
+
+The action SM's wipe arm stores no seat, so `ctx[+0x13]` still holds whoever acted last when the annihilated arm runs - usually the monster that landed the wiping blow (`battle_jou_party_wipe_results_retail`: seat `5`). The sequencer's shared tail frames it with `FUN_801D5854(ctx[+0x13], 6)` (`0x8004FC80..0x8004FC90`), the in-fight arm for a monster seat, and the results frame:
+
+- stores the yaw counter `ctx[+0x6DA] = 0x7C0` (`0x8004F920`; the capture reads `1984`), `ctx[+0xD] = 1` and the actor's `+0x1FA = 2`;
+- stages the actor's knockout taunt, the first action entry tagged `0x22` (`FUN_80050E2C` over `0x801C9348[seat - 3]`, `0x8004F928..0x8004F9C4`), unless it is already the committed clip - the taunt the action SM withholds from the wiping blow;
+- fires a boss bark once, keyed on the first monster id through `FUN_8004FCC8` (`0x8004FA24..0x8004FAE8`): `0x4C -> 0x1A0`, `0x88 -> 0x19F`, `0xA2 -> 0x1A4`, `0xA3 -> 0x1A5`, `0xA4 -> 0x1A6`, `0xA5 -> 0x1A1`, `0xA6 -> 0x1AF`, `0xA9 -> 0x1A2 + rand() % 2`, `0xB4 -> 0x1A7`, gated on `_DAT_8007BC20 < 2`.
+
+Each frame the arm also raises the actor's `+0x1DC` bit 2. The port takes the pose seat from `battle_ctx.active_actor` on a wipe (`World::victory_pose_seat`), stages the taunt and the yaw, and fires the bark through `World::dispatch_battle_cue` (`party_wipe_bark`). A party seat in `ctx[+0x13]` (a member who downed the last member) makes retail index the monster table at `seat - 3` unguarded; the port stages nothing there.
 
 #### The victory camera
 
