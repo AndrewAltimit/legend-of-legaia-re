@@ -100,6 +100,7 @@ impl World {
     /// Bee goes `96 -> 46` on the landing, then `+200` at `0x3F`.
     ///
     /// PORT: FUN_801E09F8 (`0x801E1844..0x801E1A68`, the hit arm's damage roll)
+    /// REF: FUN_801DD0AC (the roll, through `World::enemy_move_predamage`)
     pub(in crate::world) fn land_spirit_band_flight_hit(&mut self, caster: u8, victim: u8) {
         let spell = self
             .actors
