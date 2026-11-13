@@ -308,7 +308,7 @@ impl World {
         if entry == 966 {
             self.evil_seru_ride_lead();
             // Arm 0 zeroes the shake word (`sw zero,-0x5B98` at
-            // `0x801F6B90`) and the body's epilogue runs it down every tick
+            // `0x801F6B90`) and the body's epilogue runs it down once a pass
             // (`0x801F8A94..0x801F8AE8`), the code PROT 0927's has.
             if phase_entry == 0 {
                 self.casting.module_shake = 0;

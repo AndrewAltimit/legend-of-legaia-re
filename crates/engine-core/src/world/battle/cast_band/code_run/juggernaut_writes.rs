@@ -92,7 +92,7 @@ impl World {
             .collect();
         let creature = self.casting.summon_actor_slot.map(usize::from);
         // Arm 0 zeroes the shake word (`0x801F6B3C`); the epilogue runs it
-        // down on every tick.
+        // down once a pass.
         if phase == 0 && passed {
             self.casting.module_shake = 0;
         }
@@ -372,10 +372,20 @@ impl World {
         }
     }
 
-    /// PROT 0927's epilogue shake, once per tick of its body
+    /// PROT 0927's epilogue shake, once per call of its body
     /// ([`legaia_engine_cast::cast_module_ticks::juggernaut_shake_step`]);
     /// PROT 0966's body carries the same epilogue over its own word.
+    ///
+    /// Retail enters the body once a battle frame, so the word steps once a
+    /// pass, whatever the frame step: the `0x99` recording's arm 12 holds
+    /// TR y on `-208 + 16 t` plus an offset that alternates by `8 * w` a
+    /// frame for twenty frames (stager arm 4's `0x14`). Stepped on every
+    /// one-vsync tick of a step-`4` pass, the word ran out in five frames,
+    /// netting `-16` a frame where retail swings.
     pub(in crate::world::battle::cast_band) fn juggernaut_shake(&mut self) {
+        if !self.module_tick_opens_pass() {
+            return;
+        }
         let dy = legaia_engine_cast::cast_module_ticks::juggernaut_shake_step(
             &mut self.casting.module_shake,
         );
