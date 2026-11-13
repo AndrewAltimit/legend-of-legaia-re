@@ -2603,7 +2603,10 @@ div.play-vis-head { cursor: default; }
        * screen up to the caster's turn, so the first frame drawn is the art
        * or the cast under way (`debug_run_to_inflight`). */
       if (typeof rt.debug_run_to_inflight === 'function') {
-        rt.debug_run_to_inflight(1800);
+        const ran = rt.debug_run_to_inflight(1800);
+        if (rt.debug_inflight_pending()) {
+          console.warn('battle launch: no first prompt after ' + ran + ' ticks; the rest of the opening plays on screen');
+        }
         if (view) view._simLast = performance.now();
       }
     } catch (e) { console.warn('battle launch', e); }

@@ -1342,6 +1342,25 @@ to `debug_seed_inflight_art`: they run through the same queue builder and strike
 loop as a typed entry, with the Ra-Seru marker up and a Spirit and monster-HP
 floor so a Super or Miracle string is not refused or cut short.
 
+Both pages open on the caster's turn, not on the fight's opening. The launch pins
+the formation roll to neither side (`debug_seed_formation(0)`, so no back attack
+hands the monsters the first round or turns the party away), and then
+`debug_run_to_inflight` runs the opening off screen: the world-map field, the
+field-to-battle transition, the camera's entry sweep, the enemy-name banner and
+the prompt's open, each tick through the page's own per-frame owner path
+(`play_frame_ticks`) on a neutral pad, stopping on the tick the seed dispatches.
+The page then draws its next frame from there, so the first frame shown is the
+turn with the action under way. The state matches a played-out opening exactly:
+same tick count, same battle camera, same body cursors
+(`web-play/tests/showcase_skip_disc.rs`). Only drawing and sound are skipped. The
+page mixes audio between its own frames and none of that runs inside the call, so
+any SFX voice the opening keyed would sound over the action's first frame. Each
+skipped tick before the dispatching one drops its queued cues and mutes the SFX
+voices (`7..=23`). The battle track's start is kept: its sequencer is clocked by
+the mix, so the track starts on the first mixed block. The off-screen run takes
+about three hundred ticks and a few tens of milliseconds, and the page resets its
+sim clock afterwards, so the skipped time is not drained as catch-up ticks.
+
 The slot holds at most one engine. The view toggle remembers its choice per page
 (`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and
 tears the frame down when the model view is shown, so the two views do not both
