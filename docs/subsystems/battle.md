@@ -515,7 +515,7 @@ seek of `0x8C000` bytes relative to the end of the block it just read
 (`FUN_80060920(handle, 0x8C000, 1)`; on the CD path `FUN_8003E964(0x118, 1)`,
 the same span in sectors), so the slot of id `id + 8`, which holds a bare PSX
 TIM. It uploads the TIM's pixels (`+0x220`) to `(0x180, 0x100, 0x40, 0x100)` -
-page `0x16`, the seat-1 column - and its 256-entry CLUT (`+0x14`), the STP bit
+page `0x16`, the slot-1 column - and its 256-entry CLUT (`+0x14`), the STP bit
 ORed onto every non-zero colour, to row `0x1E5` (485), whatever the TIM's own
 header says. Cort's two forms are the ids that sample it: `0xB4` stages slot
 `0xBC`, `0xB5` slot `0xBD`, each byte-matched against the captured battle VRAM

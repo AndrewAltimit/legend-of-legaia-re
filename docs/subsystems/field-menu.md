@@ -1577,6 +1577,13 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   `0xC3`, the expander's spell-name token (its arm reads the spell table's
   `name_ptr`, `0x800754C8 + id*12 + 8`), so the line is the spell's raw name -
   element plate escape first - followed by the sentence's own text.
+- **The notice is a framed window.** Window 7, like window 8 (the Items
+  screen's art-learned notice, opened by `0x801E4C60`), opens through the
+  widget VM's `[open window N]` script, and an opened descriptor window is
+  framed like every other menu window. Both hosts frame it
+  (`legaia_engine_ui::pause_menu::menu_notice_chrome`, gated on the same
+  painter check as the text, so a frame never stands around a notice whose
+  text cannot draw).
 
 **Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
 (`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for
