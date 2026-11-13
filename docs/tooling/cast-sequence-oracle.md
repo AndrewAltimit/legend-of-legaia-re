@@ -104,6 +104,7 @@ Flags worth knowing:
 | `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
 | `--hit-trace` | Retail: each melee hit's `rand()` seed word to `retail/hits.csv` (breakpoint core), read at the head of `FUN_801EC3E4`'s hit body (`0x801EC5A8`); `--strike-deal` deals these words in place of the spark-burst reading ([below](#a-monsters-physical-attack)) |
 | `--hit-trace` block columns | The same recording's `hits.csv` also carries each hit's block-roll inputs (both sides' SPD `+0x164` and ATK `+0x158`, `ctx[+0x6D2]` / `+0x6D4`, the defender's category, clip, block entry and juggle window), and `blocks.csv` the two rolled sides and the verdict at `0x801EC878`; `LEGAIA_DIAG_BLOCKS=1` (through `--engine-env`) prints the engine's |
+| `--hit-trace` damage columns | `damage.csv`: each landed hit's roll, its inputs at the attacker draw's delay slot (`0x801ECE7C`: folded ATK `s0`, defence half `s1`, scalar index `sp+0x18`, juggle `ctx[+0x0A]`, approach terms, attacker HP and clip) and the two rolled sides `s0` / `s1` at the guard ladder's head (`0x801ED5CC`), whose difference is the numeral; `LEGAIA_DIAG_DAMAGE=1` prints the engine's ([a party strike's damage](#a-party-strikes-damage)) |
 | `--ribbon-trace` | Retail: each streak-ribbon call `FUN_801E1D98` to `retail/ribbons.csv` (breakpoint core), read at `0x801E1E4C` past its billboard projection: the seed word, the caller, the anchor trio, the four projected corners and the GTE view (`R`, `TR`, `OFX`, `OFY`, `H`), the inputs a ribbon's segment count and so its `rand()` draws read |
 | `--popup-trace` | Retail: each damage numeral `FUN_801DF6B8` projects to `retail/popups.csv` (breakpoint core), read at `0x801DF820`: the ring timer, the projected corners, the ordering-table depth and the GTE view |
 | `--ghost-trace` | Retail: each after-image ghost the draw tick's walk `FUN_80049348` draws to `retail/ghosts.csv` (breakpoint core), a row per `jal 0x80048A08` at `0x8004950C` with the frame counter, the ring depth and the seat: the ghosts a frame's `cost` was measured with |
@@ -1187,7 +1188,7 @@ on both sides, so a clip both sides played can be read cue for cue.
 - the seed word `0x80009010` going into each hit. A `--hit-trace` recording logs it at the head of the
   strike kernel's hit body (`0x801EC5A8`, past the head guards and ahead of the block roll's two draws),
   for every hit the kernel resolves, blocked, missed or landed, as `retail/hits.csv`; the deal hands those
-  words out as `word@vsync`. Without the trace the words are read off the recording's `rand` column. A hit's spark burst
+  words out in order, the n-th to the engine's n-th hit, with no vsync ([a party strike's damage](#a-party-strikes-damage)). Without the trace the words are read off the recording's `rand` column. A hit's spark burst
   makes its frame draw tens of times where any other frame draws once, so the frames read straight
   off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
   hit, so the word steps on once. A blocked or missed swing draws no burst and leaves no word,
@@ -1270,6 +1271,31 @@ a walk clip (`warhalf`'s `0x311`) sits on that seat's walk cycle, which the
 capture's instant does not fix. A hit
 that lands keeps its hit count: `frog`'s retail swings land, block, land and fold
 one HP drop; the engine's land, land, knock down and fold one.
+
+### A party strike's damage
+
+A party strike's numerals are the melee kernel's (`FUN_801EC3E4`), and on retail's words the engine rolls
+retail's numbers. The `--hit-trace` recording's `damage.csv` holds each landed hit's inputs and its two
+rolled sides; `LEGAIA_DIAG_DAMAGE=1` prints the engine's. On `battle_ropeway_party_gala_flying_knee_mid`
+and `battle_jou_party_vahn_chain_open` every input pairs (folded ATK, the defence half, the scalar, the
+juggle, the approach terms, attacker HP, the clip) and so does every roll: Flying Knee `239 - 179 = 60`
+and `334 - 162 = 172`, Vahn's chain `346`, `464`, Charging Scorch `1237 - 279 = 958` and `459`.
+
+Two deals put other numbers on the screen:
+
+- **The spark-burst reading.** A recording without `hits.csv` reads each hit's word off the frame's
+  first word stepped once, and an emitter's draws can fall ahead of the hit inside that frame. Flying
+  Knee's first swing then rolls `52` where retail's traced word rolls `60`, and Charging Scorch `971`.
+  Record with `--hit-trace` before reading a damage residual.
+- **A timed word.** The recording's vsyncs count retail's slow frames, and the engine's display clock
+  does not run them on its default frame law. `battle_jou_party_vahn_chain_open` runs state `0x1E`
+  over ten slow frames (`+40` vsyncs); the engine reached Charging Scorch `34` frames ahead of its
+  word's vsync, past the twelve-frame slack, and rolled `906` on its own stream. So a traced deal
+  carries no vsyncs: `hits.csv` holds every hit the kernel resolved, and the words go out in order.
+
+The damage.csv `in` row is read at the attacker draw's delay slot, not at the `jal`: the LDF arm loads
+`s1` in the `jal`'s load-delay slot (`lhu s1,0x160(v0)` at `0x801ECE74`), and a breakpoint on
+`0x801ECE78` reads the register before the load lands.
 
 ## The sound channel
 

@@ -706,11 +706,20 @@ def _step_row(first: dict, last: dict) -> str:
 
 def traced_hit_words(out: Path) -> list[str] | None:
     """The seed word each melee hit of the first action drew from, off a
-    `--hit-trace` recording's `hits.csv` (`word@vsync`), or `None` without
-    one. The probe reads the word at the head of the strike kernel's hit body
-    (`0x801EC5A8`), ahead of the block roll, so a blocked or missed swing has
-    its word as well as a landed one. Rows stop where the meta's first HP-bar
-    settle (`0x51`) begins, as the burst reading does."""
+    `--hit-trace` recording's `hits.csv`, in order and untimed, or `None`
+    without one. The probe reads the word at the head of the strike kernel's
+    hit body (`0x801EC5A8`), ahead of the block roll, so a blocked or missed
+    swing has its word as well as a landed one: the list is every hit the
+    kernel resolved, and the n-th word goes to the engine's n-th hit.
+
+    A word carries no vsync. The recording's vsyncs count retail's slow
+    frames, which the engine's display clock does not run on its default
+    frame law, so a timed word drifts off its hit:
+    `battle_jou_party_vahn_chain_open` runs state `0x1E` over ten slow frames
+    (`+40` vsyncs) and the engine reached Charging Scorch `34` frames ahead of
+    its word's vsync, past the slack, and rolled `906` on its own stream where
+    retail's word rolls `958`. Rows stop where the meta's first HP-bar settle
+    (`0x51`) begins, as the burst reading does."""
     path = out / "retail" / "hits.csv"
     if not path.exists():
         return None
@@ -726,7 +735,7 @@ def traced_hit_words(out: Path) -> list[str] | None:
             v = int(r["vsync"])
             if settle is not None and v >= settle:
                 break
-            words.append(f"{int(r['seed']) & 0xFFFFFFFF}@{v}")
+            words.append(str(int(r["seed"]) & 0xFFFFFFFF))
     return words
 
 

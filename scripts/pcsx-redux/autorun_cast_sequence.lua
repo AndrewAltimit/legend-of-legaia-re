@@ -768,6 +768,29 @@ probe.run({
                 local r = PCSX.getRegisters().GPR.n
                 blocks:row("%d,%d,%d,%d", last_elapsed, tou32(r.s0), tou32(r.s1), tou32(r.v0))
             end)
+            -- The damage roll of a landed hit: `in` at the attacker draw
+            -- (0x801ECE78, `jal rand`) with the folded ATK s0, the defence
+            -- half s1, the scalar index sp+0x18, the juggle ctx[+0x0A], the
+            -- approach terms, the attacker's HP +0x14C and committed clip
+            -- +0x1D9 and the seed word; `out` at the guard ladder's head
+            -- (0x801ED5CC) with the two rolled sides s0 / s1.
+            local dmg = probe.csv_open(probe.out_path("damage.csv"),
+                "vsync,kind,att,tgt,seed,atk,def,scalar_idx,juggle,c6d2,c6d4,ahp,aclip,raw,guard")
+            probe.arm_breakpoint(0x801ECE7C, "Exec", 4, "dmg_in", function()
+                local r = PCSX.getRegisters().GPR.n
+                local cx = u32(CTX_PTR)
+                local att = tou32(r.s6) % 256
+                local a = actor(att)
+                dmg:row("%d,in,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,,", last_elapsed, att,
+                    tou32(r.s4) % 256, u32(0x80009010), tou32(r.s0), tou32(r.s1),
+                    u8(tou32(r.sp) + 0x18), u8(cx + 0x0A), u16(cx + 0x6D2), u16(cx + 0x6D4),
+                    a ~= nil and u16(a + 0x14C) or -1, a ~= nil and u8(a + 0x1D9) or -1)
+            end)
+            probe.arm_breakpoint(0x801ED5CC, "Exec", 4, "dmg_out", function()
+                local r = PCSX.getRegisters().GPR.n
+                dmg:row("%d,out,,,%d,,,,,,,,,%d,%d", last_elapsed, u32(0x80009010),
+                    tou32(r.s0), tou32(r.s1))
+            end)
         end
         if probe.getenv_num("LEGAIA_WRAPPER_TRACE", 0) ~= 0 then
             -- Each capture-class damage roll (breakpoint core): the two
