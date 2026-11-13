@@ -61,6 +61,12 @@ pub(super) const HIDDEN_HP_CELLS: i32 = 3;
 /// Cells a hidden MP field draws: `2` (`0x801D96DC` / `0x801D993C`),
 /// against `3`.
 pub(super) const HIDDEN_MP_CELLS: i32 = 2;
+/// Cells a member's HP figure field takes, on the panel and the bar alike
+/// (`li s0,0x4` at `0x801D958C`, `li s2,0x4` at `0x801D982C`).
+pub(super) const HP_FIELD_CELLS: i32 = 4;
+/// Cells a member's MP figure field takes (`li s3,0x3` at `0x801D9604`,
+/// `li s2,0x3` at `0x801D9888`).
+pub(super) const MP_FIELD_CELLS: i32 = 3;
 
 /// Plate top-left of the actor-name plaque on its action seat (placement
 /// record 68: content `(16, 14)`, plate `(8, 8)`).

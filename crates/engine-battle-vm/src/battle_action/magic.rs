@@ -219,8 +219,14 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     let bits = host.character_ability_bits(slot);
     let modifier = crate::battle_formulas::MpCostModifier::from_ability_flags(bits);
     let cost = crate::battle_formulas::mp_cost_after_ability_bits(mp_cost as u16, modifier);
+    // `lhu v0,0x150(s3); subu v0,v0,s0; sh v0,0x150(s3)` at
+    // `0x801E4584..0x801E4594`: a halfword wrap, not a floor. The command
+    // menu and the monster pick only offer a spell the caster can pay for,
+    // so only a seat that skips them (the cast-sequence oracle's inject)
+    // reaches the wrap; retail's readout then shows `65518` for a
+    // 45-MP Seru cast at 27 MP.
     if let Some(actor) = host.actor_mut(slot) {
-        actor.mp = actor.mp.saturating_sub(cost);
+        actor.mp = actor.mp.wrapping_sub(cost);
         actor.last_mp_cost = cost;
     }
 

@@ -389,6 +389,19 @@ pub const fn digits_left_of(right: i16, digits: u16) -> i16 {
     right - (digits * DIGIT_W) as i16
 }
 
+/// Left edge of a `digits`-long figure in a number record's field of `cells`
+/// cells that ends at `right`. The record's draw (`FUN_80031D00`,
+/// `0x80032064..0x80032148`) walks its places from the field's left edge and
+/// spends a blank cell only on a leading zero inside the field, so a figure
+/// that fits is right-aligned and a longer one starts on the left edge and
+/// runs past `right`.
+///
+/// PORT: FUN_80031D00 (the type-2 record's place walk)
+pub const fn figure_left(right: i16, cells: u16, digits: u16) -> i16 {
+    let n = if digits < cells { digits } else { cells };
+    digits_left_of(right, n)
+}
+
 /// Cell count a value occupies, which is its decimal digit count (retail
 /// pads nothing - a level of `1` is one cell, `99` is two).
 pub const fn digit_count(value: u32) -> u16 {
@@ -869,6 +882,16 @@ mod tests {
         assert!(BAR_MP_CUR_RIGHT <= BAR_MP_SEPARATOR.0);
         // The bar's interior ends at BAR_X + 8 + 288 = 304.
         assert!(BAR_MP_MAX_RIGHT <= BAR_X + PLATE_CAP_W as i16 + BAR_INTERIOR_W as i16);
+    }
+
+    /// A figure longer than its field starts on the field's left edge: a
+    /// wrapped `65518` in the three-cell MP field runs two cells past it.
+    #[test]
+    fn a_figure_longer_than_its_field_runs_past_the_right_edge() {
+        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 2), panel::CUR_RIGHT - 16);
+        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 3), panel::CUR_RIGHT - 24);
+        assert_eq!(figure_left(panel::CUR_RIGHT, 3, 5), panel::CUR_RIGHT - 24);
+        assert_eq!(figure_left(BAR_HP_CUR_RIGHT, 4, 5), BAR_HP_CUR_RIGHT - 32);
     }
 
     #[test]

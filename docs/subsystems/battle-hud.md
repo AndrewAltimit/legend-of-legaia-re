@@ -296,6 +296,22 @@ command or playing an action out - and shows that actor only:
 | `MP` label sprite `(224,86)` | `(192, 194)` |
 | MP current / separator / maximum | right edge 238 / `(240, 188)` / right edge 274 (two digits start at 258) |
 
+<a id="a-figure-field"></a>
+
+**A figure field has a cell count, and a longer figure overruns it.** The readout
+spawner `FUN_801D8DE8` registers each figure through `FUN_8003563C` with its field's
+left edge and a cell count: `4` for both HP figures and `3` for both MP figures, on the
+panel (`li s0,0x4` at `0x801D958C`, `li s3,0x3` at `0x801D9604`) and on the bar
+(`0x801D982C`, `0x801D9888`). The record's draw `FUN_80031D00` walks nine places from
+that left edge (`0x80032064..0x80032148`): a leading zero at a place inside the field
+leaves a blank cell, one past it takes no cell, and the first non-zero digit and every
+digit after it draws. So a figure that fits is right-aligned, and one with more digits
+than its field starts on the field's left edge and runs on past the right one. The case
+that shows it is a wrapped MP: the cast's debit is a halfword `subu` (`0x801E458C`) with
+no floor, so a Seru cast past the caster's MP reads `65518`, five cells from the MP
+field's left edge, over the `/`. Port: the HUD's `numerals` takes the field's
+`(right edge, cells)` pair (`HP_FIELD_CELLS`, `MP_FIELD_CELLS`).
+
 The current values are the displayed words, not the live ones: HP `+0x172` and
 MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
 signed accumulator onto each a frame - `+0x10` for HP, `+0x178` for MP (the MP
