@@ -424,9 +424,22 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 yaw,
             };
         }
-        return SpanGate::Age {
-            accum: game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16,
+        // The Attack arm's first pass (`0x14` with the yaw counter still on
+        // the seed's `0x200` rung, [`super::camera_align::tween_passes_back`])
+        // is one pass, which the rung already names. Its accumulator is the
+        // acting seat's idle clock: the anim commit zeroes `ctx[+0x87C]` at
+        // every re-commit of the looping idle (`0x8004BF50..0x8004BF78`), so
+        // the word counts from the idle's last wrap, a phase battle setup drew
+        // under a stream a pinned replay does not share. The pass is met on
+        // entry (`super_queue_replace_*`: `96` on retail's idle).
+        let accum = if game_anchors::u8_at(ram, ctx + 7) == 0x14
+            && game_anchors::u16_at(ram, ctx + 0x6DA) == 0x200
+        {
+            0
+        } else {
+            game_anchors::u32_at(ram, ctx + 0x87C).min(u32::from(u16::MAX)) as u16
         };
+        return SpanGate::Age { accum };
     }
     let half = game_anchors::u16_at(ram, ctx + 0x6CE);
     match (game_anchors::u32_at(ram, END_PHASE_WORD), half) {
