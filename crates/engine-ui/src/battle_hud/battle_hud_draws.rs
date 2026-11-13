@@ -557,6 +557,19 @@ pub fn battle_hud_draws_for(
                 px + PANEL_HP_LABEL.0,
                 py + PANEL_HP_LABEL.1,
             );
+            // Each row's `/` goes down ahead of its figures: the separator is
+            // a sprite of the panel's chain, the figures are number records
+            // drawn over it, so a figure that overruns its field (a wrapped
+            // MP) covers the slash, which shows only through the digits'
+            // transparent texels (`party_basic_attack_vs_gobu_gobu`'s Horn
+            // film, arm `0xB`).
+            separator(
+                &mut sprites,
+                &mut text,
+                px + PANEL_HP_SEPARATOR.0,
+                py + PANEL_HP_SEPARATOR.1,
+                hp_tint,
+            );
             if slot.hidden_readout {
                 for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
                     question_cells(
@@ -577,13 +590,6 @@ pub fn battle_hud_draws_for(
                     hp_tint,
                 );
             }
-            separator(
-                &mut sprites,
-                &mut text,
-                px + PANEL_HP_SEPARATOR.0,
-                py + PANEL_HP_SEPARATOR.1,
-                hp_tint,
-            );
             if !slot.hidden_readout {
                 numerals(
                     &mut sprites,
@@ -606,6 +612,13 @@ pub fn battle_hud_draws_for(
                     1,
                     px + PANEL_MP_LABEL.0,
                     py + PANEL_MP_LABEL.1,
+                );
+                separator(
+                    &mut sprites,
+                    &mut text,
+                    px + PANEL_MP_SEPARATOR.0,
+                    py + PANEL_MP_SEPARATOR.1,
+                    mp_tint,
                 );
                 if slot.hidden_readout {
                     for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
@@ -635,13 +648,6 @@ pub fn battle_hud_draws_for(
                         mp_tint,
                     );
                 }
-                separator(
-                    &mut sprites,
-                    &mut text,
-                    px + PANEL_MP_SEPARATOR.0,
-                    py + PANEL_MP_SEPARATOR.1,
-                    mp_tint,
-                );
             }
 
             popup_anchor[*i] = (
@@ -689,6 +695,13 @@ pub fn battle_hud_draws_for(
             BAR_HP_LABEL.0,
             BAR_HP_LABEL.1 + dy,
         );
+        separator(
+            &mut sprites,
+            &mut text,
+            BAR_HP_SEPARATOR.0,
+            BAR_HP_SEPARATOR.1 + dy,
+            hp_tint,
+        );
         if slot.hidden_readout {
             for right in [BAR_HP_CUR_RIGHT, BAR_HP_MAX_RIGHT] {
                 question_cells(&mut text, HIDDEN_HP_CELLS, right, BAR_DIGIT_Y + dy, base);
@@ -711,13 +724,6 @@ pub fn battle_hud_draws_for(
                 hp_tint,
             );
         }
-        separator(
-            &mut sprites,
-            &mut text,
-            BAR_HP_SEPARATOR.0,
-            BAR_HP_SEPARATOR.1 + dy,
-            hp_tint,
-        );
         if slot.is_party || slot.mp_max > 0 {
             label(
                 &mut sprites,
@@ -725,6 +731,13 @@ pub fn battle_hud_draws_for(
                 1,
                 BAR_MP_LABEL.0,
                 BAR_MP_LABEL.1 + dy,
+            );
+            separator(
+                &mut sprites,
+                &mut text,
+                BAR_MP_SEPARATOR.0,
+                BAR_MP_SEPARATOR.1 + dy,
+                mp_tint,
             );
             if slot.hidden_readout {
                 for right in [BAR_MP_CUR_RIGHT, BAR_MP_MAX_RIGHT] {
@@ -748,13 +761,6 @@ pub fn battle_hud_draws_for(
                     mp_tint,
                 );
             }
-            separator(
-                &mut sprites,
-                &mut text,
-                BAR_MP_SEPARATOR.0,
-                BAR_MP_SEPARATOR.1 + dy,
-                mp_tint,
-            );
         }
         popup_anchor[i] = (
             origin.0 + BAR_HP_LABEL.0 * scale,
