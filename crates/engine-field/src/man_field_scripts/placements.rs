@@ -229,14 +229,17 @@ pub struct InlineDialogPrologue {
     pub entry_pc: usize,
     /// Offset of the first `0x1F` text segment within `body`.
     pub first_segment: usize,
-    /// `entry_pc` is the context's **live cursor** (retail `actor[+0x9E]`)
-    /// rather than the static estimate: the spawn pre-run stopped on an
-    /// executed `0x21` there, or an earlier talk on the actor left it there.
-    /// A talk from a live cursor runs as the dialog SM does - an executed
-    /// `0x21` before any box ends it silently - so the runner takes no
-    /// first-segment fallback there (`InlineDialogue::resumed`). A taken pickup's record parks on `21` /
-    /// `26 FE FF` after its grant, and the fallback re-opened the "now has"
-    /// box on every later touch.
+    /// `entry_pc` is where an **earlier talk** on the actor left the cursor
+    /// (retail `actor[+0x9E]`). A talk resumed there runs as the dialog SM
+    /// does - an executed `0x21` before any box ends it silently - so the
+    /// runner takes no first-segment fallback (`InlineDialogue::resumed`). A
+    /// taken pickup's record parks on `21` / `26 FE FF` behind its grant, and
+    /// the fallback re-opened the "now has" box on every later touch.
+    ///
+    /// The spawn pre-run's cursor seats `entry_pc` too but leaves this clear:
+    /// a first talk keeps the fallback, the port's net for a talk the hand
+    /// or host starts from outside a record's own position test (retail has
+    /// none; `rayman` `P1[44..=46]` bbox-test the player before they speak).
     ///
     /// REF: FUN_80039B7C (`0x80039DD8..0x80039E68`: run from `+0x9E`, store
     /// the forwarded PC at `0x80039E24`, end the talk on the raw `0x21`)

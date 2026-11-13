@@ -68,7 +68,7 @@ pub struct InlineDialogue {
     /// ending, so prologue execution is never worse than the truncated path.
     /// Consumed (set to `None`) the first time a box opens or the fallback fires.
     pub fallback_segment_pc: Option<usize>,
-    /// The run started at the actor's live cursor (retail `actor[+0x9E]`,
+    /// The run resumed the cursor an earlier talk left (retail `actor[+0x9E]`,
     /// [`crate::man_field_scripts::InlineDialogPrologue::resume`]), so an
     /// executed raw `0x21` or a non-text terminator before the first box ends
     /// the talk, as the dialog SM ends it, instead of taking

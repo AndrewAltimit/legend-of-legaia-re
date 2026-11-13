@@ -1925,8 +1925,8 @@ impl World {
                         prologue.entry_pc,
                         prologue.first_segment,
                     );
-                // A live cursor runs as the dialog SM runs it: an executed
-                // `0x21` before any box ends the talk (see
+                // A resumed cursor runs as the dialog SM runs it: an
+                // executed `0x21` before any box ends the talk (see
                 // `InlineDialogPrologue::resume`).
                 runner.resumed = prologue.resume;
                 runner.npc_slot = self.dialog.active_inline_slot.take();

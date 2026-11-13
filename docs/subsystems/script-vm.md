@@ -3044,13 +3044,16 @@ ended, so the next touch runs what follows. A chest ends its talk on
 empty!" loop behind it, and a pickup spot ends on `21`, `21`, `26 FE FF`, so the
 second touch is silent. Restarting every talk at the scan's entry re-ran the
 grant. Engine port: the spawn pre-run hands a clean stop (an executed raw
-`0x21`, or a text lead) to the talk as its entry
-(`InlineDialogPrologue::resume`), a talk that ends on an executed `0x21` writes
-its cursor back, and a talk from a live cursor ends on an executed `0x21` before
-any box, as the SM does, rather than falling back to the first segment. The
-static scan stays the entry for a record whose load slice does not run (its
-first opcode is not `0x24` / `0x25`) or stops on a halt. Pinned disc-wide by
-`engine-scene-host/tests/field_pickup_once_disc.rs`.
+`0x21`, or a text lead) to the talk as its entry, a talk that ends on an
+executed `0x21` writes its cursor back, and a talk resumed from that cursor
+ends on an executed `0x21` before any box, as the SM does, rather than falling
+back to the first segment (`InlineDialogPrologue::resume`). The static scan
+stays the entry for a record whose load slice does not run (its first opcode is
+not `0x24` / `0x25`) or stops on a halt. A first talk keeps the fallback: it is
+the port's net for a talk started from outside a record's own position test,
+which retail never sees (`rayman` `P1[44..=46]` bbox-test the player before
+they speak, and the full-game ladder's hand talks from where it stands). Pinned
+disc-wide by `engine-scene-host/tests/field_pickup_once_disc.rs`.
 
 **The halt-acquire that opens a talk.** `retock`'s innkeeper opens its
 interaction with `CC F8 85`, a halt-acquire on the player. Retail's acquire
