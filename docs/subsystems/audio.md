@@ -609,6 +609,40 @@ it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
 Without it the init closed the overworld theme and `son` played `2058`.
 Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
 
+### The overworld's story cutscenes are door records too
+
+`map01`'s entry script `P1[0]` tests a run of story flags and spawns one
+partition-2 record per flag: `0x2C1` spawns flat `0x31` (`P2[28]`, into
+`town0b`), `0x2C2` `P2[29]` (`dolk`), `0x2C4` `P2[30]` (`vell`), `0x2C3`
+`P2[31]` (`vozz`) and `0x2C5` `P2[32]` (`garmel`) (`72 C3 F3 00` at `+0x107`,
+`44 34` at `+0x201`). Each runs camera moves and waits, then sub-op 6 and its
+`0x3F` (`P2[31]`: `35 00 00 06` at `+0x1E8`, the `0x3F` at `+0x1F6`); the
+debug labels of `P2[29]` and `P2[31]` name a tree's revival. No walk-on
+trigger tile names them, so the overworld crossing never reads them; the field
+VM runs them like any spawned record, and its sub-op 6 arm raises bit 2.
+`map02`'s `P2[11]` (into `dohaty`) and `map03`'s `P2[16]` (into `station3`)
+are spawned by their scenes' entry scripts too (flat `0x34` at `map02` `P1[0]`
+`+0x72`, flat `0x3D` at `map03` `P1[0]` `+0xEA`).
+
+`vozz`'s Genesis Tree beat (`P1[7]`) raises `0x2C3` and sub-op 6 together
+before its own change into `map01` (`+0x468`..`+0x478`), and `P2[17]` in `vozz`
+clears `0x2C3` (`62 C3` at `+0x12`). So the story crosses two kept doors in a
+row, and the track that sounds is the one the first door brought. Played on
+from `vozz_genesis_tree_songi` with the pad (`autorun_story_forward.lua`), the
+retail chain logs bit 2 at the `vozz` -> `map01` change and again at
+`P2[31]`'s, and holds `2035`, `vozz`'s theme, under `map01`'s word `2000`
+(`map01_tree_revival_cutscene`) and under `vozz`'s own `2035` afterwards
+(`vozz_tree_revival_return`). The state `vozz_ozma_hatching_hover` sounds `2000`
+instead because it reached `map01` through `garmel`'s plain door with `0x2C3`
+poked: that door started `2000` afresh and `P2[31]` kept it.
+
+The engine runs the same chain: `door_keep_bgm_disc.rs` keeps the music across
+`P2[31]` taken as a door, across the entry script's own spawn of it, and across
+a kept door into the overworld. A door replay that seeds a captured bank has to
+raise `0x2C3` again (`arrival.flags` in `scripts/scenarios.toml`), since
+`P2[17]` cleared it before the capture and `vozz`'s entry script reads it to
+issue its start inside the latch window (`72 C3` at `+0x8C`).
+
 ### The control words: stop, pause, replay
 
 The op's arm table is `0x801CEE00` in the field overlay, indexed `sub - 1`
@@ -3428,9 +3462,11 @@ is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op o
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
-`vozz_ozma_hatching_hover` reads `track` `0`: retail sounds `map01`'s `2000` under the word `2035`,
-where the engine seeded into `vozz` starts `2035`
-([open](../reference/open-rev-eng-threads.md#does-a-walk-into-east-voz-forest-keep-the-overworld-theme)).
+`vozz_ozma_hatching_hover` sounds `map01`'s `2000` under the word `2035`. Its arrival names
+`map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
+the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
+`map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
+the card-load seed has no arrival through a partition-1 beat.
 
 The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
 emulator's `ENVX`, and its SPU runs on the host's audio clock

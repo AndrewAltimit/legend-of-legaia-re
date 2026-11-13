@@ -463,23 +463,6 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
-### Does a walk into East Voz Forest keep the overworld theme?
-
-*Status:* open (measured)
-
-`vozz_ozma_hatching_hover` holds `2000`, `map01`'s theme, sounding under the word `2035`, requested and
-loaded index both `1025`: the shape of a door kept behind sub-op 6
-([a door keeps its music only behind sub-op 6](../subsystems/audio.md#a-door-keeps-its-music-only-behind-sub-op-6)).
-`map01`'s one record into `vozz`, `P2[31]`, runs `35 00 00 06` at `+0x1E8` ahead of its `0x3F` at
-`+0x1F6`. The engine's overworld crossing reads that record with `record_path_trace`, which stops
-`Undecided` at the record's `BBoxTest` (`+0x37`, a box over tiles `0..=126`) and so does not raise
-bit 2; `vozz` then starts its own `2035`. The same walk stops `Undecided` on the sub-op 6 records into
-`dolk` (`P2[29]`), `vell` (`P2[30]`), `garmel` (`P2[32]`), `dohaty` (`map02` `P2[11]`) and `station3`
-(`map03` `P2[16]`). Seeded through the door (`arrival = { from = "map01", door = 31 }`, the record run
-in the field VM) the engine still starts `2035`, and the state's story flag `0x2C3` was raised by a
-poke, so the state is not a clean walk-in. What closes it: a retail state walked into `vozz` from the
-overworld with no poke, or a field-VM run of `P2[31]` that logs sound-flag bit 2 at the `0x3F`.
-
 ### How long does a summon's seek hold its voice?
 
 *Status:* partial (measured)
