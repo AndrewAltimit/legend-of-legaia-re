@@ -414,11 +414,30 @@ impl LegaiaRuntime {
     /// baked into the index buffer by the **shared** builder before the data
     /// crosses the WASM boundary, so there is no second place for a host to
     /// order these and no way for the two hosts to disagree about it.
+    ///
+    /// Under PSX mode every vertex leaves with the rule bits the native
+    /// renderer's staging stamps ([`Self::psx_screen_rule_flags`]), which the
+    /// page's shader reads for a Gouraud quad's dither.
     pub fn play_screen_prim_vertex_bytes(&self) -> Vec<u8> {
         self.battle_intro_geom
             .as_ref()
-            .map(|(_, g)| g.vertex_bytes())
+            .map(|(_, g)| g.vertex_bytes_with_flags(self.psx_screen_rule_flags()))
             .unwrap_or_default()
+    }
+
+    /// PSX mode's screen-vertex rule bits, the kernel's one decision
+    /// (`screen_prim::psx_rule_flags`) for the console's rule: none off PSX
+    /// mode, the dither table only with the game's dither word up
+    /// ([`Self::play_draw_dither`]). The native renderer's overlay staging
+    /// stamps the same bits.
+    pub(crate) fn psx_screen_rule_flags(&self) -> u32 {
+        use legaia_render_kernels::screen_prim::{PsxScreenRule, psx_rule_flags};
+        let rule = if self.page_toggles.psx_render {
+            PsxScreenRule::Gpu
+        } else {
+            PsxScreenRule::Off
+        };
+        psx_rule_flags(rule, self.play_draw_dither())
     }
 
     /// The screen-prim triangle index buffer, already in ordering-table draw

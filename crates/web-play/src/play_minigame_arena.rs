@@ -526,7 +526,7 @@ impl LegaiaRuntime {
             .muscle
             .hub_geom
             .as_ref()
-            .map(|(_, g)| g.vertex_bytes())
+            .map(|(_, g)| g.vertex_bytes_with_flags(self.psx_screen_rule_flags()))
             .unwrap_or_default()
     }
 

@@ -146,6 +146,9 @@ uniform int u_semi_mode;
  * 0 = an opaque run, everything draws; 1 = the semi run's opaque half, only
  * the textured prims' STP-clear texels; 2 = its blend half, the rest. */
 uniform int u_stp_pass;
+/* The framebuffer's height: the dither matrix's rows run top-down, the
+ * native renderer's clip position, and gl_FragCoord counts from the bottom. */
+uniform float u_fb_h;
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -197,6 +200,30 @@ vec3 psxTextureBlend(vec3 texel, vec3 factor) {
   return vec3(min((t5 * c8) >> 7u, uvec3(31u))) / 31.0;
 }
 
+/* The GPU dithers a Gouraud primitive's shading as it writes it (flags bit
+ * 2, a POLY_G4 or POLY_GT4) and writes a flat one undithered: an untextured
+ * quad's interpolated colour, a textured one's modulated texel (t5 * c8) >> 4,
+ * each an 8-bit value, take the console's 4x4 offset before the cut to 5 bits.
+ * The engine stamps the console's dither bit (screen_prim::FLAG_CONSOLE_DITHER,
+ * bit 11) on the stream only under PSX mode with the draw mode's dither up, so
+ * the decision is the shared kernel's (screen_prim::psx_rule_flags); this is
+ * the native overlay shader's opaque_out on the console's table. */
+vec4 opaqueOut(vec4 c) {
+  if ((v_flags & 4u) == 0u || (v_flags & 0x800u) == 0u) return c;
+  vec3 m = floor(clamp(c.rgb, 0.0, 1.0) * 255.0 + 0.001);
+  if ((v_flags & 1u) != 0u) {
+    uint word = fetch_vram_word(v_uv, v_cba_tsb.x, v_cba_tsb.y);
+    vec3 t5 = round(bgr555_to_rgba(word).rgb * 31.0);
+    vec3 c8 = round(clamp(v_color.rgb, vec3(0.0), vec3(255.0 / 128.0)) * 128.0);
+    m = min(floor(t5 * c8 / 16.0), vec3(255.0));
+  }
+  float dm[16] = float[16](${PSX_DITHER_MATRIX.map(glslFloat).join(', ')});
+  int xi = int(gl_FragCoord.x) & 3;
+  int yi = int(u_fb_h - gl_FragCoord.y) & 3;
+  vec3 c5 = floor(clamp(m + dm[yi * 4 + xi], 0.0, 255.0) / 8.0);
+  return vec4((c5 * 8.0 + floor(c5 / 4.0)) / 255.0, c.a);
+}
+
 void main() {
   gl_FragDepth = (u_log_depth.x > 0.5 && (v_flags & 2u) != 0u)
     ? v_log_depth : gl_FragCoord.z;
@@ -218,6 +245,9 @@ void main() {
     if (u_semi_mode == 0) o_color = vec4(f5 * (4.0 / 255.0), 1.0);
     else if (u_semi_mode == 3) o_color = vec4(floor(f5 / 4.0) * (8.0 / 255.0), 1.0);
     else o_color = vec4(f5 * (8.0 / 255.0), 1.0);
+  } else if (u_stp_pass != 2) {
+    /* An opaque write: an opaque run, or a semi run's STP-clear texels. */
+    o_color = opaqueOut(o_color);
   }
 }
 `;
@@ -267,6 +297,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.locLogDepth = gl.getUniformLocation(this.program, 'u_log_depth');
       this.locStpPass = gl.getUniformLocation(this.program, 'u_stp_pass');
       this.locSemiMode = gl.getUniformLocation(this.program, 'u_semi_mode');
+      this.locFbH = gl.getUniformLocation(this.program, 'u_fb_h');
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -327,6 +358,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.texture || this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
+      if (this.locFbH) gl.uniform1f(this.locFbH, gl.drawingBufferHeight);
       /* The log-depth scale the mesh program wrote this frame: a depth-tested
        * corner goes back to its w through the engine's own (a, b). */
       if (this.locLogDepth) {

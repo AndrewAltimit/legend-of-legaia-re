@@ -174,8 +174,13 @@ the screen-overlay shader) do the same for a quad carrying
 instrument's. The case is PROT 0898's band wash, two opaque `POLY_G4` a band
 behind every band-mode cast: undithered, its dim colours fell to the bin
 below (`(10, 5, 10)` drew `(8, 0, 8)`), and Big Wave's whole upper frame read
-`3..4` luma under retail. The play page leaves its opaque screen quads
-undithered.
+`3..4` luma under retail. The rule bits are one decision both hosts read
+(`screen_prim::psx_rule_flags`, with `dithers_opaque_write` naming the quads that
+take it): the native staging stamps them on its geometry, and the play page's
+stream leaves the engine with them (`OverlayGeometry::vertex_bytes_with_flags`)
+for `FS_SCREEN_PRIM`'s `opaqueOut`, the console's table under the game's dither
+word. A test evaluates both shaders over every cell of the matrix
+(`both_hosts_dither_a_gouraud_screen_quads_opaque_write_alike`).
 
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),
