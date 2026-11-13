@@ -168,13 +168,13 @@ pub struct WorldToggles {
     pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
     /// Opt-in, off by default: run each battle frame for the span retail's
     /// `VSync(n)` gives its cost (`frame_clock::frame_span`), a clip-loaded
-    /// frame at its work over the polls' share (`xa_loaded_frame_cost`) for
-    /// the clip's read window (`XA_READ_TAIL_VSYNCS`). Off, an ordinary frame
-    /// runs its step and a loaded one a single vsync past it. Retail's law,
-    /// held back because the frames it lengthens move vsync-timed gates the
-    /// engine does not yet place on retail's clock: the drive word a shout's
-    /// fallback reads loses cues on Medusa's Glare and Lip King's Kiss of
-    /// Death (`docs/subsystems/battle-stage-camera.md`, "A frame's span").
+    /// frame at its work over the polls' share (`xa_loaded_frame_cost`), and
+    /// the drive word and load window for the clip's read
+    /// (`XA_READ_TAIL_VSYNCS`). Off, an ordinary frame runs its step and a
+    /// loaded one a single vsync past it. Retail's law, held back because the
+    /// share over the table overshoots a cheap fight's loaded frames and the
+    /// film seeds' lead-ins re-deal on longer frames
+    /// (`docs/subsystems/battle-stage-camera.md`, "A frame's span").
     /// The native session raises it from `LEGAIA_BATTLE_FRAME_SPAN=1`.
     pub battle_frame_span_law: bool,
     /// Open the legacy **saved-chain list**

@@ -1540,7 +1540,8 @@ runs outside the span. Read over the unloaded cost, the spans give `3.1`..`3.6` 
 that film, `3.1`..`3.9` on a full party's heals (`ropeway_orb_pre_heal` runs its
 loaded frames at `9` vsyncs, `deene_garnet_pre_heal` at `8` and `9`,
 `taiku_topaz_pre_hyper_heal` at `8`, over the table's `595`) and `3.0`..`4.5` on
-Amethyst's on a lone Vahn (`5` and `6` over `345`); `3.4` reads all three. The clip's
+Amethyst's on a lone Vahn (`5` and `6` over `345`); the player arts' loaded frames sit at
+`8` at the median, and `3.1`, the low end the three share, reads them. The clip's
 read window runs past its span: the heals' loaded frames end `10` to `17` vsyncs after
 the clip's `261`, Flying Knee's polls `18` after its `90` (`3` of them the seek).
 
@@ -1557,28 +1558,47 @@ vsyncs a step-`4` frame) to five and more (Bloody Horns, Lapis Wave). The harnes
 retail step track and a replay's seeded state run their steps exact. Off, an ordinary
 frame runs its step and a loaded one a single vsync past it.
 
-On, the films' wall clock comes to retail's (Super Ironhead's `0x1F` runs `212`
-ticks against retail's `200` vsyncs, `133` off; Flying Knee's `39` against `37`, `23`
-off) and their game clock holds, yet the sets fall where something vsync-timed sits
-on the longer frames:
+The drive word `0x8007BC20` runs on the same read. A `--watch` recording of Medusa's
+Glare (`battle_korb2_medusa_glare_mid_cast`) reads it set to `2` at the clip's start
+(`0x8003D65C`) and cleared by the stop `FUN_8003EE00` (`sw zero` at `0x8003EE2C`) `559`
+vsyncs on, `20` past the line's `539`; Kiss of Death's clears at `444`. Under the law the
+engine holds its drive word and its load window for the span plus that tail
+(`XA_READ_TAIL_VSYNCS`), and a capture-band line leaves its arms their table's length.
+
+On, the films' wall clock comes to retail's and their game clock holds; the sets, one
+binary run both ways:
 
 | Set | Films | Off | On | Cues off | Cues on |
 |---|---:|---:|---:|---:|---:|
-| Player arts | 17 | `.8703` | `.8754` | `.9976` | `.9886` |
-| Enemy casts | 105 | `.9087` | `.9062` | `.9835` | `.9656` |
+| Player arts | 17 | `.8718` | `.8677` | `.9976` | `.9976` |
+| Enemy casts | 103 | `.9152` | `.9122` | `.9832` | `.9650` |
 
-Sonic Javelin (`.821` to `.908`), Tri-Somersault (`.688` to `.751`), Paralyzing Wave
-(`.905` to `.989`) and Power Charge (`.898` to `.979`) gain; Super Ironhead (`.895` to
-`.795`, two cues seven ticks late), Element Change (`.954` to `.806`), Death Game and the
-three Thunder Storms fall, and Medusa's Glare and Lip King's Kiss of Death lose their one
-cue. Glare's is the shout fallback `0x290`, which plays while the drive word
-(`AudioState::battle_xa_busy_frames`, the clip's span in vsyncs) holds: on longer frames
-the span ends a few passes earlier in the cast, where retail's still holds, so the drive
-word is not the span alone. The loaded frames' spans also vary by film past one share
-(Super Ironhead's art frames run `6` to `8` where the share gives `9`). What the law
-cannot reach is a frame whose cost the engine does not hold: the capture band's and the
-summons' heavy arms, whose PCSX-Redux frames run `5` to `17` vsyncs with no clip (Water
-Crystals `13` to `16`, Thunder Storm `6` to `9`), run their table's step.
+What falls, by cause:
+
+- **The replay's lead-in.** Medusa's Glare and Lip King's Kiss of Death lose their one cue
+  with the cast's own frames all but unchanged (`6` and `10` overrun ticks off and on on
+  Glare): the drive that seeds the film reaches the cast `119` and `63` ticks later on the
+  longer frames before it, and the cue's roll is dealt again. A harness re-deal, not the
+  law's frames. Kiss of Death's arm 4 is the law's own case besides: retail runs it `34`
+  passes, `27` at step `4` and the last `7` at `3`, where both clocks run `32` at `4`
+  (the arm's cost falls under the clamp inside the arm).
+- **The polls' share over a cheap fight.** Spoon's Hyper Heal (`-.024`) runs its loaded frames at `8`
+  where retail's run `5` and `6`: its fight costs some `150` under the table
+  ([a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so the share over the table
+  overshoots. Aluru's Cannon and Astral Wave read the same way.
+- **The item's floor on a line that does not load.** Death Game's frames under its
+  `425`-vsync line run their step on retail, where the floor runs every one to five vsyncs
+  (`136` overrun ticks off, `347` on).
+- **The law on a dear first pass.** Element Change (`-.148`) adds five overrun ticks at a
+  step change and pairs a pass off, and Super Ironhead (`-.098`, cues intact at the share
+  of `3.1`) runs its close-up accumulator a step out from the load's end on.
+
+So the law stays opt-in. What it needs: the fight's offset in the loaded cost, a per-line
+load (Death Game none, Glare five, Kiss of Death eight), and a film seed that does not
+re-deal on its lead-in. What the law cannot reach is a frame whose cost the engine does
+not hold: the capture band's and the summons' heavy arms, whose PCSX-Redux frames run `5`
+to `17` vsyncs with no clip (Water Crystals `13` to `16`, Thunder Storm `6` to `9`), run
+their table's step.
 
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
