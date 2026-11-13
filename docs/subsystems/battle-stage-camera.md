@@ -1471,8 +1471,9 @@ the clip's span, and the step then runs down over the sixteen-pass ring. A frame
 real span is its cost: `1063` hblanks on the item's clip is a five-vsync pass under
 step `4`, `1411`..`1660` on the Spirit's six and seven. That is PCSX-Redux's
 [CD stop watch](#the-cd-stop-watch), and a console's frames cost about a sixteenth over their
-work. Port, on the default PCSX-Redux timing: `xa_loaded_frame_cost` and the span law
-([a frame's span](#a-frames-span)). The load does not start on the cue's own frame: the cue is issued inside it and the
+work. Port, on the default PCSX-Redux timing: `XA_STREAM_FRAME_COST` and `XA_STREAM_SPAN_EXTRA`,
+the lightest overrun measured, so Spirit bands run short of that recording; the span law
+over the work is an opt-in ([a frame's span](#a-frames-span)). The load does not start on the cue's own frame: the cue is issued inside it and the
 drive has yet to stream. A PCSX-Redux recording of Orb's Heal on a full party
 (`ropeway_orb_pre_heal`, `--sfx-callers`) dispatches the clip `0x20C` on the last `0x3D` pass
 (from `0x801F3C20`), which costs `621`, and the next pass reads the clamp; Amethyst's Heal on
@@ -1540,20 +1541,44 @@ that film, `3.1`..`3.9` on a full party's heals (`ropeway_orb_pre_heal` runs its
 loaded frames at `9` vsyncs, `deene_garnet_pre_heal` at `8` and `9`,
 `taiku_topaz_pre_hyper_heal` at `8`, over the table's `595`) and `3.0`..`4.5` on
 Amethyst's on a lone Vahn (`5` and `6` over `345`); `3.4` reads all three. The clip's
-read window is its span: the heals' loaded frames end some `13` vsyncs after the
-clip's `261`, Flying Knee's `15` after its `90`, a frame or two of the long ones.
+read window runs past its span: the heals' loaded frames end `10` to `17` vsyncs after
+the clip's `261`, Flying Knee's polls `18` after its `90` (`3` of them the seek).
 
-Port: `frame_clock::frame_span` and `xa_loaded_frame_cost`
-(`XA_POLL_COST_RATIO_MILLI`, at least the item's measured `1063`);
+Port: `frame_clock::frame_span`, `xa_loaded_frame_cost` (`XA_POLL_COST_RATIO_MILLI`,
+at least the item's measured `1063`) and the read window (`XA_READ_TAIL_VSYNCS`, the
+emulator deferring each sector while a poll's interrupt is pending, `cdrom.cc`
+`readInterrupt`), behind `WorldToggles::battle_frame_span_law`, opt-in
+(`LEGAIA_BATTLE_FRAME_SPAN=1` on a native session, `--engine-env` on a film).
 `World::apply_cast_arm_frame_step` re-times each pass's frame by the span its cost
 reads. An arm table names its frames' step and no cost, so an arm takes the law only
-while a clip loads it; the harness's retail step track and a replay's seeded state
-run their steps exact. Where the constant overrun of one vsync ran a full party's
-loaded frame at `5`, the law runs it at `8` (the table's `595`), so a vsync-timed line
-covers as many passes as retail's. What the law cannot reach is a frame whose cost
-the engine does not hold: the capture band's and the summons' heavy arms, whose
-PCSX-Redux frames run `5` to `17` vsyncs with no clip (Water Crystals `13` to `16`,
-Thunder Storm `6` to `9`), run their table's step.
+while a clip loads it; a capture-band module's line loads at the floor only, since
+retail's frames under one run from no overrun (Death Game's `425`-vsync line, four
+vsyncs a step-`4` frame) to five and more (Bloody Horns, Lapis Wave). The harness's
+retail step track and a replay's seeded state run their steps exact. Off, an ordinary
+frame runs its step and a loaded one a single vsync past it.
+
+On, the films' wall clock comes to retail's (Super Ironhead's `0x1F` runs `212`
+ticks against retail's `200` vsyncs, `133` off; Flying Knee's `39` against `37`, `23`
+off) and their game clock holds, yet the sets fall where something vsync-timed sits
+on the longer frames:
+
+| Set | Films | Off | On | Cues off | Cues on |
+|---|---:|---:|---:|---:|---:|
+| Player arts | 17 | `.8703` | `.8754` | `.9976` | `.9886` |
+| Enemy casts | 105 | `.9087` | `.9062` | `.9835` | `.9656` |
+
+Sonic Javelin (`.821` to `.908`), Tri-Somersault (`.688` to `.751`), Paralyzing Wave
+(`.905` to `.989`) and Power Charge (`.898` to `.979`) gain; Super Ironhead (`.895` to
+`.795`, two cues seven ticks late), Element Change (`.954` to `.806`), Death Game and the
+three Thunder Storms fall, and Medusa's Glare and Lip King's Kiss of Death lose their one
+cue. Glare's is the shout fallback `0x290`, which plays while the drive word
+(`AudioState::battle_xa_busy_frames`, the clip's span in vsyncs) holds: on longer frames
+the span ends a few passes earlier in the cast, where retail's still holds, so the drive
+word is not the span alone. The loaded frames' spans also vary by film past one share
+(Super Ironhead's art frames run `6` to `8` where the share gives `9`). What the law
+cannot reach is a frame whose cost the engine does not hold: the capture band's and the
+summons' heavy arms, whose PCSX-Redux frames run `5` to `17` vsyncs with no clip (Water
+Crystals `13` to `16`, Thunder Storm `6` to `9`), run their table's step.
 
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
@@ -1871,9 +1896,9 @@ where PCSX-Redux reads `594`, and no real hardware has been measured.
 
 The gap between the vsyncs a pass and the mean step is frames that ran past their
 step, a fifth of a full party's fight: its timers still drain one step, so retail's
-fight runs that much longer on the wall than its game clock. The engine overruns
-where its own cost reads past the step ([a frame's span](#a-frames-span)), which covers
-a loaded frame and a dear first pass on a cheaper step, but not the heavy arms' frames. Run over retail's own sequence of states,
+fight runs that much longer on the wall than its game clock. The engine runs its
+frames on their step, a loaded frame one vsync past it; retail's span law over the
+engine's costs is an opt-in ([a frame's span](#a-frames-span)). Run over retail's own sequence of states,
 the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes. The
 table was read off these same fights, so that is a fit, and no held-out score. The
 Vahn and Noa fight stands on a state reached by a door-tile poke from
