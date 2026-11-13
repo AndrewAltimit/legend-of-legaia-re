@@ -128,6 +128,7 @@
         </tbody>
       </table>
       </div>
+      <p><strong>Arm <code>0x15</code> can step twice.</strong> Once the card is at full level the arm stores <code>state + 1</code> when its hold runs out, then tests the pad and stores <code>state + 1</code> again off a reloaded state word. A skip press on the one frame the hold runs out leaves the hub at <code>0x17</code>, an arm the jump table does not have: the hub then redraws its backdrop every frame and never starts the fight. The window is a single game frame of each ROUND card. The port takes that frame as one step to <code>0x16</code>; the hub differential runs retail&rsquo;s routine through it and reads <code>0x17</code> back.</p>
     </div>
   </details>
 </section>
@@ -278,7 +279,7 @@
     </tbody>
   </table>
   </div>
-  <p>Accessories and the Seru setting are never touched, so a stripped fighter keeps its accessories. Everything comes back at the end: settlement restores the whole party block saved at entry. The curated course rules in <code>casino.toml</code> (no equipment, no items, magic forbidden on Master) are walkthrough labels that agree with these bits.</p>
+  <p>Accessories and the Seru setting are never touched, so a stripped fighter keeps its accessories. Everything comes back at the end: the arena copies the party block out on a contest&rsquo;s first entry, ahead of the strip, and settlement copies it back, so gear, HP, MP, items and gold all return to where the contest found them. Only two words of the lead&rsquo;s record keep what the contest did. The port saves the party window on entering the dome and restores it at settlement. The curated course rules in <code>casino.toml</code> (no equipment, no items, magic forbidden on Master) are walkthrough labels that agree with these bits.</p>
   <p class="dg-note">Ladder tables in PROT 0977: score table <code>0x801D1860</code> (3 x 16 <code>i32</code>), round roster <code>0x801D1920</code> (29 x <code>{name_ptr, monster_id}</code>), course descriptors <code>0x801D1A08</code> (3 x <code>{round_count, first_round}</code>). Master clamp at <code>0x801CED28..0x801CEDA4</code>; course seed at <code>0x801CEB8C..0x801CEBC8</code>.</p>
 </section>
 
@@ -329,7 +330,7 @@
   <ul class="bullets">
     <li><strong>A pennant per press.</strong> Pennant <code>n</code> sits at <code>x = 16 + (cost of the earlier pennants)</code> and is <code>cost - 6</code> wide, so the bar fills in proportion to AP spent; a 100-AP pool spans 128 pixels.</li>
     <li><strong>Entry ends itself</strong> on the press that leaves no command affordable; there is no confirm step there.</li>
-    <li><strong>Arts.</strong> What plays out is the battle&rsquo;s tokenised queue, so a string that spells an art plays the art. A Hyper Art collapses for a fighter carrying a Ra-Seru, as in any battle. Triangle pages the learned-arts list.</li>
+    <li><strong>Arts.</strong> What plays out is the battle&rsquo;s tokenised queue, so a string that spells an art plays the art. A Hyper Art collapses for a fighter carrying a Ra-Seru, as in any battle. Triangle pages the learned-arts list. Its &ldquo;closed&rdquo; caption is a latch the entry state raises when the fighter knows any arts and opening the list clears, so it stays up while a list closed just before the entry ended slides out.</li>
     <li><strong>The AP plate</strong> on the right reads the Spirit gauge and does not move during entry; the budget&rsquo;s visible form is the bar of pennants.</li>
   </ul>
 
@@ -403,6 +404,7 @@
 <section class="doc-section" id="hub-screens" data-doc="hub-screens">
   <h2>The hub screens and their timing</h2>
   <p>Each hub screen is a fade-in at its own rate, a hold, and a fade-out. Every step is scaled by the adaptive frame-skip factor, so the figures are ticks: frames at the normal cadence. Brightness climbs to <code>0x80</code>, a PSX textured primitive&rsquo;s neutral level.</p>
+  <p>The hub&rsquo;s screen routine also stores <code>2</code> to the game&rsquo;s frame-step floor on every call, so retail runs the hub at a game tick every two vsyncs or slower, and both parked hub captures read that step. The port&rsquo;s hub timers run every vsync on a step of <code>1</code>: the stepped envelopes come out the same length, but the steps that are not scaled (the tally&rsquo;s row a tick) run twice as fast, and every fade moves at 60 frames a second where retail&rsquo;s moves at 30.</p>
   <figure class="diagram">
     <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of the first-visit hub screens in ticks: Welcome fades in over 32, holds 123 and cannot be skipped, fades out; the title zooms for 13; the course card fades in over 64 and holds 180, skippable; the wall drains; the ROUND card fades in over 64, holds 61, skippable, and fades out. Between rounds: INTERVAL fades in over 32, the tally rolls for a data-dependent time that one press finishes, then the ROUND card plays again.">
       <text class="dg-label dg-start" x="30" y="26">First visit (once per contest)</text>
