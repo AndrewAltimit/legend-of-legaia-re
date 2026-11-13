@@ -109,6 +109,7 @@ names = [
     "play_menu_press",
     "debug_arm_scene_shop",
     "debug_host_trace_text",
+    "debug_play_record",
     "debug_formation_rows",
     "debug_seed_monster_cast",
     "debug_shatter",

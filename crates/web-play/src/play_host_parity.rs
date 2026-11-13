@@ -3,8 +3,9 @@
 //!
 //! The `impl` below is not a wasm export: it exists so a headless test driving
 //! [`LegaiaRuntime`] can assert that a state the native boot installs is
-//! installed here too, without reaching into `pub(crate)` fields. The one
-//! export is the trace the browser half of `scripts/ci/host-pair.mjs` reads.
+//! installed here too, without reaching into `pub(crate)` fields. The
+//! exports are the trace the browser half of `scripts/ci/host-pair.mjs` reads
+//! and the record entry it arms a cutscene beat with.
 
 use wasm_bindgen::prelude::*;
 
@@ -20,6 +21,17 @@ impl LegaiaRuntime {
             .session()
             .map(|s| legaia_engine_session::host_trace::sample_text(s, &self.menu))
             .unwrap_or_default()
+    }
+
+    /// Run the current scene's MAN record `P{partition}[{record}]` as a
+    /// cutscene timeline: the page's twin of the play window's
+    /// `--play-record P:R` (`BootSession::play_scene_record`). A debug
+    /// affordance, called from the console and by `scripts/ci/host-pair.mjs`;
+    /// `false` when it does not resolve.
+    pub fn debug_play_record(&mut self, partition: usize, record: usize) -> bool {
+        self.scene_host
+            .session_mut()
+            .is_some_and(|s| s.play_scene_record(partition, record))
     }
 }
 
@@ -46,17 +58,6 @@ impl LegaiaRuntime {
             "accessory_passives": w.tables.accessory_passives.len(),
         })
         .to_string()
-    }
-
-    /// Run the current scene's MAN record `P{partition}[{record}]` as a
-    /// cutscene timeline: the page's twin of the play window's
-    /// `--play-record P:R` (`BootSession::play_scene_record`). A debug
-    /// affordance, called from the console; `false` when it does not
-    /// resolve.
-    pub fn debug_play_record(&mut self, partition: usize, record: usize) -> bool {
-        self.scene_host
-            .session_mut()
-            .is_some_and(|s| s.play_scene_record(partition, record))
     }
 
     /// Stand the field player at world `(x, z)`. Test support only, for a

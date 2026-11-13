@@ -115,6 +115,11 @@ export const SCENES = {
    * the entry on both hosts - the summit's entry script picks Noa as the lead only when they are
    * up at entry time, so a pair that raised them on one host after its entry drew Vahn there -
    * then the walk onto the beat's tile and its dialogue paged. */
+  /* King Drake's audience in Drake Castle (dolk2 P2[7], after Caruban): the seat puts him on the
+   * throne's tile in the near buckets, so he paints over the throne's back on both hosts. */
+  dolk2_audience: { scene: 'dolk2', flags: [0x142], record: [2, 7], ticks: 4000, every: 60, taps: every(200, 3990, 25, 'Cross') },
+  /* Noa's first dream (dream P2[1]): the light her mother's voice hangs on a scale-zero marker. */
+  dream_light: { scene: 'dream', record: [2, 1], ticks: 1200, every: 30, taps: every(120, 1190, 24, 'Cross') },
   summit582: { scene: 'rikuroa', flags: [0x2FB, 0x281, 0x282, 0x283, 0x284, 0x285], seat: [7300, 9792], ticks: 1500, every: 60, hold: [[30, 55, 'Right']], taps: every(250, 1490, 20, 'Cross') },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */
@@ -203,6 +208,7 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
     '--screenshot-last-tick', String(opts.ticks || sc.ticks)];
   if (script) a.push('--pad-script', script);
   if (sc.coins) a.push('--cheat-coins', String(sc.coins));
+  if (sc.record) a.push('--play-record', sc.record.join(':'));
   for (const f of sc.flags || []) a.push('--set-flag', '0x' + f.toString(16));
   if (sc.warp) a.push('--key-script', `${sc.warp.tick}:${sc.warp.key}`);
   if (sc.lgsfPath) a.push('--resume-save', sc.lgsfPath);
@@ -254,6 +260,8 @@ async function pageRun(cfg) {
     view.enterExpansionMap(sc.pack.map, sc.pack.spawn || '');
   } else if (!pick) { seedRng(); view.enter(sc.scene); }
   if (sc.viaTown || sc.pack) seedRng();
+  /* The window's `--play-record`, once the scene is entered. */
+  if (sc.record && !rt.debug_play_record(sc.record[0], sc.record[1])) throw new Error('record refused');
   if (sc.seat && !rt.play_debug_seat(sc.seat[0], sc.seat[1])) throw new Error('seat refused');
   /* The native side's LEGAIA_DIAG_FOLLOW_KNOBS: the knobs written raw, every frame. */
   const holdKnobs = () => {
