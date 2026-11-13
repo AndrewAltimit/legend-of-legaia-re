@@ -727,6 +727,15 @@ makes one draw and then the sixteen picks a RAM read of the rocks holds; the
 engine, seeded there, makes the same draws. Measured on that capture, the
 arm-4 segment scores `.770` with the option and `.649` without.
 
+The rest of that film is the same stream. `koru_pre_gigaton_press` reads `.853`,
+`.914` on `--rand-track` (phase 4 `.777` to `.889`), and `.913` seated only on the
+word retail's phase 3 ended on (`--rand-at 0x70:3`): from there phase 4's `51`-draw
+burst comes in retail's order draw for draw, retail spreading it over more passes, and
+the light column reaches the floor's red ring on retail's pass. Seeded at the cast's
+begin it parts again (`.847`): the engine's `0x6E` runs one pass fewer and so one
+frame-driver draw short (`7` against `8`), which is the
+[frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s.
+
 Seeded at the cast's begin (`--rand-at 0x28:0`), the stream is also a probe of
 the engine's frame pacing: the battle frame driver draws once a pass
 (`FUN_80046A20`), so the first word the engine reaches early or late names the

@@ -1032,8 +1032,19 @@ and Thunder (`0x64..=0x69`), and the stores sit on each run's `k = 3` and `k = 4
 on Thunder too. The hit loops skip a seat with no HP or with `+0x16E & 4` ahead of the
 hit (`0x801F850C..0x801F8528`); the host reads the HP after the tick's hits and does
 not read the status bit. With these the Rogue Flame recording's arm-6 `rand()` draws
-read `293` against retail's `645` (`27` before), arm 7 `791` against `1590`; what
-sheds the rest is open. Grade `disassembly`.
+read `293` against retail's `645` (`27` before), arm 7 `791` against `1590`. Grade
+`disassembly`.
+
+What the burn still sheds in retail shows on a rand-word watch of the same cast
+(`--watch 0x80009010`, each draw with its caller). Through arm 7 retail runs `322`
+burning-body emits (`0x8004A61C`, four draws each, `ra` `0x8004A634`, `0x8004A670`,
+`0x8004A6B0`, `0x8004A744`) over its `49` passes, some six a pass to the arm's end,
+beside `200` draws from `0x801E01D4` and one frame-driver draw a pass (`0x80046D34`).
+On the engine's film arm 7's draws fall from `61` a pass to `11` by its fourteenth
+pass (`1178` against `1632`), and retail's ghost walk keeps drawing seat 7 through the
+arm's first `294` vsyncs where the engine's stops twenty ticks in. So retail's bodies
+keep burning through the arm and the engine's go out; the store that keeps them lit
+is [open](../reference/open-rev-eng-threads.md#battle--rendering). Grade `capture`.
 
 ### A bare stage byte waits for the clip's end
 
@@ -2466,6 +2477,16 @@ the magic-level banner; the same pass adds one to the caster's record `+0x9C`
 ([instant kills](#instant-kills-records-and-result-lines)). The damage path rolls `FUN_801DD0AC(0x12, 7, victim)` as arm `0x12`
 leaves for `0x13` (`0x801F85A8`), steps on to arm `0x14` and stores `0xFF`
 once the victim has settled.
+
+**Arm 14 backs the creature off.** The arm's pass writes `-16` straight into the
+creature's running clip entry (`lw v0,-0x6CA8(v0)` / `lw v1,0x50(v0)` / `sh
+v0,0xc(v1)` at `0x801F7994..0x801F79A8`), beside its fade spawn and the `scalar * 55`
+countdown; the disc's speed is `0`. A negative root speed steps every pass with no
+range test (`bltz` at `0x80047D3C`), so from arm 15 on the creature walks back along
+its facing. A `--watch` of its `+0x38` on the `0x8E` film reads only the anim tick's
+root-motion store (`0x80047DC0`), `-24` a step-`3` pass, `z` `-2307` to `-3075` over
+arms 15..18. `World::apply_aluru_seat_writes` makes the store. Grade `disassembly` +
+`capture`.
 
 Port: `cast_module_camera::aluru_direct` carries the whole chain
 (`ModuleProfile::director_body`, hit arm `0x12`): the gates on the band word,

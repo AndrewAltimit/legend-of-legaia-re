@@ -1588,6 +1588,15 @@ the counter at `0x212` (nine step-`2` passes), bar and plaque retired at
 `14` with both tables at rest, and the screen shows them six and five pixels
 short of their seats (`0.865` to `0.988`).
 
+A cast's seed raises the same pair off the seed's own rung. Every seed clears the
+glide table and stores the counter's `0x800` rung in that call's delay slot
+(`0x801E2CEC..0x801E2CF8`), and only the Attack arm overwrites it with `0x200`. A
+`--watch` film of Gomboo's Steal reads records `0` / `1` cleared and spawned on the
+seed pass and retired eighteen vsyncs on in `0x6E`, so
+`battle_map01_gomboo_steal_mid_cast`'s counter `0x81C` (seven step-`3` passes) places
+the three-pixel shortfall the screen shows on the last in-flight pass. The engine's
+replay raises them on its own seed and its frame already draws them on retail's rows.
+
 A Spirit / Item band and the capture-class band time their plaques off the
 backdrop weight instead (`spirit_band_glide_seats`). The band's pre-arm (or the
 capture route's cast begin) raises the action latch `ctx[+0x243]`, and from
