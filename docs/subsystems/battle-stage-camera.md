@@ -1979,6 +1979,20 @@ retail's for the rest of the action and the backdrop slides some ten pixels acro
 frame (film `.879`, `0x1E..0x20` segments `.86` to `.89`), with every clip on retail's cursor
 pass for pass.
 
+What the engine under-prices there is the fight, not a per-frame load. Over the 54
+full-party strike recordings, each film's strike frames (`0x1E..0x20`, ring entries under
+the clamp) sit a steady offset over the table: `+25` on average, `-85` to `+85` from film to
+film, and within one film the three states' offsets part by `13` at the median. Neo
+Grude's is `+71`, and its frames hold near `700` whether `7` or `44` effect parts are live,
+so no part, ghost or pool term reaches it. The offset is not the formation's polygons: the
+alive monsters' triangle sum (the engine's `battle body` log) explains none of it (slope
+`.02` hblanks a triangle, `r` `.16`, held out no better than a flat offset). Within a film the
+cost follows what the frame links: on `rugi2`'s Fire Breath (`--gpu-cost`) the breath's
+`0x2B` frames hold `700..712` at `2250` linked polygons, and the frame that crosses `0x2D0`
+(vsync `71`, exactly `720`, then `759`, `807`) is the one whose polygons rise to `2518` and
+`3622`; a pass early is where the engine's own load crosses. A per-fight term would need the
+stage and framing's linked polygons, which only the hosts hold. Grade `capture`.
+
 What a ghost costs inside a full party's frame stays open. Over 61 recorded monster
 strikes (the `battle_*_strike` states' cast-sequence recordings, retail's step every vsync) the mesh
 cost lifts the engine's step agreement from `.916` to `.951` (Frog on `map01` `.20` to
