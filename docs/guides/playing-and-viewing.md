@@ -596,7 +596,10 @@ about 960x699) draws the frame at that step and shows it shrunk by a few
 percent to fit, rather than dropping to the step below with black around it.
 The *Pixel-exact scaling* row (`integer_scale`, also on the `F12` panel)
 turns that shrink off, for a player who wants every stage pixel the same size
-at the cost of the black border; PSX mode always scales in whole steps.
+at the cost of the black border; PSX mode always scales in whole steps. So
+does the browser play page under PSX rasterisation: its picture takes the
+largest whole multiple of 320x240 device pixels the page offers, and the rest
+of the column, or of the screen in fullscreen, stays black.
 
 The browser play page answers the same keys from the same table, with the
 canvas focused: each moves the matching control under the canvas, and `F1`

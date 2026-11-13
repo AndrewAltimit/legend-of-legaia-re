@@ -59,6 +59,7 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <li>Town placements hold retail's headings and seats for a 300-vsync film in <code>garmel</code>, <code>vozz</code> and <code>retona</code>; <code>town01_field_card_boot</code>'s seven that part are wanderers, each first off after <code>40</code> vsyncs or more.</li>
     <li>A held walk's clip runs at retail's rate: <code>kor_field_route_walk</code> steps <code>16</code> a pass through the same ten frames on both sides.</li>
     <li>The film starts on the vsync of retail's frame the state was saved on. The frame pacer waits each frame out with <code>VSync(step)</code>, which stores the vblank count on return, so the state's vblank counter less that store says how far into its frame the state stands; the engine seats its game-tick accumulators to match. Placements that had turned a vsync early or late now turn on retail's vsync: <code>conc</code>, <code>conc2</code> and <code>town01</code> read no placement off retail.</li>
+    <li>Idle 300-vsync films of ten more fields (<code>retock</code>, <code>taiku</code>, <code>nilboa</code>, <code>jou</code> and others) read no placement off retail. Where placements do part with nothing pressed, in <code>conc</code>, <code>conc2</code>, <code>dolk2</code> and <code>koin1</code>, each turns or steps at retail&rsquo;s rate one vsync early or late: the seed&rsquo;s pass parity, not a turn law. The rest that part are wanderers.</li>
   </ul>
 </section>
 

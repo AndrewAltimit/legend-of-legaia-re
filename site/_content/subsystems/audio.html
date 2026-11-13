@@ -139,6 +139,7 @@
   <ul class="bullets">
     <li><strong>Slots 2 and 6 are one physical bank in two modes.</strong> They share a header buffer and an SPU address: the field init loads 0876 into slot 6, and battle init closes it before the battle loader fills slot 2. That is why retail needs no extra SPU room for field cues.</li>
     <li><strong>Monster banks</strong> come from one packed file, <code>monster.snd</code>, with a per-monster TOC of sector ranges. Its tail clips are the party's <em>victory-pose voice lines</em>: the spoils routine picks a pose tier from the actor's HP (a status forces the weakest pose) and plays that character's clip.</li>
+    <li><strong>A side-band sample can outlive its bank&rsquo;s place.</strong> Slot 3 has its own base on retail, so a one-shot it is still playing when the next track loads plays out. In the port a long track can overrun that span; a voice still reading it follows the bank onto its re-staged copy at the same offset, and a voice nothing re-stages is cut once the frame&rsquo;s sound routing ends. Before that, a voice left on the old span read the new track&rsquo;s instruments, and a looped one held for good: after the Caruban fight on Mt. Rikuroa players heard a horn loop over the scene.</li>
   </ul>
 </section>
 

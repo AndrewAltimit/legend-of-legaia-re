@@ -30,6 +30,7 @@
 <h3 id="what-was-captured">What was captured</h3>
 <p>A breakpoint at <code>FUN_8003541C</code> on the US disc logged the string, the pen X and the Y of seventeen caption draws across eight summon casts. Every measured X equals 160 (or that module's own centre constant) minus half the width of the logged string, and every fixed X equals its typed-in number.</p>
 <p>These were <strong>injected casts</strong>, not played ones: at the start of a party member's action the queued action was rewritten to the summon's spell, after which the game loaded and ran the cast module itself. HP values were poked to keep the fight alive, and some casts ran in a fight started from a forced formation. One row - Nighto's rarer outcome - is captured on a poked state: the outcome word was overwritten with zero to take that branch. What is logged is the pen position handed to the text routine, not a screenshot. The arts, item and "Points returned" banners go through the HUD table and were not captured.</p>
+<p>The port draws every summon caption on its module's own pen, the shifted centres and the typed-in numbers alike, so the off-centre captions stay where retail puts them. Cast films of Gimard, Theeder, Nighto and Juggernaut put the port's glyph pixels on retail's columns. The one exception is Nighto's rarer outcome: the port does not roll that branch and always draws the module's first caption.</p>
 </section>
 <section class="doc-section" id="ultimate-rave">
 <h2>"Ultimate Rave" is drawn off-centre</h2>
