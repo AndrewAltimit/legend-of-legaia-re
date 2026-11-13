@@ -3950,6 +3950,10 @@ const KEYS: &[(&str, &str)] = &[
         "play or pause, step a frame (movies, animations)",
     ),
     (
+        "Tab to a 3D view, then arrows",
+        "turn the model (PgUp / PgDn zoom, Home resets)",
+    ),
+    (
         "Ctrl+= / Ctrl+- / Ctrl+0",
         "zoom in, out, reset (also View)",
     ),
