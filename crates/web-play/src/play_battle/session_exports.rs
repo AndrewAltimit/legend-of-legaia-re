@@ -351,7 +351,10 @@ impl LegaiaRuntime {
     /// silences the SFX voices. The battle track's start is kept (its
     /// sequencer is clocked by the mix, so it starts on the first mixed
     /// block). `max_ticks` caps the run; a seed still pending at the cap is
-    /// left armed and the page plays the rest of the opening on screen.
+    /// left armed and the page plays the rest of the opening on screen. Once
+    /// the seed has dispatched every monster's HP is floored
+    /// (`World::floor_showcase_monster_hp`), as the art seed does, so a cast
+    /// does not end the fight it opened.
     pub fn debug_run_to_inflight(&mut self, max_ticks: u32) -> u32 {
         use legaia_engine_audio::sfx::{ONE_SHOT_TOP_VOICE, SUSTAINED_BASE_VOICE};
         use legaia_engine_battle::encounter::EncounterPhase;
@@ -383,6 +386,16 @@ impl LegaiaRuntime {
                 d.clear_sfx();
                 d.mute_sfx_voices(&sfx_voices);
             }
+        }
+        // The showcase fight outlives its action: the art seed floors every
+        // monster's HP at its own dispatch, and a cast gets the same floor
+        // here, on the tick it dispatched, before any of its hits land - a
+        // level-99 spell would otherwise win the fight and drop the page
+        // back to the field.
+        if !self.debug_inflight_pending()
+            && let Some(host) = self.scene_host.host_mut()
+        {
+            host.world.floor_showcase_monster_hp();
         }
         // The off-screen run is not wall time the page owes the world.
         self.sim_stepper.resync();

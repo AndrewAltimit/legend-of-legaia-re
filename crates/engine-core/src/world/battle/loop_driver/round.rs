@@ -27,11 +27,29 @@ pub(in crate::world) const ROUND_BOUNDARY_FRAMES: u8 = 3;
 /// Spirit an [`InflightArtSeed`](legaia_engine_battle_loop::battle_state::InflightArtSeed)
 /// grants its caster: the 99 a Miracle Art costs covers every string.
 const ART_SEED_SPIRIT: u16 = 99;
-/// The HP floor a dispatched art seed gives every monster, so that a chain's
-/// later strikes have something to land on.
+/// The HP floor a dispatched art seed (and the art and magic pages'
+/// showcase cast, [`World::floor_showcase_monster_hp`]) gives every monster,
+/// so that a chain's later strikes - or a cast's hits - have something to
+/// land on and the fight outlives the action it was opened for.
 const ART_SEED_MONSTER_HP: u16 = 60_000;
 
 impl World {
+    /// Raise every standing monster's HP (and its maximum) to the art seed's
+    /// floor. The art seed applies it at its own dispatch; the art and magic
+    /// pages' showcase applies it to a seeded cast too, so a level-99 spell
+    /// does not end the fight it was opened to show. A debug seam: no game
+    /// path calls it, and the retail comparison's cast seed does not.
+    pub fn floor_showcase_monster_hp(&mut self) {
+        let party_count = usize::from(self.party.party_count.max(1));
+        for a in self.actors.iter_mut().skip(party_count) {
+            if a.battle.liveness == 0 {
+                continue;
+            }
+            a.battle.max_hp = a.battle.max_hp.max(ART_SEED_MONSTER_HP);
+            a.battle.hp = a.battle.hp.max(ART_SEED_MONSTER_HP);
+        }
+    }
+
     /// Turn cycling for the live loop - retail's round machine, keyed on the
     /// action SM idling at `EndOfAction`.
     ///
@@ -485,20 +503,14 @@ impl World {
         self.battle
             .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         self.battle.art_seed_ra_seru = true;
-        for (slot, a) in self.actors.iter_mut().enumerate() {
-            if a.battle.liveness == 0 {
-                continue;
-            }
-            if (slot as u8) < party_count {
-                if slot == usize::from(seed.caster) {
-                    a.battle.spirit_gauge = a.battle.spirit_gauge.max(ART_SEED_SPIRIT);
-                    a.battle.action_category = 3;
-                }
-            } else {
-                a.battle.max_hp = a.battle.max_hp.max(ART_SEED_MONSTER_HP);
-                a.battle.hp = a.battle.hp.max(ART_SEED_MONSTER_HP);
-            }
+        if (seed.caster < party_count)
+            && let Some(a) = self.actors.get_mut(usize::from(seed.caster))
+            && a.battle.liveness != 0
+        {
+            a.battle.spirit_gauge = a.battle.spirit_gauge.max(ART_SEED_SPIRIT);
+            a.battle.action_category = 3;
         }
+        self.floor_showcase_monster_hp();
         self.dispatch_pending_party_action(
             seed.caster,
             PendingPartyAction::Art {

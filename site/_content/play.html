@@ -2592,6 +2592,13 @@ div.play-vis-head { cursor: default; }
         if (typeof rt.cheat_apply === 'function') rt.cheat_apply('arts', 0, '');
         rt.debug_seed_inflight_art(0, req.arrows, target);
       } else {
+        /* The lead alone, as the art launch seats its one character: the
+         * round is the cast and the monsters' answer, with no party member
+         * acting after it. */
+        let lead = 0;
+        try { lead = JSON.parse(rt.active_party_json())[0] || 0; } catch (e) { lead = 0; }
+        const reason = rt.set_active_party_spec(String(lead));
+        if (reason) console.warn('cast launch: ' + reason);
         rt.debug_seed_inflight_cast(0, req.spell & 0xFF, target);
       }
       /* Neither side surprised: a back attack would hand the monsters the

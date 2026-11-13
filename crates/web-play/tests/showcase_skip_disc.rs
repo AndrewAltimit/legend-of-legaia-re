@@ -13,7 +13,10 @@
 //!    none of which run inside the skip, so a voice the opening keyed would
 //!    sound over the action's first frame: the skip leaves no SFX-range voice
 //!    audible that the played-out opening's last tick did not key.
-//! 3. **Every character and the casts start.** Each of a sample of arts per
+//! 3. **A cast's round is the cast.** The lead casts alone, every monster's
+//!    HP is floored as the art seed floors it, and a level-99 spell that
+//!    would win the fight leaves it standing at the next prompt instead.
+//! 4. **Every character and the casts start.** Each of a sample of arts per
 //!    character, Seru casts and a Ra-Seru summon dispatches inside the cap,
 //!    from a neutral formation, and its first seconds tick without a trap.
 //!
@@ -54,6 +57,11 @@ fn launch(rt: &mut LegaiaRuntime, action: &Action) {
             assert!(rt.debug_seed_inflight_art(0, arrows, 3));
         }
         Action::Cast(spell) => {
+            // The lead alone, as the page seats it.
+            let lead: Vec<u8> = serde_json::from_str(&rt.active_party_json()).unwrap_or_default();
+            let lead = lead.first().copied().unwrap_or(0);
+            let reason = rt.set_active_party_spec(&lead.to_string());
+            assert!(reason.is_empty(), "party spec {lead}: {reason}");
             assert!(rt.debug_seed_inflight_cast(0, *spell, 3));
         }
     }
@@ -165,5 +173,41 @@ fn showcase_skip_starts_every_character_and_cast() {
             rt.frame_ticks(1, 0, 0).expect("tick");
         }
         eprintln!("[showcase] {label}: dispatched after {ticks} ticks");
+    }
+}
+
+#[test]
+fn showcase_cast_round_is_the_cast_and_the_fight_stands() {
+    let Some(mut rt) = disc_runtime() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    // Gimard kills map01's first formation outright at level 99 without the
+    // floor; Theeder hits the whole enemy row.
+    for spell in [0x81u8, 0x82] {
+        launch(&mut rt, &Action::Cast(spell));
+        assert!(rt.debug_run_to_inflight(CAP) > 0);
+        let w = &rt.scene_host.host().expect("host").world;
+        let party = usize::from(w.party.party_count);
+        assert_eq!(party, 1, "cast {spell:#04x}: the lead is not alone");
+        let mut prompt = false;
+        for _ in 0..3000 {
+            rt.frame_ticks(1, 0, 0).expect("tick");
+            let w = &rt.scene_host.host().expect("host").world;
+            assert!(
+                rt.play_battle_active(),
+                "cast {spell:#04x}: the fight ended under the showcase"
+            );
+            if w.battle.flow == legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt
+            {
+                prompt = true;
+                break;
+            }
+        }
+        assert!(
+            prompt,
+            "cast {spell:#04x}: the round never came back to the prompt"
+        );
+        eprintln!("[showcase] cast {spell:#04x}: the fight stands at the next prompt");
     }
 }
