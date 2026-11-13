@@ -128,7 +128,14 @@ impl World {
         {
             return;
         }
-        self.run_part_stager_calls(entry);
+        // The part tick runs behind the pass's effect-pool walker, which
+        // retail runs behind it: a pool spawn here takes the walker's sweeps.
+        let walked = if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.anim_pass_vsyncs
+        } else {
+            0
+        };
+        self.run_part_stager_calls(entry, walked);
         self.seat_walk_active_summon();
     }
 

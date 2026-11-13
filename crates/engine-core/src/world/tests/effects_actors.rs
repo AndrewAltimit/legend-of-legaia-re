@@ -538,3 +538,73 @@ fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
         "top row wrapped to the bottom"
     );
 }
+
+/// PROT 0919's arm-1 pool spawn (effect `0x14`), called from the part tick,
+/// takes the sweeps the pass's walker already gave the rest: retail makes it
+/// in the tick pass, ahead of the draw tick's walker, so its first children
+/// (and their `rand() % 4` mirror draws) come in the pass that spawns it.
+/// Spoon's arm 8 recording reads `6` mirror draws on the burst's pass; walked
+/// a pass late, the engine drew `3` there and `6` on the next.
+#[test]
+fn a_part_stager_pool_spawn_takes_the_walkers_sweeps() {
+    fn world_with_spoon_puff() -> World {
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        let mut entries = Vec::new();
+        let mut recs = Vec::new();
+        for id in 0..=0x14u8 {
+            entries.push(vm::effect_vm::EffectScript {
+                child_count: if id == 0x14 { 4 } else { 1 },
+                flags: 0,
+                spread: 0,
+                body: vec![],
+            });
+            recs.push(vec![
+                vm::effect_vm::ChildSprite {
+                    sprite_id: 0,
+                    delay: 0,
+                    ..Default::default()
+                };
+                if id == 0x14 { 4 } else { 1 }
+            ]);
+        }
+        let anims = vec![vm::effect_vm::AnimBatch {
+            flags: 0,
+            frames: vec![
+                vm::effect_vm::AnimFrame {
+                    atlas_index: 0,
+                    timing: [8, 0, 0, 0, 0],
+                };
+                2
+            ],
+        }];
+        world.effect_catalog = vm::effect_vm::EffectCatalog::from_parts(
+            entries.into_iter().zip(recs).collect(),
+            vec![],
+            anims,
+        );
+        world.casting.module_stager_calls.push((
+            1,
+            legaia_engine_cast::cast_module_ticks::StagerCaller::default(),
+        ));
+        world
+    }
+    // Walked: the walker ran its sweeps, so the master's undelayed records
+    // all seed on the first one - four children, four mirror draws.
+    let mut walked = world_with_spoon_puff();
+    walked.battle.anim_pass_vsyncs = 4;
+    walked.run_part_stager_calls(919, 4);
+    assert_eq!(
+        walked.effect_pool.active_count(),
+        0,
+        "every record consumed"
+    );
+    assert_eq!(walked.effect_pool.active_child_count(), 4);
+    // Ahead of the walker (the module tick's call): the walker seeds them.
+    let mut ahead = world_with_spoon_puff();
+    ahead.run_part_stager_calls(919, 0);
+    assert_eq!(ahead.effect_pool.active_count(), 1);
+    assert_eq!(ahead.effect_pool.active_child_count(), 0);
+}

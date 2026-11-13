@@ -83,7 +83,7 @@ impl World {
             // PROT 0907's and 0908's stagers only seat more records off the
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
-            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
+            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e, 0),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
