@@ -4059,6 +4059,11 @@ impl App {
                             }
                         });
                         ui.horizontal_wrapped(|ui| {
+                            // One sentence: the link follows its words a
+                            // space apart, not a widget gap.
+                            ui.spacing_mut().item_spacing.x = ui.fonts_mut(|f| {
+                                f.glyph_width(&egui::TextStyle::Body.resolve(ui.style()), ' ')
+                            });
                             ui.label(
                                 RichText::new(
                                     "or drop the file (or folder) on this window, type its \
