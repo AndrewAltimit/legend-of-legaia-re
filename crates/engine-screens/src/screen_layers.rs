@@ -300,10 +300,19 @@ pub fn compose_screen_prims(
             screen_prim::PSX_DISPLAY_H,
         ));
     }
-    over.extend(value_readout);
+    // The value readout splits at the text bucket: the struck actors'
+    // popups link at bucket 1 after the HUD's packets and so draw under its
+    // plates and glyphs; the combo window links at bucket 0, over them.
+    for p in value_readout {
+        if screen_prim::push_covers_text(i16::try_from(p.ot_index()).unwrap_or(i16::MAX)) {
+            over.push(p);
+        } else {
+            under.push(p);
+        }
+    }
     over.extend(legaia_engine_ui::battle_numerals::arts_banner_prims(
         &world.battle_arts_banner_quads(),
-        legaia_engine_ui::battle_numerals::VALUE_READOUT_OT,
+        legaia_engine_ui::battle_numerals::ARTS_BANNER_OT,
     ));
     over.extend(dance_countin);
     over.extend(dance_hud);
@@ -403,11 +412,31 @@ mod tests {
             pack_mode_world: tag(112),
         };
         let (under, over) = compose_screen_prims(&w, &menu, None, host);
-        assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5]);
+        // A readout prim deeper than bucket 0 (the popups' bucket 1) stays
+        // under the text.
+        assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5, 102]);
         assert_eq!(
             tags(&over),
-            vec![100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+            vec![100, 101, 103, 104, 105, 106, 107, 108, 109, 110]
         );
+    }
+
+    /// The readout splits at the text bucket: a popup digit (bucket 1)
+    /// draws under the HUD text, the combo window (bucket 0) over it.
+    #[test]
+    fn the_readout_splits_at_the_text_bucket() {
+        use legaia_engine_ui::battle_numerals::{COMBO_OT, POPUP_OT};
+        let w = World::new();
+        let menu = MenuRuntime::new(std::env::temp_dir());
+        let mut value_readout = tag(POPUP_OT);
+        value_readout.extend(tag(COMBO_OT));
+        let host = HostScreenPrims {
+            value_readout,
+            ..Default::default()
+        };
+        let (under, over) = compose_screen_prims(&w, &menu, None, host);
+        assert_eq!(tags(&under), vec![POPUP_OT]);
+        assert_eq!(tags(&over), vec![COMBO_OT]);
     }
 
     /// A vignette's black borders stay black over an op-`0x34` wash linked

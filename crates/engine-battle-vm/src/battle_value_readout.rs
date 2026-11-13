@@ -110,7 +110,10 @@ pub fn fold_combo_records(
 /// halfwords).
 pub const VALUE_SLOTS: usize = 4;
 
-/// Ordering-table tag word the quads carry (`0x09000000`).
+/// Ordering-table tag word the quads carry (`0x09000000`): the high byte is
+/// the packet's length in words (a `POLY_FT4`'s nine), the low 24 bits the
+/// link `AddPrim` fills. The bucket is the `AddPrim` slot, not this word
+/// (`engine-ui::battle_numerals::POPUP_OT` / `COMBO_OT`).
 pub const OT_TAG: u32 = 0x0900_0000;
 
 /// Command + colour word every quad shares (`0x2C808080` - a textured quad at

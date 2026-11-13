@@ -27,9 +27,9 @@ use legaia_render_kernels::screen_prim::{
 /// numeral over an actor that projected to `(160, 120)`.
 fn frame_prims() -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
     let cluster = vr::combo_cluster(vr::ComboStyle::HitTotal, 3, 481, 0);
-    let mut prims = bn::combo_cluster_prims(&cluster, bn::VALUE_READOUT_OT);
+    let mut prims = bn::combo_cluster_prims(&cluster, bn::COMBO_OT);
     let cells = vr::value_cells(184, 160, 120, vr::POP_FRAMES);
-    prims.extend(bn::digit_run_prims(&cells, bn::VALUE_READOUT_OT));
+    prims.extend(bn::digit_run_prims(&cells, bn::POPUP_OT));
     prims
 }
 

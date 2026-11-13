@@ -124,10 +124,10 @@ pub fn value_readout_prims(
     let (cluster, runs) = layout;
     let mut out = Vec::new();
     if let Some(c) = cluster.as_ref() {
-        out.extend(bn::combo_cluster_prims(c, bn::VALUE_READOUT_OT));
+        out.extend(bn::combo_cluster_prims(c, bn::COMBO_OT));
     }
     for cells in runs {
-        out.extend(bn::digit_run_prims(cells, bn::VALUE_READOUT_OT));
+        out.extend(bn::digit_run_prims(cells, bn::POPUP_OT));
     }
     out
 }
