@@ -1293,6 +1293,15 @@ Two deals put other numbers on the screen:
   word's vsync, past the twelve-frame slack, and rolled `906` on its own stream. So a traced deal
   carries no vsyncs: `hits.csv` holds every hit the kernel resolved, and the words go out in order.
 
+What a traced deal still leaves is the frame step, through the juggle counter. The counter reads the
+defender's `+0x1F7` window, which the anim tick derives from the flinch's cursor, and the cursor gains
+`(step * speed * rate) >> 1` a pass ([the juggle window](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)).
+`battle_jou_party_vahn_tri_somersault_super_open` leaves the Super Art's slow motion on a 4-vsync pass in
+retail and a 3-vsync one on the engine, so Theeder's flinch reads cursor `256` (frame `16`, window shut) on
+retail's seventh hit and `252` (frame `15`, still up) on the engine's: juggle `3` for `1`, and `409` /
+`376` / `419` / `409` become `425` / `401` / `444` / `435` on the last four hits. On `--retail-steps` all ten
+hits roll retail's numerals and the film reads `.918` (`.777` on the engine's own steps).
+
 The damage.csv `in` row is read at the attacker draw's delay slot, not at the `jal`: the LDF arm loads
 `s1` in the `jal`'s load-delay slot (`lhu s1,0x160(v0)` at `0x801ECE74`), and a breakpoint on
 `0x801ECE78` reads the register before the load lands.

@@ -726,9 +726,18 @@ impl World {
         // `LEGAIA_DIAG_DAMAGE`: the word a strike deal handed this hit, if
         // any, beside the one the world stream held.
         if std::env::var_os("LEGAIA_DIAG_DAMAGE").is_some() {
+            let t = &self.actors[target_i];
             eprintln!(
-                "dealt: {dealt:?} at {} own {}",
-                self.clock.display_frames, self.rng_state
+                "dealt: {dealt:?} at {} own {} juggle {} defender clip {:#x} frame {} rate {} window {}",
+                self.clock.display_frames,
+                self.rng_state,
+                self.battle.juggle,
+                t.battle.current_anim,
+                t.battle_animation
+                    .as_ref()
+                    .map_or(-1, |p| i32::from(p.current_frame())),
+                t.battle.anim_rate.get(),
+                t.battle_juggle_window,
             );
         }
         if let Some(word) = dealt {
