@@ -711,10 +711,17 @@ impl LegaiaMinigames {
     ///   "hooked"|"landed"|"snapped",
     ///   "cast_power": 64, "cast_max": 4096, "tension": 0, "tension_max": 4096,
     ///   "record": 0, "readout": 0, "depth": 0, "lateral": 0,
+    ///   "lure_pos": [5888, 0, 4131]|null,
     ///   "fish": {"index":3,"name":...,"score":8000}|null, "move": "run"|...,
     ///   "points": 0, "best": 0, "best_fish": 0, "casts": 51,
     ///   "last_award": 0, "venue": 0, "lure": 1, "rod": 2 }
     /// ```
+    ///
+    /// `lure_pos` is the live lure's world point `[x, y, z]` (raw retail
+    /// coordinates, Y down), the tracked point `0x801D9184..0x801D9188` the
+    /// lure tick's tail leaves (`LureActor::tracked`) - the flight, the
+    /// in-water move (`0x801D2C3C..0x801D2DC8`), the sink and the hooked
+    /// fish's swim all land there. `null` while no lure is out.
     pub fn fishing_pond_state_json(&self) -> String {
         let Some(p) = self.fishing_pond.as_ref() else {
             return r#"{"live":false}"#.to_string();
@@ -739,6 +746,10 @@ impl LegaiaMinigames {
             ),
             None => "null".to_string(),
         };
+        let lure_pos = p.lure_actor().map_or_else(
+            || "null".to_string(),
+            |l| format!("[{},{},{}]", l.tracked.0, l.tracked.1, l.tracked.2),
+        );
         let mv = match p.fish_move() {
             Some(fishing::FishMove::Sink) => r#""sink""#,
             Some(fishing::FishMove::Run) => r#""run""#,
@@ -750,7 +761,7 @@ impl LegaiaMinigames {
             concat!(
                 r#"{{"live":true,"phase":{},"cast_power":{},"cast_max":{},"#,
                 r#""tension":{},"tension_max":{},"record":{},"readout":{},"#,
-                r#""depth":{},"lateral":{},"fish":{},"move":{},"#,
+                r#""depth":{},"lateral":{},"lure_pos":{},"fish":{},"move":{},"#,
                 r#""points":{},"best":{},"best_fish":{},"casts":{},"#,
                 r#""last_award":{},"venue":{},"lure":{},"rod":{}}}"#
             ),
@@ -763,6 +774,7 @@ impl LegaiaMinigames {
             p.readout(),
             p.depth(),
             p.lateral(),
+            lure_pos,
             fish,
             mv,
             p.record.points,

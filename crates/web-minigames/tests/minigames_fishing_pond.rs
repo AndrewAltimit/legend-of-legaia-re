@@ -173,10 +173,46 @@ fn pond_session_hooks_a_lure_row_species_and_lands_it() {
     assert_eq!(st["phase"].as_str(), Some("waiting"), "{st}");
     assert_eq!(st["casts"].as_i64(), Some(61), "landing counts the cast");
 
+    // The state carries the session's own lure point - the engine lure the
+    // line's fish end and the water probe read, not a page projection of
+    // the line record - and the in-water move (`0x801D2C3C..0x801D2DC8`)
+    // pulls it in under the reel.
+    let lure_xz = |mg: &LegaiaMinigames| -> (i64, i64) {
+        let st: serde_json::Value = serde_json::from_str(&mg.fishing_pond_state_json()).unwrap();
+        let lure: serde_json::Value = serde_json::from_str(&mg.fishing_lure_json()).unwrap();
+        let p = st["lure_pos"]
+            .as_array()
+            .expect("a landed lure has a point");
+        assert_eq!(p.len(), 3);
+        let (x, z) = (p[0].as_i64().unwrap(), p[2].as_i64().unwrap());
+        assert_eq!(
+            (x, z),
+            (lure["x"].as_i64().unwrap(), lure["z"].as_i64().unwrap())
+        );
+        (x, z)
+    };
+    let landed_at = lure_xz(&mg);
+    let mut early_hook = None;
+    for i in 0..8 {
+        // A reel press starts the pull (`pull_step`'s edge test).
+        let ev = mg.fishing_pond_tick(0x40, false, if i == 0 { 0x40 } else { 0 });
+        let v: serde_json::Value = serde_json::from_str(&ev).unwrap();
+        for e in v.as_array().unwrap() {
+            if e["e"].as_str() == Some("hooked") {
+                early_hook = e["id"].as_u64();
+            }
+        }
+    }
+    let st: serde_json::Value = serde_json::from_str(&mg.fishing_pond_state_json()).unwrap();
+    if early_hook.is_none() {
+        assert_eq!(st["phase"].as_str(), Some("waiting"), "{st}");
+        assert_ne!(lure_xz(&mg), landed_at, "the reel pulls the lure in");
+    }
+
     // Hold reel A until a strike hooks (recasting when reeled all the way
     // in), then verify the species came from the equipped lure's row.
-    let mut hooked_id = None;
-    'outer: for _round in 0..40 {
+    let mut hooked_id = early_hook;
+    'outer: for _round in 0..if early_hook.is_some() { 0 } else { 40 } {
         for _ in 0..1500 {
             let ev = tick(&mut mg, 0x40, false);
             if ev.contains(r#""e":"hooked""#) {
