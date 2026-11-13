@@ -138,3 +138,14 @@ fn a_songi_win_forces_pose_0x17() {
     pose_seat(&mut world);
     assert_eq!(world.battle.victory.and_then(|s| s.pose_id), Some(0x17));
 }
+
+/// The retail-compare seed's pose seat (`BattleState::forced_victory_seat`)
+/// stands the pose on the capture's acting slot whoever closed the replay's
+/// fight; a party wipe ignores it.
+#[test]
+fn a_seeded_victory_seat_poses_whoever_closed_the_fight() {
+    let mut world = world_won_by(2);
+    world.battle.forced_victory_seat = Some(0);
+    assert_eq!(pose_seat(&mut world), 0, "the capture's seat, not Gala");
+    assert_eq!(world.retail_acting_slot(), 0);
+}

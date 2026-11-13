@@ -545,6 +545,14 @@ pub struct BattleState {
     /// staged): the next party killing blow's absorb roll lands. Drawn and
     /// consumed like [`Self::forced_steal`].
     pub forced_absorb: bool,
+    /// A debug seed for a capture past the battle-end signal: the engine
+    /// seat retail's victory arm left in the acting slot `ctx[+0x13]`, which
+    /// the results sequencer poses and frames (`FUN_8004E568`, `lbu
+    /// s8,0x13(a0)` at `0x8004E5A4`). A replay that seats the capture's
+    /// already-beaten monster lets whichever member acts first close the
+    /// fight, so the pose stands on the capture's seat instead. `None` on
+    /// every ordinary fight.
+    pub forced_victory_seat: Option<u8>,
     /// The same kind of seed for a capture inside a melee action: the
     /// pushes its landed hits left on the damage-number ring
     /// (`ctx[+0x83C + i*4]`, struck slot at `ctx[+0x318 + i*2]`), as
@@ -1518,6 +1526,7 @@ impl BattleState {
             approach_idle_seated: false,
             party_melee_pushes: 0,
             forced_absorb: false,
+            forced_victory_seat: None,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,

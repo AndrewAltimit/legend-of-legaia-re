@@ -1318,6 +1318,15 @@ draws it takes.
   `+0x1DB` is read (`RetailBattle::win_pose`); a seed that reaches the phase on
   another pose is kept only as the fallback, and the remaining seeds are tried
   for one that draws retail's (`noa_levelup_banner`).
+- The pose stands on the capture's seat. The results sequencer poses the
+  acting slot `ctx[+0x13]` the victory arm left (the member who finished the
+  fight), and a drive that seats the capture's beaten monster at the HP it
+  reads lets whichever member acts first close the fight: in
+  `noa_levelup_banner` that was Gala, whose pose framed another shot
+  (`camera` `.995`, `image` `.942`) where retail's Vahn poses. The drive
+  seeds the capture's seat as the pose seat (`BattleState::forced_victory_seat`,
+  primed by `BattleDrive::prime`), and the state reads `1.000` on both. A
+  harness seat: the engine's own pose pick is unchanged.
 
 ### The image child plays the same fight
 

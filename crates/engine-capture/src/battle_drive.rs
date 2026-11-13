@@ -1226,6 +1226,18 @@ impl BattleDrive {
         {
             world.battle.forced_steal = true;
         }
+        // A capture past the end signal names its pose seat, the acting slot
+        // the victory arm left (`ctx[+0x13]`). The replay seats the capture's
+        // beaten monster at the HP the capture reads, so the first action to
+        // end closes the fight on whoever acted: in `noa_levelup_banner` that
+        // was Gala, where retail's Vahn poses.
+        if let Self::Action { seat, end, .. } = *self
+            && seat < 3
+            && end.is_end()
+        {
+            let pc = world.party.party_count.clamp(1, 3);
+            world.battle.forced_victory_seat = Some(engine_seat(seat, pc));
+        }
         // Likewise the absorb roll of a capture whose kill took a Seru.
         if let Self::Action { seat, absorbed, .. } = *self
             && seat < 3

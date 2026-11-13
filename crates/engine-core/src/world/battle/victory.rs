@@ -182,7 +182,11 @@ impl World {
     /// REF: FUN_8004E568 (`lbu s8,0x13(a0)` at `0x8004E5A4`), FUN_801E295C
     /// (the victory arm's `ctx[+0x13]` stores, `0x801E66EC..0x801E6760`)
     fn victory_pose_seat(&self, cause: BattleEndCause) -> usize {
-        let seat = self.battle_ctx.active_actor;
+        let seat = match (cause, self.battle.forced_victory_seat) {
+            // The retail-compare seed's pose seat.
+            (BattleEndCause::MonsterWipe, Some(forced)) => forced,
+            _ => self.battle_ctx.active_actor,
+        };
         match cause {
             BattleEndCause::MonsterWipe if seat < self.party.party_count => usize::from(seat),
             BattleEndCause::PartyWipe if usize::from(seat) < self.actors.len().min(8) => {
