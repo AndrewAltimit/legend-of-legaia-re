@@ -309,9 +309,14 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 
 ### Open rows
 
-- `set_move2_buffer_root`, `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested`
-  are the physics tick's own clip cursor. Which field clips run through it rather
-  than the host's actor layer is unsettled.
+- `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested` are the
+  physics tick's own clip cursor. Which field clips run through it rather than
+  the host's actor layer is unsettled. Its third bank needs no wire:
+  `set_move2_buffer_root` mirrors `_DAT_8007B840`, the type-`0x0B` bank
+  `FUN_800204F8` picks for clip ids `>= 0x400`, and no scene asset table on the
+  disc carries a type-`0x0B` descriptor (the tuple census in
+  `scene-formats::scene_asset_table`), while every observed state reads the
+  base as zero ([`mdt.md`](../formats/mdt.md)).
 - `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
   nibble; the hub's equipment panel stays on its no-candidate arm until the list
   machinery publishes it. The panel sits under the entry-list painter, and no
@@ -340,7 +345,7 @@ hook, which `asset field-op-census --only '<op>'` answers for the field VM.
 | `FieldCameraMotionHost::op4c_ne_sub7_ramp_73ee4` | `4C E7` | no clean carrier |
 | `FieldActorSpawnHost::hsv_grade_resident_meshes` | `4C E6` | the prologue palette mode draws the same pixels (`primitive_colour_grade`'s `REPLACED-BY`) |
 | `FieldTerrainHost::refresh_collision_y` | `4C DA` | the player's `CC F8 DA` is routed to the player stand-in and snapped there; a placement's Y is re-sampled by the per-tick height arm (`tick_field_npc_heights`) |
-| `FieldSceneHost::reset_party_pack_load_state` | `4C E9` | open: `opurud` carries one; clearing `_DAT_8007B9C4` forces the party pack's reload, and whether the port owes that reload is unchecked |
+| `FieldSceneHost::reset_party_pack_load_state` | `4C E9` | replaced: `opurud` carries one; clearing `_DAT_8007B9C4` forces the party pack's reload, and the port has no load gate, so every scene entry runs the swap ([above](#a-hook-left-on-its-trait-default)) |
 
 ## Analysis defects this triage found
 
