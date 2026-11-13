@@ -71,9 +71,14 @@ impl World {
     /// once the map is read, detaches and closes it (`FUN_800266E0` +
     /// `FUN_80026520` on `0x8007052C`, `0x801D7154..0x801D7170`), then forces
     /// the loaded-index barrier to `-100` so the poller loads the scene's
-    /// track afresh - the same id included. The engine's load is instant, so
-    /// the ramp collapses into the close it ends in
-    /// ([`crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE`]). With it set, the source is
+    /// track afresh - the same id included. The ramp is a decrescendo of the
+    /// whole sequence level over `0x78` ticks (`FUN_80062004` ->
+    /// `FUN_80061EDC`, the amount clamped to the current level, flag `0x20`),
+    /// so by the close the score is silent and its killed notes release
+    /// unheard. The engine's load is instant: the host's close
+    /// ([`crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE`],
+    /// `BgmDirector::close_field_source`) runs the ramp as a short fade to
+    /// silence before the next scene's bank is uploaded. With it set, the source is
     /// left sounding and the entry script's head start is latched, not
     /// loaded ([`crate::world::AudioState::bgm_entry_latch`]).
     ///
@@ -87,7 +92,7 @@ impl World {
         self.audio.bgm_swap.cancel();
         self.audio.bgm_field_init_open = true;
         if !keep {
-            self.audio.sfx_voice_stops.extend(0x10..=0x17);
+            self.audio.sfx_voice_mutes.extend(0x10..=0x17);
             self.pending_field_events.push(FieldEvent::Bgm {
                 text_id: 0,
                 sub_op: crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE,
@@ -106,6 +111,13 @@ impl World {
     /// Drain the SPU voices field-VM ops asked the host to stop this tick.
     pub fn take_sfx_voice_stops(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.audio.sfx_voice_stops)
+    }
+
+    /// Drain the SPU voices the field init silences this tick: each takes
+    /// volume `0` and then a key-off, retail's `FUN_800657D0(v, 0, 0)` +
+    /// `FUN_800653C8(v)` pair ([`Self::release_field_init_voices`]).
+    pub fn take_sfx_voice_mutes(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.audio.sfx_voice_mutes)
     }
 
     /// Drain the voices a minigame keyed directly this tick
@@ -272,12 +284,16 @@ mod tests {
     fn field_init_keys_off_the_cue_voices_unless_sub_op_6_kept_them() {
         let mut w = world_in(SceneMode::Field, "rayman");
         w.release_field_init_voices();
-        assert_eq!(w.take_sfx_voice_stops(), (0x10..=0x17).collect::<Vec<u8>>());
+        assert_eq!(w.take_sfx_voice_mutes(), (0x10..=0x17).collect::<Vec<u8>>());
+        assert!(
+            w.take_sfx_voice_stops().is_empty(),
+            "a mute, not a bare key-off"
+        );
         w.audio.keep_audio_across_field_init = true;
         w.release_field_init_voices();
-        assert!(w.take_sfx_voice_stops().is_empty(), "bit 2 keeps them");
+        assert!(w.take_sfx_voice_mutes().is_empty(), "bit 2 keeps them");
         w.release_field_init_voices();
-        assert_eq!(w.take_sfx_voice_stops().len(), 8, "for one init only");
+        assert_eq!(w.take_sfx_voice_mutes().len(), 8, "for one init only");
     }
 
     /// The same bit decides the field BGM: a plain init closes the field-BGM

@@ -285,6 +285,28 @@ impl<S: AudioSink> AudioDirector<S> {
         }
     }
 
+    /// Silence SPU voices the field init tears down: volume `0`, then key
+    /// off, so the release runs unheard (`FUN_800657D0(v, 0, 0)` +
+    /// `FUN_800653C8(v)`, `FUN_801D6704` `0x801D6BB0..0x801D6BDC`).
+    // REF: FUN_800657D0, FUN_800653C8
+    pub fn mute_sfx_voices(&mut self, voices: &[u8]) {
+        let voices: Vec<usize> = voices
+            .iter()
+            .filter(|&&v| v < 24)
+            .map(|&v| v as usize)
+            .collect();
+        if voices.is_empty() {
+            return;
+        }
+        self.audio.with_spu(|spu| {
+            for &v in &voices {
+                spu.voices[v].vol_left = 0;
+                spu.voices[v].vol_right = 0;
+                spu.voices[v].key_off();
+            }
+        });
+    }
+
     /// Key off SPU voices a field-VM op stopped (`FUN_800653C8`, the side-band
     /// teardown's top two).
     // REF: FUN_800653C8
@@ -521,6 +543,7 @@ impl<S: AudioSink> AudioDirector<S> {
                 .ok()
         });
         self.stop_sfx_voices(&world.take_sfx_voice_stops());
+        self.mute_sfx_voices(&world.take_sfx_voice_mutes());
         // While a scene switch's fade runs, the next scene's directly keyed
         // voices and emitters stay queued on the world: they key once the
         // old scene's voices are cut and its banks restaged

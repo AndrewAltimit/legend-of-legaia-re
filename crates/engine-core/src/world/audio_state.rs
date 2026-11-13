@@ -326,6 +326,11 @@ pub struct AudioState {
     /// side-band teardown's `FUN_800653C8(0x17)` / `(0x16)`), drained by
     /// [`crate::world::World::take_sfx_voice_stops`].
     pub(crate) sfx_voice_stops: Vec<u8>,
+    /// SPU voices the field init silences this tick - volume `0`, then key
+    /// off (`FUN_800657D0(v, 0, 0)` + `FUN_800653C8(v)`, `0x801D6BB0..`),
+    /// so their release runs unheard. Drained by
+    /// [`crate::world::World::take_sfx_voice_mutes`].
+    pub(crate) sfx_voice_mutes: Vec<u8>,
     /// SPU voices a minigame keyed directly this tick (`FUN_80065034` with
     /// no ring descriptor - the slot machine's reel motor), drained by
     /// [`crate::world::World::take_sfx_voice_keys`].
@@ -434,6 +439,7 @@ impl AudioState {
             sound_detach: legaia_engine_system::sound_state::SoundDetachLatch::default(),
             residency: legaia_engine_mode::sfx_residency::SfxBankResidency::default(),
             sfx_voice_stops: Vec::new(),
+            sfx_voice_mutes: Vec::new(),
             sfx_voice_keys: Vec::new(),
             sfx_emitter_ops: Vec::new(),
         }

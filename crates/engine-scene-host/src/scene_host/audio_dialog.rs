@@ -411,7 +411,7 @@ impl SceneHost {
                                 self.pending_bgm_swap = Some(held);
                             }
                             if !self.bgm_ending_source {
-                                director.stop();
+                                director.close_field_source();
                             }
                             acted += 1;
                         }

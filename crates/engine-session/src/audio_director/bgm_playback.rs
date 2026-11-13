@@ -315,6 +315,20 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
         self.start_owned_vab_faded_inner(bgm_id, entry_bytes, fade_frames);
     }
 
+    /// The field init's close, as retail orders it: the score ramps to
+    /// silence (`0x801D6AC0`'s decrescendo, here
+    /// [`super::SCENE_SWITCH_FADE_SAMPLES`] since the engine's map read takes
+    /// no time), what was sounding is cut, and only then does the next
+    /// scene's bank load - its start, its side-band and its cues wait behind
+    /// the fade ([`Self::fade_out_for_field_close`]).
+    fn close_field_source(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Stop) {
+            return;
+        }
+        self.commands.push(super::AudioCommand::BgmStop);
+        self.fade_out_for_field_close();
+    }
+
     fn unhalt_pause(&mut self) {
         if self.hold_for_switch(|| super::scene_switch::HeldCommand::UnhaltPause) {
             return;

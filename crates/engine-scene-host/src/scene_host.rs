@@ -98,6 +98,15 @@ pub trait BgmDirector {
     /// sub-op 2 with sub-op `0xA`. Default is a no-op for stub directors
     /// with no pause latch to clear.
     fn unhalt_pause(&mut self) {}
+
+    /// The field init's close of the field-BGM source (`FUN_801D6704`: the
+    /// decrescendo at `0x801D6AC0` while the map reads, then `FUN_800266E0`
+    /// and `FUN_80026520` at `0x801D7164`). A director whose load is instant
+    /// may run the ramp as a short fade before the next scene's bank lands;
+    /// the default is the bare stop.
+    fn close_field_source(&mut self) {
+        self.stop();
+    }
     /// Start an expansion pack's own track (a decoded WAV / Ogg file, not a
     /// SEQ): music id `bgm_id` in the pack-track range, its clip, and the
     /// frames to cross-fade from what plays now (`0` cuts). A director with

@@ -213,6 +213,7 @@ impl<S: AudioSink> BootSession<S> {
             let _ = (
                 w.take_sfx_ring_ops(),
                 w.take_sfx_voice_stops(),
+                w.take_sfx_voice_mutes(),
                 w.take_sfx_voice_keys(),
             );
             return;

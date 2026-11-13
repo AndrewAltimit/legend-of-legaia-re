@@ -144,6 +144,9 @@ fn reading_new_bank(s: &Session, voices: &[usize], old: &[(u32, u32)]) -> usize 
 
 /// What one switch measured.
 struct Switch {
+    /// The director's track before and after.
+    before_track: Option<u16>,
+    after_track: Option<u16>,
     /// Voices sounding when the switch was made.
     at_switch: usize,
     /// Held-over voices (keyed before the switch, still sounding) per frame.
@@ -156,9 +159,19 @@ struct Switch {
 
 const WINDOW: usize = SPU_INTERNAL_RATE as usize / 100;
 
-/// Switch `from` -> `to` through the picker after `lead` frames of `from`'s
-/// music.
-fn switch(from: &str, to: &str, lead: usize) -> Option<Switch> {
+/// How the switch is made.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Via {
+    /// The scene picker: a direct entry.
+    Picker,
+    /// A door: the field VM's named scene change, taken by the next tick.
+    Door,
+    /// A door behind op-`0x35` sub-op `6` ("music not change").
+    KeptDoor,
+}
+
+/// Switch `from` -> `to` after `lead` frames of `from`'s music.
+fn switch(from: &str, to: &str, lead: usize, via: Via) -> Option<Switch> {
     let mut s = session()?;
     let opts = FieldLiveOpts::default();
     s.enter_scene_live(from, &opts).expect("enter from");
@@ -166,19 +179,60 @@ fn switch(from: &str, to: &str, lead: usize) -> Option<Switch> {
     for _ in 0..lead {
         frame(&mut s, &mut pcm);
     }
-    let before_track = s.bgm.as_ref().and_then(|b| b.last_started);
-    let before = sounding(&s);
-    let old_bank = bank_spans(&s);
-    let at = pcm.len();
-    s.enter_scene_live(to, &opts).expect("enter to");
+    let mut snap = (
+        s.bgm.as_ref().and_then(|b| b.last_started),
+        sounding(&s),
+        bank_spans(&s),
+        pcm.len(),
+    );
+    let mut ticked = Vec::new();
+    match via {
+        Via::Picker => {
+            s.enter_scene_live(to, &opts).expect("enter to");
+        }
+        Via::Door | Via::KeptDoor => {
+            if via == Via::KeptDoor {
+                s.host.world.raise_keep_audio_across_field_init();
+            }
+            // The departure is held behind the streaming actor for a few
+            // ticks (`FUN_8001FD44`), the old scene sounding on: the switch
+            // is the tick the scene changes on, measured from just before it.
+            s.host.world.pending_named_scene_transition = Some((to.to_string(), 10, 10, 0));
+            for _ in 0..300 {
+                let before = (
+                    s.bgm.as_ref().and_then(|b| b.last_started),
+                    sounding(&s),
+                    bank_spans(&s),
+                    pcm.len(),
+                );
+                frame(&mut s, &mut pcm);
+                if s.host.scene.as_ref().is_some_and(|x| x.name == to) {
+                    snap = before;
+                    ticked.push(());
+                    break;
+                }
+            }
+        }
+    }
+    let (before_track, before, old_bank, at) = snap;
     let (mut held, mut on_new_bank) = (Vec::new(), Vec::new());
-    for _ in 0..60 {
+    for _ in &ticked {
+        let h = held_over(&s, &before);
+        on_new_bank.push(reading_new_bank(&s, &h, &old_bank));
+        held.push(h.len());
+    }
+    for _ in ticked.len()..60 {
         frame(&mut s, &mut pcm);
         let h = held_over(&s, &before);
         on_new_bank.push(reading_new_bank(&s, &h, &old_bank));
         held.push(h.len());
     }
     let after_track = s.bgm.as_ref().and_then(|b| b.last_started);
+    assert_eq!(
+        s.host.scene.as_ref().map(|x| x.name.as_str()),
+        Some(to),
+        "the switch landed"
+    );
     let levels: Vec<f64> = (0..105)
         .map(|i| {
             let a = (at + i * WINDOW).saturating_sub(5 * WINDOW);
@@ -197,16 +251,54 @@ fn switch(from: &str, to: &str, lead: usize) -> Option<Switch> {
         levels.iter().map(|l| l.round() as i64).collect::<Vec<_>>()
     );
     if let Some(path) = std::env::var_os("LEGAIA_PICKER_WAV") {
-        let path = std::path::PathBuf::from(path).join(format!("{from}_to_{to}.wav"));
+        let kind = match via {
+            Via::Picker => "picker",
+            Via::Door => "door",
+            Via::KeptDoor => "kept_door",
+        };
+        let path = std::path::PathBuf::from(path).join(format!("{kind}_{from}_to_{to}.wav"));
         write_wav(&path, &pcm[at.saturating_sub(SPU_INTERNAL_RATE as usize)..]);
         eprintln!("[ran] wrote {}", path.display());
     }
     Some(Switch {
+        before_track,
+        after_track,
         at_switch: before.len(),
         held,
         on_new_bank,
         levels,
     })
+}
+
+/// What every switch must hold: nothing of the old scene reads the new
+/// bank, nothing of it sounds past the 30 ms fade, and the output falls to
+/// silence inside the fade.
+fn assert_clean(m: &Switch, label: &str) {
+    assert!(m.at_switch > 0, "{label}: the old scene was sounding");
+    assert!(
+        m.on_new_bank.iter().all(|&n| n == 0),
+        "{label}: no old voice reads the new bank: {:?}",
+        m.on_new_bank
+    );
+    // By the third frame (50 ms) nothing of the old scene sounds.
+    assert!(
+        m.held[2..].iter().all(|&n| n == 0),
+        "{label}: old voices still sounding: {:?}",
+        m.held
+    );
+    // The fade never rises above the level it starts at, and the 10 ms
+    // window that ends 40 ms after the switch carries nothing of it.
+    let pre = m.levels[..5].iter().cloned().fold(0.0, f64::max);
+    assert!(
+        m.levels[5..8].iter().all(|&l| l <= pre),
+        "{label}: the fade only falls: {:?}",
+        &m.levels[..8]
+    );
+    assert!(
+        m.levels[8] < pre * 0.05,
+        "{label}: silent 30 ms after the switch: {:.0} against {pre:.0}",
+        m.levels[8]
+    );
 }
 
 /// `town01`, `retock` and `rikuroa` start different tracks, each in its own
@@ -223,39 +315,50 @@ fn a_picker_switch_leaves_no_old_voice_sounding() {
         ("town01", "rikuroa"),
         ("town01", "map01"),
     ] {
-        let Some(m) = switch(from, to, 240) else {
+        let Some(m) = switch(from, to, 240, Via::Picker) else {
             eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
             return;
         };
-        assert!(
-            m.at_switch > 0,
-            "{from} -> {to}: the old scene was sounding at the switch"
-        );
-        assert!(
-            m.on_new_bank.iter().all(|&n| n == 0),
-            "{from} -> {to}: no old voice reads the new bank: {:?}",
-            m.on_new_bank
-        );
-        // The fade is 30 ms: by the third frame (50 ms) nothing of the old
-        // scene sounds.
-        assert!(
-            m.held[2..].iter().all(|&n| n == 0),
-            "{from} -> {to}: old voices still sounding: {:?}",
-            m.held
-        );
-        // The output decays to silence inside the fade: the 10 ms window
-        // that ends 40 ms after the switch carries nothing of the old scene,
-        // and the fade itself never rises above the level it starts at.
-        let pre = m.levels[..5].iter().cloned().fold(0.0, f64::max);
-        assert!(
-            m.levels[5..8].iter().all(|&l| l <= pre),
-            "{from} -> {to}: the fade only falls: {:?}",
-            &m.levels[..8]
-        );
-        assert!(
-            m.levels[8] < pre * 0.05,
-            "{from} -> {to}: silent 30 ms after the switch: {:.0} against {pre:.0}",
-            m.levels[8]
-        );
+        assert_clean(&m, &format!("picker {from} -> {to}"));
     }
+}
+
+/// A door with sound-flag bit 2 clear runs the field init's close in
+/// retail's order: the cue voices `0x10..0x17` take volume `0` before their
+/// key-off (`0x801D6BB0..0x801D6BDC`), the score ramps to silence
+/// (`0x801D6AC0`) and is closed (`0x801D7164`), and the next scene's banks
+/// arrive after. Before, the close was a bare key-off at full level and the
+/// next scene's bank landed on the next frame under the release tails.
+#[test]
+fn a_door_closes_the_old_scene_before_the_new_bank_loads() {
+    for (from, to) in [
+        ("retock", "town01"),
+        ("town01", "rikuroa"),
+        ("town01", "retock"),
+        ("retock", "map01"),
+    ] {
+        let Some(m) = switch(from, to, 240, Via::Door) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+            return;
+        };
+        assert_clean(&m, &format!("door {from} -> {to}"));
+    }
+}
+
+/// A door behind sub-op `6` has no close: the init leaves the field-BGM
+/// source sounding (`0x801D6A90`, `0x801D6B94`), so the score the door
+/// brought plays on into the room with its voices untouched.
+#[test]
+fn a_kept_door_plays_the_old_score_on() {
+    let Some(m) = switch("retock", "town01", 240, Via::KeptDoor) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(m.at_switch > 0);
+    assert!(
+        m.held[..10].iter().all(|&n| n > 0),
+        "the old score sounds on: {:?}",
+        m.held
+    );
+    assert_eq!(m.before_track, m.after_track, "the track the door brought");
 }

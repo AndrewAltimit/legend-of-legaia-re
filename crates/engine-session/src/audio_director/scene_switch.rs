@@ -1,6 +1,6 @@
-//! A direct scene switch (the scene picker, a card load, a New Game) on the
-//! director: the outgoing scene's sound fades to silence before the
-//! incoming scene's bank is uploaded.
+//! A scene change on the director - a door's field-init close, or a direct
+//! switch (the scene picker, a card load, a New Game): the outgoing scene's
+//! sound fades to silence before the incoming scene's bank is uploaded.
 //!
 //! The engine's scene load is instant. Without this the old score's notes
 //! and the old scene's cue voices were keyed off at full level, and the
@@ -10,13 +10,17 @@
 //! each release ran. Retail never reaches that state: the field init ramps
 //! the field score down while the next map reads (`FUN_801D6704`,
 //! `0x801D6AC0`, the ramp `FUN_80062004(.., 0x78)`) and keys the cue voices
-//! off (`0x801D6B88`), and the new bank arrives a CD read later.
+//! off with their volume zeroed (`0x801D6BB0..0x801D6BDC`), closes the
+//! source (`0x801D7164`), and the new bank arrives a CD read later.
 //!
-//! So a direct entry starts a short fade of everything sounding
-//! ([`legaia_engine_audio::AudioSink::fade_to_silence`]) and the director
-//! holds the BGM commands the new scene issues until the fade has cut what
-//! was sounding, then replays them in order. A door does not come through
-//! here: its field init keeps the retail order the parity captures pin.
+//! So the field init's close ([`AudioDirector::fade_out_for_field_close`])
+//! and a direct entry ([`AudioDirector::begin_scene_switch`]) start a short
+//! fade of everything sounding
+//! ([`legaia_engine_audio::AudioSink::fade_to_silence`]) - retail's ramp, run
+//! in the time the engine's load does not take - and the director holds the
+//! BGM commands the new scene issues until the fade has cut what was
+//! sounding, then replays them in order. A door behind op-`0x35` sub-op `6`
+//! has no close and takes none of this.
 
 use super::*;
 
@@ -64,6 +68,23 @@ impl<S: AudioSink> AudioDirector<S> {
         self.clear_sfx();
         self.last_started = None;
         self.release_pack_music();
+        self.switch.queued.clear();
+        self.audio.fade_to_silence(SCENE_SWITCH_FADE_SAMPLES);
+        self.switch.active = self.audio.silence_pending();
+        self.switch.frames_left = SCENE_SWITCH_HOLD_MAX_FRAMES;
+    }
+
+    /// The field init's close on a door ([`BgmDirector::close_field_source`]):
+    /// the source is released - pack track, dedupe latch, pause gate - and
+    /// everything sounding fades out and is cut before the next scene's
+    /// bank loads, the same hold a direct entry takes. The cue queue is the
+    /// session's to drop (its after-swap step does, on a door).
+    ///
+    /// PORT: FUN_801D6704 (0x801D6AC0 the decrescendo, 0x801D7164..0x801D716C the close)
+    pub(super) fn fade_out_for_field_close(&mut self) {
+        self.release_pack_music();
+        self.last_started = None;
+        self.audio.set_sequencer_paused(false);
         self.switch.queued.clear();
         self.audio.fade_to_silence(SCENE_SWITCH_FADE_SAMPLES);
         self.switch.active = self.audio.silence_pending();
