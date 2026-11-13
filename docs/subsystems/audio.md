@@ -609,6 +609,40 @@ it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
 Without it the init closed the overworld theme and `son` played `2058`.
 Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
 
+### A direct entry fades the old scene out before the new bank loads
+
+Retail never uploads a scene's bank under a sounding note of the scene before
+it. With bit 2 clear the field init ramps the field score down while the map
+reads (`FUN_80062004(.., 0x78)`, `0x801D6AC0`; on the battle return it takes
+`129` vsyncs, [above](#the-battle-music-timeline)), keys off the cue voices
+`0x10..0x17` (`0x801D6B88`) and closes the source only then; the next bank
+arrives a CD read later. `see ghidra/scripts/funcs/overlay_0897_801d6704.txt`.
+
+The engine's load is instant, so the ramp collapses into the close and the
+next scene's head start uploads its bank on the next frame. A door keeps that
+order. A **direct** entry - the scene picker on both hosts, a card load, a New
+Game, the prologue skip (`BootSession::enter_scene_live` and the page's
+`enter_field`) - has no fade on screen to hide it behind, and measured there
+the old scene's notes kept releasing at full level: a `retock -> town01` pick
+left all fifteen of `retock`'s voices sounding over `town01`'s freshly
+uploaded bank for up to 22 frames, the wrong instruments for the old notes,
+and a `town01 -> rikuroa` pick left `town01`'s ambient loop reading the
+side-band bank `rikuroa` staged in its place.
+
+`AudioDirector::begin_scene_switch` is the direct entry's audio. It fades the
+SPU and the CD input to silence over 30 ms (`AudioSink::fade_to_silence`),
+with the score's clock frozen so it keys nothing new, then cuts what was
+sounding when the fade began - score, voices, reverb tail, CD-XA stream - and
+brings the master back to full. Until the cut the director holds the BGM
+commands the new scene issues, leaves its emitters and directly keyed voices
+queued on the world, keeps the cue scheduler still and defers the side-band
+and shared-region refills; the frame after the cut replays them in order, so
+the new track starts about two frames later than it did. A voice the new
+scene keys during the fade sounds on. Nothing sounding, nothing is held. The
+cap is six audio frames, for a host whose output pulls no samples. Pinned by
+`engine-session/tests/picker_switch_audio_disc.rs` and the page's
+`a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads`.
+
 ### The overworld's story cutscenes are door records too
 
 `map01`'s entry script `P1[0]` tests a run of story flags and spawns one
