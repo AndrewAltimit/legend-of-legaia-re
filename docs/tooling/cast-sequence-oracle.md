@@ -812,6 +812,16 @@ happened.", the engine's stripped the accessory and played the victim's knockdow
 and its three cues. With `--rand-at 0x70:3` both sides miss, the cues score
 `1.000` and the frames `.773` against `.756`.
 
+Aluru's `0x8E` film in [`seru.txt`](../../scripts/ci/film-sets/seru.txt) needs a
+seat of the same kind. Its kill verdict is the second draw of the pass that leaves `0x34`, after the
+frame driver's (two LCG steps between retail's last `0x34` word and its first `0x35`
+one, two on the engine's side too), and retail's `21457 % 15` killed where the engine's
+own stream rolled the damage path, whose four hit cues retail never played: cues `.286`.
+Seated with `--rand-at 0x34:0` (or `--rand-track`, which seats from `0x34` and is what
+the film set carries) both sides kill, the cues score `1.000` and the film
+`.835` to `.864` plain (`.819` to `.849` on retail's steps), the Done band `.489` to
+`.935` and arm 11's ray fans `.531` to `.597`. A harness seat.
+
 A `--rand-at` word deals one pass. An arm that draws on every pass outruns it: PROT
 0935's Earthquake bursts a rock pair a frame off `rand()`, and retail's other passes
 draw tens of times a frame where the engine draws a few, so from the second pair on the
