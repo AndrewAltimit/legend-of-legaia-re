@@ -891,7 +891,11 @@ def run_engine(a, out: Path) -> bool:
                 f[1] = str(a.monster_hp)
             return ":".join(f)
         env["LEGAIA_BATTLE_BARS"] = ",".join(raised(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
-    if a.physical and not (a.rand_at or a.rand_track or a.no_state_rand) and (w := state_rand_word(out)) is not None:
+    # A dealt strike seats the stream on every hit's own word, which is the
+    # finer seat: on top of it the gate's word re-dealt `battle_map02_mad_ogre_strike`'s
+    # verdicts onto the other swing (cues matched 4 -> 2 of 8).
+    if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
+            and (w := state_rand_word(out)) is not None):
         env["LEGAIA_FILM_RAND"] = str(w)
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
@@ -1119,7 +1123,7 @@ def main() -> int:
                          "default: the recording's guard=, retail's +0x1DE == 4 at cast begin)")
     ap.add_argument("--no-state-rand", action="store_true",
                     help="--physical: leave the world rand() stream on the replay's own draws at the gate "
-                         "(default: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
+                         "(default without --strike-deal: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
