@@ -162,6 +162,10 @@ pub struct EngineAudio {
     /// `(sfx, bgm)` sounding-voice counts of the last [`LISTEN_SPAN`] ticks.
     #[serde(skip)]
     recent: Vec<(u32, u32)>,
+    /// The sequence volume after the last tick's frame body, ahead of the
+    /// vsync's mix ([`listen_frame`]).
+    #[serde(skip)]
+    vol_before_calc: Option<u8>,
     /// Ring ids to key once the seed has settled, and what each keyed
     /// ([`crate::cue_differential`]).
     #[serde(skip)]
@@ -385,6 +389,10 @@ pub fn listen_frame<S: AudioSink>(session: &mut BootSession<S>, obs: &mut Engine
     let Some(d) = session.bgm.as_ref() else {
         return;
     };
+    // A state is saved at a vblank, after the frame body and before the
+    // interrupt's `SsSeqCalc`: a volume slide in flight reads there, one
+    // calc short of the mix below.
+    obs.vol_before_calc = d.audio().sequencer_progress().map(|p| p.master_vol);
     d.audio().with_core(|core| {
         for _ in 0..FRAMES_PER_TICK {
             core.next_frame();
@@ -416,7 +424,7 @@ pub fn finish_listen<S: AudioSink>(session: &BootSession<S>, obs: &mut EngineAud
     let prog = d.audio().sequencer_progress();
     obs.track = prog.is_some().then_some(d.last_started).flatten();
     obs.playing = d.is_playing();
-    obs.seq_vol = prog.map(|p| p.master_vol);
+    obs.seq_vol = prog.and(obs.vol_before_calc);
     obs.tempo_bpm = prog.map(|p| p.bpm);
 }
 
