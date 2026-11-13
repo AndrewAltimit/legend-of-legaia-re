@@ -3028,6 +3028,20 @@ not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
 `image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
 on the table, `.950` on this walk; a sweep of the walk back peaks there.
 
+<a id="a-drifting-arm-walks-back-on-its-drift"></a>
+An arm that writes the camera globals itself on every pass walks back on that
+drift, not on the table (`displayed_module_drift_live`). Genocidal Cannon's
+arm 1 (PROT 0963, `0x801F6C34..0x801F6C8C`) takes `step << 8` off TR z and
+`step << 3` off the pitch and adds `step << 4` to TR y every pass, off arm 0's
+one-frame cut; the table the RAM holds is that cut, whose increments are its
+whole gap, and walked back on them the displayed TR z stood at `-136662`, a
+frame of nothing but the HUD. `battle_noaru_songi_genocidal_cannon_mid_cast`
+reads `image` `.187` on the table and `.971` on the drift (a harness seat).
+The drift is read off the body's camera director on a held pass, and only
+where no component it moves sits more than one increment off its endpoint:
+Glare's arm 1 (PROT 0940) drifts while arm 0's twelve-frame shot still walks,
+and stays on the table.
+
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
 delta` a pass, the director's own unit) and PROT 0965's `0x801F8370`, which

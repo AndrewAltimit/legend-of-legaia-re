@@ -1022,7 +1022,9 @@ impl RetailBattle {
             let unarmed_setup = game_anchors::u8_at(ram, ctx + 6) == 0xFF
                 && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
-                if action_state == CAPTURE_FADE_STATE {
+                if let Some(p) = displayed_module_drift_live(ram, ctx, action_state, steps) {
+                    p
+                } else if action_state == CAPTURE_FADE_STATE {
                     displayed_cam_live_steps(
                         ram,
                         ctx,

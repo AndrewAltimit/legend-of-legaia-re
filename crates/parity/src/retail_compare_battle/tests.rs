@@ -1048,6 +1048,40 @@ fn a_charge_body_shot_walks_back_no_further_than_its_origin() {
     assert_eq!(shown.yaw, 2366.0 - 4.0 * 99.0);
 }
 
+/// Genocidal Cannon's arm 1 (PROT 0963) drifts the camera globals every pass
+/// off arm 0's one-frame cut: `battle_noaru_songi_genocidal_cannon_mid_cast`
+/// holds pitch `-160`, TR y `320`, TR z `26880` on the cut's `32000`, and the
+/// frame on screen stood the drift times the vsyncs back. A table still
+/// walking under the drift (a gap past one increment) is left to the table.
+#[test]
+fn a_drifting_capture_arm_walks_back_on_its_drift() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let songi = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x279, 1);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, songi);
+    put8(&mut ram, songi + 0x1DF, 0xB3);
+    put16(&mut ram, 0x8007_B790, (-160i16) as u16);
+    put32(&mut ram, 0x8008_40BC, 320);
+    put32(&mut ram, 0x8008_40C0, 26880);
+    // The cut's table: TR z `32000` reached in one frame from `6000`.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 26000);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 32000);
+    let shown = displayed_module_drift_live(&ram, ctx, 0x70, &[4, 2]).expect("drift arm");
+    assert_eq!(shown.tr[2], 26880.0 + 6.0 * 256.0);
+    assert_eq!(shown.tr[1], 320.0 - 6.0 * 16.0);
+    assert_eq!(shown.pitch, 4096.0 - 160.0 + 6.0 * 8.0);
+    // A shot still walking under the drift is the table's.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 400);
+    assert!(displayed_module_drift_live(&ram, ctx, 0x70, &[4, 2]).is_none());
+    // Off the capture band nothing drifts.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 26000);
+    assert!(displayed_module_drift_live(&ram, ctx, 0x6F, &[4, 2]).is_none());
+}
+
 /// Kiss of Death's arm-0 shot (PROT 0955, `0xC` frames) sets out from the
 /// magic-capture fade, which was still walking: the pass that armed it walked
 /// its own two units, and the pass before stood a further step on the fade's
