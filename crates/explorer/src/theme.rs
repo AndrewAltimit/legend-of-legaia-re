@@ -47,6 +47,13 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     // 1.1:1 (light) or 1.3:1 (dark) against the panel - an unticked box all
     // but disappears - and a text field is a borderless strip.
     v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, c(p.outline));
+    // egui draws the control with keyboard focus (a controller's too: its
+    // buttons arrive as keys) in the `active` style, the one a held button
+    // takes. Its fill is the pressed gold, which beside a selected tab or
+    // row (gold as well) made the focus read as a second selection, and on
+    // the selected row itself showed nothing at all: a ring in a hue no
+    // fill uses tells the two apart.
+    v.widgets.active.bg_stroke = Stroke::new(FOCUS_RING_WIDTH, c(p.focus));
     // egui's own error red is pure #FF0000 in both themes: 3.9:1 on the
     // light panel, and harsher than every other colour on the dark one.
     v.error_fg_color = c(p.error);
@@ -64,6 +71,10 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     v.widgets.open.weak_bg_fill = c(p.open);
     v.warn_fg_color = c(p.warn);
 }
+
+/// The focus ring's width in points: wider than a resting control's 1 pt
+/// edge, so the ring reads at a glance across the room from a controller.
+pub const FOCUS_RING_WIDTH: f32 = 2.0;
 
 /// The palette for the current visuals.
 pub fn palette(ui: &egui::Ui) -> &'static Palette {
@@ -122,6 +133,23 @@ mod tests {
                     text.contrast(got)
                 );
             }
+        }
+    }
+
+    /// The focused control carries the palette's focus ring, which is not
+    /// the selection's gold: a focused tab beside the selected one, or the
+    /// focused row that is also the selected one, shows where focus is.
+    #[test]
+    fn keyboard_focus_rings_in_a_hue_apart_from_the_selection() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        for (theme, p) in [(egui::Theme::Dark, &DARK), (egui::Theme::Light, &LIGHT)] {
+            let v = ctx.style_of(theme).visuals.clone();
+            let ring = v.widgets.active.bg_stroke;
+            assert_eq!(Rgb(ring.color.r(), ring.color.g(), ring.color.b()), p.focus);
+            assert!(ring.width > v.widgets.inactive.bg_stroke.width, "{theme:?}");
+            assert_ne!(ring.color, v.selection.stroke.color, "{theme:?}");
+            assert_ne!(ring.color, v.selection.bg_fill, "{theme:?}");
         }
     }
 

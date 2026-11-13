@@ -253,6 +253,24 @@ impl RetailBattle {
     /// The image child then retakes across the state's entry
     /// ([`Self::retake_across_band_entry`]). `battle_jou_party_wipe_results_retail`
     /// holds `3` against a lag of `6`.
+    /// The span gate on the engine's clock. A results gate's hold is
+    /// retail's `gp+0xA54`, which the results frame zeroes and then advances
+    /// by its own pass's vsync delta (`0x8004F738..0x8004F76C`): the results
+    /// pass already reads the frame step. The engine's sequence opens the
+    /// results at hold `0` and counts a vsync a tick after it, so retail's
+    /// hold `h` is the engine's `h - step`, and the results pass itself the
+    /// engine's opening tick (`battle_jou_gala_finisher_results_retail`, hold
+    /// `3` at step `3`: the RAM's camera still on the load window's
+    /// stand-off). A harness mapping; every other gate passes through.
+    pub fn engine_span_gate(&self) -> SpanGate {
+        match self.span_gate {
+            SpanGate::Results { hold } => SpanGate::Results {
+                hold: hold.saturating_sub(u16::from(self.frame_step.max(1))),
+            },
+            g => g,
+        }
+    }
+
     pub fn results_opened_inside_lag(&self) -> bool {
         matches!(self.span_gate, SpanGate::Results { hold } if hold < self.display_lag)
     }
@@ -1252,8 +1270,13 @@ impl RetailBattle {
             // there runs its own countdown and stages no clip on either seat,
             // so that cursor is time since the loop began -
             // `zeto_big_wave_mid_cast`'s caster idles through PROT 0946's band
-            // in a close-up the loop's sway fills. Elsewhere an idle seat in
-            // flight may have just come off the action's own clip.
+            // in a close-up the loop's sway fills. The band's entry `0x6E`
+            // too: a caster still idling there has staged nothing since the
+            // seed, and the replay's loop runs on the phase battle setup
+            // left it, which a pinned replay does not share with retail
+            // (`nivora_duel_mid_blazing_slash`'s Gala, `.985` to `.996`).
+            // Elsewhere an idle seat in flight may have just come off the
+            // action's own clip.
             //
             // So is a party target already on its reaction (the
             // `+0x1EF..+0x1F3` family `2, 3, 4, 5, 0x0B`): the reaction
@@ -1287,7 +1310,7 @@ impl RetailBattle {
                 let in_flight = !matches!(self.action_state, 0 | 0x0A | 0x0B | 0xFD | 0xFF)
                     && staged
                     && !(0x50..=0x5A).contains(&self.action_state);
-                let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
+                let capture_band_idle = clip == 0 && (0x6E..=0x71).contains(&self.action_state);
                 // So is a seat idling through a summon's invoke and freeze
                 // (`0x32..=0x34`): the band stages no clip on the victim
                 // before the module's hit, so its idle cursor is time since
@@ -1861,7 +1884,7 @@ impl RetailBattle {
                     || !self.party_wipe_victims().is_empty()
                     || self.party_spirit_round(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
-                end: self.span_gate,
+                end: self.engine_span_gate(),
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     prior: self.prior_framing,
@@ -2317,11 +2340,13 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         // One `0x2B` pass in on a step that has just gone to `4`. The seed's
         // arm read the caster's old heading, which took the yaw down from the
-        // Spirit's framing rather than up across the wrap.
+        // Spirit's framing rather than up across the wrap. That Spirit framed
+        // on style `2`: off the plain start the walk ends at pitch `0` and the
+        // whole 3D layer reads a pixel right and two down of retail's.
         "battle_kor_gaza_166_astral_wave_mid_cast",
         DisplayedWalkPin {
-            style: 0,
-            yaw: Some(440),
+            style: 2,
+            yaw: Some(438),
         },
     ),
     (

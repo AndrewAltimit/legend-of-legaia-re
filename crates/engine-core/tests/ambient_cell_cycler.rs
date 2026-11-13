@@ -109,3 +109,64 @@ fn the_capture_phase_relation_holds() {
     }
     assert!(matched >= 3, "the capture phase recurs every four ticks");
 }
+
+/// Op `0x30` hands the capture back: `FUN_800583C8(actor + 0xA0, buf)`
+/// (`jal` at `0x80023B04` in `FUN_80023070`) uploads the op-`0x2C` buffer
+/// over the cell and the VM clears `+0x9C`. A part that recolours its cell,
+/// runs `0x30` and lives on leaves the cell reading what it captured, not
+/// its last recolour, through the VRAM pass both hosts run
+/// (`World::step_ambient_fx`).
+#[test]
+fn op_0x30_writes_the_capture_back_over_the_recolour() {
+    let mut world = World::new();
+    let words: [u16; 16] = [
+        0x2C, 16, 507, 16, 1, // capture the cell
+        0x2E, 0, 0, 0xFFF8, // V velocity -64
+        0x09, 12,   // wait a few ticks while the cell darkens
+        0x30, // hand the capture back
+        0x1A, 0x4000, 0x09, 0x7FF, // then idle, still alive
+    ];
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&RENDER_NODE_MODE_A.to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    for w in words.iter().chain(&[0x1B]) {
+        bytes.extend_from_slice(&w.to_le_bytes());
+    }
+    world.props.stager_bytes = bytes.clone();
+    world.props.stagers = vec![SummonPart {
+        record_off: 0,
+        model_sel: RENDER_NODE_MODE_A,
+        reserved: 0,
+        bytecode: 4..bytes.len(),
+    }];
+    world.clock.frame_step = 3;
+    let mut vram = psx_tim::Vram::new();
+    let cell: Vec<u16> = (0..16u16).map(|i| 0x4210 + i * 0x21).collect();
+    let row: Vec<u8> = cell.iter().flat_map(|t| t.to_le_bytes()).collect();
+    vram.write_block(16, 507, 16, 1, &row);
+    let read =
+        |vram: &psx_tim::Vram| -> Vec<u16> { (16..32).map(|x| vram.pixel(x, 507)).collect() };
+    assert!(world.spawn_ambient_record(0, [0, 0, 0]));
+    let mut recoloured = false;
+    let mut restored_at = None;
+    for t in 0..24 {
+        world.ambient.pending_game_ticks = 1;
+        world.step_ambient_fx(&mut vram);
+        if read(&vram) != cell {
+            recoloured = true;
+        } else if recoloured && restored_at.is_none() {
+            restored_at = Some(t);
+        }
+    }
+    assert!(recoloured, "the cycler darkened the cell before op 0x30");
+    assert!(
+        restored_at.is_some(),
+        "op 0x30 put the captured texels back"
+    );
+    assert_eq!(read(&vram), cell, "and the cell stays as captured");
+    assert!(
+        !world.ambient.fx[0].finished,
+        "the part lives on past op 0x30"
+    );
+    assert_eq!(world.ambient.fx[0].state.field_9c, 0);
+}

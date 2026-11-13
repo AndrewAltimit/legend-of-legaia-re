@@ -38,8 +38,11 @@ pub enum PsxTexelRule {
     PcsxRedux,
 }
 
-/// How far back a persisting frame reads: two pages at frame step `4`.
-const FRAME_PERSIST_VSYNCS: usize = 8;
+use legaia_render_kernels::frame_persist::{self, FRAME_RING_SLOTS};
+
+/// How far back a persisting frame reads by default: two pages at frame step
+/// `4` ([`Renderer::set_frame_persist_depth`]).
+pub(crate) const FRAME_PERSIST_VSYNCS: usize = frame_persist::DEFAULT_PERSIST_VSYNCS;
 
 fn copy_frame(
     enc: &mut wgpu::CommandEncoder,
@@ -204,6 +207,9 @@ impl Renderer {
     /// [`FRAME_PERSIST_VSYNCS`] back: built on the last frame, an additive layer
     /// fills the buffer eight times too fast.
     ///
+    /// The depth is two battle frames' worth of vsyncs, which a host passes
+    /// ([`Self::set_frame_persist_depth`]).
+    ///
     /// A ring kept since before the run ([`Self::set_frame_ring_keep`]) already
     /// holds the frames it reads; otherwise the run starts on copies of the
     /// last frame.
@@ -212,6 +218,18 @@ impl Renderer {
         if on && !was && !self.frame_ring_keep.get() && self.psx_mode.get() {
             self.seed_frame_ring();
         }
+    }
+
+    /// How many presented frames back a persisting frame reads: retail's same
+    /// page two battle frames back, so twice the span of the frame the engine
+    /// runs. A frame that overruns its step (a pass under a streaming clip
+    /// runs one vsync past it) spans more vsyncs, and read at the step's eight
+    /// a frame built on a page one frame newer than retail's: Genocidal
+    /// Cannon's arm 6 decays its white a frame ahead at span `5`. Clamped to
+    /// the ring.
+    pub fn set_frame_persist_depth(&self, vsyncs: u64) {
+        self.frame_persist_depth
+            .set(frame_persist::persist_depth(vsyncs));
     }
 
     /// Keep every presented frame in the ring while `keep` holds, persisting
@@ -237,7 +255,7 @@ impl Renderer {
         };
         let mut ring = self.frame_ring.borrow_mut();
         if ring.is_empty() {
-            *ring = (0..FRAME_PERSIST_VSYNCS)
+            *ring = (0..FRAME_RING_SLOTS)
                 .map(|_| {
                     self.device.create_texture(&wgpu::TextureDescriptor {
                         label: Some("frame persist ring"),
@@ -267,13 +285,20 @@ impl Renderer {
         self.queue.submit(std::iter::once(enc.finish()));
     }
 
-    /// The frame a persisting frame builds on, loaded into `dest`.
+    /// The frame a persisting frame builds on, the one
+    /// [`Self::set_frame_persist_depth`] presented frames back, loaded into
+    /// `dest`.
     pub(super) fn load_persisted_frame(&self, dest: &wgpu::Texture) {
         let Some(native) = &self.native else {
             return;
         };
         let ring = self.frame_ring.borrow();
-        let Some(oldest) = ring.get(self.frame_ring_next.get()) else {
+        let Some(oldest) = frame_persist::ring_read_slot(
+            self.frame_ring_next.get(),
+            ring.len(),
+            self.frame_persist_depth.get(),
+        )
+        .and_then(|i| ring.get(i)) else {
             return;
         };
         let mut enc = self

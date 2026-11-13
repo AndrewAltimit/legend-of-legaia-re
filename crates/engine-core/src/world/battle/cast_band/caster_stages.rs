@@ -208,9 +208,15 @@ impl World {
                 // `FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`,
                 // arm 5's at `0x801F7A40`), whose particles draw their own
                 // jitter off the stream. The module tick runs ahead of the
-                // frame's pool walker, so the puff takes the sweeps this
-                // tick's walker already gave the rest.
-                let owed = self.battle.anim_pass_vsyncs;
+                // frame's pool walker, which on the battle frame cadence
+                // walks from the draw preamble behind it; off that cadence
+                // the walker has run, so the puff takes the sweeps it
+                // already gave the rest.
+                let owed = if self.toggles.battle_sm_frame_cadence {
+                    0
+                } else {
+                    self.battle.anim_pass_vsyncs
+                };
                 self.spawn_effect_caught_up(ROCK_PUFF_EFFECT, [x, 0, z], yaw as u16, owed);
             }
             if let Some((records, rot)) = self.casting.module_ring.take() {

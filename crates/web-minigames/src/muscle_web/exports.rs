@@ -500,11 +500,13 @@ impl LegaiaMinigames {
         )
     }
 
-    /// One hub screen's retail fade / hold envelope, sampled at `tick`
-    /// ticks in with `pad` as the arm's edge word - the browser twin of the
-    /// native window's `tick_muscle_hub`, over the same
-    /// [`legaia_engine_minigames::muscle_dome::HubScreen`] kernel, so neither host
-    /// can pick a frame count of its own.
+    /// One hub screen's retail fade / hold envelope, sampled at the screen's
+    /// `vsync`-th vsync with `pad` as the arm's edge word - the browser twin
+    /// of the native window's `tick_muscle_hub`, over the same
+    /// [`legaia_engine_minigames::muscle_dome::HubScreen`] kernel and on the
+    /// same cadence ([`legaia_engine_minigames::muscle_ringside::HubCadence`]:
+    /// a game tick every second vsync on a step of two, the first on vsync
+    /// `1`), so neither host can pick a frame count or a frame rate of its own.
     ///
     /// `screen`: 0 = intro card, 1 = ROUND banner, 2 = opponent / ROUND-n
     /// card, 3 = the between-legs INTERVAL + tally. Returns
@@ -512,8 +514,9 @@ impl LegaiaMinigames {
     /// argument [`Self::muscle_hub_quads_json`] wants (`0 ..= 0x80`; `0x80`
     /// is the emitter's neutral, **not** `0x100`), `stage` is
     /// `0` fade-in / `1` hold / `2` fade-out / `3` done, and `total` is the
-    /// screen's unskipped length in ticks.
-    pub fn muscle_hub_screen_json(&self, screen: u32, tick: i32, pad: u32) -> String {
+    /// vsync the unskipped screen reads done on.
+    pub fn muscle_hub_screen_json(&self, screen: u32, vsync: i32, pad: u32) -> String {
+        use legaia_engine_minigames::muscle_ringside::{HUB_FRAME_STEP, HubCadence};
         let mut env = match screen {
             0 => legaia_engine_minigames::muscle_dome::HubScreen::intro_card(),
             1 => legaia_engine_minigames::muscle_dome::HubScreen::round_banner(),
@@ -525,12 +528,22 @@ impl LegaiaMinigames {
                         .unwrap_or(&0) as i32,
             ),
         };
-        let total = env.total_ticks();
-        // The envelope is monotone and terminates, so a tick past its total
+        // The screen's length on the cadence: the vsync of the game tick
+        // that finishes it.
+        let total = {
+            let mut probe = env;
+            let mut ticks = 0;
+            while !probe.done() && ticks < 1 << 14 {
+                probe.tick(HUB_FRAME_STEP, 0);
+                ticks += 1;
+            }
+            HubCadence::vsync_of_tick(ticks)
+        };
+        // The envelope is monotone and terminates, so a vsync past its total
         // answers the same as the total - clamp rather than replay a page's
         // unbounded counter.
-        for _ in 0..tick.clamp(0, total) {
-            env.tick(1, pad as u16);
+        for _ in 0..HubCadence::ticks_through(vsync.clamp(0, total)) {
+            env.tick(HUB_FRAME_STEP, pad as u16);
         }
         let stage = match env.stage() {
             legaia_engine_minigames::muscle_dome::HubScreenStage::FadeIn => 0,

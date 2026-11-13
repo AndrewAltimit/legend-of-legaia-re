@@ -6,12 +6,12 @@
 //! the font fallback before the atlas exists) are the functions here, so
 //! the two cannot seat or draw the same number differently.
 
-use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup};
+use legaia_engine_battle::battle_hud_state::BattleHud;
 use legaia_engine_battle_vm::battle_value_readout as vr;
 use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
 
-/// One frame's readout: the combo cluster, and one run of digit cells per
+/// One frame's readout: the combo cluster, and one run of digit cells per live
 /// struck actor.
 pub type ValueReadoutLayout = (Option<vr::ComboCluster>, Vec<Vec<vr::ValueCell>>);
 
@@ -24,12 +24,18 @@ pub type ValueReadoutLayout = (Option<vr::ComboCluster>, Vec<Vec<vr::ValueCell>>
 /// tail-fire display lists pin, sliding in with placement record 80's glide
 /// (`vr::combo_slide`).
 ///
-/// Only the newest popup per actor contributes. Retail's readout is a
-/// per-slot **value window** (`_DAT_801F6980`, four halfwords, one per slot),
-/// so a second hit on the same actor replaces the figure rather than stacking
-/// beside it - and stacking is not cosmetic here: two runs centred on the
-/// same point interleave into an unreadable third number (a 9 landing inside
-/// a 10 reads as "190"). Status applications have no numeral on the sheet.
+/// Every live ring entry contributes a run, several on one actor among them.
+/// Retail's renderer `FUN_801DF6B8` walks all eight ring slots from the
+/// write cursor (`0x801DF700..0x801DF714`, closing at `0x801DFDB8`) and draws
+/// each non-zero value on its own timer, so a combo's numerals stand stacked
+/// up the struck actor, each risen by its own age: a `--popup-trace`
+/// recording of Mush Mush's four-hit Running Kick on Gala draws four
+/// numerals at once (timers `576`, `448`, `320`, `64`). The runs go out in
+/// the ring's order, oldest first: each `AddPrim` prepends to bucket `1`, so
+/// retail draws the newest first and the oldest over it, which the screen
+/// list's descending tie order reproduces
+/// ([`BattleHud::popups_in_ring_order`]). Status applications have no
+/// numeral on the sheet.
 ///
 /// Each run is seated the way retail's renderer `FUN_801DF6B8` seats it: a
 /// view-space square over the struck actor's display trio, rising and growing
@@ -72,19 +78,12 @@ pub fn battle_value_readout_layout_with(
             .filter(|c| !c.hidden)
             .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide())),
     };
-    let mut newest: Vec<&DamagePopup> = Vec::new();
-    for p in &hud.popups {
-        if p.status.is_some() {
-            continue;
-        }
-        match newest.iter_mut().find(|q| q.slot == p.slot) {
-            Some(q) if q.frames_remaining >= p.frames_remaining => {}
-            Some(q) => *q = p,
-            None => newest.push(p),
-        }
-    }
     let mut runs = Vec::new();
-    for p in newest {
+    for p in hud
+        .popups_in_ring_order()
+        .into_iter()
+        .filter(|p| p.status.is_none())
+    {
         // The timer the renderer's last draw stepped, once a battle frame
         // (`DamagePopup::step_timer`); a numeral no draw has reached yet
         // stands nowhere.

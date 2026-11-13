@@ -633,4 +633,63 @@ mod tests {
             assert_eq!((dl, dr), (((sl as i32 + sr as i32) / 2) as i16, dl));
         }
     }
+
+    /// A scene switch's fade ([`AudioSink::fade_to_silence`]) takes a held
+    /// note down to nothing inside its window and cuts it there - score
+    /// dropped, voice stopped, reverb tank empty - while a voice keyed
+    /// after the fade began (the next scene's) sounds on.
+    #[test]
+    fn the_switch_fade_falls_to_silence_and_cuts_what_was_sounding() {
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let bank = sink.with_spu(held_tone_bank);
+        sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
+        let live = sink.render_frames(4_410);
+        assert!(live.peak > 64, "the fixture sounds: {live:?}");
+
+        const FADE: u32 = 1_323;
+        sink.fade_to_silence(FADE);
+        assert!(sink.silence_pending());
+        // The next scene keys a voice of its own while the fade runs.
+        let fresh = sink.with_spu(|spu| {
+            let (i, _) = spu
+                .voices
+                .iter()
+                .enumerate()
+                .find(|(_, v)| v.is_off())
+                .expect("a free voice");
+            spu.voices[i] = spu.voices[0].clone();
+            spu.voices[i].key_on(&spu.ram);
+            i
+        });
+        let quarter = FADE as usize / 4;
+        let first = sink.render_frames(quarter);
+        let _ = sink.render_frames(quarter * 2);
+        let last = sink.render_frames(quarter);
+        assert!(
+            last.mean_abs() < first.mean_abs() * 0.5,
+            "the fade falls: {:.1} -> {:.1}",
+            first.mean_abs(),
+            last.mean_abs()
+        );
+        let _ = sink.render_frames(64);
+        assert!(!sink.silence_pending(), "the fade ends");
+        assert!(sink.sequencer_progress().is_none(), "the score is dropped");
+        sink.with_spu(|spu| {
+            for (i, v) in spu.voices.iter().enumerate() {
+                assert_eq!(
+                    v.is_off(),
+                    i != fresh,
+                    "voice {i}: only the voice keyed after the fade sounds"
+                );
+            }
+        });
+    }
+
+    /// Nothing sounding, the switch fade is immediate: no hold to wait on.
+    #[test]
+    fn the_switch_fade_over_silence_is_immediate() {
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        sink.fade_to_silence(1_323);
+        assert!(!sink.silence_pending());
+    }
 }

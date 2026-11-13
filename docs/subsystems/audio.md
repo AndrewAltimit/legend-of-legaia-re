@@ -609,6 +609,51 @@ it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
 Without it the init closed the overworld theme and `son` played `2058`.
 Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
 
+### A scene change closes the old scene before the new bank loads
+
+Retail never uploads a scene's bank under a sounding note of the scene before
+it. With bit 2 clear (and no warp entry) the field init `FUN_801D6704` does,
+in this order:
+
+| Address | Call | Effect |
+|---|---|---|
+| `0x801D6AC0` | `FUN_80062004(source, level, 0x78)` | a decrescendo: `FUN_80061EDC` clamps the amount to the sequence's current level and raises its flag `0x20`, so the field score ramps to silence over `0x78` ticks while the map reads (`FUN_8001F7C0` at `0x801D6AE8`) |
+| `0x801D6BB0..0x801D6BDC` | `FUN_800657D0(v, 0, 0)` then `FUN_800653C8(v)`, `v = 0x10..0x17` | each cue voice's shadow volume is written `0` (flags `\| 3`) before its key-off, so its release is unheard |
+| `0x801D7164..0x801D716C` | `FUN_800266E0` + `FUN_80026520` on `0x8007052C` | the source is detached and closed, its notes killed at the level the ramp left |
+| later | the poller, op-`0x36` sub `1` | the next track's bank and the side-band bank arrive a CD read on |
+
+`see ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the complete dump), `80062004.txt`,
+`80061edc.txt`, `800657d0.txt`. On the battle return the ramp measures `129`
+vsyncs ([above](#the-battle-music-timeline)).
+
+The engine's load is instant. Its close used to be a bare key-off of the score
+and of voices `0x10..0x17` at full level, and the next scene's head start
+uploaded its bank on the next frame under the release tails. A door
+`retock -> town01` left eight of `retock`'s voices reading `town01`'s freshly
+uploaded bank from the frame after the change, the last for 22 frames; a pick
+`retock -> town01` left all fifteen, and `town01 -> rikuroa` left `town01`'s
+ambient loop reading the side-band bank `rikuroa` staged in its place.
+
+Both kinds of scene change now take retail's order. The field init's voice
+teardown mutes before it keys off (`World::take_sfx_voice_mutes`,
+`AudioDirector::mute_sfx_voices`), and its close
+(`BgmDirector::close_field_source`) runs the ramp as a 30 ms fade of the SPU
+and the CD input (`AudioSink::fade_to_silence`), the score's clock frozen, then
+cuts what was sounding when it began - score, voices, reverb tail, CD-XA
+stream, which the map read would have taken the drive from - and brings the
+master back to full. Until the cut the director holds the BGM commands the new
+scene issues, leaves its emitters and directly keyed voices queued on the
+world, keeps the cue scheduler still and defers the side-band and
+shared-region refills; the frame after the cut replays them in order, so the
+new track starts about two frames later than it did. A **direct** entry (the
+scene picker on both hosts, a card load, a New Game, the prologue skip:
+`AudioDirector::begin_scene_switch`) takes the same fade and drops the cue
+queue too. A voice the new scene keys during the fade sounds on; nothing
+sounding, nothing is held; the cap is six audio frames, for a host whose output
+pulls no samples. A door behind sub-op 6 has no close and is untouched. Pinned
+by `engine-session/tests/picker_switch_audio_disc.rs` and the page's
+`a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads`.
+
 ### The overworld's story cutscenes are door records too
 
 `map01`'s entry script `P1[0]` tests a run of story flags and spawns one
@@ -965,6 +1010,30 @@ slot's sequence handle (`lh 0x536` = slot `+0xA`), the audio level
 `_DAT_8007B910` halved (`sll 15` / `sra 16`) and `deadline | 1` to
 `FUN_80062004` (`0x800267E4`), the `SsSeqSetVol`-ramp shim. So sub-op `5`
 fades the slot's occupant over the deadline and then stops it.
+
+The ramp is a libsnd decrescendo. `FUN_80061EDC` clamps the amount to the
+sequence's live volume (`0x80061F3C..0x80061F5C`), arms the slide through
+`FUN_8006206C` and raises flag `0x20`; the installer stores the amount as the
+slide's span and level counter and the tick count as its total and remaining
+count, and picks the rate by which is larger: one unit every
+`ticks / amount` calcs, or `amount / ticks` units a calc. Every vsync's
+`SsSeqCalc` then runs the descending slide `FUN_8006352C`, whose each move is a
+sequence-volume set that re-volumes the held notes. At the cold level the
+amount is `107`, the whole volume, so a release of `60` (`61` ticks) takes the
+score down one unit a vsync and the expiry cuts it under `50`; a release of `106`
+or more steps one unit every one or more vsyncs and reaches `1`, the slide's
+last unit being the level counter's zero, which moves nothing. The retail
+state `nilboa_delilas_family_pose`, inside `nilboa` `P2[7]`'s `9 (2028) · 5
+(60) · 0xA`, holds `2032` at `83` with flag `0x20` up: twenty-four calcs in.
+
+The port runs the same slide on the sequencer's own record
+(`legaia_engine_audio::seq_calc::set_decrescendo`, ticked by
+`Sequencer::tick_vol_slide` at each flush behind the pump): the field VM's
+sub-op `5` reaches the director as `BgmDirector::timed_release_fade`, with the
+live level halved and the deadline's low bit raised
+(`scene_host::timed_release_fade_args`), on the field-BGM source only (the
+ending theme on source `10` is not the slot the arm names). The installer and
+the setter are checked against retail in `retail-exec/tests/seq_calc.rs`.
 
 Which track that is depends on the swap window. A cutscene's commonest
 music change is `9 · 5 · 0xA`: sub-op `9` raises sound-flag bit 0, the poller
@@ -3468,6 +3537,12 @@ the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-s
 `map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
 the card-load seed has no arrival through a partition-1 beat.
 
+The engine's sequence volume is read where a state is saved: at the vblank, after the frame
+body and before that vsync's `SsSeqCalc`, so the listener takes it ahead of the tick's mix.
+A ramp reads one calc apart on the two sides of that order; `nilboa_delilas_family_pose`,
+captured inside a [timed release's](#the-timed-release-is-a-scheduled-bgm-pause) fade, reads
+`83` on both, where the reading after the mix is `82`.
+
 The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
 emulator's `ENVX`, and its SPU runs on the host's audio clock
 ([above](#the-envelope-channel-is-not-on-emulated-time)), so a one-shot can read as still
@@ -3677,6 +3752,25 @@ track's lag, at an offset fitted and reported, because the gate tick stands near
 and not on its sample; the score is over the cast's own span. `--per-second` prints level and
 correlation second by second.
 
+<a id="the-cast-channel-seats-the-scores-held-notes"></a>
+**The cast channel seats the score's held notes.** The track render reaches the state's instant by
+playing the score from its top, and a note it keyed long before can stand in the block the state's
+voice stands in yet not at the state's phase within it. On a long looped tone a fraction of a block
+is a phase shift for as long as the note holds, and a low tone's waveform dominates the window
+correlation. `theeder_summon_mid_cast` holds three voices of one pad tone (ADSR `DFE9A7D7`, pitches
+`0x1A2`, `0x272`, `0x3AB`) through the whole cast: over the first `0.4` s the state's own SPU resumed
+with its sequences silenced reads `0.92` against the recording, and the replay `0.40`, with every
+replay voice on the block the state's voice reads, the same bank at a base `0xF010` bytes lower.
+Per octave band the two sides' levels agree within `0.5` dB while the coherence below `250` Hz
+falls to `0.3`..`0.6`, the signature of a phase and not of a level or a note. The `cast` and
+`cast_steps` channels now seat every sounding voice of the replay on the state's voice of the same
+tone and pitch, at the track's lag (`pcm_retail::reseat_sounding_voices`, `Voice::take_position_from`):
+the decoder, the pitch counter and the envelope move, while the registers and the note's owner stay
+the replay's, so its note-offs still find it. Theeder's `cast` row reads `0.954` where it read
+`0.712`, its seconds `1..13` `0.82..0.99` where they read `0.52..0.98`; every other cast row holds
+within `0.0005`. Harness-only: the replay is the oracle's reconstruction of the state, not the engine's
+battle. Why the replay's held pad stands off the state's phase is not established.
+
 <a id="the-cast-offset-reaches-a-frame-step"></a>
 **The cast offset reaches a frame step.** The gate is a game-frame boundary, and a fight on a frame
 step of `2` or `3` vsyncs puts the state's instant up to that far from the nearest one. Fitted as one
@@ -3751,7 +3845,7 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.995` | `+0.00` dB | `-1070` | the cast fits `1.45` vsyncs before its gate ([a frame step](#the-cast-offset-reaches-a-frame-step)) |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-1910` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice `XA22` channel `5` lands within `32` ms of retail's; the cast fits `1.89` vsyncs before its gate, past the one-vsync reach that read as the ring's cues |
-| `theeder_summon_mid_cast` | `0.712` | `+0.47` dB | `-298` | the cast ends with retail's now, `17` s in, so the score is over those seconds alone; the band runs on its arm table, which the seed's `0x33` step had held off; the voice `10` vsyncs after mednafen's, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
+| `theeder_summon_mid_cast` | `0.954` | `+0.39` dB | `-804` | the score's held pad seated from the state ([below](#the-cast-channel-seats-the-scores-held-notes)); the cast ends with retail's, `17` s in, so the score is over those seconds alone; the band runs on its arm table, which the seed's `0x33` step had held off; the voice `6.4` vsyncs before the cast's offset, inside the seek window ([below](#the-cast-channels-seek-window)); the sweep strikes all three seats, as retail's does ([cast module](cast-module.md#prot-0904-theeder)) |
 | `zenoir_summon_mid_cast` | `0.855` | `+0.06` dB | `-5151` | [the frame step](#the-casts-step-is-pcsx-reduxs) moves the arms; the voice within `0.08` s of retail's; [Monaural](#the-monaural-states); the offset off [the duck](#the-duck-names-the-states-tick); seconds `13..14` hold both struck seats' reaction cues ([settled](../reference/re-settled-threads/audio.md#what-sounds-at-the-end-of-zenoirs-cast)), the port's a few vsyncs late on the module's frame step |
 | `nighto_summon_mid_cast` | `0.983` | `-0.08` dB | `+463` | the voice past the drive's wait aligns `9.7` vsyncs earlier than the engine's, inside the seek window |
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
@@ -3776,11 +3870,11 @@ cast's sound with the two emulators' frame costs taken out; `cast` stays the eng
 | State | `cast` (the engine's steps) | `cast_steps` (mednafen's steps) |
 |---|---|---|
 | `cort_guilty_cross_mid_cast` | `0.859` | `0.981` |
-| `zenoir_summon_mid_cast` | `0.855` | `0.893` |
-| `theeder_summon_mid_cast` | `0.712` | `0.715` |
+| `zenoir_summon_mid_cast` | `0.854` | `0.873` |
+| `theeder_summon_mid_cast` | `0.954` | `0.964` |
 
 Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
-or `2` against the table's `3` and `4`, and the score holds either way. Zenoir's row is not a clean reading. On the engine's own steps its band
+or `2` against the table's `3` and `4`, and the score moves by `0.01` either way. Zenoir's row is not a clean reading. On the engine's own steps its band
 holds `0x35` to arm 11, as retail's does, but on mednafen's the action SM leaves `0x35` for `0x36`
 after one arm-4 pass: the band word (`ctx[+0x6D8]`, shared with PROT 0908's countdown) goes negative
 at the hand-over. Mednafen's arm 3 opens on eleven step-`3` frames and the engine's on the module's

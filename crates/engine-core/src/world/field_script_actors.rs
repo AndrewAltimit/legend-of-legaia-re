@@ -451,9 +451,18 @@ impl World {
     }
 
     /// A light's parent flags as `FUN_801E4470` tests them: `8` when the
-    /// parent is gone (the tear-down the light follows), `2` when it is
-    /// parked off-map or collapsed to a point (hidden - the light skips its
-    /// draw and its script).
+    /// parent is gone (the tear-down the light follows), `2` when the
+    /// visibility cull `FUN_801D79E8` hides it (the light skips its draw and
+    /// its script) - parked off-map, or outside the region box or the
+    /// camera's tile window.
+    ///
+    /// The routine reads nothing else of the parent (`lw v1,0x10(a1)` /
+    /// `andi 0x8` / `andi 0x2` at `0x801E4490..0x801E44B8`, then the
+    /// position): its render scale `+0x72` is not a test. `dream` `P2[1]`,
+    /// Noa's first dream, hangs her mother's voice - the light she chases -
+    /// on `P1[2]`, a marker whose prologue zeroes its scale (`4C 40 00 00`);
+    /// reading a zero scale as hidden left the dream with no light at all.
+    // REF: FUN_801E4470, FUN_801D79E8
     fn attached_light_parent_flags(
         &self,
         parent: ScriptActorRef,
@@ -463,10 +472,9 @@ impl World {
         };
         let hidden = match parent {
             ScriptActorRef::Player => false,
-            ScriptActorRef::Npc(slot) => {
+            ScriptActorRef::Npc(_) => {
                 let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
-                (pos.0 == hide && pos.2 == hide)
-                    || self.field_npc_render_scale(usize::from(slot)) == Some(0)
+                (pos.0 == hide && pos.2 == hide) || self.field_npc_culled(pos.0, pos.2)
             }
         };
         Some((

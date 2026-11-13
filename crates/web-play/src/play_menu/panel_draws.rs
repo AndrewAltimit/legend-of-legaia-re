@@ -87,6 +87,13 @@ impl LegaiaRuntime {
                 &notice.line,
             ));
         }
+        // Windows 7 / 8 are framed over the screen below, as the native
+        // window frames them.
+        sprites.extend(legaia_engine_ui::pause_menu::menu_notice_chrome(
+            &assets.menu_ctx(origin, scale),
+            self.menu.spell_level_notice().is_some(),
+            self.menu.art_learned_notice().is_some(),
+        ));
         // Window 8 - the art-learned notice, through the same shared
         // composition the native window calls.
         if let Some(notice) = self.menu.art_learned_notice() {

@@ -123,6 +123,26 @@ impl SceneHost {
         })
     }
 
+    /// The art-learned notice's two lines while it is up (op `49 09`, window
+    /// record `9`): the field overlay's strings (extraction entry `0897`)
+    /// with the character and art patched in and expanded. `None` while no
+    /// notice is shown or the entry cannot be read. See
+    /// [`legaia_engine_core::field_submode_screen::ART_NOTICE_STRING_VAS`].
+    pub fn art_notice_lines(&self) -> Option<[Vec<u8>; 2]> {
+        self.world.art_notice_shown()?;
+        let bytes = self
+            .index
+            .entry_bytes(legaia_engine_core::incense_notice::FIELD_OVERLAY_PROT_INDEX)
+            .ok()?;
+        self.world.art_notice_lines(|va| {
+            let va = legaia_engine_field::field_overlay::resolve_va(&bytes, va);
+            va.checked_sub(legaia_engine_field::field_overlay::FIELD_OVERLAY_BASE)
+                .and_then(|off| bytes.get(off as usize..))
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default()
+        })
+    }
+
     /// First VAB-bearing entry in the scene, with the byte offset of the
     /// `pBAV` magic inside it. Mirrors the asset chain's "load the scene's
     /// bank before the first sound plays" pre-pass. Returns `None` when no
@@ -372,6 +392,21 @@ impl SceneHost {
                             director.resume();
                             acted += 1;
                         }
+                        // 5 = the timed release (`FUN_800267A8`): the world
+                        // armed its deadline when the op ran; the director
+                        // fades the field-BGM source's occupant over it. The
+                        // ending theme sounds from source 10, which the arm
+                        // does not address.
+                        // REF: FUN_800267A8
+                        5 => {
+                            if !self.bgm_ending_source {
+                                director.timed_release_fade(text_id as i16);
+                            }
+                            // Consumed here: a word put back on the queue
+                            // is routed again by the next drain, which would
+                            // re-arm the fade.
+                            acted += 1;
+                        }
                         super::BGM_SUB_OP_ENGINE_STOP => {
                             self.bgm_latched = None;
                             self.bgm_ending_source = false;
@@ -391,7 +426,7 @@ impl SceneHost {
                                 self.pending_bgm_swap = Some(held);
                             }
                             if !self.bgm_ending_source {
-                                director.stop();
+                                director.close_field_source();
                             }
                             acted += 1;
                         }
@@ -436,7 +471,7 @@ impl SceneHost {
                             acted += 1;
                         }
                         _ => {
-                            // Other sub-ops (5/6/7/11) are control words -
+                            // Other sub-ops (6/7/11) are control words -
                             // surface them back on the queue for richer engines.
                             leftover.push(legaia_engine_field::field_events::FieldEvent::Bgm {
                                 text_id,

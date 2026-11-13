@@ -925,33 +925,76 @@ fn retail_fog_stepped_back(
 /// part's `+0x48` points at its record inside it.
 pub(super) const STAGER_BUNDLE_PTR: u32 = 0x8007_B8D0;
 
-/// Every live draw-kind-4 sprite-arm sheet on a retail state's actor lists,
-/// in list order: a part ticked by `FUN_80021DF4` with `+0x56 == 4` and the
-/// sprite-arm bit `+0x9E & 0x4000`, not halted (`+0x10 & 0x8`)
-/// ([`legaia_engine_core::world::ambient::SpriteArmSeed`] names the fields).
-pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
+/// Every live draw-kind-4 part on a retail state's actor lists, in list
+/// order: a part ticked by `FUN_80021DF4` with `+0x56 == 4`, not halted
+/// (`+0x10 & 0x8`) ([`legaia_engine_core::world::ambient::SpriteArmSeed`]
+/// names the fields). The sprite-arm sheets (`+0x9E & 0x4000`) are seated
+/// whole; the other kind-4 parts (the default arm's rings and walls) by
+/// placement, their growing channels and their level, the last two taken
+/// back `lag` vsyncs to the displayed frame
+/// (`World::install_sprite_arm_snapshot`).
+pub fn retail_sprite_arms(
+    ram: &[u8],
+    lag: u16,
+) -> Vec<legaia_engine_core::world::ambient::SpriteArmSeed> {
     let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
     crate::retail_compare_script::actor_nodes(ram)
         .into_iter()
         .filter(|&n| {
             game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
                 && game_anchors::u16_at(ram, n + 0x56) == 4
-                && game_anchors::u16_at(ram, n + 0x9E) & 0x4000 != 0
                 && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
         })
         .filter_map(|n| {
             let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            let sheet = game_anchors::u16_at(ram, n + 0x9E) & 0x4000 != 0;
             Some(legaia_engine_core::world::ambient::SpriteArmSeed {
                 record_off: rec,
-                pos: [0x14, 0x16, 0x18].map(|o| game_anchors::i16_at(ram, n + o)),
+                pos: [0x14u16, 0x16, 0x18].map(|o| {
+                    crate::retail_compare_battle::ram_read::displayed_part_halfword(
+                        ram,
+                        n,
+                        o,
+                        i32::from(lag),
+                    ) as i16
+                }),
                 rot: [0x24, 0x26, 0x28].map(|o| game_anchors::i16_at(ram, n + o)),
                 scale: game_anchors::u16_at(ram, n + 0x72),
                 colour: game_anchors::u32_at(ram, n + 0x74),
-                level: game_anchors::u16_at(ram, n + 0x78),
-                pose: retail_pose_entries(ram, n),
+                level: if sheet {
+                    game_anchors::u16_at(ram, n + 0x78)
+                } else {
+                    displayed_part_level(ram, n, lag)
+                },
+                pose: displayed_pose_entries(ram, n, lag),
+                shape: (!sheet).then(|| {
+                    [0xB4u16, 0xB6, 0xB8, 0xBA, 0xC8].map(|o| {
+                        crate::retail_compare_battle::ram_read::displayed_part_halfword(
+                            ram,
+                            n,
+                            o,
+                            i32::from(lag),
+                        ) as i16
+                    })
+                }),
             })
         })
         .collect()
+}
+
+/// A part's depth-cue level `+0x78` as the displayed frame drew it: the
+/// motion block adds `(+0x90 * delta) >> 6` a pass (`FUN_80021DF4`
+/// `0x80022B18..0x80022B7C`, `delta` the frame step times `8`), so `lag`
+/// vsyncs take back `(+0x90 >> 3) * lag`. A level at either clamp
+/// (`0` / `0x1000`, `0x80022BC0..0x80022C1C`) with its rate pushing into it
+/// may have stood there through the lag and stays.
+fn displayed_part_level(ram: &[u8], node: u32, lag: u16) -> u16 {
+    let now = i32::from(game_anchors::u16_at(ram, node + 0x78));
+    let rate = i32::from(game_anchors::i16_at(ram, node + 0x90));
+    if (now >= 0x1000 && rate > 0) || (now == 0 && rate < 0) {
+        return now as u16;
+    }
+    (now - (rate >> 3) * i32::from(lag)).clamp(0, 0x1000) as u16
 }
 
 /// Every live ambient part on a retail state's actor lists that turns: a
@@ -1138,6 +1181,40 @@ pub(super) fn retail_pose_entries(ram: &[u8], n: u32) -> Vec<[u8; 8]> {
     (0..count.min(32))
         .map(|i| std::array::from_fn(|b| game_anchors::u8_at(ram, block + 8 + i * 8 + b as u32)))
         .collect()
+}
+
+/// [`retail_pose_entries`] as the displayed frame packed them: the cursor
+/// `+0x22` steps `+0xD0` a vsync (`0x80021E50..0x80021E74`), so `lag` vsyncs
+/// earlier it stood `+0xD0 * lag` back, and each part re-blends from the
+/// block's keyframe records (`count` 24-byte records after the entries:
+/// six halfwords current, six target) through the mode-6 pack
+/// ([`legaia_engine_vm::move_vm::keyframe_pose_entries`]). A cursor that
+/// rewinds past zero was retargeted inside the lag (op `0x3D` clears it),
+/// and the packed entries the RAM holds stay.
+pub(super) fn displayed_pose_entries(ram: &[u8], n: u32, lag: u16) -> Vec<[u8; 8]> {
+    let packed = retail_pose_entries(ram, n);
+    if packed.is_empty() {
+        return packed;
+    }
+    let block = game_anchors::u32_at(ram, n + 0x4C);
+    let count = packed.len() as u32;
+    let cursor = i32::from(game_anchors::i16_at(ram, n + 0x22))
+        - i32::from(game_anchors::i16_at(ram, n + 0xD0)) * i32::from(lag);
+    if cursor < 0 {
+        return packed;
+    }
+    let records = block + 8 + count * 8;
+    let st = legaia_engine_vm::move_vm::ActorState {
+        move_submode: 6,
+        y_rot: cursor as i16,
+        keyframe_pose: (0..count)
+            .map(|i| {
+                std::array::from_fn(|k| game_anchors::i16_at(ram, records + i * 24 + k as u32 * 2))
+            })
+            .collect(),
+        ..Default::default()
+    };
+    legaia_engine_vm::move_vm::keyframe_pose_entries(&st)
 }
 
 /// Every live mode-3 CLUT-cell cycler on a retail state's actor lists, in

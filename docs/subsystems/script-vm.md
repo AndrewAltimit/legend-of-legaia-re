@@ -763,6 +763,13 @@ steps once per drawn frame: `0x02` records `[dur][ext_w][ext_h][A rgb][B rgb]
 [lift]` interpolated by `t / dur`, `0x40` block headers stepped over, `0x01`
 restart, `0x00` retire - the lamp pools breathe.
 
+The tick reads two bits of the parent's `+0x10` and nothing else of its state
+(`0x801E4490..0x801E44B8`): `8` retires the light, `2` - the visibility cull
+`FUN_801D79E8` - skips its frame. A parent's zero render scale is not a test, so a
+light may hang on an invisible marker: `dream` `P2[1]`, Noa's first dream, hangs
+her mother's voice, the light she follows, on `P1[2]` (`B4 08 10 ..`), whose
+prologue zeroes its scale (`4C 40 00 00`).
+
 The engine seats the light on the op's target (the player for channel `0xF8`,
 else the running placement's NPC) in `World::script_actors`
 (`engine-core::world::field_script_actors`) and both play hosts draw it
@@ -1137,6 +1144,8 @@ placement 28) at the top of the shrine stairs and `B7 3F 00 84` walks her
 `[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path: the granted item is this single inline operand byte, not a per-scene table, and the op is not a sound op.
 
 `FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund.
+
+Two record shapes carry it. A **chest** grants after its "now has" box (`48`, `39 <item>`, `50 <flag>`, `21`) and a **pickup spot** grants before it (`51 <flag>`, `39 <item>`, `36 00 80 2C 00`, box); both sound the item-get SFX cue `0x2C` through op `0x36`, and both rely on the talk resuming the record's cursor so a second touch reaches the "empty" / silent tail ([the interaction cursor](#the-interaction-cursor-one-record-two-consecutive-scripts)).
 
 The chest's announcement *text* ("There is a {item}...") names the item from a **separate** `0xC2 <id>` MES item-name token (display only). Editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
 
@@ -2649,7 +2658,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `5` | `0x24` | `FUN_801EF2B0` - the **tile-board** walk SM |
 | `6` | `0x25` | `FUN_801F0ADC` - the casino coin counter |
 | `8` | `0x27` | `FUN_801F1138` - the start / confirm menu |
-| `9` | `0x28` | `FUN_801F1FDC` - the prompt |
+| `9` | `0x28` | `FUN_801F1FDC` - the prompt; its window `9` is the **art-learned notice** (below) |
 | `0xA` | `0x31` | `FUN_801ED590` |
 | `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
 | `0xC` | `0x33` | `FUN_801EDF00` - the **return-to-title soft reset** `edlast` ends on ([`cutscene.md`](cutscene.md#the-ending-vignettes-refuse-the-pad)) |
@@ -2668,6 +2677,26 @@ tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-scene-host/tests/hub_tables_disc.rs`.
+
+#### Sub-op `9`: the art-learned notice
+
+`49 09 00 <char> <art>` follows every scripted Hyper Art grant (`4C C7`, the
+masters and Drake Castle's book of Biron arts in `dolk2` P1[49]). The prompt
+`FUN_801F1FDC` installs descriptor `PANEL_PROMPT`, windows `0` and `9`, waits
+for a confirm and hands back. Window `9`'s painter `FUN_801E733C` draws two
+field-overlay strings, `0x801F2B5C` and `0x801F2B6C`, stacked `0x0F` apart at
+the record's origin `(0x20, 0x60)` (geometry `0x100 x 0x1A`). Before drawing it
+patches the operand of the first `0xC1` in the first string to the parked
+payload's `+2` byte (the character) and the operand of the first `0xC5` in the
+second to `+3 + (+2) * 0x40` (the art, split back the way the dialog kernel's
+`0xC5` arm splits it). The search is `FUN_8003CBF8`, which steps over each
+`0xCx` operand; both strings carry a zero operand on disc, so a reader that
+stops at the first `NUL` loses everything after the token.
+
+Port: `legaia_engine_core::field_submode_screen::art_notice`
+(`World::art_notice_shown`, `World::art_notice_lines`), drawn by both hosts
+through `legaia_engine_screens::field_messages`; the disc pin is
+`crates/engine-scene-host/tests/art_notice_disc.rs`.
 
 #### Sub-op `2`: the code lock
 
@@ -3006,6 +3035,42 @@ prologue. `kor5`'s `P1[2]` is the flag-write case: its spawn section is `0x25`,
 two entry points are `placement_interaction_record` (cursor, the interaction
 dispatch) and `placement_inline_prologue` (`script_pc0`, for whole-record disc
 sweeps).
+
+**The cursor is the load slice's, and it moves.** The spawn section stops at
+the first `0x21` it *executes*, which is not the first one in the bytes when the
+section is flag-dispatched. The pickup spots are the common shape (`dolk2`
+`P1[70]`, the Platinum Card): `25`, a flag test whose taken arm is `31 03`, `21`
+(the retire bit, then the stop), `26 05 00` over it, then `4C 40 ..`, `21`. On a
+fresh visit the cursor rests past the second `0x21`, on `51 14`, `39 81`,
+`36 00 80 2C 00` (the grant's flag, the grant and the item-get cue) and the
+"now has" box. A structural scan that takes the first `0x21` lands in the taken
+arm, trips its terminator, and a port that falls through to the first box
+skips the flag, the item and the cue. The talk also leaves the cursor where it
+ended, so the next touch runs what follows. A chest ends its talk on
+`39 <item>`, `50 <flag>`, `21`, with a `26` to its "The treasure chest is
+empty!" loop behind it, and a pickup spot ends on `21`, `21`, `26 FE FF`, so the
+second touch is silent. Restarting every talk at the scan's entry re-ran the
+grant. Engine port: the spawn pre-run hands a clean stop (an executed raw
+`0x21`, or a text lead) to the talk as its entry, a talk that ends on an
+executed `0x21` writes its cursor back, and a talk resumed from that cursor
+ends on an executed `0x21` before any box, as the SM does, rather than falling
+back to the first segment (`InlineDialogPrologue::resume`). The static scan
+stays the entry for a record whose load slice does not run (its first opcode is
+not `0x24` / `0x25`) or stops on a halt. A first talk keeps the fallback: it is
+the port's net for a talk started from outside a record's own position test,
+which retail never sees (`rayman` `P1[44..=46]` bbox-test the player before
+they speak, and the full-game ladder's hand talks from where it stands). Pinned
+disc-wide by `engine-scene-host/tests/field_pickup_once_disc.rs`.
+
+The engine keeps that one cursor in two places - the placement channel's, which
+an engagement and the return from a talk-staged battle run as the interaction
+timeline, and the talk record's - and every end writes both. `town01`'s Tetsu
+(`P1[10]`) needs it: the spar's return runs his context from `+0x7FB` through
+`72 27 05 00` / `26 04 00` / `52 0C` (raise `0x20C` only once the measuring's
+`0x227` is up) to the `21` at `+0xA47`, and the next talk resumes past it. A
+talk copy left on `+0x7FB` takes the raise after the measuring, which retail
+never does ([the spar-order softlock](../reference/glitches/field-sequence-breaks.md#sparring-with-tetsu-before-the-measuring);
+pinned by `engine-shell` `rim_elm_opening_issues::tetsu_spar_before_the_measuring`).
 
 **The halt-acquire that opens a talk.** `retock`'s innkeeper opens its
 interaction with `CC F8 85`, a halt-acquire on the player. Retail's acquire

@@ -107,10 +107,18 @@ impl World {
     /// with the seater's own VM run and no part tick until the next frame;
     /// the module's tick runs whatever a part ticked elsewhere left queued.
     ///
+    /// A pool spawn an arm makes (PROT 0919's and 0941's arm 1) is made
+    /// ahead of the frame's effect-pool walker in retail: the part's move-VM
+    /// step runs in the tick pass and the walker in the draw tick behind it
+    /// (`jal 0x801E0080` at `0x80048128`). Called from the part tick, which
+    /// the engine runs after the walker, the master takes the `walked`
+    /// sweeps the walker already gave the rest (`Pool::catch_up_master`);
+    /// called from the module tick, which runs ahead of it, `walked` is `0`.
+    ///
     /// REF: FUN_801F7740 (PROT 0906's stager), FUN_801F7FA8 (PROT 0907's),
     /// FUN_801F8310 (PROT 0908's), FUN_801F835C (PROT 0912's), each reached
     /// through `gp[+0x714]`
-    pub(in crate::world) fn run_part_stager_calls(&mut self, entry: u32) {
+    pub(in crate::world) fn run_part_stager_calls(&mut self, entry: u32, walked: u8) {
         // The seats of the arms run inside their caller's step (PROT
         // 0925's), in call order.
         for s in std::mem::take(&mut self.casting.module_stager_seats) {
@@ -167,7 +175,7 @@ impl World {
                         &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                         1,
                     );
-                    self.presentation.module_fades.extend(fade);
+                    self.presentation.module_fades_next_pass.extend(fade);
                 }
                 continue;
             }
@@ -266,7 +274,7 @@ impl World {
             if let Some(fx) =
                 legaia_engine_cast::cast_module_ticks::stager_effect(entry, arm, caller)
             {
-                self.try_spawn_effect(fx.id, fx.pos, fx.angle as u16);
+                self.spawn_effect_caught_up(fx.id, fx.pos, fx.angle as u16, walked);
             }
             // PROT 0959's arm 2 flushes the pool, kills the held white its
             // arm 3 parked at `ctx[+0x102C]` and fades white out before its

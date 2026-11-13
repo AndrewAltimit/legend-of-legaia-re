@@ -336,7 +336,9 @@ pub fn fog_from_env(s: &str) -> Vec<legaia_engine_field::fog_particles::FogParti
 }
 
 /// `retail_sprite_arms` as `LEGAIA_SEAT_SPRITE_ARMS`:
-/// `record,x,y,z,r24,r26,r28,scale,colour,level` per sheet, `;`-separated.
+/// `record,x,y,z,r24,r26,r28,scale,colour,level,pose` per sheet,
+/// `;`-separated, with a twelfth field `b4:b6:b8:ba:c8` on a default-arm
+/// node that carries its shape.
 pub fn sprite_arms_env(s: &[legaia_engine_core::world::ambient::SpriteArmSeed]) -> String {
     s.iter()
         .map(|a| {
@@ -345,8 +347,11 @@ pub fn sprite_arms_env(s: &[legaia_engine_core::world::ambient::SpriteArmSeed]) 
                 .iter()
                 .flat_map(|e| e.iter().map(|b| format!("{b:02x}")))
                 .collect();
+            let shape = a.shape.map_or(String::new(), |v| {
+                format!(",{}:{}:{}:{}:{}", v[0], v[1], v[2], v[3], v[4])
+            });
             format!(
-                "{},{},{},{},{},{},{},{},{},{},{pose}",
+                "{},{},{},{},{},{},{},{},{},{},{pose}{shape}",
                 a.record_off,
                 a.pos[0],
                 a.pos[1],
@@ -368,6 +373,16 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
     s.split(';')
         .filter_map(|e| {
             let mut fields: Vec<&str> = e.split(',').collect();
+            let shape = if fields.len() == 12 {
+                let v: Vec<i16> = fields
+                    .pop()?
+                    .split(':')
+                    .filter_map(|x| x.trim().parse().ok())
+                    .collect();
+                Some(<[i16; 5]>::try_from(v).ok()?)
+            } else {
+                None
+            };
             let pose_hex = if fields.len() == 11 {
                 fields.pop()?
             } else {
@@ -389,6 +404,7 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
                 colour: colour as u32,
                 level: level as u16,
                 pose: bytes.as_chunks::<8>().0.to_vec(),
+                shape,
             })
         })
         .collect()

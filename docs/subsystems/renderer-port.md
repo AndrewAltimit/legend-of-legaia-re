@@ -164,6 +164,24 @@ pair's `cast` scene at a 4-level threshold the share of pixels apart fell from
 about 17% to under 3%. The instrument stays the window's alone: the page scores
 no PCSX-Redux capture.
 
+**The screen-space pass dithers its Gouraud quads too.** The GPU dithers a
+`POLY_G4` and a `POLY_GT4` as it writes them, opaque or not, and writes a flat
+quad undithered (PCSX-Redux: `drawPoly3Gi` through `getShadeTransColDither`,
+`drawPoly3TGEx4i` through `getTextureTransColShadeXDither`, both under the draw
+mode's dither bit). In PSX mode the overlay's opaque entries (`opaque_out` in
+the screen-overlay shader) do the same for a quad carrying
+`screen_prim::FLAG_GOURAUD`, on the console's table or the PCSX-Redux
+instrument's. The case is PROT 0898's band wash, two opaque `POLY_G4` a band
+behind every band-mode cast: undithered, its dim colours fell to the bin
+below (`(10, 5, 10)` drew `(8, 0, 8)`), and Big Wave's whole upper frame read
+`3..4` luma under retail. The rule bits are one decision both hosts read
+(`screen_prim::psx_rule_flags`, with `dithers_opaque_write` naming the quads that
+take it): the native staging stamps them on its geometry, and the play page's
+stream leaves the engine with them (`OverlayGeometry::vertex_bytes_with_flags`)
+for `FS_SCREEN_PRIM`'s `opaqueOut`, the console's table under the game's dither
+word. A test evaluates both shaders over every cell of the matrix
+(`both_hosts_dither_a_gouraud_screen_quads_opaque_write_alike`).
+
 In the `legaia-engine play-window` binary PSX mode is opt-in
 (`--psx-render`, the launcher's PSX rendering row, or `LEGAIA_PSX_RENDER=1`),
 and turns on the native target with it; the play page's "PSX rasterisation"
@@ -384,10 +402,31 @@ keep their own `(max SZ >> 5) + 14` bucket (`FUN_801F89B8`). The stage's `flags.
 carries the curvature scale on the world map, so the draw-order word rides in `flags.z`
 above the occlusion bit, and the near-bucket shift of `320` `SZ` is taken by that scale.
 
-Not modelled: a walking NPC's `0x800000` (the sampler runs only for actors whose
-tick reaches it, which the port does not track per actor), a posed prop's record
-flag `0x800`, and the order inside one bucket (retail's last-linked-first). A
-clean frame keeps per-pixel depth.
+An NPC takes `0x800000` where a seat samples the floor under it: op `4C 51` calls
+`FUN_80019278` on the seated actor (`jal` at `0x801E1938`, on the same `0x20200`
+gate as its height write), and the sampler sets or clears the bit from the new
+tile's cell (`World::seat_floor_sample_sort_bit`). That is how `dolk2` `P2[7]`
+seats King Drake in his throne and draws him there: the seated pose's pelvis
+stands inside the throne's back, and only the ten buckets put him in front of it.
+
+A placement takes it from its own floor too. The field actor tick `FUN_8003BC08`
+calls the sampler on every placement it does not cull and whose height it does not
+hold (`jal` at `0x8003BC98` for the snap, `0x8003BCBC` for the glide), so a walking
+NPC carries the bit of the cell it stands on, tick by tick
+(`World::tick_field_npc_heights`): it draws ten buckets nearer while it crosses a
+placed object's floor and drops back on a ground cell.
+
+Not modelled: a posed prop's record flag `0x800`, and the order inside one bucket
+(retail's last-linked-first).
+
+A clean frame keeps per-pixel depth with one exception, the near shift. A field
+actor carrying the near-bucket bit - the player on a cell without `0x1000`, an NPC
+a seat or a prologue gave it - tests each vertex's depth ten buckets nearer than it
+stands (`DRAW_ORDER_NEAR_CLEAN`, staged as `flags.w = -16`; the page's `meanDepth`
+word `7`). Those cells are the ones a placed object's mesh floors - a dais, a
+ledge, a bridge - and the actor on them overlaps the mesh around it by design:
+per-pixel depth alone buried King Drake in his throne and Vahn in the cliff behind
+`rikuroa2`'s chest ledge, where retail's link paints both over it.
 
 ### The battle sorts by each primitive's link
 
@@ -877,10 +916,26 @@ quad instead, so that frame's additive layers sum over the frames before
 reproduces it on the native target, which is the one target that outlives its
 frame: while `World::cast_frame_persists` holds, each frame loads an earlier
 frame instead of clearing, and a capture seeds from the same one. Retail's
-earlier frame is the same display page two game frames back, eight vsyncs at the
-frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
-rather than building on the last one, which fills the buffer eight times too
-fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
+earlier frame is the same display page two game frames back, so the renderer keeps
+a ring of presented frames and reads the one two battle frames back
+(`World::cast_frame_persist_vsyncs`, `Renderer::set_frame_persist_depth`) rather
+than building on the last one, which fills the buffer eight times too fast. Two
+frames are twice the running frame's span: eight vsyncs at the step `4` a heavy
+arm runs at, ten when a streaming clip runs each pass a vsync past its step.
+Genocidal Cannon's arm 6 runs at that span, and read at a fixed eight its white
+decayed off a page one frame newer than retail's, a frame ahead of the
+recording: the mid-cast film's arm 6 reads `.975` at eight and `.993` at two
+spans. The page flips once a battle frame, whatever the frame spans: the frame-end pass
+`FUN_80016B6C` waits its `VSync` (`0x800171C0`), puts the display and draw environments of
+page `gp+0x434` (`PutDispEnv` at `0x80017230`, `PutDrawEnv` at `0x80017254`), toggles the
+page (`0x8001727C..0x80017284`) and draws the table (`0x80017288`). So the page two back is
+found by the frames' own starts (`BattleState::frame_start_ticks`), not twice the running
+frame's span: under the span law a frame after an overrun runs a vsync shorter than the one
+before, and twice its own span read the frame before last on its closing vsync. Thunder
+Storm's arms 4 to 6 showed the previous frame's white burst there
+(`battle_chitei2_gilium_thunder_storm_mid_cast` `.849` with the law and priced frames, `.960`
+read by the starts, `.965` by default). Grade `disassembly` for the flip, `capture` for the
+films. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
 The ring is kept from the moment a cast module is resident, not from the first
@@ -896,8 +951,11 @@ retail's other page still held the dark frame before the arm (luma `231` against
 The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
 ([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
 `renderAssembled` asks it for the picture at the scene's clear (after the frame's
-ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
-the ring filling while one may be asked for. Bloom stands the frames down on both
+ticks, through `play_cast_frame_persists`), reads it as deep as
+`play_cast_frame_persist_depth` says, and `play_cast_module_resident` keeps
+the ring filling while one may be asked for. The ring's size, the depth's clamp and
+the slot a read lands on are the shared kernel's (`render_kernels::frame_persist`),
+which the native ring reads too. Bloom stands the frames down on both
 hosts, since it reads the frame it adds to. The page's text layer is a canvas of
 its own, so a name plaque's letters do not enter the ring as the window's do. The
 window's own target and the browser's clean-rasterisation canvas still clear:

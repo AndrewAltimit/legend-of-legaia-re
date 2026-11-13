@@ -176,7 +176,8 @@ pub struct RetailObs {
     /// on that return, so this says which vsync of retail's frame the state
     /// was saved on - the phase a walk film resumes on.
     pub vsync_phase: u32,
-    /// The live draw-kind-4 sprite-arm sheets ([`retail_sprite_arms`]),
+    /// The live draw-kind-4 parts, sprite-arm sheets and others
+    /// ([`retail_sprite_arms`]),
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.
     pub sprite_arms: Vec<legaia_engine_core::world::ambient::SpriteArmSeed>,
@@ -439,7 +440,7 @@ impl RetailObs {
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
-                retail_sprite_arms(ram)
+                retail_sprite_arms(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
                 Vec::new()
             },

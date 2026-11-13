@@ -235,14 +235,26 @@ pub fn battle_hud_draws_for(
     // atlas at all) the digits fall back to font glyphs **centred in the
     // same cells**, so the layout is identical and only the letterforms
     // differ.
+    //
+    // A figure field is `cells` wide and the number record's draw
+    // (`FUN_80031D00`, `0x80032064..0x80032148`) walks nine places from the
+    // field's left edge: a leading zero at a place inside the field leaves a
+    // blank cell, one past it no cell at all. So a figure of more digits than
+    // the field holds starts on the field's left edge and runs past its
+    // right one: a wrapped `65518` in the three-cell MP field overwrites the
+    // `/` (a Seru cast past the caster's MP, `0x801E458C`).
     let numerals = |sprites: &mut Vec<SpriteDraw>,
                     text: &mut Vec<TextDraw>,
                     value: u32,
-                    right: i32,
+                    (right, cells): (i32, i32),
                     y: i32,
                     c: [f32; 4]| {
         let s = value.to_string();
-        let left = right - s.len() as i32 * DIGIT_W;
+        let left = i32::from(crate::battle_chrome::figure_left(
+            right as i16,
+            cells as u16,
+            s.len() as u16,
+        ));
         for (i, ch) in s.bytes().enumerate() {
             let cell_x = left + i as i32 * DIGIT_W;
             let d = u32::from(ch - b'0');
@@ -532,7 +544,7 @@ pub fn battle_hud_draws_for(
                     &mut sprites,
                     &mut text,
                     u32::from(slot.level),
-                    px + PANEL_LV_DIGITS_RIGHT,
+                    (px + PANEL_LV_DIGITS_RIGHT, 9),
                     py + PANEL_LV_DIGIT_Y,
                     base,
                 );
@@ -544,6 +556,19 @@ pub fn battle_hud_draws_for(
                 0,
                 px + PANEL_HP_LABEL.0,
                 py + PANEL_HP_LABEL.1,
+            );
+            // Each row's `/` goes down ahead of its figures: the separator is
+            // a sprite of the panel's chain, the figures are number records
+            // drawn over it, so a figure that overruns its field (a wrapped
+            // MP) covers the slash, which shows only through the digits'
+            // transparent texels (`party_basic_attack_vs_gobu_gobu`'s Horn
+            // film, arm `0xB`).
+            separator(
+                &mut sprites,
+                &mut text,
+                px + PANEL_HP_SEPARATOR.0,
+                py + PANEL_HP_SEPARATOR.1,
+                hp_tint,
             );
             if slot.hidden_readout {
                 for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
@@ -560,24 +585,17 @@ pub fn battle_hud_draws_for(
                     &mut sprites,
                     &mut text,
                     u32::from(slot.hp),
-                    px + PANEL_CUR_RIGHT,
+                    (px + PANEL_CUR_RIGHT, HP_FIELD_CELLS),
                     py + PANEL_HP_DIGIT_Y,
                     hp_tint,
                 );
             }
-            separator(
-                &mut sprites,
-                &mut text,
-                px + PANEL_HP_SEPARATOR.0,
-                py + PANEL_HP_SEPARATOR.1,
-                hp_tint,
-            );
             if !slot.hidden_readout {
                 numerals(
                     &mut sprites,
                     &mut text,
                     u32::from(slot.hp_max),
-                    px + PANEL_MAX_RIGHT,
+                    (px + PANEL_MAX_RIGHT, HP_FIELD_CELLS),
                     py + PANEL_HP_DIGIT_Y,
                     hp_tint,
                 );
@@ -595,6 +613,13 @@ pub fn battle_hud_draws_for(
                     px + PANEL_MP_LABEL.0,
                     py + PANEL_MP_LABEL.1,
                 );
+                separator(
+                    &mut sprites,
+                    &mut text,
+                    px + PANEL_MP_SEPARATOR.0,
+                    py + PANEL_MP_SEPARATOR.1,
+                    mp_tint,
+                );
                 if slot.hidden_readout {
                     for right in [PANEL_CUR_RIGHT, PANEL_MAX_RIGHT] {
                         question_cells(
@@ -610,7 +635,7 @@ pub fn battle_hud_draws_for(
                         &mut sprites,
                         &mut text,
                         u32::from(slot.mp),
-                        px + PANEL_CUR_RIGHT,
+                        (px + PANEL_CUR_RIGHT, MP_FIELD_CELLS),
                         py + PANEL_MP_DIGIT_Y,
                         mp_tint,
                     );
@@ -618,18 +643,11 @@ pub fn battle_hud_draws_for(
                         &mut sprites,
                         &mut text,
                         u32::from(slot.mp_max),
-                        px + PANEL_MAX_RIGHT,
+                        (px + PANEL_MAX_RIGHT, MP_FIELD_CELLS),
                         py + PANEL_MP_DIGIT_Y,
                         mp_tint,
                     );
                 }
-                separator(
-                    &mut sprites,
-                    &mut text,
-                    px + PANEL_MP_SEPARATOR.0,
-                    py + PANEL_MP_SEPARATOR.1,
-                    mp_tint,
-                );
             }
 
             popup_anchor[*i] = (
@@ -677,6 +695,13 @@ pub fn battle_hud_draws_for(
             BAR_HP_LABEL.0,
             BAR_HP_LABEL.1 + dy,
         );
+        separator(
+            &mut sprites,
+            &mut text,
+            BAR_HP_SEPARATOR.0,
+            BAR_HP_SEPARATOR.1 + dy,
+            hp_tint,
+        );
         if slot.hidden_readout {
             for right in [BAR_HP_CUR_RIGHT, BAR_HP_MAX_RIGHT] {
                 question_cells(&mut text, HIDDEN_HP_CELLS, right, BAR_DIGIT_Y + dy, base);
@@ -686,7 +711,7 @@ pub fn battle_hud_draws_for(
                 &mut sprites,
                 &mut text,
                 u32::from(slot.hp),
-                BAR_HP_CUR_RIGHT,
+                (BAR_HP_CUR_RIGHT, HP_FIELD_CELLS),
                 BAR_DIGIT_Y + dy,
                 hp_tint,
             );
@@ -694,18 +719,11 @@ pub fn battle_hud_draws_for(
                 &mut sprites,
                 &mut text,
                 u32::from(slot.hp_max),
-                BAR_HP_MAX_RIGHT,
+                (BAR_HP_MAX_RIGHT, HP_FIELD_CELLS),
                 BAR_DIGIT_Y + dy,
                 hp_tint,
             );
         }
-        separator(
-            &mut sprites,
-            &mut text,
-            BAR_HP_SEPARATOR.0,
-            BAR_HP_SEPARATOR.1 + dy,
-            hp_tint,
-        );
         if slot.is_party || slot.mp_max > 0 {
             label(
                 &mut sprites,
@@ -713,6 +731,13 @@ pub fn battle_hud_draws_for(
                 1,
                 BAR_MP_LABEL.0,
                 BAR_MP_LABEL.1 + dy,
+            );
+            separator(
+                &mut sprites,
+                &mut text,
+                BAR_MP_SEPARATOR.0,
+                BAR_MP_SEPARATOR.1 + dy,
+                mp_tint,
             );
             if slot.hidden_readout {
                 for right in [BAR_MP_CUR_RIGHT, BAR_MP_MAX_RIGHT] {
@@ -723,7 +748,7 @@ pub fn battle_hud_draws_for(
                     &mut sprites,
                     &mut text,
                     u32::from(slot.mp),
-                    BAR_MP_CUR_RIGHT,
+                    (BAR_MP_CUR_RIGHT, MP_FIELD_CELLS),
                     BAR_DIGIT_Y + dy,
                     mp_tint,
                 );
@@ -731,18 +756,11 @@ pub fn battle_hud_draws_for(
                     &mut sprites,
                     &mut text,
                     u32::from(slot.mp_max),
-                    BAR_MP_MAX_RIGHT,
+                    (BAR_MP_MAX_RIGHT, MP_FIELD_CELLS),
                     BAR_DIGIT_Y + dy,
                     mp_tint,
                 );
             }
-            separator(
-                &mut sprites,
-                &mut text,
-                BAR_MP_SEPARATOR.0,
-                BAR_MP_SEPARATOR.1 + dy,
-                mp_tint,
-            );
         }
         popup_anchor[i] = (
             origin.0 + BAR_HP_LABEL.0 * scale,

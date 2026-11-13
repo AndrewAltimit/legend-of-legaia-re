@@ -53,6 +53,7 @@ fn kor_seat_spawns_a_sheet_of_a_record_with_none_live() {
         colour: 0xC900_0000,
         level: 0x1FF,
         pose: Vec::new(),
+        shape: None,
     }]);
     let seated: Vec<_> = host
         .world

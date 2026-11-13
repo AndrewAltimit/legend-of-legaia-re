@@ -1116,4 +1116,7 @@ thread_local! {
     /// The foe round a solo duel last chose Spirit in
     /// ([`duel_wants_spirit`]): the round after it swings the gauge it built.
     pub(super) static DUEL_SPIRIT_ROUND: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// A solo duel's foe HP at its last drop, and the round
+    /// ([`ROUND_HISTORY`] length) it dropped in ([`duel_wants_spirit`]).
+    pub(super) static DUEL_DENT: std::cell::Cell<Option<(u32, usize)>> = const { std::cell::Cell::new(None) };
 }

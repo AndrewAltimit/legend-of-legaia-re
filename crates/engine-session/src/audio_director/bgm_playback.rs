@@ -193,6 +193,11 @@ impl<S: AudioSink> AudioDirector<S> {
 
 impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
+        if self
+            .hold_for_switch(|| super::scene_switch::HeldCommand::Start(bgm_id, seq_bytes.to_vec()))
+        {
+            return;
+        }
         self.commands.push(super::AudioCommand::BgmStart(bgm_id));
         // Suppress duplicate starts for the same BGM id - the field VM's
         // op 0x35 occasionally re-emits without a state change (we'd lose
@@ -209,6 +214,11 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     }
 
     fn start_owned_vab(&mut self, bgm_id: u16, entry_bytes: &[u8]) {
+        if self.hold_for_switch(|| {
+            super::scene_switch::HeldCommand::StartOwned(bgm_id, entry_bytes.to_vec())
+        }) {
+            return;
+        }
         self.commands
             .push(super::AudioCommand::BgmStartOwned(bgm_id));
         // Suppress a redundant re-emit of the same global track (the field VM
@@ -234,6 +244,9 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// director (a movie ducking the score, `legaia_engine_system::movie::movie_audio`)
     /// cannot leave a second latch disagreeing with it.
     fn pause(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Pause) {
+            return;
+        }
         self.commands.push(super::AudioCommand::BgmPause);
         self.audio.set_sequencer_paused(true);
         self.audio.with_pcm_bus(|b| b.set_music_paused(true));
@@ -243,6 +256,9 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// start (`FUN_800628F0` resets the read cursor before it plays), so the
     /// track rewinds, then the gate opens.
     fn resume(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Resume) {
+            return;
+        }
         self.commands.push(super::AudioCommand::BgmResume);
         self.audio.rewind_sequencer();
         self.audio.set_sequencer_paused(false);
@@ -256,6 +272,9 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// paused leaves nothing closed behind it (the browser play page's `stop`
     /// does the same).
     fn stop(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Stop) {
+            return;
+        }
         self.commands.push(super::AudioCommand::BgmStop);
         self.release_pack_music();
         self.audio.detach_sequencer();
@@ -284,10 +303,50 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     }
 
     fn start_owned_vab_faded(&mut self, bgm_id: u16, entry_bytes: &[u8], fade_frames: u16) {
+        if self.hold_for_switch(|| {
+            super::scene_switch::HeldCommand::StartOwnedFaded(
+                bgm_id,
+                entry_bytes.to_vec(),
+                fade_frames,
+            )
+        }) {
+            return;
+        }
         self.start_owned_vab_faded_inner(bgm_id, entry_bytes, fade_frames);
     }
 
+    /// The field init's close, as retail orders it: the score ramps to
+    /// silence (`0x801D6AC0`'s decrescendo, here
+    /// [`super::SCENE_SWITCH_FADE_SAMPLES`] since the engine's map read takes
+    /// no time), what was sounding is cut, and only then does the next
+    /// scene's bank load - its start, its side-band and its cues wait behind
+    /// the fade ([`Self::fade_out_for_field_close`]).
+    fn close_field_source(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::Stop) {
+            return;
+        }
+        self.commands.push(super::AudioCommand::BgmStop);
+        self.fade_out_for_field_close();
+    }
+
+    /// Sub-op `5`'s fade: the live audio level halved, clamped to the
+    /// sequence's volume, taken off over `deadline | 1` vsyncs
+    /// ([`legaia_engine_audio::Sequencer::set_decrescendo`]).
+    fn timed_release_fade(&mut self, deadline: i16) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::TimedReleaseFade(deadline)) {
+            return;
+        }
+        let (amount, ticks) = legaia_engine_scene_host::scene_host::timed_release_fade_args(
+            i32::from(self.duck_level),
+            deadline,
+        );
+        self.audio.sequencer_decrescendo(amount, ticks);
+    }
+
     fn unhalt_pause(&mut self) {
+        if self.hold_for_switch(|| super::scene_switch::HeldCommand::UnhaltPause) {
+            return;
+        }
         self.commands.push(super::AudioCommand::BgmUnhaltPause);
         if self.audio.sequencer_paused() {
             self.audio.detach_sequencer();

@@ -9,6 +9,7 @@
 
 mod ambient_grab_part_disc;
 mod ambient_shatter_row_disc;
+mod art_notice_disc;
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;
 mod baka_duel_scene_real;
@@ -92,6 +93,7 @@ mod field_object_placement_disc;
 mod field_object_render_scale_disc;
 mod field_object_visibility_disc;
 mod field_party_gesture_bank_disc;
+mod field_pickup_once_disc;
 mod field_placement_retire_disc;
 mod field_player_clip_disc;
 mod field_prop_anim_disc;

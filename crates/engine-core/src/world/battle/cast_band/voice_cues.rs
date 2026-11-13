@@ -58,7 +58,10 @@ impl World {
         use legaia_engine_battle_vm::battle_cd_drive as cd;
         self.casting.drive_arms =
             legaia_engine_battle_vm::battle_cast_cue::module_drive_arms(image).map(|a| (a, false));
-        self.casting.drive = cd::CdDrive::at(cd::SIDE_BAND_LBA);
+        self.casting.drive = cd::CdDrive {
+            seek_seat: self.casting.drive_seek_seat.map(u32::from),
+            ..cd::CdDrive::at(cd::SIDE_BAND_LBA)
+        };
         self.casting.selector_seek = None;
         let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(
             self.cast_module_for(spell_id).unwrap_or(0),

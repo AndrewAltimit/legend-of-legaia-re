@@ -55,7 +55,8 @@ impl<'m> DrawCtx<'_, 'm> {
             {
                 color_order_marks.push((
                     color_draws.len(),
-                    legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS,
+                    legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS
+                        | legaia_engine_render::DRAW_ORDER_NEAR_CLEAN,
                 ));
             }
             color_draws.push(ColorSceneDraw {
@@ -130,8 +131,12 @@ impl<'m> DrawCtx<'_, 'm> {
             // shards (`PosedFrame::npc_shattered`), both sides: the shatter
             // renderer issues no NCLIP. A clip-less NPC's op-`0x4B` morph
             // re-stages its static mesh (`npc_morph_static`).
+            // The ten-bucket shift holds on a clean frame too
+            // (`DRAW_ORDER_NEAR_CLEAN`): a seated actor paints over the
+            // furniture it sits in, as retail's link does.
             if near_npcs.contains(&(d.slot as usize)) {
-                let near = legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS;
+                let near = legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS
+                    | legaia_engine_render::DRAW_ORDER_NEAR_CLEAN;
                 order_marks.push((draws.len(), near));
                 color_order_marks.push((color_draws.len(), near));
             }
@@ -545,7 +550,11 @@ impl<'m> DrawCtx<'_, 'm> {
                         .world
                         .player_near_buckets(model.w_axis.x as i32, model.w_axis.z as i32)
                 {
-                    order_marks.push((draws.len(), legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS));
+                    order_marks.push((
+                        draws.len(),
+                        legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS
+                            | legaia_engine_render::DRAW_ORDER_NEAR_CLEAN,
+                    ));
                 }
                 // A body the defeat fade is sinking draws clipped at the
                 // stage floor (its node's `+0x42`, object-effect row 0 as

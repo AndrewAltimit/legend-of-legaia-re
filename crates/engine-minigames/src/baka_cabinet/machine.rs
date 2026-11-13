@@ -286,6 +286,14 @@ impl BakaCabinet {
         self.state
     }
 
+    /// Stand the machine on `state` with a zero state timer, for a test that
+    /// starts from an arm a fight only reaches through a whole ladder.
+    #[cfg(test)]
+    pub(crate) fn seat_state(&mut self, state: u32) {
+        self.state = state;
+        self.state_timer = 0;
+    }
+
     /// `DAT_801DBE94` - the attract card's clock, which is the `t` the intro
     /// title card ([`crate::baka_fighter_chrome::IntroTitle`]) is a function
     /// of. Only the attract arms advance it.

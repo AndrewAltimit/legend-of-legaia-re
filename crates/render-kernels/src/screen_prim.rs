@@ -882,11 +882,60 @@ pub const FLAG_TEXTURED: u32 = 1;
 /// "nearer or equal", no depth write); this bit is the only thing that
 /// makes a quad take part.
 pub const FLAG_DEPTH_TESTED: u32 = 2;
-/// `flags` bit set on a textured quad drawn with per-corner colours (a
-/// `POLY_GT4`). The GPU splits it into two triangles where a flat
-/// `POLY_FT4` can be walked whole; only an emulator's texel rule tells the two
-/// apart (`PsxTexelRule::PcsxRedux` in `engine-render`). Shaders ignore it.
+/// `flags` bit set on a quad drawn with per-corner colours (a `POLY_GT4` or
+/// an untextured `POLY_G4`). The GPU dithers a Gouraud primitive's shading
+/// and writes a flat one undithered, so PSX mode's dither reads it. A
+/// textured one the GPU also splits into two triangles where a flat
+/// `POLY_FT4` can be walked whole, which only an emulator's texel rule tells
+/// apart (`PsxTexelRule::PcsxRedux` in `engine-render`).
 pub const FLAG_GOURAUD: u32 = 4;
+/// `flags` bit PSX mode stamps on every vertex: the blend passes run the
+/// GPU's 5-bit arithmetic ([`psx_rule_flags`]).
+pub const FLAG_PSX_BLEND: u32 = 0x100;
+/// `flags` bit for the PCSX-Redux instrument's blend rule (that emulator's
+/// software GPU, an instrument for its captures).
+pub const FLAG_PCSX_BLEND: u32 = 0x200;
+/// `flags` bit for the PCSX-Redux instrument's dither table (offsets `0..7`).
+pub const FLAG_PCSX_DITHER: u32 = 0x400;
+/// `flags` bit for the console's dither table (offsets `-4..3`): a
+/// [`FLAG_GOURAUD`] quad's opaque write takes it.
+pub const FLAG_CONSOLE_DITHER: u32 = 0x800;
+
+/// The semi-transparency rule PSX mode runs, as a host knows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PsxScreenRule {
+    /// PSX mode off: no rule bit, every quad drawn as the host's clean path.
+    Off,
+    /// The console's 5-bit arithmetic and dither table.
+    Gpu,
+    /// The PCSX-Redux software GPU's (an instrument for that emulator's
+    /// captures, the native target's `PsxTexelRule::PcsxRedux`).
+    PcsxRedux,
+}
+
+/// The rule bits PSX mode stamps on every screen vertex, one decision both
+/// hosts read: the native renderer's overlay staging and the play page's
+/// screen-prim stream ([`OverlayGeometry::vertex_bytes_with_flags`]). The
+/// dither bit stands only with the draw mode's dither up (`dither`, the
+/// game's dither word): the GPU dithers a Gouraud quad's shading as it writes
+/// it, and a flat quad never ([`dithers_opaque_write`]).
+pub fn psx_rule_flags(rule: PsxScreenRule, dither: bool) -> u32 {
+    match (rule, dither) {
+        (PsxScreenRule::Off, _) => 0,
+        (PsxScreenRule::Gpu, true) => FLAG_PSX_BLEND | FLAG_CONSOLE_DITHER,
+        (PsxScreenRule::Gpu, false) => FLAG_PSX_BLEND,
+        (PsxScreenRule::PcsxRedux, true) => FLAG_PSX_BLEND | FLAG_PCSX_BLEND | FLAG_PCSX_DITHER,
+        (PsxScreenRule::PcsxRedux, false) => FLAG_PSX_BLEND | FLAG_PCSX_BLEND,
+    }
+}
+
+/// Whether a vertex's opaque write takes the ordered dither: a Gouraud quad
+/// (`POLY_G4` / `POLY_GT4`) under either dither table. The shaders on both
+/// hosts (`opaque_out` natively, `opaqueOut` on the page) test the same two
+/// bits.
+pub fn dithers_opaque_write(flags: u32) -> bool {
+    flags & FLAG_GOURAUD != 0 && flags & (FLAG_CONSOLE_DITHER | FLAG_PCSX_DITHER) != 0
+}
 
 /// One contiguous run of quads sharing a [`BlendClass`], expressed as an
 /// index-buffer range. A host binds the run's pipeline / blend state once and
@@ -922,6 +971,25 @@ impl OverlayGeometry {
     /// stride.
     pub fn vertex_bytes(&self) -> Vec<u8> {
         bytemuck::cast_slice(&self.vertices).to_vec()
+    }
+
+    /// [`Self::vertex_bytes`] with `bits` ORed into every vertex's `flags`:
+    /// PSX mode's rule bits ([`psx_rule_flags`]) for a host that stages them
+    /// as the stream leaves, not into the cached geometry.
+    pub fn vertex_bytes_with_flags(&self, bits: u32) -> Vec<u8> {
+        let mut out = self.vertex_bytes();
+        if bits != 0 {
+            let (stride, off) = (
+                SCREEN_VERTEX_STRIDE as usize,
+                SCREEN_VERTEX_OFF_FLAGS as usize,
+            );
+            for v in out.chunks_exact_mut(stride) {
+                let f = &mut v[off..off + 4];
+                let word = u32::from_ne_bytes([f[0], f[1], f[2], f[3]]) | bits;
+                f.copy_from_slice(&word.to_ne_bytes());
+            }
+        }
+        out
     }
 
     /// The run table flattened for a host that cannot carry the enum across
@@ -1090,7 +1158,7 @@ pub fn build_geometry(prims: &[ScreenPrim], surf_w: u32, surf_h: u32) -> Overlay
                         Some(g) => std::array::from_fn(|i| corner(g[i])),
                         None => [flat_gpu_color(q.color); 4],
                     },
-                    0,
+                    if q.gouraud.is_some() { FLAG_GOURAUD } else { 0 },
                     q.depth,
                     sw,
                     sh,
@@ -1408,6 +1476,83 @@ mod tests {
         let flat_v0 = geo.vertices[12];
         assert_eq!(flat_v0.flags, 0);
         assert_eq!(flat_v0.color, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    /// An untextured quad with per-corner colours is a `POLY_G4`: it carries
+    /// [`FLAG_GOURAUD`], which PSX mode's dither reads, and a flat one does not.
+    #[test]
+    fn untextured_gouraud_quad_carries_the_gouraud_flag() {
+        // The farther bucket draws first.
+        let quad = |gouraud, ot_index| {
+            ScreenPrim::Flat(FlatQuad {
+                xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
+                color: [10, 5, 10, 255],
+                gouraud,
+                semi_transparent: false,
+                abr_mode: 0,
+                ot_index,
+                depth: None,
+            })
+        };
+        let g = [
+            [10, 5, 10, 255],
+            [10, 5, 10, 255],
+            [10, 5, 20, 255],
+            [10, 5, 20, 255],
+        ];
+        let geo = build_geometry(&[quad(Some(g), 1), quad(None, 0)], 320, 240);
+        assert!(geo.vertices[..4].iter().all(|v| v.flags == FLAG_GOURAUD));
+        assert!(geo.vertices[4..].iter().all(|v| v.flags == 0));
+    }
+
+    /// The rule bits each host stamps: the dither table only with the draw
+    /// mode's dither up, and only a Gouraud quad's opaque write takes it.
+    #[test]
+    fn psx_rule_flags_gate_the_dither_on_the_draw_mode() {
+        assert_eq!(psx_rule_flags(PsxScreenRule::Off, true), 0);
+        assert_eq!(
+            psx_rule_flags(PsxScreenRule::Gpu, true),
+            FLAG_PSX_BLEND | FLAG_CONSOLE_DITHER
+        );
+        assert_eq!(psx_rule_flags(PsxScreenRule::Gpu, false), FLAG_PSX_BLEND);
+        assert_eq!(
+            psx_rule_flags(PsxScreenRule::PcsxRedux, true),
+            FLAG_PSX_BLEND | FLAG_PCSX_BLEND | FLAG_PCSX_DITHER
+        );
+        let on = psx_rule_flags(PsxScreenRule::Gpu, true);
+        assert!(dithers_opaque_write(FLAG_GOURAUD | on));
+        assert!(!dithers_opaque_write(on));
+        assert!(!dithers_opaque_write(
+            FLAG_GOURAUD | psx_rule_flags(PsxScreenRule::Gpu, false)
+        ));
+        // No rule bit lands on a kernel bit.
+        for rule in [PsxScreenRule::Gpu, PsxScreenRule::PcsxRedux] {
+            let bits = psx_rule_flags(rule, true);
+            assert_eq!(bits & (FLAG_TEXTURED | FLAG_DEPTH_TESTED | FLAG_GOURAUD), 0);
+        }
+    }
+
+    /// The stamped stream is the cached one with the bits ORed in, every
+    /// other byte untouched.
+    #[test]
+    fn vertex_bytes_with_flags_ors_the_bits_into_each_vertex() {
+        let quad = ScreenPrim::Flat(FlatQuad {
+            xy: [(0, 0), (8, 0), (0, 8), (8, 8)],
+            color: [10, 5, 10, 255],
+            gouraud: Some([[10, 5, 10, 255]; 4]),
+            semi_transparent: false,
+            abr_mode: 0,
+            ot_index: 0,
+            depth: None,
+        });
+        let geo = build_geometry(&[quad], 320, 240);
+        assert_eq!(geo.vertex_bytes_with_flags(0), geo.vertex_bytes());
+        let bits = psx_rule_flags(PsxScreenRule::Gpu, true);
+        let mut want = geo.clone();
+        for v in want.vertices.iter_mut() {
+            v.flags |= bits;
+        }
+        assert_eq!(geo.vertex_bytes_with_flags(bits), want.vertex_bytes());
     }
 
     #[test]

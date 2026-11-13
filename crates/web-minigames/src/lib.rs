@@ -127,6 +127,10 @@ pub struct LegaiaMinigames {
     /// The Muscle Dome hub's live first visit, stepped by the page
     /// (`muscle_first_visit_reset` / `muscle_first_visit_step`).
     muscle_hub: Option<legaia_engine_minigames::muscle_ringside::FirstVisitHub>,
+    /// The vsync cadence the live first visit's arms run on
+    /// ([`legaia_engine_minigames::muscle_ringside::HubCadence`], every second
+    /// vsync on a step of two, as `HubTimers::tick` runs them).
+    muscle_hub_cadence: legaia_engine_minigames::muscle_ringside::HubCadence,
     /// Announcer lines the live first visit has started.
     muscle_hub_xa_fired: u32,
     /// Announcer lines started (a read-out for the page's checks).
@@ -300,6 +304,9 @@ pub struct LegaiaMinigames {
     /// How many tally steps this screen has already keyed, so a replay to
     /// `round` keys only the steps it has not.
     muscle_tally_voiced_steps: i32,
+    /// How many of this screen's vsyncs the cue ring has aged through: the
+    /// ring ages by the display vsync, not by the hub's game tick.
+    muscle_tally_aged_vsyncs: i32,
     /// The INTERVAL screen tick the tally's fast-forward latch was raised
     /// on - retail's `DAT_801D1AB4`, which the hub's tally arm sets on a
     /// press and nothing lowers until the hub is entered again. This page
@@ -437,6 +444,7 @@ impl LegaiaMinigames {
             dance_surface: Default::default(),
             baka_xa: legaia_engine_audio::XaClipBank::new(),
             muscle_hub: None,
+            muscle_hub_cadence: legaia_engine_minigames::muscle_ringside::HubCadence::idle(),
             muscle_hub_xa_fired: 0,
             baka_xa_fired: 0,
             baka_xa_last: None,
@@ -490,6 +498,7 @@ impl LegaiaMinigames {
             fishing_sfx_bundle: None,
             muscle_tally_cue_counter: 0,
             muscle_tally_voiced_steps: 0,
+            muscle_tally_aged_vsyncs: 0,
             muscle_tally_boost_from: None,
         }
     }

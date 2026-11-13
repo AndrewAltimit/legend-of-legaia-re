@@ -393,8 +393,13 @@ impl LegaiaMinigames {
         serde_json::Value::Array(rows).to_string()
     }
 
-    /// The hub's **first visit** at `tick` ticks in (no pad input), as
-    /// retail-placed rows: `{ ok, arm, done, rows }`.
+    /// The hub's **first visit** at its `vsync`-th vsync (no pad input), as
+    /// retail-placed rows: `{ ok, arm, arm_id, done, rows }`. The arms run on
+    /// the hub's cadence ([`HubCadence::ticks_through`]: every second vsync
+    /// on a step of two, the first on vsync `1`), as the play hosts'
+    /// `HubTimers` runs them.
+    ///
+    /// [`HubCadence::ticks_through`]: legaia_engine_minigames::muscle_ringside::HubCadence::ticks_through
     ///
     /// The arms are `legaia_engine_minigames::muscle_ringside::FirstVisitHub` -
     /// the intro strip, the brick wall rising under it, the course-title
@@ -406,26 +411,30 @@ impl LegaiaMinigames {
     /// [`Self::muscle_hub_quads_json`]'s row shape, plus one
     /// `{ shade: true, x, y, dw, dh, top, bottom }` row for the backdrop
     /// shade between the wall and the screens. `arm` is the arm name
-    /// (`intro`, `title`, `card`, `drain`, `round`, `done`).
-    pub fn muscle_first_visit_json(&self, tick: i32, course: i32, round: i32) -> String {
-        use legaia_engine_minigames::muscle_ringside::FirstVisitHub;
-        // The walk is deterministic and bounded; replay it to `tick`.
+    /// (`intro`, `title`, `card`, `drain`, `round`, `done`), `arm_id` the
+    /// retail arm number (`0..=6`, `0x14..=0x16`; `-1` once done).
+    pub fn muscle_first_visit_json(&self, vsync: i32, course: i32, round: i32) -> String {
+        use legaia_engine_minigames::muscle_ringside::{FirstVisitHub, HUB_FRAME_STEP, HubCadence};
+        // The walk is deterministic and bounded; replay it to `vsync`.
         let mut hub = FirstVisitHub::new();
-        for _ in 0..tick.clamp(0, 4096) {
+        for _ in 0..HubCadence::ticks_through(vsync.clamp(0, 8192)) {
             if hub.done() {
                 break;
             }
-            hub.tick(1, 0);
+            hub.tick(HUB_FRAME_STEP, 0);
         }
         self.first_visit_rows_json(&hub, course, round)
     }
 
-    /// Start a **live** first visit: the page steps it once per tick with
+    /// Start a **live** first visit: the page steps it once per vsync with
     /// [`Self::muscle_first_visit_step`] instead of replaying a no-input walk,
     /// so a press ends the two card holds early and the announcer lines play
-    /// - what both play hosts do through `World::tick_muscle_hub`.
+    /// - what both play hosts do through `World::tick_muscle_hub`. The visit
+    /// opens on an idle hub's cadence, so its first vsync runs its first tick.
     pub fn muscle_first_visit_reset(&mut self) {
-        self.muscle_hub = Some(legaia_engine_minigames::muscle_ringside::FirstVisitHub::new());
+        use legaia_engine_minigames::muscle_ringside::{FirstVisitHub, HubCadence};
+        self.muscle_hub = Some(FirstVisitHub::new());
+        self.muscle_hub_cadence = HubCadence::idle();
     }
 
     /// Whether the leg the page is opening is owed the hub's first visit:
@@ -440,18 +449,27 @@ impl LegaiaMinigames {
             .is_none_or(legaia_engine_minigames::muscle_dome::DomeContest::opens_on_first_visit)
     }
 
-    /// Step the live first visit one tick. `pressed` is whether the player
-    /// pressed a button this tick (the page has no retail pad word; any press
-    /// stands for the hold arms' `0xF4` mask). Starts the CD-XA line the tick
-    /// started, through the announcer lane. Returns the frame as
-    /// [`Self::muscle_first_visit_json`] does; `{"ok":false}` with no live hub.
+    /// Step the live first visit one **vsync**. `pressed` is whether the
+    /// player pressed a button this vsync (the page has no retail pad word;
+    /// any press stands for the hold arms' `0xF4` mask). The arms run on the
+    /// hub's cadence ([`legaia_engine_minigames::muscle_ringside::HubCadence`]:
+    /// every second vsync on a step of two, a press between two ticks held
+    /// for the next), the rule `HubTimers::tick` applies on the play hosts.
+    /// Starts the CD-XA line the tick started, through the announcer lane.
+    /// Returns the frame as [`Self::muscle_first_visit_json`] does;
+    /// `{"ok":false}` with no live hub.
     pub fn muscle_first_visit_step(&mut self, pressed: bool, course: i32, round: i32) -> String {
         use legaia_engine_minigames::muscle_dome::HUB_SKIP_PAD_MASK;
+        use legaia_engine_minigames::muscle_ringside::HUB_FRAME_STEP;
         let Some(mut hub) = self.muscle_hub.take() else {
             return r#"{"ok":false}"#.to_string();
         };
-        if !hub.done() {
-            hub.tick(1, if pressed { HUB_SKIP_PAD_MASK } else { 0 });
+        if !hub.done()
+            && let Some(pad) =
+                self.muscle_hub_cadence
+                    .vsync(if pressed { HUB_SKIP_PAD_MASK } else { 0 })
+        {
+            hub.tick(HUB_FRAME_STEP, pad);
         }
         if let Some(cue) = hub.take_xa() {
             self.muscle_hub_xa_fired = self.muscle_hub_xa_fired.wrapping_add(1);
@@ -555,14 +573,33 @@ impl LegaiaMinigames {
             A::RoundIn | A::RoundOut => "round",
             A::Done => "done",
         };
-        serde_json::json!({ "ok": true, "arm": arm, "done": hub.done(), "rows": rows }).to_string()
+        let arm_id: i32 = match hub.arm() {
+            A::IntroIn => 0,
+            A::IntroHold => 1,
+            A::IntroOut => 2,
+            A::TitleZoom => 3,
+            A::CardIn => 4,
+            A::CardHold => 5,
+            A::Drain => 6,
+            A::Return => 0x14,
+            A::RoundIn => 0x15,
+            A::RoundOut => 0x16,
+            A::Done => -1,
+        };
+        serde_json::json!({
+            "ok": true, "arm": arm, "arm_id": arm_id, "done": hub.done(), "rows": rows,
+        })
+        .to_string()
     }
 }
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
-    /// A pad press on the INTERVAL screen, `tick` ticks into it: raise the
-    /// tally's fast-forward latch, as retail's hub arm `0x0B` does.
+    /// A pad press on the INTERVAL screen's `vsync`-th vsync: raise the
+    /// tally's fast-forward latch, as retail's hub arm `0x0B` does. The tick
+    /// that reads it is the hub cadence's
+    /// ([`legaia_engine_minigames::muscle_ringside::HubCadence::tick_reading_press`]):
+    /// that vsync's own when it runs one, else the next.
     ///
     /// That arm tests the press mask against `0xF4` ahead of the roll and
     /// stores `1` to `DAT_801D1AB4` (`0x801CFD60..0x801CFD7C`), the step
@@ -570,7 +607,7 @@ impl LegaiaMinigames {
     /// one step, so one press rolls the rest of the tally out. The heading's
     /// fade-in arm (`0x0A`) carries no pad test. The play hosts hold the
     /// latch on `HubTimers::tally_boost`; this page replays the roll from a
-    /// tick count, so it holds the tick the latch rose on and every replay
+    /// vsync count, so it holds the game tick the latch rose on and every replay
     /// ([`Self::muscle_hub_quads_json`] screen 4,
     /// [`Self::muscle_interval_still_json`], `muscle_tally_voice`) boosts the
     /// steps at or past it.
@@ -580,15 +617,16 @@ impl LegaiaMinigames {
     /// fade-in, once the latch is already up, or once the roll has drained -
     /// the page then gives the press to its own "next round" key.
     // REF: FUN_801CF870 (arm 0x0B), FUN_801D14B0
-    pub fn muscle_tally_press(&mut self, tick: i32) -> bool {
+    pub fn muscle_tally_press(&mut self, vsync: i32) -> bool {
         use legaia_engine_minigames::muscle_dome::HubScreenStage;
+        use legaia_engine_minigames::muscle_ringside::{HUB_FRAME_STEP, HubCadence};
         if self.muscle_tally_boost_from.is_some() {
             return false;
         }
         let Some(run) = self.muscle_run.as_ref() else {
             return false;
         };
-        let tick = tick.max(0);
+        let tick = HubCadence::tick_reading_press(vsync.clamp(0, 1 << 16));
         let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
         let mut interval = interval_screen();
         let (mut ramp, _) = run.tally_roll();
@@ -596,13 +634,13 @@ impl LegaiaMinigames {
         // The play hosts tick the envelope, test the pad, then step the roll;
         // replay through the press's own frame and read the stage there.
         for _ in 0..=tick {
-            interval.tick(1, 0);
+            interval.tick(HUB_FRAME_STEP, 0);
             if interval.done() {
                 return false;
             }
         }
         for _ in 0..tick {
-            if !ramp.tick(1, false, volume_word).rolling {
+            if !ramp.tick(HUB_FRAME_STEP, false, volume_word).rolling {
                 rolling = false;
                 break;
             }
@@ -614,8 +652,9 @@ impl LegaiaMinigames {
         true
     }
 
-    /// The re-entered hub's **ringside still** under the INTERVAL screen,
-    /// `tick` ticks into that screen: `{ ok, quads: [...] }` with two rows on
+    /// The re-entered hub's **ringside still** under the INTERVAL screen, at
+    /// that screen's `vsync`-th vsync (the hub cadence's
+    /// `HubCadence::ticks_through` game ticks in, each on a step of two): `{ ok, quads: [...] }` with two rows on
     /// sheet `7` (`pal` = the still variant, `0` = extraction 1221 / `int.tim`,
     /// `1` = 1222 / `int2.tim`) and `bright` the packet colour (`0x80` =
     /// neutral modulation). `quads` is empty while the level is zero.
@@ -632,8 +671,10 @@ impl LegaiaMinigames {
     /// [`legaia_engine_ui::ringside_backdrop::ringside_still_quads`]
     /// resolved onto the sheet through their texture pages
     /// (`StillDraw::from_quad`).
-    pub fn muscle_interval_still_json(&self, tick: i32, hp_cur: u32, hp_max: u32) -> String {
-        use legaia_engine_minigames::muscle_ringside::{BackdropStage, HubBackdrop};
+    pub fn muscle_interval_still_json(&self, vsync: i32, hp_cur: u32, hp_max: u32) -> String {
+        use legaia_engine_minigames::muscle_ringside::{
+            BackdropStage, HUB_FRAME_STEP, HubBackdrop, HubCadence,
+        };
         use legaia_engine_ui::ringside_backdrop as rb;
         let Some(run) = self.muscle_run.as_ref() else {
             return r#"{"ok":false}"#.to_string();
@@ -648,16 +689,20 @@ impl LegaiaMinigames {
         let (mut ramp, _) = run.tally_roll();
         let mut backdrop = HubBackdrop::reentry(still);
         let volume_word = legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
-        for step_idx in 0..tick.max(0) {
+        for step_idx in 0..HubCadence::ticks_through(vsync.clamp(0, 1 << 16)) {
             if backdrop.stage() == BackdropStage::Card {
                 break;
             }
             let lane0_full =
                 ramp.fade[0] >= legaia_engine_minigames::other_game_overlay::LANE_FADE_FULL;
-            backdrop.tick(1, 0, interval.map(|i| i.stage()), lane0_full);
+            backdrop.tick(HUB_FRAME_STEP, 0, interval.map(|i| i.stage()), lane0_full);
             if let Some(i) = interval.as_mut() {
-                i.tick(1, 0);
-                ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
+                i.tick(HUB_FRAME_STEP, 0);
+                ramp.tick(
+                    HUB_FRAME_STEP,
+                    self.muscle_tally_boost_at(step_idx),
+                    volume_word,
+                );
                 if i.done() {
                     interval = None;
                 }
@@ -689,7 +734,8 @@ impl LegaiaMinigames {
     ///
     /// `screen`: 0 = intro card, 1 = course-title art, 2 = INTERVAL
     /// heading, 3 = ROUND banner (`round` is the displayed number),
-    /// 4 = the six-row score tally. `brightness` is the emitter's colour
+    /// 4 = the six-row score tally (`round` is the INTERVAL screen's vsync).
+    /// `brightness` is the emitter's colour
     /// scale (`0x100` = the record's own colour).
     ///
     /// Every row's screen rect comes out of the retail emitters
@@ -714,10 +760,11 @@ impl LegaiaMinigames {
             // The six rows are the roll's, not the settled totals: the three
             // recovery lanes counting down, the HP they count into, the score
             // lane counting down and the coin tally counting up. On this arm
-            // `round` is the screen's own tick, and the roll is replayed from
-            // it the way the envelope is - the kernel is
-            // `other_game_overlay::ScoreTallyRamp`, which the native window
-            // steps one frame at a time off the same armed state.
+            // `round` is the screen's own vsync, and the roll is replayed
+            // from it on the hub's cadence the way the envelope is - the
+            // kernel is `other_game_overlay::ScoreTallyRamp`, which the
+            // native window steps a game tick at a time off the same armed
+            // state.
             _ => {
                 let Some(run) = self.muscle_run.as_ref() else {
                     return r#"{"ok":false}"#.to_string();
@@ -725,8 +772,15 @@ impl LegaiaMinigames {
                 let volume_word =
                     legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.voice_volume as u32;
                 let (mut ramp, mut tally) = run.tally_roll();
-                for step_idx in 0..round.max(0) {
-                    let step = ramp.tick(1, self.muscle_tally_boost_at(step_idx), volume_word);
+                let ticks = legaia_engine_minigames::muscle_ringside::HubCadence::ticks_through(
+                    round.clamp(0, 1 << 16),
+                );
+                for step_idx in 0..ticks {
+                    let step = ramp.tick(
+                        legaia_engine_minigames::muscle_ringside::HUB_FRAME_STEP,
+                        self.muscle_tally_boost_at(step_idx),
+                        volume_word,
+                    );
                     tally += step.tally_gain;
                     if !step.rolling {
                         break;

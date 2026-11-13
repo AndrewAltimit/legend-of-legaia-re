@@ -418,7 +418,8 @@ fn a_freshly_killed_monster_is_not_faded_before_its_knockdown() {
 /// Horn hides the party for its rise (arm 8), shows it again on the heal
 /// (arm `0xA`), whose pass relights the creature white under the tint
 /// machine's hold state rather than hiding it (`0x801F77A8..0x801F77EC`);
-/// arm `0xB`'s pass hides it (`0x801F7D04..0x801F7D10`).
+/// arm `0xB`'s pass hides it (`0x801F7D04..0x801F7D10`). The heal's pass
+/// also raises the roster panels.
 #[test]
 fn horn_hides_and_shows_the_party_around_the_heal() {
     use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
@@ -439,7 +440,11 @@ fn horn_hides_and_shows_the_party_around_the_heal() {
     run_arm(&mut world, 8);
     assert_eq!(world.actors[0].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert!(world.battle_body_hidden(0));
+    assert!(world.battle.action_panels_glide.is_none());
     run_arm(&mut world, 0xA);
+    // The heal's pass raises the roster panels its tally reads on
+    // (`FUN_801D8DE8(6, 0)` at `0x801F7BF8`).
+    assert!(world.battle.action_panels_glide.is_some());
     assert_eq!(world.actors[0].battle.render_flag, 0);
     assert!(!world.battle_body_hidden(0));
     assert!(!world.battle_body_hidden(9), "the creature stays lit");

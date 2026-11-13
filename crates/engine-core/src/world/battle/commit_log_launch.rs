@@ -66,7 +66,7 @@ impl World {
             self.battle.action_hud_wiped = false;
             self.battle.counter_hud = None;
             // A module's panel raise belongs to the action that made it.
-            self.battle.module_panels_glide = None;
+            self.battle.action_panels_glide = None;
             // The seed's own record-7 open (`0x801E2F24..0x801E2F44`): the
             // Attack arm and the Magic arm past its item-class branch fall
             // into `sltiu v0,t2,3` on the target and raise the bar for a
@@ -75,6 +75,13 @@ impl World {
             self.battle.readout_bar_glide = self
                 .seed_raises_readout_bar()
                 .then(|| LogLaunch::new(false));
+        } else if element == ROSTER_PANEL_ELEMENT {
+            // The panels' mode-`0` raise: the seed's plate routine for a
+            // monster's party-wide action (`jal 0x801D8DE8` with `a0 = 6`,
+            // `a1 = 0` at `0x801E7058..0x801E7060`) or the item band's `0x3E`
+            // arm (`0x801E4054..0x801E405C`). Records `0x4E` / `0x4F` follow
+            // on the same pass and ride the one glide.
+            self.battle.action_panels_glide = Some(LogLaunch::new(false));
         } else if element == READOUT_BAR_ELEMENT {
             self.battle.readout_bar_glide = Some(LogLaunch::new(false));
         } else if element == legaia_engine_battle_vm::battle_action::SPIRIT_AP_BAR_ELEMENT {
@@ -83,10 +90,19 @@ impl World {
             self.battle.spirit_gauge_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
+            // The record holds the name it opens on: the target seat's, or
+            // for the every-enemy code `9` the lone survivor's the census
+            // latched in `ctx[+0x24B]` (`li v0,0x9` / `lbu v0,0x24b(a0)` /
+            // the name pointer `actor_table[+0x24B] + 0x1BC` into the
+            // record, `0x801E6FC8..0x801E7008`).
+            let lone = self.battle_ctx.item_target_b;
             self.battle.target_plaque_seat = self
                 .actors
                 .get(usize::from(self.battle_ctx.active_actor))
-                .map(|a| a.battle.active_target);
+                .map(|a| match a.battle.active_target {
+                    9 if lone != 0 => lone,
+                    t => t,
+                });
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
         }
@@ -167,6 +183,20 @@ impl World {
         // plate are the records landing on the bar's seat and the ring
         // plate's.
         let spirit = self.spirit_gauge_view().is_some();
+        // The confirm chips' exit twins (records `0x12` / `0x14`, seat B off
+        // the left and right edges): drained with the handle list once the
+        // round starts, so a capture past the `0xFE` arm seats them afresh.
+        // Outside the stepper's return, like the hold they share.
+        if matches!(target, [-56 | 328, 86]) {
+            let x = self.battle.commit_exit.get_or_insert(
+                legaia_engine_battle_loop::battle_state::CommitExit {
+                    glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+                    escape: false,
+                },
+            );
+            x.glide.elapsed = elapsed.min(x.glide.total);
+            return true;
+        }
         let glide = match target {
             // The Done band's closing glides (mode `1`, seat B back to seat
             // A): the actor plaque leaving through the top edge, the bar,
@@ -192,6 +222,21 @@ impl World {
             [104 | 180, 86] => self.battle.round_prompt_glide.as_mut(),
             [160 | 248, 64] | [204, 32 | 96] | [68, 12] | [208, 172] => {
                 self.battle.ring_open_glide.as_mut()
+            }
+            // The commit log's exit (records `0x2B..` on mode `1`, one
+            // display width left of their rest seats on row `168`) is drawn
+            // off the confirm's exit glide.
+            [x, 168] if x < 0 => None,
+            // The roster panels' raise inside an action (records 6 /
+            // `0x4E` / `0x4F`, seat B on row `168`), when an opener raised
+            // them on this replay too; outside one the row is the round
+            // prompt's.
+            [x, 168]
+                if x != 168
+                    && self.battle.command.is_none()
+                    && self.battle.action_panels_glide.is_some() =>
+            {
+                self.battle.action_panels_glide.as_mut()
             }
             [x, 168] if x != 168 => self.battle.round_prompt_glide.as_mut(),
             _ => None,

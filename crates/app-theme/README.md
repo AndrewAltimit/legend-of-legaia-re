@@ -43,7 +43,7 @@ still-sRGB-encoded `[r, g, b, 1.0]` a texture-modulating draw expects. Each
 `Palette` names roles, not hues: `ground` / `band` / `card` / `stripe` for
 surfaces from deepest up, `stage` for the mid-tone backdrop behind a preview
 (Explorer's 3D view: a near-black mesh and a bright one both stand off it), `raised` / `hover` / `pressed` / `open` for a
-button's states, `rule` for separators and `outline` for a control's edge,
+button's states, `rule` for separators, `outline` for a control's edge and `focus` for the ring round the control with keyboard or controller focus (a blue no fill uses, so focus never reads as the gold of a selection),
 `ink` / `ink_dim` / `ink_faint` for text, `accent` (the gold of the game's
 title lettering) with `accent_fill` / `on_accent` for the one primary button a
 screen has, and `good` / `warn` / `error` / `info` for status lines.

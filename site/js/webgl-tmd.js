@@ -54,7 +54,9 @@
  *              ordering-table link: true or 1 the corners' mean, the key
  *              retail links a battle shell or field prim by; 1 + a
  *              DRAW_ORDER_* word on the field (2 farthest corner, 3 ten
- *              buckets nearer, 4 both).
+ *              buckets nearer, 4 both). Word bit 4 (DRAW_ORDER_NEAR_CLEAN,
+ *              meanDepth 7 on an NPC) keeps the ten-bucket shift on a clean
+ *              frame too, per vertex.
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage

@@ -37,11 +37,13 @@ use psx_seq::Seq;
 mod bgm_playback;
 pub(crate) mod command_log;
 mod pack_audio;
+mod scene_switch;
 mod sfx_banks;
 mod sfx_fire;
 mod xa_clips;
 
 pub use command_log::{AudioCommand, AudioCommandLog};
+pub use scene_switch::{SCENE_SWITCH_FADE_SAMPLES, SCENE_SWITCH_HOLD_MAX_FRAMES};
 #[cfg(test)]
 use sfx_banks::resolve_sfx_slot;
 pub use xa_clips::{XA_CUE_GAIN, XA_GAIN_UNITY, XaChannelSource, XaLaneStats, XaStageRequest};
@@ -207,6 +209,9 @@ pub struct AudioDirector<S: AudioSink> {
     /// An expansion pack's decoded clips and the deferred faded start
     /// ([`pack_audio`]).
     pack: pack_audio::PackAudioState,
+    /// A direct scene entry's fade and the BGM commands it holds
+    /// ([`scene_switch`]).
+    switch: scene_switch::SceneSwitchHold,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -276,6 +281,7 @@ impl<S: AudioSink> AudioDirector<S> {
             cd_reverb: false,
             commands: AudioCommandLog::default(),
             pack: Default::default(),
+            switch: Default::default(),
         }
     }
 

@@ -41,6 +41,7 @@ impl Sequencer {
             active: Vec::new(),
             master_vol: 127,
             master_vol_dirty: false,
+            vol_slide: crate::seq_calc::SeqChannel::default(),
             loop_count: 0,
             voice_prio: [0; crate::spu::NUM_VOICES],
             voice_note: [None; crate::spu::NUM_VOICES],
@@ -85,6 +86,52 @@ impl Sequencer {
         if v != self.master_vol {
             self.master_vol = v;
             self.master_vol_dirty = true;
+        }
+    }
+
+    /// Lower the sequence by `amount` over `ticks` vsyncs (`SsSeqSetVol`'s
+    /// decrescendo, `FUN_80062004` -> `FUN_80061EDC`): the amount is clamped
+    /// to the current volume, and from the next flush on each vsync's
+    /// `SsSeqCalc` runs the descending slide `FUN_8006352C`, whose every move
+    /// is a sequence-volume set that re-volumes the held notes. A timed
+    /// release (op `0x35` sub-op `5`) arms one over its deadline.
+    ///
+    /// REF: FUN_80061EDC, FUN_8006352C, FUN_80062004
+    pub fn set_decrescendo(&mut self, amount: i16, ticks: i32) {
+        let v = u16::from(self.master_vol);
+        self.vol_slide.vol = (v, v);
+        crate::seq_calc::set_decrescendo(&mut self.vol_slide, amount, ticks);
+    }
+
+    /// Whether a volume slide is running (flag `0x10` or `0x20`).
+    pub fn vol_slide_active(&self) -> bool {
+        self.vol_slide.flags & (crate::seq_calc::flag::VOL_UP | crate::seq_calc::flag::VOL_DOWN)
+            != 0
+    }
+
+    /// One vsync of the volume slides, in `SsSeqCalc`'s order behind the
+    /// pump (`FUN_80062F98`: ascending, then descending, both inside the play
+    /// arm). A move lands through [`Self::set_master_vol`], as retail's lands
+    /// through `FUN_80067E9C`.
+    ///
+    /// REF: FUN_80062F98
+    pub(super) fn tick_vol_slide(&mut self) {
+        use crate::seq_calc::{SlideDir, volume_slide_tick};
+        if self.finished {
+            return;
+        }
+        for dir in [SlideDir::Up, SlideDir::Down] {
+            if self.vol_slide.flags & dir.flag_bit() == 0 {
+                continue;
+            }
+            let v = u16::from(self.master_vol);
+            self.vol_slide.vol = (v, v);
+            let tick = volume_slide_tick(&mut self.vol_slide, dir, (v, v));
+            if let Some((l, r)) = tick.commit {
+                // One value for both sides (see `set_master_vol`); a slide
+                // moves them together.
+                self.set_master_vol(l.max(r).min(0x7F) as u8);
+            }
         }
     }
 

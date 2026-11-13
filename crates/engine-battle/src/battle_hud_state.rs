@@ -663,6 +663,30 @@ impl BattleHud {
         }
     }
 
+    /// The popups in the order retail's renderer `FUN_801DF6B8` visits the
+    /// ring: slot `(cursor + i) & 7` for `i` in `0..8`, from the slot the
+    /// next push overwrites (the oldest) to the newest
+    /// (`0x801DF700..0x801DF714`, the loop closing at `0x801DFDB8`). Every
+    /// live entry is drawn, several on one actor among them. An entry with
+    /// no ring slot (pushed out of band into [`Self::popups`]) comes first.
+    ///
+    /// REF: FUN_801DF6B8
+    pub fn popups_in_ring_order(&self) -> Vec<&DamagePopup> {
+        let slot_of = |i: usize| self.popup_ring_slots.get(i).copied().unwrap_or(0xFF);
+        let cursor = self.popup_ring.cursor & 0x7;
+        let mut out: Vec<&DamagePopup> = (0..self.popups.len())
+            .filter(|&i| slot_of(i) > 0x7)
+            .map(|i| &self.popups[i])
+            .collect();
+        for k in 0..8u8 {
+            let slot = (cursor + k) & 0x7;
+            if let Some(i) = (0..self.popups.len()).find(|&i| slot_of(i) == slot) {
+                out.push(&self.popups[i]);
+            }
+        }
+        out
+    }
+
     /// Drop every queued popup. Engines call this on battle abort / scene
     /// transition so stale popups don't bleed into the next encounter.
     pub fn clear_popups(&mut self) {

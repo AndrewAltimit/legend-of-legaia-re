@@ -284,6 +284,17 @@ fn begin_chip_seat_names_the_prompt_glide_elapsed() {
     assert_eq!(round_prompt_pool_seat(&vec![0u8; 0x20_0000], 2), None);
 }
 
+/// The confirm's exit: the left chip's seat names the glide's `elapsed`
+/// (`92 -> -56` over sixteen vsyncs), landed at `-56` in
+/// `nilboa_koru_pre_dead_end_crisis`'s older ordering table.
+#[test]
+fn commit_exit_chip_seat_names_the_exit_glide_elapsed() {
+    assert_eq!(commit_exit_elapsed(-64 + 8), Some(16));
+    assert_eq!(commit_exit_elapsed(92 - 129), Some(14));
+    assert_eq!(commit_exit_elapsed(92), None, "the confirm's own chip");
+    assert_eq!(commit_exit_pool_seat(&vec![0u8; 0x20_0000], &[2; 16]), None);
+}
+
 /// `nivora_duel_mid_blazing_slash`'s tween table: yaw `4640` closing on
 /// `4051` by `59` a pass, TR z `4368` on `4915` by `55`, at frame step `2`.
 /// Two passes back the walker stood one table step (`2 * 59`) plus one
@@ -1046,6 +1057,40 @@ fn a_charge_body_shot_walks_back_no_further_than_its_origin() {
     assert_eq!(module_shot_frames(&ram, ctx), None);
     let shown = displayed_module_cam_live(&ram, ctx, &[2, 2]);
     assert_eq!(shown.yaw, 2366.0 - 4.0 * 99.0);
+}
+
+/// Genocidal Cannon's arm 1 (PROT 0963) drifts the camera globals every pass
+/// off arm 0's one-frame cut: `battle_noaru_songi_genocidal_cannon_mid_cast`
+/// holds pitch `-160`, TR y `320`, TR z `26880` on the cut's `32000`, and the
+/// frame on screen stood the drift times the vsyncs back. A table still
+/// walking under the drift (a gap past one increment) is left to the table.
+#[test]
+fn a_drifting_capture_arm_walks_back_on_its_drift() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let songi = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x279, 1);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, songi);
+    put8(&mut ram, songi + 0x1DF, 0xB3);
+    put16(&mut ram, 0x8007_B790, (-160i16) as u16);
+    put32(&mut ram, 0x8008_40BC, 320);
+    put32(&mut ram, 0x8008_40C0, 26880);
+    // The cut's table: TR z `32000` reached in one frame from `6000`.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 26000);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 32000);
+    let shown = displayed_module_drift_live(&ram, ctx, 0x70, &[4, 2]).expect("drift arm");
+    assert_eq!(shown.tr[2], 26880.0 + 6.0 * 256.0);
+    assert_eq!(shown.tr[1], 320.0 - 6.0 * 16.0);
+    assert_eq!(shown.pitch, 4096.0 - 160.0 + 6.0 * 8.0);
+    // A shot still walking under the drift is the table's.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 400);
+    assert!(displayed_module_drift_live(&ram, ctx, 0x70, &[4, 2]).is_none());
+    // Off the capture band nothing drifts.
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 26000);
+    assert!(displayed_module_drift_live(&ram, ctx, 0x6F, &[4, 2]).is_none());
 }
 
 /// Kiss of Death's arm-0 shot (PROT 0955, `0xC` frames) sets out from the

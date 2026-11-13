@@ -55,6 +55,14 @@ pub use score::*;
 pub use strike_clock::*;
 pub use tally::*;
 
+/// The frame-step floor the secret opponent's tally arm (`0x6D`) stores on
+/// every frame it runs (`li v0,0x4` / `sw v0,-0x4628(v1)` at
+/// `0x801D0FA8..0x801D0FAC`), with the rate divisor `DAT_1F80037D` back at
+/// `8`: the challenger's announcement runs a game tick every four vsyncs,
+/// drawn at fifteen frames a second, until the opponent install `0x1E` puts
+/// the floor back at `1` (`0x801CFCB8..0x801CFCC4`).
+pub const SECRET_TALLY_FRAME_STEP: i32 = 4;
+
 /// Starting HP each round (`FUN_801d1744` round seed: `DAT_801dbfc4 = 0xc80`).
 pub const HP_START: i32 = 0xC80;
 

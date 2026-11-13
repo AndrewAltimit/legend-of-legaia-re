@@ -159,6 +159,12 @@ pub struct SpriteArmSeed {
     pub colour: u32,
     pub level: u16,
     pub pose: Vec<[u8; 8]>,
+    /// For a default-arm node (no sprite-arm bit), the builder's growing
+    /// channels as the displayed frame drew them: the radii `+0xB4` /
+    /// `+0xB6`, the heights `+0xB8` / `+0xBA` and the length `+0xC8`, each
+    /// taken back the display lag along its own rate `+0xC0..+0xCA`. `None`
+    /// keeps the engine's own.
+    pub shape: Option<[i16; 5]>,
 }
 
 /// A turning ambient part's render banks `+0x24..+0x28` as a capture's
@@ -254,10 +260,18 @@ impl World {
     /// breath puff (stager record 2, two record-8 sheets) at the player
     /// whenever its counter wraps, so a child that ran the scene from its
     /// entry holds puffs the captured frame had already lost.
+    ///
+    /// The draw-kind-4 parts without the sprite-arm bit - `vozz`'s sparkles
+    /// round Ozma's egg, `garmel`'s light bars round Zeto - are seated the
+    /// same way, record by record, but keep the engine's own colour word and
+    /// fade level: their programs fade them on every pass, so the RAM's level
+    /// stands two passes past the displayed frame, and a level seated from it
+    /// lit `garmel_zeto_appears_rising`'s floor ring brighter than retail's
+    /// frame shows (image `.966` placement only, `.954` with the level). Seated
+    /// and retired, the two sparkles the engine's own stream had put beside
+    /// Gala on `vozz_ozma_hatching_crawl` leave the frame (`.953` to `.975`).
     pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
-        let is_sheet = |p: &AmbientPart| {
-            !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
-        };
+        let is_sheet = |p: &AmbientPart| !p.finished && p.state.move_substate == 4;
         let mut used: std::collections::HashMap<usize, usize> = Default::default();
         for seed in seeds {
             let off = seed.record_off as usize;
@@ -289,8 +303,20 @@ impl World {
             st.world_y_mirror = seed.pos[1];
             [st.render_24, st.render_26, st.render_28] = seed.rot;
             st.field_72 = seed.scale;
-            st.field_74 = seed.colour;
-            st.field_78 = seed.level;
+            if st.field_9e & 0x4000 != 0 {
+                st.field_74 = seed.colour;
+                st.field_78 = seed.level;
+            } else if let Some(shape) = seed.shape {
+                // A default-arm node's rings grow by their rates every pass
+                // from the spawn, and the spawn falls on the frame clock:
+                // where each ring stands is the frame-step history since the
+                // entry, which a child running at a steady step does not
+                // replay. Seated with the level the displayed frame drew.
+                for (off, v) in [0xB4, 0xB6, 0xB8, 0xBA, 0xC8].into_iter().zip(shape) {
+                    st.set_actor_u16(off, v as u16);
+                }
+                st.field_78 = seed.level;
+            }
             seat_pose(st, &seed.pose);
         }
         // Retire what retail does not hold: a seeded record's surplus, and
@@ -1094,7 +1120,10 @@ impl World {
     /// its GPU copy). The renderer-facing sibling of [`World::step_clut_fx`].
     pub fn step_ambient_fx(&mut self, vram: &mut psx_tim::Vram) -> bool {
         let ticks = std::mem::take(&mut self.ambient.pending_game_ticks);
-        if self.ambient.fx.is_empty() && self.ambient.cell_fx_seed.is_empty() {
+        if self.ambient.fx.is_empty()
+            && self.ambient.cell_fx_seed.is_empty()
+            && self.ambient.cell_restores.is_empty()
+        {
             return false;
         }
         let mut wrote = false;
@@ -1108,6 +1137,19 @@ impl World {
         // Whatever a headless tick banked up (a host that ticked without a
         // VRAM surface) still lands, in queue order.
         wrote |= self.apply_ambient_scrolls(vram);
+        // A part whose op `0x30` ran has cleared its own `+0x9C`: its mode-3
+        // arm no longer uploads, so its last recolour is not redrawn.
+        let restores = std::mem::take(&mut self.ambient.cell_restores);
+        if !restores.is_empty() {
+            for p in self.ambient.fx.iter_mut() {
+                if p.state.field_9c == 0
+                    && p.cell_fx
+                        .is_some_and(|f| restores.iter().any(|(r, _)| *r == f.rect))
+                {
+                    p.cell_fx = None;
+                }
+            }
+        }
         let mut fx: Vec<ClutCellFx> = self
             .ambient
             .fx
@@ -1159,6 +1201,23 @@ impl World {
             if cur != out {
                 write_rect(vram, x, y, w, &out);
                 wrote = true;
+            }
+        }
+        // Op `0x30`'s `LoadImage` of the capture, after the recolours as its
+        // packet follows the mode-3 arm's.
+        // REF: FUN_800583C8
+        // A rect another live part still cycles keeps that part's recolour.
+        for (rect, src) in restores {
+            if !self
+                .ambient
+                .fx
+                .iter()
+                .any(|p| p.cell_fx.is_some_and(|f| f.rect == rect))
+            {
+                let cached = self.ambient.cell_captures.remove(&rect);
+                if let Some(src) = src.or(cached) {
+                    wrote |= restore_rect(vram, rect, &src);
+                }
             }
         }
         wrote
@@ -1318,6 +1377,23 @@ pub(crate) fn write_rect(vram: &mut psx_tim::Vram, x: u16, y: u16, w: u16, texel
         let bytes: Vec<u8> = chunk.iter().flat_map(|t| t.to_le_bytes()).collect();
         vram.write_block(x, y + row as u16, w, 1, &bytes);
     }
+}
+
+/// Write an op-`0x2C` capture back over its rect (op `0x30`); `true` when a
+/// texel changed.
+pub(crate) fn restore_rect(
+    vram: &mut psx_tim::Vram,
+    (x, y, w, h): (u16, u16, u16, u16),
+    src: &[u16],
+) -> bool {
+    if w == 0 || h == 0 || src.len() != usize::from(w) * usize::from(h) {
+        return false;
+    }
+    if read_rect(vram, x, y, w, h) == src {
+        return false;
+    }
+    write_rect(vram, x, y, w, src);
+    true
 }
 
 #[cfg(test)]

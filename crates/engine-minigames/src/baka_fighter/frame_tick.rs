@@ -105,16 +105,27 @@ impl BakaFight {
         // The held word's 32-vsync window (`_DAT_8007B938`), pumped on every
         // frame whatever the cabinet is doing, as retail's pad pump is.
         self.cabinet_hold.pump_packed(u32::from(held), 1);
+        // A game tick every `step_floor` vsyncs, on that step: the cabinet's
+        // floor is `1` but for the secret tally's `4`. A press between two
+        // ticks is held for the next, as the pad pump's edge word holds it.
+        let step = self.step_floor.max(1);
+        self.vsync_phase += 1;
+        if self.vsync_phase < step {
+            self.held_edge |= edge;
+            return BakaFrameOutcome::default();
+        }
+        self.vsync_phase = 0;
+        let edge = edge | std::mem::take(&mut self.held_edge);
         if self.cabinet.front_end() {
             self.set_cabinet_pad(edge);
-            self.tick(1);
+            self.tick(step);
             return BakaFrameOutcome::default();
         }
         if self.match_over() {
             let face = edge & (PACK_TRIANGLE | PACK_CIRCLE | PACK_CROSS | PACK_SQUARE) != 0;
             self.cabinet.set_pot(pot);
             self.set_cabinet_pad(edge);
-            self.tick_with_input(1, face);
+            self.tick_with_input(step, face);
             return BakaFrameOutcome {
                 paid: self.take_tally_gold().max(0) as u32,
                 forfeit: self.cabinet_frame.forfeit.is_some(),
@@ -125,7 +136,7 @@ impl BakaFight {
         // pick ends the visit: no throw lands from here.
         if crate::baka_cabinet::fight_on_hold(self.cabinet.state()) {
             self.set_cabinet_pad(edge);
-            self.tick(1);
+            self.tick(step);
             return BakaFrameOutcome {
                 exit: self.cabinet.exit_done(),
                 ..BakaFrameOutcome::default()
@@ -149,7 +160,7 @@ impl BakaFight {
         }
         self.set_held_pad(held);
         self.set_cabinet_pad(edge);
-        self.tick(1);
+        self.tick(step);
         BakaFrameOutcome::default()
     }
 

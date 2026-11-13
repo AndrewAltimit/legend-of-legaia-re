@@ -71,6 +71,21 @@ fn magic_cast_begin_subtracts_mp_with_ability_bits() {
     assert_eq!(host.actors[1].last_mp_cost, 10);
 }
 
+/// The debit is a halfword `subu` with no floor (`0x801E458C`): a cast past
+/// the caster's MP wraps, as a Seru cast seated past the command menu reads
+/// `65518` in retail.
+#[test]
+fn magic_cast_begin_debit_wraps_past_the_casters_mp() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCastBegin.as_byte();
+    host.actors[1].mp = 27;
+    host.actors[1].params[0] = 0x10;
+    host.spell_costs.insert(0x10, 45);
+    step(&mut host, &mut ctx);
+    assert_eq!(host.actors[1].mp, 65518);
+    assert_eq!(host.actors[1].last_mp_cost, 45);
+}
+
 #[test]
 fn magic_cast_begin_quarter_cost_with_bit_10() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);

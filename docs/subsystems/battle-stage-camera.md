@@ -778,9 +778,14 @@ actor's endpoints with the walker landed:
 | `taiku_topaz_pre_hyper_heal` | none this round | case 9: pitch `32`, `TR (0, 1280, 8712)` |
 
 Port: `battle_cam_script::end_of_action_phase` and
-`BattleCamera::set_phase_on_state`. The engine's SM rests on `0x5A` through the
-next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
-while the round is executing.
+`BattleCamera::set_phase_on_state`. Retail's state byte reads `0xFF` through the
+command band, and the engine's SM rests on its round's last pass instead (the
+Done band's `0x51` as the camera reads it, since the pass that claims `0x5A`
+rewrites the byte), so `battle_cam_inputs` hands any action state to the framing
+only while the round is executing. Fed the leftover, the Begin / Run prompt and
+the commit confirm took the Done band's framing instead of case 9, and the
+`Auto` target cursor - which opens under no member surface - its slow case-6
+orbit instead of case 1 (`the_command_band_ignores_the_last_rounds_action_state`).
 
 The gate's pass frames the seat it ran on, not the next one. The port's host
 can arm the next actor (state `0x00`, a new `ctx[+0x13]`) in the tick the
@@ -1579,9 +1584,10 @@ What falls, by cause:
   with the cast's own frames all but unchanged (`6` and `10` overrun ticks off and on on
   Glare): the drive that seeds the film reaches the cast `119` and `63` ticks later on the
   longer frames before it, and the cue's roll is dealt again. A harness re-deal, not the
-  law's frames. Kiss of Death's arm 4 is the law's own case besides: retail runs it `34`
-  passes, `27` at step `4` and the last `7` at `3`, where both clocks run `32` at `4`
-  (the arm's cost falls under the clamp inside the arm).
+  law's frames. Kiss of Death's arm 4 is the line's own case besides: retail runs it `34`
+  passes, `27` at step `4` and the last `7` at `3` once the line's read stops loading the
+  frame, which the arm table carries on both clocks
+  (`cast_module_frame_step::CAPTURE_ARM_READ_TAILS`).
 - **The polls' share over a cheap fight.** Spoon's Hyper Heal (`-.024`) runs its loaded frames at `8`
   where retail's run `5` and `6`: its fight costs some `150` under the table
   ([a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so the share over the table
@@ -1599,6 +1605,86 @@ re-deal on its lead-in. What the law cannot reach is a frame whose cost the engi
 not hold: the capture band's and the summons' heavy arms, whose PCSX-Redux frames run `5`
 to `17` vsyncs with no clip (Water Crystals `13` to `16`, Thunder Storm `6` to `9`), run
 their table's step.
+
+<a id="a-frames-work-is-what-it-links"></a>
+
+**A frame's work is what it links.** Every polygon of a battle object goes through the
+per-primitive dispatcher `FUN_80043390`, which jumps per group to its handler from the table
+at `0x8007657C` (`jr t8` at `0x80043614`); the handler transforms, culls, depth-sorts and
+links each primitive. So a frame's CPU work grows with what it links, not with its action
+state. The enemy casts' `--cd-trace` recordings give each frame's work (its cost from the
+`VSync` return to the CPU-done mark, less the CD interrupt spans,
+[`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)); against the polygons the engine's
+window links for the same state and arm (`LEGAIA_DIAG_GPU_COST`), over `171` state-and-arm
+medians of `32` films:
+
+| Work model | rms (hblanks) | Step read right | Ordinary frames' rms |
+|---|---:|---:|---:|
+| Action-state table plus draw load | `206` | `.42` | `143` |
+| `43 + .184` a linked polygon | `89` | `.78` | `55` |
+
+Fit on half the films and scored on the other, the polygon line reads rms `50` and `114`.
+Under a clip's polls the same frames cost `2.78` times that work (tenth to ninetieth
+percentile `2.70..2.85` on the fully polled arms), the stop watch's share over the frame's
+own work rather than over the table. That reads the per-line loads the table could not:
+Death Game's arms do `241..349` hblanks of work and their polled frames fit inside step
+`4`, Kiss of Death's arm 4 does `665` and its polled frames span eight vsyncs, Glare's sit
+between. Grade `disassembly` for the per-polygon path, `capture` for the coefficients.
+
+Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
+`xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
+`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`, on top of the span
+law). The native window prices each battle frame's table and hands its count over
+(`World::note_drawn_polys`); a host that does not price its frames keeps the tables. A priced
+frame's work replaces the state's base and draw load, a capture-band module's line loads it
+like the funnel's, and a capture arm's table step no longer stands in for its cost: the ring
+reads the priced cost. A summon module's arms keep their table: their clips poll on
+PCSX-Redux too (`84` to `676` polls a frame from the line's arm on), but the engine's linked
+count overshoots retail's work under them, and the Seru films read lower priced. The cast
+recorder's `meta.csv` carries each pass's `work`.
+
+The three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
+`3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's
+ring holds it), so its two homing slots land on one frame and the film's cues read `1.0`
+from `.933`. Neo Star Slash's capture arms run retail's long frames under the line, the
+drive word clears where retail's does, and Noa's death shout plays as the CD clip (`.957` to
+`1.0`). Kiss of Death's arm 4 drops from `4` to `3` within two passes of retail's when the
+line's read ends, with no per-arm pass count (`CAPTURE_ARM_READ_TAILS` still serves the
+unpriced clock). The film sets, one binary run three ways (film mean, then cue mean), with a
+persisting cast frame reading its page by the frames' starts
+([renderer port](renderer-port.md#a-casts-frames-build-on-earlier-ones)):
+
+| Set | Films | Default | Span law | Law and priced frames |
+|---|---:|---:|---:|---:|
+| Enemy casts | 107 | `.9183` / `.9982` | `.9151` / `.9935` | `.9190` / `.9844` |
+| Seru casts | 29 | `.9234` / `1.0` | `.9234` / `1.0` | `.9225` / `.9754` |
+| Player arts | 17 | `.8704` / `.9976` | `.8686` / `.9976` | `.8893` / `.9923` |
+
+Priced, the arts gain most: their strike states run retail's slow frames (Tri-Somersault's
+`0x1E` takes `720` ticks for retail's `734` vsyncs, `582` on the table; Vahn's chain `106` for
+`121`, `89`), the chain films rise `.03` to `.09` and Super Ironhead `.796` to `.857`. Pricing
+also takes back what the law alone loses on Element Change (`.954` by default, `.807` under
+the law, `.960` priced) and Death Game (`.933`, `.838`, `.935`), and the three Thunder Storm
+films sit within `.01` of the default once the page two frames back is read by the frames'
+starts (`.85` before). The film means come out level or higher on the enemy casts and the
+arts, but against the default the enemy casts drop six cues and gain two, the Seru casts drop
+one and the arts two, so the pricing stays opt-in.
+
+What still loses, by film (grade `capture`):
+
+- **Rolls dealt again.** Astral Slash's arm 4 plays a miss's `0x54` and four `0x27F` in
+  retail and a hit's `0x51` and four `0x0C` priced, and Megaton Press's victim reads `880` HP
+  priced, `878` by default and `884` on retail: the longer frames reach the casts' rolls on
+  other words. `0x8E` (`1.0` to `.286`) is the film its `--rand-track` seat was built for.
+- **Terio Punch's arm 7** (`-.165`, three cues seven ticks late). Its frames cost `3387`
+  hblanks on a plain recording as on the `--cd-trace` one, about `1220` of work under the
+  polls, steady through the arm; the engine's priced work climbs `450` to `650` through the
+  arm and peaks early in arm 8, where retail's falls to `160`. The burst of some sixty records
+  is live in both, and what retail spends on it beyond its polygons is not found.
+- **Megaton Press's arm 9** (`.636` to `.459` at the same game clock): beside the re-dealt
+  scatter, the pink ground glow under the strike draws dimmer through the arm priced.
+- **Not read further:** Plasma Strike's arm 5 hits and Fatal Decision's three extras in arm 12,
+  both in capture arms that now overrun.
 
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
@@ -2166,12 +2252,15 @@ its table, runs `3` for `45` vsyncs and then `2`; the engine runs one pass of `4
 fifteen of `3`, and the Kiss films' step agreement with retail rises from `.89` to `.94`.
 Gimard's arm 6 gains its `3` band (`45` vsyncs against retail's `46`). Over eighteen
 recorded casts (twelve enemy casts, six summons) the frame means hold (`.8861` to
-`.8863`). What the ring cannot hold is a cost that falls inside an arm: Kiss of Death's
-arm 4 runs its last five passes at `3` because the frame's cost drops from the clamp to
-about `595` (the recording's `cost` column) while no effect part changes, so the engine's
-arm 4 stays at `4` (`32` passes to retail's `34`). Gimard's arm 6 opens on `64` vsyncs of
-`4` the same way. Modelling those would take the frame's cost from the engine's own draw,
-which the table stands in for.
+`.8863`). What the ring cannot hold is a cost that falls inside an arm. Kiss of Death's
+arm 4 runs its last passes at `3` because the frame's cost drops from the clamp to about
+`595` (the recording's `cost` column) while no effect part changes: the line's CD-XA read
+stops loading the frame, at vsync `445` on this recording and `448` on Lip King's, `444`
+after the line's start (the drive word's clear on a `--watch` recording). The table carries
+that drop as a pass count inside the arm (`CAPTURE_ARM_READ_TAILS`: `4` for `27` passes,
+then `3`), since the default clock runs the loaded frames at their step and so reaches the
+read's end in wall time far later than retail's overrunning frames do. Gimard's arm 6 opens
+on `64` vsyncs of `4` the same way and keeps its table step.
 
 **The arms read as a cost.** The Seru recordings log the ring's newest entry, so each arm's
 frames have a cost as well as a step: the median over the arm's frames, `721` for a frame on the

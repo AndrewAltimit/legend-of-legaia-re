@@ -195,15 +195,19 @@ impl Renderer {
         // PSX mode's blend rule rides each vertex's flags (the overlay shader
         // has no uniforms): bit 8 the GPU's 5-bit arithmetic, bit 9 the
         // PCSX-Redux instrument's, bit 10 that emulator's dither
-        // (`blend_out` in the overlay shader).
-        let rule_bits = match self.psx_blend_rule() {
-            0 => 0,
-            1 => SCREEN_FLAG_PSX_BLEND,
-            _ if dither >= 1.5 => {
-                SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_PCSX_BLEND | SCREEN_FLAG_PCSX_DITHER
-            }
-            _ => SCREEN_FLAG_PSX_BLEND | SCREEN_FLAG_PCSX_BLEND,
-        };
+        // (`blend_out` in the overlay shader), bit 11 the console's dither
+        // (a Gouraud quad's opaque write, `opaque_out`).
+        // The bits are the shared kernel's decision (`screen_prim::psx_rule_flags`),
+        // which the play page's stream stamps too.
+        use legaia_render_kernels::screen_prim::{PsxScreenRule, psx_rule_flags};
+        let rule_bits = psx_rule_flags(
+            match self.psx_blend_rule() {
+                0 => PsxScreenRule::Off,
+                1 => PsxScreenRule::Gpu,
+                _ => PsxScreenRule::PcsxRedux,
+            },
+            dither >= 0.5,
+        );
         if rule_bits != 0 {
             for v in geo.vertices.iter_mut() {
                 v.flags |= rule_bits;
@@ -443,14 +447,6 @@ impl Renderer {
         }
     }
 }
-
-/// Screen-vertex flag bits the renderer adds at staging for its overlay
-/// shader's blend entries, clear of `legaia_render_kernels::screen_prim`'s
-/// own bits: PSX mode's 5-bit blend, the PCSX-Redux rule, that emulator's
-/// dither.
-const SCREEN_FLAG_PSX_BLEND: u32 = 0x100;
-const SCREEN_FLAG_PCSX_BLEND: u32 = 0x200;
-const SCREEN_FLAG_PCSX_DITHER: u32 = 0x400;
 
 /// The texel offset a composited screen quad samples with under the
 /// PCSX-Redux texel rule: that emulator takes none, and this sliver only

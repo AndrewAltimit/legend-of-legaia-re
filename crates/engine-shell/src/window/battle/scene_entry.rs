@@ -68,7 +68,7 @@ impl PlayWindowApp {
     /// battle edge (`battle_stage::stage_battle_world`, which has already
     /// written the world state it leaves); this build only reads it.
     pub(in crate::window) fn enter_battle_render(&mut self, stage: Option<BattleStage>) {
-        let monsters = self.session.host.world.battle_monster_slots();
+        let monsters = self.session.host.world.battle_monster_texture_slots();
         if monsters.is_empty() {
             return;
         }

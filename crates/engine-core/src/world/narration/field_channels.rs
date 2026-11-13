@@ -706,6 +706,9 @@ impl World {
             .iter()
             .map(|c| (c.ctx.world_x, c.ctx.world_z))
             .collect();
+        // Placements whose load slice ended cleanly - on an executed raw
+        // `0x21` or in front of a text lead - with the cursor it left.
+        let mut talk_cursors: Vec<(usize, usize)> = Vec::new();
         for i in 0..channels.len() {
             if channels[i].done {
                 continue;
@@ -767,6 +770,9 @@ impl World {
                 // text lead or any other sub-`0x20` byte ends the load slice
                 // unexecuted.
                 if opcode_byte & 0x7F < 0x20 {
+                    if self.field_vm.entry_prerun {
+                        talk_cursors.push((channels[i].placement_index, pc));
+                    }
                     break;
                 }
                 // Cross-context poke: resolve the extended target to another
@@ -861,6 +867,9 @@ impl World {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
                         channels[i].pc = next_pc;
+                        if self.field_vm.entry_prerun && opcode_byte == 0x21 && !stalled {
+                            talk_cursors.push((channels[i].placement_index, next_pc));
+                        }
                         // Retail frame-slice pacing: a NOP ends the slice
                         // after executing (FUN_80039B7C `bVar1 == 0x21`), and
                         // a non-advancing PC ends it defensively.
@@ -957,6 +966,24 @@ impl World {
         }
         self.field_vm.channels = channels;
         self.field_vm.stepping_view.clear();
+        // The talk resumes the same context the load slice ran (retail's
+        // dialog SM starts at `actor[+0x9E]`), so a clean stop is the talk's
+        // entry. The static entry - one past the record's first linear `0x21`
+        // - names the wrong arm of a flag-dispatched spawn section: the
+        // pickup spots (`dolk2` `P1[70]`, the Platinum Card) open `25`,
+        // `7x <flag>` (taken -> `31 03`, `21`), `26 05 00`, `4C 40 ..`, `21`,
+        // and the talk the static entry started ran into the taken arm's
+        // `0x21` and fell through to the "now has" box, past the flag set,
+        // the `0x39` grant and the `36 00 80 2C 00` item-get cue.
+        // REF: FUN_8003A1E4 (the load slice, `0x8003A4C4..0x8003A4F4`), FUN_80039B7C
+        for (placement, pc) in talk_cursors {
+            if let Ok(slot) = u8::try_from(placement)
+                && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
+                && pc < rec.body.len()
+            {
+                rec.entry_pc = pc;
+            }
+        }
     }
 
     /// Seed the per-actor field-VM channels for **ordinary free-roam** scene

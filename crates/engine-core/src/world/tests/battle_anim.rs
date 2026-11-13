@@ -2131,3 +2131,52 @@ fn an_attackers_in_slice_commit_shows_the_new_clips_first_keyframe() {
     let front = world.actors[0].battle_pose_history.front().unwrap();
     assert_eq!(front.frame, 0);
 }
+
+/// The battle loader seats each body's idle at the phase setup drew
+/// (`FUN_800513F0`, `sh v1,0x68(s1)` at `0x80051574`), and the action SM's
+/// idle requests answer `FUN_801D5854`, which writes no anim field: a request
+/// made while the idle plays keeps its cursor. The engine used to land the
+/// phase on a body's first request and rebuild its idle there, a snap on every
+/// body's first turn.
+#[test]
+fn the_setup_idle_holds_its_phase_through_the_sms_idle_requests() {
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 8, 0));
+    // The render build's player of the same idle, at keyframe 0, then the
+    // loader's install (clips after it, as the party form does).
+    let idle = pose_test_clip(0, 8, 0);
+    world.set_actor_battle_animation(
+        0,
+        legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&idle).unwrap(),
+    );
+    world.actors[0].battle_idle_phase_draw = Some(13);
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.seat_battle_setup_idle(0);
+    let a = &world.actors[0];
+    assert_eq!(a.battle_idle_phase_draw, None, "the draw is spent at setup");
+    assert_eq!(
+        a.battle_pose,
+        Some(legaia_engine_battle_vm::battle_action::Pose::Idle as u8)
+    );
+    let seated = a.battle_animation.as_ref().unwrap().cursor_sixteenths();
+    assert_eq!(seated, (13 % 8) << 4, "(rand() % frames) << 4");
+    // The SM's per-pass idle requests (seed, ready, recover) keep the loop.
+    for pose in [
+        legaia_engine_battle_vm::battle_action::Pose::Idle,
+        legaia_engine_battle_vm::battle_action::Pose::Ready,
+        legaia_engine_battle_vm::battle_action::Pose::Recover,
+    ] {
+        world.apply_battle_pose(0, pose as u8);
+        assert_eq!(
+            world.actors[0]
+                .battle_animation
+                .as_ref()
+                .unwrap()
+                .cursor_sixteenths(),
+            seated,
+            "{pose:?} restarted the idle"
+        );
+    }
+}

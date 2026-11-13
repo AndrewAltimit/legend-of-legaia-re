@@ -16,6 +16,30 @@ impl LegaiaRuntime {
             .is_some_and(|h| h.world.cast_frame_persists())
     }
 
+    /// How many presented frames back a persisting frame reads: retail's same
+    /// page two battle frames back (`World::cast_frame_persist_vsyncs`),
+    /// clamped to the ring (`frame_persist::persist_depth`). The native window
+    /// hands the same word to `Renderer::set_frame_persist_depth`; the page's
+    /// PSX target reads its ring this deep (`webgl-psx-target.js`). The default
+    /// depth outside a battle.
+    pub fn play_cast_frame_persist_depth(&self) -> u32 {
+        use legaia_render_kernels::frame_persist;
+        let depth = self
+            .scene_host
+            .host()
+            .map_or(frame_persist::DEFAULT_PERSIST_VSYNCS, |h| {
+                frame_persist::persist_depth(h.world.cast_frame_persist_vsyncs())
+            });
+        u32::try_from(depth).unwrap_or(u32::MAX)
+    }
+
+    /// How many earlier frames the page's PSX target keeps for a persisting
+    /// frame to read (`frame_persist::FRAME_RING_SLOTS`, the native ring's
+    /// size too).
+    pub fn play_frame_ring_slots(&self) -> u32 {
+        legaia_render_kernels::frame_persist::FRAME_RING_SLOTS as u32
+    }
+
     /// Whether a cast module is resident, so a frame may soon build on the
     /// ones before it (`World::cast_module_resident`): the PSX target keeps
     /// the last frame's picture while this holds.
@@ -306,6 +330,107 @@ impl LegaiaRuntime {
                 target,
             });
         true
+    }
+
+    /// Stand `advantage` in for the next battle's formation roll
+    /// (`BattleState::formation_seed`, the raw `ctx+0x290` byte: `0`
+    /// neither side, `1` back attack, `2` pre-emptive strike). The art and
+    /// magic pages pin `0`, so their seeded action opens from the party's
+    /// first prompt with nobody turned away.
+    pub fn debug_seed_formation(&mut self, advantage: u8) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        host.world.battle.formation_seed = Some(
+            legaia_engine_battle_vm::battle_formulas::FormationAdvantage::from_byte(advantage),
+        );
+        true
+    }
+
+    /// Whether a seeded cast or art ([`Self::debug_seed_inflight_cast`],
+    /// [`Self::debug_seed_inflight_art`]) still waits for its first command
+    /// prompt.
+    pub fn debug_inflight_pending(&self) -> bool {
+        self.scene_host.host().is_some_and(|h| {
+            h.world.battle.inflight_seed.is_some() || h.world.battle.inflight_art_seed.is_some()
+        })
+    }
+
+    /// Run the seeded fight's opening off screen, up to the tick the seed
+    /// dispatches, and return the ticks it took (`0` = nothing was seeded or
+    /// no fight is armed). The art and magic pages' showcase: pair with
+    /// [`Self::debug_seed_inflight_art`] / [`Self::debug_seed_inflight_cast`]
+    /// and [`Self::debug_force_battle`], and the next frame the page draws is
+    /// the caster's turn with the action already under way.
+    ///
+    /// The ticks are the ones the page would have drawn - the field-to-battle
+    /// transition, the camera's entry sweep, the enemy-name banner, the round
+    /// prompt's open - run through the same per-frame owner path
+    /// ([`Self::play_frame_ticks`]) on a neutral pad, so the fight reaches its
+    /// first prompt in exactly the state a played-out opening leaves; only the
+    /// drawing and the sound are skipped. The page mixes its audio on its own
+    /// thread's turns, none of which run inside this call, so every SFX voice
+    /// the opening keyed would otherwise sound at once over the action's
+    /// first frame: each tick before the dispatching one drops its cues and
+    /// silences the SFX voices. The battle track's start is kept (its
+    /// sequencer is clocked by the mix, so it starts on the first mixed
+    /// block). `max_ticks` caps the run; a seed still pending at the cap is
+    /// left armed and the page plays the rest of the opening on screen. Once
+    /// the seed has dispatched every monster's HP is floored
+    /// (`World::floor_showcase_monster_hp`), as the art seed does, so a cast
+    /// does not end the fight it opened.
+    pub fn debug_run_to_inflight(&mut self, max_ticks: u32) -> u32 {
+        use legaia_engine_audio::sfx::{ONE_SHOT_TOP_VOICE, SUSTAINED_BASE_VOICE};
+        use legaia_engine_battle::encounter::EncounterPhase;
+        let armed = |rt: &Self| {
+            rt.scene_host.host().is_some_and(|h| {
+                h.world.mode == legaia_engine_mode::mode::SceneMode::Battle
+                    || h.world.encounters.session.as_ref().is_some_and(|s| {
+                        !matches!(
+                            s.phase(),
+                            EncounterPhase::Idle | EncounterPhase::Grace { .. }
+                        )
+                    })
+            })
+        };
+        if !self.debug_inflight_pending() || !armed(self) {
+            return 0;
+        }
+        let sfx_voices: Vec<u8> = (SUSTAINED_BASE_VOICE..=ONE_SHOT_TOP_VOICE).collect();
+        // A relaunch abandoned the previous fight, maybe mid-cast: its CD-XA
+        // line (a summon's theme runs for tens of seconds) must not sound on
+        // over the new one.
+        if let Some(d) = self.scene_host.director_mut() {
+            use legaia_engine_audio::AudioSink;
+            d.audio().stop_xa();
+        }
+        let mut ticks = 0;
+        while ticks < max_ticks && self.debug_inflight_pending() {
+            if let Err(e) = self.frame_ticks(1, 0, 0) {
+                crate::console_log(&format!("debug_run_to_inflight: {e}"));
+                break;
+            }
+            ticks += 1;
+            if self.debug_inflight_pending()
+                && let Some(d) = self.scene_host.director_mut()
+            {
+                d.clear_sfx();
+                d.mute_sfx_voices(&sfx_voices);
+            }
+        }
+        // The showcase fight outlives its action: the art seed floors every
+        // monster's HP at its own dispatch, and a cast gets the same floor
+        // here, on the tick it dispatched, before any of its hits land - a
+        // level-99 spell would otherwise win the fight and drop the page
+        // back to the field.
+        if !self.debug_inflight_pending()
+            && let Some(host) = self.scene_host.host_mut()
+        {
+            host.world.floor_showcase_monster_hp();
+        }
+        // The off-screen run is not wall time the page owes the world.
+        self.sim_stepper.resync();
+        ticks
     }
 
     /// Make the monster in engine battle `seat` cast `spell_id` on its next

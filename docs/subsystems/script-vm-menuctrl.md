@@ -399,7 +399,7 @@ On the disc:
 | 3 | `[4C C3]` | Script-table teleport + spawn-section re-run - [below](#4c-c3-script-table-teleport). |
 | 4 | `[4C C4 x z]` | Camera-zone query at an explicit tile: arm `0x801E2878`, `FUN_801DE3E0(x & 0x7F, z & 0x7F)`. Frames a shot from a region record the player is not standing in. |
 | 5 / 6 | `[4C C5\|C6 lo hi]` | Wait on system flag `lo hi` (`FUN_8003CE64`, the `0x7x` test): sub-5 holds until it is set (`0x801E2894` -> `0x801E2A10`), sub-6 until it is clear (`0x801E28B0` / `0x801E28C4`); then PC += 4. The shipped waits are on `0x0A`, `0x0B`, `0x556` and `0x557`, each flipped by a move-VM part the scene's stager table carries (`2F 1C` / `2F 1D`) - see [below](#the-system-flag-waits). |
-| 7 | `[4C C7 char art]` | **Teach a Hyper Art** (arm `0x801E28D4`): `FUN_800402F4(char + 0x0B, art, 0, 0)`, the applier's arts-book arm, inserting `art` into roster slot `char`'s displayed-skill list. PC += 4. Every carrier passes `char` 0..2 - the masters (`town0c`'s Tetsu behind a `4C 8D` test, `geremi`, `son`, `kor5`, ...). Port: `World::teach_hyper_art`. |
+| 7 | `[4C C7 char art]` | **Teach a Hyper Art** (arm `0x801E28D4`): `FUN_800402F4(char + 0x0B, art, 0, 0)`, the applier's arts-book arm, inserting `art` into roster slot `char`'s displayed-skill list. PC += 4. Every carrier passes `char` 0..2 - the masters (`town0c`'s Tetsu behind a `4C 8D` test, `geremi`, `son`, `kor5`, ...) and Drake Castle's book (`dolk2`) - and follows it with the [`49 09` notice](script-vm.md#sub-op-9-the-art-learned-notice). Port: `World::teach_hyper_art`. |
 | 9 | `[4C C9]` | PC += 2 unless `_DAT_8007BAB8 != _DAT_8007BA9C`, then halts. |
 | A / B / C | `[4C CN slot lo hi]` | Slot-table set / add / subtract - [below](#4c-ca--cb--cc-script-counters). |
 | D | `[4C CD]` | [Camera-glide wait](#4c-cd-waits-for-the-camera-glide). |
@@ -1050,6 +1050,12 @@ executing context, or the `CC <t> 51` target):
    `+0x26`, and a floor re-sample (`FUN_80019278`) into `+0x16` when
    `+0x10` carries a `0x20200` bit or `_DAT_8007B6A8` is set, never under
    `0x20000000` (`0x801E1904..0x801E1940`). No walk kernel is armed: it is a teleport.
+   The sampler also rewrites the actor's near-bucket bit `0x800000` from the new
+   tile's object-grid cell (set without `0x1000`, `0x800192F8..0x80019350`), so an
+   actor seated on a placed object's floor draws ten ordering-table buckets nearer
+   ([renderer-port.md](renderer-port.md#the-field-sorts-by-each-primitives-link)):
+   `dolk2` `P2[7]`'s `CC 46 51 49 78 00 0C` puts King Drake in his throne, in front
+   of its back.
    The parked-sentinel tile `(0x7F, 0x7F)` seats the player in the hide box like
    anyone else: `map01` `P2[29]` hides Vahn with `CC F8 51 7F 7F 80 02` before its
    pan from the Genesis Tree's light to Drake Castle, and the player arm then

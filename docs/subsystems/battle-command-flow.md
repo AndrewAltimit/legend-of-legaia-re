@@ -559,8 +559,10 @@ glide to B), `1` on the three returns (spawn at B, glide home). The step's
 script has already reset the handle list (`FUN_801D99BC`), so the clones are
 the only log on screen. The glide is `FUN_801D9BBC`'s linear step over
 `ctx[+0x1C]` frames, which the round reset `FUN_801D88CC` seeds to `0x10`. The
-Begin confirm's steps `0x24` / `0x29` take the tail table's plain exit - the
-log leaves with the command phase, it does not slide.
+Begin confirm's steps `0x24` / `0x29` take the tail table's plain exit, with
+no launch clones; step `0x24`'s own pairs (`2B/1 2C/1 2D/1`) slide the log
+rows one display width left beside the confirm's chips
+([the confirm's exit](battle-hud.md#the-rounds-confirm-leaves-on-a-glide)).
 
 The capture `party_basic_attack_vs_gobu_gobu` (solo Vahn at `0x6E`,
 `ctx[+0x1F] = 1`) holds records `0x2B` / `0x2C` / `0x2D` at seat B

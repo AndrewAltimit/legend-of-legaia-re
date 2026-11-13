@@ -564,6 +564,23 @@ def physical_film_guard(a, out: Path, done: dict) -> str | None:
     return state_guard_seats(manifest.get("sstate", ""))
 
 
+def retail_cast_already_paid(out: Path) -> bool:
+    """Whether the retail recording opens past the cast band's MP debit:
+    its first row's action state is above `0x28`, the state whose arm debits
+    the caster's MP (`0x801E458C`). `battle_nilboa_rock_lizard_earthquake_mid_cast`
+    opens at `0x70` with Rock Lizard's MP at `0` of `150`: left unpaid, the
+    engine's monster had nothing to cast with and struck instead."""
+    try:
+        with open(out / "retail" / "meta.csv") as f:
+            row = next(csv.DictReader(f), None)
+    except OSError:
+        return False
+    try:
+        return row is not None and int(row["st7"]) > 0x28
+    except (KeyError, ValueError):
+        return False
+
+
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
     """`clip,cursor` of the caster on retail's cast begin, for
     `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose. A
@@ -671,7 +688,13 @@ def retail_rand_track(out: Path) -> str:
     `LEGAIA_CAST_RAND_TRACK`: the BIOS rand() seed word on the frame's last
     row, which the next frame's pass draws from, keyed as the step track keys
     a frame. The key the recording opens on is left out: the capture's
-    instant falls inside it, so its first frames are not the band's."""
+    instant falls inside it, so its first frames are not the band's.
+
+    The summon flash `0x34` ahead of the band is in the track too, keyed on
+    phase `0`: the pass that leaves it opens there and runs the module's
+    arm 0 in the same pass, and arm 0 is where a verdict module draws its
+    roll (Aluru's `rand() % (0x11 - level)`, Nighto's). The flash runs a
+    fixed count of passes on both sides, so its ordinals pair."""
     lines, last, first_key = [], None, None
     with open(out / "retail" / "meta.csv") as f:
         rows = list(csv.DictReader(f))
@@ -680,13 +703,13 @@ def retail_rand_track(out: Path) -> str:
     for r in rows + [None]:
         if last is not None and (r is None or r["frame"] != last["frame"]):
             st7 = int(last["st7"])
-            if st7 in (0x35, 0x36, 0x70):
-                key = (st7, int(last["phase"]))
+            if st7 in (0x34, 0x35, 0x36, 0x70):
+                key = (st7, 0 if st7 == 0x34 else int(last["phase"]))
                 if first_key is None:
                     first_key = key
                 if key != first_key:
                     lines.append(f"{key[0]} {key[1]} {int(last['rand'])}\n")
-        if r is not None and first_key is None and int(r["st7"]) not in (0x35, 0x36, 0x70):
+        if r is not None and first_key is None and int(r["st7"]) not in (0x34, 0x35, 0x36, 0x70):
             first_key = (-1, -1)
         last = r
     return "".join(lines)
@@ -700,11 +723,20 @@ def _step_row(first: dict, last: dict) -> str:
 
 def traced_hit_words(out: Path) -> list[str] | None:
     """The seed word each melee hit of the first action drew from, off a
-    `--hit-trace` recording's `hits.csv` (`word@vsync`), or `None` without
-    one. The probe reads the word at the head of the strike kernel's hit body
-    (`0x801EC5A8`), ahead of the block roll, so a blocked or missed swing has
-    its word as well as a landed one. Rows stop where the meta's first HP-bar
-    settle (`0x51`) begins, as the burst reading does."""
+    `--hit-trace` recording's `hits.csv`, in order and untimed, or `None`
+    without one. The probe reads the word at the head of the strike kernel's
+    hit body (`0x801EC5A8`), ahead of the block roll, so a blocked or missed
+    swing has its word as well as a landed one: the list is every hit the
+    kernel resolved, and the n-th word goes to the engine's n-th hit.
+
+    A word carries no vsync. The recording's vsyncs count retail's slow
+    frames, which the engine's display clock does not run on its default
+    frame law, so a timed word drifts off its hit:
+    `battle_jou_party_vahn_chain_open` runs state `0x1E` over ten slow frames
+    (`+40` vsyncs) and the engine reached Charging Scorch `34` frames ahead of
+    its word's vsync, past the slack, and rolled `906` on its own stream where
+    retail's word rolls `958`. Rows stop where the meta's first HP-bar settle
+    (`0x51`) begins, as the burst reading does."""
     path = out / "retail" / "hits.csv"
     if not path.exists():
         return None
@@ -720,7 +752,7 @@ def traced_hit_words(out: Path) -> list[str] | None:
             v = int(r["vsync"])
             if settle is not None and v >= settle:
                 break
-            words.append(f"{int(r['seed']) & 0xFFFFFFFF}@{v}")
+            words.append(str(int(r["seed"]) & 0xFFFFFFFF))
     return words
 
 
@@ -809,6 +841,12 @@ def run_engine(a, out: Path) -> bool:
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.
     env.setdefault("LEGAIA_SEAT_SIDEBAND_SEEK", "0")
+    # The same drive answers a summon module's voice seeks (the selector's and
+    # the module's own) in a couple of vsyncs, where the modelled one holds the
+    # seek arm's whole frame `18..31` passes and the poll arm `14..30`, with the
+    # fade and the rise spawned before it running on through the poll. A
+    # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
+    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", "2")
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -831,6 +869,18 @@ def run_engine(a, out: Path) -> bool:
         # The child takes its frame on the drive's gate and leaves: push the
         # frame past the recording, which exits on its own tail.
         env["LEGAIA_DIAG_CAPTURE_TICK"] = "40000"
+    elif not retail_cast_already_paid(out):
+        # The probe injects at the command state `0x0A`, ahead of the `0x28`
+        # MP debit, so the seed credits no price back and the band's own
+        # debit lands on the state's MP, wrapping as retail's halfword does
+        # (`0x801E458C`): a Seru cast past the caster's MP reads `65518`.
+        # A state that already stands past the debit (a `*_mid_cast` state,
+        # whose recording opens in the cast band) holds the MP after it, and
+        # the seed credits the price back for the engine's own debit, as a
+        # still's mid-cast replay does.
+        env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
+    if a.physical:
+        pass
     elif caster < 3:
         ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
         env["LEGAIA_BATTLE_INFLIGHT"] = f"{caster},{a.spell},{a.target}" + (f";{ground}" if ground else "")

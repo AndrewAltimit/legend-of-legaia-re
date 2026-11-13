@@ -857,7 +857,7 @@ gate:
 | Load / Save rows | Closed. Both hosts browse the console's two memory-card ports, each a mounted card image (the page's port 1 in browser storage, the window's `memcard1.mcr` in its save directory), and every Save / Load goes through one card kernel (`write_save_into_card`, `save_at`); the slot is built from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
 | PSX mode's 15-bit readout | Closed. The PSX target's copy to the canvas reads the frame out as the 15-bit framebuffer on the window's gate (SSAO and bloom off, no fog drawn), the window's `fs_scanout15`; the pair is evaluated byte for byte in `engine-render`'s tests and pinned by two tier-17 rows ([renderer-port](renderer-port.md#semi-transparency)). |
-| Pixel-exact presentation | Closed for PSX rasterisation. The window presents its `320 x 240` target at the largest whole scale it holds; the page stretched its canvas to the layout's width, a non-whole number of device pixels per stage pixel. It now takes the largest whole multiple of `320` device pixels its layout offers (`fitPixelExact`, re-fitted on a resize, fullscreen or a `devicePixelRatio` change) and leaves the rest as letterbox. At a fractional ratio the overlay canvas can sit one device row off the 3D picture. The clean mode still stretches; its *Pixel-exact scaling* option is the window's alone ([`host-drift.md`](../tooling/host-drift.md#open-differences)). |
+| Pixel-exact presentation | Closed. The window presents its `320 x 240` target at the largest whole scale it holds; the page takes the largest whole multiple of `320` device pixels its layout offers (`fitPixelExact`, re-fitted on a resize, fullscreen or a `devicePixelRatio` change) and leaves the rest as letterbox, under PSX rasterisation always and in the clean mode under *Pixel-exact scaling* (`OptionsState::integer_scale`, the window's launcher row). At a fractional ratio the overlay canvas can sit one device row off the 3D picture ([`host-drift.md`](../tooling/host-drift.md#open-differences)). |
 | PCSX-Redux instrument | Open, by design. The window's `PsxTexelRule::PcsxRedux` (texel rule, flat-quad walk, that emulator's dither table and blend terms) is set only by a retail-compare image child scoring a PCSX-Redux capture; the page scores no capture, draws the console's rules only, and carries no half of the instrument. |
 | Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. The cast-cue band's voice (the item-use shout) resolves in the world onto the XA channel and plays through `play_xa` on both hosts. |
 | Memory-card containers | Closed. The page's import pickers and its format sniff take every container the window mounts by extension (`CARD_EXTENSIONS`: `.mcr`, `.mcd`, `.srm`, `.gme`, `.mcs`); a RetroArch `.srm` had no way onto the page. Pinned by `launcher::tests::the_pages_import_every_card_the_window_mounts`. |
@@ -1341,6 +1341,37 @@ character (`set_active_party_spec`), learns every art, and hands the entered arr
 to `debug_seed_inflight_art`: they run through the same queue builder and strike
 loop as a typed entry, with the Ra-Seru marker up and a Spirit and monster-HP
 floor so a Super or Miracle string is not refused or cut short.
+
+Both pages open on the caster's turn, not on the fight's opening. The launch pins
+the formation roll to neither side (`debug_seed_formation(0)`, so no back attack
+hands the monsters the first round or turns the party away), and then
+`debug_run_to_inflight` runs the opening off screen: the world-map field, the
+field-to-battle transition, the camera's entry sweep, the enemy-name banner and
+the prompt's open, each tick through the page's own per-frame owner path
+(`play_frame_ticks`) on a neutral pad, stopping on the tick the seed dispatches.
+The page then draws its next frame from there, so the first frame shown is the
+turn with the action under way. The state matches a played-out opening exactly:
+same tick count, same battle camera, same body cursors
+(`web-play/tests/showcase_skip_disc.rs`). Only drawing and sound are skipped. The
+page mixes audio between its own frames and none of that runs inside the call, so
+any SFX voice the opening keyed would sound over the action's first frame. Each
+skipped tick before the dispatching one drops its queued cues and mutes the SFX
+voices (`7..=23`). The battle track's start is kept: its sequencer is clocked by
+the mix, so the track starts on the first mixed block. The off-screen run takes
+about three hundred ticks and a few tens of milliseconds, and the page resets its
+sim clock afterwards, so the skipped time is not drained as catch-up ticks.
+
+A showcase cast's round holds only the cast, as an art's does. The magic page
+seats the lead alone (`set_active_party_spec`, as the arts page seats its
+character), so no party member acts after the cast. Once the seed dispatches,
+every monster's HP is floored to the art seed's level
+(`World::floor_showcase_monster_hp`), so a level-99 spell does not win the fight
+and drop the page back to the field. The fight then answers with the monsters'
+turn and idles at the next prompt. A relaunch abandons the previous fight
+(`World::abandon_live_battle`), possibly mid-cast. The abandon drops that fight's
+CD-XA drive state, and the skip stops its clip. Otherwise a summon's
+still-running line held the next cast's side-band read for the rest of the line,
+which left a blank of tens of seconds after a second click during Ozma.
 
 The slot holds at most one engine. The view toggle remembers its choice per page
 (`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and

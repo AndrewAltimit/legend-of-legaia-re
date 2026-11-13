@@ -298,6 +298,35 @@ impl Default for DisplayedSkillList {
     }
 }
 
+impl DisplayedSkillList {
+    /// Drop every repeat of an id already listed, keeping each id's first
+    /// position and the order of the rest; the freed tail slots are zeroed.
+    /// Returns `true` when anything was removed.
+    ///
+    /// Retail's arts-book insert has no membership check, so a record can
+    /// carry one art twice (issue #597); the battle list then draws it twice.
+    /// The engine heals such a record on load.
+    pub fn dedup(&mut self) -> bool {
+        let n = usize::from(self.count).min(MAX_DISPLAYED_SKILLS);
+        let mut kept = 0;
+        for i in 0..n {
+            let id = self.ids[i];
+            if !self.ids[..kept].contains(&id) {
+                self.ids[kept] = id;
+                kept += 1;
+            }
+        }
+        if kept == n {
+            return false;
+        }
+        for slot in &mut self.ids[kept..n] {
+            *slot = 0;
+        }
+        self.count = kept as u8;
+        true
+    }
+}
+
 /// The six "live" stats at `+0x110..+0x11B` (six u16s LE), in
 /// the order `(AGL, ATK, UDF, LDF, SPD, INT)`.
 ///

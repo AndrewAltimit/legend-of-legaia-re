@@ -159,6 +159,7 @@ impl World {
         // the world tick.
         self.presentation.fade = None;
         self.presentation.module_fades.clear();
+        self.presentation.module_fades_next_pass.clear();
         self.battle.entry_fade = None;
         self.casting.module_pres = Default::default();
         // MAIN INIT's back-from-battle flag stores, run for every ending: the
@@ -414,6 +415,7 @@ impl World {
         self.battle.result_windows_glide = None;
         self.battle.inflight_seed = None;
         self.battle.inflight_art_seed = None;
+        self.battle.formation_seed = None;
         self.battle.art_seed_ra_seru = false;
         self.battle.active_formation = None;
         self.battle.command = None;
@@ -430,8 +432,22 @@ impl World {
         self.audio.battle_shout_cues.clear();
         self.audio.battle_bgm_active = false;
         self.audio.field_bgm_resume = None;
+        // The fight's CD-XA clip goes with it. Its drive word gates the next
+        // fight's side-band reads (`tick_sideband_token`) and is counted down
+        // only by battle ticks, so a clip cut off mid-cast - a showcase
+        // relaunch abandoning a summon's line - held the next fight's cast in
+        // `QueuedFromMenu` for the rest of that line, tens of seconds. Retail
+        // has no abandon; its exit's stream loads stop the drive
+        // (`FUN_8003ED04`), which is what this models.
+        self.audio.battle_xa_busy_frames = 0;
+        self.audio.battle_xa_load_frames = 0;
+        self.audio.battle_xa_frame_load = false;
+        self.audio.battle_xa_poll_load = false;
+        self.audio.battle_xa_cue_frame = None;
+        self.casting.sideband_read_left = None;
         self.presentation.fade = None;
         self.presentation.module_fades.clear();
+        self.presentation.module_fades_next_pass.clear();
         self.battle.entry_fade = None;
         self.casting.module_pres = Default::default();
         let buffs = std::mem::take(&mut self.battle.buffs);
@@ -472,14 +488,14 @@ impl World {
     }
 
     /// Active enemy actors in the current battle as `(actor_index,
-    /// monster_id, battle_slot)`, where `battle_slot` is the 0-based monster
-    /// index the battle texture loader keys VRAM placement on (feed it to
-    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`).
-    /// Empty unless the world is in [`SceneMode::Battle`].
+    /// monster_id, seat)`, where `seat` is the 0-based monster seat (the
+    /// actor index past the party). Empty unless the world is in
+    /// [`SceneMode::Battle`].
     ///
-    /// A renderer uses this to bridge each decoded monster mesh into its draw
-    /// list: the engine itself never loads the archive, so the actor only
-    /// carries the id - the host resolves it to a mesh.
+    /// The seat is not the texture slot: repeated species share one, and
+    /// slots follow the ids, not the seats - see
+    /// [`Self::battle_monster_texture_slots`], which a renderer feeds to
+    /// `legaia_actor_formats::monster_archive::MonsterMesh::battle_render_mesh`.
     pub fn battle_monster_slots(&self) -> Vec<(usize, u16, u8)> {
         if !matches!(self.mode, SceneMode::Battle) {
             return Vec::new();
@@ -493,6 +509,28 @@ impl World {
                 let slot = idx.checked_sub(first_monster)? as u8;
                 Some((idx, id, slot))
             })
+            .collect()
+    }
+
+    /// Active enemy actors as `(actor_index, monster_id, texture_slot)`: the
+    /// battle texture slot each monster's pool is uploaded into, the rank of
+    /// its id among the formation's distinct ids
+    /// ([`legaia_engine_battle::battle_party_form::monster_texture_slots`],
+    /// retail's loader `FUN_800542C8`). Keyed by seat, a formation's third
+    /// seat took slot `2`, which every summon creature's pool overwrites
+    /// (`FUN_801F19EC`), so a Seru cast in a `[Worm, Pump Bat, Pump Bat]`
+    /// fight repainted the second Pump Bat in the creature's texture (#599).
+    /// A renderer uses this to bridge each decoded monster mesh into its
+    /// draw list: the engine itself never loads the archive, so the actor
+    /// only carries the id - the host resolves it to a mesh.
+    pub fn battle_monster_texture_slots(&self) -> Vec<(usize, u16, u8)> {
+        let seats = self.battle_monster_slots();
+        let ids: Vec<u16> = seats.iter().map(|&(_, id, _)| id).collect();
+        let slots = legaia_engine_battle::battle_party_form::monster_texture_slots(&ids);
+        seats
+            .into_iter()
+            .zip(slots)
+            .map(|((actor, id, _), slot)| (actor, id, slot))
             .collect()
     }
 }

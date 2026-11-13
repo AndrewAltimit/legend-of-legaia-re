@@ -296,6 +296,26 @@ command or playing an action out - and shows that actor only:
 | `MP` label sprite `(224,86)` | `(192, 194)` |
 | MP current / separator / maximum | right edge 238 / `(240, 188)` / right edge 274 (two digits start at 258) |
 
+<a id="a-figure-field"></a>
+
+**A figure field has a cell count, and a longer figure overruns it.** The readout
+spawner `FUN_801D8DE8` registers each figure through `FUN_8003563C` with its field's
+left edge and a cell count: `4` for both HP figures and `3` for both MP figures, on the
+panel (`li s0,0x4` at `0x801D958C`, `li s3,0x3` at `0x801D9604`) and on the bar
+(`0x801D982C`, `0x801D9888`). The record's draw `FUN_80031D00` walks nine places from
+that left edge (`0x80032064..0x80032148`): a leading zero at a place inside the field
+leaves a blank cell, one past it takes no cell, and the first non-zero digit and every
+digit after it draws. So a figure that fits is right-aligned, and one with more digits
+than its field starts on the field's left edge and runs on past the right one. The case
+that shows it is a wrapped MP: the cast's debit is a halfword `subu` (`0x801E458C`) with
+no floor, so a Seru cast past the caster's MP reads `65518`, five cells from the MP
+field's left edge, over the `/`. The `/` is a sprite of the panel's chain and the
+figures are number records drawn after it, so an overrunning figure covers the slash,
+which shows only through the digits' transparent texels: Horn's film reads
+`65363 27` with no slash on top. Port: the HUD's `numerals` takes the field's
+`(right edge, cells)` pair (`HP_FIELD_CELLS`, `MP_FIELD_CELLS`), and each row lays
+its separator down ahead of its figures.
+
 The current values are the displayed words, not the live ones: HP `+0x172` and
 MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
 signed accumulator onto each a frame - `+0x10` for HP, `+0x178` for MP (the MP
@@ -358,6 +378,16 @@ survivor's slot, so a party-wide cast on a solo Vahn keeps the panels up through
 the whole action, as `battle_rikuroa_caruban_fire_breath_mid_cast` shows
 (`+0x1DD = 0`, panel up). Its recording raises no `DAMAGE` readout either.
 
+Each opener calls `FUN_801D8DE8` with mode `0` (`a1 = 0` in the delay slot of
+each `jal`), so the panels rise from seat A on the tracked glide's sixteen
+vsyncs rather than standing at rest from the opener's pass. A monster's
+party-wide special shows them still rising through the capture band's reads:
+the Dead End Crisis recording draws the panel's top edge at row `173`, nine
+rows short of its seat, on the vsync the action reaches `0x6F`, and the
+seed-to-`0x6F` span (two vsyncs to `0x28`, fourteen in `0x6E`) is shorter than
+the glide. Port: the seed's and the item band's raise start
+`BattleState::action_panels_glide` (`World::note_action_plate_raise`).
+
 The close is the Done band's, so the panels hold through every band the action
 runs before it - including the capture band `0x6E..=0x71`, whose state bytes
 sit above `0x51` but which exits into `0x50`. A boss special is such an action:
@@ -373,12 +403,19 @@ seed: `orb_summon_mid_cast` holds `ctx[+0x18] = 0` with Orb's `+0x1DD` at
 stores `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`): the panels glide up under
 the heal, in place of the readout bar, and the HP readout counts up in them;
 the Done hold closes them like the openers' ([cast-module.md](cast-module.md#module-stagers-and-spawn-reports)).
+PROT 0919 (Spoon) and PROT 0930 (Horn) make the same calls on their heal arms
+(`0x801F83E4..0x801F8450`, Horn's arm `0xA` at `0x801F7BF0..0x801F7C5C`): Horn's film
+holds the panel through arm `0xB`, its HP tally counting up.
 The
 same routine opens the target plaque (record 81) for a monster target, except
 for Theeder, Zenoir and Mushura (`0x82` / `0x86` / `0x8D`), which it sends down
-its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). Port:
+its row arm whatever their target byte (`0x801E6E4C..0x801E6E68`). An
+every-enemy code `9` opens it on the census's lone survivor `ctx[+0x24B]`, the
+record's name pointer that seat's `+0x1BC` (`0x801E6FC8..0x801E7008`), and the
+record keeps that name whatever the target byte reads later: Viguro's arm 10
+writes the code back, and retail's film holds `Gobu Gobu` to the Done band. Port:
 `battle_hud::battle_panels_visible` / `battle_target_plaque`; the module raise
-is `BattleState::module_panels_glide`.
+is `BattleState::action_panels_glide`.
 
 ### Numbers are cells, names are glyphs
 
@@ -567,6 +604,7 @@ The steps the menu SM runs (`engine-battle::battle_hud_state::subdraw_steps` /
 | `0x78` -> `0x5A` cursor, or `0x28` -> `0x5A` under `Automatic` | `0x2D` / `0x30` | - | park | snap | leaves |
 | `0x28` / `0x78` -> `0x50` arts entry | 9 / `0x2C` | - | park (AP bar 15 takes the seat) | snap | snap |
 | `0x28` -> `0x6E` all committed | `0x23` | - | - | tab only | leaves |
+| `0x6E` / `0x32` -> `0xFE` round armed | `0x24` / `0x29` / `0x25` | - | - | tab leaves | - |
 
 So the roster panels belong to the round prompt and the browsed windows, the
 full-width bar to the ring, the attack-mode prompt and the target steps, and
@@ -635,6 +673,37 @@ round prompt's confirm arm (`jal 0x801D388C` at `0x801D109C`):
 | 7 | the bar | `y = 236 -> 194` |
 | `0x1A` | the plaque behind the tab | `y = -24 -> 14` |
 | `0x52` | the AP plate | `x = 328 -> 208` |
+
+#### The round's confirm leaves on a glide
+
+`Begin` on the commit confirm `0x6E` stores `ctx[+0x06] = 0xFE` and runs step
+`0x24`, or `0x29` when no member is left to log (`0x801D31AC..0x801D31DC`);
+the flee confirm `0x32` runs step `0x25` (`0x801D1144..0x801D1150`). Every
+pair is the exit's own twin record, so the confirm leaves the screen instead
+of vanishing:
+
+| Record | Element | Seat the step starts from -> seat it lands on |
+|---|---|---|
+| `0x12` | the left chip, gold plate, record `0x10`'s `Begin` / `Escape` | `x = 92 -> -56`, off the left edge |
+| `0x14` | `Reselect`, blue plate | `x = 180 -> 328`, off the right edge |
+| `0x3F` / `0x40` | the `Begin` / `Run` tab | `y = 14 -> -24`, off the top edge |
+| `0x2B..` (mode `1`, step `0x24` only) | the commit log | one display width left of its rest seat |
+
+The gate holds the `0xFE` arm until the records land; the pass after, its
+handle reset (`FUN_801D99BC` at `0x801D31E8`) drains them with every text
+actor and the action SM starts. A capture on that pass reads an empty glide
+table and a running action while the displayed frame, two passes older,
+still shows the chips leaving: `nilboa_koru_pre_dead_end_crisis` (step `2`)
+draws them fourteen vsyncs in, `taiku_topaz_pre_hyper_heal` (step `3`)
+fifteen; the older ordering table of each holds them landed at `(-56, 88)`
+and `(328, 88)` and the log `320` left of its seats.
+
+Port: `World::arm_round_execution` raises `BattleState::commit_exit` beside the
+hold, `begin_round_execution` drains it, and `engine-battle-hud`'s chip, tab
+and log projections draw the exit off it (`battle_commit_exit`), so both
+hosts slide the confirm off. The hold itself is the surface hold's; the exit
+moves no input window. The retail-compare image child seats it from the
+older ordering table (`hud_glide::commit_exit_pool_seat`).
 
 #### A Spirit turn raises its gauge on a glide
 

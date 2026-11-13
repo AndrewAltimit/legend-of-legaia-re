@@ -44,6 +44,20 @@ pub const DRAW_ORDER_FAR_CORNER: u8 = 1;
 /// [`Renderer::set_draw_order`]: this draw links ten ordering-table buckets
 /// nearer (`actor[+0x10] & 0x80800000`).
 pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
+/// [`Renderer::set_draw_order`]: the ten-bucket shift of
+/// [`DRAW_ORDER_NEAR_BUCKETS`] holds in a clean frame too, taken per vertex
+/// (each corner tests depth as if it stood ten buckets nearer) rather than
+/// at the primitive's link. Set on every field actor carrying the
+/// near-bucket bit - the player on a cell without object-grid bit `0x1000`,
+/// an NPC the floor sampler or a prologue gave it: the actors retail stands
+/// on a placed object's floor or seats in its furniture, and paints over
+/// the mesh around them. Per-pixel depth alone buries them in it: King
+/// Drake in his throne (`dolk2` `P2[7]`), Vahn against the cliff behind
+/// `rikuroa2`'s chest ledge.
+pub const DRAW_ORDER_NEAR_CLEAN: u8 = 4;
+/// The `flags.w` word that stages [`DRAW_ORDER_NEAR_CLEAN`] on a clean field
+/// frame, below every PSX-mode order word (`-1 - order`, `-1..=-8`).
+pub(crate) const CLEAN_NEAR_FLAG_W: f32 = -16.0;
 
 pub mod battle_intro;
 pub mod gte_trace;

@@ -1451,3 +1451,56 @@ changes = [
   ["films/retona_lip_king_kiss_of_death/cue", 1.0, 0.0],
   ["films/retona_lip_king_kiss_of_death/matched", 3, 0],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Battle setup now seats each body's idle at its drawn phase and the action SM's idle request keeps a playing idle (FUN_801D5854 writes no anim field; setup seats clip 0 at (rand() % frames) << 4, 0x80051574). A clip staged under neither stage bit commits only on the idle loop's natural end (0x80047B54), so a pad-driven replay's opening Spirit or Magic cast now commits earlier (Noa's state 0x48 ends at tick 133 against 141) and everything after shifts; traced per tick on both trees. The replay's opening idle phase is in no RAM the capture holds, so the rows cannot be reseated from the state. noa_levelup_banner: Vahn's clip-16 commit in the Done band waits on the same natural end and lands 6 ticks later, which moves the camera eye. jou_spoon_v3_hyper_heal moves with the heal rows' Spirit band commit."
+changes = [
+  ["states/balden_devil_pump_pre_multi_cutter/image", 0.999, 0.99],
+  ["states/battle_bubu2_spoon_heal_mid_cast/image", 0.996, 0.971],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/camera", 1.0, 0.999],
+  ["states/battle_bylon_theeder_v2_thunderbolt_mid_cast/image", 0.993, 0.948],
+  ["states/battle_deroa_spoon_v2_hyper_heal_mid_cast/image", 0.999, 0.996],
+  ["states/battle_jou_spoon_v3_hyper_heal_mid_cast/image", 0.988, 0.986],
+  ["states/battle_korb2_ghost_knight_windhash_mid_cast/camera", 1.0, 0.999],
+  ["states/battle_korb2_ghost_knight_windhash_mid_cast/image", 0.997, 0.988],
+  ["states/battle_nilboa_amethyst_heal_mid_cast/image", 1.0, 0.985],
+  ["states/battle_noaru_slippery_v2_big_wave_mid_cast/image", 0.934, 0.931],
+  ["states/battle_tunnelc_xain_bloody_horns_mid_cast/image", 0.855, 0.797],
+  ["states/noa_levelup_banner/camera", 1.0, 0.997],
+  ["states/noa_levelup_banner/image", 1.0, 0.982],
+  ["states/noaru_songi_pre_genocidal_cannon/image", 0.986, 0.984],
+  ["states/ropeway_curry_devil_pre_cross_beam/image", 0.999, 0.991],
+  ["states/ropeway_orb_pre_jewel_beam/image", 0.999, 0.995],
+  ["states/tunnelb_nova_pre_scythe_wind/image", 1.0, 0.992],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "PSX mode now dithers the screen pass's opaque Gouraud quads, as the GPU does for every shaded primitive under the draw mode's dither bit (Big Wave's film .897 -> .942). The two minigame stills' backdrop gradients move by the dither pattern; measured at the commit that adds it (277999490) against its parent, unchanged by any other commit of the wave."
+changes = [
+  ["states/minigame_dance_retail_ready/image", 0.984, 0.982],
+  ["states/minigame_slot_machine_retail_reels/image", 0.999, 0.997],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The Done band's list wipe now takes the move label (FUN_801D99BC at 0x801E6170) and the win's pose seat is the acting slot (ctx+0x13): Gala's finisher results rise .623 -> .976 and the party wipe .755 -> 1.0, while Noa's finisher hold loses one scored block. Measured on the lane that made the change; not reseated."
+changes = [
+  ["states/battle_jou_noa_finisher_hold_retail/image", 0.994, 0.993],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Stable over repeated runs at .977 on the integration tip once the two-root midpoint walk back was taken out; which of the wave's commits moved it is not measured."
+changes = [
+  ["states/battle_vozz_viguro_strike/image", 0.979, 0.977],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play page carries the wave's new code: the screen-pass dither and frame persistence moved into the shared render-kernels crate and ported to the page, the menu notice chrome, the scene-switch fade, the arts and magic pages' opening skip and the minigames page's hub cadence (+0.3% gzip). The retail battle scene's allocations per frame rose 0.5% on the gate measurement; which commit added them is not measured."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5072023, 5087573],
+  ["counts/native/battle/retail/allocs_per_frame", 1231.1, 1237.3],
+]

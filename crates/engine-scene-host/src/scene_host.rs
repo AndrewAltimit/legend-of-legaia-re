@@ -98,6 +98,26 @@ pub trait BgmDirector {
     /// sub-op 2 with sub-op `0xA`. Default is a no-op for stub directors
     /// with no pause latch to clear.
     fn unhalt_pause(&mut self) {}
+
+    /// Op-`0x35` sub-op `5`'s fade. Its arm `FUN_800267A8` hands the
+    /// field-BGM source's sequence (`lh 0x536` = `0x8007052C + 0xA`), the
+    /// live audio level `_DAT_8007B910` halved and `deadline | 1` to the
+    /// decrescendo shim `FUN_80062004` (`0x800267D0..0x800267E8`), so the
+    /// slot's occupant ramps down over the deadline the release then stops it
+    /// on ([`timed_release_fade_args`]). The default is a no-op for stub
+    /// directors with no sequence volume.
+    fn timed_release_fade(&mut self, deadline: i16) {
+        let _ = deadline;
+    }
+
+    /// The field init's close of the field-BGM source (`FUN_801D6704`: the
+    /// decrescendo at `0x801D6AC0` while the map reads, then `FUN_800266E0`
+    /// and `FUN_80026520` at `0x801D7164`). A director whose load is instant
+    /// may run the ramp as a short fade before the next scene's bank lands;
+    /// the default is the bare stop.
+    fn close_field_source(&mut self) {
+        self.stop();
+    }
     /// Start an expansion pack's own track (a decoded WAV / Ogg file, not a
     /// SEQ): music id `bgm_id` in the pack-track range, its clip, and the
     /// frames to cross-fade from what plays now (`0` cuts). A director with
@@ -136,6 +156,17 @@ pub trait BgmDirector {
 /// [`SceneHost::route_bgm_events`] drives for sub-op `8`.
 pub fn bgm_reattach_volume(raw: i32) -> i16 {
     ((raw << 15) >> 16) as i16
+}
+
+/// The `(amount, ticks)` sub-op `5` hands the decrescendo for a live audio
+/// level `level` (`_DAT_8007B910`) and the op's `s16` deadline: the level
+/// halved as `(level << 15) >> 16` (`sll 0xF` / `sra 0x10` at
+/// `0x800267E0..0x800267E8`), and the deadline with its low bit raised
+/// (`ori a2,a2,0x1` at `0x800267D0`).
+///
+/// REF: FUN_800267A8, FUN_80062004
+pub fn timed_release_fade_args(level: i32, deadline: i16) -> (i16, i32) {
+    (((level << 15) >> 16) as i16, i32::from(deadline) | 1)
 }
 
 /// First id of the **global BGM pool** - the `music_01` tracks that carry

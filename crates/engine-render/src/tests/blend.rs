@@ -798,8 +798,8 @@ fn the_15_bit_scanout_reads_a_bin_as_its_expansion() {
 /// page has no other gate on it before a browser runs it.
 #[test]
 fn the_page_screen_primitive_shader_parses() {
-    use super::page_glsl::{es300_to_450, js_consts, parse_glsl, site_js, template};
-    let consts = js_consts(&site_js("play-app.js"));
+    use super::page_glsl::{es300_to_450, parse_glsl, template};
+    let consts = screen_prim_page_consts();
     let src = es300_to_450(&template(&consts, "FS_SCREEN_PRIM"));
     let module = parse_glsl(&src, naga::ShaderStage::Fragment);
     naga::valid::Validator::new(
@@ -808,6 +808,112 @@ fn the_page_screen_primitive_shader_parses() {
     )
     .validate(&module)
     .unwrap_or_else(|e| panic!("FS_SCREEN_PRIM does not validate: {e:?}"));
+}
+
+/// The constants `FS_SCREEN_PRIM` interpolates: `play-app.js`'s own over
+/// `webgl-shaders.js`'s, both classic scripts sharing the page's global scope
+/// (the dither matrix and `glslFloat` live in the latter).
+fn screen_prim_page_consts() -> std::collections::HashMap<String, super::page_glsl::JsConst> {
+    use super::page_glsl::{js_consts, site_js};
+    let mut consts = js_consts(&site_js("webgl-shaders.js"));
+    consts.extend(js_consts(&site_js("play-app.js")));
+    consts
+}
+
+/// A Gouraud screen quad's opaque write is one rule on both hosts: the native
+/// overlay shader's `fs_opaque` and the play page's `FS_SCREEN_PRIM`, each
+/// evaluated at every cell of the 4x4 dither matrix for an untextured
+/// `POLY_G4` and a textured `POLY_GT4`, with the rule bits the shared kernel
+/// stamps (`screen_prim::psx_rule_flags`) and without them. The page's
+/// framebuffer rows run bottom-up, so its `gl_FragCoord.y` is the native row
+/// flipped through `u_fb_h`.
+#[test]
+fn both_hosts_dither_a_gouraud_screen_quads_opaque_write_alike() {
+    use super::page_glsl::{es300_to_450, parse_glsl, parse_wgsl, template};
+    use super::shader_eval::{Machine, Val};
+    use legaia_render_kernels::screen_prim::{
+        FLAG_GOURAUD, FLAG_TEXTURED, PsxScreenRule, dithers_opaque_write, psx_rule_flags,
+    };
+    let native = parse_wgsl(&screen_overlay_shader_src());
+    let page = parse_glsl(
+        &es300_to_450(&template(&screen_prim_page_consts(), "FS_SCREEN_PRIM")),
+        naga::ShaderStage::Fragment,
+    );
+    const FB_H: f32 = 240.0;
+    // A 15-bpp texel (tsb depth 2) for the textured case, STP clear.
+    const TEXEL: u32 = 0x1A6B;
+    let fetch = || Box::new(|_: &str, _: i32, _: i32| [TEXEL, 0, 0, 0]);
+    let mut dithered_somewhere = false;
+    for textured in [false, true] {
+        for rule in [
+            psx_rule_flags(PsxScreenRule::Gpu, true),
+            psx_rule_flags(PsxScreenRule::Gpu, false),
+        ] {
+            let flags = FLAG_GOURAUD | rule | if textured { FLAG_TEXTURED } else { 0 };
+            // Textured: a `/128` factor; untextured: a straight colour, a dim
+            // band-wash shade whose bin the dither moves.
+            let colors: &[[f32; 4]] = if textured {
+                &[[0.75, 1.0, 1.25, 1.0], [0.3, 0.55, 0.9, 1.0]]
+            } else {
+                &[
+                    [10.0 / 255.0, 5.0 / 255.0, 13.0 / 255.0, 1.0],
+                    [0.5, 0.25, 0.8, 1.0],
+                ]
+            };
+            for &color in colors {
+                for y in 0..4u32 {
+                    for x in 0..4u32 {
+                        let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                        let mut m = Machine::new(&native, fetch());
+                        let f = m.function("fs_opaque");
+                        let names = m.struct_member_names(f.arguments[0].ty);
+                        let arg = Val::Struct(
+                            names
+                                .iter()
+                                .map(|n| match n.as_str() {
+                                    "clip_pos" => Val::f(&[px, py, 1.0, 1.0]),
+                                    "uv" => Val::f(&[3.0, 5.0]),
+                                    "cba_tsb" => Val::u(&[0, 2 << 7]),
+                                    "color" => Val::f(&color),
+                                    "flags" => Val::u(&[flags]),
+                                    other => panic!("unstaged overlay input {other}"),
+                                })
+                                .collect(),
+                        );
+                        let out = m.call(f, vec![arg]).expect("no discard").expect("colour");
+                        let want = out.floats()[..3].to_vec();
+
+                        let mut m = Machine::new(&page, fetch());
+                        m.set_uniform("u_stp_pass", Val::I(vec![0]));
+                        m.set_uniform("u_semi_mode", Val::I(vec![-1]));
+                        m.set_uniform("u_fb_h", Val::f(&[FB_H]));
+                        m.set_global("gl_FragCoord", Val::f(&[px, FB_H - py, 0.5, 1.0]));
+                        m.set_global("v_uv", Val::f(&[3.0, 5.0]));
+                        m.set_global("v_cba_tsb", Val::u(&[0, 2 << 7]));
+                        m.set_global("v_color", Val::f(&color));
+                        m.set_global("v_flags", Val::u(&[flags]));
+                        let main = m.function("main");
+                        m.call(main, Vec::new()).expect("no discard");
+                        let got = &m.global("o_color").floats()[..3];
+                        for k in 0..3 {
+                            assert!(
+                                (got[k] - want[k]).abs() < 1e-5,
+                                "textured {textured} flags {flags:#x} colour {color:?} at \
+                                 ({x}, {y}) lane {k}: page {} != native {}",
+                                got[k],
+                                want[k]
+                            );
+                        }
+                        if dithers_opaque_write(flags) {
+                            let c8 = (color[0] * 255.0 + 0.001).floor();
+                            dithered_somewhere |= !textured && (want[0] * 255.0 - c8).abs() > 0.5;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(dithered_somewhere, "the dither moved no untextured channel");
 }
 
 /// Both hosts read PSX mode's frame out as the same 15-bit framebuffer: the

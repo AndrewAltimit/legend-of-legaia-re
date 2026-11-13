@@ -131,7 +131,7 @@ Settled rows:
 | `on_movement_step`, `on_render_loop`, `on_child_step_iter`, `on_per_bone_interp`, `on_special_effect_spawn` (`anim_vm`) | Battle | Deleted: nothing called them. Each names a routine ported as its own kernel (`FUN_80047430`, `FUN_80048A08`, `FUN_80049348`, `FUN_8004998C`, `FUN_8004E13C`). |
 | `field_halt_acquire_predicate`, ops `0x38` / `0x43` | Live | Kept at `true`, half modelled: see [the acquire's first clause](#the-halt-acquires-first-clause). |
 | `stub_16`, move op `0x16` | Live | No wire owed: `FUN_80024C80` is `jr ra; nop`. |
-| `keyframe_alloc` / `_init` / `_free`, move ops `0x2C` / `0x30` | Ambient parts; cast modules `0916`, `0921`, `0928`, `0929`, `0931` | Replaced for the capture (`World::step_ambient_fx`, `BattleState::cell_captures`); the op-`0x30` restore is open: [below](#op-0x30-restores-the-captured-rect). |
+| `keyframe_alloc` / `_init` / `_free`, move ops `0x2C` / `0x30` | Ambient parts; cast modules `0916`, `0921`, `0928`, `0929`, `0931` | Replaced for the capture (`World::step_ambient_fx`, `BattleState::cell_captures`); `keyframe_free` is wired, the op-`0x30` restore: [below](#op-0x30-restores-the-captured-rect). |
 | `ext_debug_world`, move ext `0x01` | Live | No wire owed: `FUN_8001A068` is the `EFC %d %d %d` debug-text print. |
 | `ext_emit_ot_packet`, move ext `0x2E` | None | No carrier ([`move-vm-overlay-ext.md`](../subsystems/move-vm-overlay-ext.md)). |
 | `WorldMapEntityHost::bgm_poll`, `FUN_800243F0`'s return | Overworld | Kept at `-1`, the poller's common return; its `0` arm (`0x80024C60`), which holds that frame's encounter roll, is not modelled ([`world-map.md`](../subsystems/world-map.md)). |
@@ -179,14 +179,28 @@ the target's `+0x94` at the op.
 
 `FUN_80019D50` builds each frame's recolour in the `0x1F8003A0` scratch arena
 and uploads that. The op-`0x2C` capture stays as captured, and op `0x30` uploads
-it back (`FUN_800583C8(actor + 0xA0, buf)`, `0x80023AF0..0x80023B10`), which
-undoes the recolour. The port drops a rect's capture when no live part recolours
-it, but it never writes the capture back. The battle carriers are cast modules
-`0916`, `0921`, `0928`, `0929` and `0931`: each part captures a 16x1 or 256x3
-CLUT strip at rows `484..486`, runs its HSV adds, waits `0x00FF` vsyncs, then
-runs `0x30`. Whether a cast is still alive at the end of that wait is a
-cast-timing question. Next step: a cast-sequence film of one of those casts,
-reading VRAM row `486` after the module ends.
+it back (`FUN_800583C8(actor + 0xA0, buf)`, `0x80023AF0..0x80023B10`; `buf` is
+`+0xA8`, or the inline `+0xAC` when that is zero), which undoes the recolour,
+then clears `+0x9C`. `MoveVmHostImpl::keyframe_free` queues the capture with its
+rect (`BattleState::cell_restores` in a battle, `AmbientFxState::cell_restores`
+otherwise), and the VRAM pass both hosts run writes it back after the frame's
+recolours, as retail's packet follows the mode-3 arm's: `World::apply_battle_vram_moves`
+through `engine-session::battle_vram::step_battle_vram_edits`, and
+`World::step_ambient_fx`. Before the wire, a strip kept the cast's last
+recolour for the rest of the fight.
+
+The battle carriers are cast modules `0916`, `0921`, `0928`, `0929` and `0931`:
+each part captures a 16x1 or 256x3 CLUT strip at rows `484..491`, runs its HSV
+adds, waits, then runs `0x30`. In a live engine cast
+(`engine-core/tests/cast_cell_restore_disc.rs`) two reach the op while their
+part is alive: Aluru (`0916`) hands back its four 16x1 strips on row `486`, and
+Jedo (`0931`) its 256x3 strip over rows `484..486` after the band folds. Iota
+(`0921`, rows `484`, `485`, `488`, `489`), Palma (`0928`, row `486`) and Mule
+(`0929`, row `491`) recolour and their parts are freed first, so no restore
+runs. Rows `484 + slot` are the monster palettes
+([`battle-actor-rendering.md`](../subsystems/battle-actor-rendering.md)).
+Whether retail's freed parts also leave their strips recoloured needs a retail
+capture of one of those three casts, reading the rows after the module ends.
 
 ## State no host sets up
 
@@ -295,9 +309,14 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 
 ### Open rows
 
-- `set_move2_buffer_root`, `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested`
-  are the physics tick's own clip cursor. Which field clips run through it rather
-  than the host's actor layer is unsettled.
+- `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested` are the
+  physics tick's own clip cursor. Which field clips run through it rather than
+  the host's actor layer is unsettled. Its third bank needs no wire:
+  `set_move2_buffer_root` mirrors `_DAT_8007B840`, the type-`0x0B` bank
+  `FUN_800204F8` picks for clip ids `>= 0x400`, and no scene asset table on the
+  disc carries a type-`0x0B` descriptor (the tuple census in
+  `scene-formats::scene_asset_table`), while every observed state reads the
+  base as zero ([`mdt.md`](../formats/mdt.md)).
 - `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
   nibble; the hub's equipment panel stays on its no-candidate arm until the list
   machinery publishes it. The panel sits under the entry-list painter, and no
@@ -326,7 +345,7 @@ hook, which `asset field-op-census --only '<op>'` answers for the field VM.
 | `FieldCameraMotionHost::op4c_ne_sub7_ramp_73ee4` | `4C E7` | no clean carrier |
 | `FieldActorSpawnHost::hsv_grade_resident_meshes` | `4C E6` | the prologue palette mode draws the same pixels (`primitive_colour_grade`'s `REPLACED-BY`) |
 | `FieldTerrainHost::refresh_collision_y` | `4C DA` | the player's `CC F8 DA` is routed to the player stand-in and snapped there; a placement's Y is re-sampled by the per-tick height arm (`tick_field_npc_heights`) |
-| `FieldSceneHost::reset_party_pack_load_state` | `4C E9` | open: `opurud` carries one; clearing `_DAT_8007B9C4` forces the party pack's reload, and whether the port owes that reload is unchecked |
+| `FieldSceneHost::reset_party_pack_load_state` | `4C E9` | replaced: `opurud` carries one; clearing `_DAT_8007B9C4` forces the party pack's reload, and the port has no load gate, so every scene entry runs the swap ([above](#a-hook-left-on-its-trait-default)) |
 
 ## Analysis defects this triage found
 

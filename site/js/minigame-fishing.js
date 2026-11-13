@@ -28,15 +28,17 @@
  * The HUD's sprite half (plates, digits, gauge caps, banners) is the
  * overlay's own sprite table cut from the venue's HUD page, rasterised by
  * the engine; without it, glyph ids fall back to labelled text.
- * Approximated (the page's note says so): the lure is drawn as projected 2D
- * geometry, and each effect part as a placeholder mark at the seat the engine
+ * The LURE sits where the session's lure is (`lure_pos`, the engine's lure
+ * actor through its flight, in-water move, sink and the fish's swim).
+ * Approximated (the page's note says so): the lure is drawn as a 2D bobber
+ * at that point's projection, and each effect part as a placeholder mark at the seat the engine
  * gives it (the catch bursts come from the shared shore-actor step,
  * `fishing_venue::tick_venue_actors`). The ambient ripples are the overlay's
  * own ring parts, run through the move VM by the same step and drawn as
  * the engine projects them. The LINE is the
  * engine's: `fishing_line_json` hands back retail's packet (the rod end is the rod actor's projected tip, the pair is
  * clipped by the ported FUN_801D56E4, the Gouraud end colours are the
- * packet's) given this page's projection of the lure as the fish end.
+ * packet's) given the session's lure, on the water plane, as the fish end.
  */
 window.MgFishing = (function () {
   'use strict';
@@ -349,23 +351,17 @@ window.MgFishing = (function () {
       ];
     }
 
-    /* The lure's world position for the live line record: out along the
-     * angler's facing into the water, pulled back in as the record drops
-     * (an on-screen reading of DAT_801d927c - the retail projection vector
-     * is runtime state). */
-    function lureWorld(st) {
-      const b = scene;
-      if (!b) return null;
-      const t = Math.max(0, (st.record - 300)) / 1300;
-      const dist = 350 + t * 1500;
-      const [fx, fz] = facingOf(b.anchor);
-      const lat = (st.lateral || 0) * 0.6;
-      /* Lateral dart pushes perpendicular to the facing. */
-      return [
-        b.anchor.x + fx * dist + fz * lat,
-        b.anchor.y - 40,
-        b.anchor.z + fz * dist - fx * lat,
-      ];
+    /* The lure's world point: the session's own lure (`lure_pos`, the
+     * tracked point 0x801D9184..0x801D9188 the lure tick's tail leaves -
+     * the flight, the in-water move 0x801D2C3C..0x801D2DC8, the sink and
+     * the hooked fish's swim all land there), in the raw retail world
+     * coordinates the stage is drawn in. `surface` zeroes the height, as
+     * the line's fish end does (`sh zero,0x3a(sp)` at 0x801D3A90). A
+     * stale bundle without the field gets no lure. */
+    function lureWorld(st, surface) {
+      const p = st && st.lure_pos;
+      if (!scene || !p || p.length !== 3) return null;
+      return [p[0], surface ? 0 : p[1], p[2]];
     }
 
     /* ------------- events from the session ------------- */
@@ -496,11 +492,15 @@ window.MgFishing = (function () {
       if (!scene || !st || !st.live) return;
       const active = st.phase === 'flight' || st.phase === 'waiting'
         || st.phase === 'hooked';
-      const lw = active ? lureWorld(st) : null;
+      const lw = active ? lureWorld(st, false) : null;
       const lp = lw ? project(lw) : null;
+      /* The line's fish end is the lure on the water plane. */
+      const ls = active ? lureWorld(st, true) : null;
+      const lsp = ls ? project(ls) : null;
 
       /* The line: retail's LINE_G2 packet from the engine, in 320x240
-       * screen space - fish end = this page's lure projection, rod end = the
+       * screen space - fish end = the session's lure on the water plane
+       * through this page's camera, rod end = the
        * rod actor's projected tip, clipped by the ported clipper. One call a
        * frame (the engine latches the rod's yaw toward the fish off it). */
       /* The rod: the engine's rod model (the rod actor's pose, culled and
@@ -544,7 +544,7 @@ window.MgFishing = (function () {
         let line = null;
         try {
           line = JSON.parse(api.fishing_line_json(
-            lp ? Math.floor(lp[0] / sx) : 0, lp ? Math.floor(lp[1] / sy) : 0, !!lp));
+            lsp ? Math.floor(lsp[0] / sx) : 0, lsp ? Math.floor(lsp[1] / sy) : 0, !!lsp));
         } catch (_) { line = null; }
         if (line) lineOt = line.ot | 0;
         fillRod((f) => line && f.ot > lineOt);
@@ -591,28 +591,31 @@ window.MgFishing = (function () {
         }
       }
 
-      if (lp) {
+      /* The bobber floats where the line meets the water once the lure is
+       * under it (retail's Y is down: a positive height is below the
+       * surface), and rides the lure itself while it flies. */
+      const bp = lw && lw[1] > 0 ? lsp : lp;
+      if (bp) {
         g.save();
 
         /* The bobber. */
         const bob = Math.sin(performance.now() / 300) * 2;
         g.fillStyle = st.phase === 'hooked' ? '#ff5f4a' : '#ffd0d0';
         g.beginPath();
-        g.arc(lp[0], lp[1] + bob, 4, 0, Math.PI * 2);
+        g.arc(bp[0], bp[1] + bob, 4, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = '#f5f5f5';
         g.beginPath();
-        g.arc(lp[0], lp[1] + bob - 3, 2.2, 0, Math.PI * 2);
+        g.arc(bp[0], bp[1] + bob - 3, 2.2, 0, Math.PI * 2);
         g.fill();
 
-        /* The hooked fish: a shadow under the surface, darting with the
-         * fight's lateral push and sinking with the line depth. */
-        if (st.phase === 'hooked') {
-          const depth = 6 + (st.depth / 4096) * 26;
+        /* The hooked fish: a shadow on the lure it rides - the session's
+         * lure point, which carries the fish's swim and the sink. */
+        if (st.phase === 'hooked' && lp) {
           const wig = Math.sin(performance.now() / 90) * 4;
           g.fillStyle = 'rgba(10,30,45,0.55)';
           g.beginPath();
-          g.ellipse(lp[0] + wig, lp[1] + depth, 16, 5, 0, 0, Math.PI * 2);
+          g.ellipse(lp[0] + wig, lp[1], 16, 5, 0, 0, Math.PI * 2);
           g.fill();
         }
 
@@ -624,9 +627,9 @@ window.MgFishing = (function () {
           for (let i = 0; i < 3; i++) {
             const a = (i / 3) * Math.PI * 2 + splashT / 6;
             g.beginPath();
-            g.moveTo(lp[0], lp[1]);
-            g.lineTo(lp[0] + Math.cos(a) * (12 + (40 - splashT)),
-                     lp[1] - Math.abs(Math.sin(a)) * (10 + (40 - splashT) / 2));
+            g.moveTo(bp[0], bp[1]);
+            g.lineTo(bp[0] + Math.cos(a) * (12 + (40 - splashT)),
+                     bp[1] - Math.abs(Math.sin(a)) * (10 + (40 - splashT) / 2));
             g.stroke();
           }
         }

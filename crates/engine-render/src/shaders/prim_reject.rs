@@ -41,6 +41,17 @@ pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 // the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
 // as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
+    // A clean frame's near shift (`DRAW_ORDER_NEAR_CLEAN`, staged as
+    // `flags.w = -16`): each vertex tests depth ten buckets nearer than it
+    // stands, so a seated actor paints over the furniture it sits in.
+    if (u.flags.w < -15.5) {
+        if (clip.w <= 0.0) {
+            return clip;
+        }
+        let ab = clip_depth_affine(u.mvp);
+        let near_w = max(clip.w - 320.0 / 6.0, 1.0);
+        return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / near_w) * clip.w, clip.w);
+    }
     // The overworld keeps `flags.w` for its curve: its order word rides in
     // `flags.z / 2`, above the occlusion bit.
     let z_word = u32(u.flags.z / 2.0);
@@ -77,6 +88,14 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
     if (mean_w <= 0.0) {
         return clip;
     }
+    let ab = clip_depth_affine(m);
+    return vec4<f32>(clip.x, clip.y, (ab.x + ab.y / mean_w) * clip.w, clip.w);
+}
+
+// `z = a * w + b` of `m`'s depth row over its w row, read the way
+// `legaia_engine_field::overworld_draw_order::depth_affine` reads it: the
+// column with the largest w weight gives `a`, the translation column `b`.
+fn clip_depth_affine(m: mat4x4<f32>) -> vec2<f32> {
     var col = m[2];
     if (abs(m[0].w) > abs(col.w) && abs(m[0].w) >= abs(m[1].w)) {
         col = m[0];
@@ -87,8 +106,7 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
     if (abs(col.w) > 1.0e-7) {
         a = col.z / col.w;
     }
-    let b = m[3].z - a * m[3].w;
-    return vec4<f32>(clip.x, clip.y, (a + b / mean_w) * clip.w, clip.w);
+    return vec2<f32>(a, m[3].z - a * m[3].w);
 }
 
 fn prim_sz(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32) -> i32 {

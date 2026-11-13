@@ -1203,7 +1203,7 @@ An unposed entry gets a one-frame stand-in clip that never draws. An unposed tou
 
 **NPC clips use the same cursor.** Each bound NPC clip has a cursor in `World::npcs.clip_cursors` (a `PropAnim`), stepped by `World::tick_npc_clips` once per field frame under the actor's own `+0x62` word (the spawned channel's `ctx.local_flags`), with the end latch written back; both hosts pose their `FieldClipPlayer` from it (`World::sync_npc_clip`) and rotate the model to the live heading `World::npcs.headings`.
 
-The **treasure chest** is the common case: a partition-1 actor (`宝箱N`, player-bank model `0xF4`) whose spawn script binds the lid clip (`22 17`), then branches on its opened flag to `4C 35` (held shut) or `4C 36` (held open); its touch body unholds and clamps the clip and spins on `2D 08` before the item box opens. Pinned by `engine-scene-host/tests/field_chest_lid_disc.rs`.
+The **treasure chest** is the common case: a partition-1 actor (`宝箱N`, player-bank model `0xF4`) whose spawn script binds the lid clip (`22 17`), then branches on its opened flag to `4C 35` (held shut) or `4C 36` (held open); its touch body unholds and clamps the clip and spins on `2D 08` before the item box opens. The talk ends on the `0x21` behind the grant (`39 <item>`, `50 <flag>`, `21`), and the next touch resumes there, on the jump to the "The treasure chest is empty!" loop ([the interaction cursor](script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)). Pinned by `engine-scene-host/tests/field_chest_lid_disc.rs` and `field_pickup_once_disc.rs`.
 
 ### Field-buffer load chain
 

@@ -41,6 +41,12 @@ pub struct AmbientFxState {
     /// captured rect. Filled lazily by [`crate::world::World::step_ambient_fx`] from the
     /// host's VRAM the first time a cell fires; cleared on scene entry.
     pub cell_captures: std::collections::HashMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// The captures (with their rects) a live ambient part's move-VM op
+    /// `0x30` handed back since
+    /// the last VRAM-bearing step - the field side of
+    /// `BattleState::cell_restores`: the capture is written back over the
+    /// recolour and the part stops cycling (`+0x9C = 0`).
+    pub cell_restores: Vec<legaia_engine_battle_loop::battle_state::CellRestore>,
     /// The limiter's per-rect applied `(v_add, white)` state - what the
     /// last [`crate::world::World::step_ambient_fx`] actually wrote, keyed like
     /// [`crate::world::AmbientFxState::cell_captures`] and cleared with it on scene entry.
@@ -147,6 +153,7 @@ impl AmbientFxState {
             pending_game_ticks: 0,
             vsync_accum: 0,
             cell_captures: std::collections::HashMap::new(),
+            cell_restores: Vec::new(),
             flash_applied: std::collections::HashMap::new(),
             entry_vdf_pulse: None,
             morph_dirty_slots: std::collections::BTreeSet::new(),

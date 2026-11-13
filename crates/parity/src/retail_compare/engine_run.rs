@@ -95,6 +95,14 @@ impl BgmDirector for RecordingDirector {
     fn unhalt_pause(&mut self) {
         self.held = false;
     }
+    // The field init's close stops the field-BGM source like a stop op; the
+    // ramp ahead of it is a level, not a track, so it leaves `last` alone.
+    fn close_field_source(&mut self) {
+        self.held = true;
+    }
+    // Sub-op 5's decrescendo ramps the occupant's volume; the release that
+    // follows is what stops it, so the fade moves neither field.
+    fn timed_release_fade(&mut self, _deadline: i16) {}
 }
 
 /// Seed the engine from a retail state and sample it after [`SETTLE_TICKS`].

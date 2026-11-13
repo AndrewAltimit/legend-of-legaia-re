@@ -385,6 +385,10 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             Some(legaia_engine_battle_loop::frame_clock::RetailRandTrack::parse(&text));
     }
 
+    // `LEGAIA_SEAT_SEED_MP_UNPAID=1`: the seeded cast below has not paid its MP
+    // yet (the cast-sequence oracle injects ahead of the `0x28` debit), so the
+    // seed credits nothing back (`BattleState::seed_mp_unpaid`). A harness seat.
+    world.battle.seed_mp_unpaid = std::env::var_os("LEGAIA_SEAT_SEED_MP_UNPAID").is_some();
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast

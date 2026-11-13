@@ -931,6 +931,9 @@ pub fn battle_text_draws(
             }
             _ => {}
         }
+    } else if bh::battle_commit_exit(w).is_some() {
+        // The confirm's chips leaving the screen as the round starts.
+        out.extend(command_chip_text(w, font, origin, scale));
     }
     out
 }

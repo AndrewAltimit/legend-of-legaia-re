@@ -331,6 +331,7 @@ impl World {
             {
                 self.presentation.fade = None;
             }
+            self.presentation.join_next_pass_fades();
             self.presentation
                 .module_fades
                 .retain_mut(|f| f.step_vsyncs(pass_vsyncs) || f.holds_at_end());
@@ -373,9 +374,19 @@ impl World {
         // In battle on retail's cadence the walker's sweeps run with the
         // battle pass, one per vsync the pass spans, so an effect stands
         // where the pass left it until the next one (as on retail's screen).
+        //
+        // On that cadence the sweeps belong to the battle draw tick, where
+        // retail calls the walker (`jal 0x801E0080` at `0x80048128`): behind
+        // the frame driver's discarded draw and the state machines' and the
+        // module's draws, ahead of the bodies' burning puffs. The anim pass
+        // runs them there (`World::tick_battle_anim_pass`).
         if self.clock.display_frame_step == 1 && runs_master_driver {
-            for _ in 0..pass_vsyncs {
-                self.tick_effects();
+            if self.mode == SceneMode::Battle && self.toggles.battle_sm_frame_cadence {
+                self.battle.walker_sweeps_owed = pass_vsyncs;
+            } else {
+                for _ in 0..pass_vsyncs {
+                    self.tick_effects();
+                }
             }
         }
         if runs_master_driver {

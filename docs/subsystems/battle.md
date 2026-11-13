@@ -438,7 +438,7 @@ Two SCUS loaders feed the actor table: `FUN_80052FA0` (party battle files) and `
 
 ### The battle heap budget
 
-Everything the loader places in RAM comes from one heap, and its arithmetic - not VRAM and not the AI - bounds a formation. Each battle seat owns its own texture-page column at `(320 + slot*64, 256)` and CLUT row `484 + slot`, so distinct enemies never contend for VRAM. One upload breaks the pattern: [the boss effect page](#the-boss-effect-page).
+Everything the loader places in RAM comes from one heap, and its arithmetic - not VRAM and not the AI - bounds a formation. Each distinct monster id owns a texture slot - page column `(320 + slot*64, 256)`, CLUT row `484 + slot` - so distinct enemies never contend for VRAM. The slot is the id's rank among the formation's distinct ids, not its seat (below). One upload breaks the pattern: [the boss effect page](#the-boss-effect-page).
 
 **The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a best-fit free-list heap with 12-byte node headers, one shared free ring and a per-pool allocated ring. Stage init (`FUN_8001E1B4`, `jal 0x8002B3D4` at `0x8001E238`) sizes it `0x134800` (1,263,616 bytes, 1234.0 KiB) over the arena `0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer `gp+0x840 = 0x8007BB58`, allocation counter `gp+0x488 = 0x8007B7A0`, malloc-error accumulator `gp+0x510 = 0x8007B828`.
 
@@ -447,6 +447,8 @@ The wrapper `FUN_80017888(pool, size)` -> `FUN_8002B468` returns NULL on exhaust
 **The heap starts empty for every battle.** Stage init runs twice on the way in: once at game mode `8` (the field-to-battle transition, whose overlay takes two `0x32000` buffers and the field's `0x3C000` packet buffer) and again at mode `0x14`, which re-initialises the arena and discards all of it. Nothing allocated in the field survives into the fight, so the battle ledger is independent of the scene the encounter came from, except for the rows that read scene data.
 
 **Per-monster cost** is `block[+0x08]` bytes: stats, name, TMD, every action entry and animation stream. The texture pool never enters the heap; it is decoded into staging at `DAT_8007B728 + 0x12800` (inside the GPU packet buffer) and uploaded from there (`FUN_80055468`). The loader `FUN_800542C8` walks monster ids upward (`0x800543EC..0x800549F0`) and, for each, the four seats of `DAT_8007BD0C`; only the first seat naming an id streams and allocates, the rest copy its pointer, so instanced trios are nearly free and blocks load in ascending id order, not seat order.
+
+**Texture slots.** The texture upload rides the same walk: `FUN_80055468(pool, tmd, wide, s7)` runs on the first seat only (`0x80054820`), with `s7` starting at `0` (`0x800543C4`) and stepping to the uploader's return `slot + 1` (`0x80055658`), so the Worm of Mt. Rikuroa's `[Worm, Pump Bat, Pump Bat]` (id `34`) takes slot `0` and both Pump Bats (id `46`) slot `1`. Slot `2` is the one every summon creature's pool overwrites ([summon-readef](../formats/summon-readef.md#actor-record-slot-last-streamed-slot-of-a-group)), so only a formation of three or more distinct ids has a monster under it. Port: `engine-battle::battle_party_form::monster_texture_slots`.
 
 **Ledger.** Every node on the allocated ring once the fight has settled, in allocation order, from an allocator trace over one battle load: breakpoints on `FUN_8002B468` (entry and both returns), `FUN_8002B584`, `FUN_8002A880` and `FUN_8002B3D4`, each caller resolved two frames out. Measured on formation `[108,3]` (Mad Ogre + Demon Fly, one of the disc's two heaviest distinct-id formations) installed on the Karisto world map `map03` with a one-member party; three traced runs agree byte for byte. "Call site" is the `jal` into the allocator wrapper, then the `jal` that reached that function.
 
@@ -501,7 +503,9 @@ Engine: `legaia_engine_battle::battle_seats::rebuild_species_order` is the walk,
 
 The setup `FUN_800513F0` draws one `rand()` for each body it seats, the party's in seat order and then the monsters', and opens the body's anim cursor at a random frame of its first stream: `(rand() % frames) << 4` into the node's `+0x68`, `frames` being the stream's frame count `*(record[+0x88] + 1)` (`0x80051544..0x80051574` for a party seat, `0x800518D0..0x800518F8` for a monster's). So no two bodies idle in step, and three of the same monster do not breathe together. The draws come ahead of the formation roll `FUN_80051D84`, which the setup calls last.
 
-Engine: `World::enter_battle_from_formation` draws the same count in the same order and holds each draw on its actor (`Actor::battle_idle_phase_draw`) until the seat's first idle clip is installed, where `World::apply_battle_pose` seats the cursor. The differential `battle_setup` runs the setup whole against the entry: the seats of both tables with their family addends, the scripted-fight byte, the draws and the loader's fade-in.
+Engine: `World::enter_battle_from_formation` draws the same count in the same order and holds each draw on its actor (`Actor::battle_idle_phase_draw`) until the loader installs the seat's clips, where `World::seat_battle_setup_idle` seats clip `0` at that cursor: the party form's install, the scene host's monster install, and a monster seat that kept its clip set from an earlier fight.
+
+The phase lands with the fight, not on the action SM's first idle request. That request answers `FUN_801D5854`, whose stores go to the battle context's framing words and none to the actor's `+0x1D9..+0x1DC` or the node's `+0x68`, so retail's idle runs on through it; a seat installed without the idle marker restarted its loop at the phase on its first action, a snap on every body's first turn. The differential `battle_setup` runs the setup whole against the entry: the seats of both tables with their family addends, the scripted-fight byte, the draws and the loader's fade-in.
 
 ### The boss effect page
 
@@ -513,7 +517,7 @@ seek of `0x8C000` bytes relative to the end of the block it just read
 (`FUN_80060920(handle, 0x8C000, 1)`; on the CD path `FUN_8003E964(0x118, 1)`,
 the same span in sectors), so the slot of id `id + 8`, which holds a bare PSX
 TIM. It uploads the TIM's pixels (`+0x220`) to `(0x180, 0x100, 0x40, 0x100)` -
-page `0x16`, the seat-1 column - and its 256-entry CLUT (`+0x14`), the STP bit
+page `0x16`, the slot-1 column - and its 256-entry CLUT (`+0x14`), the STP bit
 ORed onto every non-zero colour, to row `0x1E5` (485), whatever the TIM's own
 header says. Cort's two forms are the ids that sample it: `0xB4` stages slot
 `0xBC`, `0xB5` slot `0xBD`, each byte-matched against the captured battle VRAM

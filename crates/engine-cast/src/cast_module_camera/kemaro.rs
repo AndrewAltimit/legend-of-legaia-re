@@ -100,8 +100,9 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
     Some(match phase {
         // `0x801F6F04..0x801F6F10`: TR z `+ 2 * scalar * step`.
         1 => drift(0, 0, 0, 2 * p),
-        // `0x801F70E8..0x801F7118`.
-        4 if drained > p << 5 => drift(0, -(p / 4), 0, -2 * p),
+        // `0x801F70C8..0x801F711C`: TR z `-= 2 * product` (`0x800840C0`),
+        // pitch `-= product / 4` (the halfword `0x8007B790`, `lhu v0,-0x4870`).
+        4 if drained > p << 5 => drift(-(p / 4), 0, 0, -2 * p),
         // `0x801F76DC..0x801F7728`, `0x801F77A0..0x801F77EC`.
         8 | 9 => drift(0, -(p / 2), 0, -(p / 8)),
         // `0x801F7930..0x801F79B4`.
@@ -135,13 +136,12 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// | 17 (`0x801F8400`, no gate) | a `0x60`-frame shot pitch `-0x20`, yaw `0xC00`, TR `(0, 0x200, ctx[+0x6D0] * 3 / 2)` on the victim's `z`; [`KEMARO_ARM17_SPAWNS`] |
 /// | `0x13` (`0x801F8A4C`) | the line cleared |
 ///
-/// The drifts are [`kemaro_drift`]'s. Not carried: arm 4's TR y shake
-/// (an absolute store `0x600` or `countdown / 2 + 0x600` on alternate
-/// passes, `0x801F7088..0x801F70C4`) and arm 12's absolute pose store
+/// The drifts are [`kemaro_drift`]'s, arm 4's TR y shake
+/// [`kemaro_arm4_shake`]'s. Not carried: arm 12's absolute pose store
 /// (`0x801F7B90..0x801F7BAC`). The walk arms 13..17 make of the arm-9 parts
 /// by handle is the host's (`World::kemaro_spear_writes`).
 ///
-/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
+/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, arm 4's TR y store, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let drained = st.countdown.0 - SPEED_SCALAR;
     let ramp_before = st.ramp;
@@ -173,9 +173,48 @@ pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
         st.ramp = 1;
         base.spawns = &KEMARO_ARM13_SPAWNS;
     }
-    match kemaro_drift(phase, drained) {
+    let base = match kemaro_drift(phase, drained) {
         Some(d) => base.drifted(d),
         None => base,
+    };
+    if phase == 4 {
+        return kemaro_arm4_shake(st, base, drained);
+    }
+    base
+}
+
+/// TR y on the arm-4 pass: `0x600` straight, and while the drained
+/// countdown `w` is still above `scalar << 5` the parity halfword
+/// [`ModuleCamState::kemaro_shake`] bumped first, `w / 2 + 0x600` on its even
+/// passes (`0x801F7088..0x801F70C4`, `0x801F7120..0x801F7128`). Retail runs
+/// it once a battle frame on the whole pass's drain, so the port bumps the
+/// word on the pass's last tick ([`ModuleCountdown`]'s rest is `0`), where
+/// the countdown has drained the pass, and the store travels as a drift
+/// off the live TR y; the ticks before it keep the pass's earlier value.
+fn kemaro_arm4_shake(st: &mut ModuleCamState, base: ArmDirection, drained: i32) -> ArmDirection {
+    let Some((_, tr)) = st.live_pitch_tr else {
+        return base;
+    };
+    let target = if drained > SPEED_SCALAR << 5 {
+        if st.countdown.1 != 0 {
+            return base;
+        }
+        st.kemaro_shake = st.kemaro_shake.wrapping_add(1) & 1;
+        if st.kemaro_shake != 0 {
+            0x600
+        } else {
+            drained / 2 + 0x600
+        }
+    } else {
+        0x600
+    };
+    let rate = base.drift.unwrap_or_default();
+    let mut d = rate;
+    d.tr_y = d.tr_y.wrapping_add((target - tr[1]) as i16);
+    ArmDirection {
+        drift: Some(d),
+        rest_drift: Some(Some(rate)),
+        ..base
     }
 }
 
@@ -267,6 +306,33 @@ mod tests {
         let a = kemaro_direct(&mut st, 4, seats);
         assert!(!a.hold);
         assert_eq!(a.shot.unwrap().frames, 0x80);
+    }
+
+    #[test]
+    fn kemaro_arm_4_drops_the_pitch_and_shakes_tr_y_on_alternate_passes() {
+        // The `0x90` recording's arm 4: pitch `-8` a step-4 pass, yaw held,
+        // TR y `0x600` then `w / 2 + 0x600` (`1888` at `w = 704`).
+        let seats = ModuleCamSeats::default();
+        let mut st = ModuleCamState {
+            countdown: ModuleCountdown(SPEED_SCALAR * 96, 0),
+            live_pitch_tr: Some((0, [0, 0x600, 0])),
+            ..Default::default()
+        };
+        let a = kemaro_direct(&mut st, 4, seats);
+        let d = a.drift.unwrap();
+        assert_eq!((d.pitch, d.yaw), (-(SPEED_SCALAR as i16) / 4, 0));
+        assert_eq!(d.tr_y, 0, "odd pass: 0x600");
+        let w = st.countdown.0;
+        let a = kemaro_direct(&mut st, 4, seats);
+        let w2 = w - SPEED_SCALAR;
+        assert_eq!(st.countdown.0, w2);
+        assert_eq!(i32::from(a.drift.unwrap().tr_y), w2 / 2);
+        assert_eq!(a.rest_drift, Some(Some(kemaro_drift(4, w2).unwrap())));
+        // A tick with the pass still owing ticks keeps the word.
+        st.countdown.1 = 3;
+        let a = kemaro_direct(&mut st, 4, seats);
+        assert_eq!(a.drift.unwrap().tr_y, 0);
+        assert_eq!(st.kemaro_shake, 0);
     }
 
     #[test]

@@ -1406,6 +1406,22 @@ impl World {
             // context's.
             c.ctx.flags |= tl.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
         }
+        // ...and to the talk runner's copy of the same cursor. The engine
+        // keeps two (the channel's for engagements and the timeline, the
+        // talk record's for a button press); retail has one, so a talk after
+        // this interaction must resume where it ended. `town01`'s Tetsu
+        // (`P1[10]`) is the case that shows it: the spar's return runs his
+        // context from `+0x7FB` as this timeline, through `72 27 05 00` (the
+        // `0x20C` raise only once the measuring's `0x227` is up) to the `21`
+        // at `+0xA47`. A talk restarted at `+0x7FB` after the measuring took
+        // the raise retail never reaches, and the softlock of a spar fought
+        // before the measuring went away in the retail-faithful mode.
+        if let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
+            && tl.pc < rec.body.len()
+        {
+            rec.entry_pc = tl.pc;
+            rec.resume = true;
+        }
     }
 
     /// Step every concurrent helper context ([`crate::world::FieldVmState::helper_contexts`]) one

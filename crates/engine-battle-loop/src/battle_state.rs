@@ -67,6 +67,11 @@ pub struct InflightCastSeed {
 /// monster seats.
 pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 
+/// One op-`0x30` hand-back: the captured rect `(x, y, w, h)` and its texels,
+/// or `None` when the engine had not captured the rect yet
+/// (`BattleState::cell_restores`).
+pub type CellRestore = ((u16, u16, u16, u16), Option<Vec<u16>>);
+
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
 pub struct BattleState {
     /// The loaded scene's **map id** - retail's `_DAT_80084540`, the scene's
@@ -483,6 +488,15 @@ pub struct BattleState {
     /// command prompt opens ([`InflightArtSeed`]). `None` on every ordinary
     /// fight; consumed (taken) by the live loop.
     pub inflight_art_seed: Option<InflightArtSeed>,
+    /// A debug seed that stands in for the next battle's formation roll
+    /// (`ctx+0x290`, `World::roll_battle_formation`): the roll still draws
+    /// its random numbers, and its result is replaced by this one. The art
+    /// and magic pages' showcase fights pin
+    /// [`FormationAdvantage::None`](legaia_engine_battle_vm::battle_formulas::FormationAdvantage::None)
+    /// so a seeded action always opens its fight from the party's first
+    /// prompt, with nobody turned away. `None` on every ordinary fight;
+    /// consumed (taken) by the roll.
+    pub formation_seed: Option<legaia_engine_battle_vm::battle_formulas::FormationAdvantage>,
     /// Set by a dispatched [`InflightArtSeed`]: the builder reads the Ra-Seru
     /// marker as up for this fight, so a Miracle or Super string plays without
     /// its story gear. Cleared at battle teardown.
@@ -495,6 +509,13 @@ pub struct BattleState {
     /// is credited back as it is taken. `None` on every ordinary fight;
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
+    /// A debug seed's caster has not paid yet: the cast-sequence oracle
+    /// injects the cast at the command state `0x0A`, ahead of the `0x28`
+    /// debit, so the price is not credited back
+    /// ([`Self::inflight_seed`], [`Self::forced_monster_cast`]) and the
+    /// band's own debit lands on the state's MP, wrap and all. `false` on
+    /// every ordinary fight and on a still's mid-cast replay.
+    pub seed_mp_unpaid: bool,
     /// The same seed's target: the party seat the capture's caster had
     /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
     /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
@@ -638,14 +659,17 @@ pub struct BattleState {
     /// `0x801E2FD4` / `0x801E2FE0`), so both walk one sixteen-vsync step
     /// together ([`BattleState::spirit_gauge_glide_offsets`]).
     pub spirit_gauge_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
-    /// The roster panels' raise glide when a cast module raises them
-    /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
-    /// `(0x4E + i, 0)` for each further member, and stores `ctx[+0x18] = 6`
-    /// for the Done hold's close (`0x801F7E64..0x801F7ED4`). Mode `0`: the
-    /// panels rise from seat A to seat B (`y = 236 -> 170`) and take the
-    /// readout bar's seat. Cleared by the next action's seed
+    /// The roster panels' raise glide inside an action. Three openers call
+    /// `FUN_801D8DE8(6, 0)`, `(0x4E, 0)`, `(0x4F, 0)` and store
+    /// `ctx[+0x18] = 6` for the Done hold's close: the seed's plate routine
+    /// `FUN_801E6D84` for a monster's party-wide action
+    /// (`0x801E7058..0x801E7080`), the item band's `0x3E` arm for a
+    /// party-wide target (`0x801E4054..0x801E407C`), and PROT 0911 (Orb)
+    /// arm 9's pass (`0x801F7E64..0x801F7ED4`). Mode `0`: the panels rise
+    /// from seat A to seat B (`y = 236 -> 170`) over the same sixteen
+    /// vsyncs as every tracked widget. Cleared by the next action's seed
     /// (`legaia_engine_battle_hud::battle_panels_visible`).
-    pub module_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    pub action_panels_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The round prompt's open glide. The menu SM's round-start arm runs
     /// sub-draw step 0 (`FUN_801D388C(0)` at `0x801D0EE4`), whose five pairs
     /// are all mode `0`: `Begin` (record 0), `Run` (record 3) and the three
@@ -675,6 +699,13 @@ pub struct BattleState {
     /// `ctx[+0x06] = 0xFE` stored and its step's records still gliding: the
     /// `0xFE` arm (the action SM's start) runs on the first dispatched pass.
     pub round_armed: bool,
+    /// The confirm chips' exit slide ([`CommitExit`]): the `Begin` /
+    /// `Escape` confirm's sub-draw step sends the chips off both edges, the
+    /// tab up and the commit log off the left edge on one sixteen-vsync
+    /// glide. Raised with [`Self::round_armed`]; the `0xFE` arm's handle
+    /// reset clears it. Not a gating record here: the hold it shares is
+    /// [`Self::surface_hold_glide`]'s.
+    pub commit_exit: Option<CommitExit>,
     /// What the glide stepper returned on this tick's pass - retail's `s0`
     /// at `0x801D0B34`, the value the menu SM leaves in `ctx[+0x6B2]`.
     /// Non-zero while a tracked glide is in flight and on the pass it lands;
@@ -795,6 +826,15 @@ pub struct BattleState {
     /// buffer every frame's recolour reads from. Dropped once no live part
     /// recolours the rect.
     pub cell_captures: std::collections::BTreeMap<(u16, u16, u16, u16), Vec<u16>>,
+    /// The captures a live part's move-VM op `0x30` handed back this frame,
+    /// each with its rect: `FUN_800583C8(actor + 0xA0, buf)` (`jal` at
+    /// `0x80023B04` in `FUN_80023070`) `LoadImage`s the op-`0x2C` capture
+    /// onto its rect, undoing the recolour. `None` when the op ran before the
+    /// rect's first upload took its capture: the applier reads the capture
+    /// that upload takes. Applied after [`Self::cell_fx`] by
+    /// `World::apply_battle_vram_moves`, as retail's packet follows the
+    /// mode-3 arm's in the same frame; cleared at battle entry.
+    pub cell_restores: Vec<CellRestore>,
     /// How the engine's one-vsync ticks group into battle frames - the unit
     /// the root-motion carry truncates over and the camera steps on
     /// (`World::set_battle_frame_step`).
@@ -817,9 +857,23 @@ pub struct BattleState {
     /// while `WorldToggles::battle_gpu_cost_step` is up. `None` before the
     /// first such frame.
     pub drawn_table_cost: Option<u16>,
+    /// The polygons the table the host drew last links
+    /// (`World::note_drawn_polys`), which a pass prices its work from while
+    /// `WorldToggles::battle_poly_frame_cost` is up. `None` before the first
+    /// priced frame, and on a host that does not price its frames.
+    pub drawn_polys: Option<u32>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
+    /// The work the last ring push priced the frame at, before a clip's polls
+    /// or an arm table's step (the state's measured base plus its draw load):
+    /// what the cast recorder logs beside the ring's entry.
+    pub frame_work: u16,
+    /// The action state and module phase of the last cast-arm pass
+    /// (`World::apply_cast_arm_frame_step`) and the passes made under them
+    /// before it: the arm's pass, which a capture arm whose line stops
+    /// loading inside it reads (`cast_module_frame_step::CAPTURE_ARM_READ_TAILS`).
+    pub cast_arm_pass: Option<(u8, u8, u16)>,
     /// The step the last pass left for the next one, installed when that
     /// pass opens its frame (`World::battle_sm_pass_due`): retail waits a
     /// pass's frame out on the step the pass ran at and only then copies the
@@ -853,6 +907,10 @@ pub struct BattleState {
     /// (`World::battle_sm_pass_due`) - one pass a battle
     /// frame, however many vsyncs it spans.
     pub sm_pass_frame: Option<u64>,
+    /// The display ticks the last three battle frames opened on, newest
+    /// first (`World::battle_sm_pass_due`): where the page two battle frames
+    /// back was drawn (`World::cast_frame_persist_vsyncs`).
+    pub frame_start_ticks: [Option<u64>; 3],
     /// The battle frame the actor anim tick last ran its pass on
     /// (`World::battle_anim_pass_vsyncs`).
     pub anim_pass_frame: Option<u64>,
@@ -866,6 +924,12 @@ pub struct BattleState {
     /// that opens a battle frame, `0` on the ticks between, `1` on the
     /// per-vsync cadence.
     pub anim_pass_vsyncs: u8,
+    /// The effect-pool walker's sweeps this tick owes the battle draw tick:
+    /// retail walks the pool from the draw tick (`jal 0x801E0080` at
+    /// `0x80048128`), behind the frame driver's pass and ahead of the bodies'
+    /// draws, so on the battle frame cadence the mode tick leaves its sweeps
+    /// to the anim pass's draw preamble.
+    pub walker_sweeps_owed: u8,
     /// Whether this tick's battle pass reached the anim tick's slot (its
     /// root motion and hit walk), which on retail's cadence run after the
     /// pass (`World::tick_battle_anim_pass`).
@@ -1514,8 +1578,10 @@ impl BattleState {
             round_flow: crate::round_flow::RoundFlow::default(),
             inflight_seed: None,
             inflight_art_seed: None,
+            formation_seed: None,
             art_seed_ra_seru: false,
             forced_monster_cast: None,
+            seed_mp_unpaid: false,
             forced_monster_target: None,
             cue_clut_seed: None,
             element_roll_seed: None,
@@ -1541,7 +1607,7 @@ impl BattleState {
             readout_bar_glide: None,
             message_bar_glide: None,
             spirit_gauge_glide: None,
-            module_panels_glide: None,
+            action_panels_glide: None,
             round_prompt_glide: None,
             ring_open_glide: None,
             surface_hold_glide: None,
@@ -1555,6 +1621,7 @@ impl BattleState {
             target_plate_cleared: false,
             action_hud_wiped: false,
             action_hud_close: None,
+            commit_exit: None,
             counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
@@ -1569,6 +1636,7 @@ impl BattleState {
             vram_scrolls: Vec::new(),
             cell_fx: Vec::new(),
             cell_captures: Default::default(),
+            cell_restores: Vec::new(),
             frame_clock: Default::default(),
             frame_stretch: None,
             cast_arm_step_on: false,
@@ -1576,6 +1644,9 @@ impl BattleState {
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
+            frame_work: 0,
+            drawn_polys: None,
+            cast_arm_pass: None,
             pending_frame_step: None,
             pending_frame_step_from: 0,
             retail_step_track: None,
@@ -1584,10 +1655,12 @@ impl BattleState {
             capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,
+            frame_start_ticks: [None; 3],
             anim_pass_frame: None,
             action_fx_pass_frame: None,
             summon_fx_pass_frame: None,
             anim_pass_vsyncs: 1,
+            walker_sweeps_owed: 0,
             anim_slot_reached: false,
             cast_tick_due: false,
             draw_spawns: Vec::new(),
@@ -1775,4 +1848,29 @@ impl BattleState {
         }
         self.last_rewards.is_some()
     }
+}
+
+/// The round's confirm leaving the screen. The `Begin` confirm on `0x6E`
+/// stores `ctx[+0x06] = 0xFE` and runs sub-draw step `0x24` (`12/0 14/0
+/// 2B/1 2C/1 2D/1 3F/0`) or `0x29` (`12/0 14/0 3F/0`, no member left to
+/// log) at `0x801D31AC..0x801D31DC`; the flee confirm on `0x32` runs step
+/// `0x25` (`12/0 14/0 40/0`) at `0x801D1144..0x801D1150`. Records `0x12` and
+/// `0x14` are the confirm chips' exit twins: seat A on the chips' own seats
+/// `(92, 88)` / `(180, 88)`, seat B off the left and right edges
+/// (`(-56, 88)` / `(328, 88)`), the left one on the gold plate (style `2`)
+/// with the record-`0x10` word (`Begin` or `Escape`), the right one blue with
+/// `Reselect`. Records `0x3F` / `0x40` lift the `Begin` / `Run` tab from
+/// `(16, 14)` to `(16, -24)`, and the log rows ride mode `1` from their rest
+/// seat to one display width left. All of it glides on one sixteen-vsync
+/// step, and the `0xFE` arm's handle reset (`FUN_801D99BC` at `0x801D31E8`)
+/// drains it the pass after it lands.
+///
+/// REF: FUN_801D0748, FUN_801D8DE8
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommitExit {
+    /// The one glide every record rides (mode `0`, seat A to seat B).
+    pub glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch,
+    /// The flee confirm's exit (step `0x25`): the left chip reads `Escape`
+    /// and the tab `Run`.
+    pub escape: bool,
 }

@@ -396,6 +396,17 @@ impl Renderer {
             if flags[1] >= 0.5 && cue.is_some_and(|c| c.blend.is_some()) {
                 flags[1] = 2.0;
             }
+            // A clean field frame keeps per-pixel depth; only the clean
+            // near shift rides through (`prim_mean_depth`'s first arm).
+            let order = match order {
+                Some(o) if !field_prim_order => {
+                    if o & crate::DRAW_ORDER_NEAR_CLEAN != 0 && flags[3] == 0.0 {
+                        flags[3] = crate::CLEAN_NEAR_FLAG_W;
+                    }
+                    None
+                }
+                other => other,
+            };
             if let Some(o) = order {
                 if flags[3] > 0.0 {
                     // The overworld's curve holds `flags.w`, so its primitive
@@ -472,7 +483,7 @@ impl Renderer {
                 i < occl_env_textured,
                 clip,
                 nclip_textured.get(i).copied().flatten(),
-                field_prim_order.then(|| order_textured.get(i).copied().unwrap_or(0)),
+                Some(order_textured.get(i).copied().unwrap_or(0)),
             );
         }
         if let Some((_, mvp)) = scene.overlay_lines {
@@ -498,7 +509,7 @@ impl Renderer {
                 i < occl_env_color,
                 clips_color.get(i).copied().flatten(),
                 nclip_color.get(i).copied().flatten(),
-                field_prim_order.then(|| order_color.get(i).copied().unwrap_or(0)),
+                Some(order_color.get(i).copied().unwrap_or(0)),
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

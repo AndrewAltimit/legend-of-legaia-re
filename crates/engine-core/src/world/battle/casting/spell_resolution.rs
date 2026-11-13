@@ -73,7 +73,11 @@ impl World {
         let caster_mp_before = if charge_mp {
             caster_mp_now
         } else {
-            caster_mp_now.saturating_add(cost)
+            // The band's debit is a halfword wrap (`0x801E458C`) that no
+            // affordability test guards: undo it as one, and a cast the band
+            // paid for past the caster's MP (a seat that skipped the menu)
+            // still reads as paid, as retail's lands.
+            caster_mp_now.wrapping_add(cost).max(cost)
         };
         if charge_mp {
             if caster_mp_now < cost {

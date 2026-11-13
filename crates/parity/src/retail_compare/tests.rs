@@ -749,3 +749,57 @@ fn a_dance_follower_copies_on_its_loops_period() {
     assert_eq!((f.offset, f.period, f.copy_at_or_before(3)), ([0; 3], 1, 3));
     assert_eq!(dance_follower(&dance_leader_words(), 22), None);
 }
+
+/// A keyframe-pose node's packed entries taken back the display lag: at no
+/// lag the re-blend reproduces the block's own entries, and a lag re-blends
+/// at the cursor `+0xD0 * lag` back; a cursor that would rewind past zero
+/// keeps the RAM's entries.
+#[test]
+fn a_pose_node_rewinds_its_cursor_by_the_lag() {
+    let node = 0x8008_0000u32;
+    let block = 0x8009_0000u32;
+    let mut ram = vec![0u8; 0x20_0000];
+    let put16 = |ram: &mut Vec<u8>, a: u32, v: i16| {
+        let i = (a & 0x1F_FFFF) as usize;
+        ram[i..i + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    put16(&mut ram, node + 0x5A, 6);
+    ram[((node + 0x4C) & 0x1F_FFFF) as usize..][..4].copy_from_slice(&block.to_le_bytes());
+    put16(&mut ram, node + 0x22, 2048);
+    put16(&mut ram, node + 0xD0, 12);
+    ram[(block & 0x1F_FFFF) as usize] = 1;
+    // One part: X from 0 to 1024, Z from 256 to 256.
+    let rec = block + 8 + 8;
+    put16(&mut ram, rec + 3 * 2, 0);
+    put16(&mut ram, rec + 5 * 2, 256);
+    put16(&mut ram, rec + (6 + 3) * 2, 1024);
+    put16(&mut ram, rec + (6 + 5) * 2, 256);
+    let packed = |x: i32, z: i32| -> [u8; 8] {
+        [
+            x as u8,
+            0,
+            ((x >> 8) & 0xF) as u8,
+            z as u8,
+            ((z >> 8) & 0xF) as u8,
+            0,
+            0,
+            0,
+        ]
+    };
+    let entry = block + 8;
+    ram[(entry & 0x1F_FFFF) as usize..][..8].copy_from_slice(&packed(512, 256));
+    assert_eq!(
+        seeds::displayed_pose_entries(&ram, node, 0),
+        vec![packed(512, 256)]
+    );
+    // Six vsyncs back: cursor 2048 - 72 = 1976, X = 1024 * 1976 >> 12 = 494.
+    assert_eq!(
+        seeds::displayed_pose_entries(&ram, node, 6),
+        vec![packed(494, 256)]
+    );
+    // Past the cursor's start: the RAM's entries stay.
+    assert_eq!(
+        seeds::displayed_pose_entries(&ram, node, 200),
+        vec![packed(512, 256)]
+    );
+}

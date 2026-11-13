@@ -69,6 +69,7 @@ mod capture_class_cast_ladder;
 mod casino_seat_disc;
 mod cast_band_body_ladder;
 mod cast_band_ladder;
+mod cast_cell_restore_disc;
 mod cast_effect_pool_disc;
 mod cast_module_bodies_ladder;
 mod cast_stager_arms_ladder;

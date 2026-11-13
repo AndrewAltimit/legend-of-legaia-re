@@ -722,7 +722,25 @@ impl World {
         // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
         // the `0x801ECB60` skip). It draws nothing.
         self.battle.juggle = self.next_juggle(target);
-        if let Some(word) = self.dealt_hit_word() {
+        let dealt = self.dealt_hit_word();
+        // `LEGAIA_DIAG_DAMAGE`: the word a strike deal handed this hit, if
+        // any, beside the one the world stream held.
+        if std::env::var_os("LEGAIA_DIAG_DAMAGE").is_some() {
+            let t = &self.actors[target_i];
+            eprintln!(
+                "dealt: {dealt:?} at {} own {} juggle {} defender clip {:#x} frame {} rate {} window {}",
+                self.clock.display_frames,
+                self.rng_state,
+                self.battle.juggle,
+                t.battle.current_anim,
+                t.battle_animation
+                    .as_ref()
+                    .map_or(-1, |p| i32::from(p.current_frame())),
+                t.battle.anim_rate.get(),
+                t.battle_juggle_window,
+            );
+        }
+        if let Some(word) = dealt {
             self.rng_state = word;
         }
         // A capture's seed names this hit as one retail's string landed, and the
@@ -812,10 +830,27 @@ impl World {
         };
         // The roll's two sides: retail's guard ladder runs on their
         // difference before the `Defense + 9999` cap (`0x801EDA00`).
+        let seed = self.rng_state;
         let (rolled_raw, guard) =
             legaia_engine_battle_vm::battle_formulas::physical_rolls(&hit_inputs, &mut || {
                 self.next_rand() as u16
             });
+        // `LEGAIA_DIAG_DAMAGE`: the roll's inputs and its two sides, the
+        // engine half of a `--hit-trace` recording's `damage.csv`.
+        if std::env::var_os("LEGAIA_DIAG_DAMAGE").is_some() {
+            eprintln!(
+                "damage: att {attacker} tgt {target} seed {seed} atk {} def {} power {power_byte:#x} juggle {} ramps {}/{} ahp {} clip {committed:#x} affinity {} war_soul {} guarding {} -> raw {rolled_raw} guard {guard}",
+                hit_inputs.attacker_atk,
+                hit_inputs.defender_def,
+                hit_inputs.combo_scale,
+                hit_inputs.attack_ramp,
+                hit_inputs.guard_ramp,
+                hit_inputs.attacker_hp,
+                hit_inputs.affinity_pct,
+                hit_inputs.art_power_bit,
+                hit_inputs.defender_guarding,
+            );
+        }
         let excess = rolled_raw.saturating_sub(guard);
         let mut raw = if self.toggles.use_damage_finish {
             // The melee kernel's inlined ladder (`0x801ED5CC..0x801EDA00`)

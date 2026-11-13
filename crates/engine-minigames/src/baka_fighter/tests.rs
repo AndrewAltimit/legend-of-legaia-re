@@ -1580,3 +1580,53 @@ fn a_held_direction_scrolls_the_player_select_once_the_window_fills() {
     f.frame(0, 0, 0);
     assert_eq!(f.cabinet().select_cursor(), cursor);
 }
+
+/// The secret opponent's tally arm (`0x6D`) stores a frame-step floor of
+/// [`SECRET_TALLY_FRAME_STEP`] on every frame it runs (`0x801D0FA8`): from
+/// the frame after its first, the cabinet runs a game tick every fourth
+/// vsync on a step of four, and its `0xB5` timer lasts as many vsyncs as it
+/// would at a step of one. The opponent install (`0x1E`) puts the floor
+/// back at one (`0x801CFCC4`).
+#[test]
+fn the_secret_tally_runs_a_game_tick_every_fourth_vsync() {
+    use crate::baka_cabinet::{ST_CHOICE_SECRET, ST_OPPONENT_INSTALL};
+    let mut f = fight();
+    f.cabinet.seat_state(ST_CHOICE_SECRET);
+    let timer = |f: &BakaFight| {
+        f.cabinet
+            .retail_words()
+            .iter()
+            .find(|(a, _)| *a == 0x801D_BF88)
+            .unwrap()
+            .1
+    };
+    // The arm's first frame runs on the floor the frame found.
+    f.frame(0, 0, 0);
+    assert_eq!(f.step_floor, SECRET_TALLY_FRAME_STEP);
+    assert_eq!(timer(&f), 2, "seeded at 1, stepped by 1");
+    for _ in 0..3 {
+        f.frame(0, 0, 0);
+        assert_eq!(timer(&f), 2, "no game tick between two of the floor's");
+    }
+    f.frame(0, 0, 0);
+    assert_eq!(timer(&f), 6, "the fourth vsync steps by 4");
+    let mut vsyncs = 5;
+    while f.cabinet.state() == ST_CHOICE_SECRET {
+        f.frame(0, 0, 0);
+        vsyncs += 1;
+        assert!(vsyncs < 400, "the secret tally never ended");
+    }
+    assert!(
+        (180..=188).contains(&vsyncs),
+        "the 0xB5 hold lasts about as many vsyncs as a step-1 run: {vsyncs}"
+    );
+    while f.step_floor != 1 {
+        let ran = f.cabinet.state();
+        f.frame(0, 0, 0);
+        vsyncs += 1;
+        assert!(vsyncs < 600, "the install never put the floor back");
+        if f.step_floor == 1 {
+            assert_eq!(ran, ST_OPPONENT_INSTALL);
+        }
+    }
+}

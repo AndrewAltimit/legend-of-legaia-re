@@ -410,7 +410,10 @@ pass after the op (`World::integrate_battle_part_cyclers` for battle parts).
 
 `0x30` calls `FUN_800583C8(actor + 0xA0, buf)` with the heap buffer at `+0xA8`
 or the inline one at `+0xAC`, clears `+0x9C`, and joins the `0x22` epilogue
-(size 1, loop continues).
+(size 1, loop continues). The call is a `LoadImage` of the capture back onto
+its rect, so the cell reads as it did before the cycler touched it. The port
+queues the capture from `MoveHost::keyframe_free` and writes it back after the
+frame's recolours (`World::apply_battle_vram_moves`, `World::step_ambient_fx`).
 
 ### 0x2F - `OVERLAY_EXT`
 

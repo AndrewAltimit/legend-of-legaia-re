@@ -25,7 +25,9 @@ fn disc_bytes() -> Option<Vec<u8>> {
 }
 
 /// The screen-prim vertices' colours, `(r, g, b)` in `0..=255`, off the page's
-/// `ScreenVertex` stream (stride 48, `color: vec4<f32>` at 24, `flags` at 40).
+/// `ScreenVertex` stream (stride 48, `color: vec4<f32>` at 24, `flags` at 40),
+/// with the flags' Gouraud bit (`screen_prim::FLAG_GOURAUD`) cleared: an
+/// untextured quad reads `0` flat or shaded.
 fn prim_colours(bytes: &[u8]) -> Vec<([u8; 3], u32)> {
     bytes
         .as_chunks::<48>()
@@ -33,7 +35,8 @@ fn prim_colours(bytes: &[u8]) -> Vec<([u8; 3], u32)> {
         .iter()
         .map(|v| {
             let f = |o: usize| f32::from_le_bytes(v[o..o + 4].try_into().unwrap());
-            let flags = u32::from_le_bytes(v[40..44].try_into().unwrap());
+            let flags = u32::from_le_bytes(v[40..44].try_into().unwrap())
+                & !legaia_render_kernels::screen_prim::FLAG_GOURAUD;
             ([24, 28, 32].map(|o| (f(o) * 255.0).round() as u8), flags)
         })
         .collect()

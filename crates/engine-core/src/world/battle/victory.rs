@@ -131,6 +131,13 @@ impl World {
             voice_bank: None,
             window_opened: false,
         };
+        // The victory arm's pick is a `ctx[+0x13]` store (`sb v1,0x2(s5)`,
+        // `0x801E66EC..0x801E6760`), so the acting slot names the pose seat
+        // through the whole sequence, a seeded seat
+        // (`BattleState::forced_victory_seat`) included.
+        if cause == BattleEndCause::MonsterWipe {
+            self.battle_ctx.active_actor = seq.pose_actor as u8;
+        }
         match cause {
             BattleEndCause::MonsterWipe => {
                 // Phase 0: the pose pick. Retail reads the round count

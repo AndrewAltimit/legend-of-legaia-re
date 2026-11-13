@@ -44,7 +44,27 @@ impl Viewport {
             // rises), as on the site's mesh viewers.
             self.cam.pitch = (self.cam.pitch + d.y * 0.01).clamp(-1.5, 1.5);
         }
-        if resp.hovered() {
+        let focused = resp.has_focus();
+        if focused {
+            // The view keeps the arrows while it has the focus (Tab, L1 /
+            // R1 or Esc / Circle leave it), so they turn the model instead
+            // of moving to the next control.
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    resp.id,
+                    egui::EventFilter {
+                        horizontal_arrows: true,
+                        vertical_arrows: true,
+                        ..Default::default()
+                    },
+                )
+            });
+            let step = ui.input(key_orbit);
+            self.cam = step.apply(self.cam);
+        }
+        // The right stick scrolls, so a controller zooms the view it has
+        // focused as a wheel zooms the view under the pointer.
+        if resp.hovered() || focused {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
                 self.cam.zoom = (self.cam.zoom * (1.0 - scroll * 0.002)).clamp(0.1, 10.0);
@@ -77,7 +97,21 @@ impl Viewport {
                 Color32::WHITE,
             );
         }
-        overlay(ui, rect, caption, VIEW_HINT);
+        if focused {
+            let ring = crate::theme::c(crate::theme::palette(ui).focus);
+            ui.painter().rect_stroke(
+                rect.shrink(1.0),
+                0.0,
+                egui::Stroke::new(crate::theme::FOCUS_RING_WIDTH, ring),
+                egui::StrokeKind::Inside,
+            );
+        }
+        overlay(
+            ui,
+            rect,
+            caption,
+            if focused { VIEW_KEYS_HINT } else { VIEW_HINT },
+        );
     }
 
     /// The shading picker and the reset button: two compact controls, so
@@ -114,6 +148,62 @@ impl Viewport {
 
 /// The interaction hint drawn in the view's bottom-left corner.
 pub(crate) const VIEW_HINT: &str = "Drag to orbit, scroll to zoom, double-click to reset";
+
+/// The hint while the view has the keyboard's or a controller's focus (Tab,
+/// or L1 / R1, reaches the view; the D-pad is the arrows, the right stick
+/// zooms). No longer than [`VIEW_HINT`]: both fit the minimum window's view.
+pub(crate) const VIEW_KEYS_HINT: &str = "Arrows turn, Page Up/Down zoom, Home resets";
+
+/// How far one arrow press (or a held D-pad's repeat) turns the view.
+const KEY_TURN: f32 = 0.12;
+/// How much one Page Up / Page Down press zooms.
+const KEY_ZOOM: f32 = 1.15;
+
+/// What a frame's keys ask of the orbit camera.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct KeyOrbit {
+    yaw: f32,
+    pitch: f32,
+    zoom: f32,
+    reset: bool,
+}
+
+impl KeyOrbit {
+    fn apply(self, cam: Camera) -> Camera {
+        if self.reset {
+            return Camera::default();
+        }
+        let mut cam = cam;
+        cam.yaw += self.yaw;
+        cam.pitch = (cam.pitch + self.pitch).clamp(-1.5, 1.5);
+        if self.zoom != 0.0 {
+            cam.zoom = (cam.zoom * KEY_ZOOM.powf(self.zoom)).clamp(0.1, 10.0);
+        }
+        cam
+    }
+}
+
+/// The orbit the frame's arrow, Page and Home presses ask for. The arrows
+/// turn the way a drag does: Right as a drag to the right, Down as a drag
+/// downwards (the eye rises).
+fn key_orbit(i: &egui::InputState) -> KeyOrbit {
+    let n = |k: egui::Key| {
+        i.events
+            .iter()
+            .filter(|e| {
+                matches!(e, egui::Event::Key { key, pressed: true, modifiers, .. }
+                    if *key == k && modifiers.is_none())
+            })
+            .count() as f32
+    };
+    use egui::Key::*;
+    KeyOrbit {
+        yaw: (n(ArrowRight) - n(ArrowLeft)) * KEY_TURN,
+        pitch: (n(ArrowDown) - n(ArrowUp)) * KEY_TURN,
+        zoom: n(PageDown) - n(PageUp),
+        reset: n(Home) > 0.0,
+    }
+}
 
 const LIT_HINT: &str = "A viewer aid with a fixed light - not how retail shades";
 
@@ -156,5 +246,46 @@ fn overlay(ui: &egui::Ui, rect: egui::Rect, caption: &str, hint: &str) {
         let box_rect = anchor.anchor_size(at, galley.size() + pad * 2.0);
         p.rect_filled(box_rect, 3.0, plate);
         p.galley(box_rect.min + pad, galley, ink);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn press(keys: &[egui::Key]) -> KeyOrbit {
+        let mut i = egui::InputState::default();
+        i.events = keys
+            .iter()
+            .map(|&key| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            })
+            .collect();
+        key_orbit(&i)
+    }
+
+    #[test]
+    fn the_keys_hint_is_no_longer_than_the_mouse_hint() {
+        assert!(VIEW_KEYS_HINT.len() <= VIEW_HINT.len());
+    }
+
+    #[test]
+    fn the_arrows_turn_and_the_page_keys_zoom_the_focused_view() {
+        use egui::Key::*;
+        let cam = Camera::default();
+        let right = press(&[ArrowRight]).apply(cam);
+        assert!(right.yaw > cam.yaw);
+        let down = press(&[ArrowDown, ArrowDown]).apply(cam);
+        assert!((down.pitch - (cam.pitch + 2.0 * KEY_TURN).min(1.5)).abs() < 1e-6);
+        assert!(press(&[PageDown]).apply(cam).zoom > cam.zoom);
+        assert!(press(&[PageUp]).apply(cam).zoom < cam.zoom);
+        let moved = press(&[ArrowLeft, PageUp]).apply(cam);
+        assert_eq!(press(&[Home]).apply(moved), Camera::default());
+        // Nothing pressed leaves the camera where it is.
+        assert_eq!(press(&[]).apply(moved), moved);
     }
 }

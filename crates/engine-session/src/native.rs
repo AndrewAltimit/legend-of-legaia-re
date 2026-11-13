@@ -180,6 +180,11 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_FRAME_SPAN").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_frame_span_law = true;
     }
+    // Opt-in: price each battle frame's work off the polygons the window
+    // links (`WorldToggles::battle_poly_frame_cost`).
+    if std::env::var("LEGAIA_BATTLE_POLY_COST").is_ok_and(|v| v.trim() == "1") {
+        toggles.battle_poly_frame_cost = true;
+    }
     // Which machine's CD response time the battle frame step reads
     // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
     // `pcsx-redux` names the default.

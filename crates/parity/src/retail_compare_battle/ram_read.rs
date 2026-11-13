@@ -964,6 +964,7 @@ impl RetailBattle {
             );
             let done_arm = done_arm_pass(ram, ctx, action_state);
             let passes = if done_arm { passes.min(1) } else { passes };
+            let passes = results_passes_back(ram, ctx, passes).unwrap_or(passes);
             // Each pass on its own step where the older ordering table's
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.
@@ -1022,7 +1023,9 @@ impl RetailBattle {
             let unarmed_setup = game_anchors::u8_at(ram, ctx + 6) == 0xFF
                 && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
-                if action_state == CAPTURE_FADE_STATE {
+                if let Some(p) = displayed_module_drift_live(ram, ctx, action_state, steps) {
+                    p
+                } else if action_state == CAPTURE_FADE_STATE {
                     displayed_cam_live_steps(
                         ram,
                         ctx,
@@ -1347,6 +1350,15 @@ impl RetailBattle {
                     if !seats.iter().any(|s| s.target == seat.target) {
                         seats.push(seat);
                     }
+                }
+                // The confirm's chips the `0xFE` arm drained, still leaving
+                // the screen on the displayed frame.
+                let mut steps = recent_pass_steps(ram);
+                steps[..2].copy_from_slice(&display_pass_steps(ram));
+                if let Some(seat) = commit_exit_pool_seat(ram, &steps)
+                    && !seats.iter().any(|s| s.target == seat.target)
+                {
+                    seats.push(seat);
                 }
                 seats
             },

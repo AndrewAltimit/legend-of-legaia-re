@@ -397,6 +397,20 @@ impl World {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         let mut list = rec.displayed_skills();
+        // Retail's arm inserts unconditionally (`0x80041FFC..0x80042074` has
+        // no membership scan), so a second copy of a book, or a book whose
+        // art the record already holds, lists the art twice (issue #597).
+        // The port keeps the list a set: an id already there is reported at
+        // its position and not inserted again. The scripted grants (`4C C7`)
+        // ask `4C 8D` first, so this changes nothing on their path.
+        let known = usize::from(list.count).min(list.ids.len());
+        if let Some(position) = list.ids[..known].iter().position(|&id| id == tier) {
+            return legaia_engine_menus::items::ItemOutcome::ArtLearned {
+                character: rslot as u8,
+                art_id: tier,
+                position: position as u8,
+            };
+        }
         let mut count = list.count;
         let Some(position) =
             legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill(

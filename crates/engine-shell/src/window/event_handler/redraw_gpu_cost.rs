@@ -100,7 +100,9 @@ impl PlayWindowApp {
     /// alone ([`gpu_cost_diag_path`]), in a battle.
     pub(super) fn gpu_cost_pricing(&self) -> bool {
         let w = &self.session.host.world;
-        (w.toggles.battle_gpu_cost_step || gpu_cost_diag_path().is_some())
+        (w.toggles.battle_gpu_cost_step
+            || w.toggles.battle_poly_frame_cost
+            || gpu_cost_diag_path().is_some())
             && w.mode == SceneMode::Battle
     }
 
@@ -139,5 +141,6 @@ impl PlayWindowApp {
             .host
             .world
             .note_drawn_table_cost(cost.total_hblanks());
+        self.session.host.world.note_drawn_polys(cost.polys);
     }
 }

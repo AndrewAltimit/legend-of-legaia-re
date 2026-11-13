@@ -665,3 +665,40 @@ fn a_field_prim_order_word_picks_its_link() {
         }
     }
 }
+
+/// `flags.w = -16`, `DRAW_ORDER_NEAR_CLEAN` on a clean frame: the draw keeps
+/// its per-pixel depth, each point tested ten buckets (`320 / 6` units)
+/// nearer than it stands - a seated NPC paints over the throne it sits in.
+#[test]
+fn a_clean_near_word_shifts_every_pixel_ten_buckets_nearer() {
+    let Some((device, queue)) = headless_device() else {
+        return;
+    };
+    let a = FAR / (FAR - NEAR);
+    let b = -NEAR * FAR / (FAR - NEAR);
+    let (plain, _) = render_cell(&device, &queue, 0.0, false, 0x7FFF, FarBucket::MeanPrim);
+    let (near, _) = render_cell(
+        &device,
+        &queue,
+        crate::CLEAN_NEAR_FLAG_W,
+        false,
+        0x7FFF,
+        FarBucket::MeanPrim,
+    );
+    let mut checked = 0;
+    for (&d0, &d1) in plain.iter().zip(&near) {
+        if d0 >= 1.0 {
+            assert!(d1 >= 1.0, "the shift moves depth, not coverage");
+            continue;
+        }
+        let w = b / (d0 - a);
+        let want = a + b / (w - 320.0 / 6.0);
+        assert!(d1 < d0, "{d1} not nearer than {d0}");
+        assert!(
+            (d1 - want).abs() < 2.0e-4,
+            "{d1} against {want} (plain {d0})"
+        );
+        checked += 1;
+    }
+    assert!(checked > 0);
+}

@@ -1420,6 +1420,36 @@ pub fn art_learned_notice_draws(ctx: &PauseMenuCtx, lines: &[String]) -> Vec<Tex
     out
 }
 
+/// The frames of the modal notice windows the menu runtime holds this
+/// frame: window 7 (spell level-up) when `spell` is set, window 8 (art
+/// learned) when `art` is set. Retail opens each through the widget VM's
+/// `[open window N]` script (`0x801E4D50` / `0x801E4C60`), and an opened
+/// descriptor window is framed like every other menu window; the text halves
+/// ([`spell_level_notice_draws`], [`art_learned_notice_draws`]) draw only
+/// the content, so without this the notice printed as bare text over the
+/// screen below. Gated on the same disc-table painter check as the text, so
+/// a frame never draws around a notice whose text cannot.
+pub fn menu_notice_chrome(ctx: &PauseMenuCtx, spell: bool, art: bool) -> Vec<SpriteDraw> {
+    let Some(table) = ctx.rects.table() else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    if spell && painter_at(table, WIN_MAGIC_LEVEL_NOTICE, MenuWindowPainter::CharPrompt).is_some() {
+        ids.push(WIN_MAGIC_LEVEL_NOTICE);
+    }
+    if art
+        && painter_at(
+            table,
+            WIN_ART_LEARNED_NOTICE,
+            MenuWindowPainter::NotifyPrompt,
+        )
+        .is_some()
+    {
+        ids.push(WIN_ART_LEARNED_NOTICE);
+    }
+    ctx.window_chrome(&ids)
+}
+
 /// Window 7 - the spell level-up notice, drawn over whichever menu screen is
 /// current while the shared menu runtime holds the beat a leveled menu cast
 /// armed.

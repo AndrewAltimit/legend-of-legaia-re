@@ -597,6 +597,34 @@ fn a_party_attack_on_a_monster_shows_plaque_target_plaque_and_no_readout() {
     assert_eq!(battle_move_name(&w), None);
 }
 
+/// An every-enemy cast (`9`) on a lone survivor opens the target plaque on the
+/// survivor the census latched (`ctx[+0x24B]`, `0x801E6FC8..0x801E7008`), and
+/// the record keeps that name when a module writes the code back (Viguro's
+/// arm 10).
+#[test]
+fn an_every_enemy_cast_on_a_lone_survivor_keeps_its_plaque() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, HUD_TARGET_BANNER};
+    let mut w = battle_world(1);
+    arm_action(&mut w, 0, ActionCategory::Magic.as_byte(), 9);
+    w.actors[0].battle.params[0] = 0x87;
+    w.battle_ctx.item_target_b = 3;
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    w.note_action_plate_raise(HUD_TARGET_BANNER, 0);
+    w.battle.land_battle_hud_glides();
+    // `0x28` rewrites the code to the survivor, and the module writes it back.
+    w.actors[0].battle.active_target = 3;
+    assert_eq!(
+        battle_target_plaque(&w).map(|(n, _)| n),
+        Some("Gimard".into())
+    );
+    w.actors[0].battle.active_target = 9;
+    assert_eq!(
+        battle_target_plaque(&w).map(|(n, _)| n),
+        Some("Gimard".into())
+    );
+}
+
 /// The Done band's teardown wipes the handle list and re-spawns the target
 /// plaque on its closing glide: it slides from its row back under the
 /// screen over sixteen vsyncs and is then gone until the next action's seed.
@@ -858,6 +886,40 @@ fn the_seed_plates_follow_fun_801e6d84() {
         w.actors[0].battle.params[0] = id;
         assert_eq!(battle_target_plaque(&w), None, "{id:#x}");
     }
+}
+
+/// The seed's party-wide raise is a mode-`0` glide (`FUN_801D8DE8(6, 0)`
+/// at `0x801E7058..0x801E7060`): the panels rise from seat A over sixteen
+/// vsyncs, not stand at rest from the seed.
+#[test]
+fn the_seed_raises_the_panels_on_a_glide() {
+    use crate::plaques::{ROSTER_PANEL_SEATS_Y, battle_round_prompt_panels_dy};
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::{HUD_CASTER_BANNER, TARGET_PARTY_WIDE};
+    let mut w = battle_world(1);
+    arm_action(
+        &mut w,
+        3,
+        ActionCategory::Magic.as_byte(),
+        TARGET_PARTY_WIDE,
+    );
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    for id in [6, 0x4E, 0x4F] {
+        w.note_action_plate_raise(id, 0);
+    }
+    assert!(battle_panels_visible(&w));
+    let (a, b) = ROSTER_PANEL_SEATS_Y;
+    assert_eq!(battle_round_prompt_panels_dy(&w), a - b, "at seat A");
+    for _ in 0..14 {
+        w.battle.step_action_plate_glides();
+    }
+    // `236 + (170 - 236) * 14 / 16`, nine rows short of the seat
+    // (`battle_nilboa_koru_dead_end_crisis_mid_cast`).
+    assert_eq!(battle_round_prompt_panels_dy(&w), 9);
+    for _ in 0..2 {
+        w.battle.step_action_plate_glides();
+    }
+    assert_eq!(battle_round_prompt_panels_dy(&w), 0, "landed");
 }
 
 #[test]

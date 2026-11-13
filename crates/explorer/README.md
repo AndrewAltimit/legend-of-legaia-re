@@ -229,6 +229,15 @@ only when a button moves, so an idle window with a pad plugged in draws
 nothing; a scripted run opens none. The shortcuts box lists the buttons
 under the keys, and scrolls in a window too short for both.
 
+Focus: the control with keyboard or controller focus carries the palette's
+`focus` ring (`theme::FOCUS_RING_WIDTH`), a blue apart from the selection's
+gold, so a focused tab never reads as a second selected one. The *Open*,
+*View* and *Export* menus go through `pad_menu_button`: one opened with
+`Enter` focuses its first item, the arrows walk the items, and `Esc` hands
+the focus back to the button. A focused 3D view (`viewport`) keeps the
+arrows: they turn the model as a drag does, Page Up / Down (or the right
+stick) zoom, Home resets, and its corner hint names those keys.
+
 ### The Overview tab
 
 It leads with the entry's kind and one sentence on what that is

@@ -6,7 +6,9 @@
     },
     "cort_guilty_cross_mid_cast": {
       "cast_corr": 0.8594,
-      "cast_level": 0.0163
+      "cast_level": 0.0163,
+      "cast_steps_corr": 0.9813,
+      "cast_steps_level": -0.0078
     },
     "cort_mystic_shield_mid_cast": {
       "cast_corr": 0.995,
@@ -26,7 +28,7 @@
     },
     "gilium_summon_mid_cast": {
       "cast_corr": 0.9908,
-      "cast_level": 0.0316
+      "cast_level": 0.029
     },
     "karisto_overworld_resident": {
       "track_corr": 0.9981,
@@ -127,8 +129,10 @@
       "track_level": 0.0004
     },
     "theeder_summon_mid_cast": {
-      "cast_corr": 0.7124,
-      "cast_level": 0.3845
+      "cast_corr": 0.9535,
+      "cast_level": 0.3917,
+      "cast_steps_corr": 0.9639,
+      "cast_steps_level": 0.1222
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
@@ -154,15 +158,17 @@
     },
     "zenoir_summon_mid_cast": {
       "cast_corr": 0.854,
-      "cast_level": 0.0619
+      "cast_level": 0.0619,
+      "cast_steps_corr": 0.873,
+      "cast_steps_level": -0.2899
     },
     "zeto_big_wave_mid_cast": {
-      "cast_corr": 0.986,
-      "cast_level": -0.0331
+      "cast_corr": 0.9863,
+      "cast_level": -0.032
     },
     "zeto_call_wave_mid_cast": {
       "cast_corr": 0.9992,
-      "cast_level": 0.0064,
+      "cast_level": 0.0061,
       "track_corr": 0.9995,
       "track_level": 5.085
     }

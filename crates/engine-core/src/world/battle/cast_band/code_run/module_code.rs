@@ -83,7 +83,7 @@ impl World {
             // PROT 0907's and 0908's stagers only seat more records off the
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
-            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
+            e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e, 0),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
@@ -308,7 +308,7 @@ impl World {
         if entry == 966 {
             self.evil_seru_ride_lead();
             // Arm 0 zeroes the shake word (`sw zero,-0x5B98` at
-            // `0x801F6B90`) and the body's epilogue runs it down every tick
+            // `0x801F6B90`) and the body's epilogue runs it down once a pass
             // (`0x801F8A94..0x801F8AE8`), the code PROT 0927's has.
             if phase_entry == 0 {
                 self.casting.module_shake = 0;

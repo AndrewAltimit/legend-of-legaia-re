@@ -42,11 +42,26 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
     ) || battle_begin_tab_alone(world)
 }
 
+/// The lone tab's exit twin lifting off the top edge while the round is
+/// armed (records `0x3F` / `0x40`, [`battle_begin_tab_offset`]): `Some(true)`
+/// for the flee confirm's `Run`, `Some(false)` for `Begin`. Only under the
+/// hold: past the `0xFE` arm its seat is the action plaque's.
+fn commit_exit_tab(world: &legaia_engine_core::world::World) -> Option<bool> {
+    world
+        .battle
+        .round_armed
+        .then(|| battle_commit_exit(world))
+        .flatten()
+}
+
 /// Is the frame the flee confirm `0x32`, where `Run` (record 4) has taken the
 /// tab seat `(16, 14)` over the `Escape` / `Reselect` chips (step 3:
 /// `10/0 13/0 02/0 04/0 06/1 4E/1 4F/1`)?
 pub fn battle_run_tab_alone(world: &legaia_engine_core::world::World) -> bool {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
+    if let Some(escape) = commit_exit_tab(world) {
+        return escape;
+    }
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_command_surface(world) == Some(CommandSurface::Other)
         && world
@@ -60,6 +75,9 @@ pub fn battle_run_tab_alone(world: &legaia_engine_core::world::World) -> bool {
 /// stands at `(16, 14)` with no plaque beside it?
 pub fn battle_begin_tab_alone(world: &legaia_engine_core::world::World) -> bool {
     use legaia_engine_battle_menus::battle_input::CommandPhase;
+    if let Some(escape) = commit_exit_tab(world) {
+        return !escape;
+    }
     world.mode == legaia_engine_mode::mode::SceneMode::Battle
         && battle_command_surface(world) == Some(CommandSurface::Other)
         && world
@@ -191,7 +209,7 @@ fn panels_still_open(s: u8) -> bool {
 /// arm 9's pass (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then
 /// `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`) puts them up under the heal,
 /// and the Done hold closes them like the others
-/// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::action_panels_glide`]).
 pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
     // The teardown's close of `ctx[+0x18] = 6` (`0x801E6188..0x801E61B0`).
     if let Some(c) = action_hud_closing(world) {
@@ -235,7 +253,7 @@ pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);
                 let item_band =
                     cat == ActionCategory::Item.as_byte() && s >= ActionState::SpiritFire as u8;
-                let module_raise = world.battle.module_panels_glide.is_some();
+                let module_raise = world.battle.action_panels_glide.is_some();
                 open && (module_raise || (party_wide && (monster_seed || item_band)))
             })
         }

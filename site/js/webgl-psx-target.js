@@ -30,12 +30,16 @@
  * battle frame's farthest bucket holds an opaque black rect, and an arm that arms
  * the wash has it hold a subtractive quad instead, so the frame's additive layers
  * sum over the frames before. Retail's earlier frame is the same display page two
- * game frames back, eight vsyncs at the frame step a heavy arm runs at, so a ring of
- * eight pictures stands behind the target: while a cast module is resident every
- * frame takes the oldest slot, and a persisting frame loads it. The ring fills
- * before the wash arms, so an arm that arms it a pass late still builds on the
- * frame before the arm (`Renderer::set_frame_ring_keep`). The native renderer's ring
- * (`FRAME_PERSIST_VSYNCS`) is the same one; docs/subsystems/renderer-port.md says why.
+ * game frames back, twice the running battle frame's span in vsyncs (eight at the
+ * step a heavy arm runs at, ten under a streaming clip's overrun), so a ring of
+ * pictures stands behind the target: while a cast module is resident every frame
+ * takes the oldest slot, and a persisting frame loads the one the engine's depth
+ * names (`play_cast_frame_persist_depth`, the native window's
+ * `Renderer::set_frame_persist_depth`). The ring fills before the wash arms, so an
+ * arm that arms it a pass late still builds on the frame before the arm
+ * (`Renderer::set_frame_ring_keep`). The ring's size and the depth's clamp are the
+ * shared kernel's (`render_kernels::frame_persist`), which the native renderer's
+ * ring reads too; docs/subsystems/renderer-port.md says why.
  *
  * Classic script. */
 (function () {
@@ -66,12 +70,19 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-  /* How far back a persisting frame reads: the native `FRAME_PERSIST_VSYNCS`. */
-  const FRAME_PERSIST_VSYNCS = 8;
+  /* The ring's size and default depth when the bundle predates
+   * `play_frame_ring_slots` / `play_cast_frame_persist_depth`: the kernel's
+   * `DEFAULT_PERSIST_VSYNCS`, a fixed eight. */
+  const FRAME_PERSIST_FALLBACK = 8;
 
   class PsxTarget {
-    constructor(gl) {
+    /* `ringSlots`: how many earlier frames the ring keeps (the kernel's
+     * `FRAME_RING_SLOTS`, handed over by the engine). */
+    constructor(gl, ringSlots) {
       this.gl = gl;
+      this.ringSlots = ringSlots > 0 ? ringSlots | 0 : FRAME_PERSIST_FALLBACK;
+      /* How many frames back a persisting frame reads (`setPersistDepth`). */
+      this.persistDepth = Math.min(FRAME_PERSIST_FALLBACK, this.ringSlots);
       this.needed = !!gl.getContextAttributes().antialias;
       this.live = false;
       this.fbo = null;
@@ -106,11 +117,21 @@ void main() {
       gl.clearBufferfi(gl.DEPTH_STENCIL, 0, 1, 0);
     }
 
+    /* How many presented frames back a persisting frame reads, already clamped
+     * to the ring by the engine (`play_cast_frame_persist_depth`). */
+    setPersistDepth(frames) {
+      if (frames > 0) this.persistDepth = Math.min(frames | 0, this.ringSlots);
+    }
+
     /* The cleared frame takes the picture of an earlier one instead, and `true`
-     * says so; `false` leaves the caller to clear. */
+     * says so; `false` leaves the caller to clear. The ring's newest slot,
+     * `ringNext - 1`, is the last frame, so the one `persistDepth` back sits
+     * `persistDepth` slots behind `ringNext` (`frame_persist::ring_read_slot`). */
     loadEarlierFrame() {
       if (!this.live || !this.lastValid) return false;
-      this._copy(this.ring[this.ringNext], this.tex);
+      const n = this.ring.length;
+      const back = Math.min(this.persistDepth, n);
+      this._copy(this.ring[(this.ringNext + n - back) % n], this.tex);
       return true;
     }
 
@@ -206,7 +227,7 @@ void main() {
 
     _ensureRing() {
       if (this.ring.length) return;
-      for (let i = 0; i < FRAME_PERSIST_VSYNCS; i++) this.ring.push(this._colorTexture(this.w, this.h));
+      for (let i = 0; i < this.ringSlots; i++) this.ring.push(this._colorTexture(this.w, this.h));
     }
 
     _dropRing() {

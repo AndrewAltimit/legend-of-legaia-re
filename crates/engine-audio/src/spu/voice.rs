@@ -167,6 +167,34 @@ impl Voice {
         self.loop_addr = Some(addr);
     }
 
+    /// The SPU RAM block (bytes) the decoder stands in.
+    pub fn block_addr(&self) -> u32 {
+        self.cur_block_addr
+    }
+
+    /// Stand where `other` stands in the same sample: its decoder, interpolator,
+    /// pitch counter and envelope, with every address moved by the distance
+    /// between the two voices' starts (the same bank at two SPU bases). The
+    /// registers this voice was keyed with - volume, pitch, ADSR words, reverb
+    /// send, bus - and its key-on count stay its own, so the owner that keyed it
+    /// still finds its note. Engine-only: a parity oracle seats a capture's
+    /// sounding notes onto a replay that reached the same instant.
+    pub fn take_position_from(&mut self, other: &Voice) {
+        let by = i64::from(self.start_addr) - i64::from(other.start_addr);
+        let shift = |a: u32| (i64::from(a) + by) as u32;
+        self.resume_next = other.resume_next.map(shift);
+        self.loop_addr = other.loop_addr.map(shift);
+        self.cur_block_addr = shift(other.cur_block_addr);
+        self.sample_idx = other.sample_idx;
+        self.sample_frac = other.sample_frac;
+        self.block_pcm = other.block_pcm;
+        self.decoder = other.decoder.clone();
+        self.has_block = other.has_block;
+        self.hist = other.hist;
+        self.start_delay = other.start_delay;
+        self.adsr = other.adsr;
+    }
+
     /// Toggle the per-voice reverb send flag (libspu `SpuSetVoiceReverb`
     /// analogue).
     pub fn set_reverb_send(&mut self, on: bool) {
@@ -528,6 +556,47 @@ mod tests {
         );
         v.tick(&ram);
         assert!(v.adsr.level > level);
+    }
+
+    #[test]
+    fn a_voice_that_takes_anothers_place_plays_on_from_it() {
+        // One looping stream at two bases: the same bank in two SPU maps.
+        let mut block = [0u8; BLOCK_BYTES];
+        block[0] = 0x0C;
+        block[1] = 0x03;
+        for (i, b) in block[2..].iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(0x37);
+        }
+        let mut ram = SpuRam::new();
+        for base in [0x1000, 0x5000] {
+            ram.write_at(base, &block);
+            ram.write_at(base + BLOCK_BYTES as u32, &block);
+        }
+        let keyed = |start: u32| Voice {
+            start_addr: start,
+            pitch: 0x0D00,
+            loop_addr: Some(start),
+            adsr_cfg: hold_forever_adsr(),
+            ..Voice::default()
+        };
+        let mut ahead = keyed(0x5000);
+        ahead.key_on(&ram);
+        for _ in 0..45 {
+            ahead.tick(&ram);
+        }
+        let mut late = keyed(0x1000);
+        late.vol_left = 0x1000;
+        late.key_on(&ram);
+        let keys = late.key_on_count();
+        late.take_position_from(&ahead);
+        assert_eq!(late.block_addr(), ahead.block_addr() - 0x4000);
+        assert_eq!(late.key_on_count(), keys, "the note stays its keyer's");
+        assert_eq!(late.vol_left, 0x1000, "and so do its registers");
+        let mut left = ahead.clone();
+        left.vol_left = 0x1000;
+        for _ in 0..200 {
+            assert_eq!(late.tick(&ram), left.tick(&ram));
+        }
     }
 
     /// Build an "infinite-sustain" ADSR config so the envelope doesn't

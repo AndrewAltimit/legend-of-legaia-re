@@ -505,6 +505,7 @@ impl World {
         // only borrow of `self` - draws stay on the shared determinism stream.
         let mut rand = || self.next_rand();
         let rolled = roll_formation_advantage(&party_spd, &enemy_spd, &inputs, &mut rand);
+        let rolled = self.battle.formation_seed.take().unwrap_or(rolled);
         self.set_battle_formation(rolled);
         self.battle.special_word =
             legaia_engine_battle_vm::battle_formulas::formation_roll_special_word(

@@ -61,6 +61,11 @@ impl World {
                     }
                 }
                 RumbleStore::PueraAlternate { odd, even } => {
+                    // Read and bumped once a battle frame, like the camera
+                    // half (`cast_module_camera::ModuleCamState::puera_shake`).
+                    if !self.module_tick_opens_pass() {
+                        continue;
+                    }
                     let old = self.casting.module_rumble_alternate;
                     self.casting.module_rumble_alternate = old.wrapping_add(1);
                     if on {

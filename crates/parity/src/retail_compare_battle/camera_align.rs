@@ -161,6 +161,48 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
     }
 }
 
+/// On a results-frame capture (phase word `5`, `ctx[+0x6CE] == 1`), how
+/// many passes the displayed frame stands back along the RAM's table, given
+/// the `passes` the display lag walks elsewhere. `None` off a results frame.
+///
+/// The results frame zeroes the hold `gp+0xA54` and adds its own pass's
+/// vsync delta (`0x8004F738..0x8004F76C`), so `hold / step` counts the
+/// results passes, the arming one included, and the table the RAM holds is
+/// the one that pass's case 6 armed (`0x8004FC80..0x8004FC90`). The framing
+/// before it stood still, so the walk back stops on the arming pass's
+/// origin and goes no further:
+///
+/// - **A win** comes off the load window's case-8 stand-off, re-armed on the
+///   same ground every load pass. `battle_jou_gala_finisher_results_retail`
+///   (hold `3`, step `3`) holds that stand-off itself, `TR (0, 0x400,
+///   0xA00)` under the results table's endpoint, so its live pose had not
+///   yet walked the table: `image` `.653` walked back two passes, `.976` on
+///   the live pose.
+/// - **A wipe** comes off the wiping action's own landed framing. On
+///   `battle_jou_party_wipe_results_retail` (hold `3`, yaw `792`, results
+///   table to `484`) the live pose had walked one pass: a yaw sweep of the
+///   frame's sky reads best one pass back, at `897` (sky error `3.2`,
+///   against `7.9` at `875`, `9.5` at `920`, and the two-pass `1035`).
+///
+/// Whether the live pose has walked the arming pass is read off the outcome,
+/// one capture each; a mid-pass save of the win's heavier results pass is the
+/// likely reason they part, and a third capture would test it.
+pub(super) fn results_passes_back(ram: &[u8], ctx: u32, passes: u16) -> Option<u16> {
+    if game_anchors::u32_at(ram, END_PHASE_WORD) != 5 || game_anchors::u16_at(ram, ctx + 0x6CE) != 1
+    {
+        return None;
+    }
+    let hold = game_anchors::u32_at(ram, END_RESULTS_HOLD);
+    let step = u32::from(frame_step(ram).max(1));
+    let results_passes = (hold / step).min(u32::from(u16::MAX)) as u16;
+    let walked = if game_anchors::u8_at(ram, ctx + 0x13) >= 3 {
+        results_passes
+    } else {
+        results_passes.saturating_sub(1)
+    };
+    Some(passes.min(walked))
+}
+
 /// What a turning shot adds to the live yaw per vsync of frame step
 /// (`FUN_801DC0A0` cases `3`, `5`, `0xE`, `0x10`; `0x801DCB18` for `0xE`).
 pub(super) fn turning_shot_rate(case: u8) -> Option<i32> {
@@ -1031,6 +1073,90 @@ pub(super) fn displayed_module_cam_live(
             live.focus[2] + back[8] as f32,
         ],
     }
+}
+
+/// A capture-band `0x70` arm that writes the camera globals itself on every
+/// pass, ahead of its gate, while no shot of its own walks: the frame the
+/// display shows stood that drift times the vsyncs back, not on the table.
+/// PROT 0963's arm 1 (`0x801F6C34..0x801F6C8C`) subtracts `step << 8` from
+/// TR z, adds `step << 4` to TR y and `step << 3` off the pitch on every
+/// pass; the table the RAM holds is arm 0's one-frame cut, whose increments
+/// are its whole gap, and walked back on them the displayed TR z stood at
+/// `-136662` (`battle_noaru_songi_genocidal_cannon_mid_cast`, a frame of
+/// nothing but the HUD). `None` off a director's arm with a per-pass drift.
+///
+/// The drift is read off the body's camera director
+/// (`cast_module_camera::capture_camera_director`) on a held pass: every
+/// director computes its every-pass drift before its gate, in vsync units.
+pub(super) fn displayed_module_drift_live(
+    ram: &[u8],
+    ctx: u32,
+    action_state: u8,
+    steps: &[u8],
+) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+    use legaia_engine_cast::cast_module_camera as cam;
+    if action_state != 0x70 {
+        return None;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    if !in_ram(actor) {
+        return None;
+    }
+    let (entry, body) = legaia_engine_cast::cast_module_ticks::capture_body_for_action(
+        game_anchors::u8_at(ram, actor + 0x1DF),
+    )?;
+    let direct = cam::capture_camera_director(entry, body)?;
+    let phase = game_anchors::u8_at(ram, ctx + 0x279);
+    let mut st = cam::ModuleCamState {
+        countdown: cam::ModuleCountdown(i32::MAX / 2, 0),
+        ..Default::default()
+    };
+    let arm = direct(&mut st, phase, cam::ModuleCamSeats::default());
+    // Only an arm the held pass leaves alone otherwise: a shot or a pose
+    // store on the same pass moves the table the walk would read.
+    if !arm.hold || arm.shot.is_some() || arm.pose_set.is_some() {
+        return None;
+    }
+    let d = arm.drift?;
+    // The walker still stepping a component the drift moves would have
+    // pulled it onto its endpoint (it lands inside one increment): a gap
+    // wider than the increment is a shot still walking under the drift
+    // (PROT 0940's arm 1 drifts while arm 0's twelve-frame shot walks), which
+    // the table walk-back reads.
+    let step = i32::from(steps.iter().copied().max().unwrap_or(1).max(1));
+    let raw = |va: u32| game_anchors::u32_at(ram, va) as i32;
+    let live_raw = [
+        i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
+        i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16),
+        0,
+        raw(0x8008_40B8),
+        raw(0x8008_40BC),
+        raw(0x8008_40C0),
+    ];
+    let moved = [d.pitch, d.yaw, 0, d.tr_x, d.tr_y, d.tr_z];
+    let walking = (0..6u32).filter(|&k| moved[k as usize] != 0).any(|k| {
+        let at = ctx + TWEEN_TABLE + k * 4;
+        let inc = i32::from(game_anchors::u16_at(ram, at) as i16).abs();
+        let end = game_anchors::u16_at(ram, at + 2) as i16;
+        let gap = i32::from(end.wrapping_sub(live_raw[k as usize] as i16)).abs();
+        inc != 0 && gap > inc * step
+    });
+    if walking {
+        return None;
+    }
+    let (live, _) = retail_cam_tween(ram, ctx);
+    let vsyncs: f32 = steps.iter().map(|&s| f32::from(s.max(1))).sum();
+    Some(legaia_engine_camera::projection::BattleCamPose {
+        pitch: (live.pitch - f32::from(d.pitch) * vsyncs).rem_euclid(4096.0),
+        yaw: (live.yaw - f32::from(d.yaw) * vsyncs).rem_euclid(4096.0),
+        tr: [
+            live.tr[0] - f32::from(d.tr_x) * vsyncs,
+            live.tr[1] - f32::from(d.tr_y) * vsyncs,
+            live.tr[2] - f32::from(d.tr_z) * vsyncs,
+        ],
+        focus: live.focus,
+    })
 }
 
 /// The strike loop's framing case (`jal 0x801D5854` with `a1 = 7` at

@@ -207,7 +207,8 @@ The item-use applier `FUN_800402F4` dispatches on the descriptor's **class** byt
 - **The descriptor's `tier` byte is the art id**, so the three lines do not share a tier space: Fire and Thunder I/II carry `3` / `2`, Wind I/II carry `5` / `4`, and all three line IIIs carry `1`. Reading `tier` as a book *level* inverts the numbering.
 - **The insert is ordered ascending by id.** The loop at `0x80041FFC..0x8004202C` moves an entry up only while the new id compares lower.
 - **The shipped descriptors carry flag byte `0x83`**: field-usable, not battle-usable.
-- **The out-of-battle leg raises a "learned" notification** (`jal 0x80035C00`), skipped when the mode word `0x8007B83C` reads `0x15`. The engine surfaces it as the `ItemOutcome::ArtLearned` it returns.
+- **There is no membership check.** Neither the arm nor the menu validator `FUN_8003FB10` (whose class `0x0B..0x0D` arm tests only that the target is roster slot `class - 0x0B`) asks whether the record already lists the art, so a second copy of a book lists its art twice. The scripted grants avoid this by asking `4C 8D` first. The engine keeps the list a set: a book whose art is already listed reports it at its position and inserts nothing, and a record that already lists an art twice loads with the repeat dropped (`DisplayedSkillList::dedup`, in `World::load_party`).
+- **The out-of-battle leg raises a "learned" notification** (`jal 0x80035C00`), skipped when the mode word `0x8007B83C` reads `0x15`. The engine surfaces it as the `ItemOutcome::ArtLearned` it returns; the Items screen opens menu window 8 on it, and like every menu window it is framed (`legaia_engine_ui::pause_menu::menu_notice_chrome`, which both hosts draw under the text).
 
 Ports: `legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill` for the insert, `World::use_item` for the seat. The record-side capture and the menu reader are on [level-up.md](level-up.md#arts-book-skill-list).
 

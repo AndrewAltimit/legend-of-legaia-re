@@ -18,6 +18,15 @@
 //! once): `rikuroa`'s Caruban (`P1[9]`) parks at `540` in its prologue and
 //! hovers there while its motion stream walks it, which a floor sample at
 //! the walked tile would put back on the ground.
+//!
+//! Both floor arms call the sampler on the actor, and the sampler rewrites the
+//! actor's near-bucket bit `0x800000` before it reads a height
+//! (`0x800192F8..0x80019350`): set on a cell without `0x1000`, clear on one
+//! with it, set outright on a word carrying `0x80000000`. So every placement
+//! the arm samples carries the bit of the cell it stands on, tick by tick, and
+//! a walking NPC that steps onto a placed object's floor - a bridge, a dais, a
+//! ledge - draws ten buckets nearer from that tick
+//! ([`World::near_bucket_npcs`]).
 
 use super::World;
 use legaia_engine_field::motion_pause::MOVING_CLASS;
@@ -84,6 +93,12 @@ impl World {
                 scene_guard_clear: true,
                 global_suppress: false,
             });
+            if matches!(
+                plan.height,
+                FieldActorHeight::GlideToFloor { .. } | FieldActorHeight::SnapToFloor
+            ) {
+                self.npc_floor_sample_sort_bit(slot, x, z);
+            }
             match plan.height {
                 FieldActorHeight::GlideToFloor { rate } => {
                     let floor = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
@@ -118,6 +133,25 @@ impl World {
                 }
             }
         }
+    }
+
+    /// The floor sampler's rewrite of a placement's near-bucket bit, on the
+    /// placement's field-VM context (the half of `+0x10` the draw reads,
+    /// [`World::near_bucket_npcs`]), at where the arm samples it.
+    ///
+    /// REF: FUN_8003BC08 (`jal 0x80019278` at `0x8003BC98` / `0x8003BCBC`), FUN_80019278
+    fn npc_floor_sample_sort_bit(&mut self, slot: u8, x: i16, z: i16) {
+        let Some(i) = self
+            .field_vm
+            .channels
+            .iter()
+            .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        else {
+            return;
+        };
+        let flags = self.field_vm.channels[i].ctx.flags;
+        let flags = self.floor_sampler_sort_flags(flags, i32::from(x), i32::from(z));
+        self.field_vm.channels[i].ctx.flags = flags;
     }
 
     /// Every placement the height arm runs on, at where it stands: the live
@@ -286,5 +320,41 @@ mod tests {
         assert!(w.npcs.positions.is_empty());
         w.tick_field_npc_heights();
         assert_eq!(w.field_npc_render_y(77, 6 * 128 + 64, 2 * 128 + 64), -320);
+    }
+
+    /// The arm's floor sample rewrites a walking placement's near-bucket bit
+    /// from the cell it stands on, tick by tick: set on a cell without
+    /// `0x1000` (a placed object's floor), cleared back on a ground cell, and
+    /// left alone under a held height (`0x20000000`, no sampler call) and on
+    /// a culled actor.
+    #[test]
+    fn a_walking_placement_takes_the_near_bit_of_its_cell() {
+        const NEAR: u32 = 0x0080_0000;
+        let mut w = World::new();
+        w.terrain.object_cells = vec![0x1000; 0x4000];
+        // Tile (6, 2): an object-mesh floor.
+        w.terrain.object_cells[2 * 128 + 6] = 0x0004;
+        w.field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 9,
+                ctx: Default::default(),
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        let at = |w: &mut World, tx: i16| {
+            w.npcs.positions.insert(9, (tx * 128 + 64, 2 * 128 + 64));
+            w.tick_field_npc_heights();
+            w.field_vm.channels[0].ctx.flags & NEAR
+        };
+        assert_eq!(at(&mut w, 5), 0);
+        assert_eq!(at(&mut w, 6), NEAR);
+        assert!(w.near_bucket_npcs().contains(&9));
+        assert_eq!(at(&mut w, 7), 0);
+        // A held height takes no sample: the bit stays as it was.
+        w.field_vm.channels[0].ctx.flags = 0x2000_0000 | NEAR;
+        assert_eq!(at(&mut w, 7), NEAR);
     }
 }

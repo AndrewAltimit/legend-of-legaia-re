@@ -2321,8 +2321,19 @@ the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
 countdown fed through `module_words`), where it used to spread a step-`2`
 pass's turn over every tick. On retail's frame steps the camera's 83 yaw adds
 then match the recording's one for one and end on its `2587`, against `1506`;
-arm 16 reads `.724` against `.690`. What is left there is the jittered ring
-records and the victim's pose. Grade `disassembly` + `capture`.
+arm 16 reads `.724` against `.690`. Grade `disassembly` + `capture`.
+
+The sixteen whirlwind rings draw on the game's one `rand()` stream. Arm 13's pass
+gives each its yaw `rand() % 0xFFF` as it seats it (`0x801F7BBC..0x801F7C5C`), and
+arms 14, 15 and 16 each run the same loop over the sixteen handles at `0x801F9134`
+on every pass, ahead of the arm's countdown: `x = v.x + rand() % 63 - 0x20`, then
+`z` the same, ring by ring (`0x801F7C80`, `0x801F7D8C`, `0x801F7F48`). That is
+`32` words a pass, which the recording's per-frame seed words hold and which the port
+drew in arm 16 only, off a private seed. On the world stream
+(`World::nova_victim_motion`, the stores held until the director seats the rings)
+every pass of arms 13..17 draws retail's count on the rand track, and arm 16 reads
+`.785` against `.729`. What is left there is the victim's pose. Grade `disassembly`
++ `capture`.
 
 ### The shatter effect on monsters
 
@@ -2498,6 +2509,21 @@ skip rule), `World::apply_summon_body_writes` makes the kill path's HP and
 colour-word stores and waives the fold, and `World::aluru_band_draw` hands
 the spread to `legaia_render_kernels::cast_aluru` in both hosts' screen
 layers.
+
+**Arm 4 holds the band in `0x35`.** Arm 3's countdown is the band word itself: the pass
+that hears the drive idle stores `ctx[+0x6D8] = scalar * 20` (`0x801F703C`), and arm 4
+drains it by `step * scalar` (`0x801F7058..0x801F7064`) on top of the action SM's own
+`step` a pass. `0x35` re-reads the word after the stager call and leaves only once it is
+negative, so retail runs arms 3 and 4 in `0x35` and enters `0x36` on the pass arm 5
+opens (`160`, `133`, .. `25`, then `-2` at step `3` on the `0x8E` film). The port kept
+the countdown on the director alone, so the SM's word stood at `0` from arm 3 on and the
+band left for `0x36` on arm 4's first pass, which also put arm 4 under another key than
+the recording's: on the recording's own steps it ran a vsync a pass where retail runs
+step `3`, and its white flare (`0x801F8B3C`) stopped at level `4096` where retail's last
+pass lands `4864` and draws on. PROT 0916 now shares the word
+(`BAND_WORD_MODULES`, [the band word](#summon-band-camera)), and arm 5 reads `.662` to
+`.979` on `--retail-steps --rand-track`, the film `.930` to `.978` (plain `.942` to
+`.965`). Grade `disassembly` + `capture`.
 
 The wash over the blast is a held fade arm 15 parks at `ctx[+0x102C]`
 (`0x801F7BC4..0x801F7C24`). Arms `0x12` and `0x13` share their tail, and its end sits
@@ -2826,8 +2852,31 @@ Kemaro's arm 8 lifts and lands the creature as its word drains: height
 `+0x44 = (w << 4) & 0xFFF` under `scalar << 5` (`0x801F7690..0x801F76A8`), height
 and pitch `0` on the pass (`World::apply_kemaro_writes`).
 
-Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
-stores on alternate passes), Kemaro's arm-12 absolute pose store and the
+<a id="the-tr-y-shakes-are-a-frames"></a>
+
+**The TR y shakes are a frame's.** Kemaro's arm 4 and Puera's arms 14 and 15
+store TR y straight on every pass off a word they bump once a pass: Kemaro's
+parity halfword `0x801F92F8` (`0x801F7088..0x801F70C4`) gives `0x600` and
+`countdown / 2 + 0x600` on alternate passes while its countdown is above
+`scalar << 5`, and `0x600` below it; Puera's alternation word `0x801FA0BC`
+(zeroed on arm 13's way out, the word its rumble reads too) gives `0x400` on an
+odd read, else `0x500` on arm 14 and `countdown * 8 / scalar + 0x400` on arm 15
+(`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`), the store ahead of the
+arm's gate. Kemaro's arm 4 also takes `product / 4` off the **pitch** halfword
+`0x8007B790`, not the yaw (`lhu v0,-0x4870(a0)` at `0x801F710C`). PROT 0927's
+epilogue shake runs the same once a frame: the tick body steps its word
+`0x801F9C90` once a call, and the battle frame driver calls it once a frame.
+The directors (`kemaro_arm4_shake`, `puera_shake`) and
+`World::juggernaut_shake` take each word once a pass, on the pass's last tick
+or the tick that leaves the arm. Stepped on every vsync of a step-`4` pass,
+Juggernaut's twenty-frame swing on arm 12 ran out in five frames as a flat
+`-16` a frame. On the Gobu Gobu films the engine's camera now holds retail's
+pitch and TR y pass for pass through these arms (`camera.csv`), and the films
+read `0x90` `.950` to `.976` (arm 5 `.758` to `.967`), `0x94` `.930` to `.937`
+(arms 14 and 15 `.936` / `.898` to `1.000` / `.998`), `0x99` `.894` to `.899` (arm 12
+`.861` to `.889`). Grade `disassembly` + `capture`.
+
+Not carried: Kemaro's arm-12 absolute pose store and the
 heights its arms 13..17 walk the arm-9 parts through, and 0927's second,
 kill-capable hit at arm 26: the band folds the cast once.
 
@@ -3689,15 +3738,15 @@ the cast. Grade `capture`.
 
 The leg labels are right: retail's roll on the `map01` film is `rand() = 20064`, even, the hit
 (probe at `0x801F8CC4`, `andi v0,v0,0x1` / `beq` to the hit leg at `0x801F8CC8`), from the seed
-word `0x4DE7668F`. `--rand-track` still hands the engine the miss because the engine's arm 4
-is two passes shorter. Arm 3's gate re-arms the countdown `0x801F9D28` by `scalar << 7`
-(`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass (`0x801F8C6C..0x801F8C98`,
-the step `0x1F800393`): retail's arm 4 runs `34` passes, the last five at step `3` as the frame
-cost falls from `700` to about `595` (step sum `131`), where the engine's table runs every pass
-at `4` (`32` passes). The track keys its words by pass within the phase, so the engine's
-gate pass takes retail's 33rd pass word (`0x6C5CC369`, then the discard), draws from
-`0x333F61EE` and rolls `19943`, odd. Retail's gate pass starts on `0x333F61EE` and draws
-the discard first. The engine's arm 3 gate also falls one pass later than retail's.
+word `0x4DE7668F`. The roll's draw is the pass count's. Arm 3's gate re-arms the countdown
+`0x801F9D28` by `scalar << 7` (`0x801F8C34..0x801F8C40`) and arm 4 drains `scalar * step` a pass
+(`0x801F8C6C..0x801F8C98`, the step `0x1F800393`): retail's arm 4 runs `34` passes, the last ones at
+step `3` once the line's read stops loading the frame (vsync `445` on this film, `448` on Lip King's,
+`444` after the line's start), the frame cost falling from the clamp to about `595`. A table that ran
+every pass at `4` gave `32` passes, the coin two draws early, and the miss. The table drops the
+arm to `3` after `27` passes (`CAPTURE_ARM_READ_TAILS`); `26` to `28` roll retail's hit on both
+recordings, and both films read cue `1.000` ([the oracle](../tooling/cast-sequence-oracle.md#what-each-side-records)).
+Grade `capture` for the count, `disassembly` for the drain and the coin.
 This is the step table's per-arm reading ([the frame step](battle-stage-camera.md#the-frame-step)), not the
 roll. Grade `capture` + `disassembly`.
 
@@ -3875,8 +3924,32 @@ stores `0x16` back (`0x801F80F8`). The engine streams the latch (`monster_ai_sta
 Film from `noaru_songi_pre_genocidal_cannon`, per arm, with the director, then the records seated
 per arm, the latched stream and the loop bounds: arm 3 `.184` to `.995`, arm 6 `.484` to `.975`,
 arm `0x0F` `.201` to `.994`, arm `0x10` `.284` to `.996`, arm 2 `.392` to `1.000`; mean `.975`
-(the mid-cast `--physical` film `.974`), sound `1.000`. Arms 9 and `0x0B` (`.85`, `.81`) and the
-white of arms 8, `0x0A` and `0x0C` landing a few frames early are what is left. Grade `disassembly` (the arms), `capture` (the film).
+(the mid-cast `--physical` film `.974`), sound `1.000`. Grade `disassembly` (the arms), `capture` (the film).
+
+The white over arms 8, `0x0A` and `0x0C` is the stager's arm 2 fade, spawned by a pulse record's
+op `0x20` inside the part tick. Retail's part walker runs after the pass has ticked its fade
+actors, so the fade first steps, and first draws, a pass after the call: retail's first white
+frame is already one step down the ramp, and the engine had drawn the template's own colour a
+pass earlier. A stager fade now joins the fades on the next pass
+(`ScreenFxState::module_fades_next_pass`): the mid-cast film reads `.974` to `.981`, arms 8,
+`0x0A` and `0x0C` `.926` / `.924` / `.962` to `.998` / `.994` / `.998`. Grade `capture`.
+
+Arms 8 and `0x0A` also set the caster's anim node back: `lw v1,0x22c(s3)` then `sh 0x110,
+0x68(v1)` (`0x801F73EC..0x801F73FC`, `0x801F75F4..0x801F7604`), frame `0x11` of the charge clip,
+from which it plays back up into the `0x15..0x17` loop. Without the store the engine's Songi
+stood in the loop through arms 9 and `0x0B` while retail's rose out of its crouch; with it the
+mid-cast film reads `.981` to `.987`, arm 9 `.852` to `.997` and arm `0x0B` `.813` to `.998`;
+with both, the pre-cast film reads `.975` to `.987`. Grade `disassembly` (the store),
+`capture` (the film).
+
+Arm 6 arms the wash `0x202020` every pass (`0x801F6FA8..0x801F6FB0`), so its frames
+build on the page two frames back, and the white the arms before it raised decays off
+those pages. The arm's passes run under the cast's streaming clip at span `5`, a vsync
+past the step, and the engine had read its page a fixed eight vsyncs back: a page one
+frame newer than retail's, so the white brightened and fell a frame ahead. Read two
+spans back ([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)), the mid-cast
+film's arm 6 reads `.975` to `.993` and arm 3 `.995` to `.998`, mean `.987` to `.990`.
+Grade `disassembly` (the arm), `capture` (the film).
 
 ### PROT 0948 (Cross Beam)
 
@@ -5787,7 +5860,20 @@ something behind (a fade actor, a VRAM copy, a parameter store) fires once:
 on the passing tick for a `Pass` site, on the arm's first tick otherwise. A
 per-frame call (the armed wash, an alpha ramp) fires on every tick its timing
 covers. A ramp's bound is the literal the arm stores behind its bound test
-(`if (alpha > 0x80) alpha = 0x80`). PROT 0905, 0954 and 0966 keep their
+(`if (alpha > 0x80) alpha = 0x80`). The alpha ramps add the frame step
+`*(0x1F800393)` (Kemaro's `scalar * step >> 3`), which the decoder folds at one
+vsync, an engine tick's share; a ramp on an arm's way out runs on the one tick
+that passes and stands for retail's whole pass, so it adds the battle frame
+step. Big Wave enters arm 6 on `alpha += step` (`0x801F70EC..0x801F7100`):
+folded at one, its wash ran three short of retail's at step `4` for the rest of
+the ramp (`battle_noaru_slippery_v2_big_wave_mid_cast` holds `28`, a multiple
+of the step, where the engine's displayed frame read `17` for retail's `20`).
+The dispatchers' tail draws the wash on that same pass and steps its scroll by
+`step * rate` (`0x801F2444..0x801F24DC`), so a wash armed by such a pass takes
+the whole step's scroll on its arming tick too
+(`CastFxState::finish_cast_wash_tick`): folded at one, Big Wave's bands ran
+`(4 - 1) * 2` lines under retail's for the rest of the cast (the state holds
+scroll `8`, seven passes of `8` wrapped into the `0x18`-line band). PROT 0905, 0954 and 0966 keep their
 hand-ported fades and PROT 0903 its director's CLUT copy, so nothing is
 spawned twice.
 

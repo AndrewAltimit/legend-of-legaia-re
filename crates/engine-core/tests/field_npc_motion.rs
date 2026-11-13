@@ -323,6 +323,7 @@ fn interaction_prologue_npc_run_seats_the_interacted_npc() {
             body,
             entry_pc: 0,
             first_segment,
+            resume: false,
         },
     );
 

@@ -95,10 +95,10 @@ impl BattleState {
     /// 9 pass, `FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)` for `i` below
     /// `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`). Each
     /// record spawns at seat A and glides to seat B
-    /// (`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`).
+    /// (`legaia_engine_battle_loop::battle_state::BattleState::action_panels_glide`).
     pub fn raise_module_roster_panels(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-        self.module_panels_glide = Some(LogLaunch::new(false));
+        self.action_panels_glide = Some(LogLaunch::new(false));
     }
 
     /// Start the round prompt's open glide: sub-draw step 0 spawning its
@@ -138,7 +138,7 @@ impl BattleState {
             self.readout_bar_glide.as_mut(),
             self.message_bar_glide.as_mut(),
             self.spirit_gauge_glide.as_mut(),
-            self.module_panels_glide.as_mut(),
+            self.action_panels_glide.as_mut(),
             self.result_windows_glide.as_mut(),
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
@@ -151,6 +151,9 @@ impl BattleState {
         }
         if let Some(c) = self.action_hud_close.as_mut() {
             c.glide.elapsed = c.glide.total;
+        }
+        if let Some(x) = self.commit_exit.as_mut() {
+            x.glide.elapsed = x.glide.total;
         }
         self.widget_glide_return = 0;
         self.widget_glide_latch = 0;
@@ -209,7 +212,7 @@ impl BattleState {
             self.readout_bar_glide.as_mut(),
             self.message_bar_glide.as_mut(),
             self.spirit_gauge_glide.as_mut(),
-            self.module_panels_glide.as_mut(),
+            self.action_panels_glide.as_mut(),
             self.round_prompt_glide.as_mut(),
             self.ring_open_glide.as_mut(),
             self.surface_hold_glide.as_mut(),
@@ -231,6 +234,12 @@ impl BattleState {
             }
         }
         self.widget_glide_return = ret;
+        // The confirm's exit records ride the same pass; the hold they would
+        // gate is the surface hold's, raised beside them, so they stay out of
+        // the return.
+        if let Some(x) = self.commit_exit.as_mut() {
+            x.glide.step(step);
+        }
     }
 
     /// Whether any tracked widget glide is still in flight: a record
@@ -242,7 +251,7 @@ impl BattleState {
             self.readout_bar_glide.as_ref(),
             self.message_bar_glide.as_ref(),
             self.spirit_gauge_glide.as_ref(),
-            self.module_panels_glide.as_ref(),
+            self.action_panels_glide.as_ref(),
             self.round_prompt_glide.as_ref(),
             self.ring_open_glide.as_ref(),
             self.surface_hold_glide.as_ref(),
@@ -298,7 +307,7 @@ impl BattleState {
             self.readout_bar_glide.as_ref(),
             self.message_bar_glide.as_ref(),
             self.spirit_gauge_glide.as_ref(),
-            self.module_panels_glide.as_ref(),
+            self.action_panels_glide.as_ref(),
             self.round_prompt_glide.as_ref(),
             self.ring_open_glide.as_ref(),
             self.surface_hold_glide.as_ref(),

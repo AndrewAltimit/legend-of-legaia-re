@@ -19,13 +19,16 @@ impl World {
     /// - Arm `0x0D`'s pass moves the two cloud banks arm 10 seated onto the
     ///   victim's plane pair and turns them by the victim's heading less
     ///   the creature's (`0x801F7A54..0x801F7B0C`).
+    ///   The same pass draws each whirlwind ring's yaw (`rand() % 0xFFF`,
+    ///   [`nova_ring_yaw`]), stored once the rings are seated.
+    /// - Arms `0x0E..=0x10`, every pass: each whirlwind ring is jittered
+    ///   round the victim on the world `rand()` stream
+    ///   ([`nova_ring_jitter`] on both plane coordinates, ring by ring,
+    ///   `0x801F7C80`, `0x801F7D8C`, `0x801F7F48`).
     /// - Arm `0x10`, every pass: the victim climbs to
     ///   [`nova_lift_height`], and on the tick that opens each pass turns by
-    ///   [`nova_lift_spin_per_pass`] at the countdown the pass leaves;
-    ///   each whirlwind ring is jittered round the victim
-    ///   (`rand() % 63 - 0x20` on both plane coordinates,
-    ///   `0x801F7F48..0x801F7FCC`). Its pass halts the sixteen rings
-    ///   (`0x801F8124..0x801F8140`).
+    ///   [`nova_lift_spin_per_pass`] at the countdown the pass leaves. Its
+    ///   pass halts the sixteen rings (`0x801F8124..0x801F8140`).
     /// - Arm `0x13` while it holds: the victim turns `0x600` a pass and
     ///   comes down along [`nova_landing_height`], arm 18's three parts
     ///   riding on it (`0x801F82FC..0x801F8368`). Its pass stands it on the
@@ -33,7 +36,7 @@ impl World {
     ///
     /// PORT: FUN_801F69F0 (PROT 0913; the victim's lift, spin and landing
     /// and the handle writes of arms 0x0D, 0x10 and 0x13)
-    pub(in crate::world::battle::cast_band) fn nova_victim_motion(
+    pub(crate) fn nova_victim_motion(
         &mut self,
         phase_in: u8,
         phase_out: u8,
@@ -65,6 +68,51 @@ impl World {
         // `0x13`, so the port turns it once, on the tick that opens the pass.
         let opens_pass = self.module_tick_opens_pass();
         let pass_ticks = i32::from(self.module_frame_step());
+        // Arm `0x0D`'s pass seats the sixteen rings, each on a yaw of its own
+        // `rand() % 0xFFF` drawn in seat order (`0x801F7BBC..0x801F7C5C`);
+        // the draws are this pass's, the stores wait for the seated rings.
+        if phase_in < NOVA_CLOUD_CARRY_ARM {
+            // A fresh cast holds no stores of an earlier one.
+            self.casting.nova_ring_yaws = None;
+            self.casting.nova_ring_places = None;
+        }
+        if phase_in == NOVA_CLOUD_CARRY_ARM && passed {
+            let yaws: [i16; 16] = std::array::from_fn(|_| nova_ring_yaw(self.next_rand()));
+            self.casting.nova_ring_yaws = Some(yaws);
+        }
+        // Arms `0x0E..=0x10` jitter every ring round the victim on each pass,
+        // ahead of the arm's countdown, so the passing pass jitters too:
+        // `x = v.x + rand() % 63 - 0x20`, then `z` the same, ring by ring
+        // over the sixteen handles. Arm `0x0E` is a one-pass arm whose
+        // single run need not open the engine's pass, so it jitters
+        // whenever it runs.
+        let jitter_pass = opens_pass || (phase_in == NOVA_RING_JITTER_ARMS[0] && passed);
+        if NOVA_RING_JITTER_ARMS.contains(&phase_in) && jitter_pass {
+            let places: [(i16, i16); 16] = std::array::from_fn(|_| {
+                let x = vx.wrapping_add(nova_ring_jitter(self.next_rand()));
+                (x, vz.wrapping_add(nova_ring_jitter(self.next_rand())))
+            });
+            self.casting.nova_ring_places = Some(places);
+        }
+        // The stores land on the seated rings, in seat order.
+        let is_ring = |p: &legaia_engine_effects::summon::SummonPartRuntime| {
+            p.tag == Some(NOVA_RING_RECORD) && !p.finished
+        };
+        if let Some(scene) = self.casting.active_summon.as_mut()
+            && scene.parts.iter().any(is_ring)
+        {
+            if let Some(yaws) = self.casting.nova_ring_yaws.take() {
+                for (part, yaw) in scene.parts.iter_mut().filter(|p| is_ring(p)).zip(yaws) {
+                    part.state.render_26 = yaw;
+                }
+            }
+            if let Some(places) = self.casting.nova_ring_places.take() {
+                for (part, (x, z)) in scene.parts.iter_mut().filter(|p| is_ring(p)).zip(places) {
+                    part.state.world_x = x;
+                    part.state.world_z = z;
+                }
+            }
+        }
         match phase_in {
             NOVA_CLOUD_CARRY_ARM if passed => {
                 let turn = creature.map_or(0, |c| vf.wrapping_sub(c.2));
@@ -94,22 +142,12 @@ impl World {
                     a.battle.facing_angle =
                         (a.battle.facing_angle as i16).wrapping_sub(spin) as u16 & 0xFFF;
                 }
-                let mut seed = self.casting.module_settle_countdown as u32 ^ 0x6E6F_7661;
-                if let Some(scene) = self.casting.active_summon.as_mut() {
+                // Its pass halts the sixteen rings (`0x801F8124..0x801F8140`).
+                if passed && let Some(scene) = self.casting.active_summon.as_mut() {
                     for part in &mut scene.parts {
-                        if part.tag != Some(NOVA_RING_RECORD) {
-                            continue;
-                        }
-                        if passed {
+                        if part.tag == Some(NOVA_RING_RECORD) {
                             part.finished = true;
-                            continue;
                         }
-                        let mut jitter = || {
-                            let r = legaia_engine_system::rand::psyq_rand_step(&mut seed);
-                            (i32::from(r) % 63) as i16 - 0x20
-                        };
-                        part.state.world_x = vx.wrapping_add(jitter());
-                        part.state.world_z = vz.wrapping_add(jitter());
                     }
                 }
             }

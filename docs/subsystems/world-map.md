@@ -3354,6 +3354,26 @@ passes (effect-pool billboards, effect models, summon and stager parts) stay
 off on the overworld - a port gate with no retail counterpart in this
 dispatcher, kept until an overworld state carrying one of them is measured.
 
+#### Case 4 on the overworld: the Genesis Tree's revival rings
+
+`map01` `P2[31]` (the tree's revival seen from the overworld) fills the lower
+half of its shot with default-arm nodes ([effect-vm](effect-vm.md#the-default-arms-draw)).
+The state `map01_tree_revival_cutscene` holds 25 live ones on list
+`_DAT_8007C350`, all mode `0x0001` (shape `0`, the ring laid on the XZ plane,
+texture mode `0`: the fixed `0x7F84` patch), `32` columns, equal inner and
+outer radius, heights `-240` / `-40` - a wall `200` units tall, black at the top
+and `0x605440` at the foot, drawn additive (`0x3E` packets, ABR `1`). Four
+emitters seat one at a point every `81` vsyncs at a steady step
+(stager records `0x3AE` / `0x3CA` / `0x3EE` spawned by `0x350`, and `0x300`'s
+pair round `(12352, 3008)` every `102`), and each wall's radius grows by its
+`+0xC0` / `+0xC2` rate, so the rings spread from the four points across the
+continent; `0x3AE`'s and `0x3CA`'s are open arcs (`+0xC8` phase `16` / `10` of
+`32`). The camera stands inside `0x3CA`'s ring round `(9536, 7744)`, whose wall
+sweeps the frame's foot about seven rows a pass. The node links at its mean
+`SZ` like any mesh part, ahead of the ground cells' `(max SZ >> 5) + 14`
+bucket, so retail paints the wall over the near ridge. The port draws them
+through `World::active_effect_kind4_draws` on both hosts.
+
 ## Globals used
 
 | Address | Role |

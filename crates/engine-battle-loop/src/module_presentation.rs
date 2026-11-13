@@ -24,6 +24,10 @@ pub struct ModulePresentation {
     pub wash_live: bool,
     /// The armed wash (`FUN_8004695C`) the module's last tick armed.
     pub armed_wash: Option<u32>,
+    /// The frame step a way-out alpha add on this tick stood for (`0` when
+    /// none ran): the passing tick is retail's whole pass, so a wash it
+    /// arms takes the whole step's scroll too ([`Self::finish_cast_wash_tick`]).
+    pub wash_pass_vsyncs: u8,
     /// The fades the hook spawned, live until they land or an arm kills them
     /// (`World::screen_fade_draws` composites them beside the band's).
     pub fades: Vec<HookFade>,
@@ -94,11 +98,21 @@ impl CastFxState {
 
     /// The dispatchers' tail: an armed colour wash steps its scroll and
     /// draws on this tick.
+    ///
+    /// The emitter steps the scroll by `step * rate` (`0x801F2444..0x801F24DC`)
+    /// on every pass it draws, which an engine tick folds at one vsync. A wash
+    /// armed by the add on its arm's way out is armed on the one tick that
+    /// passes, which stands for retail's whole pass, and the tail runs on that
+    /// same pass: it steps the whole frame step. PROT 0946's Big Wave arms its
+    /// wash so; folded at one, its bands ran `(step - 1) * rate` lines behind
+    /// retail's for the rest of the cast.
     pub fn finish_cast_wash_tick(&mut self) {
+        let entered = !self.module_pres.wash_live;
+        let pass = std::mem::take(&mut self.module_pres.wash_pass_vsyncs);
         let w = &mut self.module_pres.wash;
         self.module_pres.wash_live = w.armed();
         if w.armed() {
-            w.step_scroll(1);
+            w.step_scroll(if entered && pass > 0 { pass } else { 1 });
         }
     }
 }

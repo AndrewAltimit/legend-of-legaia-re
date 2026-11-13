@@ -650,7 +650,7 @@ engine verdict:
   (`garmel`'s cave mist, [field-ambient-fx](../subsystems/field-ambient-fx.md#a-spawned-sheet-drifts-along-its-spawners-yaw)),
   so the population matches retail's and the placement never does. The
   image child takes the state's live sheets (`retail_sprite_arms`: part tick
-  `FUN_80021DF4`, `+0x56 == 4`, `+0x9E & 0x4000`, keyed by their stager
+  `FUN_80021DF4`, `+0x56 == 4`, the sprite-arm bit `+0x9E & 0x4000`, keyed by their stager
   record `+0x48` less the bundle base `_DAT_8007B8D0`) as
   `LEGAIA_SEAT_SPRITE_ARMS` and seats the engine's sheets of the same
   record on them on the capture frame (`World::install_sprite_arm_snapshot`):
@@ -668,6 +668,32 @@ engine verdict:
   across the stair rail drawn where retail's frame has it, and the two other
   Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
   `.988` / `.984` (`.954` / `.953`).
+
+  The seat is the displayed frame's, not the RAM's: the state's RAM stands the
+  display lag past the frame on screen (`display_lag_vsyncs`, two passes), so
+  each sheet's position is taken back along its heading and speed, and a
+  keyframe-pose node's packed entries are re-blended from the block's keyframe
+  records at the cursor `+0x22` less `+0xD0` a vsync
+  (`displayed_pose_entries`; at no lag the re-blend reproduces the block's own
+  entries on every pose node of `map01_tree_revival_cutscene`).
+
+  The other draw-kind-4 parts (no sprite-arm bit) are the default arm's
+  rings, walls and crowns. They take the same seat by placement, and also
+  their growing channels - the radii `+0xB4` / `+0xB6`, the heights `+0xB8` /
+  `+0xBA` and the length `+0xC8` - and their level `+0x78`, each taken back
+  the lag along its own rate (`+0xC0..+0xCA`, `+0x90`). Their spawns fall on
+  the frame clock, and retail's step on a busy frame is not the child's
+  steady one: `map01`'s Genesis Tree revival grows a ring of `32` columns
+  round each of four points every `81` vsyncs at a steady step, and retail's
+  spacing reads `84` to `104` vsyncs, so the ring through the camera stood
+  two passes past retail's while the far ones lagged it. Seated, the ring
+  bands lie on retail's packets (`.789` to `.835`, and `.926` with the
+  ridge's puff sheets taken back too). The engine's own colour word stays.
+  `vozz_ozma_hatching_crawl`'s sparkles round Ozma's egg are `rand()` history
+  like the mist, and the two the engine had put beside Gala leave the frame;
+  `garmel_zeto_appears_rising`'s light bars stand where retail's do, where a
+  level seated from RAM without the take-back lit the floor ring brighter
+  than the frame shows. A harness seat.
 
   A state that holds no sheet says so too (`LEGAIA_SEAT_SPRITE_ARMS=none` on
   every field and overworld state), and the install retires every sheet the
@@ -1613,6 +1639,14 @@ moves: `battle_deene_garnet_heal_mid_cast` `.941` to `.990`,
 `battle_bubu2_wailing_bird_power_up_mid_cast` `.940` to `.997`. It is a
 harness seat: the replay's own `0x3D` waits out a longer idle than retail's, so
 its plaques have landed.
+
+The roster panels a monster's party-wide seed raises (records 6 / `0x4E` / `0x4F`,
+seat B row `168` from `234`) open on the actor plaque's pass, so the same seat
+times them; inside an action the image child lands a `(x, 168)` seat on the
+action's panels glide rather than the round prompt's. The game-code half is the
+glide itself ([battle-hud.md](../subsystems/battle-hud.md)):
+`battle_nilboa_koru_dead_end_crisis_mid_cast` reads `.933` to `.998`, the panel
+nine rows short of its seat on both sides.
 
 A Spirit turn's AP bar and AP plate are seated by value as well as by glide
 (`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
@@ -2964,6 +2998,24 @@ inside its state by retail's own clocks (`SpanGate`):
 | `0x00` / `0x0A` / `0x0B` | `SpanGate::Landed` | tween table `ctx[+0x118C]`, seat from `ctx[+0x274]` |
 | `0x70` under a directed module | module arm + countdown, or the arm alone (`PHASE_ONLY`) for a body that gates on no module word | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
 
+**The Attack arm's seed pass.** A `0x14` capture with the yaw counter still
+on the seed's `0x200` rung is the one pass after the seed, which the rung
+names, so its `SpanGate::Age` is met on entry (`accum` `0`). The capture's
+`ctx[+0x87C]` there is the acting seat's idle clock, not the action's: the
+anim commit zeroes the word at every re-commit of the looping idle
+(`0x8004BF50..0x8004BF78`), so it counts from the idle's last wrap, a phase
+battle setup drew under a stream a pinned replay does not share. Gated on
+the word, the `super_queue_replace_*` drives met `96` only while the engine
+restarted the seat's idle at the seed, which retail never does
+([settled](../reference/re-settled-threads/battle.md#the-action-sms-idle-request-keeps-a-playing-idle)).
+
+**A caster idling into the capture band.** The image child seats a body
+idling in the band `0x6F..=0x71` on the capture's own cursor, since the band
+stages no clip on it. The band's entry `0x6E` is seated the same way: a caster
+still on its idle there has staged nothing since the seed, and on a pinned
+replay its loop's phase is the replay's. `nivora_duel_mid_blazing_slash`'s Gala
+goes from `.985` back to `.996` (harness-only).
+
 **A directed body with no module word.** PROT 0962's charge bodies wait on
 the caster's cursor, so `capture_countdown_va` names no word for them. Their
 `0x70` captures are still held to the capture's arm
@@ -3027,6 +3079,20 @@ shot's own increments at the older pass's step: the fade's case-6 endpoint is
 not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
 `image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
 on the table, `.950` on this walk; a sweep of the walk back peaks there.
+
+<a id="a-drifting-arm-walks-back-on-its-drift"></a>
+An arm that writes the camera globals itself on every pass walks back on that
+drift, not on the table (`displayed_module_drift_live`). Genocidal Cannon's
+arm 1 (PROT 0963, `0x801F6C34..0x801F6C8C`) takes `step << 8` off TR z and
+`step << 3` off the pitch and adds `step << 4` to TR y every pass, off arm 0's
+one-frame cut; the table the RAM holds is that cut, whose increments are its
+whole gap, and walked back on them the displayed TR z stood at `-136662`, a
+frame of nothing but the HUD. `battle_noaru_songi_genocidal_cannon_mid_cast`
+reads `image` `.187` on the table and `.971` on the drift (a harness seat).
+The drift is read off the body's camera director on a held pass, and only
+where no component it moves sits more than one increment off its endpoint:
+Glare's arm 1 (PROT 0940) drifts while arm 0's twelve-frame shot still walks,
+and stays on the table.
 
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
@@ -4320,9 +4386,30 @@ inside the lag (`SpanGate::Results` with its hold `gp+0xA54` under the lag,
 has opened the report or loss window and dismissed the HUD, while the screen
 still shows the frame before, the party HUD up and the target plaque over it.
 `battle_jou_party_wipe_results_retail` (hold `3`, lag `6`) reads `.638` to
-`.755`; the residue is the engine's spell label on that frame
-([open](../reference/open-rev-eng-threads.md)). The rest keep the gate's
-own frame:
+`.755` on that retake alone. Three more pieces hold these frames:
+
+- **The state is the sequencer's phase.** Past the end signal the drive's
+  "in its state" test (`BattleDrive::in_action_state`) asks for the gate's
+  sequencer phase (`SpanGate::phase_kind_held`), not the target the seat's last
+  action left, so the retake counts back across the results entry and stands
+  the camera on the displayed pose there. The win also writes its pose seat
+  into the acting slot, as retail's victory arm does (`ctx[+0x13]`, a seeded
+  seat included). `battle_jou_gala_finisher_results_retail` had kept the
+  gate's own frame, the report window half raised.
+- **The hold counts the results pass.** Retail's results frame zeroes
+  `gp+0xA54` and adds its own pass's step (`0x8004F738..0x8004F76C`), where the
+  engine opens at `0` and counts a vsync a tick, so the gate meets retail's
+  hold `h` at the engine's `h - step` (`RetailBattle::engine_span_gate`).
+- **The walk back stops at the results table's origin**
+  (`camera_align::results_passes_back`): the framing before the results stood
+  still. The win's RAM still holds the load window's stand-off, the wipe's one
+  pass along the results table, each read off its one capture.
+
+With the label the Done band's list wipe removes
+([settled](../reference/re-settled-threads/battle.md#threads)), the wipe reads
+`1.000` and the Gala finisher `.623` to `.976` (`camera` `.955` to `.976`:
+the engine's opening tick has already stepped the results table once). The
+rest keep the gate's own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|
@@ -4681,7 +4768,14 @@ One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
 armed pass, with the terminator still to come (`case6_walk_passes`'s
 `shot_passes`). `battle_kor_gaza_166_astral_wave_mid_cast` is that case, and its
 ring reads step `3` under a newest `4`, so the walk comes off the ring and not
-off the newest step.
+off the newest step. Its earlier actor is party seat `1`'s Spirit on style `2`
+(pitch `0x80`, TR y `0x400`): the plain start leaves the walk at pitch `0`, and
+the frame reads the whole 3D layer a pixel left and two up of the engine's with
+the HUD in place (`.937`); off the style-`2` start the walk lands on pitch `9`,
+TR y `1262` and the frame reads `.985` at yaw `438`. The shift is not the
+screen offset: the state's GTE holds `OFX = 160`, `OFY = 114`, and nothing but
+`SetGeomOffset` writes them (no `ctc2` to registers `24` / `25` in any
+overlay or PROT entry).
 
 Three inputs are not in the RAM. `FUN_801DABA4` picks the highest key among ties
 by `rand()` and zeroes spent keys, so it leaves no battle order behind; the

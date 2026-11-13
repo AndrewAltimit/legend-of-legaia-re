@@ -101,7 +101,7 @@ body.magic-live .magic-status-idle { display: none; }
 
 <section class="doc-section" id="stage">
   <h2>Watch the cast</h2>
-  <p>Click a card in either list below to watch it cast here, in a real battle: the creature, the summoning effects, the camera and the sound, run by the game engine on your disc. The toggle flips to the bare model, where you can orbit the creature and step through the cast's phases.</p>
+  <p>Click a card in either list below to watch it cast here, in a real battle: the creature, the summoning effects, the camera and the sound, run by the game engine on your disc. The battle opens on the caster's turn with the spell already under way, skipping the battle intro. The toggle flips to the bare model, where you can orbit the creature and step through the cast's phases.</p>
   <div class="magic-stage stage-root" id="magic-stage" hidden data-view="scene">
     <div class="magic-controls">
       <span><span class="stage-toggle-label">View</span>
@@ -136,7 +136,7 @@ body.magic-live .magic-status-idle { display: none; }
       <button id="magic-battle-again" type="button" title="Start a fresh battle and cast the spell again">&#8635; cast again</button>
     </div>
     <p class="magic-battle-note" data-stage-view="scene">
-      The engine fights this cast on the world map's first formation with your lead casting the spell, the same battle the <a href="play.html">play page</a> fights, with your play-page options. What the engine does not draw yet is listed on the <a href="subsystems/cast-module.html#port">cast module page</a>.
+      The engine fights this cast on the world map's first formation with your lead casting the spell, from the lead's first turn: the opening runs off screen. It is the same battle the <a href="play.html">play page</a> fights, with your play-page options. What the engine does not draw yet is listed on the <a href="subsystems/cast-module.html#port">cast module page</a>.
     </p>
   </div>
 </section>

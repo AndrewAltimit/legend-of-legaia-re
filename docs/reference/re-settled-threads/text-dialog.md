@@ -114,8 +114,10 @@ field VM over it, handing a text byte to the pager `FUN_801D84D0`.
 - It advances `actor[+0x9C]` 0 -> 1 -> 2 through the segments. Its state-2 advance masks
   `(byte & 0xF0) == 0xC0` and consumes the escape's data byte, so a `0xC?` escape whose argument is
   `0x00..=0x1E` (`0xC1 0x00`) does not end the line.
-- Retail's interaction cursor is one instruction past the record's spawn-section `0x21`, not
+- Retail's interaction cursor is one instruction past the `0x21` the spawn section executed, not
   `script_pc0` ([`script-vm.md`](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)).
+  It persists across talks: the forwarded PC is stored before the `0x21` test (`0x80039E24`), so
+  a chest's second touch resumes behind its grant.
 - A raw `0x21` after the prologue has spawned a record ends the talk (`FUN_8003CF7C` breaks on
   it): `vozz` P1[7] spawns P2[13] and stops.
 - The talk ends on `FUN_80038050`'s verdict on the byte after the box (see the "What ends an NPC
@@ -184,8 +186,12 @@ field VM over it, handing a text byte to the pager `FUN_801D84D0`.
   `play-window` default; `--simple-dialogue` types `World::npcs.dialog` through
   `OwnedDialogPanel::from_inline_dialog` instead.
 - The untruncated record is kept as `World::npcs.dialog_prologue`
-  (`man_field_scripts::placement_interaction_record`, entered at the interaction cursor); the
-  runner falls back to the first segment when the prologue reaches none.
+  (`man_field_scripts::placement_interaction_record`, entered at the interaction cursor). On a
+  first talk the runner falls back to the first segment when the prologue reaches none. A talk
+  resumed from the cursor an earlier talk wrote back ends on an executed raw `0x21` before any
+  box, as the SM does, and never falls back (`InlineDialogPrologue::resume`): a chest's second
+  touch runs its "empty" loop, a pickup spot's is silent
+  ([the interaction cursor](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)).
 
 Owning page: [`mes.md`](../../formats/mes.md#dialog-window-pager---fun_801d84d0) (pager and
 [picker layout](../../formats/mes.md#picker-control-region-layout)).

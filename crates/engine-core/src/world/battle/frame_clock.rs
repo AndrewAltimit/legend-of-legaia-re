@@ -45,7 +45,10 @@ impl World {
     /// measurement and no cost, so an arm no clip loads returns `0`, a frame
     /// inside its step.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
-        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost_at};
+        use legaia_engine_battle_loop::frame_clock::{
+            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, measured_frame_cost_at,
+            polygon_frame_work, xa_polled_work_cost,
+        };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
             Some((s, n)) if s == state => n.saturating_add(1),
@@ -53,19 +56,52 @@ impl World {
         };
         self.battle.frame_cost_state = Some((state, passes));
         let xa_passes = self.battle_xa_passes_since_cue();
-        let work = measured_frame_cost_at(self.party.party_count, state, passes)
-            .saturating_add(self.battle_frame_load_cost());
+        // The frame's own work: what it links, when the host prices its
+        // draw (`WorldToggles::battle_poly_frame_cost`), else the state's
+        // measured base plus the draw load the world counts.
+        // A summon module's arms keep their table: their clips' polls and
+        // the engine's linked count part from retail's frames there (the
+        // Seru films read lower priced, `.9146` to `.889` on a partial set).
+        let summon_arm = arm_step.is_some()
+            && (state
+                == legaia_engine_battle_vm::battle_action::ActionState::SummonSustain.as_byte()
+                || state
+                    == legaia_engine_battle_vm::battle_action::ActionState::SummonReturn.as_byte());
+        let poly = self
+            .battle
+            .drawn_polys
+            .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
+        let work = match poly {
+            Some(p) => polygon_frame_work(p),
+            None => measured_frame_cost_at(self.party.party_count, state, passes)
+                .saturating_add(self.battle_frame_load_cost()),
+        };
+        self.battle.frame_work = work;
         // An XA clip's read span: the frame runs on the CD interrupt path
         // (`FUN_8005DAB0`) once the stream is up.
-        let loaded = xa_passes.map(|n| {
-            legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
+        let loaded = xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing) {
+            // The frame's own work under the stop watch's polls, a band
+            // module's line as the funnel's: the polls run for every clip the
+            // player starts (`FUN_8003D764`), so a frame's span under one is
+            // its work over the share they leave.
+            (Some(_), CdTiming::PcsxRedux) => match n {
+                0 => work,
+                1 => work.saturating_add(XA_STREAM_ONSET_COST),
+                _ => xa_polled_work_cost(work),
+            },
+            _ => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
                 n,
                 work,
                 self.toggles.battle_cd_timing,
                 self.toggles.battle_frame_span_law && self.audio.battle_xa_poll_load,
-            )
+            ),
         });
-        let cost = arm_step.map_or(loaded.unwrap_or(work), cost_of_step);
+        // An arm table's step stands in for a cost the world cannot price;
+        // a priced frame needs no stand-in.
+        let cost = match (arm_step, poly) {
+            (Some(step), None) => cost_of_step(step),
+            _ => loaded.unwrap_or(work),
+        };
         let cost = match self.battle.drawn_table_cost {
             Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
             _ => cost,
@@ -74,11 +110,24 @@ impl World {
         // A capture-band module's own line leaves its arms their table's
         // length: retail's frames under one run anywhere from inside the step
         // (Death Game, four vsyncs a step-`4` frame) to eight (Kiss of Death),
-        // which no one share of a table cost reads.
-        match arm_step {
-            None => cost,
-            Some(_) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
-            Some(_) => 0,
+        // which no one share of a table cost reads. A priced frame reads them.
+        match (arm_step, poly) {
+            (None, _) | (Some(_), Some(_)) => cost,
+            (Some(_), None) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
+            (Some(_), None) => 0,
+        }
+    }
+
+    /// Note the polygons the battle frame the host just drew links (its
+    /// scene draws through their view and `NCLIP` word and its screen
+    /// primitives, `legaia_engine_system::gpu_draw_cost::TableCost::polys`).
+    /// The next pass prices its work from it while
+    /// `WorldToggles::battle_poly_frame_cost` is up
+    /// ([`polygon_frame_work`](legaia_engine_battle_loop::frame_clock::polygon_frame_work)).
+    /// A no-op outside a battle.
+    pub fn note_drawn_polys(&mut self, polys: u32) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.drawn_polys = Some(polys);
         }
     }
 
@@ -416,14 +465,24 @@ impl World {
                     self.toggles.battle_cd_timing,
                 )
             });
+        // The pass of the arm this one runs, counted from the arm's first.
+        let phase = self.casting.module_phase;
+        let arm_pass = match self.battle.cast_arm_pass {
+            Some((s, p, n)) if s == state && p == phase => n.saturating_add(1),
+            _ => 0,
+        };
+        self.battle.cast_arm_pass = Some((state, phase, arm_pass));
         let measured = measured.or_else(|| {
             let spell = self
                 .casting
                 .capture_spell
                 .filter(|_| state == S::MagicCapturePhase2.as_byte())?;
-            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
+            // A capture arm whose own line stops loading the frame partway
+            // runs its own cost from there (Kiss of Death's arm 4).
+            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step_on_pass(
                 spell,
-                self.casting.module_phase,
+                phase,
+                arm_pass,
                 self.toggles.battle_cd_timing,
             )
         });
@@ -651,13 +710,24 @@ impl World {
     /// ([`legaia_engine_battle_loop::frame_clock::RetailRandTrack`]), keyed as
     /// the pairing keys a frame: the action state, and the module phase inside
     /// the bands. A harness seat; with no track the stream runs on.
+    ///
+    /// The summon flash `0x34` is seated as well, on phase `0`: the pass that
+    /// leaves it opens there and runs the module's arm 0, where a verdict
+    /// module draws its roll (PROT 0916's `rand() % (0x11 - level)`,
+    /// [`Self::draw_aluru_verdict`]), so a track that began at `0x35` left
+    /// that draw on the engine's own stream.
     fn seat_retail_rand_word(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
         let state = self.battle_ctx.action_state;
-        let band = state == S::SummonSustain.as_byte()
+        let module_band = state == S::SummonSustain.as_byte()
             || state == S::SummonReturn.as_byte()
             || state == S::MagicCapturePhase2.as_byte();
-        let phase = if band { self.casting.module_phase } else { 0 };
+        let band = module_band || state == S::SummonActorFreeze.as_byte();
+        let phase = if module_band {
+            self.casting.module_phase
+        } else {
+            0
+        };
         if let Some(word) = self
             .battle
             .retail_rand_track
@@ -737,6 +807,9 @@ impl World {
             return false;
         }
         self.battle.sm_pass_frame = Some(frame);
+        let starts = &mut self.battle.frame_start_ticks;
+        starts.rotate_right(1);
+        starts[0] = Some(self.clock.display_frames);
         self.take_pending_frame_step();
         true
     }
@@ -933,6 +1006,12 @@ impl World {
         // What a landing stages here commits on the victim's next node
         // tick, a pass on.
         // PORT: FUN_800480D8 (`0x800480FC..0x80048130`, the cast tick's seat in the pass)
+        //
+        // The effect-pool walker comes first (`jal 0x801E0080` at
+        // `0x80048128`), with the sweeps the mode tick left it.
+        for _ in 0..std::mem::take(&mut self.battle.walker_sweeps_owed) {
+            self.tick_effects();
+        }
         if cast_tick_due {
             self.tick_battle_cast_census();
             self.battle.cast_census_drawn = true;
@@ -1754,6 +1833,29 @@ mod tests {
         assert_eq!(w.battle_backdrop_slot_1_yaw(), 0x1AD3);
     }
 
+    /// A film's rand track seats the summon flash `0x34` on phase `0`: the
+    /// pass that leaves it runs the module's arm 0, which draws a verdict
+    /// module's roll, and the band's own keys count on from it.
+    #[test]
+    fn the_rand_track_seats_the_flash_ahead_of_the_band() {
+        use legaia_engine_battle_loop::frame_clock::RetailRandTrack;
+        let mut w = World::new();
+        w.battle.retail_rand_track = Some(RetailRandTrack::parse("52 0 11\n52 0 12\n53 1 21\n"));
+        w.casting.module_phase = 7;
+        w.battle_ctx.action_state = 0x34;
+        w.seat_retail_rand_word();
+        assert_eq!(
+            w.rng_state, 11,
+            "a stale module phase does not key the flash"
+        );
+        w.seat_retail_rand_word();
+        assert_eq!(w.rng_state, 12);
+        w.battle_ctx.action_state = 0x35;
+        w.casting.module_phase = 1;
+        w.seat_retail_rand_word();
+        assert_eq!(w.rng_state, 21, "the band goes on from the flash's count");
+    }
+
     #[test]
     fn an_xa_read_span_runs_overrunning_step_four_frames_on_pcsx_redux() {
         use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_STREAM_SPAN_EXTRA};
@@ -1886,6 +1988,82 @@ mod tests {
                 XA_STREAM_FRAME_COST.min(0x2BC),
                 "{earlier_cue_passes_back}"
             );
+        }
+    }
+
+    /// A persisting cast frame reads the page of the frame two battle frames
+    /// back by the frames' own starts: twice the running span on even frames,
+    /// and the shorter frame's last vsync when the frame two back ran shorter.
+    #[test]
+    fn a_persisting_frame_reads_the_page_two_frames_back_by_their_starts() {
+        let mut w = World::new();
+        w.battle.frame_clock.step = 4;
+        w.battle.frame_start_ticks = [Some(108), Some(104), Some(100)];
+        w.clock.display_frames = 110;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 8);
+        // A five-vsync frame before last, then two of four.
+        w.battle.frame_start_ticks = [Some(109), Some(105), Some(100)];
+        w.clock.display_frames = 112;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 9);
+        // The frame two back ran four, this one is on its fifth vsync.
+        w.battle.frame_start_ticks = [Some(108), Some(104), Some(100)];
+        w.clock.display_frames = 112;
+        assert_eq!(w.cast_frame_persist_vsyncs(), 9, "that frame's last vsync");
+        w.battle.frame_start_ticks = [None; 3];
+        assert_eq!(w.cast_frame_persist_vsyncs(), 8);
+    }
+
+    /// A priced frame's work is what it links: Tail Flare's flight state
+    /// (`0x2B`) on a full party links some `3900` polygons, which reads the
+    /// step `4` retail's ring holds from the first frame, where the action
+    /// state's table reads `3`.
+    #[test]
+    fn a_priced_frame_costs_the_polygons_it_links() {
+        use legaia_engine_battle_loop::frame_clock::{polygon_frame_work, step_of_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x2B;
+        w.push_frame_cost(None);
+        assert_eq!(step_of_cost(w.battle.frame_cost_ring.newest()), 3);
+        w.note_drawn_polys(3900);
+        w.push_frame_cost(None);
+        assert_eq!(
+            step_of_cost(w.battle.frame_cost_ring.newest()),
+            3,
+            "off: the table"
+        );
+        w.toggles.battle_poly_frame_cost = true;
+        w.push_frame_cost(None);
+        assert_eq!(w.battle.frame_work, polygon_frame_work(3900));
+        assert_eq!(w.battle.frame_cost_step, 4);
+    }
+
+    /// A capture-band module's line loads a priced frame at its work over the
+    /// polls' share, and an arm's table step stands in for nothing: Kiss of
+    /// Death's arm 4 links some `3600` polygons (work `665` on retail's trace,
+    /// eight-vsync frames under the line) and Death Game's arms some `1350`
+    /// (work `241..349`, frames inside their step `4`).
+    #[test]
+    fn a_priced_frame_under_a_band_line_spans_its_work_over_the_polls() {
+        use legaia_engine_battle_loop::frame_clock::{
+            CdTiming, frame_span, polygon_frame_work, xa_polled_work_cost,
+        };
+        for (polys, span) in [(3600u32, 8u8), (1350, 4)] {
+            let mut w = World::new();
+            w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+            w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+            w.toggles.battle_poly_frame_cost = true;
+            w.party.party_count = 3;
+            w.battle_ctx.action_state = 0x70;
+            let mut spans = vec![0u16; 0x60];
+            spans[0x58] = 527;
+            w.audio.xa_cue_durations = Some(spans);
+            w.emit_battle_xa_cue(0x158);
+            w.note_drawn_polys(polys);
+            let cost = w.push_frame_cost(Some(4));
+            assert_eq!(cost, xa_polled_work_cost(polygon_frame_work(polys)));
+            assert_eq!(frame_span(cost, 4), span, "{polys}");
         }
     }
 

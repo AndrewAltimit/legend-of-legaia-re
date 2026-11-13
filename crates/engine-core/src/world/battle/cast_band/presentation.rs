@@ -525,6 +525,20 @@ impl World {
                         } if f == field => Some(b),
                         _ => None,
                     });
+                    // The alpha ramps add the frame step `*(0x1F800393)`,
+                    // which the decoder folds at one vsync, the share of an
+                    // engine tick. A site on the arm's way out runs on the one
+                    // tick that passes, where retail's pass adds the whole
+                    // step: PROT 0946's Big Wave enters arm 6 on
+                    // `alpha += step` (`0x801F70EC..0x801F7100`), so at step
+                    // `4` a fold of `1` left the whole ramp three short.
+                    let d = if field == 0x27A && matches!(timing, SiteTiming::Pass) {
+                        let step = self.battle_frame_step().max(1);
+                        self.casting.module_pres.wash_pass_vsyncs = step;
+                        d * i32::from(step)
+                    } else {
+                        d
+                    };
                     let w = &mut self.casting.module_pres.wash;
                     let v = w.load(field);
                     w.store(field, wash_add(field, v, d, bound));
@@ -584,6 +598,32 @@ impl World {
     /// first frame with no arm clears again (its arm 25 opens on black).
     pub fn cast_frame_persists(&self) -> bool {
         self.cast_armed_wash().is_some()
+    }
+
+    /// How many vsyncs back a persisting frame's page was drawn: retail's
+    /// double buffer builds each frame on the page it drew two battle frames
+    /// before, so two spans of the running frame. A pass under a streaming
+    /// clip spans its step and an overrun vsync, and Genocidal Cannon's arm 6
+    /// runs at span `5`, where a fixed eight vsyncs read a page one frame
+    /// newer than retail's and decayed the arm's white a frame ahead.
+    ///
+    /// The frames before need not have run this one's span: a frame after an
+    /// overrun spans a vsync less than the one before it, and twice its own
+    /// span read the frame *before* last on its closing vsync (Thunder Storm's
+    /// arms 4 to 6 under the span law showed the previous frame's white burst
+    /// there). So the page is found by the frames' own starts
+    /// (`BattleState::frame_start_ticks`): the same vsync of the frame two
+    /// back, or that frame's last when it ran shorter.
+    pub fn cast_frame_persist_vsyncs(&self) -> u64 {
+        let t = self.clock.display_frames;
+        match self.battle.frame_start_ticks {
+            [Some(s0), Some(s1), Some(s2)] if s2 < s1 && s1 <= s0 && s0 <= t => {
+                let into = t - s0;
+                let target = s2 + into.min(s1 - s2 - 1);
+                t - target
+            }
+            _ => 2 * self.battle.frame_clock.span(),
+        }
     }
 
     /// The armed wash as the drain draws it (`FUN_80046978`), for a host that

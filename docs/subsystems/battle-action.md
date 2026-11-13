@@ -401,7 +401,7 @@ Decrements `ctx[+0x6D8]` by the frame step (`0x801E4BCC..0x801E4BDC`; `s7 = ctx 
 
 **Next:** `0x36` once the word reads negative after the stager call; the exit zeroes it (`sh zero,0x2(s7)`, `0x801E4C9C`).
 
-The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto) and 0908 (Zenoir) keep their arm countdown in `ctx[+0x6D8]` itself, so each re-seed from inside the stager call keeps the SM in `0x35`, and the SM's step drain adds to the module's own while it does. Retail's casts leave `0x35` on Theeder's arm 7, Nighto's arm 9 and Zenoir's arm 11, not after the `0x78` frames. Port: `summon_sustain` with the host seam `summon_band_word_in` / `_out`; `World` shares the word with the director's countdown for those three modules (`cast_band/code_run/band_word.rs`).
+The re-read is what holds the band. PROT 0904 (Theeder), 0907 (Nighto), 0908 (Zenoir) and 0916 (Aluru) keep their arm countdown in `ctx[+0x6D8]` itself, so each re-seed from inside the stager call keeps the SM in `0x35`, and the SM's step drain adds to the module's own while it does. Retail's casts leave `0x35` on Theeder's arm 7, Nighto's arm 9, Zenoir's arm 11 and Aluru's arm 5, not after the `0x78` frames. Port: `summon_sustain` with the host seam `summon_band_word_in` / `_out`; `World` shares the word with the director's countdown for those four modules (`cast_band/code_run/band_word.rs`).
 
 #### State `0x36` - Summon - return-from-fade
 

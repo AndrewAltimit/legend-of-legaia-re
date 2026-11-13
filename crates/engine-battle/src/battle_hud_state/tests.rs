@@ -785,3 +785,29 @@ fn target_select_slide_restarts_on_a_new_target_only() {
     hud.sync_target_select(None);
     assert!(hud.target_select.is_none());
 }
+
+/// `FUN_801DF6B8` visits every ring slot from the write cursor on, so four
+/// hits on one actor are four numerals, oldest first; a ninth push overwrites
+/// the oldest and the walk starts after it.
+#[test]
+fn popups_in_ring_order_walk_every_entry_from_the_cursor() {
+    let mut hud = BattleHud::new();
+    for amount in [13, 16, 17, 21] {
+        hud.push_damage(2, amount);
+    }
+    let order: Vec<u16> = hud
+        .popups_in_ring_order()
+        .iter()
+        .map(|p| p.amount)
+        .collect();
+    assert_eq!(order, vec![13, 16, 17, 21]);
+    for amount in 1..=5 {
+        hud.push_damage(3, amount);
+    }
+    let order: Vec<u16> = hud
+        .popups_in_ring_order()
+        .iter()
+        .map(|p| p.amount)
+        .collect();
+    assert_eq!(order, vec![16, 17, 21, 1, 2, 3, 4, 5]);
+}

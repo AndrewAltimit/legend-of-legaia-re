@@ -116,7 +116,7 @@ pub fn stage_battle_world(
         legaia_render_kernels::fog_volume::stage_luminance(&vram, tmd, raw, &objects)
     });
     if let Some(archive) = archive {
-        for (actor_idx, monster_id, slot) in host.world.battle_monster_slots() {
+        for (actor_idx, monster_id, slot) in host.world.battle_monster_texture_slots() {
             let Ok(Some(mesh)) = legaia_actor_formats::monster_archive::mesh(archive, monster_id)
             else {
                 continue;
@@ -155,7 +155,8 @@ pub struct WaveSeat {
     /// The actor slot it holds.
     pub actor: usize,
     pub monster_id: u16,
-    /// Its battle texture slot: the monster seat, as at the battle's entry.
+    /// Its battle texture slot: its species' slot when one is seated, else
+    /// the lowest free one (`wave_texture_slot`).
     pub tex_slot: u8,
 }
 
@@ -178,9 +179,10 @@ pub fn stage_wave_monsters(host: &mut SceneHost, archive: Option<&[u8]>) -> Vec<
     let seated = host.world.battle_monster_slots();
     let mut out = Vec::new();
     for slot in slots {
-        let Some(&(actor, monster_id, tex_slot)) = seated.iter().find(|s| s.0 == slot) else {
+        let Some(&(actor, monster_id, _)) = seated.iter().find(|s| s.0 == slot) else {
             continue;
         };
+        let tex_slot = wave_texture_slot(&host.world, actor, monster_id);
         let idle = archive.and_then(|a| {
             legaia_actor_formats::monster_archive::idle_animation(a, monster_id)
                 .ok()
@@ -195,6 +197,28 @@ pub fn stage_wave_monsters(host: &mut SceneHost, archive: Option<&[u8]>) -> Vec<
         });
     }
     out
+}
+
+/// The texture slot a wave's new monster takes: the slot its species
+/// already holds in this fight, else the lowest slot no other seated monster
+/// holds. Entry slots follow retail's loader (the rank of each distinct id,
+/// `World::battle_monster_texture_slots`), so the seat - the rule the waves
+/// used to share with the entry - can land on a slot another species is
+/// drawing from.
+fn wave_texture_slot(world: &legaia_engine_core::world::World, actor: usize, id: u16) -> u8 {
+    let others = || {
+        world
+            .battle_monster_slots()
+            .into_iter()
+            .filter(move |&(a, _, _)| a != actor)
+            .filter_map(|(a, other, _)| Some((other, world.actors.get(a)?.battle_tex_slot?)))
+    };
+    if let Some((_, slot)) = others().find(|&(other, _)| other == id) {
+        return slot;
+    }
+    (0u8..)
+        .find(|s| others().all(|(_, t)| t != *s))
+        .unwrap_or(0)
 }
 
 /// The `summon.dat` actor-record byte the seat installer `FUN_801F19EC`

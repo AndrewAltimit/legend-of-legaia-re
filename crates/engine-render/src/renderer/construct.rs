@@ -252,6 +252,7 @@ impl Renderer {
             frame_persist: std::cell::Cell::new(false),
             frame_ring_keep: std::cell::Cell::new(false),
             frame_ring: std::cell::RefCell::new(Vec::new()),
+            frame_persist_depth: std::cell::Cell::new(super::native_target::FRAME_PERSIST_VSYNCS),
             frame_ring_next: std::cell::Cell::new(0),
             native: None,
             psx_texel_rule: std::cell::Cell::new(PsxTexelRule::Gpu),

@@ -68,6 +68,13 @@ pub struct InlineDialogue {
     /// ending, so prologue execution is never worse than the truncated path.
     /// Consumed (set to `None`) the first time a box opens or the fallback fires.
     pub fallback_segment_pc: Option<usize>,
+    /// The run resumed the cursor an earlier talk left (retail `actor[+0x9E]`,
+    /// [`crate::man_field_scripts::InlineDialogPrologue::resume`]), so an
+    /// executed raw `0x21` or a non-text terminator before the first box ends
+    /// the talk, as the dialog SM ends it, instead of taking
+    /// [`Self::fallback_segment_pc`]. The fallback slot itself stays armed:
+    /// the spin rules read it as "no box has opened yet".
+    pub resumed: bool,
     /// The field-NPC placement slot this interaction record belongs to, when
     /// known (set by the interact dispatch). The world's step loop exposes it
     /// to the field-VM host so the prologue's `0x4C 0x51` NPC-run ops can
@@ -399,6 +406,7 @@ impl InlineDialogue {
             done: false,
             last_choice: None,
             fallback_segment_pc: None,
+            resumed: false,
             npc_slot: None,
             prop_anchor: None,
             park_frames: 0,
@@ -437,6 +445,7 @@ impl InlineDialogue {
             done: false,
             last_choice: None,
             fallback_segment_pc: Some(first_segment),
+            resumed: false,
             npc_slot: None,
             prop_anchor: None,
             park_frames: 0,

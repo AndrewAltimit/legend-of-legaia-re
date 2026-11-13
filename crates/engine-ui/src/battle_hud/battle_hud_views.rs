@@ -760,6 +760,76 @@ mod ink_tests {
         assert_eq!(x_of("Dark Eclipse", true, LabelPen::At(0x70)) - pinned, 6);
     }
 
+    /// A figure that overruns its field covers the row's `/`: the separator
+    /// goes down ahead of the figures, as retail's panel chain sprite does
+    /// under its number records (Horn's arm `0xB`, a wrapped `65363 / 27`).
+    #[test]
+    fn an_overrunning_figure_is_drawn_over_the_separator() {
+        let font = legaia_font::synthetic_for_tests();
+        let separator = (96, 64, 8, 16);
+        let rects = crate::SaveMenuAtlasRects {
+            battle: Some(crate::BattleChromeRects {
+                panel_bg: (0, 0, 102, 48),
+                plate_cap_l: (0, 400, 8, 20),
+                plate_body: (8, 400, 16, 20),
+                plate_cap_r: (24, 400, 8, 20),
+                separator,
+                digits: Some((0, 300, 80, 12)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let slot = HudSlotView {
+            name: "Vahn",
+            is_party: true,
+            alive: true,
+            hp: 221,
+            hp_max: 221,
+            mp: 65363,
+            mp_max: 27,
+            ap_filled: 0,
+            ap_max: 0,
+            hp_fill: 7,
+            mp_fill: 7,
+            status_sprite: 0,
+            level: 2,
+            hidden_readout: false,
+        };
+        let slots = [slot];
+        for bar in [false, true] {
+            let d = battle_hud_draws_for(
+                &font,
+                &BattleHudFrame {
+                    surface: (320, 240),
+                    slots: &slots,
+                    chrome: Some(&rects),
+                    active_slot: bar.then_some(0),
+                    ..Default::default()
+                },
+                (0, 0),
+            );
+            let mut seps = 0;
+            for (i, sep) in d
+                .sprites
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.src == separator)
+            {
+                seps += 1;
+                let (sx, sy) = (sep.dst.0, sep.dst.1);
+                // Any digit cell sharing the slash's columns on its row
+                // (the numerals sit four rows under it) comes later.
+                for (j, dg) in d.sprites.iter().enumerate() {
+                    let on_row = dg.src.1 == 300 && dg.dst.1 == sy + 4;
+                    if on_row && dg.dst.0 < sx + 8 && dg.dst.0 + 8 > sx {
+                        assert!(j > i, "bar {bar}: digit {j} under separator {i}");
+                    }
+                }
+            }
+            assert_eq!(seps, 2, "bar {bar}: an HP and an MP separator");
+        }
+    }
+
     /// Every caption the battle builder lays out - the actor plaque and the
     /// move name here - carries the tier-7 ink, not white.
     #[test]
