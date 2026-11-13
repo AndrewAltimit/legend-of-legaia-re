@@ -4725,7 +4725,14 @@ One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
 armed pass, with the terminator still to come (`case6_walk_passes`'s
 `shot_passes`). `battle_kor_gaza_166_astral_wave_mid_cast` is that case, and its
 ring reads step `3` under a newest `4`, so the walk comes off the ring and not
-off the newest step.
+off the newest step. Its earlier actor is party seat `1`'s Spirit on style `2`
+(pitch `0x80`, TR y `0x400`): the plain start leaves the walk at pitch `0`, and
+the frame reads the whole 3D layer a pixel left and two up of the engine's with
+the HUD in place (`.937`); off the style-`2` start the walk lands on pitch `9`,
+TR y `1262` and the frame reads `.985` at yaw `438`. The shift is not the
+screen offset: the state's GTE holds `OFX = 160`, `OFY = 114`, and nothing but
+`SetGeomOffset` writes them (no `ctc2` to registers `24` / `25` in any
+overlay or PROT entry).
 
 Three inputs are not in the RAM. `FUN_801DABA4` picks the highest key among ties
 by `rand()` and zeroes spent keys, so it leaves no battle order behind; the

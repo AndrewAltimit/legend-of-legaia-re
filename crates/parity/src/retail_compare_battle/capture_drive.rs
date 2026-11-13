@@ -2335,11 +2335,13 @@ const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
         // One `0x2B` pass in on a step that has just gone to `4`. The seed's
         // arm read the caster's old heading, which took the yaw down from the
-        // Spirit's framing rather than up across the wrap.
+        // Spirit's framing rather than up across the wrap. That Spirit framed
+        // on style `2`: off the plain start the walk ends at pitch `0` and the
+        // whole 3D layer reads a pixel right and two down of retail's.
         "battle_kor_gaza_166_astral_wave_mid_cast",
         DisplayedWalkPin {
-            style: 0,
-            yaw: Some(440),
+            style: 2,
+            yaw: Some(438),
         },
     ),
     (
