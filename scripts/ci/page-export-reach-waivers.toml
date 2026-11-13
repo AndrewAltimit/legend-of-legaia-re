@@ -10,7 +10,6 @@
 kind = "probe"
 reason = "Read-only state the Rust oracles (crates/web-play/tests, engine-shell host_frame_parity) and headless drivers sample; the page draws the same state from its draw-list exports."
 names = [
-    "active_party_json",
     "boot_continue_is_open",
     "boot_logos_is_active",
     "boot_title_attract_skips",
