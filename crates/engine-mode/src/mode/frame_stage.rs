@@ -301,6 +301,10 @@ pub enum FramePass {
 /// renderer's (`World::tick`).
 ///
 /// PORT: FUN_80016444
+///
+/// REPLACED-BY: `World::tick`'s actor loops for the tick passes and each
+/// host renderer's frame for the render passes and the flip; this plan is the
+/// pass order the `mode_frame` differential pins.
 pub fn master_frame_plan(i: MasterFrameInputs) -> Vec<FramePass> {
     let h = ACTOR_LIST_HEADS;
     let lists = if i.mirror {
