@@ -3797,9 +3797,10 @@ A part's op `0x20` reaches a module's stager. A charge record whose whole progra
 that call draws nothing itself: PROT 0942's Power Up glow and PROT 0941's column come
 from `FUN_801F8118` and `FUN_801F7DB0`, not from the record the arm seats. The table at
 `0x801F6734` names one stager per image; `enemy_cast_stager_spawns` carries PROT 0935,
-0941, 0942, 0951 and 0964. PROT 0936, 0937, 0943, 0945, 0950, 0953, 0955, 0956, 0957,
-0958 and 0963 hold stagers of the same shape that do not run yet, and their parts' calls
-are dropped (`World::runs_part_stager_calls`).
+0941, 0942, 0951 and 0964, and `blazing_slash_stager_spawns` carries PROT 0958's
+([Blazing Slash](#prot-0958-blazing-slash)). PROT 0936, 0937, 0943, 0945, 0950, 0953,
+0955, 0956, 0957 and 0963 hold stagers of the same shape that do not run yet, and their
+parts' calls are dropped (`World::runs_part_stager_calls`).
 
 ### PROT 0948 (Cross Beam)
 
@@ -4761,6 +4762,18 @@ stages, zeroes `ctx[+0x6DA]` and cuts to the hand-back framing.
 Records: arm 0 `0x801F8EB8`, arm 5 `0x801F9164`, arms 9 / 12 / 15
 `0x801F91EC` / `0x801F9260` / `0x801F92D4`, arm 21 `0x801F9164` and
 `0x801F9348`, all on the caster's live trio; arms 4, 6 and 22 flush.
+
+The flames under the caster are the stager's (`FUN_801F8D30`,
+`blazing_slash_stager_spawns`), paced by two emitters. `0x801F8EB8` calls arm 0
+thirty-one times, eleven vsyncs apart, and each call seats the cone pair
+`0x801F8ED4` / `0x801F8F30`, which rises and dies inside `38` vsyncs, so four
+pairs stand at staggered levels through arms 1..4. `0x801F9164` calls arm 2
+once (five flame rows and the ring `0x801F9188`) and then arm 1 thirty-one
+times (the ring alone). Seated whole at the pager, as the port once did, one
+cone pair and the rows grew unchecked through arm 4; a retail `--retail-parts`
+film holds the staggered pairs. On `--retail-steps --rand-track` arms 1..4 read
+`.976..990` for `.765..857`, arm 6 `.965` for `.836` and arm 22 `.862` for
+`.623`. The stager differential seats what retail seats on every arm.
 
 The six `FUN_801DD6B4` sites are the module's own hits, one shape each
 (`0x801F74EC`, `0x801F7854`, `0x801F7CA4`, `0x801F80E4`, `0x801F8754`,
