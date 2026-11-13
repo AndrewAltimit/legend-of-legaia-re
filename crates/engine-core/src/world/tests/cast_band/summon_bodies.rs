@@ -440,11 +440,11 @@ fn horn_hides_and_shows_the_party_around_the_heal() {
     run_arm(&mut world, 8);
     assert_eq!(world.actors[0].battle.render_flag, RENDER_FLAG_HIDDEN);
     assert!(world.battle_body_hidden(0));
-    assert!(world.battle.module_panels_glide.is_none());
+    assert!(world.battle.action_panels_glide.is_none());
     run_arm(&mut world, 0xA);
     // The heal's pass raises the roster panels its tally reads on
     // (`FUN_801D8DE8(6, 0)` at `0x801F7BF8`).
-    assert!(world.battle.module_panels_glide.is_some());
+    assert!(world.battle.action_panels_glide.is_some());
     assert_eq!(world.actors[0].battle.render_flag, 0);
     assert!(!world.battle_body_hidden(0));
     assert!(!world.battle_body_hidden(9), "the creature stays lit");
