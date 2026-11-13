@@ -373,6 +373,13 @@ impl LegaiaRuntime {
             return 0;
         }
         let sfx_voices: Vec<u8> = (SUSTAINED_BASE_VOICE..=ONE_SHOT_TOP_VOICE).collect();
+        // A relaunch abandoned the previous fight, maybe mid-cast: its CD-XA
+        // line (a summon's theme runs for tens of seconds) must not sound on
+        // over the new one.
+        if let Some(d) = self.scene_host.director_mut() {
+            use legaia_engine_audio::AudioSink;
+            d.audio().stop_xa();
+        }
         let mut ticks = 0;
         while ticks < max_ticks && self.debug_inflight_pending() {
             if let Err(e) = self.frame_ticks(1, 0, 0) {

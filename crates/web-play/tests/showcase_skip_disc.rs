@@ -16,7 +16,8 @@
 //! 3. **A cast's round is the cast.** The lead casts alone, every monster's
 //!    HP is floored as the art seed floors it, and a level-99 spell that
 //!    would win the fight leaves it standing at the next prompt instead.
-//! 4. **Every character and the casts start.** Each of a sample of arts per
+//! 4. **A relaunch mid-summon** does not wait on the abandoned line.
+//! 5. **Every character and the casts start.** Each of a sample of arts per
 //!    character, Seru casts and a Ra-Seru summon dispatches inside the cap,
 //!    from a neutral formation, and its first seconds tick without a trap.
 //!
@@ -210,4 +211,50 @@ fn showcase_cast_round_is_the_cast_and_the_fight_stands() {
         );
         eprintln!("[showcase] cast {spell:#04x}: the fight stands at the next prompt");
     }
+}
+
+/// Ozma's line runs on long after the page's next click; the relaunch
+/// abandons that fight mid-cast. Its CD-XA drive word used to ride into the
+/// next fight and hold that cast in `QueuedFromMenu` until the old line would
+/// have ended (about 1270 ticks for a Gimard clicked 1500 ticks into Ozma).
+#[test]
+fn showcase_relaunch_mid_summon_casts_without_waiting_on_the_old_line() {
+    let Some(mut rt) = disc_runtime() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    launch(&mut rt, &Action::Cast(0xA0));
+    assert!(rt.debug_run_to_inflight(CAP) > 0);
+    for _ in 0..1500 {
+        rt.frame_ticks(1, 0, 0).expect("tick");
+    }
+    assert!(
+        rt.scene_host
+            .host()
+            .expect("host")
+            .world
+            .cast_module_resident(),
+        "Ozma's cast is no longer running at the relaunch: the case is vacuous"
+    );
+    launch(&mut rt, &Action::Cast(0x81));
+    assert!(rt.debug_run_to_inflight(CAP) > 0);
+    let mut resident = None;
+    for i in 0..600 {
+        rt.frame_ticks(1, 0, 0).expect("tick");
+        if rt
+            .scene_host
+            .host()
+            .expect("host")
+            .world
+            .cast_module_resident()
+        {
+            resident = Some(i);
+            break;
+        }
+    }
+    eprintln!("[showcase] Gimard after Ozma: module resident at tick {resident:?}");
+    assert!(
+        resident.is_some_and(|t| t < 200),
+        "Gimard's module waited {resident:?} ticks behind Ozma's abandoned line"
+    );
 }

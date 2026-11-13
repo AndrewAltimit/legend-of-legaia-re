@@ -1361,6 +1361,18 @@ the mix, so the track starts on the first mixed block. The off-screen run takes
 about three hundred ticks and a few tens of milliseconds, and the page resets its
 sim clock afterwards, so the skipped time is not drained as catch-up ticks.
 
+A showcase cast's round holds only the cast, as an art's does. The magic page
+seats the lead alone (`set_active_party_spec`, as the arts page seats its
+character), so no party member acts after the cast. Once the seed dispatches,
+every monster's HP is floored to the art seed's level
+(`World::floor_showcase_monster_hp`), so a level-99 spell does not win the fight
+and drop the page back to the field. The fight then answers with the monsters'
+turn and idles at the next prompt. A relaunch abandons the previous fight
+(`World::abandon_live_battle`), possibly mid-cast. The abandon drops that fight's
+CD-XA drive state, and the skip stops its clip. Otherwise a summon's
+still-running line held the next cast's side-band read for the rest of the line,
+which left a blank of tens of seconds after a second click during Ozma.
+
 The slot holds at most one engine. The view toggle remembers its choice per page
 (`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and
 tears the frame down when the model view is shown, so the two views do not both

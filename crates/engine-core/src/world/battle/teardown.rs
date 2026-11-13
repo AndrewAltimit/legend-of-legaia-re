@@ -432,6 +432,19 @@ impl World {
         self.audio.battle_shout_cues.clear();
         self.audio.battle_bgm_active = false;
         self.audio.field_bgm_resume = None;
+        // The fight's CD-XA clip goes with it. Its drive word gates the next
+        // fight's side-band reads (`tick_sideband_token`) and is counted down
+        // only by battle ticks, so a clip cut off mid-cast - a showcase
+        // relaunch abandoning a summon's line - held the next fight's cast in
+        // `QueuedFromMenu` for the rest of that line, tens of seconds. Retail
+        // has no abandon; its exit's stream loads stop the drive
+        // (`FUN_8003ED04`), which is what this models.
+        self.audio.battle_xa_busy_frames = 0;
+        self.audio.battle_xa_load_frames = 0;
+        self.audio.battle_xa_frame_load = false;
+        self.audio.battle_xa_poll_load = false;
+        self.audio.battle_xa_cue_frame = None;
+        self.casting.sideband_read_left = None;
         self.presentation.fade = None;
         self.presentation.module_fades.clear();
         self.presentation.module_fades_next_pass.clear();
