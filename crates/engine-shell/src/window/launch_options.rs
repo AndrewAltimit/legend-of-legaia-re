@@ -246,6 +246,16 @@ pub struct ScreenshotConfig {
     /// capture's gate opens ([`legaia_engine_capture::strike_deal`]). Set by the
     /// cast-sequence oracle; `None` in play.
     pub strike_deal: Option<legaia_engine_capture::strike_deal::StrikeDeal>,
+    /// `LEGAIA_FILM_GUARD`: the party stance a film's recording held at its
+    /// cast begin, stood exactly when the capture's gate opens
+    /// ([`legaia_engine_capture::strike_deal::stand_film_guard`]). Set by the
+    /// cast-sequence oracle; `None` in play.
+    pub film_guard: Option<[bool; 3]>,
+    /// `LEGAIA_FILM_RAND=<seed>`: the BIOS `rand()` seed word `0x80009010` the
+    /// film's state held, stood on the world stream when the capture's gate
+    /// (the state's instant) opens. Set by the cast-sequence oracle; `None`
+    /// in play.
+    pub film_rand: Option<u32>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -1123,6 +1133,12 @@ impl ScreenshotConfig {
                     }
                     d
                 }),
+            film_guard: std::env::var("LEGAIA_FILM_GUARD")
+                .ok()
+                .map(|v| legaia_engine_capture::strike_deal::film_guard_from_env(&v)),
+            film_rand: std::env::var("LEGAIA_FILM_RAND")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

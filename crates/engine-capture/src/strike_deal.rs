@@ -101,6 +101,35 @@ fn stand_dealt_guard(world: &mut World) {
     }
 }
 
+/// `LEGAIA_FILM_GUARD=seat[,seat..]`: the party seats a film's recording held
+/// in the Spirit stance (`+0x1DE == 4`) when its cast began, the stance every
+/// other seat is taken out of; `-` or an empty list is a party out of it. A
+/// malformed seat is ignored.
+pub fn film_guard_from_env(v: &str) -> [bool; 3] {
+    let mut seats = [false; 3];
+    for s in v.split(',').filter_map(|t| t.trim().parse::<usize>().ok()) {
+        if let Some(g) = seats.get_mut(s) {
+            *g = true;
+        }
+    }
+    seats
+}
+
+/// Stand the party in exactly the recording's stance (`LEGAIA_FILM_GUARD`).
+///
+/// A `--physical` film keeps the state's drive, and the drive commits Spirit
+/// for every member while a monster casts (`BattleDrive::Action`), so the
+/// cast's victims stood guarded whatever retail's party held: Gilium's
+/// Thunder Storm from `battle_chitei2_gilium_thunder_storm_mid_cast` landed
+/// `148` / `235` / `148` on a guarded party where retail's unguarded one took
+/// `583` / `745` / `544`. The wrappers double the defender roll on the stance
+/// and the finisher halves the hit (`0x801EC6C0..0x801EC6D4`), so the stance
+/// is as much the hit's input as the seed word. A harness seat: a play host
+/// never sets it.
+pub fn stand_film_guard(world: &mut World, seats: [bool; 3]) {
+    world.battle.guarding = seats;
+}
+
 /// Arm the hit words alone: the deal of a cast whose hits are the melee
 /// kernel's (PROT 0952's Astral Slash lands Gaza's clip `0x0A` through
 /// `FUN_801EC3E4`), where the capture's drive holds no strike hand to stand
@@ -185,6 +214,18 @@ mod tests {
         stand_dealt_guard(&mut world);
         // A seat the replay put on Spirit itself keeps it.
         assert_eq!(world.battle.guarding, [true, true, true]);
+    }
+
+    #[test]
+    fn the_film_guard_stands_exactly_the_recorded_stance() {
+        let mut world = World::new();
+        // The drive committed Spirit for the whole party; retail's held none.
+        world.battle.guarding = [true, true, true];
+        stand_film_guard(&mut world, film_guard_from_env("-"));
+        assert_eq!(world.battle.guarding, [false, false, false]);
+        stand_film_guard(&mut world, film_guard_from_env("0,2,9,x"));
+        assert_eq!(world.battle.guarding, [true, false, true]);
+        assert_eq!(film_guard_from_env(""), [false; 3]);
     }
 
     #[test]

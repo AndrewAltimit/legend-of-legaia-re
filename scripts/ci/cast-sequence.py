@@ -476,6 +476,20 @@ def state_body_cursors(out: Path) -> str | None:
     return ",".join(seeds) or None
 
 
+def state_rand_word(out: Path) -> int | None:
+    """The BIOS `rand()` seed word `0x80009010` in the state's own RAM, for a
+    `--physical` film's `LEGAIA_FILM_RAND`. The film's gate tick is the
+    state's instant, but the replay reached it on its own draws, so every
+    roll past it - a cast's scatter, a strike's block roll - drew another
+    stream than the recording's. Seated on the state's word at the gate the
+    two streams leave the state's instant together. A harness seat."""
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    ram = state_ram(manifest.get("sstate", ""))
+    if ram is None:
+        return None
+    return ram_u32(ram, 0x80009010)
+
+
 def state_strike_queue(out: Path) -> str | None:
     """The acting monster's committed queue `+0x1DF..+0x1EE` in the state's
     own RAM, as the drive's `q` field, for a `--physical` film of a monster
@@ -525,6 +539,25 @@ def engine_guard(a, out: Path, done: dict) -> str:
     elif seats:
         print(f"[engine] guard {seats} from the state's +0x1DE (recording predates guard=)")
     return seats or ""
+
+
+def physical_film_guard(a, out: Path, done: dict) -> str | None:
+    """The stance a `--physical` film stands its party in at the gate
+    (`LEGAIA_FILM_GUARD`), exactly: a member out of it included. The film
+    keeps the state's drive, which commits Spirit for the whole party while a
+    monster casts (`BattleDrive::Action`), so without it the cast's victims
+    stood guarded whatever retail's party held:
+    `battle_chitei2_gilium_thunder_storm_mid_cast` landed `147` / `157` /
+    `130` where retail's unguarded party took `583` / `745` / `544`.
+    `--guard` wins, then the recording's `guard=` (the stance at cast begin),
+    then the state's own `+0x1DE` - the gate is the state's instant. `None`
+    when none can be read. A harness seat."""
+    if a.guard:
+        return "" if a.guard == "-" else a.guard
+    if "guard" in done:
+        return done["guard"]
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    return state_guard_seats(manifest.get("sstate", ""))
 
 
 def retail_opening_cursor(out: Path, first_row: bool = False) -> str | None:
@@ -837,6 +870,8 @@ def run_engine(a, out: Path) -> bool:
     })
     if guard := engine_guard(a, out, done):
         env["LEGAIA_BATTLE_GUARD"] = guard
+    if a.physical and (film_guard := physical_film_guard(a, out, done)) is not None:
+        env["LEGAIA_FILM_GUARD"] = film_guard or "-"
     if a.learned and caster < 3:
         env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
     if (cast_hp := retail_cast_hp(out, done)) and env.get("LEGAIA_BATTLE_BARS"):
@@ -856,6 +891,8 @@ def run_engine(a, out: Path) -> bool:
                 f[1] = str(a.monster_hp)
             return ":".join(f)
         env["LEGAIA_BATTLE_BARS"] = ",".join(raised(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
+    if a.physical and not (a.rand_at or a.rand_track or a.no_state_rand) and (w := state_rand_word(out)) is not None:
+        env["LEGAIA_FILM_RAND"] = str(w)
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -1080,6 +1117,9 @@ def main() -> int:
     ap.add_argument("--guard", default="", metavar="SEATS",
                     help="engine: party seats in the Spirit stance at the cast (comma list, `-` = none; "
                          "default: the recording's guard=, retail's +0x1DE == 4 at cast begin)")
+    ap.add_argument("--no-state-rand", action="store_true",
+                    help="--physical: leave the world rand() stream on the replay's own draws at the gate "
+                         "(default: the state's seed word 0x80009010, LEGAIA_FILM_RAND)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
