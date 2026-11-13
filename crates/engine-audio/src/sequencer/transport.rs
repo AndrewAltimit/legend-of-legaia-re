@@ -35,6 +35,7 @@ impl Sequencer {
             loop_repeats: 0,
             pending_loop_forever: false,
             staged_voices: 0,
+            external_staged: 0,
             last_flush_staged: 0,
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),

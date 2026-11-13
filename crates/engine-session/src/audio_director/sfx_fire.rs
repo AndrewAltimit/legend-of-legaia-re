@@ -612,13 +612,17 @@ impl<S: AudioSink> AudioDirector<S> {
                     });
                 }
                 EmitterOp::Volume { left, right, .. } => {
-                    let voices: Vec<_> = voices.collect();
+                    let mut mask = 0u32;
                     self.audio.with_spu(|spu| {
                         for (v, _) in voices {
                             spu.voices[v].vol_left = left as i16;
                             spu.voices[v].vol_right = right as i16;
+                            mask |= 1 << v;
                         }
                     });
+                    // The write rides the score's next flush, ahead of its KON.
+                    // REF: FUN_800657D0
+                    self.audio.stage_bgm_volume_writes(mask);
                 }
                 EmitterOp::Release { .. } => {
                     let stop: Vec<u8> = voices.map(|(v, _)| v as u8).collect();

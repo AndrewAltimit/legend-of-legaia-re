@@ -131,7 +131,8 @@ clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
 `FUN_8001DCF8`). The first tick in range keys the descriptor's voices through
 `FUN_80065034` with that volume `>> 7`; every later tick writes it straight to
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
-the key-on chain; leaving the box, or the side-band request going unsettled,
+the key-on chain, and the write goes out in the score's flush, ahead of its key-ons
+([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)); leaving the box, or the side-band request going unsettled,
 releases them (`FUN_800250D4`). The arm keys only in the field mode and
 behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
 `World::tick_ambient_fx` with the focus the camera stored
@@ -3576,23 +3577,51 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
 | `minigame_baka_fighter` | | `0.9972` | `-23` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and [the keying differential](#the-keying-differential) has these keyed alike, so the fit is locking on that tone's period |
-| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
+| `rimelm_wall_press_left` | | `0.936` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
+| `door_warp_town01_to_map01` | | `0.9992` | `-29` dB | `0.00` dB | |
+| `keikoku_chest_open` | | `0.9987` | `-26` dB | `0.00` dB | |
+| `karisto_overworld_resident` | | `0.9981` | `-24` dB | `0.00` dB | |
+| `menu_status_field` | | `0.9991` | `-28` dB | `0.00` dB | |
+| `name_input_ui` | | `0.9992` | `-28` dB | `0.00` dB | |
+| `noa_levelup_field_post` | | `0.9994` | `-29` dB | `0.00` dB | |
+| `ending_vignette_biron` | | `0.9995` | `-30` dB | `+0.01` dB | `2068` on the ending source |
+| `v0_1_battle_command_menu` | | `0.9997` | `-32` dB | `0.00` dB | a fight's command menu |
 | `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | the cast's CD-XA voice, which this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window. The [`cast` channel](#the-cast-channel) renders it |
+
+The other mednafen states the channel was run over stay out of it, each for a reason the score does
+not carry. `rim_elm_zoom_intro`, `vahn_walks_out` and `minigame_dance_noa` stand before their
+score's first event (cursor on event `0`, no wait), where no pass of the render is the state's;
+`minigame_muscle_dome` holds no open sequence. `rim_elm_gimard_seru_capture_before`,
+`ending_vignette_rimelm_walkaway` and `noa_levelup_fight_pre` read `0.99` to `1.00` second by
+second until their script stops or changes the score (`15`, `12` and `17` s in), which this channel
+does not run. `battle_gimard_tail_fire_a`, `player_steal_skeleton_pre`, `evil_medallion_rage_battle`
+and `zora_glare_petrify_pre` read `0.991` to `0.999` with `+0.6` to `+3.5` dB of their own cues in
+the recording.
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
 **`emitter`** (`--cue-voices`), mixes the track with the state's cue voices resumed from its SPU
-(voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
-level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
-window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
-windows and near `-11` dB in others, and the split is the score's, not the river's: in each
-second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after the first second
-while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
-against the resumed SPU, river included
-([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
+(voice records owned `0x21`: voices 16..18 here, nothing else stood up). An offset scan between
+the two halves has its best residual at `0` in every window, so the river is right to the sample.
+
+What the river does to the score is its flush: the emitter's voices delay the score's key-ons
+([an emitter's level rides the score's flush](#an-emitters-level-rides-the-scores-flush)). With
+that in the render the channel reads:
+
+| State | Track | `emitter` corr | Level |
+|---|---|---|---|
+| `rimelm_wall_press_left` | `2016` | `0.997` | `+0.01` dB |
+| `rimelm_wall_press_down` | `2016` | `0.998` | `+0.01` dB |
+| `rimelm_npc_press_tetsu` | `2016` | `0.997` | `+0.01` dB |
+| `v0_1_post_battle_tetsu_town` | `2016` | `0.998` | `+0.00` dB |
+| `v0_1_pre_battle_tetsu` | `2016` | `0.998` | `+0.01` dB |
+
+The same track reads `0.999` in `mei_house_inside` and `menu_status_town`, where no emitter
+sounds. The plain `track` rows of these states keep the river's energy (`0.78` to `0.98`,
+`+0.2` to `+1.7` dB): they guard the score's place, not its sound.
 
 <a id="the-cast-channel"></a>
 **The cast channel.** A battle state mid-cast keeps sounding what the cast keys after its instant:
@@ -3932,6 +3961,27 @@ staged-voice mask, at the recordings' `1.2` (the emulator-specific cycle cost of
 fitted number here, and the score is against mednafen). The port does not add the `7.4` itself: it
 moves all music alike against nothing the port keys it to. A cue keys as the port's frame reaches it,
 outside this flush, and takes the fixed delay alone.
+
+<a id="an-emitters-level-rides-the-scores-flush"></a>
+**An emitter's level rides the score's flush.** A positional emitter re-volumes its voices every
+part tick through `FUN_800657D0`, which stores the pair in the voice's shadow registers and raises
+its flag (`0x801CE060[v] |= 3`, `0x80065800..0x8006582C`); the flush's per-voice loop
+(`0x80065E0C..0x80065F34`) calls `FUN_8006C048` for every flagged voice, the score's or not, and
+writes the KON after it. So under Rim Elm's river every key-on of the score on the frame's flush
+trails by the river's three voices as well. The field runs at frame step `2` (`0x1F800393`), so
+the writes land on every second flush, and which one is fixed by the main loop that started the
+score: over five recordings under the river, staging them on every second calc from the score's
+first reads `0.997..0.998`, the other phase `0.96..0.97`, and staging them on every calc changes
+nothing (a constant delay the alignment absorbs). A volume-only voice costs less than a keyed one:
+the score's correlation peaks at `0.80..0.90` samples a voice (`0.85` taken), and both `1.2` and
+`0.5` read lower. Before it, the note fit moved the score's percussive tones (`18DC0`, `1EC60` in
+the render's SPU map) two to three samples late in the river states and within a sample in
+`mei_house_inside`, and the slow-attack pads its "vsync off" lines named fitted alike in both, as
+the open question had found. Port: `Sequencer::stage_external_voices` and
+`flush_key_on_lag_with` (`FLUSH_VOLUME_VOICE_Q8`), staged from the emitter's volume arm
+(`AudioDirector::drive_sfx_emitters` through `AudioSink::stage_bgm_volume_writes`); the oracle
+reads the emitter parts off the state (`pcm_retail::EmitterStaging`). Grade `disassembly` for the
+path, `capture` for the cost, which is mednafen's timing model.
 
 <a id="a-loop-jump-does-not-wait-again"></a>
 **A loop's later passes do not wait the delta behind the Loop Start.** With those two gone, `11` of

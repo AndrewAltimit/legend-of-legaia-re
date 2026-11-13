@@ -273,6 +273,19 @@ pub trait AudioSink {
         });
     }
 
+    /// Stage a volume write on `mask`'s voices into the score's next flush: a
+    /// positional emitter's per-tick level reaches the SPU through the same
+    /// flush that keys the score (`FUN_800657D0` raises the voice's flag), so
+    /// the score's key-ons in that flush wait for those voices too
+    /// ([`Sequencer::stage_external_voices`]).
+    fn stage_bgm_volume_writes(&self, mask: u32) {
+        self.with_core(|s| {
+            if let Some(seq) = s.sequencer.as_mut() {
+                seq.stage_external_voices(mask);
+            }
+        });
+    }
+
     /// Cross-fade from the current sequencer to `new_seq` over
     /// `fade_samples` SPU-rate (44.1 kHz) samples: the old one fades out,
     /// then `new_seq` swaps in and fades up. With no sequencer playing, or

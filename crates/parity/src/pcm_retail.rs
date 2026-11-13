@@ -200,6 +200,7 @@ pub fn render_aligned(
     verbose: bool,
     stems: Option<&Path>,
     seq_vols: Option<&[u8]>,
+    emitter: EmitterStaging,
 ) -> Result<Vec<i16>> {
     let fresh = || {
         let mut d = TraceBgmDirector::new();
@@ -209,9 +210,13 @@ pub fn render_aligned(
         d
     };
     let mut d = fresh();
+    // The score's calcs since its top, for the emitter's frame phase.
+    let calcs = std::cell::Cell::new(0u64);
     let step = |d: &mut TraceBgmDirector, carry: &mut f64, out: Option<&mut Vec<i16>>| {
         let spu: *mut Spu = d.spu_mut();
         if let Some(s) = d.sequencer_mut() {
+            s.stage_external_voices(emitter.mask_on(calcs.get()));
+            calcs.set(calcs.get() + 1);
             // SAFETY: the director's SPU and sequencer are disjoint fields.
             s.step_vsync(unsafe { &mut *spu });
         }
@@ -263,6 +268,7 @@ pub fn render_aligned(
     // phased to arrive where the state's stands: which flush a silent voice
     // is let go on, and so which voice a later note takes, depends on it.
     d = fresh();
+    calcs.set(0);
     if let Some(s) = d.sequencer_mut() {
         s.set_silent_ring_phase(usize::from(pos.silent_phase) + 16 - stepped % 16);
     }
@@ -292,7 +298,16 @@ pub fn render_aligned(
     }
     let mut out = Vec::with_capacity(samples * 2 + 4096);
     if let Some(prefix) = stems {
-        render_stems(&mut d, &mut carry, vsync_samples, samples, &mut out, prefix)?;
+        render_stems(
+            &mut d,
+            &mut carry,
+            vsync_samples,
+            samples,
+            &mut out,
+            prefix,
+            emitter,
+            calcs.get(),
+        )?;
     }
     let mut vsync = 0usize;
     while out.len() < samples * 2 {
@@ -348,9 +363,92 @@ pub fn duck_schedule(levels: &[u8], start: u8, lag: i64, vsync_samples: f64) -> 
         .collect()
 }
 
+/// The volume writes a state's positional emitters put into the score's
+/// flushes: their voices (`mask`), re-volumed once a game frame
+/// (`FUN_800657D0` from the part tick, raising each voice's flag), so on one
+/// calc in `frame_step`. The score and the emitter both start from the main
+/// loop's tick, so the flush that carries the writes is the one of every
+/// `frame_step`-th calc counted from the score's first: over five Rim Elm
+/// recordings under the river, that phase reads `0.997..0.998` and the other
+/// `0.96..0.97`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EmitterStaging {
+    pub mask: u32,
+    pub frame_step: u8,
+}
+
+impl EmitterStaging {
+    /// The voices of every emitter part (`+0x5A == 5` on the part tick
+    /// `0x80021DF4`) on the state's actor lists, its frame step the pacer's
+    /// `0x1F800393`.
+    pub fn from_state(st: &psx_mednafen::SaveState) -> Result<Self> {
+        let ram = st.main_ram()?;
+        let at = |va: u32| (va & 0x1F_FFFF) as usize;
+        let rd16 = |va: u32| {
+            ram.get(at(va)..at(va) + 2)
+                .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]))
+        };
+        let rd32 = |va: u32| {
+            ram.get(at(va)..at(va) + 4)
+                .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        };
+        let mut mask = 0u32;
+        for head in (0x8007_C34C..0x8007_C370).step_by(4) {
+            let mut node = rd32(head);
+            for _ in 0..256 {
+                if !(0x8000_0000..0x8020_0000).contains(&node) {
+                    break;
+                }
+                if rd32(node + 0xC) == EMITTER_PART_TICK && rd16(node + 0x5A) == 5 {
+                    let cue = rd32(node + 0xAC) as i32;
+                    // The descriptor's `+3 & 0x1F` voice count, from the static
+                    // table below `0x200` and the runtime bank above it.
+                    let row = if cue < 0x200 {
+                        0x8006_F198 + cue as u32 * 8
+                    } else {
+                        let base = rd32(0x8007_B8D0);
+                        let n = i32::from(rd16(base + 2) as i16);
+                        base.wrapping_add((n / 2 * 2) as u32)
+                            .wrapping_add((cue as u32 - 0x200) * 8)
+                    };
+                    let span = i32::from(ram.get(at(row + 3)).copied().unwrap_or(0) & 0x1F).max(1);
+                    let first = i32::from(rd16(node + 0xB0) as i16);
+                    // Keyed: the part's key-on latch `+0xB4`.
+                    if rd32(node + 0xB4) != 0 {
+                        for v in (first..first + span).filter(|v| (0..24).contains(v)) {
+                            mask |= 1 << v;
+                        }
+                    }
+                }
+                node = rd32(node);
+            }
+        }
+        let frame_step = st
+            .scratch_ram()
+            .ok()
+            .and_then(|s| s.get(0x393).copied())
+            .unwrap_or(1)
+            .max(1);
+        Ok(Self { mask, frame_step })
+    }
+
+    /// The mask on the score's `calc`-th calc (from `0`).
+    pub fn mask_on(&self, calc: u64) -> u32 {
+        if calc.is_multiple_of(u64::from(self.frame_step.max(1))) {
+            self.mask
+        } else {
+            0
+        }
+    }
+}
+
+/// The part tick an emitter rides (`FUN_80021DF4`).
+const EMITTER_PART_TICK: u32 = 0x8002_1DF4;
+
 /// [`render_aligned`]'s window with the mix's parts kept apart: one tick of
 /// [`Spu`] spelled out, its voices and its wet return written beside the sum.
 /// The key-ons and the flushes' staged voices go beside them.
+#[allow(clippy::too_many_arguments)]
 fn render_stems(
     d: &mut TraceBgmDirector,
     carry: &mut f64,
@@ -358,6 +456,8 @@ fn render_stems(
     samples: usize,
     out: &mut Vec<i16>,
     prefix: &Path,
+    emitter: EmitterStaging,
+    mut calc: u64,
 ) -> Result<()> {
     let with = |ext: &str| prefix.with_extension(ext);
     let mut stems = Vec::with_capacity(samples * 100);
@@ -372,6 +472,8 @@ fn render_stems(
             if let Some(t) = spu.note_trace.as_mut() {
                 t.sample = at;
             }
+            s.stage_external_voices(emitter.mask_on(calc));
+            calc += 1;
             s.step_vsync(spu);
             flushes.push_str(&format!("{at} {}\n", s.last_flush_staged()));
         }
@@ -875,6 +977,13 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             }
         };
         let (pos, track_bytes) = read_position(&path, &extracted)?;
+        let emitter_staged = {
+            let st = psx_mednafen::SaveState::from_path(&path)?;
+            EmitterStaging::from_state(&st)?
+        };
+        if args.verbose {
+            println!("emitter staging: {emitter_staged:?}");
+        }
         if args.verbose {
             println!("{}: {pos:?}", args.label);
             let st = psx_mednafen::SaveState::from_path(&path)?;
@@ -906,6 +1015,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.verbose,
             args.stems.as_deref(),
             None,
+            emitter_staged,
         )?;
         if args.cue_voices {
             let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
@@ -936,6 +1046,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
                         false,
                         None,
                         Some(&vols),
+                        emitter_staged,
                     )?;
                 }
             }

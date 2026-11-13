@@ -8,7 +8,17 @@ use crate::Spu;
 /// [the flush's own cost](../../../docs/subsystems/audio.md#the-flushs-own-cost).
 // REF: FUN_80065BAC, FUN_8006C048
 pub fn flush_key_on_lag(staged: u32) -> u8 {
-    let q8 = staged.saturating_sub(1) * FLUSH_STAGED_VOICE_Q8;
+    flush_key_on_lag_with(staged, 0)
+}
+
+/// [`flush_key_on_lag`] with `volume_only` more voices in the flush whose one
+/// staged write is a volume pair another caller made (a positional emitter's
+/// level, [`Sequencer::stage_external_voices`]). Such a voice costs the flush
+/// its `FUN_8006C048` call with one register pair to write, under the cost of
+/// a keyed voice's full set.
+// REF: FUN_80065BAC, FUN_8006C048
+pub fn flush_key_on_lag_with(staged: u32, volume_only: u32) -> u8 {
+    let q8 = staged.saturating_sub(1) * FLUSH_STAGED_VOICE_Q8 + volume_only * FLUSH_VOLUME_VOICE_Q8;
     ((q8 + 0x80) >> 8).min(u32::from(u8::MAX)) as u8
 }
 
@@ -16,6 +26,12 @@ pub fn flush_key_on_lag(staged: u32) -> u8 {
 /// off six mednafen recordings (`1.15..=1.25`, scatter under a sample). A
 /// PCSX-Redux cycle watch reads `1.34`, in cycles, with the same straight line.
 pub(super) const FLUSH_STAGED_VOICE_Q8: u32 = 307;
+
+/// Output samples, Q8, a voice with only a volume pair staged costs a flush:
+/// `0.85`, fitted on five mednafen recordings of Rim Elm under its river
+/// emitter (the score's correlation peaks over `0.80..=0.90`; `1.2` and
+/// `0.5` both read lower).
+pub(super) const FLUSH_VOLUME_VOICE_Q8: u32 = 218;
 
 /// Flushes the silent history at `0x801CE208` holds (`_DAT_801CE204 & 0xF`).
 pub(super) const SILENT_RING_LEN: usize = 16;
@@ -167,6 +183,7 @@ impl Sequencer {
     pub fn flush_key_ons(&mut self, spu: &mut Spu) {
         if self.pending.is_empty() {
             self.staged_voices = 0;
+            self.external_staged = 0;
             self.last_flush_staged = 0;
             return;
         }
@@ -227,10 +244,13 @@ impl Sequencer {
         self.voice0_adsr2_zeroed = None;
         // `FUN_80065BAC` writes the KON mask after its per-voice loop, and every
         // voice with a staged register costs a `FUN_8006C048` call first.
-        let staged = (self.staged_voices | keyed).count_ones();
+        let own = self.staged_voices | keyed;
+        let staged = own.count_ones();
+        let external = (self.external_staged & !own).count_ones();
         self.staged_voices = 0;
-        self.last_flush_staged = staged;
-        let lag = flush_key_on_lag(staged);
+        self.external_staged = 0;
+        self.last_flush_staged = staged + external;
+        let lag = flush_key_on_lag_with(staged, external);
         for (v, voice) in spu.voices.iter_mut().enumerate() {
             if keyed & (1 << v) != 0 {
                 voice.delay_start(lag);

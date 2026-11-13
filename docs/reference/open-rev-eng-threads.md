@@ -445,29 +445,6 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
-### Why does track `2016` score worse under `rimelm_wall_press_left`'s river?
-
-*Status:* open (measured)
-
-The state's `track` channel reads `0.925` because the river emitter is in the recording; the
-`emitter` channel (`0.986`) still sits below the `0.998` the same track `2016` reads in
-`mei_house_inside` and `menu_status_town`. The river is not the rest: the state's silenced
-recording reads `1.0000` at `-44.8` dB against the resumed SPU, and a per-quarter-second,
-per-side gain on the river in the full recording fits `1.00 +- 0.05` and lowers the residual by
-nothing. Voice contention is not it either: the score keys no voice above 17 here, and retail
-leaves 21 free beside the river's 16..18. The excess is the score's own, `7` to `9` dB above
-`mei_house_inside`'s from `250` Hz to `2` kHz. The note fit's "a vsync off" flushes on the
-slow-attack tone at VAG `0x20840` (ADSR1 `A0FF`) are not it alone: the clean states show
-them too (`3` and `2`), where moving those notes gains nothing. Track `2016` carries no bend
-and no volume or expression event past its set-up (a disassembly census of its SEQ), and its
-key-ons are on the score's grid on hardware's clock: a key-on census of
-`town01_field_card_boot` (`autorun_keyon_census.lua`, 900 vsyncs, 317 note-ons) puts every
-note-on inside one band one vsync wide of `tick * 10 / 115`, the budget of its 86 BPM. Nor is
-it the reverb setting, which the three states share (mode, depth `0x3264`, work area). What
-is left is a note's sound, not its time: the next step is the pad tones' stems (VAG
-`0x20840`, `0x12220`, `0x14950`) fitted against the river-subtracted recording band by band,
-beside the same tones in `mei_house_inside`.
-
 ### How long does a summon's seek hold its voice?
 
 *Status:* partial (measured)

@@ -139,6 +139,17 @@ impl Sequencer {
         self.staged_voices
     }
 
+    /// Voices a caller outside the score staged a volume write for since the
+    /// last flush: a positional emitter's per-tick level (`FUN_800657D0`
+    /// stores the shadow pair and raises the voice's flag `0x801CE060[v] |= 3`,
+    /// `0x80065800..0x8006582C`). The flush `FUN_80065BAC` calls `FUN_8006C048`
+    /// for every flagged voice before its KON write (`0x80065E0C..0x80065F34`),
+    /// the score's or not, so those voices delay the score's key-ons too
+    /// ([`flush_key_on_lag_with`]).
+    pub fn stage_external_voices(&mut self, mask: u32) {
+        self.external_staged |= mask & 0x00FF_FFFF;
+    }
+
     /// A note-off on `channel` for `key` (`FUN_8006688C`); the voices it keyed off.
     pub fn apply_note_off(&mut self, spu: &mut Spu, channel: u8, key: u8) -> u32 {
         self.note_off(spu, channel, key)
