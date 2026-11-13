@@ -125,9 +125,17 @@ pub struct BakaFight {
     /// is handed (`FUN_8001822C` from `0x800184E0`), kept for its 32-vsync
     /// AND window `_DAT_8007B938`: the player select folds it into the edge
     /// (`0x801CFA74`), so a direction held for the whole window steps the
-    /// cursor every frame. One pump per call, which is one vsync per cabinet
-    /// tick ([`Self::frame`] ticks at a step of `1`).
+    /// cursor every frame. One pump per call, which is one vsync.
     pub(super) cabinet_hold: legaia_engine_system::retail_pad::RetailPadState,
+    /// The frame-step floor the cabinet last stored (`_DAT_8007B9D8`):
+    /// [`SECRET_TALLY_FRAME_STEP`] once the secret opponent's tally arm has
+    /// run, `1` again once the opponent install has. [`Self::frame`] runs a
+    /// game tick every `step_floor` vsyncs, on that step.
+    pub(super) step_floor: i32,
+    /// Vsyncs since [`Self::frame`]'s last game tick.
+    pub(super) vsync_phase: i32,
+    /// Pad edges seen on vsyncs between two game ticks, held for the next.
+    pub(super) held_edge: u16,
     /// Both fighters' strike data. With it installed an exchange is booked
     /// only on the tick the winner's strike lands (retail's `+0x0C == 1`
     /// gate); without it (a fight built from bare configs) the exchange
@@ -246,6 +254,9 @@ impl BakaFight {
             tables: None,
             cabinet_pad: 0,
             cabinet_hold: Default::default(),
+            step_floor: 1,
+            vsync_phase: 0,
+            held_edge: 0,
             strike: None,
             rate_divisor: STRIKE_RATE_DIVISOR,
             afterimages: Vec::new(),

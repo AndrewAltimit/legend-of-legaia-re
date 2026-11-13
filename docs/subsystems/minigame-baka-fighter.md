@@ -313,7 +313,9 @@ Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confir
 <a id="a-mid-run-defeat-really-does-forfeit-the-pot"></a>
 ### The frame-step floor
 
-The cabinet writes the frame-step floor `_DAT_8007B9D8` in two arms: the opponent install (`0x1E`) stores `1` (`0x801CFCB8..0x801CFCC4`), and the secret opponent's tally (`0x6D`) stores `4` on every frame it runs, with the rate divisor `DAT_1F80037D` back at `8` (`0x801D0FA0..0x801D0FB8`). So the duel runs at the resolver's measured cadence over a floor of `1`, and the secret tally at a game tick every four vsyncs: its timer `DAT_801DBF88` adds the frame step (`0x801D1154..0x801D1164`), so the tally lasts as long, drawn at 15 frames a second *(disassembly)*. The duel captures read a step of `2`, the measured arm. The port runs the cabinet every vsync on a step of `1`, the 0x6D arm included.
+The cabinet writes the frame-step floor `_DAT_8007B9D8` in two arms: the opponent install (`0x1E`) stores `1` (`0x801CFCB8..0x801CFCC4`), and the secret opponent's tally (`0x6D`) stores `4` on every frame it runs, with the rate divisor `DAT_1F80037D` back at `8` (`0x801D0FA0..0x801D0FB8`). So the duel runs at the resolver's measured cadence over a floor of `1`, and the secret tally at a game tick every four vsyncs: its timer `DAT_801DBF88` adds the frame step (`0x801D1154..0x801D1164`), so the tally lasts as long, drawn at 15 frames a second *(disassembly)*. The duel captures read a step of `2`, the measured arm.
+
+The port runs the floor the cabinet stored: `BakaFight::frame` is called every vsync and runs a game tick every `step_floor` vsyncs on that step. The floor is `1` but from the frame after the `0x6D` arm first runs (`SECRET_TALLY_FRAME_STEP`, `4`) until the opponent install has run again, so the challenger's announcement animates at fifteen frames a second and its `0xB5` hold lasts `185` vsyncs where a step of `1` gave `181`. A press between two ticks is held for the next. Pinned by `baka_fighter::tests::the_secret_tally_runs_a_game_tick_every_fourth_vsync`.
 
 ### Pot, payout and forfeit
 

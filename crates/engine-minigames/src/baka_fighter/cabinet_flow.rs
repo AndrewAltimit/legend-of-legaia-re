@@ -93,7 +93,17 @@ impl BakaFight {
             pause_ready: self.motion[0].record == 0 && !self.motion[0].down && !self.motion[1].down,
             camera_hold,
         };
+        let ran = self.cabinet.state();
         self.cabinet_frame = self.cabinet.tick(&input);
+        // The two arms that store the frame-step floor `_DAT_8007B9D8`: the
+        // secret tally `0x6D` stores `4` on every frame it runs
+        // (`0x801D0FA0..0x801D0FAC`), the opponent install `0x1E` stores `1`
+        // (`0x801CFCB8..0x801CFCC4`). The store paces the frames after it.
+        match ran {
+            crate::baka_cabinet::ST_CHOICE_SECRET => self.step_floor = SECRET_TALLY_FRAME_STEP,
+            crate::baka_cabinet::ST_OPPONENT_INSTALL => self.step_floor = 1,
+            _ => {}
+        }
         self.cues.append(&mut self.cabinet_frame.cues);
         if self.cabinet_frame.spawn_clear_fighter {
             self.clear_fighter = Some(crate::baka_fighter_chrome::ClearFighter {
