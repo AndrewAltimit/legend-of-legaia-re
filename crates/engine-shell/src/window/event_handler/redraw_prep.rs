@@ -195,6 +195,9 @@ impl PlayWindowApp {
             if sc.seat_sideband_seek.is_some() {
                 self.session.host.world.casting.sideband_first_seek_seat = sc.seat_sideband_seek;
             }
+            if sc.seat_drive_seek.is_some() {
+                self.session.host.world.casting.drive_seek_seat = sc.seat_drive_seek;
+            }
             // Ahead of the cast it forks: battle init clears the word.
             if let Some(n) = sc.seat_ai_counter
                 && self.session.host.world.casting.active_summon.is_none()

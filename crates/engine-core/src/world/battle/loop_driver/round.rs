@@ -415,7 +415,12 @@ impl World {
         if seated {
             self.settle_seated_clips();
         }
-        let price = u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id));
+        // A film's inject stands before that debit (`seed_mp_unpaid`): no credit.
+        let price = if self.battle.seed_mp_unpaid {
+            0
+        } else {
+            u16::from(self.tables.spell_catalog.mp_cost(seed.spell_id))
+        };
         if let Some(a) = self.actors.get_mut(usize::from(seed.caster)) {
             a.battle.action_category = 2;
             a.battle.mp = a.battle.mp.saturating_add(price);

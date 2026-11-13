@@ -101,17 +101,25 @@ pub struct CdDrive {
     pub lba: u32,
     /// Vsyncs until every issued command has completed.
     pub busy: u32,
+    /// A capture harness seat: every seek takes this many vsyncs in place of
+    /// [`seek_vsyncs`]'s law. A film recorded on a drive that answers a seek
+    /// in a few vsyncs (PCSX-Redux) reads its own; no play path sets it.
+    pub seek_seat: Option<u32>,
 }
 
 impl CdDrive {
     /// A drive standing at `lba` with nothing in flight.
     pub fn at(lba: u32) -> Self {
-        Self { lba, busy: 0 }
+        Self {
+            lba,
+            busy: 0,
+            seek_seat: None,
+        }
     }
 
     /// Issue a seek to `to`, after whatever is in flight.
     pub fn seek(&mut self, to: u32) {
-        self.busy += seek_vsyncs(self.lba, to);
+        self.busy += self.seek_seat.unwrap_or_else(|| seek_vsyncs(self.lba, to));
         self.lba = to;
     }
 
@@ -173,6 +181,19 @@ mod tests {
                 "{from} -> {to}: {physical} vsyncs against {first_frame} cycles"
             );
         }
+    }
+
+    #[test]
+    fn a_seated_seek_time_replaces_the_law() {
+        let mut d = CdDrive {
+            seek_seat: Some(2),
+            ..CdDrive::at(SIDE_BAND_LBA)
+        };
+        d.seek(clip_lba(0x1A).unwrap());
+        assert_eq!(d.busy, 2);
+        assert!(d.ready());
+        d.seek_when_ready(clip_lba(0xC).unwrap());
+        assert_eq!(d.busy, 2);
     }
 
     #[test]

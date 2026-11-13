@@ -165,6 +165,11 @@ pub struct CastFxState {
     /// A film recorded on another emulator's drive reads its own; no play path
     /// sets it.
     pub sideband_first_seek_seat: Option<u16>,
+    /// A capture harness seat: the cast drive's every seek, in vsyncs, in
+    /// place of the modelled law ([`legaia_engine_battle_vm::battle_cd_drive::CdDrive::seek_seat`]).
+    /// A film recorded on another emulator's drive reads its own; no play
+    /// path sets it.
+    pub drive_seek_seat: Option<u16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -610,6 +615,7 @@ impl CastFxState {
             band_word_live: None,
             sideband_read_left: None,
             sideband_first_seek_seat: None,
+            drive_seek_seat: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,

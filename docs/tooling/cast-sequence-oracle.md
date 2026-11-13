@@ -129,6 +129,8 @@ Flags worth knowing:
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
+| `LEGAIA_SEAT_DRIVE_SEEK=<vsyncs>` (engine child) | Every seek of the cast drive takes this many vsyncs in place of the modelled law; the driver passes `2` ([the drive seek seat](#the-drive-seek-seat)) |
+| `LEGAIA_SEAT_SEED_MP_UNPAID=1` (engine child) | The seeded cast has not paid its MP: the seed credits no price back, and the `0x28` debit wraps on the state's MP as retail's does ([below](#the-casters-mp)). The driver sets it on every non-physical film |
 | `LEGAIA_SEAT_SIDEBAND_SEEK=<vsyncs>` (engine child) | The recording drive's seek into the first `summon.dat` slot; the driver passes `0` ([the side-band read](#the-side-band-reads-seek)), `--engine-env` overrides it |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
@@ -247,6 +249,19 @@ seeded, and the recorder on:
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
 Each seat's HP travels from the recording's cast begin (`retail_cast_hp`), over the state's HUD bars. A `--monster-pick` recording plays the party's turns to the pick, so the caster and its victims stand at other HP when the cast begins, and the capture-class wrappers fold the attacker's `hp >> 8` into the roll (`0x801DD728`). Bloody Horns from `battle_tunnelc_xain_strike` lands `595` on Gala in retail; on the state's bars (Xain at `9511` where retail's turns left `7145`) the same draws read `605`, and seated it lands `595` on `--rand-track`.
+
+<a id="the-casters-mp"></a>
+
+The caster's MP is the state's. The probe injects at the command state `0x0A`, ahead
+of the Magic band's debit at `0x28`, and that debit is a halfword `subu` with no floor
+(`0x801E4584..0x801E4594`): Vahn's `27` MP in `party_basic_attack_vs_gobu_gobu` pays a
+`45`-MP Seru as `65518`, and a film whose readout box opens on the caster (Spoon,
+Horn and the other ally-target casts) shows `65518` over the MP field's `/`
+([battle HUD](../subsystems/battle-hud.md#a-figure-field)). A still's replay of
+a mid-cast state credits the price back, because its capture has paid; a film's
+must not, so the driver sets `LEGAIA_SEAT_SEED_MP_UNPAID` and the engine's own debit,
+which wraps as retail's does, lands on the state's figure. A harness seat for the
+credit; the wrap is the port's.
 
 A monster those turns killed is seated dead and faded out (`0` HP, `d0`) where the state stands it alive: `battle_garmel_zenoir_strike`'s harvest rounds left seat 3 at `0`, the state at `279`. Neither that film's frames nor its roll moved (`.785`, `.821` with `--retail-steps --rand-at 0x2B:0`, the burst's `82` / `97` against retail's `91`), so the dead seat is not the film's residue. A harness seat.
 
@@ -1118,6 +1133,32 @@ prints the same line. Measured on the `party_basic_attack_vs_gobu_gobu` and
 harvested-strike Seru films (44 with drive arms), the mean goes from `.792`
 strict to `.808`, Gimard from `.847` to `.897`, Viguro from `.757` to `.786`;
 the five monster casts in the same run, with no drive arms, are unchanged.
+
+<a id="the-drive-seek-seat"></a>
+
+The window absorbs the wait, not what ran through it. A fade or a rise spawned
+before the poll arm runs on through the engine's poll hold, so it stands as many
+ticks ahead when the arm lets go, while what the next arm spawns runs on the arm's
+own clock: Nova's arm 3 (`0x8B`) opens on a white fall the engine had run `18`
+ticks further, and with the creature rising out of the ring on the arm clock no
+single shift pairs both (`.362` on `--retail-steps --rand-track`). The driver
+therefore seats the recording drive's seek time on the engine child
+(`LEGAIA_SEAT_DRIVE_SEEK=2`, `CdDrive::seek_seat`): every seek of the cast drive,
+the selector's and the module's own, takes two vsyncs, so the seek arm does not
+block and the poll holds one pass, as PCSX-Redux's `1..4`-vsync seeks do. A
+harness seat, which no play path sets; `--engine-env LEGAIA_SEAT_DRIVE_SEEK=` with
+another value overrides it. Over the ten lowest Seru films of
+[`film-sets/seru.txt`](../../scripts/ci/film-sets/seru.txt):
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.874` | `.885` | `0x8B` `.875` to `.919`, `0x99` `.899` to `.927`, `0x87` `.883` to `.898` |
+| `--retail-steps` | `.880` | `.890` | `0x8B` `.889` to `.929`, `0x87` `.868` to `.898`, `0x8A` `.919` to `.937` |
+| `--retail-steps --rand-track` | `.926` | `.937` | `0x8B` `.889` to `.929`, `0x87` `.885` to `.916`, `0x8A` `.928` to `.946` |
+
+On the rand seat Nova's arm 3 reads `.975`, Freed's `.995` and Viguro's `1.000`,
+each the white fall now leaving on the pass retail's does; the sound channel holds
+`1.000` on all ten.
 
 A monster cast reached through the state's pad drive stages the clip the drive's
 replay picked, and the picker stores its clip bytes under draws the replay does not

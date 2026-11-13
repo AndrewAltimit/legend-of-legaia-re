@@ -824,6 +824,12 @@ def run_engine(a, out: Path) -> bool:
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.
     env.setdefault("LEGAIA_SEAT_SIDEBAND_SEEK", "0")
+    # The same drive answers a summon module's voice seeks (the selector's and
+    # the module's own) in a couple of vsyncs, where the modelled one holds the
+    # seek arm's whole frame `18..31` passes and the poll arm `14..30`, with the
+    # fade and the rise spawned before it running on through the poll. A
+    # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
+    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", "2")
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -846,6 +852,14 @@ def run_engine(a, out: Path) -> bool:
         # The child takes its frame on the drive's gate and leaves: push the
         # frame past the recording, which exits on its own tail.
         env["LEGAIA_DIAG_CAPTURE_TICK"] = "40000"
+    else:
+        # The probe injects at the command state `0x0A`, ahead of the `0x28`
+        # MP debit, so the seed credits no price back and the band's own
+        # debit lands on the state's MP, wrapping as retail's halfword does
+        # (`0x801E458C`): a Seru cast past the caster's MP reads `65518`.
+        env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
+    if a.physical:
+        pass
     elif caster < 3:
         ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
         env["LEGAIA_BATTLE_INFLIGHT"] = f"{caster},{a.spell},{a.target}" + (f";{ground}" if ground else "")

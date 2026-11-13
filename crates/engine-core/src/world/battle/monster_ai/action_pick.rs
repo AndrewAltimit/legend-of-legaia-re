@@ -99,10 +99,13 @@ impl World {
                 targets = vec![t];
             }
             if !targets.is_empty() {
+                let unpaid = self.battle.seed_mp_unpaid;
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.action_category = 2;
                     a.battle.params[0] = spell_id;
-                    a.battle.mp = a.battle.mp.saturating_add(u16::from(def.mp_cost));
+                    if !unpaid {
+                        a.battle.mp = a.battle.mp.saturating_add(u16::from(def.mp_cost));
+                    }
                 }
                 return MonsterAction::Cast { spell_id, targets };
             }

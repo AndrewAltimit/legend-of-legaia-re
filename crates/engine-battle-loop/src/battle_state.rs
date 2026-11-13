@@ -495,6 +495,13 @@ pub struct BattleState {
     /// is credited back as it is taken. `None` on every ordinary fight;
     /// consumed (taken) by the monster pick.
     pub forced_monster_cast: Option<(u8, u8)>,
+    /// A debug seed's caster has not paid yet: the cast-sequence oracle
+    /// injects the cast at the command state `0x0A`, ahead of the `0x28`
+    /// debit, so the price is not credited back
+    /// ([`Self::inflight_seed`], [`Self::forced_monster_cast`]) and the
+    /// band's own debit lands on the state's MP, wrap and all. `false` on
+    /// every ordinary fight and on a still's mid-cast replay.
+    pub seed_mp_unpaid: bool,
     /// The same seed's target: the party seat the capture's caster had
     /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
     /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
@@ -1521,6 +1528,7 @@ impl BattleState {
             inflight_art_seed: None,
             art_seed_ra_seru: false,
             forced_monster_cast: None,
+            seed_mp_unpaid: false,
             forced_monster_target: None,
             cue_clut_seed: None,
             element_roll_seed: None,
