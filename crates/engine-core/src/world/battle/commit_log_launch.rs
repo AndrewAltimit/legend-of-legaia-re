@@ -90,10 +90,19 @@ impl World {
             self.battle.spirit_gauge_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
+            // The record holds the name it opens on: the target seat's, or
+            // for the every-enemy code `9` the lone survivor's the census
+            // latched in `ctx[+0x24B]` (`li v0,0x9` / `lbu v0,0x24b(a0)` /
+            // the name pointer `actor_table[+0x24B] + 0x1BC` into the
+            // record, `0x801E6FC8..0x801E7008`).
+            let lone = self.battle_ctx.item_target_b;
             self.battle.target_plaque_seat = self
                 .actors
                 .get(usize::from(self.battle_ctx.active_actor))
-                .map(|a| a.battle.active_target);
+                .map(|a| match a.battle.active_target {
+                    9 if lone != 0 => lone,
+                    t => t,
+                });
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
         }
