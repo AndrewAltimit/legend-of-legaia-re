@@ -161,6 +161,48 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
     }
 }
 
+/// On a results-frame capture (phase word `5`, `ctx[+0x6CE] == 1`), how
+/// many passes the displayed frame stands back along the RAM's table, given
+/// the `passes` the display lag walks elsewhere. `None` off a results frame.
+///
+/// The results frame zeroes the hold `gp+0xA54` and adds its own pass's
+/// vsync delta (`0x8004F738..0x8004F76C`), so `hold / step` counts the
+/// results passes, the arming one included, and the table the RAM holds is
+/// the one that pass's case 6 armed (`0x8004FC80..0x8004FC90`). The framing
+/// before it stood still, so the walk back stops on the arming pass's
+/// origin and goes no further:
+///
+/// - **A win** comes off the load window's case-8 stand-off, re-armed on the
+///   same ground every load pass. `battle_jou_gala_finisher_results_retail`
+///   (hold `3`, step `3`) holds that stand-off itself, `TR (0, 0x400,
+///   0xA00)` under the results table's endpoint, so its live pose had not
+///   yet walked the table: `image` `.653` walked back two passes, `.976` on
+///   the live pose.
+/// - **A wipe** comes off the wiping action's own landed framing. On
+///   `battle_jou_party_wipe_results_retail` (hold `3`, yaw `792`, results
+///   table to `484`) the live pose had walked one pass: a yaw sweep of the
+///   frame's sky reads best one pass back, at `897` (sky error `3.2`,
+///   against `7.9` at `875`, `9.5` at `920`, and the two-pass `1035`).
+///
+/// Whether the live pose has walked the arming pass is read off the outcome,
+/// one capture each; a mid-pass save of the win's heavier results pass is the
+/// likely reason they part, and a third capture would test it.
+pub(super) fn results_passes_back(ram: &[u8], ctx: u32, passes: u16) -> Option<u16> {
+    if game_anchors::u32_at(ram, END_PHASE_WORD) != 5 || game_anchors::u16_at(ram, ctx + 0x6CE) != 1
+    {
+        return None;
+    }
+    let hold = game_anchors::u32_at(ram, END_RESULTS_HOLD);
+    let step = u32::from(frame_step(ram).max(1));
+    let results_passes = (hold / step).min(u32::from(u16::MAX)) as u16;
+    let walked = if game_anchors::u8_at(ram, ctx + 0x13) >= 3 {
+        results_passes
+    } else {
+        results_passes.saturating_sub(1)
+    };
+    Some(passes.min(walked))
+}
+
 /// What a turning shot adds to the live yaw per vsync of frame step
 /// (`FUN_801DC0A0` cases `3`, `5`, `0xE`, `0x10`; `0x801DCB18` for `0xE`).
 pub(super) fn turning_shot_rate(case: u8) -> Option<i32> {

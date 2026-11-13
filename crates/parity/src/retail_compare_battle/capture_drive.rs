@@ -253,6 +253,24 @@ impl RetailBattle {
     /// The image child then retakes across the state's entry
     /// ([`Self::retake_across_band_entry`]). `battle_jou_party_wipe_results_retail`
     /// holds `3` against a lag of `6`.
+    /// The span gate on the engine's clock. A results gate's hold is
+    /// retail's `gp+0xA54`, which the results frame zeroes and then advances
+    /// by its own pass's vsync delta (`0x8004F738..0x8004F76C`): the results
+    /// pass already reads the frame step. The engine's sequence opens the
+    /// results at hold `0` and counts a vsync a tick after it, so retail's
+    /// hold `h` is the engine's `h - step`, and the results pass itself the
+    /// engine's opening tick (`battle_jou_gala_finisher_results_retail`, hold
+    /// `3` at step `3`: the RAM's camera still on the load window's
+    /// stand-off). A harness mapping; every other gate passes through.
+    pub fn engine_span_gate(&self) -> SpanGate {
+        match self.span_gate {
+            SpanGate::Results { hold } => SpanGate::Results {
+                hold: hold.saturating_sub(u16::from(self.frame_step.max(1))),
+            },
+            g => g,
+        }
+    }
+
     pub fn results_opened_inside_lag(&self) -> bool {
         matches!(self.span_gate, SpanGate::Results { hold } if hold < self.display_lag)
     }
@@ -1861,7 +1879,7 @@ impl RetailBattle {
                     || !self.party_wipe_victims().is_empty()
                     || self.party_spirit_round(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
-                end: self.span_gate,
+                end: self.engine_span_gate(),
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     prior: self.prior_framing,

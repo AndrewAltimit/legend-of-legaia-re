@@ -4334,9 +4334,30 @@ inside the lag (`SpanGate::Results` with its hold `gp+0xA54` under the lag,
 has opened the report or loss window and dismissed the HUD, while the screen
 still shows the frame before, the party HUD up and the target plaque over it.
 `battle_jou_party_wipe_results_retail` (hold `3`, lag `6`) reads `.638` to
-`.755`; the residue is the engine's spell label on that frame
-([open](../reference/open-rev-eng-threads.md)). The rest keep the gate's
-own frame:
+`.755` on that retake alone. Three more pieces hold these frames:
+
+- **The state is the sequencer's phase.** Past the end signal the drive's
+  "in its state" test (`BattleDrive::in_action_state`) asks for the gate's
+  sequencer phase (`SpanGate::phase_kind_held`), not the target the seat's last
+  action left, so the retake counts back across the results entry and stands
+  the camera on the displayed pose there. The win also writes its pose seat
+  into the acting slot, as retail's victory arm does (`ctx[+0x13]`, a seeded
+  seat included). `battle_jou_gala_finisher_results_retail` had kept the
+  gate's own frame, the report window half raised.
+- **The hold counts the results pass.** Retail's results frame zeroes
+  `gp+0xA54` and adds its own pass's step (`0x8004F738..0x8004F76C`), where the
+  engine opens at `0` and counts a vsync a tick, so the gate meets retail's
+  hold `h` at the engine's `h - step` (`RetailBattle::engine_span_gate`).
+- **The walk back stops at the results table's origin**
+  (`camera_align::results_passes_back`): the framing before the results stood
+  still. The win's RAM still holds the load window's stand-off, the wipe's one
+  pass along the results table, each read off its one capture.
+
+With the label the Done band's list wipe removes
+([settled](../reference/re-settled-threads/battle.md#threads)), the wipe reads
+`1.000` and the Gala finisher `.623` to `.976` (`camera` `.955` to `.976`:
+the engine's opening tick has already stepped the results table once). The
+rest keep the gate's own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|

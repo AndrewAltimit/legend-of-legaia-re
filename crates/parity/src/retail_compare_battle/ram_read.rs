@@ -964,6 +964,7 @@ impl RetailBattle {
             );
             let done_arm = done_arm_pass(ram, ctx, action_state);
             let passes = if done_arm { passes.min(1) } else { passes };
+            let passes = results_passes_back(ram, ctx, passes).unwrap_or(passes);
             // Each pass on its own step where the older ordering table's
             // floor confirms the newest one; the history's largest entry
             // for every pass otherwise.

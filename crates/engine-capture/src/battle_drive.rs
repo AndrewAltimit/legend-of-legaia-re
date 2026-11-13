@@ -832,6 +832,20 @@ impl SpanGate {
         )
     }
 
+    /// Whether the engine's battle-end sequence sits in this gate's phase,
+    /// whatever its count.
+    pub fn phase_kind_held(self, world: &legaia_engine_core::world::World) -> bool {
+        use legaia_engine_battle::victory::VictoryPhase;
+        world.battle.victory.is_some_and(|seq| {
+            matches!(
+                (self, seq.phase),
+                (Self::Loading, VictoryPhase::Loading { .. })
+                    | (Self::Results { .. }, VictoryPhase::Results { .. })
+                    | (Self::Exit { .. }, VictoryPhase::Exit { .. })
+            )
+        })
+    }
+
     /// Whether the engine's battle-end sequence holds this gate.
     pub fn met(self, world: &legaia_engine_core::world::World) -> bool {
         use legaia_engine_battle::victory::VictoryPhase;
@@ -1494,9 +1508,21 @@ impl BattleDrive {
     pub fn in_action_state(&self, world: &legaia_engine_core::world::World) -> bool {
         let mut base = *self;
         match &mut base {
-            Self::Action { end, .. } => {
+            Self::Action { end, steer, .. } => {
+                // Past the end signal the "state" is the sequencer's phase:
+                // the action byte holds its last value through the load
+                // window and the results alike, and the results frame is the
+                // entry a retake counts across. The seat's target is whatever
+                // its last action left (the load window only forces it into
+                // the monster band), which a replay that closes the fight on
+                // another monster does not share; the sequencer frames the
+                // pose seat, not its target.
+                let phase_kind = end.is_end().then_some(*end);
+                if phase_kind.is_some() {
+                    steer.target = None;
+                }
                 *end = SpanGate::None;
-                base.reached(world)
+                base.reached(world) && phase_kind.is_none_or(|gate| gate.phase_kind_held(world))
             }
             _ => false,
         }
