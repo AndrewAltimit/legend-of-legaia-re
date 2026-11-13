@@ -12,7 +12,7 @@ s8A --spell 0x8A --state party_basic_attack_vs_gobu_gobu --target 9
 s8B --spell 0x8B --state party_basic_attack_vs_gobu_gobu --target 3
 s8C --spell 0x8C --state party_basic_attack_vs_gobu_gobu --target 9
 s8D --spell 0x8D --state party_basic_attack_vs_gobu_gobu --target 3
-s8E --spell 0x8E --state party_basic_attack_vs_gobu_gobu --target 3
+s8E --spell 0x8E --state party_basic_attack_vs_gobu_gobu --target 3 --rand-track
 s8F --spell 0x8F --state party_basic_attack_vs_gobu_gobu --target 3
 s90 --spell 0x90 --state party_basic_attack_vs_gobu_gobu --target 3
 s91 --spell 0x91 --state party_basic_attack_vs_gobu_gobu --target 8

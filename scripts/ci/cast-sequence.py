@@ -671,7 +671,13 @@ def retail_rand_track(out: Path) -> str:
     `LEGAIA_CAST_RAND_TRACK`: the BIOS rand() seed word on the frame's last
     row, which the next frame's pass draws from, keyed as the step track keys
     a frame. The key the recording opens on is left out: the capture's
-    instant falls inside it, so its first frames are not the band's."""
+    instant falls inside it, so its first frames are not the band's.
+
+    The summon flash `0x34` ahead of the band is in the track too, keyed on
+    phase `0`: the pass that leaves it opens there and runs the module's
+    arm 0 in the same pass, and arm 0 is where a verdict module draws its
+    roll (Aluru's `rand() % (0x11 - level)`, Nighto's). The flash runs a
+    fixed count of passes on both sides, so its ordinals pair."""
     lines, last, first_key = [], None, None
     with open(out / "retail" / "meta.csv") as f:
         rows = list(csv.DictReader(f))
@@ -680,13 +686,13 @@ def retail_rand_track(out: Path) -> str:
     for r in rows + [None]:
         if last is not None and (r is None or r["frame"] != last["frame"]):
             st7 = int(last["st7"])
-            if st7 in (0x35, 0x36, 0x70):
-                key = (st7, int(last["phase"]))
+            if st7 in (0x34, 0x35, 0x36, 0x70):
+                key = (st7, 0 if st7 == 0x34 else int(last["phase"]))
                 if first_key is None:
                     first_key = key
                 if key != first_key:
                     lines.append(f"{key[0]} {key[1]} {int(last['rand'])}\n")
-        if r is not None and first_key is None and int(r["st7"]) not in (0x35, 0x36, 0x70):
+        if r is not None and first_key is None and int(r["st7"]) not in (0x34, 0x35, 0x36, 0x70):
             first_key = (-1, -1)
         last = r
     return "".join(lines)

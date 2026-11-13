@@ -748,6 +748,16 @@ step drop and the ring's one-pass lag were found
 with both in, the draws hold word for word through `0x34` and part at the
 module's CD-seek hold.
 
+`--rand-track` seats the summon flash `0x34` too, on phase `0`. The pass that leaves
+the flash opens in it and runs the module's arm 0 in the same pass, and a verdict
+module draws its roll there: Aluru's `rand() % (0x11 - level) < 8` (PROT 0916, two
+draws on retail's frame, the frame driver's discard and the roll). A track that began
+at `0x35` left that one draw on the engine's own stream, so `s8E` took the damage path
+(arms `0x12` to `0x14`, the defeat cue and two knockdown cues) where retail's roll took
+the kill path (`0x11`, `0x13`, `0xFF`): cue `.286`. The flash runs its sixty passes on
+both sides, so its ordinals pair, and seated `s8E` reads cue `1.000` and image `.835`
+to `.942`. A harness seat.
+
 Unseeded, the logged words still count draws: the LCG steps between one vsync's
 word and the next are the draws made in between, on either side. Counted per key
 on the lone-caster films, Odd Dimension (`0x93`, PROT 0921) and Ozma (`0xA0`, PROT

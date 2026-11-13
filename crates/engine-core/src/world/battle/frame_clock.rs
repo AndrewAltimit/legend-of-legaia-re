@@ -651,13 +651,24 @@ impl World {
     /// ([`legaia_engine_battle_loop::frame_clock::RetailRandTrack`]), keyed as
     /// the pairing keys a frame: the action state, and the module phase inside
     /// the bands. A harness seat; with no track the stream runs on.
+    ///
+    /// The summon flash `0x34` is seated as well, on phase `0`: the pass that
+    /// leaves it opens there and runs the module's arm 0, where a verdict
+    /// module draws its roll (PROT 0916's `rand() % (0x11 - level)`,
+    /// [`Self::draw_aluru_verdict`]), so a track that began at `0x35` left
+    /// that draw on the engine's own stream.
     fn seat_retail_rand_word(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
         let state = self.battle_ctx.action_state;
-        let band = state == S::SummonSustain.as_byte()
+        let module_band = state == S::SummonSustain.as_byte()
             || state == S::SummonReturn.as_byte()
             || state == S::MagicCapturePhase2.as_byte();
-        let phase = if band { self.casting.module_phase } else { 0 };
+        let band = module_band || state == S::SummonActorFreeze.as_byte();
+        let phase = if module_band {
+            self.casting.module_phase
+        } else {
+            0
+        };
         if let Some(word) = self
             .battle
             .retail_rand_track
@@ -1752,6 +1763,29 @@ mod tests {
         }
         // No keep byte, no winding - and no reset either.
         assert_eq!(w.battle_backdrop_slot_1_yaw(), 0x1AD3);
+    }
+
+    /// A film's rand track seats the summon flash `0x34` on phase `0`: the
+    /// pass that leaves it runs the module's arm 0, which draws a verdict
+    /// module's roll, and the band's own keys count on from it.
+    #[test]
+    fn the_rand_track_seats_the_flash_ahead_of_the_band() {
+        use legaia_engine_battle_loop::frame_clock::RetailRandTrack;
+        let mut w = World::new();
+        w.battle.retail_rand_track = Some(RetailRandTrack::parse("52 0 11\n52 0 12\n53 1 21\n"));
+        w.casting.module_phase = 7;
+        w.battle_ctx.action_state = 0x34;
+        w.seat_retail_rand_word();
+        assert_eq!(
+            w.rng_state, 11,
+            "a stale module phase does not key the flash"
+        );
+        w.seat_retail_rand_word();
+        assert_eq!(w.rng_state, 12);
+        w.battle_ctx.action_state = 0x35;
+        w.casting.module_phase = 1;
+        w.seat_retail_rand_word();
+        assert_eq!(w.rng_state, 21, "the band goes on from the flash's count");
     }
 
     #[test]
