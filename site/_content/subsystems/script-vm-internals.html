@@ -58,7 +58,7 @@
       <tr><td><code>36</code></td><td>SOUND_CUE</td><td>5</td><td>XA voice clips, SFX cues and the side-band sound bank (<a href="#op-36">below</a>); the legacy <code>SCENE_FADE</code> label is wrong - every arm is sound</td></tr>
       <tr><td><code>37 41</code></td><td>GLIDE</td><td>3</td><td>Motion op: compass glide. Parks the script (halt bit, resume pointer at <code>+0x94</code>) and the <a href="motion-vm.html">walk kernel</a> reads the op bytes in place each frame; <code>0x41</code> is half speed</td></tr>
       <tr><td><code>38</code></td><td>CAM_CFG (facing)</td><td>3</td><td>Set the actor's heading from the 8-direction compass at <code>0x80073F04</code>, or halt-acquire it; despite the legacy name it is not a camera op</td></tr>
-      <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest path; the id is the inline byte, not a per-scene table (the chest's "There is a ..." text names the item separately)</td></tr>
+      <tr><td><code>39</code></td><td>GIVE_ITEM</td><td>2</td><td>Add one of item <code>id</code> - the treasure-chest and pickup-spot path; the id is the inline byte, not a per-scene table (the chest's "There is a ..." text names the item separately). The next touch resumes the record behind the grant, so it runs once</td></tr>
       <tr><td><code>3A</code></td><td>ADD_MONEY</td><td>4</td><td>Signed 24-bit gold delta, clamped to <code>0..9,999,999</code></td></tr>
       <tr><td><code>3B</code></td><td>SET_EQUIP_SLOT</td><td>3</td><td>Write one equipment-slot byte of a character record, then rebuild the derived stats</td></tr>
       <tr><td><code>3C 3D</code></td><td>PARTY_ADD / REMOVE</td><td>2</td><td>Sorted insert / remove, cap 4, leader fix-up</td></tr>

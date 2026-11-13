@@ -1138,6 +1138,8 @@ placement 28) at the top of the shrine stairs and `B7 3F 00 84` walks her
 
 `FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund.
 
+Two record shapes carry it. A **chest** grants after its "now has" box (`48`, `39 <item>`, `50 <flag>`, `21`) and a **pickup spot** grants before it (`51 <flag>`, `39 <item>`, `36 00 80 2C 00`, box); both sound the item-get SFX cue `0x2C` through op `0x36`, and both rely on the talk resuming the record's cursor so a second touch reaches the "empty" / silent tail ([the interaction cursor](#the-interaction-cursor-one-record-two-consecutive-scripts)).
+
 The chest's announcement *text* ("There is a {item}...") names the item from a **separate** `0xC2 <id>` MES item-name token (display only). Editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
 
 #### 0x3F SCENE_CHANGE (named warp)
@@ -3026,6 +3028,29 @@ prologue. `kor5`'s `P1[2]` is the flag-write case: its spawn section is `0x25`,
 two entry points are `placement_interaction_record` (cursor, the interaction
 dispatch) and `placement_inline_prologue` (`script_pc0`, for whole-record disc
 sweeps).
+
+**The cursor is the load slice's, and it moves.** The spawn section stops at
+the first `0x21` it *executes*, which is not the first one in the bytes when the
+section is flag-dispatched. The pickup spots are the common shape (`dolk2`
+`P1[70]`, the Platinum Card): `25`, a flag test whose taken arm is `31 03`, `21`
+(the retire bit, then the stop), `26 05 00` over it, then `4C 40 ..`, `21`. On a
+fresh visit the cursor rests past the second `0x21`, on `51 14`, `39 81`,
+`36 00 80 2C 00` (the grant's flag, the grant and the item-get cue) and the
+"now has" box. A structural scan that takes the first `0x21` lands in the taken
+arm, trips its terminator, and a port that falls through to the first box
+skips the flag, the item and the cue. The talk also leaves the cursor where it
+ended, so the next touch runs what follows. A chest ends its talk on
+`39 <item>`, `50 <flag>`, `21`, with a `26` to its "The treasure chest is
+empty!" loop behind it, and a pickup spot ends on `21`, `21`, `26 FE FF`, so the
+second touch is silent. Restarting every talk at the scan's entry re-ran the
+grant. Engine port: the spawn pre-run hands a clean stop (an executed raw
+`0x21`, or a text lead) to the talk as its entry
+(`InlineDialogPrologue::resume`), a talk that ends on an executed `0x21` writes
+its cursor back, and a talk from a live cursor ends on an executed `0x21` before
+any box, as the SM does, rather than falling back to the first segment. The
+static scan stays the entry for a record whose load slice does not run (its
+first opcode is not `0x24` / `0x25`) or stops on a halt. Pinned disc-wide by
+`engine-scene-host/tests/field_pickup_once_disc.rs`.
 
 **The halt-acquire that opens a talk.** `retock`'s innkeeper opens its
 interaction with `CC F8 85`, a halt-acquire on the player. Retail's acquire

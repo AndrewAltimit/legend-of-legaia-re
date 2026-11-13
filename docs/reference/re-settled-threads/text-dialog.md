@@ -114,8 +114,10 @@ field VM over it, handing a text byte to the pager `FUN_801D84D0`.
 - It advances `actor[+0x9C]` 0 -> 1 -> 2 through the segments. Its state-2 advance masks
   `(byte & 0xF0) == 0xC0` and consumes the escape's data byte, so a `0xC?` escape whose argument is
   `0x00..=0x1E` (`0xC1 0x00`) does not end the line.
-- Retail's interaction cursor is one instruction past the record's spawn-section `0x21`, not
+- Retail's interaction cursor is one instruction past the `0x21` the spawn section executed, not
   `script_pc0` ([`script-vm.md`](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)).
+  It persists across talks: the forwarded PC is stored before the `0x21` test (`0x80039E24`), so
+  a chest's second touch resumes behind its grant.
 - A raw `0x21` after the prologue has spawned a record ends the talk (`FUN_8003CF7C` breaks on
   it): `vozz` P1[7] spawns P2[13] and stops.
 - The talk ends on `FUN_80038050`'s verdict on the byte after the box (see the "What ends an NPC
