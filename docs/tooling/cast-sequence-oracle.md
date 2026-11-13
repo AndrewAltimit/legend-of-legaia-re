@@ -1020,9 +1020,16 @@ in another place; a `--watch 0x80009010` recording names each draw's caller (`ra
   is left in arm 12 is the bolts' and the floor's brightness.
 - **Nova's arm 16** was missing `32` words a pass, the whirlwind rings' jitter
   ([cast module](../subsystems/cast-module.md#body-paced-directors)).
-- **Spoon's arm 8** draws a burst of effect spawns every sixth frame, each with two leg
-  words (`0x801DFF6C` / `0x801DFFD4`) and a mirror word a child; the engine's bursts are
-  two to four words short, so one or two spawns a burst are missing.
+- **Spoon's arm 8** spawns effect `0x14` every sixth pass, `24` children with two leg
+  words each (`0x801DFF6C` / `0x801DFFD4`), and the walker draws one mirror word a child
+  as it seeds them (`0x801E01D4`), `6, 3, 3, 6, 3, 3` over the six passes. The engine
+  drew the same `78` words a cycle but `3, 6, 3, 3, 6, 3`: the spawn is the calling
+  part's stager call, which the engine ran behind the walker, so the master was first
+  walked a pass late. It now takes the walker's sweeps
+  ([effect VM](../subsystems/effect-vm.md#engine-port)), and on
+  `--retail-steps --rand-track` every arm-8 pass ends on retail's word (`105` of `105`,
+  `64` of `102` before). The arm's image did not move (`.585` to `.586`): no spawn was
+  missing, and what holds it is elsewhere.
 - **Ozma's arm 21** draws retail's words once the walker moved and reads as before: its
   residue is the step's fall partway through the arm
   ([open threads](../reference/open-rev-eng-threads.md#battle--rendering)).

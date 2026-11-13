@@ -296,6 +296,15 @@ cursor `8` / wait `8` against retail's `12` / `8`, and reads `8` / `0` with
 it. The pass that remains is Vahn's reaction clip itself, `100` sixteenths
 on the engine's frame against retail's `104`.
 
+A summon part's stager spawn is the same case. PROT 0919's arm 1 spawns
+effect `0x14` inside the calling part's move-VM step (`FUN_801F8578`), in the
+tick pass ahead of the walker, and the engine runs the part tick behind it,
+so `World::run_part_stager_calls` catches the master up on the pass's sweeps
+when the part tick calls it (the module tick's call, ahead of the walker,
+takes none). A `--watch` of the seed word across Spoon's arm 8 reads the
+burst's pass as the spawn's `48` leg draws and then six mirror draws; walked a
+pass late, the engine drew three there and six on the next.
+
 **In battle the walker sweeps from the draw preamble.** The draw tick's walk sits
 behind the frame driver's discarded `rand()` draw and every draw the state
 machines and the module tick make, and ahead of the bodies' draws, whose burning
