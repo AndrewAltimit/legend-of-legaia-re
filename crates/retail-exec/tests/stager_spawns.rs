@@ -72,6 +72,7 @@ const BLADE_BREATH: u32 = 0x801F_813C;
 const DOOMSDAY: u32 = 0x801F_7B74;
 const GUILTY_CROSS: u32 = 0x801F_7F2C;
 const PLASMA_STRIKE: u32 = 0x801F_86B0;
+const BLAZING_SLASH: u32 = 0x801F_8D30;
 const DEAD_END_CRISIS: u32 = 0x801F_78A4;
 const MEGATON_PRESS: u32 = 0x801F_8250;
 const OZMA: u32 = 0x801F_92AC;
@@ -369,6 +370,9 @@ fn cases() -> Vec<Case> {
         )(e)),
         case!(960, PLASMA_STRIKE, 0..1, |e| plain(
             t::plasma_strike_stager_spawns
+        )(e)),
+        case!(958, BLAZING_SLASH, 0..1, |e| plain(
+            t::blazing_slash_stager_spawns
         )(e)),
         case!(961, DEAD_END_CRISIS, 0..1, |e| {
             t::dead_end_crisis_stager_spawns(e.arm, e.caller, e.rand)
@@ -814,9 +818,10 @@ fn the_capture_cell_stagers_seat_what_retail_seats() {
         prot(944, GUILTY_CROSS),
         prot(960, PLASMA_STRIKE),
         prot(961, DEAD_END_CRISIS),
-        prot(959, MEGATON_PRESS)
+        prot(959, MEGATON_PRESS),
+        prot(958, BLAZING_SLASH)
     );
-    run(&[938, 962, 965, 944, 960, 961, 959]);
+    run(&[938, 962, 965, 944, 960, 961, 959, 958]);
 }
 
 #[test]

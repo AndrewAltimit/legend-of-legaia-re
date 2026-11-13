@@ -552,8 +552,68 @@ pub fn plasma_strike_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerS
     }
 }
 
+/// PROT 0958's stager `FUN_801F8D30` (Blazing Slash), reached through
+/// `gp[+0x714]` from its parts' op `0x20`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F8ED4`, `0x801F8F30` on the caller |
+/// | 1 | `0x801F9188` on the caller |
+/// | 2 | `0x801F8F8C`, `0x801F8FF4`, `0x801F905C`, `0x801F90B4`, `0x801F910C`, `0x801F9188` on the caller |
+///
+/// Every call goes through `FUN_80050ED4` at `0x1000`, on the caller's
+/// `+0x14` trio and `+0x24` angles. Arm 0 is the call arm 0's emitter
+/// `0x801F8EB8` makes `31` times, `11` vsyncs apart: the flame cone pairs
+/// that build and die under the caster through arms 1..4. Arm 2 is the
+/// opening call of `0x801F9164` (arms 5 and 21), arm 1 its `31` repeats.
+///
+/// PORT: FUN_801F8D30 (PROT 0958 stager)
+pub fn blazing_slash_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    let at = |r: u32| on_caller(r, caller, 0x1000);
+    match arm {
+        0 => vec![at(0x801F_8ED4), at(0x801F_8F30)],
+        1 => vec![at(0x801F_9188)],
+        2 => [
+            0x801F_8F8C,
+            0x801F_8FF4,
+            0x801F_905C,
+            0x801F_90B4,
+            0x801F_910C,
+            0x801F_9188,
+        ]
+        .into_iter()
+        .map(at)
+        .collect(),
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn blazing_slash_stager_seats_its_cone_pair_and_flame_rows() {
+        let caller = StagerCaller {
+            pos: [1, 2, 3],
+            rot: [4, 5, 6],
+            ..Default::default()
+        };
+        let recs = |arm| {
+            blazing_slash_stager_spawns(arm, caller)
+                .iter()
+                .map(|s| s.record)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(recs(0), [0x801F_8ED4, 0x801F_8F30]);
+        assert_eq!(recs(1), [0x801F_9188]);
+        assert_eq!(recs(2).len(), 6);
+        assert!(recs(3).is_empty());
+        let s = blazing_slash_stager_spawns(0, caller);
+        assert_eq!(
+            (s[0].pos, s[0].rot, s[0].scale),
+            ([1, 2, 3], [4, 5, 6], 0x1000)
+        );
+    }
 
     #[test]
     fn doomsday_stager_arm_one_seats_the_ring_on_its_caller() {
