@@ -13,15 +13,16 @@
 //! | move-VM ext `0x2F` | `0x801D45E4` (PROT 0897) | operand | `ext_set_8007b9d8` |
 //! | name entry `FUN_801F03F0` | save `0x801F0468`, hold `0x801F0488`, restore `0x801F09A0` | `1` while open | [`World::open_name_entry`] / [`World::step_name_entry`] |
 //! | save screen `FUN_801DC6B4` (PROT 0899) | `0x801DC7B4` / `0x801DC9BC`; save `0x801DD8AC`, restore `0x801DFC30` | `1`, then `2` | not modelled |
-//! | fishing init (PROT 0972) | `0x801CF344` | `2` | not modelled |
+//! | fishing init (PROT 0972) | `0x801CF344` | `2` | `PondSession::vsync` (`VENUE_FRAME_STEP`) |
 //! | Baka Fighter (PROT 0976) | `0x801CFCC4` / `0x801D0FAC` | `1` / `4` | not modelled |
-//! | arena init (PROT 0977) | `0x801CF8E0` | `2` | not modelled |
+//! | hub screens `FUN_801CF870` (PROT 0977) | `0x801CF8E0` | `2` | `HubTimers::tick` (`HUB_FRAME_STEP`) |
 //! | battle intro (PROT 0979) | `0x801CFE00` | `3` | not modelled |
-//! | dance (PROT 0980) | `0x801CF070` | `3` | not modelled |
+//! | dance (PROT 0980) | `0x801CF070` | `3` | `DanceGame::advance_vsync` (`HALL_FRAME_STEP`) |
 //! | monster test (PROT 0981) | `0x801CE884` / `0x801CEC1C` | variable | dev mode, not ported |
 //!
-//! The unmodelled rows run in modes whose engine sessions keep their own
-//! clocks; the audio ring ages by the display vsync, not by this floor, so
+//! The minigame rows are modelled by their engine sessions, which keep their
+//! own clocks rather than this word; the unmodelled rows run in modes whose
+//! sessions do the same. The audio ring ages by the display vsync, not by this floor, so
 //! none of them moves a cue.
 //!
 //! REF: FUN_80016B6C, FUN_8001DCF8, FUN_801D6704, FUN_801F03F0

@@ -637,7 +637,21 @@ pub struct HubTimers {
     pub prev_leg_open: bool,
     /// Last frame's "a contest is open".
     pub prev_contest_open: bool,
+    /// Vsyncs since the hub's last game tick ([`HUB_FRAME_STEP`]).
+    pub vsync_phase: u8,
+    /// Pad edges seen on vsyncs between two game ticks, held for the next
+    /// one as the pad pump's edge word holds them.
+    pub pending_pad: u16,
 }
+
+/// The hub's frame step. The screen routine `FUN_801CF870` stores `2` to
+/// the frame-step floor `_DAT_8007B9D8` on every call, ahead of its arm
+/// switch (`li v0,0x2` / `sw v0,-0x4628(v1)` at `0x801CF8DC..0x801CF8E0`),
+/// so the master frame driver's resolver never steps the hub under `2`:
+/// every arm runs once every two vsyncs, on a step of `2`. The engine runs
+/// the resolver's deterministic arm, the floor itself, as it does the
+/// fishing pond's and the dance hall's.
+pub const HUB_FRAME_STEP: u8 = 2;
 
 /// What one [`HubTimers::tick`] reads off the simulation. The hub's own
 /// state is the timers; these four are the world's, sampled by the caller
@@ -698,6 +712,39 @@ impl HubTimers {
     ///
     /// REF: FUN_801CF870 (the contest hub's screen arms)
     pub fn tick(&mut self, world: HubTickInputs<'_>, pad: u16, volume_word: u32) -> HubTimersFrame {
+        let mut out = self.edges(world);
+        // The arms run once every [`HUB_FRAME_STEP`] vsyncs. An idle hub
+        // stands one vsync short of its tick, so a screen the edges above
+        // (or an earlier vsync) armed takes its first step at once - the
+        // ROUND card's line starts on the leg's first vsync.
+        let pad = pad | std::mem::take(&mut self.pending_pad);
+        self.vsync_phase = self.vsync_phase.saturating_add(1);
+        if self.vsync_phase >= HUB_FRAME_STEP {
+            self.vsync_phase = 0;
+            self.game_tick(world, pad, volume_word, &mut out);
+        } else {
+            self.pending_pad = pad;
+        }
+        if !self.screen_up() {
+            self.vsync_phase = HUB_FRAME_STEP - 1;
+            self.pending_pad = 0;
+        }
+        out.next_leg = world.between_legs && !self.screen_up();
+        out
+    }
+
+    /// Whether any hub arm owns the frame: the first visit, a ROUND card,
+    /// the INTERVAL screen or a re-entered hub's backdrop.
+    fn screen_up(&self) -> bool {
+        self.first_visit.is_some()
+            || self.round_banner.is_some()
+            || self.interval.is_some()
+            || self.backdrop.is_some()
+    }
+
+    /// The leg and contest edges, read every vsync: they arm the screens
+    /// [`Self::game_tick`] runs.
+    fn edges(&mut self, world: HubTickInputs<'_>) -> HubTimersFrame {
         let leg_open = world.leg_open;
         let contest_open = world.contest.is_some();
         let round = world.contest.map_or(1, |c| c.round() as i32 + 1);
@@ -760,15 +807,30 @@ impl HubTimers {
             self.first_visit = None;
             self.round_banner = None;
         }
+        self.prev_leg_open = leg_open;
+        self.prev_contest_open = contest_open;
+        out
+    }
+
+    /// One game tick of the hub's arms, on a step of [`HUB_FRAME_STEP`].
+    fn game_tick(
+        &mut self,
+        world: HubTickInputs<'_>,
+        pad: u16,
+        volume_word: u32,
+        out: &mut HubTimersFrame,
+    ) {
+        let dt = HUB_FRAME_STEP;
+        let round = world.contest.map_or(1, |c| c.round() as i32 + 1);
         // Retail runs one arm at a time.
         if let Some(hub) = self.first_visit.as_mut() {
-            hub.tick(1, pad);
+            hub.tick(dt, pad);
             out.xa = hub.take_xa();
             if hub.done() {
                 self.first_visit = None;
             }
         } else if let Some((_, banner)) = self.round_banner.as_mut() {
-            banner.tick(1, pad);
+            banner.tick(dt, pad);
             if banner.done() {
                 self.round_banner = None;
             }
@@ -780,7 +842,7 @@ impl HubTimers {
                 .tally
                 .as_ref()
                 .is_some_and(|(ramp, _)| ramp.fade[0] >= crate::other_game_overlay::LANE_FADE_FULL);
-            backdrop.tick(1, pad, self.interval.map(|i| i.stage()), lane0_full);
+            backdrop.tick(dt, pad, self.interval.map(|i| i.stage()), lane0_full);
             if backdrop.card_brightness().is_some() {
                 // A re-entered hub's ROUND card is arm `0x15` too: its first
                 // tick starts the round's line (`0x801CFF4C..0x801CFF70`).
@@ -794,7 +856,7 @@ impl HubTimers {
             }
         }
         if let Some(interval) = self.interval.as_mut() {
-            interval.tick(1, pad);
+            interval.tick(dt, pad);
             // Arm `0x0B` tests the pad ahead of the roll (`0x801CFD60`, then
             // `jal 0x801CF074` at `0x801CFDBC`), so a press speeds up the
             // same frame's step. Arm `0x0A`, the heading's fade-in, has no
@@ -803,7 +865,10 @@ impl HubTimers {
                 self.tally_boost = true;
             }
             if let Some((ramp, tally)) = self.tally.as_mut() {
-                let step = ramp.tick(1, self.tally_boost, volume_word);
+                // The lanes' fades take the step; each drain moves one
+                // scaled share of its remainder a tick, so the roll's rows
+                // come at retail's thirty a second.
+                let step = ramp.tick(dt, self.tally_boost, volume_word);
                 *tally += step.tally_gain;
                 out.voice_cues.extend(step.cues.iter().copied());
             }
@@ -812,13 +877,6 @@ impl HubTimers {
                 self.tally = None;
             }
         }
-        out.next_leg = world.between_legs
-            && self.interval.is_none()
-            && self.backdrop.is_none()
-            && self.first_visit.is_none();
-        self.prev_leg_open = leg_open;
-        self.prev_contest_open = contest_open;
-        out
     }
 }
 
@@ -1098,6 +1156,103 @@ mod tests {
         // Arm `0x0A` does not read the pad.
         let (_, _, in_fade) = roll(&|f| if f == 0 { 0x40 } else { 0 });
         assert!(!in_fade, "the fade-in arm carries no pad test");
+    }
+
+    /// The hub's arms run once every [`HUB_FRAME_STEP`] vsyncs on that step
+    /// (`FUN_801CF870`'s floor store at `0x801CF8DC..0x801CF8E0`): a fade
+    /// moves `dt * 4` every second vsync, the first visit lasts as many
+    /// vsyncs as it did ticks at a step of one, the tally's rows come half as
+    /// often, and a press between two ticks is held for the next.
+    #[test]
+    fn the_hub_ticks_every_second_vsync_on_a_step_of_two() {
+        use crate::other_game_overlay::{LegScoreRows, ScoreTallyRamp};
+        let idle = HubTickInputs {
+            leg_open: false,
+            contest: None,
+            ringside_still: None,
+            between_legs: false,
+        };
+        // A first visit armed on an idle hub takes its first step at once.
+        let mut t = HubTimers {
+            vsync_phase: HUB_FRAME_STEP - 1,
+            first_visit: Some(FirstVisitHub::new()),
+            ..Default::default()
+        };
+        let mut levels = Vec::new();
+        let mut vsyncs: i32 = 0;
+        while t.first_visit_up() {
+            t.tick(idle, 0, 200);
+            if let Some(h) = t.first_visit.as_ref() {
+                levels.push(h.frame().intro.unwrap_or(-1));
+            }
+            vsyncs += 1;
+            assert!(vsyncs < 4000, "the first visit never ended");
+        }
+        assert_eq!(&levels[..4], &[8, 8, 16, 16], "dt * 4 every second vsync");
+        let mut solo = FirstVisitHub::new();
+        let mut ticks: i32 = 0;
+        while !solo.done() {
+            solo.tick(1, 0);
+            ticks += 1;
+        }
+        assert!(
+            (vsyncs - ticks).abs() <= 8,
+            "the visit lasts as many vsyncs ({vsyncs}) as step-1 ticks ({ticks})"
+        );
+
+        // The tally drains one scaled share a game tick: twice the vsyncs.
+        let rows = LegScoreRows {
+            round_lane: 900,
+            turns_lane: 700,
+            outcome_lane: 500,
+            score_cell: 300,
+        };
+        let drain_vsyncs = || {
+            let mut t = HubTimers {
+                vsync_phase: HUB_FRAME_STEP - 1,
+                interval: Some(HubScreen::interval(4000)),
+                tally: Some((ScoreTallyRamp::arm(rows), 0)),
+                ..Default::default()
+            };
+            (1..4000)
+                .find(|_| {
+                    t.tick(idle, 0, 200);
+                    t.tally.as_ref().is_some_and(|(r, _)| r.settled())
+                })
+                .expect("the tally drains")
+        };
+        let mut ramp = ScoreTallyRamp::arm(rows);
+        let solo_ticks = (1..4000)
+            .find(|_| {
+                ramp.tick(1, false, 200);
+                ramp.settled()
+            })
+            .unwrap();
+        let hub_vsyncs = drain_vsyncs();
+        assert!(
+            hub_vsyncs > solo_ticks * 3 / 2,
+            "the roll runs at thirty rows a second: {hub_vsyncs} vsyncs vs {solo_ticks} step-1 ticks"
+        );
+
+        // A press on the vsync between two ticks is held for the next one.
+        let mut t = HubTimers {
+            vsync_phase: HUB_FRAME_STEP - 1,
+            interval: Some(HubScreen::interval(4000)),
+            tally: Some((ScoreTallyRamp::arm(rows), 0)),
+            ..Default::default()
+        };
+        while t
+            .interval
+            .is_some_and(|i| i.stage() == HubScreenStage::FadeIn)
+        {
+            t.tick(idle, 0, 200);
+        }
+        // The fade-in ends on a tick: the next vsync is the one between.
+        assert_eq!(t.vsync_phase, 0);
+        t.tick(idle, 0x40, 200);
+        assert!(!t.tally_boost, "no tick ran on the press's vsync");
+        t.tick(idle, 0, 200);
+        assert!(t.tally_boost, "the next tick reads the held press");
     }
 
     /// A course run through three fights shows the first visit (the
