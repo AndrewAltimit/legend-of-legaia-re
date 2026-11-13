@@ -464,7 +464,10 @@ fn option_lines() -> Vec<Line> {
 }
 
 /// The first visible line that keeps line `idx` in view from `scroll`,
-/// together with its group heading when `idx` opens a group.
+/// together with its group heading when `idx` opens a group, and one line
+/// of what comes next on the side the list is moving: a row walked to at
+/// the panel's edge shows the row beyond it, so the list visibly goes on
+/// (it stopped flush on the focused row, which read as the end).
 fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
     let top = if idx > 0 && matches!(lines[idx - 1], Line::Heading(_)) {
         idx - 1
@@ -472,10 +475,10 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
         idx
     };
     let max = lines.len().saturating_sub(VISIBLE_LINES);
-    let s = if top < scroll {
-        top
-    } else if idx >= scroll + VISIBLE_LINES {
-        idx + 1 - VISIBLE_LINES
+    let s = if top <= scroll && scroll > 0 {
+        top.saturating_sub(1)
+    } else if idx + 1 >= scroll + VISIBLE_LINES {
+        (idx + 2).saturating_sub(VISIBLE_LINES)
     } else {
         scroll
     };
@@ -4550,7 +4553,11 @@ mod tests {
             .position(|l| *l == Line::Row(OptionRow::MasterVolume))
             .unwrap();
         assert_eq!(lines[sound - 1], Line::Heading("Sound"));
-        assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 1).min(max));
+        assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 2).min(max));
+        // A row walked to at either edge brings the line beyond it.
+        let s = scroll_to_reveal(&lines, 0, VISIBLE_LINES - 1);
+        assert_eq!(s, 1, "the row under the bottom row shows");
+        assert_eq!(scroll_to_reveal(&lines, 5, 5), 4, "the line above shows");
         // Every row is reachable and visible within the panel height.
         assert!(VISIBLE_LINES as i32 * ROW_PITCH + 2 * LIST_INSET <= STAGE_H - PAD - COLUMNS_Y);
     }

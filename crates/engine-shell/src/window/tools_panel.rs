@@ -161,6 +161,20 @@ const PARTY_PICKS: [&str; 7] = [
     "gala",
 ];
 
+/// A party pick as the row and its note show it: the names as the game
+/// spells them (`vahn,noa` reads `Vahn, Noa`), not the `--party` spec.
+fn party_label(spec: &str) -> String {
+    spec.split(',')
+        .map(|name| {
+            let mut c = name.trim().chars();
+            c.next()
+                .map(|f| f.to_uppercase().chain(c).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The spell picks: the player Seru block the Cheats page's Seru grant covers.
 const SPELL_PICKS: std::ops::RangeInclusive<u8> = legaia_engine_cheats::cheats::SERU_SPELL_IDS;
 
@@ -247,7 +261,7 @@ impl PlayWindowApp {
             ToolRow::BattleCadence => world.toggles.battle_sm_frame_cadence,
             ToolRow::OverworldMarkers => world.toggles.overworld_marker_overlay,
             ToolRow::EffectOutlines => self.fx_outline,
-            ToolRow::Party => return ToolValue::Pick(PARTY_PICKS[page.party].replace(',', ", ")),
+            ToolRow::Party => return ToolValue::Pick(party_label(PARTY_PICKS[page.party])),
             ToolRow::BattleBgm => return ToolValue::Pick(bgm_pick_label(page.bgm)),
             ToolRow::LearnSpell => {
                 let id = SPELL_PICKS.clone().nth(page.spell).unwrap_or(0x81);
@@ -311,7 +325,7 @@ impl PlayWindowApp {
             ToolRow::Party => {
                 let spec = PARTY_PICKS[self.tools_page.party];
                 self.tools_page.note = Some(match self.session.seat_party_spec(spec) {
-                    Ok(_) => format!("Party: {}.", spec.replace(',', ", ")),
+                    Ok(_) => format!("Party: {}.", party_label(spec)),
                     Err(e) => e,
                 });
             }
@@ -603,6 +617,12 @@ mod tests {
 
     /// A pick steps inside its list and leaves other rows alone.
     #[test]
+    fn a_party_pick_reads_as_names() {
+        assert_eq!(party_label("vahn"), "Vahn");
+        assert_eq!(party_label("noa,vahn,gala"), "Noa, Vahn, Gala");
+    }
+
+    #[test]
     fn a_pick_wraps_its_own_list() {
         let mut p = ToolsPage::default();
         assert!(p.pick(ToolRow::Party, -1));
@@ -661,7 +681,7 @@ mod tests {
                 );
             }
             for p in PARTY_PICKS {
-                let v = p.replace(',', ", ");
+                let v = party_label(p);
                 assert!(
                     width("Party") + width(&format!("< {v} >")) <= WIDTH - 12,
                     "{v}"
