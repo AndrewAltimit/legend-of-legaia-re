@@ -718,7 +718,7 @@ follow past the page's own helper.
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = ["battle_stage_layers", "push_back"]
-web_only = ["armed", "battle_monster_slots", "battle_party_forms", "ensure_battle_party_forms", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_wave_monsters", "tmd_bytes", "upload_flame_atlas_into_vram"]
+web_only = ["armed", "battle_monster_texture_slots", "battle_party_forms", "ensure_battle_party_forms", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_wave_monsters", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
 The presentation itself is one session step on both hosts
 (`BootSession::step_battle_presentation`: the battle audio, the strike
