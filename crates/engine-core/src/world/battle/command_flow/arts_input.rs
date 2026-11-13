@@ -286,6 +286,7 @@ impl World {
     /// An arts-name table record's name bytes with its `0xC1 XX` party-name
     /// splices expanded (the text kernel's expander `FUN_80036514`); the
     /// `0xCF XX` ink escapes stay.
+    // REF: FUN_80036514
     pub(crate) fn expand_art_name(&self, raw: &[u8]) -> Vec<u8> {
         let mut name = Vec::with_capacity(raw.len());
         let mut b = raw.iter().copied();

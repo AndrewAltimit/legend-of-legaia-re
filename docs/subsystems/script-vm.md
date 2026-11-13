@@ -2649,7 +2649,7 @@ The length is the VM's own bound (op `0x49` rejects `sub_op > 0xD`,
 | `5` | `0x24` | `FUN_801EF2B0` - the **tile-board** walk SM |
 | `6` | `0x25` | `FUN_801F0ADC` - the casino coin counter |
 | `8` | `0x27` | `FUN_801F1138` - the start / confirm menu |
-| `9` | `0x28` | `FUN_801F1FDC` - the prompt |
+| `9` | `0x28` | `FUN_801F1FDC` - the prompt; its window `9` is the **art-learned notice** (below) |
 | `0xA` | `0x31` | `FUN_801ED590` |
 | `0xB` | `0x32` | `FUN_801F1E48` - the Incense wear-off notice (below) |
 | `0xC` | `0x33` | `FUN_801EDF00` - the **return-to-title soft reset** `edlast` ends on ([`cutscene.md`](cutscene.md#the-ending-vignettes-refuse-the-pad)) |
@@ -2668,6 +2668,26 @@ tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-scene-host/tests/hub_tables_disc.rs`.
+
+#### Sub-op `9`: the art-learned notice
+
+`49 09 00 <char> <art>` follows every scripted Hyper Art grant (`4C C7`, the
+masters and Drake Castle's book of Biron arts in `dolk2` P1[49]). The prompt
+`FUN_801F1FDC` installs descriptor `PANEL_PROMPT`, windows `0` and `9`, waits
+for a confirm and hands back. Window `9`'s painter `FUN_801E733C` draws two
+field-overlay strings, `0x801F2B5C` and `0x801F2B6C`, stacked `0x0F` apart at
+the record's origin `(0x20, 0x60)` (geometry `0x100 x 0x1A`). Before drawing it
+patches the operand of the first `0xC1` in the first string to the parked
+payload's `+2` byte (the character) and the operand of the first `0xC5` in the
+second to `+3 + (+2) * 0x40` (the art, split back the way the dialog kernel's
+`0xC5` arm splits it). The search is `FUN_8003CBF8`, which steps over each
+`0xCx` operand; both strings carry a zero operand on disc, so a reader that
+stops at the first `NUL` loses everything after the token.
+
+Port: `legaia_engine_core::field_submode_screen::art_notice`
+(`World::art_notice_shown`, `World::art_notice_lines`), drawn by both hosts
+through `legaia_engine_screens::field_messages`; the disc pin is
+`crates/engine-scene-host/tests/art_notice_disc.rs`.
 
 #### Sub-op `2`: the code lock
 
