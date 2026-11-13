@@ -1265,6 +1265,7 @@ fn seat_prologue_npc(w: &mut World, slot: u8) {
             body: vec![0x1F, b'h', b'i', 0x00, 0x21],
             entry_pc: 0,
             first_segment: 0,
+            resume: false,
         },
     );
     w.toggles.use_vm_dialogue = true;

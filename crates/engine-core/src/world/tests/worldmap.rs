@@ -915,6 +915,7 @@ fn world_map_talk_probe_waits_out_an_engaging_script() {
             body: vec![0x25, 0x21, 0x1F, b'A', 0x00, 0x21],
             entry_pc: 2,
             first_segment: 2,
+            resume: false,
         },
     );
     let p = world.player_actor_slot.expect("player") as usize;

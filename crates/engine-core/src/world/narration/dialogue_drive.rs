@@ -336,7 +336,9 @@ impl World {
                 // A non-`0x1F` terminator before any box opened: if a prologue
                 // fallback is pending, resume at the first segment (so the box
                 // still shows); otherwise the conversation ends.
-                if let Some(fb) = id.fallback_segment_pc.take() {
+                if !id.resumed
+                    && let Some(fb) = id.fallback_segment_pc.take()
+                {
                     id.pc = fb;
                     continue;
                 }
@@ -960,6 +962,7 @@ impl World {
                     // `0xA1` NOP runs through like any other op.
                     if b == 0x21 {
                         if !id.spawned
+                            && !id.resumed
                             && let Some(fb) = id.fallback_segment_pc.take()
                         {
                             id.pc = fb;
@@ -1922,6 +1925,10 @@ impl World {
                         prologue.entry_pc,
                         prologue.first_segment,
                     );
+                // A live cursor runs as the dialog SM runs it: an executed
+                // `0x21` before any box ends the talk (see
+                // `InlineDialogPrologue::resume`).
+                runner.resumed = prologue.resume;
                 runner.npc_slot = self.dialog.active_inline_slot.take();
                 self.dialog.inline = Some(runner);
             } else if let Some(req) = self.dialog.current.as_ref() {
@@ -1953,6 +1960,7 @@ impl World {
                 && let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
             {
                 rec.entry_pc = pc;
+                rec.resume = true;
             }
             // A talk that ended on an executed raw `0x21` leaves the actor's
             // own context there too: the talk and the placement are one
@@ -1967,13 +1975,29 @@ impl World {
                 && id.pc > 0
                 && id.bytecode.get(id.pc - 1) == Some(&0x21)
                 && id.visited.get(id.pc - 1).copied().unwrap_or(false)
-                && let Some(c) = self
+            {
+                if let Some(c) = self
                     .field_vm
                     .channels
                     .iter_mut()
                     .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
-            {
-                c.pc = id.pc;
+                {
+                    c.pc = id.pc;
+                }
+                // ...and the next talk resumes there too: the dialog SM
+                // stores the forwarded PC before it tests for the `0x21`
+                // (`sh a1,0x9e(s2)` in the delay slot at `0x80039E24`).
+                // Restarting at the interaction entry instead re-ran a
+                // chest's grant on every touch: `39 <item>`, `50 <flag>`,
+                // `21` is where its talk ends, and the `26` to the
+                // "treasure chest is empty!" loop sits behind it.
+                // REF: FUN_80039B7C
+                if let Some(rec) = self.npcs.dialog_prologue.get_mut(&slot)
+                    && id.pc < rec.body.len()
+                {
+                    rec.entry_pc = id.pc;
+                    rec.resume = true;
+                }
             }
             self.dialog.inline = None;
             self.dialog.current = None;

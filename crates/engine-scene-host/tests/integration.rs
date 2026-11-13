@@ -93,6 +93,7 @@ mod field_object_placement_disc;
 mod field_object_render_scale_disc;
 mod field_object_visibility_disc;
 mod field_party_gesture_bank_disc;
+mod field_pickup_once_disc;
 mod field_placement_retire_disc;
 mod field_player_clip_disc;
 mod field_prop_anim_disc;
