@@ -477,7 +477,9 @@ face buttons, L1 / L2 / R1 / R2 and Select / Start. It shows by default on a
 phone or tablet; the **Touch pad** button under the picture shows or hides it
 on any device, and the choice is remembered. Its presses reach the game as a
 controller's do, so every screen that takes a pad takes it; a drag on the
-picture outside the buttons still turns the camera.
+picture outside the buttons still turns the camera. On a phone held upright
+the pad sits under the picture rather than over it, so the HUD and the scene
+stay clear; turned sideways or in fullscreen it is back over the picture.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a

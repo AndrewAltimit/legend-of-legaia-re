@@ -267,7 +267,12 @@ about a 45-degree wedge per diagonal), so a thumb rolls between directions witho
 lifting. A first touch focuses the canvas and unlocks audio, as a canvas click does.
 It shows by default where the only pointer is coarse (`(pointer: coarse)` without
 `(any-pointer: fine)`); the *Touch pad* button toggles it and the choice is stored
-under `legaia.touch-pad`. Hiding it releases whatever it held.
+under `legaia.touch-pad`. Hiding it releases whatever it held. On a phone held
+upright (portrait, at most 620px wide) and out of fullscreen the pad sits in a
+band under the picture instead, START and SELECT between the shoulders: over a
+picture that small its shoulder buttons covered the party's HP readout and its
+D-pad and face buttons a third of the scene. Landscape and fullscreen keep it over
+the picture.
 
 What only a browser has is driven headless by the `controls` step of
 [`check-pages.mjs`](../../scripts/ci/check-pages.mjs) on the built bundle: a

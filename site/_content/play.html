@@ -176,6 +176,19 @@ body.xw-preview .touch-pad { display: none; }
   border-radius: 6px; font-size: 0.75rem; }
 .touch-pad .tp-l2 { left: 3%; } .touch-pad .tp-l1 { left: calc(4% + clamp(44px, 10%, 72px)); }
 .touch-pad .tp-r2 { right: 3%; } .touch-pad .tp-r1 { right: calc(4% + clamp(44px, 10%, 72px)); }
+/* A phone held upright: the picture is too small to share with the pad, whose
+   shoulder buttons covered the party's HP readout and whose D-pad and face
+   buttons covered a third of the scene. The pad moves into a band under the
+   picture, START and SELECT between the shoulders; a landscape screen and
+   fullscreen keep it over the picture. */
+@media (orientation: portrait) and (max-width: 620px) {
+  .play-screen:not(:fullscreen) .play-canvas-wrap:has(> .touch-pad:not(.is-hidden)) { margin-bottom: 212px; }
+  .play-screen:not(:fullscreen) .touch-pad { inset: auto 0 auto 0; top: calc(100% + 8px); height: 200px; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-dpad { width: 148px; bottom: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-face { width: 152px; bottom: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-middle { bottom: auto; top: 3%; }
+  .play-screen:not(:fullscreen) .touch-pad .tp-small { padding: 0.45rem 0.7rem; }
+}
 body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
 /* The picture takes the frame's own shape: the workbench's view is as wide
    as its window, not 4:3. */
