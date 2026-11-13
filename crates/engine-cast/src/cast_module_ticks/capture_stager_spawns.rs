@@ -1,10 +1,10 @@
 //! The op-`0x20` stagers of the capture-class cells whose parts call back
 //! into their module: PROT 0938 (Chaos Breath / Mystic Circle), PROT 0944
 //! (Guilty Cross / Curse All), PROT 0946 (Zeto's Call Wave / Big Wave), PROT
-//! 0959 (Che Delilas's Megaton Press), PROT 0960 (Lu Delilas's Plasma Strike)
-//! and
-//! PROT 0962 (the Blade Breath cell, whose
-//! `0xA5` body is Cort's Ultra Charge). Each seats more records off the
+//! 0950 (Rolling Flare / Shadow Break), PROT 0958 (Gi Delilas's Blazing
+//! Slash), PROT 0959 (Che Delilas's Megaton Press), PROT 0960 (Lu Delilas's
+//! Plasma Strike), PROT 0962 (the Blade Breath cell, whose `0xA5` body is
+//! Cort's Ultra Charge) and PROT 0963 (Songi's Genocidal Cannon). Each seats more records off the
 //! calling part, the shape [`super::stager_spawns`] documents for the summon
 //! band.
 
@@ -588,8 +588,125 @@ pub fn blazing_slash_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerS
     }
 }
 
+/// PROT 0950's stager `FUN_801F8208` (Rolling Flare / Shadow Break), reached
+/// through `gp[+0x714]` from its parts' op `0x20`. Arm 0 seats `0x801F8610`
+/// on the caller's `+0x14` trio and `+0x24` angles through `FUN_80050ED4`,
+/// at the caller's own scale `+0x72` (`lh a3,0x72(v0)` at `0x801F8224`);
+/// every other arm returns (`bnez a1` at `0x801F8210`).
+///
+/// PORT: FUN_801F8208 (PROT 0950 stager)
+pub fn rolling_flare_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    match arm {
+        0 => vec![on_caller(0x801F_8610, caller, caller.scale)],
+        _ => Vec::new(),
+    }
+}
+
+/// The battle actor PROT 0963's stager arms 1 and 3 aim off: table slot 3 of
+/// `0x801C9370` (`lw v0,0xC(v1)`), its live trio `+0x34..+0x38` and its
+/// facing `+0x46`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GenocidalCannonMuzzle {
+    pub pos: [i16; 3],
+    pub facing: i16,
+}
+
+/// PROT 0963's stager arm 2 fade (`0x801F83D8..0x801F841C`): the shared
+/// template block `0x801C9070`, additive `(0xFF, 0xF0, 0xC0)` to black over
+/// `0x18` frames, id `1`.
+pub const GENOCIDAL_CANNON_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x18,
+        start_rgb: [0xFF, 0xF0, 0xC0],
+        end_rgb: [0, 0, 0],
+        delay: 0,
+        hold: 0,
+    };
+
+/// PROT 0963's stager `FUN_801F81A0` (Songi's Genocidal Cannon), reached
+/// through `gp[+0x714]` from its parts' op `0x20`. Every seat goes through
+/// `FUN_80050ED4` on the caller's `+0x24` angles at the caller's scale
+/// `+0x72`:
+///
+/// | Arm | Seats |
+/// |---:|---|
+/// | 0 | `0x801F8678` on the caller's `+0x3C` trio |
+/// | 1 | `0x801F8940`, then `0x801F8984`, at the muzzle point |
+/// | 2 | nothing: the fade [`GENOCIDAL_CANNON_STAGER_FADE`] |
+/// | 3 | `0x801F8984` at the muzzle point |
+///
+/// The muzzle point is slot 3's `+0x34` trio with `y = -0x300`, pushed
+/// `0xC0` along its facing: `x += trunc(sin f * 0xC0 / 4096)`,
+/// `z += trunc(cos f * 0xC0 / 4096)` off the `0x8007B81C` / `0x8007B7F8`
+/// tables, each a halfword add (`0x801F8214..0x801F82E0`, the same at
+/// `0x801F8300..0x801F83C0`).
+///
+/// PORT: FUN_801F81A0 (PROT 0963 stager)
+pub fn genocidal_cannon_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    muzzle: GenocidalCannonMuzzle,
+) -> Vec<StagerSpawn> {
+    let seat = |record: u32, pos: [i16; 3]| StagerSpawn {
+        pos,
+        ..on_caller(record, caller, caller.scale)
+    };
+    let point = || {
+        let (sin, cos) = legaia_engine_system::trig::trig12(muzzle.facing as u16);
+        let push = |v: i16| ((i32::from(v) * 0xC0) / 4096) as i16;
+        [
+            muzzle.pos[0].wrapping_add(push(sin)),
+            -0x300,
+            muzzle.pos[2].wrapping_add(push(cos)),
+        ]
+    };
+    match arm {
+        0 => vec![seat(0x801F_8678, caller.disp)],
+        1 => vec![seat(0x801F_8940, point()), seat(0x801F_8984, point())],
+        3 => vec![seat(0x801F_8984, point())],
+        _ => Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn genocidal_cannon_stager_aims_off_slot_three() {
+        let caller = StagerCaller {
+            pos: [1, 2, 3],
+            rot: [4, 5, 6],
+            disp: [7, 8, 9],
+            scale: 0x1234,
+            ..Default::default()
+        };
+        let muzzle = GenocidalCannonMuzzle {
+            pos: [100, 200, 300],
+            facing: 0,
+        };
+        let s = genocidal_cannon_stager_spawns(0, caller, muzzle);
+        assert_eq!(
+            (s[0].record, s[0].pos, s[0].scale),
+            (0x801F_8678, [7, 8, 9], 0x1234)
+        );
+        let s = genocidal_cannon_stager_spawns(1, caller, muzzle);
+        assert_eq!(
+            s.iter().map(|s| (s.record, s.pos)).collect::<Vec<_>>(),
+            [
+                (0x801F_8940, [100, -0x300, 492]),
+                (0x801F_8984, [100, -0x300, 492])
+            ]
+        );
+        assert!(genocidal_cannon_stager_spawns(2, caller, muzzle).is_empty());
+        assert_eq!(genocidal_cannon_stager_spawns(3, caller, muzzle).len(), 1);
+        let s = rolling_flare_stager_spawns(0, caller);
+        assert_eq!(
+            (s[0].record, s[0].pos, s[0].scale),
+            (0x801F_8610, [1, 2, 3], 0x1234)
+        );
+        assert!(rolling_flare_stager_spawns(1, caller).is_empty());
+    }
 
     #[test]
     fn blazing_slash_stager_seats_its_cone_pair_and_flame_rows() {

@@ -73,6 +73,8 @@ const DOOMSDAY: u32 = 0x801F_7B74;
 const GUILTY_CROSS: u32 = 0x801F_7F2C;
 const PLASMA_STRIKE: u32 = 0x801F_86B0;
 const BLAZING_SLASH: u32 = 0x801F_8D30;
+const ROLLING_FLARE: u32 = 0x801F_8208;
+const GENOCIDAL_CANNON: u32 = 0x801F_81A0;
 const DEAD_END_CRISIS: u32 = 0x801F_78A4;
 const MEGATON_PRESS: u32 = 0x801F_8250;
 const OZMA: u32 = 0x801F_92AC;
@@ -194,6 +196,7 @@ fn expected_fades(entry: u32, arm: u8) -> Vec<(SummonFadeTemplate, u32)> {
         (929, t::MULE_STAGER_FADE_ARM) => t::MULE_STAGER_FADES.iter().map(|&f| (f, 1)).collect(),
         (959, 2) => one(t::MEGATON_PRESS_WHITE_OUT),
         (959, 3) => one(t::MEGATON_PRESS_HELD_WHITE),
+        (963, 2) => one(t::GENOCIDAL_CANNON_STAGER_FADE),
         _ => Vec::new(),
     }
 }
@@ -374,6 +377,18 @@ fn cases() -> Vec<Case> {
         case!(958, BLAZING_SLASH, 0..1, |e| plain(
             t::blazing_slash_stager_spawns
         )(e)),
+        case!(950, ROLLING_FLARE, 0..1, |e| plain(
+            t::rolling_flare_stager_spawns
+        )(e)),
+        case!(963, GENOCIDAL_CANNON, 0..1, |e| {
+            // Arms 1 and 3 aim off table slot 3's live trio and facing.
+            let a = e.mem.rd32(ACTORS + 3 * 4);
+            let muzzle = t::GenocidalCannonMuzzle {
+                pos: trio(e.mem, a + 0x34),
+                facing: e.mem.rd16(a + 0x46) as i16,
+            };
+            t::genocidal_cannon_stager_spawns(e.arm, e.caller, muzzle)
+        }),
         case!(961, DEAD_END_CRISIS, 0..1, |e| {
             t::dead_end_crisis_stager_spawns(e.arm, e.caller, e.rand)
         }),
@@ -819,9 +834,11 @@ fn the_capture_cell_stagers_seat_what_retail_seats() {
         prot(960, PLASMA_STRIKE),
         prot(961, DEAD_END_CRISIS),
         prot(959, MEGATON_PRESS),
-        prot(958, BLAZING_SLASH)
+        prot(958, BLAZING_SLASH),
+        prot(950, ROLLING_FLARE),
+        prot(963, GENOCIDAL_CANNON)
     );
-    run(&[938, 962, 965, 944, 960, 961, 959, 958]);
+    run(&[938, 962, 965, 944, 960, 961, 959, 958, 950, 963]);
 }
 
 #[test]
