@@ -186,8 +186,12 @@ field VM over it, handing a text byte to the pager `FUN_801D84D0`.
   `play-window` default; `--simple-dialogue` types `World::npcs.dialog` through
   `OwnedDialogPanel::from_inline_dialog` instead.
 - The untruncated record is kept as `World::npcs.dialog_prologue`
-  (`man_field_scripts::placement_interaction_record`, entered at the interaction cursor); the
-  runner falls back to the first segment when the prologue reaches none.
+  (`man_field_scripts::placement_interaction_record`, entered at the interaction cursor). On a
+  first talk the runner falls back to the first segment when the prologue reaches none. A talk
+  resumed from the cursor an earlier talk wrote back ends on an executed raw `0x21` before any
+  box, as the SM does, and never falls back (`InlineDialogPrologue::resume`): a chest's second
+  touch runs its "empty" loop, a pickup spot's is silent
+  ([the interaction cursor](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)).
 
 Owning page: [`mes.md`](../../formats/mes.md#dialog-window-pager---fun_801d84d0) (pager and
 [picker layout](../../formats/mes.md#picker-control-region-layout)).
