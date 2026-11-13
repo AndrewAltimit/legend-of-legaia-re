@@ -368,6 +368,7 @@ impl World {
             // frame its own cost. A module with no seek (the capture band's)
             // starts its clip as the cue funnel does.
             self.audio.battle_xa_frame_load = self.casting.drive_arms.is_none();
+            self.audio.battle_xa_poll_load = false;
             // A band module's line loads the frame from its cue's pass, with
             // no onset ramp (`frame_clock::xa_stream_pass_cost` reads a clip
             // with no cue frame as long started). The funnel's ramp measured

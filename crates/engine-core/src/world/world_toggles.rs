@@ -166,6 +166,17 @@ pub struct WorldToggles {
     /// `LEGAIA_BATTLE_CD_TIMING=console` (`pcsx-redux` names the default), and
     /// the cast-sequence films from `--console-cd`.
     pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
+    /// Opt-in, off by default: run each battle frame for the span retail's
+    /// `VSync(n)` gives its cost (`frame_clock::frame_span`), a clip-loaded
+    /// frame at its work over the polls' share (`xa_loaded_frame_cost`) for
+    /// the clip's read window (`XA_READ_TAIL_VSYNCS`). Off, an ordinary frame
+    /// runs its step and a loaded one a single vsync past it. Retail's law,
+    /// held back because the frames it lengthens move vsync-timed gates the
+    /// engine does not yet place on retail's clock: the drive word a shout's
+    /// fallback reads loses cues on Medusa's Glare and Lip King's Kiss of
+    /// Death (`docs/subsystems/battle-stage-camera.md`, "A frame's span").
+    /// The native session raises it from `LEGAIA_BATTLE_FRAME_SPAN=1`.
+    pub battle_frame_span_law: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -447,6 +458,7 @@ impl WorldToggles {
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
+            battle_frame_span_law: false,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

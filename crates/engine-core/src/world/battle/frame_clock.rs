@@ -62,6 +62,7 @@ impl World {
                 n,
                 work,
                 self.toggles.battle_cd_timing,
+                self.toggles.battle_frame_span_law && self.audio.battle_xa_poll_load,
             )
         });
         let cost = arm_step.map_or(loaded.unwrap_or(work), cost_of_step);
@@ -96,8 +97,8 @@ impl World {
     pub(in crate::world) fn arm_battle_xa_load_window(&mut self) {
         use legaia_engine_battle_loop::frame_clock::{CdTiming, XA_READ_TAIL_VSYNCS};
         let tail = match self.toggles.battle_cd_timing {
-            CdTiming::PcsxRedux => XA_READ_TAIL_VSYNCS,
-            CdTiming::Console => 0,
+            CdTiming::PcsxRedux if self.toggles.battle_frame_span_law => XA_READ_TAIL_VSYNCS,
+            _ => 0,
         };
         self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
     }
@@ -431,9 +432,21 @@ impl World {
         // dear first pass on a cheap step, and every frame a clip's polls load
         // (`XA_POLL_COST_RATIO_MILLI`), arm or not.
         let step = self.battle.frame_clock.step;
-        let extra = if self.toggles.battle_party_cost_step && self.battle.frame_stretch.is_none() {
+        let law = self.toggles.battle_frame_span_law;
+        let extra = if !self.toggles.battle_party_cost_step
+            || (law && self.battle.frame_stretch.is_some())
+        {
+            0
+        } else if law {
             legaia_engine_battle_loop::frame_clock::frame_span(span_cost, step)
                 .saturating_sub(step.max(1))
+        } else if measured.is_none()
+            && self.toggles.battle_cd_timing
+                == legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux
+            && self.battle_xa_passes_since_cue().is_some_and(|n| n >= 2)
+        {
+            // Off the law: a loaded ordinary frame runs one vsync past its step.
+            legaia_engine_battle_loop::frame_clock::XA_STREAM_SPAN_EXTRA
         } else {
             0
         };
@@ -1591,6 +1604,7 @@ mod tests {
         let mut w = World::new();
         w.mode = legaia_engine_mode::mode::SceneMode::Battle;
         w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_frame_span_law = true;
         w.party.party_count = 3;
         w.battle_ctx.action_state = 0x1E;
         w.clock.display_frames = 10;
@@ -1754,12 +1768,14 @@ mod tests {
     fn a_full_partys_loaded_frame_spans_its_work_under_the_polls() {
         use legaia_engine_battle_loop::frame_clock::{CdTiming, frame_span, xa_loaded_frame_cost};
         let mut w = World::new();
+        w.toggles.battle_frame_span_law = true;
         w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
         w.party.party_count = 3;
         w.battle_ctx.action_state = 0x20;
         w.audio.battle_xa_busy_frames = 60;
         w.audio.battle_xa_load_frames = 60;
         w.audio.battle_xa_frame_load = true;
+        w.audio.battle_xa_poll_load = true;
         w.battle.frame_clock.step = 4;
         w.apply_cast_arm_frame_step();
         let work = legaia_engine_battle_loop::frame_clock::measured_frame_cost(3, 0x20);
@@ -1773,6 +1789,7 @@ mod tests {
     #[test]
     fn an_ordinary_frame_spans_what_its_cost_runs_past() {
         let mut w = World::new();
+        w.toggles.battle_frame_span_law = true;
         w.party.party_count = 3;
         w.battle_ctx.action_state = 0x1E;
         w.battle.frame_clock.step = 2;

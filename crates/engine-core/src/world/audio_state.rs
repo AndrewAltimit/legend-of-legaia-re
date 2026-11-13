@@ -100,6 +100,13 @@ pub struct AudioState {
     /// (`frame_clock::XA_READ_TAIL_VSYNCS`). Counted down beside
     /// [`Self::battle_xa_busy_frames`], which keeps gating the drive.
     pub battle_xa_load_frames: u16,
+    /// Whether the loading clip's frames cost their work under the polls'
+    /// share (`frame_clock::xa_loaded_frame_cost`): a clip the cue funnel or
+    /// the arts voice starts. A capture-band module's line loads the frame at
+    /// the item's measured floor only: retail's frames under one run from no
+    /// overrun (Death Game's `425`-vsync line, four-vsync frames at step `4`)
+    /// to five and more (Bloody Horns', Lapis Wave's), which no one share reads.
+    pub battle_xa_poll_load: bool,
     /// The battle frame the newest loading clip was started on
     /// ([`Self::battle_xa_frame_load`]): its sectors reach the frame's cost
     /// only after it ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
@@ -380,6 +387,7 @@ impl AudioState {
             battle_xa_busy_frames: 0,
             battle_xa_frame_load: false,
             battle_xa_load_frames: 0,
+            battle_xa_poll_load: false,
             battle_xa_cue_frame: None,
             battle_sfx_bank: None,
             field_xa_cues: Vec::new(),

@@ -437,7 +437,12 @@ pub const XA_STREAM_SPAN_EXTRA: u8 = frame_span(XA_STREAM_FRAME_COST, 4) - 4;
 /// console ([`CdTiming::Console`]) a pass from the
 /// cue's next on costs its base over the console's share
 /// ([`legaia_engine_cast::cast_module_frame_step::console_poll_cost`]).
-pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTiming) -> u16 {
+pub const fn xa_stream_pass_cost(
+    passes_since_cue: u64,
+    base: u16,
+    timing: CdTiming,
+    poll_share: bool,
+) -> u16 {
     if let CdTiming::Console = timing {
         return if passes_since_cue == 0 {
             base
@@ -448,7 +453,14 @@ pub const fn xa_stream_pass_cost(passes_since_cue: u64, base: u16, timing: CdTim
     match passes_since_cue {
         0 => base,
         1 => base.saturating_add(XA_STREAM_ONSET_COST),
-        _ => xa_loaded_frame_cost(base),
+        _ if poll_share => xa_loaded_frame_cost(base),
+        _ => {
+            if base > XA_STREAM_FRAME_COST {
+                base
+            } else {
+                XA_STREAM_FRAME_COST
+            }
+        }
     }
 }
 
@@ -992,7 +1004,7 @@ mod frame_cost_tests {
         // Flying Knee's art frames: nine over some `630`.
         assert_eq!(frame_span(xa_loaded_frame_cost(630), 4), 9);
         assert_eq!(
-            xa_stream_pass_cost(5, 630, CdTiming::PcsxRedux),
+            xa_stream_pass_cost(5, 630, CdTiming::PcsxRedux, true),
             xa_loaded_frame_cost(630)
         );
     }
