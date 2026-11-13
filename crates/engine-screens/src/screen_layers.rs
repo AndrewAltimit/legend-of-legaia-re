@@ -221,7 +221,19 @@ pub fn compose_screen_prims(
         under.clear();
     }
     let mut over = transition;
-    over.extend(battle_fx);
+    // The battle screen-FX layer (weapon trails, the move-FX streak and
+    // ribbons, the cast ribbon rings) links into the table at its own
+    // buckets, `0x18` and deeper, behind the HUD's `1` / `0`: the status
+    // panels and the caption draw over it. Over the text, a Thunder Storm
+    // ribbon crossed Noa's panel and tinted its caption.
+    for p in battle_fx {
+        let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
+        if screen_prim::push_covers_text(ot) {
+            over.push(p);
+        } else {
+            under.push(p);
+        }
+    }
     // PROT 0948's Cross Beam (OT `2` / `0x400`, both behind the text) and
     // PROT 0904's beam.
     if let Some(c) = world.cross_beam_draw() {
@@ -413,11 +425,11 @@ mod tests {
         };
         let (under, over) = compose_screen_prims(&w, &menu, None, host);
         // A readout prim deeper than bucket 0 (the popups' bucket 1) stays
-        // under the text.
-        assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5, 102]);
+        // under the text, and so does the battle FX layer at its own bucket.
+        assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 101, 5, 102]);
         assert_eq!(
             tags(&over),
-            vec![100, 101, 103, 104, 105, 106, 107, 108, 109, 110]
+            vec![100, 103, 104, 105, 106, 107, 108, 109, 110]
         );
     }
 

@@ -550,6 +550,8 @@ The launch position is not the bare actor position. Retail re-seeds its stack pa
 
 Both hosts draw it through one function, `engine-screens::battle_fx::battle_fx_prims`: the packets as semi-transparent screen prims at `streak_pass::MOVE_FX_STREAK_OT`, projected through the battle VP with the 4x world scale composed.
 
+The layer composites under the text layer (`engine-screens::screen_layers`, split at `screen_prim::push_covers_text` as the screen-effect pushes are): its buckets, `0x18` and deeper, lie behind the HUD's `1` and `0`, so the status panels and the caption draw over a ribbon. Composited over the text, a Thunder Storm ribbon crossed Noa's panel and tinted the caption's last word; the `noaru_gilium_lv2_thunder_storm` film reads arm 5 `.977` to `.981` and arm 6 `.915` to `.919` under it.
+
 Differences from retail:
 
 - **Projection** is the engine camera's, not the GTE's. `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes - the operation `FUN_800195A8` performs in view space. The exact port `billboard::project_billboard` needs a GTE rotation / translation pair the engine's battle camera does not carry.
