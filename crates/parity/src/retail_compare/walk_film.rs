@@ -107,6 +107,11 @@ impl WalkFilm {
         // accumulated a step the state's records have already taken.
         session.host.world.fog.install_snapshot(&retail.fog_live);
         session.host.world.fog.pending_dt = 0;
+        // The game frame's phase: retail's next pass opens `step - phase`
+        // vsyncs into the film, which the engine's accumulators reach from
+        // `phase - 1`; a state saved on the pacer's return holds the first
+        // vsync on `0`.
+        let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
         let g = &mut session.camera.globals.0;
         let c = &retail.camera;
         g[0] = i32::from(c.pitch);
@@ -155,6 +160,9 @@ impl WalkFilm {
             let pad = self.pad_at(t);
             session.host.world.input.set_pad(pad);
             session.tick()?;
+            if hold_first && t == 0 {
+                seat_frame_accums(&mut session.host.world, 0);
+            }
             session.field_vram_tick();
             // The pool's render step a play host runs from its draw pass: it
             // writes the live count the next tick's fog spawns read.
@@ -224,5 +232,59 @@ impl WalkFilm {
         a.flush()?;
         d.flush()?;
         Ok(())
+    }
+}
+
+/// The game-frame accumulators a walk film starts on
+/// ([`legaia_engine_vm::frame_clock::FrameClock::actor_vsync_accum`] and the
+/// CLUT bank's twin), from the vsync of retail's frame the state was saved on
+/// ([`RetailObs::vsync_phase`]). Returns whether the first tick must be held
+/// (a phase of `0`, where the accumulators would need `-1`).
+///
+/// The frame pacer `FUN_80016B6C` waits out each frame with `VSync(step)`
+/// (`jal 0x8005FB84` at `0x800171C0`), and libetc's `VSync` stores the vblank
+/// count on return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`), so the state's
+/// vblank counter `0x8007A894` less that store is how far into its frame the
+/// state was saved, and the next pass opens `step - phase` vsyncs on. Left on
+/// the seed's own phase, every placement that turns on the pass grid turns a
+/// vsync early or late. A phase of `step` was saved on the vblank the wait
+/// returns on, its pass opening on the film's first vsync (`conc_field_card_boot`, `dolk2_market_noa`,
+/// `koin1_field_route_walk`). A harness seat.
+fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) -> bool {
+    let step = u32::from(world.clock.frame_step.max(1));
+    if phase > step {
+        return false;
+    }
+    seat_frame_accums(world, phase.saturating_sub(1) as u8);
+    phase == 0
+}
+
+fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
+    world.clock.actor_vsync_accum = accum;
+    world.ambient.clut_vsync_accum = accum;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The first pass opens `step - phase` vsyncs on: `phase - 1` on the
+    /// accumulators, a held first vsync on `0`, and a state saved on the
+    /// return itself (`phase == step`) fires on the film's first vsync.
+    #[test]
+    fn the_film_seats_the_frame_phase_of_the_state() {
+        let mut w = legaia_engine_core::world::World::new();
+        w.set_frame_step_floor(2);
+        assert!(!seat_frame_phase(&mut w, 1));
+        assert_eq!(w.clock.actor_vsync_accum, 0);
+        assert!(!seat_frame_phase(&mut w, 2));
+        assert_eq!(w.clock.actor_vsync_accum, 1);
+        assert_eq!(w.ambient.clut_vsync_accum, 1);
+        assert!(seat_frame_phase(&mut w, 0));
+        assert_eq!(w.clock.actor_vsync_accum, 0);
+        // A phase past the step is no frame of the pacer's: left alone.
+        w.clock.actor_vsync_accum = 1;
+        assert!(!seat_frame_phase(&mut w, 7));
+        assert_eq!(w.clock.actor_vsync_accum, 1);
     }
 }
