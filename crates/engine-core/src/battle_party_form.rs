@@ -160,6 +160,9 @@ impl crate::world::World {
         if let Some(clips) = form.action_clips.take() {
             self.set_actor_battle_action_clips(member, clips);
         }
+        // The loader seats the idle at its drawn phase with the fight; the
+        // action SM's later idle requests keep it ([`World::seat_battle_setup_idle`]).
+        self.seat_battle_setup_idle(member);
         let bank = std::mem::take(&mut form.art_bank);
         if !bank.is_empty() {
             self.set_actor_battle_art_bank(member, bank);

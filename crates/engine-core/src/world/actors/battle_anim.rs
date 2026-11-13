@@ -1889,6 +1889,39 @@ impl World {
         }
     }
 
+    /// Seat battle slot `slot` on its idle loop the way the battle loader
+    /// does: clip `0` (its effect script and cue track with it) at the
+    /// opening phase the setup drew, `(rand() % frames) << 4` into the node
+    /// cursor (`FUN_800513F0`, `sh v1,0x68(s1)` at `0x80051574`, the monster
+    /// twin from `0x800518D0`).
+    ///
+    /// The phase lands here, at setup, and not on the action SM's first
+    /// [`Self::apply_battle_pose`] request: that request answers
+    /// `FUN_801D5854`, which writes no anim field (its stores go to the
+    /// battle context's framing words, none to the actor's
+    /// `+0x1D9..+0x1DC` or the node's `+0x68`), so retail's idle runs on
+    /// through it. Seated on the loader's player, the request finds the
+    /// idle marker and keeps the loop; a body seated only on the render
+    /// build's player restarted its idle at the phase on its first action,
+    /// a snap every fight showed on each body's first turn. No-op on a slot
+    /// without action clips, or with a reaction or a staged clip in flight.
+    pub fn seat_battle_setup_idle(&mut self, slot: usize) {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return;
+        };
+        if a.battle_action_clips.is_none()
+            || a.battle_reaction.is_some()
+            || a.battle_staged_anim.is_some()
+        {
+            return;
+        }
+        a.battle_pose = None;
+        self.apply_battle_pose(
+            slot,
+            legaia_engine_battle_vm::battle_action::Pose::Idle as u8,
+        );
+    }
+
     /// Bind a battle animation player to actor `slot`, resetting its
     /// `pose_frame`. No-ops for out-of-range slots.
     pub fn set_actor_battle_animation(

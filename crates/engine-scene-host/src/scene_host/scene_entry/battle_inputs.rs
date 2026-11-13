@@ -518,6 +518,9 @@ impl SceneHost {
             {
                 self.world.set_actor_battle_animation(slot, player);
             }
+            // The loader's idle: clip 0 at the phase battle setup drew, which
+            // the action SM's idle requests then keep playing.
+            self.world.seat_battle_setup_idle(slot);
         }
     }
 

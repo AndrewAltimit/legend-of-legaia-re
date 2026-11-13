@@ -739,6 +739,18 @@ impl World {
         // half. That is what makes the base half a usable "has a debuff moved
         // this stat?" probe for the Seru side-effect stager.
         self.battle.sync_battle_stat_bases();
+        // A monster seat that kept its clip set from an earlier fight (the
+        // same id in the same slot) gets no install from the scene host, so
+        // its idle is seated here, at the phase drawn above.
+        for slot in usize::from(party_count)..usize::from(party_count + monster_count) {
+            if self
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_action_clips.is_some())
+            {
+                self.seat_battle_setup_idle(slot);
+            }
+        }
 
         // Roll for a rare shiny capturable enemy now that every monster slot
         // carries its stats + id (so capturability + the +35% boost see final
