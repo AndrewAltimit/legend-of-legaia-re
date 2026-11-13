@@ -252,6 +252,7 @@ The film therefore stands the party in the recording's stance exactly on its gat
 The gate is the state's instant, so both are the state's, and the replay's draws and commits before it stop mattering.
 `battle_chitei2_gilium_thunder_storm_mid_cast` had landed `147` / `157` / `130` on a guarded party against retail's unguarded `583` / `745` / `544`; seated it lands `583` / `745` / `544`, and its film reads `.893` to `.963`. `battle_tunnelc_xain_terio_punch_mid_cast` lands retail's `366` / `362` / `347` and reads `.857` to `.958`.
 `battle_korb2_ghost_knight_neo_windhash_mid_cast` reads `.893` to `.967` and lands `807` against retail's `771`: the two streams agree draw for draw through module phase 3, and the hit pass draws five `rand()` in retail and four in the engine, the rest of the film one draw apart. Harness seats.
+Seated, the stream also names an arm's pass count. `battle_retona_lip_king_kiss_of_death_mid_cast`'s two streams agree draw for draw until its hit roll, but the engine's arm 4 runs `31` passes where retail's runs `33`, so the roll lands two draws early and misses where retail's hits (its cues `3 / 3` to `0 / 3`); on the replay's own stream it had rolled a hit by chance.
 
 A monster's AI counter `0x801C8FE4` travels with the state
 (`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts
