@@ -1640,6 +1640,14 @@ moves: `battle_deene_garnet_heal_mid_cast` `.941` to `.990`,
 harness seat: the replay's own `0x3D` waits out a longer idle than retail's, so
 its plaques have landed.
 
+The roster panels a monster's party-wide seed raises (records 6 / `0x4E` / `0x4F`,
+seat B row `168` from `234`) open on the actor plaque's pass, so the same seat
+times them; inside an action the image child lands a `(x, 168)` seat on the
+action's panels glide rather than the round prompt's. The game-code half is the
+glide itself ([battle-hud.md](../subsystems/battle-hud.md)):
+`battle_nilboa_koru_dead_end_crisis_mid_cast` reads `.933` to `.998`, the panel
+nine rows short of its seat on both sides.
+
 A Spirit turn's AP bar and AP plate are seated by value as well as by glide
 (`LEGAIA_SEAT_SPIRIT_GAUGE`, `spirit_gauge::retail_spirit_gauge`): the bar's
 width off its widget's `+0x0E` (taken back across the display lag while the
