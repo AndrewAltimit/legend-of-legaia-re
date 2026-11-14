@@ -192,7 +192,6 @@ pub fn party_compare_members_of(
     info: Option<&crate::equipment::DiscEquipInfo>,
     item_id: u8,
 ) -> Vec<PartyCompareMember> {
-    use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let entry = info.and_then(|i| i.entry(item_id));
     present
         .iter()
@@ -207,14 +206,7 @@ pub fn party_compare_members_of(
             let current =
                 crate::pause_screens::menu_stat_block(&stat, table, hp_mp.hp_max, hp_mp.mp_max);
             let candidate = entry.map(|e| {
-                let byte = match e.category {
-                    Disc::Weapon => crate::equip_session::RETAIL_WEAPON_EQUIP_BYTE
-                        .get(ch)
-                        .map_or(2, |&b| b as usize),
-                    Disc::Head => 1,
-                    Disc::Body => 0,
-                    Disc::Footwear => 4,
-                };
+                let byte = crate::equip_session::record_byte_for_category(e.category, ch as u8);
                 let mut trial = stat;
                 if let Some(slot) = trial.equip.get_mut(byte) {
                     *slot = item_id;
