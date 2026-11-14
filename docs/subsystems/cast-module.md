@@ -3924,6 +3924,14 @@ for the per-turn seed. Arm `k = 5`'s pass flushes again, takes the golem off (no
 (`0xFFC00`, `0x3FF00000`, `0x3FF`), the word the hold state `0xFF` keeps until the `0xFF`
 arm clears it.
 
+Thunder's `k = 5` arm (phase `0x69`, `0x801F75F8`) seats its spray every pass ahead of the
+countdown test, in two rounds (`s8 = 0, 1`, `sltiu v0,s8,0x2` at `0x801F7710`): each round draws
+`x = 0x80 - rand() % 257`, then `y` the same way, and seats `0x801F9AD0` and `0x801F9B20` at
+`(x, y, 0x100)`. The port seated one round, so every pass of the arm drew two words short of
+retail's (`57` against `59`, `27` against `29` on `rugi_rogue_pre_rogue_thunder`) and none of its
+`48` passes ended on retail's word; with both rounds all `48` do, and the arm reads `.795` to
+`.823` on `--retail-steps --rand-track` (`THUNDER_SPRAY_ROUNDS`). Grade `disassembly` + `capture`.
+
 Arm 1 holds the opening's ray emitter `0x801F8FF0` through its countdown: every
 eleven units its op `0x20` calls `FUN_801F8BF8`'s arm 1, four `0x801F9008` rays on
 six `rand()` draws each. Arm 0 seats the emitter on the caster's display trio
@@ -4112,9 +4120,22 @@ the module's stager (`FUN_801F81DC`).
 Without the director the pager seated all of the image's records at once and the camera
 held `0x6F`'s pose: a `--physical` film of `battle_noaru_songi_chaos_flare_mid_cast`
 read `.233` frame by frame, `.703` with it. Its charge clip `8` goes in on arm 2's pass
-(`capture_caster_stage_arms`), not ahead of the module. Not carried: arms 2 and 6's stores into the
-first monster record's node (`+0x85` / `+0x86`) and the light words behind `0x800845C8`.
-Grade `disassembly` + `capture`.
+(`capture_caster_stage_arms`), not ahead of the module. Not carried: the light words behind
+`0x800845C8`. Grade `disassembly` + `capture`.
+
+**Arms 2 and 6 move the charge clip's loop.** Each writes the bounds `+0x85` / `+0x86` of
+the action entry at `record[+0x6C]` (the record `0x801C9348` names, the caster's): `0x0C` /
+`0x11` on arm 2 (`0x801F6E94..0x801F6EC0`) and `0x15` / `0x17` on arm 6
+(`0x801F7214..0x801F7238`), the stores Genocidal Cannon's arms 2 and 6 make on the same clip
+`8`. The entry's count `+0x84` is `0xFF`, so through arms 3 to 5 Songi holds the crouch of
+frames `12..17` and from arm 6 the rear of `21..23`: a `body.csv` of the recording reads the
+cursor cycling `200..268` and then `338..366`, where the engine ran clip `8` through to its
+end and stood on idle from arm 6. The director's arm-2 seat write stages `8` with the bump
+itself, so the stage row's arm-2 restage (`stage_caster_on_arm_pass`) found the clip already
+committed and released its fresh park; a stage row now leaves a clip the pass has already
+committed alone. On `--retail-steps --rand-track` the film reads `.838` to `.984` (arm 5
+`.598` to `.995`, arm 6 `.644` to `.995`, arm 8 `.640` to `.996`), cues `1.000`. Grade
+`disassembly` + `capture`.
 
 The strike's knockdown plays at rate `2` (arm 8's exit, `sb v1,0x21d(s1)` at
 `0x801F7498`), and arms 9 and 10 hold it there: on every pass, ahead of the gate, each
@@ -5319,7 +5340,12 @@ fork on the victim's HP (`0x801F6B20..0x801F6B38`) is not carried.
 Glare also sounds its landing, and that is not a voice. Arm 2 of PROT 0940's `0x3C` body counts out at
 `0x801F6F30`, tests Stone, and on a landing calls `FUN_8004FE5C(0xF4, ctx[+0x13])` (`0x15B` for Zora,
 `0x801F7018`, ring id `0x290`) ahead of the guard tests; then it steps to arm 3. The port folds the status-only
-cast on that pass (`World::fold_glare_on_its_arm`) rather than at the band's closing seam.
+cast on that pass (`World::fold_glare_on_its_arm`) rather than at the band's closing seam, right after the
+module tick that counted arm 2 out. The roll is that tick's draw (`jal 0x80056798` at `0x801F6F9C`), the
+second of the pass after the frame driver's: `battle_korb2_medusa_glare_mid_cast`'s recording steps the seed
+twice across it. Folded at the head of the next pass instead, the roll took that pass's word, missed, and the
+landing cue never played (cue `0.000`); on `--retail-steps --rand-track` it now lands as retail's does, cue
+`1.000`, film `.890` to `.903`, arm 3 `.916` to `.973`. Grade `disassembly` + `capture`.
 
 The cast-audio dispatcher `FUN_801F3990` emits a different, character-split
 band (`char_kind * 0x10 + 0xF8..0xFC`, plus `0x20C..0x20E` on the enemy leg).

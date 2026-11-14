@@ -1080,6 +1080,41 @@ the same cast, so its ring phase is the recording's, and Terra's vortex parts on
 rather than shape. The rest is listed in the
 [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
 
+### The enemy set on the rand-track seat
+
+The same reading runs over [`film-sets/enemy.txt`](../../scripts/ci/film-sets/enemy.txt). A
+film whose recording holds no module band (the plain-path casts: Multi Cutter, Windcutter,
+Jagged Earth, the breaths) has no word for `--rand-track` to seat, and the driver refuses it
+there; those films read on `--retail-steps` alone. On that mixed seat the films whose seed
+words agree are the place to read a cast's parts, and a per-pass count of the words each side
+draws finds what a frame cannot show. For each module-band key, the LCG steps from the word
+the track seats to the word the engine's pass ends on, set against the steps between retail's
+frame-end words, name an arm that draws a constant number short or a pass late:
+
+- **Rogue Thunder's arm `0x69`** drew two words a pass short (`57` against `59`, `27` against
+  `29`) on every pass: its spray loop runs two rounds, the port ran one
+  ([cast module](../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame)).
+- **Glare's arm 2** drew one word where retail draws two on the pass that counts it out: the
+  Stone roll had moved to the next pass's head, on another word, and missed the landing
+  retail's recording holds ([cast module](../subsystems/cast-module.md#the-cast-voice-cd-xa)).
+- **Chaos Flare's arms 5..8** drew retail's words and still read `.60`: the recording's
+  `body.csv` holds Songi's charge clip cycling the loop window arms 2 and 6 move, and the
+  engine's ran the clip through to idle
+  ([cast module](../subsystems/cast-module.md#prot-0951-chaos-flare)).
+
+Over the 107 recorded films (the two Genocidal Cannon films have no recording), the three move
+and no other film does, no cue is lost:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| `--retail-steps --rand-track` (`--retail-steps` where no band) | `.9481` | `.9496` | `0x36` `.838` to `.984`, Glare `.890` to `.903` (cue `0` to `1`), `0xB1` `.907` to `.914` |
+
+On the plain and `--retail-steps` seats Chaos Flare reads `.842` to `.988` and `.843` to
+`.990`; Rogue Thunder falls `.004` on both, where its stream is the engine's own and two more
+draws a pass re-deal the bolts. What the scan still lists is the burning body of the Rogue
+Flame arms (open), Hyper Crush's ribbon arm 6, whose counts follow the projection and step up
+a pass apart from retail's, Hyper Lightning's arm 7 and Rolling Flare's arm 4.
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`
