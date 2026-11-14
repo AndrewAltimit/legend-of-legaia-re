@@ -649,8 +649,18 @@ impl World {
     /// read this to stay out of a scripted shot: a shot is a framing the
     /// script authored, and scaling its eye depth by the `Far` preset showed
     /// the whole of the Sky Gardens island where retail frames the hedge maze.
+    ///
+    /// A talk holds the player too: the ordinary NPC-talk path runs the
+    /// placement's record through the inline dialogue runner
+    /// ([`Self::dialogue_owns_input`]), not a timeline, and a talk may stage
+    /// shots of its own. `suimon`'s Water Gate Controller (`P1[4]`) stages
+    /// two (`45 07 7B ..` at `+0x1E5` and `+0x214`, `H` 744 and 872) after
+    /// the Yes; read as a follow frame they took the `Far` preset's depth
+    /// and pulled back past the scene's edge, where retail frames the gate
+    /// towers edge to edge.
     pub fn scripted_shot_holds_camera(&self) -> bool {
-        !self.camera.state.params.is_empty() && self.script_context_engages_player()
+        !self.camera.state.params.is_empty()
+            && (self.script_context_engages_player() || self.dialogue_owns_input())
     }
 
     /// `true` while a dialogue engagement owns the pad and the player.
