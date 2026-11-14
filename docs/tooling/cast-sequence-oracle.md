@@ -2145,7 +2145,9 @@ Three things the table and the recordings behind it say about the frame-cost mod
   of the cast on step `4`, the table prices the band's first `54` ticks `570` to `708`
   (step `3`), and cue `0x17` lands seven ticks late against a six-tick window. Priced
   from the linked polygons (`LEGAIA_BATTLE_POLY_COST=1`) the band's agreement goes from
-  `.17` to `.94`, the cue lands and the film reads `.986` against `.972`.
+  `.17` to `.94`, the cue lands and the film reads `.986` against `.972`. No table row
+  can stand for both stages: `bylon_gimard_v2_tail_fire`, the same cast with the same
+  party on another stage, costs `440` to `464` on the frames the table prices `605`.
 - **No count the world holds stands in for the linked one.** `LEGAIA_DIAG_CAST_BODIES=1`
   writes `bodies.csv` beside the engine recording (every body a tick: drawn,
   triangles, position), and three world-side terms were fitted to the linked count on
