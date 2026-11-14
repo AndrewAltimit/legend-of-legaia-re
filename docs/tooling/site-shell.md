@@ -146,6 +146,38 @@ about this: the bar and the drawer's own box agree at every width and only the
 strip's box moves, so the check is the strip's rectangle at a non-zero list
 `scrollTop`.
 
+### A fixed box that does not fit has to scroll
+
+The rail and the drawer are `position: fixed`, so nothing the page does brings
+back a part of them that falls outside the screen. Each therefore scrolls what
+it holds: the drawer through `.sidebar-list`, the rail through its own
+`overflow-y: auto`. The rail's five entries need 320px under the bar, and a
+phone on its side is wide enough to get the rail (a 915px viewport is above the
+drawer breakpoint) without being that tall; a rail that does not scroll leaves
+Docs below the screen there, with no way to reach it.
+
+The same holds for the drawer's own box, which never scrolls: its `overflow` is
+`hidden`, and a hidden-overflow box still moves under `scrollIntoView()` or a
+focus change if its content ever overflows it. The strip is a `flex: none` row
+and the list a `min-height: 0` one so that it cannot.
+
+### Reading the shell off a phone
+
+A phone browser has what no desktop emulation reproduces: an address bar that
+collapses (so `100vh`, the visual viewport and the fixed containing block are
+three different heights), restored tabs that still run the page a previous
+deploy served, and a text scale of the owner's choosing. Adding `?shell-probe`
+to any page URL pins a readout to the bottom of the screen: the stylesheet and
+`layout.js` build hashes, the inner, client and visual viewports, `vh` / `svh`
+/ `lvh` / `dvh` in pixels, the page scroll, the rectangles of the top bar, the
+drawer, the zone strip and the list with their scroll positions, what a tap on
+the first zone tab would hit, and any ancestor that would capture the drawer as
+its fixed containing block. It follows the tab from page to page;
+`?shell-probe=off` ends it, and without the parameter none of it runs
+(`wireShellProbe()` in `layout.js`). A report of chrome that is cut off on a
+phone is a screenshot of that readout with the drawer open, or its `copy`
+button's text.
+
 The hamburger lives *inside* the top bar rather than floating over the page.
 A floating button needs the content column to reserve a strip for it; an in-bar
 button needs nothing, and can never sit on top of a paragraph.
@@ -671,7 +703,24 @@ The first is gated: [`check-pages.mjs`](../../scripts/ci/check-pages.mjs)'s
 page whose document is wider than the screen, naming the outermost elements
 past the edge that no scroller, closed `<details>` or fixed layer holds. The
 same pass opens the drawer with its list scrolled and fails a zone strip that
-sits under the top bar.
+sits under the top bar or does not take a tap.
+
+It then walks the left-hand chrome through `SHELL_STATES` on one page per zone
+(`--only shell` runs this part alone): an upright phone with the page at the
+top, scrolled, and loaded at a heading; a short phone; a phone on its side
+below the drawer breakpoint and one above it; a short desktop window. A drawer
+is opened by a touch on the hamburger and measured as opened, after a finger
+has dragged the list both ways, and after the window has lost 56px of height
+(what a returning address bar does). Each time every zone tab must lie inside
+the visual viewport, below the top bar, and be what `elementFromPoint` returns
+at its centre; the first and last rows must come into view by the list's own
+scrolling; the drawer's own box must not have scrolled. A visible rail must
+bring each entry into view by its own scrolling.
+
+What this pass cannot say is how a phone's browser behaves around its address
+bar: headless Chromium has none, so `100vh`, `innerHeight` and the visual
+viewport agree in every state above. A defect that needs them to differ is
+found with the shell probe on the device, not here.
 
 Two shortcuts make that check blind, and both pass a page that is broken. A
 mobile viewport widens its layout viewport to the widest content and zooms

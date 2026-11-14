@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Headless page checks over a built site: what a green `build-wasm.sh` does not say.
 //
-//   scripts/ci/check-pages.mjs [--site site] [--out dir] [--tabs 4] [--only phone,play,modes]
+//   scripts/ci/check-pages.mjs [--site site] [--out dir] [--tabs 4] [--only phone,shell,play,modes]
 //       [--gl swiftshader|egl] [--no-disc]
 //
 // Every generated page under `site/` loads with no uncaught exception, no console error
 // and no failed same-origin request, and lays out on a 360px phone with nothing wider than
-// the screen and the drawer's zone strip clear of the top bar (`phone`). Then the pages that run the bundle run it: the loader
+// the screen and the drawer's zone strip clear of the top bar (`phone`); the same pass walks the
+// shell's left-hand chrome through the states a phone puts it in (SHELL_STATES). Then the pages that run the bundle run it: the loader
 // instantiates and exposes each runtime's export, the modes page lists its cards, and, when
 // LEGAIA_DISC_BIN names an image, the play page takes the disc through its own file input,
 // enters town01 and draws frames that are not blank (a screenshot lands in --out; it holds
@@ -102,10 +103,83 @@ const PHONE_PROBE = async (W) => {
       await new Promise((r) => setTimeout(r, 50));
       const top = zones.getBoundingClientRect().top;
       if (top < bar - 1) drawer = `zone strip ${Math.round(bar - top)}px under the top bar`;
+      else {
+        const z = zones.querySelector('.sidebar-zone');
+        const zr = z && z.getBoundingClientRect();
+        const hit = zr && document.elementFromPoint(zr.left + zr.width / 2, zr.top + zr.height / 2);
+        if (z && !(hit && z.contains(hit))) drawer = `zone strip's first tab is under ${hit ? hit.tagName.toLowerCase() + '.' + String(hit.className).split(' ')[0] : 'nothing'}`;
+      }
     }
     toggle.click();
   }
   return { W, docW: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth), wide, drawer };
+};
+// The shell's left-hand chrome, in the states a phone puts it in. One page per zone
+// stands for all of them: the chrome is layout.js's, the same on every page. `scroll` is
+// the page's own scroll before the drawer opens, `hash` loads the page at its last
+// heading, and each drawer state is measured three times: as opened by a tap, after a
+// finger has dragged the list both ways, and after the window has lost 56px of height,
+// which is what the address bar coming back does to it. Above the drawer breakpoint the
+// rail is the left-hand chrome, and a phone on its side is both wide enough to get the
+// rail and too short to hold it.
+const SHELL_PAGES = ['tooling/verification-ladder.html', 'play.html', 'index.html'];
+const SHELL_STATES = [
+  { name: 'upright phone', size: [360, 780], scroll: 0 },
+  { name: 'upright phone, page scrolled', size: [360, 780], scroll: 1200 },
+  { name: 'upright phone, loaded at a heading', size: [360, 780], hash: true },
+  { name: 'short upright phone', size: [320, 480], scroll: 600 },
+  { name: 'phone on its side', size: [780, 304], scroll: 1200 },
+  { name: 'wide phone on its side', size: [915, 356], scroll: 1200 },
+  { name: 'short desktop window', size: [1280, 360], scroll: 0, desktop: true },
+];
+// Every problem with the left-hand chrome as it stands: the open drawer's zone tabs must
+// lie inside the visual viewport, below the top bar, and take a tap where they are drawn
+// (no scrolling brings a pinned strip back); the page list must reach its first and last
+// rows by its own scrolling; a visible rail must reach each of its entries by its own.
+const SHELL_PROBE = () => {
+  const out = [];
+  const vv = window.visualViewport;
+  const vTop = vv ? vv.offsetTop : 0;
+  const vBottom = vTop + (vv ? vv.height : innerHeight);
+  const bar = document.querySelector('.topbar').getBoundingClientRect().bottom;
+  const name = (el) => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24) || el.className;
+  const seen = (el, what, floor) => {
+    const r = el.getBoundingClientRect();
+    if (r.top < floor - 1) return out.push(`${what} "${name(el)}" starts ${Math.round(floor - r.top)}px above its visible area (top ${Math.round(r.top)}, floor ${Math.round(floor)})`);
+    if (r.bottom > vBottom + 1) return out.push(`${what} "${name(el)}" ends ${Math.round(r.bottom - vBottom)}px below the visible viewport (${Math.round(vBottom)}px)`);
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!(hit && el.contains(hit))) out.push(`${what} "${name(el)}" does not take a tap at its centre (${hit ? hit.tagName.toLowerCase() + '.' + String(hit.className).split(' ')[0] : 'nothing'} does)`);
+    return 0;
+  };
+  const rail = document.querySelector('.rail');
+  if (rail && getComputedStyle(rail).display !== 'none') {
+    for (const item of rail.querySelectorAll('.rail-item')) {
+      item.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      seen(item, 'rail entry', bar);
+    }
+    rail.scrollTop = 0;
+  }
+  const sb = document.querySelector('.sidebar');
+  if (sb && sb.classList.contains('open')) {
+    const strip = sb.querySelector('.sidebar-zones');
+    // Whichever box scrolls the rows: the list on the drawer as built, the drawer
+    // itself on one whose list has gone back to `display: contents`.
+    const inner = sb.querySelector('.sidebar-list');
+    const list = inner && /auto|scroll/.test(getComputedStyle(inner).overflowY) ? inner : sb;
+    const floor = strip.getBoundingClientRect().bottom;
+    const at = list.scrollTop;
+    // Rows first: bringing one into view scrolls every box that can scroll, and a
+    // drawer whose own box moved has taken the strip with it.
+    const rows = [...sb.querySelectorAll('.sidebar-section-toggle, .sidebar-nav a')].filter((r) => r.getClientRects().length);
+    for (const [row, what] of rows.length ? [[rows[0], 'first drawer row'], [rows[rows.length - 1], 'last drawer row']] : []) {
+      row.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+      seen(row, what, floor);
+    }
+    if (list !== sb && sb.scrollTop) out.push(`the drawer's own box is scrolled ${sb.scrollTop}px`);
+    for (const z of sb.querySelectorAll('.sidebar-zone')) seen(z, 'zone tab', bar);
+    list.scrollTop = at;
+  }
+  return out;
 };
 // A uniform frame compresses to almost nothing; a drawn scene does not.
 const NOT_BLANK_BYTES = 20000;
@@ -249,6 +323,80 @@ async function main() {
     }));
     await context.close();
     console.log(`[check-pages] ${list.length} pages fit a ${PHONE[0]}px phone`);
+  }
+
+  // 1c. The shell's left-hand chrome in the states a phone puts it in (`--only shell`
+  // runs this alone).
+  if (want('phone') || want('shell')) {
+    let states = 0;
+    for (const st of SHELL_STATES) {
+      const [W, H] = st.size;
+      const context = await browser.newContext(st.desktop
+        ? { viewport: { width: W, height: H } }
+        : { viewport: { width: W, height: H }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      for (const label of SHELL_PAGES) {
+        const where = `${label} (${st.name}, ${W}x${H})`;
+        const note = async (when) => {
+          for (const f of await page.evaluate(SHELL_PROBE)) failures.push(`${where}, ${when}: ${f}`);
+        };
+        try {
+          await page.setViewportSize({ width: W, height: H });
+          await page.goto(base + label, { waitUntil: 'load', timeout: 120000 });
+          await page.waitForTimeout(300);
+          if (st.hash) {
+            await page.evaluate(() => {
+              const h = [...document.querySelectorAll('.content [id]')].pop();
+              if (h) location.hash = h.id;
+            });
+          }
+          if (st.scroll) await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'instant' }), st.scroll);
+          await page.waitForTimeout(200);
+          const toggle = await page.evaluate(() => {
+            const t = document.querySelector('.sidebar-toggle');
+            if (!t || getComputedStyle(t).display === 'none') return null;
+            const r = t.getBoundingClientRect();
+            return [r.left + r.width / 2, r.top + r.height / 2];
+          });
+          if (!toggle) {
+            await note('rail');
+          } else {
+            await page.touchscreen.tap(toggle[0], toggle[1]);
+            await page.waitForTimeout(400);
+            if (!(await page.evaluate(() => document.querySelector('.sidebar').classList.contains('open')))) {
+              failures.push(`${where}: a tap on the hamburger did not open the drawer`);
+              continue;
+            }
+            await note('as opened');
+            // A finger on the list: up, then down, each a real touch sequence.
+            const mid = await page.evaluate(() => {
+              const r = document.querySelector('.sidebar').getBoundingClientRect();
+              return [r.left + r.width / 2, r.top + r.height * 0.6, Math.min(r.height * 0.3, 160)];
+            });
+            for (const dy of [-mid[2], mid[2]]) {
+              await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid[0], y: mid[1] }] });
+              for (let i = 1; i <= 8; i++) {
+                await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: mid[0], y: mid[1] + dy * i / 8 }] });
+                await page.waitForTimeout(16);
+              }
+              await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+              await page.waitForTimeout(500);
+            }
+            await note('after the list was dragged');
+            await page.setViewportSize({ width: W, height: H - 56 });
+            await page.waitForTimeout(200);
+            await note('with the window 56px shorter');
+          }
+          states += 1;
+        } catch (e) {
+          failures.push(`${where}: ${e.message.split('\n')[0]}`);
+        }
+        await page.goto('about:blank').catch(() => {});
+      }
+      await context.close();
+    }
+    console.log(`[check-pages] shell chrome reachable in ${states} page states`);
   }
 
   // 2. The bundle runs.
