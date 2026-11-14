@@ -138,13 +138,49 @@ The strip sits outside the drawer's scroller. Everything below it is wrapped in
 `.sidebar-list`, which is `display: contents` on a desktop (the sidebar scrolls,
 as before) and the scroller in the phone drawer, whose own box does not scroll.
 The drawer opens at its saved or revealed scroll position, and a strip that
-scrolls with the list is carried up behind the top bar. A `position: sticky`
-strip inside a scrolling drawer pinned in desktop engines and in emulated phone
-viewports, yet on Chrome and Firefox for Android it still went up under the top
-bar, so the pin is structural now. A drawer `top` matching the bar says nothing
-about this: the bar and the drawer's own box agree at every width and only the
-strip's box moves, so the check is the strip's rectangle at a non-zero list
+scrolls with the list is carried up behind the top bar. The pin is structural: the strip is a row of the drawer, not a sticky child of
+a scroller, so the check for it is the strip's rectangle at a non-zero list
 `scrollTop`.
+
+### The drawer is sized by its insets, never by a height
+
+On Chrome and Firefox for Android the strip went up under the top bar while
+every desktop engine and every emulated phone showed it in place. The strip was
+not moving inside the drawer; the whole drawer was moving up, by the height of
+the browser's address bar.
+
+The drawer is `position: fixed` with `top` (the bar) and `bottom: 0`, and it
+used to inherit the desktop sidebar's `height: calc(100vh - top bar)`. On a
+phone `100vh` is the screen with the address bar hidden, while fixed boxes are
+laid out against what is on screen, which is shorter by the bar while it
+shows. A box with both insets and a height too tall for the space between them
+used to overflow at the bottom. Current Blink and Gecko instead keep such a box
+inside its containing block when it fits there: it is moved back by the
+overflow, which here is exactly the address bar, so the drawer's top lands at
+the top of the screen and its first 56px - the zone tabs - sit under the top
+bar. An emulated phone has no address bar, so `100vh` is the window and nothing
+overflows.
+
+Two declarations in the drawer rule close it. `height: auto` leaves the insets
+to size the drawer. `align-self: stretch` goes with it, because the same
+engines read `align-self` on a fixed box: the sidebar is a grid item with
+`align-self: start` on a desktop, and with that value an auto-height drawer is
+sized to its whole page list and moved up the same way.
+
+`check-pages.mjs` models the bar in three of its shell states (`bar: 56`): it
+serves the site with every `vh` length in the CSS, the pages and the scripts
+grown by its share of the bar, and leaves the window - so `svh`, `dvh` and the
+fixed containing block - at the visible height. Against the inherited height
+those states fail on every page with the zone tabs 42px above their visible
+area.
+
+The other viewport heights in the stylesheet are declared twice, `vh` then
+`svh` or `dvh`: the sticky sidebar and contents rail, the page's minimum
+height, the search results, and on their own pages the play canvas's height
+cap, the NPC conversation pane and the two workbenches' panes. A browser
+without the newer units keeps the first declaration. The drawer and the top bar
+also pad by `env(safe-area-inset-*)`, which is zero unless a page opts into
+drawing under a notch.
 
 ### A fixed box that does not fit has to scroll
 
@@ -165,7 +201,7 @@ and the list a `min-height: 0` one so that it cannot.
 
 A phone browser has what no desktop emulation reproduces: an address bar that
 collapses (so `100vh`, the visual viewport and the fixed containing block are
-three different heights), restored tabs that still run the page a previous
+three different heights; the gate models that one, [above](#the-drawer-is-sized-by-its-insets-never-by-a-height)), restored tabs that still run the page a previous
 deploy served, and a text scale of the owner's choosing. Adding `?shell-probe`
 to any page URL pins a readout to the bottom of the screen: the stylesheet and
 `layout.js` build hashes, the inner, client and visual viewports, `vh` / `svh`
@@ -217,16 +253,16 @@ drops the scroller and turns on `position: sticky` under the top bar; where it
 is too wide the wrapper keeps the horizontal scroller and a static header. It
 runs in the docs zone only, on load, on resize and once fonts settle.
 
-### A touch target clears 38px, a mouse target need not
+### A touch target clears 44px, a mouse target need not
 
-Below the drawer breakpoint every top-bar control clears 38px: the hamburger
-and the brand mark at 38, search, the disc chip, the theme toggle, the zone
-pills and the GitHub link at 40. Content
-controls keep their desktop size for a mouse and grow under
+Below the drawer breakpoint every top-bar control and every drawer row is a
+44px target: the hamburger, the brand mark, search, the disc chip, the theme
+toggle and the GitHub link, in a 56px bar. Content
+controls keep their desktop size for a mouse and grow to 44px under
 `@media (pointer: coarse)`: disclosure summaries, the registers' *why* rows,
-the search box's close button (its keyboard hints go), the patcher's and the
-workbenches' `?` badges, which keep their drawn size and take a 12px wider hit
-area, and the dense lists on the crate map, disc map, shops and world overview,
+the search box's close button (its keyboard hints go), file fields, sliders,
+the patcher's and the workbenches' `?` badges, which keep their drawn size and
+take a 15px wider hit area, and the dense lists on the crate map, disc map, shops and world overview,
 each in its own page's stylesheet. A width breakpoint is the wrong test for
 these: a narrow desktop window has a mouse, and a tablet in landscape is wide.
 
