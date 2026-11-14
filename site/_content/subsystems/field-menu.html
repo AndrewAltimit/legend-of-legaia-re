@@ -220,11 +220,25 @@
   </ul>
   <p>An apply screen outlives its use. Items and Magic stay on the target panel while the stack lasts (or the caster can pay) and somebody would still benefit, then hand back to the list. The panel takes only the list's place: the command, caster and info windows stay up behind it, and an all-party item or group spell puts the hand on every row and waits for one more confirm. The Magic screen's caster picker refuses a character with no spells, or with no Ra-Seru, with a buzz before any list opens; it never looks at HP, so a knocked-out member with MP still casts. Up and Down move the caster and target hands (Left and Right do nothing there), and every return to the spell list opens it on its first row.</p>
   <p>The Items screen's info window prints an item's description through the same detail printer the Equip screen uses, so a weapon or armour piece shows its stat line there too, and an item that grants a passive shows a small one-member or whole-party scope icon beside the passive's name.</p>
+  <p>A notice opens over its own screen. When an item or spell has nothing to do (a full-HP target, an MP-short caster), the apply screen raises its notice window from inside its own phase machine (window 8 for Items, window 7 for Magic), waits for a press, closes it and steps back to its cursor, so the Items or Magic screen stays up under the notice and carries on after it. The notice's body covers the screen's text beneath it on both hosts.</p>
   <p>The target panel (window 14) draws one block per member; for the permanent-stat Waters it previews the changed maxima or stat rows rather than plain cur / max pairs. Engine: <code>PauseItemsSession</code>, <code>SpecialUseSession</code>, <code>target_panel_model</code> + their <code>engine-ui</code> draw builders.</p>
   <details class="disclosure">
     <summary>History: the mode-1 target panel</summary>
     <div class="disclosure-body"><p>An earlier reading called the target panel's mode 1 an "HP-restore preview". Restore items use the plain mode-0 panel; the non-zero modes belong to the permanent-stat Waters (Life / Magic / Power / Swift / Wisdom / Guardian).</p></div>
   </details>
+</section>
+
+<section class="doc-section" id="menu-sounds">
+  <h2>Menu sounds</h2>
+  <p>Every pause-menu cue goes through one ring. The overlay's picker pushes its own cue for each press (Cross <code>0x36</code>, Circle <code>0x37</code>, a cursor step <code>0x21</code>), and a screen that accepts or refuses the pick overwrites that slot with its own: <code>0x20</code> for most confirms, <code>0x23</code> for a refusal. The content lists confirm with <code>0x20</code> and buzz <code>0x23</code> on a grey row, which then opens nothing.</p>
+  <ul class="bullets">
+    <li><strong>Using an item or casting a spell</strong> sounds <code>0x25</code> as it lands, single-target or all-party; a member the validator turns down buzzes <code>0x23</code>.</li>
+    <li><strong>The Items command window</strong> buzzes on an empty bag, confirms Use and Throw Out with <code>0x20</code>, and Arrange answers with <code>0x37</code>.</li>
+    <li><strong>Throw Out</strong> buzzes on a key item or other undiscardable row instead of opening the Yes / No; Yes sounds <code>0x37</code> as the stack goes.</li>
+    <li><strong>Incense's Yes</strong> sounds <code>0x25</code>; the other Yes / No answers keep the bare <code>0x36</code>.</li>
+    <li><strong>Equip</strong>: the character pick confirms <code>0x20</code>; Best Equipment and a fitted candidate sound <code>0x24</code>, or <code>0x23</code> when nothing would change; an empty Remove sounds <code>0x37</code> and the worn row is silent.</li>
+  </ul>
+  <p>The <a href="shop.html">shop</a> and the <a href="save-screen.html">card grid</a> follow the same overwrite rule with their own cue sets. Engine: <code>field_menu_dispatch::pause_frame_blip</code>, which asks the open screen for its confirm cue before the generic edge cue, on both hosts.</p>
 </section>
 
 <section class="doc-section" id="record-fields">

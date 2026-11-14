@@ -75,6 +75,7 @@
     </tbody>
   </table>
   <p>Read a town&rsquo;s stock off a disc with <code>asset shop-stock --prot PROT.DAT --scus SCUS_942.54 --cdname CDNAME.TXT --scene bylon</code>; it prints &ldquo;decodes 10 ids, sells 7&rdquo; rather than truncating. The casino prize counter is a different system: its table lives in the menu overlay and debits the coin bank, not gold.</p>
+  <p><strong>The shop&rsquo;s own cues.</strong> The Buy / Sell / Quit panel is paged by the overlay&rsquo;s picker, so a pick sounds its bare <code>0x36</code>; the handler overwrites it twice - Quit sounds the cancel <code>0x37</code>, and Sell over an empty bag buzzes <code>0x23</code>. The buy and sell lists confirm with <code>0x20</code> and buzz <code>0x23</code> on a dim row (a buy the purse cannot cover). Dismissing the Point Card toast sounds <code>0x20</code>.</p>
   <details class="disclosure">
     <summary>Details: the prize counter&rsquo;s sound cues</summary>
     <div class="disclosure-body">
