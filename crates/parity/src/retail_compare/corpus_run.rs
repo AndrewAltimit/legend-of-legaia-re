@@ -424,6 +424,11 @@ pub(super) fn run_one(
             .map(|man| beat_move_targets(&man))
             .unwrap_or_default();
         retail.scripted_seats = scripted_seats(&beats, &retail.actor_facings);
+        retail.scripted_seats.extend(spawn_history_seats(
+            opts.extracted,
+            &retail,
+            &entry.spawned_under_flags,
+        ));
         retail.scripted_headings = scripted_heading_seats(&beats, &retail.actor_facings);
     }
     let engine = match run_engine_with(opts.extracted, &retail, opts.order) {
