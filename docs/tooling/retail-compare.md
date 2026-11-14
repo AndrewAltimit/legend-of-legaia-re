@@ -1499,7 +1499,15 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   art begins one slot past the walk's first depth, so retail draws one
   ghost where the replay, its art committed earlier on its own clock, drew
   two (`.930` to `.946`). A monster's ring id is
-  `record[+0x77] + 0x10`, not a clip, and its ghosts stay the replay's.
+  `record[+0x77] + 0x10`, not a clip, so a monster seat's depths are seated
+  where the clip-record ring `+0x234` holds the entry the displayed frame
+  shows, resolved through the record's entry array as the displayed clip is.
+  `battle_nilboa_gi_delilas_strike`'s walker had cut its live pair back at a
+  loop end inside the walk's depths, so retail's two ghosts trail the body by
+  pairs the replay's ring, begun on the seat, never held (`.885` to `.929`);
+  over the battle states seventeen others rise, Jewel Beam's Orb `.951` to
+  `.996` and the Tail Fire Gimards `.984` / `.978` to `.990` / `.987`, and
+  none falls.
 - **Heading.** On a capture past the end signal each placed combatant takes its
   heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
   stores it every frame of a swing and nothing turns the actor back, so the
