@@ -114,11 +114,15 @@ impl World {
         // full-party Barra recording (`battle_kor_spoon_strike`) holds `3`
         // vsyncs and its arm 1 runs on at the close-up's `2`, then `1`. The
         // lone caster's seek holds nothing: its arm 3 runs `118` frames at `1`.
-        let cost = match std::mem::take(&mut self.casting.drive_held_vsyncs) {
-            n if n > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS => {
-                cost.max(cost_of_step(3))
-            }
-            _ => cost,
+        // Measured on the summon band alone; a capture cast's hold keeps its
+        // frame's cost.
+        let held = std::mem::take(&mut self.casting.drive_held_vsyncs);
+        let cost = if held > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS
+            && matches!(state, 0x35 | 0x36)
+        {
+            cost.max(cost_of_step(3))
+        } else {
+            cost
         };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
         // A capture-band module's own line leaves its arms their table's
