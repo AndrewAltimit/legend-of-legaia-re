@@ -140,6 +140,14 @@ pub struct RetailAudio {
     pub seqs: Vec<RetailSeqSlot>,
     /// Sounding cue voices (owner `0x21`, live envelope): `(voice, vab slot)`.
     pub cue_voices: Vec<(u8, u16)>,
+    /// How many of [`Self::cue_voices`] the state vouches for as sounding at
+    /// once. With the SPU's own envelopes (a mednafen state) every one;
+    /// read off libsnd's records alone (a PCSX-Redux state) the records
+    /// that agree on tone page, program, tone and VAB slot count once: that
+    /// emulator's `ENVX` runs on the host's audio clock and holds a one-shot
+    /// at `7FFF` past its sample's end, so two key-ons of one cue a period
+    /// apart read as two voices where one sounds.
+    pub cue_sounds: usize,
     /// Sounding sequence-owned voices.
     pub seq_voices: u32,
 }
@@ -332,6 +340,7 @@ impl RetailAudio {
             });
         }
         let mut cue_voices = Vec::new();
+        let mut cue_keys = BTreeSet::new();
         let mut seq_voices = 0;
         for v in 0..24u32 {
             let r = VOICE_RECORDS + v * VOICE_STRIDE;
@@ -340,11 +349,24 @@ impl RetailAudio {
                 continue;
             }
             match rd16(r + 0x10) {
-                CUE_OWNER => cue_voices.push((v as u8, rd16(r + 0x18))),
+                CUE_OWNER => {
+                    cue_voices.push((v as u8, rd16(r + 0x18)));
+                    cue_keys.insert([
+                        rd16(r + 0x12),
+                        rd16(r + 0x14),
+                        rd16(r + 0x16),
+                        rd16(r + 0x18),
+                    ]);
+                }
                 0xFFFF => {}
                 _ => seq_voices += 1,
             }
         }
+        let cue_sounds = if env.is_some() {
+            cue_voices.len()
+        } else {
+            cue_keys.len()
+        };
         Self {
             track_word: rd16(0x8007_BAC8),
             swap: (rd16(0x8007_BAB8), rd16(0x8007_BA9C)),
@@ -354,6 +376,7 @@ impl RetailAudio {
             formation_head: rd8(FORMATION),
             seqs,
             cue_voices,
+            cue_sounds,
             seq_voices,
         }
     }
@@ -502,10 +525,10 @@ pub fn score(
     if !retail.cue_voices.is_empty() {
         put(
             "ambient",
-            engine.sfx_voices_peak as usize >= retail.cue_voices.len(),
+            engine.sfx_voices_peak as usize >= retail.cue_sounds,
             format!(
-                "retail cue voices {:?} engine sfx peak {} cues {:?}",
-                retail.cue_voices, engine.sfx_voices_peak, engine.cues_fired
+                "retail cue voices {:?} ({} at once) engine sfx peak {} cues {:?}",
+                retail.cue_voices, retail.cue_sounds, engine.sfx_voices_peak, engine.cues_fired
             ),
         );
     }
@@ -782,6 +805,41 @@ mod tests {
         assert_eq!(a.seq_voices, 0);
     }
 
+    /// Two records of one cue with no SPU envelope to vouch for them (a
+    /// PCSX-Redux state) count once; with the SPU's own levels, each voice
+    /// that sounds counts.
+    #[test]
+    fn one_cue_on_two_records_counts_once_without_the_spu() {
+        let mut ram = row_ram();
+        let put16 = |ram: &mut [u8], va: u32, v: u16| {
+            let o = (va & 0x1F_FFFF) as usize;
+            ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+        };
+        for v in [22u32, 23] {
+            let r = VOICE_RECORDS + v * VOICE_STRIDE;
+            put16(&mut ram, r + 6, 0x7FFF);
+            put16(&mut ram, r + 0x10, CUE_OWNER);
+            put16(&mut ram, r + 0x16, 0);
+            put16(&mut ram, r + 0x18, 3);
+        }
+        // A different tone on a third record is another sound.
+        let r = VOICE_RECORDS + 21 * VOICE_STRIDE;
+        put16(&mut ram, r + 6, 0x7FFF);
+        put16(&mut ram, r + 0x10, CUE_OWNER);
+        put16(&mut ram, r + 0x16, 2);
+        put16(&mut ram, r + 0x18, 3);
+        let bank = TrackBank { tracks: Vec::new() };
+        let a = RetailAudio::from_ram(&ram, &bank, None);
+        assert_eq!(a.cue_voices.len(), 3);
+        assert_eq!(a.cue_sounds, 2);
+        let mut env = [0u16; 24];
+        env[21] = 0x7FFF;
+        env[22] = 0x7FFF;
+        env[23] = 0x7FFF;
+        let a = RetailAudio::from_ram(&ram, &bank, Some(env));
+        assert_eq!(a.cue_sounds, 3);
+    }
+
     #[test]
     fn a_playing_slot_and_a_cue_voice_read_back() {
         let mut ram = row_ram();
@@ -815,6 +873,7 @@ mod tests {
         assert_eq!((s.slot, s.vol.0, s.tempo_bpm), (1, 127, 80));
         assert_eq!(s.source, Some(FIELD_BGM_SOURCE));
         assert_eq!(a.cue_voices, vec![(3, 6)]);
+        assert_eq!(a.cue_sounds, 1);
         assert_eq!(a.seq_voices, 1);
     }
 }

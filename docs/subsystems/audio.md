@@ -2424,7 +2424,9 @@ Four rules in that table are easy to get wrong:
   builder writes a row disabled unless the spell record's `+2` carries the
   battle bit `0x4` and the caster's MP covers the discounted cost
   (`0x800310A0..0x800310D0`), so an unaffordable spell buzzes in the kernel
-  and the flow state's own MP test at `0x801D1C10` never meets one. The item
+  and the flow state's own MP test at `0x801D1C10` never meets one. Every
+  costed record of the disc's spell table carries the bit, so MP is the only
+  thing that greys a spell. The item
   list greys by the descriptor's battle bit alone
   ([`battle-hud.md`](battle-hud.md#the-battle-item-window-0x3c)). The kernel writes
   its confirm word over the slot it last queued (`lh a0,0x15a(gp)` at
@@ -3625,7 +3627,18 @@ activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 `map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
 the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
 `map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
-the card-load seed has no arrival through a partition-1 beat.
+the card-load seed has no arrival through a partition-1 beat. Its `ambient` `0` is the same
+history: the cue voices are the revival's own, scene cue `0x22A` pushed by `P2[31]`
+(`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC the seed resumes the record on.
+Neither is a card load's music: a save cannot be made inside either record, and across the
+library's walkable states (the retail card boots among them) the seeded engine sounds
+retail's track on every other row.
+
+The still corpus scores the track word alone, and reads `2035` on both `vozz` states by the
+script gate: `P2[17]` cleared `0x2C3` before either capture, so the entry starts `2002`, and
+the resume of the record replays the `Bgm 2035` of the entry arm that spawns it
+(`72 C3` at `+0x8C`, the start at `+0x93`). The replay lands between two ticks, where a
+session with no director of its own would drop it as stale; the corpus routes it at once.
 
 The engine's sequence volume is read where a state is saved: at the vblank, after the frame
 body and before that vsync's `SsSeqCalc`, so the listener takes it ahead of the tick's mix.
@@ -3639,6 +3652,9 @@ emulator's `ENVX`, and its SPU runs on the host's audio clock
 sounding long after its sample ended. `son_field_door_hop` is the case: its records hold
 voices 22 and 23 at `7FFF`, where one ambient part keys a `40`-vsync sample every `63` vsyncs
 and only one voice sounds ([settled](../reference/re-settled-threads/audio.md#why-son_field_door_hops-records-hold-two-0x201-voices)).
+So the channel counts a PCSX-Redux state's records that agree on tone page, program, tone and
+VAB slot once (`RetailAudio::cue_sounds`); a mednafen state brings the SPU's own envelopes and
+every sounding voice counts.
 
 ## The keying differential
 
