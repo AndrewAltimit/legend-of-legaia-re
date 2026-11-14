@@ -672,14 +672,20 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     out
 }
 
-/// The pad edge that moves a kind-4 list cursor (seven rows a page, Left /
+/// The pad edge that moves a kind-4 list cursor (`page` rows a page, Left /
 /// Right flip the page, Up / Down wrap inside it) from `cursor` toward
 /// `row`, or Cross on it.
-fn list_edge(cursor: usize, row: usize) -> u16 {
-    const PAGE: usize = 7;
-    if cursor / PAGE < row / PAGE {
+///
+/// `page` is the list's own: the buy list pages seven rows and the sell list
+/// eleven ([`legaia_engine_menus::shop_cues::shop_list_page_rows`]). Paging a
+/// sell list by sevens put a row of its second page on a "third" one, and the
+/// hand flipped Right and Left across it until the sale was struck off: a bag
+/// with more than eleven stacks kept most of its outgrown armour.
+fn list_edge(cursor: usize, row: usize, page: usize) -> u16 {
+    let page = page.max(1);
+    if cursor / page < row / page {
         PadButton::Right.mask()
-    } else if cursor / PAGE > row / PAGE {
+    } else if cursor / page > row / page {
         PadButton::Left.mask()
     } else if cursor < row {
         PadButton::Down.mask()
@@ -688,6 +694,13 @@ fn list_edge(cursor: usize, row: usize) -> u16 {
     } else {
         PadButton::Cross.mask()
     }
+}
+
+/// Rows a page of the shop list the screen is on.
+fn list_page(menu: &MenuRuntime) -> usize {
+    MenuState::from_byte(menu.ctx.state)
+        .and_then(legaia_engine_menus::shop_cues::shop_list_page_rows)
+        .unwrap_or(7)
 }
 
 /// The shop screens' cancel: the menu VM backs a screen out on Triangle.
@@ -745,7 +758,7 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
         }
         Some(MenuState::ShopSell) if menu.quantity_view().is_none() => {
             return match sale {
-                Some(row) => list_edge(usize::from(menu.ctx.cursor), row),
+                Some(row) => list_edge(usize::from(menu.ctx.cursor), row, list_page(menu)),
                 None => CANCEL,
             };
         }
@@ -791,7 +804,7 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
         },
         Some(MenuState::ShopBuy) => match want {
             Some(Want::Gear { row, .. } | Want::Stack { row, .. } | Want::Bag { row, .. }) => {
-                list_edge(usize::from(menu.ctx.cursor), row)
+                list_edge(usize::from(menu.ctx.cursor), row, list_page(menu))
             }
             None => CANCEL,
         },
