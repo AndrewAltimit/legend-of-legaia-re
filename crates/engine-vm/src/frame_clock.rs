@@ -50,6 +50,32 @@ pub struct FrameClock {
     ///
     /// REF: FUN_80016B6C, FUN_801D6704
     pub frame_step_floor: u8,
+    /// The frame time, in hblanks, a host hands the adaptive resolver for
+    /// every game frame from here on (`World::seed_frame_cost_history`), or
+    /// `None` for the deterministic arm, whose step is the one installed.
+    ///
+    /// Retail measures each frame (`VSync(1)` through `FUN_800173BC`) and
+    /// steps by the longest of the last sixteen, so a slow stretch a capture
+    /// was saved after - a load, a heavy shot - holds the step up for as many
+    /// frames as its samples stay in the ring and then lets it fall. The
+    /// engine has no frame time to measure; with the ring a capture held and
+    /// the cost its newest frames ran at, [`Self::frame_step_telemetry`]
+    /// replays that fall.
+    ///
+    /// REF: FUN_80016B6C
+    pub frame_cost: Option<i32>,
+    /// The vsyncs the frame pacer waits before the next game frame while
+    /// [`Self::frame_cost`] is set: the step of the frame that just ran.
+    /// Retail waits `VSync(0x1F800392)` at the end of a frame and only then
+    /// stores the step it resolved there (`0x8001719C`, `0x800171D8`), so the
+    /// gap after a frame is that frame's own step and the step resolved at
+    /// its end is the next frame's ([`Self::next_frame_step`]).
+    ///
+    /// REF: FUN_80016B6C
+    pub pass_wait: Option<u8>,
+    /// The step the last game frame resolved at its end, installed as
+    /// [`Self::frame_step`] when the next one opens.
+    pub next_frame_step: Option<u8>,
     /// Set to request that the next per-frame mode handler skip its frame.
     ///
     /// Retail's frame-begin pass `FUN_8001698C` returns `1` when `gp+0x3D8`
@@ -157,6 +183,9 @@ impl FrameClock {
             // Field/town baseline; scene entry re-pins (`mapNN` -> 3).
             frame_step: 2,
             frame_step_floor: 2,
+            frame_cost: None,
+            pass_wait: None,
+            next_frame_step: None,
             frame_begin_skip: false,
             frame_step_telemetry: crate::actor_tick::FrameStepTelemetry::new(),
             actor_vsync_accum: 0,
@@ -171,6 +200,41 @@ impl FrameClock {
             display_frames: 0,
             battle_frame_step_seed: None,
         }
+    }
+
+    /// The vsyncs between two game frames: [`Self::pass_wait`] under a
+    /// seeded frame cost, else [`Self::frame_step`]. Never zero.
+    pub fn game_frame_wait(&self) -> u8 {
+        self.pass_wait.unwrap_or(self.frame_step).max(1)
+    }
+
+    /// Open a game frame under a seeded frame cost: install the step the
+    /// frame before resolved, make it the wait that follows this frame, and
+    /// resolve the next frame's step off the ring with this frame's cost in
+    /// it. No-op without a seeded cost.
+    ///
+    /// REF: FUN_80016B6C (`0x80017044..0x800171D8`)
+    pub fn open_costed_game_frame(&mut self) {
+        let Some(cost) = self.frame_cost else {
+            return;
+        };
+        if let Some(step) = self.next_frame_step.take() {
+            self.frame_step = step;
+        }
+        self.pass_wait = Some(self.frame_step.max(1));
+        self.next_frame_step = Some(
+            self.frame_step_telemetry
+                .resolve(cost, true, self.frame_step_floor)
+                .vsyncs_per_tick(),
+        );
+    }
+
+    /// Drop a seeded frame cost: the step stays where it is and the
+    /// deterministic arm holds it.
+    pub fn clear_frame_cost(&mut self) {
+        self.frame_cost = None;
+        self.pass_wait = None;
+        self.next_frame_step = None;
     }
 
     /// What a field-VM op that reads `DAT_1F800393` credits on this world

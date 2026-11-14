@@ -4,6 +4,13 @@ use super::*;
 
 use legaia_engine_scene::scene_arrivals::ArrivalClass;
 
+/// The frame step retail measures on a walked world map: a `map01..map03`
+/// frame costs `551..671` hblanks, past the resolver's `0x1FE` rung and
+/// under its `0x2D0` one, over the field floor of `2`.
+///
+/// REF: FUN_80016B6C
+pub const WORLD_MAP_MEASURED_FRAME_STEP: u8 = 3;
+
 impl SceneHost {
     /// Install the placed-prop collision + interaction layer for the current
     /// field scene: one [`legaia_engine_core::world::FieldPropCollider`] per placed `.MAP`
@@ -253,15 +260,25 @@ impl SceneHost {
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.ambient.script_vram_moves.clear();
         self.world.ambient.script_vram_stp.clear();
-        // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
+        // Retail installs `2` as the frame-step floor `DAT_8007B9D8` on every
+        // field entry, a world map's included (`0x801D6990`), and the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
-        self.world.clock.frame_step_floor = if legaia_engine_scene::scene::is_world_map_scene(name)
-        {
-            3
+        // On a world map it does: a walked map frame costs more than two
+        // fields (`551..671` hblanks on `map01..map03`, past the `0x1FE`
+        // rung), so the measured step there is `3`, which the engine stands
+        // in as the scene's step over the floor of `2`. A scripted shot of
+        // the same map can cost less (the opening's pan over `map01` reads
+        // `406..457` and runs at `2`); a host standing the engine on a
+        // capture hands it the capture's step (`World::seed_frame_step`).
+        // REF: FUN_801D6704, FUN_80016B6C
+        self.world.clock.frame_step_floor = 2;
+        // A capture's frame-time ring is that scene's load history.
+        self.world.clock.clear_frame_cost();
+        self.world.clock.frame_step = if legaia_engine_scene::scene::is_world_map_scene(name) {
+            WORLD_MAP_MEASURED_FRAME_STEP
         } else {
             2
         };
-        self.world.clock.frame_step = self.world.clock.frame_step_floor;
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene

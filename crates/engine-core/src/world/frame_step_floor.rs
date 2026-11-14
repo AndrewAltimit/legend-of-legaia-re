@@ -53,6 +53,35 @@ impl World {
     pub fn seed_frame_step(&mut self, step: u8) {
         self.clock.frame_step = step.max(self.clock.frame_step_floor).max(1);
     }
+
+    /// Stand the adaptive resolver on a capture's frame-time ring and run it
+    /// from here on at `cost` hblanks a frame: `history` is `DAT_80084098`,
+    /// `cursor` the write cursor `gp+0x440`, `step` the step the capture was
+    /// running at (`0x1F800393`). The step then follows retail's own law -
+    /// the longest of the last sixteen samples against the `0xF0` / `0x1FE`
+    /// / `0x2D0` rungs, over the floor - so a capture saved a few frames
+    /// after a slow stretch falls back to the floor when retail's does
+    /// (`garmel_zeto_appears_rising`: ten more frames at `3`, then `2`).
+    ///
+    /// A harness seat: a play host has no ring to hand over and keeps the
+    /// installed step ([`Self::seed_frame_step`]). A scene entry drops it.
+    ///
+    /// REF: FUN_80016B6C
+    pub fn seed_frame_cost_history(
+        &mut self,
+        history: [i16; 16],
+        cursor: usize,
+        step: u8,
+        cost: i32,
+    ) {
+        let step = step.max(self.clock.frame_step_floor).max(1);
+        self.clock.frame_step = step;
+        self.clock.frame_step_telemetry =
+            legaia_engine_vm::actor_tick::FrameStepTelemetry::from_state(history, cursor, step);
+        self.clock.frame_cost = Some(cost);
+        self.clock.pass_wait = Some(step);
+        self.clock.next_frame_step = None;
+    }
 }
 
 #[cfg(test)]
@@ -67,6 +96,37 @@ mod tests {
         assert_eq!((w.clock.frame_step, w.clock.frame_step_floor), (3, 2));
         w.seed_frame_step(1);
         assert_eq!(w.clock.frame_step, 2);
+    }
+
+    /// A ring that holds ten slow samples behind six fast ones runs ten more
+    /// game frames at `3` and then falls to the floor; the wait after a frame
+    /// is that frame's own step.
+    #[test]
+    fn a_seeded_ring_lets_the_step_fall_when_the_slow_samples_age_out() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.set_frame_step_floor(2);
+        // Newest first from the cursor: six at 450, ten at the clamp.
+        let mut history = [700i16; 16];
+        let cursor = 6usize;
+        for h in history.iter_mut().take(cursor) {
+            *h = 450;
+        }
+        w.seed_frame_cost_history(history, cursor, 3, 450);
+        let mut gaps = Vec::new();
+        let (mut last, mut steps) = (None, Vec::new());
+        for t in 0..60u32 {
+            let _ = w.tick();
+            if w.clock.game_tick_fired {
+                if let Some(l) = last {
+                    gaps.push(t - l);
+                }
+                last = Some(t);
+                steps.push(w.clock.frame_step);
+            }
+        }
+        assert_eq!(&steps[..12], &[3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2]);
+        assert_eq!(&gaps[..12], &[3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2]);
     }
 
     #[test]
