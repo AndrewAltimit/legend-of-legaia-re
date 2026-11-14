@@ -78,6 +78,8 @@ nilboa_koru_pre_ultra_charge__A5 --spell 0xA5 --state nilboa_koru_pre_ultra_char
 chitei2_cort_pre_mystic_shield__AC --spell 0xAC --state chitei2_cort_pre_mystic_shield --caster 3 --target 3 --pin-seed 0x12345678
 chitei2_cort_pre_guilty_cross__37 --spell 0x37 --state chitei2_cort_pre_guilty_cross --caster 3 --target 0 --pin-seed 0x12345678
 chitei2_cort_pre_mystic_circle__B7 --spell 0xB7 --state chitei2_cort_pre_mystic_circle --caster 3 --target 8 --pin-seed 0x12345678
+# Evil Seru Magic runs 4713 vsyncs; its recording was made with LEGAIA_MAX_SHOTS=2600 (the probe's cap is 1500 frames).
+chitei2_cort_pre_mystic_circle__AD --spell 0xAD --state chitei2_cort_pre_mystic_circle --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/chitei2_cort_evil_seru_magic/retail
 rugi_berserker_2_pre_spore_gas__4F --spell 0x4F --state rugi_berserker_2_pre_spore_gas --caster 3 --target 0 --pin-seed 0x12345678
 deroa_jette_clone --physical --state battle_deroa_jette_clone_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
 deroa_jette_shadow_break --physical --state battle_deroa_jette_shadow_break_mid_cast --caster 4 --target 3 --pin-seed 0x12345678
