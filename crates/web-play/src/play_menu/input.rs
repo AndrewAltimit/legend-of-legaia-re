@@ -103,8 +103,9 @@ impl LegaiaRuntime {
         // The menu's blip, off this edge once the refusal box has had it -
         // the native window fires its cues after the same pre-empts
         // (`tick_boot_ui`). The save screen's grid filters the edge further
-        // (`before_tick`, below), so its blip waits for the filtered edge:
-        // a blocked Load on an empty block is silent on both hosts.
+        // (`before_tick`, below), so its blip waits for the filtered edge,
+        // with a refused grid confirm's Cross put back (`blip_edge`): retail
+        // sounds `0x20` on a blocked Load before it reads the cell.
         let (start_closes_menu, save_sub) = self
             .play_menu
             .as_ref()
@@ -210,6 +211,12 @@ impl LegaiaRuntime {
                 crate::pad_bindings::store_mapping(mapping);
             }
             // The save screen's blip, off the edge its grid let through.
+            // A grid confirm the flow refused still sounds (`blip_edge`).
+            let save_edge = save_edge.map(|e| {
+                self.play_menu
+                    .as_ref()
+                    .map_or(e, |m| m.save_flow.blip_edge(e))
+            });
             if let Some(e) = save_edge.filter(|&e| e != 0) {
                 let _ = self.play_menu_edge_blip(e, false);
             }

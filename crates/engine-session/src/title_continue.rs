@@ -92,7 +92,9 @@ pub struct ContinueLoad {
 pub enum ContinueStep {
     /// The screen is still up. `blip` is the menu cue this frame's edge
     /// earns, off the edge the refusal notice and the block grid let
-    /// through (a blocked Load on an empty block is silent).
+    /// through: a Load confirm on an empty block opens nothing but still
+    /// sounds the confirm cue, as retail's grid writes it before the cell test
+    /// (`SaveScreenFlow::blip_edge`).
     Running { blip: Option<MenuBlip> },
     /// The player backed out: the host puts the title card back up.
     BackedOut { blip: Option<MenuBlip> },
@@ -175,7 +177,7 @@ impl ContinueScreen {
         }
         let edge = self.flow.before_tick(&mut self.select, edge);
         // Inside the save screen Start is an ordinary edge, not a close.
-        let blip = menu_edge_blip(edge, false);
+        let blip = menu_edge_blip(self.flow.blip_edge(edge), false);
         let _ = self.select.tick(SelectInput::from_pad_edge(edge));
         let Some(outcome) = self.select.outcome() else {
             return ContinueStep::Running { blip };

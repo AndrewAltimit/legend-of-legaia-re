@@ -160,6 +160,9 @@ pub struct SaveScreenFlow {
     refusal: Option<(SaveRefusal, u16)>,
     /// The card Save written inside the commit beat ([`Self::written_save`]).
     written: Option<SaveCommit>,
+    /// This frame's grid confirm was refused on its cell
+    /// ([`Self::blip_edge`]).
+    grid_refused: bool,
 }
 
 /// Why a finished save-screen commit did not happen.
@@ -416,6 +419,7 @@ impl SaveScreenFlow {
     /// A flat-rack session gets its edge back untouched: there is no second
     /// stage to walk.
     pub fn before_tick(&mut self, session: &mut SaveSelectSession, edge: u16) -> u16 {
+        self.grid_refused = false;
         if !session.card_slots_mode() {
             return edge;
         }
@@ -567,7 +571,26 @@ impl SaveScreenFlow {
         if accepted {
             edge
         } else {
+            self.grid_refused = true;
             edge & !PadButton::Cross.mask()
+        }
+    }
+
+    /// The edge the screen's blip reads, from the edge [`Self::before_tick`]
+    /// handed back. Retail's grid confirm writes the confirm cue `0x20` into
+    /// the ring (`0x801DEAC0..0x801DEAC8`) *before* it asks `FUN_801E3F74`
+    /// for the cell's mode, so a press on a cell the screen refuses - an
+    /// empty block under Load, a foreign file - still sounds `0x20` and
+    /// opens nothing. The save screen has no buzz: every ring write in
+    /// `FUN_801DD35C` is `0x20`, `0x21` or `0x37`. The edge comes back with
+    /// its Cross restored on such a frame, and unchanged otherwise.
+    ///
+    /// REF: FUN_801DD35C
+    pub fn blip_edge(&self, filtered: u16) -> u16 {
+        if self.grid_refused {
+            filtered | PadButton::Cross.mask()
+        } else {
+            filtered
         }
     }
 
@@ -1110,8 +1133,12 @@ mod tests {
             assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
             assert_eq!(flow.card_io_result(), 1, "the card op published success");
             // Cell 0 is empty.
-            let gated = flow.before_tick(&mut s, cross()) & PadButton::Cross.mask() == 0;
+            let edge = flow.before_tick(&mut s, cross());
+            let gated = edge & PadButton::Cross.mask() == 0;
             assert_eq!(gated, expect_gated, "{mode:?} on an empty cell");
+            // Refused or not, the press sounds the grid's confirm cue: retail
+            // writes `0x20` ahead of the cell test (`0x801DEAC8`).
+            assert_eq!(flow.blip_edge(edge), cross(), "{mode:?} blips");
             // Cell 2 holds a save - never gated.
             flow.grid_cursor = 2;
             assert_ne!(

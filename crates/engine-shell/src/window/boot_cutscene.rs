@@ -383,7 +383,9 @@ impl PlayWindowApp {
         // tick.
         if let BootUiState::FieldMenu { sub } = &self.boot_ui {
             let start_closes_menu = sub.is_none();
-            self.fire_menu_cues(pressed, start_closes_menu);
+            // A grid confirm the card screen refused still sounds
+            // (`SaveScreenFlow::blip_edge`).
+            self.fire_menu_cues(self.save_flow.blip_edge(pressed), start_closes_menu);
         }
 
         let boot_ui_active = match &mut self.boot_ui {

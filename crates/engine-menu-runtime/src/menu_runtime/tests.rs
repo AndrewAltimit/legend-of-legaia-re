@@ -635,7 +635,9 @@ fn sell_over_an_empty_bag_buzzes_and_stays_on_the_mode_select() {
         let (state, cue) = if stocked {
             (
                 MenuState::ShopSell,
-                Some(legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE),
+                // The mode select keeps its picker's bare pick
+                // (`FUN_801D688C`, `0x36`; `FUN_801DAFD4` writes nothing over it).
+                Some(legaia_engine_menus::menu_cues::MENU_PICK_CUE),
             )
         } else {
             (
@@ -652,6 +654,25 @@ fn sell_over_an_empty_bag_buzzes_and_stays_on_the_mode_select() {
         if !stocked {
             assert_eq!(runtime.ctx.cursor, 1, "the hand stays on Sell");
         }
+    }
+}
+
+/// The mode select's Buy keeps the picker's `0x36` and its Quit sounds the
+/// cancel `0x37` it pushes (`FUN_801DAFD4`, `0x801DB0D8`).
+#[test]
+fn the_shop_mode_select_sounds_pick_for_buy_and_cancel_for_quit() {
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
+    for (downs, cue) in [(0, 0x36), (2, 0x37)] {
+        let mut world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, Vec::new())));
+        runtime.ctx.state = MenuState::ShopMenu.as_byte();
+        for _ in 0..downs {
+            runtime.tick(&mut world, down());
+        }
+        let _ = runtime.take_ui_cue();
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.take_ui_cue(), Some(cue), "row {downs}");
     }
 }
 
