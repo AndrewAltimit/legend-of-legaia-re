@@ -213,6 +213,7 @@ mod seq_chunk_walk_disc;
 mod shop_catalog_disc;
 mod slot_minigame_real;
 mod south_gate_disc;
+mod spawn_clip_rate_disc;
 mod spell_model_single_source_disc;
 mod sprite_arm_seat_spawn_disc;
 mod stone_delilas_confrontation_disc;
