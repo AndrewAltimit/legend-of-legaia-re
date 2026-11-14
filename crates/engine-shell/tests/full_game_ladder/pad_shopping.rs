@@ -300,7 +300,6 @@ fn gear_worth(w: &legaia_engine_core::world::World, id: u8) -> i32 {
 /// The first three heals come before any equipment - a player with an empty
 /// bag buys those first.
 fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option<Want> {
-    use legaia_engine_menus::equipment::EquipSlot;
     // Only the continuous hand buys. A segmented pass whose talk reaches a
     // counter (`doman` P1's merchant, on the way to Nivora) looks and
     // leaves: the screen still has to open and close for the merchant's
@@ -516,12 +515,6 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         if entry.is_ra_seru || i64::from(it.price) + reserve > i64::from(gold) {
             continue;
         }
-        let slot = match entry.category {
-            Disc::Weapon => EquipSlot::Weapon,
-            Disc::Body => EquipSlot::BodyArmor,
-            Disc::Head => EquipSlot::Helmet,
-            Disc::Footwear => EquipSlot::Boot,
-        };
         for (member, &ch) in party.iter().enumerate().take(3) {
             if !info.can_equip(it.item_id, ch)
                 || REFUSED_BUYS.with(|r| r.borrow().contains(&(it.item_id, ch)))
@@ -531,7 +524,8 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             let Some(rec) = w.party.roster.members.get(usize::from(ch)) else {
                 continue;
             };
-            let worn = rec.equipment().slots[slot.as_index() as usize];
+            let worn = rec.equipment().slots
+                [legaia_engine_menus::equip_session::record_byte_for_category(entry.category, ch)];
             let gain = gear_worth(w, it.item_id) - gear_worth(w, worn);
             // A piece the bag already holds is worn through the Equip
             // screen, not bought again.
@@ -621,7 +615,6 @@ pub(super) fn outgrown_value(session: &NativeSession) -> i64 {
 /// has joined the party either, present or not: what a heal sale may part
 /// with ([`heal_sale_gear`]).
 fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
-    use legaia_engine_menus::equipment::EquipSlot;
     use legaia_game_tables::equip_stats::EquipSlot as Disc;
     let w = &session.host.world;
     let mut out = BTreeSet::new();
@@ -648,29 +641,24 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
         if n == 0 || entry.is_ra_seru || prices.price(id) == 0 {
             continue;
         }
-        let slot = match entry.category {
-            Disc::Weapon => EquipSlot::Weapon,
-            Disc::Body => EquipSlot::BodyArmor,
-            Disc::Head => EquipSlot::Helmet,
-            Disc::Footwear => EquipSlot::Boot,
-        };
         let wanted = party.iter().any(|&ch| {
             if !info.can_equip(id, ch) {
                 return false;
             }
-            let worn = if slot == EquipSlot::Weapon {
-                worn_weapon(session, ch)
-            } else {
-                w.party
-                    .roster
-                    .members
-                    .get(usize::from(ch))
-                    .map_or(0, |rec| rec.equipment().slots[slot.as_index() as usize])
-            };
+            // The record byte the piece is worn in, by the rule the shop and
+            // the Equip screen share.
+            let byte =
+                legaia_engine_menus::equip_session::record_byte_for_category(entry.category, ch);
+            let worn = w
+                .party
+                .roster
+                .members
+                .get(usize::from(ch))
+                .map_or(0, |rec| rec.equipment().slots[byte]);
             if gear_worth(w, id) > gear_worth(w, worn) {
                 return true;
             }
-            slot == EquipSlot::Weapon
+            entry.category == Disc::Weapon
                 && match (arm_cost(session, ch, id), arm_cost(session, ch, worn)) {
                     (Some(c), Some(cw)) => c < cw,
                     // A cost the battle file cannot price is kept.
