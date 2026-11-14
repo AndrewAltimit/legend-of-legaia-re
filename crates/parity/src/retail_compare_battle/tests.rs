@@ -2306,6 +2306,24 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     assert!(b.engine_clip_cursors().is_empty(), "a cast's target");
     b.queued_category = 3;
 
+    // A monster strike's gate waits for the bystanders the capture holds on
+    // idle: every slot on clip 0 but the striker and its target.
+    {
+        let mut s = b.clone();
+        s.clip_cursors = vec![(0, 0, 12), (1, 0, 40), (3, 7, 0), (4, 0, 120), (5, 8, 16)];
+        let (striker, target) = (s.active_actor, s.target_code);
+        let want = [0u8, 1, 4]
+            .into_iter()
+            .filter(|&k| k != striker && k != target)
+            .fold(0u8, |m, k| m | 1 << k);
+        assert_eq!(s.strike_aim_steerable(), s.idle_bystanders() != 0);
+        if s.strike_aim_steerable() {
+            assert_eq!(s.idle_bystanders(), want);
+        }
+        s.queued_category = 2;
+        assert_eq!(s.idle_bystanders(), 0, "a cast names none");
+    }
+
     // Every party seat sat the round out on Spirit: the drive's party does.
     b.party_categories = vec![4];
     assert!(b.party_spirit_round());

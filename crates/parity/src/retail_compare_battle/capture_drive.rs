@@ -1862,6 +1862,21 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
+    /// The pool slots a monster strike's capture holds on their idle clip,
+    /// besides the striker and its target (`ActionSteer::idle_bystanders`):
+    /// the turn retail stands on finds them idle, so the replay's does.
+    pub fn idle_bystanders(&self) -> u8 {
+        if !self.strike_aim_steerable() {
+            return 0;
+        }
+        self.clip_cursors
+            .iter()
+            .filter(|&&(slot, clip, _)| {
+                clip == 0 && slot < 8 && slot != self.active_actor && slot != self.target_code
+            })
+            .fold(0, |m, &(slot, _, _)| m | 1 << slot)
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
@@ -2087,6 +2102,7 @@ impl RetailBattle {
                     walk_clock: self.walk_clock_capture(),
                     arrival: self.walk_clock_arrival(),
                     strike_aim: self.strike_aim_steer,
+                    idle_bystanders: self.idle_bystanders(),
                     harvest_pacing: seat < 3
                         && self.queued_category == 3
                         && self.arts_queue

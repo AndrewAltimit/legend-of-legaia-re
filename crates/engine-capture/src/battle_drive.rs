@@ -306,6 +306,14 @@ pub struct ActionSteer {
     /// the drive: raised by the retail-compare search only once no stream
     /// reached the capture on the targets the replay picked itself.
     pub strike_aim: bool,
+    /// The bystanders a monster strike's capture holds on their idle clip
+    /// (`+0x1D9 == 0`), as a mask of pool slots: the gate waits for a turn
+    /// that finds each of them idle too. A replay reaches the striker's
+    /// turns on its own stream, and a later turn than retail's can open the
+    /// same phase with another body still on a reaction clip a party swing
+    /// left it in (`battle_dohaty_nova_v2_strike`: the second Nova mid
+    /// knockdown, off its ground, where the capture's stands idle).
+    pub idle_bystanders: u8,
     /// The capture's harvest probe restored the party's HP at every round
     /// prompt and raised the maximum to `9999` (`autorun_battle_harvest.lua`
     /// `LEGAIA_TOUGH=2`, kept in the state): its live HP is the probe's, not
@@ -968,6 +976,9 @@ impl BattleDrive {
                 if steer.strike_aim {
                     s.push_str(",x");
                 }
+                if steer.idle_bystanders != 0 {
+                    s.push_str(&format!(",B{:x}", steer.idle_bystanders));
+                }
                 if steer.tough {
                     s.push_str(",z");
                 }
@@ -1067,6 +1078,8 @@ impl BattleDrive {
                 steer.arrival = true;
             } else if last == "x" {
                 steer.strike_aim = true;
+            } else if let Some(m) = last.strip_prefix('B') {
+                steer.idle_bystanders = u8::from_str_radix(m, 16).ok()?;
             } else if last == "z" {
                 steer.tough = true;
             } else if last == "d" {
@@ -1434,6 +1447,14 @@ impl BattleDrive {
                             .get(usize::from(engine_seat(seat, pc)))
                             .is_some_and(|a| a.battle.active_target == engine_seat(t, pc))
                     })
+                    && (0..8u8)
+                        .filter(|s| steer.idle_bystanders & (1 << s) != 0)
+                        .all(|s| {
+                            let i = usize::from(engine_seat(s, pc));
+                            world.actors.get(i).is_none_or(|a| {
+                                !a.active || a.battle.hp == 0 || world.battle_current_anim(i) == 0
+                            })
+                        })
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
                         // A phase past arm 0 with no module word is placed
