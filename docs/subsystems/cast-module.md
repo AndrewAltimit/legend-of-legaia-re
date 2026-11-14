@@ -1042,9 +1042,26 @@ burning-body emits (`0x8004A61C`, four draws each, `ra` `0x8004A634`, `0x8004A67
 beside `200` draws from `0x801E01D4` and one frame-driver draw a pass (`0x80046D34`).
 On the engine's film arm 7's draws fall from `61` a pass to `11` by its fourteenth
 pass (`1178` against `1632`), and retail's ghost walk keeps drawing seat 7 through the
-arm's first `294` vsyncs where the engine's stops twenty ticks in. So retail's bodies
-keep burning through the arm and the engine's go out; the store that keeps them lit
-is [open](../reference/open-rev-eng-threads.md#battle--rendering). Grade `capture`.
+arm's first `294` vsyncs where the engine's stops twenty ticks in. Grade `capture`.
+
+No store keeps the party lit. Sampled each vsync on
+`battle_rugi_rogue_rogue_flame_mid_cast`, a party seat's `+0x21F` is `1` from the hit
+loop's pass to the moment its colour word reaches neutral: `+0x21C` is `0`, `+0x0C` is
+`0`, and the tint machine's decay arm eases the word from `(0x3FF, 0, 0)` by `32` a lane
+a battle frame (step `4`) and then retires the selector, `16` frames on and well before
+the arm ends. The engine's party seats run the same law. What burns to the arm's end is
+seat 7: the golem's `+0x21F` stays `1` (the `k = 4` every-pass store) under a red word
+`0x3FC`, and its strike clip `1` keeps the committed id `0x11` until its natural end,
+`265` vsyncs into the arm, so the after-image walk draws its two ghosts and each sheds
+the body's fire. `k = 4` stages `0` bare (`sb zero,0x1da(v0)` at `0x801F8378`, Wind's at
+`0x801F7B78`, Thunder's at `0x801F72E4`, no `+0x1DC` store beside it), which waits for
+that end; the engine had committed it at once, and the golem stood on its idle from
+the arm's first pass. The port holds the stage to the clip's end
+(`CLIP_GATED_MODULES`, the capture band's spell naming the module), and a creature the
+`k = 5` pass takes off draws no ghosts from the history it keeps
+(`battle_ghost_draws`). The engine's clip still ends sooner in the arm than retail's,
+which is the arm's [frame span](battle-stage-camera.md#a-frames-span). Grade
+`disassembly` + `capture`.
 
 ### A bare stage byte waits for the clip's end
 

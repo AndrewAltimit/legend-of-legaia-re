@@ -143,6 +143,18 @@ fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
     world.actors[0].battle.render_color = 0;
     world.actors[0].battle.render_flag = 0xFF;
     assert!(legaia_engine_world_views::battle_draws::battle_ghost_draws(&world).is_empty());
+
+    // A seat taken off the stage keeps its ring and its colour word, and the
+    // draw tick never reaches it, so it leaves no ghosts either (PROT 0964's
+    // golem after the `k = 5` pass).
+    world.actors[0].battle.render_color = 0x2008_0200;
+    world.actors[0].battle.render_flag = 0;
+    assert_eq!(
+        legaia_engine_world_views::battle_draws::battle_ghost_draws(&world).len(),
+        2
+    );
+    world.actors[0].active = false;
+    assert!(legaia_engine_world_views::battle_draws::battle_ghost_draws(&world).is_empty());
 }
 
 /// A seated ghost is drawn from the slot the walk reads, re-posed from the
