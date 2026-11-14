@@ -101,6 +101,35 @@ impl WalkFilm {
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
+        if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
+            for s in &retail.part_vm {
+                eprintln!(
+                    "R rec {:#x} pc {} wait {} loops {:?} 5c {}",
+                    s.record_off, s.pc, s.wait_timer, s.loops, s.field_5c
+                );
+            }
+            for p in session.host.world.ambient.fx.iter().filter(|p| !p.finished) {
+                let st = &p.state;
+                eprintln!(
+                    "E rec {:#x} pc {} wait {} loops {:?} 5c {}",
+                    p.record_off,
+                    st.pc,
+                    st.wait_timer,
+                    [st.field_88, st.field_8a, st.field_8c, st.field_8e],
+                    st.field_5c
+                );
+            }
+        }
+        // The ambient parts' programs where the state holds them: a part's
+        // waits run from its spawn on the game pass, so the pass its next
+        // `rand()` op lands on is time since the entry, which the seed's
+        // settle does not replay.
+        if std::env::var_os("LEGAIA_RC_NO_PART_VM").is_none() {
+            let (seated, of) = session.host.world.seat_ambient_part_vm(&retail.part_vm);
+            if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
+                eprintln!("part vm seated {seated} of {of}");
+            }
+        }
         // The fog pool as the state left it: its live count gates the next
         // spawns (`_DAT_8007BCA8`, FUN_801D629C), so a film from an empty
         // pool draws past the cap until it fills. The seed's warm-up ticks

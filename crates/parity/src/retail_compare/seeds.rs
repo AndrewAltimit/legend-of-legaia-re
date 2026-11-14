@@ -1043,6 +1043,34 @@ pub fn retail_turning_parts(
         .collect()
 }
 
+/// Every live ambient part on a retail state's actor lists with its move-VM
+/// program words, in list order: a part ticked by `FUN_80021DF4`, not
+/// halted (`+0x10 & 0x8`), whose record lies in the stager bundle
+/// ([`legaia_engine_core::world::ambient::AmbientVmSeed`] names the words).
+/// The RAM is the state's own, not taken back to the displayed frame: a run
+/// resuming from the state ticks from here.
+pub fn retail_part_vm(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient::AmbientVmSeed> {
+    let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+        })
+        .filter_map(|n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            (rec < 0x10_0000).then_some(())?;
+            Some(legaia_engine_core::world::ambient::AmbientVmSeed {
+                record_off: rec,
+                pc: game_anchors::i16_at(ram, n + 0x70),
+                wait_timer: game_anchors::i16_at(ram, n + 0x54),
+                loops: [0x88u32, 0x8A, 0x8C, 0x8E].map(|o| game_anchors::u16_at(ram, n + o)),
+                field_5c: game_anchors::i16_at(ram, n + 0x5C),
+            })
+        })
+        .collect()
+}
+
 /// The `4C E1` text balloon's handler word (`FUN_801DA7F0`, field overlay),
 /// which the place-name banner shares.
 const BALLOON_TICK: u32 = 0x801D_A7F0;

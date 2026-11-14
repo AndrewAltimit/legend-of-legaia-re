@@ -191,6 +191,9 @@ pub struct RetailObs {
     /// render banks as the displayed frame drew them, handed to the image
     /// child as `LEGAIA_SEAT_TURNING_PARTS`.
     pub turning_parts: Vec<legaia_engine_core::world::ambient::AmbientBankSeed>,
+    /// The live ambient parts' move-VM program words ([`retail_part_vm`]),
+    /// which the walk film seats so the parts' waits run in retail's phase.
+    pub part_vm: Vec<legaia_engine_core::world::ambient::AmbientVmSeed>,
     /// The text balloon the displayed frame drew ([`retail_balloon`]) - the
     /// place-name banner a door leaves up - for a field state, handed to the
     /// image child as `LEGAIA_SEAT_BALLOON` (`none` when it drew none).
@@ -456,6 +459,11 @@ impl RetailObs {
                 .flatten(),
             turning_parts: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_turning_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
+            } else {
+                Vec::new()
+            },
+            part_vm: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_part_vm(ram)
             } else {
                 Vec::new()
             },

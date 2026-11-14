@@ -47,6 +47,8 @@ draw for draw until an engage or a touch separates the two runs.
 
 It also stands on the live count the state's last render step wrote (`_DAT_8007BCA8`, `RetailObs::fog_live_count`), which is what the first pass's spawner reads: a state saved between a pass's spawns and its render step holds more records up than that count (`field_walled_collision_pin`: 73 against 66).
 
+It seats each live ambient part's program from the state too (`retail_part_vm`, `World::seat_ambient_part_vm`): the PC `+0x70`, the wait `+0x54`, the loop PCs and counters `+0x88..+0x8E` and `+0x5C`, paired with the engine's parts record by record in list order. A part's waits run on the game pass from its spawn, so which pass its next `rand()` op draws on is time since the scene entry, and the seed's settle had left `koin1`'s parts on other PCs and other waits than the state's (`0x5EE` at PC `20`, wait `96`, against retail's `38`, `24`). Positions, banks and render state stay the engine's. A harness seat; `LEGAIA_RC_NO_PART_VM=1` turns it off and `LEGAIA_RC_PART_DIAG=1` prints both sides' parts.
+
 A retail pass reads the pad the probe set one vsync earlier, and a pass is on a game frame, so a pad file made from an engine digest replays on retail two vsyncs early (each row's `tick - 2`, one-vsync presses widened); `retail - 1` of a draw then pairs with the engine tick.
 
 The first pass differs by construction: a state saved mid-walk has one more
