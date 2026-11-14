@@ -85,7 +85,11 @@ export const SCENES = {
    * battle frames back) and whose band wash is opaque Gouraud quads: Big Wave (0x56),
    * Genocidal Cannon (0xB3, an arm at span 5) and Thunder Storm (0x77). */
   cast_big_wave: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0x56, 9] },
-  cast_cannon: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0xB3, 9] },
+  /* Genocidal Cannon in its own fight: Songi's third form (monster 179) on `noaru`'s formation
+   * row 4, casting from the first prompt. Songi's AI latch streams the cannon's starfield page
+   * (`readef.DAT` group 0x17), where a party seat's seeded cast left the dev placeholder page.
+   * Begin on the round prompt opens the first command prompt, which the cast takes. */
+  cast_cannon: { scene: 'noaru', ticks: 2400, every: 40, battle: 30, row: 4, monsterCast: [3, 0xB3], taps: [[450, 'Cross']] },
   cast_thunder: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 0x77, 9] },
   /* The round prompt's Begin, then the command ring's Item window (Up), its cursor,
    * back out, the Magic direction, and an item picked: engine-screens' battle windows. */
@@ -223,7 +227,8 @@ function nativeRun(engine, name, sc, mode, dir, opts) {
   if (sc.shop) env.LEGAIA_CAPTURE_SHOP = `${sc.shop.idx}@${sc.shop.tick}`;
   if (sc.seat) env.LEGAIA_SEAT = sc.seat.join(',');
   if (sc.knobs) env.LEGAIA_DIAG_FOLLOW_KNOBS = sc.knobs.join(',');
-  if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',');
+  if (sc.battle) env.LEGAIA_CAPTURE_BATTLE = [sc.battle, ...(sc.inflight || [])].join(',') + (sc.row !== undefined ? `@${sc.row}` : '');
+  if (sc.monsterCast) env.LEGAIA_BATTLE_MONSTER_CAST = `${sc.monsterCast[0]},${sc.monsterCast[1]},p`;
   if (sc.lgsfPath || sc.viaTown || sc.pack) env.LEGAIA_RNG_SEED = String(CARD_RNG_SEED);
   const cwd = fs.mkdtempSync(path.join(dir, 'cwd-')); /* a clean options file on each run */
   if (MODES[mode].options) fs.writeFileSync(path.join(cwd, 'legaia-options.toml'), MODES[mode].options);
@@ -308,7 +313,8 @@ async function pageRun(cfg) {
   for (let n = 0; n <= last; n++) {
     if (sc.battle === n + 1) {
       if (sc.inflight) rt.debug_seed_inflight_cast(...sc.inflight);
-      rt.debug_force_battle(-1);
+      if (sc.monsterCast) rt.debug_seed_monster_cast(sc.monsterCast[0], sc.monsterCast[1], true);
+      if (!rt.debug_force_battle(sc.row !== undefined ? sc.row : -1) && sc.row !== undefined) throw new Error('battle row refused ' + sc.row);
     }
     if (sc.talk && sc.talk.tick === n + 1) rt.debug_talk_to_placement(sc.talk.slot);
     if (sc.shop && sc.shop.tick === n + 1) rt.debug_arm_scene_shop(sc.shop.idx);

@@ -487,7 +487,11 @@ impl PlayWindowApp {
                         idle: Default::default(),
                     });
             }
-            if let Some(id) = world.first_rollable_formation_id() {
+            // A monster's seeded cast for this fight (`LEGAIA_BATTLE_MONSTER_CAST`),
+            // as `--battle` reads it: the page's `debug_seed_monster_cast`.
+            crate::window::run::apply_monster_cast_env(world);
+            let row = self.screenshot.as_ref().and_then(|sc| sc.battle_row);
+            if let Some(id) = row.or_else(|| world.first_rollable_formation_id()) {
                 world.force_encounter(id);
             }
         }
