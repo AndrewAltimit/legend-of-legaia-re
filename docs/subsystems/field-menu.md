@@ -989,8 +989,16 @@ overlay's `FUN_801D688C` (21 callers): Cross pushes `0x36`, Circle `0x37`, a ste
 `0x21`, and a screen that accepts the row overwrites the ring's last slot through
 `FUN_80035BD0`, `0x20` for most and `0x23` for a refusal. The root picker overwrites
 only for Load and Save, so its first five rows sound the bare `0x36`. The content
-lists run the kernel below, whose confirm is `0x20`. Engine:
-`field_menu::pause_edge_blip`, on both hosts.
+lists run the kernel below, whose confirm is `0x20`.
+
+The four apply screens sound their own cue. As an item lands or a spell is cast,
+each overwrites the pick with `0` and pushes `0x25`: the single-target apply at
+`0x801D84B8`, the all-party apply at `0x801D8120`, the group cast at `0x801D9368`
+and the target cast at `0x801D9680`. A member the validator turns down
+overwrites it with `0x23` instead (`0x801D8480`, `0x801D96E0`). Engine:
+`field_menu_dispatch::pause_frame_blip` on both hosts, which asks the open screen
+(`FieldMenuSubsession::confirm_blip`, a step on a copy of the session) before
+`field_menu::pause_edge_blip`.
 
 ### The kind-4 list kernel (SCUS `FUN_80032A44`)
 

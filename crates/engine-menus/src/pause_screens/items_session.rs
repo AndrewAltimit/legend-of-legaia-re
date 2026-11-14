@@ -286,6 +286,39 @@ impl PauseItemsSession {
         )
     }
 
+    /// The cue this frame's `pressed` edge sounds in place of the picker's,
+    /// for the target step's confirm: [`MenuBlip::Use`] when the item lands,
+    /// [`MenuBlip::Refuse`] when the validator turns the member down.
+    /// `None` everywhere else (the edge keeps the picker's own cue).
+    ///
+    /// Retail's single-target apply (`FUN_801D8308`) overwrites the pick with
+    /// `0` and pushes `0x25` as it applies (`0x801D84B0` / `0x801D84B8`), or
+    /// overwrites it with `0x23` on a refused member (`0x801D8480`); the
+    /// all-party apply (`FUN_801D7FF8`) pushes the same `0x25`
+    /// (`0x801D8120`). The answer is the flow's own: the step runs on a
+    /// copy of the item-use session.
+    ///
+    /// REF: FUN_801D8308, FUN_801D7FF8
+    pub fn confirm_blip(&self, pressed: u16) -> Option<crate::menu_cues::MenuBlip> {
+        use crate::inventory_use::InventoryUseEvent;
+        use crate::menu_cues::MenuBlip;
+        if !self.target_select() {
+            return None;
+        }
+        let ev = simple_inventory_input(pressed)?;
+        if ev != InventoryUseInput::Confirm {
+            return None;
+        }
+        let mut probe = self.inner.clone();
+        let _ = probe.drain_events();
+        probe.input(ev);
+        probe.drain_events().iter().find_map(|e| match e {
+            InventoryUseEvent::Used { .. } => Some(MenuBlip::Use),
+            InventoryUseEvent::InvalidConfirm => Some(MenuBlip::Refuse),
+            _ => None,
+        })
+    }
+
     /// The sort ranks this screen's Arrange runs on, once per Arrange it ran:
     /// `Some` hands the host the sort to apply to the bag
     /// ([`crate::item_bag::ItemBag::arrange`]), which retail's

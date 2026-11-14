@@ -22,6 +22,22 @@ pub fn tick_root_list(
     }
 }
 
+/// The pause menu's blip for this frame's just-pressed `pressed` word, on
+/// every host: an apply screen's own cue where its confirm uses an item,
+/// casts a spell or is refused ([`FieldMenuSubsession::confirm_blip`]), else
+/// the pickers' rule ([`legaia_engine_menus::field_menu::pause_edge_blip`]).
+/// `sub` is the open sub-session, `None` on the root list.
+pub fn pause_frame_blip(
+    pressed: u16,
+    start_closes_menu: bool,
+    root: Option<&legaia_engine_menus::field_menu::FieldMenuSession>,
+    sub: Option<&FieldMenuSubsession>,
+) -> Option<legaia_engine_menus::menu_cues::MenuBlip> {
+    sub.and_then(|s| s.confirm_blip(pressed)).or_else(|| {
+        legaia_engine_menus::field_menu::pause_edge_blip(pressed, start_closes_menu, root)
+    })
+}
+
 /// Step an open sub-session one frame on a raw pad edge (and the host's
 /// latest key name, for the Options screen's Key Config screen). Returns the
 /// rebound binding table when a rebind committed this frame, for the host

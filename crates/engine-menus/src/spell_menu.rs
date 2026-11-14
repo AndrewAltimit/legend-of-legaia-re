@@ -487,6 +487,32 @@ impl SpellMenuSession {
         ((cursor as i8 + dir).rem_euclid(n as i8)) as u8
     }
 
+    /// The cue this frame's `pressed` edge sounds in place of the picker's:
+    /// [`MenuBlip::Use`](crate::menu_cues::MenuBlip::Use) when the cast
+    /// commits, [`MenuBlip::Refuse`](crate::menu_cues::MenuBlip::Refuse) when
+    /// the confirm is turned down, `None` for every other edge.
+    ///
+    /// Retail's group cast (`FUN_801D9280`) and target cast (`FUN_801D9594`)
+    /// overwrite the pick with `0` and push `0x25` as the spell lands
+    /// (`0x801D9368`, `0x801D9680`); the target cast's refusal overwrites it
+    /// with `0x23` (`0x801D96E0`), as the caster picker's (`0x801D908C..`)
+    /// and the list kernel's disabled row (`0x80032D0C`) do. The answer is
+    /// the flow's own: the step runs on a copy of the session.
+    ///
+    /// REF: FUN_801D9280, FUN_801D9594
+    pub fn confirm_blip(&self, pressed: u16) -> Option<crate::menu_cues::MenuBlip> {
+        use crate::menu_cues::MenuBlip;
+        let input = SpellMenuInput::from_pad_edge(pressed);
+        if !input.cross || matches!(self.phase, SpellMenuPhase::Done(_)) {
+            return None;
+        }
+        self.clone().tick(input).iter().find_map(|e| match e {
+            SpellMenuEvent::Cast { .. } | SpellMenuEvent::CastGroup { .. } => Some(MenuBlip::Use),
+            SpellMenuEvent::InvalidConfirm { .. } => Some(MenuBlip::Refuse),
+            _ => None,
+        })
+    }
+
     pub fn tick(&mut self, input: SpellMenuInput) -> Vec<SpellMenuEvent> {
         let mut events = Vec::new();
         match self.phase.clone() {
@@ -819,6 +845,46 @@ mod tests {
         assert!(!spell_targets_group(
             SpellTarget::OneEnemy.retail_target_flag_bits()
         ));
+    }
+
+    /// The group cast's commit sounds `0x25` (`FUN_801D9280`, `0x801D9368`);
+    /// the caster and list confirms before it keep the pickers' cues, and
+    /// the preview leaves the session where it was.
+    #[test]
+    fn a_group_cast_sounds_the_use_cue() {
+        use crate::menu_cues::MenuBlip;
+        let party = vec![CasterSlot {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            mp: 30,
+            spells: vec![0x11],
+            ..Default::default()
+        }];
+        let targets = vec![TargetRow {
+            slot: 0,
+            name: "Vahn".into(),
+            hp: 60,
+            hp_max: 100,
+        }];
+        let mut s = SpellMenuSession::new(
+            party,
+            targets,
+            legaia_engine_battle::spells::SpellCatalog::vanilla(),
+        );
+        let cross = PadButton::Cross.mask();
+        let press = SpellMenuInput {
+            cross: true,
+            ..Default::default()
+        };
+        assert_eq!(s.confirm_blip(cross), None);
+        let _ = s.tick(press);
+        assert_eq!(s.confirm_blip(cross), None);
+        let _ = s.tick(press);
+        assert!(matches!(s.phase(), SpellMenuPhase::GroupConfirm { .. }));
+        assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Use));
+        assert_eq!(s.confirm_blip(PadButton::Down.mask()), None);
+        assert!(matches!(s.phase(), SpellMenuPhase::GroupConfirm { .. }));
     }
 
     /// A group spell opens the no-pick flow and its commit carries one grant

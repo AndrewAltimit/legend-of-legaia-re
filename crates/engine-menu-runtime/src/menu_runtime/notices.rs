@@ -20,6 +20,13 @@ impl MenuRuntime {
         self.spell_level_notice.as_ref()
     }
 
+    /// `true` while window 7 or window 8 holds the pad over its screen: the
+    /// frame's confirm dismisses the notice, so the screen's own confirm cue
+    /// ([`crate::field_menu_dispatch::pause_frame_blip`]) is not asked.
+    pub fn notice_held(&self) -> bool {
+        self.spell_level_notice.is_some() || self.art_learned_notice.is_some()
+    }
+
     /// The live art-learned notice (retail window 8), or `None`.
     pub fn art_learned_notice(
         &self,

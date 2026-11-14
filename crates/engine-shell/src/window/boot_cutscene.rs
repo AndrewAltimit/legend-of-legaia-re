@@ -247,15 +247,20 @@ impl PlayWindowApp {
 
     /// Fire the pause menu's own blip for this frame's pad edges. Which cue,
     /// if any, is the engine's one rule
-    /// ([`legaia_engine_menus::field_menu::pause_edge_blip`]) - the browser play
+    /// ([`legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip`]) - the browser play
     /// page asks the same function through `play_menu_edge_blip`.
     /// `start_closes_menu` is whether this frame's Start closes the menu:
     /// on the root row list it does, inside a sub-screen it does not.
     pub(super) fn fire_menu_cues(&mut self, pressed: u16, start_closes_menu: bool) {
-        if let Some(blip) = legaia_engine_menus::field_menu::pause_edge_blip(
+        let sub = match &self.boot_ui {
+            BootUiState::FieldMenu { sub } if !self.menu_runtime.notice_held() => sub.as_ref(),
+            _ => None,
+        };
+        if let Some(blip) = legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip(
             pressed,
             start_closes_menu,
             self.session.field_menu.as_ref(),
+            sub,
         ) {
             self.fire_menu_cue(u16::from(blip.cue()));
         }

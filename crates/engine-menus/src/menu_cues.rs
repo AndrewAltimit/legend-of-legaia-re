@@ -31,6 +31,12 @@ pub const MENU_CANCEL_CUE: u8 = 0x37;
 pub const MENU_PICK_CUE: u8 = 0x36;
 /// A refused row (`FUN_801D6B20`, `li a0,0x23` at `0x801D6CEC`).
 pub const MENU_REFUSE_CUE: u8 = 0x23;
+/// An item used or a spell cast from the pause menu. The four apply screens
+/// overwrite the picker's pick with `0` (`FUN_80035BD0`) and push `0x25`
+/// (`FUN_80035B50`): the single-target item apply at `0x801D84B8`, the
+/// all-party apply at `0x801D8120`, the group cast at `0x801D9368` and the
+/// target cast at `0x801D9680`.
+pub const MENU_USE_CUE: u8 = 0x25;
 
 use legaia_engine_system::input::PadButton;
 
@@ -53,6 +59,8 @@ pub enum MenuBlip {
     Pick,
     /// A gated row.
     Refuse,
+    /// An apply screen's use or cast ([`MENU_USE_CUE`]).
+    Use,
 }
 
 impl MenuBlip {
@@ -64,6 +72,7 @@ impl MenuBlip {
             Self::Cancel => MENU_CANCEL_CUE,
             Self::Pick => MENU_PICK_CUE,
             Self::Refuse => MENU_REFUSE_CUE,
+            Self::Use => MENU_USE_CUE,
         }
     }
 }
@@ -101,6 +110,7 @@ mod tests {
         assert_eq!(MenuBlip::Cancel.cue(), 0x37);
         assert_eq!(MenuBlip::Pick.cue(), 0x36);
         assert_eq!(MenuBlip::Refuse.cue(), 0x23);
+        assert_eq!(MenuBlip::Use.cue(), 0x25);
     }
 
     /// Start on the root list closes the menu and blips a cancel, whatever

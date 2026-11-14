@@ -196,6 +196,15 @@ const PLAY_EVENTS: &[PlayCue] = &[
         source: "disc",
         why: "FUN_801D6B20 refused row (li a0,0x23 at 0x801d6cec); category 0",
     },
+    PlayCue {
+        event: "menu_use",
+        retail_cue: legaia_engine_menus::menu_cues::MENU_USE_CUE,
+        fires: Some(legaia_engine_menus::menu_cues::MENU_USE_CUE),
+        source: "disc",
+        why: "the pause menu's four apply screens push 0x25 as an item lands or a \
+              spell is cast (li a0,0x25 at 0x801d84bc / 0x801d8124 / 0x801d936c / \
+              0x801d9684); category 0",
+    },
 ];
 
 /// The page's side of the SFX channel: descriptor tables kept for before a
@@ -655,20 +664,28 @@ impl LegaiaRuntime {
 
     /// Fire the pause menu's blip for this frame's just-pressed `edge` (the
     /// PSX pad word the page feeds `set_pad`). Which blip, if any, is the
-    /// engine's one rule ([`legaia_engine_menus::field_menu::pause_edge_blip`]),
+    /// engine's one rule ([`legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip`]),
     /// the same call the native window makes: `start_closes_menu` is whether
     /// this frame's Start closes the whole menu (the root row list) rather
     /// than reaching a sub-screen. Returns whether a cue sounded; a request
     /// is counted in `menu_cue_requests` either way, as
     /// [`Self::play_sfx_event`] counts it.
     pub fn play_menu_edge_blip(&mut self, edge: u16, start_closes_menu: bool) -> bool {
+        let sub = if self.menu.notice_held() {
+            None
+        } else {
+            self.play_menu_sub_session()
+        };
         let root = self
             .scene_host
-            .session_mut()
+            .session()
             .and_then(|s| s.field_menu.as_ref());
-        let Some(blip) =
-            legaia_engine_menus::field_menu::pause_edge_blip(edge, start_closes_menu, root)
-        else {
+        let Some(blip) = legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip(
+            edge,
+            start_closes_menu,
+            root,
+            sub,
+        ) else {
             return false;
         };
         self.play_menu_blip(blip)
@@ -688,6 +705,7 @@ impl LegaiaRuntime {
             legaia_engine_menus::menu_cues::MenuBlip::Cancel => "menu_cancel",
             legaia_engine_menus::menu_cues::MenuBlip::Pick => "menu_pick",
             legaia_engine_menus::menu_cues::MenuBlip::Refuse => "menu_refuse",
+            legaia_engine_menus::menu_cues::MenuBlip::Use => "menu_use",
         };
         self.play_sfx_event(event)
     }
