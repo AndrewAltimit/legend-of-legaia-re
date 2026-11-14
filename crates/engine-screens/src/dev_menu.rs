@@ -38,9 +38,18 @@ pub const RECORDS_LABELS: RecordsLabels<'static> = RecordsLabels {
     percent: "%",
 };
 
+/// The row pitch the developer list draws at. Retail steps its rows 8 px
+/// (`FUN_801EAD98`, `dev_menu_row_y`) under its 8 x 8 debug font; the port
+/// draws the list in the dialogue font, whose ink is 11 px tall, and at
+/// retail's pitch each row's lower half sat under the next row's upper half.
+/// One pixel more than the ink keeps a descender off the row below.
+pub const DEV_MENU_FONT_PITCH: i32 = 12;
+
 /// The developer row list: the shared list geometry (the `+8` label column,
-/// the 8-px row pitch, the `0x17` row clamp, the cursor column) over the
-/// session's own `(label, value)` row model, at [`DEV_MENU_PEN`].
+/// the `0x17` row clamp, the cursor column) over the session's own
+/// `(label, value)` row model, at [`DEV_MENU_PEN`], a row every
+/// [`DEV_MENU_FONT_PITCH`]. Each row goes through the ported row renderer as
+/// a one-row window at its own pen, so the columns stay the kernel's.
 pub fn dev_menu_list_draws(session: &DevMenuSession, font: &legaia_font::Font) -> Vec<TextDraw> {
     use ui::{DevMenuListRow, dev_menu_cursor_xy, dev_menu_list_draws_for, text_draws_for};
     let values: Vec<String> = DevMenuRow::ALL
@@ -55,9 +64,13 @@ pub fn dev_menu_list_draws(session: &DevMenuSession, font: &legaia_font::Font) -
             value: Some((v.as_str(), 0x68)),
         })
         .collect();
-    let last = (rows.len() - 1) as i32;
-    let mut out = dev_menu_list_draws_for(font, &rows, 0, last, DEV_MENU_PEN);
-    if let Some(xy) = dev_menu_cursor_xy(DEV_MENU_PEN, session.row as i32, 0, last) {
+    let pen_of = |row: i32| (DEV_MENU_PEN.0, DEV_MENU_PEN.1 + row * DEV_MENU_FONT_PITCH);
+    let mut out = Vec::new();
+    for row in 0..rows.len() as i32 {
+        out.extend(dev_menu_list_draws_for(font, &rows, row, row, pen_of(row)));
+    }
+    let cursor = session.row as i32;
+    if let Some(xy) = dev_menu_cursor_xy(pen_of(cursor), cursor, cursor, cursor) {
         out.extend(text_draws_for(
             &font.layout_ascii(">"),
             xy,
@@ -304,5 +317,22 @@ mod tests {
         let session = DevMenuSession::new();
         let font = legaia_font::Font::placeholder();
         assert_on_stage(&dev_menu_list_draws(&session, &font));
+    }
+
+    /// The rows sit a font pitch apart, not retail's 8 px: at 8 a row's ink
+    /// (11 px in the dialogue font) ran into the row under it.
+    #[test]
+    fn dev_list_rows_clear_each_other_in_the_dialogue_font() {
+        let session = DevMenuSession::new();
+        let font = legaia_font::Font::placeholder();
+        let draws = dev_menu_list_draws(&session, &font);
+        let mut tops: Vec<i32> = draws.iter().map(|d| d.dst.1).collect();
+        tops.sort_unstable();
+        tops.dedup();
+        assert_eq!(tops.len(), DevMenuRow::ALL.len(), "{tops:?}");
+        for pair in tops.windows(2) {
+            assert_eq!(pair[1] - pair[0], DEV_MENU_FONT_PITCH, "{tops:?}");
+        }
+        const { assert!(DEV_MENU_FONT_PITCH > ui::DEV_MENU_ROW_STEP) };
     }
 }

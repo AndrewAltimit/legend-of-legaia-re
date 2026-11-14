@@ -604,7 +604,10 @@ columns, the `H:MM:SS` play clock and the treasure line) from the ported model
 plus caller-supplied labels; `records_screen_fields` is the structured
 emit-order intermediate the unit tests assert. `dev_menu_list_draws_for` ports
 the `FUN_801EAD98` row loop geometry (label column `x + 8`, 8-px row pitch,
-the `0x17` clamp). The per-character portrait / separator icons
+the `0x17` clamp). Retail steps the rows 8 px under its 8 x 8 debug font;
+the hosts draw the list in the dialogue font, whose ink is 11 px tall, so
+`engine-screens`' `dev_menu_list_draws` hands the row loop one row at a time
+at a 12-px pitch (`DEV_MENU_FONT_PITCH`) and keeps the kernel's columns. The per-character portrait / separator icons
 (`FUN_8002C488`) are a UI-icon-atlas sprite the host supplies, as with the
 status page's LV/HP/MP icons.
 
