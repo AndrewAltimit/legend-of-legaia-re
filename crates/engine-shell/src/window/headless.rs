@@ -208,6 +208,24 @@ impl HeadlessPlayWindow {
         Ok(())
     }
 
+    /// Stage an in-window movie of `frames` blank frames, as the redraw's
+    /// movie start does once a STR has decoded: the world's ticks are held
+    /// under it until its frames drain or it is skipped. The headless
+    /// driver draws nothing, so nothing advances the movie's frame.
+    pub fn stage_movie(&mut self, frames: usize) {
+        let blank = psx_mdec::VideoFrame {
+            rgba: Vec::new(),
+            width: 0,
+            height: 0,
+            frame_number: 0,
+        };
+        self.app.stage_windowed_cutscene((
+            vec![blank; frames],
+            std::time::Duration::from_millis(66),
+            None,
+        ));
+    }
+
     /// The field VRAM the window's draws sample (`cpu_vram_base`): the
     /// scene build with what the window layers on it.
     pub fn field_vram(&self) -> Option<&psx_tim::Vram> {

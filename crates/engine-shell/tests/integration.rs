@@ -33,6 +33,7 @@ mod menu_replay;
 mod menu_window_dispatch_real;
 mod minigame_replay;
 mod mode_seat_host_parity;
+mod movie_play_clock_host_parity;
 mod native_card_import;
 mod native_front_end;
 mod native_minigame_ladder;

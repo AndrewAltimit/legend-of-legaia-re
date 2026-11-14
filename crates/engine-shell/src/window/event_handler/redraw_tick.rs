@@ -164,6 +164,18 @@ impl PlayWindowApp {
         } else {
             ticks
         };
+        // A movie holds the world's ticks, not the game's vsyncs: retail's
+        // play counter runs under one (the movie pair's mode word carries
+        // the `0x800` bit, `GameMode::play_counter_runs`). The browser page
+        // hands a movie's ticks through `claim_tick`, which counts each
+        // ahead of naming an owner; this host claims none under a movie, so
+        // it counts them here. The settings panel is this host's own pause
+        // and counts nothing.
+        if self.cutscene.is_some() && !panel_holds {
+            for _ in 0..ticks {
+                self.session.count_play_tick();
+            }
+        }
         // Retail's movie abort on an in-flow movie (`fmv_skip_edge_hit`: the
         // attract id only, on a face button / Select), which the browser
         // page's FMV lane tests on every frame of a field cutscene too. The

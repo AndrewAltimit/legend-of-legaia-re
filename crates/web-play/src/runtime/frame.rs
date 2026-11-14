@@ -92,9 +92,10 @@ impl LegaiaRuntime {
         // source strips were never parked in, blanking whichever palettes
         // the new scene keeps on its destination cells (the ground went
         // black under them until the scene was left); the entered scene's
-        // own animator started a tick behind the window's; and the actors
-        // its entry script spawned were drained into the upload queue the
-        // rebuild then cleared.
+        // own animator started a tick behind the window's; and an actor
+        // spawned on the entry tick would have been drained into the upload
+        // queue the rebuild then cleared (an ordering hazard: no scene
+        // sampled spawns on that tick).
         //
         // `town01` keeps its establishing-sweep timeline: the page draws
         // the name-entry overlay its pinned op-0x49 opens

@@ -1215,7 +1215,7 @@ impl PlayWindowApp {
     }
 
     /// Stage decoded frames as the in-window movie.
-    fn stage_windowed_cutscene(
+    pub(in crate::window) fn stage_windowed_cutscene(
         &mut self,
         decoded: (
             Vec<psx_mdec::VideoFrame>,
