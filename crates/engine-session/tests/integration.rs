@@ -73,6 +73,7 @@ mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;
 mod town01_opening_view_window_disc;
+mod town0c_mei_talk_shot_disc;
 mod training_battle;
 mod vell_bridge_grass_disc;
 mod victory_voice_disc;

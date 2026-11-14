@@ -356,6 +356,18 @@ impl World {
                 }
                 id.visited[id.pc] = true;
             }
+            // An op-`0x45` beat in the talk: a CONFIGURE (`op0 & 0xC0 == 0`)
+            // stages the talk's own shot, an APPLY (`0xC0`) hands it back.
+            // `town0c` P1[24], Mei meeting Noa, frames the room from beside
+            // the bed with three snaps and a glide inside the talk.
+            if b & 0x7F == 0x45 {
+                let op0_at = id.pc + if b & 0x80 != 0 { 2 } else { 1 };
+                match id.bytecode.get(op0_at).map(|op0| op0 & 0xC0) {
+                    Some(0x00) => id.staged_shot = true,
+                    Some(0xC0) => id.staged_shot = false,
+                    _ => {}
+                }
+            }
             // The `0x80`-prefix target byte, when this op carries one. Retail
             // resolves it through `FUN_8003C83C` to *another actor's* record -
             // `0xF8` to the live player (`_DAT_8007C364`), anything else by an

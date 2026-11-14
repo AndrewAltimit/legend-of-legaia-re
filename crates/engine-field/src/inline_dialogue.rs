@@ -58,6 +58,12 @@ pub struct InlineDialogue {
     /// `true` once the script reached an end terminator or an op the runner
     /// can't advance past.
     pub done: bool,
+    /// `true` while this talk holds an op-`0x45` shot it staged itself: a
+    /// CONFIGURE ran in it and no APPLY has handed the camera back since.
+    /// A talk raises the player's engaged bit like any context the runner
+    /// steps (`FUN_80039B7C`), so its shot is a scripted framing the user's
+    /// follow knobs stay out of (`World::scripted_shot_holds_camera`).
+    pub staged_shot: bool,
     /// Records the most recent option index the player picked (for hosts /
     /// tests that want to observe which branch was taken).
     pub last_choice: Option<usize>,
@@ -404,6 +410,7 @@ impl InlineDialogue {
             pc,
             panel: None,
             done: false,
+            staged_shot: false,
             last_choice: None,
             fallback_segment_pc: None,
             resumed: false,
@@ -443,6 +450,7 @@ impl InlineDialogue {
             pc: entry_pc,
             panel: None,
             done: false,
+            staged_shot: false,
             last_choice: None,
             fallback_segment_pc: Some(first_segment),
             resumed: false,
