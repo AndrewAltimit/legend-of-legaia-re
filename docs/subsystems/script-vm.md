@@ -3101,15 +3101,16 @@ empty!" loop behind it, and a pickup spot ends on `21`, `21`, `26 FE FF`, so the
 second touch is silent. Restarting every talk at the scan's entry re-ran the
 grant. Engine port: the spawn pre-run hands a clean stop (an executed raw
 `0x21`, or a text lead) to the talk as its entry, a talk that ends on an
-executed `0x21` writes its cursor back, and a talk resumed from that cursor
+executed `0x21` writes its cursor back, and a talk run from either cursor
 ends on an executed `0x21` before any box, as the SM does, rather than falling
 back to the first segment (`InlineDialogPrologue::resume`). The static scan
 stays the entry for a record whose load slice does not run (its first opcode is
-not `0x24` / `0x25`) or stops on a halt. A first talk keeps the fallback: it is
-the port's net for a talk started from outside a record's own position test,
-which retail never sees (`rayman` `P1[44..=46]` bbox-test the player before
-they speak, and the full-game ladder's hand talks from where it stands). Pinned
-disc-wide by `engine-scene-host/tests/field_pickup_once_disc.rs`.
+not `0x24` / `0x25`) or stops on a halt, and only that entry keeps the
+fallback. A record that tests where the player stands before it speaks is
+therefore silent from anywhere else, on the first talk as on any other:
+`rayman` `P1[44..=46]` open on `CD F8 6B 46 6B 50` (column 107, rows 70..=80)
+and skip to their closing `0x21` outside it. Pinned disc-wide by
+`engine-scene-host/tests/field_pickup_once_disc.rs`.
 
 The engine keeps that one cursor in two places - the placement channel's, which
 an engagement and the return from a talk-staged battle run as the interaction

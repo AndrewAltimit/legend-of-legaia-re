@@ -982,6 +982,7 @@ impl World {
                 && pc < rec.body.len()
             {
                 rec.entry_pc = pc;
+                rec.resume = true;
             }
         }
     }

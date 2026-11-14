@@ -256,3 +256,40 @@ fn every_pickup_grants_at_most_once() {
     );
     assert!(granted >= 200, "only {granted} pickup sites granted at all");
 }
+
+/// Stand the player on world `(x, z)`.
+fn stand(host: &mut SceneHost, x: i16, z: i16) {
+    let slot = usize::from(host.world.player_actor_slot.expect("a player"));
+    let ms = &mut host.world.actors[slot].move_state;
+    ms.world_x = x;
+    ms.world_z = z;
+}
+
+/// A record that tests where the player stands before it speaks says nothing
+/// from anywhere else, on the first talk as on a later one: the talk runs
+/// from the cursor the spawn pre-run left, into the box test, and out through
+/// the record's closing `0x21`. `rayman` `P1[44]` opens its interaction on
+/// `CD F8 6B 46 6B 50` (the player on column 107, rows 70..=80) and stands on
+/// (108, 78); a first-segment fallback there spoke its first line to a player
+/// standing east of it.
+#[test]
+fn a_talk_outside_the_records_player_box_is_silent() {
+    const SLOT: u8 = 44;
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    enter_scene(&mut host, "rayman").expect("enter rayman");
+    let (nx, nz) = host.world.npcs.positions[&SLOT];
+    assert_eq!(((nx - 0x40) >> 7, (nz - 0x40) >> 7), (108, 78));
+    // East of the actor, outside the box: twice, so the cursor the first
+    // silent talk wrote back is exercised too.
+    for n in 0..2 {
+        stand(&mut host, nx + 128, nz);
+        let (_, boxed) = touch(&mut host, SLOT);
+        assert!(!boxed, "talk {n} from outside the box opened a box");
+    }
+    // Inside it, beside the actor.
+    stand(&mut host, 107 * 128 + 96, 78 * 128 + 96);
+    let (_, boxed) = touch(&mut host, SLOT);
+    assert!(boxed, "the talk from inside the box speaks");
+}

@@ -1571,7 +1571,12 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 
 - a **talk** walks up to the NPC (re-reading a routed NPC's position),
   leans toward it until the retail interact probe lands on it, presses Cross,
-  pages the conversation and steps away. Talks go nearest first;
+  pages the conversation and steps away. Talks go nearest first. A record
+  that tests a box of the player's tiles before it speaks (`CD F8` at the
+  cursor the talk runs from, its jumps followed) is spoken to from a tile of
+  that box beside the actor, in both tiers: `rayman` P1[44..=46] stand on
+  column 108 and answer only a player on column 107, and from the east side
+  the talk ends on the record's `0x21` with nothing said, as in retail;
 - a **walk-on** walks to an inert tile beside the band, then onto it. A band
   is often several tiles wide and boxed in on some of them (`retockin`
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled

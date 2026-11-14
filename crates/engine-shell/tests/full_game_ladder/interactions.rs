@@ -10,6 +10,9 @@ use super::*;
 /// flag. The player goes back where it stood afterwards, so the next press
 /// does not re-open the same talk.
 pub(super) fn talk_to(session: &mut NativeSession, slot: u8) -> Run {
+    if let Some(r) = talk_in_entry_box(session, slot) {
+        return r;
+    }
     if pad_hand() {
         return pad_talk_to(session, slot);
     }
@@ -22,6 +25,142 @@ pub(super) fn talk_to(session: &mut NativeSession, slot: u8) -> Run {
         &|w: &legaia_engine_core::world::World| w.field_interact_probe_slot() == Some(slot),
         false,
     )
+}
+
+/// The tiles of the player box a talk record tests before it says anything:
+/// a player-channel `BBoxTest` (`CD F8 x0 z0 x1 z1`) among the first
+/// instructions at the cursor the talk starts from. `rayman` P1[44..=46],
+/// the three on the east ledge, open on `CD F8 6B 46 6B 50`: column 107,
+/// rows 70..=80, and from anywhere else the record skips to its closing
+/// `0x21`. Empty for a record that tests no box there.
+pub(super) fn talk_entry_box(session: &NativeSession, slot: u8) -> Vec<(u8, u8)> {
+    let Some(rec) = session.host.world.npcs.dialog_prologue.get(&slot) else {
+        return Vec::new();
+    };
+    entry_box_tiles(entry_box(&rec.body, rec.entry_pc))
+}
+
+/// The player box test a script reaches first from `pc`, its jumps
+/// followed, within its first few instructions. A talk that ended on the
+/// record's `0x21` resumes one past it, and the record jumps back from
+/// there to the test (`rayman` P1[44]: `21`, `26 02 00`, `26 CC F4`).
+pub(super) fn entry_box(body: &[u8], mut pc: usize) -> Option<(u8, u8, u8, u8)> {
+    use legaia_scene_formats::field_disasm::{InsnInfo, decode};
+    for _ in 0..6 {
+        let insn = decode(body, pc).ok()?;
+        match insn.info {
+            InsnInfo::BBoxTest {
+                x_min,
+                z_min,
+                x_max,
+                z_max,
+                ..
+            } if insn.extended == Some(0xF8) => return Some((x_min, z_min, x_max, z_max)),
+            InsnInfo::JmpRel { target, .. } => pc = target,
+            InsnInfo::TextSegment { .. } | InsnInfo::Byte { .. } => return None,
+            _ if insn.size == 0 => return None,
+            _ => pc += insn.size,
+        }
+    }
+    None
+}
+
+/// The tiles of box `(x0, z0, x1, z1)`, inclusive; none for no box or one
+/// whose corners are out of order.
+pub(super) fn entry_box_tiles(bx: Option<(u8, u8, u8, u8)>) -> Vec<(u8, u8)> {
+    let Some((x0, z0, x1, z1)) = bx else {
+        return Vec::new();
+    };
+    (z0..=z1)
+        .flat_map(|z| (x0..=x1).map(move |x| (x, z)))
+        .collect()
+}
+
+/// The tiles of `tiles` a talk with the actor on `npc` can be held from,
+/// nearest first: those within two tiles of it on both axes. The interact
+/// probe reaches 64 units ahead into a 72-unit box, so a stand further off
+/// reaches nobody.
+pub(super) fn box_stands(tiles: &[(u8, u8)], npc: (i32, i32)) -> Vec<(u8, u8)> {
+    let far = |t: &(u8, u8)| {
+        let (dx, dz) = (
+            (i32::from(t.0) - npc.0).abs(),
+            (i32::from(t.1) - npc.1).abs(),
+        );
+        (dx.max(dz), dx + dz, t.1, t.0)
+    };
+    let mut near: Vec<(u8, u8)> = tiles.iter().copied().filter(|t| far(t).0 <= 2).collect();
+    near.sort_by_key(far);
+    near
+}
+
+/// Talk to `slot` from inside the player box its record tests first
+/// ([`talk_entry_box`]), as a player has to: retail's dialog SM runs the
+/// record from its cursor, and a talk begun outside the box ends on the
+/// record's `0x21` with nothing said. `None` when the record tests no box,
+/// or no stand inside it reaches the actor - the caller's usual approach
+/// then runs.
+///
+/// The seated hand is seated on the stand; the pad hand walks there. Both
+/// then lean in without leaving the tile and press Cross
+/// ([`talk_from_box`]).
+fn talk_in_entry_box(session: &mut NativeSession, slot: u8) -> Option<Run> {
+    if session.host.world.mode != SceneMode::Field {
+        return None;
+    }
+    let tiles = talk_entry_box(session, slot);
+    if tiles.is_empty() {
+        return None;
+    }
+    let &(nx, nz) = session.host.world.npcs.positions.get(&slot)?;
+    let claimed = claimed_tiles(session);
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        eprintln!(
+            "      [box-talk] P1[{slot}] at {:?}: box {:?}..{:?}, stands {:?}",
+            (nx, nz),
+            tiles.first(),
+            tiles.last(),
+            box_stands(&tiles, dispatch_tile(nx, nz))
+        );
+    }
+    for t in box_stands(&tiles, dispatch_tile(nx, nz)) {
+        if claimed.contains(&t) {
+            continue;
+        }
+        let back = player_xz(session);
+        if pad_hand() {
+            let goal = (i16::from(t.0), i16::from(t.1));
+            match pad_walk(session, goal, &pad_avoid(session, Some(goal)), 0) {
+                Ok(Walk::Entered(s)) => return Some(Run::Entered(s)),
+                Ok(Walk::Arrived) => {}
+                Err(_) => continue,
+            }
+            if let Some(s) = center_on_box_tile(session, t) {
+                return Some(Run::Entered(s));
+            }
+        } else {
+            let at = (i16::from(t.0) * 128 + 96, i16::from(t.1) * 128 + 96);
+            if session.host.world.field_tile_is_wall(at.0, at.1) {
+                continue;
+            }
+            session.host.world.set_pad(0);
+            restore_player_xz(session, at);
+        }
+        let r = talk_from_box(session, slot, t);
+        if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+            eprintln!(
+                "      [box-talk] P1[{slot}] at {:?} from box tile {t:?} (stood {:?}) -> {r:?}",
+                (nx, nz),
+                player_xz(session)
+            );
+        }
+        if !pad_hand() && session.host.world.mode == SceneMode::Field {
+            restore_player_xz(session, back);
+        }
+        if r.is_some() {
+            return r;
+        }
+    }
+    None
 }
 
 /// Examine the interact-gated prop anchored at `anchor` (the cupboard class,
@@ -506,4 +645,49 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         }
     }
     last
+}
+
+/// A box's tiles are its inclusive rectangle, and the stands a talk is held
+/// from are the ones beside the actor, nearest first.
+#[test]
+fn a_talk_box_is_stood_in_beside_the_actor() {
+    // `rayman` P1[44]: column 107, rows 70..=80, the actor on (108, 78).
+    let tiles = entry_box_tiles(Some((107, 70, 107, 80)));
+    assert_eq!(tiles.len(), 11);
+    assert_eq!(tiles.first(), Some(&(107, 70)));
+    assert_eq!(tiles.last(), Some(&(107, 80)));
+    let stands = box_stands(&tiles, (108, 78));
+    assert_eq!(
+        stands.first(),
+        Some(&(107, 78)),
+        "the tile beside the actor"
+    );
+    assert_eq!(
+        stands,
+        vec![(107, 78), (107, 77), (107, 79), (107, 76), (107, 80)]
+    );
+    // A box nowhere near the actor is no stand for a talk with it.
+    assert!(box_stands(&tiles, (120, 30)).is_empty());
+    assert!(entry_box_tiles(None).is_empty());
+    assert!(entry_box_tiles(Some((9, 9, 3, 3))).is_empty());
+}
+
+/// The test is found at the cursor, behind the `0x21` an ended talk parked
+/// on, and behind the jumps back to it; a record that speaks first has none.
+#[test]
+fn a_talk_entry_box_is_read_through_the_jumps_back_to_it() {
+    // 0: CD F8 x0 z0 x1 z1 <skip to 9>; 8: 21; 9: 21; 10: 26 02 00 (-> 13);
+    // 13: 26 <back to 0>.
+    let mut body = vec![0xCD, 0xF8, 107, 70, 107, 80, 0x09, 0x00, 0x21, 0x21];
+    body.extend_from_slice(&[0x26, 0x02, 0x00]);
+    let back = (0i32 - 13 - 1) as i16;
+    body.push(0x26);
+    body.extend_from_slice(&back.to_le_bytes());
+    let bx = Some((107, 70, 107, 80));
+    assert_eq!(entry_box(&body, 0), bx);
+    assert_eq!(entry_box(&body, 9), bx, "resumed on the closing 0x21");
+    assert_eq!(entry_box(&body, 10), bx, "resumed one past it");
+    // A record that opens on its text tests no box first.
+    let text = [0x1F, b'h', b'i', 0x00, 0x21];
+    assert_eq!(entry_box(&text, 0), None);
 }
