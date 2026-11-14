@@ -2412,7 +2412,10 @@ Four rules in that table are easy to get wrong:
   Ra-Seru marker `ctx[+0x25F + member]` (`beq v0,zero,0x801D2968` at
   `0x801D1420`), ahead of Curse (`+0x16E & 0x1000`, `0x801D1440`) and the
   special word's `0x200` (`0x801D1454`). A member with no Ra-Seru hears the
-  refusal and the ring stays up; no empty window opens. The Item arm's one
+  refusal and the ring stays up; no empty window opens. The port reads a
+  member who knows a spell as bound whatever the equipment byte holds: the
+  two never part on a disc save, and the Seru cheat on a scene-picker party
+  keeps its Magic arm. The Item arm's one
   refusal is the special word's `0x100` (`0x801D1370..0x801D137C`), an arena
   course rule, and `Attack`'s is three rotted limbs (`0x801D1560..0x801D156C`).
 - **A list step sounds whether or not the hand moved.** The kernel's Up and

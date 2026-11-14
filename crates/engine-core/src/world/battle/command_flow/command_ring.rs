@@ -479,16 +479,25 @@ impl World {
 
     /// Whether the ring's Magic arm finds a Ra-Seru on the member at battle
     /// ordinal `actor`: the marker `ctx[+0x25F + member]` the arm reads at
-    /// `0x801D1418`. A member with no roster record reads bound, so a
-    /// synthetic party keeps its Magic arm.
+    /// `0x801D1418`.
+    ///
+    /// A member who knows a spell reads bound whatever the equipment byte
+    /// holds. On retail the two never part - a spell is absorbed through the
+    /// Ra-Seru - so the rule changes nothing a disc save can hold; it keeps
+    /// the Magic arm for the states only the port makes (the Seru cheat on a
+    /// scene-picker party, whose starter loadout carries no story gear). A
+    /// member with no roster record reads bound too.
     ///
     /// REF: FUN_801D0748 (`0x801D1408..0x801D1420`)
     pub(in crate::world) fn ring_member_has_raseru(&self, actor: u8) -> bool {
         let roster_slot = self.party_roster_slot(usize::from(actor));
-        if self.party.roster.members.get(roster_slot).is_none() {
+        let Some(record) = self.party.roster.members.get(roster_slot) else {
             return true;
-        }
+        };
         self.miracle_marker_armed_for(roster_slot as u8)
+            || record.spell_list().count != 0
+            || !self.seru.log.learned_spells(roster_slot as u8).is_empty()
+            || !self.expansion_pack_spell_ids(roster_slot as u8).is_empty()
     }
 
     /// The acting slot's Miracle marker `ctx[+0x25F + slot]`, as retail's

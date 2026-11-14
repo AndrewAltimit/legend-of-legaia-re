@@ -147,6 +147,17 @@ fn the_magic_arm_buzzes_for_a_member_with_no_raseru() {
         vec![SfxRingOp::Push(0x22)]
     );
     assert!(world.battle.spell_menu.is_none());
+
+    // A member who knows a spell keeps the arm with no Ra-Seru worn: a
+    // state retail cannot hold and the port's Seru cheat can.
+    let mut cheat = ring_world();
+    let mut record = legaia_save::CharacterRecord::zeroed();
+    legaia_engine_battle::magic_xp::learn_spell_prepend(&mut record, 0x81);
+    cheat.party.roster.members = vec![record];
+    assert_eq!(
+        press(&mut cheat, PadButton::Right),
+        vec![SfxRingOp::Push(0x20)]
+    );
 }
 
 /// The Item arm's one refusal is the special-battle word's `0x100`
