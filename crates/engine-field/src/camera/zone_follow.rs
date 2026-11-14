@@ -33,8 +33,8 @@ impl Camera {
     /// REF: FUN_800180EC, FUN_80017DD4, FUN_80017EC8, FUN_801DBA20
     pub(super) fn zone_follow_tick<W: CameraWorld + ?Sized>(&mut self, world: &W, dt: i32) {
         use crate::camera_zone::{ComposeInputs, compose, ease_step, ease_step_i16, snap};
-        use crate::field_regions::{RegionTable, zone_query};
-        use crate::register_ramp::{CameraRegisterFile, RampSlot};
+        use crate::field_regions::RegionTable;
+        use crate::register_ramp::RampSlot;
 
         let Some((x, y, z)) = world.player_world_pos() else {
             return;
@@ -68,18 +68,7 @@ impl Camera {
         //    tile crossing: only on the seat / arrival, on a queued script
         //    arm, or while the per-frame re-query flag is raised.
         let load_at = |zone: &mut ZoneFollow, tx: i32, tz: i32| {
-            let attrs = zone.attrs;
-            let hit = zone_query(world.zone_table(), table.as_ref(), &attrs, tx, tz)
-                .and_then(|r| r.record)
-                .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
-            match hit {
-                Some(rec) => zone.load_record(&rec),
-                None => {
-                    zone.config.load_zone_miss();
-                    zone.loaded_record = None;
-                    zone.ramp_seen = CameraRegisterFile::DEFAULTS;
-                }
-            }
+            load_zone_block(zone, world, table.as_ref(), tx, tz);
         };
         if zone.reload_pending {
             load_at(zone, tile.0, tile.1);
@@ -87,20 +76,7 @@ impl Camera {
         } else if requery_per_frame {
             load_at(zone, frame_tile.0, frame_tile.1);
         }
-        for req in pending {
-            use CameraZoneRequest as R;
-            match req {
-                R::QueryAtPlayer => load_at(zone, tile.0, tile.1),
-                R::QueryAtTile { x: tx, z: tz } => load_at(zone, i32::from(tx), i32::from(tz)),
-                R::QueryConformAndSnap => {
-                    load_at(zone, tile.0, tile.1);
-                    zone.snap_pending = true;
-                }
-                R::SnapAndClamp => zone.snap_pending = true,
-                // `[4C 3D]`: the world latched the box when the arm ran.
-                R::RefreshAttributes => zone.attrs = world.region_attributes(),
-            }
-        }
+        apply_zone_requests(zone, world, pending, tile, load_at);
 
         // 3. Ramp registers (`FUN_80037018` stores through `+0x94`) land in
         //    the block's own cells.
@@ -549,6 +525,45 @@ impl Camera {
         }
     }
 
+    /// Run the queued zone arms now, while a script holds the shot.
+    ///
+    /// Retail runs every arm inline: the `0x4C` handlers call the query
+    /// (`FUN_801DE3E0`) and the snap (`FUN_801DB8EC`) from the op, and a
+    /// kind-0 warp's landing runs the same `[4C 39]` sequence in code
+    /// (`0x801D1FE8..0x801D2014`) before the landing tile's kind-1 record
+    /// (`FUN_8003BDE0`) is spawned. The follow tick, where the port drains
+    /// the queue on a free frame, does not run under a scripted shot, so a
+    /// record that the landing spawns ran on the region block the player
+    /// left: `dolk2`'s door out of the castle lands on the market beat's
+    /// walk-on row (`P2[11]`, tiles `(69..=71, 94)`), and the beat's
+    /// closing `45 C0 78 00` composed the hall's follow shot (pitch `494`,
+    /// yaw `-630`, `H` `768`) and glided there before the hand-back snapped
+    /// to the market's own (pitch `200`, yaw `0`, `H` `520`).
+    ///
+    /// The loads land here; the snap stays armed (`snap_pending`) for the
+    /// first compose that reads the block - the record's first staged shot
+    /// ([`Self::prime_zone_before_script`]) or the hand-back.
+    ///
+    /// REF: FUN_801DE3E0, FUN_801DB8EC, FUN_801D1EC4
+    pub(super) fn drain_zone_requests_under_script<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        use crate::field_regions::RegionTable;
+        if self.zone.pending.is_empty() {
+            return;
+        }
+        let Some((x, _, z)) = world.player_world_pos() else {
+            return;
+        };
+        let tile = ((x - 0x40) >> 7, (z - 0x40) >> 7);
+        let pending = std::mem::take(&mut self.zone.pending);
+        let table = RegionTable::parse(world.map_region_block());
+        let zone = &mut self.zone;
+        zone.attrs = world.region_attributes();
+        let load_at = |zone: &mut ZoneFollow, tx: i32, tz: i32| {
+            load_zone_block(zone, world, table.as_ref(), tx, tz);
+        };
+        apply_zone_requests(zone, world, pending, tile, load_at);
+    }
+
     /// The MAN load's camera-zone query (`FUN_801DE3E0` at `0x8003B800`):
     /// the block of the record covering the player's tile, loaded at scene
     /// entry before any script runs. The port defers it to the first follow
@@ -654,4 +669,52 @@ fn has_field_terrain<W: CameraWorld + ?Sized>(world: &W) -> bool {
     !world.zone_table().is_empty()
         || !world.map_region_block().is_empty()
         || !world.collision_grid().is_empty()
+}
+
+/// The queued zone arms in queue order: the queries load the block covering
+/// their tile through `load_at`, the snaps arm the follow camera's snap.
+fn apply_zone_requests<W: CameraWorld + ?Sized>(
+    zone: &mut ZoneFollow,
+    world: &W,
+    pending: Vec<CameraZoneRequest>,
+    tile: (i32, i32),
+    load_at: impl Fn(&mut ZoneFollow, i32, i32),
+) {
+    for req in pending {
+        use CameraZoneRequest as R;
+        match req {
+            R::QueryAtPlayer => load_at(zone, tile.0, tile.1),
+            R::QueryAtTile { x: tx, z: tz } => load_at(zone, i32::from(tx), i32::from(tz)),
+            R::QueryConformAndSnap => {
+                load_at(zone, tile.0, tile.1);
+                zone.snap_pending = true;
+            }
+            R::SnapAndClamp => zone.snap_pending = true,
+            // `[4C 3D]`: the world latched the box when the arm ran.
+            R::RefreshAttributes => zone.attrs = world.region_attributes(),
+        }
+    }
+}
+
+/// `FUN_801DE3E0`'s query and load: the camera block of the zone record
+/// covering tile `(tx, tz)`, or the zone-miss defaults.
+fn load_zone_block<W: CameraWorld + ?Sized>(
+    zone: &mut ZoneFollow,
+    world: &W,
+    table: Option<&crate::field_regions::RegionTable<'_>>,
+    tx: i32,
+    tz: i32,
+) {
+    let attrs = zone.attrs;
+    let hit = crate::field_regions::zone_query(world.zone_table(), table, &attrs, tx, tz)
+        .and_then(|r| r.record)
+        .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
+    match hit {
+        Some(rec) => zone.load_record(&rec),
+        None => {
+            zone.config.load_zone_miss();
+            zone.loaded_record = None;
+            zone.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+        }
+    }
 }

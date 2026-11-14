@@ -158,10 +158,12 @@ impl Camera {
                 self.zone_follow_tick(world, dt);
             } else {
                 // Retail's scene-entry pieces run under a scripted shot too:
-                // the MAN load's block query and the arrival actor's tick.
+                // the MAN load's block query, the queued zone arms (a warp
+                // landing's query among them) and the arrival actor's tick.
                 if self.zone.reload_pending {
                     self.load_scene_zone_block(world);
                 }
+                self.drain_zone_requests_under_script(world);
                 self.tick_arrival_under_script(world, dt);
             }
             if scripted && gliding && self.mode == CameraMode::Follow {
