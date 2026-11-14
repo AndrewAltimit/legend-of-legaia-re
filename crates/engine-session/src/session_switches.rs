@@ -48,6 +48,11 @@ pub struct GameplayTweaks {
     /// state-`0x51` readout softlock cannot hold. A port fix with no patcher
     /// counterpart. On by default.
     pub hp_readout_guard: bool,
+    /// Heal numerals (`--no-heal-numerals` disables,
+    /// `WorldToggles::heal_numerals`): a battle restore throws a heal-coloured
+    /// number, where retail only rolls the HP figure up. An enhancement. On
+    /// by default.
+    pub heal_numerals: bool,
     /// Spirit AP (`--spirit-ap`, `WorldToggles::spirit_ap`): the AP a Spirit
     /// turn charges; retail `32`, negative drains.
     pub spirit_ap: i16,
@@ -99,6 +104,7 @@ impl GameplayTweaks {
             tetsu_spar_fix: t.tetsu_spar_fix,
             jewel_fix: t.jewel_fix,
             hp_readout_guard: t.hp_readout_guard,
+            heal_numerals: t.heal_numerals,
             spirit_ap: t.spirit_ap,
             damage_ap: t.damage_ap,
             seru_catch_pct: t.seru_catch_pct,
@@ -129,6 +135,7 @@ impl GameplayTweaks {
         toggles.tetsu_spar_fix = self.tetsu_spar_fix;
         toggles.jewel_fix = self.jewel_fix;
         toggles.hp_readout_guard = self.hp_readout_guard;
+        toggles.heal_numerals = self.heal_numerals;
         use legaia_engine_core::world::{DAMAGE_AP_RANGE, SCALE_RANGE, SPIRIT_AP_RANGE};
         let clamp_i = |v: i16, r: std::ops::RangeInclusive<i16>| v.clamp(*r.start(), *r.end());
         let clamp_u = |v: u16| v.clamp(*SCALE_RANGE.start(), *SCALE_RANGE.end());
@@ -274,6 +281,9 @@ pub struct PersistedSwitches {
     /// Without the battle HP-readout guard (`--no-hp-readout-guard`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_hp_readout_guard: bool,
+    /// Without the heal numerals (`--no-heal-numerals`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_heal_numerals: bool,
     /// Spirit AP (`--spirit-ap`); `None` is retail's 32.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spirit_ap: Option<i16>,
@@ -320,6 +330,7 @@ impl PersistedSwitches {
             tetsu_spar_fix: !self.no_tetsu_spar_fix,
             jewel_fix: self.jewel_fix,
             hp_readout_guard: !self.no_hp_readout_guard,
+            heal_numerals: !self.no_heal_numerals,
             spirit_ap: self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL),
             damage_ap: self.damage_ap.unwrap_or(DAMAGE_AP_RETAIL),
             seru_catch_pct: self.seru_catch_pct,
@@ -344,6 +355,7 @@ impl PersistedSwitches {
         self.no_tetsu_spar_fix = !t.tetsu_spar_fix;
         self.jewel_fix = t.jewel_fix;
         self.no_hp_readout_guard = !t.hp_readout_guard;
+        self.no_heal_numerals = !t.heal_numerals;
         self.spirit_ap = (t.spirit_ap != SPIRIT_AP_RETAIL).then_some(t.spirit_ap);
         self.damage_ap = (t.damage_ap != DAMAGE_AP_RETAIL).then_some(t.damage_ap);
         self.seru_catch_pct = t.seru_catch_pct;
@@ -412,6 +424,7 @@ mod tests {
                 tetsu_spar_fix: true,
                 jewel_fix: true,
                 hp_readout_guard: true,
+                heal_numerals: true,
                 spirit_ap: -16,
                 damage_ap: 200,
                 seru_catch_pct: Some(100),
@@ -449,11 +462,41 @@ mod tests {
         assert_eq!(GameplayTweaks::from_toggles(&t), all_on(false).tweaks);
     }
 
+    /// The heal numerals ride the shared switch set both hosts apply: on by
+    /// default and when the set says so, off when it says so, held off by the
+    /// retail profile whatever the set says, and stored as a `no_` key only
+    /// when off.
+    #[test]
+    fn heal_numerals_follow_the_set_and_retail_holds_them_off() {
+        let mut t = WorldToggles::new();
+        assert!(t.heal_numerals, "the engine default");
+        let mut set = all_on(false);
+        set.apply(&mut t);
+        assert!(t.heal_numerals);
+        set.tweaks.heal_numerals = false;
+        set.apply(&mut t);
+        assert!(!t.heal_numerals);
+        set.tweaks.heal_numerals = true;
+        set.retail = true;
+        set.apply(&mut t);
+        assert!(!t.heal_numerals, "the retail profile hides them");
+        assert!(!GameplayTweaks::retail().heal_numerals);
+        let mut p = PersistedSwitches::default();
+        assert!(p.tweaks().heal_numerals);
+        let off = GameplayTweaks {
+            heal_numerals: false,
+            ..Default::default()
+        };
+        p.set_tweaks(&off);
+        assert!(p.no_heal_numerals && !p.tweaks().heal_numerals);
+    }
+
     #[test]
     fn tweak_defaults_are_the_engine_defaults_and_rates_cycle() {
         let d = GameplayTweaks::default();
         assert_eq!(d, GameplayTweaks::from_toggles(&WorldToggles::new()));
         assert!(d.shiny_seru && d.fortress_encounter_fix && d.tetsu_spar_fix && d.hp_readout_guard);
+        assert!(d.heal_numerals, "the heal numerals ship on");
         assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere && !d.action_movement);
         assert_eq!(d.exp_rate_permille, 1000);
         assert_eq!(GameplayTweaks::exp_rate_label(1500), "1.5x");

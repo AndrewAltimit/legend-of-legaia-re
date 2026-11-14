@@ -30,7 +30,7 @@ use legaia_engine_system::input::PadButton;
 /// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
 /// tuning) and *Original game only*, as the play page's boxes take them
 /// live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 42] = [
     OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
@@ -45,6 +45,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
     OptionRow::GroundFog,
     OptionRow::SeeThroughWalls,
     OptionRow::EntryPulse,
+    OptionRow::HealNumerals,
     OptionRow::PreciseMovement,
     OptionRow::ActionMovement,
     OptionRow::SmartMonsters,
@@ -77,9 +78,10 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
 /// The launch switches the page changes live. Each is remembered in the
 /// launcher's settings file, where its row there reads it back.
 #[cfg(test)]
-pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 20] = [
+pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 21] = [
     OptionRow::PsxRender,
     OptionRow::EntryPulse,
+    OptionRow::HealNumerals,
     OptionRow::ActionMovement,
     OptionRow::SmartMonsters,
     OptionRow::ArtsSavedList,

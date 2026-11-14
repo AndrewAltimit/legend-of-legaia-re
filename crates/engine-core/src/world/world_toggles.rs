@@ -271,6 +271,14 @@ pub struct WorldToggles {
     /// in every state retail itself produces cleanly, so the guard is an
     /// identity there.
     pub hp_readout_guard: bool,
+    /// Heal numerals (enhancement, **on** by default): a battle restore that
+    /// retail lands with no numeral - an item's HP / MP / revive arm of
+    /// `FUN_800402F4`, the Life Grail tick, the Lost Grail's Final Heal, the
+    /// AI companion's heal and a catalog heal cast - throws a heal-coloured
+    /// number over its patient. Retail pushes none of them onto the
+    /// damage-number ring, so off (and under [`Self::pin_retail`]) only the
+    /// HP figure rolls up. Presentation only: no HP, readout or RNG change.
+    pub heal_numerals: bool,
     /// Spirit AP (the engine twin of the patcher's `--spirit-ap`): the AP a
     /// Spirit turn charges into the gauge, retail [`SPIRIT_AP_RETAIL`]
     /// (`actor[+0x224] = 0x20` at `0x801E5D84`). Negative drains the gauge,
@@ -481,6 +489,7 @@ impl WorldToggles {
             tetsu_spar_fix: true,
             jewel_fix: false,
             hp_readout_guard: true,
+            heal_numerals: true,
             spirit_ap: SPIRIT_AP_RETAIL,
             damage_ap: DAMAGE_AP_RETAIL,
             seru_catch_pct: None,
@@ -526,6 +535,7 @@ impl WorldToggles {
         self.tetsu_spar_fix = false;
         self.jewel_fix = false;
         self.hp_readout_guard = false;
+        self.heal_numerals = false;
         self.spirit_ap = SPIRIT_AP_RETAIL;
         self.damage_ap = DAMAGE_AP_RETAIL;
         self.seru_catch_pct = None;
@@ -592,6 +602,9 @@ impl WorldToggles {
         if self.hp_readout_guard {
             out.push("hp_readout_guard");
         }
+        if self.heal_numerals {
+            out.push("heal_numerals");
+        }
         if self.spirit_ap != SPIRIT_AP_RETAIL {
             out.push("spirit_ap");
         }
@@ -648,6 +661,7 @@ mod fidelity_tests {
                 "fortress_encounter_fix",
                 "tetsu_spar_fix",
                 "hp_readout_guard",
+                "heal_numerals",
                 "battle_entry_off_axis"
             ]
         );
@@ -676,7 +690,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 26);
+        assert_eq!(t.retail_deviations().len(), 27);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

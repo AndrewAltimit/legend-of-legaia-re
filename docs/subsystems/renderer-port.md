@@ -1104,9 +1104,9 @@ rest, replaced for the acting member by the full-width active-actor bar at
 running forward / the same pair for `MP` - and **no gauge bar**. A top-left
 plaque names the actor the frame belongs to, which is also the port's whole
 monster readout since retail draws no monster gauge. Popups sit at slot_y - 16 (heal = green, crit = yellow, plain damage =
-cyan; the heal colour serves only the restores that still file a popup, the
-spell-catalog fold's and the fatal-decision restore's, since an item restore
-throws no numeral); fade alpha multiplies into the text colour's alpha channel. Monster
+cyan; the heal colour serves the fatal-decision restore, which retail pushes,
+and every other restore under the heal-numerals enhancement, which retail
+throws silently); fade alpha multiplies into the text colour's alpha channel. Monster
 rows, the LV / AP tail and the "ENCOUNTER!" banner are diagnostic-only,
 behind `LEGAIA_DIAG_HUD`. Geometry provenance, including which retail table
 the measurement falsified, is on

@@ -752,12 +752,33 @@ fn a_venom_tick_throws_its_damage_numeral() {
     assert_eq!(world.battle_ctx.cast_readout_cursor, 1);
 }
 
-/// Life Grail (record `+0xF8 & 0x20`) restores at the round-open tick with no
-/// numeral: the ticker's ring push is the drain's alone, and the applier call
-/// that follows (`0x801E77A8`) pushes nothing, so the HP figure rolls up on
-/// its readout word.
+/// Life Grail (record `+0xF8 & 0x20`) restores at the round-open tick. Retail
+/// throws no numeral: the ticker's ring push is the drain's alone, and the
+/// applier call that follows (`0x801E77A8`) pushes nothing, so the HP figure
+/// rolls up on its readout word. The heal-numeral enhancement (on by default)
+/// throws the heal-coloured `200`; `pin_retail` silences it.
 #[test]
-fn a_life_grail_tick_restores_without_a_numeral() {
+fn a_life_grail_tick_numeral_follows_the_heal_numeral_knob() {
+    let fx = |retail: bool| {
+        let mut world = life_grail_world();
+        if retail {
+            world.toggles.pin_retail();
+        }
+        world.tick_status_effects();
+        assert_eq!(world.actors[0].battle.hp, 300, "the 200 HP After restore");
+        assert_eq!(world.battle_ctx.readout_pushes, 0, "never a ring push");
+        world.drain_battle_hit_fx()
+    };
+    let on = fx(false);
+    assert_eq!(on.len(), 1, "{on:?}");
+    assert_eq!(
+        (on[0].target_slot, on[0].amount, on[0].is_heal),
+        (0, 200, true)
+    );
+    assert!(fx(true).is_empty(), "retail throws no numeral");
+}
+
+fn life_grail_world() -> World {
     let mut world = World::new();
     world.load_party(legaia_save::Party::zeroed(1));
     world.party.party_count = 1;
@@ -766,10 +787,7 @@ fn a_life_grail_tick_restores_without_a_numeral() {
     world.party.roster.members[0].set_ability_bits(bits);
     world.actors[0].battle.hp = 100;
     world.actors[0].battle.max_hp = 1000;
-    world.tick_status_effects();
-    assert_eq!(world.actors[0].battle.hp, 300, "the 200 HP After restore");
-    assert!(world.drain_battle_hit_fx().is_empty());
-    assert_eq!(world.battle_ctx.readout_pushes, 0);
+    world
 }
 
 #[test]

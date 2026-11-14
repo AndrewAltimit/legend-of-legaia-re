@@ -587,7 +587,9 @@ impl World {
     /// Grail (`+0xF8 & 0x40`, passive `0x26` MP After) its class 2 tier 2
     /// (`0x801E7730..0x801E7768`). The body the call reaches is
     /// `FUN_800402F4`'s `0x8007655C` restore: 200 HP and 20 MP on the disc.
-    /// Neither throws a numeral: the HP figure rolls up on its readout word.
+    /// Retail throws no numeral for either: the HP figure rolls up on its
+    /// readout word. The heal-numeral enhancement throws one
+    /// ([`Self::push_heal_numeral`]).
     ///
     /// PORT: FUN_801E752C (`0x801E7730..0x801E7768`, the HP After and MP After calls)
     fn tick_after_passives(&mut self, slot: u8) {
@@ -604,15 +606,19 @@ impl World {
                 .saturating_sub(a.battle.hp)
                 .min(HP_AFTER_RESTORE);
             a.battle.hp += restore;
-            // The readout rolls the restore up; no numeral rises. The ticker's
-            // ring push (`0x801E76CC..0x801E7754`) is the drain's alone and
-            // runs before these calls, and the applier pushes nothing.
+            // The readout rolls the restore up; retail throws no numeral. The
+            // ticker's ring push (`0x801E76CC..0x801E7754`) is the drain's
+            // alone and runs before these calls, and the applier pushes
+            // nothing.
             a.battle.assign_hp_bar(restore as i16);
+            self.push_heal_numeral(slot, restore);
         }
         if word & 0x40 != 0 {
             let max_mp = self.seat_max_mp(usize::from(slot));
             if let Some(a) = self.actors.get_mut(usize::from(slot)) {
-                a.battle.mp += max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
+                let restore = max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
+                a.battle.mp += restore;
+                self.push_heal_numeral(slot, restore);
             }
         }
     }

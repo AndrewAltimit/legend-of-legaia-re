@@ -253,6 +253,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
+| Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |

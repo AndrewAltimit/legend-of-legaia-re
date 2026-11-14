@@ -282,9 +282,15 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
         0,
         "the Final Heal bit clears with no second Grail equipped"
     );
+    // Retail throws no numeral (`FUN_801E6968` pushes nothing); the
+    // heal-numeral enhancement, on by default, throws the revive's HP.
     assert!(
-        world.battle.hit_fx.is_empty(),
-        "the revive throws no numeral (FUN_801E6968 pushes nothing)"
+        world
+            .battle
+            .hit_fx
+            .iter()
+            .any(|fx| fx.target_slot == 0 && fx.is_heal && fx.amount == 250),
+        "the enhancement's heal numeral"
     );
 }
 

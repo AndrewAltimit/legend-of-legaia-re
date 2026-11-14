@@ -293,9 +293,11 @@ impl World {
             if delta != 0 {
                 a.assign_hp_bar(delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
             }
-            // No numeral: `FUN_801E6968` and the applier's revive arm push
-            // nothing onto the ring, so the readout rolls up to max HP alone.
+            // Retail throws no numeral: `FUN_801E6968` and the applier's
+            // revive arm push nothing onto the ring, so the readout rolls up
+            // to max HP alone. The heal-numeral enhancement throws one.
             self.stand_revived_party_member(slot);
+            self.push_heal_numeral(slot as u8, max_hp);
         }
     }
 

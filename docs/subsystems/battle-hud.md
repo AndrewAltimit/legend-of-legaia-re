@@ -1995,14 +1995,19 @@ play page runs the same fold in `web-play`'s `play_battle.rs`.
 The HUD is fed by `World` events:
 
 - `BattleEvent::ApplyArtStrike` → `push_damage` / `push_heal` (per-strike popup
-  with a fade timer). A restore throws no numeral: an item heal, MP restore or
-  revive, the HP After / MP After ticks and the companion's heal push nothing,
-  as retail's applier `FUN_800402F4` pushes nothing onto the ring, and the HP
-  figure rolls up on the readout word alone
-  ([battle round loop](battle-round-loop.md)). `push_heal` is left to the
-  restores that still file a heal popup: the spell-catalog fold's heal / revive
-  (`World::fold_spell_outcome`) and the fatal-decision restore
-  (`fatal_decision.rs`).
+  with a fade timer). In retail a restore throws no numeral: an item heal, MP
+  restore or revive, the HP After / MP After ticks, the Lost Grail's Final
+  Heal, the companion's heal and the healing modules (PROT 0905, 0911, 0919)
+  push nothing, as retail's applier `FUN_800402F4` and those modules push
+  nothing onto the ring, and the HP figure rolls up on the readout word alone
+  ([battle round loop](battle-round-loop.md)). The port throws the
+  heal-coloured `push_heal` numeral for every one of them under the **heal
+  numerals** enhancement (`WorldToggles::heal_numerals`, on by default; off
+  under `pin_retail`, `--retail` and the page's Retail-faithful), through the
+  one gate `World::push_heal_numeral`, which the spell-catalog fold
+  (`World::fold_spell_outcome`) takes too. The fatal-decision full heal is
+  retail's own push (`FUN_801F44A0` at `0x801F8084`) and throws its numeral
+  either way.
 - the round-open Venom / Toxic tick → its damage numeral over the poisoned
   body, as retail's ticker pushes it.
 - `StatusEvent::TickDamage` / `Cleared` → `sync_status` (replaces the slot's

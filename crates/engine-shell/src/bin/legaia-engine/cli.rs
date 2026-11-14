@@ -1253,6 +1253,12 @@ pub(crate) enum Cmd {
         /// default; `--retail` holds it off.
         #[arg(long, default_value_t = false)]
         no_hp_readout_guard: bool,
+        /// No heal numerals: a battle restore (an item, the Grails, Final
+        /// Heal, a heal cast) rolls the HP figure up with no number over its
+        /// patient, as retail does. The heal-coloured numeral is an
+        /// enhancement, on by default; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        no_heal_numerals: bool,
         /// Spirit AP: how much AP the Spirit command charges (retail 32;
         /// `0` = defence only, `100` = one press fills the gauge, negative =
         /// Spirit drains it) - the engine twin of the patcher's `--spirit-ap`.
@@ -1520,7 +1526,7 @@ pub(crate) enum Cmd {
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "no_tetsu_spar_fix", "jewel_fix",
-                "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
+                "no_hp_readout_guard", "no_heal_numerals", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
                 "action_movement"]
         )]
