@@ -161,8 +161,38 @@ def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
     return hp
 
 
+def seat_retail_from(a, out: Path) -> bool:
+    """Point `<out>/retail` at the recording `--retail-from` names: a film set
+    line that holds its recording rather than whichever one a films directory
+    last captured. A symlink is re-pointed; a real capture directory is left
+    alone and refused, never deleted."""
+    src = Path(a.retail_from)
+    if not src.is_absolute():
+        src = REPO / src
+    if int(read_kv(src / "done.txt").get("done", "-1")) < 0:
+        print(f"[retail] --retail-from {src}: no finished recording there")
+        return False
+    rdir = out / "retail"
+    if rdir.is_symlink():
+        if rdir.resolve() == src.resolve():
+            return True
+        rdir.unlink()
+    elif rdir.exists():
+        print(f"[retail] {rdir} is a capture of its own; move it aside to use --retail-from")
+        return False
+    out.mkdir(parents=True, exist_ok=True)
+    rdir.symlink_to(src.resolve())
+    print(f"[retail] {rdir} -> {src}")
+    return True
+
+
 def run_retail(a, out: Path) -> bool:
     rdir = out / "retail"
+    if a.retail_from:
+        if a.recapture:
+            print("[retail] --recapture ignored: --retail-from names the recording")
+        if not seat_retail_from(a, out):
+            return False
     done = read_kv(rdir / "done.txt")
     if done and not a.recapture and int(done.get("done", "-1")) >= 0:
         print(f"[retail] cached: {rdir} (cast at vsync {done['cast']}, {done['shots']} frames)")
@@ -1276,6 +1306,9 @@ def main() -> int:
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
     ap.add_argument("--recapture", action="store_true", help="re-run the retail capture")
+    ap.add_argument("--retail-from", metavar="DIR",
+                    help="use this finished retail recording (relative to the repo root) as <out>/retail, "
+                         "symlinked; a film set names a re-pointed film's recording this way")
     ap.add_argument("--rerecord", action="store_true",
                     help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")

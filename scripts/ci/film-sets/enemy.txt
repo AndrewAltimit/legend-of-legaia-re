@@ -57,7 +57,7 @@ ropeway_orb_pre_heal__2E --spell 0x2E --state ropeway_orb_pre_heal --caster 3 --
 ropeway_orb_pre_jewel_beam__2D --spell 0x2D --state ropeway_orb_pre_jewel_beam --caster 3 --target 1 --pin-seed 0x12345678
 rugi_rogue_pre_element_change__AF --spell 0xAF --state rugi_rogue_pre_element_change --caster 3 --target 3 --pin-seed 0x12345678
 rugi_rogue_pre_rogue_flame__B2 --spell 0xB2 --state rugi_rogue_pre_rogue_flame --caster 3 --target 8 --guard 0,1,2 --pin-seed 0x12345678
-rugi_rogue_pre_rogue_thunder__B1 --spell 0xB1 --state rugi_rogue_pre_rogue_thunder --caster 3 --target 8 --guard 0,1,2 --pin-seed 0x12345678
+rugi_rogue_pre_rogue_thunder__B1 --spell 0xB1 --state rugi_rogue_pre_rogue_thunder --caster 3 --target 8 --guard 0,1,2 --pin-seed 0x12345678 --retail-from captures/w42-N/rt_wrap/retail
 rugi_rogue_pre_rogue_wind__B0 --spell 0xB0 --state rugi_rogue_pre_rogue_wind --caster 3 --target 8 --guard 0,1,2 --pin-seed 0x12345678
 taiku_terror_face_pre_fissure__32 --spell 0x32 --state taiku_terror_face_pre_fissure --caster 4 --target 2 --pin-seed 0x12345678
 taiku_terror_face_pre_terror_scream__70 --spell 0x70 --state taiku_terror_face_pre_terror_scream --caster 4 --target 2 --pin-seed 0x12345678

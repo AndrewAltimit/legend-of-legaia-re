@@ -97,6 +97,7 @@ Flags worth knowing:
 | `--target <seat>` | Target seat (default `3`) |
 | `--every <n>` | Retail vsyncs between frames (default `2`; the engine records every tick) |
 | `--recapture` / `--reseed` / `--rerecord` | Re-run the retail capture / the retail-compare seed / the engine recording instead of using the cache |
+| `--retail-from DIR` | Use a finished recording (relative to the repo root) as `retail/`, symlinked; a film set line names its recording this way, and `--recapture` is ignored beside it |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
@@ -1185,8 +1186,10 @@ A frame's HP readout is not a damage reading: the bar counts down, and Rogue Thu
 showed Noa a few points apart from retail mid-count. A `--wrapper-trace` recording of
 `rugi_rogue_pre_rogue_thunder` lands `818`, `833` and `723` on the three guarding seats
 (`pre` minus `def`, halved by the guard), and the engine on the rand track ends on the same
-`855`, `727` and `1079`. The older recording the film set points at ends Noa `20` lower: two
-recordings of one cast deal apart, and the fresh one is the measurement.
+`855`, `727` and `1079`. The older recording the film set pointed at ends Noa `20` lower: two
+recordings of one cast deal apart, and the fresh one is the measurement. The film set names
+it (`--retail-from`), and the film reads `.845` against it with every cue matched, where the
+older recording read `.853`.
 
 ## The game clock
 
@@ -1763,7 +1766,8 @@ The sets are batch files under [`film-sets/`](../../scripts/ci/film-sets/): the 
 casts from the Gobu Gobu opener, the enemy casts, the dealt monster strikes and the
 party arts (each party art state's own action, Hyper and Super Arts among them,
 dealt its traced hit words). A film's
-`retail/` may be a symlink to an existing recording, which the batch driver reuses. A
+`retail/` may be a symlink to an existing recording, which the batch driver reuses; a line
+that carries `--retail-from` makes that symlink itself, so the set names the recording. A
 baselined film fails when its cue score falls or it matches fewer cues; one whose
 retail side holds another number of cues was re-recorded and is listed, not scored; one
 with no report is counted as a skip, not a pass. `--propose` writes a candidate
