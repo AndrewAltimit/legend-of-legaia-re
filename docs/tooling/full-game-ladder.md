@@ -697,7 +697,13 @@ the bag is short of an errand's copies:
   piece no present member is better off wearing - worth less, summed over
   its stat bonuses, than what each member who can wear it wears in its slot,
   and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
-  - is sold, the whole stack, before anything is bought.
+  - is sold, the whole stack, before anything is bought. The slot is the
+  record byte the piece's class names
+  (`equip_session::record_byte_for_category`), and the hand walks each list
+  by its own page: seven rows on the buy list, eleven on the sell list
+  (`shop_cues::shop_list_page_rows`). Paged by sevens, a sale past the sell
+  list's first page was struck off the visit, and the price the planner had
+  already counted never reached the purse.
 - **It keeps the heal reserve.** Three heals a member are bought before the
   errand's items, and a purchase that does not complete the errand leaves
   the reserve's price in the purse. Six of eight loaves bought out of 38225
