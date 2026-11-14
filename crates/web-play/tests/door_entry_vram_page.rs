@@ -13,7 +13,7 @@
 //! draws as a black hole until the scene is left.
 //!
 //! Whether a walker is due on the entry tick depends on its hold counter, so
-//! each walk is repeated across a spread of idle offsets.
+//! each walk is repeated across one whole cycle of that walker.
 //!
 //! Skipped (passes) when `LEGAIA_DISC_BIN` is unset.
 
@@ -46,9 +46,15 @@ const HUNTERS_SPRING: Route = Route {
     scene: "izumi",
 };
 
-/// Idle offsets each route is walked at: the overworld walker's hold
-/// counters all repeat inside this many page ticks.
-const IDLE_OFFSETS: u32 = 64;
+/// Idle offsets each route is walked at. The overworld walker that writes
+/// cell `(32, 509)` comes due once every [`WALKER_CYCLE`] page ticks, and a
+/// walk is only caught when its entry tick is one of them. Offsets inside
+/// the world map's arrival share one entry tick (the lead does not move
+/// until the arrival hands the pad back), so the sweep starts past it and
+/// covers one whole cycle: some offset of it lands the door on a due tick
+/// on either route.
+const IDLE_FROM: u32 = 60;
+const WALKER_CYCLE: u32 = 21;
 
 /// Walk the route after `idle` standing ticks and return the scene VRAM as
 /// the page holds it on the entry tick.
@@ -105,7 +111,9 @@ fn ground_clut_cells(rt: &LegaiaRuntime) -> Vec<(usize, usize)> {
     cells
 }
 
-fn assert_route_keeps_the_image(rt: &mut LegaiaRuntime, route: &Route) {
+/// Walk `route` at every idle offset of the sweep; the lines name what the
+/// walked-in image lost against a direct entry's.
+fn route_image_losses(rt: &mut LegaiaRuntime, route: &Route) -> Vec<String> {
     // The image a direct entry holds before its first tick: the scene's own
     // uploads with its walker strips parked and nothing yet animated.
     rt.enter_field(route.scene).expect("enter the scene");
@@ -113,7 +121,7 @@ fn assert_route_keeps_the_image(rt: &mut LegaiaRuntime, route: &Route) {
 
     let mut hits: Vec<(u32, usize, (usize, usize))> = Vec::new();
     let mut blanked_ground: Vec<(u32, (usize, usize))> = Vec::new();
-    for idle in 0..IDLE_OFFSETS {
+    for idle in IDLE_FROM..IDLE_FROM + WALKER_CYCLE {
         let walked = walk_in(rt, route, idle);
         let cells = differing_cells(&walked, &direct);
         if let Some(&first) = cells.first() {
@@ -126,18 +134,22 @@ fn assert_route_keeps_the_image(rt: &mut LegaiaRuntime, route: &Route) {
             }
         }
     }
-    assert!(
-        blanked_ground.is_empty(),
-        "{}: the walked-in scene's ground palettes differ from the direct \
-         entry's, as (idle offset, CLUT cell): {blanked_ground:?}",
-        route.scene
-    );
-    assert!(
-        hits.is_empty(),
-        "{}: the walked-in scene's VRAM differs from the direct entry's, as \
-         (idle offset, cells, first cell): {hits:?}",
-        route.scene
-    );
+    let mut lost = Vec::new();
+    if !blanked_ground.is_empty() {
+        lost.push(format!(
+            "{}: the walked-in scene's ground palettes differ from the direct \
+             entry's, as (idle offset, CLUT cell): {blanked_ground:?}",
+            route.scene
+        ));
+    }
+    if !hits.is_empty() {
+        lost.push(format!(
+            "{}: the walked-in scene's VRAM differs from the direct entry's, as \
+             (idle offset, cells, first cell): {hits:?}",
+            route.scene
+        ));
+    }
+    lost
 }
 
 #[test]
@@ -149,6 +161,9 @@ fn a_walked_in_scene_holds_the_direct_entrys_texture_image() {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(std::fs::read(disc).expect("read disc"), String::new())
         .expect("load disc");
+    // Both routes are walked before anything is asserted, so a failure
+    // names each route that lost its image.
+    let mut lost = Vec::new();
     for route in [&HUNTERS_SPRING, &RIM_ELM] {
         // Non-vacuous: the scene's ground does sample the cell the
         // overworld's walker writes.
@@ -158,6 +173,7 @@ fn a_walked_in_scene_holds_the_direct_entrys_texture_image() {
             "{}: the walk ground samples CLUT cell (32, 509)",
             route.scene
         );
-        assert_route_keeps_the_image(&mut rt, route);
+        lost.extend(route_image_losses(&mut rt, route));
     }
+    assert!(lost.is_empty(), "{lost:#?}");
 }
