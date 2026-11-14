@@ -322,6 +322,19 @@ itself waits until the kernel lands it (`tunnelc`
 leg (`FieldNpcState::glide_legs`), `World::tick_field_npc_face_legs` steps
 it, and a talk holds on `InlineDialogue::own_turn` until it lands.
 
+The load slice itself does not wait on its own walk. The refusal reads the
+scene word `*(_DAT_801C6EA4) + 8` before the caller's id
+(`0x801DE920..0x801DE930`) and lets the op through while it is non-zero, and
+`FUN_8003AEB0` holds it at `1` around the whole spawn loop and the object
+binds (`0x8003B73C`, dropped at `0x8003B928`); op `4C D2`'s respawn and op
+`4C C3`'s re-seat raise it the same way. `suimon`'s Water Gate Controller
+(`P1[4]`) depends on it: `41 05 01`, then `CC 0E 40 00 00 00 00` (render
+scale `0`) and `B1 0E 15` (no drop shadow) on its own id, then the `0x21`
+that ends the slice in front of the talk text at `+0x28`. A retail capture
+of the scene shows no figure at the controller. Port:
+`FieldHaltHost::spawn_bracket`, up while `entry_prerun` or `object_prerun`
+is; disc-gated in `engine-scene-host/tests/suimon_controller_disc.rs`.
+
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
 `a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN

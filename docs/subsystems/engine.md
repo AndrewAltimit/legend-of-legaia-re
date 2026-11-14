@@ -554,6 +554,12 @@ The second cave, entered through the cliff opening at tile `(117, 80)`, showed t
 
 The placed-object near reject follows the vantage the same way (`field_view_window::retail_vantage`, which also counts a scripted shot and a battle frame as retail's): it drops a whole placed object by its origin's depth, and under a swung, tilted or zoomed follow camera that origin can sit behind the lens while a ground slab fills the view ([renderer.md](renderer.md#the-placed-object-near-reject)). The per-primitive near reject and the GPU span limit stay armed off the retail vantage.
 
+### A scripted shot keeps the follow knobs out
+
+The distance preset, the orbit, the tilt and the wheel zoom shape the follow camera only. A shot a script stages (op `0x45`) is a framing the record authored, so the knobs stand down while any script that holds the player has one staged (`World::scripted_shot_holds_camera`): a timeline, a spawned helper record, or an ordinary talk on the inline dialogue runner. The talk case is `suimon`'s Water Gate Controller, whose key-use shots (`H` 744 and 872) took the `Far` preset's depth as follow frames and pulled back past the scene's edge; a retail capture of the beat frames the gate towers edge to edge. Pinned by `engine-shell/tests/water_gate_issues.rs`.
+
+The pause menu freezes the field camera too. Retail swaps the field overlay out for the menu's, so the follow ease, the edge clamp `FUN_801DAA50` and the anchor store `FUN_801DBE9C` do not run until it closes, and `Camera::tick_globals` writes nothing in `SceneMode::Menu`. Letting the non-zone writeback run there pinned the focus on the raw player for the wipe, which drops the edge clamp: at `suimon`'s seat the field jumped about 770 units sideways into the void past the map's edge (`web-play/tests/water_gate_menu_wipe.rs`).
+
 ### The crop and the cull hold under a scripted shot
 
 The crop and the field actor cull both read the cull view the follow camera publishes (focus, region box, visible tile window; `engine-field::camera::event_routing`). Retail's cull `FUN_801D79E8` runs every frame against the scratchpad globals whatever wrote them, so the view is published while the zone follow camera composes and while a script owns the shot. The one gap is a free-roam frame before the follow camera's first compose, whose focus is not yet the one retail's globals would hold. The region box in the view is the world's latch (scratchpad `0x1F800384..87`, written at every re-centre), which a beat's scripted player moves keep current while the follow tick is not running.
