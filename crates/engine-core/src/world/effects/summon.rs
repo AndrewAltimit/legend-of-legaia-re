@@ -127,13 +127,28 @@ impl World {
         // the ring takes this frame's part tick as retail's does. Arms 0 and
         // 1 (the stage byte, the halts and the fade) stay with the module's
         // tick, whose context they write.
-        if entry == 923 {
+        //
+        // PROT 0927's spawn arms seat on the caller's frame the same way; its
+        // fades, shake word and row sweep stay queued for the module's tick
+        // (`World::run_juggernaut_stager_calls`, which seats nothing).
+        if matches!(entry, 923 | 927) {
+            use legaia_engine_cast::cast_module_ticks as ticks;
             let calls = std::mem::take(&mut self.casting.module_stager_calls);
-            let (now, later): (Vec<_>, Vec<_>) = calls.into_iter().partition(|(arm, _)| *arm == 2);
+            let (now, later): (Vec<_>, Vec<_>) = if entry == 923 {
+                calls.into_iter().partition(|(arm, _)| *arm == 2)
+            } else {
+                (calls.clone(), calls)
+            };
             self.casting.module_stager_calls = later;
+            let mut seated = false;
             for (arm, caller) in &now {
-                for s in &legaia_engine_cast::cast_module_ticks::gilium_stager_spawns(*arm, *caller)
-                {
+                let spawns = if entry == 923 {
+                    ticks::gilium_stager_spawns(*arm, *caller)
+                } else {
+                    ticks::juggernaut_stager_spawns(*arm, *caller)
+                };
+                seated |= !spawns.is_empty();
+                for s in &spawns {
                     let before = self
                         .casting
                         .active_summon
@@ -151,7 +166,7 @@ impl World {
                     }
                 }
             }
-            if !now.is_empty() {
+            if seated {
                 self.seat_walk_active_summon();
             }
             return;

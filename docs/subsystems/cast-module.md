@@ -3532,6 +3532,13 @@ seats arm 2's ring on the caller's frame now, reached by the walk where its call
 node behind it (`SummonScene::seat_walk`); arms 0 and 1, which write the module's context,
 stay on the tick. Arm 21 of the `0x95` film reads `.996`. Grade `disassembly` + `capture`.
 
+PROT 0927 (Juggernaut) has the same shape: its stager's spawn arms seat from inside the
+calling part's step, so the port seats them on the caller's frame too, while the fades,
+the shake word and the row sweep the same calls make stay on the module's tick
+(`World::run_juggernaut_stager_calls`). On the `0x99` film arm 12 reads `.989` against
+`.889` and arm 27 `.947` against `.836` on `--retail-steps --rand-track`, the cues alike.
+Grade `capture` (the seat path is the one the disassembly gives the other stagers).
+
 Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
 pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
 flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
