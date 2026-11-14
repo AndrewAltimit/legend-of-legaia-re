@@ -516,6 +516,15 @@ pub struct BattleState {
     /// band's own debit lands on the state's MP, wrap and all. `false` on
     /// every ordinary fight and on a still's mid-cast replay.
     pub seed_mp_unpaid: bool,
+    /// Bit 0 of the creature seat's `+0x1DC` as the last cast left it: a
+    /// stage bump made on seat 7 after its node was taken off, which no tick
+    /// consumed. The seat installer `FUN_801F19EC` leaves the byte alone, so
+    /// the next creature's first node tick takes the bit at once
+    /// (`0x800478F4`) and commits the idle the installer left staged: the
+    /// creature opens at rate `4`, not the installer's `2`. PROT 0964's
+    /// strikes raise it in their `0xFF` arm (`0x801F888C..0x801F8898`), so
+    /// every Rogue strike of a battle but the first opens so.
+    pub creature_seat_restage: bool,
     /// The same seed's target: the party seat the capture's caster had
     /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
     /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
@@ -1630,6 +1639,7 @@ impl BattleState {
             art_seed_ra_seru: false,
             forced_monster_cast: None,
             seed_mp_unpaid: false,
+            creature_seat_restage: false,
             forced_monster_target: None,
             cue_clut_seed: None,
             element_roll_seed: None,

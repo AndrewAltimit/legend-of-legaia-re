@@ -447,6 +447,22 @@ def state_guard_seats(sstate: str) -> str | None:
     return ",".join(seats)
 
 
+def state_creature_restage(out: Path) -> bool:
+    """Whether the recording's state holds a stage bump on the bare creature
+    seat (`+0x1DC` bit 0 of actor `(&DAT_801C9370)[7]`): an earlier cast of the
+    same battle staged the seat's idle with the bump after its node was taken
+    off (PROT 0964's `0xFF` arm), and the next creature's first tick commits
+    on it. The replay's fresh fight has played no such cast, so the engine is
+    told (`LEGAIA_SEAT_CREATURE_RESTAGE`). A harness seat."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return False
+    a = ram_u32(ram, 0x801C9370 + 4 * 7)
+    if not RAM_BASE <= a < RAM_TOP - 0x200:
+        return False
+    return ram[a - RAM_BASE + 0x1DC] & 1 != 0
+
+
 def state_opening_cursor(out: Path) -> str | None:
     """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
     anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
@@ -1021,6 +1037,8 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         # the seed credits the price back for the engine's own debit, as a
         # still's mid-cast replay does.
         env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
+    if state_creature_restage(out):
+        env["LEGAIA_SEAT_CREATURE_RESTAGE"] = "1"
     if a.physical:
         pass
     elif caster < 3:

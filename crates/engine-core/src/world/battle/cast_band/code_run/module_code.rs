@@ -1933,6 +1933,16 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // A stage bump made on the creature seat with no creature on it
+        // (PROT 0964's `0xFF` arm, `0x801F8880..0x801F8898`, after `k = 5`
+        // took the golem off): no tick consumes it, and the byte waits on
+        // the seat for the next creature (`BattleState::creature_seat_restage`).
+        if self.casting.summon_actor_slot.is_none()
+            && self.casting.pending_summon_spawn.is_none()
+            && seat.restage != seat_orig.restage
+        {
+            self.battle.creature_seat_restage = true;
+        }
         // A tick body that seats its creature and stages its clip on one pass
         // (PROT 0910's arm 2, `sb s8,0x1da` / `sb s8,0x1dc` at
         // `0x801F6DB0..0x801F6DB4` right behind the installer): the host seats
