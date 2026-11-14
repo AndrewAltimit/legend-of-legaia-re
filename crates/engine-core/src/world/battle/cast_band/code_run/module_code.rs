@@ -72,6 +72,7 @@ impl World {
             ..Default::default()
         };
 
+        let mut esm_stager_hits = Vec::new();
         // The seven state-touching spawn stagers, by owning entry.
         // PROT 0906's stager is called from its spawned record's program,
         // not off the phase: its arms are placed below on the director's
@@ -86,6 +87,8 @@ impl World {
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e, 0),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(spell_id),
+            // PROT 0966's stager is PROT 0927's over the party row.
+            966 => esm_stager_hits = self.run_evil_seru_stager_calls(caster_slot, spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
             // when the record that calls it does. A retail cast holds
@@ -603,35 +606,27 @@ impl World {
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
             }
-            // The module's own move-VM stager hit lands mid-cast, not at the
-            // fold: arm 10 spawns record `0x801F937C`, whose script waits
-            // `0x7F` (`<< 3`, drained `scalar * delta` - 127 vsyncs) and then
-            // runs op `0x20` with arm 4, the `0x100` never-kill sweep. That
-            // is arm 11's gate (`0x80` vsyncs), so it lands before arm 26's
-            // kill-capable hit, and the band's fold owes nothing more.
-            let mut stager_hits = Vec::new();
+            // The module's own move-VM stager hits land mid-cast, not at the
+            // fold: arm 10 seats records `0x801F937C` and `0x801F94D0`, whose
+            // scripts wait `0x7F` and `0x187` (`<< 3`, drained
+            // `scalar * delta`) and then run op `0x20` with arms 4 and 3, the
+            // `0x100` never-kill sweep both times (arm 3 falls into arm 4).
+            // The parts make those calls where the disc's records run
+            // (`run_evil_seru_stager_calls`, above). A host that seats no
+            // record keeps each call on the pass of the arm it falls beside.
+            let mut stager_hits = esm_stager_hits;
             if passed
-                && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
+                && self
+                    .casting
+                    .effect_pool
+                    .as_ref()
+                    .is_none_or(|p| p.module(entry).is_none())
+                && let Some(k) = ticks::EVIL_SERU_MAGIC_SWEEP_CALLERS
+                    .iter()
+                    .position(|c| c.1 == phase)
             {
-                // The stager's arm 4 (`0x801F8E4C`) opens on Juggernaut's
-                // salmon flash and its shake (`+0x14` into `0x801FA468`)
-                // before the sweep.
-                if let Some(t) = ticks::juggernaut_stager_fade(AOE_STAGER_WORKING_ARM) {
-                    let mut fade = None;
-                    legaia_engine_system::fade::spawn_fade(
-                        &mut fade,
-                        &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
-                        1,
-                    );
-                    self.presentation.module_fades.extend(fade);
-                }
-                self.casting.module_shake += ticks::juggernaut_stager_shake(AOE_STAGER_WORKING_ARM);
-                if let Some(r) =
-                    self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
-                {
-                    stager_hits = r.aoe_hits;
-                }
-                self.casting.module_skips_fold = true;
+                let arm = if k == 0 { AOE_STAGER_WORKING_ARM } else { 3 };
+                stager_hits.extend(self.evil_seru_stager_arm(caster_slot, spell_id, arm));
             }
             let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
             let mut rolls: Vec<(u8, i32)> = Vec::new();

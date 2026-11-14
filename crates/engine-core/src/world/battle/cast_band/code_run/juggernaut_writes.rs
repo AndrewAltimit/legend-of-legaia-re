@@ -371,6 +371,59 @@ impl World {
         }
     }
 
+    /// Run the op-`0x20` calls PROT 0966's parts made since its last tick
+    /// through its stager `FUN_801F8D64`, in call order. The spawn arms'
+    /// seats were made on the caller's frame, behind the part tick
+    /// (`World::run_summon_part_stager_calls`); what is left is PROT 0927's
+    /// arms 3..5 over this module's words. Returns the seats the sweeps hit.
+    ///
+    /// REF: FUN_801F8D64
+    pub(in crate::world::battle::cast_band) fn run_evil_seru_stager_calls(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+    ) -> Vec<legaia_engine_cast::cast_module_ticks::AoeHit> {
+        let calls = std::mem::take(&mut self.casting.module_stager_calls);
+        let mut hits = Vec::new();
+        for (arm, _) in calls {
+            hits.extend(self.evil_seru_stager_arm(caster, spell_id, arm));
+        }
+        hits
+    }
+
+    /// One call of PROT 0966's stager arms 3..5: arm 4 (`0x801F8E4C`) raises
+    /// the salmon flash, adds `0x14` to the shake word `0x801FA468` and sweeps
+    /// the party row with the never-kill clamp; arm 3 (`0x801F8E38`) adds
+    /// `0xC` and falls into it, so it sweeps too; arm 5 (`0x801F8FD0`) is the
+    /// long flash alone. The band's fold owes nothing once a sweep has landed.
+    ///
+    /// REF: FUN_801F8D64
+    pub(in crate::world::battle::cast_band) fn evil_seru_stager_arm(
+        &mut self,
+        caster: u8,
+        spell_id: u8,
+        arm: u8,
+    ) -> Vec<legaia_engine_cast::cast_module_ticks::AoeHit> {
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        if let Some(t) = ticks::juggernaut_stager_fade(arm) {
+            let mut fade = None;
+            legaia_engine_system::fade::spawn_fade(
+                &mut fade,
+                &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
+                1,
+            );
+            self.presentation.module_fades.extend(fade);
+        }
+        self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
+        if arm != super::super::AOE_STAGER_WORKING_ARM && arm != 3 {
+            return Vec::new();
+        }
+        self.casting.module_skips_fold = true;
+        self.run_cast_module_aoe_as(caster, spell_id, super::super::AOE_STAGER_WORKING_ARM)
+            .map(|r| r.aoe_hits)
+            .unwrap_or_default()
+    }
+
     /// PROT 0927's epilogue shake, once per call of its body
     /// ([`legaia_engine_cast::cast_module_ticks::juggernaut_shake_step`]);
     /// PROT 0966's body carries the same epilogue over its own word.

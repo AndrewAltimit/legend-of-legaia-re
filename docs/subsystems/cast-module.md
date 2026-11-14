@@ -4400,26 +4400,49 @@ close to a minute. It is ported whole.
   1's pass, hides at arm 10, comes back on clip `0` at arm 21, takes the
   defeat-fade tint state `2` at arm 23 and is shown again at arm 27. Because
   the body stages its own caster, it has no row in the caster-stage table.
-- **The first hit is the stager's.** Arm 10 spawns record `0x801F937C`, whose
-  script is `WAIT 0x7F` then op `0x20` with arm `4`. Op `0x20` calls
+- **The first two hits are the stager's.** Arm 10 seats record `0x801F937C`,
+  whose script is `WAIT 0x7F` then op `0x20` with arm `4`, and record
+  `0x801F94D0`, `WAIT 0x187` then op `0x20` with arm `3`. Op `0x20` calls
   `gp[+0x714]`, which holds the stager `0x801F8D64` in the
-  `cort_evil_seru_magic_mid_cast` capture. Arm 4 is the `0x100` never-kill
-  sweep. The wait is `0x7F << 3`, drained `scalar * delta` a battle frame, so
-  it lasts 127 vsyncs, one short of arm 11's `0x80`. The port lands that sweep
-  on arm 11's pass and raises the band's skip-fold.
-- **The second hit is the tick's.** Arm 26 walks `actor_table[0 .. ctx[+0]]`,
+  `cort_evil_seru_magic_mid_cast` capture. Arm 4 (`0x801F8E4C`) is the `0x100`
+  never-kill sweep, and arm 3 (`0x801F8E38`) adds `0xC` to the shake word and
+  falls into it, so the party row is swept twice before the tick's hit. A
+  retail recording of the cast (`chitei2_cort_pre_mystic_circle` with the
+  action rewritten to `0xAD`) drops every member's HP on three frames: arm
+  11's last, arm 14's first and arm 26's pass. Each wait is `n << 3`, drained
+  `scalar * delta` a battle frame. The port runs both calls off the seated
+  records' own programs (`World::run_evil_seru_stager_calls`); a host that
+  seats no record lands them on the passes of arms 11 and 13. Grade
+  `disassembly` + `capture`.
+- **The stager is PROT 0927's over its own records.** Nine arms behind
+  `sltiu a1, 9` and the table at `0x801F6A50`: arms 0, 1, 2, 6 and 8 seat
+  records on the calling part (`evil_seru_magic_stager_spawns`: the pulses
+  record `0x801F94D0` and `0x801F937C` loop out every `0x0B` vsyncs, the four
+  records `0x801F96B8` seats seven times, the pair arm 26's emitter
+  `0x801FA2D0` seats for as long as it lives), arm 5 is the long salmon flash,
+  and arm 7 jitters its caller's `+0x84` / `+0x28` off three `rand()`s, the six
+  rays of arm 23. The seats land on the caller's frame, as
+  [Gilium's and Juggernaut's](#summon-creature-directors) do. Grade
+  `disassembly`; the film reads `.744` to `.902` over arms 0..21 with them.
+- **The last hit is the tick's.** Arm 26 walks `actor_table[0 .. ctx[+0]]`,
   skips a dead or non-targetable seat, and calls
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp
-  (`0x801F8610` / `0x801F863C`), so it can kill a member the first hit left
+  (`0x801F8610` / `0x801F863C`), so it can kill a member the sweeps left
   low. It also stages the seat's knockdown at rate `2`.
+- **Arm 27 lets the knockdown play.** Every pass it stores rate `2` on each
+  party seat and then `0` only on a seat whose committed clip `+0x1D9` is not
+  its knockdown `+0x1F1` (`beq` at `0x801F8730` over the store at
+  `0x801F8738`): a struck member falls at rate `2` and freezes where the clip
+  ends, until arm 28 stores `2` again. The recording walks each member's node
+  cursor through the arm and reads rate `0` from the clip's end.
 
 Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row of
 half-size models at `z = 0x190`, and restore them; arm 10 seats the creature
 at seat 7. The engine keeps every seat where the battle put it, so the cuts
-frame the stage rather than the moved seats. The effect records and the arm-20
-spell-name banner are also left out. The screen fades are carried on the
-engine's one fade seat; arm 26 spawns three at once, and the seat keeps the
-last, the delayed white-in that arm 27 fades out of.
+frame the stage rather than the moved seats. The arm-20 spell-name banner is
+also left out. The screen fades are carried on the engine's one fade seat; arm
+26 spawns three at once, and the seat keeps the last, the delayed white-in that
+arm 27 fades out of.
 
 ## The module owns the camera
 
