@@ -152,6 +152,15 @@ pub struct FieldLocomotion {
     /// host-owned follow camera; `None` with no camera composing (a headless
     /// run), which takes the common mode `4` arm of the walk's diagonal cut.
     pub camera_mode_byte: Option<u8>,
+    /// The player's movement lock as the frame's walk gate read it, before
+    /// the pad controller ran. Retail's field tick `FUN_801D1344` tests the
+    /// engaged bit `+0x10 & 0x80000` once, at `0x801D1694..0x801D16C0`
+    /// ahead of the pad controller (`jal 0x801D01B0` at `0x801D16F4`), and
+    /// keeps the answer in `s3` for the follow ease's branch at
+    /// `0x801D17DC`, so a touch the walk posts this frame (which raises the
+    /// bit) does not stop this frame's ease. Refreshed at the top of every
+    /// tick and again at the field walk gate.
+    pub locked_at_walk_gate: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
@@ -394,6 +403,7 @@ impl FieldLocomotion {
             forced_slow: false,
             scene_ctrl_61: 0,
             camera_mode_byte: None,
+            locked_at_walk_gate: false,
             precise_move_carry: (0.0, 0.0),
             player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             player_8e: 0,

@@ -89,6 +89,10 @@ impl CameraWorld for World {
         World::cutscene_timeline_active(self)
     }
 
+    fn cutscene_timeline_holds_camera(&self) -> bool {
+        World::cutscene_timeline_holds_camera(self)
+    }
+
     fn script_arc_follow_camera(&self) -> bool {
         World::script_arc_follow_camera(self)
     }
@@ -99,6 +103,10 @@ impl CameraWorld for World {
 
     fn field_player_movement_locked(&self) -> bool {
         World::field_player_movement_locked(self)
+    }
+
+    fn field_player_locked_at_walk_gate(&self) -> bool {
+        self.locomotion.locked_at_walk_gate
     }
 
     fn scripted_shot_holds_camera(&self) -> bool {

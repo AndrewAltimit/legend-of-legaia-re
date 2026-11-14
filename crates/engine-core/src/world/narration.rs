@@ -585,6 +585,28 @@ impl World {
             .is_some_and(|t| !t.is_done())
     }
 
+    /// `true` while a modal timeline that has taken a slice owns the camera.
+    ///
+    /// A walk-on record the tile dispatch spawns this frame has not run yet
+    /// when the camera steps, and retail's field tick eases the camera on
+    /// that frame all the same: the ease's gate is the engaged bit as the
+    /// tick read it ahead of the pad controller (`s3`, `0x801D1694..
+    /// 0x801D16C0`), and the spawn comes after the walk. Rim Elm's
+    /// stand-and-press beats (`town01` P2[12..14] and their `town0b..0e`
+    /// twins) re-run on every frame the player stands or walks on their
+    /// tiles (`2E 13`) and end in the same slice unless the button is down,
+    /// so the port saw a fresh, unstepped timeline at every camera step:
+    /// the follow camera froze while the player walked along the band and
+    /// jumped the distance it had fallen behind when he left it.
+    ///
+    /// REF: FUN_801D1344, FUN_801D1EC4, FUN_8003BDE0
+    pub fn cutscene_timeline_holds_camera(&self) -> bool {
+        self.cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|t| !t.is_done() && t.stepped)
+    }
+
     /// `true` while a spawned field-VM context holds the player - the
     /// engine's reading of retail's engaged bit `+0x10 & 0x80000` as the
     /// script runner raises it.

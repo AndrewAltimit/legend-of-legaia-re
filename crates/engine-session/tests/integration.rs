@@ -34,6 +34,7 @@ mod expansion_refill_wave_disc;
 mod expansion_sample_main_line_disc;
 mod field_actor_guard_skip;
 mod field_ambient_ring_cue;
+mod field_follow_stall_disc;
 mod fmv_handoff;
 mod fog_gate_census;
 mod frame_step_kernels;

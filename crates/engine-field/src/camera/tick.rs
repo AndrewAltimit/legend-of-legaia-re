@@ -152,7 +152,7 @@ impl Camera {
         // distinct focus values across the whole scene, so a writeback gated
         // only on `!gliding` re-pins the focus to the player on every settled
         // frame and turns those two values into ~1000.
-        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_holds_camera();
         // A player arc whose release watcher runs the follow camera
         // (`FUN_801D5D60` calling `FUN_801DB510(player)` + `FUN_801DAA50`
         // every frame the arc flies) hands a cutscene's shot back to the

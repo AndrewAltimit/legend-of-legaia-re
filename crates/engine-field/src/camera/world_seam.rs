@@ -104,6 +104,12 @@ pub trait CameraWorld {
     }
     /// Whether a cutscene timeline owns the frame.
     fn cutscene_timeline_active(&self) -> bool;
+    /// Whether a cutscene timeline that has run a slice owns the camera: a
+    /// record spawned this frame, after the walk, does not stop this frame's
+    /// follow step. The default is [`Self::cutscene_timeline_active`].
+    fn cutscene_timeline_holds_camera(&self) -> bool {
+        self.cutscene_timeline_active()
+    }
     /// Whether a script record that holds the player has staged an op-`0x45`
     /// shot into the camera globals - the concurrent helper records the
     /// ending vignettes and boss arrivals run, which frame through the follow
@@ -122,6 +128,12 @@ pub trait CameraWorld {
     fn camera_zone_requery_per_frame(&self) -> bool;
     /// Whether the player's movement is locked.
     fn field_player_movement_locked(&self) -> bool;
+    /// Whether the player's movement was locked when this frame's walk gate
+    /// read it, ahead of the pad controller (`FUN_801D1344`'s `s3`,
+    /// `0x801D1694..0x801D16C0`). The default is the live lock.
+    fn field_player_locked_at_walk_gate(&self) -> bool {
+        self.field_player_movement_locked()
+    }
     /// Whether a ledge hop is in flight.
     fn ledge_hop_active(&self) -> bool;
     /// Whether the player's scripted arc is live.

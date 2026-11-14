@@ -88,6 +88,7 @@ impl World {
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();
         self.refresh_bag_window();
+        self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
         let outcome = self.tick_modes();
         // The script runner's release: a conversation that showed a box and
         // has just let the player go leaves the pad hold
@@ -811,6 +812,7 @@ impl World {
                 // controller, behind the same gate
                 // (`World::tick_field_walk_regen`); its Incense zero edge
                 // raises the wear-off notice, which runs here.
+                self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
                 self.step_field_locomotion();
                 self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a

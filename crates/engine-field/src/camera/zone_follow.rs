@@ -112,8 +112,19 @@ impl Camera {
         // `FUN_801DB8EC` themselves), and neither are the two callers that
         // run the ease on their own: the ledge hop's phase tick
         // (`FUN_801D2298`) and the arc release watcher (`FUN_801D5D60`).
+        //
+        // The tick reads the bit once, ahead of the pad controller, and the
+        // ease branch uses that answer (`s3`): a walk that posts a touch
+        // this frame - a door prop the player slides along, whose run raises
+        // the bit before the camera steps - still eases with the step it
+        // took. Read live, the lock froze the focus for every frame the
+        // player brushed `town01`'s door at tile `(22, 18)`, and the focus
+        // jumped the distance it had fallen behind once he walked clear.
         let engaged = world.field_player_movement_locked();
-        let locked = engaged && !world.ledge_hop_active() && !world.player_script_arc_live();
+        let locked = engaged
+            && world.field_player_locked_at_walk_gate()
+            && !world.ledge_hop_active()
+            && !world.player_script_arc_live();
         // Retail eases once a game pass, with no frame-step term in the shift
         // (`0x801DB5AC..0x801DB724`; the player tick `FUN_801D1344` calls
         // it), and the world ticks once a vsync: the steps land on the pass
