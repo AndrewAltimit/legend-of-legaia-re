@@ -985,7 +985,13 @@ impl World {
                 p.release_loop_window();
             }
             a.battle.queued_anim = 0;
-            if a.battle.current_anim == 0 {
+            // A caster its module froze (`+0x21D = 0`, Neo Star Slash's arm
+            // 4 at `0x801F6F8C`) plays no clip out: retail's band leaves
+            // with it frozen (rate `0` through `0xFF`, `0x71` and `0x50` on
+            // a `gaza2_card_pre_neo_star_slash` recording) and the Done
+            // band's restore `FUN_801E93C8` runs the clip on to the idle
+            // staged here.
+            if a.battle.current_anim == 0 || a.battle.anim_rate.0 == 0 {
                 self.casting.caster_stages = None;
                 return false;
             }
