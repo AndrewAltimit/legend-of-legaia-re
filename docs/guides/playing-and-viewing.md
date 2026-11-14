@@ -406,7 +406,10 @@ read, newest first, then offers the file dialog, so moving between two
 emulators' cards takes no browsing. While the game runs, dropping a card
 file on the game window swaps it into card 2 for the rest of the session
 (the notice line names it, or says the file is not a card); the launcher's
-remembered card is left as it was. `LEGAIA_ENGINE_CONFIG_DIR` and
+remembered card is left as it was. The `F12` panel's Tools page does the same
+from a controller: its *Memory card 2* row steps through the cards the
+launcher remembers and the card files in the saves folder, Cross inserts the
+picked one, and *No card* takes the card out. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 
@@ -478,9 +481,10 @@ is pressed again.
 
 A controller reaches everything inside the game: the title, every menu and
 screen, the launcher, and the window's `F12` panel (`Select` + `Start`). It does
-not reach what sits outside the game: the play page's own boxes and sliders
-beside the picture, its disc and save file pickers (a browser opens a file
-dialog only for a click or a key), and Legaia Explorer.
+not reach what sits outside the game on the play page: its own boxes and
+sliders beside the picture, and its disc and save file pickers (a browser
+opens a file dialog only for a click or a key). Legaia Explorer takes a
+controller as it takes the keyboard, its file pickers included.
 
 On a touch screen the browser play page draws an on-screen pad over the
 picture: a D-pad you can roll a thumb around (diagonals included), the four
@@ -573,7 +577,9 @@ minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
 picker and the trading-card menu, then the play page's other debug controls:
 effect outlines, the party, the fight music, teaching the lead a spell, and a
 GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
-folder; the page's box is a text field, a window has none), and *Start a
+folder; the page's box is a text field, a window has none), *Memory card 2*
+(the card in the save screen's second port, picked from the launcher's
+remembered cards and the saves folder - the play page's card insert), and *Start a
 battle here*, the scene's first encounter formation through the normal
 transition (`--battle first`, the page's button of the same name). The list scrolls
 under the cursor, with a bar on the plate's edge showing where the view is, as

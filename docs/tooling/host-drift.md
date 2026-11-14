@@ -1528,6 +1528,7 @@ Traps, each of which has produced a false drift report:
 | native stage | The stage is integer-scaled and centred (2x at 960x699): crop it out and halve before comparing. The 3D pass draws inside the same rect. |
 | page key layout | `Mapping::web_default`: `X` is Circle, `V` Square, `C` Triangle, the d-pad `WASD`. |
 | title confirm | `--pad-script` cannot confirm a boot-title row; the confirm lives in the keyboard handler, so use `--key-script "<tick>:Z"`. |
+| `F12` panel cursor | A scripted run's pad word goes to the game, never to the panel, so `--pad-script` moves nothing on it. `LEGAIA_PANEL_FOCUS_ROW=N` steps each page's cursor `N` rows down as it is shown; `tools=11:RX` keeps that to one page and then presses the lettered buttons (`L` `R` `U` `D`, `X` for Cross). `--key-script` still opens the panel (`F12`) and flips its pages (`Tab`). |
 | multi-save `.mcr` | The page's import raises a block picker in `#save-status`; until one is clicked no card session exists and CONTINUE stays dim by design. |
 | persisted options | Each host persists the camera-distance preset itself (`legaia-options.toml` in the working directory; `localStorage`). Pin it on both. Scripted native runs write neither options nor bindings. |
 | `--seed-party` | Resets story flags to a fresh New Game, which changes a scene's entry script; the page's picker has no such seed. |
