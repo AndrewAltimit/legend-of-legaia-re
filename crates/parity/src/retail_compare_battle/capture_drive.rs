@@ -1553,6 +1553,12 @@ impl RetailBattle {
                     target,
                     strike,
                     target_ground,
+                    // Still on the walk: the swing staged behind it waits
+                    // for its natural end, so the walk's phase is seated
+                    // too (`World::seat_capture_approach_start`).
+                    walk_phase: self
+                        .walk_clock_capture()
+                        .then_some((self.walk_yaw_base, self.caster_cursor)),
                 },
             )
     }
@@ -1625,6 +1631,7 @@ impl RetailBattle {
             target,
             strike,
             target_ground,
+            walk_phase: None,
         })
     }
 

@@ -570,6 +570,21 @@ impl MonsterAnimPlayer {
     /// shift (`(dt * rate * clip_rate) >> 1`, `0x80047730..0x8004775C`), so
     /// one pass at step `n` moves the cursor by one `n`-scaled advance.
     // REF: FUN_80047430 (the frame-step factor of the cursor advance)
+    /// The cursor advance, in 12.4 sixteenths, of one pass of `vsyncs` at
+    /// `rate`: what [`Self::tick_rated_vsyncs`] would move the cursor by.
+    pub fn pass_advance_sixteenths(
+        &self,
+        rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
+        vsyncs: u8,
+    ) -> u16 {
+        let step = legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(
+            self.step * u32::from(vsyncs.max(1)),
+            rate,
+            false,
+        );
+        (step >> 4) as u16
+    }
+
     pub fn tick_rated_vsyncs(
         &mut self,
         rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,

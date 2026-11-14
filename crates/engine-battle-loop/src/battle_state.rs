@@ -1451,12 +1451,19 @@ pub struct CaptureApproach {
     pub strike: [i16; 2],
     /// The target's captured live pair.
     pub target_ground: [i16; 2],
+    /// A strike-loop capture still on its walk: the yaw counter
+    /// `ctx[+0x6DA]` it was saved at and the walk's node cursor `+0x68`
+    /// there. The staged swing commits at the walk's natural end, so where
+    /// the walk's cycle stands at the arrival decides how many passes it
+    /// walks on into the loop.
+    pub walk_phase: Option<(u16, u16)>,
 }
 
 impl CaptureApproach {
-    /// `arrive:target:sx:sz:tx:tz`.
+    /// `arrive:target:sx:sz:tx:tz`, then `:yaw:cursor` for a
+    /// [`Self::walk_phase`].
     pub fn to_env(&self) -> String {
-        format!(
+        let mut s = format!(
             "{}:{}:{}:{}:{}:{}",
             self.arrive,
             self.target,
@@ -1464,7 +1471,11 @@ impl CaptureApproach {
             self.strike[1],
             self.target_ground[0],
             self.target_ground[1]
-        )
+        );
+        if let Some((yaw, cursor)) = self.walk_phase {
+            s.push_str(&format!(":{yaw}:{cursor}"));
+        }
+        s
     }
 
     /// Parse [`Self::to_env`]'s form.
@@ -1476,6 +1487,10 @@ impl CaptureApproach {
             target: next()?.parse().ok()?,
             strike: [next()?.parse().ok()?, next()?.parse().ok()?],
             target_ground: [next()?.parse().ok()?, next()?.parse().ok()?],
+            walk_phase: match (next(), next()) {
+                (Some(y), Some(c)) => Some((y.parse().ok()?, c.parse().ok()?)),
+                _ => None,
+            },
         })
     }
 }
@@ -1488,9 +1503,16 @@ fn capture_approach_env_round_trips() {
         target: 2,
         strike: [168, 290],
         target_ground: [0, -12],
+        walk_phase: None,
     };
     assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
     assert_eq!(CaptureApproach::from_env("656:2:168"), None);
+    let walking = CaptureApproach {
+        walk_phase: Some((638, 72)),
+        ..a
+    };
+    assert_eq!(walking.to_env(), "656:2:168:290:0:-12:638:72");
+    assert_eq!(CaptureApproach::from_env(&walking.to_env()), Some(walking));
 }
 
 /// One combatant of [`BattleState::capture_reseat_bars`]: engine slot, HP,

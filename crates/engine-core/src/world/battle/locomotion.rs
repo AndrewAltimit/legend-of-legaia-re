@@ -920,7 +920,54 @@ impl World {
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = (px as f32 + ux / len * back).round() as i16;
         ms.world_z = (pz as f32 + uz / len * back).round() as i16;
+        if let Some((yaw, cursor)) = app.walk_phase {
+            self.seat_capture_walk_phase(slot, counter, yaw, cursor, step);
+        }
         self.refresh_battle_body_pairs_now();
+    }
+
+    /// The walk half of [`Self::seat_capture_approach_start`], for a capture
+    /// saved in the strike loop still on its walk
+    /// ([`CaptureApproach::walk_phase`]): stand the walk's cursor where,
+    /// stepping a pass at a time, it reaches the capture's cursor `cursor` on
+    /// the pass the counter reaches the capture's `yaw`.
+    ///
+    /// The arrival stages idle under `+0x1DC` bit 0 (`0x801E35BC..0x801E35C8`)
+    /// and the strike loop its swing under bit 1 (`0x801E3758`), and a walk
+    /// entry carrying the `+0x76` lock refuses both cuts
+    /// (`0x80047940..0x80047948`): whatever is staged commits at the walk's
+    /// natural end (`0x80047B54`). Which of the two that is depends on where
+    /// the walk's cycle stands at the arrival. The replay starts its walk on
+    /// its own clock, and seated only on distance it reached the arrival on
+    /// another phase: `battle_map02_mad_ogre_strike`'s Ogre arrived on its
+    /// walk's last pass and committed idle there, then its swing a pass
+    /// later, where retail's walked ten more passes with the swing staged.
+    /// A harness seat. A cycle is whole passes: the re-commit zeroes the
+    /// cursor (`sh zero,0x68` at `0x8004B068`), so an overshoot is dropped.
+    ///
+    /// [`CaptureApproach::walk_phase`]: legaia_engine_battle_loop::battle_state::CaptureApproach::walk_phase
+    fn seat_capture_walk_phase(
+        &mut self,
+        slot: usize,
+        counter: i32,
+        yaw: u16,
+        cursor: u16,
+        step: u8,
+    ) {
+        let inc =
+            i32::from(legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step))
+                .max(1);
+        let a = &mut self.actors[slot];
+        let rate = a.battle.anim_rate;
+        let Some(p) = a.battle_animation.as_mut().filter(|p| p.is_looping()) else {
+            return;
+        };
+        let advance = i32::from(p.pass_advance_sixteenths(rate, step));
+        let total = (p.frame_count() * 16) as i32;
+        let passes = (i32::from(yaw) - counter) / inc;
+        if let Some(want) = capture_walk_cursor(i32::from(cursor), passes, advance, total) {
+            a.pose_frame = Some(p.seat_cursor(want));
+        }
     }
 
     /// Where [`Self::seat_capture_approach_start`]'s walk ends: a monster's
@@ -1150,10 +1197,40 @@ impl World {
     }
 }
 
+/// The cursor a looping clip stands on `passes` passes of `advance`
+/// sixteenths before it reads `cursor`, on a cycle of whole passes: the
+/// natural end's re-commit zeroes the cursor (`sh zero,0x68` at
+/// `0x8004B068`), so a cycle of a `total`-sixteenth clip is the first
+/// multiple of `advance` at or past `total`
+/// ([`World::seat_capture_walk_phase`]).
+fn capture_walk_cursor(cursor: i32, passes: i32, advance: i32, total: i32) -> Option<u16> {
+    if advance <= 0 || total <= 0 {
+        return None;
+    }
+    let cycle = (total + advance - 1) / advance * advance;
+    u16::try_from((cursor - passes * advance).rem_euclid(cycle)).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use legaia_engine_battle_vm::battle_action::{ActionState, StepOutcome};
+
+    /// `battle_map02_mad_ogre_strike`: Mad Ogre's walk (entry `1`, 20
+    /// keyframes, `320` sixteenths) at `24` a step-`3` pass ends on the
+    /// fourteenth pass (`312 + 24 = 336`) and restarts at `0`, so its cycle
+    /// is `336`. Saved at cursor `72`, thirty passes after the walk's first
+    /// step, it stood on `24` there.
+    #[test]
+    fn a_capture_walk_cursor_steps_back_on_whole_passes() {
+        assert_eq!(capture_walk_cursor(72, 30, 24, 320), Some(24));
+        assert_eq!(capture_walk_cursor(72, 3, 24, 320), Some(0));
+        assert_eq!(capture_walk_cursor(72, 4, 24, 320), Some(312));
+        assert_eq!(capture_walk_cursor(72, 0, 24, 320), Some(72));
+        // A cycle that divides into whole passes keeps its length.
+        assert_eq!(capture_walk_cursor(168, 8, 24, 384), Some(360));
+        assert_eq!(capture_walk_cursor(72, 1, 0, 320), None);
+    }
 
     /// A world in battle mode with 1 party member and 1 monster at the
     /// authored solo seats (0,-800) vs (0,+800), on the per-vsync cadence:

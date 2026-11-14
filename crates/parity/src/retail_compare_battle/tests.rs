@@ -3051,6 +3051,7 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     b.span_gate = SpanGate::Age { accum: 432 };
     b.step_run = (2, 16);
     b.walk_yaw_base = 568;
+    b.caster_cursor = 72;
     // The case-6 table the arrival armed: the yaw has landed.
     b.cam_tween_steps = [0; 9];
     b.captured = vec![None; 8];
@@ -3060,11 +3061,15 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     let app = b.capture_approach_yaw().expect("a walk to place");
     assert_eq!(app.arrive, 568);
     assert_eq!((app.strike, app.target_ground), ([0, 312], [0, 0]));
+    // Still on the walk: its phase is seated with the counter it stood at.
+    assert_eq!(app.walk_phase, Some((568, 72)));
     // The same pass with the staged idle committed (clip `0`, accumulator
-    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`).
+    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`),
+    // with no walk to phase.
     b.caster_clip = 0;
     b.span_gate = SpanGate::Age { accum: 0 };
     assert_eq!(b.capture_approach_yaw().map(|a| a.arrive), Some(568));
+    assert_eq!(b.capture_approach_yaw().and_then(|a| a.walk_phase), None);
     // Its framing endpoint was armed on the pass's starting pair (ring slot
     // `1`) and the heading the pass before left: counter `568`, style `3`,
     // table yaw `568` name heading `0x800`.

@@ -1306,6 +1306,10 @@ impl RetailBattle {
             }),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
+            caster_cursor: active
+                .map(|p| game_anchors::u32_at(ram, p + 0x22C))
+                .filter(|&node| in_ram(node))
+                .map_or(0, |node| game_anchors::u16_at(ram, node + 0x68)),
             caster_latched: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DB)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             swing_reseed_entry: active_actor < 3 && {

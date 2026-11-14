@@ -480,6 +480,10 @@ pub struct RetailBattle {
     pub cam_accum: u32,
     /// The active seat's committed clip `+0x1D9`.
     pub caster_clip: u8,
+    /// The active seat's anim-node cursor (`*(+0x22C) + 0x68`, 12.4
+    /// sixteenths of a keyframe) in the RAM, not taken back to the displayed
+    /// frame as [`Self::clip_cursors`] are.
+    pub caster_cursor: u16,
     /// The active seat's latched raw staged id `+0x1DB` - the byte its last
     /// commit installed, before an art id was rewritten to a dynamic slot.
     pub caster_latched: u8,
