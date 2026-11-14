@@ -119,6 +119,12 @@ impl World {
         if run.phase != arm || !run.busy {
             self.stage_caster_on_arm_pass(arm);
         }
+        // Glare's roll sits inside the pass its arm 2 counts out on
+        // (`jal 0x80056798` at `0x801F6F9C`, past the gate at `0x801F6F30`),
+        // after that pass's frame-driver draw, not on the next pass's head.
+        if run.phase != arm {
+            self.fold_glare_on_its_arm(run.prot_entry, spell_id, run.phase);
+        }
         // A module whose arms' spawns are ported seats each on the pass
         // its arm makes the call.
         if per_arm == Some(run.prot_entry) {
