@@ -817,6 +817,41 @@ fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
     assert_eq!(before, after, "rate 0 froze the clip");
 }
 
+/// A party seat's art install clears its whole history-ring id column
+/// (`sb zero,0x1fb(v0)` over `0..0x20`, `0x8004BCD4..0x8004BCE8`): the ghost
+/// walk's gate fails on every entry until the passes after the commit refill
+/// it, so an art's ghosts go out at the next art and come back a depth at a
+/// time.
+#[test]
+fn an_art_install_clears_the_ghost_ring() {
+    let mut world = pose_test_world();
+    let frame = crate::world::BattleGhostFrame {
+        pose: legaia_anm::player::PoseFrame {
+            bone_outputs: Vec::new(),
+            factor: 0,
+            finished: false,
+        },
+        pos: [0; 3],
+        ghost_eligible: true,
+        clip_key: 0,
+        variant_track: Default::default(),
+        frame: 0,
+    };
+    world.actors[0].battle_pose_history = std::iter::repeat_n(frame, 8).collect();
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xB] = Some(pose_test_clip(0x1B, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    world.actors[0].battle.queued_anim = 0x1B;
+    world.commit_staged_battle_anim(0);
+    assert!(
+        world.actors[0]
+            .battle_pose_history
+            .iter()
+            .all(|f| !f.ghost_eligible),
+        "every ring entry fails the gate after the install"
+    );
+}
+
 // --- trail-keyed test clips -------------------------------------------------
 
 /// A clip with enough parts to carry Vahn's weapon-bone chain

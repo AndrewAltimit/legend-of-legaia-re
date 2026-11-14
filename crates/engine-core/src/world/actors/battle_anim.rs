@@ -1509,6 +1509,16 @@ impl World {
         // before the cursor is the known-art starter, or under the solo
         // latch - read here, ahead of this commit's own store below.
         if q >= 0x10 && self.actors[i].battle_monster_id.is_none() {
+            // The same install clears the seat's whole history-ring id
+            // column (`sb zero,0x1fb(v0)` over `0..0x20`,
+            // `0x8004BCD4..0x8004BCE8`) before the shout: every entry fails
+            // the ghost walk's `id >= 0x11` gate until the passes after this
+            // commit refill it, so an art's ghosts go out at each new art and
+            // come back one ring depth at a time (Tri-Somersault's two at
+            // `step` and `2 * step` passes into the next swing).
+            for f in self.actors[i].battle_pose_history.iter_mut() {
+                f.ghost_eligible = false;
+            }
             let latch = self.battle_ctx.gauge_rearm_latch;
             self.emit_commit_arts_shout(i, latch);
         }
