@@ -1485,9 +1485,13 @@ pub fn slime_divide_side_axis(facing: u16) -> (i32, i32) {
 /// the caster's old seat.
 ///
 /// Retail steps the shake once a battle frame; so does this, on the tick that
-/// opens a frame ([`ModuleCamState::opens_pass`]) and on the passing one.
+/// opens a frame ([`ModuleCamState::opens_pass`]), which reads the word as
+/// the whole pass's drain leaves it. The tick the word runs out on belongs
+/// to a frame whose shake has already been stepped, so it pushes the point
+/// and steps nothing: stepped again there, the caster crossed back over and
+/// stood on the clone, both halves on one side of the old seat.
 /// Measured on `battle_map01_green_slime_divide_mid_cast` (facing `0x800`,
-/// `P = (26, -178)`): the caster at `x = 11, -5, ..` early, `-490` at the
+/// `P = (26, -178)`): the caster at `x = 11, -5, ..` early, `-492` at the
 /// end, the point at `537`, and the clone seated there.
 ///
 /// PORT: overlay_cast_glare_divide_0940_801f78b8 (PROT 0940 `0x50` / `0xAE`; arm 2's shake and split point)
@@ -1511,7 +1515,7 @@ pub fn slime_divide_shake(
         return arm;
     };
     let (ax, az) = slime_divide_side_axis(caster.facing);
-    if st.opens_pass || !held {
+    if st.opens_pass {
         let reach = 0x200 - word;
         let (dx, dz) = ((ax * reach) / 4096, (az * reach) / 4096);
         let (x, z) = if st.split_passes & 1 == 1 {
@@ -1994,6 +1998,17 @@ mod slime_divide_tests {
         let arm = shake(&mut st, 4, 65);
         assert!(arm.hold && arm.caster_write.x.is_none());
         assert_eq!(st.split_passes, 65);
+        // The tick the word runs out on is inside a frame whose shake has
+        // been stepped: it pushes the point to the side the bumped counter
+        // names and leaves the caster on the other.
+        let arm = shake(&mut st, 0, 66);
+        assert!(!arm.hold);
+        assert_eq!(arm.caster_write.x, None);
+        assert_eq!(st.split_passes, 66);
+        assert_eq!(st.split_point, Some([537, -178]));
+        // A frame that opens on the passing tick steps the shake once.
+        st.split_point = Some([26, -178]);
+        st.opens_pass = true;
         let arm = shake(&mut st, 0, 65);
         assert!(!arm.hold);
         assert_eq!(arm.caster_write.x, Some(-485));
