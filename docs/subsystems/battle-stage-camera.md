@@ -937,6 +937,18 @@ and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
 | `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass |
 | past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
 
+The step is not the fight's own from the first pass. The game-mode transition
+`FUN_80016230` zeroes the frame-time ring (`0x80016234..0x80016274`), so the sweep
+opens on the step the transition's last frame left and then on `1` until a pass
+long enough to raise it has been pushed, and the stage loader's pass (the first at
+`0x84` or more, `0x80046F04`) is the last of those. A walked encounter filmed a
+vsync at a time (`autorun_battle_intro_rand.lua`) reads the counter `0x80`, `0x82`,
+`0x83`, `0x84`, the loader's pass, `0x85`, and from there `+3` a pass; both
+PCSX-Redux openings stand on `0x97` at `TR (0, 2384, 5696)`, a whole number of
+steps past `0x85` on a step of `2` and on a step of `3`. Port:
+`BattleCamera::entry_sweep_opening_step` (`ENTRY_FIRST_PASS_STEP`,
+`ENTRY_MEASURED_FROM`); the stage colour ramp takes the same step on those passes.
+
 Two captures of the sparring fight's entry pin it. `v0_1_battle_loading_tetsu`
 (counter `0x84`) reads pitch `60`, `TR (0, 1472, 6912)` - four frames of drift
 from `(0, 1280, 7168)` - with an empty step table. `s5_tetsu_battle` (`0xAF`)
@@ -989,16 +1001,17 @@ white-out holds white and fades in from white, and every other fight does
 the same from black. The loader clears the word after its spawn
 (`0x80051D44`).
 
-The new fade ticks on its spawn pass. Both PCSX-Redux openings
+The new fade first ticks on the pass after its spawn. Both PCSX-Redux openings
 (`gaza2_card_battle_init` at frame step `3`, `cort_evolved_card_battle_init`
 at `2`) hold the block 18 units into its ramp at counter `0x97` - level `25`
-in RAM, `102` and `76` on the displayed frame two passes older - which only
-a first step on the loader's own pass reaches.
+in RAM, `102` and `76` on the displayed frame two passes older - which is the
+passes from `0x85` alone, six on a step of `3` and nine on a step of `2`: the
+loader's own pass leaves the counter at `0x85` and the fade unstepped.
 
 Port: `World::battle_entry_fade_draw`, which `World::screen_fade_draws` leads
 with, so both hosts draw it. The held fade is the stage load still pending;
-the loader's ramp is `BattleState::entry_fade`, spawned and stepped once in
-`World::run_battle_stage_load`, then stepped with the other fade actors.
+the loader's ramp is `BattleState::entry_fade`, spawned in
+`World::run_battle_stage_load` and stepped with the other fade actors from the next pass.
 `legaia_render_kernels::battle_intro_styles::intro_leaves_white` is the
 `_DAT_8007B8FC` store, latched when the transition resolves its style.
 
