@@ -348,22 +348,12 @@ pub fn field_resources(index: &ProtIndex, scene: &Scene) -> Result<SceneResource
     Ok(res)
 }
 
-/// The VRAM a map's base scene runs with, for allocation: its field build,
-/// the effect-texture pool and the field character atlas the hosts layer
-/// with it.
+/// The VRAM a map's base scene runs with, for allocation: its field build
+/// over the resident texture pool the hosts layer under it (the effect
+/// textures and the field character atlas).
 fn occupancy_vram(index: &ProtIndex, res: &SceneResources) -> Vram {
     let mut vram = res.vram.clone();
-    let mut pool = Vram::new();
-    if crate::scene::upload_effect_textures_into_vram(index, &mut pool, true).is_ok() {
-        vram.underlay(&pool);
-    }
-    if let Ok(mut pack) = index
-        .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
-        .and_then(|b| legaia_actor_formats::field_char_textures::parse(&b))
-    {
-        pack.textures.retain(|t| (1..=3).contains(&t.index));
-        pack.upload_to_vram(&mut vram, false);
-    }
+    let _ = crate::scene::underlay_field_texture_pool(index, &mut vram);
     vram
 }
 

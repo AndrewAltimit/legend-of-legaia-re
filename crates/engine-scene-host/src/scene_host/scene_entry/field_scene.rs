@@ -1223,14 +1223,11 @@ impl SceneHost {
                 // TIM covers a pool rect the scene's texels win - `dolk` keeps
                 // its own `(448, 0)` texels on the 1010 halfwords the two
                 // differ on. Writing the pool over the build clobbered them.
-                // Same order as the native window's build (`window/run.rs`).
+                // One step with the native window's build
+                // (`underlay_field_texture_pool`).
                 // Soft-fails (the pool just stays absent).
-                let mut effect_pool = psx_tim::Vram::new();
-                match upload_effect_textures_into_vram(&self.index, &mut effect_pool, true) {
-                    Ok(_) => res.vram.underlay(&effect_pool),
-                    Err(err) => {
-                        eprintln!("[scene] effect-texture VRAM underlay skipped: {err:#}");
-                    }
+                if let Err(err) = underlay_field_texture_pool(&self.index, &mut res.vram) {
+                    eprintln!("[scene] effect-texture VRAM underlay skipped: {err:#}");
                 }
                 self.world.init_scene_animations(&res);
                 // Scene-entry VDF pulse (enhancement): when the scene's VDF
