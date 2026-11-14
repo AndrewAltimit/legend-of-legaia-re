@@ -645,6 +645,9 @@ struct LauncherApp {
     /// Whether [`Self::font`] is the disc's own (vs the built-in one).
     disc_font: bool,
     atlas: Option<UploadedFontAtlas>,
+    /// Atlas rows from a glyph to its shadowless copy (`0` when the whole
+    /// atlas is shadowless).
+    plain_dy: u32,
     solid: (u32, u32, u32, u32),
     disc: Option<DiscInfo>,
     problem: Option<DiscProblem>,
@@ -755,6 +758,7 @@ impl LauncherApp {
             font: legaia_font::Font::placeholder(),
             disc_font: false,
             atlas: None,
+            plain_dy: 0,
             solid: (0, 0, 1, 1),
             disc: None,
             problem,
@@ -868,14 +872,24 @@ impl LauncherApp {
         if self.atlas.is_some() {
             return;
         }
-        let rgba = (!self.dark).then(|| self.font.atlas_rgba_without_shadow());
+        // Black letter shadows smear into dark ink: on a light card, and on
+        // the dark palette's one gold fill (the focused Play). The light
+        // palette draws every glyph from the shadowless atlas; the dark one
+        // stacks that atlas under the shadowed one, and dark-on-gold text
+        // samples the lower copy ([`Canvas::plain_dy`]).
+        let plain = self.font.atlas_rgba_without_shadow();
         let (w, h) = self.font.atlas_dimensions();
+        let (pixels, rows) = if self.dark {
+            let mut both = self.font.atlas_rgba().to_vec();
+            both.extend_from_slice(&plain);
+            self.plain_dy = h;
+            (both, h * 2)
+        } else {
+            self.plain_dy = 0;
+            (plain, h)
+        };
         if let Some(r) = self.win.renderer() {
-            let uploaded = match &rgba {
-                // Black letter shadows smear into dark ink on a light card.
-                Some(pixels) => r.upload_font_atlas(pixels, w, h),
-                None => r.upload_font(&self.font),
-            };
+            let uploaded = r.upload_font_atlas(&pixels, w, rows);
             match uploaded {
                 Ok(a) => self.atlas = Some(a),
                 Err(e) => log::error!("launcher font upload: {e:#}"),
@@ -2668,6 +2682,7 @@ impl LauncherApp {
     }
 
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        c.list_mark = c.draws.len();
         let retail = self.settings.switches.retail;
         let lines = option_lines();
         let shown = visible_lines(c.stage.extra);
@@ -2690,8 +2705,7 @@ impl LauncherApp {
             hits.push((Item::Opt(row), r));
             let focused = self.focus == Item::Opt(row);
             if focused {
-                c.rect(r, FOCUS);
-                c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+                c.focus_row(r);
             }
             let muted = retail && row.overridden_by_retail();
             let ink = if muted { FAINT } else { INK };
@@ -2742,6 +2756,7 @@ impl LauncherApp {
     }
 
     fn controls_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        c.list_mark = c.draws.len();
         let mapping = self.rebind.mapping();
         let waiting = self.awaiting_key();
         let mut y = panel.y + LIST_INSET;
@@ -2757,8 +2772,7 @@ impl LauncherApp {
             hits.push((item, r));
             let focused = self.focus == item;
             if focused {
-                c.rect(r, FOCUS);
-                c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+                c.focus_row(r);
             }
             c.text(panel.x + 10, y, button_label(row.button.name()), INK);
             // Key names take the key ink the play window's F12 panel and
@@ -2791,8 +2805,7 @@ impl LauncherApp {
         let r = Rect::new(panel.x + 4, y - 1, panel.w - 8, ROW_PITCH);
         hits.push((Item::BindReset, r));
         if self.focus == Item::BindReset {
-            c.rect(r, FOCUS);
-            c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+            c.focus_row(r);
         }
         c.text(panel.x + 10, y, "All keys and buttons back to default", INK);
         y += ROW_PITCH;
@@ -2802,6 +2815,7 @@ impl LauncherApp {
     }
 
     fn recent_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        c.list_mark = c.draws.len();
         let shown = visible_lines(c.stage.extra);
         let scroll = self
             .recent_scroll
@@ -2824,8 +2838,7 @@ impl LauncherApp {
             if entry.kind != RecentKind::Note {
                 hits.push((item, r));
                 if focused {
-                    c.rect(r, FOCUS);
-                    c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+                    c.focus_row(r);
                 }
             }
             let ink = if entry.kind == RecentKind::Note {
@@ -3031,8 +3044,10 @@ impl LauncherApp {
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
+            plain_dy: self.plain_dy,
             stage,
             draws: Vec::new(),
+            list_mark: 0,
         };
         let mut hits = Vec::new();
         self.layout(&mut canvas, &mut hits);
@@ -3083,8 +3098,10 @@ impl LauncherApp {
             font: &self.font,
             solid: self.solid,
             condense: !self.disc_font,
+            plain_dy: self.plain_dy,
             stage: st,
             draws: Vec::new(),
+            list_mark: 0,
         };
         let mut hits = Vec::new();
         self.layout(&mut canvas, &mut hits);
@@ -3470,8 +3487,14 @@ struct Canvas<'a> {
     /// Set the built-in font 6 px a character instead of its 8 (its glyphs
     /// are 5 px wide; the wider pitch is for the game HUD's fallback).
     condense: bool,
+    /// Atlas rows from a glyph to its shadowless copy, which dark-on-gold
+    /// text ([`Role::OnAccent`]) is drawn from.
+    plain_dy: u32,
     stage: Stage,
     draws: Vec<TextDraw>,
+    /// Where the list being drawn starts in [`Self::draws`]: a focused
+    /// row's band goes in there ([`Self::focus_row`]).
+    list_mark: usize,
 }
 
 impl Canvas<'_> {
@@ -3510,6 +3533,17 @@ impl Canvas<'_> {
             src: self.solid,
             color: self.palette.get(color).to_f32(),
         });
+    }
+
+    /// The focused row's mark: a lighter band with a gold bar down its left
+    /// edge, drawn *under* the list's rows. Rows sit closer than the font's
+    /// descenders reach, so a band drawn in row order cut the bottom off the
+    /// row above it.
+    fn focus_row(&mut self, r: Rect) {
+        let above = self.draws.split_off(self.list_mark.min(self.draws.len()));
+        self.rect(r, FOCUS);
+        self.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+        self.draws.extend(above);
     }
 
     fn rect(&mut self, r: Rect, color: Role) {
@@ -3568,7 +3602,13 @@ impl Canvas<'_> {
         {
             let (gx, gy) = (x + self.pitch(d.dst.0) * k, y + d.dst.1 * k);
             let (gw, gh) = (d.dst.2 as i32 * k, d.dst.3 as i32 * k);
+            let src_dy = if color == Role::OnAccent {
+                self.plain_dy
+            } else {
+                0
+            };
             self.draws.push(TextDraw {
+                src: (d.src.0, d.src.1 + src_dy, d.src.2, d.src.3),
                 dst: (
                     st.origin.0 + st.px(gx),
                     st.origin.1 + st.px(gy),
@@ -4372,8 +4412,10 @@ mod tests {
             font,
             solid: (0, 0, 1, 1),
             condense: true,
+            plain_dy: 0,
             stage: BASE_STAGE,
             draws: Vec::new(),
+            list_mark: 0,
         }
     }
 
@@ -4485,6 +4527,62 @@ mod tests {
         assert!(s.ends_with("..."));
         assert!(c.width(&s) <= 120);
         assert_eq!(c.ellipsize_right("short", 120), "short");
+    }
+
+    /// The focused row's band is drawn under every row of its list: no
+    /// quad drawn after it is a row glyph that started above the band, which
+    /// is how the band used to cut the bottom off the row above.
+    #[test]
+    fn a_focus_band_never_covers_the_row_above_it() {
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        let font = legaia_font::Font::placeholder();
+        let focus_ink = legaia_app_theme::palette(true).get(FOCUS).to_f32();
+        for row in [OptionRow::WholeStepScale, OptionRow::Theme] {
+            app.focus = Item::Opt(row);
+            app.reveal_focus();
+            let mut c = canvas(&font);
+            let mut hits = Vec::new();
+            app.layout(&mut c, &mut hits);
+            let band = c
+                .draws
+                .iter()
+                .position(|d| d.src == c.solid && d.color == focus_ink)
+                .expect("the focused row draws its band");
+            let top = c.draws[band].dst.1;
+            let (x0, x1) = (
+                c.draws[band].dst.0,
+                c.draws[band].dst.0 + c.draws[band].dst.2 as i32,
+            );
+            let glyphs_above =
+                |d: &TextDraw| d.src != c.solid && d.dst.1 < top && d.dst.0 >= x0 && d.dst.0 < x1;
+            assert!(
+                c.draws[band..].iter().any(glyphs_above),
+                "{row:?}: the rows above are drawn after the band"
+            );
+            assert!(
+                !c.draws[..band]
+                    .iter()
+                    .any(|d| glyphs_above(d) && d.dst.1 + d.dst.3 as i32 > top),
+                "{row:?}: a glyph of the row above lies under the band"
+            );
+        }
+    }
+
+    /// Dark-on-gold text takes its glyphs from the shadowless copy of the
+    /// atlas; every other ink keeps the shadowed one.
+    #[test]
+    fn text_on_the_gold_fill_draws_without_letter_shadows() {
+        let font = legaia_font::Font::placeholder();
+        let mut c = canvas(&font);
+        c.plain_dy = 64;
+        c.text(0, 0, "Play", INK);
+        let shadowed: Vec<_> = c.draws.drain(..).map(|d| d.src).collect();
+        c.text(0, 0, "Play", ON_GOLD);
+        let plain: Vec<_> = c.draws.iter().map(|d| d.src).collect();
+        assert_eq!(shadowed.len(), plain.len());
+        for (a, b) in shadowed.iter().zip(&plain) {
+            assert_eq!((a.0, a.1 + 64, a.2, a.3), *b);
+        }
     }
 
     #[test]
@@ -4802,6 +4900,7 @@ mod tests {
     fn canvas_for(font: &legaia_font::Font, condense: bool) -> Canvas<'_> {
         Canvas {
             condense,
+            plain_dy: 0,
             ..canvas(font)
         }
     }
