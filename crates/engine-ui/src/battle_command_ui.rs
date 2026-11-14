@@ -172,9 +172,27 @@ impl ChipCluster {
         (x + PLATE_CAP_W, y + CHIP_LABEL_DY)
     }
 
-    /// The D-pad glyph's drawn rect, centred on the cluster.
-    pub const fn dpad_rect(&self) -> (i32, i32, u32, u32) {
-        (self.centre.0 - 8, self.centre.1 - 8, DPAD_DRAW, DPAD_DRAW)
+    /// The anchor retail's command flow passes the D-pad glyph leaf for this
+    /// cluster: eight left of the centre, four above it. The round prompt's
+    /// `(160, 92)` gives `(0x98, 0x58)`, the ring's `(228, 70)` `(0xDC, 0x42)`.
+    pub const fn dpad_anchor(&self) -> (i16, i16) {
+        ((self.centre.0 - 8) as i16, (self.centre.1 - 4) as i16)
+    }
+
+    /// The D-pad glyph's drawn rect: the span of the quad
+    /// `legaia_engine_battle_vm::battle_party_panel::dpad_glyph` builds at
+    /// [`Self::dpad_anchor`].
+    pub fn dpad_rect(&self) -> (i32, i32, u32, u32) {
+        let (ax, ay) = self.dpad_anchor();
+        let q = legaia_engine_battle_vm::battle_party_panel::dpad_glyph(ax, ay);
+        let (x0, y0) = q.xy[0];
+        let (x1, y1) = q.xy[3];
+        (
+            i32::from(x0),
+            i32::from(y0),
+            (x1 - x0) as u32,
+            (y1 - y0) as u32,
+        )
     }
 }
 
@@ -524,7 +542,13 @@ pub fn battle_command_chip_sprites(
                 dw * scale,
                 dh * scale,
             ),
-            src: atlas.dpad,
+            // The leaf's quad runs its UVs `0..16` over fifteen pixels, a
+            // texel step of `16 / 15`, so pixel `k` samples texel
+            // `floor(k * 16 / 15)` = `k`: the top-left 15x15 texels one to
+            // one, as the arts-entry diamond draws the same leaf
+            // (`arts_input::DPAD_SIZE`). The full 16x16 rect scaled into the
+            // seat resamples the outline.
+            src: (atlas.dpad.0, atlas.dpad.1, dw, dh),
             color: CHIP_COLOR,
         });
     }
@@ -965,6 +989,26 @@ mod tests {
         assert_eq!(bare.len(), plates.len(), "no Rot cell, no stamp");
     }
 
+    /// Each cluster hands the D-pad leaf the anchor retail's command flow
+    /// passes it, and the drawn rect is that leaf's quad.
+    #[test]
+    fn the_dpad_glyph_is_the_leafs_quad_at_retails_anchor() {
+        use legaia_engine_battle_vm::battle_party_panel::{
+            DPAD_ANCHOR_PROMPT, DPAD_ANCHOR_RING, dpad_glyph,
+        };
+        for (c, anchor) in [
+            (CLUSTER_TOP_LEVEL, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMIT_CONFIRM, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMAND, DPAD_ANCHOR_RING),
+        ] {
+            assert_eq!(c.dpad_anchor(), anchor);
+            let q = dpad_glyph(anchor.0, anchor.1);
+            let (x, y, w, h) = c.dpad_rect();
+            assert_eq!((x as i16, y as i16), q.xy[0]);
+            assert_eq!((x as i16 + w as i16, y as i16 + h as i16), q.xy[3]);
+        }
+    }
+
     #[test]
     fn top_level_pair_reproduces_the_begin_run_capture() {
         let c = CLUSTER_TOP_LEVEL;
@@ -1095,7 +1139,12 @@ mod tests {
             // for the 36-wide prompt), plus the single glyph.
             assert_eq!(sprites.len(), n * 5 + 1, "{phase:?}");
             let g = sprites.last().unwrap();
-            assert_eq!(g.src, title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD);
+            // The glyph is `FUN_801DB8F4`'s quad: sixteen texels of UV over
+            // fifteen pixels, which the GPU samples as the cell's top-left
+            // 15x15 one to one - the crop the arts-entry diamond draws.
+            let (u, v, _, _) = title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD;
+            let (w, h) = crate::arts_input::DPAD_SIZE;
+            assert_eq!(g.src, (u, v, w, h), "{phase:?} glyph resampled");
             assert_eq!(g.dst, glyph, "{phase:?} glyph drifted");
         }
     }

@@ -498,8 +498,12 @@ falls back to a labelled tag for that badge only.
 
 ### The command chips
 
-Chips are blue plate runs around a D-pad glyph - texels `(0, 112)` 16x16,
-sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. Every
+Chips are blue plate runs around a D-pad glyph - texels `(0, 112)`,
+sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. The quad
+is `FUN_801DB8F4`'s (`battle_party_panel::dpad_glyph`): its UVs run `0..16` over
+those fifteen pixels, so pixel `k` samples texel `floor(k * 16 / 15)` = `k`, and
+the glyph is the cell's top-left 15x15 texels one to one. Both clusters and the
+arts-entry diamond draw that crop. Every
 chip in one cluster is built at the **same** interior width. The label is
 left-aligned at the interior's left edge, four rows down.
 
