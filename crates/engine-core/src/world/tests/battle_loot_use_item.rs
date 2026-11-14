@@ -727,6 +727,31 @@ fn tick_status_effects_drains_hp() {
     assert_eq!(world.actors[0].battle.hp, 90);
 }
 
+/// Issue #616: the round-open Venom tick throws its numeral over the
+/// poisoned body, as retail's ticker files each non-zero drain on the
+/// damage-number ring (`FUN_801E752C`, `0x801E76CC..0x801E7754`). A drain of
+/// `0` (a max HP under 32) pushes nothing.
+#[test]
+fn a_venom_tick_throws_its_damage_numeral() {
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+    let mut world = World::new();
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.max_hp = 160;
+    world.actors[1].battle.hp = 10;
+    world.actors[1].battle.max_hp = 16;
+    world.battle.status_effects.apply(0, StatusKind::Venom);
+    world.battle.status_effects.apply(1, StatusKind::Venom);
+    world.tick_status_effects();
+    assert_eq!(world.actors[0].battle.hp, 95, "160 >> 5");
+    assert_eq!(world.actors[1].battle.hp, 10, "16 >> 5 is 0");
+    let fx = world.drain_battle_hit_fx();
+    assert_eq!(fx.len(), 1, "{fx:?}");
+    assert_eq!((fx[0].target_slot, fx[0].amount), (0, 5));
+    assert!(!fx[0].is_heal && !fx[0].is_crit);
+    assert_eq!(world.battle_ctx.readout_pushes, 1);
+    assert_eq!(world.battle_ctx.cast_readout_cursor, 1);
+}
+
 #[test]
 fn reset_party_ap_refills_all_three_gauges() {
     let mut world = World::new();
