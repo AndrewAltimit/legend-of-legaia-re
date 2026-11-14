@@ -495,7 +495,7 @@ stay clear; turned sideways or in fullscreen it is back over the picture.
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
 double-click puts the framing back to retail, centred on the party (the
 browser play page's **Reset camera** button does the same, and also leaves the
-`F3` debug vantage). All three, and the distance preset, sit out while a cutscene has the camera, the ending credits' vignettes included.
+`F3` debug vantage). All three, and the distance preset, sit out while a cutscene or a conversation has staged its own shot (the ending credits' vignettes, a character meeting another in a talk), so the scene is framed as authored. When the shot lets you go, the camera stays on it until you walk, then eases back to the follow view, and a far preset pulls back gradually rather than jumping. The field camera holds still while the pause menu is open.
 
 **Window toggles.** These are the port's enhancements and conveniences; each
 enhancement has a retail-faithful off position
