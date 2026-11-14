@@ -2184,15 +2184,19 @@ impl World {
                     });
                 self.casting.pending_summon_spawn = Some((spell_id, at));
             }
-            if !arm.others_write.is_empty() && !capture_held {
+            if !arm.others_write.is_empty() && (!capture_held || arm.others_every_pass) {
                 let monsters = self.party.party_count..self.actors.len() as u8;
+                let skips =
+                    |slot: u8| arm.others_skip_pair && (slot == caster_slot || slot == victim_slot);
                 for slot in 0..self.party.party_count {
-                    if !arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0 {
+                    if !skips(slot)
+                        && (!arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0)
+                    {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }
                 for slot in monsters {
-                    if self.actors[usize::from(slot)].battle.hp > 0 {
+                    if !skips(slot) && self.actors[usize::from(slot)].battle.hp > 0 {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }

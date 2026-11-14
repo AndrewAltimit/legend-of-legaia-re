@@ -204,6 +204,13 @@ pub struct CaptureCamArm {
     /// [`Self::others_write`] skips a downed party seat as it does a downed
     /// monster (PROT 0955 `0x70` walks seven seats behind one HP test).
     pub others_live_only: bool,
+    /// [`Self::others_write`] is made on every pass of the arm, held or not
+    /// (PROT 0940 `0x3C`'s arm 1 walks both rows ahead of its gate).
+    pub others_every_pass: bool,
+    /// [`Self::others_write`] walks past the caster and the victim (PROT
+    /// 0940 `0x3C`'s arm 1: `beq a0,s0` on the party row, `beq a0,v0` on
+    /// the monster row).
+    pub others_skip_pair: bool,
     /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
     pub vram_move: Option<super::ModuleVramMove>,
     /// PROT 0935's arms 4 and 5: the pass's rock pair at a point off the
@@ -832,16 +839,38 @@ pub fn ultra_charge_camera(
                 drift: None,
                 hold: false,
                 next: Some(1),
+                // Cort's clip `6` runs at half rate (`li v0,0x4` /
+                // `sb v0,0x21d(s1)` at `0x801F6AF0..0x801F6AF4`, the `0xB5`
+                // branch only).
+                caster_write: CaptureSeatWrite {
+                    rate: (seats.first_monster == 0xB5).then_some(4),
+                    ..Default::default()
+                },
                 ..Default::default()
             }
         }
-        1 => CaptureCamArm {
-            shot: None,
-            drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
-            hold: st.countdown.drain_above(0),
-            next: Some(0xFF),
-            ..Default::default()
-        },
+        1 => {
+            let hold = st.countdown.drain_above(0);
+            CaptureCamArm {
+                shot: None,
+                drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
+                hold,
+                next: Some(0xFF),
+                // The rate again on every pass in the `0xB5` formation
+                // (`0x801F6C1C..0x801F6C30`); the pass that spends the
+                // countdown cuts the caster back to idle with the bump
+                // (`sb zero,0x1da` at `0x801F6D18`, `+0x1DC += 1` at
+                // `0x801F6D14..0x801F6D20`). Until then the staged clip
+                // stays staged and wraps at each natural end.
+                caster_write: CaptureSeatWrite {
+                    rate: (seats.first_monster == 0xB5).then_some(4),
+                    stage: (!hold).then_some(0),
+                    restage: !hold,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        }
         _ => CaptureCamArm::default(),
     }
 }
@@ -1550,31 +1579,58 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         1..=3 => {
             let d = if phase == 1 { drift(0, 0, 2, -8) } else { pull };
             let hold = st.countdown.drain_above(0);
-            if hold {
-                return CaptureCamArm {
-                    shot: None,
-                    drift: Some(d),
-                    hold: true,
-                    next: Some(phase),
+            let mut arm = CaptureCamArm {
+                drift: Some(d),
+                hold,
+                next: Some(phase),
+                ..Default::default()
+            };
+            if phase == 1 {
+                // Every pass of arm 1, ahead of its gate: Zora's rate `4`
+                // (`0x801F6C90..0x801F6C9C`), each party seat but the
+                // victim and each monster seat but the caster hidden
+                // (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F6CB8..0x801F6D80`),
+                // and the caster's idle staged with no bump
+                // (`sb zero,0x1da(s4)` at `0x801F6D94`), which the cast
+                // clip's natural end commits.
+                arm.others_write = super::v_windhash::HIDDEN;
+                arm.others_every_pass = true;
+                arm.others_skip_pair = true;
+                arm.caster_write = CaptureSeatWrite {
+                    rate: (seats.caster_monster == 0xA9).then_some(4),
+                    stage: Some(0),
                     ..Default::default()
                 };
+            }
+            if hold {
+                return arm;
             }
             if phase < 3 {
                 st.countdown.add(1 << 7);
             }
-            let shot = (phase == 1).then(|| ModuleShot {
-                angles: [0, yaw_from(0x800, seats.victim.facing), 0],
-                tr: [0, 0x400, 0xA00],
-                focus: focus_on(seats.victim),
-                frames: 1,
-            });
-            CaptureCamArm {
-                shot,
-                drift: Some(d),
-                hold: false,
-                next: (phase < 3).then_some(phase + 1),
-                ..Default::default()
+            if phase == 1 {
+                arm.shot = Some(ModuleShot {
+                    angles: [0, yaw_from(0x800, seats.victim.facing), 0],
+                    tr: [0, 0x400, 0xA00],
+                    focus: focus_on(seats.victim),
+                    frames: 1,
+                });
+                // The cut hides the caster and shows the victim
+                // (`sw zero,0x4(s4)` / `sb 0xFF,0x21c(s4)`,
+                // `sw 0x20080200,0x4(s6)` / `sb zero,0x21c(s6)` at
+                // `0x801F6EBC..0x801F6ED0`). A monster whose colour word
+                // reads zero does not tick, so the caster stands on the
+                // keyframe the cut found it on until the Done band shows
+                // it: `battle_korb2_medusa_glare_mid_cast`'s recording
+                // holds Medusa's clip `8` at cursor `1024` through arms 2
+                // and 3.
+                arm.caster_write.colour = Some(0);
+                arm.caster_write.render_flag = Some(0xFF);
+                arm.victim_write = super::v_windhash::SHOWN;
             }
+            arm.hold = false;
+            arm.next = (phase < 3).then_some(phase + 1);
+            arm
         }
         _ => CaptureCamArm::default(),
     }

@@ -926,12 +926,19 @@ impl World {
         // accumulated total on live HP, leaving the bar drained and the
         // SM parked in `0x51` for good.
         // PORT: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
+        //
+        // A capture caster's clip is the same case with no stage latch: the
+        // module staged it once and left the byte, and the natural end
+        // commits that byte again until the module stores another (Ultra
+        // Charge's clip `7` wraps through the whole of arm 1).
         let restaged = staged_done.is_some_and(|id| {
             let b = &self.actors[i].battle;
             b.queued_anim == id
                 && b.current_anim == id
-                && b.flag_bits
+                && (b
+                    .flag_bits
                     .has(legaia_engine_battle_vm::battle_action::ActorFlags::ADVANCE_DONE)
+                    || self.capture_caster_clip_loops(i, id))
         });
         if restaged {
             self.commit_staged_battle_anim_at_boundary(i);

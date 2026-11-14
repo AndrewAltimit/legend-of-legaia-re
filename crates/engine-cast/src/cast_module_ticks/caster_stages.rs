@@ -434,6 +434,36 @@ pub fn capture_module_walks(prot_entry: u32, action_id: u8) -> bool {
         .any(|(e, ids)| *e == prot_entry && ids.contains(&action_id))
 }
 
+/// The capture-class bodies whose staged caster clip **loops**, as `(PROT
+/// entry, action ids)`.
+///
+/// The anim tick's natural end commits whatever `+0x1DA` holds
+/// (`FUN_80047430`, `0x80047B30..0x80047B58`: bit 2 of `+0x1DC` zeroes the
+/// byte first, and the action SM routes a capture cast past the one state
+/// that raises it), so a clip a module staged and left staged re-commits
+/// from its first keyframe until the module stores another byte. The bodies
+/// here do exactly that, and their port makes the closing store:
+///
+/// * PROT 0962 `0xA5` (Ultra Charge) - arm 0 stages `7` (or `6`) with the
+///   bump and arm 1 runs its whole countdown before `sb zero,0x1da` with the
+///   bump on its pass (`0x801F6D14..0x801F6D20`).
+///   `nilboa_koru_pre_ultra_charge`'s recording wraps clip `7` at cursor
+///   `464` three times through the arm.
+///
+/// A body whose closing store is not ported stays off the list: its clip
+/// plays once and the pair converges on idle.
+pub const CAPTURE_CASTER_CLIP_LOOPS: &[(u32, &[u8])] = &[(962, &[0xA5])];
+
+/// Whether the caster clip PROT `prot_entry`'s body stages for `action_id`
+/// re-commits at its natural end ([`CAPTURE_CASTER_CLIP_LOOPS`]).
+///
+/// REF: FUN_80047430 (`0x80047B30..0x80047B58`, the natural-end commit)
+pub fn capture_caster_clip_loops(prot_entry: u32, action_id: u8) -> bool {
+    CAPTURE_CASTER_CLIP_LOOPS
+        .iter()
+        .any(|(e, ids)| *e == prot_entry && ids.contains(&action_id))
+}
+
 /// The module arm whose pass stages each of the clips
 /// [`capture_caster_stages`] returns for the same cast, where the rows place
 /// them ([`CasterStageRow::arms`]); `None` for a body whose clips replay at
@@ -509,6 +539,10 @@ mod caster_stage_tests {
                 assert_eq!(arms.len(), clips.len(), "PROT {}", r.prot_entry);
             }
         }
+        // The one body whose staged clip loops.
+        assert!(capture_caster_clip_loops(962, 0xA5));
+        assert!(!capture_caster_clip_loops(962, 0xA4));
+        assert!(!capture_caster_clip_loops(940, 0x3C));
         // Bodies that stage nothing on the caster.
         assert_eq!(capture_caster_stages(945, 0x54, 0, 0), None);
         assert_eq!(capture_caster_stages(946, 0x56, 0, 0), None);

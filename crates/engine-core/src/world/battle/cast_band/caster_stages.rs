@@ -651,6 +651,10 @@ impl World {
             slot,
             clips,
             at_arms: if placed { at_arms } else { Vec::new() },
+            loops: placed
+                && legaia_engine_cast::cast_module_ticks::capture_caster_clip_loops(
+                    entry, spell_id,
+                ),
             cursor: 0,
             approach,
             phase: if approach.is_some() {
@@ -934,6 +938,18 @@ impl World {
         };
         self.casting.caster_stages = Some(run);
         gate
+    }
+
+    /// Whether seat `i` is a capture caster on a clip its module staged and
+    /// left staged, which the natural end re-commits
+    /// ([`CasterStageRun::loops`]).
+    pub(in crate::world) fn capture_caster_clip_loops(&self, i: usize, clip: u8) -> bool {
+        self.casting.caster_stages.as_ref().is_some_and(|run| {
+            run.loops
+                && usize::from(run.slot) == i
+                && run.phase == CasterStagePhase::Module
+                && run.clips.get(run.cursor) == Some(&clip)
+        })
     }
 
     /// The module's arm `arm` passed this tick: stage the caster clips the

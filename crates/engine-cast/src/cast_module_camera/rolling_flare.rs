@@ -88,6 +88,12 @@ pub fn rolling_flare_camera(
             } else {
                 st.countdown.add(1 << 6);
                 arm.folds_hit = true;
+                // The hit pass lets the caster's clip `8` off its park and
+                // stages the idle behind it (`sb zero,0x21b` /
+                // `sh zero,0x176` / `sb zero,0x1da` at
+                // `0x801F8000..0x801F8008`): the clip plays out through
+                // arm 4 and the idle commits at its natural end.
+                arm.caster_write.loop_release = true;
             }
         }
         4 => {

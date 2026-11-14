@@ -51,6 +51,10 @@ pub struct CasterStageRun {
     /// ([`legaia_engine_cast::cast_module_ticks::capture_caster_stage_arms`]).
     /// A placed clip does not hold the band: the arms run on while it plays.
     pub at_arms: Vec<u8>,
+    /// The staged clip re-commits at its natural end until the module
+    /// stores another byte
+    /// ([`legaia_engine_cast::cast_module_ticks::capture_caster_clip_loops`]).
+    pub loops: bool,
     /// Index of the clip being staged / waited on.
     pub cursor: usize,
     /// The seat the caster walks into reach of before the first stage

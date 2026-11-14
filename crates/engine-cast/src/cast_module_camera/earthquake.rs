@@ -220,6 +220,11 @@ pub fn earthquake_camera(
                 return arm;
             }
             arm.caster_write.render_flag = Some(0);
+            // The pass releases the cast clip's park beside the idle stage
+            // (`sb zero,0x21b` / `sh zero,0x176` at `0x801F7A80..0x801F7A84`,
+            // ahead of `sb zero,0x1da`): the clip runs on from its window
+            // to its natural end through arm 6 and commits the idle there.
+            arm.caster_write.loop_release = true;
             arm.folds_hit = true;
         }
         6 => {
