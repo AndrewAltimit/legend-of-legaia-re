@@ -1318,6 +1318,16 @@ draws it takes.
   behind every capture, so the entry takes neither
   ([the seat order](#the-seat-order-is-the-captures)) and the fight's first
   draw is the stream's first.
+- A stream whose replay seats a monster the capture does not hold is another
+  fight. The gate reads the acting seat alone, so a round ahead of the phase
+  that cast Divide or Clone still reaches it, with the twin on the field. The
+  search keeps such a run as a fallback while the remaining streams are tried
+  (`EngineBattle::seated_monsters` against the capture's seat count), and an
+  [undrift](#a-push-the-capture-already-holds) re-run that seats more than the
+  first run did is refused: `battle_map01_green_slime_strike`, a lone Green
+  Slime, reached its phase with one slime and its re-run, seeded on other
+  ground, had the slime divide two rounds earlier (plaque "Green Slime A").
+  `LEGAIA_RC_SEED_TRACE=1` prints the count as `seated=`.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition
