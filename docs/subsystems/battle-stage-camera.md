@@ -1702,6 +1702,37 @@ What still loses, by film (grade `capture`):
 - **Not read further:** Plasma Strike's arm 5 hits and Fatal Decision's three extras in arm 12,
   both in capture arms that now overrun.
 
+<a id="where-a-slow-frames-vsyncs-go"></a>
+
+**Where a slow frame's vsyncs go.** No battle routine waits on its own: no battle overlay
+calls `VSync` (`FUN_8005FB84`) or `DrawSync` (`FUN_80058104`), and the forced step `gp+0x5D8`
+and the floor `0x8007B9D8` have no writer that runs in a battle (`jal` scan of every image,
+`find-gp-relative-refs.py 0x5d8 --prot` and `--va 0x8007b9d8 --prot`). So a battle frame that
+runs past its step does so on its cost alone, and the slow frames the films part on are work
+and the CD stop watch, read off `--cd-trace` recordings
+([`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)'s frame split):
+
+- **Tri-Somersault's `0x1E`** (`210` vsyncs over its steps). The three arts-voice clips
+  (`ReadS` `47`, `208` and `394` vsyncs in, `Pause` at `130`, `284` and `590`) poll `840` to
+  `1040` times a frame. Their frames' work is `700` to `940` hblanks, the polls take them to
+  `2000`..`2600`, eight to eleven vsyncs a step-`4` frame. Off the law a loaded frame runs one
+  vsync past its step (`587` ticks for `734`); under it the state runs `722`.
+- **Element Strike's arms 6 and 7** (`battle_rugi_rogue_pre_rogue_flame`). Rogue's line polls
+  from arm 1 to the middle of arm 7. Through arms 1 to 5 the frames' work is `225` to `295`
+  and they cost `630` to `815`, inside step `4`; the burning bodies of arms 6 and 7 lift the
+  work to `780`..`1000`, and the polls take the frames to `2100`..`2800`. The golem's clip
+  gains `8` a pass on both sides (rate `4`), and its `56` passes span `483` vsyncs in retail.
+  A capture band's line loads the frame at the item's floor by default, so its frames run
+  four or five vsyncs; priced from their polygons (opt-in) they load by their work.
+- **The Super Arts' slow motion** is [a party member's ghosts](#a-party-members-ghosts): a
+  cost the engine prices, now on the default.
+- **The monster strikes' step-`4` passes** (Neo Grude, Nova, Gel Frog). Their frames sit
+  at the clamp, `690` to `720` hblanks, and a pass reads `4` only when its own frame passes
+  `0x2D0` raw: a cost within some `30` of the rung, which no table row resolves. The camera
+  gains `yaw_inc * step` a pass on both sides.
+
+Grade `disassembly` for the absence of a wait, `capture` for the four splits.
+
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
 restarts somewhere no `SCUS_942.54` store shows (only its increment at
@@ -2074,8 +2105,10 @@ unfinished parts of every effect scene, the effect pool's live children
 (`effect_pool_cost`), and for each ghost `battle_afterimage::plan_ghosts` plans (the
 plan both hosts draw) its body's triangles at `.092` (`ghost_draw_cost`; the scene
 host reads a monster's count off its archive mesh, `MonsterMesh::triangle_count`). A
-body whose count the world does not hold, a party member's assembled form, keeps the
-flat `GHOST_DRAW_COST`. The strike rows
+party member's ghost costs the objects its seat draws (the model table's drawn set over
+the assembled form's triangles, `Actor::battle_object_triangles`, counted at the form's
+install), and a body whose count the world does not hold keeps the flat
+`GHOST_DRAW_COST` ([a party member's ghosts](#a-party-members-ghosts)). The strike rows
 `0x1E..=0x20` of a lone member and a full party are the strike recordings' frames with
 no part live (`393` / `389` / `386` and `622` / `596` / `596`); the library's
 full-party `700` and `667` held a party strike's load in the base. Nighto's strike is
@@ -2084,6 +2117,23 @@ frames from `392` to `579` in retail, its step goes from `2` to `3` thirty-odd v
 in, and the yaw counter gains `4` a pass from there. On the base rows alone the
 engine's ran at `2` throughout and its yaw fell `16` units behind; with the load the
 film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
+
+<a id="a-party-members-ghosts"></a>
+
+**A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
+ghosts of the acting member, and each costs about what a monster's body of the same size
+does. PCSX-Redux recordings of the three Super Arts on a full party
+(`battle_jou_party_vahn_tri_somersault_super_open`, `_gala_super_ironhead_super_open`,
+`_noa_dragon_fangs_super_open`, `--ghost-trace --gpu-cost`) drop `90` to `105` hblanks a
+ghost on the passes the slow motion's ghosts go (Tri-Somersault's `0x1E` from about `800`
+to `600`), and the finisher's rise `140` a ghost. So the ghost passes cost over `0x2D0` and
+run step `4`. Costed at the flat `36` a ghost the engine's read `694` and ran `3`; the pass
+that leaves the slow motion ran three vsyncs where retail's runs four, the flinch cursor the
+juggle counter reads ([a party strike's damage](../tooling/cast-sequence-oracle.md#a-party-strikes-damage))
+came one frame short. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`,
+Noa's `1536` over the whole form) the passes read `4`, and the chain finishers' `0x1F` and
+`0x20` with them. Grade `disassembly` for the walk (`FUN_80049348` re-runs
+`FUN_80048A08` per ghost), `capture` for the costs.
 
 Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
 `0x2B` frames sit at `504` to `510` with both ghosts up, on the edge of `0x1FF`, and the
