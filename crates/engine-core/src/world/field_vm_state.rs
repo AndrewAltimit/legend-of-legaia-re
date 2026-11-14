@@ -25,6 +25,13 @@ pub struct FieldVmState {
     /// semantics (an initial SEAT written through the channel ctx) without
     /// touching the live free-roam / cutscene behaviour of the same op.
     pub(crate) entry_prerun: bool,
+    /// `true` while [`crate::world::World::seed_object_channels`] runs the
+    /// object binds' prologue slices (retail `FUN_8003A55C`, called inside
+    /// `FUN_8003AEB0`'s spawn bracket). With [`Self::entry_prerun`] it makes
+    /// up the scene word `*(_DAT_801C6EA4) + 8` the dispatcher's
+    /// halted-target early-out reads
+    /// ([`legaia_engine_vm::field::FieldHaltHost::spawn_bracket`]).
+    pub(crate) object_prerun: bool,
     /// The placement slot whose scene-entry pre-run slice is executing: the
     /// spawn loop's list tail, the point a `0x23` / `4C 51` relink lands
     /// when nodes past it are not yet spawned
@@ -259,6 +266,7 @@ impl FieldVmState {
             mode_flags: 0,
             submode_context: [0; legaia_engine_field::field_submode::SUBMODE_CONTEXT_WORDS],
             entry_prerun: false,
+            object_prerun: false,
             prerun_running_slot: None,
             respawn_rerun: false,
             eased_moves: Vec::new(),

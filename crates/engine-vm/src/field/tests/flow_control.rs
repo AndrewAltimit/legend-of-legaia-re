@@ -391,6 +391,27 @@ fn extended_halt_target_returns_halt() {
 }
 
 #[test]
+fn extended_op_on_halted_target_runs_inside_the_spawn_bracket() {
+    // `suimon` P1[4]'s spawn section walks its own actor (`41 05 01`) and
+    // then hides it (`CC 0E 40 00 00 ..`). The load slice runs inside
+    // `FUN_8003AEB0`'s spawn bracket (`*(_DAT_801C6EA4) + 8 = 1`), which
+    // the halted-target early-out reads at `0x801DE920..0x801DE930`, so the
+    // op lands on the walking actor instead of parking the section.
+    let mut host = TestHost {
+        spawn_bracket: true,
+        ..Default::default()
+    };
+    let mut ctx = FieldCtx {
+        flags: 0x400,
+        script_id: 0x0E,
+        ..Default::default()
+    };
+    let r = step(&mut host, &mut ctx, &[0xB1, 0x0E, 21], 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 3 });
+    assert_eq!(ctx.flags, 0x400 | (1 << 21));
+}
+
+#[test]
 fn extended_system_channel_bypasses_halt() {
     // script_id == 0xFB is the system channel; halted state is ignored.
     let mut host = TestHost::default();

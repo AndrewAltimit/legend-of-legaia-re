@@ -1072,7 +1072,9 @@ impl World {
         let mut obj =
             legaia_engine_field::field_channels::spawn_object_channels(man_file, man, binds);
         self.seat_object_channel_rots(&mut obj);
+        self.field_vm.object_prerun = true;
         self.pre_run_object_channel_prologues(&mut obj, man);
+        self.field_vm.object_prerun = false;
         self.field_vm.channels.extend(obj);
     }
 
