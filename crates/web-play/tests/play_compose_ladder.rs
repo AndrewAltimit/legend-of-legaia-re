@@ -655,6 +655,17 @@ fn rung5_shops(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), String> 
     if !rt.play_shop_is_open() {
         return Err("shop session not reported open".into());
     }
+    // Let the opening fade finish: the overlay reports open from the first
+    // frame its windows draw, and a cancel on the mode select leaves the
+    // shop, so a hand that pressed through the fade would be out again
+    // before a single shop frame composed.
+    for _ in 0..240 {
+        if tally.overlay_open > before {
+            break;
+        }
+        rt.play_shop_input(0);
+        step(rt, tally);
+    }
     // Browse the stock list, open a quantity prompt, cancel, exit.
     for edge in [
         PadButton::Down.mask(),
@@ -679,6 +690,14 @@ fn rung5_shops(rt: &mut LegaiaRuntime, tally: &mut Tally) -> Result<(), String> 
 
     // Equipment shop, with its stat-compare recipient flow.
     if rt.debug_open_equipment_shop() {
+        let shown = tally.overlay_open;
+        for _ in 0..240 {
+            if tally.overlay_open > shown {
+                break;
+            }
+            rt.play_shop_input(0);
+            step(rt, tally);
+        }
         for edge in [
             PadButton::Down.mask(),
             PadButton::Cross.mask(),
