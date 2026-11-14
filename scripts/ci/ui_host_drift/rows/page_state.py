@@ -72,6 +72,18 @@ PAGE_STATE_RULES = [
         "and the sea covered town01's beach off retail's vantage",
     },
     {
+        "what": "the opaque pass hands a depth tie to the first-drawn primitive",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "before",
+        "source": "gl.depthFunc(gl.LESS);",
+        "then": "drawOpaque();",
+        "why": "the window's opaque pipelines test strictly (reversed-Z "
+        "`Greater`); at LEQUAL the last of two coincident primitives won, so "
+        "Genocidal Cannon's four overlapping octagon nodes, one baked stream "
+        "on the page, showed another quadrant of their page than the window's "
+        "(`cast_cannon` 20% of a frame off)",
+    },
+    {
         "what": "an untextured screen primitive's tie nudge is coarser than SwiftShader's sub-pixel grid",
         "path": REPO / "site/js/play-view-frame.js",
         "kind": "contains",

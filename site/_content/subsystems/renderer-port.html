@@ -108,6 +108,7 @@
   </table>
   </div>
   <p><strong>Order mirrors the ordering table at per-primitive granularity.</strong> Every blended primitive is keyed by its centroid depth and the whole list blends far to near regardless of draw boundaries; equal keys draw later-submitted-first, as a bucket of the retail table does. Untextured primitives have no per-texel gate and blend every pixel.</p>
+  <p>Opaque primitives at exactly one depth keep the first one drawn, on both hosts: the window tests depth strictly on its reversed-Z buffer and the browser page&rsquo;s opaque pass tests <code>LESS</code>. Genocidal Cannon&rsquo;s wash is four overlapping octagons over one side-band page, each mapping its own quadrant; under PSX rasterisation they tie, and with the page keeping the last one drawn the two hosts showed different quadrants of the page.</p>
 </section>
 
 <section class="doc-section" id="field-link-order">

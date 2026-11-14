@@ -669,6 +669,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * G-buffer under the same uniforms (the trackers above carry across
      * both runs). */
     const drawOpaque = () => {
+      /* An opaque fragment at the depth already written loses, so on an
+       * exact tie the primitive drawn first keeps the pixel: the window's
+       * opaque pipelines test strictly (`CompareFunction::Greater` on its
+       * reversed-Z buffer). At LEQUAL the last one won, and Genocidal
+       * Cannon's four overlapping octagon nodes (draw kind 4), one baked
+       * stream here and four draws there, showed a different quadrant of
+       * the side-band page on each host (`cast_cannon` 20% of a frame off). The blend pass keeps LEQUAL, as
+       * the window's blend pipelines keep GreaterEqual. */
+      gl.depthFunc(gl.LESS);
       /* Continent ground heightfield: one draw, fixed Y-flip model (the
        * mesh is already in world coords, PSX +Y down). Drawn after the
        * ocean (so land occludes water through depth-test) and before the
@@ -749,6 +758,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       }
       if (farOn) gl.uniform1i(this.locFarSlice, 0);
       if (forceOn) { gl.uniform1i(this.locForceSemi, 0); forceOn = 0; }
+      gl.depthFunc(gl.LEQUAL);
       /* Hand the frame-global cue back before the blend pass / next frame. */
       if (cueOn !== undefined && cueOn !== this.cueParams) {
         this._setCue(this.cueParams);

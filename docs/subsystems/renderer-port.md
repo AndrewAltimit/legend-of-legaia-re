@@ -486,6 +486,14 @@ Worked on Sol Tower's shell: `battle_kor_dead_bone_strike` `.969` to `.993`,
 `battle_korb2_kemaro_strike` `.971` to `.990`, `battle_kor_spoon_strike` `.966`
 to `.984`.
 
+Two primitives at exactly one mean depth, such as Genocidal Cannon's four
+overlapping octagon nodes over one side-band page, keep the first one drawn:
+the opaque pass tests depth strictly on both hosts (`Greater` on the window's
+reversed-Z buffer, `LESS` on the page), and each blend pass keeps the equal
+test. The page bakes those nodes into one stream in the window's draw order,
+so the tie lands on the same node on both
+([host drift](../tooling/host-drift.md#what-it-has-found)).
+
 Not modelled: the order inside one bucket (retail's last-linked-first), a ghost's
 `0x50`-byte table offset (`FUN_80048A08` at `0x80048E7C`, twenty buckets deeper
 than its body; the hosts' eye push stands in), and the screen primitives' links,
