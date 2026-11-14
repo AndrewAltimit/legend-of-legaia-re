@@ -535,6 +535,18 @@ fn psx_sample_uv(uv: vec2<f32>, uv_dy: vec2<f32>, bary: vec4<f32>, bary_dy: vec4
     return uv - uv_dy * clamp(reach - margin, 0.0, rows);
 }
 
+// How far past the GPU's half-texel bias the native-target texel rule reads,
+// in texels. The snapped corners and the byte UVs put a texel boundary
+// exactly on many pixel centres (a ground grid tile's rows). A float
+// interpolation lands a hair either side of it, differently on each host and
+// each driver, and the two play hosts sampled whole rows a texel apart. A
+// 256th of a texel is far above that noise and far below a texel's width, so
+// both hosts take the texel the exact UV rounds to (the page's
+// `PSX_TEXEL_TIE_BIAS` is the same). Against the mednafen states' frames the
+// bias moves as many states up as down; the same bias below the boundary reads
+// sixteen of eighteen moved states worse.
+const PSX_TEXEL_TIE_BIAS: f32 = 0.00390625;
+
 // PSX mode on the native target (`psx_params.z >= 1.5`,
 // `Renderer::set_native_resolution`): the frame is the 320 x 240 display and
 // the snapped geometry sits half a pixel down and right
@@ -556,7 +568,7 @@ fn psx_texel_uv(
         return psx_sample_uv(uv, uv_dy, bary, bary_dy);
     }
     if u.psx_params.z < 2.5 {
-        return uv + vec2<f32>(0.5, 0.5);
+        return uv + vec2<f32>(0.5 + PSX_TEXEL_TIE_BIAS, 0.5 + PSX_TEXEL_TIE_BIAS);
     }
     // PCSX-Redux's software GPU (`PsxTexelRule::PcsxRedux`, an instrument
     // for scoring against its captures): no texel bias - the texel at the

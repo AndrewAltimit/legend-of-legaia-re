@@ -291,6 +291,17 @@ the window-sized mode's row move stops at; a fragment inside its triangle
 keeps its row. The console's rule needs no move: its half-texel bias already
 rounds the edge value onto the corner's row.
 
+Under the console's rule the snapped corners and the byte UVs put a texel
+boundary exactly on many pixel centres: on a battle ground grid tile, whole
+rows of them. The float interpolation lands a hair either side, differently
+on each host, and the window and the play page sampled those rows a texel
+apart (`0.4%` of a battle frame, the largest share of the hosts' remaining
+difference). Both read `PSX_TEXEL_TIE_BIAS` (a 256th of a texel) past the half
+texel, so such a tie takes the texel the exact UV rounds to on both. Against
+the mednafen states' frames the bias moves as many states up as down; the
+same bias taken below the boundary reads sixteen of eighteen moved states
+worse.
+
 The composited screen primitives take the same pixel centre and texel bias
 on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to

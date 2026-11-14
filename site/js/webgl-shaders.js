@@ -277,6 +277,12 @@ const PSX_TIE_FLAT_NDC_Y = 2 / 240 / 8;
  * the texels and the Gouraud colour stay the ones the GPU reads at the
  * pixel. */
 const PSX_NATIVE_TIE_ROWS = 0.0625;
+/* How far past the GPU's half-texel bias the native target's texel rule reads,
+ * in texels: the twin of engine-render's PSX_TEXEL_TIE_BIAS (vram_mesh.rs). A
+ * texel boundary on a pixel centre, which the snapped corners and byte UVs make
+ * common, otherwise falls a hair either side by each host's float error, and
+ * the hosts sampled whole rows a texel apart. */
+const PSX_TEXEL_TIE_BIAS = 0.00390625;
 
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {
@@ -1338,7 +1344,7 @@ vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
    * its sample point already, and the GPU rounds it to a texel. The sample
    * point is the pixel the tie nudge moved the primitive off
    * (PSX_NATIVE_TIE_ROWS; GL's window y runs up, so that is +dFdy). */
-  if (u_psx.z >= 1.5) return uv + uv_dy * ${glslFloat(PSX_NATIVE_TIE_ROWS)} + vec2(0.5);
+  if (u_psx.z >= 1.5) return uv + uv_dy * ${glslFloat(PSX_NATIVE_TIE_ROWS)} + vec2(0.5 + ${glslFloat(PSX_TEXEL_TIE_BIAS)});
   float perRow = u_psx.y / 240.0;
   float rows = 0.5 * perRow;
   float margin = perRow / 64.0;
