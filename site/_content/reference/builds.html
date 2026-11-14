@@ -179,7 +179,7 @@
     <thead><tr><th>Tool</th><th>Retail entry</th><th>Lives in</th></tr></thead>
     <tbody>
       <tr><td>Row list (<code>MAP CHANGE</code>, <code>CAMERA</code>, <code>ENCOUNT</code>, &hellip; 24 rows)</td><td><code>FUN_801EAD98</code> draws it; <code>FUN_801E9F64</code> applies each row's pad edits</td><td>Field overlay (PROT 0897) - the world map is a 0897-hosted mode, not an overlay of its own</td></tr>
-      <tr><td>EVENT FLAG editor</td><td><code>FUN_801DBD04</code> value step; <code>FUN_801DB8B4</code> / <code>FUN_801DB8F4</code> list cursor</td><td>Field overlay (0897)</td></tr>
+      <tr><td>EVENT FLAG editor</td><td>value step at <code>0x801EA51C</code>; list cursor at <code>0x801EA10C</code> / <code>0x801EA0CC</code> (arms of the dev-menu dispatcher <code>FUN_801E9F64</code>)</td><td>Field overlay (0897)</td></tr>
       <tr><td>Character-parameter editor</td><td><code>FUN_801D6E18</code></td><td>Menu overlay (0899)</td></tr>
       <tr><td>Equip commit</td><td><code>FUN_801E5A08</code></td><td>Field overlay (0897)</td></tr>
     </tbody>
