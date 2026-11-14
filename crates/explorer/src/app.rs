@@ -3934,10 +3934,7 @@ const KEYS: &[(&str, &str)] = &[
     ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
     ("F5", "play the open disc"),
     ("Shift+F5", "the game's options, keys and saves"),
-    (
-        "Ctrl+E",
-        "save what the view shows (texture, model, entry, frame)",
-    ),
+    ("Ctrl+E", "save the view's texture, model, entry or frame"),
     ("Ctrl+F, Esc", "search the archive, clear the search"),
     ("Ctrl+Tab, Ctrl+PgDn", "next preview tab"),
     ("Ctrl+Shift+Tab, Ctrl+PgUp", "previous preview tab"),

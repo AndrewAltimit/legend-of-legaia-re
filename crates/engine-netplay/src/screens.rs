@@ -35,12 +35,6 @@ enum Overlay {
     Reactions,
 }
 
-/// Whether the room screen is up: the one overlay that covers the whole
-/// stage, under which a host draws none of its own HUD.
-pub fn room_screen_open(net: &NetPlay) -> bool {
-    matches!(overlay(net), Overlay::Screen)
-}
-
 fn overlay(net: &NetPlay) -> Overlay {
     if let Some(h) = net.hunt_hud() {
         Overlay::Hunt(h)

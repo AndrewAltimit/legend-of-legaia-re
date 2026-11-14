@@ -168,6 +168,11 @@ impl PlayWindowApp {
         if self.multiplayer_screen_up() {
             return Default::default();
         }
+        // The developer menu lists its rows in this same corner, and the two
+        // drawn through each other read as neither.
+        if !self.dev_menu_draws.is_empty() {
+            return Default::default();
+        }
         let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {

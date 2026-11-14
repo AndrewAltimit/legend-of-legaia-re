@@ -286,15 +286,15 @@ impl PlayWindowApp {
     }
 
     /// Whether the Multiplayer screen covers the stage: the menu before a
-    /// room, or the room screen itself (not the roaming panel). The window's
-    /// own readouts - the field party's, the start-up key line - step aside
-    /// under it.
+    /// room, or the room screen or a party card (not the roaming panel). The
+    /// window's own readouts - the field party's, the start-up key line -
+    /// step aside under it.
     pub(in crate::window) fn multiplayer_screen_up(&self) -> bool {
         self.netplay_menu.is_some()
             || self
                 .netplay
                 .as_ref()
-                .is_some_and(|nh| legaia_engine_netplay::screens::room_screen_open(&nh.net))
+                .is_some_and(|nh| legaia_engine_netplay::screens::screen_owns_frame(&nh.net))
     }
 
     /// The room screen / roaming panel's prims, in stage pixels.
