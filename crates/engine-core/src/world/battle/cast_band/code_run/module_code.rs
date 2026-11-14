@@ -1360,6 +1360,7 @@ impl World {
                         take,
                     );
                     self.write_cast_seat_row(&seats);
+                    self.push_sweep_popups(hits.iter().map(|h| h.seat), &rolls);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                         seat: h.seat,
                         applied: h.applied as i32,
@@ -1374,6 +1375,7 @@ impl World {
                     // kernel names retail seats; the roll takes engine slots.
                     let shape = arms::arm_damage_shape_for(956, arms::WATER_HAZARD_TICK);
                     let map = self.cast_seat_map();
+                    let mut popups: Vec<(u8, i32)> = Vec::new();
                     let (step, hits) = arms::water_hazard_tick(
                         &mut ctx,
                         r_caster as u8,
@@ -1381,15 +1383,24 @@ impl World {
                         &mut caster,
                         &mut seats,
                         |seat| {
-                            let damage = map
-                                .engine(seat)
+                            let slot = map.engine(seat);
+                            let damage = slot
                                 .zip(shape)
                                 .and_then(|(e, sh)| self.capture_module_roll(sh, caster_slot, e))
                                 .unwrap_or(0);
+                            popups.push((seat, damage));
                             (damage, self.next_rand())
                         },
                     );
                     self.write_cast_seat_row(&seats);
+                    // Each swept seat's numeral: `FUN_801F44A0(roll, seat)` on
+                    // the raw wrapper roll, between the roll and the clamp
+                    // (`jal 0x801dd4b0` / `jal 0x801f44a0` at
+                    // `0x801F78D0..0x801F78E4`, the other leg's at
+                    // `0x801F7A40..0x801F7A54`), so the three numbers stand
+                    // over the party through the arm the sweep opens.
+                    let swept: Vec<u8> = popups.iter().map(|p| p.0).collect();
+                    self.push_sweep_popups(swept.into_iter(), &popups);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                         seat: h.seat,
                         applied: h.applied as i32,

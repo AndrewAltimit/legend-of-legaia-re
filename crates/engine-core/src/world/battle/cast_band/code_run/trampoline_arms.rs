@@ -94,6 +94,37 @@ impl World {
         out
     }
 
+    /// The numerals a sweep arm throws: `FUN_801F44A0(roll, seat)` on each
+    /// swept seat's raw wrapper roll, between the roll and the clamp (PROT
+    /// 0941 `0xB9` at `0x801F6FAC..0x801F6FC0`, PROT 0950 `0xAB` at
+    /// `0x801F770C..0x801F7720`, PROT 0956 `0x71` at
+    /// `0x801F78D0..0x801F78E4`). The tick lands the HP itself and the fold
+    /// is waived, so nothing else raises them. `seats` are the sweep's own
+    /// (retail) seats, `rolls` the rolls it took by that seat.
+    pub(in crate::world::battle::cast_band) fn push_sweep_popups(
+        &mut self,
+        seats: impl Iterator<Item = u8>,
+        rolls: &[(u8, i32)],
+    ) {
+        let map = self.cast_seat_map();
+        for seat in seats {
+            let Some(&(_, roll)) = rolls.iter().find(|(s, _)| *s == seat) else {
+                continue;
+            };
+            let Some(slot) = map.engine(seat) else {
+                continue;
+            };
+            self.battle
+                .hit_fx
+                .push(legaia_engine_battle::battle_events::BattleHitFx {
+                    target_slot: slot,
+                    amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                    is_heal: false,
+                    is_crit: false,
+                });
+        }
+    }
+
     /// Drive one of the two table-dispatched sweep arms end to end: roll,
     /// tick, write the seats back.
     pub(in crate::world::battle::cast_band) fn run_cast_arm_sweep(
@@ -122,6 +153,7 @@ impl World {
         let (step, hits) =
             legaia_engine_cast::cast_arm_ticks::steal_sweep_tick(ctx, &mut seats, sweep, take);
         self.write_cast_seat_row(&seats);
+        self.push_sweep_popups(hits.iter().map(|h| h.seat), &rolls);
         (
             step,
             self.cast_hits_to_engine(hits.iter().map(|h| {

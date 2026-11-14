@@ -1404,6 +1404,18 @@ readout rolls up on its own; none of the three healing images (PROT 0905, 0911,
 beside its HP write. The `0x83` and `0x89` recordings show the readout roll and
 no number. The fold drops its heal popup for these casts.
 
+A sweep arm throws its numbers where it rolls. Each of the three trampoline-arm
+sweeps calls the push per swept seat on the raw wrapper roll, between the roll
+and the clamp: PROT 0941 `0xB9` (`jal 0x801dd4b0` / `jal 0x801f44a0` at
+`0x801F6FAC..0x801F6FC0`), PROT 0950 `0xAB` (`0x801F770C..0x801F7720`) and PROT
+0956 `0x71` (`0x801F78D0..0x801F78E4`, the other leg's at `0x801F7A40`). The
+tick lands the HP and the fold is waived, so the numerals are the tick's to
+raise as well (`World::push_sweep_popups`): Water Hazard's three stand over the
+party through the whole of arm 3 on retail's recording, where the port's sweep
+landed the same HP on the same pass and showed nothing. An audit of the arm in
+which each seat's HP column moves finds no other cast of the enemy set landing
+on another arm than retail's. Grade `disassembly` + `capture`.
+
 #### Other directly-called ticks
 
 | Tick | Owner | Reached from | Phase arms | Damage |
