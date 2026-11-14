@@ -1316,11 +1316,18 @@ The position column found Divide's and Clone's halves on one side of the old sea
 monster's clip `4` against the engine's `0` is bookkeeping, and so is seat 7 reading
 live on retail's side outside a strike: the bare seat keeps its last creature's bytes.
 
+One position line was the recording's. Xain's strike `0x5C` stood the caster `56` units
+off from arm 3: retail's first range poll reads out of range on the victim's body pair,
+`19` units behind its live pair on heading `839`, and the walk steps once, while the
+film's older recording seeded the victim with no heading, so the replay's body pair
+stood `19` ahead and the poll read in range. Against a recording whose `ground=` carries
+the heading the film reads `.981` from `.868`. A harness seat: a film recorded before
+the probe wrote headings seats its party on the replay's own.
+
 What the audit still lists on the plain seat, by cause:
 
 | Line | Cause |
 |---|---|
-| Xain's strike `0x5C`, the caster `56` units off from arm 3 | retail's first range poll reads out of range on the victim's body pair, `19` units behind its live pair on heading `839`, and the walk steps once; the film's older recording seeds no heading, the replay's victim stands its body pair `19` ahead and the poll reads in range |
 | Jette's Clone, the acting seat `1021` off in arm 3 | the split's side is the parity of the arm's passes, which follows the frame steps; `--retail-steps` lands it |
 | Scythe Wind's victim at rate `4` for retail's `1` | the replay's idle stands `72` cursor units on, so it wraps and commits inside the arm |
 | Final Crisis, a party seat down where retail's gets up | the replay's own damage roll |
