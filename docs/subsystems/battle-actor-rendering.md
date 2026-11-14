@@ -321,7 +321,7 @@ So the strike loop's first swing, staged under bit 1 over the idle `0x19`'s arri
 | `0x1A` SpecialStarter | all slots `0`, acting actor `2` | `0x8004B728..0x8004B750` |
 | `>= 0x1B` art constant | all slots `2` if `ctx[+0x243]` set, else `4` | `0x8004BB78..0x8004BBA8` |
 
-The first row holds on a re-commit too, a looping clip's natural end included: a summon creature seated at rate `2` loops at `4` from its first wrap (capture: PROT 0916's arm 9).
+The first row holds on a re-commit too, a looping clip's natural end included: a summon creature seated at rate `2` loops at `4` from its first wrap (capture: PROT 0916's arm 9). It holds on the idle commit that follows a finished reaction chain as well: a party seat a cast left at `2` gets up and idles at `4` until the Done band's restore (Stone Circle's recording reads `4` on each seat from the pass its knockdown chain ends in `0x71`; `World::finish_battle_reaction`).
 
 Outside the commit, a cast's arms slow the seats they strike, beside each reaction
 stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in

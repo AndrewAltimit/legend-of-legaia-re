@@ -3746,8 +3746,14 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   shell's sixteen arm-2 parts match retail's at each paired frame field for field (colour
   word, level and `+0x7A` ramps, radius and height channels, UV / tpage / CLUT, the `+0x26`
   spin), and the shell's texture page `0x88` and CLUT rows `488` / `490` match the
-  state's VRAM byte for byte. What the film still parts on is the shell's texture phase
-  and the backdrop's star field, not the cast's parts.
+  state's VRAM byte for byte. Arm 0 seats `0x801F7720` on the caster's own seat
+  (`addiu a0,s4,0x34` / `addiu a1,s4,0x44` at `0x801F6C4C..0x801F6C50`), where its first
+  thirteen calls take the stack's zeroed trios: the record is the sea disc under Freed,
+  and a `--retail-parts` recording of `battle_jou_freed_v3_water_crystals_mid_cast`
+  holds its node at the caster's `(-600, 0, 825)` from arm 1 on. Seated at the stage
+  origin the disc's far edge fell short of the horizon and the stage floor showed
+  through to it: the film reads `.782` to `.981` on `--retail-steps --rand-track`, its
+  long arm `.726` to `.996`. Grade `disassembly` + `capture`.
 - PROT 0943's arm 2 seats two records on each party seat (`0x801F6C9C..0x801F6D30`),
   `capture_arm_party_records`. Its gate drains the bare step, its seeds are literals.
 - PROT 0956's `0x75` (Paralyzing Wave) arm 2 marks a live victim `+0x16E |= 0x400` and
@@ -4698,7 +4704,7 @@ three units). The bodies without that store keep the half turn
 | 0940 `0xAC` Mystic Shield, `0x801F7240` | arm 0's shot behind the caster (pitch `0x200`, TR `(0, -0x100, 0x400)`, `0x40` frames); drifts on arms 2, 4, 5, 6 | `0x801F864C` gates arms 1..7: seeded `scalar * 0x60`, re-armed `scalar << 8` / `<< 6` / `* 0xC0`. `cort_mystic_shield_mid_cast` sits in arm 1 with `496` left, 34 vsyncs into the shot |
 | 0944 `0x37` Guilty Cross, `0x801F6A04` | arm 0's `0x20`-frame shot behind the caster (TR `(0, 0x600, 0x800)`), arm 2's cut to the victim (pitch `0x100`, TR `(0, 0x400, 0xA00)`), arm 4's cut back; TR z drift on arms 1 / 2 / 5 (`+4`) and 3 (`+32`); arm 3 drops the cross arm 2 parked at `0x801F836C` (`+0x16 += step << 8` once the word is at or under `scalar << 4`, `-0x200` as it passes) | `0x801F8360` gates arms 1..5 |
 | 0962 `0xA5` Ultra Charge, `0x801F69D8` | arm 0's `0xC`-frame shot behind the caster (TR y `0xC00` when the formation's first monster is `0xB5`, `0x240` otherwise; TR z `0xC00`); arm 1's TR z drift of `scalar * delta` | `0x801F89AC`, seeded `scalar * 0x180`. The body has no other port, so the director owns the phase (`0 -> 1 -> 0xFF`) |
-| 0961 `0xA1` / `0xB4` Dead End Crisis / Final Crisis, `0x801F69D8` | four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`: arm 0 behind it (TR y `0x800` in formation `0xB5`, `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in `0xB5`), arm 5's return (TR y `0x800`); drifts below | `0x801F82E4`; the phase chain is ported (`DEAD_END_CRISIS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
+| 0961 `0xA1` / `0xB4` Dead End Crisis / Final Crisis, `0x801F69D8` | four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`: arm 0 behind it (TR y `0x800` in formation `0xB5`, `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in `0xB5`), arm 5's return (TR y `0x800`); drifts below; in `0xB5` the caster's rate `+0x21D = 3` beside the clip `6` arm 1 stages (`0x801F6D5C`) and on every arm-2 pass (`0x801F6ED4`) | `0x801F82E4`; the phase chain is ported (`DEAD_END_CRISIS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`); the caster's rate `+0x21D = 4` beside the clip `7` arm 1 stages (`0x801F6CD8`) and on every arm-2 pass (`0x801F6D9C`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
 | 0938 `0x4E` Chaos Breath, `0x801F726C` | arm 0's `0x100`-frame shot on the caster (pitch `-0x40`, TR `(0, depth / 3, depth / 2)`, the caster turned on the row's centroid), arm 1's `0x100`-frame pull-out (pitch `0x40`, TR `(0, depth / 2, 3 * depth)`); records `0x801F7BC8` at the model scale and `0x801F7C40` ahead; every arm-1 pass pulls the party row in `2 * step` | `0x801F8040`, the `CHAOS_BREATH` table |
 | 0950 `0xAB` Shadow Break, `0x801F6A24` | arm 0's `0xC`-frame shot, the party hidden through arms 1 and 2 and shown on 2's pass, `0x20`-frame cut (pitch `0x180`, TR `(0, -0x200, 0x600)`) and three one-frame cuts on the caster (arms 4, 6, 7); each arm's TR z, TR y, pitch and yaw drift ahead of its gate; arm 2's blades, arm 8's rise, arm 9's fall with its blade halt, arm 10's burst and a thirteen-point ring of three records; arm 11 fades every record | `ROLLING_FLARE_SWEEP` table |
@@ -5258,8 +5264,12 @@ Its one damage site is `FUN_801DD4B0(0x2C6, ...)` per live party seat at arm
 (`capture_site_power`). Arm 5 seats two records on the caster, three on each
 point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
-`0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
-left out, as the chain leaves it.
+`0x1000 / 3`) and three on every live party seat. Arm 4's pass freezes the
+caster (`sb zero,0x21d(s4)` at `0x801F6F8C`, past its gate and the two fades):
+a recording holds Gaza on cursor `288` at rate `0` through arms 5 and 6, the
+`0xFF` arm, `0x71` and `0x50`, and the Done band's restore runs the clip on
+from there on `0x51`. The band's close does not wait on a frozen caster, whose
+clip cannot end (`World::close_caster_stages`). Grade `disassembly` + `capture`.
 Arm 5's spawns all sit behind its countdown's expiry (`bgtz t0,0x801F74B0` at
 `0x801F708C`), so they are seated on arm 6's first pass. Its two caster
 records are radius-`0x800` cylinders textured off page `0x9` / `0x8A` (op `0x1F`

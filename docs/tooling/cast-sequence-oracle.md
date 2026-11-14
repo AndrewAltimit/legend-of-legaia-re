@@ -1159,6 +1159,55 @@ on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the par
 own class is a group, so retail frames a party-wide cast with the panels up against the
 engine's self-cast. The film on the cast's own seat reads `.991`.
 
+### The enemy set on the plain seat, and what holds it
+
+On the plain seat (the engine's own steps and stream, the cast-begin seat on the spell
+films) the 107 recorded films read `.9286` with the cue channel at `.9991`; on
+`--retail-steps --rand-track` (`--retail-steps` where a film has no module band) `.9574`
+and `.9996`. The `.029` between the two seats is the frame's cost, and three places carry
+most of it:
+
+- **The opening step.** A full party's opening states cost the engine's table `595` to
+  `608` hblanks, step `3`, where the recordings of the cheaper fights open on step `2`
+  (`rugi_rogue_pre_element_change`, `garmel_zeto_pre_poisonous_bubbles`,
+  `ropeway_orb_pre_jewel_beam`, `retona_viguro_v2_pre_thunder_break`). The stream then
+  enters the module on another word: retail's `0x6E` runs eight two-vsync passes and the
+  engine's five, and Element Change's roll (`rand() % 3`, arm 0) lands on another element,
+  so the ray fan plays in another colour through the whole of arm 1 (`.954` on
+  `--no-cast-rand`, `.807` on the default seat, `.972` on the steps).
+- **A cut on a half turn.** Poisonous Bubbles' `0x29` shot stands exactly `0x800` from the
+  camera on retail's step (`yaw_end = 1203 + ctx[+0x6DA]`, the counter at `2050`), which
+  the tween builder's strict `> 0x800` test turns upward; the engine's counter reads `2052`
+  on step `3`, the gap is `0x802` and the camera turns the other way round (`0x29` `.39`).
+- **The Done band.** Retail leaves most capture bodies with the ring already clear and
+  pans `0x51` on step `3` or `2`; the engine's ring still holds the band's last entries,
+  or the module's line still loads the frame through a held `0xFF` arm, and `0x51` pans on
+  `4` in some thirty films. `0x51` is the largest shared loss on the plain seat (`.902`
+  over `2760` pairs).
+
+None of the three is a cast's code ([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
+What the steps seat still lists is, and two films move on both seats when their defects
+are fixed: Water Crystals `.767` to `.964` plain (`.782` to `.981` on the steps, the sea
+disc's seat) and Final Crisis `.738` to `.791` (`.894` to `.957`, the caster's rate),
+with the set at `.9310` and no cue moved
+([Water Crystals](../subsystems/cast-module.md#prot-0943-0945-0949-and-0956-a-director-the-arm-tables-and-a-stager),
+[the capture-band cameras](../subsystems/cast-module.md#capture-band-camera)).
+
+<a id="a-rate-audit-over-a-film-set"></a>
+
+**A rate audit over a film set.** Both recorders write `rates.csv`, so a script can hold
+every seat's animation rate `+0x21D` against retail's at each pair's shown vsync
+(`shown_vsync` and `engine_tick` in `report.json`) and list the seats that differ for
+eight pairs or more. A rate is a store a module makes or a commit decays, so each line
+names a port defect or a harness phase, never a cadence: over the enemy set it listed
+Final Crisis's caster (`3` in retail, `8` in the engine, arms 2 and 3), Neo Star Slash's
+frozen caster (`0` against `4`, arms 5 and 6), the party seats that idled at `2` after a
+reaction where retail reads `4` (Stone Circle, the Rogue strikes, Final Crisis), and the
+Rogue strikes' stand-in creature ([open](../reference/open-rev-eng-threads.md)). Two
+lines were the harness: Scythe Wind's victim wraps its idle a cycle early because the
+replay's idle stands `72` cursor units on from the recording's, and Berserker's Spore Gas
+close-up reads low on the same idle phase.
+
 ### A recording that opens inside an arm
 
 A harvested `*_mid_cast` state is saved inside the frame whose module tick leaves the arm
