@@ -12,12 +12,12 @@
     <tbody>
       <tr><td>One routine</td><td><a href="retail-kernel-differential.html">Retail kernel differential</a></td><td>The routine's own bytes, run off the disc in an R3000 interpreter</td><td>Every byte the routine wrote, against the Rust kernel</td></tr>
       <tr><td>One instant</td><td><a href="retail-compare.html">Retail comparison corpus</a></td><td>A library save state's RAM and VRAM, read offline</td><td>Channels in <code>0..1</code>: scene, camera, party, flags, battle, the frame</td></tr>
-      <tr><td>A stretch of time</td><td><a href="cast-sequence-oracle.html">Cast-sequence oracle</a>, <a href="walk-film.html">walk film</a></td><td>An emulator recording from a state, one row a vsync</td><td>Frame by frame, paired on the game's own clock</td></tr>
+      <tr><td>A stretch of time</td><td><a href="cast-sequence-oracle.html">Cast-sequence oracle</a>, <a href="walk-film.html">walk film</a>, <a href="gate-replay.html">gate replay</a></td><td>An emulator recording from a state, one row a vsync</td><td>Frame by frame, paired on the game's own clock; a film's sound cues are <a href="cast-sequence-oracle.html#cue-ratchet">ratcheted</a></td></tr>
       <tr><td>Sound</td><td><a href="../subsystems/audio-internals.html">Audio oracles</a>, real PCM</td><td>libsnd and SPU state from RAM; the emulator's own audio output</td><td>Voice registers, keyed notes, waveform correlation and level</td></tr>
     </tbody>
   </table>
   </div>
-  <p>Below them sit the checks that say what the bytes are and which routine a port claims to be; <a href="verification-ladder.html">the verification ladder</a> stacks all of them in one order. Around them sit the checks that are not about retail's numbers but about keeping the port honest as a program: the <a href="full-game-ladder.html">full-game ladder</a> (New Game to credits on pad input alone), the <a href="soak-harness.html">soak harness</a> (seeded random play looking for panics and softlocks), <a href="host-drift.html">host drift</a> and the <a href="frame-hash.html">browser frame hash</a> (the window and the page running one engine the same way), and <a href="determinism-replay.html">record / replay</a> (the same input twice gives the same bytes).</p>
+  <p>Below them sit the checks that say what the bytes are and which routine a port claims to be; <a href="verification-ladder.html">the verification ladder</a> stacks all of them in one order. Around them sit the checks that are not about retail's numbers but about keeping the port honest as a program: the <a href="full-game-ladder.html">full-game ladder</a> (New Game to credits on pad input alone), the <a href="soak-harness.html">soak harness</a> (seeded random play looking for panics and softlocks), <a href="host-drift.html">host drift</a>, its <a href="host-drift.html#host-pair">host pair run</a> and the <a href="frame-hash.html">browser frame hash</a> (the window and the page running one engine the same way), <a href="determinism-replay.html">record / replay</a> (the same input twice gives the same bytes), and the <a href="frame-bench.html#cost-ratchet">cost ratchet</a> (draws and allocations per frame, counted, not timed). <a href="porting-by-reimplementation.html#coverage">The coverage map</a> lists every one of them by the gap it closes and what it cannot see.</p>
 </section>
 
 <section class="doc-section" id="the-picture">
@@ -101,7 +101,9 @@
   <h2>A stretch of time: the films</h2>
   <p>The <strong>cast-sequence oracle</strong> records one spell, summon or monster cast on both sides, from cast begin to past its Done band: a PCSX-Redux probe injects the cast into a retail state and dumps the displayed frame and per-vsync metadata, and the seeded <code>play-window</code> writes the same per tick. The <strong>walk film</strong> does the same for a field walk under a fixed pad schedule: player, follow camera, staging pose and placements, pass by pass.</p>
   <p>Frames never pair on wall time. A cast's rows fold into runs of one key - the <a href="../subsystems/battle-action.html">action state</a>, or inside a cast module the module's own phase byte - and the two key lists align by longest common subsequence, so an arm one side skips shows as a one-sided row instead of shifting everything after it. A retail grab shows the frame built two passes earlier, counted in the ends of the game's own vsync waits: a pass that overran its step holds its image up for as long as it ran, and a pass's state can stand in RAM a vsync ahead of its frame counter, so neither vsyncs nor counter bumps place a grab on their own. <a href="../subsystems/cast-pipeline.html">A cast, end to end</a> follows the same two clocks through the battle code.</p>
-  <p>Two retail recordings of one cast are not byte-identical, so a residual smaller than two retail runs differ from each other is noise, not a finding.</p>
+  <p>Two retail recordings of one cast are not byte-identical, so a residual smaller than two retail runs differ from each other is noise, not a finding. A film's image score is therefore reported before and after a change and never committed. Its sound cues are the exception: a cue plays on the same clock or it does not, so <code>film-cues.py</code> holds the committed film sets' cue channel to a baseline, and a cue that stops playing fails there while the picture barely moves.</p>
+  <p>A low film score is not always a wrong routine. An arm whose look is its random draws plays another pattern when the engine reaches it after another number of <code>rand()</code> calls; the film logs retail's seed word every vsync and can seat the engine's stream on it at a named phase (<a href="cast-sequence-oracle.html#rand">the rand stream</a>), which tells a wrong routine from a different deal.</p>
+  <p><a href="gate-replay.html">Gate replay</a> covers the stretch a film does not: it plays one engine run's pad on retail beat by beat, resynchronised at each state gate (a scene change, a dialogue page, a battle command), and reports the gap, the positions and the random draws per beat. It is report-only, like the walk film.</p>
 </section>
 
 <section class="doc-section" id="sound">
@@ -135,6 +137,7 @@
     <a href="retail-compare.html">Retail comparison corpus</a>
     <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
     <a href="walk-film.html">Field walk film</a>
+    <a href="gate-replay.html">Gate replay</a>
     <a href="../subsystems/audio-internals.html">Audio internals</a>
     <a href="recomp-differential.html">Recomp differential</a>
     <a href="capture-coverage.html">Capture coverage</a>
