@@ -101,17 +101,24 @@ impl PlayWindowApp {
             );
             stage.extend(text_draws_for(&layout, (8, y), color));
         }
+        // The Keys page fills the stage top to bottom, so it is fitted to
+        // the window on its own ([`fit_plate_draws`]) rather than riding the
+        // stage's whole step.
+        let mut keys_page = Vec::new();
         if self.hotkey_help {
-            stage.extend(match self.panel_page() {
-                crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
-                crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
-                crate::window::settings_panel::PanelPage::Scenes => self.scenes_stage_draws(),
-                crate::window::settings_panel::PanelPage::Tools => self.tools_stage_draws(),
-                crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
-            });
+            use crate::window::settings_panel::PanelPage;
+            match self.panel_page() {
+                PanelPage::Settings => stage.extend(self.settings_stage_draws()),
+                PanelPage::Cheats => stage.extend(self.cheats_stage_draws()),
+                PanelPage::Scenes => stage.extend(self.scenes_stage_draws()),
+                PanelPage::Tools => stage.extend(self.tools_stage_draws()),
+                PanelPage::Keys => keys_page = self.hotkey_help_stage_draws(),
+            }
         }
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
         legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
+        fit_plate_draws(&mut keys_page, (w, h), stage_scale);
+        stage.extend(keys_page);
         stage
     }
 
@@ -877,6 +884,57 @@ impl PlayWindowApp {
     }
 }
 
+/// Quarter steps a fitted plate scales by ([`fit_plate_draws`]).
+const PLATE_STEP_DEN: i32 = 4;
+
+/// Scale a panel's stage-pixel `draws` (its plate first among them) into a
+/// `(w, h)` surface centred, with a margin of a thirtieth of the surface's
+/// height (16 px at least) on every side: the largest quarter step that
+/// fits, never above the stage's own whole step `stage_scale`. The Keys
+/// page's two columns, pad rows and footer fill the 320x240 stage top to
+/// bottom, so at the stage's step its plate met the window's edges; fitted,
+/// it keeps nearly the same size and gains the margin. A quarter step draws
+/// the font's pixels a mix of widths, which reads fine at the 2x-and-up
+/// sizes a window gives it.
+pub(in crate::window) fn fit_plate_draws(
+    draws: &mut [TextDraw],
+    (w, h): (u32, u32),
+    stage_scale: u32,
+) {
+    let Some(first) = draws.first() else {
+        return;
+    };
+    let (mut x0, mut y0) = (first.dst.0, first.dst.1);
+    let (mut x1, mut y1) = (x0, y0);
+    for d in draws.iter() {
+        x0 = x0.min(d.dst.0);
+        y0 = y0.min(d.dst.1);
+        x1 = x1.max(d.dst.0 + d.dst.2 as i32);
+        y1 = y1.max(d.dst.1 + d.dst.3 as i32);
+    }
+    let (bw, bh) = ((x1 - x0).max(1), (y1 - y0).max(1));
+    let (w, h) = (w as i32, h as i32);
+    let margin = (h / 30).max(16);
+    let q = (((w - 2 * margin) * PLATE_STEP_DEN) / bw)
+        .min(((h - 2 * margin) * PLATE_STEP_DEN) / bh)
+        .clamp(
+            PLATE_STEP_DEN / 2,
+            stage_scale.max(1) as i32 * PLATE_STEP_DEN,
+        );
+    let px = |v: i32| (v * q).div_euclid(PLATE_STEP_DEN);
+    let origin = ((w - px(bw)) / 2, (h - px(bh)) / 2);
+    for d in draws.iter_mut() {
+        let (lx, ly) = (d.dst.0 - x0, d.dst.1 - y0);
+        let (rx, ry) = (lx + d.dst.2 as i32, ly + d.dst.3 as i32);
+        d.dst = (
+            origin.0 + px(lx),
+            origin.1 + px(ly),
+            (px(rx) - px(lx)) as u32,
+            (px(ry) - px(ly)) as u32,
+        );
+    }
+}
+
 /// The help panel's fixed rows.
 const HELP_QUIT: &str = "Close (2x: quit)";
 const HELP_SELF: &str = "Close (also ?)";
@@ -1106,6 +1164,31 @@ fn help_panel_layout_with(
 #[cfg(test)]
 mod help_panel_tests {
     use super::*;
+
+    /// A plate as tall as the 320x240 stage keeps a margin in the window
+    /// instead of meeting its edges, stays within the stage's own step, and
+    /// sits centred.
+    #[test]
+    fn a_fitted_plate_keeps_a_margin() {
+        let quad = |x: i32, y: i32, w: u32, h: u32| TextDraw {
+            dst: (x, y, w, h),
+            src: (0, 0, 1, 1),
+            color: [1.0; 4],
+        };
+        for (w, h, scale) in [(960u32, 720u32, 3u32), (1280, 720, 3), (640, 480, 2)] {
+            let mut d = vec![quad(6, 0, 308, 240), quad(10, 4, 8, 12)];
+            fit_plate_draws(&mut d, (w, h), scale);
+            let plate = d[0].dst;
+            let margin = (h as i32 / 30).max(16);
+            assert!(plate.1 >= margin && plate.1 + plate.3 as i32 <= h as i32 - margin);
+            assert!(plate.0 >= margin && plate.0 + plate.2 as i32 <= w as i32 - margin);
+            assert!(plate.3 <= 240 * scale);
+            assert!((plate.0 - (w as i32 - plate.0 - plate.2 as i32)).abs() <= 1);
+            // The glyph stays inside its plate.
+            let g = d[1].dst;
+            assert!(g.0 > plate.0 && g.1 > plate.1);
+        }
+    }
     use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
 
     /// Every hotkey in its widest state.
