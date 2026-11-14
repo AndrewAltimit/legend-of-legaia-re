@@ -303,6 +303,8 @@ async function pageRun(cfg) {
       if (n === at + 1) send('keyup', cfg.key[b]);
     }
   };
+  const syncGl = view.canvas.getContext('webgl2');
+  const syncPx = new Uint8Array(4);
   const comp = document.createElement('canvas');
   comp.width = 320; comp.height = 240;
   const cx = comp.getContext('2d', { willReadFrequently: true });
@@ -333,6 +335,12 @@ async function pageRun(cfg) {
       page.width = cfg.size[0]; page.height = cfg.size[1];
       const pc = page.getContext('2d');
       pc.imageSmoothingEnabled = false;
+      /* A finish and a read of the drawing buffer ahead of the copy. On a real GPU (ANGLE over
+       * an NVIDIA driver) a multisampled canvas copied straight after its draws comes back
+       * black on a share of frames, one in three in a fight, while the buffer itself holds the
+       * frame and a display shows it. Nothing the page left bound or masked (the state at the
+       * end of a black frame is the default one), and no frame without multisampling does it. */
+      if (syncGl) { syncGl.finish(); syncGl.readPixels(0, 0, 1, 1, syncGl.RGBA, syncGl.UNSIGNED_BYTE, syncPx); }
       pc.drawImage(view.canvas, 0, 0, page.width, page.height);
       /* Every layer stacked over it, in stacking order: the menu overlay and a minigame's hub layer. */
       for (const c of view.canvas.parentNode.querySelectorAll('canvas')) {
