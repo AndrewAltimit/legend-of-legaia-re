@@ -2307,18 +2307,15 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     b.queued_category = 3;
 
     // A monster strike's gate waits for the bystanders the capture holds on
-    // idle: every slot on clip 0 but the striker and its target.
+    // idle: every monster slot on clip 0 but the striker.
     {
         let mut s = b.clone();
         s.clip_cursors = vec![(0, 0, 12), (1, 0, 40), (3, 7, 0), (4, 0, 120), (5, 8, 16)];
-        let (striker, target) = (s.active_actor, s.target_code);
-        let want = [0u8, 1, 4]
-            .into_iter()
-            .filter(|&k| k != striker && k != target)
-            .fold(0u8, |m, k| m | 1 << k);
-        assert_eq!(s.strike_aim_steerable(), s.idle_bystanders() != 0);
+        let want = if s.active_actor == 4 { 0 } else { 1u8 << 4 };
         if s.strike_aim_steerable() {
             assert_eq!(s.idle_bystanders(), want);
+        } else {
+            assert_eq!(s.idle_bystanders(), 0);
         }
         s.queued_category = 2;
         assert_eq!(s.idle_bystanders(), 0, "a cast names none");

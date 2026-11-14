@@ -1406,11 +1406,13 @@ another monster on its knockdown when the striker's turn comes up again:
 `battle_dohaty_nova_v2_strike`'s replay met the gate some `2400` ticks in with
 the second Nova off its ground on clip `8`, where the capture's stands idle on
 its pair and draws as the near-camera ghost above the striker. So a monster
-strike's drive also names the pool slots the capture holds on clip `0`, the
-striker and its target aside (`ActionSteer::idle_bystanders`, the drive's
-`B<mask>` token, `RetailBattle::idle_bystanders`), and the gate waits for a
-turn that finds each of them idle or down. Both halves read it, so the
-headless search and the child miss the same turns and take the same rescue.
+strike's drive also names the other monster slots the capture holds on clip
+`0` (`ActionSteer::idle_bystanders`, the drive's `B<mask>` token,
+`RetailBattle::idle_bystanders`), and the gate waits for a turn that finds
+each of them idle or down. Both halves read it, so the headless search and
+the child miss the same turns and take the same rescue. The party's seats are
+not named: a film's party stands on its guard clip from the first prompt
+(`LEGAIA_BATTLE_GUARD`), which is never clip `0`.
 
 The headless search takes the same aim once no stream reached the phase on the
 targets the replay picked itself (`RetailBattle::strike_aim_steer`, carried on the

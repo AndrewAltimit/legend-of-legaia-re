@@ -1862,9 +1862,11 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
-    /// The pool slots a monster strike's capture holds on their idle clip,
-    /// besides the striker and its target (`ActionSteer::idle_bystanders`):
-    /// the turn retail stands on finds them idle, so the replay's does.
+    /// The monster slots a monster strike's capture holds on their idle
+    /// clip, besides the striker (`ActionSteer::idle_bystanders`): the turn
+    /// retail stands on finds them idle, so the replay's does. The party's
+    /// seats are left out: a film's party stands on its guard clip
+    /// (`LEGAIA_BATTLE_GUARD`), and the target is one of them.
     pub fn idle_bystanders(&self) -> u8 {
         if !self.strike_aim_steerable() {
             return 0;
@@ -1872,7 +1874,7 @@ impl RetailBattle {
         self.clip_cursors
             .iter()
             .filter(|&&(slot, clip, _)| {
-                clip == 0 && slot < 8 && slot != self.active_actor && slot != self.target_code
+                clip == 0 && (3..8).contains(&slot) && slot != self.active_actor
             })
             .fold(0, |m, &(slot, _, _)| m | 1 << slot)
     }

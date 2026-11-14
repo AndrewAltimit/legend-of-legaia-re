@@ -306,7 +306,7 @@ pub struct ActionSteer {
     /// the drive: raised by the retail-compare search only once no stream
     /// reached the capture on the targets the replay picked itself.
     pub strike_aim: bool,
-    /// The bystanders a monster strike's capture holds on their idle clip
+    /// The other monsters a monster strike's capture holds on their idle clip
     /// (`+0x1D9 == 0`), as a mask of pool slots: the gate waits for a turn
     /// that finds each of them idle too. A replay reaches the striker's
     /// turns on its own stream, and a later turn than retail's can open the
