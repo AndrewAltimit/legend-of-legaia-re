@@ -72,6 +72,16 @@ PAGE_STATE_RULES = [
         "and the sea covered town01's beach off retail's vantage",
     },
     {
+        "what": "the scene blend pass blends a mesh's semi prims far to near",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "orderSemiPrims(o, m.cpuIndices, m.cpuPositions,",
+        "why": "the window blends every semi prim by its centroid depth whatever "
+        "its mode; blended a mode at a time, the baked FX stream drew Genocidal "
+        "Cannon's subtractive ground shadow over the additive rings drawn first, "
+        "which the window draws over it (`cast_cannon` tick 1121, 1.7% of a frame)",
+    },
+    {
         "what": "the opaque pass hands a depth tie to the first-drawn primitive",
         "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
         "kind": "before",

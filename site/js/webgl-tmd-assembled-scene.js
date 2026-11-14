@@ -79,6 +79,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * touched by renderAssembled's blend pass. */
     const tail = buildSemiTail(indices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
+    /* The blend pass's per-prim order scratch (semiPrimOrder), keyed per
+     * placement each frame. */
+    m.semiOrder = semiPrimOrder(tail, indices, m.hasFlat ? flatRgba : null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
@@ -112,6 +115,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, cbaTsb);
     const tail = buildSemiTail(m.baseIndices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
+    m.semiOrder = semiPrimOrder(tail, m.baseIndices, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : m.baseIndices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -781,6 +785,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * blend prims against the already-rendered background. */
     let blendOn = false;
     let strictOn = false;
+    const semiMvp = this._semiMvp || (this._semiMvp = new Float32Array(16));
     let blendOccl = -1;
     let blendMean = -1;
     for (const [meshId, list] of byMesh) {
@@ -841,6 +846,33 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           continue;
         }
         if (!m.semiRanges) continue;
+        const o = m.semiOrder;
+        if (o && m.cpuPositions && m.cpuIndices) {
+          /* The window blends every semi prim far to near by its centroid's
+           * depth, whatever its mode (psx_blend::sort_blend_list); blended
+           * a mode at a time, Genocidal Cannon's subtractive ground shadow
+           * took its amount off the additive rings drawn first, where the
+           * window subtracts it from the frame under them. */
+          orderSemiPrims(o, m.cpuIndices, m.cpuPositions, mulMat4Into(semiMvp, vp, model));
+          let bound = -1;
+          for (let j = 0; j < o.order.length;) {
+            const k = o.order[j];
+            const mode = o.prims[k * 3];
+            const start = o.prims[k * 3 + 1];
+            let count = 3;
+            for (j++; j < o.order.length; j++) {
+              const e = o.order[j];
+              if (o.prims[e * 3] !== mode || o.prims[e * 3 + 1] !== start + count) break;
+              count += 3;
+            }
+            if (mode !== bound) {
+              this._setSemiBlend(mode, this.locSemiMode);
+              bound = mode;
+            }
+            gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
+          }
+          continue;
+        }
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
