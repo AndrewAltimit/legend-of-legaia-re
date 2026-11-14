@@ -1091,6 +1091,37 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     ),
     // mystic_circle
     (0xB7, &[(1, 4), (2, 4), (3, 3), (4, 4)]),
+    // evil_seru_magic (`chitei2_cort_pre_mystic_circle`, the full party): every
+    // arm to the sweeps' end clamps but the gather arm 24, whose cost climbs
+    // with its parts ([`CAPTURE_ARM_COST_TAILS`]); arm 28 draws the party alone
+    (
+        0xAD,
+        &[
+            (1, 4),
+            (2, 4),
+            (3, 4),
+            (4, 4),
+            (10, 4),
+            (11, 4),
+            (12, 4),
+            (13, 4),
+            (14, 4),
+            (15, 4),
+            (16, 4),
+            (17, 4),
+            (18, 4),
+            (19, 4),
+            (20, 4),
+            (21, 4),
+            (22, 4),
+            (23, 4),
+            (24, 3),
+            (25, 4),
+            (26, 4),
+            (27, 4),
+            (28, 2),
+        ],
+    ),
 ];
 
 /// [`CAPTURE_ARM_STEPS`] with each arm a voice clip's stop watch polls
@@ -1336,8 +1367,24 @@ pub fn capture_arm_frame_step(spell: u8, phase: u8, timing: CdTiming) -> Option<
 /// retail's hit (`26` to `28` passes at `4` roll retail's hit on both).
 pub const CAPTURE_ARM_READ_TAILS: &[(u8, u8, u16, u8)] = &[(0x6E, 4, 27, 3)];
 
+/// Capture-band arms whose own draw load changes cost class inside the arm:
+/// `(spell, phase, pass, step)`, the arm's frames reading `step` from its
+/// `pass`-th pass (from `0`) on, the capture band's
+/// [`CAST_ARM_COST_TAILS`]. PCSX-Redux only.
+///
+/// Evil Seru Magic's gather arm 24 (PROT 0966) is the case. Its recording
+/// (`chitei2_cort_pre_mystic_circle`) costs `512`..`548` hblanks for the arm's
+/// first `20` frames, `480`..`493` for the next `25`, `533` and up for `29`
+/// more and the clamp for the last `43`; behind arm 23's clamped entries the
+/// ring reads `3`, `2` for ten frames, `3` and `4`. The arm drains its
+/// countdown by the step, so the classes are its pass count: `117` frames on
+/// retail, `97` on one step of `4`.
+pub const CAPTURE_ARM_COST_TAILS: &[(u8, u8, u16, u8)] =
+    &[(0xAD, 24, 20, 2), (0xAD, 24, 45, 3), (0xAD, 24, 74, 4)];
+
 /// [`capture_arm_frame_step`] on the `pass`-th pass (from `0`) of the arm,
-/// with a line's read ending inside it ([`CAPTURE_ARM_READ_TAILS`]).
+/// with a line's read ending inside it ([`CAPTURE_ARM_READ_TAILS`]) or the
+/// arm's own cost changing class ([`CAPTURE_ARM_COST_TAILS`]).
 pub fn capture_arm_frame_step_on_pass(
     spell: u8,
     phase: u8,
@@ -1351,6 +1398,15 @@ pub fn capture_arm_frame_step_on_pass(
                 .find(|&&(s, p, n, _)| s == spell && p == phase && pass >= n)
         })
         .flatten();
+    let tail = tail.or_else(|| {
+        (timing == CdTiming::PcsxRedux)
+            .then(|| {
+                CAPTURE_ARM_COST_TAILS
+                    .iter()
+                    .rfind(|&&(s, p, n, _)| s == spell && p == phase && pass >= n)
+            })
+            .flatten()
+    });
     tail.map(|&(.., step)| step)
         .or_else(|| capture_arm_frame_step(spell, phase, timing))
 }
@@ -1448,6 +1504,17 @@ mod tests {
         assert_eq!(capture_arm_frame_step(0x51, 2, pcsx), Some(3));
         assert_eq!(capture_arm_frame_step(0x01, 1, pcsx), None);
         assert_eq!(capture_arm_frame_step(0x01, 0, pcsx), None);
+        // Evil Seru Magic's gather arm changes class three times.
+        for (pass, step) in [(0, 3), (19, 3), (20, 2), (44, 2), (45, 3), (74, 4)] {
+            assert_eq!(
+                capture_arm_frame_step_on_pass(0xAD, 24, pass, pcsx),
+                Some(step)
+            );
+        }
+        assert_eq!(
+            capture_arm_frame_step_on_pass(0xAD, 24, 80, CdTiming::Console),
+            None
+        );
         // Guilty Cross's voiced arms read `3` on a console, as mednafen's
         // `cort_guilty_cross_mid_cast` ring does.
         for arm in 1..=4 {

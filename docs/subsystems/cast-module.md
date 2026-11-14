@@ -1939,14 +1939,21 @@ arm 2 (`ctx[+0x279] += 1`) moves it on. The stager is reached through move-VM
 op `0x20`, from record `0x801F7B80`, one of the three parts arm 4 spawns. Its
 program runs `WAIT 95, WAIT 63, WAIT 30, op20(0), WAIT 0, op20(1), WAIT 63,
 op20(2)`: the white and blue flash pair, the creature shown (`+0x21C = 0`,
-`+0x0C = 0x1000`), then the release. The engine runs the stager's spawn
-arms off the parts' calls ([spawn reports](#a-module-that-reports-its-spawns))
-but keeps these three on `cast_module_camera::gizam_direct`, which holds
-phase 5 on that program's clock
-(256 ticks, a wait `v` lasting `v + 1` frames) and the host fires stager arms
-0 and 1 on ticks 191 and 192. Retail's hole lasts 309 vsyncs and its flash
-lands about 60 vsyncs later than the clock puts it; the difference is not
-traced. Arm 4 hides the creature behind both its flag and its colour word
+`+0x0C = 0x1000`), then the release. The engine runs all of the stager's
+arms off the part's own calls ([spawn reports](#a-module-that-reports-its-spawns)):
+the record is seated by arm 4 and its three state calls reach the module's next
+tick (`World::run_gizam_record_calls`), where arm 2 steps the phase. The hole's
+length is therefore the record's own: each wait is `v << 3`, drained
+`scalar * step` a pass until it runs out, so a wait that does not divide by the
+pass's step runs a pass over, and the hole lasts as many passes as the step
+history gives it. `cast_module_camera::gizam_direct` keeps the same program as
+one 256-vsync clock (a wait `v` lasting `v + 1` frames, arms 0 and 1 on ticks
+191 and 192) for a host that seats no record. Counted on that clock where the
+record runs, arm 5 ran `65` passes on a recording's own steps for retail's
+`66`, one frame-driver `rand()` short for the rest of the cast: the `0x84` film
+reads `.965` plain and on `--retail-steps` (`.899` on both) off the
+record. Retail's hole lasts 309 vsyncs on that recording, its frames running
+past their step. Arm 4 hides the creature behind both its flag and its colour word
 (`+0x21C = 0xFF`, `sw zero,4(s4)` at `0x801F6D34`), so through the hole it
 neither draws nor ticks its node: retail's clip waits on its first frames
 until stager arm 1 lights it. With the flag alone the port drew the creature
@@ -4483,9 +4490,11 @@ close to a minute. It is ported whole.
   action rewritten to `0xAD`) drops every member's HP on three frames: arm
   11's last, arm 14's first and arm 26's pass. Each wait is `n << 3`, drained
   `scalar * delta` a battle frame. The port runs both calls off the seated
-  records' own programs (`World::run_evil_seru_stager_calls`); a host that
-  seats no record lands them on the passes of arms 11 and 13. Grade
-  `disassembly` + `capture`.
+  records' own programs, inside the calling part's frame as retail's stager
+  does (`World::run_summon_part_stager_calls`), and reports the hits on the
+  module's next tick: the recording's HP falls one battle frame ahead of the
+  hit's cues. A host that seats no record lands them on the passes of arms 11
+  and 13. Grade `disassembly` + `capture`.
 - **The stager is PROT 0927's over its own records.** Nine arms behind
   `sltiu a1, 9` and the table at `0x801F6A50`: arms 0, 1, 2, 6 and 8 seat
   records on the calling part (`evil_seru_magic_stager_spawns`: the pulses
@@ -5458,6 +5467,13 @@ on a drive model ([the drive holds a summon's voice](audio.md#the-drive-holds-a-
 is heard well after it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
 call is outside its tick, and raises at the arming seam.
 
+PROT 0905 (Vera) seeks on its seek arm's way out, not at its head. Arm 2 (`0x801F6DA4`)
+drains its countdown and waits on `ctx[+0x276]` before the `jal 0x8003EAE4`, so the seek
+goes out on the pass that leaves the arm and arm 3's `FUN_8003F2B8(1)` returns busy on its
+first pass (`World::module_seek_on_arm_exit`). Issued at the arm's head, the seek was long
+done when arm 3 came round thirty passes on, and the poll arm ran one frame where the
+`0x83` recording runs two: one frame-driver `rand()` short for the rest of the cast.
+
 A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who
 is casting or which branch arm 0 takes (`forked_head_cue`, `latch_forked_head_cue`): Call Wave's `0x150`
 against Big Wave's `0x151`, Terio Punch's charge `0x159` against its punch `0x15A`, Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
@@ -6389,7 +6405,7 @@ and scatter build to white ([Thunder Storm](#prot-0957-thunder-storm)).
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
 than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
-0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock,
+0959, 0963, 0966). PROT 0906's flash pair rides its record's own call,
 and PROT 0912's blue fade and PROT 0929's arm-3 pair ride their stager ports ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
 seat or the camera plus a random spread, which the constant tracker does not
 fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
@@ -6647,12 +6663,12 @@ module's stager `0x801F7740` through op `0x20` (`World::run_part_stager_calls`, 
 bubble sprite `0x801F7C8C` on the point with `x += rand() % 129 - 0x40`,
 `y += rand() % 65 - 0x20`; `0x801F7EBC` calls arm 5 twelve times
 (`0x801F7E68` on the creature's `+0x3C`) and arm 6 once (`0x801F7F44` on
-the calling part). Record `0x801F7B80`'s calls with arms 0..2 are left to the
-director's phase-5 clock, which also releases the phase hole where no record
-runs. Retail's pillar program runs about a third slower than its wait words
-in the capture (the flash 259 vsyncs into the hole against the program's
-191 frames), the frame step held while heavy frames run long, which the port
-does not model.
+the calling part). Record `0x801F7B80`'s calls with arms 0..2 run on the
+module's tick behind the part that made them ([PROT 0906](#prot-0906-gizam));
+the director's phase-5 clock stands in where no record runs. Retail's pillar
+program runs about a third slower than its wait words in the capture (the
+flash 259 vsyncs into the hole against the program's 191 frames), the frame
+step held while heavy frames run long.
 
 PROT 0912 (Freed) seats its records on its tick body's own passes
 (`World::freed_body_effects`, `cast_module_camera::freed_arm_spawns`):

@@ -310,6 +310,13 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
 /// there on. One emulated machine's measurement, like the table.
 pub const SUMMON_BAND_FRAME_COST: u16 = 200;
 
+/// The longest hold of a summon module's seek arm that leaves its frame's
+/// cost alone, in vsyncs: PCSX-Redux's ordinary seek takes `1..4`, inside the
+/// frame's own wait for its step. A longer one loads the frame it ends on
+/// (the world's cost push). Two full-party recordings place it: a hold of `3`
+/// stores no dear entry, one of `9` stores a step-`3` one.
+pub const SEEK_HOLD_FREE_VSYNCS: u8 = 4;
+
 /// The passes the summon close-up `0x33` opens on at a higher cost
 /// ([`measured_frame_cost_at`]).
 pub const CLOSE_UP_OPENING_PASSES: u8 = 6;

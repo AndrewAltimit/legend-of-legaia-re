@@ -1175,9 +1175,9 @@ within `.006` of the step seat: what parted them was the pass count.
 The step seat's falls are the invoke hold's. Those four recordings (`0x83`, `0x84`,
 `0x87`, `0x89`) are short modules, and the engine's extra invoke pass had stood their
 stream one word on, which a pass the engine runs short later in the band took back:
-Gizam's arm 5 runs `65` passes for retail's `66` on the recording's own steps, Vera's
-poll arm `1` for `2`. With the invoke right the stream enters the band on retail's word
-and parts at that arm instead.
+Gizam's arm 5 ran `65` passes for retail's `66` on the recording's own steps, Vera's
+poll arm `1` for `2`. With the invoke right the stream entered the band on retail's word
+and parted at that arm instead (both closed below).
 
 The same holds at the module's drive poll, where the recording's drive took `4` vsyncs
 on most casts and the film's seek seat gives `2` ([the drive seek seat](#the-drive-seek-seat)):
@@ -1187,6 +1187,35 @@ already did. With it `0x88` holds retail's words through arm 6 and `0x89` throug
 where both parted at arm 2, and the films read `.9911` for `.9385` (`0x99`), `.9809` for
 `.9500` (`0x9A`), `.9449` for `.9361` (`0x8A`); `0x88`, `0x89` and `0x8B` read `.004` to
 `.008` lower on a longer stretch of retail's words. Harness seats.
+
+The driver now reads that seat off the recording instead of a film line
+(`settle_drive_seek`): it films on the default `2`, reads the poll's live shift from the
+score, re-films once on `2 - shift` and keeps the seat only if the shift moved, cached
+beside the film under the recording's id (`drive-seek.txt`). It settles the same seats
+the lines named (`4` on `0x87`..`0x8D`, `0x90` and `0x99`, `8` on `0x9A`), and `4` on
+Vera's `0x83` once its seek leaves on the arm's exit
+([the module's voice](../subsystems/cast-module.md#prot-0905-vera)). Harness.
+
+Three more places then parted the stream, each a pass or a deal a frame off:
+
+- Gizam's hole (arm 5) was counted on a 256-vsync clock where the module's own record
+  drains its waits by the pass's step: `65` passes for retail's `66`. Run off the record's
+  calls the arm runs retail's count ([PROT 0906](../subsystems/cast-module.md#prot-0906-gizam)).
+- Vera's poll arm ran `1` pass for `2`: its seek call sits at the seek arm's way out.
+- Ozma's arm 15 seats its ring of `32` jittered columns on its passing pass and retail
+  draws their `96` words on that same frame (callers `0x800289FC`, `0x80028A80`,
+  `0x80028AAC` on a `--watch` recording); the engine dealt a frame's draw words before its
+  part tick, so parts seated by the tick drew a frame late. A part seated behind the
+  frame's deal now draws on its own frame (`deal_late_seated_draw_rands`), and the plain
+  stream holds retail's words through arm 22.
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9531` | `.9570` | `0x84` `.899` to `.965`, `0xA0` `.891` to `.917`, `0x83` `.934` to `.953` |
+| `--retail-steps` | `.9587` | `.9625` | the same three films, by the same amounts |
+
+No film falls on either seat and the cue score holds `1.000`. Ozma's arm 21 reads `.765`
+for `.474`, what `--rand-track` read: its deal is retail's.
 
 ### Evil Seru Magic
 
@@ -1204,6 +1233,20 @@ score `.528` to `1.000` (`14` of retail's `33` cues to all `33`: the second swee
 and knockdown cues, and arm 27's, which had played `250` ticks late in arm 28). What is
 left is mostly the seats the port does not move: arms 0, 27 and 28 re-seat the party in
 a row of half-size models, and arm 10 seats the creature.
+
+The cast had no row in the capture band's step table, so its arms ran on the ordinary
+cost: `97` passes of the gather arm 24 for retail's `117`, `43` a sweep arm for `32`.
+Its recording clamps every arm to the sweeps' end but arm 24, whose cost changes class
+three times as its parts gather, and arm 28 draws the party alone
+(`CAPTURE_ARM_STEPS`, `CAPTURE_ARM_COST_TAILS`). With the row every arm of the band runs
+retail's pass count and the plain seat reads the step seat's score (`.784` to `.818`;
+arm 24 `.61` to `.74`, arms 25 and 26 `.36` to `.63`, arm 28 `.83` to `.998`). The
+stager's sweep calls run inside the calling part's frame, as retail's `jal` does. What
+parts the words now is the deal, one word at a time: arm 12's burst spreads `82`, `3`,
+`9`, `9` words over four frames on retail and `85`, `9`, `9` over three in the engine,
+arms 13 and 15 each draw one word the recording does not (four passes behind the arm's
+second two-word frame), and arm 14's second frame draws `10` for retail's `11`. Arms 22
+and 23 (`.51`, `.76`) and arm 27 (`.52`) stand on that parted stream.
 
 ### The enemy set on the rand-track seat
 

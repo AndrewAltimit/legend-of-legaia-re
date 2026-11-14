@@ -294,6 +294,7 @@ impl World {
             })
         };
         if direction.as_ref().is_some_and(|d| !d.hold) {
+            self.issue_module_seek_on_exit(ctx.phase);
             self.raise_cast_voice_on_pass(ctx.phase);
         }
         // PROT 0903's settle arm halves the victim's animation rate on every

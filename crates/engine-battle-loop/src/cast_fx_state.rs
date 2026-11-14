@@ -111,6 +111,10 @@ pub struct CastFxState {
     /// (`World::tick_cast_drive`); the module's pass after it in the same
     /// tick does not run it again.
     pub drive_vsync_done: bool,
+    /// Vsyncs the seek arm's `CdlSetloc` has held the frame since the last
+    /// pass closed (`World::cast_drive_blocks_frame`): that pass's frame ran
+    /// over them, and its cost carries them.
+    pub drive_held_vsyncs: u8,
     /// The head cue's call sits behind its arm's own gate as well as the
     /// drive poll (`battle_cast_cue::head_cue_waits_arm_gate`): it lands on
     /// the pass the arm's hold lets through.
@@ -627,6 +631,7 @@ impl CastFxState {
             drive_ticked_at: 0,
             selector_seek: None,
             drive_vsync_done: false,
+            drive_held_vsyncs: 0,
             module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,

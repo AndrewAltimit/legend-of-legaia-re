@@ -2362,6 +2362,17 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
   `0xF1`. Priced off the ordinary row, each stored a step-`2` entry (`3` on a full party)
   that held the band's first arm for sixteen passes: Gimard's arm 2 ran `49` frames where
   retail's runs `64`, one frame-driver `rand()` short on each.
+- **A long seek hold loads the frame it ends on.** A module's seek arm waits on the drive
+  when the selector's seek is still in flight. One of PCSX-Redux's ordinary `1..4`-vsync
+  seeks fits inside the frame's own wait and stores nothing dear
+  (`SEEK_HOLD_FREE_VSYNCS`); a longer one stores a step-`3` entry. The full-party Zenoir
+  recording (`battle_tower_swordie_strike`) spends `11` vsyncs on its seek arm and its
+  ring reads `3` for the sixteen frames behind, on arm 3's own `164` hblanks, where the
+  full-party Barra recording holds `3` vsyncs and runs on at the close-up's `2`. Without
+  the entry the engine ran the tower cast's arm 3 for `103` passes against retail's `76`
+  (`84` with it), and the mednafen stills `zenoir_summon_mid_cast` and
+  `slippery_summon_mid_cast`, which stand behind such a hold, landed a pass
+  off (camera `.991` and `.999`).
 
 The cause is the frame's cost, which a table of arms can only sample. Modelling it would
 take a per-frame cost out of the engine's own draw lists through the sixteen-entry ring;

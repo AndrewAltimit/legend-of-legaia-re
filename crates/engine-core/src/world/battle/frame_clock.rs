@@ -106,6 +106,20 @@ impl World {
             Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
             _ => cost,
         };
+        // A frame the seek arm's `CdlSetloc` held for longer than one of
+        // PCSX-Redux's ordinary seeks ran past its step. The full-party
+        // Zenoir recording (`battle_tower_swordie_strike`) spends `11` vsyncs
+        // on the seek arm's five frames, and the ring reads `3` for the
+        // sixteen frames behind them on arm 3's own `164` hblanks; the
+        // full-party Barra recording (`battle_kor_spoon_strike`) holds `3`
+        // vsyncs and its arm 1 runs on at the close-up's `2`, then `1`. The
+        // lone caster's seek holds nothing: its arm 3 runs `118` frames at `1`.
+        let cost = match std::mem::take(&mut self.casting.drive_held_vsyncs) {
+            n if n > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS => {
+                cost.max(cost_of_step(3))
+            }
+            _ => cost,
+        };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
         // A capture-band module's own line leaves its arms their table's
         // length: retail's frames under one run anywhere from inside the step
