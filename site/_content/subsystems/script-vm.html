@@ -269,6 +269,17 @@
     <li><b>Display</b><span>The runner stops at the text byte and parks the context on the one shared dialog box; the pager shows it a box at a time. When the box closes, the script runs on.</span></li>
   </ol>
   <p>The box has one owner at a time: a script that reaches text while another holds the box waits for it, while every script not on text keeps its slice. Op <code>0x3E</code> is often mistaken for "talk to NPC"; with <code>op0 &lt; 100</code> it installs a scripted battle.</p>
+  <h3 id="silent-talkers">Talkers that say nothing</h3>
+  <p>A talk that reaches the record's closing <code>0x21</code> before any text ends with nothing said, and a handful of records do exactly that. A disc sweep talks to every talkable placement of every field scene from every tile a player can stand on around it, under a cold flag bank and under the flags of each milestone of a playthrough, and nineteen records come out silent somewhere. Each is silent by its own bytes.</p>
+  <table>
+    <thead><tr><th>Shape</th><th>Where</th><th>What the record does</th></tr></thead>
+    <tbody>
+      <tr><td>A player box test ahead of every line</td><td>Three people on a ledge in Octam's underground city, the research centre's desk, a poster in Karisto Station</td><td>Speaks only to a player standing in the tiles the record names: in front of the desk, not beside it</td></tr>
+      <tr><td>No text at all</td><td>Three placements in Biron Monastery and its epilogue twin</td><td>Flag pokes and a park. An earlier port read one operand byte as a text lead and "spoke" it</td></tr>
+      <tr><td>A story flag that jumps to the end</td><td>Eight records across Conkram, Drake Castle, Karisto Station, Rim Elm and West Voz Forest</td><td>Nothing left to say once the flag is up</td></tr>
+    </tbody>
+  </table>
+  <p>The cursor each talk starts from is the one the scene load left, and retail save states of those scenes hold the same word. One record on the disc has no such cursor: a Drake Castle placement whose script does not open on the marker the loader looks for, so retail never runs its spawn section. Read from the save state, its first talk ends on that section's own <code>0x21</code> with nothing said and the second speaks; the port speaks on the first press.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

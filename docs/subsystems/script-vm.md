@@ -3112,6 +3112,35 @@ therefore silent from anywhere else, on the first talk as on any other:
 and skip to their closing `0x21` outside it. Pinned disc-wide by
 `engine-scene-host/tests/field_pickup_once_disc.rs`.
 
+**Which talkers say nothing.** A disc sweep talks to every talkable placement
+of every field scene from every standable tile around it, under a cold flag
+bank and under the bank of each milestone of the playthrough spine
+(`engine-scene-host/tests/field_talker_sweep_disc.rs`). The talks that open no
+box where a first-segment fallback would have opened one belong to nineteen
+records, and each is silent by its own bytes:
+
+| Shape | Records | What the record does at the cursor |
+|---|---|---|
+| A player box test ahead of every line | `rayman` `P1[44..=46]`, `doman` `P1[18]`, `station3` `P1[4]` | `CD F8 x0 z0 x1 z1` skips to the closing `0x21` from outside the box: the three on `rayman`'s ledge from column `107`, the research centre's desk from its two front tiles `(40..=41, 81)`, the station poster from `(80..=81, 37..=38)` |
+| No text at all | `bylon` `P1[39]`, `P1[41]`, `P1[42]`; `edbylon` `P1[27]`, `P1[29]`, `P1[30]` | `31 1D`, `31 00`, `31 1F`, `4C 42 50 ..`, `38 82 00`, then a `21` / `26 FE FF` park. The fallback's "first segment" was the `1F` operand of `31 1F` read as a text lead |
+| A story-flag test that jumps to a bare `0x21` | `concnow` `P1[12]`, `P1[13]` (`75 F8`); `dolk` `P1[27]` (`71 7B` / `71 78` / `71 42`); `station3` `P1[6]`, `P1[8]` (`73 8F`); `town0b` `P1[36]`, `town0c` `P1[21]` (`75 C4`); `vell` `P1[3]` (`72 B0` behind its box test) | The record has nothing to say once the flag is up, and loops back to the test |
+
+The cursor each of them starts from is one past the spawn section's executed
+`0x21`, and the retail save states that hold those scenes carry the same word
+at `actor[+0x9E]`. The comparison holds disc-wide: over the library's retail
+field states, every placement nobody has talked to and no cutscene is driving
+holds the cursor the engine's pre-run leaves.
+
+One talker has no pre-run cursor. `dolk2` `P1[13]` opens on `38 87 00` (face
+the compass point) rather than `24` / `25`, so the load slice's first-opcode
+gate (`0x8003A480..0x8003A48C`) skips it and its cursor stays on that first
+opcode: `dolk2_field_door_hop` holds `+0x9E = 9`. Run from there, a first talk
+executes the `38` and the `21` behind it and ends with nothing said, and the
+second talk speaks *(inferred from the cursor and the SM's run loop; no film of
+the two presses)*. The port enters it at the static scan's estimate, one past
+that `21`, and speaks on the first press - the one place it keeps the kinder
+reading over retail's, pinned by the same test file.
+
 The engine keeps that one cursor in two places - the placement channel's, which
 an engagement and the return from a talk-staged battle run as the interaction
 timeline, and the talk record's - and every end writes both. `town01`'s Tetsu
