@@ -155,6 +155,17 @@ impl WalkFilm {
         g[9] = i32::from(c.h);
         [g[3], g[4], g[5]] = c.eye;
         [g[6], g[8]] = c.focus;
+        // A state saved between a frame's actor pass and its render pass
+        // holds that frame's spawns unwalked (age `0`, and more records up
+        // than the live count): retail's first step past the save is that
+        // frame's fog walk, not the next frame's actor pass. Run it here, so
+        // the pool ages and frees a pass in step with retail's and the first
+        // spawner reads the count that walk writes.
+        if pending_fog_walk(retail) && std::env::var_os("LEGAIA_RC_NO_FOG_WALK").is_none() {
+            let step = u32::from(session.host.world.clock.frame_step.max(1));
+            session.host.world.fog.pending_dt = step;
+            session.fog_render_tick();
+        }
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
@@ -192,6 +203,19 @@ impl WalkFilm {
             .iter()
             .map(|(&k, c)| (k, c.vm.rand_draws))
             .collect();
+        // `LEGAIA_RC_WALK_FOG=1`: the fog pool's live count and every live
+        // record's `slot:age:rate:x:z:y` a tick (`engine.fog.csv`), the rows a
+        // PCSX-Redux probe of `_DAT_8007BCA8` and the pool writes.
+        let mut fog = match std::env::var_os("LEGAIA_RC_WALK_FOG") {
+            Some(_) => {
+                let mut p = self.out.clone();
+                p.set_extension("fog.csv");
+                let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
+                writeln!(w, "tick,live,cap,recs")?;
+                Some(w)
+            }
+            None => None,
+        };
         for t in 0..self.ticks {
             let pad = self.pad_at(t);
             session.host.world.input.set_pad(pad);
@@ -203,6 +227,21 @@ impl WalkFilm {
             // The pool's render step a play host runs from its draw pass: it
             // writes the live count the next tick's fog spawns read.
             session.fog_render_tick();
+            if let Some(w) = fog.as_mut() {
+                let pool = &session.host.world.fog;
+                let mut recs: Vec<_> = pool.records.iter().filter(|r| r.alive).collect();
+                recs.sort_by_key(|r| r.slot);
+                let recs: Vec<String> = recs
+                    .iter()
+                    .map(|r| {
+                        format!(
+                            "{}:{}:{}:{}:{}:{}",
+                            r.slot, r.age, r.rate, r.x, r.z, r.y as u16
+                        )
+                    })
+                    .collect();
+                writeln!(w, "{t},{},{},{}", pool.live, pool.cap, recs.join(" "))?;
+            }
             if session.host.world.active_scene_label != n0_scene {
                 n0 = partition0(session);
                 n0_scene = session.host.world.active_scene_label.clone();
@@ -293,6 +332,15 @@ fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) ->
     }
     seat_frame_accums(world, phase.saturating_sub(1) as u8);
     phase == 0
+}
+
+/// Whether the state was saved with its frame's fog walk still to run: a
+/// record the spawner seated this frame stands at age `0` until the render
+/// pass walks it (`FUN_8003F3FC` adds `rate * dt` to every live record), and
+/// the live count `_DAT_8007BCA8` is the last walk's.
+fn pending_fog_walk(retail: &RetailObs) -> bool {
+    retail.fog_live.iter().any(|r| r.age == 0)
+        || retail.fog_live.len() > usize::from(retail.fog_live_count)
 }
 
 fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
