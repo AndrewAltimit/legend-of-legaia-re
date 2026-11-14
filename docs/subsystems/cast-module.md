@@ -3520,6 +3520,18 @@ overwrites. Arm `0x10`'s node cursor store is carried: every pass pins each stan
 monster at `+0x68 = 0x10` (`0x801F8474`). Arms `0xB` and `0xC` tip the creature
 nose-up every pass, pitch `+0x44 += (scalar * step) >> 1` (`0x801F7C60`,
 `0x801F7D0C`).
+Gilium's arm-21 rings are its stager's arm 2, which seats `0x801FA414` on the caller
+(`lhu a3,0x72(v1)` at `0x801F8C94`) from inside the caller's move-VM step: the emitter
+`0x801FA3FC`, a seventeen-pass loop of the op-`0x20` call and a wait of `0x0B`. Arm 21's
+pass seats the emitter, whose own seat run makes the first call, so retail's first ring is
+seated ahead of that frame's part-list walk and takes its first `+0x100` level step on the
+pass arm 21 opens (a `--retail-parts` recording holds it at `256` on arm 21's first
+vsync). The port ran Gilium's stager calls on the module's next tick, a battle frame late,
+and every ring stood one step small and dim through the arm (`.789` on every film seat). It
+seats arm 2's ring on the caller's frame now, reached by the walk where its caller has a
+node behind it (`SummonScene::seat_walk`); arms 0 and 1, which write the module's context,
+stay on the tick. Arm 21 of the `0x95` film reads `.996`. Grade `disassembly` + `capture`.
+
 Gilium's creature flight is carried (`World::apply_gilium_writes`): arm 3's
 pass seats the creature at `(0, -0x100, -0x800)`, each held pass of arm 4
 flies it `24` a frame delta along `+0x38` and `2` down `+0x36`
