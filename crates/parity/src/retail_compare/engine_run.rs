@@ -526,6 +526,12 @@ fn seed_and_settle(
             }
             if g.drive_resume(&mut session.host, t) {
                 resumed = true;
+                // The resume replays the spawning arm's track words between
+                // two ticks. With no director of its own the session leaves
+                // them queued, behind a mark the route above has already
+                // shortened the queue under, and the next tick would drop
+                // them as stale: route them now.
+                route_bgm(&mut session, &mut director)?;
             }
         }
     }
