@@ -171,6 +171,7 @@ pub const EVIL_SERU_MAGIC_SWEEP_CALLERS: [(u32, u8); 2] = [(0x801F_937C, 11), (0
 /// `0x801F94D0` calls arm 3 `0x187` vsyncs after.
 ///
 /// PORT: FUN_801F8D64 (PROT 0966 stager; the spawn arms 0, 1, 2, 6 and 8)
+/// REF: FUN_80050ED4
 pub fn evil_seru_magic_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
     let records: &[u32] = match arm {
         0 => &[0x801F_9538],
