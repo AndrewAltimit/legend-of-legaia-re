@@ -1884,8 +1884,9 @@ clip spans re-read at the console's share over `--cd-trace` recordings of the sa
 voice's frames from the pass after the cue cost their base over `.935`
 (`console_poll_cost`), inside their step. The retail-compare child of a PCSX-Redux capture runs
 `PcsxRedux` whatever its parent opted in to. `Console` is the closer model of a console, but it
-stays opt-in until five enemy casts' lost cues (below) are explained
-([open threads](../reference/open-rev-eng-threads.md)): under it the full-game ladder re-deals too.
+stays opt-in: the films and stills are PCSX-Redux recordings, so it scores them lower by the
+artifact's size, and under it the full-game ladder re-deals. The five enemy casts that lost cues on
+it lost them to the deal and the pass lattice, not to a cue test on the step (below).
 
 Measured with the opt-in against mednafen, which is the nearer machine for this term:
 
@@ -1904,10 +1905,26 @@ both tables run `1`.
 Against the PCSX-Redux films the console timing is the recordings' artifact taken out, so the
 films fall, and that fall is the artifact's size: the Seru films' mean goes from `.9065` to `.8658`,
 the enemy casts' from `.8949` to `.8675`, the monster strikes' stays at `.963`. The cue channel
-holds on the Seru films and the strikes; five enemy casts lose cues on it (Glare's and Lip King's
-Kiss of Death's entirely), so a pass-counted arm whose cue the films place on PCSX-Redux's lattice
-moves with the step, or a body emits its cue off a step-dependent test. On the default timing each
-film reads the base engine's score and the cue ratchet passes on all three sets.
+holds on the Seru films and the strikes. Five enemy casts lost cues on it, and none of the five
+is a body that emits its cue off a step-dependent test. Run on retail's `rand()` words, the console
+timing plays every cue the default timing plays:
+
+| Film | Default | Console | Console, retail's words |
+|---|---:|---:|---:|
+| `korb2_medusa_glare` | `1.000` | `1.000` | - |
+| `retona_lip_king_kiss_of_death` | `1.000` | `0` | `1.000` (`--rand-at 0x70:4`) |
+| `nivora_duel_pre_plasma_strike__7B` | `.917` | `.667` | `.917` (`--rand-track`) |
+| `cort_evolved_card_pre_doomsday__B4` | `1.000` | `.917` | `1.000` (`--rand-track`) |
+| `korb2_aluru_cannon` | `1.000` | `.833` | - |
+
+The longer frames change how many passes draw before an arm's roll, so the roll is dealt again.
+Kiss of Death's arm-4 roll comes up odd, the miss that keys no cue (the victim's HP stays
+`1133`); Plasma Strike's hits key other cues (`0x4A`, `0x60` and `0x61` where retail keys `0x0C`
+and `0x249`); Doomsday keys two more in arm 6 (`0x62`, `0x10`). Aluru Cannon keeps all six cues, and one, `0x56` in
+state `0x2C`, lands `7` ticks off retail's where the score allows `6`: a cue on a pass the films
+place on PCSX-Redux's lattice. Glare's cue no longer moves. So the cue losses are the deal and
+the pass lattice, both the harness's to seat, and not a defect of the timing. On the default
+timing each film reads the base engine's score and the cue ratchet passes on all three sets.
 
 <a id="the-engines-gpu-frame-step-source"></a>
 

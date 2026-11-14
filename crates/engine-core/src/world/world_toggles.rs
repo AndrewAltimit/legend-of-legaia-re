@@ -161,8 +161,10 @@ pub struct WorldToggles {
     /// stop watch polls the drive on two thirds of the CPU and a voiced arm's
     /// frames reach step `4`, or, opt-in, a console's, where the same polls
     /// take a sixteenth of it (`docs/subsystems/battle-stage-camera.md`, "The
-    /// CD stop watch"). The console's waits on five enemy casts whose cues stop
-    /// playing under it. The native session takes it from
+    /// CD stop watch"). The console's stays opt-in because the recordings the
+    /// films and stills score against are PCSX-Redux's and the full-game ladder
+    /// re-deals under it; the enemy casts whose cues moved under it moved on the
+    /// `rand()` deal, not on a cue test. The native session takes it from
     /// `LEGAIA_BATTLE_CD_TIMING=console` (`pcsx-redux` names the default), and
     /// the cast-sequence films from `--console-cd`.
     pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
