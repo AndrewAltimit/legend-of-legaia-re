@@ -2,7 +2,7 @@
 # each line its set's own with the cached recording named. A recording is a copy under
 # captures/film-retail/<film>/retail; the gate films nothing on the emulator.
 # See docs/tooling/cast-sequence-oracle.md, "The gate set".
-rugi_barra_strike --physical --state battle_rugi_barra_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9B05688C --retail-from captures/film-retail/rugi_barra_strike/retail
+rugi_barra_strike --physical --state battle_rugi_barra_strike --every 8 --hit-trace --strike-deal --pin-seed 0xA54FF53A --retail-from captures/film-retail/rugi_barra_strike/retail
 taiku_topaz_strike --physical --state battle_taiku_topaz_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9 --retail-from captures/film-retail/taiku_topaz_strike/retail
 map03_heavy_grude_strike --physical --state battle_map03_heavy_grude_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85 --retail-from captures/film-retail/map03_heavy_grude_strike/retail
 cave01_theeder_thunderbolt --physical --state battle_cave01_theeder_thunderbolt_mid_cast --caster 3 --target 0 --pin-seed 0x12345678 --retail-from captures/film-retail/cave01_theeder_thunderbolt/retail
