@@ -145,6 +145,7 @@ Flags worth knowing:
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_SEAT_DRIVE_SEEK=<vsyncs>` (engine child) | Every seek of the cast drive takes this many vsyncs in place of the modelled law; the driver passes `2` ([the drive seek seat](#the-drive-seek-seat)) |
+| `LEGAIA_SEAT_CREATURE_RESTAGE=1` (engine child) | The state's bare creature seat holds a stage bump an earlier cast of its battle left (`+0x1DC` bit 0 of seat 7), which the next creature's first tick commits on ([the golem's rate](../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame)). The driver reads the byte off the recording's state and sets it; the replay's fresh fight has played no such cast |
 | `LEGAIA_SEAT_SEED_MP_UNPAID=1` (engine child) | The seeded cast has not paid its MP: the seed credits no price back, and the `0x28` debit wraps on the state's MP as retail's does ([below](#the-casters-mp)). The driver sets it on every non-physical film |
 | `LEGAIA_SEAT_SIDEBAND_SEEK=<vsyncs>` (engine child) | The recording drive's seek into the first `summon.dat` slot; the driver passes `0` ([the side-band read](#the-side-band-reads-seek)), `--engine-env` overrides it |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
@@ -1226,7 +1227,7 @@ frame-end words, name an arm that draws a constant number short or a pass late:
   engine's ran the clip through to idle
   ([cast module](../subsystems/cast-module.md#prot-0951-chaos-flare)).
 
-Over the 107 recorded films (the two Genocidal Cannon films have no recording), the three move
+Over 107 of the set's films (all but the two Genocidal Cannon films), the three move
 and no other film does, no cue is lost:
 
 | Seat | Before | After | Moved |
@@ -1305,11 +1306,24 @@ rather than a hit landing late ([the popup push](../subsystems/cast-module.md#ti
 The clip column found the band's close: six films ran their last arm `15` to `45` ticks
 past retail's while the engine waited for the caster's clip to end, where retail's
 recordings leave with the caster mid-clip, parked or frozen; without the wait their Done
-band reads `.95` to `.99` from `.77` to `.89`. What the clip column still lists is each
-body's own park: Koru holds Ultra Charge's clip `7` through the whole arm where the
-engine's plays once and idles, Medusa stands on the last keyframe of Glare's clip `8`
-until `0x51`, and Earthquake's caster is back on idle from arm 6 where the engine's
-parks on clip `9`. A dead monster's clip `4` against the engine's `0` is bookkeeping.
+band reads `.95` to `.99` from `.77` to `.89`. The clip column then listed each body's own
+park, and each was a store the port did not make: Koru's Ultra Charge clip wraps
+through its arm, Medusa stands on the keyframe Glare's cut hid her on, and Earthquake,
+Hyper Crush and Rolling Flare release their park on the pass that stages the idle
+([cast module](../subsystems/cast-module.md#a-staged-caster-clip-between-its-stage-and-its-idle)).
+The position column found Divide's and Clone's halves on one side of the old seat
+([the split](../subsystems/cast-module.md#fourteen-trampoline-arm-bodies)). A dead
+monster's clip `4` against the engine's `0` is bookkeeping, and so is seat 7 reading
+live on retail's side outside a strike: the bare seat keeps its last creature's bytes.
+
+What the audit still lists on the plain seat, by cause:
+
+| Line | Cause |
+|---|---|
+| Xain's strike `0x5C`, the caster `56` units off from arm 3 | retail's first range poll reads out of range on the victim's body pair, `19` units behind its live pair on heading `839`, and the walk steps once; the film's older recording seeds no heading, the replay's victim stands its body pair `19` ahead and the poll reads in range |
+| Jette's Clone, the acting seat `1021` off in arm 3 | the split's side is the parity of the arm's passes, which follows the frame steps; `--retail-steps` lands it |
+| Scythe Wind's victim at rate `4` for retail's `1` | the replay's idle stands `72` cursor units on, so it wraps and commits inside the arm |
+| Final Crisis, a party seat down where retail's gets up | the replay's own damage roll |
 
 ### A recording that opens inside an arm
 
@@ -1967,7 +1981,11 @@ Each strike and enemy film is pinned to the battle stream it was baselined on
 ahead of the search list, and a change to the draws before the phase no longer hands
 the film whichever stream now reaches first. A pin that stops reaching falls through
 to the list, and `cast-sequence.py` says which stream it dealt. Re-pin from the
-`stream` detail of the film's `rc/report.json`.
+`stream` detail of the film's `rc/report.json`. A set is checked in one pass by
+holding each film's `--pin-seed` against that detail after a run: the film scores the
+same on the stream it was dealt whether the pin names it or the list finds it, so a
+re-pin moves no number and only stops the next change to the earlier draws from
+re-dealing the film.
 
 Two cue drops show why. A summon kill's fade stand-in once faded the body before its
 knockdown committed, so the death arm and its defeat cue `0x0D` never ran: five Seru

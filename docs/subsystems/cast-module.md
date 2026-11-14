@@ -1081,6 +1081,51 @@ scale `0x1800` (`0x801F6EF4`). Modules outside the list keep the at-once commit
 until their stage stores are read the same way: enlarging the list without the
 bumps parks the arms that wait on a cut.
 
+### A staged caster clip between its stage and its idle
+
+A capture-class body stages its caster's clip once and says nothing more until its
+closing store, and three rules of the anim tick decide what the body does in between.
+Each was read off a film whose caster stood on another clip, or another keyframe, than
+retail's.
+
+- **The natural end commits whatever is staged.** `FUN_80047430` zeroes `+0x1DA` only
+  when `+0x1DC` bit 2 is up (`0x80047B30..0x80047B44`), then calls the commit
+  unconditionally (`0x80047B54`). The action SM routes a capture cast past the state
+  that raises bit 2 (`0x2A`'s terminator), so a clip the module staged and left staged
+  re-commits from its first keyframe at every end. Ultra Charge stages `7` with the bump
+  in arm 0 and stores nothing until arm 1's pass: `nilboa_koru_pre_ultra_charge`'s
+  recording wraps the clip at cursor `464` three times. Port:
+  `cast_module_ticks::capture_caster_clip_loops`, read by `World::finish_staged_clip`.
+- **A park stands until the module clears its budget.** The closing store is a trio,
+  `sb zero,0x21b` / `sh zero,0x176` / `sb zero,0x1da`, on one arm's pass: the park is
+  released, the clip runs on from its window to its natural end, and the idle commits
+  there. The idle byte alone leaves the clip on its park until the band ends.
+- **A monster under a zero colour word does not tick** (`0x800474D4..0x800474E0`), so a
+  cut that hides the caster by colour stands it on the keyframe the cut found until
+  something shows it again.
+
+| Body | Closing store | What the recording holds |
+|---|---|---|
+| 0962 `0xA5` Ultra Charge | arm 1's pass, `sb zero,0x1da` with the bump (`0x801F6D14..0x801F6D20`) | clip `7` wrapping through arm 1, cut to idle on the pass |
+| 0935 Earthquake | arm 5's pass, the trio (`0x801F7A80..0x801F7A8C`) | clip `9` off its window at `512`, idle from cursor `712` in arm 6 |
+| 0936 Hyper Crush | arm 6's pass, the trio (`0x801F78B0..0x801F78B8`) | clip `0x0B` parked on `128` through arms 4 to 6, idle after `272` in arm 7 |
+| 0937 Hyper Lightning | the `0xFF` arm, the trio (`0x801F780C..0x801F7814`) | the park to the band's end |
+| 0950 `0x5A` Rolling Flare | arm 3's pass, the trio (`0x801F8000..0x801F8008`) | clip `8` parked on `304`, running out through arm 4 |
+| 0940 `0x3C` Glare | arm 1 stages the idle bare on every pass (`0x801F6D94`); its cut hides the caster (`sw zero,0x4` / `sb 0xFF,0x21c` at `0x801F6EC4..0x801F6EC8`) | Medusa's clip `8` on cursor `1024` through arms 2 and 3, running out in `0x51` |
+
+Glare's arm 1 also hides every party seat but the victim and every monster seat but the
+caster on each pass, ahead of its gate (`+0x21C = 0xFF`, `+0x04 = 0`,
+`0x801F6CB8..0x801F6D80`), and its cut shows the victim (`0x20080200`, flag `0`). Zora's
+rate drops to `4` on the same passes (`0x801F6C90..0x801F6C9C`). Ultra Charge's `0xB5`
+formation stores rate `4` on both arms (`0x801F6AF4`, `0x801F6C30`). Ports: the bodies'
+directors (`CaptureSeatWrite::loop_release`, `CaptureCamArm::others_every_pass`).
+
+Over the enemy set the six films read `.952` to `.987` (Glare), `.839` to `.864` (Ultra
+Charge), `.900` to `.913` (Rolling Flare), `.899` to `.904` (Hyper Crush) and `.988` to
+`.990` (Van Saryu's Earthquake) on the plain seat, with no cue moved. A body whose
+closing store is not ported keeps the one play and the converge on idle. Grade
+`disassembly` + `capture`.
+
 ### One owner per hit
 
 **The flurry lands in the module, not in the hit kernel.** A cast clip's hit
@@ -1660,6 +1705,19 @@ re-arms literals. Four arms do not fit one word:
 **Slime Divide's shake and split point** (`slime_divide_shake`) ride the same countdown. Arm 0 saves the caster's ground pair into the module words `0x801F865C` / `0x801F8660`, and arm 1's exit zeroes the counter `0x801F8650`.
 
 Each pass of arm 2 stands the caster off that point by `axis * (0x200 - word) >> 12` along its side axis (the cosine view at `0xFFF - facing`, the sine base at `0x1000 - facing`), on the side the counter's parity names, then bumps the counter. The passing pass pushes the point by `axis / 8` and the body seats the clone there (the spawn-node builder at `0x801F7F44`). The clone's node wears the caster's heading, and its colour word is stamped `0x3FCFF3FC`, full white, which eases back to neutral. The caster stays where its last shake left it, so the two halves stand about a thousand units apart across the old seat.
+
+The passing pass makes one shake step, on the counter as it stands, and pushes the point on the
+counter that step bumped, so the caster and the clone always land on opposite sides. The port steps
+the shake on the tick that opens a battle frame; stepped again on the tick the word runs out, inside
+a frame already stepped, the caster crossed back and stood on its clone
+(`battle_map01_green_slime_divide_mid_cast` and `battle_deroa_jette_clone_mid_cast` both read the
+acting seat about `1025` units off through arm 3).
+
+Which side each half takes is the parity of the passes the arm ran, and the word drains by twice the
+frame step a pass, so the side follows the frame steps: on `--retail-steps` both films land retail's
+way (`.962` to `.990` and `.962` to `.979`), and on the engine's own steps Divide does (`.955` to
+`.972`) while Clone runs one pass more than retail and lands mirrored (`.961` to `.949`), which is
+[the frame step's thread](../reference/open-rev-eng-threads.md). Grade `disassembly` + `capture`.
 
 Evidence: `battle_map01_green_slime_divide_mid_cast` played forward in PCSX-Redux. The caster faces `0x800` on `(26, -178)` and rocks out to `-485` by the passing pass. The point moves to `537`, where the clone (pool slot 6) is seated, and the two separate a few units more on the next frame. Arm 1's flag `10` eases the caster toward white from its neutral colour word. In the port the engine's resting word is `0`, which reads as a blacked-out body under a raised flag, so the host seeds the neutral word when the flag goes up.
 
@@ -3949,6 +4007,20 @@ for the per-turn seed. Arm `k = 5`'s pass flushes again, takes the golem off (no
 `+0x10 |= 8`, HP `0`) and lights the crystal in the element's colour with `+0x0C = 0x1000`
 (`0xFFC00`, `0x3FF00000`, `0x3FF`), the word the hold state `0xFF` keeps until the `0xFF`
 arm clears it.
+
+**The golem's rate is the last strike's leftover.** The `0xFF` arm stages seat 7's idle
+with the bump (`sb zero,0x1da` at `0x801F8880`, `+0x1DC += 1` at `0x801F888C..0x801F8898`)
+after `k = 5` took the node off, so no tick consumes the bit, and the installer leaves
+`+0x1DC` alone. The next golem's first node tick, on the install pass, finds bit 0 up
+(`0x800478F4`) and commits the staged idle: the commit's decay row lifts the installer's
+rate `2` to `4` (`0x8004B080..0x8004B090`) and the golem idles at `4` from cursor `0`. A
+`--watch` recording of `rugi_rogue_pre_rogue_wind` holds the installer's store
+(`0x801F1DFC`) and the commit's on one vsync, and the state's seat 7 reads `+0x1DC = 1`
+before the cast; `rugi_rogue_pre_rogue_flame`'s state reads `0` and its golem runs at
+the installer's `2`. So the first strike of a battle opens at a quarter rate and every
+later one at half. Port: `BattleState::creature_seat_restage`, raised by the chain's
+`0xFF` stage on the bare seat and spent by `World`'s creature spawn. Grade `disassembly`
++ `capture`.
 
 Thunder's `k = 5` arm (phase `0x69`, `0x801F75F8`) seats its spray every pass ahead of the
 countdown test, in two rounds (`s8 = 0, 1`, `sltiu v0,s8,0x2` at `0x801F7710`): each round draws

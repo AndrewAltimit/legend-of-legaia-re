@@ -27,7 +27,7 @@ rugi_caruban_2_fire_breath --physical --state battle_rugi_caruban_2_fire_breath_
 rugi_caruban_3_fire_breath --physical --state battle_rugi_caruban_3_fire_breath_mid_cast --caster 3 --target 8 --pin-seed 0x12345678
 rugi_gola_gola_v2_rolling_flare --physical --state battle_rugi_gola_gola_v2_rolling_flare_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 tunnelc_xain_bull_charge --physical --state battle_tunnelc_xain_bull_charge_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
-tunnelc_xain_strike__5C --spell 0x5C --state battle_tunnelc_xain_strike --caster 3 --target 2 --pin-seed 0x9B05688C
+tunnelc_xain_strike__5C --spell 0x5C --state battle_tunnelc_xain_strike --caster 3 --target 2 --pin-seed 0xBB67AE85
 tunnelc_xain_terio_punch --physical --state battle_tunnelc_xain_terio_punch_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
 vozz_gizam_water_column --physical --state battle_vozz_gizam_water_column_mid_cast --caster 3 --target 1 --pin-seed 0x12345678
 chitei2_kemaro_v2_pre_lava_breath__46 --spell 0x46 --state chitei2_kemaro_v2_pre_lava_breath --caster 3 --target 8 --pin-seed 0x12345678
@@ -112,5 +112,5 @@ korb2_ghost_knight_neo_windhash --physical --state battle_korb2_ghost_knight_neo
 # Plasma Strike's third burst beat deals its cue pair off rand(); the pinned seed shares no word with the
 # recording's, so --rand-track seats retail's words for the module band.
 nivora_duel_pre_plasma_strike__7B --spell 0x7B --state nivora_duel_pre_plasma_strike --caster 3 --target 0 --pin-seed 0x12345678 --rand-track
-noaru_songi_pre_genocidal_cannon__B3 --spell 0xB3 --state noaru_songi_pre_genocidal_cannon --caster 3 --target 8 --pin-seed 0x12345678
-noaru_songi_genocidal_cannon --physical --state battle_noaru_songi_genocidal_cannon_mid_cast --caster 3 --target 8 --pin-seed 0x12345678
+noaru_songi_pre_genocidal_cannon__B3 --spell 0xB3 --state noaru_songi_pre_genocidal_cannon --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/noaru_songi_pre_genocidal_cannon__B3/retail
+noaru_songi_genocidal_cannon --physical --state battle_noaru_songi_genocidal_cannon_mid_cast --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/noaru_songi_genocidal_cannon/retail

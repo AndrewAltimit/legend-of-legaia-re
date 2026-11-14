@@ -1402,8 +1402,19 @@ total `16`, elapsed `11`; the older ordering table draws the frame's top edge at
 (elapsed `3`). Port: `BattleState::message_bar_glide`, stepped with the action
 plates' glides, read by `battle_hud::battle_message_bar_dy` into
 `BattleHudFrame::message_bar_dy`; started by a cast module's raise
-(`World::raise_module_message_bar`). The steal, Glare and Fatal Decision raises
+(`World::raise_module_message_bar`). Glare's raise is a mode-`0` call like the
+rest (`clear a1` at `0x801F7160` / `0x801F7178`, `jal 0x801D8DE8` at
+`0x801F7188`) and glides the same way. The steal and Fatal Decision raises
 still draw at rest.
+
+**The readout bar stays under it until it is covered.** The bar is queued behind
+the readout on the same seat, so a bar still rising from below leaves the plate
+in view and a risen one hides it: films of Glare and Melt Spray hold the
+victim's readout through the first half of the glide, the frame's top edge
+climbing under it. The readout's numbers ride the text layer, so the builder
+drops the readout once the frame's top reaches the plate's bottom row
+(`battle_hud_draws_for`). Dropped on the raise, the plate went a half glide
+early. Grade `capture`.
 
 **It is queued after the target plaque.** The same capture's ordering table
 links the target plaque's sprites ahead of the bar's, so a bar risen over the
