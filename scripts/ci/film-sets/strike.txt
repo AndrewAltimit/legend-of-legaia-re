@@ -36,7 +36,7 @@ nilboa_neo_grude_strike --physical --state battle_nilboa_neo_grude_strike --ever
 noaru_barra_v2_strike --physical --state battle_noaru_barra_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
 noaru_gilium_lv2_strike --physical --state battle_noaru_gilium_lv2_strike --every 8 --hit-trace --strike-deal --pin-seed 0x2545F491
 noaru_slippery_v2_strike --physical --state battle_noaru_slippery_v2_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
-retockin_evil_shadow_strike --physical --state battle_retockin_evil_shadow_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85
+retockin_evil_shadow_strike --physical --state battle_retockin_evil_shadow_strike --every 8 --hit-trace --strike-deal --pin-seed 0x59F111F1
 retockin_skull_knight_strike --physical --state battle_retockin_skull_knight_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
 retona_hells_rat_strike --physical --state battle_retona_hells_rat_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
 retona_king_frog_strike --physical --state battle_retona_king_frog_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
