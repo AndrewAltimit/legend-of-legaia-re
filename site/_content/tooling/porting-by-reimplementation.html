@@ -454,7 +454,7 @@
 
       <tr class="pr-group"><th colspan="5" scope="colgroup">Is each routine the right one, computing the right thing?</th></tr>
       <tr><td>A tag naming the wrong routine</td><td><a href="port-provenance.html">Port provenance</a></td><td>The bytes at the tagged address</td><td>The arithmetic under a correct tag</td><td>Ratchet</td></tr>
-      <tr><td>A routine that computes something else</td><td><a href="retail-kernel-differential.html">Retail kernel differential</a></td><td>The routine itself, run off the disc in an R3000 interpreter</td><td>When, and with what, the engine calls it</td><td>Test, coverage ratchet</td></tr>
+      <tr><td>A routine that computes something else</td><td><a href="retail-kernel-differential.html">Retail kernel differential</a></td><td>The routine itself, run off the disc in an R3000 interpreter</td><td>When, and with what, the engine calls it</td><td>Test, ratchet</td></tr>
       <tr><td>A reference GTE that shares the port's defect</td><td>The interpreter's <a href="retail-kernel-differential.html#what-it-can-run">own GTE</a></td><td>The hardware documentation, not the port</td><td>Hardware the documentation gets wrong</td><td>Test</td></tr>
 
       <tr class="pr-group"><th colspan="5" scope="colgroup">Does it look, move and sound like retail?</th></tr>
@@ -613,7 +613,11 @@
 
   table.pr-cover tr.pr-group th { text-align: left; background: var(--accent-soft); color: var(--text-bright); font-weight: 600; border-top: 1px solid var(--accent-line); }
   table.pr-cover td:first-child { color: var(--text-bright); }
-  table.pr-cover td:last-child { white-space: nowrap; font-family: var(--font-mono); font-size: 0.82rem; }
+  table.pr-cover { width: 100%; }
+  table.pr-cover th:last-child, table.pr-cover td:last-child { width: 1%; }
+  table.pr-cover td:last-child { font-family: var(--font-mono); font-size: 0.82rem; }
+  table.pr-cover td:nth-child(1) { width: 22%; }
+  table.pr-cover td:nth-child(2) { width: 24%; }
 
   .pr-grades { list-style: none; margin: 1rem 0 1.25rem; padding: 0; display: grid; gap: 0.7rem; }
   .pr-grades li { margin: 0; padding: 0 0 0.55rem; display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.2rem 0.9rem; line-height: 1.5; position: relative; }
