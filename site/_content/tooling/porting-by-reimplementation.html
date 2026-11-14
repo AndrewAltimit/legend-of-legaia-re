@@ -30,7 +30,7 @@
 
         <rect class="dg-node" x="34" y="98" width="276" height="64" rx="5"/>
         <text class="dg-label pr-title" x="172" y="124">2 Port from disassembly</text>
-        <text class="dg-sub pr-sub" x="172" y="146">port catalog, evidence grades</text>
+        <text class="dg-sub pr-sub" x="172" y="146">port catalog, R3000 differential</text>
 
         <rect class="dg-node" x="34" y="186" width="276" height="64" rx="5"/>
         <text class="dg-label pr-title" x="172" y="212">3 Wire: reach it live</text>
@@ -46,11 +46,11 @@
 
         <rect class="dg-node-accent" x="34" y="450" width="276" height="64" rx="5"/>
         <text class="dg-label pr-title" x="172" y="476">6 Measure against retail</text>
-        <text class="dg-sub pr-sub" x="172" y="498">corpus ratchet, ledger</text>
+        <text class="dg-sub pr-sub" x="172" y="498">stills, films, sound, ledger</text>
 
         <rect class="dg-node" x="34" y="538" width="276" height="64" rx="5"/>
         <text class="dg-label pr-title" x="172" y="564">7 Keep iteration quick</text>
-        <text class="dg-sub pr-sub" x="172" y="586">same output, or it is a bug</text>
+        <text class="dg-sub pr-sub" x="172" y="586">same output, counted cost</text>
 
         <!-- A: corpus to porting -->
         <path class="dg-edge" d="M310 464 H372 V118 H312" marker-end="url(#pr-arrow)"/>
@@ -231,12 +231,12 @@
   <p>A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise.</p>
   <dl class="kv">
     <dt>Stills</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> seats the engine where each of several hundred retail save states stood and scores frame, camera, player, placements, music, flags, party and enemies per state.</dd>
-    <dt>Film</dt><dd>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still sees one instant.</dd>
-    <dt>Sound</dt><dd>The <a href="../subsystems/audio.html#state-sweep">audio-state sweep and real retail PCM</a> compare music and cues against what the emulator actually played.</dd>
-    <dt>Routines</dt><dd>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs a retail routine off your disc in the <code>crates/retail-exec</code> R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. Every test declares and proves the routines it runs, and the count it covers is a ratchet.</dd>
+    <dt>Film</dt><dd>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still sees one instant. The <a href="walk-film.html">walk film</a> does the same for a field walk on a fixed pad schedule. Films carry retail pixels, so their image scores are reported and not committed.</dd>
+    <dt>Sound</dt><dd>The <a href="../subsystems/audio.html#state-sweep">audio-state sweep and real retail PCM</a> compare music and cues against what the emulator actually played. A film's sound cues are the one part of it that is ratcheted (<a href="cast-sequence-oracle.html#cue-ratchet">the cue ratchet</a>).</dd>
+    <dt>Routines</dt><dd>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs a retail routine off your disc in the <code>crates/retail-exec</code> R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. It is the one instrument in which retail's own code executes, and the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count it covers is a ratchet. What it cannot see is when, and with what, the engine calls the kernel.</dd>
     <dt>Whole game</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a> plays New Game to credits on pad input, segment by segment and as one continuous run.</dd>
   </dl>
-  <p><a href="verification-ladder.html">The verification ladder</a> stacks these with the format docs and port provenance, rung by rung, with what each one cannot see. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc (<a href="capture-coverage.html">capture coverage</a>) and its gates refuse a silent loosening.</p>
+  <p><a href="verification-ladder.html">The verification ladder</a> stacks these with the format docs and port provenance, rung by rung, with what each one cannot see, and <a href="#coverage">the coverage map</a> below lists every instrument by the gap it closes. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc (<a href="capture-coverage.html">capture coverage</a>) and its gates refuse a silent loosening.</p>
   <div class="callout callout-provenance">
     <div class="callout-title">The boundary, stated honestly</div>
     <p>The project does not call this "clean-room". The same people read the Ghidra output and write the Rust, which is not the two-team firewall that term means. The boundary actually enforced is narrower and checkable: the dumps in <code>ghidra/scripts/funcs/</code> stay reference material and are never committed, no Sony-derived bytes are committed, and no code is mechanically translated. The user supplies the disc.</p>
@@ -267,7 +267,7 @@
   <dl class="kv">
     <dt>Done</dt><dd>Dump the function, read the instruction stream, write a fresh Rust function that does the same thing, and tag it <code>// PORT: FUN_&lt;addr&gt;</code>. The decompiled C is only a hint about where to look: register arguments vanish from calls, stores get reordered or dropped, labels print as calls, and a module imported at the wrong base prints every address shifted by a constant (<a href="ghidra.html#decompiler-artifacts">decompiler artifacts</a>).</dd>
     <dt>Produces</dt><dd><code>World</code>-free kernels in the engine's crates, a citation in the docs, and a row in the <a href="port-catalog.html">port catalog</a>, which derives each function's status from the tree on every run.</dd>
-    <dt>Gate</dt><dd>Three checks, each on its own question. <code>port-catalog.py --check</code> ratchets what is ported. <a href="port-provenance.html">Port provenance</a> asks whether a <code>// PORT:</code> address names the routine the Rust implements; its signals rank suspicion, so <code>--check</code> gates the delta: a commit that adds an unwaived finding fails. The <a href="retail-kernel-differential.html">retail kernel differential</a> asks whether the Rust computes what the routine computes, by running the routine off your disc beside its kernel; each test declares and proves the routines it runs, and <code>differential-coverage.py --check</code> ratchets how many tagged routines are covered. A differential settles provenance for the addresses it runs (<a href="verification-ladder.html">the verification ladder</a>).</dd>
+    <dt>Gate</dt><dd>Three checks, each on its own question. <code>port-catalog.py --check</code> ratchets what is ported. <a href="port-provenance.html">Port provenance</a> asks whether a <code>// PORT:</code> address names the routine the Rust implements; its signals rank suspicion, so <code>--check</code> gates the delta: a commit that adds an unwaived finding fails. The <a href="retail-kernel-differential.html">retail kernel differential</a> asks whether the Rust computes what the routine computes, by running the routine off your disc in an R3000 interpreter beside its kernel, on generated inputs and one scripted <code>rand()</code> stream, and comparing the whole regions both wrote; each test declares and proves the routines it runs, and <code>differential-coverage.py --check</code> ratchets how many tagged routines are covered. A differential settles provenance for the addresses it runs (<a href="verification-ladder.html">the verification ladder</a>). The interpreter is user-mode, and a test that runs no retail routine says so with its reason, so it is never counted as coverage.</dd>
     <dt>Example</dt><dd>A sweep for writers of <code>_DAT_8007B8C2</code> searched the absolute <code>lui</code> + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's polarity. Its writer is <code>0x80015F08 sh v0,0x5aa(gp)</code>, a gp-relative store the scan could not see. A negative result is held to the same evidence bar as a positive one.</dd>
   </dl>
 </section>
@@ -285,7 +285,8 @@
   <dl class="kv">
     <dt>Done</dt><dd>Give each port a caller that a host can reach. An unwired port compiles, passes its own unit tests, reads as progress and does nothing for a player, so it is not done until something live reaches it.</dd>
     <dt>Produces</dt><dd>Ports a host reaches, and for the rest an explicit statement of why not: <code>// NOT WIRED:</code> names what must exist first, <code>// REPLACED-BY:</code> names the mechanism that does the routine's job.</dd>
-    <dt>Gate</dt><dd>Static and runtime. <a href="port-catalog.html#reachability"><code>port-catalog.py --live</code></a> builds a call graph from the hosts' real entry points, with every ambiguity resolved toward reachability, so <code>--not-live</code> is a hard floor. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md" target="_blank" rel="noopener">Live-audit triage</a> settles each row: <code>WIRE</code>, <code>DISCLOSE</code>, <code>DELETE</code>, <code>REPLACE</code> or <code>FALSE INERT</code>. The <a href="port-catalog.html#runtime-denominator">runtime denominator</a> asks what a replay actually entered, and host-drift gates catch a feature wired into one host only.</dd>
+    <dt>Gate</dt><dd>Static and runtime. <a href="port-catalog.html#reachability"><code>port-catalog.py --live</code></a> builds a call graph from the hosts' real entry points, with every ambiguity resolved toward reachability, so <code>--not-live</code> is a hard floor. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md" target="_blank" rel="noopener">Live-audit triage</a> settles each row: <code>WIRE</code>, <code>DISCLOSE</code>, <code>DELETE</code>, <code>REPLACE</code> or <code>FALSE INERT</code>. The <a href="port-catalog.html#runtime-denominator">runtime denominator</a> asks what a replay actually entered. Two worklists come from retail's side: <a href="playthrough-coverage.html">playthrough coverage</a> plays a scripted segment of retail with a breakpoint on every dumped function no page explains, and the <a href="field-op-census.html">field-op census</a> says whether any scene on the disc issues an opcode arm at all.</dd>
+    <dt>Hosts</dt><dd>Three hosts run one engine, and <a href="host-drift.html">host-drift</a> gates catch a feature wired into one only. Those gates read source. The <a href="host-drift.html#host-pair">host pair run</a> plays one pad script in the native window and the browser page and pairs them by world frame, picture against picture and state against state: the one check that sees the page's JavaScript and GL state.</dd>
     <dt>Example</dt><dd>Three field effect handlers stay unconverted across coverage runs, which reads as "a composed-overworld ladder would reach them". That reading is falsified: no production path constructs an actor on any of the three, so the gap is a constructor, not a test. Sharper still: an anchor tagged <code>NOT WIRED</code> that a passing oracle executed has the highest priority, since an oracle traversing stub code can certify behaviour nothing implements.</dd>
   </dl>
 </section>
@@ -359,7 +360,8 @@
   <dl class="kv">
     <dt>Done</dt><dd>Play New Game to credits with no human, on pad input alone. A scripted hand walks, talks, fights, heals and shops by pressing the buttons a player would. Story and battle defects no unit test sees appear here, and a game that cannot be finished is not a port.</dd>
     <dt>Produces</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a>: story segments between milestones anchored to retail saves, each climbing <code>loads</code>, <code>enters</code>, <code>progresses</code> and <code>pad</code>. The <a href="full-game-ladder.html#continuous">continuous run</a> plays one session from New Game with no re-seeding, so it arrives at each stretch with the levels it earned. The <a href="soak-harness.html">soak harness</a> throws seeded random input at every scene and minigame.</dd>
-    <dt>Gate</dt><dd>The tiers are ratcheted, and a red run may not be turned green by lowering them. One random stream can hide a fight won only by the deal, so the seed set repeats the whole run on other streams, each asserting its own row. <a href="determinism-replay.html">Record and replay</a> keeps it reproducible: the same input gives bit-identical traces.</dd>
+    <dt>Gate</dt><dd>The tiers are ratcheted, and a red run may not be turned green by lowering them. One random stream can hide a fight won only by the deal, so the seed set repeats the whole run on other streams, each asserting its own row. <a href="determinism-replay.html">Record and replay</a> keeps it reproducible: the same input gives bit-identical traces. The soak harness's fixed findings stay as hard-fail replays.</dd>
+    <dt>Blind to</dt><dd>Fidelity. The ladder proves the game can be finished and compares nothing with retail, and the soak harness's detectors are internal-consistency checks. <a href="gate-replay.html">Gate replay</a> carries a ladder run across: it plays the engine's own pad on retail beat by beat, resynchronised at each state gate, and reports the gaps, positions and random draws per beat.</dd>
     <dt>Example</dt><dd>A stall is a diagnosis, not a red light. The report names the script instruction that parked, the door gate that refused, the story flag never set and the disc records that set it (<a href="full-game-ladder.html#stall">how to read a stall</a>). The page also says <a href="full-game-ladder.html#limits">what the ladder cannot claim</a>.</dd>
   </dl>
 </section>
@@ -368,8 +370,10 @@
   <h2>Step 6: measure against a retail corpus</h2>
   <dl class="kv">
     <dt>Done</dt><dd>Capture moments of the original as emulator save states. For each, read what retail was doing out of the state's own memory, put the engine in the same situation through its own load path, and score the difference per channel, worst state first. The <a href="retail-compare.html#channels">channels</a> cover what a player notices: the frame on screen, player position, camera, NPC placement, facing, the music track, story flags, party, enemies and more. <a href="retail-oracle-method.html">The retail-oracle method</a> writes it up engine-neutral.</dd>
-    <dt>Produces</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> and its siblings: the <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> for what unfolds over time, the <a href="../subsystems/audio.html#state-sweep">audio sweep</a> and real PCM comparison for sound, the <a href="retail-kernel-differential.html">retail kernel differential</a> for single routines run off the disc, the <a href="recomp-differential.html">recomp differential</a> for continuous traces. Its reports are a worklist, with a <a href="retail-compare.html#divergence">catalogue of divergence shapes</a>.</dd>
-    <dt>Gate</dt><dd>Per-state, per-channel <a href="retail-compare.html#ratchet">scores may only rise</a>. Two more gates protect the ratchet: a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed (<a href="retail-oracle-method.html#ratchet">ratchet integrity</a>).</dd>
+    <dt>Produces</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> and its siblings: the <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> and the <a href="walk-film.html">walk film</a> for what unfolds over time, the <a href="../subsystems/audio.html#state-sweep">audio sweep</a> and real PCM comparison for sound, the <a href="retail-kernel-differential.html">retail kernel differential</a> for single routines run off the disc, the <a href="recomp-differential.html">recomp differential</a> for continuous traces. Its reports are a worklist, with a <a href="retail-compare.html#divergence">catalogue of divergence shapes</a>.</dd>
+    <dt>Gate</dt><dd>Per-state, per-channel <a href="retail-compare.html#ratchet">scores may only rise</a>. Two more gates protect the ratchet: a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed (<a href="retail-oracle-method.html#ratchet">ratchet integrity</a>). No instrument blesses itself: <code>--propose</code> writes a candidate baseline beside the committed one, for review.</dd>
+    <dt>Films</dt><dd>A film has no committed image baseline, since its recordings carry retail pixels and its score moves a little with every change; a change reports before and after on one command. Its sound-cue channel is the exception: a cast plays the cue retail plays, on the same clock, or it does not, so <a href="cast-sequence-oracle.html#cue-ratchet"><code>film-cues.py</code></a> holds the committed film sets to a baseline.</dd>
+    <dt>Order and timing</dt><dd>A film can score low with every routine right, because the engine reaches an arm after another number of <code>rand()</code> draws and the arm's look is its draws. The film logs retail's seed word every vsync and can seat the engine's stream on it at a named phase (<a href="cast-sequence-oracle.html#rand">the rand stream</a>), which separates a wrong routine from a different deal. Frames pair on the game's own clock, never on wall time (<a href="cast-sequence-oracle.html#pairing">the pairing rule</a>).</dd>
     <dt>Keeping it wide</dt><dd>A corpus grows where capturing is easy, and parity on those moments says nothing about the rest. <a href="retail-compare.html#capture-coverage">Capture coverage</a> lists every scene, monster, enemy attack, player cast and menu screen the disc defines, and ranks what no state shows yet. As parity is reached on what the corpus holds, the corpus is extended into what it does not hold.</dd>
     <dt>Example</dt><dd>On <code>noaru_field_card_walk</code>, the engine's frame is black where retail shows a floor, with every other channel exact. That pattern points at a mesh-bearing ambient part seated off its anchor: Noaru's ice floor rides the camera focus through <a href="../subsystems/move-vm-overlay-ext.html">move-VM extension op <code>0x24</code></a>. The frame pointed at the gap, and the mechanism itself is read from the move VM's overlay extension.</dd>
   </dl>
@@ -379,10 +383,114 @@
   <h2>Step 7: keep iteration quick</h2>
   <dl class="kv">
     <dt>Done</dt><dd>Focused performance rounds, run now and then rather than continuously, on two costs: what the engine costs a player, and what a change costs a developer. An oracle that takes too long gets run less, and defects survive longer.</dd>
-    <dt>Produces</dt><dd><a href="frame-bench.html">Frame benchmarks</a> on both hosts, and <a href="build-and-test-speed.html">build and test profiles</a> with an edit-time <code>dev-fast</code> path, a result cache on the corpus and a parallel <a href="build-and-test-speed.html#full-gate">full gate</a>. The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake.</dd>
-    <dt>Gate</dt><dd>A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's <code>.ppf</code> from a fixed seed must hash the same (<a href="build-and-test-speed.html#profiling">profiling</a>). A cache has to key on everything its result depends on, and a bless or a check never reads the corpus's.</dd>
+    <dt>Produces</dt><dd><a href="frame-bench.html">Frame benchmarks</a> on both hosts, and <a href="build-and-test-speed.html">build and test profiles</a> with an edit-time <code>dev-fast</code> path, a result cache on the corpus and a parallel <a href="build-and-test-speed.html#full-gate">full gate</a>. The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake. Counts do not flake, so the <a href="frame-bench.html#cost-ratchet">cost ratchet</a> commits those instead: draws and allocations per frame on tick-locked runs, and the shipped bundle's size.</dd>
+    <dt>Gate</dt><dd>A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's <code>.ppf</code> from a fixed seed must hash the same (<a href="build-and-test-speed.html#profiling">profiling</a>). A cache has to key on everything its result depends on, and a bless or a check never reads the corpus's. In the browser, the <a href="frame-hash.html">frame hash</a> steps the play page tick by tick on a scripted pad and compares two bundles frame for frame. A rise in a ratcheted count is a loosening and takes a ledger entry like any other.</dd>
     <dt>Example</dt><dd>The <code>readPixels</code> on the battle transition's arming frame is expensive, and an asynchronous read would remove the wait. It would also land the capture frames later, which moves the transition, so that is not an optimisation available here (<a href="frame-bench.html#shapes">what the numbers have shown</a>).</dd>
   </dl>
+</section>
+
+<section class="doc-section" id="coverage" data-doc="what-is-tested-and-the-gap-each-test-closes">
+  <h2>What is tested, and the gap each test closes</h2>
+  <p>Each step's gate closes one kind of gap and is blind to another. The five questions below sort every instrument the project runs; the table under them names each one, what it is held against and what it cannot see.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Five questions, each with what its instruments are held against and what they stay blind to. Is everything read, ported and wired: held against the disc's bytes and the hosts' call graph, blind to what the code computes. Is each routine right: held against retail's own routine run in an R3000 interpreter, blind to when the engine calls it. Does it look, move and sound like retail: held against save states, emulator recordings and recorded audio, blind to what no capture shows. Does it hold together as a program: held against the port itself, on another host, another seed or the same input twice, blind to retail. Are the measurements honest: held against every baseline at the base revision and a count of skips, blind to a value that was wrong when it was blessed.">
+      <text class="dg-sub dg-start" x="20" y="18">the question</text>
+      <text class="dg-sub dg-start" x="330" y="18">held against</text>
+      <text class="dg-sub dg-start" x="650" y="18">blind to</text>
+
+      <rect class="dg-node" x="20" y="28" width="280" height="58" rx="4"/>
+      <text class="dg-label" x="160" y="52">Read, ported and wired?</text><text class="dg-sub" x="160" y="70">steps 1 to 3</text>
+      <rect class="dg-node" x="330" y="28" width="290" height="58" rx="4"/>
+      <text class="dg-label" x="475" y="52">The disc's bytes</text><text class="dg-sub" x="475" y="70">and the hosts' call graph</text>
+      <rect class="dg-node-warn" x="650" y="28" width="230" height="58" rx="4"/>
+      <text class="dg-label" x="765" y="62">What the code computes</text>
+
+      <rect class="dg-node-accent" x="20" y="96" width="280" height="58" rx="4"/>
+      <text class="dg-label" x="160" y="120">The right routine, computing right?</text><text class="dg-sub" x="160" y="138">step 2</text>
+      <rect class="dg-node-accent" x="330" y="96" width="290" height="58" rx="4"/>
+      <text class="dg-label" x="475" y="120">Retail's own routine</text><text class="dg-sub" x="475" y="138">run in an R3000 interpreter</text>
+      <rect class="dg-node-warn" x="650" y="96" width="230" height="58" rx="4"/>
+      <text class="dg-label" x="765" y="130">When the engine calls it</text>
+
+      <rect class="dg-node" x="20" y="164" width="280" height="58" rx="4"/>
+      <text class="dg-label" x="160" y="188">Looks, moves, sounds like retail?</text><text class="dg-sub" x="160" y="206">step 6</text>
+      <rect class="dg-node" x="330" y="164" width="290" height="58" rx="4"/>
+      <text class="dg-label" x="475" y="188">Save states, recordings</text><text class="dg-sub" x="475" y="206">and the emulator's audio output</text>
+      <rect class="dg-node-warn" x="650" y="164" width="230" height="58" rx="4"/>
+      <text class="dg-label" x="765" y="198">What no capture shows</text>
+
+      <rect class="dg-node" x="20" y="232" width="280" height="58" rx="4"/>
+      <text class="dg-label" x="160" y="256">Holds together as a program?</text><text class="dg-sub" x="160" y="274">steps 3, 5 and 7</text>
+      <rect class="dg-node" x="330" y="232" width="290" height="58" rx="4"/>
+      <text class="dg-label" x="475" y="256">The port itself</text><text class="dg-sub" x="475" y="274">other host, other seed, same input twice</text>
+      <rect class="dg-node-warn" x="650" y="232" width="230" height="58" rx="4"/>
+      <text class="dg-label" x="765" y="266">Retail</text>
+
+      <rect class="dg-node" x="20" y="300" width="280" height="58" rx="4"/>
+      <text class="dg-label" x="160" y="324">Are the measurements honest?</text><text class="dg-sub" x="160" y="342">every step</text>
+      <rect class="dg-node" x="330" y="300" width="290" height="58" rx="4"/>
+      <text class="dg-label" x="475" y="324">Baselines at the base revision</text><text class="dg-sub" x="475" y="342">and a count of what skipped</text>
+      <rect class="dg-node-warn" x="650" y="300" width="230" height="58" rx="4"/>
+      <text class="dg-label" x="765" y="334">A value wrong when blessed</text>
+
+      <path class="dg-edge" d="M300 57 L328 57"/><path class="dg-edge" d="M300 125 L328 125"/><path class="dg-edge" d="M300 193 L328 193"/><path class="dg-edge" d="M300 261 L328 261"/><path class="dg-edge" d="M300 329 L328 329"/>
+      <path class="dg-edge-dim" d="M620 57 L648 57"/><path class="dg-edge-dim" d="M620 125 L648 125"/><path class="dg-edge-dim" d="M620 193 L648 193"/><path class="dg-edge-dim" d="M620 261 L648 261"/><path class="dg-edge-dim" d="M620 329 L648 329"/>
+    </svg>
+    <figcaption>Each row's blind spot is the next row's question, except the fourth: an instrument that compares the port with itself says nothing about retail. Only the second row executes retail's code.</figcaption>
+  </figure>
+  <p>In the last column, a <strong>ratchet</strong> is a committed baseline that may only improve, a <strong>test</strong> is a hard assertion, and a <strong>report</strong> is read by a person and gates nothing.</p>
+  <div class="table-wrap">
+  <table class="pr-cover">
+    <thead><tr><th>Gap</th><th>Instrument</th><th>Held against</th><th>Cannot see</th><th>Kind</th></tr></thead>
+    <tbody>
+      <tr class="pr-group"><th colspan="5" scope="colgroup">Is everything read, ported and wired?</th></tr>
+      <tr><td>Bytes no parser reads, code nobody dumped</td><td><a href="disc-coverage.html">Disc coverage</a>, <a href="byte-accounting.html">byte accounting</a></td><td>The disc's code images and archive entries</td><td>What the code does with the data</td><td>Ratchet</td></tr>
+      <tr><td>A writer that disagrees with its reader</td><td>The patcher's <a href="randomizer-internals.html#tests">round-trip and runtime oracles</a></td><td>The patched image re-decoded; the engine's grant kernels</td><td>Retail running the patched disc</td><td>Test</td></tr>
+      <tr><td>A routine nobody has ported</td><td><a href="port-catalog.html">Port catalog</a>, worklist classification</td><td>Function entries in the dumped images</td><td>Code no dump has cut into functions</td><td>Ratchet</td></tr>
+      <tr><td>A port nothing calls</td><td><a href="port-catalog.html#reachability"><code>port-catalog.py --live</code></a>, live-audit triage</td><td>A call graph from the hosts' entry points</td><td>Whether a reachable port ever runs</td><td>Ratchet</td></tr>
+      <tr><td>A port no run enters</td><td><a href="port-catalog.html#runtime-denominator">Runtime denominator</a>, reach triage</td><td>What the replays executed</td><td>Paths no replay walks</td><td>Report</td></tr>
+      <tr><td>Code retail runs that no page explains</td><td><a href="playthrough-coverage.html">Playthrough coverage</a></td><td>Retail under breakpoints on a scripted segment</td><td>Anything off the segment</td><td>Report</td></tr>
+      <tr><td>An opcode arm that looks untested</td><td><a href="field-op-census.html">Field-op census</a></td><td>Every script carrier on the disc</td><td>Whether the port's arm is right</td><td>Report</td></tr>
+
+      <tr class="pr-group"><th colspan="5" scope="colgroup">Is each routine the right one, computing the right thing?</th></tr>
+      <tr><td>A tag naming the wrong routine</td><td><a href="port-provenance.html">Port provenance</a></td><td>The bytes at the tagged address</td><td>The arithmetic under a correct tag</td><td>Ratchet</td></tr>
+      <tr><td>A routine that computes something else</td><td><a href="retail-kernel-differential.html">Retail kernel differential</a></td><td>The routine itself, run off the disc in an R3000 interpreter</td><td>When, and with what, the engine calls it</td><td>Test, coverage ratchet</td></tr>
+      <tr><td>A reference GTE that shares the port's defect</td><td>The interpreter's <a href="retail-kernel-differential.html#what-it-can-run">own GTE</a></td><td>The hardware documentation, not the port</td><td>Hardware the documentation gets wrong</td><td>Test</td></tr>
+
+      <tr class="pr-group"><th colspan="5" scope="colgroup">Does it look, move and sound like retail?</th></tr>
+      <tr><td>A wrong frame, camera, placement or facing</td><td><a href="retail-compare.html#channels">Retail-compare</a> state and <a href="retail-compare.html#image">image</a> channels</td><td>A save state's RAM and displayed VRAM</td><td>Time; whatever the seed installed</td><td>Ratchet</td></tr>
+      <tr><td>A moment no capture shows</td><td><a href="capture-coverage.html">Capture coverage</a></td><td>Every scene, monster, cast and screen the disc defines</td><td>Whether a covered moment matches</td><td>Report</td></tr>
+      <tr><td>A cast in the wrong order, length or timing</td><td><a href="cast-sequence-oracle.html">Cast-sequence oracle</a></td><td>An emulator recording, a row a vsync, paired on the game's clock</td><td>The rest of the fight; residuals under retail's own spread</td><td>Report</td></tr>
+      <tr><td>A random draw taken in another order</td><td>The film's <a href="cast-sequence-oracle.html#rand">rand stream</a> seat; the differential's scripted <code>rand()</code></td><td>Retail's seed word, logged every vsync</td><td>Draws outside a recorded stretch</td><td>Report</td></tr>
+      <tr><td>A walk or camera ease that unfolds differently</td><td><a href="walk-film.html">Walk film</a></td><td>Retail on the same state and pad schedule</td><td>Any other state or schedule</td><td>Report</td></tr>
+      <tr><td>A run that parts from retail between two states</td><td><a href="gate-replay.html">Gate replay</a></td><td>The engine's pad replayed on retail, beat by beat</td><td>What retail would have pressed instead</td><td>Report</td></tr>
+      <tr><td>A divergence on a continuous run</td><td><a href="recomp-differential.html">Recomp differential</a></td><td>A static recompilation's state trace</td><td>The recomp's own hardware model</td><td>Report</td></tr>
+      <tr><td>A cue that stops playing or lands off the clock</td><td><a href="cast-sequence-oracle.html#cue-ratchet">Film cue ratchet</a>, cue differential</td><td>Retail's cue ring, sampled every vsync; its drainer run off a state</td><td>Cues outside the committed film sets</td><td>Ratchet</td></tr>
+      <tr><td>The wrong track, tempo or volume</td><td><a href="../subsystems/audio.html#state-sweep">Audio state sweep</a></td><td>libsnd's records in every state's RAM</td><td>The waveform</td><td>Ratchet</td></tr>
+      <tr><td>Wrong notes or voices</td><td><a href="../subsystems/audio-internals.html#audio-trace-oracle">Audio trace</a>, keying differential</td><td>SPU registers; retail's sequencer run in the interpreter</td><td>The mixed sound</td><td>Test</td></tr>
+      <tr><td>A mix that sounds different</td><td><a href="../subsystems/audio-internals.html#real-pcm">Real retail PCM</a></td><td>The emulator's recorded output</td><td>States with no recording</td><td>Ratchet</td></tr>
+
+      <tr class="pr-group"><th colspan="5" scope="colgroup">Does it hold together as a program?</th></tr>
+      <tr><td>A game that cannot be finished</td><td><a href="full-game-ladder.html">Full-game ladder</a>: segments, <a href="full-game-ladder.html#continuous">continuous run</a></td><td>Retail saves at each story milestone</td><td>Fidelity: it compares nothing with retail</td><td>Ratchet</td></tr>
+      <tr><td>A run won only by the deal</td><td>The ladder's <a href="full-game-ladder.html#continuous">seed set</a></td><td>The same run on other random streams</td><td>Streams outside the set</td><td>Ratchet</td></tr>
+      <tr><td>A panic, softlock or endless battle</td><td><a href="soak-harness.html">Soak harness</a></td><td>Nothing of retail: its own detectors</td><td>Retail divergence, a wrong picture or sound</td><td>Test</td></tr>
+      <tr><td>A run that does not repeat</td><td><a href="determinism-replay.html#gate">Determinism replay</a></td><td>The same input, run twice</td><td>Whether the repeated result is right</td><td>Test</td></tr>
+      <tr><td>A feature wired into one host</td><td><a href="host-drift.html">Host drift</a> gates, the <code>wasm32</code> type-check</td><td>The other host's source</td><td>What the page draws</td><td>Test</td></tr>
+      <tr><td>A page that draws differently from the window</td><td><a href="host-drift.html#host-pair">Host pair run</a></td><td>The native window on the same pad script</td><td>Retail: both hosts can be wrong together</td><td>Report</td></tr>
+      <tr><td>A speedup that changed the picture</td><td><a href="frame-hash.html">Frame hash</a>, stripped ladder trace</td><td>The same run on the previous build</td><td>Fidelity; hashes differ between drivers</td><td>Report</td></tr>
+      <tr><td>A frame that got more expensive</td><td><a href="frame-bench.html#cost-ratchet">Cost ratchet</a>, <a href="frame-bench.html">frame bench</a></td><td>Committed counts of draws, allocations and bundle bytes</td><td>Time itself; the bench asserts nothing</td><td>Ratchet</td></tr>
+      <tr><td>A kernel crate reaching a host</td><td>The <a href="../subsystems/engine.html#crate-layout">layering gate</a></td><td>A committed table of crate edges</td><td>Behaviour</td><td>Test</td></tr>
+
+      <tr class="pr-group"><th colspan="5" scope="colgroup">Are the measurements themselves honest?</th></tr>
+      <tr><td>A baseline quietly lowered</td><td><a href="ratchet-integrity.html#loosening">Loosening ledger</a></td><td>Every baseline at the base revision</td><td>A value that was wrong when blessed</td><td>Test</td></tr>
+      <tr><td>A measurement that never ran</td><td><a href="ratchet-integrity.html#skips">Skip tally</a>, the full gate's preflight</td><td>Skips counted by reason where the data is</td><td>A test that returns early without a skip line</td><td>Test</td></tr>
+      <tr><td>An instrument that blesses itself</td><td><code>--propose</code>, <a href="build-and-test-speed.html#full-gate">the full gate</a></td><td>A candidate file beside the committed baseline</td><td>Whether the reviewer read it</td><td>Test</td></tr>
+      <tr><td>A fix undone by a later merge</td><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/scripts/ci/revert-scan.py" target="_blank" rel="noopener"><code>revert-scan.py</code></a>, in the full gate</td><td>Each removed line's blame within the branch</td><td>Whether the removal was meant</td><td>Report</td></tr>
+      <tr><td>A claim resting on a rendering</td><td><a href="#grades">Evidence grades</a>, the <a href="../reference/re-do-not-re-walk.html">falsified register</a></td><td>The instructions at stated addresses</td><td>A grade nobody re-audits</td><td>Review</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Three patterns run through the table. An instrument that runs retail's own code (the differential, a film, real PCM) can disagree with the port in ways its author did not think of, and one that compares the port with itself (the soak harness, determinism, the host pair) cannot speak about retail at all. A report-only instrument is not a weaker one: films and walk films stay uncommitted because their recordings are Sony-derived, not because their findings count for less. And the third group samples the game where a capture stands, which is why capture coverage sits in it: a denominator from the disc says how much of the game the samples reach.</p>
 </section>
 
 <section class="doc-section" id="grades" data-doc="evidence-grades">
@@ -445,6 +553,8 @@
     <a href="../subsystems/engine.html">Engine reimplementation</a>
     <a href="retail-oracle-method.html">The retail-oracle method</a>
     <a href="verification-ladder.html">The verification ladder</a>
+    <a href="measuring-parity.html">Measuring against retail</a>
+    <a href="ratchet-integrity.html">Ratchet integrity</a>
     <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
     <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
     <a href="../reference/re-do-not-re-walk.html">Falsified readings</a>
@@ -500,6 +610,10 @@
   .pr-rungs strong { color: var(--text-bright); font-family: var(--font-mono); font-size: 0.9rem; font-weight: 600; }
   .pr-rungs span { color: var(--text-muted); font-size: 0.84rem; line-height: 1.4; }
   .pr-rung-top { background: var(--ok-soft) !important; border-color: var(--ok) !important; border-bottom-color: var(--ok) !important; }
+
+  table.pr-cover tr.pr-group th { text-align: left; background: var(--accent-soft); color: var(--text-bright); font-weight: 600; border-top: 1px solid var(--accent-line); }
+  table.pr-cover td:first-child { color: var(--text-bright); }
+  table.pr-cover td:last-child { white-space: nowrap; font-family: var(--font-mono); font-size: 0.82rem; }
 
   .pr-grades { list-style: none; margin: 1rem 0 1.25rem; padding: 0; display: grid; gap: 0.7rem; }
   .pr-grades li { margin: 0; padding: 0 0 0.55rem; display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.2rem 0.9rem; line-height: 1.5; position: relative; }
