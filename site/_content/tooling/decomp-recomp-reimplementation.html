@@ -232,7 +232,7 @@
       <h3>A bug no local test could see</h3>
       <div class="cs-side cs-reimpl"><span>Reimplementation</span><p>The GTE model passed its own sweep, because the sweep agreed with the model. The screen-coordinate FIFO saturates at signed 11 bits, and nothing here knew that.</p></div>
       <div class="cs-side cs-recomp"><span>Recomp</span><p>Running retail's code, it produced real input and output pairs from the GTE, which exposed the difference at once. Its value here was as <a href="recomp-differential.html">a second, independent execution</a>.</p></div>
-      <p class="cs-moral">Each route makes the others better. Here, each has been the other's best instrument.</p>
+      <p class="cs-moral">Each route makes the others better. Here, each has been the other's best instrument. The engine's tooling keeps the lesson: the interpreter that runs retail routines beside their ports carries a GTE written from the hardware documentation, not from the port, because a reference copied from the code under test shares its defects.</p>
     </article>
   </div>
 </section>
@@ -246,6 +246,13 @@
     <div><strong>Reimplementation</strong><span class="cs-when">Only by comparing</span><span>The game runs and is slightly different, so the mistake appears only when measured against the original.</span></div>
   </figure>
   <p>That third row is the real historic objection to reimplementation. Without something to compare against, you can only say it feels right. It is also why this project spends so much on measurement: <a href="retail-oracle-method.html">the retail-oracle method</a> exists to turn that difference into a number. Even so, a score only speaks for what it sampled. A matching decompilation's proof is stronger, and nothing here replaces it.</p>
+  <p>What the measurement consists of matters to the comparison, because one part of it borrows the other routes' strength. The <a href="retail-kernel-differential.html">retail kernel differential</a> runs the original's routines off your disc in an R3000 interpreter (<code>crates/retail-exec</code>), beside the Rust that ports them, on generated inputs. That is the original's code executing, as in a recompilation, but only inside a test and one routine at a time. It asks the question a matching decompilation answers by construction, whether this function computes what the original computes, and answers it per sampled input instead of by proof, including inputs no capture ever held.</p>
+  <figure class="cs-errs" aria-label="What this project measures at each grain. One routine: the original's routine run in an R3000 interpreter beside its port. One instant: a retail save state's memory and frame. A stretch of time: an emulator recording of a cast or a walk, paired frame by frame, with its sound scored beside it.">
+    <div><strong>One routine</strong><span class="cs-when">Retail's code, interpreted</span><span>Every byte the routine wrote, against the Rust kernel. Blind to when the engine calls it.</span></div>
+    <div><strong>One instant</strong><span class="cs-when">A retail save state</span><span>The frame, camera, placements and flags the state holds. Blind to time.</span></div>
+    <div><strong>A stretch of time</strong><span class="cs-when">An emulator recording</span><span>A cast or a walk, paired frame by frame on the game's clock, with sound cues and the emulator's audio output scored beside it.</span></div>
+  </figure>
+  <p>Above those, a pad-only run plays New Game to the credits, which proves the game can be finished and compares nothing with retail. <a href="porting-by-reimplementation.html#coverage">The coverage map</a> lists every instrument with the gap it closes and what it stays blind to.</p>
 </section>
 
 <section class="doc-section" id="ai" data-doc="why-reimplementation-is-more-viable-now">
@@ -308,7 +315,7 @@
     <div class="cs-this"><strong>You want the game to become more than it was</strong><span>Reimplementation, especially if much of the game is data, the target cannot carry its code, and you can measure against the original.</span></div>
     <div><strong>You want to play it tonight</strong><span>An emulator, or an official release if there is one.</span></div>
   </div>
-  <p>The routes also combine. This project uses a <a href="recomp-differential.html">recomp as an oracle</a>, Ghidra's output as a pointer and an emulator as the judge, and a matching decompilation of Legaia would be a better reference than any of them.</p>
+  <p>The routes also combine. This project uses a <a href="recomp-differential.html">recomp as an oracle</a>, Ghidra's output as a pointer, an emulator as the judge and the original's own routines, run in an interpreter, as the check on each port, and a matching decompilation of Legaia would be a better reference than any of them.</p>
 </section>
 
 <section class="doc-section" id="limits" data-doc="what-this-case-cannot-show">
@@ -331,6 +338,8 @@
     <a href="retail-oracle-method.html">The retail-oracle method</a>
     <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
     <a href="recomp-differential.html">Recomp differential</a>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/decomp-recomp-reimplementation.md" target="_blank" rel="noopener">This page's source</a>
   </div>
 </section>
