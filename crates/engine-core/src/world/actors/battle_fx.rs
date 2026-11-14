@@ -536,7 +536,10 @@ impl World {
         };
         let mut seated = player.clone();
         let pose = seated.seat_cursor(cursor);
+        let morphs =
+            super::battle_anim::clip_morph_weights(&seated, actor.battle_clip_morphs.as_deref());
         let frame = crate::world::BattleGhostFrame {
+            morphs,
             pose,
             pos: [pos[0], template.pos[1], pos[1]],
             ghost_eligible: true,

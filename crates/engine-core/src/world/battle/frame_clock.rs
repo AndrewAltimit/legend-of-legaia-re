@@ -1808,6 +1808,7 @@ mod tests {
         w.toggles.battle_sm_frame_cadence = true;
         w.actors.push(crate::world::Actor::default());
         let frame = crate::world::BattleGhostFrame {
+            morphs: Vec::new(),
             pose: legaia_anm::player::PoseFrame {
                 bone_outputs: Vec::new(),
                 factor: 0,
@@ -1854,6 +1855,7 @@ mod tests {
         assert_eq!(w.battle.frame_cost_ring, before, "staged, not pushed");
         // The pass's node tick brings two ghosts into the walk's reach.
         let frame = crate::world::BattleGhostFrame {
+            morphs: Vec::new(),
             pose: legaia_anm::player::PoseFrame {
                 bone_outputs: Vec::new(),
                 factor: 0,

@@ -121,3 +121,79 @@ fn a_morphing_idle_moves_the_drawn_vertices_mid_clip() {
         rest.len()
     );
 }
+
+/// An after-image ghost wears the morph of its own frame: the walk
+/// `FUN_80049348` swaps the node's entry `+0x4C` and cursor `+0x68` to the
+/// ring's before each `jal 0x80048A08`, and the draw's blend `FUN_800495C8`
+/// reads those two. Seated a ghost on frame 9 behind a live body on frame 0,
+/// the ghost's mesh is the frame-9 blend and the live one the rest mesh.
+#[test]
+fn a_ghost_is_morphed_at_its_own_cursor() {
+    let Some(archive) = archive() else {
+        return;
+    };
+    let mesh = monster_archive::mesh(&archive, MONSTER).unwrap().unwrap();
+    let tmd = legaia_tmd::parse(mesh.tmd_bytes()).unwrap();
+    let idle = monster_archive::idle_animation(&archive, MONSTER)
+        .unwrap()
+        .unwrap();
+    let table = monster_archive::clip_morph_table(&archive, MONSTER)
+        .unwrap()
+        .unwrap();
+
+    let mut world = World::default();
+    world.actors.push(Actor {
+        active: true,
+        battle_monster_id: Some(MONSTER),
+        ..Actor::default()
+    });
+    world.set_actor_battle_animation(0, MonsterAnimPlayer::new(&idle).unwrap());
+    world.set_actor_battle_clip_morphs(0, Arc::new(table));
+
+    // What the live body draws on frame 9.
+    world.actors[0]
+        .battle_animation
+        .as_mut()
+        .unwrap()
+        .seek_sixteenths(9 * 16);
+    let live_at_9 = world.battle_morphed_tmd(0, &tmd).expect("lanes active");
+    let weights_at_9: Vec<i16> = world
+        .battle_clip_morph_lanes(0)
+        .iter()
+        .map(|(_, w)| *w)
+        .collect();
+
+    // The live body back on frame 0, one history slot to seat into.
+    let player = world.actors[0].battle_animation.as_mut().unwrap();
+    player.seek_sixteenths(0);
+    let template = legaia_engine_core::world::BattleGhostFrame {
+        pose: player.clone().seat_cursor(0),
+        pos: [0, 0, 0],
+        ghost_eligible: false,
+        clip_key: player.attach_key(),
+        variant_track: player.variant_track(),
+        frame: 0,
+        morphs: Vec::new(),
+    };
+    world.actors[0].battle_pose_history.push_front(template);
+    assert!(world.seat_battle_ghost_ring(0, 0, 9 * 16, [0, 0]));
+    assert!(world.battle_morphed_tmd(0, &tmd).is_none(), "live at rest");
+
+    let frame = world.actors[0].battle_pose_history.front().unwrap();
+    assert_eq!(
+        frame.morphs.iter().map(|&(_, w)| w).collect::<Vec<_>>(),
+        weights_at_9
+    );
+    assert_eq!(
+        frame.morphs.iter().map(|&(ix, _)| ix).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    let morphs = frame.morphs.clone();
+    let ghost = world
+        .battle_ghost_morphed_tmd(0, &morphs, &tmd)
+        .expect("the ghost's lanes are active");
+    assert_eq!(verts(&ghost), verts(&live_at_9));
+    assert!(verts(&ghost) != verts(&tmd));
+    // A frame with no lane draws the rest mesh.
+    assert!(world.battle_ghost_morphed_tmd(0, &[], &tmd).is_none());
+}

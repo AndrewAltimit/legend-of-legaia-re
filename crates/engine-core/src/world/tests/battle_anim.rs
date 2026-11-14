@@ -826,6 +826,7 @@ fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
 fn an_art_install_clears_the_ghost_ring() {
     let mut world = pose_test_world();
     let frame = crate::world::BattleGhostFrame {
+        morphs: Vec::new(),
         pose: legaia_anm::player::PoseFrame {
             bone_outputs: Vec::new(),
             factor: 0,
@@ -861,6 +862,7 @@ fn an_art_install_clears_the_ghost_ring() {
 fn the_commit_pass_stamps_the_ring_with_the_committed_clip() {
     let mut world = pose_test_world();
     let frame = crate::world::BattleGhostFrame {
+        morphs: Vec::new(),
         pose: legaia_anm::player::PoseFrame {
             bone_outputs: Vec::new(),
             factor: 0,

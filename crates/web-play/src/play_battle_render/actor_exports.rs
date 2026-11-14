@@ -263,6 +263,48 @@ impl LegaiaRuntime {
         positions
     }
 
+    /// Ghost `g` of battle actor `i`'s object-local positions with that
+    /// ghost frame's clip morph blended in
+    /// (`World::battle_ghost_morphed_tmd`: the after-image walk's draw
+    /// blends the lanes at the ghost's own entry and cursor), in the
+    /// [`Self::play_battle_actor_morph`] shape. Empty when the ghost's frame
+    /// held no active lane, so the page poses the rest positions.
+    pub fn play_battle_actor_ghost_morph(&self, i: u32, g: u32) -> Vec<f32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        let Some(src) = a.morph_src.as_ref() else {
+            return Vec::new();
+        };
+        let draws = legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world);
+        let Some(d) = draws
+            .iter()
+            .filter(|d| d.actor_slot as usize == a.actor_idx)
+            .nth(g as usize)
+        else {
+            return Vec::new();
+        };
+        let Some(tmd) = host
+            .world
+            .battle_ghost_morphed_tmd(a.actor_idx, &d.morphs, &src.0)
+        else {
+            return Vec::new();
+        };
+        let positions: Vec<f32> = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &src.1)
+            .positions
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        if positions.len() != a.mesh.mesh.positions.len() * 3 {
+            return Vec::new();
+        }
+        positions
+    }
+
     /// Battle actor `i`'s body broken by the shatter renderer this frame
     /// (its `+0x1BA` word, `BattleActorDrawPlan::shatter`; kernel
     /// `legaia_render_kernels::shatter`, the native window's shattered

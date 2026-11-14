@@ -540,6 +540,7 @@ impl World {
                     clip_key,
                     variant_track: player.variant_track(),
                     frame: after,
+                    morphs: clip_morph_weights(player, actor.battle_clip_morphs.as_deref()),
                 });
                 actor
                     .battle_pose_history
@@ -1787,16 +1788,39 @@ impl World {
         else {
             return Vec::new();
         };
-        let phase = player.cursor_sixteenths() as i16;
-        player
-            .morph_lanes()
+        clip_morph_weights(player, Some(table))
             .into_iter()
-            .filter_map(|ix| {
-                let m = table.get((ix as usize).checked_sub(1)?)?.as_ref()?;
-                let w = legaia_actor_formats::monster_archive::clip_morph_weight(m.keys, phase);
-                (w != 0).then_some((m, w))
-            })
+            .filter_map(|(ix, w)| Some((table.get((ix as usize).checked_sub(1)?)?.as_ref()?, w)))
             .collect()
+    }
+
+    /// `tmd` with a ghost frame's clip morphs blended in
+    /// ([`BattleGhostFrame::morphs`]): the mesh an after-image ghost of
+    /// actor `actor_idx` poses and draws. The walk `FUN_80049348` swaps the
+    /// node's entry `+0x4C` and cursor `+0x68` to the ring's before each
+    /// `jal 0x80048A08` (`0x8004950C`), and the draw's blend reads exactly
+    /// those two (`lw v0,0x4c(s8)` at `0x800495FC`, `lhu v1,0x68(s8)` at
+    /// `0x80049634`), so the ghost of a morphing clip is morphed at the
+    /// ghost's own cursor. `None` when the frame held no active lane.
+    ///
+    /// REF: FUN_80049348, FUN_800495C8
+    pub fn battle_ghost_morphed_tmd(
+        &self,
+        actor_idx: usize,
+        morphs: &[(u32, i16)],
+        tmd: &legaia_tmd::Tmd,
+    ) -> Option<legaia_tmd::Tmd> {
+        let table = self.actors.get(actor_idx)?.battle_clip_morphs.as_ref()?;
+        let lanes: Vec<_> = morphs
+            .iter()
+            .filter_map(|&(ix, w)| Some((table.get((ix as usize).checked_sub(1)?)?.as_ref()?, w)))
+            .collect();
+        if lanes.is_empty() {
+            return None;
+        }
+        let mut out = tmd.clone();
+        legaia_actor_formats::monster_archive::apply_clip_morphs(&mut out, &lanes);
+        Some(out)
     }
 
     /// `tmd` with battle actor `actor_idx`'s active clip morphs blended into
@@ -2106,4 +2130,33 @@ fn step_model_table(
         }
         _ => None,
     };
+}
+
+/// A playing entry's clip-morph lanes with their weights at the player's
+/// cursor, `(lane, weight)` with the lane 1-based as the entry holds it, in
+/// `FUN_800495C8`'s order and without the zero weights. Empty without a
+/// morph table.
+pub(super) fn clip_morph_weights(
+    player: &legaia_engine_battle::battle_anim::MonsterAnimPlayer,
+    table: Option<&Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>,
+) -> Vec<(u32, i16)> {
+    let Some(table) = table else {
+        return Vec::new();
+    };
+    let phase = player.cursor_sixteenths() as i16;
+    let mut out = Vec::new();
+    for ix in player.morph_lanes() {
+        let Some(m) = (ix as usize)
+            .checked_sub(1)
+            .and_then(|k| table.get(k))
+            .and_then(Option::as_ref)
+        else {
+            continue;
+        };
+        let w = legaia_actor_formats::monster_archive::clip_morph_weight(m.keys, phase);
+        if w != 0 {
+            out.push((ix, w));
+        }
+    }
+    out
 }

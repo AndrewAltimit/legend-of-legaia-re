@@ -357,6 +357,13 @@ pub struct BattleGhostFrame {
     /// swap `FUN_8004CCD4` with for this frame's ghost.
     pub variant_track: legaia_actor_formats::monster_archive::VariantTrack,
     pub frame: i16,
+    /// The playing entry's clip-morph lanes that frame, each with its weight
+    /// at that frame's cursor (`(lane, weight)`, lane 1-based, zero weights
+    /// left out): the walk draws a ghost through `FUN_80048A08` with the
+    /// node's entry `+0x4C` and cursor `+0x68` swapped to the ring's, and the
+    /// draw's blend `FUN_800495C8` reads both, so a ghost wears the morph of
+    /// its own frame ([`crate::world::World::battle_ghost_morphed_tmd`]).
+    pub morphs: Vec<(u32, i16)>,
 }
 
 /// One planned weapon-trail draw, resolved by
@@ -396,6 +403,8 @@ pub struct BattleGhostDraw {
     /// drawn over the registration identity table
     /// ([`Self::drawn_objects`]). `None` for a seat with a model table.
     pub monster_parts: Option<u8>,
+    /// The ghost frame's clip-morph lanes ([`BattleGhostFrame::morphs`]).
+    pub morphs: Vec<(u32, i16)>,
 }
 
 /// Per-actor record held by the world. Composes the per-VM state structs.
