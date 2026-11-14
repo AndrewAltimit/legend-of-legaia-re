@@ -1333,6 +1333,27 @@ hosts use): a running timeline alone is not enough. `garmel`'s Songi taunt
 a host that switched to the per-slot fallbacks with nothing staged framed an
 invented low shot across the room.
 
+A shot that no record releases is still released, by the follow ease. Retail
+keeps no "a script owns the camera" state: `FUN_801DB510` runs at the head of
+the player's handler (`jal` at `0x801D22B8` in `FUN_801D2298`) and tests only
+the camera switch `0x8007B606`, the freeze bit `0x1F800394 & 0x400` and whether
+the player moved (`0x801DB550..0x801DB5A4`). While a record holds the player
+nothing moves him, so its shot stands; once it lets go, the shot stands until
+the first pass the player walks, and that pass composes and eases toward the
+follow pose. Records that end on a shot are common: talks (`koin4` P1[1]
+glides to a shot, waits on it with `4C CD`, prints its line and ends on
+`21`; `bubu1` P1[22] stages five), door records (`balden` P0[7] / P0[14]
+snap the arrival shot behind a fade and loop) and named records (`town01`
+P2[25], `uru` P2[30..37], `dream` P2[1..4], `town0d` P2[29..31]). The engine
+drops its focus latch (`Camera::release_unheld_shot`) once no glide is in
+flight, no timeline runs and the player is free, without the hand-back snap,
+and drops its mirror of the staged slots there as APPLY does. A latch kept
+past the record freezes the follow camera on the shot for the rest of the
+scene. The census is
+`engine-core/tests/field_camera_shot_census_disc.rs`; the executing checks
+are `engine-session/tests/talk_shot_release_disc.rs` and
+`record_shot_release_disc.rs`.
+
 The APPLY `s16` is a glide trigger, never a jump target. `urudre2`'s only door
 record carries `45 C0 00 00` about `0x670` bytes before its `0x3F` -> `map01`
 tail; read as a jump, a target of zero would restart the record.
