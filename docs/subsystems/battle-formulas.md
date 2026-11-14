@@ -1695,7 +1695,9 @@ instructions); called by the round driver `FUN_801D0748` state `0x14`, after
 / `venom_tick_damage` (module `engine-battle-vm::status_effects`); the roll scales are
 `apply_status_weaken`. `World::tick_status_effects` makes the scripted-fight
 clear on a monster seat: the arm that ticked (Toxic ahead of Venom) cures its
-own status.
+own status. It also files each non-zero drain on the damage-number ring
+(`0x801E76CC..0x801E7754`), so the numeral rises over the poisoned body as
+the round opens.
 
 ### Status application (the art / move record status byte)
 

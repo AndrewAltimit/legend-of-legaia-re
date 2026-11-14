@@ -414,9 +414,16 @@ seat index is `ctx[+1]` read **before** the increment (`lbu v0, 1(v1);
 andi s3, v0, 0xff; addiu v0, v0, 1; sb v0, 1(v1)` at `0x801F7E08`), and the
 actor it writes is `actor_table[s3 + 3]`, i.e. the next free monster seat. The
 clone inherits the caster's monster record (`0x801C9348[s3] =
-0x801C9348[ctx[+0x13] - 3]`), its display object comes from `FUN_80054CB0` /
-`FUN_80024C88`, and its pose is `swl`/`swr`-copied out of the caster's
-`+0x34..+0x4B`.
+0x801C9348[ctx[+0x13] - 3]`) and its display template's model word (the
+`0x80076764` row's `+0x04`, `0x801F7E78..0x801F7E9C`). `FUN_80054CB0`
+initialises the seat, and `FUN_80024C88` spawns its node on the module's
+split point `0x801F865C`, not on the caster. The node's pair is then
+`swl`/`swr`-copied into the clone's body pair `+0x3C..+0x43` and live pair
+`+0x34..+0x3B`, and its angles into `+0x44..+0x4B`, the heading being the
+caster's `+0x46`. Arm 2 moves that point a side step off the caster's seat
+while shaking the caster the other way, so the two halves end up side by
+side ([cast-module.md](../../subsystems/cast-module.md)). The clone's colour
+word is stamped `0x3FCFF3FC` (`0x801F7F6C`).
 
 The `0xAE` branch is gated on the caster's queued id, read back off the actor
 table at `0x801F80EC` and compared with `li v0, 0xae`. It renames both halves

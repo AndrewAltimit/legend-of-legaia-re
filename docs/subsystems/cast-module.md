@@ -1625,6 +1625,12 @@ re-arms literals. Four arms do not fit one word:
 
 **Slime Divide's camera** (`slime_divide_camera`, PROT 0940 `0x801F78B8`): arm 0 cuts to the caster over `0xC` frames at `TR (0, 0x300, 0x600)` (`0xAE`: `(0, 0x400, 0x800)`), and arm 1, once its gate passes, lifts to pitch `0x100` at TR z `0x1000` over `0x100`. Arms 2 and 3 frame nothing.
 
+**Slime Divide's shake and split point** (`slime_divide_shake`) ride the same countdown. Arm 0 saves the caster's ground pair into the module words `0x801F865C` / `0x801F8660`, and arm 1's exit zeroes the counter `0x801F8650`.
+
+Each pass of arm 2 stands the caster off that point by `axis * (0x200 - word) >> 12` along its side axis (the cosine view at `0xFFF - facing`, the sine base at `0x1000 - facing`), on the side the counter's parity names, then bumps the counter. The passing pass pushes the point by `axis / 8` and the body seats the clone there (the spawn-node builder at `0x801F7F44`). The clone's node wears the caster's heading, and its colour word is stamped `0x3FCFF3FC`, full white, which eases back to neutral. The caster stays where its last shake left it, so the two halves stand about a thousand units apart across the old seat.
+
+Evidence: `battle_map01_green_slime_divide_mid_cast` played forward in PCSX-Redux. The caster faces `0x800` on `(26, -178)` and rocks out to `-485` by the passing pass. The point moves to `537`, where the clone (pool slot 6) is seated, and the two separate a few units more on the next frame. Arm 1's flag `10` eases the caster toward white from its neutral colour word. In the port the engine's resting word is `0`, which reads as a blacked-out body under a raised flag, so the host seeds the neutral word when the flag goes up.
+
 **Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. Arm 4 adds `step * scalar` to the TR z global `0x800840C0` every pass ahead of its gate (`0x801F6FD0..0x801F7014`), so the shot pulls back through the hits. The finishing arm shows the caster again.
 
 **Spore Gas's cloud** is arm 1's: on the gate the arm hides the victim and seats nine
