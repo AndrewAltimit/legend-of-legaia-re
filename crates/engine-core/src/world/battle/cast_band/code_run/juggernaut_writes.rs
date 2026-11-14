@@ -371,6 +371,64 @@ impl World {
         }
     }
 
+    /// Whether PROT 0906's stager record `0x801F7B80` runs as a part: the
+    /// disc's module image is in the effect pool, so arm 4's spawns seat it.
+    pub(in crate::world::battle::cast_band) fn gizam_record_runs(&self) -> bool {
+        self.casting
+            .effect_pool
+            .as_ref()
+            .is_some_and(|p| p.module(906).is_some())
+    }
+
+    /// PROT 0906's stager arms `0..=2`, on the calls its record `0x801F7B80`
+    /// makes (`WAIT 95`, `WAIT 63`, `WAIT 30`, op `0x20` arm 0, `WAIT 0`,
+    /// arm 1, `WAIT 63`, arm 2). Arm 2 is the only way out of the tick's
+    /// phase-5 hole (`ctx[+0x279] += 1`, `0x801F783C`), so the arm's length is
+    /// the record's: each wait is drained `scalar * step` a pass until it runs
+    /// out, and a wait that does not divide by the pass's step runs a pass
+    /// over. Counted as one vsync clock instead, the arm ran `65` passes on a
+    /// recording's own steps where retail's runs `66`.
+    ///
+    /// Phase 5 holds on the part: its countdown is kept up until the release,
+    /// or until the record is long overdue (a part that was never seated).
+    ///
+    /// REF: FUN_801F7740 (PROT 0906's stager, arms 0..=2)
+    pub(in crate::world::battle::cast_band) fn run_gizam_record_calls(
+        &mut self,
+        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
+        seat: &mut legaia_engine_cast::cast_module_ticks::CastActorState,
+    ) {
+        use legaia_engine_cast::cast_module_camera as cam;
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        let calls = std::mem::take(&mut self.casting.module_gizam_calls);
+        if !self.gizam_record_runs() {
+            return;
+        }
+        for arm in calls {
+            if arm == 0 {
+                for (t, id) in &cam::GIZAM_STAGER_FLASHES {
+                    let mut fade = None;
+                    legaia_engine_system::fade::spawn_fade(
+                        &mut fade,
+                        &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
+                        *id,
+                    );
+                    self.presentation.module_fades.extend(fade);
+                }
+            } else {
+                ticks::gizam_stager(ctx, seat, arm);
+            }
+        }
+        if ctx.phase == legaia_engine_cast::seru_magic_ticks::GIZAM_MISSING_ARM {
+            self.casting.module_gizam_waited += 1;
+            if self.casting.module_gizam_waited < cam::GIZAM_STAGER_RELEASE_TICK + 96 {
+                let floor = 2 * cam::SPEED_SCALAR;
+                let cd = &mut self.casting.module_cam.countdown.0;
+                *cd = (*cd).max(floor);
+            }
+        }
+    }
+
     /// Run the op-`0x20` calls PROT 0966's parts made since its last tick
     /// through its stager `FUN_801F8D64`, in call order. The spawn arms'
     /// seats were made on the caller's frame, behind the part tick
@@ -384,7 +442,9 @@ impl World {
         spell_id: u8,
     ) -> Vec<legaia_engine_cast::cast_module_ticks::AoeHit> {
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
-        let mut hits = Vec::new();
+        // The calls a part made ran on its own frame
+        // (`World::run_summon_part_stager_calls`); these are their hits.
+        let mut hits = std::mem::take(&mut self.casting.module_esm_hits);
         for (arm, _) in calls {
             hits.extend(self.evil_seru_stager_arm(caster, spell_id, arm));
         }
@@ -398,7 +458,7 @@ impl World {
     /// long flash alone. The band's fold owes nothing once a sweep has landed.
     ///
     /// REF: FUN_801F8D64
-    pub(in crate::world::battle::cast_band) fn evil_seru_stager_arm(
+    pub(in crate::world) fn evil_seru_stager_arm(
         &mut self,
         caster: u8,
         spell_id: u8,

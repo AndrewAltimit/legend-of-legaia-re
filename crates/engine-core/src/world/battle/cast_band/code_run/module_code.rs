@@ -84,6 +84,12 @@ impl World {
             // PROT 0907's and 0908's stagers only seat more records off the
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
+            // PROT 0906's record also calls the stager's three state arms,
+            // the phase release among them.
+            906 => {
+                self.run_part_stager_calls(906, 0);
+                self.run_gizam_record_calls(&mut ctx, &mut seat);
+            }
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e, 0),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(spell_id),
@@ -361,7 +367,10 @@ impl World {
         // on the clock the director runs through the phase-5 hole. Arm 0 is
         // the flash pair, arm 1 shows the creature; arm 2 is the director's
         // pass out of phase 5.
-        if entry == 906 {
+        // Where the record runs as a part its own calls are the clock
+        // (`World::run_gizam_record_calls`); this one stands in for a host
+        // that seats none.
+        if entry == 906 && !self.gizam_record_runs() {
             use legaia_engine_cast::cast_module_camera as cam;
             match cam::gizam_stager_arm_due(ctx.phase, self.casting.module_cam.countdown.0) {
                 Some(0) => {

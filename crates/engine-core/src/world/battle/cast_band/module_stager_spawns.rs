@@ -177,6 +177,12 @@ impl World {
             .unwrap_or([0; 3]);
         for (arm, caller) in calls {
             self.casting.stager_arm_calls_run = self.casting.stager_arm_calls_run.wrapping_add(1);
+            // PROT 0906's arms 0..=2 touch the module's state, not the pool:
+            // the module's tick runs them (`World::run_gizam_record_calls`).
+            if entry == 906 && arm <= 2 {
+                self.casting.module_gizam_calls.push(arm);
+                continue;
+            }
             let stager_fades: &[_] = match (entry, arm) {
                 (912, 6) => std::slice::from_ref(&FREED_STAGER_FADE),
                 (916, 1) => std::slice::from_ref(&ALURU_STAGER_FADE_IN),
