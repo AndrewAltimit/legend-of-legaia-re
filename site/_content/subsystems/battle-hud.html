@@ -226,6 +226,7 @@
     <li><strong>The selection cue is the plate, not a tint.</strong> Every chip draws at neutral grey. Only under the Battle Command option&rsquo;s cross-button setting does the highlighted arm switch frame style, to the carved-gold run; on the default directional setting all chips stay blue.</li>
     <li><strong><em>Begin</em> draws over <em>Run</em>.</strong> Each chip is a text actor that queues its plate, then its label, and the later chip walks first in the ordering table: while the round prompt&rsquo;s pair is still folded together, <em>Begin</em>&rsquo;s plate covers the left of <em>Run</em>&rsquo;s, label and all. Apart, the two never overlap. The port draws the plates last chip first and cuts each label where an earlier chip&rsquo;s plate lies over it.</li>
     <li><strong>Damage numerals sit under the text.</strong> Each digit links into the HUD text&rsquo;s own ordering-table bucket after the HUD&rsquo;s packets, so it draws first there and the plates and glyphs cover it: a figure that lands under the <em>Run</em> chip shows behind the plate. The combo window and the Arts banner link one bucket nearer, over the text.</li>
+    <li><strong>A restore throws no number.</strong> A healing item, an MP restore, a revive or a cure pushes nothing onto the damage-number ring - retail&rsquo;s applier <code>FUN_800402F4</code> has no store to it - so the patient&rsquo;s HP figure rolls up in the readout and no number rises. The Venom and Toxic tick as a round opens does throw its damage number over the poisoned member, and a landed Kiss of Death throws a <code>1</code>.</li>
   </ul>
 </section>
 
@@ -260,7 +261,7 @@
   <table>
     <thead><tr><th>Stage byte <code>ctx[+0x28B]</code></th><th>Banner</th><th>Raised when</th></tr></thead>
     <tbody>
-      <tr><td><code>1</code></td><td>NEW</td><td>the queue builder<td>the queue builder marks a newly learned art</td>rsquo;s build loop leaves its mark in the side array</td></tr>
+      <tr><td><code>1</code></td><td>NEW</td><td>the queue builder&rsquo;s build loop leaves its mark in the side array</td></tr>
       <tr><td><code>2</code></td><td>HYPER</td><td>the default: the byte is still zero after the other two writes</td></tr>
       <tr><td><code>3</code></td><td>MIRACLE</td><td>the queue builder raised the seat&rsquo;s Miracle flag</td></tr>
       <tr><td><code>4</code></td><td>SUPER</td><td>the Super tail-replace leaves its mark in the side array</td></tr>
@@ -268,7 +269,7 @@
     </tbody>
   </table>
   </div>
-  <p>The raises sit in the executable&rsquo;s anim commit <code>FUN_8004AD80</code> and fire only for a party actor committing the SpecialStarter clip. The three writes run in sequence and the later one wins - they are not an if / else chain. Each raise restarts the slide and queues the character&rsquo;s Arts fanfare. Port: <code>engine-battle-vm::battle_action::flash_ramp</code>, stepped once per battle frame and drawn by both hosts.</p>
+  <p>The raises sit in the executable&rsquo;s anim commit <code>FUN_8004AD80</code> and fire only for a party actor committing the SpecialStarter clip. The three writes run in sequence and the later one wins - they are not an if / else chain. Each raise restarts the slide and queues the character&rsquo;s Arts fanfare. Port: <code>engine-battle-vm::battle_action::flash_ramp</code>, stepped once per battle frame by that frame&rsquo;s step, as retail&rsquo;s draw tick steps it, and drawn by both hosts. Walked every vsync instead, the slide would run three times retail&rsquo;s speed on a step-3 frame.</p>
 </section>
 
 <section class="doc-section" id="port" data-doc="engine-port-the-battle-hud-model">

@@ -1995,7 +1995,16 @@ play page runs the same fold in `web-play`'s `play_battle.rs`.
 The HUD is fed by `World` events:
 
 - `BattleEvent::ApplyArtStrike` → `push_damage` / `push_heal` (per-strike popup
-  with a fade timer).
+  with a fade timer). A restore throws no numeral: an item heal, MP restore or
+  revive, the HP After / MP After ticks and the companion's heal push nothing,
+  as retail's applier `FUN_800402F4` pushes nothing onto the ring, and the HP
+  figure rolls up on the readout word alone
+  ([battle round loop](battle-round-loop.md)). `push_heal` is left to the
+  restores that still file a heal popup: the spell-catalog fold's heal / revive
+  (`World::fold_spell_outcome`) and the fatal-decision restore
+  (`fatal_decision.rs`).
+- the round-open Venom / Toxic tick → its damage numeral over the poisoned
+  body, as retail's ticker pushes it.
 - `StatusEvent::TickDamage` / `Cleared` → `sync_status` (replaces the slot's
   status set from the `StatusEffectTracker`).
 - the round boundary → `sync_slot` (refreshes HP / MP / AP per round).
