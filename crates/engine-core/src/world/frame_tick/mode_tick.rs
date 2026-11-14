@@ -655,8 +655,18 @@ impl World {
                 // from the battle DRAW tick (`FUN_800480D8`); the engine steps
                 // it here so every host advances it, and reads the quads back
                 // at draw time (`World::battle_arts_banner_quads`).
+                //
+                // Once a battle frame, by that frame's step: the draw tick
+                // runs once per frame (`jal 0x801E2524` at `0x80048140`, the
+                // first body's draw) and walks the clock by
+                // `DAT_1F800393 << 3`. Stepped by the frame step on every
+                // vsync, the slide ran three times retail's speed on a
+                // step-3 frame and landed in a dozen vsyncs where retail's
+                // takes forty.
                 // REF: FUN_800480D8
-                self.tick_arts_banner(cadence);
+                if self.battle.anim_pass_vsyncs > 0 {
+                    self.tick_arts_banner(self.battle.anim_pass_vsyncs);
+                }
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the
