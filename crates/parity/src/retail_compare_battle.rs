@@ -277,6 +277,21 @@ pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     // the capture's label then reads one slime of two.
     ("battle_map03_acid_slime_strike", 0xB5C0_FBCF),
     ("battle_korb2_ghost_knight_strike", 0x9B05_688C),
+    // Pre-cast and command-input captures whose driven round lands its
+    // gate a few ticks apart by stream, on a HUD bar still unfolding.
+    ("nilboa_lava_face_pre_fissure", 0x2545_F491),
+    ("nilboa_rock_lizard_pre_earthquake", 0x0BAD_F00D),
+    ("nilboa_lucifer_pre_cross_beam", 0xC0FF_EE01),
+    ("nilboa_neo_grude_pre_power_up", 0x2545_F491),
+    ("teien_berserker_pre_stone_circle", 0x9E37_79B9),
+    ("garmel_zeto_pre_poisonous_bubbles", 0x9E37_79B9),
+    ("garmel_zeto_pre_call_wave", 0x9E37_79B9),
+    ("rugi_rogue_pre_rogue_wind", 0x9E37_79B9),
+    ("rugi_rogue_pre_element_change", 0x9E37_79B9),
+    ("rugi_rogue_pre_rogue_thunder", 0x9E37_79B9),
+    ("kor_shade_pre_fatal_decision", 0x2545_F491),
+    ("delilas_gi_spirit_streaks_v2", 0x428A_2F98),
+    ("noaru_songi_pre_genocidal_cannon", 0x9E37_79B9),
 ];
 
 /// The stream a state's search tries first, when it has one.
