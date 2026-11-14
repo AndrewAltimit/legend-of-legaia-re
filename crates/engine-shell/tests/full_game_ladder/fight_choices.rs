@@ -987,8 +987,11 @@ pub(super) fn wanted_spell(
             .collect()
     });
     let ratio: Option<f64> = {
+        // A measured zero says the foes shrug that spell off, not that
+        // this caster's estimates run high: it is left out of the ratio.
         let r: Vec<f64> = seen
             .iter()
+            .filter(|&&(_, dmg)| dmg > 0)
             .filter_map(|&(id, dmg)| {
                 est(id)
                     .filter(|&e| e > 0)

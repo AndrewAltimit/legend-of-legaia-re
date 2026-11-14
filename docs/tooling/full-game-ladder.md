@@ -1785,6 +1785,12 @@ reserve keeps her from casting it a second time. The gap is the formula's
 Gala held Slippery at magic level 7 and Vahn at 3, which scales the attacker
 roll by 1.75 and 1.25 before the defender roll is subtracted, so a common
 roll of about 4600 against a defence of about 4900 gives 3171 and 862.
+A cast that spends its MP and takes nothing off the foes is a measurement
+too: the round's command window records a zero for that caster and spell
+(`unlanded_cast`), so the Magic row stops scoring it at its estimate. The
+zero is kept out of the ratio that scales the caster's unmeasured spells,
+and is not recorded in a round where a foe lost HP that no seat could be
+credited with.
 Treating a single-target hit within a quarter of a member's HP as one no heal
 outlasts did not change the outcome on two streams.
 

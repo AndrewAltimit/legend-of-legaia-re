@@ -92,6 +92,31 @@ pub(super) fn dealt_kind(
     }
 }
 
+/// The spell a member cast in the round just finished that took nothing off
+/// the foes - absorbed, resisted to nothing, or spent on a foe it cannot
+/// touch - so [`DEALT`] can hold a zero for it. Without the zero the spell
+/// stays unmeasured, and the Magic row goes on scoring it at its estimate.
+///
+/// - `kind`: what the member's commit of the round deals damage as.
+/// - `still_pending`: the commit has not been taken up yet.
+/// - `landed`: a foe lost HP while the member was the one acting.
+/// - `stray`: a foe lost HP in the round with nobody to credit it to, so a
+///   cast's hit may have been read under another seat.
+/// - `hp`: the member's HP now; `mp_then` / `mp_now`: its MP at the last
+///   round's command window and at this one. The cast is known to have run
+///   by the MP it spent.
+pub(super) fn unlanded_cast(
+    kind: Option<u16>,
+    still_pending: bool,
+    landed: bool,
+    stray: bool,
+    hp: u16,
+    (mp_then, mp_now): (u16, u16),
+) -> Option<u16> {
+    let kind = kind.filter(|&k| k != ART_KIND)?;
+    (!still_pending && !landed && !stray && hp > 0 && mp_now < mp_then).then_some(kind)
+}
+
 /// The HP of the lone foe still standing in a fight that forbids running,
 /// `None` while two or more stand.
 fn last_foe_hp(w: &legaia_engine_core::world::World) -> Option<u32> {
@@ -862,4 +887,46 @@ pub(super) fn lone_and_worn(w: &legaia_engine_core::world::World) -> bool {
         let b = &w.actors[0].battle;
         u32::from(b.hp) * 2 < u32::from(b.max_hp)
     }
+}
+
+/// A cast that spent its MP and took nothing off the foes is remembered as a
+/// zero; an Arts string, a cast still waiting its turn, one that landed, one
+/// whose caster fell, one that cost nothing and a round with a hit nobody
+/// could be credited with are not.
+#[test]
+fn a_cast_that_lands_nothing_is_a_measured_zero() {
+    let spell = Some(0x21u16);
+    assert_eq!(
+        unlanded_cast(spell, false, false, false, 500, (60, 40)),
+        Some(0x21)
+    );
+    assert_eq!(
+        unlanded_cast(Some(ART_KIND), false, false, false, 500, (60, 40)),
+        None
+    );
+    assert_eq!(
+        unlanded_cast(None, false, false, false, 500, (60, 40)),
+        None
+    );
+    assert_eq!(
+        unlanded_cast(spell, true, false, false, 500, (60, 40)),
+        None
+    );
+    assert_eq!(
+        unlanded_cast(spell, false, true, false, 500, (60, 40)),
+        None
+    );
+    assert_eq!(
+        unlanded_cast(spell, false, false, true, 500, (60, 40)),
+        None
+    );
+    assert_eq!(unlanded_cast(spell, false, false, false, 0, (60, 40)), None);
+    assert_eq!(
+        unlanded_cast(spell, false, false, false, 500, (60, 60)),
+        None
+    );
+    assert_eq!(
+        unlanded_cast(spell, false, false, false, 500, (40, 60)),
+        None
+    );
 }
