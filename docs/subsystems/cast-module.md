@@ -4423,7 +4423,10 @@ close to a minute. It is ported whole.
   and arm 7 jitters its caller's `+0x84` / `+0x28` off three `rand()`s, the six
   rays of arm 23. The seats land on the caller's frame, as
   [Gilium's and Juggernaut's](#summon-creature-directors) do. Grade
-  `disassembly`; the film reads `.744` to `.902` over arms 0..21 with them.
+  `disassembly`, each arm held to the module image by the
+  [differential](../tooling/retail-kernel-differential.md); the cast's
+  [film](../tooling/cast-sequence-oracle.md#evil-seru-magic) reads `.672` to
+  `.788` with the calls run.
 - **The last hit is the tick's.** Arm 26 walks `actor_table[0 .. ctx[+0]]`,
   skips a dead or non-targetable seat, and calls
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp

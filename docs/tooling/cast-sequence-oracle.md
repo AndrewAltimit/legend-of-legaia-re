@@ -820,17 +820,16 @@ Earthquake `.786` to `.950` (its rocks now fall on retail's draws), Jewel Beam
 (Odd Dimension `.860` to `.984`, Iota `.875` to `.987`, Ozma `.773` to `.881` on
 the steps; `sA0` `.771` to `.843` plain).
 
-The films that fall do so by a draw or two, and the seat is not their cause. Counted
-from the seated word, `s85`'s draws match retail's through `0x32` and stand one
+The films that fell did so by a draw or two, and the seat was not their cause. Counted
+from the seated word, `s85`'s draws matched retail's through `0x32` and stood one
 ahead from `0x33` on: retail's summon invoke ran `7` passes there and the engine's
-`8`. That state waits on the drive's read, which runs on the wall clock
-(`SUMMON_INVOKE_DRIVE_VSYNCS`, [state `0x32`](../subsystems/battle-action.md#state-0x32---summon---invoke)), so
-retail's pass count varies by recording (`s93`'s ran `8` and its draws stay word for
-word through arm 9). From there the module plays retail's stream one word late, which
-can match its pattern worse than a stream no closer to it: `s85` `.952` to `.943`
-plain, `.975` to `.968` on the steps; `s92` `.985` to `.978` on the steps. On the
-plain seat the lone-caster films also part at the module's CD-seek hold (`s85`'s
-arm 3 draws `117` in retail and `101` in the engine), as noted above.
+`8`. That state waits on the read of the cast's own module, and its length follows the
+module's: `14` vsyncs for the nine modules of four sectors or fewer, `16` for the rest
+([state `0x32`](../subsystems/battle-action.md#state-0x32---summon---invoke)), which
+the port now reads off the module image. The lone-caster films also parted at the
+module's CD-seek hold (`s85`'s arm 3 drew `117` in retail and `101` in the engine),
+which was the band's opening arms priced off the ordinary frame
+([the band's pass count](#the-bands-pass-count)).
 
 `--rand-track` seats the summon flash `0x34` too, on phase `0`. The pass that leaves
 the flash opens in it and runs the module's arm 0 in the same pass, and a verdict
@@ -1129,6 +1128,81 @@ Juggernaut's arm 26 reads `.44` against one retail recording and `.80` against a
 the same cast, so its ring phase is the recording's, and Terra's vortex parts on phase
 rather than shape. The rest is listed in the
 [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
+
+<a id="the-bands-pass-count"></a>
+
+**The band's pass count.** Each recording's `frame` column counts retail's battle frames
+arm by arm, and the engine's `rand` column changes once a pass (the frame driver's draw),
+so the two sides' passes compare without a seat. They parted at four kinds of place:
+
+- the invoke state `0x32` waits on the read of the cast's module and ran `8` passes on
+  every cast, where the nine short modules' recordings run `7`
+  ([state `0x32`](../subsystems/battle-action.md#state-0x32---summon---invoke));
+- the band's opening arms, which no table row prices, ran sixteen passes at step `2`
+  where every recording runs step `1` (Gimard's arm 2 `49` passes for `64`, Theeder's
+  `103` for `119`);
+- an arm whose frames change cost partway ran one modal step (Gimard's arm 6 `150` passes
+  for `99`, Ozma's arm 21 `64` for `78`, Nova's arm 16 `65` for `84`, Meta's arm 15 `80`
+  for `102`, Terra's arm 3 `64` for `73`);
+- a frame that overruns its step (`+N` under `slow frames`) is the
+  [frame span](../subsystems/battle-stage-camera.md#a-frames-span)'s and moves no count.
+
+The first three are carried: the hold reads the module's length, the opening arms cost
+the band's own frame, and the arm table holds a row wherever a recording's frames change
+rung ([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)).
+A pass count is a draw count, so with them the plain film's stream stays on retail's
+words for as long as the counts hold. Gimard's holds through the whole cast: every state
+and arm of the `0x81` film ends on the recording's seed word, on no seat but the cast
+begin's, and its late arms, which had read low on every seat, read `.982` / `.984` /
+`.975` (`.869` / `.770` / `.946`). Ozma's holds through arm 15: its arms 5..7 read
+`.969` / `.897` / `.894`, what they read on the recording's own steps, and arms 11..15
+`.885` / `.900` / `.733` / `.957` / `.969`, what the rand track gives them. One draw
+count there was a call, not a pass: arm 9 makes its eight ribbon calls and two rumble
+words behind its countdown gate (`bgtz` at `0x801F772C`), so the pass that spends the
+word draws neither, and the host, which holds a pass on its first tick and passes it on
+its last, had dealt a thirteenth ring there (`187` words on the first arm-10 row for
+retail's `1`).
+
+| Seat | Before | Engine | With the seek seats | Moved most |
+|---|---|---|---|---|
+| plain | `.9304` | `.9504` | `.9531` | `0x9C` `.873` to `.987`, `0x8C` `.936` to `.994`, `0x8F` `.921` to `.975`, `0x81` `.939` to `.985`, `0xA0` `.843` to `.891`, `0x85` `.943` to `.978`, `0x8A` `.903` to `.945` |
+| `--retail-steps` | `.9572` | `.9564` | `.9587` | `0x81` `.946` to `.985`, `0x85` `.968` to `.992`, `0x84` `.973` to `.899`, `0x83` `.952` to `.934` |
+
+The cue score holds `1.000` on all 29 films on both seats. The plain seat now reads
+within `.006` of the step seat: what parted them was the pass count.
+
+The step seat's falls are the invoke hold's. Those four recordings (`0x83`, `0x84`,
+`0x87`, `0x89`) are short modules, and the engine's extra invoke pass had stood their
+stream one word on, which a pass the engine runs short later in the band took back:
+Gizam's arm 5 runs `65` passes for retail's `66` on the recording's own steps, Vera's
+poll arm `1` for `2`. With the invoke right the stream enters the band on retail's word
+and parts at that arm instead.
+
+The same holds at the module's drive poll, where the recording's drive took `4` vsyncs
+on most casts and the film's seek seat gives `2` ([the drive seek seat](#the-drive-seek-seat)):
+one pass, one word. Twelve film lines now name their recording's own poll
+(`LEGAIA_SEAT_DRIVE_SEEK`, `4` on ten, `5` and `8` on Terra's and Palma's), as Horn's
+already did. With it `0x88` holds retail's words through arm 6 and `0x89` through arm 9
+where both parted at arm 2, and the films read `.9911` for `.9385` (`0x99`), `.9809` for
+`.9500` (`0x9A`), `.9449` for `.9361` (`0x8A`); `0x88`, `0x89` and `0x8B` read `.004` to
+`.008` lower on a longer stretch of retail's words. Harness seats.
+
+### Evil Seru Magic
+
+Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
+with the queued action rewritten (`--spell 0xAD --caster 3 --target 8`); the cast runs
+`4713` vsyncs, so the recorder's frame cap goes up with it (`LEGAIA_MAX_SHOTS=2600`).
+The recording's HP columns drop on three frames (vsyncs `865`, `1437` and `4218`: arm
+11's last frame, arm 14's first and arm 26's pass) and its `rates.csv` walks the party's
+knockdown through arm 27 at rate `2`. The engine landed one sweep, seated none of the
+stager's records and held the struck party frozen through arm 27
+([cast module](../subsystems/cast-module.md#prot-0966-evil-seru-magic)). With the stager's
+calls run off its seated records and arm 27's rate store read off the disassembly, the
+film reads `.672` to `.788` plain and `.705` to `.824` on `--retail-steps`, and the cue
+score `.528` to `1.000` (`14` of retail's `33` cues to all `33`: the second sweep's hit
+and knockdown cues, and arm 27's, which had played `250` ticks late in arm 28). What is
+left is mostly the seats the port does not move: arms 0, 27 and 28 re-seat the party in
+a row of half-size models, and arm 10 seats the creature.
 
 ### The enemy set on the rand-track seat
 
