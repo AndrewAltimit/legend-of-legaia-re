@@ -841,10 +841,11 @@ fn an_item_use_sounds_0x25_and_a_refused_member_0x23() {
     }
     let mut s = build(FieldMenuRow::Items, &w);
     let cross = PadButton::Cross.mask();
-    // The command window's Use and the list's row keep the pickers' cues.
-    assert_eq!(s.confirm_blip(cross), None);
+    // The command window's Use and the list's row sound the confirm `0x20`
+    // (`FUN_801D7C00`, `0x801D7D64`; the kernel's `0x80032D24`).
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
     let _ = tick_open_subsession(&mut s, cross, None, &mut w);
-    assert_eq!(s.confirm_blip(cross), None);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
     let _ = tick_open_subsession(&mut s, cross, None, &mut w);
     let FieldMenuSubsession::Items(items) = &s else {
         panic!("Items");

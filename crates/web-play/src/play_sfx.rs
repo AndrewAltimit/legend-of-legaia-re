@@ -205,6 +205,14 @@ const PLAY_EVENTS: &[PlayCue] = &[
               spell is cast (li a0,0x25 at 0x801d84bc / 0x801d8124 / 0x801d936c / \
               0x801d9684); category 0",
     },
+    PlayCue {
+        event: "menu_equip",
+        retail_cue: legaia_engine_menus::menu_cues::MENU_EQUIP_CUE,
+        fires: Some(legaia_engine_menus::menu_cues::MENU_EQUIP_CUE),
+        source: "disc",
+        why: "the Equip screen's Best Equipment and candidate commit (li a0,0x24 at \
+              0x801d9b7c / 0x801da110 / 0x801da154); category 0",
+    },
 ];
 
 /// The page's side of the SFX channel: descriptor tables kept for before a
@@ -706,6 +714,9 @@ impl LegaiaRuntime {
             legaia_engine_menus::menu_cues::MenuBlip::Pick => "menu_pick",
             legaia_engine_menus::menu_cues::MenuBlip::Refuse => "menu_refuse",
             legaia_engine_menus::menu_cues::MenuBlip::Use => "menu_use",
+            legaia_engine_menus::menu_cues::MenuBlip::Equip => "menu_equip",
+            // Keys nothing (`pause_frame_blip` never hands it out).
+            legaia_engine_menus::menu_cues::MenuBlip::Silent => return false,
         };
         self.play_sfx_event(event)
     }

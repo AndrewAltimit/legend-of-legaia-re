@@ -229,13 +229,22 @@ impl FieldMenuSubsession {
     /// ([`legaia_engine_system::input::KEY_NAME_DOM_CODES`]). Consumed only by the Options
     /// sub-session's key-rebind screen while it awaits a key; every other
     /// variant ignores it.
-    /// The cue an apply screen sounds for this frame's confirm in place of
-    /// the picker's: an item used or a spell cast (`0x25`), or a refused
-    /// confirm (`0x23`). `None` for every other screen and edge.
+    /// The cue a screen sounds for this frame's confirm in place of the
+    /// edge rule's: the Items screen's (a use `0x25`, a refused row `0x23`,
+    /// Arrange and a discard `0x37`, ...), the Magic screen's, and the Equip
+    /// screen's (`0x24`, `0x36`, `0x37`, or [`MenuBlip::Silent`]). `None`
+    /// for every other screen and edge.
+    ///
+    /// [`MenuBlip::Silent`]: legaia_engine_menus::menu_cues::MenuBlip::Silent
     pub fn confirm_blip(&self, pressed: u16) -> Option<legaia_engine_menus::menu_cues::MenuBlip> {
         match self {
             Self::Items(s) => s.confirm_blip(pressed),
             Self::Spells(s) => s.confirm_blip(pressed),
+            // The character picker's confirm keeps the edge rule's `0x20`
+            // (`FUN_801D98F0`, `0x801D99BC`).
+            Self::Equip {
+                session, picking, ..
+            } if !*picking => session.confirm_blip(pressed),
             _ => None,
         }
     }

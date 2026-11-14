@@ -299,11 +299,32 @@ impl PauseItemsSession {
     /// copy of the item-use session.
     ///
     /// REF: FUN_801D8308, FUN_801D7FF8
+    ///
+    /// Off the target step, a Cross sounds what the screen under the hand
+    /// writes over the picker's pick:
+    ///
+    /// - the command window (`FUN_801D7C00`): `0x23` on an empty bag
+    ///   (`0x801D7D44`), `0x20` for Use and Throw Out (`0x801D7D64`,
+    ///   `0x801D7D88`), and for Arrange a silenced pick (`0x801D7DAC`) with a
+    ///   pushed `0x37` (`0x801D7DCC`);
+    /// - the Use and Throw Out lists (the kind-4 kernel `FUN_80032A44`):
+    ///   `0x23` on a row whose word carries the disabled bit (`andi
+    ///   v0,v0,0x800` at `0x80032D04`, `li a1,0x23` at `0x80032D0C`), else
+    ///   `0x20` (`0x80032D24`);
+    /// - the throw-out Yes / No (`FUN_801D8734` phase 3): Yes overwrites the
+    ///   pick with `0x37` as the stack goes (`0x801D88E0`), No keeps the
+    ///   picker's `0x36`;
+    /// - the Incense Yes (`FUN_801D8D94`): a silenced pick and a pushed
+    ///   `0x25` (`0x801D8E4C`, `0x801D8E54`); the Door of Light's Yes / No
+    ///   (`FUN_801D8A58`) keeps the picker's `0x36`, and the Door of Wind's
+    ///   destination list the kernel's `0x20`.
+    ///
+    /// REF: FUN_801D7C00, FUN_801D8734, FUN_801D8A58, FUN_801D8D94
     pub fn confirm_blip(&self, pressed: u16) -> Option<crate::menu_cues::MenuBlip> {
         use crate::inventory_use::InventoryUseEvent;
         use crate::menu_cues::MenuBlip;
         if !self.target_select() {
-            return None;
+            return self.browse_confirm_blip(pressed);
         }
         let ev = simple_inventory_input(pressed)?;
         if ev != InventoryUseInput::Confirm {
@@ -317,6 +338,64 @@ impl PauseItemsSession {
             InventoryUseEvent::InvalidConfirm => Some(MenuBlip::Refuse),
             _ => None,
         })
+    }
+
+    /// [`Self::confirm_blip`] off the target step.
+    fn browse_confirm_blip(&self, pressed: u16) -> Option<crate::menu_cues::MenuBlip> {
+        use crate::menu_cues::MenuBlip;
+        if pressed & PadButton::Cross.mask() == 0 {
+            return None;
+        }
+        let circle = pressed & PadButton::Circle.mask() != 0;
+        match self.focus {
+            // The picker's confirm is read ahead of its cancel and its move.
+            PauseItemsFocus::Command if self.bag_empty() => Some(MenuBlip::Refuse),
+            PauseItemsFocus::Command if self.command_cursor >= 2 => Some(MenuBlip::Cancel),
+            PauseItemsFocus::Command => Some(MenuBlip::Confirm),
+            // The port's list backs out on Circle ahead of the confirm.
+            PauseItemsFocus::List | PauseItemsFocus::ThrowOutList if circle => None,
+            PauseItemsFocus::List | PauseItemsFocus::ThrowOutList => {
+                let row = list_kernel_navigate(self.cursor, self.rows.len(), pressed);
+                Some(if self.list_row_refused(row) {
+                    MenuBlip::Refuse
+                } else {
+                    MenuBlip::Confirm
+                })
+            }
+            PauseItemsFocus::ThrowOutConfirm if self.confirm_cursor == 0 => Some(MenuBlip::Cancel),
+            PauseItemsFocus::ThrowOutConfirm => Some(MenuBlip::Pick),
+            PauseItemsFocus::SpecialRoute => {
+                let sp = self.special_use.as_deref()?;
+                match sp.phase {
+                    SpecialUsePhase::Confirm if sp.route == UseRoute::Incense && sp.cursor == 0 => {
+                        Some(MenuBlip::Use)
+                    }
+                    SpecialUsePhase::Confirm => Some(MenuBlip::Pick),
+                    SpecialUsePhase::PickDestination => Some(MenuBlip::Confirm),
+                    SpecialUsePhase::Done(_) => None,
+                }
+            }
+        }
+    }
+
+    /// Whether the kind-4 kernel refuses a confirm on list row `row`: its row
+    /// word carries the disabled bit (`0x80032D04`), which the Use list reads
+    /// off the content-id-3 build (plus the live Incense gate) and the Throw
+    /// Out list off the content-id-`0x22` build. A Use row the host built
+    /// without row tables falls back to the item-use flow's own filter.
+    fn list_row_refused(&self, row: usize) -> bool {
+        use crate::menu_list_rows::ROW_DISABLED;
+        let Some(r) = self.rows.get(row) else {
+            return true;
+        };
+        match self.focus {
+            PauseItemsFocus::ThrowOutList => r.throw_bits & ROW_DISABLED != 0,
+            _ => match special_use_route_for_item(r.id) {
+                Some(UseRoute::Incense) if self.incense_blocked => true,
+                Some(_) => r.use_bits & ROW_DISABLED != 0,
+                None => r.use_bits & ROW_DISABLED != 0 || !self.inner.filtered_items.contains(&row),
+            },
+        }
     }
 
     /// The sort ranks this screen's Arrange runs on, once per Arrange it ran:
@@ -499,6 +578,11 @@ impl PauseItemsSession {
                     return;
                 }
                 self.list_navigate(pressed);
+                // The kernel buzzes a disabled row and keeps the list up
+                // (`0x80032D04`): no route, no target panel.
+                if cross && self.list_row_refused(self.cursor) {
+                    return;
+                }
                 if cross {
                     // Retail's Use dispatch routes on the hovered item's
                     // effect class before it ever opens the target panel:
@@ -513,11 +597,6 @@ impl PauseItemsSession {
                         .get(self.cursor)
                         .and_then(|r| special_use_route_for_item(r.id))
                     {
-                        // A greyed Incense row buzzes in the list kernel
-                        // (`with_incense_window`) - no confirm window opens.
-                        if route == UseRoute::Incense && self.incense_blocked {
-                            return;
-                        }
                         // Only the Door of Wind route reads the landmark
                         // list; the two Yes/No routes open with an empty
                         // one, exactly as `SpecialUseSession::new` expects.
@@ -561,7 +640,10 @@ impl PauseItemsSession {
                     return;
                 }
                 self.list_navigate(pressed);
-                if cross && self.cursor < self.rows.len() {
+                // A key item or a no-discard piece is a disabled row of the
+                // content-id-0x22 build: the kernel buzzes and the Yes / No
+                // never opens (`0x80032D04`).
+                if cross && !self.list_row_refused(self.cursor) {
                     // Confirm window opens seeded on "No"
                     // (`DAT_801E46D0 = 1`).
                     self.confirm_cursor = 1;

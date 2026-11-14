@@ -33,9 +33,10 @@ pub fn pause_frame_blip(
     root: Option<&legaia_engine_menus::field_menu::FieldMenuSession>,
     sub: Option<&FieldMenuSubsession>,
 ) -> Option<legaia_engine_menus::menu_cues::MenuBlip> {
-    sub.and_then(|s| s.confirm_blip(pressed)).or_else(|| {
-        legaia_engine_menus::field_menu::pause_edge_blip(pressed, start_closes_menu, root)
-    })
+    match sub.and_then(|s| s.confirm_blip(pressed)) {
+        Some(blip) => Some(blip).filter(|b| b.sounds()),
+        None => legaia_engine_menus::field_menu::pause_edge_blip(pressed, start_closes_menu, root),
+    }
 }
 
 /// Step an open sub-session one frame on a raw pad edge (and the host's

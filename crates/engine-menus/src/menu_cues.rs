@@ -37,6 +37,11 @@ pub const MENU_REFUSE_CUE: u8 = 0x23;
 /// all-party apply at `0x801D8120`, the group cast at `0x801D9368` and the
 /// target cast at `0x801D9680`.
 pub const MENU_USE_CUE: u8 = 0x25;
+/// An equipment change from the pause menu's Equip screen: Best Equipment
+/// that swapped a piece (`FUN_801D99F0`, `li a0,0x24` at `0x801D9B7C`), and
+/// the candidate list's commit or occupied Remove (`FUN_801D9C14`,
+/// `0x801DA110` / `0x801DA154`).
+pub const MENU_EQUIP_CUE: u8 = 0x24;
 
 use legaia_engine_system::input::PadButton;
 
@@ -61,6 +66,13 @@ pub enum MenuBlip {
     Refuse,
     /// An apply screen's use or cast ([`MENU_USE_CUE`]).
     Use,
+    /// An equipment change ([`MENU_EQUIP_CUE`]).
+    Equip,
+    /// A confirm the screen silences: it overwrites the picker's pick with
+    /// `0` and pushes nothing (the Equip candidate list's already-worn row,
+    /// `FUN_801D9C14`'s `0x801DA274`). Hosts never key it; the frame's rule
+    /// answers `None` ([`MenuBlip::sounds`]).
+    Silent,
 }
 
 impl MenuBlip {
@@ -73,7 +85,14 @@ impl MenuBlip {
             Self::Pick => MENU_PICK_CUE,
             Self::Refuse => MENU_REFUSE_CUE,
             Self::Use => MENU_USE_CUE,
+            Self::Equip => MENU_EQUIP_CUE,
+            Self::Silent => 0,
         }
+    }
+
+    /// `false` for [`Self::Silent`], the one blip that keys nothing.
+    pub const fn sounds(self) -> bool {
+        !matches!(self, Self::Silent)
     }
 }
 
@@ -111,6 +130,8 @@ mod tests {
         assert_eq!(MenuBlip::Pick.cue(), 0x36);
         assert_eq!(MenuBlip::Refuse.cue(), 0x23);
         assert_eq!(MenuBlip::Use.cue(), 0x25);
+        assert_eq!(MenuBlip::Equip.cue(), 0x24);
+        assert!(!MenuBlip::Silent.sounds());
     }
 
     /// Start on the root list closes the menu and blips a cancel, whatever
