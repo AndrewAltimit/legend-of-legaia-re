@@ -48,10 +48,74 @@ pub(in crate::window) struct NetMenu {
 }
 
 impl NetMenu {
-    pub fn new(name: Option<&str>) -> Self {
+    /// The screen seeded with `name` (`--name`), else the name it was last
+    /// used with, and the address it last joined (`remembered`).
+    pub fn new(name: Option<&str>, remembered: &NetRemembered) -> Self {
+        let mut menu = legaia_engine_netplay::connect::ConnectMenu::new(
+            true,
+            name.unwrap_or(&remembered.name),
+        );
+        menu.address = remembered.address.clone();
         Self {
-            menu: legaia_engine_netplay::connect::ConnectMenu::new(true, name.unwrap_or("")),
+            menu,
             prev_pad: u16::MAX,
+        }
+    }
+}
+
+/// The file [`NetRemembered`] lives in, in the launcher's settings folder
+/// ([`crate::launcher::config_dir`]): its own file, so a window writing it
+/// never races the launcher's write of the settings file.
+const NET_REMEMBERED_FILE: &str = "legaia-netplay.toml";
+
+/// What the Multiplayer screen remembers between runs: the address last
+/// joined and the name last played under. The browser play page's Online
+/// panel remembers the same two (and, like it, not the room code, which is
+/// a new one for every room).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(in crate::window) struct NetRemembered {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub address: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+}
+
+impl NetRemembered {
+    /// The remembered file's path, if a settings folder is known.
+    pub fn path() -> Option<std::path::PathBuf> {
+        crate::launcher::config_dir().map(|d| d.join(NET_REMEMBERED_FILE))
+    }
+
+    /// What `path` holds; nothing when it is missing or unreadable (a
+    /// remembered address is a convenience, never a reason to fail).
+    pub fn load(path: &Path) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|t| toml::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+
+    /// Write to `path`, whole or not at all.
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+        }
+        let text = toml::to_string(self).context("serialise the remembered room")?;
+        legaia_app_theme::settings_file::write_atomic(path, text.as_bytes())
+            .with_context(|| format!("write {}", path.display()))
+    }
+
+    /// `self` after the screen asked for `action`: a join's address and
+    /// either action's name replace the remembered ones. The default name
+    /// (an empty field) is not a name the player chose.
+    pub fn after(&self, menu: &legaia_engine_netplay::connect::ConnectMenu, joined: bool) -> Self {
+        Self {
+            address: if joined {
+                menu.address.trim().to_string()
+            } else {
+                self.address.clone()
+            },
+            name: menu.name.trim().to_string(),
         }
     }
 }
@@ -65,6 +129,22 @@ pub(in crate::window) struct NetHost {
     props_scene: Option<u16>,
     /// The room code was logged.
     logged_room: bool,
+}
+
+impl NetHost {
+    /// A window joined to room `code` over an already-open `link`: the
+    /// headless driver's way into a room, over an in-memory link.
+    pub(in crate::window) fn joined(
+        link: Box<dyn legaia_netplay::transport::Transport>,
+        code: RoomCode,
+    ) -> Self {
+        Self {
+            net: NetPlay::join(link, "Window", code, None),
+            _relay: None,
+            props_scene: None,
+            logged_room: false,
+        }
+    }
 }
 
 /// The address others on this machine's network reach it at: the local
@@ -174,7 +254,13 @@ impl PlayWindowApp {
         };
         let pressed = pad & !m.prev_pad;
         m.prev_pad = pad;
-        let launch = match m.menu.step(pressed) {
+        let action = m.menu.step(pressed);
+        let joined = matches!(action, Some(ConnectAction::Join { .. }));
+        let asked = action
+            .as_ref()
+            .is_some_and(|a| !matches!(a, ConnectAction::Close))
+            .then(|| m.menu.clone());
+        let launch = match action {
             None => return true,
             Some(ConnectAction::Close) => {
                 self.netplay_menu = None;
@@ -192,6 +278,11 @@ impl PlayWindowApp {
                 ..NetLaunch::default()
             },
         };
+        // Remembered on the ask, not on the connect: an address that did
+        // not answer is the one to correct next time.
+        if let Some(menu) = asked {
+            self.remember_room(&menu, joined);
+        }
         match start_netplay(&launch, &self.session.host.world) {
             Ok(nh) => {
                 self.netplay = nh;
@@ -204,6 +295,31 @@ impl PlayWindowApp {
             }
         }
         true
+    }
+
+    /// What the Multiplayer screen opens with: the remembered address and
+    /// name, or nothing in a scripted capture (which reads no player file).
+    pub(in crate::window) fn remembered_room(&self) -> NetRemembered {
+        if self.scripted_run() {
+            return NetRemembered::default();
+        }
+        NetRemembered::path()
+            .map(|p| NetRemembered::load(&p))
+            .unwrap_or_default()
+    }
+
+    /// Keep what `menu` just hosted or joined with for the next run.
+    fn remember_room(&self, menu: &legaia_engine_netplay::connect::ConnectMenu, joined: bool) {
+        if self.scripted_run() {
+            return;
+        }
+        let Some(path) = NetRemembered::path() else {
+            return;
+        };
+        let next = NetRemembered::load(&path).after(menu, joined);
+        if let Err(e) = next.save(&path) {
+            log::warn!("netplay: the room was not remembered: {e:#}");
+        }
     }
 
     /// `Tab`: open or close the room screen (and, online, the backquote
@@ -222,7 +338,7 @@ impl PlayWindowApp {
             if code == KeyCode::Tab {
                 self.netplay_menu = match self.netplay_menu.take() {
                     Some(_) => None,
-                    None => Some(NetMenu::new(None)),
+                    None => Some(NetMenu::new(None, &self.remembered_room())),
                 };
                 return true;
             }
@@ -460,5 +576,64 @@ impl PlayWindowApp {
             out.push((mesh, color, model));
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod remembered_tests {
+    use super::*;
+    use legaia_engine_netplay::connect::ConnectMenu;
+
+    #[test]
+    fn a_join_is_remembered_and_seeds_the_next_screen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub").join(NET_REMEMBERED_FILE);
+        assert_eq!(NetRemembered::load(&path), NetRemembered::default());
+
+        let mut menu = ConnectMenu::new(true, "");
+        menu.address = " 192.168.1.20:7777 ".into();
+        menu.name = "Noa".into();
+        let kept = NetRemembered::default().after(&menu, true);
+        kept.save(&path).unwrap();
+
+        let back = NetRemembered::load(&path);
+        assert_eq!(back.address, "192.168.1.20:7777");
+        assert_eq!(back.name, "Noa");
+        let next = NetMenu::new(None, &back);
+        assert_eq!(next.menu.address, "192.168.1.20:7777");
+        assert_eq!(next.menu.name, "Noa");
+        assert!(next.menu.room.is_empty(), "a room code is never remembered");
+    }
+
+    #[test]
+    fn hosting_keeps_the_address_last_joined() {
+        let had = NetRemembered {
+            address: "example.org:7777".into(),
+            name: "Vahn".into(),
+        };
+        let mut menu = ConnectMenu::new(true, "Gala");
+        menu.address = "typed-but-not-joined".into();
+        let kept = had.after(&menu, false);
+        assert_eq!(kept.address, "example.org:7777");
+        assert_eq!(kept.name, "Gala");
+    }
+
+    #[test]
+    fn a_launch_name_wins_over_the_remembered_one() {
+        let had = NetRemembered {
+            address: "example.org:7777".into(),
+            name: "Vahn".into(),
+        };
+        let menu = NetMenu::new(Some("Guest"), &had).menu;
+        assert_eq!(menu.name, "Guest");
+        assert_eq!(menu.address, "example.org:7777");
+    }
+
+    #[test]
+    fn a_damaged_file_reads_as_nothing_remembered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(NET_REMEMBERED_FILE);
+        std::fs::write(&path, "address = [not toml").unwrap();
+        assert_eq!(NetRemembered::load(&path), NetRemembered::default());
     }
 }

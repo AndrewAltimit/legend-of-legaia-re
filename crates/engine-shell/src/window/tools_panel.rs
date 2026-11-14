@@ -9,10 +9,11 @@
 //! The browser play page's twins are its dev-menu box, Auto-battle box,
 //! *Overworld markers* box, *Retail battle cadence* box, Minigame list,
 //! *Effect outlines* box, Party field, Battle BGM field, Learn spell row,
-//! *Start a battle here* button and GameShark box (a file here: a window has
-//! no text field).
+//! *Start a battle here* button, GameShark box (a file here: a window has
+//! no text field), *Export session* button and *Copy report* button.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
 use std::path::PathBuf;
 
 /// One row of the page.
@@ -43,6 +44,11 @@ pub(super) enum ToolRow {
     /// The memory card in port 2 (`--card`, or a card file dropped on the
     /// window); picked, then inserted.
     MemoryCard,
+    /// Write the running game as an `.lgsf` file in the saves folder: the
+    /// page's *Export session* button.
+    ExportSession,
+    /// Put a bug report on the clipboard: the page's *Copy report* button.
+    CopyReport,
     /// Arm a fight from the scene's own encounter table (`--battle first`).
     StartBattle,
     /// A press of the window key that enters a minigame or a mode.
@@ -50,7 +56,7 @@ pub(super) enum ToolRow {
 }
 
 /// The rows: control, label, one line of help.
-pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 20] = [
+pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 22] = [
     (
         ToolRow::DevMenu,
         "Developer menu",
@@ -110,6 +116,16 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 20] = [
         ToolRow::MemoryCard,
         "Memory card 2",
         "Left/Right pick, Cross insert: a card the launcher mounted before, or one in the saves folder.",
+    ),
+    (
+        ToolRow::ExportSession,
+        "Export session",
+        "Cross: write the running game to an .lgsf file in the saves folder.",
+    ),
+    (
+        ToolRow::CopyReport,
+        "Copy report",
+        "Cross: copy a bug report: version, system, scene, settings. No game data.",
     ),
     (
         ToolRow::StartBattle,
@@ -263,6 +279,76 @@ fn bgm_pick(i: usize) -> Option<u16> {
 }
 const BGM_PICKS: usize = 2 + legaia_engine_system::music_labels::BATTLE_BANK_BGM_IDS.len();
 
+/// The most session files the export row numbers before it asks for room.
+const SESSION_FILES_MAX: u32 = 999;
+/// The file the report row writes when no clipboard takes the text.
+const REPORT_FILE: &str = "legaia-report.txt";
+
+/// The session file name for `scene` and number `n`: the scene's label
+/// reduced to file-safe characters, so a pack scene's name cannot leave the
+/// folder.
+fn session_file_name(scene: &str, n: u32) -> String {
+    let label: String = scene
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(24)
+        .collect();
+    let label = if label.is_empty() { "game" } else { &label };
+    format!("session_{label}_{n:03}.lgsf")
+}
+
+/// Write `bytes` as the next unused session file for `scene` in `dir`
+/// (created when missing): never over a file that is there.
+pub(super) fn write_session_file(dir: &Path, scene: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for n in 1..=SESSION_FILES_MAX {
+        let path = dir.join(session_file_name(scene, n));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut f) => {
+                use std::io::Write;
+                return f
+                    .write_all(bytes)
+                    .map(|()| path.clone())
+                    .map_err(|e| format!("{}: {e}", path.display()));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    Err("The saves folder is full of session files; move some out.".to_string())
+}
+
+/// The system clipboard, opened on the report row's first press and kept for
+/// the session: on X11 the text lives only as long as its owner does.
+#[derive(Default)]
+struct HeldClipboard(Option<arboard::Clipboard>);
+
+impl std::fmt::Debug for HeldClipboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "open" } else { "closed" })
+    }
+}
+
+impl Clone for HeldClipboard {
+    /// A copy of the page holds no clipboard; it opens its own.
+    fn clone(&self) -> Self {
+        Self(None)
+    }
+}
+
+impl HeldClipboard {
+    fn set_text(&mut self, text: &str) -> Result<(), arboard::Error> {
+        if self.0.is_none() {
+            self.0 = Some(arboard::Clipboard::new()?);
+        }
+        self.0.as_mut().expect("just set").set_text(text)
+    }
+}
+
 /// The cursor, each picker's position and the last row's message.
 #[derive(Debug, Clone, Default)]
 pub(super) struct ToolsPage {
@@ -278,6 +364,8 @@ pub(super) struct ToolsPage {
     cards: Option<Vec<PathBuf>>,
     /// What the last press did, or why it did nothing.
     note: Option<String>,
+    /// The report row's clipboard.
+    clipboard: HeldClipboard,
 }
 
 impl ToolsPage {
@@ -360,6 +448,8 @@ impl PlayWindowApp {
                     },
                 });
             }
+            ToolRow::ExportSession => return ToolValue::Press("Cross: write"),
+            ToolRow::CopyReport => return ToolValue::Press("Cross: copy"),
             ToolRow::StartBattle => return ToolValue::Press("Cross: start"),
             ToolRow::Enter(_) => return ToolValue::Press("Cross: start"),
         })
@@ -385,7 +475,12 @@ impl PlayWindowApp {
         }
         if !matches!(
             row,
-            ToolRow::Enter(_) | ToolRow::GameShark | ToolRow::StartBattle | ToolRow::MemoryCard
+            ToolRow::Enter(_)
+                | ToolRow::GameShark
+                | ToolRow::StartBattle
+                | ToolRow::MemoryCard
+                | ToolRow::ExportSession
+                | ToolRow::CopyReport
         ) {
             self.tools_apply();
         }
@@ -487,6 +582,19 @@ impl PlayWindowApp {
                     }
                 });
             }
+            ToolRow::ExportSession => {
+                self.tools_page.note = Some(match self.export_session() {
+                    Ok(path) => format!(
+                        "Wrote {} in the saves folder.",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                    Err(e) => e,
+                });
+            }
+            ToolRow::CopyReport => {
+                let report = self.session_report();
+                self.tools_page.note = Some(self.hand_over_report(&report));
+            }
             ToolRow::StartBattle => {
                 let world = &mut self.session.host.world;
                 if !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
@@ -507,6 +615,119 @@ impl PlayWindowApp {
                     self.tools_page.note = Some(REFUSED.into());
                 }
             }
+        }
+    }
+
+    /// Write the running game as an `.lgsf` session file in the saves
+    /// folder, with the resume trailer the save screen's files carry: the
+    /// page's `export_save`, by the same refusal and the same writer.
+    pub(super) fn export_session(&mut self) -> Result<PathBuf, String> {
+        if !self.session.host.world.host_save_allowed() {
+            return Err("A battle is starting - export once it is over.".into());
+        }
+        let resume = self.session.current_resume();
+        let bytes = self
+            .session
+            .host
+            .world
+            .save_full()
+            .write_with_resume(&resume);
+        let dir = self.menu_runtime.save_dir.clone();
+        write_session_file(&dir, &resume.scene, &bytes)
+    }
+
+    /// What a player pastes into a bug report while the game runs: the
+    /// launcher's failure report ([`legaia_app_theme::game_exit::report_text`])
+    /// with the running session in place of how the game ended. It names the
+    /// scene and the settings, never the disc's bytes or the save's.
+    pub(super) fn session_report(&self) -> String {
+        use legaia_app_theme::game_exit;
+        let world = &self.session.host.world;
+        let scene = self.session.current_resume().scene;
+        let headline = format!(
+            "Copied while playing: scene {}, mode {:?}, frame {}",
+            if scene.is_empty() { "(none)" } else { &scene },
+            world.mode,
+            world.frame
+        );
+        let (w, h) = self.win.surface_size();
+        let log_text = self.session_log_text();
+        let mut detail = vec![format!(
+            "window {w}x{h}{}",
+            if self.win.is_fullscreen() {
+                ", fullscreen"
+            } else {
+                ""
+            }
+        )];
+        // The adapter line is logged once at start, far above the log's end.
+        if let Some(gpu) = log_text.as_deref().and_then(|t| {
+            t.lines()
+                .find(|l| l.contains("wgpu adapter:"))
+                .map(game_exit::strip_log_prefix)
+        }) {
+            detail.push(gpu.to_string());
+        }
+        detail.push(format!(
+            "controller: {}",
+            match self.last_pad {
+                Some(style) => format!("{style:?}"),
+                None => "keyboard last".to_string(),
+            }
+        ));
+        detail.push(format!(
+            "not at the original's values: {}",
+            match world.toggles.retail_deviations() {
+                d if d.is_empty() => "nothing".to_string(),
+                d => d.join(", "),
+            }
+        ));
+        if let Some(sw) = self.launch_switches.as_ref() {
+            detail.push(format!("switches: {sw:?}"));
+        }
+        detail.push(format!("options: {:?}", self.options_state));
+        if let Some(pack) = world.expansion.pack.as_deref() {
+            detail.push(format!("expansion pack: {}", pack.manifest.id));
+        }
+        if self.netplay.is_some() {
+            detail.push("in a multiplayer room".to_string());
+        }
+        game_exit::report_text(
+            "legaia-engine play-window",
+            env!("CARGO_PKG_VERSION"),
+            &headline,
+            Some(&detail.join("\n")),
+            log_text.as_deref(),
+            game_exit::home_folder().as_deref(),
+        )
+    }
+
+    /// The log of this run, when the launcher is keeping one: its game log
+    /// in the working directory, written to since this window started (an
+    /// older file is some earlier run's).
+    fn session_log_text(&self) -> Option<String> {
+        let path = std::env::current_dir()
+            .ok()?
+            .join(crate::launcher::GAME_LOG);
+        let written = std::fs::metadata(&path).ok()?.modified().ok()?;
+        let started = std::time::SystemTime::now().checked_sub(self.started_at.elapsed())?;
+        (written >= started)
+            .then(|| std::fs::read_to_string(&path).ok())
+            .flatten()
+    }
+
+    /// Put `report` on the clipboard, or in a file beside the saves when no
+    /// clipboard takes it (a scripted capture never touches the player's).
+    fn hand_over_report(&mut self, report: &str) -> String {
+        if !self.scripted_run() && self.tools_page.clipboard.set_text(report).is_ok() {
+            return "Report copied. Paste it into your bug report.".to_string();
+        }
+        let path = self.menu_runtime.save_dir.join(REPORT_FILE);
+        let wrote = std::fs::create_dir_all(&self.menu_runtime.save_dir)
+            .and_then(|()| std::fs::write(&path, report));
+        match wrote {
+            Ok(()) => format!("No clipboard here: wrote {REPORT_FILE} in the saves folder."),
+            Err(e) => format!("The report could not be copied or written: {e}"),
         }
     }
 
@@ -800,6 +1021,24 @@ mod tests {
     }
 
     /// The page stays on the stage with the row count it carries.
+    #[test]
+    fn a_session_file_never_lands_on_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let saves = dir.path().join("saves");
+        let a = write_session_file(&saves, "town01", b"one").unwrap();
+        let b = write_session_file(&saves, "town01", b"two").unwrap();
+        assert_eq!(a.file_name().unwrap(), "session_town01_001.lgsf");
+        assert_eq!(b.file_name().unwrap(), "session_town01_002.lgsf");
+        assert_eq!(std::fs::read(&a).unwrap(), b"one");
+        assert_eq!(std::fs::read(&b).unwrap(), b"two");
+        // A scene label is reduced to file-safe characters; none is "game".
+        let c = write_session_file(&saves, "../../etc/x y", b"3").unwrap();
+        assert_eq!(c.parent().unwrap(), saves);
+        assert_eq!(c.file_name().unwrap(), "session_etcxy_001.lgsf");
+        let d = write_session_file(&saves, "", b"4").unwrap();
+        assert_eq!(d.file_name().unwrap(), "session_game_001.lgsf");
+    }
+
     #[test]
     fn the_plate_fits_the_stage() {
         let h = super::super::settings_panel::plate_height(SHOWN, NOTE_LINES);

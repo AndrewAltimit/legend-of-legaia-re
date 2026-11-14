@@ -259,6 +259,7 @@ impl PlayWindowApp {
             cheats_page: Default::default(),
             scenes_page: Default::default(),
             tools_page: Default::default(),
+            keys_reset: Default::default(),
             chrome_dark: true,
             fx_outline: std::env::var_os("LEGAIA_DIAG_FX").is_some(),
             cheat_file: None,

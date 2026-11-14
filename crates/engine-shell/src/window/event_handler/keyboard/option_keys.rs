@@ -165,15 +165,17 @@ impl PlayWindowApp {
                         PanelPage::Cheats => self.cheats_apply(),
                         PanelPage::Scenes => self.scenes_go(),
                         PanelPage::Tools => self.tools_apply(),
-                        PanelPage::Keys => {}
+                        PanelPage::Keys => self.keys_reset_press(),
                     }
                 }
                 true
             }
             KeyCode::Delete | KeyCode::Backspace if self.panel_holds_game() => {
                 use super::super::super::settings_panel::PanelPage;
-                if self.panel_page() == PanelPage::Settings {
-                    self.reset_setting();
+                match self.panel_page() {
+                    PanelPage::Settings => self.reset_setting(),
+                    PanelPage::Keys if !repeat => self.keys_reset_press(),
+                    _ => {}
                 }
                 true
             }

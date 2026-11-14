@@ -687,6 +687,26 @@ impl LegaiaRuntime {
         self.scene_host.session()
     }
 
+    /// Put this page in a room over `link`, as `play_net_join` does over a
+    /// WebSocket - for a native test that steps the room on both hosts over
+    /// an in-memory link. Not a wasm export.
+    pub fn debug_join_room(
+        &mut self,
+        link: Box<dyn legaia_netplay::transport::Transport>,
+        code: legaia_netplay::protocol::RoomCode,
+    ) {
+        self.netplay = Some(legaia_engine_netplay::room::NetPlay::join(
+            link, "Page", code, None,
+        ));
+        self.netplay_props_scene = None;
+    }
+
+    /// Room frames this page's room controller has stepped
+    /// (`NetPlay::frames`), `None` out of a room. Not a wasm export.
+    pub fn debug_room_frames(&self) -> Option<u32> {
+        self.netplay.as_ref().map(|n| n.frames())
+    }
+
     /// [`Self::debug_session`], mutable: a native test seats the same state
     /// on this host and on the window (a raised party wipe, a queued cue)
     /// ahead of the frames it compares. Not a wasm export.

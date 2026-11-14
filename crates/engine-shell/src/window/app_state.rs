@@ -1113,6 +1113,8 @@ pub(super) struct PlayWindowApp {
     pub(super) cheats_page: super::cheats_panel::CheatsPage,
     /// The `F12` panel's Scenes page: its cursor.
     pub(super) scenes_page: super::scenes_panel::ScenesPage,
+    /// The Keys page's reset row (`hud::text_list::KeysReset`).
+    pub(super) keys_reset: super::hud::KeysReset,
     /// The Tools page's cursor and last refusal (`window::tools_panel`).
     pub(super) tools_page: super::tools_panel::ToolsPage,
     /// A wireframe box around every effect sprite (`LEGAIA_DIAG_FX`, or the

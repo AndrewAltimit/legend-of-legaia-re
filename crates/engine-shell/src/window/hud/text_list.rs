@@ -261,7 +261,17 @@ impl PlayWindowApp {
         }
         put(HELP_MOUSE, (l.x0, y + 2), ink.text);
         put(HELP_LEGEND, (l.x0, y + 2 + l.line_h), ink.changed);
-        put(HELP_FOOTER, (l.x0, y + 2 + 2 * l.line_h), ink.heading);
+        let cross = self.last_pad.map(|style| {
+            self.mapping
+                .prompt_label("Cross", Some(style))
+                .unwrap_or_else(|| "Cross".to_string())
+        });
+        let footer = keys_footer(self.keys_reset, self.panel_holds_game(), cross.as_deref());
+        let footer_ink = match self.keys_reset {
+            KeysReset::Idle => ink.heading,
+            KeysReset::Armed | KeysReset::Done => ink.changed,
+        };
+        put(&footer, (l.x0, y + 2 + 2 * l.line_h), footer_ink);
         out
     }
 
@@ -943,6 +953,47 @@ pub(in crate::window) fn fit_plate_draws(
 const HELP_QUIT: &str = "Close (2x: quit)";
 const HELP_SELF: &str = "Close (also ?)";
 const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
+/// The footer while the panel holds the game: the rebind pointer and the
+/// reset row, on the keyboard and (`{cross}` filled in) on a controller.
+const HELP_FOOTER_RESET: &str = "Rebind: Options > Key Config. Reset: Delete";
+const HELP_FOOTER_RESET_PAD: &str = "Rebind: Options > Key Config. Reset: {cross}";
+/// The footer after the reset row's first press, and after its second.
+const HELP_FOOTER_ARMED: &str = "Press again: every key and button to default";
+const HELP_FOOTER_DONE: &str = "Keys and buttons are back to the defaults";
+/// Every footer the Keys page draws with no label filled in; the panel is as
+/// wide as the widest, so a press never resizes it.
+const HELP_FOOTERS: [&str; 4] = [
+    HELP_FOOTER,
+    HELP_FOOTER_RESET,
+    HELP_FOOTER_ARMED,
+    HELP_FOOTER_DONE,
+];
+
+/// Where the Keys page's reset row stands. Two presses reset: one press on a
+/// page with no cursor is too easy to make by accident.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(in crate::window) enum KeysReset {
+    #[default]
+    Idle,
+    /// Pressed once: the next press resets.
+    Armed,
+    /// Reset on this visit to the page.
+    Done,
+}
+
+/// The Keys page's footer for the reset row's state. `holds` is whether the
+/// panel holds the game (it reads no press in a multiplayer room, where it
+/// shows the rebind pointer alone); `cross` is the controller's label for
+/// Cross when a controller was pressed last.
+pub(in crate::window) fn keys_footer(reset: KeysReset, holds: bool, cross: Option<&str>) -> String {
+    match (holds, reset, cross) {
+        (false, _, _) => HELP_FOOTER.to_string(),
+        (true, KeysReset::Armed, _) => HELP_FOOTER_ARMED.to_string(),
+        (true, KeysReset::Done, _) => HELP_FOOTER_DONE.to_string(),
+        (true, KeysReset::Idle, None) => HELP_FOOTER_RESET.to_string(),
+        (true, KeysReset::Idle, Some(c)) => HELP_FOOTER_RESET_PAD.replace("{cross}", c),
+    }
+}
 /// The mouse's camera controls (`window/camera.rs`): drag orbits and tilts,
 /// the wheel zooms, a double-click puts the retail framing back.
 const HELP_MOUSE: &str = "Mouse: drag turns, wheel zooms, double-click resets";
@@ -1108,7 +1159,7 @@ fn help_panel_layout_with(
         let in_right = right.iter().filter(|r| **r).count();
         let rows = in_right.max(n - in_right);
         let body = (left_w + right_w)
-            .max(width(HELP_FOOTER))
+            .max(HELP_FOOTERS.iter().map(|f| width(f)).max().unwrap_or(0))
             .max(width(HELP_MOUSE))
             .max(width(HELP_LEGEND))
             .max(pad_w);
@@ -1167,6 +1218,21 @@ fn help_panel_layout_with(
 
 #[cfg(test)]
 mod help_panel_tests {
+    /// The reset row takes two presses, and every footer it shows is one the
+    /// panel's width already covers.
+    #[test]
+    fn the_keys_footer_follows_the_reset_row() {
+        use super::{HELP_FOOTERS, KeysReset, keys_footer};
+        assert!(keys_footer(KeysReset::Idle, true, None).ends_with("Reset: Delete"));
+        assert!(keys_footer(KeysReset::Idle, true, Some("A")).ends_with("Reset: A"));
+        assert!(keys_footer(KeysReset::Armed, true, None).starts_with("Press again"));
+        // A room's panel reads no press: it offers no reset.
+        for state in [KeysReset::Idle, KeysReset::Armed, KeysReset::Done] {
+            assert!(!keys_footer(state, false, Some("A")).contains("Reset"));
+            assert!(HELP_FOOTERS.contains(&keys_footer(state, true, None).as_str()));
+        }
+    }
+
     use super::*;
 
     /// A plate as tall as the 320x240 stage keeps a margin in the window

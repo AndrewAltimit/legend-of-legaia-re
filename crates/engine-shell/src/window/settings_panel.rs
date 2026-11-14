@@ -317,6 +317,7 @@ impl PlayWindowApp {
             return;
         }
         self.hotkey_help = true;
+        self.keys_reset = Default::default();
         self.panel_page = PanelPage::Settings;
         self.startup_hint.dismiss();
         self.scripted_panel_focus();
@@ -398,12 +399,41 @@ impl PlayWindowApp {
             PanelInput::Move(d) if page == PanelPage::Tools => self.tools_page.move_cursor(d),
             PanelInput::Change(dir) if page == PanelPage::Tools => self.tools_change(dir),
             PanelInput::Confirm if page == PanelPage::Tools => self.tools_apply(),
+            PanelInput::Confirm if page == PanelPage::Keys => self.keys_reset_press(),
+            // Any other press on the Keys page takes the armed reset back.
+            _ if page == PanelPage::Keys => self.keys_reset = Default::default(),
             PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
 
+    /// The Keys page's reset row: Cross, `Enter` or `Delete`. The first
+    /// press arms it and the second puts every key and controller button
+    /// back to its default and writes the binding file - the play page's
+    /// *Reset keys and buttons*, the launcher's key reset and `legaia-engine
+    /// config reset`, here for a rebind that left no way into the menu.
+    pub(super) fn keys_reset_press(&mut self) {
+        use super::hud::KeysReset;
+        self.keys_reset = match self.keys_reset {
+            KeysReset::Idle | KeysReset::Done => KeysReset::Armed,
+            KeysReset::Armed => {
+                let defaults = legaia_engine_system::input::Mapping::default();
+                // A controller button still down would fold through the new
+                // table as a fresh press (`swallow_held`, as a rebind does).
+                if defaults.gamepad != self.mapping.gamepad
+                    && let Some(gp) = self.gamepad.as_mut()
+                {
+                    gp.swallow_held();
+                }
+                self.mapping = defaults;
+                self.persist_bindings();
+                KeysReset::Done
+            }
+        };
+    }
+
     /// `Tab`, `L1`, `R1`: the other page.
     pub(super) fn flip_panel(&mut self) {
+        self.keys_reset = Default::default();
         self.panel_page = match self.panel_page {
             PanelPage::Settings => PanelPage::Cheats,
             PanelPage::Cheats => PanelPage::Scenes,

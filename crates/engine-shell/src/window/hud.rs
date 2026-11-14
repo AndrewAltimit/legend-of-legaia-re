@@ -12,6 +12,7 @@ mod dialog;
 mod field_party;
 #[path = "hud/text_list.rs"]
 mod text_list;
+pub(in crate::window) use text_list::{KeysReset, keys_footer};
 
 impl PlayWindowApp {
     /// The field overlay's own stage windows that ride the shop-family
