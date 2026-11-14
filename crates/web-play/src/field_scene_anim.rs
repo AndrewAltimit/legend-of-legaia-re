@@ -23,6 +23,9 @@ pub struct FieldSceneAnim {
     frame_step: u8,
     /// Vsyncs banked toward the next game tick.
     vsync_accum: u8,
+    /// The walker's source cells as the image they were parked in held them
+    /// ([`Self::remember_sources`]): `(x, y, sixteen entries)` per frame.
+    sources: Vec<(u16, u16, [u16; 16])>,
 }
 
 impl FieldSceneAnim {
@@ -37,7 +40,53 @@ impl FieldSceneAnim {
             clut: Some(clut),
             frame_step,
             vsync_accum: 0,
+            sources: Vec::new(),
         }
+    }
+
+    /// Remember the walker's source cells as `vram` holds them now - call it
+    /// on the image the install parked into. A host whose scene image can be
+    /// rebuilt under a walker it keeps (the map viewer's live preview
+    /// re-enters its scene when the script walks out of it) hands them back
+    /// with [`Self::repark`]: the scene loader uploads the bundle's TIMs, not
+    /// the walker's strips, and a walker stepped over an image without them
+    /// copies blank cells onto the palettes it animates.
+    pub fn remember_sources(&mut self, vram: &psx_tim::Vram) {
+        use legaia_engine_scene::clut_walk_anim::ClutWalkAnim;
+        self.sources.clear();
+        let Some(ClutWalkAnim::Walk { table, .. }) = self.clut.as_ref() else {
+            return;
+        };
+        for frame in table.entries.iter().flat_map(|e| e.frames.iter()) {
+            if self
+                .sources
+                .iter()
+                .any(|&(x, y, _)| (x, y) == (frame.src_x, frame.src_y))
+            {
+                continue;
+            }
+            let mut cell = [0u16; 16];
+            for (i, word) in cell.iter_mut().enumerate() {
+                *word = vram.pixel(usize::from(frame.src_x) + i, usize::from(frame.src_y));
+            }
+            self.sources.push((frame.src_x, frame.src_y, cell));
+        }
+    }
+
+    /// Write the remembered source cells ([`Self::remember_sources`]) into
+    /// `vram`. Returns `true` when any cell differed.
+    pub fn repark(&self, vram: &mut psx_tim::Vram) -> bool {
+        let mut wrote = false;
+        for (x, y, cell) in &self.sources {
+            let held = (0..16).all(|i| vram.pixel(usize::from(*x) + i, usize::from(*y)) == cell[i]);
+            if held {
+                continue;
+            }
+            let bytes: Vec<u8> = cell.iter().flat_map(|w| w.to_le_bytes()).collect();
+            vram.write_clut_row(*x, *y, &bytes);
+            wrote = true;
+        }
+        wrote
     }
 
     /// Which CLUT animator is installed: `1` the walker, `2` the legacy

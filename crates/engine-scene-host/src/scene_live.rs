@@ -60,8 +60,9 @@
 //! A viewer never follows the scene out: a door, warp or scripted battle the
 //! headless world reaches re-enters the viewed scene instead (its entry
 //! script runs again, as on a fresh visit), and after
-//! [`MAX_RESTARTS`] such re-entries the preview stops ticking and the view
-//! holds its last frame.
+//! [`MAX_RESTARTS`] such re-entries the preview stops ticking on one last
+//! entry of the viewed scene, so the host a stopped preview holds is still
+//! that scene's.
 //!
 //! The overworld's ground does not follow the field ladder (its bulk
 //! continent is a separate pass), so a kingdom map reports no floor wave and
@@ -261,10 +262,12 @@ impl LiveScene {
         if left {
             self.restarts += 1;
             let name = self.name.clone();
-            if self.restarts > MAX_RESTARTS
-                || Self::enter_host(&mut self.host, &mut self.camera, &name, self.world_map)
-                    .is_err()
-            {
+            // The last re-entry too: the host then holds the viewed scene
+            // when the preview stops, not the scene (or battle) its script
+            // left for, whose image the viewer would draw its meshes from.
+            let entered =
+                Self::enter_host(&mut self.host, &mut self.camera, &name, self.world_map).is_ok();
+            if self.restarts > MAX_RESTARTS || !entered {
                 self.halted = true;
                 return false;
             }

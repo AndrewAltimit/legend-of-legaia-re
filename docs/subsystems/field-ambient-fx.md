@@ -79,6 +79,15 @@ its animator when the tick reports a scene entry
 (`crates/web-play/tests/door_entry_vram_page.rs`); the native window steps
 its animator against its own copy of the image and replaces both together.
 
+The map viewer has the opposite case: it keeps the walker while its live
+preview re-enters the viewed scene (a script that walks out of it, `edson`'s
+ending record for one), and the scene loader rebuilds the image from the
+bundle's TIMs, which do not carry the walker's strips. The viewer's animator
+remembers its source cells at the install and parks them again on every
+re-entry (`FieldSceneAnim::remember_sources` / `repark`), and a preview that
+stops after its last re-entry stops on the viewed scene, so the image the
+page draws is never the one the script left for.
+
 ## Mechanism 2 - the ambient move-VM effect tree
 
 Most ambience is a tree of small invisible actors ("stager parts") running
