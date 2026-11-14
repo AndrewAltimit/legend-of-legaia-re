@@ -441,8 +441,31 @@ const BUTTON_PITCH: i32 = 20;
 const ROW_PITCH: i32 = 13;
 /// The option list's inset from the panel's top and bottom edges.
 const LIST_INSET: i32 = 5;
-/// How many option-list lines (rows and group headings) the panel shows.
-const VISIBLE_LINES: usize = ((STAGE_H - PAD - COLUMNS_Y - 2 * LIST_INSET) / ROW_PITCH) as usize;
+/// How many option-list lines (rows and group headings) the panel shows on
+/// the base stage; a taller window shows more ([`visible_lines`]).
+const VISIBLE_LINES: usize = visible_lines(0);
+/// The option list's length in lines: its rows and its group headings.
+const OPTION_LINES: usize = {
+    let mut n = OPTION_ROWS.len();
+    let mut i = 0;
+    while i < OPTION_ROWS.len() {
+        if OPTION_ROWS[i].0.is_some() {
+            n += 1;
+        }
+        i += 1;
+    }
+    n
+};
+/// The most stage rows a tall window adds under the base stage: enough to
+/// show the whole option list, past which the extra would only be empty
+/// panel.
+const MAX_EXTRA_H: i32 = (OPTION_LINES - VISIBLE_LINES) as i32 * ROW_PITCH;
+
+/// How many list lines the right panel shows on a stage `extra` rows taller
+/// than the base one.
+const fn visible_lines(extra: i32) -> usize {
+    ((STAGE_H + extra - PAD - COLUMNS_Y - 2 * LIST_INSET) / ROW_PITCH) as usize
+}
 
 /// One line of the option list: a group heading or a row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -468,17 +491,17 @@ fn option_lines() -> Vec<Line> {
 /// of what comes next on the side the list is moving: a row walked to at
 /// the panel's edge shows the row beyond it, so the list visibly goes on
 /// (it stopped flush on the focused row, which read as the end).
-fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
+fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize, shown: usize) -> usize {
     let top = if idx > 0 && matches!(lines[idx - 1], Line::Heading(_)) {
         idx - 1
     } else {
         idx
     };
-    let max = lines.len().saturating_sub(VISIBLE_LINES);
+    let max = lines.len().saturating_sub(shown);
     let s = if top <= scroll && scroll > 0 {
         top.saturating_sub(1)
-    } else if idx + 1 >= scroll + VISIBLE_LINES {
-        (idx + 2).saturating_sub(VISIBLE_LINES)
+    } else if idx + 1 >= scroll + shown {
+        (idx + 2).saturating_sub(shown)
     } else {
         scroll
     };
@@ -1336,7 +1359,7 @@ impl LauncherApp {
             match nav {
                 PadNav::Focus(d) => self.step_focus(d),
                 PadNav::Horizontal(d) => self.horizontal(d, evl),
-                PadNav::Page(d) => self.step_option(d * (VISIBLE_LINES as i32 - 2)),
+                PadNav::Page(d) => self.step_option(d * (self.lines_shown() as i32 - 2)),
                 PadNav::Back => {
                     if self.panel != Panel::Options {
                         self.leave_page();
@@ -2265,11 +2288,12 @@ impl LauncherApp {
         } else {
             idx
         };
-        let max = self.recent_lines.len().saturating_sub(VISIBLE_LINES);
+        let shown = self.lines_shown();
+        let max = self.recent_lines.len().saturating_sub(shown);
         self.recent_scroll = if top < self.recent_scroll {
             top
-        } else if idx >= self.recent_scroll + VISIBLE_LINES {
-            idx + 1 - VISIBLE_LINES
+        } else if idx >= self.recent_scroll + shown {
+            idx + 1 - shown
         } else {
             self.recent_scroll
         }
@@ -2378,18 +2402,18 @@ impl LauncherApp {
         let Item::Opt(row) = self.focus else { return };
         let lines = option_lines();
         if let Some(idx) = lines.iter().position(|l| *l == Line::Row(row)) {
-            self.opt_scroll = scroll_to_reveal(&lines, self.opt_scroll, idx);
+            self.opt_scroll = scroll_to_reveal(&lines, self.opt_scroll, idx, self.lines_shown());
         }
     }
 
     /// Scroll the option list by `lines` (negative is up), clamped.
     fn scroll_options(&mut self, lines: i32) {
         if self.panel == Panel::Recent {
-            let max = self.recent_lines.len().saturating_sub(VISIBLE_LINES) as i32;
+            let max = self.recent_lines.len().saturating_sub(self.lines_shown()) as i32;
             self.recent_scroll = (self.recent_scroll as i32 + lines).clamp(0, max) as usize;
             return;
         }
-        let max = option_lines().len().saturating_sub(VISIBLE_LINES) as i32;
+        let max = option_lines().len().saturating_sub(self.lines_shown()) as i32;
         self.opt_scroll = (self.opt_scroll as i32 + lines).clamp(0, max) as usize;
     }
 
@@ -2426,6 +2450,11 @@ impl LauncherApp {
 
     fn stage(&self) -> Stage {
         stage_for(self.win.surface_size())
+    }
+
+    /// How many list lines the right panel shows in the window as it is.
+    fn lines_shown(&self) -> usize {
+        visible_lines(self.stage().extra)
     }
 
     /// Lay the screen out; `hits` gets each control's stage rectangle.
@@ -2503,7 +2532,7 @@ impl LauncherApp {
         }
 
         // Left column, below the buttons: help for the focused control.
-        let help = help_rect();
+        let help = help_rect(c.stage.extra);
         c.rect(help, CARD);
         let lines = self.help_lines();
         let hl = help_layout(c, &lines);
@@ -2534,7 +2563,7 @@ impl LauncherApp {
         }
 
         // Right column.
-        let panel = panel_rect();
+        let panel = panel_rect(c.stage.extra);
         c.rect(panel, CARD);
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
@@ -2621,11 +2650,10 @@ impl LauncherApp {
     fn options_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
         let retail = self.settings.switches.retail;
         let lines = option_lines();
-        let scroll = self
-            .opt_scroll
-            .min(lines.len().saturating_sub(VISIBLE_LINES));
+        let shown = visible_lines(c.stage.extra);
+        let scroll = self.opt_scroll.min(lines.len().saturating_sub(shown));
         let mut y = panel.y + LIST_INSET;
-        for line in lines.iter().skip(scroll).take(VISIBLE_LINES) {
+        for line in lines.iter().skip(scroll).take(shown) {
             let row = match *line {
                 Line::Heading(h) => {
                     // A heading sits on a band of the header's colour, so a
@@ -2677,17 +2705,17 @@ impl LauncherApp {
             y += ROW_PITCH;
         }
         // The scroll bar: the whole list is the track, the view the thumb.
-        if lines.len() > VISIBLE_LINES {
+        if lines.len() > shown {
             let track = Rect::new(
                 panel.x + panel.w - 6,
                 panel.y + LIST_INSET,
                 2,
-                VISIBLE_LINES as i32 * ROW_PITCH,
+                shown as i32 * ROW_PITCH,
             );
             c.rect(track, RULE);
             let n = lines.len() as i32;
-            let thumb_h = (track.h * VISIBLE_LINES as i32 / n).max(8);
-            let max = n - VISIBLE_LINES as i32;
+            let thumb_h = (track.h * shown as i32 / n).max(8);
+            let max = n - shown as i32;
             let thumb_y = track.y + (track.h - thumb_h) * scroll as i32 / max.max(1);
             c.rect(Rect::new(track.x, thumb_y, track.w, thumb_h), DIM);
         }
@@ -2754,11 +2782,12 @@ impl LauncherApp {
     }
 
     fn recent_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        let shown = visible_lines(c.stage.extra);
         let scroll = self
             .recent_scroll
-            .min(self.recent_lines.len().saturating_sub(VISIBLE_LINES));
+            .min(self.recent_lines.len().saturating_sub(shown));
         let mut y = panel.y + LIST_INSET;
-        for line in self.recent_lines.iter().skip(scroll).take(VISIBLE_LINES) {
+        for line in self.recent_lines.iter().skip(scroll).take(shown) {
             let index = match *line {
                 RecentLine::Heading(h) => {
                     c.rect(Rect::new(panel.x + 4, y, panel.w - 14, ROW_PITCH - 1), BAND);
@@ -2806,17 +2835,17 @@ impl LauncherApp {
             c.text(panel.x + panel.w - 14 - vw, y, &value, entry.value_ink);
             y += ROW_PITCH;
         }
-        if self.recent_lines.len() > VISIBLE_LINES {
+        if self.recent_lines.len() > shown {
             let track = Rect::new(
                 panel.x + panel.w - 6,
                 panel.y + LIST_INSET,
                 2,
-                VISIBLE_LINES as i32 * ROW_PITCH,
+                shown as i32 * ROW_PITCH,
             );
             c.rect(track, RULE);
             let n = self.recent_lines.len() as i32;
-            let thumb_h = (track.h * VISIBLE_LINES as i32 / n).max(8);
-            let max = n - VISIBLE_LINES as i32;
+            let thumb_h = (track.h * shown as i32 / n).max(8);
+            let max = n - shown as i32;
             let thumb_y = track.y + (track.h - thumb_h) * scroll as i32 / max.max(1);
             c.rect(Rect::new(track.x, thumb_y, track.w, thumb_h), DIM);
         }
@@ -3021,7 +3050,7 @@ impl LauncherApp {
         let st = self.stage();
         let x = ((cx as i32) - st.origin.0).div_euclid(st.scale);
         let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
-        help_rect().contains(x, y)
+        help_rect(st.extra).contains(x, y)
     }
 
     /// The control under the cursor, if any.
@@ -3246,10 +3275,10 @@ impl ApplicationHandler for LauncherApp {
                     Key::Named(NamedKey::ArrowDown) if !typing => self.step_focus(1),
                     Key::Named(NamedKey::Tab) if !typing => self.switch_column(),
                     Key::Named(NamedKey::PageUp) if !typing => {
-                        self.step_option(-(VISIBLE_LINES as i32 - 2));
+                        self.step_option(-(self.lines_shown() as i32 - 2));
                     }
                     Key::Named(NamedKey::PageDown) if !typing => {
-                        self.step_option(VISIBLE_LINES as i32 - 2);
+                        self.step_option(self.lines_shown() as i32 - 2);
                     }
                     Key::Named(NamedKey::Home) if !typing => {
                         self.step_option(-(OPTION_ROWS.len() as i32));
@@ -3339,6 +3368,11 @@ struct Stage {
     /// Stage rows the header band gives up ([`HEADER_GIVE`] at most): the
     /// stage's top `squeeze` rows sit above the surface.
     squeeze: i32,
+    /// Stage rows a window taller than the base stage adds under it
+    /// ([`MAX_EXTRA_H`] at most): the help box and the right panel grow by
+    /// that much, so the option list shows more of itself rather than the
+    /// window framing a short list in empty margins.
+    extra: i32,
 }
 
 /// The largest whole-step stage that fits a `(w, h)` surface, centred. A
@@ -3350,7 +3384,8 @@ fn stage_for((w, h): (u32, u32)) -> Stage {
     let (w, h) = (w as i32, h as i32);
     let scale = (w / STAGE_W).min(h / (STAGE_H - HEADER_GIVE)).max(1);
     let squeeze = (STAGE_H - h / scale).clamp(0, HEADER_GIVE);
-    let shown = STAGE_H - squeeze;
+    let extra = (h / scale - STAGE_H).clamp(0, MAX_EXTRA_H);
+    let shown = STAGE_H - squeeze + extra;
     let origin = (
         (w - STAGE_W * scale) / 2,
         (h - shown * scale) / 2 - squeeze * scale,
@@ -3360,6 +3395,7 @@ fn stage_for((w, h): (u32, u32)) -> Stage {
         origin,
         surface: (w as u32, h as u32),
         squeeze,
+        extra,
     }
 }
 
@@ -4022,15 +4058,21 @@ fn button_rect(i: usize) -> Rect {
 /// How many of [`BUTTONS`] take a whole row.
 const FULL_BUTTONS: i32 = 4;
 
-/// The help box under the buttons.
-fn help_rect() -> Rect {
+/// The help box under the buttons, on a stage `extra` rows taller than the
+/// base one ([`Stage::extra`]).
+fn help_rect(extra: i32) -> Rect {
     let y = COLUMNS_Y + BUTTON_ROWS * BUTTON_PITCH + 4;
-    Rect::new(LEFT_X, y, LEFT_W, STAGE_H - PAD - y)
+    Rect::new(LEFT_X, y, LEFT_W, STAGE_H + extra - PAD - y)
 }
 
-/// The right-hand panel (options or controls).
-fn panel_rect() -> Rect {
-    Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y)
+/// The right-hand panel (options or controls), as [`help_rect`].
+fn panel_rect(extra: i32) -> Rect {
+    Rect::new(
+        RIGHT_X,
+        COLUMNS_Y,
+        RIGHT_W,
+        STAGE_H + extra - PAD - COLUMNS_Y,
+    )
 }
 
 /// How many of the rebind session's rows the Controls page lists: its order
@@ -4146,7 +4188,7 @@ struct HelpLayout {
 }
 
 fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
-    let help = help_rect();
+    let help = help_rect(c.stage.extra);
     let lines: Vec<(Vec<String>, Role)> = msg
         .iter()
         .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
@@ -4240,6 +4282,7 @@ mod tests {
                 origin: (0, 0),
                 surface: (960, 720),
                 squeeze: 0,
+                extra: 0,
             },
             draws: Vec::new(),
         }
@@ -4271,6 +4314,37 @@ mod tests {
         // The squeezed header still holds the title: 24 rows of it.
         let title_y = 7 + HEADER_GIVE / 2;
         assert!(title_y >= HEADER_GIVE && title_y + 24 <= HEADER_H);
+    }
+
+    /// A window taller than a whole step lengthens the columns instead of
+    /// framing the base stage in empty margins: the option list shows more
+    /// lines, up to the whole list, and the stage stays on the surface.
+    #[test]
+    fn a_tall_window_shows_more_of_the_list() {
+        assert_eq!(stage_for((960, 720)).extra, 0);
+        assert_eq!(
+            stage_for((960, 699)).extra,
+            0,
+            "a squeezed stage adds nothing"
+        );
+        let tall = stage_for((1600, 1000));
+        assert_eq!((tall.scale, tall.extra), (2, 140));
+        assert_eq!(tall.origin.1, 0);
+        assert!(visible_lines(tall.extra) > VISIBLE_LINES + 9);
+        // A very tall window stops at the whole list.
+        let huge = stage_for((960, 2000));
+        assert_eq!(huge.extra, MAX_EXTRA_H);
+        assert!(visible_lines(huge.extra) >= option_lines().len());
+        assert!(visible_lines(huge.extra - ROW_PITCH) < option_lines().len());
+        assert!(huge.origin.1 > 0, "past the list the stage centres again");
+        // The columns end on the same row on any stage.
+        for extra in [0, 70, MAX_EXTRA_H] {
+            let (help, panel) = (help_rect(extra), panel_rect(extra));
+            assert_eq!(help.y + help.h, panel.y + panel.h);
+            assert_eq!(panel.y + panel.h, STAGE_H + extra - PAD);
+            let lines = visible_lines(extra) as i32;
+            assert!(lines * ROW_PITCH + 2 * LIST_INSET <= panel.h);
+        }
     }
 
     #[test]
@@ -4542,22 +4616,29 @@ mod tests {
         let max = lines.len() - VISIBLE_LINES;
         // The last row scrolls the view to the end; back at the first row
         // the first heading shows again.
-        let s = scroll_to_reveal(&lines, 0, last);
+        let s = scroll_to_reveal(&lines, 0, last, VISIBLE_LINES);
         assert_eq!(s, max);
-        assert_eq!(scroll_to_reveal(&lines, s, 1), 0);
+        assert_eq!(scroll_to_reveal(&lines, s, 1, VISIBLE_LINES), 0);
         // A row already in view leaves the scroll alone.
-        assert_eq!(scroll_to_reveal(&lines, 2, 5), 2);
+        assert_eq!(scroll_to_reveal(&lines, 2, 5, VISIBLE_LINES), 2);
         // A group's first row brings its heading with it.
         let sound = lines
             .iter()
             .position(|l| *l == Line::Row(OptionRow::MasterVolume))
             .unwrap();
         assert_eq!(lines[sound - 1], Line::Heading("Sound"));
-        assert_eq!(scroll_to_reveal(&lines, max, sound), (sound - 2).min(max));
+        assert_eq!(
+            scroll_to_reveal(&lines, max, sound, VISIBLE_LINES),
+            (sound - 2).min(max)
+        );
         // A row walked to at either edge brings the line beyond it.
-        let s = scroll_to_reveal(&lines, 0, VISIBLE_LINES - 1);
+        let s = scroll_to_reveal(&lines, 0, VISIBLE_LINES - 1, VISIBLE_LINES);
         assert_eq!(s, 1, "the row under the bottom row shows");
-        assert_eq!(scroll_to_reveal(&lines, 5, 5), 4, "the line above shows");
+        assert_eq!(
+            scroll_to_reveal(&lines, 5, 5, VISIBLE_LINES),
+            4,
+            "the line above shows"
+        );
         // Every row is reachable and visible within the panel height.
         assert!(VISIBLE_LINES as i32 * ROW_PITCH + 2 * LIST_INSET <= STAGE_H - PAD - COLUMNS_Y);
     }
@@ -4846,7 +4927,7 @@ mod tests {
         let mut cut = Vec::new();
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
-            let room = help_rect().w - 12;
+            let room = help_rect(0).w - 12;
             for glyphs in [GlyphSet::Xbox, GlyphSet::PlayStation, GlyphSet::Nintendo] {
                 let mut app =
                     LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
@@ -5091,7 +5172,7 @@ mod tests {
 
     #[test]
     fn controls_notes_fit_the_panel() {
-        let panel = panel_rect();
+        let panel = panel_rect(0);
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
             let bottom = controls_notes_bottom(&c, panel);
