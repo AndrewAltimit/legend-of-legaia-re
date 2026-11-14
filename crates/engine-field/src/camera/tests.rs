@@ -188,3 +188,38 @@ fn tick_script_advances_motion_state() {
     assert_eq!(r1, StepResult::Yield);
     assert_eq!(c.motion_state.world_x, 32);
 }
+
+#[test]
+fn the_distance_preset_blends_from_identity_and_retail_never_moves() {
+    let mut c = Camera::new();
+    assert_eq!(c.knob_blend, KNOB_BLEND_FULL);
+    for blend in [0, 0x800, KNOB_BLEND_FULL] {
+        c.knob_blend = blend;
+        c.distance = CameraDistance::Retail;
+        assert_eq!(c.blended_distance_scale().to_bits(), 1.0f32.to_bits());
+        c.distance = CameraDistance::Far;
+        let s = c.blended_distance_scale();
+        let full = CameraDistance::Far.scale();
+        let want = 1.0 + (full - 1.0) * blend as f32 / KNOB_BLEND_FULL as f32;
+        assert!((s - want).abs() < 1e-6, "blend {blend:#x}: {s} vs {want}");
+    }
+    c.knob_blend = 0;
+    c.reset_globals_for_scene_entry();
+    assert_eq!(
+        c.knob_blend, KNOB_BLEND_FULL,
+        "a scene starts at full reach"
+    );
+}
+
+#[test]
+fn the_blend_walks_on_the_follow_ease_law() {
+    let code = 3;
+    let mut b = 0;
+    let mut steps = 0;
+    while b < KNOB_BLEND_FULL {
+        b = crate::camera_zone::ease_step(b, KNOB_BLEND_FULL, code).min(KNOB_BLEND_FULL);
+        steps += 1;
+        assert!(steps < 200, "the blend never arrives");
+    }
+    assert!(steps > 8, "the blend arrived in {steps} passes, a pop");
+}

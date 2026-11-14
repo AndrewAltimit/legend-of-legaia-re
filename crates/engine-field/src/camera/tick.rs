@@ -65,6 +65,14 @@ impl Camera {
     ///
     /// [`World::tick`]: legaia_engine_core::world::World::tick
     pub fn tick<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        // A held shot keeps the distance preset out; it eases back in with the
+        // follow ease once it lets go ([`Self::knob_blend`]). A scene with no
+        // zone ease has nothing to ease it over.
+        if world.scripted_shot_holds_camera() {
+            self.knob_blend = 0;
+        } else if !zone_camera_scene(world) {
+            self.knob_blend = KNOB_BLEND_FULL;
+        }
         self.tick_globals(world);
         match self.mode {
             CameraMode::Follow => {

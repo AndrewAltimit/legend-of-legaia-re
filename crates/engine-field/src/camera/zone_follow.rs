@@ -164,6 +164,7 @@ impl Camera {
             && (zone.active || awaiting);
         let hold = !gated && (!zone.follow_enabled || story & CAMERA_HOLD_FLAG != 0);
         if hold {
+            self.knob_blend = KNOB_BLEND_FULL;
             zone.prev_player = Some([x, y, z]);
             let g = &mut self.globals.0;
             g[6] = -x;
@@ -261,6 +262,10 @@ impl Camera {
         } else if (zone.ease_moved || forced) && passes > 0 || !zone.active {
             let code = zone.config.ease_shift();
             for _ in 0..passes.max(1) {
+                // The distance preset comes back on the ease's own law
+                // ([`Camera::knob_blend`]).
+                self.knob_blend =
+                    ease_step(self.knob_blend, KNOB_BLEND_FULL, code).min(KNOB_BLEND_FULL);
                 g[0] = i32::from(ease_step_i16(g[0] as i16, t.pitch, code));
                 g[1] = i32::from(ease_step_i16(g[1] as i16, t.yaw, code));
                 g[9] = i32::from(ease_step_i16(g[9] as i16, t.h, code));

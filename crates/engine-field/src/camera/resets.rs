@@ -21,6 +21,7 @@ impl Camera {
             self.globals.0[9] = RetailCamGlobals::FIELD_RESET.0[9];
         }
         self.mover = None;
+        self.knob_blend = KNOB_BLEND_FULL;
         self.script_owns_focus = false;
         // The field draw context (`FUN_801DE37C`) re-stamps the visible-tile
         // window every field entry runs through, *before* the new scene's

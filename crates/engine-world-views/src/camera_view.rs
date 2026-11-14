@@ -85,10 +85,13 @@ pub fn field_follow_view(cam: &Camera, world: &World) -> Option<FieldCameraView>
     if world.scripted_shot_holds_camera() {
         return follow_view_with_knobs(cam, world, 1.0, 0.0, 0.0, 1.0);
     }
+    // Once the shot lets go the distance preset eases back in over the
+    // follow ease (`Camera::knob_blend`) rather than jumping the frame by
+    // its scaling on the release frame.
     follow_view_with_knobs(
         cam,
         world,
-        cam.distance.scale(),
+        cam.blended_distance_scale(),
         cam.manual_orbit,
         cam.manual_tilt,
         cam.manual_zoom,
@@ -424,7 +427,7 @@ pub fn resolve_field_camera(
         let depth_scale = if world.scripted_shot_holds_camera() {
             1.0
         } else {
-            cam.distance.scale()
+            cam.blended_distance_scale()
         };
         if cam.zone.active
             && let Some(v) = follow_view_with_knobs(cam, world, depth_scale, 0.0, 0.0, 1.0)

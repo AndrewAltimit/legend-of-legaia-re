@@ -69,6 +69,7 @@ mod scene_encounter_rollable;
 mod scene_entry_cutscene_handback_disc;
 mod sfx_cue_resident_bank;
 mod sfx_shared_region;
+mod shot_hand_back_knob_ease_disc;
 mod summon_texture_slot_disc;
 mod taiku_escape_clock_expiry_disc;
 mod taiku_security_door_camera;
