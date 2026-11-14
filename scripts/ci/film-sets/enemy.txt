@@ -67,6 +67,8 @@ teien_berserker_pre_spore_gas__4F --spell 0x4F --state teien_berserker_pre_spore
 teien_berserker_pre_stone_circle__B9 --spell 0xB9 --state teien_berserker_pre_stone_circle --caster 3 --target 8 --pin-seed 0x12345678
 tunnelb_nova_pre_scythe_wind__5B --spell 0x5B --state tunnelb_nova_pre_scythe_wind --caster 3 --target 2 --pin-seed 0x12345678
 garmel_zeto_pre_poisonous_bubbles__28 --spell 0x28 --state garmel_zeto_pre_poisonous_bubbles --caster 3 --target 0 --pin-seed 0x12345678
+# Zeto's AI arm queues Call Wave on its own seat (+0x1DD = s7 + 3, 0x801EB9AC; Big Wave stores 8 at
+# 0x801EBD24): this film's --target 8 is the probe's, no retail pick writes it, and the engine seam drops it.
 garmel_zeto_pre_call_wave_all__55 --spell 0x55 --state garmel_zeto_pre_call_wave --caster 3 --target 8 --pin-seed 0x12345678
 garmel_zeto_pre_big_wave__56 --spell 0x56 --state garmel_zeto_pre_big_wave --caster 3 --target 8 --pin-seed 0x12345678
 nilboa_koru_pre_blade_breath__A2 --spell 0xA2 --state nilboa_koru_pre_blade_breath --caster 3 --target 0 --pin-seed 0x12345678

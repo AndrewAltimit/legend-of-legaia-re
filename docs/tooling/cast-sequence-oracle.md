@@ -1115,6 +1115,17 @@ draws a pass re-deal the bolts. What the scan still lists is the burning body of
 Flame arms (open), Hyper Crush's ribbon arm 6, whose counts follow the projection and step up
 a pass apart from retail's, Hyper Lightning's arm 7 and Rolling Flare's arm 4.
 
+Two of the lowest films are not the cast's code. `garmel_zeto_pre_call_wave_all` (`.448`,
+arm 2 `.40`) injects `--target 8`, which no retail pick writes: Zeto's AI arm queues Call Wave
+on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the party
+(`+0x1DD = 8` at `0x801EBD24`), and the engine seam lands a party code only where the spell's
+own class is a group, so retail frames a party-wide cast with the panels up against the
+engine's self-cast. The film on the cast's own seat reads `.991`. Chaos Breath's arm 1
+(`dohaty_dohati_chaos_breath`, `.47`) holds the same clouds in the same order on both sides of
+a `--retail-parts` recording, but retail's frames stretch from four vsyncs to seven as the
+clouds pile up while the engine's stay at four, which is the frame's cost
+([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`
