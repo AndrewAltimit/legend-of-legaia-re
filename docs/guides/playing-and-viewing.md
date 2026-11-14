@@ -58,7 +58,9 @@ lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
 a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
 panel are paid for, keeps the step with a slimmer header band rather than
-falling to 1x.
+falling to 1x. A window taller than a step keeps the step and lengthens the
+two columns instead, so the option list shows more rows at once (up to the
+whole list) rather than sitting in empty margins.
 
 | Key / mouse | Does |
 |---|---|
@@ -537,7 +539,8 @@ next gives the mix back; `Delete` on it puts every row it speaks for back on
 *Enhanced*. A row with a window key letters the key after its label (*Ground
 fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
-tuning*). Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
+tuning*); the focused row is marked as on the launcher, a lighter band with a
+gold bar down its left edge, on every page of the panel. Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
 `Delete` puts it back on its default as on the launcher, with the row's help
 underneath; a change takes effect behind the panel at once, and the list
 scrolls under the plate. Options go to `legaia-options.toml`; the launcher's
