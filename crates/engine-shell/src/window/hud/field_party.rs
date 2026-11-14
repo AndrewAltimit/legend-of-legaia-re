@@ -163,6 +163,11 @@ impl PlayWindowApp {
         if self.hotkey_help {
             return Default::default();
         }
+        // The Multiplayer screen covers the stage with its own backdrop, and
+        // the readout drew over its title and its player list.
+        if self.multiplayer_screen_up() {
+            return Default::default();
+        }
         let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {

@@ -59,12 +59,14 @@ impl PlayWindowApp {
             rows.push((text.as_str(), ink.key));
         }
         // The start-up pointer at the keys and the help panel, under the
-        // panel's own gold; never with the panel up. It waits out the
+        // panel's own gold; never with the panel up, nor over the Multiplayer
+        // screen, whose footer sits on the same rows. It waits out the
         // publisher logos and stays up on the title, where a first-time
         // player is waiting to be told which key does what; the clock starts
         // when the title is left.
         let startup_line;
         if !self.hotkey_help
+            && !self.multiplayer_screen_up()
             && self.boot_ui.logos_session().is_none()
             && self.startup_hint.live()
             && (self.boot_ui.title_session().is_some()
