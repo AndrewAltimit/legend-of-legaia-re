@@ -185,6 +185,17 @@ pub struct RetailObs {
     /// on that return, so this says which vsync of retail's frame the state
     /// was saved on - the phase a walk film resumes on.
     pub vsync_phase: u32,
+    /// The frame pacer's history at the capture: the sixteen frame times of
+    /// `DAT_80084098` and the write cursor `gp+0x440`
+    /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
+    /// history does not set the step.
+    pub frame_history: Option<([i16; 16], usize)>,
+    /// The pacer's step bytes off the scratchpad, `(0x1F800392, 0x1F800393)`:
+    /// the wait of the frame the state holds and the step resolved at its
+    /// end. `None` without a scratchpad image. A history entry reading
+    /// `0x2BC` is a clamped long frame or a raw `700`, and only the step
+    /// byte says which ([`Self::frame_cost_seat`]).
+    pub step_bytes: Option<(u8, u8)>,
     /// The live draw-kind-4 parts, sprite-arm sheets and others
     /// ([`retail_sprite_arms`]),
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
@@ -453,6 +464,9 @@ impl RetailObs {
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
+            frame_history: crate::retail_compare_battle::frame_cost_ring(ram)
+                .map(|(e, c)| (e.map(|v| v.min(0x7FFF) as i16), usize::from(c))),
+            step_bytes: None,
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_sprite_arms(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
@@ -862,6 +876,34 @@ impl RetailObs {
         (self.scripts.display_lag / 2).clamp(1, 4) as u8
     }
 
+    /// Read the pacer's step bytes off a state's scratchpad image.
+    pub fn seat_step_bytes(&mut self, scratchpad: Option<&[u8]>) {
+        self.step_bytes = scratchpad
+            .and_then(|s| s.get(0x392..0x394))
+            .map(|b| (b[0], b[1]));
+    }
+
+    /// What a film hands `World::seed_frame_cost_history`: the history, its
+    /// cursor, the step the next frame runs at and the frame time retail's
+    /// frames cost from here on, taken as the newest sample's. `None` without
+    /// a history or a step byte.
+    ///
+    /// The newest sample reading the clamp `0x2BC` under a step of `4` is a
+    /// frame past the `0x2D0` rung (the resolver takes the raw time over the
+    /// ring's longest only there, `0x800170F8`), so the cost is the first
+    /// time that steps `4`; under a step of `3` it is a raw `700`.
+    pub fn frame_cost_seat(&self) -> Option<([i16; 16], usize, u8, i32)> {
+        let (history, cursor) = self.frame_history?;
+        let (_, step) = self.step_bytes?;
+        let newest = i32::from(history[(cursor + 15) & 0xF]);
+        let cost = if newest == 0x2BC && step >= 4 {
+            0x2D1
+        } else {
+            newest
+        };
+        (newest > 0 && step > 0).then_some((history, cursor, step, cost))
+    }
+
     /// The player heading the seed stands the player in: retail's `+0x26`
     /// when the pad has turned it off the arrival facing, `None` while it
     /// still holds the arrival facing (the engine's own entry gives that).
@@ -1120,6 +1162,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             };
             let mut obs = RetailObs::from_ram(ram, frame);
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
+            obs.seat_step_bytes(st.scratch_ram().ok());
             obs.seat_view_window(st.scratch_ram().ok());
             obs.seat_walk_rewind(st.scratch_ram().ok());
             obs.frame_table = st
@@ -1135,6 +1178,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));
             let mut obs = RetailObs::from_ram(st.main_ram(), frame);
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
+            obs.seat_step_bytes(st.scratchpad());
             obs.seat_view_window(st.scratchpad());
             obs.seat_walk_rewind(st.scratchpad());
             obs.frame_table = st

@@ -153,6 +153,21 @@ impl WalkFilm {
         // vsyncs into the film, which the engine's accumulators reach from
         // `phase - 1`; a state saved on the pacer's return holds the first
         // vsync on `0`.
+        // The pacer's history: a state saved a few frames after a slow
+        // stretch runs on at the raised step until those samples leave the
+        // ring, and falls to the floor when retail's does. A harness seat;
+        // `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step instead.
+        if std::env::var_os("LEGAIA_RC_NO_FRAME_RING").is_none()
+            && let Some((history, cursor, step, cost)) = retail.frame_cost_seat()
+        {
+            let world = &mut session.host.world;
+            world.seed_frame_cost_history(history, cursor, step, cost);
+            // A state saved inside the pacer's wait is waiting out the step
+            // of the frame before (`0x1F800392`, stored after the wait).
+            if let Some((wait, _)) = retail.step_bytes.filter(|b| b.0 > 0) {
+                world.clock.pass_wait = Some(wait.max(world.clock.frame_step_floor));
+            }
+        }
         let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
         let g = &mut session.camera.globals.0;
         let c = &retail.camera;
@@ -332,7 +347,7 @@ impl WalkFilm {
 /// returns on, its pass opening on the film's first vsync (`conc_field_card_boot`, `dolk2_market_noa`,
 /// `koin1_field_route_walk`). A harness seat.
 fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) -> bool {
-    let step = u32::from(world.clock.frame_step.max(1));
+    let step = u32::from(world.clock.game_frame_wait());
     if phase > step {
         return false;
     }
