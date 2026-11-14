@@ -22,6 +22,122 @@ function mixedSemiOrder(tail, indices, flatRgba) {
   return o;
 }
 
+/* Which blends a set of ABR modes holds, as bits: 1 additive (`B + F`,
+ * `B + F/4`), 2 subtractive (`B - F`), 4 average. Two saturating adds land
+ * the same either way round, and so do two saturating subtractions; an add
+ * against a subtraction does not, and nothing commutes with an average. */
+const SEMI_ADD = 1, SEMI_SUB = 2, SEMI_AVG = 4;
+function semiModeBit(mode) {
+  return mode === 0 ? SEMI_AVG : mode === 2 ? SEMI_SUB : SEMI_ADD;
+}
+/* Whether two blend sets may draw in either order, as far as the merge
+ * orders them. Two averages do not commute, but the page leaves the order
+ * of average prims among themselves unmodelled inside one mesh already
+ * (a one-mode mesh keeps its single run, above), and keying them across two
+ * placements of one mesh cost town01 three hundred draws a frame for the
+ * same reason; an average against an add or a subtraction is ordered. */
+function semiCommute(a, b) {
+  const both = a | b;
+  return both === SEMI_ADD || both === SEMI_SUB || both === SEMI_AVG;
+}
+
+/* Each semi prim's screen rectangle under `mvp` (x0, y0, x1, y1 in NDC, a
+ * little grown; the whole screen for a prim with a corner behind the eye)
+ * and its blend bit, for `semiPrimsMeet`. */
+function semiPrimRects(prims, indices, positions, mvp) {
+  const n = prims.length / 3;
+  const rects = new Float32Array(n * 4);
+  const bits = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    bits[k] = semiModeBit(prims[k * 3]);
+    const i = prims[k * 3 + 2];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let behind = 0;
+    for (let c = 0; c < 3; c++) {
+      const v = indices[i + c] * 3;
+      const x = positions[v], y = positions[v + 1], z = positions[v + 2];
+      const w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+      if (!(w > 1e-3)) { behind++; continue; }
+      const nx = (mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]) / w;
+      const ny = (mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]) / w;
+      if (nx < x0) x0 = nx;
+      if (nx > x1) x1 = nx;
+      if (ny < y0) y0 = ny;
+      if (ny > y1) y1 = ny;
+    }
+    /* Wholly behind the eye: on no pixel. Straddling it: anywhere. */
+    if (behind === 3) { semiNoRect(rects, k * 4); continue; }
+    if (behind) {
+      rects[k * 4] = -1e9; rects[k * 4 + 1] = -1e9; rects[k * 4 + 2] = 1e9; rects[k * 4 + 3] = 1e9;
+      continue;
+    }
+    rects[k * 4] = x0 - 0.01; rects[k * 4 + 1] = y0 - 0.0125;
+    rects[k * 4 + 2] = x1 + 0.01; rects[k * 4 + 3] = y1 + 0.0125;
+    semiOnScreen(rects, k * 4);
+  }
+  return { rects, bits };
+}
+
+/* Whether some prim of `a` and some prim of `b` whose blends do not commute
+ * share a pixel's neighbourhood. Past SEMI_MEET_BUDGET pair tests the two
+ * are taken to meet. */
+const SEMI_MEET_BUDGET = 40000;
+function semiPrimsMeet(a, b) {
+  const na = a.bits.length, nb = b.bits.length;
+  if (na * nb > SEMI_MEET_BUDGET) return true;
+  const ra = a.rects, rb = b.rects;
+  for (let i = 0; i < na; i++) {
+    const ax0 = ra[i * 4], ay0 = ra[i * 4 + 1], ax1 = ra[i * 4 + 2], ay1 = ra[i * 4 + 3];
+    const ab = a.bits[i];
+    for (let j = 0; j < nb; j++) {
+      if (semiCommute(ab, b.bits[j])) continue;
+      if (ax0 > rb[j * 4 + 2] || rb[j * 4] > ax1 || ay0 > rb[j * 4 + 3] || rb[j * 4 + 1] > ay1) continue;
+      return true;
+    }
+  }
+  return false;
+}
+
+/* A placement's screen rectangle in NDC, into `out` (x0, y0, x1, y1): the
+ * mesh's box under `mvp`, a little grown. The whole screen when the box
+ * straddles the eye plane or the mesh has no box; empty (`x0 > x1`, which
+ * meets nothing) when the box is wholly behind the eye or off the screen. */
+function semiScreenRect(out, mvp, b) {
+  out[0] = -1e9; out[1] = -1e9; out[2] = 1e9; out[3] = 1e9;
+  if (!b) return out;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let behind = 0;
+  for (let c = 0; c < 8; c++) {
+    const x = b.cx + (c & 1 ? 0.5 : -0.5) * b.sx;
+    const y = b.cy + (c & 2 ? 0.5 : -0.5) * b.sy;
+    const z = b.cz + (c & 4 ? 0.5 : -0.5) * b.sz;
+    const w = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+    if (!(w > 1e-3)) { behind++; continue; }
+    const nx = (mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12]) / w;
+    const ny = (mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13]) / w;
+    if (nx < x0) x0 = nx;
+    if (nx > x1) x1 = nx;
+    if (ny < y0) y0 = ny;
+    if (ny > y1) y1 = ny;
+  }
+  if (behind === 8) return semiNoRect(out, 0);
+  if (behind) return out;
+  /* A pixel and a half at the native target, for the vertex snap. */
+  out[0] = x0 - 0.01; out[1] = y0 - 0.0125; out[2] = x1 + 0.01; out[3] = y1 + 0.0125;
+  return semiOnScreen(out, 0);
+}
+
+/* The empty rectangle at `at`: it meets no other. */
+function semiNoRect(out, at) {
+  out[at] = 2; out[at + 1] = 2; out[at + 2] = -2; out[at + 3] = -2;
+  return out;
+}
+/* The rectangle at `at`, emptied when no part of it is on the screen. */
+function semiOnScreen(out, at) {
+  if (out[at] > 1 || out[at + 2] < -1 || out[at + 1] > 1 || out[at + 3] < -1) semiNoRect(out, at);
+  return out;
+}
+
 window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* ---------- Assembled / scene-mesh path ----------------------------- */
 
@@ -96,6 +212,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     /* The blend pass's per-prim order scratch (semiPrimOrder), keyed per
      * placement each frame. */
     m.semiOrder = mixedSemiOrder(tail, indices, m.hasFlat ? flatRgba : null);
+    this._keepSemiTail(m, tail, m.hasFlat ? flatRgba : null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
@@ -114,6 +231,205 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     m.normalsDirty = true;
   }
 
+  /* What the cross-mesh blend merge needs of a mesh's semi tail: the tail's
+   * prim records, the blends it holds (`semiModeBit`) and the flat stream
+   * that splits its textured prims from its untextured ones. The order
+   * scratch itself is built the first frame the mesh is merged
+   * (`_mergeOrder`): most meshes never are. */
+  _keepSemiTail(m, tail, flatRgba) {
+    m.semiTail = tail ? { prims: tail.prims, flat: flatRgba, indices: tail.indices } : null;
+    m.semiBits = 0;
+    if (tail) for (const r of tail.ranges) m.semiBits |= semiModeBit(r.mode);
+    m.mergeOrder = null;
+    /* Where a merged run's indices go in the element buffer: past the
+     * tail, in room made the first time the mesh is merged, so the tail
+     * keeps the runs a frame without a merge draws from. */
+    m.mergeAt = 0;
+  }
+
+  /* Room for a merged run after `m`'s semi tail (its VAO bound): the
+   * element buffer again, the tail's length longer. */
+  _mergeRoom(m) {
+    if (m.mergeAt) return m.mergeAt;
+    const gl = this.gl;
+    const full = m.semiTail.indices;
+    const grown = new Uint32Array(full.length + (full.length - m.indexCount));
+    grown.set(full, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, grown, gl.DYNAMIC_DRAW);
+    /* A mixed mesh's own pass rewrites the tail in the frame's order; the
+     * fresh copy is in mode order again, as its first frame found it. */
+    m.mergeAt = full.length;
+    return m.mergeAt;
+  }
+
+  /* A merged mesh's per-prim order scratch, with the count of its textured
+   * prims (the window submits those ahead of every untextured one). */
+  _mergeOrder(m) {
+    if (m.mergeOrder) return m.mergeOrder;
+    const t = m.semiTail;
+    const o = semiPrimOrder({ prims: t.prims }, m.cpuIndices, t.flat);
+    if (!o) return null;
+    let untex = 0;
+    if (t.flat && t.flat.length) {
+      for (let k = 0; k < o.seq.length; k++) {
+        if (t.flat[m.cpuIndices[t.prims[k * 3 + 2]] * 4 + 3] < 128) untex++;
+      }
+    }
+    o.texCount = o.seq.length - untex;
+    o.sorted = new Uint32Array(o.seq.length * 3);
+    m.mergeOrder = o;
+    return o;
+  }
+
+  /* The placements of this frame whose blends must share one order: groups
+   * of two or more with a pair of prims that overlap on screen and whose
+   * blends do not commute (`semiCommute`, `semiPrimsMeet`). Null when there is none, which is most frames:
+   * a town's window glows and its actors' shadows sit apart on screen, and
+   * a mesh alone keeps the one draw per mode it had. `seen` receives every
+   * grouped placement. */
+  _semiGroups(byMesh, vp, seen) {
+    let all = 0;
+    let count = 0;
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (!m || m.indexCount === 0) continue;
+      for (const p of list) {
+        const bits = p.forceSemi !== undefined ? semiModeBit(p.forceSemi & 3) : (m.semiRanges ? m.semiBits : 0);
+        if (bits) { all |= bits; count++; }
+      }
+    }
+    if (count < 2 || semiCommute(all, all)) return null;
+    const items = this._semiItems || (this._semiItems = []);
+    items.length = 0;
+    const mvp = this._semiMvp || (this._semiMvp = new Float32Array(16));
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (!m || m.indexCount === 0) continue;
+      for (const p of list) {
+        const forced = p.forceSemi !== undefined;
+        const bits = forced ? semiModeBit(p.forceSemi & 3) : (m.semiRanges ? m.semiBits : 0);
+        if (!bits) continue;
+        /* A mesh with no CPU copy cannot be keyed; it keeps its own draw. */
+        if (!forced && !(m.cpuPositions && m.cpuIndices && m.semiTail)) continue;
+        const rect = semiScreenRect(new Float64Array(4), mulMat4Into(mvp, vp, this._placementModel(p, m)), m.aabb);
+        items.push({ p, m, bits, rect, forced, group: items.length, prims: null });
+      }
+    }
+    const root = (i) => { while (items[i].group !== i) i = items[i].group; return i; };
+    /* A placement's prims on screen, worked out for the first pair that
+     * needs them: a forced placement is one prim, its whole box. */
+    const primsOf = (it) => {
+      if (it.prims) return it.prims;
+      if (it.forced) {
+        it.prims = { rects: Float32Array.from(it.rect), bits: Uint8Array.of(it.bits) };
+      } else {
+        mulMat4Into(mvp, vp, this._placementModel(it.p, it.m));
+        it.prims = semiPrimRects(it.m.semiTail.prims, it.m.cpuIndices, it.m.cpuPositions, mvp);
+      }
+      return it.prims;
+    };
+    let joined = false;
+    for (let i = 0; i < items.length; i++) {
+      const a = items[i];
+      for (let j = i + 1; j < items.length; j++) {
+        const b = items[j];
+        if (semiCommute(a.bits, b.bits)) continue;
+        if (a.rect[0] > b.rect[2] || b.rect[0] > a.rect[2] || a.rect[1] > b.rect[3] || b.rect[1] > a.rect[3]) continue;
+        const ra = root(i), rb = root(j);
+        if (ra === rb) continue;
+        /* The boxes meet; the prims decide. A town's ground mesh spans the
+         * screen, and its window glows meet an actor's shadow nowhere. */
+        if (!semiPrimsMeet(primsOf(a), primsOf(b))) continue;
+        if (ra !== rb) { items[rb].group = ra; joined = true; }
+      }
+    }
+    if (!joined) return null;
+    const groups = new Map();
+    for (let i = 0; i < items.length; i++) {
+      const r = root(i);
+      let g = groups.get(r);
+      if (!g) { g = []; groups.set(r, g); }
+      g.push(items[i]);
+    }
+    const out = [];
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      for (const it of g) {
+        seen.add(it.p);
+        /* Every member's prim rectangles: the draw batches read them. */
+        primsOf(it);
+      }
+      out.push(g);
+    }
+    return out.length ? out : null;
+  }
+
+  /* One group's blend entries for this frame, far to near: every semi prim
+   * of every member keyed as the window keys it (`psx_blend::push_draw_prims`
+   * / `push_forced_draw`: the clip w of the prim's centroid, or of a forced
+   * mesh's box centre, snapped to a whole SZ), and sorted as
+   * `sort_blend_list` sorts: a larger key first, and on a tie the entry
+   * submitted later first. The window submits every textured draw's prims
+   * and then every untextured draw's, each in draw order; a page mesh holds
+   * both halves, so an entry's submission rank is (untextured, placement,
+   * the prim's own rank). Returns the entry count; entry `e` of the order is
+   * member `this._mergeItem[e]`, prim `this._mergePrim[e]` (-1: the forced
+   * mesh's whole range). */
+  _orderSemiGroup(group, vp) {
+    let n = 0;
+    for (const it of group) {
+      if (it.forced) { n += 1; continue; }
+      const o = this._mergeOrder(it.m);
+      n += o ? o.seq.length : 0;
+    }
+    if (!this._mergeKey || this._mergeKey.length < n) {
+      const cap = Math.max(256, n * 2);
+      this._mergeKey = new Float64Array(cap);
+      this._mergeSeq = new Float64Array(cap);
+      this._mergeItem = new Int32Array(cap);
+      this._mergePrim = new Int32Array(cap);
+      this._mergeOrderIdx = new Uint32Array(cap);
+    }
+    const key = this._mergeKey, seq = this._mergeSeq, item = this._mergeItem, prim = this._mergePrim;
+    const mvp = this._semiMvp;
+    /* Past any mesh's prim count, so a placement's prims rank together. */
+    const SPAN = 1 << 22;
+    let at = 0;
+    for (let gi = 0; gi < group.length; gi++) {
+      const it = group[gi];
+      mulMat4Into(mvp, vp, this._placementModel(it.p, it.m));
+      const rank = (it.p._semiRank || 0) * SPAN;
+      if (it.forced) {
+        const b = it.m.aabb;
+        const mx = f32(mvp[3]), my = f32(mvp[7]), mz = f32(mvp[11]), mw = f32(mvp[15]);
+        const w = b ? f32(f32(f32(f32(mx * f32(b.cx)) + f32(my * f32(b.cy))) + f32(mz * f32(b.cz))) + mw) : mw;
+        key[at] = snapDepthKey(w);
+        seq[at] = rank;
+        item[at] = gi;
+        prim[at] = -1;
+        at++;
+        continue;
+      }
+      const o = this._mergeOrder(it.m);
+      if (!o) continue;
+      orderSemiPrims(o, it.m.cpuIndices, it.m.cpuPositions, mvp);
+      /* The untextured half ranks after every placement's textured half. */
+      const UNTEX = 2 ** 48;
+      for (let k = 0; k < o.seq.length; k++) {
+        key[at] = o.key[k];
+        seq[at] = (o.seq[k] >= o.texCount ? UNTEX : 0) + rank + o.seq[k];
+        item[at] = gi;
+        prim[at] = k;
+        at++;
+      }
+    }
+    const order = this._mergeOrderIdx.subarray(0, at);
+    for (let e = 0; e < at; e++) order[e] = e;
+    order.sort((p, q) => (key[q] - key[p]) || (seq[q] - seq[p]));
+    return at;
+  }
+
   /* Re-upload just the per-vertex CBA/TSB words of an already-registered
    * scene mesh (same vertex count) and rebuild its per-ABR semi tail from
    * them. A battle body's whole-mesh blend rides this: the engine hands the
@@ -130,6 +446,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const tail = buildSemiTail(m.baseIndices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
     m.semiOrder = mixedSemiOrder(tail, m.baseIndices, null);
+    this._keepSemiTail(m, tail, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : m.baseIndices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -655,7 +972,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const cullOff = !this.psxMode;
     const xOnly = this.overworldCurve > 0 || this.overworldCurveBias !== 0;
     const cullMvp = this._cullMvp || (this._cullMvp = new Float32Array(16));
+    let semiRank = 0;
     for (const p of placements) {
+      /* The placement's place in the frame's submission order, for the
+       * blend merge's bucket ties (`_orderSemiGroup`). */
+      p._semiRank = semiRank++;
       const m = this.sceneMeshes.get(p.meshId);
       if (!m) continue;
       let list = byMesh.get(p.meshId);
@@ -802,64 +1123,89 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const semiMvp = this._semiMvp || (this._semiMvp = new Float32Array(16));
     let blendOccl = -1;
     let blendMean = -1;
-    for (const [meshId, list] of byMesh) {
-      const m = this.sceneMeshes.get(meshId);
-      if (!m || m.indexCount === 0 || list.length === 0) continue;
-      if (!m.semiRanges && !list.some((p) => p.forceSemi !== undefined)) continue;
-      if (!blendOn) {
-        gl.enable(gl.BLEND);
-        gl.depthMask(false);
-        gl.uniform1i(this.locSemiPass, 1);
-        blendOn = true;
-      }
+    const beginBlend = () => {
+      if (blendOn) return;
+      gl.enable(gl.BLEND);
+      gl.depthMask(false);
+      gl.uniform1i(this.locSemiPass, 1);
+      blendOn = true;
+    };
+    /* A mesh's VAO and flat-colour word, then a placement's own draw state:
+     * what both the per-mesh loop and the merged groups stage ahead of a
+     * blend draw. Returns the placement's model. */
+    const stageMesh = (m) => {
       const wantFlat = flatColorsWord(m);
       if (wantFlat !== flatColorsOn) {
         gl.uniform1i(this.locUseFlatColors, wantFlat);
         flatColorsOn = wantFlat;
       }
       gl.bindVertexArray(m.vao);
+    };
+    const stagePlacement = (p, m) => {
+      const model = this._placementModel(p, m);
+      const wantCue = p.cue
+        || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
+        || this.cueParams;
+      if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
+      /* Strictly-nearer depth test for placements that ask for it (the
+       * arts after-image ghosts): at LEQUAL a ghost pose coincident with
+       * the live body passes on every fragment and washes the whole mesh
+       * additive; LESS rejects the equal-depth overlap so the tint only
+       * builds where the delayed pose has separated - the retail look of
+       * a trail drawn in a deeper OT bucket than the body. */
+      const wantStrict = !!p.strictDepth;
+      if (wantStrict !== strictOn) {
+        gl.depthFunc(wantStrict ? gl.LESS : gl.LEQUAL);
+        strictOn = wantStrict;
+      }
+      gl.uniformMatrix4fv(this.locModel, false, model);
+      if (p.hazeDeco || hazeOn) {
+        this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
+        hazeOn = !!p.hazeDeco;
+      }
+      const wantOccl = p.noOccl ? 0 : 1;
+      if (wantOccl !== blendOccl) { gl.uniform1i(this.locOcclAllow, wantOccl); blendOccl = wantOccl; }
+      nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+      const wantMean = Number(p.meanDepth) || 0;
+      if (this.locPrimMeanDepth && wantMean !== blendMean) {
+        gl.uniform1f(this.locPrimMeanDepth, wantMean);
+        blendMean = wantMean;
+      }
+      eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+      return model;
+    };
+    /* A forced placement blends its whole opaque range in its own mode
+     * (textured prims their STP texels only); its semi tail would draw
+     * those prims twice. */
+    const drawForced = (p, m) => {
+      if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 1);
+      this._setSemiBlend(p.forceSemi, this.locSemiMode);
+      gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+      if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 0);
+    };
+    /* The placements whose blends must share one far-to-near order with
+     * another mesh's (`_semiGroups`); the per-mesh loop leaves them out. */
+    const mergedSet = this._semiMerged || (this._semiMerged = new Set());
+    mergedSet.clear();
+    const groups = this._semiGroups(byMesh, vp, mergedSet);
+    for (const [meshId, list] of byMesh) {
+      const m = this.sceneMeshes.get(meshId);
+      if (!m || m.indexCount === 0 || list.length === 0) continue;
+      if (!m.semiRanges && !list.some((p) => p.forceSemi !== undefined)) continue;
+      let staged = false;
       for (const p of list) {
-        const model = this._placementModel(p, m);
-        const wantCue = p.cue
-          || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
-          || this.cueParams;
-        if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
-        /* Strictly-nearer depth test for placements that ask for it (the
-         * arts after-image ghosts): at LEQUAL a ghost pose coincident with
-         * the live body passes on every fragment and washes the whole mesh
-         * additive; LESS rejects the equal-depth overlap so the tint only
-         * builds where the delayed pose has separated - the retail look of
-         * a trail drawn in a deeper OT bucket than the body. */
-        const wantStrict = !!p.strictDepth;
-        if (wantStrict !== strictOn) {
-          gl.depthFunc(wantStrict ? gl.LESS : gl.LEQUAL);
-          strictOn = wantStrict;
+        if (groups && mergedSet.has(p)) continue;
+        if (p.forceSemi === undefined && !m.semiRanges) continue;
+        if (!staged) {
+          beginBlend();
+          stageMesh(m);
+          staged = true;
         }
-        gl.uniformMatrix4fv(this.locModel, false, model);
-        if (p.hazeDeco || hazeOn) {
-          this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
-          hazeOn = !!p.hazeDeco;
-        }
-        const wantOccl = p.noOccl ? 0 : 1;
-        if (wantOccl !== blendOccl) { gl.uniform1i(this.locOcclAllow, wantOccl); blendOccl = wantOccl; }
-        nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
-        const wantMean = Number(p.meanDepth) || 0;
-        if (this.locPrimMeanDepth && wantMean !== blendMean) {
-          gl.uniform1f(this.locPrimMeanDepth, wantMean);
-          blendMean = wantMean;
-        }
-        eclipOn = this._setEffectClip(p.effectClip, eclipOn);
-        /* A forced placement blends its whole opaque range in its own mode
-         * (textured prims their STP texels only); its semi tail would draw
-         * those prims twice. */
+        const model = stagePlacement(p, m);
         if (p.forceSemi !== undefined) {
-          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 1);
-          this._setSemiBlend(p.forceSemi, this.locSemiMode);
-          gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
-          if (this.locForceSemi) gl.uniform1i(this.locForceSemi, 0);
+          drawForced(p, m);
           continue;
         }
-        if (!m.semiRanges) continue;
         const o = m.semiOrder;
         if (o && m.cpuPositions && m.cpuIndices) {
           /* The window blends every semi prim far to near by its centroid's
@@ -888,6 +1234,72 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);
+        }
+      }
+    }
+    /* The merged groups: one far-to-near order across the group's meshes,
+     * as the window's one blend list has across its draws
+     * (psx_blend::sort_blend_list). A batch's indices go past its mesh's
+     * tail. In placement order instead, a subtractive shadow under another
+     * mesh's additive glow drew over the glow or under it by which mesh
+     * the page listed first. */
+    if (groups) {
+      beginBlend();
+      for (const group of groups) {
+        const n = this._orderSemiGroup(group, vp);
+        const order = this._mergeOrderIdx, item = this._mergeItem, prim = this._mergePrim;
+        /* The order as draws. An entry joins the last batch of its own
+         * placement and mode when every batch after that one commutes with
+         * it (two adds, two subtractions): drawn there, nothing it had to
+         * follow comes after it. An entry that cannot is a new batch. */
+        const batches = [];
+        for (let e = 0; e < n; e++) {
+          const gi = item[order[e]], k = prim[order[e]];
+          const it = group[gi];
+          const mode = k < 0 ? (it.p.forceSemi & 3) : it.m.mergeOrder.prims[k * 3];
+          const bit = semiModeBit(mode);
+          /* The entry's rectangle: a batch it does not touch is no bar. */
+          const r = it.prims.rects, ro = k < 0 ? 0 : k * 4;
+          const x0 = r[ro], y0 = r[ro + 1], x1 = r[ro + 2], y1 = r[ro + 3];
+          let at = -1;
+          if (k >= 0) {
+            for (let b = batches.length - 1; b >= 0; b--) {
+              const c = batches[b];
+              if (c.gi === gi && c.mode === mode && c.prims) { at = b; break; }
+              if (!semiCommute(bit, c.bit)
+                && !(x0 > c.x1 || c.x0 > x1 || y0 > c.y1 || c.y0 > y1)) break;
+            }
+          }
+          if (at < 0) {
+            batches.push({ gi, mode, bit, prims: k < 0 ? null : [k], x0, y0, x1, y1 });
+          } else {
+            const c = batches[at];
+            c.prims.push(k);
+            if (x0 < c.x0) c.x0 = x0;
+            if (y0 < c.y0) c.y0 = y0;
+            if (x1 > c.x1) c.x1 = x1;
+            if (y1 > c.y1) c.y1 = y1;
+          }
+        }
+        for (const c of batches) {
+          const it = group[c.gi];
+          stageMesh(it.m);
+          stagePlacement(it.p, it.m);
+          if (!c.prims) {
+            drawForced(it.p, it.m);
+            continue;
+          }
+          const m = it.m, o = m.mergeOrder;
+          const room = this._mergeRoom(m);
+          const src = m.cpuIndices, out = o.sorted;
+          let at = 0;
+          for (const k of c.prims) {
+            const i = o.prims[k * 3 + 2];
+            out[at++] = src[i]; out[at++] = src[i + 1]; out[at++] = src[i + 2];
+          }
+          gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, room * 4, out, 0, at);
+          this._setSemiBlend(c.mode, this.locSemiMode);
+          gl.drawElements(gl.TRIANGLES, at, gl.UNSIGNED_INT, room * 4);
         }
       }
     }

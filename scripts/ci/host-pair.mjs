@@ -4,7 +4,7 @@
 //
 //   scripts/ci/host-pair.mjs --site site --engine target/release-test/legaia-engine --out DIR
 //       [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n]
-//       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n]
+//       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n] [--page-init js]
 //
 // The native side is `play-window`'s own capture sweep (`--screenshot-every`, `--pad-script`)
 // with `LEGAIA_SWEEP_TRACE` writing `engine-session::host_trace` beside each PNG. The page side
@@ -465,6 +465,9 @@ async function main() {
     const size = [first.readUInt32BE(16), first.readUInt32BE(20)];
     console.error(`[host-pair] ${name}/${mode}: ${ticks.length} native frames ${size.join('x')}, page`);
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    /* `--page-init <js>`: a script the page runs ahead of its own, for a switch an
+     * experiment reads off `window` (a pass drawn another way on the page alone). */
+    if (arg('page-init')) await context.addInitScript(String(arg('page-init')));
     const page = await context.newPage();
     const problems = [];
     page.on('pageerror', (e) => problems.push('page error: ' + e.message));

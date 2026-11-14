@@ -82,6 +82,16 @@ PAGE_STATE_RULES = [
         "which the window draws over it (`cast_cannon` tick 1121, 1.7% of a frame)",
     },
     {
+        "what": "the scene blend pass orders overlapping meshes' semi prims as one list",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "const n = this._orderSemiGroup(group, vp);",
+        "why": "the window keys every semi prim of every draw into one list and "
+        "blends it far to near; mesh by mesh, a subtractive prim of one mesh and "
+        "an additive prim of another over the same pixels landed in the page's "
+        "placement order, whichever was nearer",
+    },
+    {
         "what": "the opaque pass hands a depth tie to the first-drawn primitive",
         "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
         "kind": "before",
