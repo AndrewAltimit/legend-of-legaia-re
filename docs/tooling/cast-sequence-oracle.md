@@ -2110,14 +2110,14 @@ the rows a cost term is fitted on. Report-only.
 | Set | Films | All bands | Done band | Retail / engine mean step, Done band |
 |---|---|---|---|---|
 | arts | 20 | `.837` | `.937` | `2.89` / `2.96` |
-| strike | 65 | `.953` | `.971` | `2.93` / `2.95` |
+| strike | 64 | `.955` | `.975` | `2.93` / `2.95` |
 | seru | 29 | `.993` | `.977` | `2.21` / `2.19` |
-| enemy | 107 | `.830` | `.783` | `2.81` / `3.02` |
-| all four | 221 | `.907` | `.878` | `2.77` / `2.88` |
+| enemy | 109 | `.835` | `.783` | `2.82` / `3.02` |
+| all four | 222 | `.908` | `.878` | `2.78` / `2.89` |
 
-The bands that part furthest are the enemy set's: state `0x71` (`.285`, the engine on
-`3.62` where retail runs `2.45`), the cast states `0x2B` to `0x2E` (`.58` to `.73`,
-the engine under retail) and the capture band `0x70` (`.864`, the engine over). On
+The bands that part furthest are the enemy set's: state `0x71` (`.344`, the engine on
+`3.49` where retail runs `2.48`), the cast states `0x2B` to `0x2E` (`.55` to `.73`,
+the engine under retail) and the capture band `0x70` (`.869`, the engine over). On
 the party's side it is the arts' strike state `0x20` (`.786`, the engine over).
 
 Three things the table and the recordings behind it say about the frame-cost model
@@ -2126,8 +2126,8 @@ Three things the table and the recordings behind it say about the frame-cost mod
 - **A voice line that has ended does not load the Done band.** The port's frames
   under a line run their step where retail's run six to nine vsyncs, so a line timed
   on vsyncs alone outlasts the cast and loads the HP-bar settle: left that way, the
-  enemy set's Done band agrees on `.619` of its game time, the engine on a mean step
-  of `3.25` against retail's `2.81`. Retail's settle is not loaded: `17` of the
+  enemy set's Done band agrees on `.624` of its game time, the engine on a mean step
+  of `3.24` against retail's `2.82`. Retail's settle is not loaded: `17` of the
   recordings' `2144` full-party `0x51` frames read the clamp, in a handful of films
   whose line starts late in the action. The port counts the line a second time on
   retail's frames and loads the Done band only with what that count has left, which
