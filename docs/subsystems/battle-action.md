@@ -1601,7 +1601,9 @@ Its inputs resolve entirely out of state this page already names:
   three effect-`130` records at gate `29` over 28 keyframes this way, `0x4B`'s
   entry 3 one effect-`133` record, and `0xB5`'s walk one effect-`131` record
   at gate `13` over 12 keyframes once a cycle, on the ending cycle's walk ahead
-  of the re-commit that zeroes `+0x1F5`. Port:
+  of the re-commit that zeroes `+0x1F5`. Party reaction entries carry the same
+  shape: the get-up (entry 5) spawns a direct effect `7` (`0x87`) on its
+  crossing (frame 28), and the flinches (entries 2 and 3) one on theirs (frame 9). Port:
   `MonsterAnimPlayer::crossing_frame`, census
   `actor-formats/tests/monster_cue_track_end_frame_real.rs`.
 - **facing** = actor `+0x46`, the SM's bearing writes
