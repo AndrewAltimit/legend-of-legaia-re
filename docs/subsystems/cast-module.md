@@ -3892,7 +3892,9 @@ Lizard's clip loops on frames `0x20..0x21` through the rock arms. The disc entry
 moved, arm 1 held `17` step-`4` passes where retail's holds `11`, and every later arm
 opened six passes late. On `nilboa_rock_lizard_pre_earthquake`'s film arm 1 now runs
 retail's `43` game frames and the `rand()` draws from the cast's begin agree with the
-recording's up to arm 4's opening. Grade `disassembly` + `capture`.
+recording's up to arm 4's opening. `battle_jagaroom_van_saryu_earthquake_mid_cast`'s
+film, which seats the state's own stream, goes from `.821` to `.977`. Grade
+`disassembly` + `capture`.
 
 Each rock pass ends on a dust puff at the rocks' point and yaw:
 `FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`, arm 5's at `0x801F7A40`).
