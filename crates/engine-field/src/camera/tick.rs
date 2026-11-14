@@ -88,6 +88,18 @@ impl Camera {
             false
         };
 
+        // The pause menu freezes the field under it: retail swaps the field
+        // overlay out for the menu's (PROT 0899 over 0897), so nothing that
+        // writes the focus - the follow ease `FUN_801DB510`, the edge clamp
+        // `FUN_801DAA50`, the anchor store `FUN_801DBE9C` - runs until the
+        // menu closes. The non-zone writeback below would otherwise pin the
+        // focus on the raw player for the menu's whole length, dropping the
+        // edge clamp: `suimon`'s water gate jumped about 770 units sideways
+        // and showed the void past the map's edge through the open wipe.
+        if world.scene_mode() == legaia_engine_mode::mode::SceneMode::Menu {
+            return;
+        }
+
         // The follow camera only owns the focus in free-roam. A cutscene's
         // staged focus must survive the gaps BETWEEN its beats, not just the
         // frames a glide happens to be in flight: retail's `opdeene` holds two
