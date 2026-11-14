@@ -8,6 +8,20 @@
  * Classic script. Requires webgl-tmd.js first (the class, buildSemiTail,
  * overworldDecorationCue) and site-util.js (LegaiaUtil.installMethods). */
 
+/* A scene mesh's blend-pass order scratch (semiPrimOrder), or null: only a
+ * mesh whose semi prims span more than one ABR mode takes the per-frame order,
+ * where additive under subtractive and the reverse land differently. Keying
+ * every mesh cost a draw per run on every frame (town01 rose from 44 to 550
+ * draws); a one-mode mesh keeps its single run, which leaves an average-mode
+ * (mode 0) mesh's own order unmodelled. `sorted` holds the tail rewritten in
+ * the frame's order. */
+function mixedSemiOrder(tail, indices, flatRgba) {
+  if (!tail || tail.ranges.length < 2) return null;
+  const o = semiPrimOrder(tail, indices, flatRgba);
+  if (o) o.sorted = new Uint32Array(o.seq.length * 3);
+  return o;
+}
+
 window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* ---------- Assembled / scene-mesh path ----------------------------- */
 
@@ -81,7 +95,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     m.semiRanges = tail ? tail.ranges : null;
     /* The blend pass's per-prim order scratch (semiPrimOrder), keyed per
      * placement each frame. */
-    m.semiOrder = semiPrimOrder(tail, indices, m.hasFlat ? flatRgba : null);
+    m.semiOrder = mixedSemiOrder(tail, indices, m.hasFlat ? flatRgba : null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
@@ -115,7 +129,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, cbaTsb);
     const tail = buildSemiTail(m.baseIndices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
-    m.semiOrder = semiPrimOrder(tail, m.baseIndices, null);
+    m.semiOrder = mixedSemiOrder(tail, m.baseIndices, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : m.baseIndices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -854,22 +868,20 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
            * took its amount off the additive rings drawn first, where the
            * window subtracts it from the frame under them. */
           orderSemiPrims(o, m.cpuIndices, m.cpuPositions, mulMat4Into(semiMvp, vp, model));
-          let bound = -1;
+          /* The tail rewritten in that order, one draw per change of mode. */
+          const src = m.cpuIndices, out = o.sorted;
+          let at = 0;
+          for (let j = 0; j < o.order.length; j++) {
+            const i = o.prims[o.order[j] * 3 + 2];
+            out[at++] = src[i]; out[at++] = src[i + 1]; out[at++] = src[i + 2];
+          }
+          gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, m.indexCount * 4, out);
           for (let j = 0; j < o.order.length;) {
-            const k = o.order[j];
-            const mode = o.prims[k * 3];
-            const start = o.prims[k * 3 + 1];
-            let count = 3;
-            for (j++; j < o.order.length; j++) {
-              const e = o.order[j];
-              if (o.prims[e * 3] !== mode || o.prims[e * 3 + 1] !== start + count) break;
-              count += 3;
-            }
-            if (mode !== bound) {
-              this._setSemiBlend(mode, this.locSemiMode);
-              bound = mode;
-            }
-            gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_INT, start * 4);
+            const mode = o.prims[o.order[j] * 3];
+            const first = j;
+            for (j++; j < o.order.length && o.prims[o.order[j] * 3] === mode; j++);
+            this._setSemiBlend(mode, this.locSemiMode);
+            gl.drawElements(gl.TRIANGLES, (j - first) * 3, gl.UNSIGNED_INT, (m.indexCount + first * 3) * 4);
           }
           continue;
         }
