@@ -188,6 +188,73 @@ pub(super) fn released(session: &NativeSession) -> bool {
         && w.active_fmv().is_none()
 }
 
+/// The player actor's engaged bit (`+0x10 & 0x80000`, the movement lock the
+/// walk controller reads) is up while nothing the hand pages holds the pad:
+/// no scene change, timeline, dialogue, spawned record or movie. Something
+/// else in the field raised it and waits on the player.
+pub(super) fn player_held(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    released(session)
+        && session.field_menu.is_none()
+        && w.player_actor_slot
+            .and_then(|s| w.actors.get(usize::from(s)))
+            .is_some_and(|a| a.move_state.flags & 0x0008_0000 != 0)
+}
+
+/// Ticks [`answer_notice`] gives a notice to close.
+const NOTICE_ANSWER_TICKS: usize = 120;
+
+/// Answer a notice the field raised on its own, as a player does: let go of
+/// the pad, press Cross, and again until it is gone. `true` when one was up.
+///
+/// The Incense wear-off notice is the one there is (retail `FUN_801D0B90`'s
+/// zero edge, `World::raise_incense_notice`): the walk tick that drains the
+/// window's last count locks the player's movement and shows a one-line
+/// panel, and the panel's handler (`FUN_801F1E48`) waits for a confirm or
+/// cancel **edge**. No script runs under it, so nothing the hand reads as a
+/// pad holder is up, and a walk that only holds a direction stands there for
+/// good. The walk's once-a-second action tap used to close it by accident;
+/// beside a person that tap is withheld, and a notice that came up within
+/// reach of `kor3`'s resident P1[9] at (18, 38) stopped every walk through
+/// the stair doorway until the stretch gave up.
+pub(super) fn answer_notice(session: &mut NativeSession) -> bool {
+    answer_notice_on(
+        session,
+        |s| &mut s.host.world,
+        |s| {
+            let _ = s.tick();
+        },
+    )
+}
+
+/// [`answer_notice`] over anything that owns a world and can tick it.
+pub(super) fn answer_notice_on<S>(
+    s: &mut S,
+    world: impl Fn(&mut S) -> &mut legaia_engine_core::world::World,
+    mut tick: impl FnMut(&mut S),
+) -> bool {
+    if world(s).locomotion.incense_notice.is_none() {
+        return false;
+    }
+    for i in 0..NOTICE_ANSWER_TICKS {
+        let w = world(s);
+        if w.locomotion.incense_notice.is_none()
+            || !matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
+        {
+            break;
+        }
+        // The handler reads an edge: a released frame, then the press.
+        w.set_pad(if i % 2 == 0 {
+            0
+        } else {
+            PadButton::Cross.mask()
+        });
+        tick(s);
+    }
+    world(s).set_pad(0);
+    true
+}
+
 /// Fight what a beat committed. A record that ends on `3E FF` (`chitei2`
 /// P2[13], the Jette fight) is gone before its battle's intro runs, so the
 /// beat reads as released while the fight is still to come - and what the
@@ -260,4 +327,73 @@ pub(super) fn note_caps(session: &mut NativeSession) {
             );
         }
     }
+}
+
+/// A field world with a player and the Incense notice just raised.
+#[cfg(test)]
+fn world_under_the_notice() -> legaia_engine_core::world::World {
+    let mut w = legaia_engine_core::world::World {
+        mode: SceneMode::Field,
+        ..Default::default()
+    };
+    w.spawn_actor(0).active = true;
+    w.player_actor_slot = Some(0);
+    w.raise_incense_notice();
+    w
+}
+
+/// The stall the notice made: a hand that only holds a direction - and one
+/// that holds Cross without letting go - never gives the handler its edge,
+/// so the notice and the movement lock stay up.
+#[test]
+fn a_held_pad_never_answers_the_incense_notice() {
+    for pad in [PadButton::Down.mask(), PadButton::Cross.mask()] {
+        let mut w = world_under_the_notice();
+        // The frame the notice comes up on already has the pad down.
+        w.set_pad(pad);
+        let _ = w.tick();
+        for _ in 0..300 {
+            w.set_pad(pad);
+            let _ = w.tick();
+        }
+        assert!(
+            w.locomotion.incense_notice.is_some(),
+            "pad {pad:#06x} held closed the notice"
+        );
+        assert_ne!(w.actors[0].move_state.flags & 0x0008_0000, 0);
+    }
+}
+
+/// [`answer_notice_on`] closes it whatever the pad held before, and hands
+/// the player back unlocked with the pad released.
+#[test]
+fn the_hand_answers_the_incense_notice() {
+    for before in [0, PadButton::Down.mask(), PadButton::Cross.mask()] {
+        let mut w = world_under_the_notice();
+        w.set_pad(before);
+        let _ = w.tick();
+        let mut ticks = 0;
+        assert!(answer_notice_on(
+            &mut w,
+            |w| w,
+            |w| {
+                ticks += 1;
+                let _ = w.tick();
+            }
+        ));
+        assert!(w.locomotion.incense_notice.is_none(), "after {ticks} ticks");
+        assert_eq!(w.actors[0].move_state.flags & 0x0008_0000, 0);
+        assert_eq!(w.input.pad(), 0);
+        assert!(ticks < 20, "a player answers it at once, not in {ticks}");
+    }
+}
+
+/// With no notice up the hand spends no frame on it.
+#[test]
+fn no_notice_costs_no_tick() {
+    let mut w = world_under_the_notice();
+    w.locomotion.incense_notice = None;
+    let mut ticks = 0;
+    assert!(!answer_notice_on(&mut w, |w| w, |_| ticks += 1));
+    assert_eq!(ticks, 0);
 }
