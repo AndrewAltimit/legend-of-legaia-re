@@ -194,7 +194,7 @@ impl World {
             return false;
         };
         (arm == a.seek_arm && !issued)
-            || (arm == a.poll_arm && issued && !self.casting.drive.idle())
+            || (arm == a.poll_arm && issued && self.casting.drive.poll_busy())
     }
 
     /// The module's pass on `arm` makes the head cue's call once `arm` has

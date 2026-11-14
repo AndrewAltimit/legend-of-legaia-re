@@ -96,6 +96,7 @@ mod cast_steal;
 mod cast_theeder;
 mod cast_view;
 mod cd_plumbing;
+mod cd_sync;
 mod chain_ticks;
 mod chip_marks;
 mod chunk_install;

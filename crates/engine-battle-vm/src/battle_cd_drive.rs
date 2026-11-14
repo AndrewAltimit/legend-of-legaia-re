@@ -23,7 +23,10 @@
 //! `10.12M..10.68M`. This is the emulator's drive, which the real-PCM oracle
 //! scores against; no console has been timed.
 //!
-//! REF: FUN_8003EAE4, FUN_8003F2B8, FUN_8004DA00
+//! [`cd_sync_wait`] is the poll itself, the SCUS wrapper every one of those
+//! arms calls; [`CdDrive::poll_busy`] is that call against the modelled drive.
+//!
+//! REF: FUN_8003EAE4, FUN_8004DA00
 
 /// The R3000's clock, cycles a second.
 pub const CPU_HZ: u64 = 33_868_800;
@@ -72,6 +75,53 @@ pub fn party_magic_seek_clip(slot: u8, spell_class: u8) -> u8 {
     } else {
         7
     }
+}
+
+/// `CdSync`'s answer for a command that has completed (`CdlComplete`).
+pub const CD_SYNC_COMPLETE: u32 = 2;
+/// `CdSync`'s answer while the command is still running (`CdlNoIntr`).
+pub const CD_SYNC_NO_INTR: u32 = 0;
+
+/// The game's wait on the drive's last command (`FUN_8003F2B8(mode)`), over
+/// `sync` = `CdSync(1, 0x8007BC10)`, the library's non-blocking status read.
+///
+/// - `mode == 0` blocks: it reads the status until it is
+///   [`CD_SYNC_COMPLETE`], calling `vsync` (`VSync(0)`) after every read that
+///   is not, and returns that status (`2`).
+/// - any other mode polls once: `0` when the command is complete, `1` while
+///   it is not - the busy return the cast arms branch on. With the debug word
+///   `0x8007B6D0` bit 0 set (`debug`), a busy poll hands the status to
+///   `trace` first (the `"Cd Check %d"` print, whose `%d` is the status still
+///   standing in `a1`).
+///
+/// A status that is neither complete nor running (`CdlDiskError`, `5`) is
+/// busy to both arms: the blocking one spins on it for good.
+///
+/// PORT: FUN_8003F2B8
+pub fn cd_sync_wait(
+    mode: u32,
+    debug: bool,
+    mut sync: impl FnMut() -> u32,
+    mut vsync: impl FnMut(),
+    mut trace: impl FnMut(u32),
+) -> u32 {
+    if mode == 0 {
+        loop {
+            let status = sync();
+            if status == CD_SYNC_COMPLETE {
+                return status;
+            }
+            vsync();
+        }
+    }
+    let status = sync();
+    if status == CD_SYNC_COMPLETE {
+        return 0;
+    }
+    if debug {
+        trace(status);
+    }
+    1
 }
 
 /// The drive's start LBA for seek-table clip `index` (`XA<index + 1>`).
@@ -152,6 +202,22 @@ impl CdDrive {
     pub fn idle(&self) -> bool {
         self.busy == 0
     }
+
+    /// What `CdSync(1)` reads off this drive: [`CD_SYNC_COMPLETE`] once every
+    /// issued command has finished, [`CD_SYNC_NO_INTR`] before.
+    pub fn sync_status(&self) -> u32 {
+        if self.idle() {
+            CD_SYNC_COMPLETE
+        } else {
+            CD_SYNC_NO_INTR
+        }
+    }
+
+    /// A cast arm's poll of the drive, `FUN_8003F2B8(1)`: `true` is the busy
+    /// return the arm leaves on (`bne v0,zero`).
+    pub fn poll_busy(&self) -> bool {
+        cd_sync_wait(1, false, || self.sync_status(), || {}, |_| {}) != 0
+    }
 }
 
 #[cfg(test)]
@@ -181,6 +247,40 @@ mod tests {
                 "{from} -> {to}: {physical} vsyncs against {first_frame} cycles"
             );
         }
+    }
+
+    /// A module's poll arm holds for exactly the vsyncs its seek takes, and
+    /// the blocking wait spends one `VSync` per busy read.
+    #[test]
+    fn the_poll_is_busy_until_the_seek_completes() {
+        let mut d = CdDrive::at(SIDE_BAND_LBA);
+        assert!(!d.poll_busy());
+        d.seek(clip_lba(0xC).unwrap());
+        let n = d.busy;
+        assert!(n > LOGICAL_SEEK_VSYNCS);
+        let mut held = 0;
+        while d.poll_busy() {
+            d.tick();
+            held += 1;
+        }
+        assert_eq!(held, n);
+
+        let mut d = CdDrive::at(SIDE_BAND_LBA);
+        d.seek(clip_lba(7).unwrap());
+        let n = d.busy;
+        let d = std::cell::RefCell::new(d);
+        let mut vsyncs = 0;
+        let r = cd_sync_wait(
+            0,
+            false,
+            || d.borrow().sync_status(),
+            || {
+                d.borrow_mut().tick();
+                vsyncs += 1;
+            },
+            |_| {},
+        );
+        assert_eq!((r, vsyncs), (CD_SYNC_COMPLETE, n));
     }
 
     #[test]
