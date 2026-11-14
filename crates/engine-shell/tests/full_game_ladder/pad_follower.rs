@@ -1050,7 +1050,22 @@ pub(super) fn pad_walk(
             }
         }
         let w = &session.host.world;
-        if w.cutscene_timeline_active() || w.dialogue_owns_input() || w.active_fmv().is_some() {
+        // A touch's run takes its first slice in the tick that posted it, so
+        // a prop record that ends in that slice is over before the hand looks
+        // (`World::tick_prop_interactions`). What it set going is a helper
+        // context installed at the tick's end and not yet stepped: `chitei2`'s
+        // lift P0[5] (`44 56`, `21`). Pressing on through its ride, the walk
+        // landed on the far lift and touched it straight back.
+        let fresh_helper = w
+            .field_vm
+            .helper_contexts
+            .iter()
+            .any(|tl| !tl.stepped && !tl.is_done());
+        if w.cutscene_timeline_active()
+            || w.dialogue_owns_input()
+            || w.active_fmv().is_some()
+            || fresh_helper
+        {
             let site = format!("{} at {}", holder(session), park_site(session));
             let fired_record = timeline_p2_record(session);
             let rec_label = fired_record.map_or("-".to_string(), |r| format!("P2[{r}]"));
