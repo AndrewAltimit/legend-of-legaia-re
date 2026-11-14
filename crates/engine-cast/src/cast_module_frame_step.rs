@@ -34,7 +34,7 @@
 /// ([`CdTiming::PcsxRedux`]).
 const ARM_STEPS: &[(u32, &[u8])] = &[
     // gimard
-    (903, &[0, 0, 1, 1, 4, 4, 1, 4, 4, 4, 4, 4, 4]),
+    (903, &[0, 0, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4, 4]),
     // theeder
     (904, &[0, 0, 1, 1, 1, 4, 3, 3, 4, 4, 4, 3, 4, 4, 4]),
     // vera
@@ -137,7 +137,7 @@ const ARM_STEPS: &[(u32, &[u8])] = &[
     (
         933,
         &[
-            0, 1, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2,
+            0, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 2, 2, 2, 2, 2, 2, 2, 2,
         ],
     ),
     // ozma
@@ -322,6 +322,67 @@ pub fn cast_arm_frame_step(entry: u32, phase: u8, timing: CdTiming) -> Option<u8
     };
     let (_, steps) = table.iter().find(|(e, _)| *e == entry)?;
     steps.get(usize::from(phase)).copied().filter(|&s| s != 0)
+}
+
+/// Summon-band arms whose frames change cost inside the arm:
+/// `(PROT entry, module phase, pass, step)`, the arm's frames costing `step`'s
+/// rung from its `pass`-th pass (from `0`) on, and its [`ARM_STEPS`] entry
+/// before the first row. Read off the same Gobu Gobu recordings as the table,
+/// frame by frame: the `cost` column (the ring's newest entry) of each frame
+/// the arm opens, run-length coded, a run under three frames folded into its
+/// neighbour. PCSX-Redux only, as [`CAPTURE_ARM_READ_TAILS`] is.
+///
+/// One modal step an arm cannot say this, and the ring cannot recover it: the
+/// ring holds a dear arm's entries for sixteen frames and no longer, so an arm
+/// whose own frames turn cheap partway drains its countdown on smaller steps
+/// from there and runs more passes. Ozma's arm 21 runs `23` frames at the
+/// clamp and `55` under it (`674`..`712` hblanks) where a flat `4` runs `64`;
+/// Gimard's arm 6 opens on `15` clamped frames while its cast line still
+/// loads and then costs under `0xF1`, so the ring walks `4`, `3`, `1` over
+/// `99` frames; Nova's arm 16 and Meta's arm 15 fall as their whirl and their
+/// rays leave the frame; Terra's arm 3 climbs as its vortex fills it. Every
+/// frame draws the frame driver's `rand()`, so a wrong pass count also parts
+/// the stream.
+pub const CAST_ARM_COST_TAILS: &[(u32, u8, u16, u8)] = &[
+    // gimard
+    (903, 6, 15, 1),
+    (903, 12, 19, 3),
+    (903, 12, 34, 2),
+    // nova
+    (913, 16, 28, 3),
+    (913, 16, 45, 2),
+    // meta
+    (932, 15, 49, 2),
+    // terra: the dear frame is arm 1's last, and arms 2 and 3 open on it
+    (933, 1, 26, 3),
+    (933, 3, 16, 3),
+    (933, 3, 31, 4),
+    (933, 12, 11, 2),
+    // ozma: arm 2 turns dear as its last frames fill
+    (934, 2, 19, 2),
+    (934, 2, 22, 3),
+    (934, 21, 23, 3),
+];
+
+/// [`cast_arm_frame_step`] on the `pass`-th pass (from `0`) of the arm, the
+/// passes counted through the band's two states, with the arm's frames
+/// changing cost inside it ([`CAST_ARM_COST_TAILS`]).
+pub fn cast_arm_frame_step_on_pass(
+    entry: u32,
+    phase: u8,
+    pass: u16,
+    timing: CdTiming,
+) -> Option<u8> {
+    let base = cast_arm_frame_step(entry, phase, timing)?;
+    if timing != CdTiming::PcsxRedux {
+        return Some(base);
+    }
+    Some(
+        CAST_ARM_COST_TAILS
+            .iter()
+            .rfind(|&&(e, p, n, _)| e == entry && p == phase && pass >= n)
+            .map_or(base, |&(.., step)| step),
+    )
 }
 
 /// `(action id, (module phase, step))`, the capture band's reading of the same
@@ -815,6 +876,33 @@ pub fn capture_arm_frame_step_on_pass(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_summon_arm_changes_cost_on_its_measured_pass() {
+        let pcsx = CdTiming::PcsxRedux;
+        assert_eq!(cast_arm_frame_step_on_pass(934, 21, 0, pcsx), Some(4));
+        assert_eq!(cast_arm_frame_step_on_pass(934, 21, 22, pcsx), Some(4));
+        assert_eq!(cast_arm_frame_step_on_pass(934, 21, 23, pcsx), Some(3));
+        assert_eq!(cast_arm_frame_step_on_pass(903, 12, 18, pcsx), Some(4));
+        assert_eq!(cast_arm_frame_step_on_pass(903, 12, 19, pcsx), Some(3));
+        assert_eq!(cast_arm_frame_step_on_pass(903, 12, 200, pcsx), Some(2));
+        assert_eq!(cast_arm_frame_step_on_pass(933, 3, 0, pcsx), Some(2));
+        assert_eq!(cast_arm_frame_step_on_pass(933, 1, 26, pcsx), Some(3));
+        assert_eq!(cast_arm_frame_step_on_pass(933, 3, 31, pcsx), Some(4));
+        // An arm with no row keeps its table step, an unread arm stays unread.
+        assert_eq!(cast_arm_frame_step_on_pass(934, 20, 500, pcsx), Some(4));
+        assert_eq!(cast_arm_frame_step_on_pass(903, 0, 0, pcsx), None);
+        // A console's table reads each arm at its own cost throughout.
+        assert_eq!(
+            cast_arm_frame_step_on_pass(934, 21, 40, CdTiming::Console),
+            cast_arm_frame_step(934, 21, CdTiming::Console)
+        );
+        // Every row names an arm the table holds.
+        for &(e, p, _, s) in CAST_ARM_COST_TAILS {
+            assert!(cast_arm_frame_step(e, p, pcsx).is_some(), "{e} arm {p}");
+            assert!((1..=4).contains(&s));
+        }
+    }
 
     #[test]
     fn kiss_of_death_arm_4_falls_to_its_own_step_when_the_line_stops_loading() {

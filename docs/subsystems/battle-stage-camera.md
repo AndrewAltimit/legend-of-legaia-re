@@ -2323,6 +2323,23 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
 - **The step moves inside an arm.** Gimard's arm 6 runs `4` for 64 vsyncs, `3` for 46
   and `1` for 70, as the sixteen-frame ring empties, and the table holds one value. Over
   the 29 recordings the table agrees with the recording on 91% of band vsyncs.
+- **A frame's cost moves inside an arm too, and the ring cannot recover that.** Read
+  frame by frame off the recordings' `cost` column, Gimard's arm 6 is fifteen clamped
+  frames, while its cast line still loads, and then frames under `0xF1`: the ring walks
+  `4`, `3`, `1` from those two costs, where one modal `1` ran the arm half again as many
+  passes. Ozma's arm 21 costs the clamp for `23` frames and `674`..`712` hblanks for the
+  other `55`; Nova's arm 16 and Meta's arm 15 fall as their effect leaves the frame, and
+  Terra's arm 3 climbs as its vortex fills it. `CAST_ARM_COST_TAILS` carries those rows
+  beside the table (`cast_arm_frame_step_on_pass`, the pass counted through the band's
+  two states), the summon band's reading of what `CAPTURE_ARM_READ_TAILS` holds for Kiss
+  of Death.
+- **The band opens cheap, whatever the party.** The arms no recording reads a step for
+  (the page-in pass and the drive's seek) cost `122`..`236` hblanks on the lone-caster
+  films and `165`..`221` on a full party's (`kor`, `tower`): the module draws its own
+  scene with the party off the frame. They are priced at `SUMMON_BAND_FRAME_COST`, under
+  `0xF1`. Priced off the ordinary row, each stored a step-`2` entry (`3` on a full party)
+  that held the band's first arm for sixteen passes: Gimard's arm 2 ran `49` frames where
+  retail's runs `64`, one frame-driver `rand()` short on each.
 
 The cause is the frame's cost, which a table of arms can only sample. Modelling it would
 take a per-frame cost out of the engine's own draw lists through the sixteen-entry ring;

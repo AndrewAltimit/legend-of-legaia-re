@@ -482,6 +482,19 @@ impl World {
         }
         let state = self.battle_ctx.action_state;
         let band = state == S::SummonSustain.as_byte() || state == S::SummonReturn.as_byte();
+        // The pass of the arm this one runs, counted from the arm's first. A
+        // summon arm runs through the band's two states.
+        let phase = self.casting.module_phase;
+        let pass_state = if band {
+            S::SummonSustain.as_byte()
+        } else {
+            state
+        };
+        let arm_pass = match self.battle.cast_arm_pass {
+            Some((s, p, n)) if s == pass_state && p == phase => n.saturating_add(1),
+            _ => 0,
+        };
+        self.battle.cast_arm_pass = Some((pass_state, phase, arm_pass));
         let measured = self
             .casting
             .summon_stager
@@ -489,19 +502,13 @@ impl World {
             .filter(|_| band)
             .and_then(|st| self.cast_module_for(st.spell_id))
             .and_then(|entry| {
-                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
+                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step_on_pass(
                     entry,
-                    self.casting.module_phase,
+                    phase,
+                    arm_pass,
                     self.toggles.battle_cd_timing,
                 )
             });
-        // The pass of the arm this one runs, counted from the arm's first.
-        let phase = self.casting.module_phase;
-        let arm_pass = match self.battle.cast_arm_pass {
-            Some((s, p, n)) if s == state && p == phase => n.saturating_add(1),
-            _ => 0,
-        };
-        self.battle.cast_arm_pass = Some((state, phase, arm_pass));
         let measured = measured.or_else(|| {
             let spell = self
                 .casting

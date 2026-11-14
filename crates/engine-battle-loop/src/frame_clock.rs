@@ -271,6 +271,7 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
         0x33 | 0x34 => [200, 330, 460],
+        0x35 | 0x36 => [SUMMON_BAND_FRAME_COST; 3],
         0x00 => [282, 411, 545],
         0x0A => [340, 457, 527],
         0x0C => [354, 463, 608],
@@ -293,6 +294,21 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         _ => 2,
     }]
 }
+
+/// What a summon band's frame (`0x35` / `0x36`) costs on an arm no arm table
+/// prices: the band's opening arms, the page-in pass and the drive's seek.
+/// The module draws its own scene with the party and the stage off the frame,
+/// so the cost does not read the party: over the lone-caster films of
+/// `party_basic_attack_vs_gobu_gobu` the ring's entries on those arms run
+/// `122`..`236` hblanks (three casts whose opening is a black frame read under
+/// `100`), and the full-party films (`kor`, `tower`) `165`..`221`. All sit
+/// under `0xF1`, so the band opens on step `1` once the close-up's entries
+/// have left the ring. Priced off the ordinary row instead, each opening pass
+/// stored a step-`2` entry (`3` on a full party) and the band's first arm ran
+/// sixteen passes on it: Gimard's arm 2 drew `49` frames where retail's draws
+/// `64`, and the `rand()` stream stood fifteen frame-driver draws short from
+/// there on. One emulated machine's measurement, like the table.
+pub const SUMMON_BAND_FRAME_COST: u16 = 200;
 
 /// The passes the summon close-up `0x33` opens on at a higher cost
 /// ([`measured_frame_cost_at`]).
