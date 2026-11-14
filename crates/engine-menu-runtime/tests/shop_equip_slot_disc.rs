@@ -291,3 +291,59 @@ fn every_sold_piece_equips_to_the_same_byte_from_the_shop_and_the_equip_screen()
     );
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+/// A save made while the shop misfiled the buy - Savior Clothes on Vahn's
+/// weapon byte, the armour he already wore still on byte `0`, his weapon in
+/// the bag - loads with the misfiled piece back in the bag and the weapon
+/// byte free. The same save on a world without the disc table loads as
+/// written, so the repair is the table's, not the loader's guess.
+#[test]
+fn a_save_with_savior_clothes_on_the_weapon_byte_loads_repaired() {
+    use legaia_engine_save_state::WorldSaveState;
+    let Some(path) = disc_path() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or not a file");
+        return;
+    };
+    let t = tables(&path);
+    // Another body armour Vahn can wear, for the occupied body byte.
+    let other = (1u8..=255)
+        .find(|&id| {
+            id != SAVIOR_CLOTHES
+                && t.info.category(id) == Some(Disc::Body)
+                && t.info.can_equip(id, 0)
+                && !t.info.entry(id).is_some_and(|e| e.is_ra_seru)
+        })
+        .expect("a second body armour for Vahn");
+    let weapon = (1u8..=255)
+        .find(|&id| t.info.category(id) == Some(Disc::Weapon) && t.info.can_equip(id, 0))
+        .expect("a weapon for Vahn");
+
+    let mut bad = party_world();
+    let mut slots = [0u8; 8];
+    slots[0] = other;
+    slots[2] = SAVIOR_CLOTHES;
+    bad.party.roster.members[0].set_equipment(legaia_save::EquipmentSlots { slots });
+    bad.party.inventory.insert(weapon, 1);
+    let save = bad.save_full();
+
+    let mut fixed = World::default();
+    fixed.set_equip_stats(t.equip.clone());
+    fixed.load_full(save.clone());
+    let worn = fixed.party.roster.members[0].equipment().slots;
+    assert_eq!(worn[0], other, "the armour he wore stays on");
+    assert_eq!(worn[2], 0, "the weapon byte no longer holds body armour");
+    assert_eq!(
+        fixed.party.inventory.get(&SAVIOR_CLOTHES).copied(),
+        Some(1),
+        "the misfiled piece is in the bag, not lost"
+    );
+    assert_eq!(fixed.party.inventory.get(&weapon).copied(), Some(1));
+
+    let mut plain = World::default();
+    plain.load_full(save);
+    assert_eq!(
+        plain.party.roster.members[0].equipment().slots,
+        slots,
+        "without the disc table the record loads as written"
+    );
+}
