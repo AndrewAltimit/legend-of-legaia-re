@@ -52,6 +52,9 @@ const SWORD_BONUS: [u8; 5] = [0, 20, 0, 0, 0];
 const ARMOR_BONUS: [u8; 5] = [0, 0, 8, 6, 0];
 const BLADE_BONUS: [u8; 5] = [0, 40, 0, 0, 0];
 
+/// Record `+0x196` byte body armour is worn in, for every character.
+const BODY_BYTE: usize = 0;
+
 const BASE_ATK: u16 = 31;
 const BASE_UDF: u16 = 17;
 const BASE_LDF: u16 = 13;
@@ -128,9 +131,14 @@ fn world_with_tables(restrictions: bool) -> World {
         stats.ldf = BASE_LDF;
         member.set_live_stats(stats);
         let mut eq = member.equipment();
-        // Engine equip-array order: weapon `0`, body armour `2`.
-        eq.slots[0] = ID_SWORD;
-        eq.slots[2] = ID_ARMOR;
+        eq.slots[BODY_BYTE] = ID_ARMOR;
+        member.set_equipment(eq);
+    }
+    // The record's own byte order: body armour on byte `0`, the weapon on the
+    // character's own halfword (Vahn `2`, Noa `3`).
+    for (ch, member) in w.party.roster.members.iter_mut().enumerate() {
+        let mut eq = member.equipment();
+        eq.slots[RETAIL_WEAPON_SLOTS[ch] as usize] = ID_SWORD;
         member.set_equipment(eq);
     }
     w.party.active_party = vec![0];
@@ -248,7 +256,7 @@ fn each_entry_gets_its_own_characters_numbers() {
     let mut w = world_with_tables(false);
     // Give the second member a different loadout: armour only.
     let mut eq = w.party.roster.members[1].equipment();
-    eq.slots[0] = 0;
+    eq.slots[RETAIL_WEAPON_SLOTS[1] as usize] = 0;
     w.party.roster.members[1].set_equipment(eq);
     w.party.active_party = vec![0, 1];
 
@@ -320,7 +328,7 @@ fn a_weaker_candidate_lowers_the_row() {
     let mut w = world_with_tables(true);
     // Swap the loadout to the strong blade so the plain sword is a downgrade.
     let mut eq = w.party.roster.members[0].equipment();
-    eq.slots[0] = ID_VAHN_BLADE;
+    eq.slots[RETAIL_WEAPON_SLOTS[0] as usize] = ID_VAHN_BLADE;
     w.party.roster.members[0].set_equipment(eq);
 
     let panel = painted_with_candidate(&mut w, EQUIP_MODE_DIRECT, i32::from(ID_SWORD));
@@ -455,27 +463,99 @@ fn a_mode_without_the_restriction_bytes_stays_on_the_no_candidate_arm() {
 }
 
 #[test]
-fn the_weapon_slot_table_decides_which_slot_a_weapon_candidate_displaces() {
+fn the_panel_walks_the_record_bytes_as_they_stand() {
     use legaia_engine_core::field_submode_screen::hub_panel_slots;
 
-    let mut equip = [0u8; 8];
-    equip[0] = ID_SWORD; // engine weapon slot
-    equip[1] = 0x33; // helmet
-    equip[2] = ID_ARMOR; // body armour
-    equip[4] = 0x44; // boots
-
-    // Retail's `+0x196` order: body `0`, head `1`, weapon at the character's
-    // own halfword, footwear `4`.
-    let vahn = hub_panel_slots(&equip, 0);
-    assert_eq!(vahn[0], ID_ARMOR);
-    assert_eq!(vahn[1], 0x33);
-    assert_eq!(vahn[RETAIL_WEAPON_SLOTS[0] as usize], ID_SWORD);
-    assert_eq!(vahn[4], 0x44);
-
-    let noa = hub_panel_slots(&equip, 1);
-    assert_eq!(noa[RETAIL_WEAPON_SLOTS[1] as usize], ID_SWORD);
+    // A record in retail's own order, every byte distinct.
+    let record = [0x11, 0x33, 0x10, 0x05, 0x44, 0x71, 0x72, 0x73];
+    assert_eq!(
+        hub_panel_slots(&record),
+        [0x11, 0x33, 0x10, 0x05, 0x44],
+        "the kernel sums `+0x196..+0x19B` verbatim; the Goods bytes stay out"
+    );
     assert_ne!(
         RETAIL_WEAPON_SLOTS[0], RETAIL_WEAPON_SLOTS[1],
-        "the table is per character, which is why it is a table"
+        "the weapon byte is per character, which is why it is a table"
     );
+}
+
+/// Every equipment class, on every character: a trial candidate displaces the
+/// worn piece of **its own class** and nothing else.
+///
+/// Each worn piece and the Ra-Seru carry a distinct power-of-two ATK bonus, so
+/// the candidate column names exactly which byte the trial wrote.
+#[test]
+fn a_candidate_of_each_class_displaces_the_worn_piece_of_that_class() {
+    use legaia_engine_menus::equip_session::{RETAIL_RASERU_EQUIP_BYTE, record_byte_for_category};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    use legaia_game_tables::equip_stats::{BONUS_STRIDE, BONUS_TABLE_VA, KIND_EQUIPMENT};
+
+    // (class, `+7 & 0x60` bits, worn id, worn ATK, candidate id).
+    const CLASSES: [(Disc, u8, u8, u8, u8); 4] = [
+        (Disc::Body, 0x00, 0x30, 1, 0x40),
+        (Disc::Head, 0x20, 0x31, 2, 0x41),
+        (Disc::Weapon, 0x40, 0x32, 4, 0x42),
+        (Disc::Footwear, 0x60, 0x33, 8, 0x43),
+    ];
+    const ID_RA_SERU: u8 = 0x34;
+    const RA_SERU_ATK: u8 = 16;
+    const CANDIDATE_ATK: u8 = 100;
+
+    let mut scus = synthetic_scus();
+    let off = |va: u32| (va - 0x8001_0000) as usize + 0x800;
+    let mut define = |id: u8, atk: u8, bits: u8| {
+        let item = off(0x8007_4368) + usize::from(id) * 0x0C;
+        scus[item] = KIND_EQUIPMENT;
+        scus[item + 1] = id; // one bonus row per id
+        let row = off(BONUS_TABLE_VA) + usize::from(id) * BONUS_STRIDE;
+        scus[row + 1] = atk;
+        scus[row + 6] = 7; // any member
+        scus[row + 7] = bits;
+    };
+    for (_, bits, worn, atk, cand) in CLASSES {
+        define(worn, atk, bits);
+        define(cand, CANDIDATE_ATK, bits);
+    }
+    // The Ra-Seru byte is inside the five-byte walk; its class bits are never
+    // asked for, because it is never a candidate.
+    define(ID_RA_SERU, RA_SERU_ATK, 0x01);
+
+    let equip = legaia_game_tables::equip_stats::EquipStatTable::from_scus(&scus).unwrap();
+    let effects = legaia_game_tables::item_effect::ItemEffectTable::from_scus(&scus).unwrap();
+
+    for ch in 0..3u8 {
+        for (class, _, worn, worn_atk, cand) in CLASSES {
+            let mut w = World::new();
+            w.man_load_actor_reset();
+            w.set_equipment_table(equip_modifier_table_from_disc(&equip));
+            w.set_item_effects(effects.clone());
+            w.install_hub_equip_restrictions(&DiscEquipInfo::from_disc(&equip));
+            w.party.roster = legaia_save::Party::zeroed(3);
+            let member = &mut w.party.roster.members[usize::from(ch)];
+            let mut stats = member.live_stats();
+            stats.atk = BASE_ATK;
+            member.set_live_stats(stats);
+            let mut eq = member.equipment();
+            for (c, _, id, _, _) in CLASSES {
+                eq.slots[record_byte_for_category(c, ch)] = id;
+            }
+            eq.slots[RETAIL_RASERU_EQUIP_BYTE[usize::from(ch)] as usize] = ID_RA_SERU;
+            member.set_equipment(eq);
+            w.party.active_party = vec![ch];
+
+            let panel = painted_with_candidate(&mut w, EQUIP_MODE_DIRECT, i32::from(cand));
+            let v = values(&panel);
+            assert_eq!(v.len(), 6, "{class:?} on character {ch}: {v:?}");
+            let current = i32::from(BASE_ATK) + 1 + 2 + 4 + 8 + i32::from(RA_SERU_ATK);
+            assert_eq!(
+                v[0], current,
+                "{class:?} on character {ch}: all five record bytes are summed"
+            );
+            assert_eq!(
+                v[1],
+                current - i32::from(worn_atk) + i32::from(CANDIDATE_ATK),
+                "{class:?} on character {ch}: the candidate replaces id {worn:#x} alone"
+            );
+        }
+    }
 }

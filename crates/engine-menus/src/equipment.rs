@@ -27,10 +27,14 @@ use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
 /// **body armour at byte 0**, head at 1 and footwear at 4, and the weapon
 /// at byte 2 or 3 depending on the character (`_DAT_8007B42C` = `2, 3, 2`
 /// for Vahn / Noa / Gala). This enum is weapon-first with a hand-guard
-/// insert, so a retail record must be re-ordered before a ported kernel
-/// that walks slots by index touches it - see `hub_panel_slots` in
-/// `field_submode_screen`. Aggregation is order-blind, but a trial-equip
-/// destination is not: reading an engine-ordered array with retail's
+/// insert, and it is the equip **session's** order only: the roster record
+/// (`legaia_save::CharacterRecord::equipment`) holds retail's bytes as they
+/// are. A routine that takes a record converts through
+/// `equip_session::record_byte_for_engine_slot` /
+/// `record_byte_for_category`; a ported kernel that walks the record in
+/// retail's own index space (the hub sub-panel, `hub_panel_slots` in
+/// `field_submode_screen`) reads it verbatim. Aggregation is order-blind, but
+/// a trial-equip destination is not: reading the record with this enum's
 /// indices makes a body-armour candidate displace the weapon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EquipSlot {

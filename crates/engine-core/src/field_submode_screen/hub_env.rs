@@ -84,7 +84,7 @@ impl World {
             let live = rec.live_stats();
             env.records.push(HubEquipRecord {
                 code,
-                slots: hub_panel_slots(&rec.equipment().slots, usize::from(code)),
+                slots: hub_panel_slots(&rec.equipment().slots),
                 base_stats: [live.atk as i32, live.udf as i32, live.ldf as i32],
             });
         }

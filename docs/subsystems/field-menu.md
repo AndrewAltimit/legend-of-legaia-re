@@ -1925,8 +1925,9 @@ its `j` targets print correctly - see
   `engine_equip_from_record` reads the record,
   `BROWSE_SLOT_ORDER` gives retail's seven rows, `ARMAMENT_ENGINE_SLOTS`
   carries `FUN_801CF760`'s indirection, and
-  `retail_slot_row_for_engine_slot` converts for window 25. A record is
-  re-ordered before a routine that indexes in retail's space walks it
+  `retail_slot_row_for_engine_slot` converts for window 25. That order is
+  the session's alone: the roster record keeps retail's bytes, so a routine
+  that indexes in retail's space reads it verbatim
   (`field_submode_screen::hub_panel_slots`).
 - **Commit**: `EquipSession::commit` runs
   `engine-dev-menu::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
