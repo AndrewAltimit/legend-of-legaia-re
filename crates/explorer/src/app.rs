@@ -130,8 +130,16 @@ pub struct Automation {
     /// `LEGAIA_EXPLORER_FIND`: start with this text in the Text tab's find
     /// field.
     pub find: Option<String>,
-    /// `LEGAIA_EXPLORER_PLAY`: press Play once the disc has loaded.
+    /// `LEGAIA_EXPLORER_PLAY`: press Play once the disc has loaded;
+    /// `options` presses *Game options* instead, the game's launcher screen
+    /// (which takes its own `LEGAIA_LAUNCHER_SCREENSHOT` from the same
+    /// environment).
     pub play: bool,
+    /// [`Self::play`] asked for the launcher screen.
+    pub play_options: bool,
+    /// `LEGAIA_EXPLORER_MENU`: hold one of the top bar's menus open by its
+    /// title (`open`, `view`, `export`, `menu`), so a screenshot shows it.
+    pub menu: Option<String>,
     /// `LEGAIA_EXPLORER_BROWSE`: open the in-app file browser at start, for
     /// a disc (`disc`), an extracted folder (`folder`) or the extraction
     /// output folder (`out`) or the export folder (`export`).
@@ -157,6 +165,12 @@ impl Automation {
             search: std::env::var("LEGAIA_EXPLORER_SEARCH").ok(),
             find: std::env::var("LEGAIA_EXPLORER_FIND").ok(),
             play: std::env::var_os("LEGAIA_EXPLORER_PLAY").is_some_and(|v| !v.is_empty()),
+            play_options: std::env::var("LEGAIA_EXPLORER_PLAY")
+                .is_ok_and(|v| v.trim().eq_ignore_ascii_case("options")),
+            menu: std::env::var("LEGAIA_EXPLORER_MENU")
+                .ok()
+                .map(|m| m.trim().to_ascii_lowercase())
+                .filter(|m| !m.is_empty()),
             browse: std::env::var("LEGAIA_EXPLORER_BROWSE").ok(),
         }
     }
@@ -863,7 +877,15 @@ impl App {
         }
         if self.auto.play && self.explorer.library.is_some() && self.explorer.loading().is_none() {
             self.auto.play = false;
-            self.start_game();
+            if self.auto.play_options {
+                self.open_game_launcher();
+            } else {
+                self.start_game();
+            }
+        }
+        // The menu to hold open, where `pad_menu_button` finds it.
+        if let Some(menu) = self.auto.menu.clone() {
+            ctx.data_mut(|d| d.insert_temp(egui::Id::new(AUTO_MENU), menu));
         }
         let Some(shot) = self.auto.screenshot.clone() else {
             return;
@@ -3881,6 +3903,10 @@ impl App {
     }
 }
 
+/// Where a scripted run names the menu to hold open
+/// (`LEGAIA_EXPLORER_MENU`), in egui's temp data.
+const AUTO_MENU: &str = "legaia_explorer_auto_menu";
+
 /// `ui.menu_button` that a keyboard or a controller can work: a menu opened
 /// with `Enter` (Cross) on its focused button takes the focus onto its
 /// first item, so the arrows (the D-pad) walk its items and `Enter`
@@ -3888,9 +3914,9 @@ impl App {
 /// whatever control lay nearest below the menu (the path field under the
 /// Open menu), and a controller could not reach the theme, the zoom, the
 /// export folder or the recent list at all.
-fn pad_menu_button<'a, R>(
+fn pad_menu_button<R>(
     ui: &mut egui::Ui,
-    title: impl egui::IntoAtoms<'a>,
+    title: &str,
     add_contents: impl FnOnce(&mut egui::Ui, bool) -> R,
 ) -> egui::InnerResponse<Option<R>> {
     // The menu learns it was opened from the keyboard one frame late (the
@@ -3904,6 +3930,17 @@ fn pad_menu_button<'a, R>(
         )
     });
     let r = ui.menu_button(title, |ui| add_contents(ui, focus_first));
+    // A scripted run holds the menu it names open (no pointer is there to
+    // click it, and a screenshot of a closed menu shows nothing of it).
+    let held = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(egui::Id::new(AUTO_MENU)))
+        .is_some_and(|m| m.eq_ignore_ascii_case(title));
+    let popup = egui::Popup::default_response_id(&r.response);
+    if held && !egui::Popup::is_id_open(ui.ctx(), popup) {
+        egui::Popup::open_id(ui.ctx(), popup);
+        ui.ctx().request_repaint();
+    }
     let open = r.inner.is_some();
     ui.ctx().data_mut(|d| d.insert_temp(key, open));
     if open && !was_open && r.response.has_focus() {
