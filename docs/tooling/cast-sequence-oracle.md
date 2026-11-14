@@ -1221,6 +1221,22 @@ lines were the harness: Scythe Wind's victim wraps its idle a cycle early becaus
 replay's idle stands `72` cursor units on from the recording's, and Berserker's Spore Gas
 close-up reads low on the same idle phase.
 
+The same pass reads more than the rate. Both `seats.csv` files carry each seat's clip
+`+0x1D9` and staged byte `+0x1DA` (the engine's adds the reaction channel's entry), and
+`meta.csv` the HP columns, so the audit also lists a seat on another clip than retail's,
+a cursor apart on the same non-idle clip, the acting seat's live pair apart, and the arm
+in which each seat's HP first moves. Over the enemy set the HP arms agree on every film,
+which is how Water Hazard's missing numerals read as a popup the sweep never raised
+rather than a hit landing late ([the popup push](../subsystems/cast-module.md#tick-bodies)).
+The clip column found the band's close: six films ran their last arm `15` to `45` ticks
+past retail's while the engine waited for the caster's clip to end, where retail's
+recordings leave with the caster mid-clip, parked or frozen; without the wait their Done
+band reads `.95` to `.99` from `.77` to `.89`. What the clip column still lists is each
+body's own park: Koru holds Ultra Charge's clip `7` through the whole arm where the
+engine's plays once and idles, Medusa stands on the last keyframe of Glare's clip `8`
+until `0x51`, and Earthquake's caster is back on idle from arm 6 where the engine's
+parks on clip `9`. A dead monster's clip `4` against the engine's `0` is bookkeeping.
+
 ### A recording that opens inside an arm
 
 A harvested `*_mid_cast` state is saved inside the frame whose module tick leaves the arm
