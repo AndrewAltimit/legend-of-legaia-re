@@ -666,7 +666,21 @@ impl World {
                     )
                 });
                 self.actors[i].battle_anim_cue_cursor = cue_cursor;
-                self.note_active_clip_commit(i);
+                // The natural end makes one commit (`jal 0x8004AD80` at
+                // `0x80047B54`): when the byte below hands the loop over, that
+                // commit is the staged clip's, and its tail (the camera reset,
+                // the strike loop's reach snap) runs once, there. Run here as
+                // well, the reach snap walked a locked walk's strike commit
+                // twice: back off the arrival, then forward onto the edge
+                // again, and Warman struck from `(138, 333)` where retail's
+                // one walk back and the swing's root step leave `(136, 325)`.
+                let hands_over = (self.summon_seat_waits_for_cycle(i)
+                    || self.loop_cut_locked(i)
+                    || self.spirit_stage_waits_for_cycle(i))
+                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim;
+                if !hands_over {
+                    self.note_active_clip_commit(i);
+                }
                 // The natural-end commit installs whatever `+0x1DA` holds:
                 // a byte staged over the summon creature's loop waits here
                 // ([`Self::summon_seat_waits_for_cycle`]).
@@ -674,11 +688,7 @@ impl World {
                 // refused ([`Self::loop_cut_locked`]).
                 // And the Spirit band's stage
                 // ([`Self::spirit_stage_waits_for_cycle`]).
-                if (self.summon_seat_waits_for_cycle(i)
-                    || self.loop_cut_locked(i)
-                    || self.spirit_stage_waits_for_cycle(i))
-                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
-                {
+                if hands_over {
                     self.commit_staged_battle_anim_at_boundary(i);
                     // This tick's pose is the old clip wrapped to frame 0, which
                     // retail's commit never decodes. A new clip shorter than the
