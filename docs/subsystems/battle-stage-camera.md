@@ -2365,7 +2365,8 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
 - **A long seek hold loads the frame it ends on.** A module's seek arm waits on the drive
   when the selector's seek is still in flight. One of PCSX-Redux's ordinary `1..4`-vsync
   seeks fits inside the frame's own wait and stores nothing dear
-  (`SEEK_HOLD_FREE_VSYNCS`); a longer one stores a step-`3` entry. The full-party Zenoir
+  (`SEEK_HOLD_FREE_VSYNCS`); a longer one stores a step-`3` entry, on the summon band's
+  states, which is where it is measured. The full-party Zenoir
   recording (`battle_tower_swordie_strike`) spends `11` vsyncs on its seek arm and its
   ring reads `3` for the sixteen frames behind, on arm 3's own `164` hblanks, where the
   full-party Barra recording holds `3` vsyncs and runs on at the close-up's `2`. Without
