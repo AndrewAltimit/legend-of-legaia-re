@@ -1050,6 +1050,20 @@ film set's Horn seat):
 
 The sound channel holds `1.000` on all ten, on every seat.
 
+Three more arms held on every seat were points and turns the port read off the wrong
+word, each found by holding a `--retail-parts` recording against `LEGAIA_DIAG_CAST_PARTS`
+on the rand track, where the parts' own `rand()` words already matched: Spoon's heal turns
+against the creature's facing (arm 8), Zenoir's rays stand on the creature's display trio
+(arm 7, and Gizam's stager spawns with them), and Horn re-seats the party for its cast
+(arm `0xB`) ([cast module](../subsystems/cast-module.md#summon-creature-directors)). Over
+the 29 films, no sound cue moving:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9243` | `.9269` | `0x91` `.888` to `.954`, `0x9C` `.864` to `.875`, `0x84` `.893` to `.895` |
+| `--retail-steps` | `.9366` | `.9396` | `0x91` `.893` to `.967`, `0x9C` `.864` to `.875` |
+| `--retail-steps --rand-track` | `.9592` | `.9631` | `0x91` `.893` to `.967`, `0x86` `.936` to `.960`, `0x9C` `.972` to `.983` |
+
 Juggernaut's arm 26 reads `.44` against one retail recording and `.80` against another of
 the same cast, so its ring phase is the recording's, and Terra's vortex parts on phase
 rather than shape. The rest is listed in the
