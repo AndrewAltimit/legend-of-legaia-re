@@ -317,3 +317,54 @@ fn a_longer_poll_inside_the_window_shifts_the_next_arm() {
     let strict = compare_with("long poll", &retail, &engine, Lag::Fixed(0), false).unwrap();
     assert!(strict.mean_within < 1.0);
 }
+
+/// A recording that opens inside a capture-band arm (a mid-cast state saved inside
+/// the frame that runs the arm before it) holds only the arm's tail: that
+/// segment pairs back from its end, which both sides reach on the same frame,
+/// so its frames land on the engine rows at the same distance from the arm's
+/// exit.
+#[test]
+fn a_recording_opening_inside_an_arm_pairs_it_from_its_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rd, ed) = (dir.path().join("retail"), dir.path().join("engine"));
+    std::fs::create_dir_all(&rd).unwrap();
+    std::fs::create_dir_all(&ed).unwrap();
+
+    // Retail: the last 6 vsyncs of capture phase 1 (state 0x70), whose 10
+    // vsyncs began 4 before the recording, then 6 of phase 2. Frame step 1.
+    // Arm position `p` (0..10 in phase 1, 10.. after) draws level `p * 2`.
+    let level = |p: u64| (p * 2) as u16;
+    let pos = |t: u64| t - 100 + 4;
+    let mut meta = String::from("vsync,st7,phase,step,shot,w,h,bpp\n");
+    for t in 100..112u64 {
+        let phase = if pos(t) < 10 { 1 } else { 2 };
+        let name = format!("r_{t:05}.raw");
+        std::fs::write(rd.join(&name), retail_raw(level(pos(t.max(102) - 2)))).unwrap();
+        writeln!(meta, "{t},112,{phase},1,{name},320,228,16").unwrap();
+    }
+    std::fs::write(rd.join("meta.csv"), meta).unwrap();
+
+    // Engine: the whole of phase 1 (10 ticks) and phase 2 after it, each tick
+    // drawing its own arm position's level.
+    let mut meta = String::from("tick,st7,phase,acting,shot\n");
+    for t in 10..26u64 {
+        let p = t - 10;
+        let phase = if p < 10 { 1 } else { 2 };
+        let name = format!("e_{t:05}.png");
+        engine_png(&ed.join(&name), expand(level(p)));
+        writeln!(meta, "{t},112,{phase},0,{name}").unwrap();
+    }
+    std::fs::write(ed.join("meta.csv"), meta).unwrap();
+
+    let retail = Side::read(&rd).unwrap();
+    let engine = Side::read(&ed).unwrap();
+    let r = compare("synthetic", &retail, &engine, Lag::Auto).unwrap();
+    // Grabbed on 104, it shows row 102, arm position 6: engine tick 16, not
+    // the tick two vsyncs into the engine's phase 1.
+    let p = r.pairs.iter().find(|p| p.retail_vsync == 104).unwrap();
+    assert_eq!(
+        (p.shown_vsync, p.key, p.engine_tick),
+        (102, Key::Capture(1), 16)
+    );
+    assert!(r.pairs.iter().all(|p| p.within == 1.0), "{:?}", r.pairs);
+}

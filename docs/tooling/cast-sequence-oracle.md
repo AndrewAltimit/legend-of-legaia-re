@@ -1115,16 +1115,30 @@ draws a pass re-deal the bolts. What the scan still lists is the burning body of
 Flame arms (open), Hyper Crush's ribbon arm 6, whose counts follow the projection and step up
 a pass apart from retail's, Hyper Lightning's arm 7 and Rolling Flare's arm 4.
 
-Two of the lowest films are not the cast's code. `garmel_zeto_pre_call_wave_all` (`.448`,
+The lowest film is not the cast's code. `garmel_zeto_pre_call_wave_all` (`.448`,
 arm 2 `.40`) injects `--target 8`, which no retail pick writes: Zeto's AI arm queues Call Wave
 on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the party
 (`+0x1DD = 8` at `0x801EBD24`), and the engine seam lands a party code only where the spell's
 own class is a group, so retail frames a party-wide cast with the panels up against the
-engine's self-cast. The film on the cast's own seat reads `.991`. Chaos Breath's arm 1
-(`dohaty_dohati_chaos_breath`, `.47`) holds the same clouds in the same order on both sides of
-a `--retail-parts` recording, but retail's frames stretch from four vsyncs to seven as the
-clouds pile up while the engine's stay at four, which is the frame's cost
-([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
+engine's self-cast. The film on the cast's own seat reads `.991`.
+
+### A recording that opens inside an arm
+
+A harvested `*_mid_cast` state is saved inside the frame whose module tick leaves the arm
+before the one the recording opens on: its RAM still reads that phase (`ctx[+0x279] = 0` on
+the Lapis Wave, Glare, Paralyzing Wave and Dark Typhoon states) and holds none of the opening
+arm's parts, while the recording's first row already reads arm 1 and its emitter. So the
+recording's first row is not where the arm began on the game clock, and pairing the opening
+segment from its first row stood every frame of it one frame off. Counted in frames from the
+emitter's seat, Lapis Wave's rings are born on the same frame on both sides (the eighth) and
+both reach arm 2 fifty-six frames after the first ring, yet the pairing held the engine's rings
+`8` units of radius ahead through the whole arm, and the thin rings read `.71`. A recording that
+opens inside a capture-band arm now pairs that segment back from its end, which both sides reach
+on the same frame (`opens_in_band` in `cast_sequence::compare_with`). A harness seat: over the
+107 enemy films the mean moves `.9503` to `.9568`, no film falls and no cue moves; Chaos Breath
+`.712` to `.935`, Ogre's Power Charge `.893` to `.978`, Scythe Wind `.876` to `.955`, Paralyzing
+Wave `.917` to `.992`, Lapis Wave `.923` to `.997` (arm 1 `.714` to `.998`), Glare `.903` to
+`.958`.
 
 ## The game clock
 

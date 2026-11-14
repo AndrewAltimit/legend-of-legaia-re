@@ -984,6 +984,11 @@ pub fn compare_with(
         /// Paired on the screen fade's row ([`FADE_FRAMES_BACK`]).
         fade: bool,
     }
+    // The recording opens inside a capture-band arm: a harvested `*_mid_cast`
+    // state is saved inside the frame whose module tick leaves the arm before
+    // it (its RAM still reads that phase, with none of the arm's parts), so
+    // the recording's first row is not where the arm began on the game clock.
+    let opens_in_band = rs.first().is_some_and(|s| matches!(s.key, Key::Capture(_)));
     // The engine frame a retail frame showing row `shown` pairs with; `None`
     // when the row has no aligned engine segment.
     let pair_at = |ix: usize, shown: u64| -> Option<Job<'_>> {
@@ -991,10 +996,17 @@ pub fn compare_with(
         let (shown_row, ri) = (retail.row_at(shown)?, seg_of(&rs, shown)?);
         let &ei = to_engine.get(&ri)?;
         let (rseg, eseg) = (&rs[ri], &es[ei]);
-        let into = game(shown).saturating_sub(game(rseg.start));
         // The engine row `into` live ticks into the segment, clamped to its
         // last tick.
         let base = live[&eseg.start];
+        // That opening arm pairs back from its end, which both sides reach
+        // on the same frame.
+        let into = if ri == 0 && opens_in_band {
+            let to_end = game(rseg.end).saturating_sub(game(shown));
+            (live[&eseg.end] - base).saturating_sub(to_end)
+        } else {
+            game(shown).saturating_sub(game(rseg.start))
+        };
         let want = live
             .range(eseg.start..=eseg.end)
             .find(|&(t, &l)| !frozen.contains(t) && l - base >= into)
