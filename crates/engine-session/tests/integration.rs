@@ -77,6 +77,7 @@ mod talk_spin_net_census_disc;
 mod tetsu_spar_picker_disc;
 mod tetsu_spar_somersault;
 mod tile_board_draw_live;
+mod town01_door_slide_disc;
 mod town01_opening_view_window_disc;
 mod town0c_mei_talk_shot_disc;
 mod training_battle;
