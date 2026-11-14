@@ -122,6 +122,23 @@ pub const ALURU_STAGER_FADE_IN: legaia_engine_battle_vm::battle_action::SummonFa
         delay: 0,
         hold: 4,
     };
+/// PROT 0948's (Cross Beam) stager `FUN_801F8504`, its one arm `0`: a
+/// subtractive fade, `0x15` frames from `(0, 0x20, 0x20)` to black, spawned
+/// with id `0x80` (`0x801F8510..0x801F8550`); any other arm returns
+/// (`bne a1,zero` at `0x801F8508`). Record `0x801F867C` calls it after its
+/// opening `WAIT 0x3F`.
+pub const CROSS_BEAM_STAGER_FADE: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 2,
+        duration: 0x15,
+        start_rgb: [0, 0x20, 0x20],
+        end_rgb: [0, 0, 0],
+        delay: 0,
+        hold: 0,
+    };
+/// The fade id `FUN_80024E80` takes for [`CROSS_BEAM_STAGER_FADE`]
+/// (`li a1,0x80` at `0x801F852C`).
+pub const CROSS_BEAM_STAGER_FADE_ID: i16 = 0x80;
 /// PROT 0916's stager arm 2: a `0x1E`-frame white fall.
 pub const ALURU_STAGER_FADE_OUT: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
     legaia_engine_battle_vm::battle_action::SummonFadeTemplate {

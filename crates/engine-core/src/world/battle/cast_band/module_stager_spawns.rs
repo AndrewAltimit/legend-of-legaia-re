@@ -53,6 +53,8 @@ impl World {
                 | 953
                 | 955
                 | 964
+                | 948
+                | 904
                 | 905
                 | 906
                 | 907
@@ -181,7 +183,15 @@ impl World {
                 (916, 2) => std::slice::from_ref(&ALURU_STAGER_FADE_OUT),
                 (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,
                 (963, 2) => std::slice::from_ref(&GENOCIDAL_CANNON_STAGER_FADE),
+                (948, 0) => std::slice::from_ref(
+                    &legaia_engine_cast::cast_module_ticks::CROSS_BEAM_STAGER_FADE,
+                ),
                 _ => &[],
+            };
+            let fade_id = if entry == 948 {
+                legaia_engine_cast::cast_module_ticks::CROSS_BEAM_STAGER_FADE_ID
+            } else {
+                1
             };
             if !stager_fades.is_empty() {
                 for t in stager_fades {
@@ -189,7 +199,7 @@ impl World {
                     legaia_engine_system::fade::spawn_fade(
                         &mut fade,
                         &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
-                        1,
+                        fade_id,
                     );
                     self.presentation.module_fades_next_pass.extend(fade);
                 }

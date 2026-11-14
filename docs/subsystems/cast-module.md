@@ -1821,6 +1821,13 @@ case 8) beside the tick body (arm 7's wait and arm 14's poll). Clip 1 parks
 on frame 17, so arm 7 holds about 140 vsyncs
 ([the loop counter](#the-creatures-loop-counter-0x21b)).
 
+Theeder's stager `0x801F8EAC` seats its one record `0x801F90B0` (a cyan pulse that fades
+in over fourteen vsyncs and out over fourteen more) on its caller. Record `0x801F9014`
+calls it eleven times in a loop, nine vsyncs apart. The port dispatched the arm but never
+ran PROT 0904's op-`0x20` calls, so no pulse was seated; they run now on the caller's frame
+as the other Seru stagers' do. The `0x82` film's arm 9 reads `.960` against `.950`.
+Grade `disassembly` + `capture`.
+
 ### PROT 0905 (Vera)
 
 Arms 4, 5 and 8 kill the effect parts earlier arms spawned, through the
@@ -4035,6 +4042,13 @@ trail of core, glow and flare quads that dims by `2` per segment, the right
 beam the left's mirror run `0x20` steps behind, all under ABR 1.
 `World::cross_beam_draw` carries the counter and `legaia_render_kernels::cast_beam`
 builds the packets for both hosts.
+
+The stager `FUN_801F8504` has one arm: arm `0` spawns a subtractive screen fade, `0x15`
+frames from `(0, 0x20, 0x20)` to black, with id `0x80` (`0x801F8510..0x801F8550`; any
+other arm returns at `0x801F8508`). Record `0x801F867C` calls it after its opening
+`WAIT 0x3F`: the red cast the beams flare under. The port dropped the call; it runs
+now (`CROSS_BEAM_STAGER_FADE`), and the three Cross Beam films' charge arm reads
+`.993` / `.994` / `.995` against `.980` / `.976` / `.974`. Grade `disassembly` + `capture`.
 
 ### PROT 0951 (Scythe Wind)
 
