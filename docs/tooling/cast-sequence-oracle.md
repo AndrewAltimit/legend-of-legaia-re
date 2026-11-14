@@ -173,6 +173,12 @@ children (tick, slot, frame count, cursor, position, anim id). It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
+`LEGAIA_DIAG_CAST_BODIES=1` (also through `--engine-env`) adds `bodies.csv`, a row a
+body a tick with no header: tick, actor slot, monster flag, drawn flag, triangles (a
+monster's mesh, the objects a party seat draws), the raw position trio, the render
+radius and HP. With `cam.csv`'s pose it is what a frame-cost term can read of a shot
+([the step agreement table](#the-step-agreement-table)).
+
 `LEGAIA_DIAG_CAST_HIDE=<va>,..` (also through `--engine-env`) leaves the cast
 scene's parts seated from those record addresses out of the draw lists while
 their programs run on: a film whose frame shows something no retail frame
@@ -2079,6 +2085,73 @@ The table is blessed with the cue baseline, from one run of each set on one buil
 row is a measurement on that build with that film's recording and seats: a film
 re-recorded or re-seated since reads as a move with no engine change behind it, which
 is what the cue channel's recording digest is for.
+
+## The step agreement table
+
+The image and cue channels say what a film looks and sounds like; neither says which
+frame step each side ran. [`film-step-agreement.py`](../../scripts/ci/film-step-agreement.py)
+does, for every film of a run:
+
+```bash
+scripts/ci/film-step-agreement.py captures/films/arts captures/films/strike captures/films/seru captures/films/enemy
+scripts/ci/film-step-agreement.py captures/films/enemy --films     # the bands that part, largest loss first
+scripts/ci/film-step-agreement.py captures/films/strike --costs /tmp/costs.tsv
+```
+
+Both sides are read on the game clock (a retail frame counts its step however many
+vsyncs it ran, an engine tick past its frame's step counts nothing), over the span
+both recorded. A band is an action state or a group of them: the strike states, the
+cast states, the capture band `0x70`, the Done band. Per film and band the two sides'
+game time is spread over the steps, the agreement is the overlap of the two spreads,
+and a set's figure weights each band by retail's game time in it. `--costs` writes
+every unloaded retail frame's ring entry with the fight's living party and monsters,
+the rows a cost term is fitted on. Report-only.
+
+| Set | Films | All bands | Done band | Retail / engine mean step, Done band |
+|---|---|---|---|---|
+| arts | 20 | `.837` | `.937` | `2.89` / `2.96` |
+| strike | 65 | `.953` | `.971` | `2.93` / `2.95` |
+| seru | 29 | `.993` | `.977` | `2.21` / `2.19` |
+| enemy | 107 | `.830` | `.783` | `2.81` / `3.02` |
+| all four | 221 | `.907` | `.878` | `2.77` / `2.88` |
+
+The bands that part furthest are the enemy set's: state `0x71` (`.285`, the engine on
+`3.62` where retail runs `2.45`), the cast states `0x2B` to `0x2E` (`.58` to `.73`,
+the engine under retail) and the capture band `0x70` (`.864`, the engine over). On
+the party's side it is the arts' strike state `0x20` (`.786`, the engine over).
+
+Three things the table and the recordings behind it say about the frame-cost model
+(grade `capture`):
+
+- **A voice line that has ended does not load the Done band.** The port's frames
+  under a line run their step where retail's run six to nine vsyncs, so a line timed
+  on vsyncs alone outlasts the cast and loads the HP-bar settle: left that way, the
+  enemy set's Done band agrees on `.619` of its game time, the engine on a mean step
+  of `3.25` against retail's `2.81`. Retail's settle is not loaded: `17` of the
+  recordings' `2144` full-party `0x51` frames read the clamp, in a handful of films
+  whose line starts late in the action. The port counts the line a second time on
+  retail's frames and loads the Done band only with what that count has left, which
+  is the table's `.783`
+  ([the frame step](../subsystems/battle-stage-camera.md#a-voice-line-loads-no-done-band-frame)).
+- **A frame's cost follows the polygons it links, shot by shot.** Against the
+  polygons the engine's window links on the paired tick (`LEGAIA_DIAG_GPU_COST`),
+  retail's unloaded frames on the arts and strike films read `35 + .181` a polygon
+  with rms `39` hblanks and the step right on `.93` of frames, held out by film; the
+  action-state table reads rms `84` and `.76`. The Done band is the plainest case:
+  eleven enemy films' settles cost `300` to `688` on a full party and track the linked
+  count (`1481` to `3424`) at `.19` a polygon, where the table says `595` for all of
+  them, and four in ten full-party settles cost under `0x1FF` (step `2`).
+- **No count the world holds stands in for the linked one.** `LEGAIA_DIAG_CAST_BODIES=1`
+  writes `bodies.csv` beside the engine recording (every body a tick: drawn,
+  triangles, position), and three world-side terms were fitted to the linked count on
+  a sample of all four sets: the drawn bodies' triangles, those triangles weighted by
+  how much of each body the camera holds, and the ground grid's drawn cells. Together
+  they explain half of it in-sample and none of it held out by film. The stage is the
+  part they miss (its meshes link `900` to `2600` polygons from shot to shot), and a
+  party body links about `470` of its triangles' `700` polygons whichever way it
+  faces, which is the `90` hblanks a party ghost costs. So pricing the default from
+  polygons needs the count itself in host-independent code, not a proxy
+  ([the open thread](../reference/open-rev-eng-threads.md#the-party-arts-frame-cost)).
 
 ## Reading the report
 

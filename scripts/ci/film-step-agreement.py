@@ -75,16 +75,18 @@ def retail_frames(path: Path):
 
 
 def engine_clock(meta: Path, cam: Path):
-    """Game ticks per `(state, step)`."""
+    """Game ticks per `(state, step)`, and the state the recording opens on."""
     with open(cam) as f:
         steps = {r["tick"]: int(r["step"]) for r in csv.DictReader(f)}
-    out = collections.Counter()
+    out, first = collections.Counter(), None
     with open(meta) as f:
         for r in csv.DictReader(f):
+            if first is None:
+                first = int(r["st7"])
             if r.get("over", "0") == "1" or r["tick"] not in steps:
                 continue
             out[(int(r["st7"]), steps[r["tick"]])] += 1
-    return out
+    return out, first
 
 
 def alive(row: dict, keys) -> int:
@@ -109,7 +111,11 @@ def main() -> int:
             frames, raw = retail_frames(rm)
             if frames is None:
                 continue
-            eng = engine_clock(em, ec)
+            eng, opens = engine_clock(em, ec)
+            # A retail recording can open on the action before the cast (its Done band
+            # and the turn select); the engine's opens at the gate.
+            lead = next((i for i, fr in enumerate(frames) if fr[0] == opens), 0)
+            frames = frames[lead:]
             held = {st for st, _ in eng}
             party = alive(raw[0], ("hp0", "hp1", "hp2"))
             mons = alive(raw[0], ("hp3", "hp4", "hp5", "hp6", "hp7"))

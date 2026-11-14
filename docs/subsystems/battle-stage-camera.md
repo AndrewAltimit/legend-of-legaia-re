@@ -2155,6 +2155,31 @@ motion runs step `3` where the table's `622` puts the port on `4`, and Sonic Jav
 return frames cost `665` to `714` under both. The base is what the port does not model
 there ([the open thread](../reference/open-rev-eng-threads.md)).
 
+<a id="a-voice-line-loads-no-done-band-frame"></a>
+
+**A spent voice line loads no Done-band frame.** A clip's polls load every frame of its
+read span, and the span is vsyncs. Retail's frames under the polls run six to nine
+vsyncs, so a cast's line has run out by the time its action settles: across the film
+recordings, `17` of `2144` full-party `0x51` frames read the ring's clamp, and those
+sit in a handful of films whose line starts late in the action (both Grude strikes'
+settles are loaded throughout, Neo Star Slash's and Astral Slash's in part). The port's default law runs a loaded frame one vsync past its step, the same
+line covers more of its passes, and on the enemy casts it reached into the Done band:
+the HP-bar settle panned on step `4` where retail's runs `3` or `2`
+([the step agreement table](../tooling/cast-sequence-oracle.md#the-step-agreement-table)).
+
+So the port counts a line's span twice. The first count is its own ticks and loads the
+frames as before. The second is the same span on retail's frames
+(`AudioState::battle_xa_retail_left`): the read tail added, and each loaded pass taking
+the vsyncs retail's frame runs, its work under the polls for a clip the cue funnel or
+the arts voice starts and the recordings' median of `6` for a capture-band module's own
+line. When the action state reaches `0x50` / `0x51` the load is cut to what the second
+count has left (`World::close_pass_frame_cost`): a cast's line is spent and the settle
+runs its own cost, a line cued a few passes earlier is not and loads it as retail's does.
+The drive word keeps the line's own span, and the span law, whose frames run retail's
+length, needs no second count. Cutting every line at the Done band instead moved the
+replays behind four strike films (`noaru_gilium_lv2_strike` `.989` to `.871`). Grade
+`capture`.
+
 <a id="a-frames-cost-is-its-own-node-ticks"></a>
 
 **A frame's cost is its own node ticks and draw.** The frame driver measures a frame from
