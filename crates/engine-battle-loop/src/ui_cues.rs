@@ -16,8 +16,10 @@
 //!   cancel at `0x801D2320`; the commit-confirm screen's `Begin` at
 //!   `0x801D31A4` and `Reselect` at `0x801D3054`; the ring's cancel and its
 //!   refused arms through the shared tail `0x801D2968`; the arts entry's
-//!   refused directions at `0x801D1EA0..0x801D1F78` and its cancel at
-//!   `0x801D2104`.
+//!   taken arrows through `0x801D1F98` into the commit tail, its refused
+//!   directions at `0x801D1EA0..0x801D1F78` and its cancel at `0x801D2104`.
+//!   The press-by-press table is `docs/subsystems/audio.md`, "Every press,
+//!   surface by surface".
 //! - The item and magic windows are pause-menu list windows paged by the
 //!   SCUS list kernel `FUN_80032A44`, which writes the ring itself: `0x21`
 //!   a cursor step, `0x20` a confirm, `0x23` a disabled row, `0x37` a cancel

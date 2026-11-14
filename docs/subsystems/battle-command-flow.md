@@ -410,8 +410,13 @@ press: `0x21` for a commit, `0x22` for a target-cursor step, `0x23` for a
 cancel or a refused arm. Most go through two shared tails - `0x801D20D4` keys
 `0x21` and `0x801D2968` keys `0x23` - which is why every ring arm and both
 round-prompt chips commit with one sound and every refusal shares another. The
-item and magic windows sound the list kernel's own cues instead. Site table and
-port: [`audio.md`](audio.md#the-battle-command-surfaces-blips).
+item and magic windows sound the list kernel's own cues instead. An arrow the
+arts entry takes sounds the commit too (`0x801D1F80..0x801D1F98` into the
+tail), and the ring answers a refused arm with the cancel cue: `Item` under
+the special word's `0x100`, the magic arm for a member with no Ra-Seru marker
+(`ctx[+0x25F + member]`, `0x801D1420`), under Curse or under the word's
+`0x200`, and `Attack` with all three limbs rotted. The press-by-press table
+and the port: [`audio.md`](audio.md#every-press-surface-by-surface).
 
 ### The ring's cancel steps back a member
 

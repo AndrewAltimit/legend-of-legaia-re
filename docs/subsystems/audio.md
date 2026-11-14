@@ -2357,9 +2357,79 @@ The item and magic windows are list windows paged by the SCUS list kernel
 `FUN_80032A44`, which writes the ring itself: `0x21` a step, `0x20` a confirm,
 `0x23` a disabled row, `0x37` a cancel ([`field-menu.md`](field-menu.md)). The
 item window's flow state reads the kernel's mode word `0x8007BB94` (`3`
-cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
-leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
-the tail's cue.
+cancelled, `2` chosen) at `0x801D17F8`, the magic window's at `0x801D1B78`.
+
+#### Every press, surface by surface
+
+The whole command UI, read off `FUN_801D0748` and the list kernel. The retail
+column is the id on the ring (the dispatcher's argument less one, or the
+kernel's own word); the port keys the same descriptor on every row.
+
+| Surface | Press | Ring id | Site | Port cue |
+|---|---|---|---|---|
+| Round prompt `0x1E` | Left or confirm (`Begin`), Right (`Escape`) | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Flee confirm `0x32` | Left (run) | `0x20` | `0x801D1158` | `Confirm` |
+| Flee confirm `0x32` | cancel or Right | `0x22` | `0x801D1130` | `Back` |
+| Ring `0x28` | Up (`Item`), Right (magic), Down (`Spirit`) | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Ring `0x28` | Left or confirm (`Attack`) | `0x20` | `0x801D15D0` | `Confirm` |
+| Ring `0x28` | a refused arm | `0x22` | tail `0x801D2968` | `Back` |
+| Ring `0x28` | cancel (step back a member, or back to the prompt) | `0x22` | tail `0x801D2968` | `Back` |
+| Ring, cross-button option | a direction that moves the highlight | `0x21` | `0x801D082C`, `0x801D08D0`, `0x801D0988`, `0x801D0A40` | `Cursor` |
+| Attack mode `0x78` | Left or confirm (`Auto`), Right (`Command`) | `0x20` | `0x801D17CC`, `0x801D175C` | `Confirm` |
+| Attack mode `0x78` | cancel | `0x22` | tail `0x801D2968` | `Back` |
+| Arts entry `0x50` | an arrow the entry takes | `0x20` | `0x801D1F98` into the tail | `Confirm` |
+| Arts entry `0x50` | an arrow its limb's Rot refuses | `0x22` | `0x801D1EA0`, `0x801D1EE8`, `0x801D1F30`, `0x801D1F78` | `Back` |
+| Arts entry `0x50` | confirm on an entered or preseeded string | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Arts entry `0x50` | the advance off an exhausted gauge | none | `bne` at `0x801D20CC` | none |
+| Arts entry `0x50` | cancel (drop an arrow, or leave) | `0x22` | `0x801D2104` | `Back` |
+| Arts entry `0x50` | Triangle (the arts list window) | none | `FUN_801D3748` calls no cue routine | none |
+| Target cursor `0x5A` | a step onto another seat | `0x21` | `0x801D263C` | `Cursor` |
+| Target cursor `0x5A` | confirm | `0x20` | `0x801D22B0` | `Confirm` |
+| Target cursor `0x5A` | cancel | `0x22` | `0x801D2320` | `Back` |
+| Item `0x3C`, magic `0x46` lists | Up, Down | `0x21` | kernel `0x80032C74` | `Cursor` |
+| Item, magic lists | Left, Right when the page flips | `0x21` | kernel `0x80032B9C`, `0x80032C68` | `Cursor` |
+| Item, magic lists | confirm on an enabled row | `0x20` | kernel `0x80032D24` | `Confirm` |
+| Item, magic lists | confirm on a greyed row | `0x23` | kernel `0x80032D0C` | `Buzz` |
+| Item, magic lists | cancel | `0x37` | kernel `0x80032D74` | `ListCancel` |
+| One-enemy sub-cursors `0x5B` / `0x5C` | a step onto another seat | `0x21` | `0x801D263C` | `Cursor` |
+| One-ally sub-cursors `0x64` / `0x65` | Left, Right (a party of two or more) | `0x21` | `0x801D2BE8`, `0x801D2C78` | `Cursor` |
+| The eight sub-cursors `0x5B..0x5E`, `0x64..0x67` | confirm | `0x20` | `0x801D24AC`, `0x801D2690`, `0x801D2828`, `0x801D29B8`, `0x801D2AA4`, `0x801D2D6C`, `0x801D2E5C`, `0x801D2FDC` | `Confirm` |
+| The eight sub-cursors | cancel | `0x22` | `0x801D2560`, `0x801D26F4`, tail `0x801D2968` (`0x5D`, `0x5E`), `0x801D2A1C`, `0x801D2B58`, `0x801D2DD0`, `0x801D2F10` | `Back` |
+| Commit screen `0x6E` | Left or confirm (`Begin`) | `0x20` | `0x801D31A4` | `Confirm` |
+| Commit screen `0x6E` | Right or cancel (`Reselect`) | `0x22` | `0x801D3054` | `Back` |
+| Spoils window | a level gained | `0x50` | `FUN_8004E568`, `0x8004F6E8` | `dispatch_battle_cue(0x50)` |
+| Spoils window | the page presses | none | `FUN_8004E568` calls the dispatcher nowhere else but for the victory voice (`0x8004FAE8`) | none |
+
+Four rules in that table are easy to get wrong:
+
+- **An arrow sounds a commit.** The arts entry stores the arrow in
+  `ctx[+0x1A]`, runs HUD step `0xB` and jumps to the commit tail
+  (`0x801D1F80..0x801D1F98`). Step `0xB` returns ahead of its append when the
+  gauge cannot pay the arrow, and the tail still runs, so an unpaid arrow
+  sounds too. Only the advance off an exhausted gauge is silent: the `bne
+  s0,zero,0x801D3290` at `0x801D20CC` steps over the tail.
+- **The ring's Magic arm refuses three ways.** Its first test is the member's
+  Ra-Seru marker `ctx[+0x25F + member]` (`beq v0,zero,0x801D2968` at
+  `0x801D1420`), ahead of Curse (`+0x16E & 0x1000`, `0x801D1440`) and the
+  special word's `0x200` (`0x801D1454`). A member with no Ra-Seru hears the
+  refusal and the ring stays up; no empty window opens. The Item arm's one
+  refusal is the special word's `0x100` (`0x801D1370..0x801D137C`), an arena
+  course rule, and `Attack`'s is three rotted limbs (`0x801D1560..0x801D156C`).
+- **A list step sounds whether or not the hand moved.** The kernel's Up and
+  Down arms both fall into the queue at `0x80032C74` on every path, a one-row
+  list included; a page flip queues only when `top` moves (`blez` at
+  `0x80032B98`, the `slt` at `0x80032C2C`). The hand wraps inside its
+  eight-row page and the horizontal pad is the only way to another page.
+- **A greyed row is the list build's.** The battle arm of the spell list
+  builder writes a row disabled unless the spell record's `+2` carries the
+  battle bit `0x4` and the caster's MP covers the discounted cost
+  (`0x800310A0..0x800310D0`), so an unaffordable spell buzzes in the kernel
+  and the flow state's own MP test at `0x801D1C10` never meets one. The item
+  list greys by the descriptor's battle bit alone
+  ([`battle-hud.md`](battle-hud.md#the-battle-item-window-0x3c)). The kernel writes
+  its confirm word over the slot it last queued (`lh a0,0x15a(gp)` at
+  `0x80032D14` / `0x80032D2C`), so a step and a confirm on one frame sound
+  the confirm.
 
 The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
 drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
@@ -2385,7 +2455,11 @@ commit and nothing else.
 Port: `engine-core::world::battle::command_flow::ui_cues` derives one blip per
 frame from each surface's state before and after its input (the command
 session, the spell and item windows, the arts entry) and pushes its ring id,
-which both hosts drain through `AudioDirector::route_world_sfx`. Measured by
+which both hosts drain through `AudioDirector::route_world_sfx`; the kernels
+are `engine-battle-loop::ui_cues`, and the spell list steps through the same
+`list_kernel_navigate_rows` the pause lists and the item window use. The
+table's rows are pinned disc-free by
+`engine-core/src/world/tests/battle_ui_cue_routing.rs`. Measured by
 `engine-shell/tests/battle_ui_sfx_disc.rs` on the play window's frame body:
 `Begin`, the `Item` arm, the item list's cancel and the ring's cancel each come
 due on the ring and key a voice on the tick of the press.
