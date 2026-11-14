@@ -67,6 +67,18 @@ records the kingdoms use; resolution is **by type byte**, not slot position -
 the `rayman`-family carrier is the MAN-less count-4 table variant
 (`[1, 2, 6, 0x14]`).
 
+A walker is only meaningful against the image its strips were parked in. A
+host that keeps the stepper beside the scene must retire it on the tick the
+scene image is swapped, not at its next render-state rebuild: one step of the
+old scene's walker against the new image copies blank source cells onto the
+destination cells, and the new scene may own those. The kingdom table's
+destination `(32, 509)` is a ground palette in `izumi` (the dark strips along
+the hedges) and in `town0c` (the house floors), so a stale step there turns
+that ground into transparent texels for the whole visit. The play page drops
+its animator when the tick reports a scene entry
+(`crates/web-play/tests/door_entry_vram_page.rs`); the native window steps
+its animator against its own copy of the image and replaces both together.
+
 ## Mechanism 2 - the ambient move-VM effect tree
 
 Most ambience is a tree of small invisible actors ("stager parts") running

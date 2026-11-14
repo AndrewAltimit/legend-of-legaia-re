@@ -78,6 +78,20 @@ impl LegaiaRuntime {
             self.persist_and_apply_options();
         }
         let fmv_handoff_scene = self.service_cutscene_fmv();
+        // The scene host has already swapped its scene VRAM when the tick
+        // (or the movie hand-off) entered a scene, and the page-side render
+        // state is rebuilt only at the end of this frame. The CLUT-walk
+        // animator is the one piece of that state the tail below steps
+        // against the host's image, so it goes now: the old scene's walker
+        // would copy its 16x1 cells out of an image its source strips were
+        // never parked in, blanking whichever palettes the new scene keeps
+        // on its destination cells (the ground went black under them until
+        // the scene was left). The native window steps its animator against
+        // its own copy of the image, which it replaces together with the
+        // animator.
+        if !fmv_handoff_scene.is_empty() || matches!(event, SceneTickEvent::SceneEntered { .. }) {
+            self.field_vram_anim = None;
+        }
         // ...and the rest of the frame tail is the world's, so it freezes
         // with the scene tick. A movie that ends this frame falls through, as
         // it does natively (the finish is drained before the window counts
