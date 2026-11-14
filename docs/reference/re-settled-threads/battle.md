@@ -384,7 +384,11 @@ The idle's phase also decides when a cast starts. A clip staged under neither `+
 
 On the image channel the battle corpus moves both ways. `battle_uru2_nurga_heal_mid_cast` rises from `.973` to `.999` and `battle_rugi_puera_v2_strike` from `.989` to `1.000`. Eleven pad-driven rows fall on that shifted history, `battle_tunnelc_xain_bloody_horns_mid_cast` the most (`.855` to `.797`).
 
-A pinned replay opens its fight with no setup draws, so its opening turn's idle phase is its own, and retail's is in no RAM the capture holds: the commit it waits on lies far more than sixteen passes back. On `battle_bylon_theeder_v2_thunderbolt_mid_cast` the shift leaves the walk's focus at another point of its glide (`-823` against `-834`, retail `-851`). The `super_queue_replace_*` drives had gated the Attack arm's seed pass on `ctx[+0x87C]`. That word counts from the acting seat's last idle re-commit (`0x8004BF50..0x8004BF78`), so the drives now meet the pass on its yaw rung. A caster idling in the capture band's entry `0x6E` is seated on the capture's cursor, as in `0x6F..=0x71` ([retail-compare](../../tooling/retail-compare.md#battle-states)).
+A pinned replay opens its fight with no setup draws, so its opening turn's idle phase is its own, and retail's is in no RAM the capture holds: the commit it waits on lies far more than sixteen passes back.
+
+On `battle_bylon_theeder_v2_thunderbolt_mid_cast` the shift did not move the frame through the cast itself: it tipped the harness's undrift search onto a round eight units of residual nearer, which moved Gala's seeded ground and with it the box the displayed walk starts from. The search now keeps a round only when it is `UNDRIFT_MIN` nearer, and the still reads `.999` ([retail-compare](../../tooling/retail-compare.md#a-push-the-capture-already-holds)).
+
+The `super_queue_replace_*` drives had gated the Attack arm's seed pass on `ctx[+0x87C]`. That word counts from the acting seat's last idle re-commit (`0x8004BF50..0x8004BF78`), so the drives now meet the pass on its yaw rung. A caster idling in the capture band's entry `0x6E` is seated on the capture's cursor, as in `0x6F..=0x71` ([retail-compare](../../tooling/retail-compare.md#battle-states)).
 
 ### An Orb's Heal strikes the ally it heals
 

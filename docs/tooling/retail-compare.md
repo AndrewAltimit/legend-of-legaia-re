@@ -1698,8 +1698,16 @@ engine's own replay measures the push:
 1. A driven action that reaches its phase is run once more on the same stream
    from `captured - drift` (`RetailBattle::undrift`, any axis moved by at least
    `UNDRIFT_MIN`).
-2. The second run is kept when it stands the placed combatants nearer their
-   captured pairs than the first (`ground_residual`).
+2. The second run is kept when it stands the placed combatants at least
+   `UNDRIFT_MIN` nearer their captured pairs than the first
+   (`ground_residual`). A few units either way is two replays of one push,
+   and a separation push makes that common: `FUN_80050BB8` pushes a pair
+   until it stands outside `(r_a + r_b) / 6` wherever it started, so seeding
+   the pair back only walks it further off and the residual wanders round
+   after round. `battle_bylon_theeder_v2_thunderbolt_mid_cast`'s Theeder and
+   Gala read `60`, `58`, `62` and `50` over the rounds, and the last moved
+   Gala `35` units, which shifted the prompt framing's box the displayed
+   walk starts from (`image` `.948` to `.999`, harness-only).
 3. The acting seat's own drift is its approach, whose direction is the heading
    every framing case subtracts, so it is tried under two rules
    (`UndriftActing`). Under the first a seat that walked moves with its
@@ -1712,9 +1720,9 @@ engine's own replay measures the push:
    run. A round that lands further off does not end the iteration: the push
    is not monotone in where it starts, and with the attacker's in-range
    back-off `noa_levelup_fight_pre`'s second round lands `396` units further
-   off than its first while a later one lands nearest. The own-drift run replaces
-   the target's-drift one only when it stands the fight at least
-   `UNDRIFT_MIN` nearer.
+   off than its first while a later one lands nearest. The own-drift run, like
+   the target's-drift one, replaces what stands only when it stands the fight
+   at least `UNDRIFT_MIN` nearer.
 5. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
 

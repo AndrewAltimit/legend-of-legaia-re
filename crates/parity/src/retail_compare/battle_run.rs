@@ -421,14 +421,20 @@ pub(super) fn run_battle(
                         rule_best = Some((b, e, residual));
                     }
                 }
-                // The first rule has only to beat the first run. A later one
-                // replaces a rule that already stands the fight nearer only
-                // by a margin a framing can read (`UNDRIFT_MIN`): a few
-                // units of residual either way is two replays of one push,
-                // not a nearer ground.
+                // A rule replaces the first run, or a rule that already
+                // stands the fight nearer, only by a margin a framing can
+                // read (`UNDRIFT_MIN`): a few units of residual either way
+                // is two replays of one push, not a nearer ground. A
+                // separation push is the clearest case: `FUN_80050BB8`
+                // pushes a pair until it stands outside `(r_a + r_b) / 6`,
+                // wherever it started, so seeding it back by the drift only
+                // walks it further off and the residual wanders by a few
+                // units round after round (`battle_bylon_theeder_v2_thunderbolt_mid_cast`:
+                // `60`, `58`, `62`, `50`), while the bystander the last of
+                // those rounds moved names the prompt framing's box.
                 if let Some((b, e, residual)) = rule_best {
-                    let nearer = match (best.is_some(), residual, best_residual) {
-                        (true, Some(r), Some(have)) => {
+                    let nearer = match (residual, best_residual) {
+                        (Some(r), Some(have)) => {
                             r + i64::from(crate::retail_compare_battle::UNDRIFT_MIN) <= have
                         }
                         _ => residual < best_residual,
