@@ -90,6 +90,36 @@ not a finding by itself; a placement off retail from the first row is.
 Retail's pass runs once every frame step of vsyncs, and a state is saved on one vsync of that frame. The frame pacer `FUN_80016B6C` waits each frame out with libetc `VSync(step)` (`jal 0x8005FB84` at `0x800171C0`), which stores the vblank count on return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`), so the vblank counter `0x8007A894` less that store is the vsync of its frame the state holds (`RetailObs::vsync_phase`), and the next pass opens `step - phase` vsyncs into the film.
 The engine side seats its game-tick accumulators to match (`actor_vsync_accum`, the CLUT bank's twin): `phase - 1`, and on a phase of `0` it holds the first vsync. `conc_field_card_boot` (phase `0`) read `12` placements off on the seed's own phase and reads `0`, `conc2_field_route_walk` (`0`) `14` to `0`, `dolk2_market_noa` (`1`) `9` to `1`, `koin1_field_route_walk` (phase `2` of a step-`3` frame) `5` to `3`, `town01_field_card_boot` `5` to `0`. A harness seat.
 
+The step is not a constant of the scene either. `FUN_80016B6C` measures it: each frame's time in hblanks goes into a sixteen-entry ring (`DAT_80084098`, cursor `gp+0x440`), and the step is the longest entry against the `0xF0` / `0x1FE` / `0x2D0` rungs, raised to the floor `DAT_8007B9D8`, which the field init stores as `2` on every field scene and every world map (`0x801D6990`). So a state saved a few frames after a slow stretch runs on at the raised step until those samples leave the ring. `garmel_zeto_appears_rising` holds ten clamped samples (`700`) behind six of about `450`: retail runs ten more frames at `3` and then `2` for the rest of the film.
+
+The film seats that ring (`RetailObs::frame_cost_seat`, `World::seed_frame_cost_history`): the history, its cursor, the step bytes `0x1F800392` / `0x1F800393` off the scratchpad, and the newest sample as the cost of every frame that follows. The engine then resolves each next step by the ported law and waits the step of the frame that just ran, as the pacer's `VSync(0x1F800392)` does before it stores the new one. A newest sample reading the clamp under a step of `4` is a frame past the `0x2D0` rung, and the seat costs it there (`map01_tree_revival_cutscene` holds `4`). A harness seat; `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step for the whole film.
+
+What the seat cannot know is a cost that changes after the save. `doman_field_card_boot` (`432..449` hblanks at the save) and `korout_field_door_hop` (`471..496`) sit under the `0x1FE` rung and cross it inside their films, retail stepping `3` from there on; `field_walled_collision_pin` (`700..718`) crosses `0x2D0` and steps `4`. The engine has no frame time to measure, so those films run on at the saved cost.
+
+## Where a film parts
+
+[`autorun_field_rand_callers.lua`](../../scripts/pcsx-redux/autorun_field_rand_callers.lua) counts the calls of the `rand()` thunk `FUN_80056798` by return address, a vsync at a time, and writes the fog pool beside them (`fog_pool.csv`, the rows `LEGAIA_RC_WALK_FOG=1` writes on the engine side). Run on a film's state up to the vsync its `rng` column parts on, it names the consumer that drew more or fewer times there. The field's callers:
+
+| Return address | Consumer | Draws |
+|---|---|---|
+| `0x801D61CC`, `0x801D61E8`, `0x801D6200` | the ambient emitter `FUN_801D6058`, scene arm | `72` a pass: twenty-four candidates, three draws each |
+| `0x801D6214`, `0x801D622C`, `0x801D6238` | the same arm's bursts | one for a burst's size, two for each of its points |
+| `0x801D629C..0x801D6560` | the fog spawner `FUN_801D629C` | five for a record it seats, two for one the overworld depth test drops, none for one it rejects |
+| `0x801D371C`, `0x801D4600` | the move-VM extension `FUN_801D362C`: an ambient part's random operand | one an op |
+| `0x80038C74`, `0x80039080` | the scripted-motion VM `FUN_80038158`: a wanderer's stream | one a decision |
+
+Every film that parts before its end parts on one of five causes, read off that probe at the first parted pass:
+
+| Cause | Films | Kind |
+|---|---|---|
+| The ambient parts the state holds and the seed does not: a spawner part's children live longer than the seed's settle, so the engine stands fewer of them (`garmel`: nine of retail's twenty-nine), and their random operands go undrawn | the five `garmel` films, `dohaty_field_card_walk`, `jagaroom_field_door_hop`, `koin1_field_route_walk`, `map02_field_door_hop`, `uru2_field_door_hop` | harness seat |
+| An open talk the seed does not resume: retail's wanderers stand under it and draw nothing for the whole film, the engine's are free and draw | `retock_innkeeper_talk_open`, `retock_inn_stay_prompt` | harness seat |
+| A wanderer's stream on another phase than the state's | `balden_field_route_walk`, `koin6_field_route_walk`, `doman_field_card_boot` | harness seat |
+| The fog pool: a burst point the spawner seats on one side and rejects on the other, the pools having parted earlier with no draw to show it | `taiku2_field_door_hop`, `tower_field_walk`, `vell_fog_field`, `rikuroa_field_cave_exit_arrival`, `rikuroa2_field_door_hop`, `concnow_field_door_hop`, `teien_field_run`, `s2_rimelm_town01`, `son_arrival_from_doman`, `map01_tree_revival_cutscene` | engine (fog pool) or seat, film by film |
+| The measured step changing inside the film | `korout_field_door_hop`, `field_walled_collision_pin` | retail's frame time |
+
+The pass clock is the cause only in the last row: with the ring seated, every other film whose emitter draws each pass opens its passes on retail's vsyncs up to the pass it parts on.
+
 ## The rand ratchet
 
 How far a film's `rng` column agrees with retail's is one number for "the field runs
@@ -132,7 +162,7 @@ runs it as `walk-film-rand`.
 
 A film that parts early is not by itself a defect: an engage, a touch or a CD load
 the engine answers at once separates the two runs for good, and the count stops
-there. The ratchet holds what agrees, so a consumer moved onto the wrong clock shows
+there ([where a film parts](#where-a-film-parts) names the cause film by film). The ratchet holds what agrees, so a consumer moved onto the wrong clock shows
 as a fall on every film that draws through it.
 
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).
