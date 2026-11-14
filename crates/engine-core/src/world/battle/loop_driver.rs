@@ -685,7 +685,9 @@ impl World {
             self.battle.spell_cam = None;
             self.battle.sm_ran_state = Some(self.battle_ctx.action_state);
             self.battle.sm_ran_actor = Some(self.battle_ctx.active_actor);
-            self.step_battle()
+            let outcome = self.step_battle();
+            self.battle.sm_ran_target_clip = Some(self.battle_target_clip_tests());
+            outcome
         } else {
             StepOutcome::Stay
         };

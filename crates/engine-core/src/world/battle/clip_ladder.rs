@@ -83,6 +83,32 @@ impl World {
         cur == map[2] || (cur == map[3] && cur != 0)
     }
 
+    /// The post-strike arms' two clip tests on `acting`'s target
+    /// `actor[+0x1DD]`: on its knockdown / get-up ([`Self::battle_on_knockdown`]),
+    /// and on the death clip `7` / `8`. `(false, false)` with no target.
+    pub fn battle_target_clip_tests_of(&self, acting: u8) -> (bool, bool) {
+        let Some(t) = self
+            .actors
+            .get(usize::from(acting))
+            .map(|a| usize::from(a.battle.active_target))
+            .filter(|&t| t < 8)
+        else {
+            return (false, false);
+        };
+        (
+            self.battle_on_knockdown(t),
+            matches!(self.battle_current_anim(t), 7 | 8),
+        )
+    }
+
+    /// [`Self::battle_target_clip_tests_of`] on the acting seat, tagged with
+    /// it, as the SM's pass leaves them (`BattleState::sm_ran_target_clip`).
+    pub(in crate::world) fn battle_target_clip_tests(&self) -> (u8, bool, bool) {
+        let acting = self.battle_ctx.active_actor;
+        let (knocked, death) = self.battle_target_clip_tests_of(acting);
+        (acting, knocked, death)
+    }
+
     /// Actor `slot`'s `+0x1EF..+0x1F3` reaction map; `None` without clips.
     pub(in crate::world) fn battle_reaction_map(&self, slot: usize) -> Option<[u8; 5]> {
         let actor = self.actors.get(slot)?;

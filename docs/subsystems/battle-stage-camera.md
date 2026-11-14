@@ -1228,7 +1228,23 @@ The pass on which `0x20` lets go arms nothing: it stores `0x50` (`0x801E5590`)
 and jumps to the state tail at `0x801E5F64` before the fork, so the walker steps
 the increments the last held pass armed, and case 8 is armed by the Done arm a
 pass later. An Attack's Done band therefore opens with one un-re-armed step of
-case 7's table between the two framings.
+whatever the last held pass armed between the two framings.
+
+The fork reads the target's clip inside the state arm, ahead of the pass's node
+ticks, so the last held pass sees the get-up still playing and arms case 8 even
+when that pass's anim tick ends it. Read after the tick, the port's last held
+pass armed case 7, the exit pass stepped case 7's increments, and the Done band's
+live-target arm (a monster not animating keeps the live `TR.y` and pitch) held
+the stepped height for the rest of the band: `battle_garmel_party_vahn_hyper_elbow_mid`
+stood at `TR.y 832`, `TR.z 3809` on the Done arm's pass where retail's film holds
+`768` / `3440` throughout. The SM pass now records the two clip tests as it leaves
+the target (`BattleState::sm_ran_target_clip`), and `battle_done_band` reads them
+for the seat that pass ran on, on retail's cadence. Over the arts films the Done
+band's camera then reads retail's to the unit, and the films rise: Sonic Javelin
+`.832` to `.881`, Hyper Elbow `.820` to `.852`, Lizard Tail `.882` to `.909`, Noa's
+chain `.874` to `.886`. Grade `capture`: the films' target clip
+and camera rows, beside the same read order the cast driver's case `0xA` shows
+([the clip clock](#the-cast-drivers-clip-clock)).
 
 That pass is also the one on which the change that ended the return happened:
 the target's get-up finished, or its defeat fade reached black (the `0x20`

@@ -1007,6 +1007,14 @@ pub struct BattleState {
     /// actor's turn (the Done band, the gate `0x5A`) frames that actor, and
     /// the host may arm the next one before the camera steps on the pass.
     pub sm_ran_actor: Option<u8>,
+    /// The acting actor's target as the SM's last pass left it, ahead of
+    /// that pass's anim tick: `(acting seat, on knockdown / get-up, on the
+    /// death clip 7 / 8)`, the clip tests the post-strike arms hand `FUN_801D5854` case
+    /// 7 or 8 on. Retail's framing call sits inside the state arm
+    /// (`0x801E5660..0x801E5684` in `0x20`), before the node ticks, so a
+    /// get-up that ends on a pass is still read as the get-up by that pass's
+    /// framing. Not a retail field.
+    pub sm_ran_target_clip: Option<(u8, bool, bool)>,
     /// The battle frame the defeat fade's sink last lowered its bodies on
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
@@ -1675,6 +1683,7 @@ impl BattleState {
             frame_step_seed_after_accum: None,
             frame_step_seed_in_state: false,
             sm_ran_state: None,
+            sm_ran_target_clip: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

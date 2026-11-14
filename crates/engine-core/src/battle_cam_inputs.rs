@@ -586,7 +586,25 @@ pub fn battle_post_action_target(
 /// party seat (retail's `sp+0x20` spill, `< 3`; the engine seats the party
 /// first, so `< party_count`), and whether that target's live HP has reached
 /// zero.
+///
+/// The two clip tests are read as the SM's pass left the target, ahead of
+/// that pass's anim tick (`BattleState::sm_ran_target_clip`), on retail's
+/// cadence: the framing call sits inside the state arm, so the pass on which
+/// a get-up ends still frames it as the get-up. Read live after the tick, the
+/// return `0x20`'s last held pass armed case 7 where retail's held case 8,
+/// and the walker stepped its increments through the exit pass: every Done
+/// band of `battle_garmel_party_vahn_hyper_elbow_mid` then held `TR.y 832`
+/// over retail's `768` (the live-target arm keeps the live `TR.y` of a
+/// monster that is not animating).
 pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInputs {
+    let (target_knocked, target_death_clip) = match world.battle.sm_ran_target_clip {
+        Some((seat, knocked, death))
+            if seat == acting_slot && world.toggles.battle_sm_frame_cadence =>
+        {
+            (knocked, death)
+        }
+        _ => world.battle_target_clip_tests_of(acting_slot),
+    };
     script::DoneBandInputs {
         category: world
             .actors
@@ -595,10 +613,8 @@ pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInput
         target_party_seat: battle_target_slot(world, acting_slot)
             .is_some_and(|t| t < world.party.party_count as usize),
         target_dead: battle_post_action_target(world, acting_slot).is_some_and(|t| !t.live),
-        target_knocked: battle_target_slot(world, acting_slot)
-            .is_some_and(|t| world.battle_on_knockdown(t)),
-        target_death_clip: battle_target_slot(world, acting_slot)
-            .is_some_and(|t| matches!(world.battle_current_anim(t), 7 | 8)),
+        target_knocked,
+        target_death_clip,
         results_begun: world.battle.victory.is_some(),
     }
 }
