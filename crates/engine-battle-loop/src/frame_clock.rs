@@ -564,7 +564,13 @@ pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
 
 /// What one after-image ghost of a body of `triangles` costs a frame
 /// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose
-/// polygon count the frame does not know (the party's assembled forms).
+/// polygon count the frame does not know. A party member's count is that of
+/// the objects its seat draws: on PCSX-Redux recordings of the Super Arts
+/// (`battle_jou_party_*_super_open`, `--ghost-trace`) a full party's frame
+/// drops `90` to `105` hblanks a ghost where the slow motion's two ghosts go,
+/// and rises `140` a ghost where they come back in the finisher, against the
+/// flat `36` that left those frames under `0x2D1` (step `3` where retail's
+/// run `4`).
 pub const fn ghost_draw_cost(triangles: Option<u16>) -> u16 {
     match triangles {
         Some(t) => {

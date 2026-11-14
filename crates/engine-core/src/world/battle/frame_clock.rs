@@ -265,11 +265,24 @@ impl World {
                 },
             )
             .len();
-            let triangles = a
-                .battle_body_triangles
-                .filter(|&(id, _)| Some(id) == a.battle_monster_id)
-                .map(|(_, t)| t)
-                .filter(|&t| t > 0);
+            let triangles = match a.battle_monster_id {
+                Some(monster) => a
+                    .battle_body_triangles
+                    .filter(|&(id, _)| id == monster)
+                    .map(|(_, t)| t),
+                // A party member's ghost re-runs the objects its seat draws.
+                None => a.battle_object_triangles.as_deref().map(|objects| {
+                    let drawn = a.battle_drawn_objects.as_deref();
+                    let sum: u32 = objects
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, _)| drawn.is_none_or(|d| d.get(i).copied().unwrap_or(false)))
+                        .map(|(_, &t)| u32::from(t))
+                        .sum();
+                    u16::try_from(sum).unwrap_or(u16::MAX)
+                }),
+            }
+            .filter(|&t| t > 0);
             let each = ghost_draw_cost(triangles);
             cost = cost.saturating_add(each.saturating_mul(u16::try_from(n).unwrap_or(u16::MAX)));
         }
@@ -1738,6 +1751,47 @@ mod tests {
             step_of_cost(measured_frame_cost(3, 0x1F) + frame_load_cost(25, 0)),
             3
         );
+    }
+
+    /// A party member's two Super Art ghosts cost what the objects its seat
+    /// draws link, as a monster's cost its body's: on a full party they carry
+    /// a strike frame over `0x2D0`, where two flat ghosts left it on step 3.
+    #[test]
+    fn a_party_members_ghosts_cost_the_objects_it_draws() {
+        use legaia_engine_battle_loop::frame_clock::{
+            GHOST_DRAW_COST, ghost_draw_cost, measured_frame_cost, step_of_cost,
+        };
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.actors.push(crate::world::Actor::default());
+        let frame = crate::world::BattleGhostFrame {
+            pose: legaia_anm::player::PoseFrame {
+                bone_outputs: Vec::new(),
+                factor: 0,
+                finished: false,
+            },
+            pos: [0; 3],
+            ghost_eligible: true,
+            clip_key: 0,
+            variant_track: Default::default(),
+            frame: 0,
+        };
+        let a = &mut w.actors[0];
+        a.battle_pose_history = std::iter::repeat_n(frame, 8).collect();
+        assert_eq!(
+            w.battle_frame_load_cost(),
+            2 * GHOST_DRAW_COST,
+            "no form: flat"
+        );
+        let a = &mut w.actors[0];
+        a.battle_object_triangles = Some(vec![600, 400, 300].into());
+        a.battle_drawn_objects = Some(vec![true, true, false]);
+        let each = ghost_draw_cost(Some(1000));
+        assert_eq!(w.battle_frame_load_cost(), 2 * each);
+        let base = measured_frame_cost(3, 0x1E);
+        assert_eq!(step_of_cost(base + 2 * GHOST_DRAW_COST), 3);
+        assert_eq!(step_of_cost(base + 2 * each), 4);
     }
 
     #[test]
