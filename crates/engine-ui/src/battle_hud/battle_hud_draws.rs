@@ -418,9 +418,22 @@ pub fn battle_hud_draws_for(
     // screen the whole roster cluster is parked off-screen, so a frame shows
     // one or the other and never both.
     let message_bar = frame.message_bar.filter(|m| !m.is_empty());
+    // The message bar is queued behind the readout bar on the same seat and
+    // rises over it from below (`FUN_801D8DE8(0x5B, 0)`'s glide), so the
+    // readout stays in view until the bar's frame covers it: retail films of
+    // Glare and Melt Spray hold the plate through the first half of the
+    // glide, the frame's top edge climbing under it. The readout's numbers
+    // ride the text layer, which draws over every sprite, so the port drops
+    // the readout once the frame's top reaches the plate's bottom.
+    let bar_hides_readout = message_bar.is_some()
+        && BAR_NAME.1
+            - crate::battle_hud_chrome::BANNER_PEN_INSET
+            - crate::battle_hud_chrome::BANNER_BORDER
+            + frame.message_bar_dy
+            <= BAR_Y + PLATE_H;
     let bar_member = frame
         .active_slot
-        .filter(|_| message_bar.is_none())
+        .filter(|_| !bar_hides_readout)
         .and_then(|a| live_party.iter().find(|(i, _)| *i == a as usize).copied());
 
     // Rows a host-drawn box claims this frame, skin included, and the row
