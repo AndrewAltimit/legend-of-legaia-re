@@ -746,6 +746,39 @@ both the mask table and the record the piece is written into (`char *
 0x414`, `0x801DB678`). A lone Noa is row 1, and a member who has not
 joined has no row.
 
+**Which equip byte the piece lands in** comes from the piece, not from the
+row (`0x801DB5E8..0x801DB670`). The equipment record's `(+7 & 0x60) >> 5`
+class picks an equip-screen row, and the row picks the record byte:
+
+| Class (`+7 & 0x60`) | Row | Record byte (`+0x196 +`) | Source |
+|---|---|---|---|
+| `0x40` weapon | `0` | `2` Vahn, `3` Noa, `2` Gala | the halfword table `0x8007B42C + char * 2` (`0x801DB648..0x801DB658`) |
+| `0x20` head | `1` | `1` | the row map `DAT_801E43E8[row]` (`0x801DB664..0x801DB66C`) |
+| `0x00` body | `2` | `0` | the same map |
+| `0x60` footwear | `3` | `4` | the same map |
+
+The piece that byte held goes back to the bag (`FUN_800421D4(old, 1)`,
+`0x801DB69C..0x801DB6A8`) and the new id is stored over it (`sb v0,0x75e(s0)`,
+`0x801DB6B8`; `0x75E` is record `+0x196` seen from the `0x80084140` window).
+The pause menu's Equip screen resolves the same bytes from the same class
+(`FUN_801E5A08`), so a piece is worn in one place whichever screen put it on.
+Port: `engine-menus::equip_session::record_byte_for_category`, the one rule
+the shop commit, the party compare's trial equip and the Equip screen share.
+The record byte order is not the engine's `EquipSlot` order (weapon-first):
+indexing a record with the enum files body armour on Vahn's weapon byte and a
+weapon on the body byte. The disc-gated sweep `shop_equip_slot_disc`
+(`engine-menu-runtime`) buys every piece of equipment every gold shop sells
+for every character who can wear it and holds the shop's byte to the Equip
+screen's.
+
+A save can carry the misfiling: a record with **body armour on byte `2`** or
+**a weapon on byte `0`**, which no retail writer produces. The load puts such
+a piece back (`World::repair_misfiled_equipment`, run by the save load): to
+its own byte when that byte is empty, else to the bag, clearing the byte it
+left; on Noa, whose byte `2` is the Ra-Seru byte, the Ra-Seru stage found in
+the bag returns to it. A record lifted from a retail card matches neither
+pattern and loads untouched.
+
 Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
 2`) - the retail item shop carries no per-shop gold price, which is
 why the sell-side proceeds derive from the same table the buy list
@@ -780,7 +813,7 @@ either - the accrual is the sub-screen's, one phase earlier.
 ### State-machine routing
 
 The menu state machine (`engine-menus::menu`) owns the per-screen transition graph
-(`commit_route` for Cross, `back_route` for Triangle); the `MenuHost` commit
+(`commit_route` for Cross, `back_route` for a cancel); the `MenuHost` commit
 hooks only apply side effects. The graph still carries a `ShopConfirm` node,
 but the live flow leaves `ShopQuantity` through the stepper's own commit and
 never enters it:
@@ -788,13 +821,43 @@ never enters it:
 ```
 ShopBuy/ShopSell --Cross--> ShopQuantity --Cross--> ShopConfirm --Cross--> ShopBuy
        |                          |                       |
-       | Triangle                 | Triangle              | Triangle
-   ShopMenu --Triangle--> ShopExit   ShopBuy          ShopQuantity
+       | cancel                   | cancel                | cancel
+   ShopMenu --cancel--> ShopExit     ShopBuy          ShopQuantity
 ```
 
-Triangle from the buy or sell list returns to the top shop menu
-(`ShopMenu`), and only Triangle there leaves, through the transient
-`ShopExit` screen. `ShopExit` is auto-advancing: on entry it fires its
+A cancel from the buy or sell list returns to the top shop menu
+(`ShopMenu`), and a cancel there (or its Quit row) leaves, through the
+transient `ShopExit` screen.
+
+### The cancel button
+
+**Circle is the shop's cancel at every level.** No shop screen names a
+button: each tests the pad edge `_DAT_8007B874` against the cancel mask word
+`0x800846D4`, which the new-game init `FUN_80034A6C` seeds to `0x21` =
+Circle | L2 (`li v0,0x21` / `sw v0,0x594(s0)`, `0x80034AA4..0x80034AA8`), next
+to the confirm word `0x800846D0 = 0x44` = Cross | L1. Nothing else in
+`SCUS_942.54` or the overlays writes either word
+([field-locomotion.md](field-locomotion.md)).
+
+| Level | Reader of the cancel mask | A cancel does |
+|---|---|---|
+| Mode select | the picker `FUN_801D688C` (`0x801DB09C`; return `2` at `0x801DB0B0`) | leaves the shop |
+| Buy list, sell list | the list kernel `FUN_80032A44` (`0x80032D5C..0x80032D74`, cue `0x37`) | back to the mode select |
+| Buy / sell quantity | the stepper's own decode | back to its list, nothing traded |
+| Recipient picker | `FUN_801D688C` | back to the buy list, nothing bought |
+| Point Card notice | confirm \| cancel (`FUN_801DB7F4` case 4) | dismisses the notice; the purchase stands |
+
+There is no exit confirmation: Quit and a cancel on the mode select both
+start the close ([Leaving](#screen-composition)).
+
+Triangle is in neither mask - it is the field's open-the-menu button
+(`0x800846D8 = 0x10`) and does nothing on a retail shop screen. The port
+takes it as a **second cancel** on every shop level, an engine convenience.
+The router and the cue read one predicate, `engine-menus::menu::MenuInput::cancel`,
+so the button that sounds the cancel is the button that backs out. L1 and L2,
+retail's alternates for confirm and cancel, are not read by the port's menu
+input. `shop_cancel_levels` (`engine-menu-runtime`) walks each level with
+each button and counts the cue. `ShopExit` is auto-advancing: on entry it fires its
 one-shot commit (clears the trade and recipient sessions), holds while the
 windows slide out (`transient_hold_frames`, [above](#screen-composition)), then
 routes to the menu's `Closing` state, dropping the shop session as it leaves. The same routing drives the inn (`InnConfirm` Yes →

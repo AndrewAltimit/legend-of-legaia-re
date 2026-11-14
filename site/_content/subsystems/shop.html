@@ -21,7 +21,7 @@
 <section class="doc-section" id="flow">
   <h2>Flow</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shop flow. Talking to a merchant runs field-VM op 0x49, which hands the stock to the menu overlay's mode panel: Buy, Sell or Quit. Buy opens the stock list priced from the item table, Sell the bag. Either list leads to the quantity stepper; buying equipment first asks who it is for. Committing moves the gold and returns to the list. Quit, or Triangle from a list, ends the shop and the script resumes past the merchant.">
+    <svg viewBox="0 0 860 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shop flow. Talking to a merchant runs field-VM op 0x49, which hands the stock to the menu overlay's mode panel: Buy, Sell or Quit. Buy opens the stock list priced from the item table, Sell the bag. Either list leads to the quantity stepper; buying equipment first asks who it is for. Committing moves the gold and returns to the list. Quit, or a cancel on the mode panel, ends the shop and the script resumes past the merchant.">
       <defs><marker id="sh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="110" width="150" height="56" rx="5"/>
       <text class="dg-label" x="95" y="134">Merchant</text><text class="dg-sub" x="95" y="152">field-VM op 0x49</text>
@@ -50,9 +50,9 @@
       <path class="dg-edge-dim" d="M810 130 L810 12 L470 12 L470 28" marker-end="url(#sh-arrow)"/>
       <text class="dg-edge-label" x="640" y="24" text-anchor="middle">back to the list - keep shopping</text>
       <path class="dg-edge" d="M275 166 L275 228" marker-end="url(#sh-arrow)"/>
-      <text class="dg-edge-label" x="267" y="204" text-anchor="end">Quit / Triangle</text>
+      <text class="dg-edge-label" x="267" y="204" text-anchor="end">Quit / cancel</text>
     </svg>
-    <figcaption>Every commit returns to the list so the player keeps shopping; the only way out is Quit on the mode panel or Triangle from a list. Sell and Quit grey out together when the bag is empty, and a confirm on Sell then buzzes and keeps the mode panel up: an empty bag never reaches the sell list.</figcaption>
+    <figcaption>Every commit returns to the list so the player keeps shopping; the only way out is Quit, or a cancel, on the mode panel. Cancel is Circle at every level - the mode panel, both lists, the quantity stepper and the who-is-it-for rows each back out one step; Triangle, which retail leaves unread here, is the port&rsquo;s second cancel. Sell and Quit grey out together when the bag is empty, and a confirm on Sell then buzzes and keeps the mode panel up: an empty bag never reaches the sell list.</figcaption>
   </figure>
   <ol class="steps">
     <li><b>Talk to the merchant</b><span>the script reaches op <code>0x49</code> sub-0; the field VM parks and hands the stock bytes to the menu</span></li>
@@ -93,7 +93,7 @@
     <li><strong>Sell price</strong> is half the item table's price times the quantity, rounded down. A zero-priced item shows &ldquo;Cannot sell&rdquo;.</li>
     <li><strong>Stack cap 99.</strong> A row greys once the held count reaches 99, and the quantity picker clamps to <code>99 &minus; held</code>.</li>
     <li><strong>Point Card</strong> (item <code>0xFE</code>) is a third purse, passive while held. Each purchase credits <code>price / 20</code> per unit - 5% - before the gold debit; sales never accrue. A one-line toast (window 31) shows the balance after each buy and holds until a confirm or cancel press, which plays cue <code>0x20</code> on the way back to the list; without the card the buy returns to the list on the confirm&rsquo;s own frame.</li>
-    <li><strong>Buying equipment</strong> first asks who it is for: a party row checks the equip mask and, on a match, equips immediately and returns the replaced piece to the bag. The picker&rsquo;s rows are the <em>present party</em>, not the four character records: the cursor gets party-size rows (<code>0x801DB434</code>) and a confirmed row resolves to its character through the party list (<code>0x801DB554</code>), so a lone Noa is row 1 and a member who has not joined has no row.</li>
+    <li><strong>Buying equipment</strong> first asks who it is for: a party row checks the equip mask and, on a match, equips immediately and returns the replaced piece to the bag. The picker&rsquo;s rows are the <em>present party</em>, not the four character records: the cursor gets party-size rows (<code>0x801DB434</code>) and a confirmed row resolves to its character through the party list (<code>0x801DB554</code>), so a lone Noa is row 1 and a member who has not joined has no row. The piece lands in the equip byte its own class names (<code>0x801DB5E8..0x801DB670</code>): body armour in byte <code>0</code>, head gear in <code>1</code>, footwear in <code>4</code>, and a weapon in the wearer&rsquo;s own weapon byte (<code>2</code> for Vahn and Gala, <code>3</code> for Noa) - the same bytes the pause menu&rsquo;s Equip screen writes, so a piece is worn in one place whichever screen put it on.</li>
   </ul>
   <details class="disclosure">
     <summary>Details: what spends the Point Card</summary>
