@@ -58,9 +58,14 @@ lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
 a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
 panel are paid for, keeps the step with a slimmer header band rather than
-falling to 1x. A window taller than a step keeps the step and lengthens the
+falling to 1x. A window under two steps, such as 640x480, takes a fractional
+step (3/2, 4/3 or 5/4) so the launcher fills it rather than drawing at 1x in
+its middle. A window taller than a step keeps the step and lengthens the
 two columns instead, so the option list shows more rows at once (up to the
-whole list) rather than sitting in empty margins.
+whole list) rather than sitting in empty margins; a wider one widens both
+columns, up to a 16:9 layout, so the help text wraps less. The gold-filled
+button is the one under the cursor; *Play* letters itself in gold when it is
+not.
 
 | Key / mouse | Does |
 |---|---|
