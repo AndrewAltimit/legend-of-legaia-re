@@ -339,8 +339,8 @@ impl World {
     }
 
     /// Run the op-`0x20` calls PROT 0927's parts made since its last tick
-    /// through its stager `FUN_801F85A8`, in call order: the spawn arms seat
-    /// their records on the caller, arms 3..5 raise the salmon fades and the
+    /// through its stager `FUN_801F85A8`, in call order (the spawn arms'
+    /// seats are made on the caller's frame, behind the part tick): arms 3..5 raise the salmon fades and the
     /// shake word, and arm 4's monster-row sweep lands the cast's outcome
     /// (the band's fold, once: retail's arm 4 is where the damage numbers
     /// come up, long before the body's arm 26).
@@ -352,10 +352,9 @@ impl World {
     ) {
         use legaia_engine_cast::cast_module_ticks as ticks;
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
-        for (arm, caller) in calls {
-            for s in ticks::juggernaut_stager_spawns(arm, caller) {
-                self.casting.seat_stager_spawn(927, &s);
-            }
+        // The spawn arms' seats were made on the caller's frame
+        // (`World::run_summon_part_stager_calls`).
+        for (arm, _) in calls {
             if let Some(t) = ticks::juggernaut_stager_fade(arm) {
                 let mut fade = None;
                 legaia_engine_system::fade::spawn_fade(

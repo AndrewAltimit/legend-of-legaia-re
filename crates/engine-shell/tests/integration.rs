@@ -46,6 +46,7 @@ mod scenarios;
 mod soak_harness;
 mod tower_lift_arrival_disc;
 mod v0_1_playthrough;
+mod water_gate_issues;
 mod world_map_camera_remap;
 // --- lane K ---
 mod casino_seat_round_trip;

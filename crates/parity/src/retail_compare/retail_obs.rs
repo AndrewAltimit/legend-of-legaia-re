@@ -69,6 +69,9 @@ pub struct RetailObs {
     /// [`RetailObs::seat_view_window`] from the state's scratchpad, on a
     /// field state only - `None` when the state carries no scratchpad.
     pub view_window: Option<[i8; 4]>,
+    /// The packets and fog sheets in the table the state's frame is building
+    /// ([`retail_frame_table`]); `None` without a scratchpad image.
+    pub frame_table: Option<(usize, usize)>,
     /// The live game-state window lifted as a save.
     pub save: Option<legaia_save::SaveFile>,
     /// The field party HUD's idle countdown `_DAT_801F348C` (field-overlay
@@ -166,6 +169,12 @@ pub struct RetailObs {
     /// The same records with no step back to the displayed frame
     /// ([`retail_fog_live`]): what the walk film resumes from.
     pub fog_live: Vec<legaia_engine_field::fog_particles::FogParticle>,
+    /// `_DAT_8007BCA8`, the live count the last render step wrote and the
+    /// next pass's spawner tests against the cap. A state saved between a
+    /// pass's spawns and its render step holds more alive records than this:
+    /// the spawns are in, and the records the step is about to free are
+    /// still up.
+    pub fog_live_count: u16,
     /// `_DAT_8007BCAC`, the camera's eased vertical offset, which the sheets
     /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
     /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
@@ -185,6 +194,9 @@ pub struct RetailObs {
     /// render banks as the displayed frame drew them, handed to the image
     /// child as `LEGAIA_SEAT_TURNING_PARTS`.
     pub turning_parts: Vec<legaia_engine_core::world::ambient::AmbientBankSeed>,
+    /// The live ambient parts' move-VM program words ([`retail_part_vm`]),
+    /// which the walk film seats so the parts' waits run in retail's phase.
+    pub part_vm: Vec<legaia_engine_core::world::ambient::AmbientVmSeed>,
     /// The text balloon the displayed frame drew ([`retail_balloon`]) - the
     /// place-name banner a door leaves up - for a field state, handed to the
     /// image child as `LEGAIA_SEAT_BALLOON` (`none` when it drew none).
@@ -372,6 +384,7 @@ impl RetailObs {
                 rd32(ram, ENTRY_OPERAND + 4) as i16,
             ),
             view_window: None,
+            frame_table: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd16(ram, HUD_COUNTDOWN)),
@@ -436,6 +449,7 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            fog_live_count: game_anchors::u16_at(ram, 0x8007_BCA8),
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),
@@ -449,6 +463,11 @@ impl RetailObs {
                 .flatten(),
             turning_parts: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_turning_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
+            } else {
+                Vec::new()
+            },
+            part_vm: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_part_vm(ram)
             } else {
                 Vec::new()
             },
@@ -1103,6 +1122,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_view_window(st.scratch_ram().ok());
             obs.seat_walk_rewind(st.scratch_ram().ok());
+            obs.frame_table = st
+                .scratch_ram()
+                .ok()
+                .and_then(|s| retail_frame_table(ram, s));
             Ok(obs)
         }
         _ => {
@@ -1114,6 +1137,9 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_view_window(st.scratchpad());
             obs.seat_walk_rewind(st.scratchpad());
+            obs.frame_table = st
+                .scratchpad()
+                .and_then(|s| retail_frame_table(st.main_ram(), s));
             Ok(obs)
         }
     }

@@ -72,6 +72,28 @@ PAGE_STATE_RULES = [
         "and the sea covered town01's beach off retail's vantage",
     },
     {
+        "what": "the scene blend pass blends a mesh's semi prims far to near",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "orderSemiPrims(o, m.cpuIndices, m.cpuPositions,",
+        "why": "the window blends every semi prim by its centroid depth whatever "
+        "its mode; blended a mode at a time, the baked FX stream drew Genocidal "
+        "Cannon's subtractive ground shadow over the additive rings drawn first, "
+        "which the window draws over it (`cast_cannon` tick 1121, 1.7% of a frame)",
+    },
+    {
+        "what": "the opaque pass hands a depth tie to the first-drawn primitive",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "before",
+        "source": "gl.depthFunc(gl.LESS);",
+        "then": "drawOpaque();",
+        "why": "the window's opaque pipelines test strictly (reversed-Z "
+        "`Greater`); at LEQUAL the last of two coincident primitives won, so "
+        "Genocidal Cannon's four overlapping octagon nodes, one baked stream "
+        "on the page, showed another quadrant of their page than the window's "
+        "(`cast_cannon` 20% of a frame off)",
+    },
+    {
         "what": "an untextured screen primitive's tie nudge is coarser than SwiftShader's sub-pixel grid",
         "path": REPO / "site/js/play-view-frame.js",
         "kind": "contains",

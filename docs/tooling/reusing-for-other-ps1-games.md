@@ -355,8 +355,9 @@ practices, and they apply whichever route the port takes: what decompilation,
 static recompilation and reimplementation each start from and buy is laid out
 in [porting by reimplementation](../porting-by-reimplementation.md#three-ways-to-port-a-game). [The retail-oracle method](retail-oracle-method.md) writes them up
 engine-neutral, in the order to adopt them, with this project only as worked
-examples. Each is documented for Legaia; the pages below are the reference,
-and nothing in them depends on Legaia beyond the examples.
+examples. Each is documented for Legaia; the pages below are the reference.
+The practices do not depend on Legaia; much of the code that carries them out
+does, and [the table below](#how-far-each-instrument-carries) says where.
 
 ### Measure against retail RAM and VRAM
 
@@ -366,11 +367,44 @@ catalogued retail save state, read the observables out of the state's own RAM
 its VRAM, seed the reimplementation into the same situation, tick it until it
 settles, and score each channel in `0..1`. A committed baseline ratchets the
 scores, so a change that loses accuracy fails. Nothing runs an emulator: the
-save state is the oracle. The time-axis sibling,
-[`cast-sequence-oracle.md`](cast-sequence-oracle.md), records one sequence on
-both sides and scores it frame by frame; [`ratchet-integrity.md`](ratchet-integrity.md)
+save state is the oracle. The time-axis siblings,
+[`cast-sequence-oracle.md`](cast-sequence-oracle.md) and
+[`walk-film.md`](walk-film.md), record one sequence on both sides and score it
+frame by frame, and
+[`retail-kernel-differential.md`](retail-kernel-differential.md) runs the
+original's routines off the disc beside their ports, which reaches inputs no
+state holds; [`ratchet-integrity.md`](ratchet-integrity.md)
 covers keeping a ratchet honest (a baseline may not loosen silently, and a
 skipped test is not a passing one).
+
+### How far each instrument carries
+
+The method pages transfer as method. The code behind them does not transfer
+evenly: some of it describes the PlayStation or nothing but git, and some of
+it is this game's addresses from the first line. The table says which, so a
+second project knows what it takes and what it writes.
+
+| Instrument | What carries | What is Legaia's |
+|---|---|---|
+| [Routine differential](retail-kernel-differential.md) | `psx-retail-exec` as a crate: the R3000 interpreter, its GTE, call hooks and the entry ledger | The image loaders for `SCUS_942.54` and the PROT overlays, the `differential!` macro in the crate's tests, every comparison |
+| [State corpus](retail-compare.md) | The state readers, the manifest (`psx_ram_image::scenarios`), the seed-and-score method | `legaia-parity`: every observable's address, the seeding, the channels |
+| [Films](cast-sequence-oracle.md) | The probe library, the pairing-on-the-game's-clock idea, the per-vsync seed log | The probes' addresses, the action-state and module-phase keys, the cue ring |
+| [Sound](../subsystems/audio.md#the-audio-state-sweep) | The SPU and sequencer models, the state readers' SPU side, recording the emulator's output | The libsnd record addresses, the keying and cue differentials |
+| [Ratchet integrity](ratchet-integrity.md) | `check-baseline-loosening.py`'s mechanism and ledger, `disc-test-tally.py`'s skip count | The `RULES` table of this repository's baselines, the `LEGAIA_*` variable names |
+| [Revert scan](build-and-test-speed.md#the-full-gate) | `revert-scan.py` as it stands: it reads git and nothing else | Nothing |
+| [Disc denominators](disc-coverage.md) | The counting method, `psx-iso` for the walk | The PROT archive, the overlay map, the format classes |
+| [Port catalog, provenance](port-catalog.md) | The `// PORT:` tag convention, deriving status from the tree, gating the delta | The dump corpus layout and its address ranges |
+| [Full-game ladder](full-game-ladder.md) | Tiers per story segment, a continuous run, a seed set | The scripted hand, the milestones, the saves |
+| [Determinism, soak](determinism-replay.md) | A pad-transition text file, the twice-run test, seeded random play with detectors | Both drive this engine's session |
+| [Host pair, frame hash, cost ratchet](host-drift.md) | The methods: paired hosts, hashed frames, counted costs | The scripts drive this project's window and play page |
+| [Doc and shell gates](doc-density.md) | `check-doc-density.py`, `check-md-links.py`, `check-shell-observer-traps.py` | The paths they scan |
+
+Two rows are worth taking first. The routine differential needs only the
+executable's bytes and an interpreter, so it works before any engine runs, and
+`psx-retail-exec` knows nothing of Legaia. The ratchet's two guards (a
+baseline may not loosen without a ledger entry, a skip is not a pass) cost an
+afternoon and protect every score that comes after. [The coverage map](../porting-by-reimplementation.md#what-is-tested-and-the-gap-each-test-closes)
+lists every instrument by the gap it closes.
 
 ### Grade every claim by its evidence
 

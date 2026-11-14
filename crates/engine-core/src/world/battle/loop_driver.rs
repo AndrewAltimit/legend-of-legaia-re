@@ -293,13 +293,11 @@ impl World {
             if delta != 0 {
                 a.assign_hp_bar(delta.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16);
             }
+            // Retail throws no numeral: `FUN_801E6968` and the applier's
+            // revive arm push nothing onto the ring, so the readout rolls up
+            // to max HP alone. The heal-numeral enhancement throws one.
             self.stand_revived_party_member(slot);
-            self.battle.hit_fx.push(BattleHitFx {
-                target_slot: slot as u8,
-                amount: max_hp,
-                is_heal: true,
-                is_crit: false,
-            });
+            self.push_heal_numeral(slot as u8, max_hp);
         }
     }
 
@@ -685,7 +683,9 @@ impl World {
             self.battle.spell_cam = None;
             self.battle.sm_ran_state = Some(self.battle_ctx.action_state);
             self.battle.sm_ran_actor = Some(self.battle_ctx.active_actor);
-            self.step_battle()
+            let outcome = self.step_battle();
+            self.battle.sm_ran_target_clip = Some(self.battle_target_clip_tests());
+            outcome
         } else {
             StepOutcome::Stay
         };

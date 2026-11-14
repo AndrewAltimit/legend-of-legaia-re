@@ -101,17 +101,24 @@ impl PlayWindowApp {
             );
             stage.extend(text_draws_for(&layout, (8, y), color));
         }
+        // The Keys page fills the stage top to bottom, so it is fitted to
+        // the window on its own ([`fit_plate_draws`]) rather than riding the
+        // stage's whole step.
+        let mut keys_page = Vec::new();
         if self.hotkey_help {
-            stage.extend(match self.panel_page() {
-                crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
-                crate::window::settings_panel::PanelPage::Cheats => self.cheats_stage_draws(),
-                crate::window::settings_panel::PanelPage::Scenes => self.scenes_stage_draws(),
-                crate::window::settings_panel::PanelPage::Tools => self.tools_stage_draws(),
-                crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
-            });
+            use crate::window::settings_panel::PanelPage;
+            match self.panel_page() {
+                PanelPage::Settings => stage.extend(self.settings_stage_draws()),
+                PanelPage::Cheats => stage.extend(self.cheats_stage_draws()),
+                PanelPage::Scenes => stage.extend(self.scenes_stage_draws()),
+                PanelPage::Tools => stage.extend(self.tools_stage_draws()),
+                PanelPage::Keys => keys_page = self.hotkey_help_stage_draws(),
+            }
         }
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
         legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
+        fit_plate_draws(&mut keys_page, (w, h), stage_scale);
+        stage.extend(keys_page);
         stage
     }
 
@@ -121,6 +128,24 @@ impl PlayWindowApp {
     /// to.
     pub(in crate::window) fn chrome(&self) -> legaia_app_theme::chrome::Inks {
         legaia_app_theme::chrome::inks(self.chrome_dark)
+    }
+
+    /// The focused row of an `F12` page: [`focus_row_draws`] at stage row
+    /// `y` across the panel at `x0` that is `width` wide.
+    pub(in crate::window) fn push_focus_row(
+        &self,
+        out: &mut Vec<TextDraw>,
+        (x0, y): (i32, i32),
+        (width, row_h): (i32, i32),
+    ) {
+        if let Some(src) = self.battle_hud_solid_src() {
+            out.extend(focus_row_draws(
+                src,
+                (x0, y),
+                (width, row_h),
+                &self.chrome(),
+            ));
+        }
     }
 
     pub(in crate::window) fn push_scrim(
@@ -859,6 +884,57 @@ impl PlayWindowApp {
     }
 }
 
+/// Quarter steps a fitted plate scales by ([`fit_plate_draws`]).
+const PLATE_STEP_DEN: i32 = 4;
+
+/// Scale a panel's stage-pixel `draws` (its plate first among them) into a
+/// `(w, h)` surface centred, with a margin of a thirtieth of the surface's
+/// height (16 px at least) on every side: the largest quarter step that
+/// fits, never above the stage's own whole step `stage_scale`. The Keys
+/// page's two columns, pad rows and footer fill the 320x240 stage top to
+/// bottom, so at the stage's step its plate met the window's edges; fitted,
+/// it keeps nearly the same size and gains the margin. A quarter step draws
+/// the font's pixels a mix of widths, which reads fine at the 2x-and-up
+/// sizes a window gives it.
+pub(in crate::window) fn fit_plate_draws(
+    draws: &mut [TextDraw],
+    (w, h): (u32, u32),
+    stage_scale: u32,
+) {
+    let Some(first) = draws.first() else {
+        return;
+    };
+    let (mut x0, mut y0) = (first.dst.0, first.dst.1);
+    let (mut x1, mut y1) = (x0, y0);
+    for d in draws.iter() {
+        x0 = x0.min(d.dst.0);
+        y0 = y0.min(d.dst.1);
+        x1 = x1.max(d.dst.0 + d.dst.2 as i32);
+        y1 = y1.max(d.dst.1 + d.dst.3 as i32);
+    }
+    let (bw, bh) = ((x1 - x0).max(1), (y1 - y0).max(1));
+    let (w, h) = (w as i32, h as i32);
+    let margin = (h / 30).max(16);
+    let q = (((w - 2 * margin) * PLATE_STEP_DEN) / bw)
+        .min(((h - 2 * margin) * PLATE_STEP_DEN) / bh)
+        .clamp(
+            PLATE_STEP_DEN / 2,
+            stage_scale.max(1) as i32 * PLATE_STEP_DEN,
+        );
+    let px = |v: i32| (v * q).div_euclid(PLATE_STEP_DEN);
+    let origin = ((w - px(bw)) / 2, (h - px(bh)) / 2);
+    for d in draws.iter_mut() {
+        let (lx, ly) = (d.dst.0 - x0, d.dst.1 - y0);
+        let (rx, ry) = (lx + d.dst.2 as i32, ly + d.dst.3 as i32);
+        d.dst = (
+            origin.0 + px(lx),
+            origin.1 + px(ly),
+            (px(rx) - px(lx)) as u32,
+            (px(ry) - px(ly)) as u32,
+        );
+    }
+}
+
 /// The help panel's fixed rows.
 const HELP_QUIT: &str = "Close (2x: quit)";
 const HELP_SELF: &str = "Close (also ?)";
@@ -873,6 +949,35 @@ const HELP_LEGEND: &str = "Green: not as in the original game";
 /// [`HOST_HOTKEYS`](legaia_engine_session::hotkeys::HOST_HOTKEYS) table:
 /// the browser page has its own fullscreen button, so only this window
 /// lists it.
+/// Stage pixels the focus bar takes at a focused row's left edge.
+pub(in crate::window) const FOCUS_BAR_W: i32 = 2;
+
+/// The focused row of an `F12` page, as the launcher marks its own: the
+/// hover fill, then a bar in the heading gold down the row's left edge. The
+/// fill alone sat within 1.4:1 of the light panel, so a cursor on the
+/// light theme was all but invisible; the bar is the accent the panel's
+/// heading and controls line already use, so it reads on either palette.
+pub(in crate::window) fn focus_row_draws(
+    src: (u32, u32, u32, u32),
+    (x0, y): (i32, i32),
+    (width, row_h): (i32, i32),
+    ink: &legaia_app_theme::chrome::Inks,
+) -> [TextDraw; 2] {
+    let (w, h) = ((width - 4).max(0) as u32, row_h.max(0) as u32);
+    [
+        TextDraw {
+            dst: (x0 + 2, y, w, h),
+            src,
+            color: ink.hover,
+        },
+        TextDraw {
+            dst: (x0 + 2, y, FOCUS_BAR_W as u32, h),
+            src,
+            color: ink.heading,
+        },
+    ]
+}
+
 fn fullscreen_entry(on: bool) -> (&'static str, String) {
     (
         "F11",
@@ -1059,6 +1164,31 @@ fn help_panel_layout_with(
 #[cfg(test)]
 mod help_panel_tests {
     use super::*;
+
+    /// A plate as tall as the 320x240 stage keeps a margin in the window
+    /// instead of meeting its edges, stays within the stage's own step, and
+    /// sits centred.
+    #[test]
+    fn a_fitted_plate_keeps_a_margin() {
+        let quad = |x: i32, y: i32, w: u32, h: u32| TextDraw {
+            dst: (x, y, w, h),
+            src: (0, 0, 1, 1),
+            color: [1.0; 4],
+        };
+        for (w, h, scale) in [(960u32, 720u32, 3u32), (1280, 720, 3), (640, 480, 2)] {
+            let mut d = vec![quad(6, 0, 308, 240), quad(10, 4, 8, 12)];
+            fit_plate_draws(&mut d, (w, h), scale);
+            let plate = d[0].dst;
+            let margin = (h as i32 / 30).max(16);
+            assert!(plate.1 >= margin && plate.1 + plate.3 as i32 <= h as i32 - margin);
+            assert!(plate.0 >= margin && plate.0 + plate.2 as i32 <= w as i32 - margin);
+            assert!(plate.3 <= 240 * scale);
+            assert!((plate.0 - (w as i32 - plate.0 - plate.2 as i32)).abs() <= 1);
+            // The glyph stays inside its plate.
+            let g = d[1].dst;
+            assert!(g.0 > plate.0 && g.1 > plate.1);
+        }
+    }
     use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
 
     /// Every hotkey in its widest state.
@@ -1176,5 +1306,34 @@ mod help_panel_tests {
             "disc font",
         );
         eprintln!("disc font help layout: {l:?}");
+    }
+}
+
+#[cfg(test)]
+mod focus_row_tests {
+    use super::*;
+
+    /// The focused row carries a bar in the heading ink, and that bar holds
+    /// 3:1 (the WCAG floor for a non-text marker) against the fill under it
+    /// on both palettes: the fill alone did not on the light one.
+    #[test]
+    fn focused_row_has_an_accent_bar_on_both_palettes() {
+        for dark in [false, true] {
+            let ink = legaia_app_theme::chrome::inks(dark);
+            let [fill, bar] = focus_row_draws((0, 0, 1, 1), (10, 17), (300, 11), &ink);
+            assert_eq!(fill.dst, (12, 17, 296, 11));
+            assert_eq!(bar.dst, (12, 17, FOCUS_BAR_W as u32, 11));
+            assert_eq!(bar.color, ink.heading);
+            let p = ink.palette;
+            assert!(
+                p.accent.contrast(p.hover) >= 3.0,
+                "dark={dark}: bar {:.2}:1 on the fill",
+                p.accent.contrast(p.hover)
+            );
+            assert!(
+                p.hover.contrast(p.ground) < 3.0,
+                "dark={dark}: the fill alone is the weak cue the bar is for"
+            );
+        }
     }
 }

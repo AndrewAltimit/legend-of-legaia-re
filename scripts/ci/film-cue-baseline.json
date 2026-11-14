@@ -138,6 +138,12 @@
       "retail_cues": 0,
       "recording": "2ce9c4003261"
     },
+    "deene_lapis_strike": {
+      "cue": 0.9767,
+      "matched": 21,
+      "retail_cues": 21,
+      "recording": "f11ef3e5f24f"
+    },
     "deene_neo_bison_strike": {
       "cue": 1.0,
       "matched": 8,
@@ -222,11 +228,41 @@
       "retail_cues": 8,
       "recording": "b37963f2e633"
     },
+    "garmel_gala_flying_knee_mid": {
+      "cue": 1.0,
+      "matched": 9,
+      "retail_cues": 9,
+      "recording": "b2909cd51a41"
+    },
+    "garmel_gala_thunder_punch_open": {
+      "cue": 1.0,
+      "matched": 3,
+      "retail_cues": 3,
+      "recording": "850878d1c893"
+    },
+    "garmel_noa_lizard_tail_mid": {
+      "cue": 1.0,
+      "matched": 9,
+      "retail_cues": 9,
+      "recording": "04c9fdf785b4"
+    },
+    "garmel_noa_lizard_tail_open": {
+      "cue": 1.0,
+      "matched": 13,
+      "retail_cues": 13,
+      "recording": "3c6e11be47b2"
+    },
     "garmel_songi_hyper_wave": {
       "cue": 1.0,
       "matched": 6,
       "retail_cues": 6,
       "recording": "be47a74518c2"
+    },
+    "garmel_vahn_hyper_elbow_mid": {
+      "cue": 1.0,
+      "matched": 10,
+      "retail_cues": 10,
+      "recording": "54fcae190fdf"
     },
     "garmel_zenoir_fire_claw": {
       "cue": 1.0,
@@ -264,15 +300,39 @@
       "retail_cues": 11,
       "recording": "ed03fb7fc072"
     },
+    "jou_cort_181_strike": {
+      "cue": 1.0,
+      "matched": 12,
+      "retail_cues": 12,
+      "recording": "543f5b44fc22"
+    },
     "jou_freed_v3_water_crystals": {
       "cue": 1.0,
       "matched": 3,
       "retail_cues": 3,
       "recording": "ad4f7db664eb"
     },
+    "jou_gala_chain_mid": {
+      "cue": 1.0,
+      "matched": 11,
+      "retail_cues": 11,
+      "recording": "03cbc970b106"
+    },
+    "jou_gala_chain_open": {
+      "cue": 1.0,
+      "matched": 13,
+      "retail_cues": 13,
+      "recording": "3cbb02eb93cd"
+    },
+    "jou_gala_super_ironhead_super_open": {
+      "cue": 1.0,
+      "matched": 18,
+      "retail_cues": 18,
+      "recording": "4faeee2253ae"
+    },
     "jou_gimard_v3_tail_flare": {
-      "cue": 0.9333,
-      "matched": 14,
+      "cue": 1.0,
+      "matched": 15,
       "retail_cues": 15,
       "recording": "fa23bd26b990"
     },
@@ -293,6 +353,18 @@
       "matched": 5,
       "retail_cues": 5,
       "recording": "7c1bd28bfefa"
+    },
+    "jou_noa_chain_mid": {
+      "cue": 1.0,
+      "matched": 8,
+      "retail_cues": 8,
+      "recording": "261254434d00"
+    },
+    "jou_noa_dragon_fangs_super_open": {
+      "cue": 1.0,
+      "matched": 23,
+      "retail_cues": 23,
+      "recording": "031daa121e16"
     },
     "jou_nova_v3_pre_scythe_wind__5B": {
       "cue": 1.0,
@@ -341,6 +413,24 @@
       "matched": 15,
       "retail_cues": 15,
       "recording": "d823e71fb3a1"
+    },
+    "jou_vahn_chain_late": {
+      "cue": 1.0,
+      "matched": 7,
+      "retail_cues": 7,
+      "recording": "94ee41adc5c4"
+    },
+    "jou_vahn_chain_open": {
+      "cue": 1.0,
+      "matched": 13,
+      "retail_cues": 13,
+      "recording": "4482d19cae0e"
+    },
+    "jou_vahn_tri_somersault_super_open": {
+      "cue": 0.964,
+      "matched": 28,
+      "retail_cues": 28,
+      "recording": "3040218a9314"
     },
     "jou_viguro_v3_thunder_burst": {
       "cue": 1.0,
@@ -499,8 +589,8 @@
       "recording": "2ce9c4003261"
     },
     "map01_lippian_kiss_of_death": {
-      "cue": 0.0,
-      "matched": 0,
+      "cue": 1.0,
+      "matched": 5,
       "retail_cues": 5,
       "recording": "dc2ef30fe41a"
     },
@@ -511,8 +601,8 @@
       "recording": "21054178a832"
     },
     "map02_mad_ogre_strike": {
-      "cue": 0.5714,
-      "matched": 4,
+      "cue": 0.8571,
+      "matched": 6,
       "retail_cues": 8,
       "recording": "7f96a5959b7c"
     },
@@ -545,6 +635,12 @@
       "matched": 21,
       "retail_cues": 21,
       "recording": "5b1798f21d4e"
+    },
+    "nilboa_gi_delilas_strike": {
+      "cue": 1.0,
+      "matched": 15,
+      "retail_cues": 15,
+      "recording": "3d8e3e345018"
     },
     "nilboa_koru_pre_blade_breath__A2": {
       "cue": 1.0,
@@ -619,8 +715,8 @@
       "recording": "54f90169a50f"
     },
     "nivora_duel_pre_plasma_strike__7B": {
-      "cue": 0.9167,
-      "matched": 22,
+      "cue": 1.0,
+      "matched": 24,
       "retail_cues": 24,
       "recording": "a1730f9ff93a"
     },
@@ -684,6 +780,12 @@
       "retail_cues": 11,
       "recording": "6b4f9298e9ee"
     },
+    "noaru_songi_strike": {
+      "cue": 1.0,
+      "matched": 12,
+      "retail_cues": 12,
+      "recording": "65aa65af6658"
+    },
     "retockin_evil_shadow_strike": {
       "cue": 1.0,
       "matched": 8,
@@ -715,8 +817,8 @@
       "recording": "602cbe31d374"
     },
     "retona_lip_king_kiss_of_death": {
-      "cue": 0.0,
-      "matched": 0,
+      "cue": 1.0,
+      "matched": 3,
       "retail_cues": 3,
       "recording": "d1c719092c4c"
     },
@@ -768,6 +870,12 @@
       "retail_cues": 8,
       "recording": "4c1434bdbb88"
     },
+    "rikuroa_vahn_chain_open": {
+      "cue": 1.0,
+      "matched": 7,
+      "retail_cues": 7,
+      "recording": "dd7845841b17"
+    },
     "rikuroa_worm_strike": {
       "cue": 1.0,
       "matched": 4,
@@ -780,11 +888,29 @@
       "retail_cues": 3,
       "recording": "2dc5317a62d2"
     },
+    "ropeway_gala_flying_knee_late": {
+      "cue": 1.0,
+      "matched": 4,
+      "retail_cues": 4,
+      "recording": "f0d92a61a4fd"
+    },
+    "ropeway_gala_flying_knee_mid": {
+      "cue": 1.0,
+      "matched": 7,
+      "retail_cues": 7,
+      "recording": "ef26dc215f26"
+    },
     "ropeway_mad_mantis_strike": {
       "cue": 1.0,
       "matched": 13,
       "retail_cues": 13,
       "recording": "d36690f271c0"
+    },
+    "ropeway_noa_sonic_javelin_open": {
+      "cue": 0.96,
+      "matched": 12,
+      "retail_cues": 13,
+      "recording": "51d742cff7b8"
     },
     "ropeway_orb_pre_heal__2E": {
       "cue": 1.0,
@@ -803,6 +929,12 @@
       "matched": 6,
       "retail_cues": 6,
       "recording": "57ec5597462b"
+    },
+    "ropeway_vahn_slash_kick_mid": {
+      "cue": 1.0,
+      "matched": 10,
+      "retail_cues": 10,
+      "recording": "a6d0c9cb4cce"
     },
     "rugi_barra_strike": {
       "cue": 1.0,
@@ -850,7 +982,7 @@
       "cue": 1.0,
       "matched": 11,
       "retail_cues": 11,
-      "recording": "0c23ae68e894"
+      "recording": "6cf827e65f04"
     },
     "rugi_rogue_pre_rogue_wind__B0": {
       "cue": 1.0,
@@ -943,7 +1075,7 @@
       "recording": "605077e7a6d7"
     },
     "s8E": {
-      "cue": 0.286,
+      "cue": 1.0,
       "matched": 1,
       "retail_cues": 1,
       "recording": "e5c63ad5d11e"
@@ -1049,6 +1181,12 @@
       "matched": 0,
       "retail_cues": 0,
       "recording": "2ce9c4003261"
+    },
+    "taiku_terror_face_strike": {
+      "cue": 1.0,
+      "matched": 6,
+      "retail_cues": 6,
+      "recording": "413a8a087a2a"
     },
     "taiku_thermo_pre_void_accessories__73": {
       "cue": 1.0,

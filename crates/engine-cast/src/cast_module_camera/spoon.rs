@@ -25,9 +25,10 @@ const SPOON_SEAT_SPAWNS: [ModuleSpawn; 5] = [
 ];
 
 /// One of arm 7's calls on the healed group's centre, the group's extent as
-/// the scale ([`spawn_anchor_scale`]).
+/// the scale ([`spawn_anchor_scale`]), turned to `yaw - f`: the arm's shot
+/// trio, whose yaw is `0x800 - creature[+0x46]` (`0x801F7DF8..0x801F7E14`).
 const fn group_spawn(va: u32, yaw: i16) -> ModuleSpawn {
-    spoon_spawn(va, SpawnAnchor::ShotPointFacing { y: 0, yaw })
+    spoon_spawn(va, SpawnAnchor::ShotPointAgainstFacing { y: 0, yaw })
 }
 
 /// Arm 7's pass (`0x801F7E18..0x801F7F30`): the two crossed fans, turned a

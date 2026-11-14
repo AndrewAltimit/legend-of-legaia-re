@@ -267,6 +267,21 @@ Two channels make a retail art read as an event: the battle clock slowing while 
 
 **When a staged clip commits.** The same tick decides it, idle and walk loops included. Mid-clip, `+0x1DC` bit 0 commits at once and bit 1 commits once the cursor frame is past the entry's gate frame by more than two (`0x800478EC..0x80047948`); the entry's `+0x76` lock refuses both. Otherwise the staged byte waits for the natural end (`0x80047B54`), which calls `FUN_8004AD80` whatever is staged. A clip left staged behind itself re-commits from its first frame, which is how a loop loops.
 
+**One natural end, one commit.** A loop whose end hands over to another staged byte
+makes a single call to `FUN_8004AD80`, the staged clip's, and no re-commit of the loop
+beside it. The commit's tail runs once with it, and in the strike loop that tail walks
+the acting attacker onto the edge of its reach (`0x8004BF7C..0x8004C118`). A monster
+that walked into `0x1E` on a locked walk commits its swing so: from an in-range pair the
+snap steps it back until the range law reads out of range, the in-range back-off
+(`0x80047C3C`) then finds it out of range, and the swing's own root speed `+0x0C`
+steps it forward (`0x80047D20..0x80047E18`). `battle_tunnelb_warman_strike`'s Warman
+goes from `(116, 289)` to `(140, 337)` on the snap and `(136, 325)` on the swing's
+step, as the recording holds. Counted as the walk's re-commit and then the swing's
+install, the port ran the snap twice, back and then forward onto the edge, and the
+back-off and root step then cancelled: Warman struck from `(138, 333)`, Warhalf from
+`(-110, 338)` for `(-106, 331)`, Mad Ogre from `(81, 293)` for `(79, 285)`. Port:
+`World::tick_battle_animations` (the hand-over path). Grade `disassembly` + `capture`.
+
 **A one-shot's natural end lands in its own pass.** The commit at the natural end sits behind the advance that crossed the end, in the same tick, so the pass that finishes an action clip draws the next entry on its first keyframe: `battle_jou_nighto_v3_eye_beam_mid_cast`'s retail film reads Nighto on clip `0` at cursor `0` on the pass its Eye Beam clip `0x0A` ends, with `+0x1DC` bit 2 (raised by `0x2A`'s terminator) staging the idle.
 
 The port takes a finished staged one-shot there too (`World::finish_staged_clip` from the slice's tail); taken at the head of the next slice, it held the clip's last keyframe a pass longer. Over the strike films (`--retail-steps`) the mean moves `.970` to `.973`, the frogs' most (`battle_map01_frog_strike` `.877` to `.966`), and the Seru set's `0x9F` reads `.863` to `.961`. Grade `disassembly` + `capture`.
@@ -349,6 +364,8 @@ The per-actor draw tick `FUN_800480D8` runs `FUN_80049348`, which draws **two gh
 
 - A party seat copies the committed dynamic slot `+0x1D9` (`0x80047FCC`). A party art materialises at dynamic slot `0x10`, except the `0x1A` / re-staged-`0x10` commits, which land at `0x11`. Party mesh ghosts therefore belong to the **SpecialStarter dash** and to **chained** arts (a re-staged `0x10`); an ordinary art swing leaves the 2D weapon trail instead. Capture `battle_melee_hit_spark` holds Vahn at `+0x1D9 = +0x1FB = 0x11` mid-Somersault with his ghosts drawn, and Gimard at ring id `0x10` with none.
 - A monster seat stamps `record[+0x77] + 0x10`, or `0x11` when the record's `+0x87` solo byte is `1` (`0x80048044..0x80048060`). A monster ghosts only on a clip whose record carries a non-zero `+0x77` or `+0x87 == 1`: the solo / special entries (Tetsu's tag-`0x0F` special carries both; Gobu Gobu has none). No idle entry qualifies, so an idle or walking monster never ghosts. Not "any non-idle clip tag": see [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md#battle--arts--level-up); disc census `crates/engine-battle/tests/battle_afterimage_gate_real.rs`.
+
+**The ring is cleared at each art.** A party seat's art-bank install (staged id `>= 0x10`) zeroes the seat's whole ring id column before the shout (`sb zero,0x1fb(v0)` over `0..0x20`, `0x8004BCD4..0x8004BCE8` in `FUN_8004AD80`), so every entry fails the gate until the passes after the commit refill it: an art's ghosts go out at the next art and come back one ring depth at a time. A `--ghost-trace` recording of Tri-Somersault (`battle_jou_party_vahn_tri_somersault_super_open`) drops both ghosts at the `0x1E` / `0x1F` boundary, brings the depth-`4` one back three passes in and the depth-`8` one seven. The port marks the history ineligible at the same install (`World::commit_staged_battle_anim`). Grade `disassembly` + `capture`.
 
 **Colour.** The body's texture modulated by the ghost colour, added over the frame - not a flat fill. The walk changes two words of the render node and calls the ordinary object draw: the colour word `+0x74 = rgb | 0x85000000` (`0x800494A4..0x800494C4`) and the weight `+0x78 = 0x1000` (`0x800493D8`). The draw wrapper `FUN_80043390` decodes the mode byte:
 

@@ -97,24 +97,34 @@ impl World {
     /// kept as the camera the next spawn's overworld depth test reads.
     ///
     /// Returns the quads to composite this frame, also kept in
-    /// [`World::fog_quads`]. The `dt` is every tick since the previous call
-    /// (retail's `DAT_1F800393` as the render pass sees it); a call with no
-    /// tick in between re-emits the same frame.
+    /// [`World::fog_quads`]. The `dt` is the frame step every game pass since
+    /// the previous call banked (retail's `DAT_1F800393` as the render pass
+    /// sees it); a call with no pass in between keeps the last frame's quads
+    /// and walks nothing.
     ///
     /// REF: FUN_80026CE4 (the pass; its fog stage at `0x80026EA4`)
     pub fn fog_render_step(&mut self, view: &FieldCameraView) -> &[FogQuad] {
         let dt = self.fog.pending_dt.min(u32::from(u8::MAX)) as u8;
         self.fog.pending_dt = 0;
-        self.fog.last_dt = dt;
         self.fog.depth_view = Some(*view);
         // The overworld map display stops the pass: its field caller
         // `FUN_801D0D38` is reached from the walk frame `FUN_801D1344`, which
         // the mode-13 handler does not run (and whose bytes PROT 0981 has
         // replaced).
         if !Self::fog_mode(self.mode) || !self.fog.gate || self.world_map.map_display.is_some() {
+            self.fog.last_dt = dt;
             self.fog.quads.clear();
             return &self.fog.quads;
         }
+        // A vsync between two game frames: retail's render pass does not run
+        // (the frame on screen is the last pass's), so the pool is neither
+        // walked nor culled. A walk here would still kill a record whose
+        // last pass aged it past the fade-out, a vsync before retail's next
+        // pass does, and the spawner would read the freed slot a pass early.
+        if dt == 0 {
+            return &self.fog.quads;
+        }
+        self.fog.last_dt = dt;
         // `_DAT_8007BCB8..BA`: the op `0x4C 0x12` global multiply tint,
         // `0x80` neutral - the same ramp the scene grade reads.
         let tint = self

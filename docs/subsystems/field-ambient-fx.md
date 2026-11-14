@@ -188,6 +188,17 @@ not-halted branch reaches the `jalr`. So a part renders one last time inside
 the call that halts it and never again: its CLUT-cell write and strip rotation
 stop there.
 
+The walk is the frame driver's actor pass, so a part ticks on the game pass
+and on no other vsync, the same pass the placements and the walkers tick on.
+A PCSX-Redux breakpoint on `FUN_80021DF4` and on the `rand()` thunk over idle
+field states (`deroa_field_door_hop`, `koin1_field_route_walk`, every two and
+every three vsyncs) logs the part ticks and their move-VM draws (return address
+`0x801D371C`, the ext op's `jal`) on the pass vsyncs only (grade: capture). The
+port banks one part tick where its actor pool fires (`World::tick`), and the
+host drains it on the same tick (`World::step_ambient_fx`); a counter of its own
+had drifted off the pass, and a part's `rand()` op then drew on a vsync between
+passes where retail draws nothing.
+
 Freeing is one walk later than stopping. The halted arm tests bit
 `0x02000000` and, while it is **clear**, branches past the entire teardown to
 set it (`0x800251F4` `and`/`beq` against `lui s3, 0x200`) - so the first walk
@@ -631,6 +642,23 @@ before each slice and stores them back after it
 (`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
 `engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
 
+A talk drives another actor's morph the same way, by target byte. `ropeway`'s
+ruins report (`P1[45]`, the book in Octam's shrine) seats the player on the
+vision spot and pages four lines, each behind a morph of placement `42`
+(channel `0x40`): `CB 40 05 01 ..` arms five lanes, `B1 40 0C` raises the gate,
+`AC 40 0C` / `AB 40 0A` / `AC 40 0D` drop recycle and raise HOLD, and
+`AC 40 0B` / `AD 40 0B` waits for ADVANCE, which `FUN_80020740` raises when the
+last lane peaks under HOLD (`0x80020948..0x80020960`). Then it seats the player
+back at the bookcase (`A3 F8 A2 DD`) and hands the shot back. `jagaroom` `P1[8]`
+(placed object `0x12`) and `station` `P1[8]` (object `0x06`) are the same shape
+on a placed object. The talk runner steps these ops on the target's own channel
+context (`World::talk_morph_word_channel`), as the dispatcher prologue swaps the
+resolved actor into `s5`. Run on the talk's stand-in, no lanes were armed, the
+wait ran into the runner's spin net, and the player was left on the vision spot.
+Disc-gated `engine-session/tests/ropeway_ruins_report_disc.rs` pins the walk
+back; `talk_spin_net_census_disc.rs` runs every talk with a `2D` wait and lists
+any that reach the net.
+
 #### town0e's installer is a placed actor, not an effect actor
 
 The install op is the same one every other ambience uses - `0x34` sub-3
@@ -784,8 +812,15 @@ The walk runs once per game frame, and the update ages each record by
 `rate * [0x1F800393]`, the frame step the pacer `FUN_80016B6C` measured in
 VSyncs (grade: disassembly; the chain is in
 [`renderer.md`](renderer.md#field-fog-sheets-fun_8003f348)). The walk draws
-nothing from `rand()`; only the spawner does. The port steps it once per sim
-tick on both hosts with the tick's frame step banked as its `dt`.
+nothing from `rand()`; only the spawner does. The port walks it on the game
+pass alone: the pass banks its frame step as the walk's `dt`, and a vsync
+between passes walks nothing (grade: capture - a PCSX-Redux film of the pool on
+`deroa_field_door_hop` shows every age stepping `rate * 2` on the pass vsync and
+holding on the next, and a record aged past the fade-out on one pass freed on
+the following pass). Walked every vsync with `dt = 1`, a record left alive at
+`0xC00+` by one pass was freed on the vsync after it, so the next pass's
+spawner read a free slot retail's did not have and drew a burst of spawns
+early.
 
 ```text
 fog particle lifetime (brightness vs age)

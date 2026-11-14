@@ -153,6 +153,7 @@ fn stage_slot_mesh(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Opti
 }
 
 /// One page-uploadable battle mesh in the play page's scene-mesh shape.
+#[derive(Clone)]
 struct BattleMesh {
     mesh: legaia_tmd::mesh::VramMesh,
     /// Per-vertex `[r, g, b, textured_flag]` for the hybrid shader; empty =
@@ -207,6 +208,7 @@ impl BattleMesh {
 
 /// One battle actor's render bundle, index-parallel with the JS side's
 /// per-actor mesh instances.
+#[derive(Clone)]
 struct BattleActorRender {
     /// World actor-table slot this mesh is bound to.
     actor_idx: usize,
@@ -333,6 +335,36 @@ impl BattleRender {
 }
 
 impl BattleRender {
+    /// [`LegaiaRuntime::bind_split_monsters_web`]'s half: give every live
+    /// monster seat without a mesh the bundle of a bound seat holding the
+    /// same monster, and return how many it bound. Allocation-free while
+    /// every seat is bound.
+    fn bind_split_seats(&mut self, actors: &[legaia_engine_core::world::Actor]) -> usize {
+        let mut bound = 0usize;
+        for (i, a) in actors.iter().enumerate() {
+            let Some(id) = a.battle_monster_id else {
+                continue;
+            };
+            if !a.active || self.actors.iter().any(|r| r.actor_idx == i) {
+                continue;
+            }
+            let Some(src) = self.actors.iter().find(|r| {
+                actors
+                    .get(r.actor_idx)
+                    .is_some_and(|b| b.battle_monster_id == Some(id))
+            }) else {
+                continue;
+            };
+            let render = BattleActorRender {
+                actor_idx: i,
+                ..src.clone()
+            };
+            self.actors.push(render);
+            bound += 1;
+        }
+        bound
+    }
+
     /// Put a monster an expansion wave seated mid-battle on its seat: adopt
     /// the VRAM its texture was injected into and replace whatever mesh the
     /// seat drew (the downed monster it takes over from). The caller bumps
@@ -749,6 +781,34 @@ impl LegaiaRuntime {
         web_log(&format!("play battle: bound {bound} wave monster mesh(es)"));
     }
 
+    /// Bind the mesh of a monster seat a cast split off a seated monster
+    /// mid-fight: Divide's clone (PROT 0940, `0x801F78B8`). Retail's clone
+    /// shares its caster's monster record (`0x801C9348[seat] =
+    /// 0x801C9348[caster]`) and its display template's model word
+    /// (`0x80076764[seat].+0x04` from the caster's row, `0x801F7E78..
+    /// 0x801F7E9C`), so it draws the caster's mesh out of the caster's
+    /// texture band - nothing new is uploaded. The browser twin of the native
+    /// window, whose clone draws through the `tmd_binding` it copied off the
+    /// caster. Without it the page has no mesh for the seat: the clone can be
+    /// targeted but is never drawn.
+    pub(crate) fn bind_split_monsters_web(&mut self) {
+        let (Some(host), Some(br)) = (self.scene_host.host(), self.battle_render.as_mut()) else {
+            return;
+        };
+        if host.world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return;
+        }
+        let bound = br.bind_split_seats(&host.world.actors);
+        if bound == 0 {
+            return;
+        }
+        self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
+        br.generation = self.battle_render_generation;
+        web_log(&format!(
+            "play battle: bound {bound} split monster mesh(es)"
+        ));
+    }
+
     /// Drop the battle render state on the `Battle -> Field` edge. The page
     /// notices `play_battle_active()` fall and restores the field VRAM
     /// texture from `field_vram_bytes` - the field-side copy was never
@@ -811,3 +871,5 @@ fn party_actor_render(
 
 #[cfg(test)]
 mod battle_cam_web_tests;
+#[cfg(test)]
+mod split_seat_tests;

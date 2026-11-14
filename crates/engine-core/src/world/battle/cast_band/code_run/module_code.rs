@@ -1115,6 +1115,25 @@ impl World {
                         (ctx.phase == ticks::KISS_OF_DEATH_ROLL_ARM).then(|| self.next_rand());
                     let (step, refund) = ticks::kiss_of_death_tick(&mut ctx, &mut victim, roll);
                     run.item_refund = refund;
+                    // The hit leg throws its literal `1` over the victim:
+                    // `FUN_801F44A0(1, seat)` at `0x801F8D6C`, behind the
+                    // same Stone guard (`0x801F8D60`) the HP write takes.
+                    // REF: FUN_801F44A0
+                    if roll.is_some_and(|r| r & 1 == 0)
+                        && victim.flags & ticks::FLAG_NON_TARGETABLE == 0
+                    {
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: victim_slot,
+                                amount: 1,
+                                is_heal: false,
+                                is_crit: false,
+                            });
+                        let c = &mut self.battle_ctx;
+                        c.cast_readout_cursor = (c.cast_readout_cursor + 1) & 7;
+                        c.readout_pushes = c.readout_pushes.wrapping_add(1);
+                    }
                     // Only the odd (miss) leg raises the bar
                     // (`0x801F8CC8` branches the hit leg past the raise).
                     if roll.is_some_and(|r| r & 1 != 0) {
@@ -1217,6 +1236,19 @@ impl World {
                     if let Some(sp) = split {
                         self.casting.module_split_saved_target = Some(sp.saved_caster_target);
                         self.apply_glare_divide_split(caster_slot, &sp);
+                    }
+                    // Arm 1's shake flag eases the caster toward white from
+                    // its own colour word, which in retail is the neutral
+                    // `0x20080200`. The engine's resting word is `0`, which
+                    // under a raised flag reads as retail's zero - a body
+                    // the tint pass blacks out and the draw tick skips - so
+                    // the shake would start from black.
+                    if caster.render_flag == arms::SPLIT_SHAKE_FLAG
+                        && let Some(a) = self.actors.get_mut(usize::from(caster_slot))
+                        && a.battle.render_color == 0
+                    {
+                        a.battle.render_color =
+                            legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
                     }
                     Some(step)
                 }
@@ -2352,7 +2384,12 @@ impl World {
                 seat_slot,
             );
             if entry == 930 {
-                self.apply_horn_writes(phase_in, ctx.phase != phase_in, seat_slot);
+                self.apply_horn_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    seat_slot,
+                    usize::from(caster_slot),
+                );
             }
             if entry == 915 {
                 self.apply_mushura_writes(phase_in, victim_slot);

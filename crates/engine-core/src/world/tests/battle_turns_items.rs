@@ -233,11 +233,41 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     // The band's applier call lands it.
     world.fold_battle_item_action(0, 0, 0);
     assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
+    // Retail's applier pushes nothing onto the ring; the heal numeral is the
+    // enhancement's (on by default), which throws the heal-coloured amount.
     let fx = world.drain_battle_hit_fx();
-    assert_eq!(fx.len(), 1);
-    assert!(fx[0].is_heal);
-    assert_eq!(fx[0].amount, 100);
-    assert_eq!(fx[0].target_slot, 0);
+    assert_eq!(fx.len(), 1, "{fx:?}");
+    assert_eq!(
+        (fx[0].target_slot, fx[0].amount, fx[0].is_heal),
+        (0, 100, true)
+    );
+}
+
+/// Under the retail pin a battle item's restore throws no numeral: the HP
+/// figure rolls up on the readout word alone, as the Gaza Healing Berry film
+/// reads (ring empty, `ctx[+0x273]` at 0).
+#[test]
+fn a_retail_battle_item_heal_throws_no_numeral() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 2,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.mode = SceneMode::Battle;
+    world.set_item_catalog(full_test_catalog());
+    world.toggles.pin_retail();
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.max_hp = 200;
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.action_category =
+        legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte();
+    world.actors[0].battle.params[0] = 0x01;
+    world.party.inventory.insert(0x01, 1);
+    world.fold_battle_item_action(0, 0, 0);
+    assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
+    assert!(world.drain_battle_hit_fx().is_empty());
 }
 
 #[test]

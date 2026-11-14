@@ -138,7 +138,7 @@ pub struct NameEntryInput {
     pub down: bool,
     pub left: bool,
     pub right: bool,
-    /// Cross / Circle - select the cell under the cursor (or confirm Yes/No).
+    /// Cross - select the cell under the cursor (or confirm Yes/No).
     pub confirm: bool,
     /// The cancel button - takes the last glyph while editing; the confirm
     /// prompt has no arm for it.
@@ -207,8 +207,14 @@ impl NameEntryInput {
     /// Decode one frame's **raw** just-pressed pad word (the
     /// [`legaia_engine_system::input::PadButton`] layout both hosts feed `World::set_pad`)
     /// into the overlay's semantic edges: the d-pad, Cross to confirm and
-    /// Triangle to cancel. Both hosts route their naming-prompt edges through
+    /// Circle to cancel. Both hosts route their naming-prompt edges through
     /// this one decode; each used to spell the six masks out locally.
+    ///
+    /// The machine tests the edge word against the two mask words at
+    /// `0x800846D0` / `0x800846D4` (`lw v0,0x594(s2)` at `0x801F055C` with
+    /// `s2 = 0x80084140`, and `0x590` at `0x801F05BC`), which the new-game
+    /// init seeds to Cross | L1 and Circle | L2. Triangle is the engine's
+    /// second cancel, as it is on the shop screens.
     pub fn from_pad_edge(edge: u16) -> Self {
         Self::from_pad_words(edge, edge)
     }
@@ -227,7 +233,7 @@ impl NameEntryInput {
             left: stepped(PadButton::Left),
             right: stepped(PadButton::Right),
             confirm: pressed(PadButton::Cross),
-            cancel: pressed(PadButton::Triangle),
+            cancel: pressed(PadButton::Circle) || pressed(PadButton::Triangle),
             start: edge == PadButton::Start.mask(),
         }
     }
@@ -568,16 +574,20 @@ mod tests {
 
     /// The shared decode reads the raw layout: the masks the two hosts used
     /// to spell out (`0x0010` up, `0x0040` down, `0x0080` left, `0x0020`
-    /// right, `0x4000` Cross, `0x1000` Triangle), and nothing else.
+    /// right, `0x4000` Cross, `0x2000` Circle and `0x1000` Triangle for the
+    /// cancel), and nothing else.
     #[test]
     fn pad_edge_decode_matches_the_raw_masks() {
         let i = NameEntryInput::from_pad_edge(0x0010 | 0x4000);
         assert!(i.up && i.confirm && !i.down && !i.cancel && !i.left && !i.right);
         let i = NameEntryInput::from_pad_edge(0x0040 | 0x0080 | 0x0020 | 0x1000);
         assert!(i.down && i.left && i.right && i.cancel && !i.up && !i.confirm);
-        // Circle and Start are not naming edges.
-        let i = NameEntryInput::from_pad_edge(0x2000 | 0x0008);
-        assert!(!(i.up || i.down || i.left || i.right || i.confirm || i.cancel));
+        // Circle is retail's cancel (the mask word `0x800846D4`).
+        let i = NameEntryInput::from_pad_edge(0x2000);
+        assert!(i.cancel && !i.confirm);
+        // Start with another button is not a naming edge, and Square is none.
+        let i = NameEntryInput::from_pad_edge(0x8000 | 0x0008);
+        assert!(!(i.up || i.down || i.left || i.right || i.confirm || i.cancel || i.start));
     }
 
     #[test]
@@ -796,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn triangle_is_a_backspace_shortcut() {
+    fn cancel_takes_the_last_glyph() {
         let mut e = NameEntry::new(0, "Vahn");
         e.step(NameEntryInput {
             cancel: true,

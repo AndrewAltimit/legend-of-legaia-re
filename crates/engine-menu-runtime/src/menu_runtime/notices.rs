@@ -20,6 +20,13 @@ impl MenuRuntime {
         self.spell_level_notice.as_ref()
     }
 
+    /// `true` while window 7 or window 8 holds the pad over its screen: the
+    /// frame's confirm dismisses the notice, so the screen's own confirm cue
+    /// ([`crate::field_menu_dispatch::pause_frame_blip`]) is not asked.
+    pub fn notice_held(&self) -> bool {
+        self.spell_level_notice.is_some() || self.art_learned_notice.is_some()
+    }
+
     /// The live art-learned notice (retail window 8), or `None`.
     pub fn art_learned_notice(
         &self,
@@ -48,6 +55,21 @@ impl MenuRuntime {
             self.arm_spell_level_notice(n);
         }
         if let Some(n) = finished.art_learned_notice.take() {
+            self.arm_art_learned_notice(n);
+        }
+    }
+
+    /// Arm the window-7 / window-8 notices a use or cast raised with its
+    /// screen still up ([`crate::field_menu_dispatch::take_raised_notices`]).
+    /// Hosts call it after every
+    /// [`crate::field_menu_dispatch::tick_open_subsession`]; the screen keeps
+    /// drawing under the notice, as retail's apply sub-screens leave it.
+    pub fn arm_raised_notices(&mut self, world: &mut World) {
+        let raised = crate::field_menu_dispatch::take_raised_notices(world);
+        if let Some(n) = raised.spell_level_notice {
+            self.arm_spell_level_notice(n);
+        }
+        if let Some(n) = raised.art_learned_notice {
             self.arm_art_learned_notice(n);
         }
     }

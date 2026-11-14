@@ -322,6 +322,19 @@ itself waits until the kernel lands it (`tunnelc`
 leg (`FieldNpcState::glide_legs`), `World::tick_field_npc_face_legs` steps
 it, and a talk holds on `InlineDialogue::own_turn` until it lands.
 
+The load slice itself does not wait on its own walk. The refusal reads the
+scene word `*(_DAT_801C6EA4) + 8` before the caller's id
+(`0x801DE920..0x801DE930`) and lets the op through while it is non-zero, and
+`FUN_8003AEB0` holds it at `1` around the whole spawn loop and the object
+binds (`0x8003B73C`, dropped at `0x8003B928`); op `4C D2`'s respawn and op
+`4C C3`'s re-seat raise it the same way. `suimon`'s Water Gate Controller
+(`P1[4]`) depends on it: `41 05 01`, then `CC 0E 40 00 00 00 00` (render
+scale `0`) and `B1 0E 15` (no drop shadow) on its own id, then the `0x21`
+that ends the slice in front of the talk text at `+0x28`. A retail capture
+of the scene shows no figure at the controller. Port:
+`FieldHaltHost::spawn_bracket`, up while `entry_prerun` or `object_prerun`
+is; disc-gated in `engine-scene-host/tests/suimon_controller_disc.rs`.
+
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
 `a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN
@@ -1065,7 +1078,10 @@ bit 8 engages the target and a placed object's word is written too). `CC <id>
 A0` / `A1` read the target's words for the same reason: `retock` `P1[46]` raises
 bit 0 with `B1 0D 00` and tests it with `CC 0D A0 00 05 00`. A talker naming its
 own id keeps its own context, and bit 3 (the retire) and bit 10 (halt) stay off
-this route. Every placement leg holds later cross-context ops on that actor, a
+this route. A morph-word op is the last route: `CB <id> ..` arms the target's
+VDF lanes, and `AB` / `AC` / `AD <id>` on bits `10..=15` reach its envelope
+word, so a talk's `AD <id> 0B` waits on the ADVANCE the target's envelope
+raises ([field-ambient-fx.md](field-ambient-fx.md#a-record-that-drives-its-own-objects-morph)). Every placement leg holds later cross-context ops on that actor, a
 walk-kernel `motions` leg included; `B2 <id> 0A` is the op's one carve-out
 (`0x801DE90C..0x801DE944`).
 
@@ -1319,6 +1335,27 @@ hosts use): a running timeline alone is not enough. `garmel`'s Songi taunt
 (`P2[62]`: three BGM ops and the text) is captured on the walk framing;
 a host that switched to the per-slot fallbacks with nothing staged framed an
 invented low shot across the room.
+
+A shot that no record releases is still released, by the follow ease. Retail
+keeps no "a script owns the camera" state: `FUN_801DB510` runs at the head of
+the player's handler (`jal` at `0x801D22B8` in `FUN_801D2298`) and tests only
+the camera switch `0x8007B606`, the freeze bit `0x1F800394 & 0x400` and whether
+the player moved (`0x801DB550..0x801DB5A4`). While a record holds the player
+nothing moves him, so its shot stands; once it lets go, the shot stands until
+the first pass the player walks, and that pass composes and eases toward the
+follow pose. Records that end on a shot are common: talks (`koin4` P1[1]
+glides to a shot, waits on it with `4C CD`, prints its line and ends on
+`21`; `bubu1` P1[22] stages five), door records (`balden` P0[7] / P0[14]
+snap the arrival shot behind a fade and loop) and named records (`town01`
+P2[25], `uru` P2[30..37], `dream` P2[1..4], `town0d` P2[29..31]). The engine
+drops its focus latch (`Camera::release_unheld_shot`) once no glide is in
+flight, no timeline runs and the player is free, without the hand-back snap,
+and drops its mirror of the staged slots there as APPLY does. A latch kept
+past the record freezes the follow camera on the shot for the rest of the
+scene. The census is
+`engine-core/tests/field_camera_shot_census_disc.rs`; the executing checks
+are `engine-session/tests/talk_shot_release_disc.rs` and
+`record_shot_release_disc.rs`.
 
 The APPLY `s16` is a glide trigger, never a jump target. `urudre2`'s only door
 record carries `45 C0 00 00` about `0x670` bytes before its `0x3F` -> `map01`

@@ -161,8 +161,38 @@ def retail_cast_hp(out: Path, done: dict) -> dict[int, int]:
     return hp
 
 
+def seat_retail_from(a, out: Path) -> bool:
+    """Point `<out>/retail` at the recording `--retail-from` names: a film set
+    line that holds its recording rather than whichever one a films directory
+    last captured. A symlink is re-pointed; a real capture directory is left
+    alone and refused, never deleted."""
+    src = Path(a.retail_from)
+    if not src.is_absolute():
+        src = REPO / src
+    if int(read_kv(src / "done.txt").get("done", "-1")) < 0:
+        print(f"[retail] --retail-from {src}: no finished recording there")
+        return False
+    rdir = out / "retail"
+    if rdir.is_symlink():
+        if rdir.resolve() == src.resolve():
+            return True
+        rdir.unlink()
+    elif rdir.exists():
+        print(f"[retail] {rdir} is a capture of its own; move it aside to use --retail-from")
+        return False
+    out.mkdir(parents=True, exist_ok=True)
+    rdir.symlink_to(src.resolve())
+    print(f"[retail] {rdir} -> {src}")
+    return True
+
+
 def run_retail(a, out: Path) -> bool:
     rdir = out / "retail"
+    if a.retail_from:
+        if a.recapture:
+            print("[retail] --recapture ignored: --retail-from names the recording")
+        if not seat_retail_from(a, out):
+            return False
     done = read_kv(rdir / "done.txt")
     if done and not a.recapture and int(done.get("done", "-1")) >= 0:
         print(f"[retail] cached: {rdir} (cast at vsync {done['cast']}, {done['shots']} frames)")
@@ -615,6 +645,19 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
     return None if seed is None else f"{st7}:{phase}:{seed}"
 
 
+def retail_cast_begin_key(out: Path, done: dict) -> str | None:
+    """`st7:phase` of the retail row on the cast's begin (`done.txt`'s
+    `cast` vsync), the key the engine recording opens on."""
+    cast = int(done.get("cast", "-1"))
+    if cast < 0:
+        return None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if int(r["vsync"]) >= cast:
+                return f"{int(r['st7'])}:{int(r['phase'])}"
+    return None
+
+
 def record_key(exe: str, env: dict, args: list[str]) -> str:
     """What an engine recording is a function of: the binary's bytes, the
     child's `LEGAIA_*` environment and arguments, the contents of every file
@@ -762,18 +805,49 @@ def retail_track_coins(out: Path) -> list[str]:
     `rand() % 2` at every commit of a clip whose `+0x87` byte is set
     (`FUN_8004E13C`, `0x8004E2BC..0x8004E2DC`); a re-draw onto the same value
     leaves no change point and needs none. Empty for a recording made before
-    the probe wrote the `coin` column."""
+    the probe wrote the `coin` column.
+
+    A change point's time is the recording's game clock, not its vsync: each
+    frame counts the step it drains by however many vsyncs it ran over, as
+    the pairing's `retail game` column counts it. The engine's display clock
+    runs a frame's step and not retail's slow vsyncs, so on the vsync a Super
+    Art's slow frames put the change tens of frames behind the engine's commit:
+    `battle_jou_party_gala_super_ironhead_super_open` draws `1` at vsync `320`
+    (game clock `264`), the engine's `+0x87` commit read the `0` before it, and
+    the finale filmed the other column."""
     pts, prev = [], None
     with open(out / "retail" / "meta.csv") as f:
-        for r in csv.DictReader(f):
-            c = r.get("coin")
-            if c is None or c == "":
-                return []
-            c = int(c) & 1
-            if c != prev:
-                pts.append(f"{c}@{r['vsync']}")
-                prev = c
+        rows = list(csv.DictReader(f))
+    for r, game in zip(rows, game_clock(rows)):
+        c = r.get("coin")
+        if c is None or c == "":
+            return []
+        c = int(c) & 1
+        if c != prev:
+            pts.append(f"{c}@{game}")
+            prev = c
     return pts
+
+
+def game_clock(rows: list[dict]) -> list[int]:
+    """Each `meta.csv` row's time on the recording's game clock, from `1` on
+    the first row: a frame (one value of the `frame` column) advances it by
+    its step (the frame's last row) and no further, so a slow frame's extra
+    vsyncs hold it. A recording without the columns is its own vsyncs."""
+    if not rows or "frame" not in rows[0] or "step" not in rows[0]:
+        return [int(r["vsync"]) for r in rows]
+    step_of = {}
+    for r in rows:
+        step_of[r["frame"]] = max(1, int(r["step"] or 1))
+    out, base, cur, into = [], 1, None, 0
+    for r in rows:
+        if r["frame"] != cur:
+            if cur is not None:
+                base += step_of[cur]
+            cur, into = r["frame"], 0
+        out.append(base + min(into, step_of[cur] - 1))
+        into += 1
+    return out
 
 
 def retail_hit_words(out: Path) -> list[str]:
@@ -827,12 +901,25 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # The still stands a seat on the displayed frame's pair; a film runs on
+    # from the gate on the RAM's clip cursors, so a physical recording stands
+    # it on the RAM's pair (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the child
+    # carries only where the two part). A harness seat.
+    ram_ground = env.pop("LEGAIA_BATTLE_GROUND_SNAP_RAM", None)
+    if a.physical and ram_ground is not None:
+        env["LEGAIA_BATTLE_GROUND_SNAP"] = ram_ground
     # A monster strike's drive (`action,<seat>,<state>,3,...`) plays the
-    # state's own queue unless the still already steered it.
+    # state's own queue unless the still already steered it: by its own `q`,
+    # or by a gate on the first swing's clip and cursor (`k` / `u`), which
+    # reaches the phase only on a replay that drew the swing itself. Steered
+    # again on top of that gate, `battle_rugi_barra_strike` and
+    # `battle_taiku_topaz_strike` never met it and recorded no frame.
     drive = env.get("LEGAIA_BATTLE_DRIVE", "")
     f = drive.split(",")
+    clip_gated = any(x[:1] == "k" and x[1:].isdigit() for x in f[4:])
     if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
             and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
+            and not clip_gated
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
@@ -957,6 +1044,14 @@ def run_engine(a, out: Path) -> bool:
     if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
             and (w := state_rand_word(out)) is not None):
         env["LEGAIA_FILM_RAND"] = str(w)
+    # A spell film enters the cast on the replay's own stream, whose draws
+    # before the cast are not retail's: seat retail's word on the cast's
+    # begin key unless another rand seat or `--no-cast-rand` says otherwise.
+    # A harness seat (docs/tooling/cast-sequence-oracle.md, the rand stream).
+    if (not a.physical and not (a.rand_at or a.rand_track or a.no_cast_rand)
+            and (key := retail_cast_begin_key(out, done)) is not None
+            and (seed := retail_rand_seed(out, key)) is not None):
+        env["LEGAIA_CAST_RAND_SEED"] = seed
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -1187,6 +1282,9 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--no-cast-rand", action="store_true",
+                    help="engine: a spell film enters the cast on the replay's own rand() stream, not on "
+                         "retail's word under the cast's begin key (the default seat, LEGAIA_CAST_RAND_SEED)")
     ap.add_argument("--rand-track", action="store_true",
                     help="engine: seat every module-band pass on the rand() word retail's frame before it "
                          "ended on (a harness seat: an arm that draws each pass, such as Earthquake's "
@@ -1208,6 +1306,9 @@ def main() -> int:
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
     ap.add_argument("--recapture", action="store_true", help="re-run the retail capture")
+    ap.add_argument("--retail-from", metavar="DIR",
+                    help="use this finished retail recording (relative to the repo root) as <out>/retail, "
+                         "symlinked; a film set names a re-pointed film's recording this way")
     ap.add_argument("--rerecord", action="store_true",
                     help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")

@@ -586,11 +586,29 @@ impl World {
         }
     }
 
-    /// Surface a cosmetic HUD popup for a resolved item use. Heals / MP
-    /// restores / revives push a heal-coloured number; offensive items push a
-    /// damage-coloured number; cures push the status letter. The HP / status
-    /// side is already applied by [`Self::use_item`]; this is presentation-only
-    /// (drained via [`Self::drain_battle_hit_fx`]).
+    /// Surface the numeral a resolved item use throws, if any: the Point
+    /// Card's spent amount and the port's offensive catalog items push a
+    /// damage number; a restore, revive or cure pushes none, as retail's
+    /// applier does not. The HP / status side is already applied; this is
+    /// presentation-only (drained via [`Self::drain_battle_hit_fx`]).
+    ///
+    /// REF: FUN_800402F4 (no ring store outside the selector-`0x0E` arm)
+    /// Throw the heal-coloured numeral a restore retail lands silently, when
+    /// the heal-numeral enhancement ([`crate::world::WorldToggles::heal_numerals`])
+    /// is on. Off, and under `pin_retail`, nothing is pushed: no applier
+    /// restore, Grail tick, Final Heal or module heal reaches the ring in
+    /// retail. A zero restore throws nothing either way.
+    pub(in crate::world) fn push_heal_numeral(&mut self, target_slot: u8, amount: u16) {
+        if self.toggles.heal_numerals && amount != 0 {
+            self.battle.hit_fx.push(BattleHitFx {
+                target_slot,
+                amount,
+                is_heal: true,
+                is_crit: false,
+            });
+        }
+    }
+
     pub(in crate::world) fn push_item_use_fx(
         &mut self,
         target_slot: u8,
@@ -598,8 +616,24 @@ impl World {
     ) {
         use legaia_engine_menus::items::ItemOutcome;
         let (amount, is_heal) = match outcome {
-            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => (amount, true),
-            ItemOutcome::Revived { hp_after } => (hp_after, true),
+            // Retail throws no numeral for a restore. The applier's HP / MP
+            // / revive arms write the pool and the readout word `+0x10` and
+            // push nothing onto the ring (`FUN_800402F4` has no `ctx[+0x83C]`
+            // store; its one popup call is the Point Card's), and state
+            // `0x3F` around the call pushes nothing either, so the HUD's HP
+            // figure rolls up and no number rises over the patient. A
+            // `Healing Berry` filmed off the Gaza item target reads the ring
+            // empty and its push count `ctx[+0x273]` at 0 through the roll.
+            // The heal-numeral enhancement throws one
+            // ([`Self::push_heal_numeral`]).
+            ItemOutcome::HealedHp { amount } | ItemOutcome::HealedMp { amount } => {
+                self.push_heal_numeral(target_slot, amount);
+                return;
+            }
+            ItemOutcome::Revived { hp_after } => {
+                self.push_heal_numeral(target_slot, hp_after);
+                return;
+            }
             ItemOutcome::DamageDealt { amount } => (amount, false),
             // The Point Card strike pops its spent amount as a damage number,
             // which is what retail's `FUN_801F44A0(amount, slot)` call in the

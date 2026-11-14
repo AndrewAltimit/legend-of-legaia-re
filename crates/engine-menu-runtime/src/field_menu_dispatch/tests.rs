@@ -825,6 +825,49 @@ fn a_use_leaves_the_items_screen_up() {
     assert!(items.target_select(), "Vahn is still short of HP");
 }
 
+/// The target step's confirm sounds the apply screen's own cue: `0x25` as
+/// the heal lands (`FUN_801D8308`, `0x801D84B8`), `0x23` on a member the
+/// validator turns down (`0x801D8480`). Every other edge keeps the pickers'
+/// rule.
+#[test]
+fn an_item_use_sounds_0x25_and_a_refused_member_0x23() {
+    use legaia_engine_menus::menu_cues::MenuBlip;
+    let mut w = fresh_world();
+    {
+        let m = &mut w.party.roster.members[1];
+        let mut h = m.hp_mp_sp();
+        h.hp_cur = 0;
+        m.set_hp_mp_sp(h);
+    }
+    let mut s = build(FieldMenuRow::Items, &w);
+    let cross = PadButton::Cross.mask();
+    // The command window's Use and the list's row sound the confirm `0x20`
+    // (`FUN_801D7C00`, `0x801D7D64`; the kernel's `0x80032D24`).
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
+    let _ = tick_open_subsession(&mut s, cross, None, &mut w);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
+    let _ = tick_open_subsession(&mut s, cross, None, &mut w);
+    let FieldMenuSubsession::Items(items) = &s else {
+        panic!("Items");
+    };
+    assert!(items.target_select(), "the target panel opened");
+    // Vahn is short of HP: the confirm uses the leaf.
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Use));
+    assert_eq!(
+        pause_frame_blip(cross, false, None, Some(&s)),
+        Some(MenuBlip::Use)
+    );
+    assert_eq!(
+        pause_frame_blip(PadButton::Down.mask(), false, None, Some(&s)),
+        Some(MenuBlip::Cursor)
+    );
+    // The preview spends nothing.
+    assert_eq!(w.party.inventory.get(&0x77).copied(), Some(3));
+    // Noa has fallen: a leaf cannot reach her.
+    let _ = tick_open_subsession(&mut s, PadButton::Down.mask(), None, &mut w);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Refuse));
+}
+
 /// Arrange sorts the bag itself (`FUN_801D64A8` swaps the physical slot
 /// pairs), so the order outlives the screen: the next Items screen, the
 /// battle window and the save all read the sorted bag.

@@ -1,0 +1,21 @@
+# Party arts, Hyper / Super Arts: the party's own action from its state's instant, dealt its --hit-trace words (scripts/ci/film-cues.py)
+garmel_gala_flying_knee_mid --physical --state battle_garmel_party_gala_flying_knee_mid --hit-trace --strike-deal
+garmel_gala_thunder_punch_open --physical --state battle_garmel_party_gala_thunder_punch_open --hit-trace --strike-deal
+garmel_noa_frost_breath_open --physical --state battle_garmel_party_noa_frost_breath_open --hit-trace --strike-deal
+garmel_noa_lizard_tail_mid --physical --state battle_garmel_party_noa_lizard_tail_mid --hit-trace --strike-deal
+garmel_noa_lizard_tail_open --physical --state battle_garmel_party_noa_lizard_tail_open --hit-trace --strike-deal
+garmel_vahn_hyper_elbow_mid --physical --state battle_garmel_party_vahn_hyper_elbow_mid --hit-trace --strike-deal
+garmel_vahn_tornado_flame_open --physical --state battle_garmel_party_vahn_tornado_flame_open --hit-trace --strike-deal
+jou_gala_chain_mid --physical --state battle_jou_party_gala_chain_mid --hit-trace --strike-deal
+jou_gala_chain_open --physical --state battle_jou_party_gala_chain_open --hit-trace --strike-deal
+jou_gala_super_ironhead_super_open --physical --state battle_jou_party_gala_super_ironhead_super_open --hit-trace --strike-deal
+jou_noa_chain_mid --physical --state battle_jou_party_noa_chain_mid --hit-trace --strike-deal
+jou_noa_dragon_fangs_super_open --physical --state battle_jou_party_noa_dragon_fangs_super_open --hit-trace --strike-deal
+jou_vahn_chain_late --physical --state battle_jou_party_vahn_chain_late --hit-trace --strike-deal
+jou_vahn_chain_open --physical --state battle_jou_party_vahn_chain_open --hit-trace --strike-deal
+jou_vahn_tri_somersault_super_open --physical --state battle_jou_party_vahn_tri_somersault_super_open --hit-trace --strike-deal
+rikuroa_vahn_chain_open --physical --state battle_rikuroa_party_vahn_chain_open --hit-trace --strike-deal
+ropeway_gala_flying_knee_late --physical --state battle_ropeway_party_gala_flying_knee_late --hit-trace --strike-deal
+ropeway_gala_flying_knee_mid --physical --state battle_ropeway_party_gala_flying_knee_mid --hit-trace --strike-deal
+ropeway_noa_sonic_javelin_open --physical --state battle_ropeway_party_noa_sonic_javelin_open --hit-trace --strike-deal
+ropeway_vahn_slash_kick_mid --physical --state battle_ropeway_party_vahn_slash_kick_mid --hit-trace --strike-deal

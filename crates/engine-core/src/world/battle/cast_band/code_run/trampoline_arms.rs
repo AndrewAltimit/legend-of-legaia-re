@@ -242,12 +242,19 @@ impl World {
     /// Materialise the seat PROT 0940's split allocated.
     ///
     /// Retail builds a whole actor: it copies the caster's monster-record
-    /// pointer into `0x801C9348[seat]`, allocates a display object through
-    /// `FUN_80054CB0` / `FUN_80024C88`, and unaligned-copies the caster's
-    /// pose. The engine's equivalent is the caster's own actor record cloned
-    /// into the seat, and the five simulation writes the arm makes on top of
-    /// that (`+0x16C`, `+0x1DE`, `+0x1DF`, `+0x1DD`, `+0x14C` / `+0x172`) are
-    /// what this applies.
+    /// pointer into `0x801C9348[seat]`, initialises the seat through
+    /// `FUN_80054CB0`, and spawns its display node with `FUN_80024C88` on
+    /// the split point the arm's shake pushed aside
+    /// ([`legaia_engine_cast::cast_module_camera::slime_divide_shake`]),
+    /// copying the node's pair into the clone's body pair `+0x3C` / `+0x40`
+    /// and live pair `+0x34` / `+0x38` (`0x801F7FDC..0x801F8018`). The node
+    /// wears the caster's heading (`+0x26` from caster `+0x46`,
+    /// `0x801F7F8C`), and the clone's colour word is stamped full white
+    /// (`+0x04 = 0x3FCFF3FC`, `0x801F7F4C..0x801F7F6C`) for the flag-`0`
+    /// ease to bring back to neutral. The engine's equivalent is the
+    /// caster's own actor record cloned into the seat, stood on the split
+    /// point, and the five simulation writes the arm makes on top of that
+    /// (`+0x16C`, `+0x1DE`, `+0x1DF`, `+0x1DD`, `+0x14C` / `+0x172`).
     ///
     /// Returns `false` when the table has no seat there, which is retail's own
     /// bound: `ctx[+1]` indexes `actor_table` and the engine caps both counts
@@ -258,7 +265,8 @@ impl World {
         split: &legaia_engine_cast::cast_arm_ticks::GlareDivideSplit,
     ) -> bool {
         use legaia_engine_cast::cast_arm_ticks::{
-            SPLIT_CLONE_ACTION, SPLIT_CLONE_CATEGORY, SPLIT_WEAK_AGL, SplitWeakened,
+            SPLIT_CLONE_ACTION, SPLIT_CLONE_CATEGORY, SPLIT_CLONE_COLOUR, SPLIT_WEAK_AGL,
+            SplitWeakened,
         };
         // `clone_seat` is a retail pool slot (`3 + ctx[+1]`): retail seats
         // monster `k` at `3 + k` whatever the party size, and the engine
@@ -285,6 +293,18 @@ impl World {
         };
         let mut clone = src;
         clone.active = true;
+        // Without the point (a body run with no director) the clone keeps
+        // the caster's pair, as before.
+        if let Some([x, z]) = self.casting.module_cam.split_point {
+            clone.move_state.world_x = x;
+            clone.move_state.world_z = z;
+            clone.battle.seat = Some((x, z));
+        }
+        // A fresh seat: `FUN_80054CB0` leaves `+0x21C` clear, so the
+        // caster's shake flag `10` (raised by arm 1, still on the caster's
+        // record until this pass's write-back) does not carry over.
+        clone.battle.render_flag = 0;
+        clone.battle.render_color = SPLIT_CLONE_COLOUR;
         clone.battle.init_key = 0;
         clone.battle.action_category = SPLIT_CLONE_CATEGORY;
         if let Some(p) = clone.battle.params.first_mut() {

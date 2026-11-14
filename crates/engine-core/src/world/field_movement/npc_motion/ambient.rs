@@ -81,13 +81,11 @@ impl World {
         let Ok(bind) = u8::try_from(seat.flat) else {
             return false;
         };
-        let Some(rec) = man_motion::motion_records(&man, &man_file)
-            .into_iter()
-            .find(|r| r.bindings.iter().any(|b| b.actor_id == bind))
-        else {
+        let records = man_motion::motion_records(&man, &man_file);
+        let Some(rec) = man_motion::bound_record(&records, bind) else {
             return false;
         };
-        let Some(variant) = man_motion::stream_variants(&man, &rec)
+        let Some(variant) = man_motion::stream_variants(&man, rec)
             .into_iter()
             .find(|v| v.selector & 0x0FFF == seat.selector & 0x0FFF)
         else {
@@ -300,7 +298,12 @@ impl World {
         for rec in &records {
             for b in &rec.bindings {
                 let record = usize::from(b.actor_id);
-                if record >= n0 || self.npcs.object_ambient.contains_key(&record) {
+                // The installer stores every binding's stream, so the last
+                // record naming the object is the one it runs.
+                if record >= n0
+                    || !man_motion::bound_record(&records, b.actor_id)
+                        .is_some_and(|r| r.index == rec.index)
+                {
                     continue;
                 }
                 let variants: Vec<(u16, Vec<u8>)> = man_motion::stream_variants(man, rec)
@@ -340,10 +343,10 @@ impl World {
             if bind_id >= man_motion::ACTOR_PLAYER {
                 continue; // collides with the 0xF8/0xFB special ids
             }
-            let Some(rec) = records
-                .iter()
-                .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))
-            else {
+            // The last record that binds the id: the installer stores every
+            // binding's stream, so a later record replaces an earlier one.
+            // REF: FUN_8003A9D4
+            let Some(rec) = man_motion::bound_record(&records, bind_id) else {
                 continue;
             };
             let variants: Vec<(u16, Vec<u8>)> = man_motion::stream_variants(man, rec)

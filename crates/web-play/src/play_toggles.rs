@@ -354,6 +354,19 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.hp_readout_guard
     }
 
+    /// The heal numerals, the native `--no-heal-numerals` inverted (on by
+    /// default): a battle restore throws a heal-coloured number where retail
+    /// only rolls the HP figure up. Retail mode holds it off.
+    pub fn set_heal_numerals(&mut self, on: bool) {
+        self.page_toggles.tweaks.heal_numerals = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_heal_numerals`] is on.
+    pub fn heal_numerals(&self) -> bool {
+        self.page_toggles.tweaks.heal_numerals
+    }
+
     /// The bonus equipment drop, the native `--equipment-drops`. Retail mode
     /// holds it off.
     pub fn set_bonus_drop(&mut self, on: bool) {
@@ -841,7 +854,7 @@ mod tests {
             legaia_engine_session::session_switches::GameplayTweaks::default()
         );
         assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
-        assert!(rt.tetsu_spar_fix());
+        assert!(rt.tetsu_spar_fix() && rt.heal_numerals());
         assert!(!rt.flee_exp() && !rt.jewel_fix());
         assert_eq!(rt.exp_rate_permille(), 1000);
         rt.set_shiny_seru(false);
@@ -863,6 +876,7 @@ mod tests {
             "set_tetsu_spar_fix",
             "set_jewel_fix",
             "set_hp_readout_guard",
+            "set_heal_numerals",
             "set_bonus_drop",
             "set_save_anywhere",
             "set_action_movement",

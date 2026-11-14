@@ -697,6 +697,32 @@ fn art_bank(disc: &impl PartyFormDisc, raw: &[u8], cslot: usize, anm_bones: &[u8
     (bank, faces, records)
 }
 
+/// Triangles per TMD object of a battle form's mesh (a quad counts two), in
+/// object order: what the draw tick's after-image walk `FUN_80049348` re-runs
+/// per ghost through the body's object draw `FUN_80048A08` (`jal 0x80048A08`
+/// at `0x8004950C`), for the objects the seat draws.
+pub fn object_triangle_counts(tmd: &legaia_tmd::Tmd, raw: &[u8]) -> Vec<u16> {
+    tmd.objects
+        .iter()
+        .map(|o| {
+            let n: usize = legaia_tmd::legaia_prims::iter_groups_lenient(
+                raw,
+                o.primitives_byte_offset,
+                o.primitives_byte_size,
+            )
+            .iter()
+            .flat_map(|g| &g.prims)
+            .map(|p| match p.vertex_indices().len() {
+                3 => 1,
+                4 => 2,
+                _ => 0,
+            })
+            .sum();
+            u16::try_from(n).unwrap_or(u16::MAX)
+        })
+        .collect()
+}
+
 /// The Tactical-Arts character whose records a roster slot's bank carries
 /// (Vahn / Noa / Gala; Terra has no arts).
 pub fn art_character(cslot: usize) -> Option<legaia_art::Character> {

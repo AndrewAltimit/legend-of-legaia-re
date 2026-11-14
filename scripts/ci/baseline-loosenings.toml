@@ -1504,3 +1504,55 @@ changes = [
   ["counts/bundle/play_gzip_bytes", 5072023, 5087573],
   ["counts/native/battle/retail/allocs_per_frame", 1231.1, 1237.3],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Most of these counts already stood over the baseline on main itself: measured on main, battle enhanced allocations read 1289.7 and summon-cast retail 1258.0 against 1283.4 and 1252.2, so the native allocation rows are a stale baseline plus under one allocation a frame from this wave. The browser cast draws rise 0.6 a frame from the scene blend pass drawing each mesh's semi-transparent primitives far to near, as retail does; town and world-map draws move by hundredths. The bundles carry the wave's new code: the heal-number toggle, the shell probe, the shop rule shared with the Equip screen, the Divide clone seat and the cast and strike seats."
+changes = [
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 128.17, 128.75],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 109485, 109486],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 105.55, 106.14],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 54863, 54951],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.8, 43.81],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48580, 48668],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 162135, 162139],
+  ["counts/browser/world_map/retail/gl_draws_per_frame", 152.33, 152.36],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 162026, 162039],
+  ["counts/bundle/gzip_bytes", 7207601, 7236818],
+  ["counts/bundle/play_gzip_bytes", 5087573, 5101437],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4485.8, 4499.4],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1283.4, 1290.5],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4457.4, 4468.1],
+  ["counts/native/battle/retail/allocs_per_frame", 1237.3, 1238.2],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4611.6, 4623.0],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1300.1, 1306.2],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4584.2, 4595.8],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1252.2, 1258.5],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1708.5, 1709.4],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1442.0, 1446.6],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1391.4, 1392.2],
+  ["counts/native/town01/retail/allocs_per_frame", 1192.5, 1197.4],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1476.3, 1476.4],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1213.6, 1214.0],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "An art install now clears the caster's after-image ring, as retail does (traced in the battle-action docs); the results frame's after-image ghosts now differ slightly from the capture's, unsettled which side is short."
+changes = [
+  ["states/battle_jou_gala_finisher_results_retail/image", 0.976, 0.974],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The hit and effect walks read the crossing cursor, as FUN_80047430 hands them; that re-deals the strike stream so the gate lands 314 ticks later and one block flips. The only differing state word, the striker's tint blend, now reads 0 as retail's RAM does."
+changes = [
+  ["states/battle_noaru_barra_v2_strike/image", 0.99, 0.989],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A patched-executable state (the shiny-seru mod), outside the retail-disc check: the damage figure reads 219 against retail's 233 and the fog drifts; stable at .830 over three runs this wave."
+changes = [
+  ["states/shiny_refactor_gimard_levelup/image", 0.832, 0.83],
+]

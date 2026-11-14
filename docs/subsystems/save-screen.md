@@ -399,7 +399,11 @@ confirm is taken. The sub-modes this page pins:
 **Which cells take a confirm.** Sub-mode `0x0B` takes the cell's mode from
 [`FUN_801E3F74`](#which-mode-a-slot-gets-fun_801e3f74) and accepts mode `1` (a
 readable Legaia save) on a Load, mode `1` or `3` (a free block) on a Save. Any
-other cell takes the press without a prompt. Whether a claimed block is
+other cell takes the press without a prompt, but not silently: the grid writes
+the confirm cue `0x20` into the ring before it asks for the mode
+(`0x801DEAC0..0x801DEAC8`). The card screen has no buzz at all; every ring
+write in `FUN_801DD35C` is `0x20`, `0x21` or `0x37`. Port:
+`SaveScreenFlow::blip_edge`, read by every host's blip. Whether a claimed block is
 Legaia's is decided by its directory **filename**, not by whether its bytes
 parse. Port: `save_select::card_block_snapshots` captions a claimed block with
 any other name foreign, and `SaveScreenFlow::before_tick` drops the Cross on

@@ -1244,7 +1244,9 @@ Two functions carry the screen:
   through a 5-entry jump table at `0x801CF71C`:
   - `0x801F0444` **init** - sets the active flag and advances to interactive.
   - `0x801F0480` **interactive** - the arms are exclusive, in this order:
-    the cancel mask (takes the last glyph), the edge word equal to Start
+    the cancel mask (`0x800846D4`, read as `lw v0,0x594(s2)` at `0x801F055C`
+    off the `0x80084140` window: Circle | L2 as the new-game init seeds it;
+    takes the last glyph - the port also takes Triangle), the edge word equal to Start
     (`0x800`: jumps to cell `0x74`, and on the Select button counts as a
     confirm), the confirm mask, then the auto-repeat word's d-pad bits. The
     deltas are `-0x11` (up) / `+0x11` (down) / `+1` (right) / `-1` (left). A

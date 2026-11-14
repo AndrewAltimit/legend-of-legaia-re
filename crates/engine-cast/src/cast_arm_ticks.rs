@@ -222,5 +222,17 @@ pub const SPLIT_CLONE_ACTION: u8 = 0x50;
 /// The AGL both halves of a weakened split are pinned to (`li v0, 0x20`).
 pub const SPLIT_WEAK_AGL: u16 = 0x20;
 
+/// The colour word PROT 0940's split stamps on the clone it seats
+/// (`lui a0,0x3fcf; ori a0,a0,0xf3fc; sw a0,0x4(v1)` at
+/// `0x801F7F4C..0x801F7F6C`): all three lanes at `0x3FC`, full white, which
+/// the flag-`0` tint ease walks back to neutral.
+pub const SPLIT_CLONE_COLOUR: u32 = 0x3FCF_F3FC;
+
+/// The render flag `+0x21C` the split's arm 1 raises on the caster
+/// (`li v0,0xa; sb v0,0x21c(s2)` at `0x801F7B54..0x801F7B5C`): the tint
+/// SM's white arm, eased toward from the caster's own colour word while the
+/// caster shakes. Arm 2's split pass clears it (`0x801F80C0`).
+pub const SPLIT_SHAKE_FLAG: u8 = 10;
+
 #[cfg(test)]
 mod tests;

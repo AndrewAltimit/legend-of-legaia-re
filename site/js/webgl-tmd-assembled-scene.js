@@ -8,6 +8,20 @@
  * Classic script. Requires webgl-tmd.js first (the class, buildSemiTail,
  * overworldDecorationCue) and site-util.js (LegaiaUtil.installMethods). */
 
+/* A scene mesh's blend-pass order scratch (semiPrimOrder), or null: only a
+ * mesh whose semi prims span more than one ABR mode takes the per-frame order,
+ * where additive under subtractive and the reverse land differently. Keying
+ * every mesh cost a draw per run on every frame (town01 rose from 44 to 550
+ * draws); a one-mode mesh keeps its single run, which leaves an average-mode
+ * (mode 0) mesh's own order unmodelled. `sorted` holds the tail rewritten in
+ * the frame's order. */
+function mixedSemiOrder(tail, indices, flatRgba) {
+  if (!tail || tail.ranges.length < 2) return null;
+  const o = semiPrimOrder(tail, indices, flatRgba);
+  if (o) o.sorted = new Uint32Array(o.seq.length * 3);
+  return o;
+}
+
 window.LegaiaUtil.installMethods(TmdRenderer, class {
   /* ---------- Assembled / scene-mesh path ----------------------------- */
 
@@ -79,6 +93,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * touched by renderAssembled's blend pass. */
     const tail = buildSemiTail(indices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
+    /* The blend pass's per-prim order scratch (semiPrimOrder), keyed per
+     * placement each frame. */
+    m.semiOrder = mixedSemiOrder(tail, indices, m.hasFlat ? flatRgba : null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : indices, gl.STATIC_DRAW);
 
@@ -112,6 +129,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, cbaTsb);
     const tail = buildSemiTail(m.baseIndices, cbaTsb);
     m.semiRanges = tail ? tail.ranges : null;
+    m.semiOrder = mixedSemiOrder(tail, m.baseIndices, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.idxBuf);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, tail ? tail.indices : m.baseIndices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
@@ -669,6 +687,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * G-buffer under the same uniforms (the trackers above carry across
      * both runs). */
     const drawOpaque = () => {
+      /* An opaque fragment at the depth already written loses, so on an
+       * exact tie the primitive drawn first keeps the pixel: the window's
+       * opaque pipelines test strictly (`CompareFunction::Greater` on its
+       * reversed-Z buffer). At LEQUAL the last one won, and Genocidal
+       * Cannon's four overlapping octagon nodes (draw kind 4), one baked
+       * stream here and four draws there, showed a different quadrant of
+       * the side-band page on each host (`cast_cannon` 20% of a frame off). The blend pass keeps LEQUAL, as
+       * the window's blend pipelines keep GreaterEqual. */
+      gl.depthFunc(gl.LESS);
       /* Continent ground heightfield: one draw, fixed Y-flip model (the
        * mesh is already in world coords, PSX +Y down). Drawn after the
        * ocean (so land occludes water through depth-test) and before the
@@ -749,6 +776,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       }
       if (farOn) gl.uniform1i(this.locFarSlice, 0);
       if (forceOn) { gl.uniform1i(this.locForceSemi, 0); forceOn = 0; }
+      gl.depthFunc(gl.LEQUAL);
       /* Hand the frame-global cue back before the blend pass / next frame. */
       if (cueOn !== undefined && cueOn !== this.cueParams) {
         this._setCue(this.cueParams);
@@ -771,6 +799,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * blend prims against the already-rendered background. */
     let blendOn = false;
     let strictOn = false;
+    const semiMvp = this._semiMvp || (this._semiMvp = new Float32Array(16));
     let blendOccl = -1;
     let blendMean = -1;
     for (const [meshId, list] of byMesh) {
@@ -831,6 +860,31 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           continue;
         }
         if (!m.semiRanges) continue;
+        const o = m.semiOrder;
+        if (o && m.cpuPositions && m.cpuIndices) {
+          /* The window blends every semi prim far to near by its centroid's
+           * depth, whatever its mode (psx_blend::sort_blend_list); blended
+           * a mode at a time, Genocidal Cannon's subtractive ground shadow
+           * took its amount off the additive rings drawn first, where the
+           * window subtracts it from the frame under them. */
+          orderSemiPrims(o, m.cpuIndices, m.cpuPositions, mulMat4Into(semiMvp, vp, model));
+          /* The tail rewritten in that order, one draw per change of mode. */
+          const src = m.cpuIndices, out = o.sorted;
+          let at = 0;
+          for (let j = 0; j < o.order.length; j++) {
+            const i = o.prims[o.order[j] * 3 + 2];
+            out[at++] = src[i]; out[at++] = src[i + 1]; out[at++] = src[i + 2];
+          }
+          gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, m.indexCount * 4, out);
+          for (let j = 0; j < o.order.length;) {
+            const mode = o.prims[o.order[j] * 3];
+            const first = j;
+            for (j++; j < o.order.length && o.prims[o.order[j] * 3] === mode; j++);
+            this._setSemiBlend(mode, this.locSemiMode);
+            gl.drawElements(gl.TRIANGLES, (j - first) * 3, gl.UNSIGNED_INT, (m.indexCount + first * 3) * 4);
+          }
+          continue;
+        }
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode, this.locSemiMode);
           gl.drawElements(gl.TRIANGLES, r.count, gl.UNSIGNED_INT, r.start * 4);

@@ -88,6 +88,7 @@ impl World {
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();
         self.refresh_bag_window();
+        self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
         let outcome = self.tick_modes();
         // The script runner's release: a conversation that showed a box and
         // has just let the player go leaves the pad hold
@@ -257,16 +258,6 @@ impl World {
                     (self.ambient.clut_pending_game_ticks + 1).min(600);
             }
         }
-        // Same game-tick law for the ambient move-VM effect parts (jou's
-        // CLUT-cell cyclers / lightning director); drained by the host's
-        // `step_ambient_fx` against its VRAM.
-        if self.clock.display_frame_step == 1 && !self.ambient.fx.is_empty() {
-            self.ambient.vsync_accum += 1;
-            if self.ambient.vsync_accum >= self.clock.frame_step.max(1) {
-                self.ambient.vsync_accum = 0;
-                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
-            }
-        }
         // The modelled CD drive under a field XA one-shot: one vsync of its
         // read span elapses per world tick (`World::push_field_xa_cue`).
         self.tick_field_xa_busy();
@@ -421,6 +412,17 @@ impl World {
         self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
+            // The ambient move-VM effect parts (jou's CLUT-cell cyclers and
+            // lightning director, every stager part) are nodes of the same
+            // actor lists: the part tick `FUN_80021DF4` is their node handler,
+            // so they step on this pass and no other vsync. Banked here for
+            // the host's `step_ambient_fx`, which drains it against its VRAM
+            // on the same tick. A clock of their own drifted half a pass off
+            // the walk, and a part's `rand()` op then drew on a vsync where
+            // retail draws nothing (`deroa`'s, every second pass).
+            if !self.ambient.fx.is_empty() {
+                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
+            }
             self.tick_actor_physics();
             // The `jalr node[+0x0C]` arm of the same walk: run the ported
             // per-frame handler kernels (the colour tween, the field VM
@@ -578,9 +580,18 @@ impl World {
                 self.rng_state = rng.state();
             }
             // The fog pool's render step (`FUN_8003F348`, run from the field
-            // render pass) sees `DAT_1F800393` as its `dt`; the hosts call
-            // it from their draw path, so the ticks accumulate until then.
-            self.fog.pending_dt = self.fog.pending_dt.saturating_add(u32::from(delta));
+            // render pass) sees `DAT_1F800393` as its `dt`, and the pass draws
+            // once a game frame: a retail state films each record's age moving
+            // `rate * 2` on the pass vsync and holding on the vsync between.
+            // So the pass banks its frame step and the vsync between banks
+            // nothing, where the hosts' per-tick step re-emits the same frame.
+            // A per-vsync `dt = 1` aged the pool half a pass ahead of retail
+            // on every second vsync, so a record aged out and freed its slot a
+            // vsync early and the next pass's spawner drew past retail's.
+            if actor_tick_fired {
+                let step = u32::from(self.clock.frame_step.max(1));
+                self.fog.pending_dt = self.fog.pending_dt.saturating_add(step);
+            }
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller
@@ -645,8 +656,18 @@ impl World {
                 // from the battle DRAW tick (`FUN_800480D8`); the engine steps
                 // it here so every host advances it, and reads the quads back
                 // at draw time (`World::battle_arts_banner_quads`).
+                //
+                // Once a battle frame, by that frame's step: the draw tick
+                // runs once per frame (`jal 0x801E2524` at `0x80048140`, the
+                // first body's draw) and walks the clock by
+                // `DAT_1F800393 << 3`. Stepped by the frame step on every
+                // vsync, the slide ran three times retail's speed on a
+                // step-3 frame and landed in a dozen vsyncs where retail's
+                // takes forty.
                 // REF: FUN_800480D8
-                self.tick_arts_banner(cadence);
+                if self.battle.anim_pass_vsyncs > 0 {
+                    self.tick_arts_banner(self.battle.anim_pass_vsyncs);
+                }
                 // In-battle dialogue box (the tutorial text the engage script
                 // opened across the transition): the box owns the frame -
                 // retail parks the battle under it (the camera holds the
@@ -791,6 +812,7 @@ impl World {
                 // controller, behind the same gate
                 // (`World::tick_field_walk_regen`); its Incense zero edge
                 // raises the wear-off notice, which runs here.
+                self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
                 self.step_field_locomotion();
                 self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a

@@ -574,6 +574,14 @@ pub struct BattleState {
     /// fight, so the pose stands on the capture's seat instead. `None` on
     /// every ordinary fight.
     pub forced_victory_seat: Option<u8>,
+    /// The same kind of seed for the pose the capture's results sequencer
+    /// latched on that seat (`+0x1DB`): it stands over the pose pick
+    /// (`0x8004E78C..0x8004EAF0`) after the pick's two `rand()` draws, as
+    /// retail's held-button select does (`0x8004EAF4..0x8004EB8C`), so the
+    /// stream is the replay's either way. A replay that ends the fight on
+    /// another stream draws another pose, and the results framing is the
+    /// pose's script. `None` on every ordinary fight.
+    pub forced_victory_pose: Option<u8>,
     /// The same kind of seed for a capture on the results frame or past it:
     /// the item the report's drop row names (`0` for a report with none),
     /// which the replay's own drop roll `rand()` draws do not share. The
@@ -1007,6 +1015,14 @@ pub struct BattleState {
     /// actor's turn (the Done band, the gate `0x5A`) frames that actor, and
     /// the host may arm the next one before the camera steps on the pass.
     pub sm_ran_actor: Option<u8>,
+    /// The acting actor's target as the SM's last pass left it, ahead of
+    /// that pass's anim tick: `(acting seat, on knockdown / get-up, on the
+    /// death clip 7 / 8)`, the clip tests the post-strike arms hand `FUN_801D5854` case
+    /// 7 or 8 on. Retail's framing call sits inside the state arm
+    /// (`0x801E5660..0x801E5684` in `0x20`), before the node ticks, so a
+    /// get-up that ends on a pass is still read as the get-up by that pass's
+    /// framing. Not a retail field.
+    pub sm_ran_target_clip: Option<(u8, bool, bool)>,
     /// The battle frame the defeat fade's sink last lowered its bodies on
     /// (`World::tick_battle_defeat_sink`) - one
     /// `(size * step) >> 2` step a battle frame, as retail's pass takes it.
@@ -1443,12 +1459,19 @@ pub struct CaptureApproach {
     pub strike: [i16; 2],
     /// The target's captured live pair.
     pub target_ground: [i16; 2],
+    /// A strike-loop capture still on its walk: the yaw counter
+    /// `ctx[+0x6DA]` it was saved at and the walk's node cursor `+0x68`
+    /// there. The staged swing commits at the walk's natural end, so where
+    /// the walk's cycle stands at the arrival decides how many passes it
+    /// walks on into the loop.
+    pub walk_phase: Option<(u16, u16)>,
 }
 
 impl CaptureApproach {
-    /// `arrive:target:sx:sz:tx:tz`.
+    /// `arrive:target:sx:sz:tx:tz`, then `:yaw:cursor` for a
+    /// [`Self::walk_phase`].
     pub fn to_env(&self) -> String {
-        format!(
+        let mut s = format!(
             "{}:{}:{}:{}:{}:{}",
             self.arrive,
             self.target,
@@ -1456,7 +1479,11 @@ impl CaptureApproach {
             self.strike[1],
             self.target_ground[0],
             self.target_ground[1]
-        )
+        );
+        if let Some((yaw, cursor)) = self.walk_phase {
+            s.push_str(&format!(":{yaw}:{cursor}"));
+        }
+        s
     }
 
     /// Parse [`Self::to_env`]'s form.
@@ -1468,6 +1495,10 @@ impl CaptureApproach {
             target: next()?.parse().ok()?,
             strike: [next()?.parse().ok()?, next()?.parse().ok()?],
             target_ground: [next()?.parse().ok()?, next()?.parse().ok()?],
+            walk_phase: match (next(), next()) {
+                (Some(y), Some(c)) => Some((y.parse().ok()?, c.parse().ok()?)),
+                _ => None,
+            },
         })
     }
 }
@@ -1480,9 +1511,16 @@ fn capture_approach_env_round_trips() {
         target: 2,
         strike: [168, 290],
         target_ground: [0, -12],
+        walk_phase: None,
     };
     assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
     assert_eq!(CaptureApproach::from_env("656:2:168"), None);
+    let walking = CaptureApproach {
+        walk_phase: Some((638, 72)),
+        ..a
+    };
+    assert_eq!(walking.to_env(), "656:2:168:290:0:-12:638:72");
+    assert_eq!(CaptureApproach::from_env(&walking.to_env()), Some(walking));
 }
 
 /// One combatant of [`BattleState::capture_reseat_bars`]: engine slot, HP,
@@ -1600,6 +1638,7 @@ impl BattleState {
             party_melee_pushes: 0,
             forced_absorb: false,
             forced_victory_seat: None,
+            forced_victory_pose: None,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
@@ -1675,6 +1714,7 @@ impl BattleState {
             frame_step_seed_after_accum: None,
             frame_step_seed_in_state: false,
             sm_ran_state: None,
+            sm_ran_target_clip: None,
             sm_ran_actor: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

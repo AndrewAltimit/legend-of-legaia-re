@@ -119,6 +119,12 @@ impl World {
         if run.phase != arm || !run.busy {
             self.stage_caster_on_arm_pass(arm);
         }
+        // Glare's roll sits inside the pass its arm 2 counts out on
+        // (`jal 0x80056798` at `0x801F6F9C`, past the gate at `0x801F6F30`),
+        // after that pass's frame-driver draw, not on the next pass's head.
+        if run.phase != arm {
+            self.fold_glare_on_its_arm(run.prot_entry, spell_id, run.phase);
+        }
         // A module whose arms' spawns are ported seats each on the pass
         // its arm makes the call.
         if per_arm == Some(run.prot_entry) {
@@ -278,19 +284,21 @@ impl World {
             if let Some(records) = self.casting.module_spray.take()
                 && opens_pass
             {
-                let x = 0x80 - (self.next_rand() % 257) as i16;
-                let y = 0x80 - (self.next_rand() % 257) as i16;
-                let seated: Vec<cmc::ModuleSpawn> = records
-                    .iter()
-                    .map(|&r| cmc::ModuleSpawn {
+                // Two rounds a pass (`sltiu v0,s8,0x2` / `bne` at
+                // `0x801F7710`), each two draws and the pair on them.
+                let mut seated = Vec::with_capacity(2 * records.len());
+                for _ in 0..legaia_engine_cast::cast_module_camera::THUNDER_SPRAY_ROUNDS {
+                    let x = 0x80 - (self.next_rand() % 257) as i16;
+                    let y = 0x80 - (self.next_rand() % 257) as i16;
+                    seated.extend(records.iter().map(|&r| cmc::ModuleSpawn {
                         record: cmc::SpawnRecord::Module(r),
                         anchor: cmc::SpawnAnchor::LiteralScaled {
                             pos: [x, y, 0x100],
                             rot: [0; 3],
                             scale: 0x1000,
                         },
-                    })
-                    .collect();
+                    }));
+                }
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
             }
             if let Some((record, count)) = self.casting.module_scatter.take()
@@ -945,6 +953,15 @@ impl World {
         let (slot, clip) = (run.slot, run.clips[i]);
         run.cursor = i;
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            // A director that makes the arm's store itself (PROT 0951's
+            // Chaos Flare stages `8` with the bump in its arm-2 seat write,
+            // `0x801F6D60`) has already committed the clip on this pass:
+            // the one store is not made twice, so the fresh clip keeps the
+            // hold budget its commit seeded (`+0x176`, the loop window the
+            // arm moves).
+            if a.battle.current_anim == clip {
+                return;
+            }
             if let Some(p) = a.battle_animation.as_mut() {
                 p.release_loop_window();
             }

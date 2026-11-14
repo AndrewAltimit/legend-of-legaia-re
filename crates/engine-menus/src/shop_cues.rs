@@ -66,6 +66,7 @@ pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: boo
             | MenuState::ShopSell
             | MenuState::ShopConfirm
             | MenuState::ShopTrade
+            | MenuState::ShopTradeConfirm
     ) {
         return None;
     }
@@ -76,11 +77,32 @@ pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: boo
             MENU_CONFIRM_CUE
         });
     }
-    if input.circle || input.triangle {
+    if input.cancel() {
         return Some(MENU_CANCEL_CUE);
     }
     moved.then_some(MENU_CURSOR_CUE)
 }
+
+/// The cue a Cross on the shop's mode select (`FUN_801DAFD4`, sub-screen
+/// `0x1A`) sounds for `row`. The window is paged by the overlay's picker
+/// `FUN_801D688C(&DAT_801E46BC, 3, 1)` (`0x801DB09C`), whose confirm pushes
+/// `0x36`, and the mode select writes over it only twice: Quit silences the
+/// pick and pushes the cancel `0x37` (`0x801DB0D0` / `0x801DB0D8`), and Sell
+/// over an empty bag buzzes `0x23` (`0x801DB184`). Buy, and Sell with goods,
+/// keep the bare `0x36`; so does the engine-only Trade row.
+// REF: FUN_801DAFD4
+pub fn shop_root_confirm_cue(row: Option<MenuState>, refused: bool) -> u8 {
+    use crate::menu_cues::{MENU_CANCEL_CUE, MENU_PICK_CUE};
+    match row {
+        _ if refused => SHOP_REFUSAL_CUE,
+        Some(MenuState::ShopExit) | None => MENU_CANCEL_CUE,
+        Some(_) => MENU_PICK_CUE,
+    }
+}
+
+/// The confirm cue the shop's Point Card notice sounds as a confirm or cancel
+/// dismisses it (`FUN_801DB7F4` case 4, `FUN_80035BD0(0x20)` at `0x801DBC2C`).
+pub const POINT_CARD_DISMISS_CUE: u8 = crate::menu_cues::MENU_CONFIRM_CUE;
 
 /// The list kernel's dim-row buzz (`li a1,0x23` at `0x80032D0C`), which the
 /// recipient picker also keys for a member who cannot equip the piece.

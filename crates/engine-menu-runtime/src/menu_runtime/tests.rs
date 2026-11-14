@@ -635,7 +635,9 @@ fn sell_over_an_empty_bag_buzzes_and_stays_on_the_mode_select() {
         let (state, cue) = if stocked {
             (
                 MenuState::ShopSell,
-                Some(legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE),
+                // The mode select keeps its picker's bare pick
+                // (`FUN_801D688C`, `0x36`; `FUN_801DAFD4` writes nothing over it).
+                Some(legaia_engine_menus::menu_cues::MENU_PICK_CUE),
             )
         } else {
             (
@@ -652,6 +654,25 @@ fn sell_over_an_empty_bag_buzzes_and_stays_on_the_mode_select() {
         if !stocked {
             assert_eq!(runtime.ctx.cursor, 1, "the hand stays on Sell");
         }
+    }
+}
+
+/// The mode select's Buy keeps the picker's `0x36` and its Quit sounds the
+/// cancel `0x37` it pushes (`FUN_801DAFD4`, `0x801DB0D8`).
+#[test]
+fn the_shop_mode_select_sounds_pick_for_buy_and_cancel_for_quit() {
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
+    for (downs, cue) in [(0, 0x36), (2, 0x37)] {
+        let mut world = world_with_party(1);
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, Vec::new())));
+        runtime.ctx.state = MenuState::ShopMenu.as_byte();
+        for _ in 0..downs {
+            runtime.tick(&mut world, down());
+        }
+        let _ = runtime.take_ui_cue();
+        runtime.tick(&mut world, cross());
+        assert_eq!(runtime.take_ui_cue(), Some(cue), "row {downs}");
     }
 }
 
@@ -824,9 +845,14 @@ fn equipment_buy_opens_recipient_picker_and_equips_now() {
 
     let mut world = world_with_party(2);
     world.party.money = 300;
-    // Party member 1 already wears item 7 in the weapon slot.
+    // Party member 1 already wears item 7 as a weapon and item 8 as body
+    // armour. Character 1's weapon is record byte 3 (`0x8007B42C` = 2, 3,
+    // 2); body armour is byte 0 for everyone.
+    let weapon_byte = legaia_engine_menus::equip_session::record_byte_for_category(Disc::Weapon, 1);
+    assert_eq!(weapon_byte, 3);
     let mut eq = world.party.roster.members[1].equipment();
-    eq.slots[legaia_engine_menus::equipment::EquipSlot::Weapon.as_index() as usize] = 7;
+    eq.slots[weapon_byte] = 7;
+    eq.slots[0] = 8;
     world.party.roster.members[1].set_equipment(eq);
 
     let mut runtime = MenuRuntime::new("/tmp/legaia-test");
@@ -868,12 +894,10 @@ fn equipment_buy_opens_recipient_picker_and_equips_now() {
     runtime.tick(&mut world, MenuInput::default());
     assert!(runtime.recipient_session.is_none(), "picker closed");
     assert_eq!(world.party.money, 180, "120 gold debited");
-    assert_eq!(
-        world.party.roster.members[1].equipment().slots
-            [legaia_engine_menus::equipment::EquipSlot::Weapon.as_index() as usize],
-        0x30,
-        "bought piece equipped directly"
-    );
+    let worn = world.party.roster.members[1].equipment().slots;
+    assert_eq!(worn[weapon_byte], 0x30, "bought piece equipped directly");
+    assert_eq!(worn[0], 8, "the body armour stays on");
+    assert_eq!(world.party.inventory.get(&8), None);
     assert_eq!(
         world.party.inventory.get(&7).copied(),
         Some(1),
@@ -884,6 +908,76 @@ fn equipment_buy_opens_recipient_picker_and_equips_now() {
         None,
         "the purchase never entered the bag"
     );
+}
+
+/// Buy-and-equip resolves the record byte from the piece's disc category
+/// and the wearer, as retail's `0x801DB5E8..0x801DB670` does: body armour on
+/// byte 0, head gear on 1, footwear on 4, the weapon on the character's own
+/// byte. Each buy displaces only what that byte held.
+#[test]
+fn buy_and_equip_writes_the_category_byte_for_each_wearer() {
+    use legaia_engine_menus::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+
+    const WANT: [(Disc, [usize; 3]); 4] = [
+        (Disc::Body, [0, 0, 0]),
+        (Disc::Head, [1, 1, 1]),
+        (Disc::Weapon, [2, 3, 2]),
+        (Disc::Footwear, [4, 4, 4]),
+    ];
+    for (category, bytes) in WANT {
+        for (ch, &want) in bytes.iter().enumerate() {
+            let mut world = world_with_party(3);
+            world.party.money = 500;
+            // Every byte holds a marker id, so a wrong destination shows as
+            // the wrong marker coming back to the bag.
+            let mut eq = world.party.roster.members[ch].equipment();
+            for (i, s) in eq.slots.iter_mut().enumerate() {
+                *s = 0x10 + i as u8;
+            }
+            world.party.roster.members[ch].set_equipment(eq);
+
+            let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+            runtime.retail_equipment_buy = true;
+            runtime.install_equip_info(DiscEquipInfo::from_entries([(
+                0x44,
+                DiscEquipEntry {
+                    mask: 0b111,
+                    category,
+                    is_ra_seru: false,
+                    passive_index: None,
+                },
+            )]));
+            runtime.open_shop(ShopSession::new(ShopInventory::new(
+                1,
+                vec![ShopItem {
+                    item_id: 0x44,
+                    price: 100,
+                }],
+            )));
+            runtime.ctx.state = MenuState::ShopBuy.as_byte();
+            runtime.tick(&mut world, cross());
+            runtime.tick(&mut world, MenuInput::default()); // Init frame
+            for _ in 0..=ch {
+                runtime.tick(&mut world, down());
+            }
+            runtime.tick(&mut world, cross());
+            runtime.tick(&mut world, MenuInput::default());
+            assert!(runtime.recipient_session.is_none());
+
+            let worn = world.party.roster.members[ch].equipment().slots;
+            for (i, &id) in worn.iter().enumerate() {
+                let expect = if i == want { 0x44 } else { 0x10 + i as u8 };
+                assert_eq!(id, expect, "{category:?} on character {ch}: byte {i}");
+            }
+            assert_eq!(
+                world.party.inventory.get(&(0x10 + want as u8)).copied(),
+                Some(1),
+                "{category:?} on character {ch}: the displaced piece is that byte's"
+            );
+        }
+    }
 }
 
 #[test]

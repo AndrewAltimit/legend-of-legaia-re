@@ -7,7 +7,7 @@
 <section class="doc-section" id="the-ladder" data-doc="contents">
   <h2>The ladder</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 880 548" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Six rungs, from the bottom up. One: format docs, is the data read right, held to the disc's bytes traced to their reader, gated by disc coverage and byte accounting. Two: port provenance, does a PORT tag name the right routine, held to the bytes at the tagged address, gated by the provenance ratchet. Three, highlighted: the retail kernel differential, does the Rust compute what the bytes compute, held to the routine itself run off the disc in an R3000 and GTE interpreter, gated by the differential coverage ratchet; a run also settles the provenance of the tags it covers. Four: retail-compare stills, does the engine stand where retail stood at one instant, held to a save state's RAM and VRAM, gated by a per-state per-channel ratchet. Five: films, does it unfold the same over time, held to an emulator recording, reported before and after. Six: the full-game ladder, can the game be finished on pad input, seeded from retail saves at each milestone, gated by a tier ratchet.">
+    <svg viewBox="0 0 880 548" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Six rungs, from the bottom up. One: format docs, is the data read right, held to the disc's bytes traced to their reader, gated by disc coverage and byte accounting. Two: port provenance, does a PORT tag name the right routine, held to the bytes at the tagged address, gated by the provenance ratchet. Three, highlighted: the retail kernel differential, does the Rust compute what the bytes compute, held to the routine itself run off the disc in an R3000 and GTE interpreter, gated by the differential coverage ratchet; a run also settles the provenance of the tags it covers. Four: retail-compare stills, does the engine stand where retail stood at one instant, held to a save state's RAM and VRAM, gated by a per-state per-channel ratchet. Five: films, does it unfold the same over time, held to an emulator recording, reported before and after, with its sound cues ratcheted. Six: the full-game ladder, can the game be finished on pad input, seeded from retail saves at each milestone, gated by a tier ratchet.">
       <defs>
         <marker id="vl-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
         <marker id="vl-arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-dim)"/></marker>
@@ -40,7 +40,7 @@
       <text class="dg-sub" x="460" y="163">a row a vsync, on the game's clock</text>
       <rect class="dg-node" x="620" y="118" width="240" height="62" rx="5"/>
       <text class="dg-label" x="740" y="143">Report</text>
-      <text class="dg-sub" x="740" y="163">before and after, one command</text>
+      <text class="dg-sub" x="740" y="163">its sound cues are ratcheted</text>
 
       <!-- 4 stills -->
       <rect class="dg-node" x="50" y="204" width="250" height="62" rx="5"/>
@@ -139,7 +139,8 @@
 
 <section class="doc-section" id="rung-5" data-doc="rung-5-films">
   <h2>5 &middot; Films</h2>
-  <p>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records one cast on both sides and pairs frames on the game's own clock, the action state and then the cast module's phase; the <a href="walk-film.html">walk film</a> does the same for a field walk under a fixed pad schedule. Recordings carry retail pixels and stay off the repository, so a film has no committed baseline: a change reports its before and after on the same command.</p>
+  <p>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records one cast on both sides and pairs frames on the game's own clock, the action state and then the cast module's phase; the <a href="walk-film.html">walk film</a> does the same for a field walk under a fixed pad schedule. Recordings carry retail pixels and stay off the repository, so a film's image score has no committed baseline: a change reports its before and after on the same command.</p>
+  <p>One channel of a film is ratcheted. A cast plays the cue retail plays, on the same clock, or it does not, so <code>film-cues.py --check</code> holds the sound cues of the committed film sets to a baseline (<a href="cast-sequence-oracle.html#cue-ratchet">the cue ratchet</a>). A cue that stops playing fails there while the picture's score barely moves. A film also separates a wrong routine from a different deal: it logs retail's <code>rand()</code> seed word on every vsync and can seat the engine's stream on it at a named phase (<a href="cast-sequence-oracle.html#rand">the rand stream</a>).</p>
   <p class="hint">Blind to everything outside the recorded stretch, and to residuals smaller than two retail recordings of one cast differ from each other.</p>
 </section>
 
@@ -147,6 +148,26 @@
   <h2>6 &middot; The full-game ladder</h2>
   <p>The <a href="full-game-ladder.html">full-game ladder</a> plays New Game to credits with no human on pad input, segment by segment from retail saves at each story milestone and as one continuous run. Its tiers are ratcheted, and a seed set repeats the run on other random streams.</p>
   <p class="hint">Blind to fidelity: it proves the game can be finished in the port and compares nothing with retail, which is what the rungs below it do.</p>
+</section>
+
+<section class="doc-section" id="beside" data-doc="beside-the-ladder">
+  <h2>Beside the ladder</h2>
+  <p>The six rungs are the checks that stand on one another. Others sit beside them, each on its own question, and none is a rung because none rests on the rung below it.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Question</th><th>Instrument</th><th>Held against</th><th>Blind to</th></tr></thead>
+    <tbody>
+      <tr><td>Is the engine playing the same sound?</td><td><a href="../subsystems/audio.html#state-sweep">Audio state sweep</a>, <a href="../subsystems/audio-internals.html#real-pcm">real retail PCM</a></td><td>libsnd's records in a state's RAM; the emulator's recorded output</td><td>States with no recording</td></tr>
+      <tr><td>Does a run stay with retail between two states?</td><td><a href="gate-replay.html">Gate replay</a>, <a href="recomp-differential.html">recomp differential</a></td><td>The engine's pad on retail, beat by beat; a recomp's trace</td><td>Report only</td></tr>
+      <tr><td>Does the page draw what the window draws?</td><td><a href="host-drift.html">Host drift</a> gates, the <a href="host-drift.html#host-pair">host pair run</a></td><td>The other host, on the same pad script</td><td>Retail</td></tr>
+      <tr><td>Does the same input give the same run?</td><td><a href="determinism-replay.html#gate">Determinism replay</a>, <a href="frame-hash.html">frame hash</a></td><td>The same run, twice</td><td>Whether the run is right</td></tr>
+      <tr><td>Does anything panic, stall or loop?</td><td><a href="soak-harness.html">Soak harness</a></td><td>Its own detectors</td><td>Retail divergence</td></tr>
+      <tr><td>Did a frame get more expensive?</td><td><a href="frame-bench.html#cost-ratchet">Cost ratchet</a></td><td>Committed counts of draws, allocations, bundle bytes</td><td>Time</td></tr>
+      <tr><td>Did a baseline loosen, or a check not run?</td><td><a href="ratchet-integrity.html">Ratchet integrity</a></td><td>Baselines at the base revision; skips counted</td><td>A value wrong when blessed</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The full list, sorted by the gap each instrument closes, is <a href="porting-by-reimplementation.html#coverage">the coverage map</a>.</p>
 </section>
 
 <section class="doc-section" id="hinge" data-doc="why-the-differential-is-the-hinge">

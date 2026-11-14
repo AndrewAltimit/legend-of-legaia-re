@@ -193,7 +193,10 @@ impl World {
             let a = &mut self.actors[i];
             match (a.battle_staged_anim, a.battle_animation.as_mut()) {
                 (Some(_), Some(p)) => (
-                    p.hit_source().map(|src| (src, p.current_frame())),
+                    // On the crossing tick the walk reads the advanced
+                    // cursor, as the anim tick hands it (`0x80047890..0x800478A4`).
+                    p.hit_source()
+                        .map(|src| (src, p.crossing_frame().unwrap_or(p.current_frame()))),
                     p.take_loop_rewound(),
                 ),
                 _ => (None, false),

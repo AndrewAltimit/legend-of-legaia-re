@@ -1343,7 +1343,13 @@ draws it takes.
   is that pose's own script (`battle_over_script`). The pose actor's latched
   `+0x1DB` is read (`RetailBattle::win_pose`); a seed that reaches the phase on
   another pose is kept only as the fallback, and the remaining seeds are tried
-  for one that draws retail's (`noa_levelup_banner`).
+  for one that draws retail's (`noa_levelup_banner`). When none does, the
+  fallback's stream runs again with retail's pose seated over the pick
+  (`RetailBattle::pose_seat`, `BattleState::forced_victory_pose`), as retail's
+  held-button select stands over it after the pick's two draws: a change of
+  frame pacing that finishes the replayed fight on other streams no longer
+  turns the shot (`battle_jou_gala_finisher_hold_retail`, whose reaching
+  streams all drew `0x11` or `0x12` for Gala's `0x14`, `.600` to `.994`).
 - The pose stands on the capture's seat. The results sequencer poses the
   acting slot `ctx[+0x13]` the victory arm left (the member who finished the
   fight), and a drive that seats the capture's beaten monster at the HP it
@@ -1393,6 +1399,20 @@ turn from the start lets an earlier turn than the one retail stands on meet the
 gate, which cost `battle_jou_gola_gola_v3_strike`'s camera `1.000` to `.873`. If
 the rescue misses too, the child drops to the default step, unaimed and then
 aimed.
+
+A later turn than retail's can open the phase as well. The replay runs rounds
+the capture's history may not hold, and a party swing in one of them can leave
+another monster on its knockdown when the striker's turn comes up again:
+`battle_dohaty_nova_v2_strike`'s replay met the gate some `2400` ticks in with
+the second Nova off its ground on clip `8`, where the capture's stands idle on
+its pair and draws as the near-camera ghost above the striker. So a monster
+strike's drive also names the other monster slots the capture holds on clip
+`0` (`ActionSteer::idle_bystanders`, the drive's `B<mask>` token,
+`RetailBattle::idle_bystanders`), and the gate waits for a turn that finds
+each of them idle or down. Both halves read it, so the headless search and
+the child miss the same turns and take the same rescue. The party's seats are
+not named: a film's party stands on its guard clip from the first prompt
+(`LEGAIA_BATTLE_GUARD`), which is never clip `0`.
 
 The headless search takes the same aim once no stream reached the phase on the
 targets the replay picked itself (`RetailBattle::strike_aim_steer`, carried on the
@@ -1499,7 +1519,15 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   art begins one slot past the walk's first depth, so retail draws one
   ghost where the replay, its art committed earlier on its own clock, drew
   two (`.930` to `.946`). A monster's ring id is
-  `record[+0x77] + 0x10`, not a clip, and its ghosts stay the replay's.
+  `record[+0x77] + 0x10`, not a clip, so a monster seat's depths are seated
+  where the clip-record ring `+0x234` holds the entry the displayed frame
+  shows, resolved through the record's entry array as the displayed clip is.
+  `battle_nilboa_gi_delilas_strike`'s walker had cut its live pair back at a
+  loop end inside the walk's depths, so retail's two ghosts trail the body by
+  pairs the replay's ring, begun on the seat, never held (`.885` to `.929`);
+  over the battle states seventeen others rise, Jewel Beam's Orb `.951` to
+  `.996` and the Tail Fire Gimards `.984` / `.978` to `.990` / `.987`, and
+  none falls.
 - **Heading.** On a capture past the end signal each placed combatant takes its
   heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
   stores it every frame of a swing and nothing turns the actor back, so the
@@ -1698,8 +1726,16 @@ engine's own replay measures the push:
 1. A driven action that reaches its phase is run once more on the same stream
    from `captured - drift` (`RetailBattle::undrift`, any axis moved by at least
    `UNDRIFT_MIN`).
-2. The second run is kept when it stands the placed combatants nearer their
-   captured pairs than the first (`ground_residual`).
+2. The second run is kept when it stands the placed combatants at least
+   `UNDRIFT_MIN` nearer their captured pairs than the first
+   (`ground_residual`). A few units either way is two replays of one push,
+   and a separation push makes that common: `FUN_80050BB8` pushes a pair
+   until it stands outside `(r_a + r_b) / 6` wherever it started, so seeding
+   the pair back only walks it further off and the residual wanders round
+   after round. `battle_bylon_theeder_v2_thunderbolt_mid_cast`'s Theeder and
+   Gala read `60`, `58`, `62` and `50` over the rounds, and the last moved
+   Gala `35` units, which shifted the prompt framing's box the displayed
+   walk starts from (`image` `.948` to `.999`, harness-only).
 3. The acting seat's own drift is its approach, whose direction is the heading
    every framing case subtracts, so it is tried under two rules
    (`UndriftActing`). Under the first a seat that walked moves with its
@@ -1712,9 +1748,9 @@ engine's own replay measures the push:
    run. A round that lands further off does not end the iteration: the push
    is not monotone in where it starts, and with the attacker's in-range
    back-off `noa_levelup_fight_pre`'s second round lands `396` units further
-   off than its first while a later one lands nearest. The own-drift run replaces
-   the target's-drift one only when it stands the fight at least
-   `UNDRIFT_MIN` nearer.
+   off than its first while a later one lands nearest. The own-drift run, like
+   the target's-drift one, replaces what stands only when it stands the fight
+   at least `UNDRIFT_MIN` nearer.
 5. A capture past the end signal is not re-run: the win pose's own travel is not
    a push the capture holds twice.
 
@@ -1744,8 +1780,27 @@ So a monster-melee capture also places the walk's start (`BattleState::capture_a
 | arrival reading | harness | the capture's counter less the passes since the walk ended: the accumulator dates the strike clip the capture sits in (`8 * step` a framing call), plus the arrival pass and the loop's first |
 | seed `0x0C` | `World::stand_capture_attacker_off_reach` | stands the attacker on the ray, back by the tag-`1` walk entry's speed (`FUN_80050E2C`'s fallback at `0x801E32B0`; `speed * scale / 8` a vsync) times the counter units to arrival, so the bystanders' make-way at `0x14` reads its path and `0x14`'s in-reach shortcut (`0x801E320C`) cannot skip the walk |
 | first walk step | `World::seat_capture_approach_start` | re-seats it on the ray from the counter it walks off, now that the playing clip's speed is known |
+| walk phase | `World::seat_capture_walk_phase` | on a capture still on its walk, stands the walk's cursor where it reaches the RAM's on the capture's counter ([the walk phase](#the-walk-phase)) |
 
 Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
+
+#### The walk phase
+
+A capture still on its walk in `0x1E` holds its swing staged behind the walk (`+0x1DC =
+3`): the arrival staged idle under bit 0 (`0x801E35BC..0x801E35C8`), the loop its swing
+under bit 1 (`0x801E3758`), and a walk entry carrying the `+0x76` lock refuses both cuts
+(`0x80047940..0x80047948`), so the walk's natural end commits whatever is staged
+(`0x80047B54`). Where the walk's cycle stands at the arrival therefore decides the
+swing's pass, and the counter alone does not place it: the replay's walk runs from its
+own commit. `battle_map02_mad_ogre_strike`'s replay arrived on its walk's last pass,
+committed idle with the arrival and its swing a pass later, before the gate, where
+retail's Ogre walks ten more passes with the swing staged. So the first walk step also
+stands the walk's cursor where, a pass at a time, it reaches the RAM's node cursor
+(`RetailBattle::caster_cursor`) on the pass the counter reaches the capture's
+(`CaptureApproach::walk_phase`, the `:yaw:cursor` tail of `LEGAIA_BATTLE_APPROACH_YAW`).
+A cycle is whole passes: the re-commit zeroes the cursor (`sh zero,0x68` at
+`0x8004B068`), so Mad Ogre's `320`-sixteenth walk at `24` a pass cycles on `336`. A
+harness seat.
 
 Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
 A walk-clip capture saved on the arrival itself, the cursor `ctx[+0x15]` still `0`, is the exception (`ActionSteer::arrival`): the poll `0x19` has just stored `0x1E` with idle staged, and a one-swing stream's first loop pass stages its byte and leaves for `0x1F` together (`0x801E3734`, `0x801E3998`), so the state lasts one pass. A replay whose walk was shorter arrives with its counter short of retail's and is past the state before the clock is due, so the gate is that pass and the counter is pinned to retail's word there.
@@ -2145,6 +2200,18 @@ own clock, and its depth cue ramps with its age, so `0x801F5EB0` seats its
 position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
+
+A ring the replay stomped past the capture's count is retired. The capture
+holds every ring its walk left live, and the replay's walk is not retail's: it
+starts where the yaw counter places it and runs on the replay's frame step, so
+on a finer step than retail's it is longer. Cort's walk is one cycle of his
+12-keyframe clip in retail, five stomps with the last (gate `13`, read on the
+crossing's frame `12`) on the pass he arrives; the replay, on step `2` where
+retail's sixteen-entry history reads `3`, walks a third further, re-commits
+the loop and stomps gate `13` and the new cycle's gate `1` on one pass. The
+snapshot seats the capture's rings over the replay's first and marks the rest
+finished (`World::install_action_fx_part_snapshot`), only for a capture that
+holds a ring at all.
 
 A ring the replay never stomped is seated outright. The seed carries the ring's
 scale `+0x72` beside its ground point, and the snapshot seats each ring past the

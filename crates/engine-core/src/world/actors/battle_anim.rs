@@ -403,6 +403,10 @@ impl World {
                 player.set_tween_target(tween);
             }
             let mut looped_recommit = false;
+            // The keyframe the effect-script and cue walks read
+            // ([`MonsterAnimPlayer::walked_frame`] on the crossing tick, else
+            // the cursor).
+            let mut walk_frame = None;
             let mut slice_natural_end = false;
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
@@ -571,7 +575,9 @@ impl World {
                     && actor.battle.current_anim == 0x11
                     && actor.battle.latched_anim >= 0x2B;
                 let recommit = natural_end && player.is_looping();
-                if rearm_window || recommit {
+                // A loop's natural-end re-commit zeroes the cursor behind the
+                // ending cycle's walks (below).
+                if rearm_window {
                     actor.battle_effect_cursor = 0;
                 }
                 // The natural-end re-commit re-seeds the window
@@ -593,6 +599,11 @@ impl World {
                     }
                 }
                 looped_recommit = recommit;
+                walk_frame = Some(if natural_end {
+                    player.walked_frame()
+                } else {
+                    after
+                });
                 Some(after)
             } else {
                 None
@@ -607,7 +618,22 @@ impl World {
             // wrap, not from the idle's first commit 58 vsyncs back.
             // PORT: FUN_80047430 (`0x80047B54`, the natural-end commit of a
             // looping clip)
+            // The crossing tick walks the ending cycle's effect script and cue
+            // track on the advanced cursor, ahead of the re-commit that zeroes
+            // `+0x1F5` / `+0x1F6` (the walks at `0x800478B8` / `0x800478E4`
+            // run before the natural-end commit at `0x80047B54`): a record or
+            // cue authored past a loop's last keyframe fires once a cycle, as
+            // it ends. The hit walk keeps the new cycle's frame: its index is
+            // zeroed already, and no loop's event frame stands past its count.
+            // PORT: FUN_80047430 (`0x800478A8..0x800478E8` ahead of `0x80047B54`)
+            if looped_recommit && let Some(f) = walk_frame {
+                self.step_actor_effect_script(i, f);
+                self.step_actor_anim_cues(i, f);
+            }
             if looped_recommit {
+                // The commit's effect-cursor zero (`sb zero,0x1f5` at
+                // `0x8004B060`), behind the ending cycle's walk.
+                self.actors[i].battle_effect_cursor = 0;
                 // The commit's rate decay runs on this path too
                 // (`0x8004B080..0x8004B090`): a seat at any rate but `8` loops
                 // at `4`, so a summon creature seated at `2` plays its idle at
@@ -640,7 +666,21 @@ impl World {
                     )
                 });
                 self.actors[i].battle_anim_cue_cursor = cue_cursor;
-                self.note_active_clip_commit(i);
+                // The natural end makes one commit (`jal 0x8004AD80` at
+                // `0x80047B54`): when the byte below hands the loop over, that
+                // commit is the staged clip's, and its tail (the camera reset,
+                // the strike loop's reach snap) runs once, there. Run here as
+                // well, the reach snap walked a locked walk's strike commit
+                // twice: back off the arrival, then forward onto the edge
+                // again, and Warman struck from `(138, 333)` where retail's
+                // one walk back and the swing's root step leave `(136, 325)`.
+                let hands_over = (self.summon_seat_waits_for_cycle(i)
+                    || self.loop_cut_locked(i)
+                    || self.spirit_stage_waits_for_cycle(i))
+                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim;
+                if !hands_over {
+                    self.note_active_clip_commit(i);
+                }
                 // The natural-end commit installs whatever `+0x1DA` holds:
                 // a byte staged over the summon creature's loop waits here
                 // ([`Self::summon_seat_waits_for_cycle`]).
@@ -648,11 +688,7 @@ impl World {
                 // refused ([`Self::loop_cut_locked`]).
                 // And the Spirit band's stage
                 // ([`Self::spirit_stage_waits_for_cycle`]).
-                if (self.summon_seat_waits_for_cycle(i)
-                    || self.loop_cut_locked(i)
-                    || self.spirit_stage_waits_for_cycle(i))
-                    && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
-                {
+                if hands_over {
                     self.commit_staged_battle_anim_at_boundary(i);
                     // This tick's pose is the old clip wrapped to frame 0, which
                     // retail's commit never decodes. A new clip shorter than the
@@ -690,10 +726,14 @@ impl World {
             // to the post-commit re-walk.
             let cut = self.actors[i].battle_clip_commits != commits;
             if let Some(frame) = frame.filter(|_| !cut) {
-                self.step_actor_effect_script(i, frame);
+                // A loop's crossing walked its ending cycle above; this walk
+                // is the new cycle's, retail's post-commit walk.
+                let walk_frame = walk_frame.filter(|_| !looped_recommit).unwrap_or(frame);
+                self.step_actor_effect_script(i, walk_frame);
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
-                self.step_actor_anim_cues(i, frame);
+                // REF: FUN_800508dc (the cue walk the crossing frame feeds)
+                self.step_actor_anim_cues(i, walk_frame);
             }
             // A reaction a hit staged on this seat commits here, behind the
             // advance and the old clip's walks
@@ -1469,6 +1509,16 @@ impl World {
         // before the cursor is the known-art starter, or under the solo
         // latch - read here, ahead of this commit's own store below.
         if q >= 0x10 && self.actors[i].battle_monster_id.is_none() {
+            // The same install clears the seat's whole history-ring id
+            // column (`sb zero,0x1fb(v0)` over `0..0x20`,
+            // `0x8004BCD4..0x8004BCE8`) before the shout: every entry fails
+            // the ghost walk's `id >= 0x11` gate until the passes after this
+            // commit refill it, so an art's ghosts go out at each new art and
+            // come back one ring depth at a time (Tri-Somersault's two at
+            // `step` and `2 * step` passes into the next swing).
+            for f in self.actors[i].battle_pose_history.iter_mut() {
+                f.ghost_eligible = false;
+            }
             let latch = self.battle_ctx.gauge_rearm_latch;
             self.emit_commit_arts_shout(i, latch);
         }

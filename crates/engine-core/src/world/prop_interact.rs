@@ -270,12 +270,30 @@ impl World {
     /// Advance the placed-prop layer one field tick: step the clips, step an
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.
+    ///
+    /// A touch's run takes its first slice in the tick the walk posted it,
+    /// game frame or not. Retail's player tick runs ahead of every placement
+    /// and placed object in the pass (scene init tail-appends partition-1
+    /// actors, then the props: `0x8003B8D4`, `0x8003B908`, `FUN_80020454`),
+    /// so the touched object's dialog SM `FUN_80039B7C` runs later in the
+    /// pass whose walk posted the touch, and a record that ends on its first
+    /// `0x21` clears the player's `+0x10 & 0x80000` there (`0x80039EF8`),
+    /// before the next pass's walk gate. The port walks every vsync, so a
+    /// touch can land between game frames; its slice belongs to that walk's
+    /// pass all the same. Left to the next game frame, the lock it raised
+    /// held that frame's walk: sliding along `town01`'s door at `(22, 18)`
+    /// (bind record `P0[4]`, `25 21 21`) the player moved on every other
+    /// vsync.
+    ///
+    /// REF: FUN_801D5B5C, FUN_80039B7C, FUN_80020454
     pub fn tick_prop_interactions(&mut self) {
         self.sync_prop_colliders_to_object_actors();
         self.tick_actor_anims();
         self.step_prop_interaction();
-        if let Some(anchor) = self.props.pending_touch.take() {
-            self.start_prop_interaction(anchor);
+        if let Some(anchor) = self.props.pending_touch.take()
+            && self.start_prop_interaction(anchor)
+        {
+            self.step_prop_interaction_slice(true);
         }
     }
 
@@ -371,6 +389,13 @@ impl World {
     /// end. The retail counterpart is the dialog SM (`FUN_80039B7C`) driving
     /// the dispatcher on the touched actor each frame.
     pub(crate) fn step_prop_interaction(&mut self) {
+        self.step_prop_interaction_slice(false);
+    }
+
+    /// [`Self::step_prop_interaction`], with `posted_now` set for the slice
+    /// of the tick that posted the touch: it runs off the game-frame grid
+    /// ([`Self::tick_prop_interactions`]).
+    fn step_prop_interaction_slice(&mut self, posted_now: bool) {
         use legaia_engine_system::input::PadButton;
         let is_prop_run = self
             .dialog
@@ -523,7 +548,7 @@ impl World {
         // (`FrameClock::script_slice_due`). The box above and the player's
         // legs read the pad and spend on every vsync.
         // REF: FUN_8002519C, FUN_80039B7C
-        if !self.clock.script_slice_due() {
+        if !posted_now && !self.clock.script_slice_due() {
             self.dialog.inline = Some(id);
             return;
         }
@@ -694,6 +719,31 @@ impl World {
                             });
                         break;
                     }
+                    continue;
+                }
+                // The touched mark on a talk placement (`B1 <id> 08`, the
+                // `+0x10 |= 0x100` the touch post `FUN_801D5B5C` raises): the
+                // context runner `FUN_80039B7C` steps that actor's record from
+                // then on, so the press that reached this prop opens the
+                // other actor's conversation. `dolk2`'s market counters
+                // (P0[26..=28], interact class `31 1E`) carry nothing else -
+                // the keepers stand a tile behind the counter, out of the
+                // facing probe's reach (64 ahead, a 72-unit box) from its
+                // front, and the counter's own 80-unit box is what the probe
+                // meets. Stepped on the counter's context, the bit landed on
+                // the counter and the press opened nothing.
+                // REF: FUN_801D5B5C, FUN_80039B7C, FUN_801CF9F4
+                if b == 0xB1
+                    && id
+                        .bytecode
+                        .get(id.pc + 2)
+                        .is_some_and(|bit| bit & 0x1F == 8)
+                    && let Some(slot) = vm::field::peek_extended(&id.bytecode, id.pc)
+                        .and_then(|t| host.world.placement_slot_for_target(t))
+                    && host.world.npcs.dialog_prologue.contains_key(&slot)
+                {
+                    host.world.props.proxy_talk = Some(slot);
+                    id.pc += 3;
                     continue;
                 }
                 // An op aimed at another actor that no arm below routes to
@@ -904,6 +954,11 @@ impl World {
         }
         self.set_player_engaged(false);
         self.dialog.inline = None;
+        // A touched mark the record raised on a talk placement: that
+        // actor's conversation runs next, as the context runner picks it up.
+        if let Some(slot) = self.props.proxy_talk.take() {
+            self.trigger_field_interact(0, slot);
+        }
     }
 
     /// Move prop `anchor`'s actor to `seat`: its position, its contact-box
@@ -1220,7 +1275,12 @@ pub(in crate::world) fn step_npc_word_op(
     slot: u8,
 ) -> FieldStepResult {
     let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
-    if b & 0x7F == 0x2D && !host.world.npc_clip_cursor_bound(slot) {
+    if b & 0x7F == 0x2D
+        && !host.world.npc_clip_cursor_bound(slot)
+        && !host
+            .world
+            .placement_morph_spin(slot, id.bytecode.get(id.pc + 2).copied())
+    {
         return FieldStepResult::Advance { next_pc: id.pc + 3 };
     }
     let Some(ci) = host

@@ -639,15 +639,15 @@ const GHOST_RING_ID_MIN: u8 = 0x11;
 /// first slot is 5, so the walk's depth 4 from the displayed slot 2 reads a
 /// ring id of `0` and retail draws one ghost, the replay two).
 ///
-/// Party seats only. A party seat's ring id is its committed dynamic slot
-/// `+0x1D9` (`0x80047FCC`), which names the clip the engine must be
-/// playing; a monster's is `record[+0x77] + 0x10` (`0x80048044..0x80048060`),
-/// which does not, and the Tail Fire captures' Gimard ghosts read worse
-/// seated on a replay standing elsewhere (`battle_gimard_tail_fire_a`
-/// `.925` to `.920`).
+/// A party seat's ring id is its committed dynamic slot `+0x1D9`
+/// (`0x80047FCC`), which names the clip the engine must be playing; a
+/// monster's is `record[+0x77] + 0x10` (`0x80048044..0x80048060`), which
+/// does not, so the monster row takes its clip off the clip-record ring
+/// ([`retail_monster_ghost_ring`]).
 pub(super) fn retail_ghost_ring(
     ram: &[u8],
     party_count: u8,
+    monster_count: u8,
 ) -> Vec<legaia_engine_capture::ghost_ring::GhostRingSeed> {
     let mut out = Vec::new();
     for pool in 0..u32::from(party_count.clamp(1, 3)) {
@@ -687,6 +687,80 @@ pub(super) fn retail_ghost_ring(
             out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
                 slot,
                 clip: id,
+                depth,
+                drawn: true,
+                cursor: game_anchors::u16_at(ram, p + RING_CURSOR + at * 2),
+                x: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8) as i16),
+                z: i32::from(game_anchors::u32_at(ram, p + POSITION_RING + at * 8 + 4) as i16),
+            });
+        }
+    }
+    out.extend(retail_monster_ghost_ring(ram, party_count, monster_count));
+    out
+}
+
+/// [`retail_ghost_ring`] for the monster row. A monster's ring id
+/// `record[+0x77] + 0x10` names no clip, so the clip a ghost re-poses is the
+/// clip-record ring `+0x234` resolved through the monster record's entry
+/// array (as [`displayed_monster_clip`] does for the body), and a depth is
+/// seated only where that ring holds the clip the displayed frame shows:
+/// the engine re-poses a ghost from the body's playing clip. The walk
+/// doubles a monster seat's depths (`0x8004941C..0x80049428`).
+///
+/// A walker whose walk loops (its live pair cut back at each loop) left its
+/// ghosts at the ring's pairs across the cut, which the replay's own ring,
+/// begun on the seat, does not hold: `battle_nilboa_gi_delilas_strike`'s two
+/// ghosts trail its body by the walk's pairs two loops apart.
+fn retail_monster_ghost_ring(
+    ram: &[u8],
+    party_count: u8,
+    monster_count: u8,
+) -> Vec<legaia_engine_capture::ghost_ring::GhostRingSeed> {
+    let mut out = Vec::new();
+    let pc = u32::from(party_count.clamp(1, 3));
+    for m in 0..u32::from(monster_count.min(5)) {
+        let pool = 3 + m;
+        let p = game_anchors::u32_at(ram, ACTOR_TABLE + pool * 4);
+        let record = game_anchors::u32_at(ram, 0x801C_9348 + m * 4);
+        if !in_ram(p) || !in_ram(record) {
+            continue;
+        }
+        let Some((clip, _)) = displayed_monster_clip(ram, pool) else {
+            continue;
+        };
+        let shown = game_anchors::u32_at(ram, p + RING_RECORD + DISPLAYED_FRAMES_BACK * 4);
+        let rate = u32::from(game_anchors::u8_at(ram, p + 0x21D));
+        let step = 2 * (8u32.checked_div(rate).unwrap_or(0)).max(1);
+        let Ok(slot) = u8::try_from(pc + m) else {
+            continue;
+        };
+        for depth in [step, 2 * step] {
+            let at = DISPLAYED_FRAMES_BACK + depth;
+            if at >= RING_SLOTS {
+                continue;
+            }
+            let Ok(depth) = u8::try_from(depth) else {
+                continue;
+            };
+            let id = game_anchors::u8_at(ram, p + RING_ID + at);
+            if id < GHOST_RING_ID_MIN {
+                out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                    slot,
+                    clip,
+                    depth,
+                    drawn: false,
+                    cursor: 0,
+                    x: 0,
+                    z: 0,
+                });
+                continue;
+            }
+            if game_anchors::u32_at(ram, p + RING_RECORD + at * 4) != shown {
+                continue;
+            }
+            out.push(legaia_engine_capture::ghost_ring::GhostRingSeed {
+                slot,
+                clip,
                 depth,
                 drawn: true,
                 cursor: game_anchors::u16_at(ram, p + RING_CURSOR + at * 2),
@@ -1139,7 +1213,7 @@ impl RetailBattle {
             part_ages: retail_part_ages(ram),
             action_fx_parts: retail_action_fx_parts(ram),
             effect_children: retail_effect_children(ram),
-            ghost_ring: retail_ghost_ring(ram, party_count),
+            ghost_ring: retail_ghost_ring(ram, party_count, monster_count),
             backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))
@@ -1232,6 +1306,10 @@ impl RetailBattle {
             }),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
+            caster_cursor: active
+                .map(|p| game_anchors::u32_at(ram, p + 0x22C))
+                .filter(|&node| in_ram(node))
+                .map_or(0, |node| game_anchors::u16_at(ram, node + 0x68)),
             caster_latched: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DB)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
             swing_reseed_entry: active_actor < 3 && {
@@ -1400,6 +1478,7 @@ impl RetailBattle {
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
             strike_stream_steer: false,
             strike_aim_steer: false,
+            pose_seat: false,
             approach_terms: (
                 game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
                 game_anchors::u16_at(ram, ctx + 0x6D4) as i16,

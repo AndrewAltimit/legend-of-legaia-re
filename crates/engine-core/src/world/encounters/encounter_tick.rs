@@ -425,9 +425,8 @@ impl World {
             // `DAT_80070536` - the field-BGM sound-source actor's bound voice
             // id (`0x8007052C + 0xA`), runtime-written when the field track
             // attaches. The engine's BGM director owns a single sequencer
-            // slot, so its id is 0. Structurally unread on this path: the
-            // `ReapplyBgmLevel` effect only fires for a non-negative battle
-            // id, and the phase-0 tick passes the sentinel (above).
+            // slot, so its id is 0. The only reader is the `ReapplyBgmLevel`
+            // effect, which the consumer below leaves a no-op.
             bgm_voice_id: 0,
             // `_DAT_8007B910` - the live audio level. The engine models no
             // field-mode duck, so the level sits where the MAN loader rests
@@ -450,8 +449,8 @@ impl World {
                 // The engine's BGM director already plays at its configured
                 // level and the world models no live duck in field mode, so
                 // there is nothing to re-apply - a no-op here, disclosed
-                // rather than faked. (Unreachable on this path anyway: the
-                // phase-0 sentinel skips it, as retail's `blez` arm does.)
+                // rather than faked. Only a script's `-1` sound set (op
+                // `0x35` sub-op `7`) skips it, as retail's `blez` arm does.
                 TransitionEffect::ReapplyBgmLevel { .. } => {}
                 _ => {}
             }

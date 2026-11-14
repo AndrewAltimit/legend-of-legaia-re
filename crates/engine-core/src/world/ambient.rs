@@ -177,6 +177,25 @@ pub struct AmbientBankSeed {
     pub rot: [i16; 3],
 }
 
+/// A live ambient part's move-VM program state as a retail state holds it
+/// ([`World::seat_ambient_part_vm`]): where its program stands and what it is
+/// counting, the words a part's next tick reads before it draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AmbientVmSeed {
+    /// The part's record offset inside the stager bundle, as
+    /// [`AmbientBankSeed::record_off`].
+    pub record_off: u32,
+    /// `+0x70`, the PC in u16 units over the record.
+    pub pc: i16,
+    /// `+0x54`, the wait timer (`WAIT_SET v` stores `v << 3`).
+    pub wait_timer: i16,
+    /// `+0x88` / `+0x8A`, the saved loop PCs; `+0x8C` / `+0x8E`, the loop
+    /// counters (ops `0x18`..`0x1B`).
+    pub loops: [u16; 4],
+    /// `+0x5C`, the anim-loop counter.
+    pub field_5c: i16,
+}
+
 /// Seat a keyframe-pose node so its mode-6 pack reproduces `entries`: each
 /// part's current and target keyframes both hold the packed values, so the
 /// blend at any cursor packs them back byte for byte.
@@ -394,6 +413,40 @@ impl World {
             let st = &mut part.state;
             [st.render_24, st.render_26, st.render_28] = seed.rot;
         }
+    }
+
+    /// Seat the program state of the live ambient parts on a retail state's
+    /// own ([`AmbientVmSeed`]), record by record, in list order. A part's
+    /// waits run on the game pass from its spawn, so which pass its next
+    /// `rand()` op or VRAM write lands on is time since the scene entry,
+    /// which a seed that settles on its own clock does not reproduce. Only
+    /// the program words are written; positions, banks and render state stay
+    /// the engine's. A record retail holds more live parts of than the engine
+    /// seats the surplus on nothing. Returns `(seated, retail parts)`.
+    pub fn seat_ambient_part_vm(&mut self, seeds: &[AmbientVmSeed]) -> (usize, usize) {
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        let mut seated = 0;
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            let n = used.entry(off).or_insert(0);
+            let Some(part) = self
+                .ambient
+                .fx
+                .iter_mut()
+                .filter(|p| !p.finished && p.record_off == off)
+                .nth(*n)
+            else {
+                continue;
+            };
+            *n += 1;
+            seated += 1;
+            let st = &mut part.state;
+            st.pc = seed.pc;
+            st.wait_timer = seed.wait_timer;
+            [st.field_88, st.field_8a, st.field_8c, st.field_8e] = seed.loops;
+            st.field_5c = seed.field_5c;
+        }
+        (seated, seeds.len())
     }
 
     /// Spawn prescript stager record `id` as an ambient part at `origin`

@@ -21,7 +21,7 @@ impl MenuRuntime {
         };
         let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
-            input.circle || input.triangle,
+            input.cancel(),
             input.up,
             input.down,
         );
@@ -348,7 +348,7 @@ impl MenuRuntime {
         // the other axis.
         let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
-            input.circle || input.triangle,
+            input.cancel(),
             input.up,
             input.down,
         );
@@ -418,10 +418,17 @@ impl MenuRuntime {
     }
 
     /// Party-row commit: the buy **equips directly** - the piece never
-    /// enters the bag - and the previously equipped item in the slot the
-    /// disc category names returns to the bag (`FUN_801DB380` at
-    /// `0x801db6a4`), then the gold debit runs and the ability bits rebuild
-    /// (`FUN_80042558` - engine side `World::refresh_party_ability_bits`).
+    /// enters the bag - and the previously equipped item in the record byte
+    /// the disc category names for that character returns to the bag
+    /// (`FUN_801DB380` at `0x801db6a4`), then the gold debit runs and the
+    /// ability bits rebuild (`FUN_80042558` - engine side
+    /// `World::refresh_party_ability_bits`).
+    ///
+    /// The destination is a record `+0x196` byte resolved by
+    /// [`legaia_engine_menus::equip_session::record_byte_for_category`], the
+    /// rule the Equip screen lands on too - body armour on byte `0`, the
+    /// weapon on the character's own weapon byte.
+    ///
     /// `false` when the item has no disc equip record, the purse is short,
     /// or the party index is out of range - nothing changed in each case.
     fn apply_recipient_equip_buy(
@@ -431,27 +438,19 @@ impl MenuRuntime {
         item_id: u8,
         cost: i32,
     ) -> bool {
-        use legaia_engine_menus::equipment::EquipSlot;
-        use legaia_game_tables::equip_stats::EquipSlot as Disc;
         let Some(entry) = self.equip_info.as_ref().and_then(|i| i.entry(item_id)) else {
             return false;
         };
         if world.party.money < cost {
             return false;
         }
-        let slot = match entry.category {
-            Disc::Weapon => EquipSlot::Weapon,
-            Disc::Body => EquipSlot::BodyArmor,
-            Disc::Head => EquipSlot::Helmet,
-            Disc::Footwear => EquipSlot::Boot,
-        };
-        let idx = slot.as_index() as usize;
         // The picker's row is a party-list position; the record it equips
         // is that entry's character (`0x80084597 + row`, then
         // `char * 0x414` at `0x801DB678`).
         let Some(&ch) = world.present_party_list().get(party_index as usize) else {
             return false;
         };
+        let idx = legaia_engine_menus::equip_session::record_byte_for_category(entry.category, ch);
         let Some(record) = world.party.roster.members.get_mut(usize::from(ch)) else {
             return false;
         };

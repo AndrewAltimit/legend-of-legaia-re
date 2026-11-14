@@ -265,7 +265,12 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
     let mut out = Vec::new();
     let per_frame = world.ghost_ring_slots_per_frame();
     for (i, actor) in world.actors.iter().enumerate() {
-        if actor.battle_pose_history.is_empty() || battle_body_word_zero(actor) {
+        // The walk runs inside the draw tick `FUN_800480D8`, so a body the
+        // tick does not draw leaves no ghosts: a seat taken off (a capture
+        // module's creature, node `+0x10 |= 8`) keeps its history ring, and
+        // drawing from it put PROT 0964's golem back on screen as two white
+        // ghosts after its arm-5 pass.
+        if !actor.active || actor.battle_pose_history.is_empty() || battle_body_word_zero(actor) {
             continue;
         }
         let monster = world.battle_seat_walks_as_monster(i);

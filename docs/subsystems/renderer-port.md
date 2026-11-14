@@ -291,6 +291,17 @@ the window-sized mode's row move stops at; a fragment inside its triangle
 keeps its row. The console's rule needs no move: its half-texel bias already
 rounds the edge value onto the corner's row.
 
+Under the console's rule the snapped corners and the byte UVs put a texel
+boundary exactly on many pixel centres: on a battle ground grid tile, whole
+rows of them. The float interpolation lands a hair either side, differently
+on each host, and the window and the play page sampled those rows a texel
+apart (`0.4%` of a battle frame, the largest share of the hosts' remaining
+difference). Both read `PSX_TEXEL_TIE_BIAS` (a 256th of a texel) past the half
+texel, so such a tie takes the texel the exact UV rounds to on both. Against
+the mednafen states' frames the bias moves as many states up as down; the
+same bias taken below the boundary reads sixteen of eighteen moved states
+worse.
+
 The composited screen primitives take the same pixel centre and texel bias
 on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to
@@ -485,6 +496,14 @@ belly stands in front of the ring wherever it reaches past the ring's radius.
 Worked on Sol Tower's shell: `battle_kor_dead_bone_strike` `.969` to `.993`,
 `battle_korb2_kemaro_strike` `.971` to `.990`, `battle_kor_spoon_strike` `.966`
 to `.984`.
+
+Two primitives at exactly one mean depth, such as Genocidal Cannon's four
+overlapping octagon nodes over one side-band page, keep the first one drawn:
+the opaque pass tests depth strictly on both hosts (`Greater` on the window's
+reversed-Z buffer, `LESS` on the page), and each blend pass keeps the equal
+test. The page bakes those nodes into one stream in the window's draw order,
+so the tie lands on the same node on both
+([host drift](../tooling/host-drift.md#what-it-has-found)).
 
 Not modelled: the order inside one bucket (retail's last-linked-first), a ghost's
 `0x50`-byte table offset (`FUN_80048A08` at `0x80048E7C`, twenty buckets deeper
@@ -1085,7 +1104,9 @@ rest, replaced for the acting member by the full-width active-actor bar at
 running forward / the same pair for `MP` - and **no gauge bar**. A top-left
 plaque names the actor the frame belongs to, which is also the port's whole
 monster readout since retail draws no monster gauge. Popups sit at slot_y - 16 (heal = green, crit = yellow, plain damage =
-cyan); fade alpha multiplies into the text colour's alpha channel. Monster
+cyan; the heal colour serves the fatal-decision restore, which retail pushes,
+and every other restore under the heal-numerals enhancement, which retail
+throws silently); fade alpha multiplies into the text colour's alpha channel. Monster
 rows, the LV / AP tail and the "ENCOUNTER!" banner are diagnostic-only,
 behind `LEGAIA_DIAG_HUD`. Geometry provenance, including which retail table
 the measurement falsified, is on

@@ -246,7 +246,6 @@ impl SceneHost {
         // The field init keys off the cue voices, emitters included, so a
         // looping emitter of the scene left behind falls silent.
         self.world.release_field_init_voices();
-        self.world.ambient.vsync_accum = 0;
         self.world.ambient.pending_game_ticks = 0;
         self.world.ambient.cell_captures.clear();
         self.world.ambient.flash_applied.clear();

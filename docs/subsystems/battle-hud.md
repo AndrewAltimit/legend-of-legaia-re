@@ -1971,9 +1971,15 @@ The cue bank is documented in `legaia_art::hyper_fanfare`.
 `banner_cancel_on_commit`, called from the engine's own commit
 (`World::commit_staged_battle_anim_at_boundary`, beside the slow-motion arms -
 see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-and-after-image-ghosts)).
-`World::tick_arts_banner` steps the clock once per battle frame and
-`World::battle_arts_banner_quads` is the read both hosts draw through
-(`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+`World::tick_arts_banner` steps the clock once per battle frame, by that frame's
+step, as the draw tick does (`jal 0x801E2524` at `0x80048140` in `FUN_800480D8`,
+gated to the first body drawn), and `World::battle_arts_banner_quads` is the read
+both hosts draw through (`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+Walked by the frame step on every vsync instead, the slide ran three times retail's
+speed on a step-`3` frame: the arts films' banner pixels landed in a dozen vsyncs
+where retail's take forty, and the Hyper Art films rise on the fix (Tornado Flame
+`.809` to `.838`, Thunder Punch `.849` to `.883`, Frost Breath `.880` to `.913`).
+Grade `disassembly` (the call site) and `capture` (the films).
 
 <a id="battle-hud-model"></a>
 ## Engine port: the battle HUD model
@@ -1989,7 +1995,21 @@ play page runs the same fold in `web-play`'s `play_battle.rs`.
 The HUD is fed by `World` events:
 
 - `BattleEvent::ApplyArtStrike` → `push_damage` / `push_heal` (per-strike popup
-  with a fade timer).
+  with a fade timer). In retail a restore throws no numeral: an item heal, MP
+  restore or revive, the HP After / MP After ticks, the Lost Grail's Final
+  Heal, the companion's heal and the healing modules (PROT 0905, 0911, 0919)
+  push nothing, as retail's applier `FUN_800402F4` and those modules push
+  nothing onto the ring, and the HP figure rolls up on the readout word alone
+  ([battle round loop](battle-round-loop.md)). The port throws the
+  heal-coloured `push_heal` numeral for every one of them under the **heal
+  numerals** enhancement (`WorldToggles::heal_numerals`, on by default; off
+  under `pin_retail`, `--retail` and the page's Retail-faithful), through the
+  one gate `World::push_heal_numeral`, which the spell-catalog fold
+  (`World::fold_spell_outcome`) takes too. The fatal-decision full heal is
+  retail's own push (`FUN_801F44A0` at `0x801F8084`) and throws its numeral
+  either way.
+- the round-open Venom / Toxic tick → its damage numeral over the poisoned
+  body, as retail's ticker pushes it.
 - `StatusEvent::TickDamage` / `Cleared` → `sync_status` (replaces the slot's
   status set from the `StatusEffectTracker`).
 - the round boundary → `sync_slot` (refreshes HP / MP / AP per round).

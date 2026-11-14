@@ -151,6 +151,70 @@ impl World {
                 .is_some_and(|st| st.keyframe_count > 0)
     }
 
+    /// Whether a cross-context `2D <id> <bit>` on placement `slot` is the
+    /// morph-end spin: the bit is the envelope's ADVANCE (`11`, `+0x62 &
+    /// 0x800`) and the world runs that placement's envelope, so the bit
+    /// lands in its own time ([`Self::tick_npc_morphs`]) and the record
+    /// waits on it rather than taking it as a clip of no length. `ropeway`'s
+    /// ruins report (`P1[45]`) arms placement `42`'s lanes with
+    /// `CB 40 05 01 ..`, holds them (`AB 40 0A`) and waits with
+    /// `AC 40 0B` / `AD 40 0B` before each page.
+    ///
+    /// REF: FUN_80020740 (`0x80020948..0x80020960`: the last lane's peak
+    /// under HOLD raises `0x800`), FUN_801DE840 (op 0x2D)
+    pub(crate) fn placement_morph_spin(&self, slot: u8, bit: Option<u8>) -> bool {
+        bit == Some(11)
+            && self
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                .is_some_and(|c| self.channel_morph_envelope_live(c))
+    }
+
+    /// The channel a talk's cross-context morph-word op at `pc` reaches: the
+    /// op-`0x4B` lane arm (`CB <id> ..`), or an `AB` / `AC` / `AD <id>` on
+    /// one of the envelope bits `10..=15` (`+0x62 & 0xFC00`) of an actor that
+    /// carries lanes - a placement or a placed object. The low bits of the
+    /// same word are the clip cursor's, which the clip route keeps. An
+    /// `AD <id> 0B` is routed only while the world runs that envelope
+    /// ([`Self::channel_morph_envelope_live`]), so a wait on a dropped gate
+    /// keeps the runner's own handling.
+    ///
+    /// REF: FUN_801DE840 (0x801DE894..0x801DE8B4, the op-0x4B arm
+    /// 0x801E0820..0x801E08C0), FUN_8003C83C
+    pub(crate) fn talk_morph_word_channel(&self, bytecode: &[u8], pc: usize) -> Option<usize> {
+        let b = *bytecode.get(pc)?;
+        if b & 0x80 == 0 {
+            return None;
+        }
+        let t = *bytecode.get(pc + 1)?;
+        let ci = legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, t)?;
+        let c = &self.field_vm.channels[ci];
+        let owner = if c.object_bind {
+            MorphOwner::Object(c.ctx.script_id)
+        } else {
+            MorphOwner::Placement(u8::try_from(c.placement_index).ok()?)
+        };
+        let routed = match b & 0x7F {
+            0x4B => true,
+            0x2B | 0x2C => {
+                bytecode
+                    .get(pc + 2)
+                    .is_some_and(|bit| (10..=15).contains(bit))
+                    && self.npcs.morphs.contains_key(&owner)
+            }
+            0x2D => {
+                bytecode
+                    .get(pc + 2)
+                    .is_some_and(|bit| (10..=15).contains(bit))
+                    && self.channel_morph_envelope_live(c)
+            }
+            _ => false,
+        };
+        routed.then_some(ci)
+    }
+
     /// The object-bind channel of placed object `key` when the object carries
     /// a morph: the channel whose words the ramp envelope reads and writes
     /// ([`Self::tick_npc_morphs`]).
@@ -399,4 +463,61 @@ impl World {
     ) {
         self.npcs.object_pack_slots = targets;
     }
+}
+
+/// Step a talk's cross-context morph-word op on channel `ci`'s own context
+/// ([`World::talk_morph_word_channel`]): the arm writes that actor's lanes,
+/// `+0x10` gate and `+0x62` envelope word, which the ramp envelope
+/// ([`World::tick_npc_morphs`]) steps and whose ADVANCE the `AD <id> 0B`
+/// spin reads. The channel runs as the executing placement or object, so
+/// the op-`0x4B` arm lands on the actor's own [`MorphOwner`].
+///
+/// `ropeway`'s ruins report (`P1[45]`) drives placement `42` this way,
+/// `jagaroom` `P1[8]` placed object `0x12` and `station` `P1[8]` object
+/// `0x06`. On the talk's stand-in the lanes went nowhere and each wait ran
+/// into the spin net.
+///
+/// REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_80020740
+pub(in crate::world) fn step_channel_morph_op(
+    host: &mut FieldHostImpl<'_>,
+    id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
+    ci: usize,
+) -> FieldStepResult {
+    let (object, key) = {
+        let c = &host.world.field_vm.channels[ci];
+        (c.object_bind, c.placement_index)
+    };
+    let mut target_ctx = host.world.field_vm.channels[ci].ctx.clone();
+    // A halt bit the context carries from a leg is not this op's refusal;
+    // the caller has tested the legs. It is put back after the op.
+    let held = target_ctx.flags & 0x400;
+    target_ctx.flags &= !0x400;
+    let saved = (
+        host.world.field_vm.executing_channel,
+        host.world.field_vm.executing_object,
+    );
+    if object {
+        host.world.field_vm.executing_channel = None;
+        host.world.field_vm.executing_object = u16::try_from(key).ok();
+    } else {
+        host.world.field_vm.executing_channel = u8::try_from(key).ok();
+        host.world.field_vm.executing_object = None;
+    }
+    let r = vm::field::step_with_caller(
+        host,
+        &mut target_ctx,
+        &mut id.ctx,
+        false,
+        &id.bytecode,
+        id.pc,
+    );
+    (
+        host.world.field_vm.executing_channel,
+        host.world.field_vm.executing_object,
+    ) = saved;
+    target_ctx.flags |= held;
+    if let Some(c) = host.world.field_vm.channels.get_mut(ci) {
+        c.ctx = target_ctx;
+    }
+    r
 }

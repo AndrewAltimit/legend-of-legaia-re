@@ -27,6 +27,20 @@ const TALL_MONSTER: u8 = 0x89;
 const WIND_UP_FRAME: u16 = 0x160;
 /// The node frame arm 2 pins each pass (`li v0,0x130` / `sh v0,0x68`).
 const WIND_UP_PIN: u16 = 0x130;
+/// The caster's cast clip, which arm 0 stages (`+0x1DA = 9`) and whose action
+/// entry `record[+0x70]` the arms' window stores land in.
+const CAST_CLIP: u8 = 9;
+/// Arm 0's window on the cast clip, `+0x85 = +0x86 = 0x13`
+/// (`0x801F6BCC..0x801F6C00`): a park on frame `0x13`, which spends the
+/// overshoot from the loop budget, so the counter `+0x21B` leaves `0xFF` the
+/// first pass the cursor reaches `0x130` (`FUN_80047430`,
+/// `0x800477A4..0x800477E8`). That is what arm 1 holds on.
+const WIND_UP_WINDOW: [u8; 2] = [0x13, 0x13];
+/// Arm 2's window on its pass, `+0x85 = 0x16`, `+0x86 = 0x21`
+/// (`0x801F702C..0x801F7060`), and the start moved to `0x20` unless the first
+/// formation monster is [`TALL_MONSTER`] (`0x801F7064..0x801F70A4`).
+const QUAKE_WINDOW_TALL: [u8; 2] = [0x16, 0x21];
+const QUAKE_WINDOW: [u8; 2] = [0x20, 0x21];
 
 /// `(s * n) / 4096`, a `sra 12` rounded toward zero as the arm's `bgez` does.
 fn scaled(s: i16, n: i32) -> i32 {
@@ -58,9 +72,9 @@ fn off(x: i16, z: i16, facing: u16, along: i32, across: i32) -> (i16, i16) {
 /// | 6 (`0x801F7D88`) | TR z `+= k`, TR y alternates; the target row's settle is the body's | - |
 ///
 /// `k` is `scalar * step`, `scalar` per engine tick. The phase chain - clips,
-/// the hit of arm 5 - is `EARTHQUAKE_CHAIN`. Not ported: the record-table words
-/// `+0x85` / `+0x86` the arms write through the caster's monster record, the
-/// pad rumble words. The 2D puff `FUN_801DFDF0(2, ..)` beside each rock pair is
+/// the hit of arm 5 - is `EARTHQUAKE_CHAIN`. Arms 0 and 2 also move the cast
+/// clip's loop window `+0x85` / `+0x86` through the caster's monster record
+/// ([`WIND_UP_WINDOW`], [`QUAKE_WINDOW`]). Not ported: the pad rumble words. The 2D puff `FUN_801DFDF0(2, ..)` beside each rock pair is
 /// the host's (`World::capture_stager_tick`, beside the rocks).
 ///
 /// PORT: overlay_cast_earthquake_0935_801f69d8 (PROT 0935; the camera arms and the records)
@@ -95,6 +109,12 @@ pub fn earthquake_camera(
                 ..Default::default()
             };
             arm.shot = Some(held_shot(facing));
+            // Without the park the clip runs on to its disc window
+            // (`0x16..0x21`) before the counter moves, and arm 1 held
+            // seventeen step-`4` passes where retail's holds eleven: every
+            // later arm opened six passes late, the rock arms' `rand()` draws
+            // on another stretch of the stream.
+            arm.caster_clip_bounds = Some((CAST_CLIP, WIND_UP_WINDOW));
         }
         1 => {
             arm.shot = Some(held_shot(c.facing));
@@ -132,7 +152,16 @@ pub fn earthquake_camera(
             arm.caster_write.seek = Some(WIND_UP_PIN);
             if st.countdown.drain_above(0) {
                 arm.hold = true;
+                return arm;
             }
+            arm.caster_clip_bounds = Some((
+                CAST_CLIP,
+                if seats.first_monster == TALL_MONSTER {
+                    QUAKE_WINDOW_TALL
+                } else {
+                    QUAKE_WINDOW
+                },
+            ));
         }
         3 => {
             arm.drift = Some(CaptureDrift {
@@ -255,6 +284,28 @@ mod tests {
         assert!(!a.hold);
         assert_eq!(a.charge_spawns.iter().flatten().count(), 7);
         assert_eq!(st.countdown.0, SPEED_SCALAR << 6);
+    }
+
+    #[test]
+    fn arms_zero_and_two_move_the_cast_clips_window() {
+        let mut st = ModuleCamState::default();
+        let a0 = earthquake_camera(&mut st, 0, seats());
+        assert_eq!(a0.caster_clip_bounds, Some((9, [0x13, 0x13])));
+        // Arm 2 holds on its countdown, then moves the window on its pass.
+        st.countdown.0 = SPEED_SCALAR << 6;
+        let held = earthquake_camera(&mut st, 2, seats());
+        assert!(held.hold);
+        assert_eq!(held.caster_clip_bounds, None);
+        st.countdown.0 = 0;
+        let a2 = earthquake_camera(&mut st, 2, seats());
+        assert!(!a2.hold);
+        assert_eq!(a2.caster_clip_bounds, Some((9, [0x20, 0x21])));
+        let tall = ModuleCamSeats {
+            first_monster: TALL_MONSTER,
+            ..seats()
+        };
+        let a2 = earthquake_camera(&mut st, 2, tall);
+        assert_eq!(a2.caster_clip_bounds, Some((9, [0x16, 0x21])));
     }
 
     #[test]

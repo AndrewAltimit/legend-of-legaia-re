@@ -905,6 +905,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_hp_readout_guard {
         args.push("--no-hp-readout-guard".into());
     }
+    if settings.switches.no_heal_numerals {
+        args.push("--no-heal-numerals".into());
+    }
     // `--flag=value`, so a negative AP is never read as a flag.
     let mut kv = |flag: &str, v: String| args.push(format!("--{flag}={v}").into());
     if let Some(ap) = settings
@@ -1407,6 +1410,7 @@ pub enum OptionRow {
     TetsuSparFix,
     JewelFix,
     HpReadoutGuard,
+    HealNumerals,
     BonusDrop,
     SaveAnywhere,
     SpiritAp,
@@ -1421,7 +1425,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 42] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 43] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -1437,6 +1441,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 42] = [
     (None, OptionRow::GroundFog),
     (None, OptionRow::SeeThroughWalls),
     (None, OptionRow::EntryPulse),
+    (None, OptionRow::HealNumerals),
     (Some("Play"), OptionRow::PreciseMovement),
     (None, OptionRow::ActionMovement),
     (None, OptionRow::SmartMonsters),
@@ -1487,6 +1492,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.no_tetsu_spar_fix = true;
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
+    w.no_heal_numerals = true;
     w.spirit_ap = None;
     w.damage_ap = None;
     w.seru_catch_pct = None;
@@ -1578,6 +1584,7 @@ impl OptionRow {
             Self::TetsuSparFix => "Tetsu spar order fix",
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
+            Self::HealNumerals => "Heal numbers",
             Self::BonusDrop => "Bonus equipment drops",
             Self::SaveAnywhere => "Save anywhere",
             Self::SpiritAp => "Spirit AP",
@@ -1722,6 +1729,10 @@ impl OptionRow {
                 "Multiplies every monster's health and combat stats. Experience, gold \
                  and drops stay as they are."
             }
+            Self::HealNumerals => {
+                "Show the amount over a character healed in battle. The original only \
+                 counts the HP figure up."
+            }
             Self::HpReadoutGuard => {
                 "Stops a rare original bug where a battle freezes with the camera \
                  circling forever after a party member's HP gauge stops counting."
@@ -1760,6 +1771,7 @@ impl OptionRow {
                 | Self::TetsuSparFix
                 | Self::JewelFix
                 | Self::HpReadoutGuard
+                | Self::HealNumerals
                 | Self::BonusDrop
                 | Self::SaveAnywhere
                 | Self::SpiritAp
@@ -1835,6 +1847,7 @@ impl OptionRow {
             Self::TetsuSparFix => on_off(!s.switches.no_tetsu_spar_fix),
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
+            Self::HealNumerals => on_off(!s.switches.no_heal_numerals),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
             Self::ActionMovement => on_off(s.switches.action_movement),
@@ -1995,6 +2008,7 @@ impl OptionRow {
             Self::TetsuSparFix => w.no_tetsu_spar_fix = d.no_tetsu_spar_fix,
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
+            Self::HealNumerals => w.no_heal_numerals = d.no_heal_numerals,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
             Self::ActionMovement => w.action_movement = d.action_movement,
@@ -2102,6 +2116,7 @@ impl OptionRow {
             Self::TetsuSparFix => s.switches.no_tetsu_spar_fix ^= true,
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
+            Self::HealNumerals => s.switches.no_heal_numerals ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
             Self::ActionMovement => s.switches.action_movement ^= true,
@@ -2467,6 +2482,7 @@ mod tests {
         );
         assert_eq!(shown(OptionRow::JewelFix), on_off(t.jewel_fix));
         assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
+        assert_eq!(shown(OptionRow::HealNumerals), on_off(t.heal_numerals));
         assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
         assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
         assert_eq!(shown(OptionRow::ActionMovement), on_off(t.action_movement));
@@ -3051,6 +3067,14 @@ mod tests {
         OptionRow::JewelFix.adjust(&mut o, &mut s, 1);
         assert_eq!(OptionRow::HpReadoutGuard.value(&o, &s), "On");
         OptionRow::HpReadoutGuard.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::HealNumerals.value(&o, &s), "On");
+        OptionRow::HealNumerals.adjust(&mut o, &mut s, 1);
+        assert_eq!(OptionRow::HealNumerals.value(&o, &s), "Off");
+        assert!(
+            play_args_with(&info, &s)
+                .iter()
+                .any(|a| a == "--no-heal-numerals")
+        );
         assert_eq!(OptionRow::SpiritAp.value(&o, &s), "32");
         assert_eq!(OptionRow::SeruCatchRate.value(&o, &s), "Original");
         for row in [
@@ -3142,6 +3166,7 @@ mod tests {
             TetsuSparFix => "play-tetsu-spar-fix",
             JewelFix => "play-jewel-fix",
             HpReadoutGuard => "play-hp-readout-guard",
+            HealNumerals => "play-heal-numerals",
             BonusDrop => "play-bonus-drop",
             SaveAnywhere => "play-save-anywhere",
             ActionMovement => "play-action-movement",

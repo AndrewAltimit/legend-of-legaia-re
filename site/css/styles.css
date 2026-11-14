@@ -3399,8 +3399,16 @@ kbd {
   align-items: stretch;
   padding: 0.7rem 0.55rem;
   gap: 0.35rem;
+  /* Five entries need 320px under the bar, and a phone on its side is wide
+     enough to get the rail without being that tall. A fixed box that does not
+     scroll puts whatever does not fit out of reach for good. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+.rail::-webkit-scrollbar { display: none; }
 .rail-item {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;

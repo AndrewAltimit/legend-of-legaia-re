@@ -97,6 +97,7 @@ Flags worth knowing:
 | `--target <seat>` | Target seat (default `3`) |
 | `--every <n>` | Retail vsyncs between frames (default `2`; the engine records every tick) |
 | `--recapture` / `--reseed` / `--rerecord` | Re-run the retail capture / the retail-compare seed / the engine recording instead of using the cache |
+| `--retail-from DIR` | Use a finished recording (relative to the repo root) as `retail/`, symlinked; a film set line names its recording this way, and `--recapture` is ignored beside it |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
@@ -127,6 +128,7 @@ Flags worth knowing:
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
+| `--no-cast-rand` | Engine: a spell film enters the cast on the replay's own `rand()` stream instead of the default seat on retail's word under the cast's begin key ([below](#the-cast-begin-seat)) |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_SEAT_DRIVE_SEEK=<vsyncs>` (engine child) | Every seek of the cast drive takes this many vsyncs in place of the modelled law; the driver passes `2` ([the drive seek seat](#the-drive-seek-seat)) |
@@ -504,7 +506,11 @@ another clip. `battle_geremi_ogre_strike`'s Ogre walked from cursor `72` where
 retail's stood on `96`, then swung `09` where retail's queue holds `07 07`; seated
 on both, every segment runs retail's length and the film reads `.983` for `.920`.
 Neither is a deal: both are bytes the state holds, and `--strike-deal` still owns
-the later draws.
+the later draws. A still gated on the first swing's clip and cursor (the drive's `k`
+/ `u`) has steered it already, and the driver adds no `q` there: steered again on
+top of that gate, `battle_rugi_barra_strike` and `battle_taiku_topaz_strike` never
+met it and recorded no frame (now `.995` and `.987`), and
+`battle_dohaty_nova_v2_strike` reads `.993` for `.976`. A harness seat.
 
 A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
 Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
@@ -782,6 +788,37 @@ step drop and the ring's one-pass lag were found
 with both in, the draws hold word for word through `0x34` and part at the
 module's CD-seek hold.
 
+### The cast-begin seat
+
+A spell film (`--spell`, not `--physical`) seats the stream by default: the driver
+takes the key of retail's row on the cast's begin (`done.txt`'s `cast` vsync, the key
+the engine recording opens on) and passes retail's word there as `--rand-at` would
+(`LEGAIA_CAST_RAND_SEED`). The replay reaches the cast through rounds of its own, so
+without it the stream enters the cast on another word and a module that draws its
+look, Earthquake's rocks or a ray fan, plays another pattern every time.
+`--no-cast-rand` leaves the replay's stream, and `--rand-at` / `--rand-track`
+replace the seat. A `--physical` film keeps the state's own word
+(`LEGAIA_FILM_RAND`) or its strike deal. A harness seat.
+
+On the enemy cast set, of the films measured both ways none falls: Rock Lizard's
+Earthquake `.786` to `.950` (its rocks now fall on retail's draws), Jewel Beam
+`.933` to `.941`, Vacuum Slicer `.980` to `.986`; over the Seru set from `.9279` to `.9303` plain and
+`.9407` to `.9572` on `--retail-steps`, every cue score unchanged at `1.000`
+(Odd Dimension `.860` to `.984`, Iota `.875` to `.987`, Ozma `.773` to `.881` on
+the steps; `sA0` `.771` to `.843` plain).
+
+The films that fall do so by a draw or two, and the seat is not their cause. Counted
+from the seated word, `s85`'s draws match retail's through `0x32` and stand one
+ahead from `0x33` on: retail's summon invoke ran `7` passes there and the engine's
+`8`. That state waits on the drive's read, which runs on the wall clock
+(`SUMMON_INVOKE_DRIVE_VSYNCS`, [state `0x32`](../subsystems/battle-action.md#state-0x32---summon---invoke)), so
+retail's pass count varies by recording (`s93`'s ran `8` and its draws stay word for
+word through arm 9). From there the module plays retail's stream one word late, which
+can match its pattern worse than a stream no closer to it: `s85` `.952` to `.943`
+plain, `.975` to `.968` on the steps; `s92` `.985` to `.978` on the steps. On the
+plain seat the lone-caster films also part at the module's CD-seek hold (`s85`'s
+arm 3 draws `117` in retail and `101` in the engine), as noted above.
+
 `--rand-track` seats the summon flash `0x34` too, on phase `0`. The pass that leaves
 the flash opens in it and runs the module's arm 0 in the same pass, and a verdict
 module draws its roll there: Aluru's `rand() % (0x11 - level) < 8` (PROT 0916, two
@@ -1029,7 +1066,12 @@ in another place; a `--watch 0x80009010` recording names each draw's caller (`ra
   ([effect VM](../subsystems/effect-vm.md#engine-port)), and on
   `--retail-steps --rand-track` every arm-8 pass ends on retail's word (`105` of `105`,
   `64` of `102` before). The arm's image did not move (`.585` to `.586`): no spawn was
-  missing, and what holds it is elsewhere.
+  missing. What held it was the heal's turn: a `--retail-parts` recording holds every
+  arm-7 fan and column, and every part they spawn, `68` yaw units short of the engine's
+  through the whole arm, twice the creature's facing. Arm 7 turns them to
+  `0x800 - facing` where the port added the facing as Orb's arm 9 does
+  ([cast module](../subsystems/cast-module.md#summon-creature-directors)); turned
+  retail's way, arm 8 reads `.980` against `.737`.
 - **Ozma's arm 21** draws retail's words once the walker moved and reads as before: its
   residue is the step's fall partway through the arm
   ([open threads](../reference/open-rev-eng-threads.md#battle--rendering)).
@@ -1045,10 +1087,109 @@ film set's Horn seat):
 
 The sound channel holds `1.000` on all ten, on every seat.
 
+Three more arms held on every seat were points and turns the port read off the wrong
+word, each found by holding a `--retail-parts` recording against `LEGAIA_DIAG_CAST_PARTS`
+on the rand track, where the parts' own `rand()` words already matched: Spoon's heal turns
+against the creature's facing (arm 8), Zenoir's rays stand on the creature's display trio
+(arm 7, and Gizam's stager spawns with them), and Horn re-seats the party for its cast
+(arm `0xB`) ([cast module](../subsystems/cast-module.md#summon-creature-directors)). Over
+the 29 films, no sound cue moving:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9243` | `.9269` | `0x91` `.888` to `.954`, `0x9C` `.864` to `.875`, `0x84` `.893` to `.895` |
+| `--retail-steps` | `.9366` | `.9396` | `0x91` `.893` to `.967`, `0x9C` `.864` to `.875` |
+| `--retail-steps --rand-track` | `.9592` | `.9631` | `0x91` `.893` to `.967`, `0x86` `.936` to `.960`, `0x9C` `.972` to `.983` |
+
+Gilium's and Juggernaut's stager calls then seated their records a battle frame late,
+on the module's next tick, where retail seats them inside the calling part's step
+([cast module](../subsystems/cast-module.md#summon-creature-directors)). Seated on the
+caller's frame, no cue moving:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9269` | `.9279` | `0x95` `.942` to `.960`, `0x99` `.927` to `.938` |
+| `--retail-steps` | `.9396` | `.9407` | `0x95` `.967` to `.985`, `0x99` `.925` to `.937` |
+| `--retail-steps --rand-track` | `.9631` | `.9642` | `0x95` `.967` to `.986`, `0x99` `.979` to `.991` |
+
 Juggernaut's arm 26 reads `.44` against one retail recording and `.80` against another of
 the same cast, so its ring phase is the recording's, and Terra's vortex parts on phase
 rather than shape. The rest is listed in the
 [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
+
+### The enemy set on the rand-track seat
+
+The same reading runs over [`film-sets/enemy.txt`](../../scripts/ci/film-sets/enemy.txt). A
+film whose recording holds no module band (the plain-path casts: Multi Cutter, Windcutter,
+Jagged Earth, the breaths) has no word for `--rand-track` to seat, and the driver refuses it
+there; those films read on `--retail-steps` alone. On that mixed seat the films whose seed
+words agree are the place to read a cast's parts, and a per-pass count of the words each side
+draws finds what a frame cannot show. For each module-band key, the LCG steps from the word
+the track seats to the word the engine's pass ends on, set against the steps between retail's
+frame-end words, name an arm that draws a constant number short or a pass late:
+
+- **Rogue Thunder's arm `0x69`** drew two words a pass short (`57` against `59`, `27` against
+  `29`) on every pass: its spray loop runs two rounds, the port ran one
+  ([cast module](../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame)).
+- **Glare's arm 2** drew one word where retail draws two on the pass that counts it out: the
+  Stone roll had moved to the next pass's head, on another word, and missed the landing
+  retail's recording holds ([cast module](../subsystems/cast-module.md#the-cast-voice-cd-xa)).
+- **Chaos Flare's arms 5..8** drew retail's words and still read `.60`: the recording's
+  `body.csv` holds Songi's charge clip cycling the loop window arms 2 and 6 move, and the
+  engine's ran the clip through to idle
+  ([cast module](../subsystems/cast-module.md#prot-0951-chaos-flare)).
+
+Over the 107 recorded films (the two Genocidal Cannon films have no recording), the three move
+and no other film does, no cue is lost:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| `--retail-steps --rand-track` (`--retail-steps` where no band) | `.9481` | `.9496` | `0x36` `.838` to `.984`, Glare `.890` to `.903` (cue `0` to `1`), `0xB1` `.907` to `.914` |
+
+On the plain and `--retail-steps` seats Chaos Flare reads `.842` to `.988` and `.843` to
+`.990`; Rogue Thunder falls `.004` on both, where its stream is the engine's own and two more
+draws a pass re-deal the bolts. What the scan still lists is the burning body of the Rogue
+Flame arms (open), Hyper Crush's ribbon arm 6, whose counts follow the projection and step up
+a pass apart from retail's, Hyper Lightning's arm 7 and Rolling Flare's arm 4.
+
+The lowest film is not the cast's code. `garmel_zeto_pre_call_wave_all` (`.448`,
+arm 2 `.40`) injects `--target 8`, which no retail pick writes: Zeto's AI arm queues Call Wave
+on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the party
+(`+0x1DD = 8` at `0x801EBD24`), and the engine seam lands a party code only where the spell's
+own class is a group, so retail frames a party-wide cast with the panels up against the
+engine's self-cast. The film on the cast's own seat reads `.991`.
+
+### A recording that opens inside an arm
+
+A harvested `*_mid_cast` state is saved inside the frame whose module tick leaves the arm
+before the one the recording opens on: its RAM still reads that phase (`ctx[+0x279] = 0` on
+the Lapis Wave, Glare, Paralyzing Wave and Dark Typhoon states) and holds none of the opening
+arm's parts, while the recording's first row already reads arm 1 and its emitter. So the
+recording's first row is not where the arm began on the game clock, and pairing the opening
+segment from its first row stood every frame of it one frame off. Counted in frames from the
+emitter's seat, Lapis Wave's rings are born on the same frame on both sides (the eighth) and
+both reach arm 2 fifty-six frames after the first ring, yet the pairing held the engine's rings
+`8` units of radius ahead through the whole arm, and the thin rings read `.71`. A recording that
+opens inside a capture-band arm now pairs that segment back from its end, which both sides reach
+on the same frame (`opens_in_band` in `cast_sequence::compare_with`). A harness seat: over the
+107 enemy films the mean moves `.9503` to `.9568`, no film falls and no cue moves; Chaos Breath
+`.712` to `.935`, Ogre's Power Charge `.893` to `.978`, Scythe Wind `.876` to `.955`, Paralyzing
+Wave `.917` to `.992`, Lapis Wave `.923` to `.997` (arm 1 `.714` to `.998`), Glare `.903` to
+`.958`.
+
+The rule stops at the capture band. Seventeen plain-path films open in the magic band's state
+`0x2B`; pairing that segment from its end lifts Aluru Cannon `.845` to `.954` but lowers Grand
+Claw `.964` to `.953` and Thunder Burst `.984` to `.970`, so whether a `0x2B` opening is cut
+short needs a reading of its own before the pairing takes it.
+
+A frame's HP readout is not a damage reading: the bar counts down, and Rogue Thunder's films
+showed Noa a few points apart from retail mid-count. A `--wrapper-trace` recording of
+`rugi_rogue_pre_rogue_thunder` lands `818`, `833` and `723` on the three guarding seats
+(`pre` minus `def`, halved by the guard), and the engine on the rand track ends on the same
+`855`, `727` and `1079`. The older recording the film set pointed at ends Noa `20` lower: two
+recordings of one cast deal apart, and the fresh one is the measurement. The film set names
+it (`--retail-from`), and the film reads `.845` against it with every cue matched, where the
+older recording read `.853`.
 
 ## The game clock
 
@@ -1243,6 +1384,47 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   pass ahead of the gate tick, so the score drops the engine's leading rows on that
   pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
   that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
+- **Ground.** The child stands each seat on the RAM's pairs
+  (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the still's command carries where the
+  two part), not on the displayed frame's ground the still stands a walker on.
+  The film runs on from the gate on the RAM's clip cursors, so a walker seated on
+  its ring slot two passes back starts that far back along its walk. A walker in
+  the strike loop stands at the edge of its reach: each in-range pass the
+  back-off steps it `12` units back (`0x80047C3C..0x80047D1C`), and the pass that
+  carries it out of reach lets the walk's root motion (`+0x0C`) step it forward
+  again, `60` units on Mad Ogre's and Warman's walks (speed `20` at step `3`, less
+  that pass's back-off). Seated another pass along, a walk takes that forward step on another pass than retail's,
+  commits its strike clip from
+  another pair, and its hits push the target along another heading, which every
+  later re-face and the case-7 yaw inherit. `battle_nilboa_gi_delilas_strike`
+  seated `384` against the RAM's `204` and ended its film `42` yaw units off
+  retail's; on the RAM's pair it tracks retail's walk pass for pass. A harness
+  seat. Over the strike set (with the four lowest strike stills added) the mean
+  `within` goes from `.966` to `.969`: Gi Delilas `.874` to `.962`, Mad Mantis
+  `.919` to `.981`, Warhalf `.937` to `.969`, Twin Tomb `.943` to `.965`.
+  The acting body's clip and cursor come off the state's own RAM too (its anim
+  node's `+0x68`); a recording whose state the driver cannot read falls back to
+  the recording's first row, a pass later. `battle_tunnelb_warman_strike` seated
+  so stood on `192` against the RAM's `168`, reached its walk's natural end a
+  pass early and struck from `(130, 335)` where retail's strikes from
+  `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Walk phase.** A monster saved in the strike loop still on its walk
+  (`battle_map02_mad_ogre_strike`, `+0x1DC = 3` with its swing staged) holds the
+  swing until the walk's natural end: the arrival stages idle under bit 0
+  (`0x801E35BC..0x801E35C8`), the loop its swing under bit 1 (`0x801E3758`),
+  and a walk entry carrying the `+0x76` lock refuses both cuts
+  (`0x80047940..0x80047948`), so whatever is staged at the natural end
+  commits there (`0x80047B54`). Which byte that is follows where the walk's
+  cycle stood at the arrival. The replay walks from its own commit, and placed
+  on distance alone its Ogre arrived on its walk's last pass: idle committed
+  with the arrival, the swing a pass later, before the gate, where retail's
+  walked ten more passes with the swing staged and the cursor seat found no
+  walk to land on (`.817`). The approach seat now stands the walk's cursor
+  too, at the first walk step, where it reaches the RAM's cursor on the pass
+  the counter reaches the capture's (`CaptureApproach::walk_phase`,
+  `World::seat_capture_walk_phase`; a cycle is whole passes, since the
+  re-commit zeroes the cursor at `0x8004B068`). The Ogre arrives with
+  `+0x1DC = 3`, walks retail's ten passes and reads `.992`. A harness seat.
 
 A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
 `0x3E`), which the probe also takes as the recording's start: before it did, a
@@ -1299,7 +1481,12 @@ on both sides, so a clip both sides played can be read cue for cue.
   `battle_jou_party_vahn_tri_somersault_super_open` holds `1` throughout; the replay's own
   stream drew `0` at the Super Art's `0x1A` commit and filmed the other shot: `.728`
   without the deal, `.798` with it, camera `67` px to `27`. A recording made before the
-  column deals no coin.
+  column deals no coin. A change point is timed on the recording's game clock (each frame
+  counts its step, not the vsyncs it ran over), since the engine's display clock runs no slow
+  vsyncs: on its vsync, `battle_jou_party_gala_super_ironhead_super_open`'s draw of `1`
+  (vsync `320`, game clock `267`) stood behind the engine's `+0x87` commit, which read the
+  `0` before it and filmed the finale on the other column (`0x1F` reads `.496`; on the game
+  clock `.79`, the film `.793` to `.862`). A harness seat.
 
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
@@ -1387,14 +1574,17 @@ Two deals put other numbers on the screen:
   word's vsync, past the twelve-frame slack, and rolled `906` on its own stream. So a traced deal
   carries no vsyncs: `hits.csv` holds every hit the kernel resolved, and the words go out in order.
 
-What a traced deal still leaves is the frame step, through the juggle counter. The counter reads the
+A traced deal also needs the frame step, through the juggle counter. The counter reads the
 defender's `+0x1F7` window, which the anim tick derives from the flinch's cursor, and the cursor gains
 `(step * speed * rate) >> 1` a pass ([the juggle window](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)).
-`battle_jou_party_vahn_tri_somersault_super_open` leaves the Super Art's slow motion on a 4-vsync pass in
-retail and a 3-vsync one on the engine, so Theeder's flinch reads cursor `256` (frame `16`, window shut) on
-retail's seventh hit and `252` (frame `15`, still up) on the engine's: juggle `3` for `1`, and `409` /
-`376` / `419` / `409` become `425` / `401` / `444` / `435` on the last four hits. On `--retail-steps` all ten
-hits roll retail's numerals and the film reads `.918` (`.777` on the engine's own steps).
+`battle_jou_party_vahn_tri_somersault_super_open` leaves the Super Art's slow motion on a step-`4` pass,
+whose cost the slow motion's two ghosts carry over `0x2D0`
+([a party member's ghosts](../subsystems/battle-stage-camera.md#a-party-members-ghosts)). Costed at a
+flat `36` a ghost the engine ran that pass at `3`, so Theeder's flinch read cursor `252` (frame `15`,
+window still up) on the seventh hit where retail's reads `256`: juggle `3` for `1`, and the last four
+hits rolled `425` / `401` / `444` / `435` for retail's `409` / `376` / `419` / `409`. With the ghosts
+costed by the drawn objects every one of the ten hits reads retail's juggle and rolls retail's
+numeral on the engine's own steps (`LEGAIA_DIAG_DAMAGE=1`), as it did on `--retail-steps` only.
 
 The damage.csv `in` row is read at the attacker draw's delay slot, not at the `jal`: the LDF arm loads
 `s1` in the `jal`'s load-delay slot (`lhu s1,0x160(v0)` at `0x801ECE74`), and a breakpoint on
@@ -1573,8 +1763,11 @@ scripts/ci/film-cues.py --check captures/films/seru captures/films/enemy --propo
 ```
 
 The sets are batch files under [`film-sets/`](../../scripts/ci/film-sets/): the Seru
-casts from the Gobu Gobu opener, the enemy casts and the dealt monster strikes. A film's
-`retail/` may be a symlink to an existing recording, which the batch driver reuses. A
+casts from the Gobu Gobu opener, the enemy casts, the dealt monster strikes and the
+party arts (each party art state's own action, Hyper and Super Arts among them,
+dealt its traced hit words). A film's
+`retail/` may be a symlink to an existing recording, which the batch driver reuses; a line
+that carries `--retail-from` makes that symlink itself, so the set names the recording. A
 baselined film fails when its cue score falls or it matches fewer cues; one whose
 retail side holds another number of cues was re-recorded and is listed, not scored; one
 with no report is counted as a skip, not a pass. `--propose` writes a candidate

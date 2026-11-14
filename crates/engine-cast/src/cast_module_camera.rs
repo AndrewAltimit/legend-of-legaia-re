@@ -144,6 +144,16 @@ pub struct ModuleCamState {
     pub pin_saved: u8,
     /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
     pub blade: [i16; 2],
+    /// PROT 0940's split point `(x, z)`, the module words `0x801F865C` /
+    /// `0x801F8660`: the caster's ground pair as arm 0 saw it, the centre
+    /// arm 2 shakes the caster about, and - pushed an eighth of the trig
+    /// scale along the caster's side axis on the arm's passing pass - the
+    /// spawn point the Divide clone is seated on. `None` before arm 0 runs.
+    pub split_point: Option<[i16; 2]>,
+    /// PROT 0940's shake counter, the module word `0x801F8650`: zeroed by
+    /// arm 1's exit, bumped by every pass of arm 2. Its parity picks the
+    /// side of each shake and of the split point's push.
+    pub split_passes: u32,
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
     /// The TR y of a cut on the row's middle: `-4 * +0x3E` averaged over the
@@ -291,6 +301,11 @@ pub struct ModuleCamState {
     /// The party seats' pairs and headings as a line-up arm found them
     /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
     pub party_saved: [Option<(i16, i16, u16)>; 3],
+    /// The caster's entry of [`Self::party_saved`], where a re-seat moved a
+    /// party caster: PROT 0930's arm `0xB` restores the seats before its cut
+    /// reads the caster (`0x801F7D3C..0x801F7DDC`), so the director frames
+    /// the restored pair.
+    pub caster_saved: Option<(i16, i16, u16)>,
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
@@ -683,6 +698,11 @@ pub enum SpawnAnchor {
     /// 0x801F7980`) and stores `creature[+0x46] + 0x800` as the yaw
     /// (`0x801F7984..0x801F7998`).
     ShotPointFacing { y: i16, yaw: i16 },
+    /// [`Self::ShotPointFacing`] turned to `yaw` **less** the creature's
+    /// facing: PROT 0919 arm 7 stores `0x800 - creature[+0x46]` as its shot's
+    /// yaw (`0x801F7DF8..0x801F7E14`) and hands that same angle trio to its
+    /// spawns, adding `0x400` after the second (`0x801F7E78..0x801F7E88`).
+    ShotPointAgainstFacing { y: i16, yaw: i16 },
     /// A point at a literal `x` and `y` on the creature's live `z`: PROT 0917's
     /// arm `0xB` stands its records on `z = -2 * word` (`0x801F7998..0x801F79B8`),
     /// the word arm 5 took off the victim's height and arm 6 walked the creature
@@ -863,6 +883,14 @@ pub fn spawn_anchor_point_with(
                 [0, f.wrapping_add(yaw), 0],
             )
         }
+        SpawnAnchor::ShotPointAgainstFacing { y, yaw } => {
+            let s = shot?;
+            let f = creature.map_or(0, |c| c.facing as i16);
+            (
+                [s.focus[0].wrapping_neg(), y, s.focus[2].wrapping_neg()],
+                [0, yaw.wrapping_sub(f), 0],
+            )
+        }
         SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
         SpawnAnchor::CasterRing { index, count, div } => {
             let c = seats.caster?;
@@ -1016,7 +1044,7 @@ pub fn spawn_anchor_scale(
         }
         // The tween builder rewrites the shot's stack TR z in place
         // (`(z << 8) / 0xA0`, `FUN_801D829C`) before the call reads it back.
-        SpawnAnchor::ShotPointFacing { .. } => shot
+        SpawnAnchor::ShotPointFacing { .. } | SpawnAnchor::ShotPointAgainstFacing { .. } => shot
             .map(|s| s.tr[2])
             .filter(|&z| z > 0)
             .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
@@ -1252,8 +1280,8 @@ pub use doomsday::{
 };
 pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
 pub use element_change::{
-    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, element_change_camera,
-    element_strike_camera,
+    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, THUNDER_SPRAY_ROUNDS,
+    element_change_camera, element_strike_camera,
 };
 pub use evil_seru_magic::*;
 pub use freed::*;

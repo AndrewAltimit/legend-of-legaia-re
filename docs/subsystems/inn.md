@@ -227,7 +227,7 @@ one, both hosts draw it through the shared fallback panel
 The menu state machine (`engine-menus::menu`) routes the prompt: `InnConfirm` Yes
 (slot 0) commits the rest and routes to the transient `InnSleep` fade, which
 auto-advances to the menu's `Closing` state after `transient_hold_frames`;
-`InnConfirm` No (slot 1) and Triangle route straight to `Closing`. Either way the
+`InnConfirm` No (slot 1) and a cancel (Circle, or Triangle) route straight to `Closing`. Either way the
 inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
 
 On confirmation the engine calls `InnSession::can_afford(world_money)` before

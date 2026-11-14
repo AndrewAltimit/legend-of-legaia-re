@@ -456,12 +456,8 @@ impl PlayWindowApp {
         }
         for (i, (row, label, _)) in TOOL_ROWS.iter().enumerate().skip(first).take(SHOWN) {
             let focused = i == self.tools_page.cursor;
-            if focused && let Some(src) = self.battle_hud_solid_src() {
-                out.push(TextDraw {
-                    dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
-                    src,
-                    color: self.chrome().hover,
-                });
+            if focused {
+                self.push_focus_row(&mut out, (X0, y), (WIDTH, ROW_H));
             }
             put(&mut out, label, (left, y - 2), text);
             let value = self.tool_value(*row);

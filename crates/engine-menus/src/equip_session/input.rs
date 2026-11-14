@@ -12,6 +12,79 @@ fn next_browse_row(slot: u8) -> u8 {
 }
 
 impl EquipSession {
+    /// The cue this frame's `pressed` Cross sounds in place of the edge
+    /// rule's `0x20`, read off a step on a copy of the session:
+    ///
+    /// - the slot browse (`FUN_801D99F0`): Best Equipment cues `0x24` when it
+    ///   swapped a piece (`0x801D9B7C`) and buzzes `0x23` when it found
+    ///   nothing (`0x801D9B9C`); a slot row keeps the picker's bare `0x36`;
+    /// - the candidate list (`FUN_801D9C14`): a candidate cues `0x24`
+    ///   (`0x801DA154`, written ahead of the bag test), Remove on a worn
+    ///   slot `0x24` (`0x801DA110`) and on an empty one pushes `0x37`
+    ///   (`0x801DA12C`); a row already worn tests no class, and the kernel's
+    ///   `0x20` is silenced (`0x801DA274`).
+    ///
+    /// `None` for every other edge.
+    ///
+    /// REF: FUN_801D99F0, FUN_801D9C14
+    pub fn confirm_blip(&self, pressed: u16) -> Option<crate::menu_cues::MenuBlip> {
+        use crate::menu_cues::MenuBlip;
+        if pressed & PadButton::Cross.mask() == 0 {
+            return None;
+        }
+        let input = EquipInput {
+            up: pressed & PadButton::Up.mask() != 0,
+            down: pressed & PadButton::Down.mask() != 0,
+            left: pressed & PadButton::Left.mask() != 0,
+            right: pressed & PadButton::Right.mask() != 0,
+            cross: true,
+            circle: pressed & PadButton::Circle.mask() != 0,
+            triangle: pressed & PadButton::Triangle.mask() != 0,
+        };
+        match self.state {
+            EquipState::SlotPicker { cursor } => {
+                if cursor != 0 {
+                    return Some(MenuBlip::Pick);
+                }
+                let mut probe = self.clone();
+                let _ = probe.drain_events();
+                probe.input(input);
+                probe.drain_events().iter().find_map(|e| match e {
+                    EquipEvent::BestEquipmentApplied { .. } => Some(MenuBlip::Equip),
+                    EquipEvent::BestEquipmentUnchanged => Some(MenuBlip::Refuse),
+                    _ => None,
+                })
+            }
+            EquipState::ItemPicker { slot, cursor } => {
+                // A move this frame takes the edge ahead of the confirm.
+                if input.up || input.down || input.left || input.right {
+                    return None;
+                }
+                let items = self.items_for_slot(slot);
+                let item = items.get(usize::from(cursor))?;
+                Some(if item.id == REMOVE_ROW_ID {
+                    if self
+                        .record
+                        .equip
+                        .get(usize::from(slot))
+                        .copied()
+                        .unwrap_or(0)
+                        != 0
+                    {
+                        MenuBlip::Equip
+                    } else {
+                        MenuBlip::Cancel
+                    }
+                } else if item.equipped {
+                    MenuBlip::Silent
+                } else {
+                    MenuBlip::Equip
+                })
+            }
+            EquipState::Done => None,
+        }
+    }
+
     /// Apply a per-frame input.
     pub fn input(&mut self, input: EquipInput) {
         match self.state {

@@ -192,7 +192,7 @@ pub(super) fn run_battle(
                         && e.inflight != Some(None) =>
                 {
                     if battle.win_pose.is_some() && e.win_pose != battle.win_pose {
-                        off_pose.get_or_insert(e);
+                        off_pose.get_or_insert((e, victims));
                         continue;
                     }
                     if ring_pushes.is_some() && e.action_pushes != ring_pushes {
@@ -225,6 +225,54 @@ pub(super) fn run_battle(
         reached = Some(e);
         reached_victims = victims;
     }
+    // A battle-end capture no stream reached on retail's win pose: the pose
+    // is a draw of the replay's own stream (`0x8004E78C..0x8004EAF0`) and the
+    // results framing is its script, so the first stream that reached the
+    // phase runs again with the capture's pose seated over the pick
+    // (`RetailBattle::pose_seat`). `battle_jou_gala_finisher_hold_retail`'s
+    // replays finish the fight on other streams once the frame pacing moves,
+    // and every one of them drew another pose for Gala.
+    let posed;
+    let battle = match off_pose.take() {
+        Some((e, victims)) if reached.is_none() => {
+            let mut b = battle.clone();
+            b.pose_seat = true;
+            let run = crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                &b,
+                e.rng_seed,
+                victims,
+            );
+            if seed_trace() {
+                eprintln!(
+                    "[seed] {} pose seat seed={:#010X}: {:?}",
+                    entry.label,
+                    e.rng_seed,
+                    run.as_ref().map(|r| (r.driven, r.win_pose))
+                );
+            }
+            match run {
+                Ok(r)
+                    if r.mode == legaia_engine_mode::mode::SceneMode::Battle
+                        && r.driven.is_some_and(|d| d.is_some()) =>
+                {
+                    reached = Some(r);
+                    reached_victims = victims;
+                    posed = b;
+                    &posed
+                }
+                _ => {
+                    off_pose = Some((e, victims));
+                    battle
+                }
+            }
+        }
+        other => {
+            off_pose = other;
+            battle
+        }
+    };
     // A monster strike gated on its first swing clip that no stream reached
     // on the picks the replay drew: the streams again, with the attacker's
     // strike stream stood on the capture's (`RetailBattle::strike_stream_steer`).
@@ -421,14 +469,20 @@ pub(super) fn run_battle(
                         rule_best = Some((b, e, residual));
                     }
                 }
-                // The first rule has only to beat the first run. A later one
-                // replaces a rule that already stands the fight nearer only
-                // by a margin a framing can read (`UNDRIFT_MIN`): a few
-                // units of residual either way is two replays of one push,
-                // not a nearer ground.
+                // A rule replaces the first run, or a rule that already
+                // stands the fight nearer, only by a margin a framing can
+                // read (`UNDRIFT_MIN`): a few units of residual either way
+                // is two replays of one push, not a nearer ground. A
+                // separation push is the clearest case: `FUN_80050BB8`
+                // pushes a pair until it stands outside `(r_a + r_b) / 6`,
+                // wherever it started, so seeding it back by the drift only
+                // walks it further off and the residual wanders by a few
+                // units round after round (`battle_bylon_theeder_v2_thunderbolt_mid_cast`:
+                // `60`, `58`, `62`, `50`), while the bystander the last of
+                // those rounds moved names the prompt framing's box.
                 if let Some((b, e, residual)) = rule_best {
-                    let nearer = match (best.is_some(), residual, best_residual) {
-                        (true, Some(r), Some(have)) => {
+                    let nearer = match (residual, best_residual) {
+                        (Some(r), Some(have)) => {
                             r + i64::from(crate::retail_compare_battle::UNDRIFT_MIN) <= have
                         }
                         _ => residual < best_residual,
@@ -480,7 +534,7 @@ pub(super) fn run_battle(
         }
         r => (battle, r),
     };
-    let engine = match reached.or(off_pose).map(Ok).or(first) {
+    let engine = match reached.or(off_pose.map(|(e, _)| e)).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
             report.unseeded = format!("seeding failed: {e:#}");
@@ -887,6 +941,25 @@ pub(super) fn battle_image(
                 },
             ),
         ));
+        // The pairs the RAM holds, beside the displayed frame's: a film runs
+        // on from the gate on the RAM's clip cursors (the cast-sequence
+        // oracle drops `LEGAIA_SEAT_DISPLAYED_CLIPS`), so it stands on the
+        // RAM's ground too, and `cast-sequence.py --physical` seats this in
+        // place of `LEGAIA_BATTLE_GROUND_SNAP`. Stood on the displayed pair,
+        // a walker whose ring slot sits across its walk's loop cut starts the
+        // film two passes back along its walk on the RAM's cursor, reaches
+        // the cut two passes late, and strikes from another pair
+        // (`battle_nilboa_gi_delilas_strike`: `384` seated against the RAM's
+        // `204`). The play window never reads it.
+        if battle.displayed_camera() {
+            let ram = battle.engine_ground_snaps();
+            if ram != battle.engine_image_ground_snaps() {
+                env.push((
+                    "LEGAIA_BATTLE_GROUND_SNAP_RAM",
+                    legaia_engine_capture::ground_snap::ground_snaps_to_env(&ram),
+                ));
+            }
+        }
         if battle.displayed_camera() {
             env.push((
                 "LEGAIA_BATTLE_GHOST_POSE",

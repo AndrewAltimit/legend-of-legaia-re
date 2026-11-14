@@ -1228,7 +1228,23 @@ The pass on which `0x20` lets go arms nothing: it stores `0x50` (`0x801E5590`)
 and jumps to the state tail at `0x801E5F64` before the fork, so the walker steps
 the increments the last held pass armed, and case 8 is armed by the Done arm a
 pass later. An Attack's Done band therefore opens with one un-re-armed step of
-case 7's table between the two framings.
+whatever the last held pass armed between the two framings.
+
+The fork reads the target's clip inside the state arm, ahead of the pass's node
+ticks, so the last held pass sees the get-up still playing and arms case 8 even
+when that pass's anim tick ends it. Read after the tick, the port's last held
+pass armed case 7, the exit pass stepped case 7's increments, and the Done band's
+live-target arm (a monster not animating keeps the live `TR.y` and pitch) held
+the stepped height for the rest of the band: `battle_garmel_party_vahn_hyper_elbow_mid`
+stood at `TR.y 832`, `TR.z 3809` on the Done arm's pass where retail's film holds
+`768` / `3440` throughout. The SM pass now records the two clip tests as it leaves
+the target (`BattleState::sm_ran_target_clip`), and `battle_done_band` reads them
+for the seat that pass ran on, on retail's cadence. Over the arts films the Done
+band's camera then reads retail's to the unit, and the films rise: Sonic Javelin
+`.832` to `.881`, Hyper Elbow `.820` to `.852`, Lizard Tail `.882` to `.909`, Noa's
+chain `.874` to `.886`. Grade `capture`: the films' target clip
+and camera rows, beside the same read order the cast driver's case `0xA` shows
+([the clip clock](#the-cast-drivers-clip-clock)).
 
 That pass is also the one on which the change that ended the return happened:
 the target's get-up finished, or its defeat fade reached black (the `0x20`
@@ -1686,6 +1702,37 @@ What still loses, by film (grade `capture`):
 - **Not read further:** Plasma Strike's arm 5 hits and Fatal Decision's three extras in arm 12,
   both in capture arms that now overrun.
 
+<a id="where-a-slow-frames-vsyncs-go"></a>
+
+**Where a slow frame's vsyncs go.** No battle routine waits on its own: no battle overlay
+calls `VSync` (`FUN_8005FB84`) or `DrawSync` (`FUN_80058104`), and the forced step `gp+0x5D8`
+and the floor `0x8007B9D8` have no writer that runs in a battle (`jal` scan of every image,
+`find-gp-relative-refs.py 0x5d8 --prot` and `--va 0x8007b9d8 --prot`). So a battle frame that
+runs past its step does so on its cost alone, and the slow frames the films part on are work
+and the CD stop watch, read off `--cd-trace` recordings
+([`cd-poll-steps.py`](../../scripts/ci/cd-poll-steps.py)'s frame split):
+
+- **Tri-Somersault's `0x1E`** (`210` vsyncs over its steps). The three arts-voice clips
+  (`ReadS` `47`, `208` and `394` vsyncs in, `Pause` at `130`, `284` and `590`) poll `840` to
+  `1040` times a frame. Their frames' work is `700` to `940` hblanks, the polls take them to
+  `2000`..`2600`, eight to eleven vsyncs a step-`4` frame. Off the law a loaded frame runs one
+  vsync past its step (`587` ticks for `734`); under it the state runs `722`.
+- **Element Strike's arms 6 and 7** (`battle_rugi_rogue_pre_rogue_flame`). Rogue's line polls
+  from arm 1 to the middle of arm 7. Through arms 1 to 5 the frames' work is `225` to `295`
+  and they cost `630` to `815`, inside step `4`; the burning bodies of arms 6 and 7 lift the
+  work to `780`..`1000`, and the polls take the frames to `2100`..`2800`. The golem's clip
+  gains `8` a pass on both sides (rate `4`), and its `56` passes span `483` vsyncs in retail.
+  A capture band's line loads the frame at the item's floor by default, so its frames run
+  four or five vsyncs; priced from their polygons (opt-in) they load by their work.
+- **The Super Arts' slow motion** is [a party member's ghosts](#a-party-members-ghosts): a
+  cost the engine prices, now on the default.
+- **The monster strikes' step-`4` passes** (Neo Grude, Nova, Gel Frog). Their frames sit
+  at the clamp, `690` to `720` hblanks, and a pass reads `4` only when its own frame passes
+  `0x2D0` raw: a cost within some `30` of the rung, which no table row resolves. The camera
+  gains `yaw_inc * step` a pass on both sides.
+
+Grade `disassembly` for the absence of a wait, `capture` for the four splits.
+
 A capture recovers only its newest sixteen frames. `gp+0x480` counts frames and
 the libetc vsync count `0x8007A894` counts vsyncs, but the frame counter
 restarts somewhere no `SCUS_942.54` store shows (only its increment at
@@ -1884,8 +1931,9 @@ clip spans re-read at the console's share over `--cd-trace` recordings of the sa
 voice's frames from the pass after the cue cost their base over `.935`
 (`console_poll_cost`), inside their step. The retail-compare child of a PCSX-Redux capture runs
 `PcsxRedux` whatever its parent opted in to. `Console` is the closer model of a console, but it
-stays opt-in until five enemy casts' lost cues (below) are explained
-([open threads](../reference/open-rev-eng-threads.md)): under it the full-game ladder re-deals too.
+stays opt-in: the films and stills are PCSX-Redux recordings, so it scores them lower by the
+artifact's size, and under it the full-game ladder re-deals. The five enemy casts that lost cues on
+it lost them to the deal and the pass lattice, not to a cue test on the step (below).
 
 Measured with the opt-in against mednafen, which is the nearer machine for this term:
 
@@ -1904,10 +1952,26 @@ both tables run `1`.
 Against the PCSX-Redux films the console timing is the recordings' artifact taken out, so the
 films fall, and that fall is the artifact's size: the Seru films' mean goes from `.9065` to `.8658`,
 the enemy casts' from `.8949` to `.8675`, the monster strikes' stays at `.963`. The cue channel
-holds on the Seru films and the strikes; five enemy casts lose cues on it (Glare's and Lip King's
-Kiss of Death's entirely), so a pass-counted arm whose cue the films place on PCSX-Redux's lattice
-moves with the step, or a body emits its cue off a step-dependent test. On the default timing each
-film reads the base engine's score and the cue ratchet passes on all three sets.
+holds on the Seru films and the strikes. Five enemy casts lost cues on it, and none of the five
+is a body that emits its cue off a step-dependent test. Run on retail's `rand()` words, the console
+timing plays every cue the default timing plays:
+
+| Film | Default | Console | Console, retail's words |
+|---|---:|---:|---:|
+| `korb2_medusa_glare` | `1.000` | `1.000` | - |
+| `retona_lip_king_kiss_of_death` | `1.000` | `0` | `1.000` (`--rand-at 0x70:4`) |
+| `nivora_duel_pre_plasma_strike__7B` | `.917` | `.667` | `.917` (`--rand-track`) |
+| `cort_evolved_card_pre_doomsday__B4` | `1.000` | `.917` | `1.000` (`--rand-track`) |
+| `korb2_aluru_cannon` | `1.000` | `.833` | - |
+
+The longer frames change how many passes draw before an arm's roll, so the roll is dealt again.
+Kiss of Death's arm-4 roll comes up odd, the miss that keys no cue (the victim's HP stays
+`1133`); Plasma Strike's hits key other cues (`0x4A`, `0x60` and `0x61` where retail keys `0x0C`
+and `0x249`); Doomsday keys two more in arm 6 (`0x62`, `0x10`). Aluru Cannon keeps all six cues, and one, `0x56` in
+state `0x2C`, lands `7` ticks off retail's where the score allows `6`: a cue on a pass the films
+place on PCSX-Redux's lattice. Glare's cue no longer moves. So the cue losses are the deal and
+the pass lattice, both the harness's to seat, and not a defect of the timing. On the default
+timing each film reads the base engine's score and the cue ratchet passes on all three sets.
 
 <a id="the-engines-gpu-frame-step-source"></a>
 
@@ -2041,8 +2105,10 @@ unfinished parts of every effect scene, the effect pool's live children
 (`effect_pool_cost`), and for each ghost `battle_afterimage::plan_ghosts` plans (the
 plan both hosts draw) its body's triangles at `.092` (`ghost_draw_cost`; the scene
 host reads a monster's count off its archive mesh, `MonsterMesh::triangle_count`). A
-body whose count the world does not hold, a party member's assembled form, keeps the
-flat `GHOST_DRAW_COST`. The strike rows
+party member's ghost costs the objects its seat draws (the model table's drawn set over
+the assembled form's triangles, `Actor::battle_object_triangles`, counted at the form's
+install), and a body whose count the world does not hold keeps the flat
+`GHOST_DRAW_COST` ([a party member's ghosts](#a-party-members-ghosts)). The strike rows
 `0x1E..=0x20` of a lone member and a full party are the strike recordings' frames with
 no part live (`393` / `389` / `386` and `622` / `596` / `596`); the library's
 full-party `700` and `667` held a party strike's load in the base. Nighto's strike is
@@ -2051,6 +2117,25 @@ frames from `392` to `579` in retail, its step goes from `2` to `3` thirty-odd v
 in, and the yaw counter gains `4` a pass from there. On the base rows alone the
 engine's ran at `2` throughout and its yaw fell `16` units behind; with the load the
 film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
+
+<a id="a-party-members-ghosts"></a>
+
+**A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
+ghosts of the acting member, and each costs about what a monster's body of the same size
+does. PCSX-Redux recordings of the three Super Arts on a full party
+(`battle_jou_party_vahn_tri_somersault_super_open`, `_gala_super_ironhead_super_open`,
+`_noa_dragon_fangs_super_open`, `--ghost-trace --gpu-cost`) drop `90` to `105` hblanks a
+ghost on the passes the slow motion's ghosts go (Tri-Somersault's `0x1E` from about `800`
+to `600`), and the finisher's rise `140` a ghost. So the ghost passes cost over `0x2D0` and
+run step `4`. Costed at the flat `36` a ghost the engine's read `694` and ran `3`; the pass
+that leaves the slow motion ran three vsyncs where retail's runs four, the flinch cursor the
+juggle counter reads ([a party strike's damage](../tooling/cast-sequence-oracle.md#a-party-strikes-damage))
+came one frame short, and the last four hits rolled on juggle `3` to `6` for retail's `1` to
+`4`. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`, Noa's `1536` over the
+whole form) the passes read `4`, all ten hits roll retail's numerals, and the chain finishers'
+`0x1F` and `0x20` read `4` with them: the party arts' films go from `.9034` to `.9183` (Gala's
+chain `.858` to `.951`, Lizard Tail `.917` to `.983`). Grade `disassembly` for the walk (`FUN_80049348` re-runs
+`FUN_80048A08` per ghost), `capture` for the costs.
 
 Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
 `0x2B` frames sit at `504` to `510` with both ghosts up, on the edge of `0x1FF`, and the

@@ -8,9 +8,55 @@ impl Camera {
     /// `FUN_801DB510` draws from the one BIOS seed. The shared
     /// `crate::frame_step::camera_after_world_tick` runs this one.
     pub fn tick_on_stream<W: CameraWorld + ?Sized>(&mut self, world: &mut W) {
+        self.release_unheld_shot(world);
         self.zone.shake_seed = world.rng_state();
         self.tick(world);
         world.set_rng_state(self.zone.shake_seed);
+    }
+
+    /// Hand a staged shot nobody holds back to the follow ease.
+    ///
+    /// Retail has no latch for a staged shot. The follow ease `FUN_801DB510`
+    /// sits at the head of the player's handler (`jal 0x801DB510` at
+    /// `0x801D22B8`) and tests only the camera switch `0x8007B606`, the
+    /// freeze bit `0x1F800394 & 0x400` and whether the player moved
+    /// (`0x801DB550..0x801DB5A4`); it never asks what the staging block
+    /// holds. So a shot a record stages and never releases (no APPLY, no
+    /// `[4C 39]` / `[4C 3E]`, no scene change) stands while the record holds
+    /// the player, and once it lets go the first pass the player walks
+    /// composes and eases from the shot to the follow pose.
+    ///
+    /// The port's `script_owns_focus` latch stood for "a record holds the
+    /// shot" and outlived the record: the follow camera stayed frozen on the
+    /// shot for the rest of the scene while the player walked out of frame.
+    /// A talk does this (`koin4` P1[1] glides to a shot, prints its line and
+    /// ends with `21`), and so do door records (`balden` P0[7] / P0[14] snap
+    /// the arrival shot after a fade and loop back without an APPLY). With
+    /// no glide in flight, no timeline and the player free, the latch goes
+    /// here. No snap is armed, unlike the port's hand-back backstop: retail
+    /// keeps the shot until the player moves and then eases. The world's
+    /// mirror of the staged slots goes too, as APPLY drops it, so a later
+    /// camera-less record of the scene does not read the stale shot back as
+    /// its own framing.
+    ///
+    /// REF: FUN_801DB510, FUN_801D2298
+    fn release_unheld_shot<W: CameraWorld + ?Sized>(&mut self, world: &mut W) {
+        if !self.script_owns_focus
+            || self.mover.is_some()
+            || world.scene_mode() == legaia_engine_mode::mode::SceneMode::Menu
+            || world.cutscene_timeline_active()
+            || world.field_player_movement_locked()
+            || !zone_camera_scene(world)
+        {
+            return;
+        }
+        self.script_owns_focus = false;
+        // The ease reads the globals the shot left, so no hand-back snap
+        // and, for a mode-5 block, the shot's focus is where its focus ease
+        // starts from.
+        self.zone.prev_scripted = false;
+        self.zone.focus_held = Some([self.globals.0[6], self.globals.0[8]]);
+        world.drop_staged_camera_shot();
     }
 
     /// Per-frame tick. Reads the world to update `eye` / `look_at` based on
@@ -19,6 +65,14 @@ impl Camera {
     ///
     /// [`World::tick`]: legaia_engine_core::world::World::tick
     pub fn tick<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        // A held shot keeps the distance preset out; it eases back in with the
+        // follow ease once it lets go ([`Self::knob_blend`]). A scene with no
+        // zone ease has nothing to ease it over.
+        if world.scripted_shot_holds_camera() {
+            self.knob_blend = 0;
+        } else if !zone_camera_scene(world) {
+            self.knob_blend = KNOB_BLEND_FULL;
+        }
         self.tick_globals(world);
         match self.mode {
             CameraMode::Follow => {
@@ -88,13 +142,25 @@ impl Camera {
             false
         };
 
+        // The pause menu freezes the field under it: retail swaps the field
+        // overlay out for the menu's (PROT 0899 over 0897), so nothing that
+        // writes the focus - the follow ease `FUN_801DB510`, the edge clamp
+        // `FUN_801DAA50`, the anchor store `FUN_801DBE9C` - runs until the
+        // menu closes. The non-zone writeback below would otherwise pin the
+        // focus on the raw player for the menu's whole length, dropping the
+        // edge clamp: `suimon`'s water gate jumped about 770 units sideways
+        // and showed the void past the map's edge through the open wipe.
+        if world.scene_mode() == legaia_engine_mode::mode::SceneMode::Menu {
+            return;
+        }
+
         // The follow camera only owns the focus in free-roam. A cutscene's
         // staged focus must survive the gaps BETWEEN its beats, not just the
         // frames a glide happens to be in flight: retail's `opdeene` holds two
         // distinct focus values across the whole scene, so a writeback gated
         // only on `!gliding` re-pins the focus to the player on every settled
         // frame and turns those two values into ~1000.
-        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_holds_camera();
         // A player arc whose release watcher runs the follow camera
         // (`FUN_801D5D60` calling `FUN_801DB510(player)` + `FUN_801DAA50`
         // every frame the arc flies) hands a cutscene's shot back to the
@@ -146,10 +212,12 @@ impl Camera {
                 self.zone_follow_tick(world, dt);
             } else {
                 // Retail's scene-entry pieces run under a scripted shot too:
-                // the MAN load's block query and the arrival actor's tick.
+                // the MAN load's block query, the queued zone arms (a warp
+                // landing's query among them) and the arrival actor's tick.
                 if self.zone.reload_pending {
                     self.load_scene_zone_block(world);
                 }
+                self.drain_zone_requests_under_script(world);
                 self.tick_arrival_under_script(world, dt);
             }
             if scripted && gliding && self.mode == CameraMode::Follow {

@@ -60,3 +60,7 @@ tunnelb_nova_strike --physical --state battle_tunnelb_nova_strike --every 8 --hi
 tunnelb_warman_strike --physical --state battle_tunnelb_warman_strike --every 8 --hit-trace --strike-deal --pin-seed 0x3C6EF372
 vozz_gizam_strike --physical --state battle_vozz_gizam_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
 vozz_twin_tomb_strike --physical --state battle_vozz_twin_tomb_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+nilboa_gi_delilas_strike --physical --state battle_nilboa_gi_delilas_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+deene_lapis_strike --physical --state battle_deene_lapis_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+jou_cort_181_strike --physical --state battle_jou_cort_181_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+noaru_songi_strike --physical --state battle_noaru_songi_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678

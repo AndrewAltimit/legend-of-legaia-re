@@ -739,6 +739,10 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-hp-readout-guard"> Battle freeze guard
             </label>
             <label class="play-dev-menu"
+                   title="A character healed in battle by an item, a Grail or a healing spell shows the amount over them. The original throws no number for a heal and only counts the HP figure up (play-window --no-heal-numerals turns it off). Not retail; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-heal-numerals"> Heal numbers
+            </label>
+            <label class="play-dev-menu"
                    title="Now and then a won battle also grants one random piece of equipment, on top of the normal drop (a 5% roll; the patcher's --equipment-drops; play-window --equipment-drops). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-bonus-drop"> Bonus equipment drops
             </label>
@@ -3612,6 +3616,7 @@ div.play-vis-head { cursor: default; }
   const tetsuSparFixEl = document.getElementById('play-tetsu-spar-fix');
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
+  const healNumEl = document.getElementById('play-heal-numerals');
   const bonusDropEl = document.getElementById('play-bonus-drop');
   const saveAnywhereEl = document.getElementById('play-save-anywhere');
   const actionMoveEl = document.getElementById('play-action-movement');
@@ -3638,6 +3643,7 @@ div.play-vis-head { cursor: default; }
     tetsuSparFixEl.checked = !!rtCall('tetsu_spar_fix');
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
+    healNumEl.checked = !!rtCall('heal_numerals');
     bonusDropEl.checked = !!rtCall('bonus_drop');
     saveAnywhereEl.checked = !!rtCall('save_anywhere');
     actionMoveEl.checked = !!rtCall('action_movement');
@@ -3701,6 +3707,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked);
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
+    rtCall('set_heal_numerals', !!healNumEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
     rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
     rtCall('set_action_movement', !!actionMoveEl.checked);
@@ -3745,6 +3752,7 @@ div.play-vis-head { cursor: default; }
   tetsuSparFixEl.addEventListener('change', () => { rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked); canvas.focus(); });
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
+  healNumEl.addEventListener('change', () => { rtCall('set_heal_numerals', !!healNumEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
   saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });
   actionMoveEl.addEventListener('change', () => { rtCall('set_action_movement', !!actionMoveEl.checked); canvas.focus(); });

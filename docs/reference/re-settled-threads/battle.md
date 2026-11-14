@@ -373,6 +373,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | What brightens Barra's arm 7 every ten to twelve vsyncs? | resolved (a cloud of the four-record cycle reaching the lens) | `disassembly` + `capture` | The four records `0x801F8B40..0x801F8BE8` differ only in their texture band, each a quarter of the cloud page drawn as a `0x800`-wide sprite flying at the lens for `31` vsyncs. One is seated a pass in turn, so the frame whitens once every four passes: twelve vsyncs at step `3`, irregular because retail's arm-7 frames mix steps `3` and `4`. The same arm's sky was a separate defect: its scanline sample origin `ctx[+0x285]` / `+0x286` slides with the words `0x801F9360` / `0x801F9362`, which the port now carries ([cast module](../../subsystems/cast-module.md#barras-sky)). |
 | Why does Theeder's arm 11 flash read a step ahead once a fade takes its spawning frame's step, and why does Gizam's arm 9 fall with the `0x32` hold? | resolved (neither does now; what is left is not the flash) | `capture` | On the Gobu Gobu films the frame luma tracks retail's pair for pair through both arms: Theeder's arm 11 within `0.6` on average (at most `3`) plain and `0.4` on `--retail-steps`, Gizam's arm 9 within `0.4` (at most `1.6`) on both. Theeder's arm reads `.916` / `.907` on the two seats, its residue the creature's sway and the spark lines over the flash's first frames; Gizam's reads `.97`. |
 | Where do Gimard's arm-11 flame puffs spawn from? | resolved (from the walk's own pose, two a pass, as retail's) | `capture` | The burning-body emitter sheds two puffs a pass at the creature's pose of that pass. On `--retail-steps` (`LEGAIA_DIAG_CAST_PARTS` against a `--pose-objects` recording) the port's arm-11 spawns match retail's in number (`32`), in pool count (`10` live), in anim cadence and in the walk's cursor and live pair per pass, and their mean position per quarter of the walk lies within one walk step (`111` units) of retail's. The earlier `70..110` offset counted pool rows, not spawns. Puff by puff they part by the jitter, a `rand()` deal ([battle-action-helpers](../../subsystems/battle-action-helpers.md#the-burning-body-emitter-at-the-tail-of-fun_8004998c)). |
+| Why do five enemy casts lose their cues under the console CD timing? | resolved (the module bands' `rand()` deal and one pass on PCSX-Redux's lattice; no cue test reads the step) | `capture` | Engine films under `LEGAIA_BATTLE_CD_TIMING=console` against the PCSX-Redux recordings: Glare keeps its cue, and with retail's `rand()` words seated Kiss of Death (`--rand-at 0x70:4`) plays `3` of `3`, Plasma Strike (`--rand-track`) `.917` as on the default timing, and Doomsday (`--rand-track`) `11` of `11`. Aluru Cannon keeps every cue, one `7` ticks off retail's. [The table](../../subsystems/battle-stage-camera.md#the-cd-stop-watch). |
+| What sheds the rest of Element Strike's burn? | resolved (the golem's two after-image ghosts, while its strike clip runs to its natural end) | `disassembly` + `capture` | The party seats' selector retires when the tint decay arm eases their word back to neutral, `16` battle frames into arm 7, in retail as in the port. Seat 7 keeps `+0x21F = 1` and its clip `1` (committed id `0x11`) `265` vsyncs into the arm, so its ghosts shed fire; `k = 4`'s bare `sb zero,0x1da` (`0x801F8378`) waits for the clip's end, which the port had committed at once. [PROT 0964](../../subsystems/cast-module.md#prot-0964-element-change-rogue-wind--thunder--flame). |
 
 ### The action SM's idle request keeps a playing idle
 
@@ -384,7 +386,11 @@ The idle's phase also decides when a cast starts. A clip staged under neither `+
 
 On the image channel the battle corpus moves both ways. `battle_uru2_nurga_heal_mid_cast` rises from `.973` to `.999` and `battle_rugi_puera_v2_strike` from `.989` to `1.000`. Eleven pad-driven rows fall on that shifted history, `battle_tunnelc_xain_bloody_horns_mid_cast` the most (`.855` to `.797`).
 
-A pinned replay opens its fight with no setup draws, so its opening turn's idle phase is its own, and retail's is in no RAM the capture holds: the commit it waits on lies far more than sixteen passes back. On `battle_bylon_theeder_v2_thunderbolt_mid_cast` the shift leaves the walk's focus at another point of its glide (`-823` against `-834`, retail `-851`). The `super_queue_replace_*` drives had gated the Attack arm's seed pass on `ctx[+0x87C]`. That word counts from the acting seat's last idle re-commit (`0x8004BF50..0x8004BF78`), so the drives now meet the pass on its yaw rung. A caster idling in the capture band's entry `0x6E` is seated on the capture's cursor, as in `0x6F..=0x71` ([retail-compare](../../tooling/retail-compare.md#battle-states)).
+A pinned replay opens its fight with no setup draws, so its opening turn's idle phase is its own, and retail's is in no RAM the capture holds: the commit it waits on lies far more than sixteen passes back.
+
+On `battle_bylon_theeder_v2_thunderbolt_mid_cast` the shift did not move the frame through the cast itself: it tipped the harness's undrift search onto a round eight units of residual nearer, which moved Gala's seeded ground and with it the box the displayed walk starts from. The search now keeps a round only when it is `UNDRIFT_MIN` nearer, and the still reads `.999` ([retail-compare](../../tooling/retail-compare.md#a-push-the-capture-already-holds)).
+
+The `super_queue_replace_*` drives had gated the Attack arm's seed pass on `ctx[+0x87C]`. That word counts from the acting seat's last idle re-commit (`0x8004BF50..0x8004BF78`), so the drives now meet the pass on its yaw rung. A caster idling in the capture band's entry `0x6E` is seated on the capture's cursor, as in `0x6F..=0x71` ([retail-compare](../../tooling/retail-compare.md#battle-states)).
 
 ### An Orb's Heal strikes the ally it heals
 
@@ -2607,3 +2613,23 @@ So the pass before the RAM's chased `3936` and stood at `3694`, and the pass bef
 The focus follows the same law with an endpoint the bodies move. A film of `battle_ropeway_party_gala_flying_knee_mid` from the strike loop to the fade-down holds `focus = previous + step * ceil((endpoint - previous) / 12)` on `42` of `48` pass edges through `0x1E`, `0x1F` and the return `0x20` (the rest land within a unit of the endpoint, or split a pass across two rows). Walked back two passes on each pass's own endpoint, the focus lands within `8` units of the frame's; on the RAM's endpoint alone, up to `36` units off during the return.
 
 Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#battle-states).
+
+### Which frame the effect-script walk reads as a loop ends
+
+*Status:* resolved - the advanced cursor, on the walk ahead of the commit. Evidence: `disassembly` + `capture`
+
+`FUN_80047430` hands `(+0x68 >> 4) & 0xFF` to `FUN_801DEA50` at `0x800478B8`, ahead of both the
+`+0x1DC` cut (`0x800478F4`) and the natural-end test (`0x80047A48`). A PCSX-Redux run of
+`cort_evolved_card_first_menu`, breaking on the walker's floor-part seat (`0x801DEF08`), shows the
+evolved Cort's first approach stomp its walk entry's gates `1`, `4`, `7`, `10` and then gate `13` on
+frame `12` of the 12-keyframe clip (cursor `200`), on the pass the arrival's staged idle cuts the walk.
+`battle_jou_cort_181_strike` holds the same walk: three rings `12` vsyncs apart, the newest on the
+ground Cort arrived on, spaced as the body pair stands at keyframes `6`, `9` and `12`.
+
+On that pass the cut commits the staged idle, so the walk is not re-committed and the new cycle's
+gate `1` does not fire beside gate `13`. A walk that runs past its clip's end without arriving
+re-commits the loop and walks frame `0` on the same pass (`0x80047B54`, then the post-commit walk at
+`0x80047C08`); no recording holds that pass.
+
+Owning page: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
+

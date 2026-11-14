@@ -66,8 +66,10 @@ pub fn step_from_caller<H: FieldHost>(
     // is the only instruction allowed to run while halted - it's how a script
     // un-halts a target. A **caller** that is the system channel
     // (`+0x50 == 0xFB`) also bypasses the halt check (see
-    // [`step_from_caller`]).
-    if extended && ctx.is_halted() && caller_id != 0xFB {
+    // [`step_from_caller`]), and so does every op while the scene's spawn
+    // bracket is up (`*(_DAT_801C6EA4) + 8`, `0x801DE920..0x801DE930`; see
+    // `FieldHaltHost::spawn_bracket`).
+    if extended && ctx.is_halted() && caller_id != 0xFB && !host.spawn_bracket() {
         let halt_bypass = opcode == 0x32
             && bytecode
                 .get(operand)

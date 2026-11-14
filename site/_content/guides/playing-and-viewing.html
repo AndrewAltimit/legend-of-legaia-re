@@ -46,7 +46,7 @@
   <p>On Linux and Windows a disc image, expansion pack or memory card opened with <code>Legend of Legaia</code> ("Open with", or a file dropped on the program's icon) arrives in the launcher as if it were dropped on its window.</p>
   <figure class="screenshot">
     <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Play online, Change disc, Expansion pack, Controls, Saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar, opening on the Look and feel row, then Display and Enhancements" loading="lazy">
-    <figcaption>The launcher, lettered in the game's own font once your disc is known.</figcaption>
+    <figcaption>The launcher, lettered in the game's own font once your disc is known. It scales in whole steps (a 640x480 window takes a 4/3 step so it fills); a taller window shows more of the option list and a wider one widens both columns. The gold-filled button is the one under the cursor; <em>Play</em> letters itself in gold when it is not.</figcaption>
   </figure>
   <ol class="steps">
     <li><b>Pick the disc</b><span><em>Choose disc...</em> (<kbd>Ctrl</kbd>+<kbd>O</kbd>) opens the file dialog; dragging the <code>.bin</code> / <code>.cue</code> onto the window, or typing its path, works too.</span></li>
@@ -88,6 +88,7 @@
       <tr><td>Enhancements</td><td>Ground fog</td><td><code>legaia-options.toml</code></td><td><kbd>F9</kbd></td><td>off</td></tr>
       <tr><td>Enhancements</td><td>See-through walls</td><td><code>legaia-options.toml</code></td><td><kbd>F4</kbd></td><td>on</td></tr>
       <tr><td>Enhancements</td><td>Living ground pulse (off = <code>--no-entry-pulse</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
+      <tr><td>Enhancements</td><td>Heal numbers (off = <code>--no-heal-numerals</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>on</td></tr>
       <tr><td>Play</td><td>Free-angle movement</td><td><code>legaia-options.toml</code></td><td><kbd>R</kbd></td><td>off</td></tr>
       <tr><td>Play</td><td>Action movement: Square jumps (twice in the air), R2 dashes (<code>--action-movement</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
       <tr><td>Play</td><td>Smarter monsters (<code>--smart-monsters</code>)</td><td><code>launcher.toml</code></td><td>-</td><td>off</td></tr>
@@ -162,7 +163,7 @@
   <p>A controller reaches everything inside the game, the launcher and the window's <kbd>F12</kbd> panel (<kbd>Select</kbd> + <kbd>Start</kbd>). It does not reach the play page's own boxes beside the picture, its file pickers (a browser opens a file dialog only for a click or a key), or Legaia Explorer.</p>
   <p><strong>Touch screens.</strong> On a phone or tablet the browser play page draws an on-screen pad over the picture: a D-pad you can roll a thumb around (diagonals included), the four face buttons, L1 / L2 / R1 / R2 and Select / Start. The <em>Touch pad</em> button under the picture shows or hides it on any device, and the choice is remembered. Its presses reach the game as a controller's do; a drag on the picture outside the buttons still turns the camera. On a phone held upright the pad sits under the picture rather than over it, so the HUD and the scene stay clear; turned sideways or in fullscreen it is back over the picture.</p>
   <h3>Camera and window toggles</h3>
-  <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail, centred on the party (the browser play page's <strong>Reset camera</strong> button does the same, and also leaves the <kbd>F3</kbd> debug vantage) - all three, and the <kbd>T</kbd> distance preset, sit out while a cutscene has the camera, the ending credits' vignettes included.</p>
+  <p>Left-mouse drag orbits the camera around your character (horizontal) and tilts it (vertical), the wheel zooms, and a double-click puts the framing back to retail, centred on the party (the browser play page's <strong>Reset camera</strong> button does the same, and also leaves the <kbd>F3</kbd> debug vantage) - all three, and the <kbd>T</kbd> distance preset, sit out while a cutscene or a conversation has staged its own shot (the ending credits' vignettes, a character meeting another in a talk), so the scene is framed as authored. When the shot lets you go, the camera stays on it until you walk, then eases back to the follow view, and a far preset pulls back gradually rather than jumping. The field camera holds still while the pause menu is open.</p>
   <table>
     <thead><tr><th>Key</th><th>Toggle</th><th>Default</th></tr></thead>
     <tbody>

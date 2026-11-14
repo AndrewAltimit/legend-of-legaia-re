@@ -58,7 +58,14 @@ lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
 a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
 panel are paid for, keeps the step with a slimmer header band rather than
-falling to 1x.
+falling to 1x. A window under two steps, such as 640x480, takes a fractional
+step (3/2, 4/3 or 5/4) so the launcher fills it rather than drawing at 1x in
+its middle. A window taller than a step keeps the step and lengthens the
+two columns instead, so the option list shows more rows at once (up to the
+whole list) rather than sitting in empty margins; a wider one widens both
+columns, up to a 16:9 layout, so the help text wraps less. The gold-filled
+button is the one under the cursor; *Play* letters itself in gold when it is
+not.
 
 | Key / mouse | Does |
 |---|---|
@@ -246,6 +253,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
+| Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
@@ -488,7 +496,7 @@ stay clear; turned sideways or in fullscreen it is back over the picture.
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
 double-click puts the framing back to retail, centred on the party (the
 browser play page's **Reset camera** button does the same, and also leaves the
-`F3` debug vantage). All three, and the distance preset, sit out while a cutscene has the camera, the ending credits' vignettes included.
+`F3` debug vantage). All three, and the distance preset, sit out while a cutscene or a conversation has staged its own shot (the ending credits' vignettes, a character meeting another in a talk), so the scene is framed as authored. When the shot lets you go, the camera stays on it until you walk, then eases back to the follow view, and a far preset pulls back gradually rather than jumping. The field camera holds still while the pause menu is open.
 
 **Window toggles.** These are the port's enhancements and conveniences; each
 enhancement has a retail-faithful off position
@@ -537,7 +545,8 @@ next gives the mix back; `Delete` on it puts every row it speaks for back on
 *Enhanced*. A row with a window key letters the key after its label (*Ground
 fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
-tuning*). Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
+tuning*); the focused row is marked as on the launcher, a lighter band with a
+gold bar down its left edge, on every page of the panel. Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
 `Delete` puts it back on its default as on the launcher, with the row's help
 underneath; a change takes effect behind the panel at once, and the list
 scrolls under the plate. Options go to `legaia-options.toml`; the launcher's

@@ -23,7 +23,7 @@ use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_menu_runtime::field_menu_dispatch::{
     FieldMenuSubsession, SubsessionHandoff, finish_subsession, journal_on_select, open_journal,
-    pause_slide_gate, tick_open_subsession, tick_root_list,
+    pause_slide_gate, take_raised_notices, tick_open_subsession, tick_root_list,
 };
 use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuSession};
 use legaia_engine_menus::options::OptionsState;

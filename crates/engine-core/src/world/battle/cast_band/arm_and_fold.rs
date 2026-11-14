@@ -364,7 +364,10 @@ impl World {
     /// Glare's roll belongs to its own pass: PROT 0940's arm 2 counts out,
     /// resolves Stone and its landing cue, and steps to arm 3
     /// (`0x801F6F30`, `0x801F6F9C..0x801F719C`, `0x801F71A0`). The band's closing
-    /// seam would otherwise fold it some two seconds later.
+    /// seam would otherwise fold it some two seconds later. The band calls it
+    /// with the phase the pass leaves on, right after the module tick that
+    /// counted arm 2 out, so the roll draws the word retail's tick draws;
+    /// the call at the next pass's head finds the cast already folded.
     pub(in crate::world) fn fold_glare_on_its_arm(&mut self, entry: u32, spell_id: u8, arm: u8) {
         if entry == 940 && spell_id == 0x3C && arm >= 3 {
             self.fold_pending_cast();

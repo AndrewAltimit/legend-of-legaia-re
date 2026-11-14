@@ -989,8 +989,32 @@ overlay's `FUN_801D688C` (21 callers): Cross pushes `0x36`, Circle `0x37`, a ste
 `0x21`, and a screen that accepts the row overwrites the ring's last slot through
 `FUN_80035BD0`, `0x20` for most and `0x23` for a refusal. The root picker overwrites
 only for Load and Save, so its first five rows sound the bare `0x36`. The content
-lists run the kernel below, whose confirm is `0x20`. Engine:
-`field_menu::pause_edge_blip`, on both hosts.
+lists run the kernel below, whose confirm is `0x20`.
+
+The four apply screens sound their own cue. As an item lands or a spell is cast,
+each overwrites the pick with `0` and pushes `0x25`: the single-target apply at
+`0x801D84B8`, the all-party apply at `0x801D8120`, the group cast at `0x801D9368`
+and the target cast at `0x801D9680`. A member the validator turns down
+overwrites it with `0x23` instead (`0x801D8480`, `0x801D96E0`). Engine:
+`field_menu_dispatch::pause_frame_blip` on both hosts, which asks the open screen
+(`FieldMenuSubsession::confirm_blip`, a step on a copy of the session) before
+`field_menu::pause_edge_blip`.
+
+The rest of the Items and Equip screens answer the same call:
+
+| Screen | Confirm | Site |
+|---|---|---|
+| Items command window | `0x23` on an empty bag; `0x20` for Use and Throw Out; Arrange silences the pick and pushes `0x37` | `FUN_801D7C00`, `0x801D7D44`, `0x801D7D64` / `0x801D7D88`, `0x801D7DAC` / `0x801D7DCC` |
+| Use and Throw Out lists | the kernel's `0x23` on a disabled row (the confirm opens nothing), else `0x20` | `FUN_80032A44`, `0x80032D04..0x80032D24` |
+| Throw-out Yes / No | Yes overwrites the pick with `0x37` as the stack goes; No keeps `0x36` | `FUN_801D8734`, `0x801D88E0` |
+| Incense / Door of Light Yes / No | Incense's Yes silences the pick and pushes `0x25`; the rest keep `0x36` | `FUN_801D8D94`, `0x801D8E4C` / `0x801D8E54`; `FUN_801D8A58` |
+| Equip character picker | `0x20` | `FUN_801D98F0`, `0x801D99BC` |
+| Equip slot browse | Best Equipment `0x24`, or `0x23` when nothing changes; a slot row keeps `0x36` | `FUN_801D99F0`, `0x801D9B7C` / `0x801D9B9C` |
+| Equip candidate list | a candidate or an occupied Remove `0x24`; an empty Remove pushes `0x37`; a worn row is silent | `FUN_801D9C14`, `0x801DA154` / `0x801DA110`, `0x801DA12C`, `0x801DA274` |
+
+The Throw Out list's disabled rows are its own build's (content id `0x22`: a
+key item, a no-discard piece), so a key item buzzes there rather than opening
+the Yes / No.
 
 ### The kind-4 list kernel (SCUS `FUN_80032A44`)
 
@@ -1584,6 +1608,17 @@ path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
   (`legaia_engine_ui::pause_menu::menu_notice_chrome`, gated on the same
   painter check as the text, so a frame never stands around a notice whose
   text cannot draw).
+- **The notice opens over its own screen.** The apply sub-screen raises it
+  from inside its phase machine (`FUN_801D8308` opens window 8 at
+  `0x801D8560` and parks in phase 4; `FUN_801D9594` opens window 7 at
+  `0x801D97C8` and parks in phase 3), stalls on the confirm | cancel masks,
+  closes it and steps back to its own cursor, so the Items or Magic screen
+  stays under the notice and resumes after it. The port's
+  `field_menu_dispatch::resume_after_use` keeps the screen up and leaves the
+  notice for the host (`take_raised_notices`). The notice's body covers the
+  text below it; the hosts draw text after every sprite, so
+  `pause_menu::occlude_under_menu_notices` drops the screen's glyphs inside
+  the notice's frame.
 
 **Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
 (`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for

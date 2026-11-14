@@ -697,7 +697,13 @@ the bag is short of an errand's copies:
   piece no present member is better off wearing - worth less, summed over
   its stat bonuses, than what each member who can wear it wears in its slot,
   and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
-  - is sold, the whole stack, before anything is bought.
+  - is sold, the whole stack, before anything is bought. The slot is the
+  record byte the piece's class names
+  (`equip_session::record_byte_for_category`), and the hand walks each list
+  by its own page: seven rows on the buy list, eleven on the sell list
+  (`shop_cues::shop_list_page_rows`). Paged by sevens, a sale past the sell
+  list's first page was struck off the visit, and the price the planner had
+  already counted never reached the purse.
 - **It keeps the heal reserve.** Three heals a member are bought before the
   errand's items, and a purchase that does not complete the errand leaves
   the reserve's price in the purse. Six of eight loaves bought out of 38225
@@ -1531,6 +1537,7 @@ map as its street:
 - **Cross-axis offset.** The follower leaves a cross-axis offset of a few units alone while the other axis still has ground to cover. Chasing its own overshoot flips the diagonal every frame, and along a terrace edge the side-step toward the drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to (89, 80), a one-way hop it cannot climb back).
 - **A script that fires and changes no flag** more than a couple of dozen times on one walk makes that walk a stall. `retock` P2[26], the Mt. Letona checkpoint, turns the party back every time it is crossed without Lord Saryu's key. The count is per record as well as per park site: `jouinc`'s camera bands P2[3..57], one every three tiles of the way to `jouind`, all park at the same `pc` and op, and are distinct records, not one script firing repeatedly.
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
+- **A ride a touch sets going.** A touch's prop record takes its first slice in the tick that posted it, so a record that spawns a ride and ends (`chitei2`'s lift P0[5], `44 56` then `21`) is over before the follower looks, and the ride is a helper context installed at the tick's end that has not stepped yet. The follower lets go of the pad for it as for any script it sets off. Pressing on through the ride, the walk landed on the far lift and touched it straight back, ten rides a stretch, until the frame budget ran out.
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
 - **Minigame cabinets.** The tap is never pressed at a minigame cabinet, a talk record that runs the minigame door-warp (`3E` with `op0 >= 100`) itself or through a record it spawns. `koin1`'s slot machines (P1[51..56]) are props the interact probe reaches but no NPC slot carries; a tap beside one on the walk to the Prize Counter (P1[5]) asked to play, the scripted-sequence hand answered, and the session sat at the slot machine. A session that lands in a minigame anyway leaves it with Start, the engine's shared minigame exit, which also closes the door-warp's round trip back to the field.

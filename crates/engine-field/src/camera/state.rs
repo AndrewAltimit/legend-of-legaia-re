@@ -17,6 +17,9 @@ pub enum CameraMode {
     Static,
 }
 
+/// [`Camera::knob_blend`] at full reach (Q12 one).
+pub const KNOB_BLEND_FULL: i32 = 0x1000;
+
 /// Runtime camera. Composed from the field-VM's CameraState plus a follow
 /// target. Engines call [`Camera::tick`] each frame after the world ticks
 /// to update the view; the resulting `eye` / `look_at` pair feeds the
@@ -120,6 +123,14 @@ pub struct Camera {
     /// retail holds two distinct focus values across the whole of `opdeene`.
     /// Cleared by [`Self::reset_globals_for_scene_entry`].
     pub(super) script_owns_focus: bool,
+    /// How far the distance preset reaches the follow frame, Q12
+    /// (`0..=4096`). An engine enhancement with no retail counterpart: a
+    /// scripted shot that holds the camera puts the preset at identity, and
+    /// when it lets go the preset comes back over the follow ease, one ease
+    /// step per pass the ease runs ([`Self::zone_follow_tick`]), instead of
+    /// in one frame ([`Self::blended_distance_scale`]). At the retail
+    /// preset the blend scales identity, so the faithful frame is unchanged.
+    pub knob_blend: i32,
     /// The zone-driven follow camera: the retail camera parameter block,
     /// the target it composes and the ease that walks the globals toward
     /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
@@ -421,6 +432,7 @@ impl Default for Camera {
             mover: None,
             last_field_frame: 0,
             script_owns_focus: false,
+            knob_blend: KNOB_BLEND_FULL,
             zone: ZoneFollow::default(),
         }
     }
@@ -477,5 +489,24 @@ impl Camera {
         mv.pairs = *pairs;
         mv.write_globals(&mut self.globals.0);
         true
+    }
+}
+
+impl Camera {
+    /// The distance preset's depth scale as [`Self::knob_blend`] lets it
+    /// reach the follow frame, lerped from identity. At full reach it is the
+    /// preset's; at the retail preset it is `1.0` whatever the blend.
+    ///
+    /// Only the preset blends. The orbit, the tilt and the wheel zoom are
+    /// direct manipulation, and the d-pad compass turns with the orbit
+    /// (`Self::compass_azimuth_units`): a drag made after the shot lets go
+    /// must land at once.
+    pub fn blended_distance_scale(&self) -> f32 {
+        let b = self.knob_blend.clamp(0, KNOB_BLEND_FULL);
+        let scale = self.distance.scale();
+        if b == KNOB_BLEND_FULL {
+            return scale;
+        }
+        1.0 + (scale - 1.0) * (b as f32 / KNOB_BLEND_FULL as f32)
     }
 }

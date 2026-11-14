@@ -281,6 +281,12 @@ of `+0x00..+0x03`, and bumps `+0x1F4` in its epilogue; every commit zeroes the
 index (`0x8004B064`). A swing entry's single beat is therefore its one hit and
 an art entry's ascending run its combo, paced by the clip rather than by the
 action stream ([battle-action.md](../subsystems/battle-action.md#3-damage-is-one-power-byte-per-animation-hit-event)).
+The frame is the cursor before the natural-end test, so on the tick a clip
+ends it is the frame count and a beat one past the count still lands. None of
+the four entries with a beat at or past their count is in that reach: each
+stands three or more keyframes past it (monster `0xA8` entry 5 at `255`,
+`0xB5` entry 2 at `10` over 7 keyframes, `0xB6` entries 5 and 6 at `200`), and
+a pass advances at most two keyframes, so those beats never land in retail.
 The two `FUN_80050E00` consumers below are the other readers.
 
 Both traced consumers are in the anim tick `FUN_80047430`, and both locate the

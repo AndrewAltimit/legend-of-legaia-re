@@ -334,6 +334,15 @@ impl<S: AudioSink> BootSession<S> {
         }
         // No key table here: a headless driver has no bindings to rebind.
         let _ = tick_open_subsession(active, edge, None, &mut self.host.world);
+        // A use or cast that raised window 7 / 8 leaves its screen up; a
+        // renderer-less driver just latches the notice.
+        let raised = take_raised_notices(&mut self.host.world);
+        if raised.spell_level_notice.is_some() {
+            self.spell_level_notice = raised.spell_level_notice;
+        }
+        if raised.art_learned_notice.is_some() {
+            self.art_learned_notice = raised.art_learned_notice;
+        }
         if !self
             .field_menu_sub
             .as_ref()

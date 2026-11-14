@@ -174,7 +174,18 @@ impl crate::world::World {
         // The seat's model table, fresh per fight (retail registers the
         // node and snapshots the pairs at every battle load). The draw set
         // starts as the idle stream's channels until the first pose.
+        let triangles = legaia_engine_battle::battle_party_form::object_triangle_counts(
+            &form.tmd,
+            &form.tmd_bytes,
+        );
+        log::info!(
+            "battle body: party member {member} (roster {}), {} triangles over {} objects",
+            form.cslot,
+            triangles.iter().map(|&t| u32::from(t)).sum::<u32>(),
+            triangles.len()
+        );
         if let Some(a) = self.actors.get_mut(member) {
+            a.battle_object_triangles = Some(triangles.into());
             a.battle_model_table = form.model_table.clone();
             a.battle_drawn_objects = form
                 .model_table

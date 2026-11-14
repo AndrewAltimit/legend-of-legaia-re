@@ -18,6 +18,7 @@ Nothing here changes the ground rules: the user supplies the disc, no Sony-owned
 - [Step 5: play the whole game on pad input](#step-5-play-the-whole-game-on-pad-input)
 - [Step 6: measure against a retail corpus](#step-6-measure-against-a-retail-corpus)
 - [Step 7: keep iteration quick](#step-7-keep-iteration-quick)
+- [What is tested, and the gap each test closes](#what-is-tested-and-the-gap-each-test-closes)
 - [The feedback loops](#the-feedback-loops)
 - [Evidence grades](#evidence-grades)
 - [Traps a newcomer hits](#traps-a-newcomer-hits)
@@ -83,12 +84,12 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise:
 
 - **Stills.** The [retail comparison corpus](tooling/retail-compare.md) seats the engine where each of several hundred retail save states stood and scores the frame, camera, player, placements, music, flags, party and enemies per state, in [`scripts/ci/retail-compare-baseline.json`](../scripts/ci/retail-compare-baseline.json).
-- **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant.
-- **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`.
-- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`).
+- **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant. The [walk film](tooling/walk-film.md) does the same for a field walk on a fixed pad schedule. Films carry retail pixels, so their image scores are reported and not committed.
+- **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`. A film's sound cues are the one part of it that is ratcheted ([the cue ratchet](tooling/cast-sequence-oracle.md#the-cue-ratchet)).
+- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. It is the one instrument in which retail's own code executes, and the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`). What it cannot see is when, and with what, the engine calls the kernel.
 - **The whole game.** The [full-game ladder](tooling/full-game-ladder.md) plays New Game to credits on pad input, segment by segment and as one continuous run.
 
-[The verification ladder](tooling/verification-ladder.md) stacks these with the format docs and port provenance, rung by rung, with what each one cannot see. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
+[The verification ladder](tooling/verification-ladder.md) stacks these with the format docs and port provenance, rung by rung, with what each one cannot see, and [the coverage map](#what-is-tested-and-the-gap-each-test-closes) below lists every instrument by the gap it closes. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
 
 ### The boundary, stated honestly
 
@@ -145,7 +146,8 @@ Every step runs through a gate. A gate here is a check that fails on its own, us
 
 **The gate.** Three checks, each on a different question. `port-catalog.py --check` ratchets what is ported, with worklists read through [worklist classification](tooling/worklist-classification.md) so that an address which is no real function entry does not read as work.
 [Port provenance](tooling/port-provenance.md) asks whether a `// PORT:` address names the routine the Rust implements; its signals rank suspicion rather than prove anything, so `check-port-provenance.py --check` gates the delta: a commit that adds an unwaived finding fails, and each waiver records what the bytes showed.
-The [retail kernel differential](tooling/retail-kernel-differential.md) asks whether the Rust computes what the routine computes, by running the routine off the user's disc in an R3000 interpreter beside its kernel. Each test declares the routines it runs and fails unless the run entered exactly those bytes, and `differential-coverage.py --check` ratchets how many tagged routines a differential runs. A differential settles provenance for the addresses it runs; the rest stay on the ranked worklist ([the verification ladder](tooling/verification-ladder.md)).
+The [retail kernel differential](tooling/retail-kernel-differential.md) asks whether the Rust computes what the routine computes, by running the routine off the user's disc in an R3000 interpreter beside its kernel, on generated inputs and one scripted `rand()` stream, and comparing the whole regions both wrote.
+Each test declares the routines it runs and fails unless the run entered exactly those bytes, and `differential-coverage.py --check` ratchets how many tagged routines a differential runs. A differential settles provenance for the addresses it runs; the rest stay on the ranked worklist ([the verification ladder](tooling/verification-ladder.md)). The interpreter is user-mode: a `syscall`, an undefined GTE command or a COP0 operation beyond register moves stops the run, and a test that runs no retail routine says so with `not_a_differential!` and its reason, so it is never counted as coverage.
 
 **An example.** A sweep for writers of `_DAT_8007B8C2` searched the absolute `lui` + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's documented polarity. Its writer is `0x80015F08 sh v0,0x5aa(gp)`, a gp-relative store that scan could not see, and the executable's header clears no BSS at all. The chain is in [`ghidra.md`](tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims), and it is why a negative result is held to the same evidence bar as a positive one.
 
@@ -155,7 +157,11 @@ The [retail kernel differential](tooling/retail-kernel-differential.md) asks whe
 
 **What it produces.** Ports that a host reaches, and for the rest an explicit statement of why not: `// NOT WIRED:` names what must exist first, and `// REPLACED-BY:` names the different mechanism that does the routine's job.
 
-**The gate.** Two measurements, one static and one at runtime. `port-catalog.py --live` builds a call graph from the hosts' real entry points, and every ambiguity resolves toward reachability, so what `--not-live` reports is a hard floor on what cannot run. [Live-audit triage](tooling/live-audit-triage.md) settles each row with a verdict: `WIRE`, `DISCLOSE`, `DELETE`, `REPLACE` or `FALSE INERT` (the audit's own error, fixed in the audit). The [runtime denominator](tooling/port-catalog.md#the-runtime-denominator-replay-port-coveragepy) then asks what a replay actually entered, and [reach triage](tooling/reach-triage.md) records the verdicts. Because three hosts run one engine, [host drift](tooling/host-drift.md) gates catch a feature wired into only one.
+**The gate.** Two measurements, one static and one at runtime. `port-catalog.py --live` builds a call graph from the hosts' real entry points, and every ambiguity resolves toward reachability, so what `--not-live` reports is a hard floor on what cannot run.
+
+[Live-audit triage](tooling/live-audit-triage.md) settles each row with a verdict: `WIRE`, `DISCLOSE`, `DELETE`, `REPLACE` or `FALSE INERT` (the audit's own error, fixed in the audit). The [runtime denominator](tooling/port-catalog.md#the-runtime-denominator-replay-port-coveragepy) then asks what a replay actually entered, and [reach triage](tooling/reach-triage.md) records the verdicts. Two worklists come from retail's side: [playthrough coverage](tooling/playthrough-coverage.md) plays a scripted segment of retail with a breakpoint on every dumped function no page explains, and the [field-op census](tooling/field-op-census.md) says whether any scene on the disc issues an opcode arm at all.
+
+Because three hosts run one engine, [host drift](tooling/host-drift.md) gates catch a feature wired into only one. Those gates read source. The [host pair run](tooling/host-drift.md#the-host-pair-run) plays one pad script in the native window and the browser page and pairs them by world frame, picture against picture and state against state, which is the one check that sees the page's JavaScript and GL state.
 
 **An example.** Three field effect handlers stay unconverted across coverage runs, which reads as "a composed-overworld ladder would reach them". That reading is falsified: no production path constructs an actor on any of the three, so the gap is a constructor, not a test ([measurement readings](reference/re-do-not-re-walk.md#measurement-readings)). The runtime side has a sharper form too: an anchor tagged `NOT WIRED` that a passing oracle executed has the highest priority, since an oracle traversing stub code can certify behaviour nothing implements.
 
@@ -190,7 +196,9 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What it produces.** The [full-game ladder](tooling/full-game-ladder.md). The story is cut into segments between milestones anchored to retail saves, and each segment climbs the tiers `loads`, `enters`, `progresses` (the player is placed on doors) and `pad` (pad input only). The [continuous run](tooling/full-game-ladder.md#the-continuous-run) then plays one session from New Game with no re-seeding, so it has to arrive at each stretch with the levels it earned and the items it bought. Alongside it, the [soak harness](tooling/soak-harness.md) throws seeded, game-shaped random input at every scene and minigame.
 
-**The gate.** The tiers are ratcheted in a committed baseline, and a red run may not be turned green by lowering them. One random stream can hide a fight won only by the deal, since a change that shifts one draw re-deals every later encounter, so [the seed set](tooling/full-game-ladder.md#the-seed-set) repeats the whole run on other streams, and each asserts its own row. [Record and replay](tooling/determinism-replay.md) keeps it all reproducible: the same input gives bit-identical traces.
+**The gate.** The tiers are ratcheted in a committed baseline, and a red run may not be turned green by lowering them. One random stream can hide a fight won only by the deal, since a change that shifts one draw re-deals every later encounter, so [the seed set](tooling/full-game-ladder.md#the-seed-set) repeats the whole run on other streams, and each asserts its own row. [Record and replay](tooling/determinism-replay.md) keeps it all reproducible: the same input gives bit-identical traces. The soak harness's fixed findings stay as hard-fail replays.
+
+**What it cannot see.** Fidelity. The ladder proves the game can be finished and compares nothing with retail, and the soak harness's detectors are internal-consistency checks. [Gate replay](tooling/gate-replay.md) carries a ladder run across: it plays the engine's own pad on retail beat by beat, resynchronised at each state gate, and reports the gaps, positions and random draws per beat.
 
 **An example.** A stall is a diagnosis rather than a red light. The report names the script instruction that parked, the door gate that refused, the story flag never set and the disc records that set it ([how to read a stall](tooling/full-game-ladder.md#how-to-read-a-stall)). The page also says what the ladder cannot claim, such as a segmented tier that places the player proving doors and scripts but not locomotion ([what it cannot measure](tooling/full-game-ladder.md#what-it-cannot-measure)).
 
@@ -198,9 +206,13 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What is done.** Capture moments of the original as emulator save states. For each, read what retail was doing out of the state's own memory, put the engine in the same situation through its own load path, and score the difference per channel, worst state first. The channels cover what a player notices: the frame on screen, player position, camera, NPC placement, facing, the music track, story flags, party, enemies and more ([channels](tooling/retail-compare.md#channels)). The method is written up engine-neutral in [the retail-oracle method](tooling/retail-oracle-method.md).
 
-**What it produces.** The [retail comparison corpus](tooling/retail-compare.md) and its siblings: the [cast-sequence oracle](tooling/cast-sequence-oracle.md) for what unfolds over time, the [audio sweep and real PCM comparison](subsystems/audio.md#the-audio-state-sweep) for sound, the [retail kernel differential](tooling/retail-kernel-differential.md) for single routines run off the disc, and the [recomp differential](tooling/recomp-differential.md) for continuous traces. Its reports are a worklist, with a [catalogue of divergence shapes](tooling/retail-compare.md#divergence-shapes) saying what each pattern usually means.
+**What it produces.** The [retail comparison corpus](tooling/retail-compare.md) and its siblings: the [cast-sequence oracle](tooling/cast-sequence-oracle.md) and the [walk film](tooling/walk-film.md) for what unfolds over time, the [audio sweep and real PCM comparison](subsystems/audio.md#the-audio-state-sweep) for sound, the [retail kernel differential](tooling/retail-kernel-differential.md) for single routines run off the disc, and the [recomp differential](tooling/recomp-differential.md) for continuous traces. Its reports are a worklist, with a [catalogue of divergence shapes](tooling/retail-compare.md#divergence-shapes) saying what each pattern usually means.
 
 **The gate.** Per-state, per-channel [scores may only rise](tooling/retail-compare.md#the-ratchet). Two more gates protect the ratchet itself ([ratchet integrity](tooling/ratchet-integrity.md)): a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed.
+
+**Films.** A film has no committed image baseline, since its recordings carry retail pixels and its score moves a little with every change; a change reports before and after on one command. Its sound-cue channel is the exception: a cast plays the cue retail plays, on the same clock, or it does not, so [`film-cues.py`](tooling/cast-sequence-oracle.md#the-cue-ratchet) holds the committed film sets to a baseline. No instrument blesses itself: `--propose` writes a candidate baseline beside the committed one, for review.
+
+**Order and timing.** A film can score low with every routine right, because the engine reaches an arm after another number of `rand()` draws and the arm's look is its draws. The film logs retail's seed word every vsync and can seat the engine's stream on it at a named phase ([the rand stream](tooling/cast-sequence-oracle.md#the-rand-stream)), which separates a wrong routine from a different deal. Frames pair on the game's own clock, never on wall time ([the pairing rule](tooling/cast-sequence-oracle.md#the-pairing-rule)).
 
 **Keeping it wide.** A corpus grows where capturing is easy, and parity on those moments says nothing about the rest. [Capture coverage](tooling/capture-coverage.md) takes the denominator from the disc, listing every scene, monster, enemy attack, player cast and menu screen, then ranks what no state shows yet. As parity is reached on what the corpus holds, the corpus is extended into what it does not hold, so the headline keeps measuring more of the game.
 
@@ -210,11 +222,77 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What is done.** Focused performance rounds, run now and then rather than continuously, on two costs: what the engine costs a player, and what a change costs a developer. Every other step's value depends on how often it can run. An oracle that takes too long gets run less, and defects survive longer.
 
-**What it produces.** [Frame benchmarks](tooling/frame-bench.md) on both hosts, covering frame time, allocations and scene entry, and [build and test profiles](tooling/build-and-test-speed.md) with an edit-time `dev-fast` path, a result cache on the corpus, and a parallel [full gate](tooling/build-and-test-speed.md#the-full-gate). The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake.
+**What it produces.** [Frame benchmarks](tooling/frame-bench.md) on both hosts, covering frame time, allocations and scene entry, and [build and test profiles](tooling/build-and-test-speed.md) with an edit-time `dev-fast` path, a result cache on the corpus, and a parallel [full gate](tooling/build-and-test-speed.md#the-full-gate). The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake. Counts do not flake, so the [cost ratchet](tooling/frame-bench.md#cost-ratchet) commits those instead: draws and allocations per frame on tick-locked runs, and the shipped bundle's size.
 
-**The gate.** A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's `.ppf` from a fixed seed must hash the same ([profiling](tooling/build-and-test-speed.md#profiling-without-perf)). A cache has to key on everything its result depends on: the corpus's [result cache](tooling/retail-compare.md#parallel-states-and-the-result-cache) hashes the binary, disc, state, memory card, manifest row, frame mode and environment, and a bless or a check never reads it.
+**The gate.** A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's `.ppf` from a fixed seed must hash the same ([profiling](tooling/build-and-test-speed.md#profiling-without-perf)). A cache has to key on everything its result depends on: the corpus's [result cache](tooling/retail-compare.md#parallel-states-and-the-result-cache) hashes the binary, disc, state, memory card, manifest row, frame mode and environment, and a bless or a check never reads it. In the browser, the [frame hash](tooling/frame-hash.md) steps the play page tick by tick on a scripted pad and compares two bundles frame for frame. A rise in a ratcheted count is a loosening and takes a ledger entry like any other.
 
 **An example.** The `readPixels` on the battle transition's arming frame is expensive, and an asynchronous read would remove the wait. It would also land the capture frames later, which moves the transition, so that is not an optimisation available here ([what the numbers have shown](tooling/frame-bench.md#what-the-numbers-have-shown)). The deferred work that was taken is a pure function of what the load captured, so its reader gets what it would have had.
+
+## What is tested, and the gap each test closes
+
+Each step's gate closes one kind of gap and is blind to another. The tables below list every instrument by the gap it closes, what it is held against, and what it cannot see. The last column says how it fails: a **ratchet** is a committed baseline that may only improve, a **test** is a hard assertion, and a **report** is read by a person and gates nothing.
+
+### Is everything read, ported and wired?
+
+| Gap | Instrument | Held against | Cannot see | Kind |
+|---|---|---|---|---|
+| Bytes no parser reads, code nobody dumped | [Disc coverage](tooling/disc-coverage.md), [byte accounting](tooling/byte-accounting.md) | The disc's code images and archive entries | What the code does with the data | Ratchet |
+| A writer that disagrees with its reader | The patcher's [round-trip and runtime oracles](tooling/randomizer-internals.md#tests) | The patched image re-decoded; the engine's grant kernels | Retail running the patched disc | Test |
+| A routine nobody has ported | [Port catalog](tooling/port-catalog.md), [worklist classification](tooling/worklist-classification.md) | Function entries in the dumped images | Code no dump has cut into functions | Ratchet |
+| A port nothing calls | `port-catalog.py --live`, [live-audit triage](tooling/live-audit-triage.md) | A call graph from the hosts' entry points | Whether a reachable port ever runs | Ratchet |
+| A port no run enters | [Runtime denominator](tooling/port-catalog.md#the-runtime-denominator-replay-port-coveragepy), [reach triage](tooling/reach-triage.md) | What the replays executed | Paths no replay walks | Report |
+| Code retail runs that no page explains | [Playthrough coverage](tooling/playthrough-coverage.md) | Retail under breakpoints on a scripted segment | Anything off the segment | Report |
+| An opcode arm that looks untested | [Field-op census](tooling/field-op-census.md) | Every script carrier on the disc | Whether the port's arm is right | Report |
+
+### Is each routine the right one, computing the right thing?
+
+| Gap | Instrument | Held against | Cannot see | Kind |
+|---|---|---|---|---|
+| A tag naming the wrong routine | [Port provenance](tooling/port-provenance.md) | The bytes at the tagged address | The arithmetic under a correct tag | Ratchet |
+| A routine that computes something else | [Retail kernel differential](tooling/retail-kernel-differential.md) | The routine itself, run off the disc in an R3000 interpreter | When, and with what, the engine calls it | Test, coverage ratchet |
+| A reference GTE that shares the port's defect | The interpreter's [own GTE](tooling/retail-kernel-differential.md#the-gte) | The hardware documentation, not the port | Hardware the documentation gets wrong | Test |
+
+### Does it look, move and sound like retail?
+
+| Gap | Instrument | Held against | Cannot see | Kind |
+|---|---|---|---|---|
+| A wrong frame, camera, placement or facing | [Retail-compare](tooling/retail-compare.md) state and [image](tooling/retail-compare.md#the-image-channel) channels | A save state's RAM and displayed VRAM | Time; whatever the seed installed | Ratchet |
+| A moment no capture shows | [Capture coverage](tooling/capture-coverage.md) | Every scene, monster, cast and screen the disc defines | Whether a covered moment matches | Report |
+| A cast in the wrong order, length or timing | [Cast-sequence oracle](tooling/cast-sequence-oracle.md) | An emulator recording, a row a vsync, paired on the game's clock | The rest of the fight; residuals under retail's own spread | Report |
+| A random draw taken in another order | The film's [rand stream](tooling/cast-sequence-oracle.md#the-rand-stream) seat; the differential's scripted `rand()` | Retail's seed word, logged every vsync | Draws outside a recorded stretch | Report |
+| A walk or camera ease that unfolds differently | [Walk film](tooling/walk-film.md) | Retail on the same state and pad schedule | Any other state or schedule | Report |
+| A run that parts from retail between two states | [Gate replay](tooling/gate-replay.md) | The engine's pad replayed on retail, beat by beat | What retail would have pressed instead | Report |
+| A divergence on a continuous run | [Recomp differential](tooling/recomp-differential.md) | A static recompilation's state trace | The recomp's own hardware model | Report |
+| A cue that stops playing or lands off the clock | [Film cue ratchet](tooling/cast-sequence-oracle.md#the-cue-ratchet), [cue differential](subsystems/audio.md#the-cue-differential) | Retail's cue ring, sampled every vsync; its drainer run off a state | Cues outside the committed film sets | Ratchet |
+| The wrong track, tempo or volume | [Audio state sweep](subsystems/audio.md#the-audio-state-sweep) | libsnd's records in every state's RAM | The waveform | Ratchet |
+| Wrong notes or voices | [Audio trace](subsystems/audio.md#audio-trace-parity-oracle), [keying differential](subsystems/audio.md#the-keying-differential) | SPU registers; retail's sequencer run in the interpreter | The mixed sound | Test |
+| A mix that sounds different | [Real retail PCM](subsystems/audio.md#real-retail-pcm) | The emulator's recorded output | States with no recording | Ratchet |
+
+### Does it hold together as a program?
+
+| Gap | Instrument | Held against | Cannot see | Kind |
+|---|---|---|---|---|
+| A game that cannot be finished | [Full-game ladder](tooling/full-game-ladder.md): segments, continuous run | Retail saves at each story milestone | Fidelity: it compares nothing with retail | Ratchet |
+| A run won only by the deal | [The seed set](tooling/full-game-ladder.md#the-seed-set) | The same run on other random streams | Streams outside the set | Ratchet |
+| A panic, softlock or endless battle | [Soak harness](tooling/soak-harness.md) | Nothing of retail: its own detectors | Retail divergence, a wrong picture or sound | Test |
+| A run that does not repeat | [Determinism replay](tooling/determinism-replay.md#determinism-gate) | The same input, run twice | Whether the repeated result is right | Test |
+| A feature wired into one host | [Host drift](tooling/host-drift.md) gates, the `wasm32` type-check | The other host's source | What the page draws | Test |
+| A page that draws differently from the window | [Host pair run](tooling/host-drift.md#the-host-pair-run) | The native window on the same pad script | Retail: both hosts can be wrong together | Report |
+| A speedup that changed the picture | [Frame hash](tooling/frame-hash.md), stripped ladder trace | The same run on the previous build | Fidelity; hashes differ between drivers | Report |
+| A frame that got more expensive | [Cost ratchet](tooling/frame-bench.md#cost-ratchet), [frame bench](tooling/frame-bench.md) | Committed counts of draws, allocations and bundle bytes | Time itself; the bench asserts nothing | Ratchet |
+| A kernel crate reaching a host | [The layering gate](subsystems/engine.md#the-layering-gate) | A committed table of crate edges | Behaviour | Test |
+
+### Are the measurements themselves honest?
+
+| Gap | Instrument | Held against | Cannot see | Kind |
+|---|---|---|---|---|
+| A baseline quietly lowered | [Loosening ledger](tooling/ratchet-integrity.md#a-baseline-may-not-loosen-silently) | Every baseline at the base revision | A value that was wrong when blessed | Test |
+| A measurement that never ran | [Skip tally](tooling/ratchet-integrity.md#a-skipped-test-is-not-a-passed-test), the full gate's preflight | Skips counted by reason where the data is | A test that returns early without a skip line | Test |
+| An instrument that blesses itself | `--propose`, [the full gate](tooling/build-and-test-speed.md#the-full-gate) | A candidate file beside the committed baseline | Whether the reviewer read it | Test |
+| A fix undone by a later merge | [`revert-scan.py`](../scripts/ci/revert-scan.py), in the full gate | Each removed line's blame within the branch | Whether the removal was meant | Report |
+| A claim resting on a rendering | [Evidence grades](#evidence-grades), the [falsified register](reference/re-do-not-re-walk.md) | The instructions at stated addresses | A grade nobody re-audits | Review |
+
+Three patterns run through the tables. An instrument that runs retail's own code (the differential, a film, real PCM) can disagree with the port in ways its author did not think of, and one that compares the port with itself (the soak harness, determinism, the host pair) cannot speak about retail at all. A report-only instrument is not a weaker one: films and walk films stay uncommitted because their recordings are Sony-derived, not because their findings count for less. And the third table samples the game where a capture stands, which is why capture coverage sits in it: a denominator from the disc says how much of the game the samples reach.
 
 ## The feedback loops
 
@@ -271,5 +349,6 @@ Then start small on each axis instead of finishing one step at a time: one forma
 - [Overview](overview.md) - the project in four parts, and how the disc's layers stack.
 - [The retail-oracle method](tooling/retail-oracle-method.md) - the measurement half, written for any game.
 - [The verification ladder](tooling/verification-ladder.md) - every check from format docs to the full-game ladder, and what each cannot see.
+- [Ratchet integrity](tooling/ratchet-integrity.md) - what keeps a committed baseline honest.
 - [Reusing for other PS1 games](tooling/reusing-for-other-ps1-games.md) - which crates and scripts carry.
 - [Open RE threads](reference/open-rev-eng-threads.md) - the live hunts, and [falsified readings](reference/re-do-not-re-walk.md) - the ones not worth repeating.

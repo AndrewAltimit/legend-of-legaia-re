@@ -118,8 +118,12 @@ impl LegaiaRuntime {
                 on_battle_left(&mut self.battle_hud, &mut self.encounter_banner);
                 self.exit_battle_render();
             }
-            // An expansion wave's monsters, seated since the last tick.
-            None => self.bind_wave_monsters_web(),
+            // An expansion wave's monsters, seated since the last tick, and
+            // a seat a Divide split off a seated monster.
+            None => {
+                self.bind_wave_monsters_web();
+                self.bind_split_monsters_web();
+            }
         }
         // The battle camera is stepped inside `World::tick` for every host
         // (`World::tick_battle_camera`), independent of this page's render

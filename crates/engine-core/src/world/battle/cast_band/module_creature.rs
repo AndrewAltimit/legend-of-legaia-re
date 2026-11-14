@@ -57,12 +57,22 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// played and arm 8 parked on the wrong clip's cursor for the wait's whole
 /// bound.
 ///
+/// PROT 0964's Element Strike (`0xB0..=0xB2`) stores `0` bare on its `k = 4`
+/// arm's pass (`sb zero,0x1da(v0)` at `0x801F8378` / `0x801F7B78` /
+/// `0x801F72E4`, the creature off `*(t3 + 0x1C)`, no `+0x1DC` store beside
+/// it), after `k = 3` committed clip `1` with the bump (`0x801F81D0..
+/// 0x801F81E8`). Retail RAM on `battle_rugi_rogue_rogue_flame_mid_cast` holds
+/// the golem's `+0x1D9 = 1` and committed id `0x11` for `265` vsyncs into
+/// arm 7 until clip `1`'s natural end, so its two after-image ghosts keep
+/// drawing, and shedding flame, through the arm; committed at once, the
+/// golem stood on its idle from arm 7's first pass and its ghosts went out.
+///
 /// The commit path names no module, so the rule is the band's; a module joins
 /// this list once its director's stage stores carry their `+0x1DC` bumps
 /// (`ModuleCamState::creature_restage`), which an at-once commit hides.
-const CLIP_GATED_MODULES: [u32; 22] = [
+const CLIP_GATED_MODULES: [u32; 23] = [
     905, 910, 911, 918, 922, 920, 907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931,
-    932, 933, 934,
+    932, 933, 934, 964,
 ];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
@@ -86,13 +96,19 @@ impl World {
     /// commits such a byte at once for every other actor; for these
     /// creatures the difference is the length of an arm - PROT 0908's arm 6
     /// waits on the commit its arm 5 staged.
+    ///
+    /// The module is the stager's spell's for a summon, and the capture
+    /// band's spell's for a capture module, which seats its creature with no
+    /// stager (PROT 0964's golem).
     pub(in crate::world) fn summon_seat_waits_for_cycle(&self, slot: usize) -> bool {
         self.casting.summon_actor_slot == Some(slot as u8)
             && self
                 .casting
                 .summon_stager
                 .as_ref()
-                .and_then(|st| self.cast_module_for(st.spell_id))
+                .map(|st| st.spell_id)
+                .or(self.casting.capture_spell)
+                .and_then(|spell| self.cast_module_for(spell))
                 .is_some_and(|e| CLIP_GATED_MODULES.contains(&e))
     }
 

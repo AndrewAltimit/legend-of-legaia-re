@@ -20,5 +20,7 @@ mod pause_screens_disc;
 mod pause_special_use_ladder;
 mod playable_shell_e2e;
 mod prize_exchange_wiring;
+mod shop_cancel_levels;
+mod shop_equip_slot_disc;
 mod shop_quantity_stepper;
 mod status_snapshot_ailment_word;

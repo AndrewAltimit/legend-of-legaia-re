@@ -78,6 +78,25 @@ pub trait FieldHaltHost {
         false
     }
 
+    /// The scene word `*(_DAT_801C6EA4) + 8`: `true` while the spawn
+    /// bracket is up. The scene-entry map-init `FUN_8003AEB0` raises it
+    /// (`sh v0,0x8(v1)` with `v0 = 1` at `0x8003B73C`) before its spawn loop
+    /// (`FUN_8003A1E4` per placement, `0x8003B8D4`) and the object binds
+    /// (`FUN_8003A55C`, `0x8003B908`), and drops it at `0x8003B928`; op
+    /// `4C D2`'s respawn and op `4C C3`'s re-seat raise it around their
+    /// own `FUN_8003A1E4` / `FUN_8003CF7C` slices.
+    ///
+    /// While it is up the dispatcher's halted-target early-out lets the op
+    /// through (`lhu v0,0x8(v0)` / `bne v0,zero,0x801DE948` at
+    /// `0x801DE920..0x801DE930`), so a spawn section that walks its own
+    /// actor and then pokes it (`suimon` `P1[4]`: `41 05 01`, then
+    /// `CC 0E 40 00 00 ..`) runs on past the walk inside the load slice.
+    /// Default `false`.
+    // REF: FUN_801DE840 (0x801DE90C..0x801DE944), FUN_8003AEB0
+    fn spawn_bracket(&self) -> bool {
+        false
+    }
+
     /// Side effect of [`field_halt_acquire_predicate`] returning `true`.
     ///
     /// The original also writes the same halt fields onto the system-channel

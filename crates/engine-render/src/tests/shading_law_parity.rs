@@ -1378,11 +1378,18 @@ fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
 /// sits in its triangle. The page lifts its primitives by
 /// `PSX_NATIVE_TIE_ROWS` for its fill rule's tie, so its interpolated UV is
 /// the window's that far down the row step, and its sample takes it back.
+/// Both read `PSX_TEXEL_TIE_BIAS` past the half texel, so a texel boundary on
+/// a pixel centre takes one texel on both.
 #[test]
 fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
-    let tie = match js_consts(&site_js("webgl-shaders.js")).get("PSX_NATIVE_TIE_ROWS") {
+    let consts = js_consts(&site_js("webgl-shaders.js"));
+    let tie = match consts.get("PSX_NATIVE_TIE_ROWS") {
         Some(super::page_glsl::JsConst::Num(v)) => *v as f32,
         other => panic!("PSX_NATIVE_TIE_ROWS: {other:?}"),
+    };
+    let bias = match consts.get("PSX_TEXEL_TIE_BIAS") {
+        Some(super::page_glsl::JsConst::Num(v)) => *v as f32,
+        other => panic!("PSX_TEXEL_TIE_BIAS: {other:?}"),
     };
     let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
     let page = parse_glsl(&page_fragment_glsl());
@@ -1432,7 +1439,7 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
             .ok()
             .flatten()
             .expect("page sample");
-        let want = [uv[0] + 0.5, uv[1] + 0.5];
+        let want = [uv[0] + (0.5 + bias), uv[1] + (0.5 + bias)];
         assert_eq!(n.floats(), &want[..], "native");
         let got = g.floats();
         assert!(

@@ -500,6 +500,14 @@ impl World {
     /// Step every actor's status effects forward one turn - folds the
     /// tick-damage into `BattleActor::hp` and emits per-status events.
     /// Called by engines once per battle round.
+    ///
+    /// Each non-zero drain is shown: retail's ticker files it on the
+    /// damage-number ring (`ctx[+0x83C + i*4]` the value, `ctx[+0x318 +
+    /// i*2]` the seat, `ctx[+0x85C + i*4]` the timer zeroed, cursor
+    /// `ctx[+0x262]` stepped `& 7`, push count `ctx[+0x273]` bumped;
+    /// `0x801E76CC..0x801E7754`), so the numeral rises over the poisoned
+    /// body as the round opens. A drain of `0` pushes nothing (the `beq
+    /// a1,zero` at `0x801E76CC`).
     pub fn tick_status_effects(&mut self) {
         let actor_count = self.actors.len();
         for slot in 0..actor_count as u8 {
@@ -558,6 +566,15 @@ impl World {
                 // forever.
                 // REF: FUN_801E752C
                 actor.battle.resync_hp_bar();
+                self.battle.hit_fx.push(BattleHitFx {
+                    target_slot: slot,
+                    amount: dmg,
+                    is_heal: false,
+                    is_crit: false,
+                });
+                let ctx = &mut self.battle_ctx;
+                ctx.cast_readout_cursor = (ctx.cast_readout_cursor + 1) & 7;
+                ctx.readout_pushes = ctx.readout_pushes.wrapping_add(1);
             }
             if cur != 0 && slot < self.party.party_count {
                 self.tick_after_passives(slot);
@@ -570,6 +587,9 @@ impl World {
     /// Grail (`+0xF8 & 0x40`, passive `0x26` MP After) its class 2 tier 2
     /// (`0x801E7730..0x801E7768`). The body the call reaches is
     /// `FUN_800402F4`'s `0x8007655C` restore: 200 HP and 20 MP on the disc.
+    /// Retail throws no numeral for either: the HP figure rolls up on its
+    /// readout word. The heal-numeral enhancement throws one
+    /// ([`Self::push_heal_numeral`]).
     ///
     /// PORT: FUN_801E752C (`0x801E7730..0x801E7768`, the HP After and MP After calls)
     fn tick_after_passives(&mut self, slot: u8) {
@@ -586,20 +606,19 @@ impl World {
                 .saturating_sub(a.battle.hp)
                 .min(HP_AFTER_RESTORE);
             a.battle.hp += restore;
+            // The readout rolls the restore up; retail throws no numeral. The
+            // ticker's ring push (`0x801E76CC..0x801E7754`) is the drain's
+            // alone and runs before these calls, and the applier pushes
+            // nothing.
             a.battle.assign_hp_bar(restore as i16);
-            if restore != 0 {
-                self.battle.hit_fx.push(BattleHitFx {
-                    target_slot: slot,
-                    amount: restore,
-                    is_heal: true,
-                    is_crit: false,
-                });
-            }
+            self.push_heal_numeral(slot, restore);
         }
         if word & 0x40 != 0 {
             let max_mp = self.seat_max_mp(usize::from(slot));
             if let Some(a) = self.actors.get_mut(usize::from(slot)) {
-                a.battle.mp += max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
+                let restore = max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
+                a.battle.mp += restore;
+                self.push_heal_numeral(slot, restore);
             }
         }
     }

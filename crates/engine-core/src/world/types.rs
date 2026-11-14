@@ -601,6 +601,13 @@ pub struct Actor {
     /// re-taken by another monster) and a count of `0` (no mesh) read as unknown.
     pub battle_body_triangles: Option<(u16, u16)>,
 
+    /// A party member's battle form, its triangles per TMD object (a quad
+    /// counts two): what one after-image ghost of the drawn objects
+    /// ([`Self::battle_drawn_objects`]) costs a battle frame, as
+    /// [`Self::battle_body_triangles`] is a monster's. Installed with the
+    /// form (`World::install_party_battle_form`); `None` for a monster.
+    pub battle_object_triangles: Option<std::sync::Arc<[u16]>>,
+
     /// Pose id the current `battle_animation` was selected for, in the pose-id
     /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
     /// `9` defeat). Lets a repeated request for the same pose keep the playing

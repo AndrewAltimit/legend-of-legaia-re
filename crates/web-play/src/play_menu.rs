@@ -326,3 +326,12 @@ mod blip_tests {
         assert!(rt.play_menu_blips_inline());
     }
 }
+
+impl LegaiaRuntime {
+    /// The pause menu's open sub-session, `None` on the root list or with
+    /// the menu closed.
+    pub(crate) fn play_menu_sub_session(&self) -> Option<&FieldMenuSubsession> {
+        let PlaySub::Session(session) = self.play_menu.as_ref()?.sub.as_ref()?;
+        Some(session.as_ref())
+    }
+}

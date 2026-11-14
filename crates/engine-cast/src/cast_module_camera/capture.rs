@@ -1351,6 +1351,13 @@ pub const GLARE_BODY: u32 = 0x801F_69F8;
 /// lift at `0x100` (`0x801F7B34`) once its gate passes. Arms 2 and 3 frame
 /// nothing; each arm's countdown is `capture_countdown::GLARE_DIVIDE_SPLIT`'s.
 ///
+/// The body's seat work rides here too, because it is paced by the same
+/// word: arm 0 saves the caster's ground pair as the split point
+/// ([`ModuleCamState::split_point`], `0x801F7A4C..0x801F7A68`), arm 1's exit
+/// zeroes the shake counter (`0x801F7B48`), and arm 2 shakes the caster about
+/// the point and pushes the point to where the clone is seated
+/// ([`slime_divide_shake`]).
+///
 /// | arm | pitch | TR, `0x50` | TR, `0xAE` | frames |
 /// |---|---|---|---|---|
 /// | 0 | `0` | `(0, 0x300, 0x600)` | `(0, 0x400, 0x800)` | `0xC` |
@@ -1366,6 +1373,9 @@ pub fn slime_divide_camera(
     else {
         return CaptureCamArm::default();
     };
+    if phase == SLIME_DIVIDE_SHAKE_ARM {
+        return slime_divide_shake(st, gate, seats.caster);
+    }
     if gate.holds(&mut st.countdown) {
         return CaptureCamArm {
             hold: true,
@@ -1373,6 +1383,11 @@ pub fn slime_divide_camera(
         };
     }
     gate.pass(&mut st.countdown);
+    match phase {
+        0 => st.split_point = Some([seats.caster.x, seats.caster.z]),
+        1 => st.split_passes = 0,
+        _ => {}
+    }
     let y: i16 = if seats.action == 0x50 { 0x300 } else { 0x400 };
     let (pitch, z, frames): (i16, i16, u16) = match phase {
         0 if seats.action == 0x50 => (0, 0x600, 0xC),
@@ -1389,6 +1404,90 @@ pub fn slime_divide_camera(
         }),
         ..Default::default()
     }
+}
+
+/// PROT 0940's split arm: the shake, and the split on its passing pass.
+pub const SLIME_DIVIDE_SHAKE_ARM: u8 = 2;
+
+/// The split's side axis for a caster facing `facing`: the cosine view
+/// `_DAT_8007B7F8` at `0xFFF - facing` for x, the sine base `_DAT_8007B81C`
+/// at `0x1000 - facing` for z (`0x801F7B8C..0x801F7C14`) - a unit vector at
+/// right angles to the heading, `4096` long.
+pub fn slime_divide_side_axis(facing: u16) -> (i32, i32) {
+    use legaia_engine_system::trig::sin12;
+    let f = facing & 0xFFF;
+    (
+        i32::from(sin12((0xFFF - f).wrapping_add(0x400))),
+        i32::from(sin12(0x1000 - f)),
+    )
+}
+
+/// PROT 0940's arm 2 (`0x801F7B60..0x801F7DF8`), the half the camera
+/// countdown paces.
+///
+/// Every pass drains the word by `step << 1` and stands the caster off the
+/// split point `P` by `axis * (0x200 - word) >> 12` (truncating toward
+/// zero), on the `+` side when the shake counter is odd and the `-` side when
+/// it is even, then bumps the counter - so the slime rocks side to side
+/// further and further as the word runs down. The pass whose drain takes the
+/// word to zero re-arms it by `scalar << 6` and pushes `P` by `axis / 8` on
+/// the side the bumped counter's parity names; the body then hands that `P`
+/// to the spawn-node builder as the clone's spawn point (the `jal` at
+/// `0x801F7F44`) and copies the node's pair into the clone's body and live pairs
+/// (`0x801F7FDC..0x801F8018`). The caster is left where its last shake put
+/// it, the clone on the far side of `P`: the two halves stand apart across
+/// the caster's old seat.
+///
+/// Retail steps the shake once a battle frame; so does this, on the tick that
+/// opens a frame ([`ModuleCamState::opens_pass`]) and on the passing one.
+/// Measured on `battle_map01_green_slime_divide_mid_cast` (facing `0x800`,
+/// `P = (26, -178)`): the caster at `x = 11, -5, ..` early, `-490` at the
+/// end, the point at `537`, and the clone seated there.
+///
+/// PORT: overlay_cast_glare_divide_0940_801f78b8 (PROT 0940 `0x50` / `0xAE`; arm 2's shake and split point)
+pub fn slime_divide_shake(
+    st: &mut ModuleCamState,
+    gate: super::capture_countdown::ArmCountdown,
+    caster: super::ModuleSeat,
+) -> CaptureCamArm {
+    // The word as the pass's single drain leaves it - what the shake reads -
+    // before the gate's rest-of-pass drain on a passing tick.
+    let word = st.countdown.0 - gate.drain.unwrap_or(0);
+    let held = gate.holds(&mut st.countdown);
+    let mut arm = CaptureCamArm {
+        hold: held,
+        ..Default::default()
+    };
+    let Some(mut p) = st.split_point else {
+        if !held {
+            gate.pass(&mut st.countdown);
+        }
+        return arm;
+    };
+    let (ax, az) = slime_divide_side_axis(caster.facing);
+    if st.opens_pass || !held {
+        let reach = 0x200 - word;
+        let (dx, dz) = ((ax * reach) / 4096, (az * reach) / 4096);
+        let (x, z) = if st.split_passes & 1 == 1 {
+            (i32::from(p[0]) + dx, i32::from(p[1]) + dz)
+        } else {
+            (i32::from(p[0]) - dx, i32::from(p[1]) - dz)
+        };
+        arm.caster_write.x = Some(x as i16);
+        arm.caster_write.z = Some(z as i16);
+        st.split_passes = st.split_passes.wrapping_add(1);
+    }
+    if !held {
+        gate.pass(&mut st.countdown);
+        let (dx, dz) = ((ax / 8) as i16, (az / 8) as i16);
+        if st.split_passes & 1 == 1 {
+            p = [p[0].wrapping_add(dx), p[1].wrapping_add(dz)];
+        } else {
+            p = [p[0].wrapping_sub(dx), p[1].wrapping_sub(dz)];
+        }
+        st.split_point = Some(p);
+    }
+    arm
 }
 
 /// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
@@ -1770,6 +1869,64 @@ mod slime_divide_tests {
         let mut st = ModuleCamState::default();
         let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
         assert_eq!(arm0.tr, [0, 0x400, 0x800]);
+    }
+
+    /// `battle_map01_green_slime_divide_mid_cast` played forward (PCSX-Redux,
+    /// caster pool slot 4 facing `0x800` on `(26, -178)`): arm 0 saves the
+    /// point; arm 2 at word `496`, counter `1` stands the caster on `x = 11`;
+    /// at word `6`, counter `64` (even) on `26 + 505 = 531`; the pass that
+    /// spends the word (counter `65`, odd) on `26 - 511 = -485`, and the
+    /// bumped counter `66` (even) pushes the point to `26 + 511 = 537` - the
+    /// pair the clone (pool slot 6) is seated on, word `0x200` after.
+    #[test]
+    fn slime_divide_shakes_the_caster_and_pushes_the_split_point() {
+        let caster = super::super::ModuleSeat {
+            x: 26,
+            y: 0,
+            z: -178,
+            facing: 0x800,
+        };
+        let seats = ModuleCamSeats {
+            action: 0x50,
+            caster,
+            ..Default::default()
+        };
+        let mut st = ModuleCamState::default();
+        slime_divide_camera(&mut st, 0, seats);
+        assert_eq!(st.split_point, Some([26, -178]));
+        // Arm 1's gate spends the word to zero and re-arms it by `0x200`.
+        st.countdown.0 = SPEED_SCALAR;
+        st.split_passes = 9;
+        slime_divide_camera(&mut st, 1, seats);
+        assert_eq!(st.split_passes, 0);
+        assert_eq!(st.countdown.0, 0x200);
+        st.opens_pass = true;
+        // The word as the capture read it after the drain, plus the drain.
+        let shake = |st: &mut ModuleCamState, word: i32, passes: u32| {
+            st.countdown.0 = word + 2;
+            st.split_passes = passes;
+            slime_divide_camera(st, SLIME_DIVIDE_SHAKE_ARM, seats)
+        };
+        let arm = shake(&mut st, 496, 1);
+        assert!(arm.hold);
+        assert_eq!(
+            (arm.caster_write.x, arm.caster_write.z),
+            (Some(11), Some(-178))
+        );
+        let arm = shake(&mut st, 6, 64);
+        assert_eq!(arm.caster_write.x, Some(531));
+        assert_eq!(st.split_point, Some([26, -178]), "held: the point stays");
+        // A held tick that opens no battle frame does not step the shake.
+        st.opens_pass = false;
+        let arm = shake(&mut st, 4, 65);
+        assert!(arm.hold && arm.caster_write.x.is_none());
+        assert_eq!(st.split_passes, 65);
+        let arm = shake(&mut st, 0, 65);
+        assert!(!arm.hold);
+        assert_eq!(arm.caster_write.x, Some(-485));
+        assert_eq!(st.split_passes, 66);
+        assert_eq!(st.split_point, Some([537, -178]));
+        assert_eq!(st.countdown.0, SPEED_SCALAR << 6);
     }
 }
 

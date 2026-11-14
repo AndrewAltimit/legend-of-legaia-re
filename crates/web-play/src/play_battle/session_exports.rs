@@ -438,12 +438,15 @@ impl LegaiaRuntime {
     /// window's `LEGAIA_BATTLE_MONSTER_CAST=seat,spell` debug seam
     /// (`BattleState::forced_monster_cast`). Pair with
     /// [`Self::debug_force_battle`] to watch one enemy special from a cold
-    /// page.
-    pub fn debug_seed_monster_cast(&mut self, seat: u8, spell_id: u8) -> bool {
+    /// page. `at_prompt` is the native seam's `,p`: the turn is taken from the
+    /// first command prompt, ahead of the party's commands, so a driver that
+    /// presses nothing still sees the cast.
+    pub fn debug_seed_monster_cast(&mut self, seat: u8, spell_id: u8, at_prompt: bool) -> bool {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
         host.world.battle.forced_monster_cast = Some((seat, spell_id));
+        host.world.battle.forced_monster_cast_at_prompt = at_prompt;
         true
     }
 

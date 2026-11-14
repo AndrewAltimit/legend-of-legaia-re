@@ -16,6 +16,11 @@ honest: an evidence grade on every claim, a register of disproved readings, a
 coverage denominator taken from the original's data rather than from the work
 done so far, and runs that replay bit for bit.
 
+A state is one instant with the inputs it happened to hold, so four kinds of
+instrument reach where the loop cannot: the original's routines run beside
+their ports, films of what unfolds over time, sound scored against what was
+played, and checks of the port against itself. Each has a section below.
+
 A static recompilation inherits retail behaviour by running the original's
 translated code; a reimplementation runs none of it, so its fidelity exists
 only as far as it is measured, and this loop is that measurement. The same
@@ -137,11 +142,60 @@ pair ([cast-sequence oracle](cast-sequence-oracle.md#the-pairing-rule)). The
 pairing rule is the design problem: the original shows a frame some frames
 after it built it, and runs slow frames that the engine does not.
 
+Three things make a film worth more than its picture score.
+
+- **Film movement as well as set pieces.** The same recording under a fixed
+  pad schedule, with the player, the camera and the actors logged per pass,
+  measures how a walk and a camera ease unfold, which no pair of stills
+  brackets ([walk film](walk-film.md)).
+- **Log the original's random seed on every frame.** An arm whose look is its
+  random draws plays another pattern when the engine reaches it after another
+  number of draws. Seating the engine's stream on the original's at a named
+  phase separates a wrong routine from a different deal
+  ([the rand stream](cast-sequence-oracle.md#the-rand-stream)).
+- **Ratchet the discrete channel, report the continuous one.** A film's
+  picture score moves a little with every change, and its recordings are the
+  original's pixels, so it is reported before and after and never committed. A
+  sound cue either plays on the same clock or does not, so that channel takes
+  a baseline ([the cue ratchet](cast-sequence-oracle.md#the-cue-ratchet)).
+
+A recorded input stream cannot run blind on the original for long: the two
+sides reach a door a few frames apart and every later press lands somewhere
+else. Replay it beat by beat instead, cutting the run at state gates (a scene
+change, a dialogue page, a battle command) and waiting for the original at
+each one, so a disagreement stays in the beat that caused it
+([gate replay](gate-replay.md)).
+
 Read the worst states first. A report sorted worst first, with both sides'
 values and the side-by-side image, is the product; the mean is the headline.
 For each bad state, decide first whether the divergence is the instrument's
 (a seeding gap) or the engine's, and keep a catalogue of the divergence shapes
 that recur ([divergence shapes](retail-compare.md#divergence-shapes)).
+
+## Score sound against what was played
+
+Sound needs its own channels, because a picture can be right while the wrong
+track plays. Measure it at increasing strictness, and know what each level
+cannot disagree about.
+
+- **The sound driver's state.** Read the driver's own records out of each
+  captured state (the track, its play flag, volume, tempo, the cue voices) and
+  ask whether the seeded engine is playing the same thing
+  ([the audio state sweep](../subsystems/audio.md#the-audio-state-sweep)). It
+  runs over the whole corpus and sees no waveform.
+- **Registers and notes.** Compare what the sound chip's voices are
+  programmed with, and count the notes a score keys
+  ([audio-trace oracle](../subsystems/audio.md#audio-trace-parity-oracle)).
+  The original's sequencer can also be run in the routine interpreter beside
+  the port's, voice by voice
+  ([the keying differential](../subsystems/audio.md#the-keying-differential)).
+- **The recorded output.** Record the emulator's audio while it plays on from
+  a state, and compare waveforms with the engine's mix of the same bars
+  ([real retail PCM](../subsystems/audio.md#real-retail-pcm)).
+
+The last level exists because of a trap in the others: a "retail" waveform
+rendered by the engine's own mixer from a snapshot has no way to disagree with
+that mixer. An oracle is only as independent as its retail side.
 
 ## Ratchet the baseline with a loosening ledger
 
@@ -168,6 +222,14 @@ runner does not have, so they skip when it is missing, and a skip reports as
 a pass. Count skips by reason on the machine that has the data, and fail a run
 in which a test skipped for want of an input that machine is supposed to hold
 ([a skipped test is not a passed test](ratchet-integrity.md#a-skipped-test-is-not-a-passed-test)).
+
+Two smaller rules follow from the same idea. **No instrument blesses
+itself**: a driver's `--propose` writes a candidate baseline to another path,
+and the committed file changes only in a reviewed edit. And **a merge can undo
+a fix with every test green**, since nothing pins a fix to the commit that
+made it; a scan that blames each removed line against the branch's own earlier
+commits lists what to read
+([the full gate](build-and-test-speed.md#the-full-gate)).
 
 ## Run the original's routines beside their ports
 
@@ -288,6 +350,30 @@ regression ([soak harness](soak-harness.md)). A replay that starts from a
 captured state ties the engine's trace back to the original's, which is what
 the time-axis oracles stand on.
 
+## Check the port against itself
+
+Some gaps have no retail side at all, and the port is its own reference. These
+checks say nothing about fidelity, and they catch what the retail oracles
+cannot.
+
+- **Two hosts, one engine.** When the same engine runs in a native window and
+  in a browser page, run one input script on both, pair them by world frame,
+  and compare the picture and a digest of the state. Static gates on the
+  source catch a feature wired into one host; only the paired run sees what
+  the page actually drew ([host drift](host-drift.md#the-host-pair-run)).
+- **One build against the last.** A change meant to move speed alone is
+  proved by stepping the same run on both builds and comparing every frame's
+  hash ([frame hash](frame-hash.md)). Hashes differ between graphics drivers,
+  so both sides come from one machine and none is committed.
+- **Count costs, do not time them.** A frame-time gate on a shared machine
+  flakes. Draws, allocations and bundle bytes on a tick-locked run do not, so
+  those are what a baseline holds
+  ([cost ratchet](frame-bench.md#cost-ratchet)); times stay a before-and-after
+  report ([frame bench](frame-bench.md)).
+- **Random play.** Seeded random input over every scene, with detectors for a
+  panic, a softlock, a stalled script and an endless battle, finds the states
+  no scripted run reaches ([soak harness](soak-harness.md)).
+
 ## Where to start
 
 The pieces have an order, because each makes the next one cheaper:
@@ -307,6 +393,12 @@ The pieces have an order, because each makes the next one cheaper:
 7. The disc-derived denominators, once there is enough work for a count over
    done work to start flattering.
 8. Determinism replay, as soon as the engine has input.
+9. The sound driver's state as a channel, then recorded output, once music
+   plays.
+10. Films, once stills agree and the play-through still looks wrong: the
+    pairing rule first, then the random-stream seat and the cue ratchet.
+11. The self-checks (paired hosts, frame hashes, counted costs) as each
+    becomes possible: a second host, a performance round.
 
 ## See also
 
@@ -319,6 +411,8 @@ The pieces have an order, because each makes the next one cheaper:
   stack, with what each cannot see.
 - [Ratchet integrity](ratchet-integrity.md) - the loosening ledger and the
   skip tally.
+- [The coverage map](../porting-by-reimplementation.md#what-is-tested-and-the-gap-each-test-closes) -
+  every instrument this project runs, by the gap it closes.
 - [Reusing for other PS1 games](reusing-for-other-ps1-games.md) - the crates
   that read emulator states and disc images, and a worked example on a game
   built in code.

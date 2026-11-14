@@ -557,10 +557,12 @@ fn a_live_cast_stages_its_module_records() {
             // PROT 0904 makes one call in arm 3 (`0x801F6D64`) and two on
             // arm 7's pass (`0x801F732C`, `0x801F7344`); its stager
             // `0x801F8EAC` seats `0x801F90B0` for a calling part.
+            // `0x801F9014` calls the stager's arm 0 eleven times, each
+            // seating the pulse `0x801F90B0` on it.
             904 => (
                 vec![&cmc::THEEDER_RISE_SPAWNS, &cmc::THEEDER_ATTACK_SPAWNS],
-                &[],
                 &[0x801F_90B0],
+                &[],
             ),
             905 => (
                 vec![
@@ -666,7 +668,7 @@ fn a_live_cast_stages_its_module_records() {
         // arms seat more records off the calling part; every one of those
         // records is seated over the band, on top of the arms' own calls.
         // PROT 0909's arm-11 records call its stager arms 2, 3, 4 and 6.
-        let stager_run = matches!(entry, 905 | 906 | 907 | 908 | 909 | 910 | 912);
+        let stager_run = matches!(entry, 904 | 905 | 906 | 907 | 908 | 909 | 910 | 912);
         // A record whose first step calls its stager has the stager's seats
         // on the same frame (the call runs inside the caller's step:
         // PROT 0907's arm-0 record seats its stager's record at once, PROT

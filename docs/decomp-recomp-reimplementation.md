@@ -54,11 +54,15 @@ The last row is not a legal claim. No court has settled any of this; the nearest
 
 - **Battle items and CD audio.** Legaia's CD callback can wait for a vblank inside an exception handler; handling that in the recomp's hardware model fixed battle items, Spirit actions, Hyper Arts and summons together. The engine runs no libcd, so that pattern never arises, and it also lacked the timing that comes with it: battle frames that [run long during a CD-XA clip](subsystems/battle-stage-camera.md), which had to be measured and modelled.
 - **Code that is not in the executable.** The translator sees the boot executable, so overlays are captured as they load, then compiled or interpreted. Here they are [extracted from the disc](tooling/static-overlay-pipeline.md) and read once, at the price of [address aliasing](reference/overlay-va-aliases.md).
-- **A bug no local test could see.** The GTE model passed a sweep that agreed with it. The recomp's real input and output pairs exposed the signed 11-bit saturation of the screen-coordinate FIFO, through the [recomp differential](tooling/recomp-differential.md).
+- **A bug no local test could see.** The GTE model passed a sweep that agreed with it. The recomp's real input and output pairs exposed the signed 11-bit saturation of the screen-coordinate FIFO, through the [recomp differential](tooling/recomp-differential.md). The lesson is kept in the engine's own tooling: the interpreter that runs retail routines beside their ports carries a GTE written from the hardware documentation, not from the port, because a reference copied from the code under test shares its defects.
 
 ## How a mistake shows up
 
 In a matching decompilation, a misreading fails the byte match at once. In a recompilation, a mistake is usually a crash, freeze or visible glitch. In a reimplementation the game runs and is quietly different, which is the historic objection to the route and the reason for [the retail-oracle method](tooling/retail-oracle-method.md). A score speaks only for what it sampled; a matching decompilation's proof is stronger.
+
+What the measurement consists of matters to the comparison, because one part of it borrows the other routes' strength. The [retail kernel differential](tooling/retail-kernel-differential.md) runs the original's routines off the user's disc in an R3000 interpreter (`crates/retail-exec`), beside the Rust that ports them, on generated inputs. That is the original's code executing, as in a recompilation, but only inside a test and one routine at a time. It asks the question a matching decompilation answers by construction, whether this function computes what the original computes, and answers it per sampled input instead of by proof, including inputs no capture ever held.
+
+It cannot see when the engine calls a routine, or with what. That is measured where a player would notice it: stills seeded from retail save states, films of a cast or a walk paired frame by frame, sound scored against the emulator's recorded output, and a pad-only run from New Game to the credits. [The coverage map](porting-by-reimplementation.md#what-is-tested-and-the-gap-each-test-closes) lists every instrument with the gap it closes and what it stays blind to.
 
 ## Why reimplementation is more viable now
 
@@ -75,7 +79,7 @@ The community cost is real. [decomp.dev](https://decomp.dev/) is sunsetting its 
 - The game becoming more than it was: reimplementation, especially when much of it is data and the original can be measured against.
 - Playing it tonight: an emulator or an official release.
 
-The routes combine. This project uses a recomp as an oracle, Ghidra's output as a pointer and an emulator as the judge.
+The routes combine. This project uses a recomp as an oracle, Ghidra's output as a pointer, an emulator as the judge, and the original's own routines, run in an interpreter, as the check on each port.
 
 ## What this case cannot show
 
@@ -85,5 +89,7 @@ It is one heavily data-driven game, which flatters this route. PSXRecomp is a ge
 
 - [`porting-by-reimplementation.md`](porting-by-reimplementation.md)
 - [`tooling/retail-oracle-method.md`](tooling/retail-oracle-method.md)
+- [`tooling/verification-ladder.md`](tooling/verification-ladder.md)
+- [`tooling/retail-kernel-differential.md`](tooling/retail-kernel-differential.md)
 - [`tooling/reusing-for-other-ps1-games.md`](tooling/reusing-for-other-ps1-games.md)
 - [`tooling/recomp-differential.md`](tooling/recomp-differential.md)

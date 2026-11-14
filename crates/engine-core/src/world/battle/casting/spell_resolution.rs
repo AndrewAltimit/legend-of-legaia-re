@@ -252,8 +252,8 @@ impl World {
             // `+0x10 = -heal` (PROT 0905 `0x801F7CFC` / `0x801F7D0C`), and no
             // image of the three (PROT 0905, 0911, 0919) calls the popup push
             // `FUN_801F44A0`, so the HP readout rolls up with no number over
-            // the target. The fold's popup is dropped for it.
-            let mut module_restore = false;
+            // the target. The fold's popup is the heal-numeral enhancement's
+            // ([`Self::push_heal_numeral`]), which is off under `pin_retail`.
             if is_party_summon_cast
                 && let legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } =
                     &mut outcome
@@ -261,7 +261,6 @@ impl World {
                     self.seru_tick_heal_amount(caster, def.id, snap.target_hp, snap.target_hp_max)
             {
                 *amount = a;
-                module_restore = true;
                 summon_xp_gain = summon_xp_gain.saturating_add(self.seru_tick_heal_xp(
                     caster,
                     def.id,
@@ -323,11 +322,7 @@ impl World {
                 outcome,
                 legaia_engine_battle::spells::SpellOutcome::Damage { .. }
             );
-            let popups_before = self.battle.hit_fx.len();
             self.fold_spell_outcome(outcome);
-            if module_restore {
-                self.battle.hit_fx.truncate(popups_before);
-            }
             // The finisher's per-element stat switch runs once per hit, on the
             // hit's own target - a cure class (light) and a party target write
             // nothing, which `apply_hit` already encodes.

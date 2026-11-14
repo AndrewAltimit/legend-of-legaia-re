@@ -51,14 +51,11 @@ impl World {
             }
             O::Heal { target, amount } => {
                 self.apply_battle_hp_delta(target as usize, -i32::from(amount));
-                if amount > 0 {
-                    self.battle.hit_fx.push(BattleHitFx {
-                        target_slot: target,
-                        amount,
-                        is_heal: true,
-                        is_crit: false,
-                    });
-                }
+                // No retail heal reaches the ring: the healing modules
+                // (PROT 0905, 0911, 0919) call no `FUN_801F44A0`, and a
+                // monster's heal lands through the applier. The numeral is
+                // the heal-numeral enhancement's.
+                self.push_heal_numeral(target, amount);
             }
             O::Cure { target, .. } => {
                 self.battle.status_effects.cure_all(target);
@@ -87,12 +84,7 @@ impl World {
                         self.stand_revived_party_member(target as usize);
                     }
                 }
-                self.battle.hit_fx.push(BattleHitFx {
-                    target_slot: target,
-                    amount: hp,
-                    is_heal: true,
-                    is_crit: false,
-                });
+                self.push_heal_numeral(target, hp);
             }
             O::Buff {
                 target,

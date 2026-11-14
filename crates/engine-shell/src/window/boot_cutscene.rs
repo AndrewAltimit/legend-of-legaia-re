@@ -247,15 +247,20 @@ impl PlayWindowApp {
 
     /// Fire the pause menu's own blip for this frame's pad edges. Which cue,
     /// if any, is the engine's one rule
-    /// ([`legaia_engine_menus::field_menu::pause_edge_blip`]) - the browser play
+    /// ([`legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip`]) - the browser play
     /// page asks the same function through `play_menu_edge_blip`.
     /// `start_closes_menu` is whether this frame's Start closes the menu:
     /// on the root row list it does, inside a sub-screen it does not.
     pub(super) fn fire_menu_cues(&mut self, pressed: u16, start_closes_menu: bool) {
-        if let Some(blip) = legaia_engine_menus::field_menu::pause_edge_blip(
+        let sub = match &self.boot_ui {
+            BootUiState::FieldMenu { sub } if !self.menu_runtime.notice_held() => sub.as_ref(),
+            _ => None,
+        };
+        if let Some(blip) = legaia_engine_menu_runtime::field_menu_dispatch::pause_frame_blip(
             pressed,
             start_closes_menu,
             self.session.field_menu.as_ref(),
+            sub,
         ) {
             self.fire_menu_cue(u16::from(blip.cue()));
         }
@@ -378,7 +383,9 @@ impl PlayWindowApp {
         // tick.
         if let BootUiState::FieldMenu { sub } = &self.boot_ui {
             let start_closes_menu = sub.is_none();
-            self.fire_menu_cues(pressed, start_closes_menu);
+            // A grid confirm the card screen refused still sounds
+            // (`SaveScreenFlow::blip_edge`).
+            self.fire_menu_cues(self.save_flow.blip_edge(pressed), start_closes_menu);
         }
 
         let boot_ui_active = match &mut self.boot_ui {
@@ -615,6 +622,10 @@ impl PlayWindowApp {
                         pending_key,
                         &mut self.session.host.world,
                     );
+                    // A use or cast that raised window 7 / 8 leaves its
+                    // screen up; the runtime holds the notice over it.
+                    self.menu_runtime
+                        .arm_raised_notices(&mut self.session.host.world);
                     if active_sub.is_done() {
                         // Fold the outcome into the world through the one
                         // router every host shares; only the save rack and
@@ -1033,6 +1044,14 @@ impl PlayWindowApp {
                 };
                 // Window 7 - the spell level-up notice - overlays whichever
                 // menu screen is current while `MenuRuntime` holds the beat.
+                // Its window covers the screen's text under it; the text
+                // pass runs after every sprite, so the covered glyphs go.
+                legaia_engine_ui::pause_menu::occlude_under_menu_notices(
+                    &self.menu_ctx(surface_w, surface_h),
+                    self.menu_runtime.spell_level_notice().is_some(),
+                    self.menu_runtime.art_learned_notice().is_some(),
+                    &mut draws,
+                );
                 draws.extend(self.magic_level_notice_draws(surface_w, surface_h));
                 draws.extend(self.art_learned_notice_window_draws(surface_w, surface_h));
                 draws

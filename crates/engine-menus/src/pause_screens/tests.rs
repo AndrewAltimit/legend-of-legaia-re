@@ -1307,3 +1307,104 @@ fn target_panel_stat_preview_counts_the_worn_gear() {
     assert_eq!(model.members[0].stat_eff, [47, 37, 26, 16, 7]);
     assert_eq!(model.members[0].status, 0x0200);
 }
+
+/// The Items screen's confirms sound what retail writes over the picker's
+/// pick: the command window `0x23` on an empty bag, `0x20` for Use / Throw
+/// Out and `0x37` for Arrange (`FUN_801D7C00`); the lists `0x23` on a
+/// disabled row (the kind-4 kernel's `0x80032D04`) and `0x20` otherwise; the
+/// throw-out Yes `0x37`, its No the bare `0x36` (`FUN_801D8734`).
+#[test]
+fn the_items_screen_confirms_sound_retails_cues() {
+    use crate::menu_cues::MenuBlip;
+    let cross = edge(PadButton::Cross);
+    let empty = items_session(&[]);
+    assert_eq!(empty.confirm_blip(cross), Some(MenuBlip::Refuse));
+
+    let mut s = items_session(&[(0x77, 3), (0x78, 2)]);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
+    s.command_cursor = 2;
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Cancel));
+    s.command_cursor = 0;
+    assert_eq!(s.confirm_blip(edge(PadButton::Down)), None);
+
+    // The Use list: a greyed row buzzes and the hand stays on it.
+    s.rows[1].use_bits = crate::menu_list_rows::ROW_DISABLED;
+    s.input_pad_edge(cross);
+    assert_eq!(s.focus, PauseItemsFocus::List);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
+    assert_eq!(
+        s.confirm_blip(cross | edge(PadButton::Down)),
+        Some(MenuBlip::Refuse),
+        "the confirm reads the row the frame's step lands on"
+    );
+    s.input_pad_edge(edge(PadButton::Down));
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Refuse));
+    s.input_pad_edge(cross);
+    assert_eq!(s.focus, PauseItemsFocus::List);
+    assert!(!s.target_select(), "a greyed row opens no target panel");
+
+    // The Throw Out list: a key item is a disabled row of its own build.
+    s.input_pad_edge(edge(PadButton::Circle));
+    s.command_cursor = 1;
+    s.rows[0].throw_bits = crate::menu_list_rows::ROW_DISABLED;
+    s.input_pad_edge(cross);
+    assert_eq!(s.focus, PauseItemsFocus::ThrowOutList);
+    let key_row = s.rows.iter().position(|r| r.id == 0x77).unwrap();
+    while s.list_cursor() != key_row {
+        s.input_pad_edge(edge(PadButton::Down));
+    }
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Refuse));
+    s.input_pad_edge(cross);
+    assert_eq!(s.focus, PauseItemsFocus::ThrowOutList, "no Yes / No opens");
+    s.input_pad_edge(edge(PadButton::Down));
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Confirm));
+    s.input_pad_edge(cross);
+    assert_eq!(s.focus, PauseItemsFocus::ThrowOutConfirm);
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Pick), "No");
+    s.input_pad_edge(edge(PadButton::Up));
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Cancel), "Yes");
+}
+
+/// The Equip screen's confirms (`FUN_801D99F0` / `FUN_801D9C14`): a slot row
+/// keeps the picker's `0x36`, a candidate commit cues `0x24`, a worn row is
+/// silent, and Best Equipment that finds nothing buzzes `0x23`.
+#[test]
+fn the_equip_screen_confirms_sound_retails_cues() {
+    use crate::equip_session::{EquipInput, EquipSession};
+    use crate::menu_cues::MenuBlip;
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+    let cross = edge(PadButton::Cross);
+    let mut bag = crate::item_bag::ItemBag::new();
+    bag.insert(0x05, 1);
+    let mut s = EquipSession::new(
+        StatRecord::default(),
+        bag,
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+    );
+    // Row 0, Best Equipment, over an empty table: nothing to change.
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Refuse));
+    s.input(EquipInput {
+        down: true,
+        ..Default::default()
+    });
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Pick));
+    s.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    let rows = s.items_for_slot(0);
+    let at = rows
+        .iter()
+        .position(|r| r.id == 0x05)
+        .expect("the weapon candidate is listed");
+    let on_row = |s: &EquipSession| matches!(s.state(), crate::equip_session::EquipState::ItemPicker { cursor, .. } if usize::from(cursor) == at);
+    while !on_row(&s) {
+        s.input(EquipInput {
+            down: true,
+            ..Default::default()
+        });
+    }
+    assert_eq!(s.confirm_blip(cross), Some(MenuBlip::Equip));
+}

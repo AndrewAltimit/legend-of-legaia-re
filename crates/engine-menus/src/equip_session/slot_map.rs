@@ -97,6 +97,43 @@ pub const RETAIL_WEAPON_EQUIP_BYTE: [i16; 3] = [2, 3, 2];
 /// `0x801DA5D0..0x801DA600` before it reads the learned-spell count.
 pub const RETAIL_RASERU_EQUIP_BYTE: [i16; 3] = [3, 2, 3];
 
+/// The record `+0x196` byte a piece of equipment of disc category `cat` is
+/// worn in by character `char_id` - the one rule every writer of a
+/// character's equip bytes resolves a destination through.
+///
+/// This is the shop's buy-and-equip resolution (`FUN_801DB380`,
+/// `0x801DB5E8..0x801DB670`): the equipment record's `(+7 & 0x60) >> 5`
+/// class picks an equip-screen row - weapon `0`, head `1`, body `2`,
+/// footwear `3` - and the row picks the byte. Row `0` reads the
+/// per-character weapon halfword ([`RETAIL_WEAPON_EQUIP_BYTE`],
+/// `0x8007B42C + char * 2`); the other rows read the row map `DAT_801E43E8`
+/// (`00 01 00 04 ..`), so head is byte `1`, body armour byte `0` and
+/// footwear byte `4`. The equip screen's applier (`FUN_801E5A08`) and the
+/// hub sub-panel's trial equip land on the same bytes.
+///
+/// The answer is a **record byte**, not an engine
+/// [`crate::equipment::EquipSlot`] index: the two orders differ (the engine
+/// enum is weapon-first, the record is body-first), and indexing a record
+/// with the enum puts body armour on Vahn's weapon byte and a weapon on the
+/// body byte.
+///
+/// A character id past the three-entry weapon table answers byte `2`.
+// REF: FUN_801DB380
+pub fn record_byte_for_category(
+    cat: legaia_game_tables::equip_stats::EquipSlot,
+    char_id: u8,
+) -> usize {
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    match cat {
+        Disc::Weapon => RETAIL_WEAPON_EQUIP_BYTE
+            .get(usize::from(char_id))
+            .map_or(2, |&b| b as usize),
+        Disc::Head => 1,
+        Disc::Body => 0,
+        Disc::Footwear => 4,
+    }
+}
+
 /// Engine [`EquipSlot`] index each retail `+0x196` equip byte maps to.
 ///
 /// Retail's array is `[body, head, weapon, weapon, footwear, goods x3]`;
@@ -138,5 +175,35 @@ pub(super) fn slot_bits_of_category(cat: legaia_game_tables::equip_stats::EquipS
         Disc::Head => 0x20,
         Disc::Weapon => 0x40,
         Disc::Footwear => 0x60,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+
+    /// The shop's resolution and the equip screen's applier
+    /// (`FUN_801E5A08`, ported as `resolve_equip_slot`) name one byte for
+    /// every category and character, and that byte round-trips through the
+    /// engine's slot order.
+    #[test]
+    fn the_shop_and_the_equip_screen_resolve_one_record_byte() {
+        for cat in [Disc::Body, Disc::Head, Disc::Weapon, Disc::Footwear] {
+            for ch in 0..3u8 {
+                let byte = record_byte_for_category(cat, ch);
+                let applier = legaia_engine_dev_menu::dev_menu_leaves::resolve_equip_slot(
+                    slot_bits_of_category(cat),
+                    usize::from(ch),
+                    &RETAIL_WEAPON_EQUIP_BYTE,
+                );
+                assert_eq!(byte, applier, "{cat:?} on character {ch}");
+                let engine = RETAIL_EQUIP_BYTE_TO_ENGINE_SLOT[byte];
+                assert_eq!(record_byte_for_engine_slot(engine, ch), byte);
+            }
+        }
+        assert_eq!(record_byte_for_category(Disc::Body, 0), 0);
+        assert_eq!(record_byte_for_category(Disc::Weapon, 0), 2);
+        assert_eq!(record_byte_for_category(Disc::Weapon, 1), 3);
     }
 }

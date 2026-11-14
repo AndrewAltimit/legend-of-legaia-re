@@ -1553,6 +1553,12 @@ impl RetailBattle {
                     target,
                     strike,
                     target_ground,
+                    // Still on the walk: the swing staged behind it waits
+                    // for its natural end, so the walk's phase is seated
+                    // too (`World::seat_capture_approach_start`).
+                    walk_phase: self
+                        .walk_clock_capture()
+                        .then_some((self.walk_yaw_base, self.caster_cursor)),
                 },
             )
     }
@@ -1625,6 +1631,7 @@ impl RetailBattle {
             target,
             strike,
             target_ground,
+            walk_phase: None,
         })
     }
 
@@ -1855,6 +1862,23 @@ impl RetailBattle {
             && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
+    /// The monster slots a monster strike's capture holds on their idle
+    /// clip, besides the striker (`ActionSteer::idle_bystanders`): the turn
+    /// retail stands on finds them idle, so the replay's does. The party's
+    /// seats are left out: a film's party stands on its guard clip
+    /// (`LEGAIA_BATTLE_GUARD`), and the target is one of them.
+    pub fn idle_bystanders(&self) -> u8 {
+        if !self.strike_aim_steerable() {
+            return 0;
+        }
+        self.clip_cursors
+            .iter()
+            .filter(|&&(slot, clip, _)| {
+                clip == 0 && (3..8).contains(&slot) && slot != self.active_actor
+            })
+            .fold(0, |m, &(slot, _, _)| m | 1 << slot)
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
@@ -2046,6 +2070,9 @@ impl RetailBattle {
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which
                     // commit the capture's age counts from.
+                    win_pose: (self.pose_seat && self.span_gate.is_end())
+                        .then_some(self.win_pose)
+                        .flatten(),
                     latched: (seat < 3
                         && self.queued_category == 3
                         && self.arts_queue
@@ -2077,6 +2104,7 @@ impl RetailBattle {
                     walk_clock: self.walk_clock_capture(),
                     arrival: self.walk_clock_arrival(),
                     strike_aim: self.strike_aim_steer,
+                    idle_bystanders: self.idle_bystanders(),
                     harvest_pacing: seat < 3
                         && self.queued_category == 3
                         && self.arts_queue

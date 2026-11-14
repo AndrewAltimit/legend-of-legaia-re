@@ -585,6 +585,28 @@ impl World {
             .is_some_and(|t| !t.is_done())
     }
 
+    /// `true` while a modal timeline that has taken a slice owns the camera.
+    ///
+    /// A walk-on record the tile dispatch spawns this frame has not run yet
+    /// when the camera steps, and retail's field tick eases the camera on
+    /// that frame all the same: the ease's gate is the engaged bit as the
+    /// tick read it ahead of the pad controller (`s3`, `0x801D1694..
+    /// 0x801D16C0`), and the spawn comes after the walk. Rim Elm's
+    /// stand-and-press beats (`town01` P2[12..14] and their `town0b..0e`
+    /// twins) re-run on every frame the player stands or walks on their
+    /// tiles (`2E 13`) and end in the same slice unless the button is down,
+    /// so the port saw a fresh, unstepped timeline at every camera step:
+    /// the follow camera froze while the player walked along the band and
+    /// jumped the distance it had fallen behind when he left it.
+    ///
+    /// REF: FUN_801D1344, FUN_801D1EC4, FUN_8003BDE0
+    pub fn cutscene_timeline_holds_camera(&self) -> bool {
+        self.cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|t| !t.is_done() && t.stepped)
+    }
+
     /// `true` while a spawned field-VM context holds the player - the
     /// engine's reading of retail's engaged bit `+0x10 & 0x80000` as the
     /// script runner raises it.
@@ -649,8 +671,21 @@ impl World {
     /// read this to stay out of a scripted shot: a shot is a framing the
     /// script authored, and scaling its eye depth by the `Far` preset showed
     /// the whole of the Sky Gardens island where retail frames the hedge maze.
+    ///
+    /// A talk that stages its own shot holds the camera the same way: the
+    /// conversation runner raises the engaged bit for the talker's record
+    /// (`FUN_80039B7C`). `town0c` P1[24], where Mei meets Noa, frames the
+    /// room from beside the bed; scaled by the `Far` preset its eye stood
+    /// behind the house wall, which then filled the frame, and the widened
+    /// tile window drew the wall retail's crops away. `suimon`'s Water Gate
+    /// Controller (`P1[4]`) stages two (`45 07 7B ..` at `+0x1E5` and
+    /// `+0x214`, `H` 744 and 872) after the Yes; read as a follow frame they
+    /// took the `Far` preset's depth and pulled back past the scene's edge,
+    /// where retail frames the gate towers edge to edge.
     pub fn scripted_shot_holds_camera(&self) -> bool {
-        !self.camera.state.params.is_empty() && self.script_context_engages_player()
+        !self.camera.state.params.is_empty()
+            && (self.script_context_engages_player()
+                || self.dialog.inline.as_ref().is_some_and(|id| id.staged_shot))
     }
 
     /// `true` while a dialogue engagement owns the pad and the player.

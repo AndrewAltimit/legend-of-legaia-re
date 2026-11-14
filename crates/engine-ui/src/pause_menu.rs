@@ -1450,6 +1450,56 @@ pub fn menu_notice_chrome(ctx: &PauseMenuCtx, spell: bool, art: bool) -> Vec<Spr
     ctx.window_chrome(&ids)
 }
 
+/// Drop the glyphs of the screen below that a notice window covers. A host
+/// draws every frame's sprites before its text, so a framed notice cannot
+/// hide the text of the window it opens over; retail draws the notice's
+/// window after the screen's, and its body covers whatever text sat under
+/// it. Run over the screen's text before the notice's own text is added.
+/// A glyph goes when its centre lies inside a held notice's frame
+/// ([`MenuRects::frame_rect`]); the same painter gate as
+/// [`menu_notice_chrome`], so nothing is hidden behind a frame that does not
+/// draw.
+pub fn occlude_under_menu_notices(
+    ctx: &PauseMenuCtx,
+    spell: bool,
+    art: bool,
+    texts: &mut Vec<TextDraw>,
+) {
+    let Some(table) = ctx.rects.table() else {
+        return;
+    };
+    let mut frames = Vec::new();
+    if spell && painter_at(table, WIN_MAGIC_LEVEL_NOTICE, MenuWindowPainter::CharPrompt).is_some() {
+        frames.push(ctx.rects.frame_rect(WIN_MAGIC_LEVEL_NOTICE));
+    }
+    if art
+        && painter_at(
+            table,
+            WIN_ART_LEARNED_NOTICE,
+            MenuWindowPainter::NotifyPrompt,
+        )
+        .is_some()
+    {
+        frames.push(ctx.rects.frame_rect(WIN_ART_LEARNED_NOTICE));
+    }
+    if frames.is_empty() {
+        return;
+    }
+    let scale = ctx.scale.max(1) as i32;
+    let (ox, oy) = ctx.origin;
+    let surface: Vec<(i32, i32, i32, i32)> = frames
+        .into_iter()
+        .map(|(x, y, w, h)| (ox + x * scale, oy + y * scale, w * scale, h * scale))
+        .collect();
+    texts.retain(|t| {
+        let cx = t.dst.0 + t.dst.2 as i32 / 2;
+        let cy = t.dst.1 + t.dst.3 as i32 / 2;
+        !surface
+            .iter()
+            .any(|&(x, y, w, h)| cx >= x && cx < x + w && cy >= y && cy < y + h)
+    });
+}
+
 /// Window 7 - the spell level-up notice, drawn over whichever menu screen is
 /// current while the shared menu runtime holds the beat a leveled menu cast
 /// armed.

@@ -1384,7 +1384,7 @@ fn the_ghost_ring_seed_is_the_displayed_frames_walk() {
         );
         put32(&mut ram, p + POSITION_RING + 8 * i + 4, 136 - 5 * i);
     }
-    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    let seeds = ram_read::retail_ghost_ring(&ram, 1, 0);
     let got: Vec<_> = seeds
         .iter()
         .map(|s| (s.slot, s.clip, s.depth, s.drawn, s.cursor, s.x, s.z))
@@ -1399,12 +1399,49 @@ fn the_ghost_ring_seed_is_the_displayed_frames_walk() {
     // A slot the gate closes (ring id `0x10` or below) is seeded undrawn,
     // as `battle_vahn_tri_somersault_super`'s depth 4 ...
     put8(&mut ram, p + 0x1FB + 6, 0x00);
-    let seeds = ram_read::retail_ghost_ring(&ram, 1);
+    let seeds = ram_read::retail_ghost_ring(&ram, 1, 0);
     assert_eq!(seeds.len(), 2);
     assert!(seeds[0].drawn && !seeds[1].drawn);
     // ... and a slot of another art clip is left to the replay.
     put8(&mut ram, p + 0x1FB + 6, 0x12);
-    assert_eq!(ram_read::retail_ghost_ring(&ram, 1).len(), 1);
+    assert_eq!(ram_read::retail_ghost_ring(&ram, 1, 0).len(), 1);
+}
+
+/// A monster seat's ghosts take their clip off the clip-record ring
+/// `+0x234`, resolved through the record's entry array, at doubled depths:
+/// rate `8` gives step `1`, so the walk reads slots `2` and `4` from the
+/// displayed slot `2`, ring slots 4 and 6. A depth on another record is left
+/// to the replay.
+#[test]
+fn a_monster_ghost_ring_seed_resolves_the_clip_record_ring() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let p = 0x800E_D000;
+    let record = 0x800F_0000;
+    let walk = 0x800F_1000;
+    let strike = 0x800F_2000;
+    // One party seat, one monster in pool slot 3 (engine slot 1).
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, p);
+    put32(&mut ram, 0x801C_9348, record);
+    put32(&mut ram, record + 0x4C + 4, walk);
+    put32(&mut ram, record + 0x4C + 7 * 4, strike);
+    put8(&mut ram, p + 0x21D, 8);
+    for i in 0..8u32 {
+        put8(&mut ram, p + 0x1FB + i, 0x12);
+        put32(&mut ram, p + ram_read::RING_RECORD + 4 * i, walk);
+        put16(&mut ram, p + 0x17A + 2 * i, 300 - 24 * i as u16);
+        put32(&mut ram, p + POSITION_RING + 8 * i + 4, 200 + 12 * i);
+    }
+    let seeds = ram_read::retail_ghost_ring(&ram, 1, 1);
+    let got: Vec<_> = seeds
+        .iter()
+        .map(|s| (s.slot, s.clip, s.depth, s.drawn, s.cursor, s.z))
+        .collect();
+    assert_eq!(
+        got,
+        vec![(1, 1, 2, true, 204, 248), (1, 1, 4, true, 156, 272)]
+    );
+    put32(&mut ram, p + ram_read::RING_RECORD + 4 * 6, strike);
+    assert_eq!(ram_read::retail_ghost_ring(&ram, 1, 1).len(), 1);
 }
 
 /// A burst child (the narrow arm's record `0x801F5D0C`) is seeded whole,
@@ -2269,6 +2306,21 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     assert!(b.engine_clip_cursors().is_empty(), "a cast's target");
     b.queued_category = 3;
 
+    // A monster strike's gate waits for the bystanders the capture holds on
+    // idle: every monster slot on clip 0 but the striker.
+    {
+        let mut s = b.clone();
+        s.clip_cursors = vec![(0, 0, 12), (1, 0, 40), (3, 7, 0), (4, 0, 120), (5, 8, 16)];
+        let want = if s.active_actor == 4 { 0 } else { 1u8 << 4 };
+        if s.strike_aim_steerable() {
+            assert_eq!(s.idle_bystanders(), want);
+        } else {
+            assert_eq!(s.idle_bystanders(), 0);
+        }
+        s.queued_category = 2;
+        assert_eq!(s.idle_bystanders(), 0, "a cast names none");
+    }
+
     // Every party seat sat the round out on Spirit: the drive's party does.
     b.party_categories = vec![4];
     assert!(b.party_spirit_round());
@@ -3014,6 +3066,7 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     b.span_gate = SpanGate::Age { accum: 432 };
     b.step_run = (2, 16);
     b.walk_yaw_base = 568;
+    b.caster_cursor = 72;
     // The case-6 table the arrival armed: the yaw has landed.
     b.cam_tween_steps = [0; 9];
     b.captured = vec![None; 8];
@@ -3023,11 +3076,15 @@ fn an_arrival_capture_places_its_walk_on_the_rams_counter() {
     let app = b.capture_approach_yaw().expect("a walk to place");
     assert_eq!(app.arrive, 568);
     assert_eq!((app.strike, app.target_ground), ([0, 312], [0, 0]));
+    // Still on the walk: its phase is seated with the counter it stood at.
+    assert_eq!(app.walk_phase, Some((568, 72)));
     // The same pass with the staged idle committed (clip `0`, accumulator
-    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`).
+    // `0`): still the walk's last reading (`battle_dolk_gimard_strike`),
+    // with no walk to phase.
     b.caster_clip = 0;
     b.span_gate = SpanGate::Age { accum: 0 };
     assert_eq!(b.capture_approach_yaw().map(|a| a.arrive), Some(568));
+    assert_eq!(b.capture_approach_yaw().and_then(|a| a.walk_phase), None);
     // Its framing endpoint was armed on the pass's starting pair (ring slot
     // `1`) and the heading the pass before left: counter `568`, style `3`,
     // table yaw `568` name heading `0x800`.

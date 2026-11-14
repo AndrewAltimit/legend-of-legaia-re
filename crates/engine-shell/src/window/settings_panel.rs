@@ -30,7 +30,7 @@ use legaia_engine_system::input::PadButton;
 /// monsters, the saved-chain Arts list, the gameplay tweaks and the battle
 /// tuning) and *Original game only*, as the play page's boxes take them
 /// live ([`LIVE_SWITCH_ROWS`]).
-pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
+pub(super) const SETTINGS_ROWS: [OptionRow; 42] = [
     OptionRow::Preset,
     OptionRow::Fullscreen,
     OptionRow::WholeStepScale,
@@ -45,6 +45,7 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
     OptionRow::GroundFog,
     OptionRow::SeeThroughWalls,
     OptionRow::EntryPulse,
+    OptionRow::HealNumerals,
     OptionRow::PreciseMovement,
     OptionRow::ActionMovement,
     OptionRow::SmartMonsters,
@@ -77,9 +78,10 @@ pub(super) const SETTINGS_ROWS: [OptionRow; 41] = [
 /// The launch switches the page changes live. Each is remembered in the
 /// launcher's settings file, where its row there reads it back.
 #[cfg(test)]
-pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 20] = [
+pub(super) const LIVE_SWITCH_ROWS: [OptionRow; 21] = [
     OptionRow::PsxRender,
     OptionRow::EntryPulse,
+    OptionRow::HealNumerals,
     OptionRow::ActionMovement,
     OptionRow::SmartMonsters,
     OptionRow::ArtsSavedList,
@@ -703,12 +705,8 @@ impl PlayWindowApp {
             .take(SHOWN_ROWS)
         {
             let focused = i == self.settings_cursor;
-            if focused && let Some(src) = self.battle_hud_solid_src() {
-                out.push(TextDraw {
-                    dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
-                    src,
-                    color: self.chrome().hover,
-                });
+            if focused {
+                self.push_focus_row(&mut out, (X0, y), (WIDTH, ROW_H));
             }
             let label_at = (left, y - 2);
             put(&mut out, row.label(), label_at, text);

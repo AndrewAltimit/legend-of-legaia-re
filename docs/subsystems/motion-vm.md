@@ -525,7 +525,13 @@ The only disc source of this bytecode is **MAN tail-section 1** (parser
   from the `FUN_8003AEB0` header decode), so a binding resolves to
   partition-1 placement `actor_id - N0` - the id space is offset by the
   object records, NOT the raw partition-1 index (town01: `N0 = 36`, binding
-  `0x30` = placement 12). Engine decoders:
+  `0x30` = placement 12). The store is unconditional (`sw v0,0x80(v1)` at
+  `0x8003AAD4`, no test of what the actor holds), so when two records bind
+  the same actor the **later** one in chain order is the stream it runs
+  (`man_motion::bound_record`). `dolk2` binds placement `0x31` twice: the
+  first record wanders it round its spawn tile, the second waits `0x6D` and
+  then retires two wanders whose boxes it stands outside, and a retail state
+  holds the second record's stream at `+0x80`. Engine decoders:
   `man_field_scripts::placement_wander_step` /
   `motion_default_move_writes`.
 - The stream opens with a **variant header table** `[u16 selector][s16

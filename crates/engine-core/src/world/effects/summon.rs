@@ -122,6 +122,55 @@ impl World {
             }
             return;
         }
+        // PROT 0923's arm 2 seats its ring on the caller and touches nothing
+        // else (`lhu a3,0x72(v1)` at `0x801F8C94`): seated here, on the caller's frame,
+        // the ring takes this frame's part tick as retail's does. Arms 0 and
+        // 1 (the stage byte, the halts and the fade) stay with the module's
+        // tick, whose context they write.
+        //
+        // PROT 0927's spawn arms seat on the caller's frame the same way; its
+        // fades, shake word and row sweep stay queued for the module's tick
+        // (`World::run_juggernaut_stager_calls`, which seats nothing).
+        if matches!(entry, 923 | 927) {
+            use legaia_engine_cast::cast_module_ticks as ticks;
+            let calls = std::mem::take(&mut self.casting.module_stager_calls);
+            let (now, later): (Vec<_>, Vec<_>) = if entry == 923 {
+                calls.into_iter().partition(|(arm, _)| *arm == 2)
+            } else {
+                (calls.clone(), calls)
+            };
+            self.casting.module_stager_calls = later;
+            let mut seated = false;
+            for (arm, caller) in &now {
+                let spawns = if entry == 923 {
+                    ticks::gilium_stager_spawns(*arm, *caller)
+                } else {
+                    ticks::juggernaut_stager_spawns(*arm, *caller)
+                };
+                seated |= !spawns.is_empty();
+                for s in &spawns {
+                    let before = self
+                        .casting
+                        .active_summon
+                        .as_ref()
+                        .map_or(0, |sc| sc.parts.len());
+                    self.casting.seat_stager_spawn(entry, s);
+                    // Retail's walk reaches what a caller with a node behind
+                    // it seats (`SummonScene::seat_walk`).
+                    if caller.walk_successor
+                        && let Some(sc) = self.casting.active_summon.as_mut()
+                    {
+                        for p in sc.parts.iter_mut().skip(before) {
+                            p.walk_reached = true;
+                        }
+                    }
+                }
+            }
+            if seated {
+                self.seat_walk_active_summon();
+            }
+            return;
+        }
         if !Self::runs_part_stager_calls(entry)
             || (self.casting.module_stager_calls.is_empty()
                 && self.casting.module_stager_seats.is_empty())
