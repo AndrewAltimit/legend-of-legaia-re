@@ -438,6 +438,22 @@ pub fn ozma_bolt_ring() -> capture::CastRibbonRing {
     }
 }
 
+/// Whether PROT `entry`'s arm `phase` makes its streak-ribbon calls behind its
+/// countdown gate, so the pass that runs the countdown out makes none. PROT
+/// 0934's arm 9 is the one: `bgtz a2` at `0x801F772C` enters the eight-call
+/// loop at `0x801F77A0` only while the word is still positive, and the pass
+/// that spends it flushes the pool, cuts the camera and leaves by
+/// `0x801F7798`. Its arms 6..8 call ahead of their gates, on every pass.
+///
+/// A host that runs a pass as several one-vsync ticks sees the arm held on the
+/// pass's first tick and passed on its last, so it reads this to know the
+/// held answer is not a call.
+///
+/// REF: overlay_summon_ozma_0934_801f6a40 (arm 9, `0x801F76A8..0x801F78B0`)
+pub fn ring_behind_gate(entry: u32, phase: u8) -> bool {
+    entry == 934 && phase == 9
+}
+
 fn with_ring(dir: ArmDirection) -> ArmDirection {
     ArmDirection {
         ribbons: Some(ozma_bolt_ring()),

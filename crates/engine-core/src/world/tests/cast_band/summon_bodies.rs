@@ -577,6 +577,51 @@ fn ozma_deals_its_bolt_ring_off_the_world_stream() {
     assert!(released);
 }
 
+/// PROT 0934's arm 9 rings behind its countdown gate: the pass that spends the
+/// word makes no ribbon call and draws no word for one (`bgtz` at
+/// `0x801F772C`). A pass here is `step` one-vsync ticks, held on its first.
+#[test]
+fn ozma_arm_9_makes_no_ring_on_the_pass_that_spends_its_countdown() {
+    use legaia_engine_cast::cast_module_camera::ring_behind_gate;
+    assert!(ring_behind_gate(934, 9));
+    assert!(!ring_behind_gate(934, 8) && !ring_behind_gate(909, 12));
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[0].battle.active_target = 1;
+    for i in 5..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let (mut rings_9, mut last_9_held_ring) = (0, None);
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        if phase == 9 {
+            let ring = world.battle.cast_ribbons.is_some();
+            rings_9 += usize::from(ring);
+            if world.casting.module_phase == 9 {
+                last_9_held_ring = Some(ring);
+            }
+        }
+        if world.casting.module_phase > 9 || !run.busy {
+            break;
+        }
+    }
+    assert!(rings_9 > 0, "arm 9 rings while it holds");
+    assert_eq!(
+        last_9_held_ring,
+        Some(false),
+        "the last held tick is inside the spending pass"
+    );
+}
+
 /// PROT 0934's arm `0x18`: its threshold walks down from `0x60` by `0x20` as
 /// the word falls past it, three steps while the arm holds; the fourth hit is
 /// the band's fold, on the arm's pass.

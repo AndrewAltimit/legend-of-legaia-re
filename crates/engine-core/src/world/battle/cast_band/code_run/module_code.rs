@@ -842,24 +842,38 @@ impl World {
             .as_ref()
             .and_then(|a| a.ribbons)
             .or(direction.and_then(|d| d.ribbons));
-        if pass_ribbons.is_none() {
+        // An arm that rings behind its gate makes no call on the pass that
+        // runs its countdown out. A pass here is `step` one-vsync ticks and
+        // the deal is its first tick's, where the word still holds: it is
+        // spent within this pass once it stands under the step.
+        let spent_behind_gate =
+            legaia_engine_cast::cast_module_camera::ring_behind_gate(entry, phase_in)
+                && direction.is_some_and(|d| d.hold)
+                && self.casting.module_cam.countdown.0 < i32::from(self.module_frame_step());
+        if pass_ribbons.is_none() || spent_behind_gate {
             self.battle.cast_ribbon_seeds = None;
         }
         if let Some(ring) = pass_ribbons.as_ref()
             && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)
             && self.module_tick_opens_pass()
+            && !spent_behind_gate
         {
             self.deal_cast_ribbon_rands(ring);
         }
-        // The arm's controller rumble stores, on the edge each sits on.
+        // The arm's controller rumble stores, on the edge each sits on. An
+        // arm that rings behind its gate rumbles there too (PROT 0934's arm
+        // 9 draws its two words at `0x801F7830` / `0x801F7860`, past the
+        // ribbon loop).
         let rumble_passed = direction.map_or(!capture_held, |d| !d.hold);
-        self.apply_module_rumble(
-            entry,
-            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
-            phase_in,
-            rumble_passed,
-            countdown_before,
-        );
+        if !spent_behind_gate {
+            self.apply_module_rumble(
+                entry,
+                body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                phase_in,
+                rumble_passed,
+                countdown_before,
+            );
+        }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         // A capture director's framing-case calls (PROT 0962 `0xA2`): case 6
@@ -2104,8 +2118,8 @@ impl World {
             self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
-        // none.
-        self.battle.cast_ribbons = pass_ribbons;
+        // none (and none on the pass a ring behind its gate is spent on).
+        self.battle.cast_ribbons = pass_ribbons.filter(|_| !spent_behind_gate);
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         if std::mem::take(&mut self.casting.module_storm_dealt) {
