@@ -412,7 +412,6 @@ const BAND: Role = Role::Band;
 const CARD: Role = Role::Card;
 const FOCUS: Role = Role::Hover;
 const BUTTON: Role = Role::Raised;
-const PRIMARY: Role = Role::AccentFill;
 const PRIMARY_FOCUS: Role = Role::AccentFillFocus;
 const RULE: Role = Role::Rule;
 const KEY: Role = legaia_app_theme::chrome::KEY;
@@ -435,6 +434,21 @@ const LEFT_X: i32 = PAD;
 const LEFT_W: i32 = 170;
 const RIGHT_X: i32 = LEFT_X + LEFT_W + 10;
 const RIGHT_W: i32 = STAGE_W - PAD - RIGHT_X;
+/// The most stage columns a wide window adds beside the base stage: up to a
+/// 16:9 stage (`640 x 360`). The left column takes [`left_extra`] of them,
+/// so the help text wraps less, and the option panel the rest.
+const MAX_EXTRA_W: i32 = 160;
+/// The steps a window under two whole steps tries, largest first, as
+/// `(numerator, denominator)`: a 640x480 window takes `4/3` rather than
+/// drawing the launcher at 1x in its middle. The font's pixels come out a
+/// mix of one and two surface pixels wide at these, which stays legible
+/// where 1x is small.
+const FRACTIONAL_STEPS: [(i32, i32); 3] = [(3, 2), (4, 3), (5, 4)];
+
+/// The columns of `extra_w` ([`Stage::extra_w`]) the left column takes.
+const fn left_extra(extra_w: i32) -> i32 {
+    extra_w / 3
+}
 const COLUMNS_Y: i32 = 108;
 const BUTTON_H: i32 = 17;
 const BUTTON_PITCH: i32 = 20;
@@ -2473,7 +2487,7 @@ impl LauncherApp {
         c.text_scaled(PAD, 7 + sq / 2, "Legend of Legaia", GOLD, 2);
         let sub = format!("engine port {}", env!("CARGO_PKG_VERSION"));
         let w = c.width(&sub);
-        c.text(STAGE_W - PAD - w, 20 + sq / 2, &sub, FAINT);
+        c.text(c.stage.width() - PAD - w, 20 + sq / 2, &sub, FAINT);
 
         self.disc_card(c);
 
@@ -2482,17 +2496,23 @@ impl LauncherApp {
             None => "Expansion pack...".to_string(),
             Some(Ok(info)) if info.playable() => {
                 // A name reads from its start: a long one keeps its head.
-                c.ellipsize_right(&format!("Pack: {}", info.short_name), LEFT_W - 12)
+                c.ellipsize_right(
+                    &format!("Pack: {}", info.short_name),
+                    LEFT_W + left_extra(c.stage.extra_w) - 12,
+                )
             }
             Some(_) => "Pack: has errors".to_string(),
         };
         for (i, item) in BUTTONS.iter().enumerate() {
-            let r = button_rect(i);
+            let r = button_rect(i, c.stage.extra_w);
             hits.push((*item, r));
             let focused = self.focus == *item;
             let enabled = !matches!(item, Item::Play | Item::Online) || self.can_play();
             let (bg, ink) = match (*item == Item::Play, enabled, focused) {
-                (true, true, false) => (PRIMARY, ON_GOLD),
+                // Unfocused, Play keeps its gold in the label only: a gold
+                // fill a shade off the focused one read as the focus itself
+                // while the hand was on another button.
+                (true, true, false) => (BUTTON, GOLD),
                 (true, true, true) => (PRIMARY_FOCUS, ON_GOLD),
                 (_, false, f) => (if f { FOCUS } else { BUTTON }, FAINT),
                 (false, true, true) => (FOCUS, INK),
@@ -2532,7 +2552,7 @@ impl LauncherApp {
         }
 
         // Left column, below the buttons: help for the focused control.
-        let help = help_rect(c.stage.extra);
+        let help = help_rect(&c.stage);
         c.rect(help, CARD);
         let lines = self.help_lines();
         let hl = help_layout(c, &lines);
@@ -2563,7 +2583,7 @@ impl LauncherApp {
         }
 
         // Right column.
-        let panel = panel_rect(c.stage.extra);
+        let panel = panel_rect(&c.stage);
         c.rect(panel, CARD);
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
@@ -2573,7 +2593,7 @@ impl LauncherApp {
     }
 
     fn disc_card(&self, c: &mut Canvas) {
-        let card = Rect::new(PAD, 54, STAGE_W - 2 * PAD, 46);
+        let card = Rect::new(PAD, 54, c.stage.width() - 2 * PAD, 46);
         c.rect(card, CARD);
         let (accent, head) = match (&self.disc, &self.problem) {
             (Some(d), _) => (
@@ -3048,17 +3068,15 @@ impl LauncherApp {
             return false;
         };
         let st = self.stage();
-        let x = ((cx as i32) - st.origin.0).div_euclid(st.scale);
-        let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
-        help_rect(st.extra).contains(x, y)
+        let (x, y) = st.stage_point((cx as i32, cy as i32));
+        help_rect(&st).contains(x, y)
     }
 
     /// The control under the cursor, if any.
     fn hit(&self) -> Option<Item> {
         let (cx, cy) = self.cursor?;
         let st = self.stage();
-        let x = ((cx as i32) - st.origin.0).div_euclid(st.scale);
-        let y = ((cy as i32) - st.origin.1).div_euclid(st.scale);
+        let (x, y) = st.stage_point((cx as i32, cy as i32));
         // Re-run the layout to get the rectangles (cheap: a few hundred quads).
         let mut canvas = Canvas {
             palette: legaia_app_theme::palette(self.dark),
@@ -3150,7 +3168,7 @@ impl ApplicationHandler for LauncherApp {
                 let lines = match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => -y.round() as i32,
                     winit::event::MouseScrollDelta::PixelDelta(p) => {
-                        -(p.y / f64::from(ROW_PITCH * self.stage().scale)).round() as i32
+                        -(p.y / f64::from(self.stage().px(ROW_PITCH).max(1))).round() as i32
                     }
                 };
                 if lines != 0 {
@@ -3362,7 +3380,12 @@ impl Rect {
 
 #[derive(Debug, Clone, Copy)]
 struct Stage {
+    /// The step's numerator over [`Self::den`]: a stage pixel is
+    /// `scale / den` surface pixels.
     scale: i32,
+    /// `1` on a whole step; a window under two whole steps may take a
+    /// fractional one ([`FRACTIONAL_STEPS`]).
+    den: i32,
     origin: (i32, i32),
     surface: (u32, u32),
     /// Stage rows the header band gives up ([`HEADER_GIVE`] at most): the
@@ -3373,6 +3396,30 @@ struct Stage {
     /// that much, so the option list shows more of itself rather than the
     /// window framing a short list in empty margins.
     extra: i32,
+    /// Stage columns a window wider than the base stage adds
+    /// ([`MAX_EXTRA_W`] at most), split between the two columns
+    /// ([`left_extra`]) instead of framing the stage in side margins.
+    extra_w: i32,
+}
+
+impl Stage {
+    /// Stage length `v` in surface pixels (from the stage origin).
+    fn px(&self, v: i32) -> i32 {
+        (v * self.scale).div_euclid(self.den)
+    }
+
+    /// The stage point under surface point `(x, y)`.
+    fn stage_point(&self, (x, y): (i32, i32)) -> (i32, i32) {
+        (
+            ((x - self.origin.0) * self.den).div_euclid(self.scale),
+            ((y - self.origin.1) * self.den).div_euclid(self.scale),
+        )
+    }
+
+    /// The stage's width: the base stage and [`Self::extra_w`].
+    fn width(&self) -> i32 {
+        STAGE_W + self.extra_w
+    }
 }
 
 /// The largest whole-step stage that fits a `(w, h)` surface, centred. A
@@ -3382,20 +3429,35 @@ struct Stage {
 /// holds at any squeeze.
 fn stage_for((w, h): (u32, u32)) -> Stage {
     let (w, h) = (w as i32, h as i32);
-    let scale = (w / STAGE_W).min(h / (STAGE_H - HEADER_GIVE)).max(1);
-    let squeeze = (STAGE_H - h / scale).clamp(0, HEADER_GIVE);
-    let extra = (h / scale - STAGE_H).clamp(0, MAX_EXTRA_H);
+    let min_h = STAGE_H - HEADER_GIVE;
+    let whole = (w / STAGE_W).min(h / min_h).max(1);
+    let (scale, den) = if whole == 1 {
+        FRACTIONAL_STEPS
+            .iter()
+            .copied()
+            .find(|&(n, d)| w * d >= STAGE_W * n && h * d >= min_h * n)
+            .unwrap_or((1, 1))
+    } else {
+        (whole, 1)
+    };
+    // The window in stage pixels.
+    let (sw, sh) = (w * den / scale, h * den / scale);
+    let squeeze = (STAGE_H - sh).clamp(0, HEADER_GIVE);
+    let extra = (sh - STAGE_H).clamp(0, MAX_EXTRA_H);
+    let extra_w = (sw - STAGE_W).clamp(0, MAX_EXTRA_W);
     let shown = STAGE_H - squeeze + extra;
     let origin = (
-        (w - STAGE_W * scale) / 2,
-        (h - shown * scale) / 2 - squeeze * scale,
+        (w - (STAGE_W + extra_w) * scale / den) / 2,
+        (h - shown * scale / den) / 2 - squeeze * scale / den,
     );
     Stage {
         scale,
+        den,
         origin,
         surface: (w as u32, h as u32),
         squeeze,
         extra,
+        extra_w,
     }
 }
 
@@ -3424,9 +3486,8 @@ impl Canvas<'_> {
     /// A band `h` stage rows tall at stage row `y`, across the whole
     /// surface (the margins beside the stage included).
     fn full_width(&mut self, y: i32, h: i32, color: Role) {
-        let s = self.stage.scale;
-        let top = self.stage.origin.1 + y * s;
-        let bottom = top + h.max(0) * s;
+        let top = self.stage.origin.1 + self.stage.px(y);
+        let bottom = self.stage.origin.1 + self.stage.px(y + h.max(0));
         self.draws.push(TextDraw {
             dst: (
                 0,
@@ -3443,7 +3504,7 @@ impl Canvas<'_> {
     /// across the whole surface: the header in a window taller than the
     /// stage reaches the top instead of floating under a dark margin.
     fn band_to_top(&mut self, bottom: i32, color: Role) {
-        let h = self.stage.origin.1 + bottom * self.stage.scale;
+        let h = self.stage.origin.1 + self.stage.px(bottom);
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, h.max(0) as u32),
             src: self.solid,
@@ -3452,13 +3513,17 @@ impl Canvas<'_> {
     }
 
     fn rect(&mut self, r: Rect, color: Role) {
-        let s = self.stage.scale;
+        let st = self.stage;
+        // Both edges through the step, so a fractional one leaves no seam
+        // between two rects that share an edge.
+        let (x0, y0) = (st.px(r.x), st.px(r.y));
+        let (x1, y1) = (st.px(r.x + r.w.max(0)), st.px(r.y + r.h.max(0)));
         self.draws.push(TextDraw {
             dst: (
-                self.stage.origin.0 + r.x * s,
-                self.stage.origin.1 + r.y * s,
-                (r.w.max(0) * s) as u32,
-                (r.h.max(0) * s) as u32,
+                st.origin.0 + x0,
+                st.origin.1 + y0,
+                (x1 - x0) as u32,
+                (y1 - y0) as u32,
             ),
             src: self.solid,
             color: self.palette.get(color).to_f32(),
@@ -3497,16 +3562,18 @@ impl Canvas<'_> {
     }
 
     fn text_scaled(&mut self, x: i32, y: i32, text: &str, color: Role, k: i32) {
-        let s = self.stage.scale;
+        let st = self.stage;
         let layout = self.font.layout_ascii(&Self::clean(text));
         for d in legaia_engine_ui::text_draws_for(&layout, (0, 0), self.palette.get(color).to_f32())
         {
+            let (gx, gy) = (x + self.pitch(d.dst.0) * k, y + d.dst.1 * k);
+            let (gw, gh) = (d.dst.2 as i32 * k, d.dst.3 as i32 * k);
             self.draws.push(TextDraw {
                 dst: (
-                    self.stage.origin.0 + (x + self.pitch(d.dst.0) * k) * s,
-                    self.stage.origin.1 + (y + d.dst.1 * k) * s,
-                    d.dst.2 * (k * s) as u32,
-                    d.dst.3 * (k * s) as u32,
+                    st.origin.0 + st.px(gx),
+                    st.origin.1 + st.px(gy),
+                    (st.px(gx + gw) - st.px(gx)) as u32,
+                    (st.px(gy + gh) - st.px(gy)) as u32,
                 ),
                 ..d
             });
@@ -4037,20 +4104,22 @@ const BUTTON_LABEL_MARGIN: i32 = 3;
 
 /// Button `i`'s rect: the first [`FULL_BUTTONS`] take a full-width row
 /// each, the rest pair up two to a row.
-fn button_rect(i: usize) -> Rect {
+/// `extra_w` is the stage's added width ([`Stage::extra_w`]).
+fn button_rect(i: usize, extra_w: i32) -> Rect {
     // The first four buttons take a row each; the rest pair up, two to a
     // row (Controls / Recent, Saves folder / Quit).
     let i = i as i32;
+    let left_w = LEFT_W + left_extra(extra_w);
     if i < FULL_BUTTONS {
-        return Rect::new(LEFT_X, COLUMNS_Y + i * BUTTON_PITCH, LEFT_W, BUTTON_H);
+        return Rect::new(LEFT_X, COLUMNS_Y + i * BUTTON_PITCH, left_w, BUTTON_H);
     }
     let paired = i - FULL_BUTTONS;
     let y = COLUMNS_Y + (FULL_BUTTONS + paired / 2) * BUTTON_PITCH;
-    let half = (LEFT_W - 4) / 2;
+    let half = (left_w - 4) / 2;
     let x = if paired % 2 == 0 {
         LEFT_X
     } else {
-        LEFT_X + LEFT_W - half
+        LEFT_X + left_w - half
     };
     Rect::new(x, y, half, BUTTON_H)
 }
@@ -4058,20 +4127,26 @@ fn button_rect(i: usize) -> Rect {
 /// How many of [`BUTTONS`] take a whole row.
 const FULL_BUTTONS: i32 = 4;
 
-/// The help box under the buttons, on a stage `extra` rows taller than the
-/// base one ([`Stage::extra`]).
-fn help_rect(extra: i32) -> Rect {
+/// The help box under the buttons, on a stage [`Stage::extra`] rows taller
+/// and [`Stage::extra_w`] columns wider than the base one.
+fn help_rect(st: &Stage) -> Rect {
     let y = COLUMNS_Y + BUTTON_ROWS * BUTTON_PITCH + 4;
-    Rect::new(LEFT_X, y, LEFT_W, STAGE_H + extra - PAD - y)
+    Rect::new(
+        LEFT_X,
+        y,
+        LEFT_W + left_extra(st.extra_w),
+        STAGE_H + st.extra - PAD - y,
+    )
 }
 
 /// The right-hand panel (options or controls), as [`help_rect`].
-fn panel_rect(extra: i32) -> Rect {
+fn panel_rect(st: &Stage) -> Rect {
+    let left = left_extra(st.extra_w);
     Rect::new(
-        RIGHT_X,
+        RIGHT_X + left,
         COLUMNS_Y,
-        RIGHT_W,
-        STAGE_H + extra - PAD - COLUMNS_Y,
+        RIGHT_W + st.extra_w - left,
+        STAGE_H + st.extra - PAD - COLUMNS_Y,
     )
 }
 
@@ -4188,7 +4263,7 @@ struct HelpLayout {
 }
 
 fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
-    let help = help_rect(c.stage.extra);
+    let help = help_rect(&c.stage);
     let lines: Vec<(Vec<String>, Role)> = msg
         .iter()
         .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
@@ -4271,19 +4346,33 @@ mod tests {
         assert_eq!(short_folder(Path::new("discs")), "discs");
     }
 
+    /// The base stage at 2x, as a 960x720 window lays it out.
+    const BASE_STAGE: Stage = Stage {
+        scale: 2,
+        den: 1,
+        origin: (0, 0),
+        surface: (960, 720),
+        squeeze: 0,
+        extra: 0,
+        extra_w: 0,
+    };
+
+    /// [`BASE_STAGE`] with `extra` rows and `extra_w` columns added.
+    fn grown(extra: i32, extra_w: i32) -> Stage {
+        Stage {
+            extra,
+            extra_w,
+            ..BASE_STAGE
+        }
+    }
+
     fn canvas(font: &legaia_font::Font) -> Canvas<'_> {
         Canvas {
             palette: legaia_app_theme::palette(true),
             font,
             solid: (0, 0, 1, 1),
             condense: true,
-            stage: Stage {
-                scale: 2,
-                origin: (0, 0),
-                surface: (960, 720),
-                squeeze: 0,
-                extra: 0,
-            },
+            stage: BASE_STAGE,
             draws: Vec::new(),
         }
     }
@@ -4302,9 +4391,9 @@ mod tests {
         assert!(short.origin.1 + STAGE_H * short.scale <= 699);
         assert_eq!(stage_for((1920, 1080)).scale, 3);
         assert_eq!(stage_for((1366, 705)).scale, 2);
-        // Too short for the give: the step below.
+        // Too short for the give: the fractional step below.
         let small = stage_for((960, 690));
-        assert_eq!((small.scale, small.squeeze), (1, 0));
+        assert_eq!((small.scale, small.den, small.squeeze), (3, 2, 0));
         // The minimum window.
         let min = stage_for((STAGE_W as u32, (STAGE_H - HEADER_GIVE) as u32));
         assert_eq!(
@@ -4339,7 +4428,8 @@ mod tests {
         assert!(huge.origin.1 > 0, "past the list the stage centres again");
         // The columns end on the same row on any stage.
         for extra in [0, 70, MAX_EXTRA_H] {
-            let (help, panel) = (help_rect(extra), panel_rect(extra));
+            let st = grown(extra, 0);
+            let (help, panel) = (help_rect(&st), panel_rect(&st));
             assert_eq!(help.y + help.h, panel.y + panel.h);
             assert_eq!(panel.y + panel.h, STAGE_H + extra - PAD);
             let lines = visible_lines(extra) as i32;
@@ -4402,32 +4492,77 @@ mod tests {
         let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
         let font = legaia_font::Font::placeholder();
         let mut hits = Vec::new();
-        for item in app.order() {
-            // Focusing a control scrolls it into view.
-            app.focus = item;
-            app.reveal_focus();
-            let mut c = canvas(&font);
-            hits.clear();
-            app.layout(&mut c, &mut hits);
-            let (_, r) = hits
-                .iter()
-                .find(|(i, _)| *i == item)
-                .unwrap_or_else(|| panic!("{item:?} has no hit rectangle"));
-            assert!(
-                r.x >= 0 && r.y >= 0 && r.x + r.w <= STAGE_W && r.y + r.h <= STAGE_H,
-                "{item:?} {r:?} leaves the stage"
-            );
-        }
-        // No two controls overlap.
-        for (i, (a, ra)) in hits.iter().enumerate() {
-            for (b, rb) in &hits[i + 1..] {
-                let overlap = ra.x < rb.x + rb.w
-                    && rb.x < ra.x + ra.w
-                    && ra.y < rb.y + rb.h
-                    && rb.y < ra.y + ra.h;
-                assert!(!overlap, "{a:?} {ra:?} overlaps {b:?} {rb:?}");
+        // The base stage and the widest one.
+        for st in [BASE_STAGE, grown(0, MAX_EXTRA_W)] {
+            for item in app.order() {
+                // Focusing a control scrolls it into view.
+                app.focus = item;
+                app.reveal_focus();
+                let mut c = canvas(&font);
+                c.stage = st;
+                hits.clear();
+                app.layout(&mut c, &mut hits);
+                let (_, r) = hits
+                    .iter()
+                    .find(|(i, _)| *i == item)
+                    .unwrap_or_else(|| panic!("{item:?} has no hit rectangle"));
+                assert!(
+                    r.x >= 0 && r.y >= 0 && r.x + r.w <= st.width() && r.y + r.h <= STAGE_H,
+                    "{item:?} {r:?} leaves the stage"
+                );
+            }
+            // No two controls overlap.
+            for (i, (a, ra)) in hits.iter().enumerate() {
+                for (b, rb) in &hits[i + 1..] {
+                    let overlap = ra.x < rb.x + rb.w
+                        && rb.x < ra.x + ra.w
+                        && ra.y < rb.y + rb.h
+                        && rb.y < ra.y + ra.h;
+                    assert!(!overlap, "{a:?} {ra:?} overlaps {b:?} {rb:?}");
+                }
             }
         }
+    }
+
+    /// A window under two whole steps but well over one takes a fractional
+    /// step: 640x480 draws at 4/3, not at 1x in its middle, and the stage
+    /// fills it.
+    #[test]
+    fn a_640x480_window_takes_a_fractional_step() {
+        let st = stage_for((640, 480));
+        assert_eq!((st.scale, st.den), (4, 3));
+        assert_eq!((st.squeeze, st.extra, st.extra_w), (0, 0, 0));
+        assert_eq!(st.origin, (0, 0));
+        assert_eq!(st.px(STAGE_W), 640);
+        assert_eq!(st.px(STAGE_H), 480);
+        assert_eq!(st.stage_point((639, 479)), (STAGE_W - 1, STAGE_H - 1));
+        // Just past the minimum keeps 1x; 720x540 takes 3/2.
+        assert_eq!(stage_for((500, 360)).scale, 1);
+        assert_eq!(
+            (stage_for((720, 540)).scale, stage_for((720, 540)).den),
+            (3, 2)
+        );
+        // Whole steps are unchanged.
+        assert_eq!(
+            (stage_for((960, 720)).scale, stage_for((960, 720)).den),
+            (2, 1)
+        );
+    }
+
+    /// A wide window widens both columns instead of framing the stage in side
+    /// margins, up to a 16:9 stage, and the two columns keep their gap.
+    #[test]
+    fn a_wide_window_widens_the_columns() {
+        assert_eq!(stage_for((960, 720)).extra_w, 0);
+        let wide = stage_for((1600, 720));
+        assert_eq!((wide.scale, wide.extra_w), (2, MAX_EXTRA_W));
+        assert_eq!(wide.origin.0, (1600 - 2 * wide.width()) / 2);
+        let (help, panel) = (help_rect(&wide), panel_rect(&wide));
+        let (help0, panel0) = (help_rect(&BASE_STAGE), panel_rect(&BASE_STAGE));
+        assert!(help.w > help0.w && panel.w > panel0.w);
+        assert_eq!(panel.x - (help.x + help.w), panel0.x - (help0.x + help0.w));
+        assert_eq!(panel.x + panel.w, wide.width() - PAD);
+        assert_eq!(button_rect(0, wide.extra_w).w, help.w);
     }
 
     #[test]
@@ -4927,7 +5062,7 @@ mod tests {
         let mut cut = Vec::new();
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
-            let room = help_rect(0).w - 12;
+            let room = help_rect(&BASE_STAGE).w - 12;
             for glyphs in [GlyphSet::Xbox, GlyphSet::PlayStation, GlyphSet::Nintendo] {
                 let mut app =
                     LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
@@ -5027,7 +5162,7 @@ mod tests {
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
             for (i, _) in BUTTONS.iter().enumerate() {
-                let r = button_rect(i);
+                let r = button_rect(i, 0);
                 for label in labels {
                     let shown = fit_button_label(&c, label, r.w);
                     assert!(
@@ -5172,7 +5307,7 @@ mod tests {
 
     #[test]
     fn controls_notes_fit_the_panel() {
-        let panel = panel_rect(0);
+        let panel = panel_rect(&BASE_STAGE);
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
             let bottom = controls_notes_bottom(&c, panel);
