@@ -199,8 +199,14 @@ Jedo (`0931`) its 256x3 strip over rows `484..486` after the band folds. Iota
 (`0929`, row `491`) recolour and their parts are freed first, so no restore
 runs. Rows `484 + slot` are the monster palettes
 ([`battle-actor-rendering.md`](../subsystems/battle-actor-rendering.md)).
-Whether retail's freed parts also leave their strips recoloured needs a retail
-capture of one of those three casts, reading the rows after the module ends.
+Retail leaves them recoloured too. Stepped frame by frame on mednafen from
+`iota_summon_mid_cast` and `palma_summon_mid_cast`, reading VRAM rows `480..497`
+each frame: Iota recolours rows `484`, `486`, `488` and `489` (rows `488` / `489`
+on every other vsync from module phase 5 to 11), Palma row `486` through phases 12
+and 13, and no upload puts any of them back through the module's end, the Done band
+and the `0x5A` state after it (`300` vsyncs past Iota's band, `1700` past
+Palma's). So the engine's strips stand where retail's do, and no restore is owed for
+those casts. Mule's is not measured. Grade `capture`.
 
 ## State no host sets up
 
@@ -305,6 +311,9 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `BattleActionCtx::charm_widen` | the randomizer's `0x801E6638` edit; retail's mask is `0x4`, which `false` is |
 | `Camera::follow_slot` | an engine framing choice, not a retail word; the field camera follows the player |
 | `FieldCtx::field_90` | op `0x49` sub-op 1 stores it into `_DAT_8007B44C` (`0x801E09C8`), and the save driver it opens overwrites that word with the scene name on its first step (`0x801DAF4C..0x801DAF58`), before either reader (`0x801E1A28`, `0x801E1D9C`) runs |
+| `TopLevelView::cursor_static` | the pause list's cursor word never carries `0x1000`: the root picker masks `DAT_801E46BC` to its row on entry (`0x801D6B64..0x801D6B78`), and the four routines that raise the bit are the shop's mode select's (`0x801DB270`, `0x801DB3F8`, `0x801DBCB8`, `0x801DBDF4`) |
+| `SettleInputs::warp_timer`, `warp_hold` | the settle head's hop probe is the caller's: `World::step_field_vertical` tests the same pair (`_DAT_8007B6B0`, `_DAT_8007B6B4`, `0x801D1C6C..0x801D1CA8`) through `field_warp_tile::pad_suppressed` with the step delta, and hands the head zeros |
+| `TransitionGlobals::bgm_voice_id` | read only by phase 0's `SsSeqSetVol` re-apply (`FUN_80062004`), which restores the live level to a field track the engine already plays at it; the effect is a disclosed no-op |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 ### Open rows
