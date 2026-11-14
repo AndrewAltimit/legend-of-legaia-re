@@ -2130,9 +2130,11 @@ to `600`), and the finisher's rise `140` a ghost. So the ghost passes cost over 
 run step `4`. Costed at the flat `36` a ghost the engine's read `694` and ran `3`; the pass
 that leaves the slow motion ran three vsyncs where retail's runs four, the flinch cursor the
 juggle counter reads ([a party strike's damage](../tooling/cast-sequence-oracle.md#a-party-strikes-damage))
-came one frame short. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`,
-Noa's `1536` over the whole form) the passes read `4`, and the chain finishers' `0x1F` and
-`0x20` with them. Grade `disassembly` for the walk (`FUN_80049348` re-runs
+came one frame short, and the last four hits rolled on juggle `3` to `6` for retail's `1` to
+`4`. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`, Noa's `1536` over the
+whole form) the passes read `4`, all ten hits roll retail's numerals, and the chain finishers'
+`0x1F` and `0x20` read `4` with them: the party arts' films go from `.9034` to `.9183` (Gala's
+chain `.858` to `.951`, Lizard Tail `.917` to `.983`). Grade `disassembly` for the walk (`FUN_80049348` re-runs
 `FUN_80048A08` per ghost), `capture` for the costs.
 
 Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
