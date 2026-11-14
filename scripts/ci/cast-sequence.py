@@ -827,6 +827,13 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # The still stands a seat on the displayed frame's pair; a film runs on
+    # from the gate on the RAM's clip cursors, so a physical recording stands
+    # it on the RAM's pair (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the child
+    # carries only where the two part). A harness seat.
+    ram_ground = env.pop("LEGAIA_BATTLE_GROUND_SNAP_RAM", None)
+    if a.physical and ram_ground is not None:
+        env["LEGAIA_BATTLE_GROUND_SNAP"] = ram_ground
     # A monster strike's drive (`action,<seat>,<state>,3,...`) plays the
     # state's own queue unless the still already steered it.
     drive = env.get("LEGAIA_BATTLE_DRIVE", "")

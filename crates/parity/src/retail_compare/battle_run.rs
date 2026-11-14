@@ -893,6 +893,25 @@ pub(super) fn battle_image(
                 },
             ),
         ));
+        // The pairs the RAM holds, beside the displayed frame's: a film runs
+        // on from the gate on the RAM's clip cursors (the cast-sequence
+        // oracle drops `LEGAIA_SEAT_DISPLAYED_CLIPS`), so it stands on the
+        // RAM's ground too, and `cast-sequence.py --physical` seats this in
+        // place of `LEGAIA_BATTLE_GROUND_SNAP`. Stood on the displayed pair,
+        // a walker whose ring slot sits across its walk's loop cut starts the
+        // film two passes back along its walk on the RAM's cursor, reaches
+        // the cut two passes late, and strikes from another pair
+        // (`battle_nilboa_gi_delilas_strike`: `384` seated against the RAM's
+        // `204`). The play window never reads it.
+        if battle.displayed_camera() {
+            let ram = battle.engine_ground_snaps();
+            if ram != battle.engine_image_ground_snaps() {
+                env.push((
+                    "LEGAIA_BATTLE_GROUND_SNAP_RAM",
+                    legaia_engine_capture::ground_snap::ground_snaps_to_env(&ram),
+                ));
+            }
+        }
         if battle.displayed_camera() {
             env.push((
                 "LEGAIA_BATTLE_GHOST_POSE",

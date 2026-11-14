@@ -1243,6 +1243,24 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   pass ahead of the gate tick, so the score drops the engine's leading rows on that
   pose (`--engine-skip`, counted by the driver). A strike's camera sweeps fastest in
   that opening: one step of skew costs its `0x1E` segment about `.08` of `within`.
+- **Ground.** The child stands each seat on the RAM's pairs
+  (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the still's command carries where the
+  two part), not on the displayed frame's ground the still stands a walker on.
+  The film runs on from the gate on the RAM's clip cursors, so a walker seated on
+  its ring slot two passes back starts that far back along its walk. A walk
+  whose live pair is cut back at each loop end (the end-of-clip step) then
+  reaches the cut on another pass than retail's, commits its strike clip from
+  another pair, and its hits push the target along another heading, which every
+  later re-face and the case-7 yaw inherit. `battle_nilboa_gi_delilas_strike`
+  seated `384` against the RAM's `204` and ended its film `42` yaw units off
+  retail's; on the RAM's pair it tracks retail's walk pass for pass. A harness
+  seat. Over the strike set (with the four lowest strike stills added) the mean
+  `within` goes from `.966` to `.969`: Gi Delilas `.874` to `.962`, Mad Mantis
+  `.919` to `.981`, Warhalf `.937` to `.969`, Twin Tomb `.943` to `.965`, and
+  Warman `.975` to `.955`: on the RAM's pair its walk runs retail's passes
+  but commits the strike clip one pass early, without the loop-end step
+  retail's last walk pass takes, and so strikes from `(130, 335)` where
+  retail's does from `(136, 325)`.
 
 A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
 `0x3E`), which the probe also takes as the recording's start: before it did, a
