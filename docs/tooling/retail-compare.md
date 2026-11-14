@@ -1343,7 +1343,13 @@ draws it takes.
   is that pose's own script (`battle_over_script`). The pose actor's latched
   `+0x1DB` is read (`RetailBattle::win_pose`); a seed that reaches the phase on
   another pose is kept only as the fallback, and the remaining seeds are tried
-  for one that draws retail's (`noa_levelup_banner`).
+  for one that draws retail's (`noa_levelup_banner`). When none does, the
+  fallback's stream runs again with retail's pose seated over the pick
+  (`RetailBattle::pose_seat`, `BattleState::forced_victory_pose`), as retail's
+  held-button select stands over it after the pick's two draws: a change of
+  frame pacing that finishes the replayed fight on other streams no longer
+  turns the shot (`battle_jou_gala_finisher_hold_retail`, whose reaching
+  streams all drew `0x11` or `0x12` for Gala's `0x14`, `.600` to `.994`).
 - The pose stands on the capture's seat. The results sequencer poses the
   acting slot `ctx[+0x13]` the victory arm left (the member who finished the
   fight), and a drive that seats the capture's beaten monster at the HP it
