@@ -1004,7 +1004,7 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     # seek arm's whole frame `18..31` passes and the poll arm `14..30`, with the
     # fade and the rise spawned before it running on through the poll. A
     # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
-    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", "2")
+    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", str(drive_seek_seat(out) or DRIVE_SEEK_DEFAULT))
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -1183,6 +1183,72 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     frames = sum(1 for _ in edir.glob("e_*.png"))
     print(f"[engine] {frames} frames")
     return True, frames, pinned
+
+
+DRIVE_SEEK_DEFAULT = 2
+
+
+def _drive_seek_file(out: Path) -> Path:
+    return out / "drive-seek.txt"
+
+
+def _recording_id(out: Path) -> str:
+    done = out / "retail" / "done.txt"
+    return hashlib.sha256(done.read_bytes()).hexdigest()[:12] if done.exists() else ""
+
+
+def drive_seek_seat(out: Path) -> int | None:
+    """The seek seat read off this recording on an earlier run
+    (`settle_drive_seek`), `None` when none was, or the recording changed."""
+    kv = read_kv(_drive_seek_file(out))
+    if kv.get("recording") != _recording_id(out) or not kv.get("seek", "").isdigit():
+        return None
+    return int(kv["seek"])
+
+
+def settle_drive_seek(a, out: Path) -> bool:
+    """Seat the cast drive's seek on the recording's own poll.
+
+    The scorer reads how long retail's drive held the module's seek and poll
+    arms on the game clock (`retail_live_wait`) against the engine's hold on
+    the seat it ran (`engine_frozen` + `engine_poll_hold`): `live_shift` is the
+    difference. A recording whose drive held longer than the seat gets the
+    seat raised by it and the engine side re-run, once; where that moves
+    nothing (the module's poll never holds on this drive) the default stays.
+    The seat is kept in `drive-seek.txt` beside the recording's id. One pass more or less in the poll arm is one frame-driver `rand()`,
+    which parts the stream for the rest of the cast. A harness seat. Returns
+    whether the engine side must run again."""
+    if a.physical or a.camera_only or any(kv.startswith("LEGAIA_SEAT_DRIVE_SEEK=") for kv in a.engine_env):
+        return False
+    kv = read_kv(_drive_seek_file(out))
+    fresh = kv.get("recording") == _recording_id(out)
+    if fresh and kv.get("settled") == "1":
+        return False
+    try:
+        rep = json.loads((out / "report.json").read_text())
+    except (OSError, ValueError):
+        return False
+    w = rep.get("drive_wait")
+    seat = int(kv["seek"]) if fresh and kv.get("seek", "").isdigit() else DRIVE_SEEK_DEFAULT
+    step = int(kv.get("step", "0")) if fresh else 0
+    shift = w["live_shift"] if w else 0
+
+    def keep(seek: int, step: int, settled: bool) -> None:
+        _drive_seek_file(out).write_text(
+            f"seek={seek}\nrecording={_recording_id(out)}\nstep={step}\nshift={shift}\nsettled={int(settled)}\n")
+
+    if step == 0 and shift < 0:
+        nxt = DRIVE_SEEK_DEFAULT - shift
+        keep(nxt, 1, False)
+        print(f"[engine] the recording's drive held {-shift} vsyncs past the seek seat: "
+              f"re-running on LEGAIA_SEAT_DRIVE_SEEK={nxt}")
+        return True
+    # A raise that moved nothing names no seat: the module's poll never held
+    # on this drive (its seek was issued an arm earlier), and the default
+    # stays without another run, the two recordings being the same.
+    moved = step == 1 and shift != int(kv.get("shift", "0"))
+    keep(seat if step == 0 or moved else DRIVE_SEEK_DEFAULT, step, True)
+    return False
 
 
 def score(a, out: Path) -> int:
@@ -1435,7 +1501,12 @@ def main() -> int:
     if not (out / "retail" / "meta.csv").exists():
         print(f"[score] no retail recording under {out / 'retail'}: engine side only")
         return 0
-    return score(a, out)
+    rc = score(a, out)
+    while rc == 0 and not a.score_only and settle_drive_seek(a, out):
+        if not run_engine(a, out):
+            return 1
+        rc = score(a, out)
+    return rc
 
 
 if __name__ == "__main__":
