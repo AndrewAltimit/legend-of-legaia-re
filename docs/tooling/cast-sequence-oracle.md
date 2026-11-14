@@ -1336,7 +1336,12 @@ on both sides, so a clip both sides played can be read cue for cue.
   `battle_jou_party_vahn_tri_somersault_super_open` holds `1` throughout; the replay's own
   stream drew `0` at the Super Art's `0x1A` commit and filmed the other shot: `.728`
   without the deal, `.798` with it, camera `67` px to `27`. A recording made before the
-  column deals no coin.
+  column deals no coin. A change point is timed on the recording's game clock (each frame
+  counts its step, not the vsyncs it ran over), since the engine's display clock runs no slow
+  vsyncs: on its vsync, `battle_jou_party_gala_super_ironhead_super_open`'s draw of `1`
+  (vsync `320`, game clock `267`) stood behind the engine's `+0x87` commit, which read the
+  `0` before it and filmed the finale on the other column (`0x1F` reads `.496`; on the game
+  clock `.79`, the film `.793` to `.862`). A harness seat.
 
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal

@@ -762,18 +762,49 @@ def retail_track_coins(out: Path) -> list[str]:
     `rand() % 2` at every commit of a clip whose `+0x87` byte is set
     (`FUN_8004E13C`, `0x8004E2BC..0x8004E2DC`); a re-draw onto the same value
     leaves no change point and needs none. Empty for a recording made before
-    the probe wrote the `coin` column."""
+    the probe wrote the `coin` column.
+
+    A change point's time is the recording's game clock, not its vsync: each
+    frame counts the step it drains by however many vsyncs it ran over, as
+    the pairing's `retail game` column counts it. The engine's display clock
+    runs a frame's step and not retail's slow vsyncs, so on the vsync a Super
+    Art's slow frames put the change tens of frames behind the engine's commit:
+    `battle_jou_party_gala_super_ironhead_super_open` draws `1` at vsync `320`
+    (game clock `264`), the engine's `+0x87` commit read the `0` before it, and
+    the finale filmed the other column."""
     pts, prev = [], None
     with open(out / "retail" / "meta.csv") as f:
-        for r in csv.DictReader(f):
-            c = r.get("coin")
-            if c is None or c == "":
-                return []
-            c = int(c) & 1
-            if c != prev:
-                pts.append(f"{c}@{r['vsync']}")
-                prev = c
+        rows = list(csv.DictReader(f))
+    for r, game in zip(rows, game_clock(rows)):
+        c = r.get("coin")
+        if c is None or c == "":
+            return []
+        c = int(c) & 1
+        if c != prev:
+            pts.append(f"{c}@{game}")
+            prev = c
     return pts
+
+
+def game_clock(rows: list[dict]) -> list[int]:
+    """Each `meta.csv` row's time on the recording's game clock, from `1` on
+    the first row: a frame (one value of the `frame` column) advances it by
+    its step (the frame's last row) and no further, so a slow frame's extra
+    vsyncs hold it. A recording without the columns is its own vsyncs."""
+    if not rows or "frame" not in rows[0] or "step" not in rows[0]:
+        return [int(r["vsync"]) for r in rows]
+    step_of = {}
+    for r in rows:
+        step_of[r["frame"]] = max(1, int(r["step"] or 1))
+    out, base, cur, into = [], 1, None, 0
+    for r in rows:
+        if r["frame"] != cur:
+            if cur is not None:
+                base += step_of[cur]
+            cur, into = r["frame"], 0
+        out.append(base + min(into, step_of[cur] - 1))
+        into += 1
+    return out
 
 
 def retail_hit_words(out: Path) -> list[str]:
