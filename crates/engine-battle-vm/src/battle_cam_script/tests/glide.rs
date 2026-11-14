@@ -34,6 +34,42 @@ fn the_entry_sweep_drifts_then_eases_onto_case_two_then_cuts_to_the_dialogue() {
     assert_eq!(cam.entry_sweep_counter(), None);
 }
 
+/// The sweep's opening passes run on their own step - `2`, then `1` through
+/// the stage loader's pass - so the counter reads `0x80`, `0x82`, `0x83`,
+/// `0x84`, `0x85` and only then climbs by the fight's step. Both PCSX-Redux
+/// openings stand on `0x97` at TR `(0, 2384, 5696)`, one on a step of `2` and
+/// one on a step of `3`.
+#[test]
+fn the_entry_sweep_opens_on_its_own_steps_before_the_fights() {
+    for fight_step in [2u8, 3] {
+        let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+        cam.set_frame_step(fight_step);
+        cam.start_entry_sweep();
+        let mut seen = vec![cam.entry_sweep_counter().unwrap()];
+        let mut opening = vec![cam.entry_sweep_opening_step()];
+        while cam.entry_sweep_counter().is_some_and(|c| c < 0x97) {
+            cam.advance_to(cam.last_frames + u64::from(fight_step));
+            seen.push(cam.entry_sweep_counter().unwrap());
+            opening.push(cam.entry_sweep_opening_step());
+        }
+        assert_eq!(seen[..5], [0x80, 0x82, 0x83, 0x84, 0x85]);
+        assert_eq!(
+            opening[..5],
+            [Some(2), Some(1), Some(1), Some(1), None],
+            "the stage loader's pass at 0x84 is the last opening pass"
+        );
+        assert_eq!(seen[5], 0x85 + u32::from(fight_step));
+        assert_eq!(*seen.last().unwrap(), 0x97, "step {fight_step}");
+        assert_eq!(cam.pose().tr, [0.0, 2384.0, 5696.0]);
+    }
+    // A per-vsync cadence keeps its step of 1 throughout.
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_frame_step(1);
+    cam.start_entry_sweep();
+    cam.advance_to(cam.last_frames + 3);
+    assert_eq!(cam.entry_sweep_counter(), Some(0x83));
+}
+
 /// Retail opens no surface and runs no action under the sweep; the port's
 /// battle tick can, and the first one ends the sweep.
 #[test]

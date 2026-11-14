@@ -2371,8 +2371,10 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
         return true;
     }
     world.battle.camera.as_ref().is_some_and(|c| {
+        // The next pass's own step: the sweep's opening passes run on theirs.
+        let step = c.entry_sweep_opening_step().unwrap_or(c.frame_step());
         c.entry_sweep_counter()
-            .is_none_or(|n| entry != 0xFF && n + u32::from(c.frame_step()) / 2 >= u32::from(entry))
+            .is_none_or(|n| entry != 0xFF && n + u32::from(step) / 2 >= u32::from(entry))
     })
 }
 
