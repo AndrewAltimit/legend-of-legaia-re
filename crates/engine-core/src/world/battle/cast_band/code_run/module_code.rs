@@ -1115,6 +1115,25 @@ impl World {
                         (ctx.phase == ticks::KISS_OF_DEATH_ROLL_ARM).then(|| self.next_rand());
                     let (step, refund) = ticks::kiss_of_death_tick(&mut ctx, &mut victim, roll);
                     run.item_refund = refund;
+                    // The hit leg throws its literal `1` over the victim:
+                    // `FUN_801F44A0(1, seat)` at `0x801F8D6C`, behind the
+                    // same Stone guard (`0x801F8D60`) the HP write takes.
+                    // REF: FUN_801F44A0
+                    if roll.is_some_and(|r| r & 1 == 0)
+                        && victim.flags & ticks::FLAG_NON_TARGETABLE == 0
+                    {
+                        self.battle
+                            .hit_fx
+                            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                                target_slot: victim_slot,
+                                amount: 1,
+                                is_heal: false,
+                                is_crit: false,
+                            });
+                        let c = &mut self.battle_ctx;
+                        c.cast_readout_cursor = (c.cast_readout_cursor + 1) & 7;
+                        c.readout_pushes = c.readout_pushes.wrapping_add(1);
+                    }
                     // Only the odd (miss) leg raises the bar
                     // (`0x801F8CC8` branches the hit leg past the raise).
                     if roll.is_some_and(|r| r & 1 != 0) {

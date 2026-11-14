@@ -302,3 +302,47 @@ fn the_applier_lands_a_monsters_spirit_band_cast() {
     world.fold_battle_item_action(4, 0, 2);
     assert!(world.casting.pending_cast.is_some());
 }
+
+/// Kiss of Death's hit leg throws its literal `1` over the victim
+/// (`FUN_801F44A0(1, seat)` at `0x801F8D6C`) beside its one-point HP write;
+/// the miss leg, which marks Numb and takes the turn, throws nothing.
+#[test]
+fn a_kiss_of_death_hit_throws_its_one() {
+    let mut hits = 0;
+    let mut misses = 0;
+    for seed in 0..16u32 {
+        use legaia_game_tables::spell_names::{CAPTURE_CLASS, SpellEntry, SpellNameTable};
+        let mut world = module_code_world();
+        world.party.party_count = 3;
+        world.battle_ctx.active_actor = 3;
+        world.actors[3].battle.active_target = 0;
+        let mut entries = vec![SpellEntry::default(); 0x100];
+        entries[0x6E].class = CAPTURE_CLASS;
+        entries[0x6E].sub_class = (955 - 935) as u8;
+        world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+            spell_names: Some(SpellNameTable::from_entries(entries)),
+            ..Default::default()
+        });
+        world.casting.module_phase = legaia_engine_cast::cast_module_ticks::KISS_OF_DEATH_ROLL_ARM;
+        world.rng_state = seed.wrapping_mul(0x9E37_79B9);
+        world
+            .run_cast_module_code(
+                0x6E,
+                legaia_engine_cast::cast_module_ticks::KISS_OF_DEATH_ROLL_ARM,
+            )
+            .expect("PROT 0955's Kiss of Death runs");
+        let fx = world.drain_battle_hit_fx();
+        if world.actors[0].battle.hp == 99 {
+            hits += 1;
+            assert_eq!(fx.len(), 1, "{fx:?}");
+            assert_eq!(
+                (fx[0].target_slot, fx[0].amount, fx[0].is_heal),
+                (0, 1, false)
+            );
+        } else {
+            misses += 1;
+            assert!(fx.is_empty(), "{fx:?}");
+        }
+    }
+    assert!(hits > 0 && misses > 0, "hits {hits} misses {misses}");
+}
