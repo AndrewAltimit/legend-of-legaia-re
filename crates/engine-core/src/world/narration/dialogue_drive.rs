@@ -624,8 +624,31 @@ impl World {
             // other target the port has no cursor for falls through to the
             // record's own word - the op has to land somewhere, and the
             // spin's timeout net covers the rest.
+            // A cross-context morph op on another placement (`CB <id> ..`
+            // arming its VDF lanes, and the `AB` / `AC` / `AD <id>` envelope
+            // bits `10..=15` of its `+0x62` once it carries a morph): the
+            // dispatcher prologue swaps the resolved actor into `s5`, so the
+            // arm writes the TARGET's lanes, gate and envelope word, and the
+            // ramp envelope that raises ADVANCE (`0x800`) reads them there.
+            // Run on the talk's stand-in, the lanes went nowhere and the
+            // `AD <id> 0B` spin waited on a bit nothing raises: `ropeway`'s
+            // ruins report (`P1[45]`) parked on its first page wait until
+            // the spin net ended it, with the player still on the vision
+            // seat and the record's `A3 F8 A2 DD` walk-back unrun.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4, the op-0x4B arm
+            // 0x801E0820..0x801E08C0), FUN_80020740, FUN_8003C83C
+            let morph_target = host
+                .world
+                .talk_morph_word_channel(&id.bytecode, id.pc)
+                .filter(|&ci| {
+                    let c = &host.world.field_vm.channels[ci];
+                    c.object_bind
+                        || Some(c.placement_index)
+                            != host.world.dialog.stepping_inline_npc.map(usize::from)
+                });
             let saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
+                .filter(|_| morph_target.is_none())
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
                     let hint = host.world.player_clip_frames_hint();
@@ -839,6 +862,8 @@ impl World {
                     }
                 }
                 r
+            } else if let Some(ci) = morph_target {
+                crate::world::npc_morph::step_channel_morph_op(&mut host, &mut id, ci)
             } else if let Some(slot) = reseat.or(actor_target).or(seat_target) {
                 host.world.dialog.stepping_inline_npc = None;
                 crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
@@ -1115,6 +1140,7 @@ impl World {
                     if (b & 0x7F) == 0x2D
                         && (id.fallback_segment_pc.is_none()
                             || bound.is_some()
+                            || morph_target.is_some()
                             || (npc_clip_bound
                                 && ext_target.is_none()
                                 && id.bytecode.get(final_pc + 1) == Some(&8))) =>

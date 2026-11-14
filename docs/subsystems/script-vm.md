@@ -1078,7 +1078,10 @@ bit 8 engages the target and a placed object's word is written too). `CC <id>
 A0` / `A1` read the target's words for the same reason: `retock` `P1[46]` raises
 bit 0 with `B1 0D 00` and tests it with `CC 0D A0 00 05 00`. A talker naming its
 own id keeps its own context, and bit 3 (the retire) and bit 10 (halt) stay off
-this route. Every placement leg holds later cross-context ops on that actor, a
+this route. A morph-word op is the last route: `CB <id> ..` arms the target's
+VDF lanes, and `AB` / `AC` / `AD <id>` on bits `10..=15` reach its envelope
+word, so a talk's `AD <id> 0B` waits on the ADVANCE the target's envelope
+raises ([field-ambient-fx.md](field-ambient-fx.md#a-record-that-drives-its-own-objects-morph)). Every placement leg holds later cross-context ops on that actor, a
 walk-kernel `motions` leg included; `B2 <id> 0A` is the op's one carve-out
 (`0x801DE90C..0x801DE944`).
 

@@ -1250,7 +1250,12 @@ pub(in crate::world) fn step_npc_word_op(
     slot: u8,
 ) -> FieldStepResult {
     let b = id.bytecode.get(id.pc).copied().unwrap_or(0);
-    if b & 0x7F == 0x2D && !host.world.npc_clip_cursor_bound(slot) {
+    if b & 0x7F == 0x2D
+        && !host.world.npc_clip_cursor_bound(slot)
+        && !host
+            .world
+            .placement_morph_spin(slot, id.bytecode.get(id.pc + 2).copied())
+    {
         return FieldStepResult::Advance { next_pc: id.pc + 3 };
     }
     let Some(ci) = host

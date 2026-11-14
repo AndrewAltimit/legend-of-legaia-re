@@ -642,6 +642,23 @@ before each slice and stores them back after it
 (`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
 `engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
 
+A talk drives another actor's morph the same way, by target byte. `ropeway`'s
+ruins report (`P1[45]`, the book in Octam's shrine) seats the player on the
+vision spot and pages four lines, each behind a morph of placement `42`
+(channel `0x40`): `CB 40 05 01 ..` arms five lanes, `B1 40 0C` raises the gate,
+`AC 40 0C` / `AB 40 0A` / `AC 40 0D` drop recycle and raise HOLD, and
+`AC 40 0B` / `AD 40 0B` waits for ADVANCE, which `FUN_80020740` raises when the
+last lane peaks under HOLD (`0x80020948..0x80020960`). Then it seats the player
+back at the bookcase (`A3 F8 A2 DD`) and hands the shot back. `jagaroom` `P1[8]`
+(placed object `0x12`) and `station` `P1[8]` (object `0x06`) are the same shape
+on a placed object. The talk runner steps these ops on the target's own channel
+context (`World::talk_morph_word_channel`), as the dispatcher prologue swaps the
+resolved actor into `s5`. Run on the talk's stand-in, no lanes were armed, the
+wait ran into the runner's spin net, and the player was left on the vision spot.
+Disc-gated `engine-session/tests/ropeway_ruins_report_disc.rs` pins the walk
+back; `talk_spin_net_census_disc.rs` runs every talk with a `2D` wait and lists
+any that reach the net.
+
 #### town0e's installer is a placed actor, not an effect actor
 
 The install op is the same one every other ambience uses - `0x34` sub-3

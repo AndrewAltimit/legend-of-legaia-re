@@ -14,10 +14,10 @@
 //!   eases off the shot. The port's latch used to freeze the follow camera
 //!   on it for the rest of the scene.
 //!
-//! `ropeway` P1[45] reaches the release the same way at present: the ride
-//! stages its shot, the runner's spin-park net ends the talk on the
-//! gondola's morph-lane wait (`AD 40 0B` at `+0x1F0`) before the ride's
-//! `45 C0 00 00`, and the follow camera used to stay on the ride shot.
+//! `ropeway` P1[45] (the shrine's ruins report) stages its vision shot and
+//! hands it back with `45 C0 00 00` once its four morph waits on placement
+//! `42` (`AD 40 0B`) have run; `ropeway_ruins_report_disc.rs` pins the walk
+//! back.
 //!
 //! The record list is the partition-1 rows of
 //! `engine-core/tests/field_camera_shot_census_disc.rs` (every placement
