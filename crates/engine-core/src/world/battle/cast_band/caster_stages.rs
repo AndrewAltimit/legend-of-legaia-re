@@ -970,8 +970,17 @@ impl World {
     }
 
     /// The module reported done: release the caster's park and stage idle
-    /// behind it. `true` when a [`CasterStageRun`] is now closing (the band
-    /// holds until the caster is back on idle).
+    /// behind the clip it still plays. The band does not wait for that clip:
+    /// retail leaves `0x70` on the pass the body reports done and the caster
+    /// plays its clip out, or is cut to idle, in the Done band. Recordings
+    /// hold Cort on clip `7` at cursor `264` as Mystic Circle's last arm ends
+    /// and on through `0x71` and `0x50`, Medusa parked on Glare's clip `8`
+    /// until `0x51`, and Gaza frozen at rate `0` after Neo Star Slash (arm 4's
+    /// `sb zero,0x21d` at `0x801F6F8C`; the Done band's restore
+    /// `FUN_801E93C8` runs the clip on). Held until the caster was back on
+    /// idle, the `0xFF` arm ran `15` to `45` ticks past retail's on six films
+    /// of the enemy set and the Done band's pan opened on another pose.
+    /// Always `false`: nothing is left for the band to wait on.
     fn close_caster_stages(&mut self) -> bool {
         let Some(run) = self.casting.caster_stages.as_mut() else {
             return false;
@@ -979,23 +988,13 @@ impl World {
         if run.phase != CasterStagePhase::Module || run.clips.is_empty() {
             return false;
         }
-        run.phase = CasterStagePhase::Closing;
         if let Some(a) = self.actors.get_mut(usize::from(run.slot)) {
             if let Some(p) = a.battle_animation.as_mut() {
                 p.release_loop_window();
             }
             a.battle.queued_anim = 0;
-            // A caster its module froze (`+0x21D = 0`, Neo Star Slash's arm
-            // 4 at `0x801F6F8C`) plays no clip out: retail's band leaves
-            // with it frozen (rate `0` through `0xFF`, `0x71` and `0x50` on
-            // a `gaza2_card_pre_neo_star_slash` recording) and the Done
-            // band's restore `FUN_801E93C8` runs the clip on to the idle
-            // staged here.
-            if a.battle.current_anim == 0 || a.battle.anim_rate.0 == 0 {
-                self.casting.caster_stages = None;
-                return false;
-            }
         }
-        true
+        self.casting.caster_stages = None;
+        false
     }
 }
