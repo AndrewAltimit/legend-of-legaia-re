@@ -441,6 +441,7 @@ impl World {
         // (`FUN_8003ED04`), which is what this models.
         self.audio.battle_xa_busy_frames = 0;
         self.audio.battle_xa_load_frames = 0;
+        self.audio.battle_xa_retail_left = 0;
         self.audio.battle_xa_frame_load = false;
         self.audio.battle_xa_poll_load = false;
         self.audio.battle_xa_cue_frame = None;

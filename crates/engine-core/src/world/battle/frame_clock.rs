@@ -3,6 +3,16 @@
 
 use super::*;
 
+/// Vsyncs a frame under a capture-band module's own line runs on the
+/// PCSX-Redux recordings: the median of the enemy casts' full-party step-`4`
+/// frames at the clamp in the band `0x70` (`3207` frames, `4` to `11`).
+const MODULE_LINE_FRAME_VSYNCS: u8 = 6;
+
+/// Action state `0x50`, the Done band's first pass.
+const DONE_CLEANUP_STATE: u8 = 0x50;
+/// Action state `0x51`, the HP-bar settle.
+const DONE_SETTLE_STATE: u8 = 0x51;
+
 impl World {
     /// The battle frame the current tick falls in
     /// ([`BattleFrameClock::frame_of`](legaia_engine_battle_loop::frame_clock::BattleFrameClock::frame_of) at `display_frames`).
@@ -173,6 +183,11 @@ impl World {
             _ => 0,
         };
         self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
+        // Retail's polls run the read tail past the span whatever the law.
+        self.audio.battle_xa_retail_left = self
+            .audio
+            .battle_xa_busy_frames
+            .saturating_add(XA_READ_TAIL_VSYNCS);
         // The drive word `0x8007BC20` holds `2` from the start (`0x8003D65C`)
         // until the stop `FUN_8003EE00` clears it once the read is done
         // (`0x8003EE2C`), not for the span alone: a `--watch` recording of
@@ -559,6 +574,29 @@ impl World {
         let Some(measured) = self.battle.pass_frame_cost_due.take() else {
             return;
         };
+        // A voice line's read span is vsyncs, and retail's frames under its
+        // polls run six to nine of them where the port's default law runs a
+        // loaded frame its step plus one. So the same line covers more of the
+        // port's passes, and a cast's line reached into its Done band: the
+        // HP-bar settle panned on step `4` where retail's runs `3` or `2`
+        // (`17` of the film recordings' `2144` full-party `0x51` frames read
+        // the clamp, in a handful of films whose line starts late in the
+        // action). The line's span is counted a second time on retail's
+        // frames ([`crate::world::AudioState::battle_xa_retail_left`]), and
+        // the Done band loads only what that count has left. The drive word
+        // keeps its own span, and the span law, whose frames run retail's
+        // length, needs no second count.
+        if !self.toggles.battle_frame_span_law
+            && matches!(
+                self.battle_ctx.action_state,
+                DONE_CLEANUP_STATE | DONE_SETTLE_STATE
+            )
+        {
+            self.audio.battle_xa_load_frames = self
+                .audio
+                .battle_xa_load_frames
+                .min(self.audio.battle_xa_retail_left);
+        }
         // `FUN_80016B6C` closes a pass by storing the step this frame's cost
         // reads, waits `VSync` on the one the pass ran at (`0x8001719C`) and
         // only then copies the new one across (`0x800171D8`): the frame this
@@ -578,6 +616,26 @@ impl World {
         // (`XA_POLL_COST_RATIO_MILLI`), arm or not.
         let step = self.battle.frame_clock.step;
         let law = self.toggles.battle_frame_span_law;
+        // The pass's share of the line on retail's frames: a frame the polls
+        // load runs its work under them (`frame_span` of
+        // `xa_loaded_frame_cost`), a capture-band module's line the
+        // recordings' median (`MODULE_LINE_FRAME_VSYNCS`), and the cue's own
+        // pass and the one after it their step.
+        if let Some(n) = self.battle_xa_passes_since_cue() {
+            use legaia_engine_battle_loop::frame_clock as fc;
+            let own = step.max(1);
+            let retail = if n < 2 {
+                own
+            } else if self.audio.battle_xa_poll_load {
+                fc::frame_span(fc::xa_loaded_frame_cost(self.battle.frame_work), own)
+            } else {
+                MODULE_LINE_FRAME_VSYNCS.max(own)
+            };
+            self.audio.battle_xa_retail_left = self
+                .audio
+                .battle_xa_retail_left
+                .saturating_sub(u16::from(retail));
+        }
         let extra = if !self.toggles.battle_party_cost_step
             || (law && self.battle.frame_stretch.is_some())
         {
@@ -2011,6 +2069,42 @@ mod tests {
         w.casting.module_phase = 1;
         w.seat_retail_rand_word();
         assert_eq!(w.rng_state, 21, "the band goes on from the flash's count");
+    }
+
+    /// A voice line that has run out on retail's frames loads no Done-band
+    /// frame, the settle runs the state's own cost and the drive word keeps
+    /// its span; a line cued late loads the band still.
+    #[test]
+    fn a_spent_voice_line_loads_no_done_band_frame() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, measured_frame_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_party_cost_step = true;
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+        w.party.party_count = 3;
+        w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
+        w.audio.battle_xa_frame_load = true;
+        w.battle_ctx.action_state = 0x2E;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_cost_step, 4, "the line loads a cast frame");
+        // The line has run out on retail's frames: the settle is not loaded.
+        w.audio.battle_xa_retail_left = 0;
+        w.battle_ctx.action_state = 0x51;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.audio.battle_xa_load_frames, 0);
+        assert_eq!(w.audio.battle_xa_busy_frames, 60);
+        assert_eq!(
+            w.battle.frame_cost_ring.newest(),
+            measured_frame_cost(3, 0x51)
+        );
+        // A line cued just ahead of the Done band still loads it.
+        w.audio.battle_xa_load_frames = 60;
+        w.audio.battle_xa_retail_left = 80;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.audio.battle_xa_load_frames, 60);
+        assert_eq!(w.battle.frame_cost_step, 4);
     }
 
     #[test]

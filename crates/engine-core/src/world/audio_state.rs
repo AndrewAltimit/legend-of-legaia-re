@@ -100,6 +100,12 @@ pub struct AudioState {
     /// (`frame_clock::XA_READ_TAIL_VSYNCS`). Counted down beside
     /// [`Self::battle_xa_busy_frames`], which keeps gating the drive.
     pub battle_xa_load_frames: u16,
+    /// Vsyncs of the loading clip's read span retail would still have left:
+    /// [`Self::battle_xa_load_frames`] counted on retail's frames, each
+    /// loaded pass taking the vsyncs its frame runs there rather than the
+    /// ticks the port's frame runs (`World::close_pass_frame_cost`). What the
+    /// line's load is cut to when the action reaches its Done band.
+    pub battle_xa_retail_left: u16,
     /// Whether the loading clip's frames cost their work under the polls'
     /// share (`frame_clock::xa_loaded_frame_cost`): a clip the cue funnel or
     /// the arts voice starts. A capture-band module's line loads the frame at
@@ -392,6 +398,7 @@ impl AudioState {
             battle_xa_busy_frames: 0,
             battle_xa_frame_load: false,
             battle_xa_load_frames: 0,
+            battle_xa_retail_left: 0,
             battle_xa_poll_load: false,
             battle_xa_cue_frame: None,
             battle_sfx_bank: None,
