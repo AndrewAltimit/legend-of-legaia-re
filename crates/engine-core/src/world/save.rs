@@ -132,6 +132,96 @@ impl World {
         }
     }
 
+    /// Put back equipment a shop's buy-and-equip misfiled, using the disc's
+    /// equipment table. See [`Self::repair_misfiled_equipment_with`]; a world
+    /// without the table changes nothing.
+    pub fn repair_misfiled_equipment(&mut self) -> usize {
+        let Some(table) = self.tables.equip_stats.clone() else {
+            return 0;
+        };
+        self.repair_misfiled_equipment_with(|id| {
+            (id != 0 && table.is_equipment(id))
+                .then(|| table.bonus(id))
+                .flatten()
+                .map(|b| b.slot())
+        })
+    }
+
+    /// Put back equipment a shop's buy-and-equip misfiled, and return how
+    /// many pieces moved. `category` is the disc slot category of an
+    /// equipment id (`None` for anything else).
+    ///
+    /// The shop's equip-now row once indexed the record's `+0x196` bytes in
+    /// the engine's slot order instead of the record's, so a save made by
+    /// such a build can hold **body armour on byte `2`** (Vahn's and Gala's
+    /// weapon byte, Noa's Ra-Seru byte) or **a weapon on byte `0`** (the body
+    /// armour byte). No retail writer produces either: the shop
+    /// (`FUN_801DB380`) and the Equip screen (`FUN_801E5A08`) both resolve
+    /// the byte from the piece's own class, so a record lifted from a retail
+    /// card never matches and loads untouched.
+    ///
+    /// A misfiled piece moves to its own byte when that byte is empty, else
+    /// to the bag; it stays where it is only when the bag has no room. The
+    /// byte it leaves is cleared, which for a weapon byte leaves the
+    /// character unarmed until the player re-equips - the weapon the bad buy
+    /// displaced is already in the bag. Noa's Ra-Seru byte takes back the
+    /// Ra-Seru stage the bad buy sent to the bag, where no stage ever
+    /// belongs.
+    pub fn repair_misfiled_equipment_with(
+        &mut self,
+        category: impl Fn(u8) -> Option<legaia_game_tables::equip_stats::EquipSlot>,
+    ) -> usize {
+        use legaia_engine_menus::equip_session::{
+            RETAIL_RASERU_EQUIP_BYTE, record_byte_for_category,
+        };
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
+        // Noa's Ra-Seru stage ids: the nine after Meta's (`0x01..=0x09`).
+        const TERRA_STAGES: std::ops::RangeInclusive<u8> = 0x0A..=0x12;
+        let mut moved = 0;
+        let party = &mut self.party;
+        let members = party.roster.members.iter_mut().take(3);
+        for ((ch, member), &ra_seru) in members.enumerate().zip(&RETAIL_RASERU_EQUIP_BYTE) {
+            let mut eq = member.equipment();
+            // Lift both misfiled pieces first, so a weapon and an armour
+            // sitting on each other's bytes simply trade places.
+            let mut lifted = Vec::new();
+            for (byte, wrong) in [(2usize, Disc::Body), (0, Disc::Weapon)] {
+                let id = eq.slots[byte];
+                if category(id) == Some(wrong) {
+                    eq.slots[byte] = 0;
+                    lifted.push((byte, wrong, id));
+                }
+            }
+            let lifted_here = !lifted.is_empty();
+            for (byte, wrong, id) in lifted {
+                let home = record_byte_for_category(wrong, ch as u8);
+                if eq.slots[home] == 0 {
+                    eq.slots[home] = id;
+                } else if !party.inventory.add(id, 1) {
+                    // No room in the bag: the piece stays where it was.
+                    eq.slots[byte] = id;
+                    continue;
+                }
+                moved += 1;
+            }
+            let ra_seru = ra_seru as usize;
+            if lifted_here && ra_seru == 2 && eq.slots[ra_seru] == 0 {
+                let stage = TERRA_STAGES
+                    .rev()
+                    .find(|s| category(*s).is_none() && party.inventory.contains_key(s));
+                if let Some(stage) = stage {
+                    party.inventory.remove(&stage);
+                    eq.slots[ra_seru] = stage;
+                }
+            }
+            member.set_equipment(eq);
+        }
+        if moved > 0 {
+            self.refresh_party_ability_bits();
+        }
+        moved
+    }
+
     /// Capture the world's current actor state back into a `Party`. The
     /// roster bytes are returned verbatim except for the HP / MP / max-HP
     /// fields, which are resynced from the live `BattleActor` mirrors so

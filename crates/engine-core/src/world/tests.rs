@@ -355,6 +355,7 @@ mod counterattack;
 mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;
+mod equipment_repair;
 mod expansion_arts;
 mod expansion_audio;
 mod expansion_battle;
