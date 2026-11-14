@@ -71,7 +71,19 @@ impl DevMenuWorldExt for DevMenuSession {
             return None;
         }
         let character = self.chars.character as usize;
-        let weapon_slots: Vec<i16> = vec![2; world.party.roster.members.len().max(4)];
+        // The destination is the staged item's equip class, not the row:
+        // the applier reads equip record `+7` through the item table
+        // (`0x801E5A58..0x801E5A8C`), and a weapon lands on the
+        // per-character byte of `0x8007B42C` (`0x801E5AC0..0x801E5AD8`).
+        self.equip_slot_bits = world
+            .tables
+            .equip_stats
+            .as_ref()
+            .and_then(|t| t.row_for_item(self.equip_item))
+            .map_or(0, |row| row.raw[7]);
+        let mut weapon_slots: Vec<i16> =
+            legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS.to_vec();
+        weapon_slots.resize(world.party.roster.members.len().max(4), 0);
         let member = world.party.roster.members.get_mut(character)?;
         let mut raw = std::mem::take(&mut member.raw);
         let mut host = WorldEquipHost {
@@ -164,6 +176,55 @@ mod tests {
         // Other edges leave it alone.
         s.tick_host(&mut w, &mut cam, PACK_CROSS, 0);
         assert!(cam.zone.follow_enabled);
+    }
+
+    /// The `EQUIP` row's confirm lands each item on the equip byte its class
+    /// names - body `0`, head `1`, the character's weapon byte (`2`, `3`,
+    /// `2`), footwear `4` - as `FUN_801E5A08` resolves it from the equipment
+    /// table, whatever row the menu confirmed on.
+    #[test]
+    fn the_equip_row_lands_an_item_on_its_class_slot() {
+        use legaia_game_tables::equip_stats::EquipStatTable;
+        const EQUIP_BASE: usize = 0x196;
+        let mut w = legaia_engine_core::world::World::new();
+        w.set_equip_stats(EquipStatTable::from_entries(&[
+            (0x10, [0, 0, 0, 0, 0, 0, 0, 0x00]),
+            (0x11, [0, 0, 0, 0, 0, 0, 0, 0x20]),
+            (0x12, [0, 0, 0, 0, 0, 0, 0, 0x40]),
+            (0x13, [0, 0, 0, 0, 0, 0, 0, 0x60]),
+        ]));
+        while w.party.roster.members.len() < 3 {
+            w.party
+                .roster
+                .members
+                .push(legaia_save::CharacterRecord::zeroed());
+        }
+        let mut cam = legaia_engine_field::camera::Camera::default();
+        for (character, item, slot) in [
+            (0u8, 0x10u8, 0usize),
+            (0, 0x11, 1),
+            (0, 0x12, 2),
+            (1, 0x12, 3),
+            (2, 0x12, 2),
+            (0, 0x13, 4),
+        ] {
+            for m in &mut w.party.roster.members {
+                m.raw[EQUIP_BASE..EQUIP_BASE + 8].fill(0);
+            }
+            w.party.inventory.insert(item, 1);
+            let mut s = DevMenuSession::new();
+            s.select(DevMenuRow::Equip);
+            s.equip_item = item;
+            s.chars.character = character.into();
+            let out = s.tick_host(&mut w, &mut cam, PACK_CROSS, 0);
+            assert!(
+                matches!(out, Some(Some(_))),
+                "item {item:#x} commits on character {character}: {out:?}"
+            );
+            let raw = &w.party.roster.members[character as usize].raw;
+            let worn: Vec<usize> = (0..8).filter(|&i| raw[EQUIP_BASE + i] == item).collect();
+            assert_eq!(worn, vec![slot], "item {item:#x} character {character}");
+        }
     }
 
     /// `tick_host` loads the world's published region box into the readout.

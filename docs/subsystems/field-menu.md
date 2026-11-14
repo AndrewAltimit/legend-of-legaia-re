@@ -1933,6 +1933,10 @@ its `j` targets print correctly - see
   `engine-dev-menu::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
   `world_map_overlay::resolve_equip_slot`, staging the record's `+0x196`
   window in retail order; `retail_destination_slot` exposes the routing.
+- **Developer-menu `EQUIP` row**: `DevMenuWorldExt::tick_host` hands the same
+  body the staged item's equip record `+7` (`EquipStatTable::row_for_item`,
+  the applier's own unguarded read through item byte `+1`) and the weapon
+  bytes `2, 3, 2`, so the item lands on its class's byte.
 - **Candidate lists**: Goods slots use
   `menu_list_rows::{goods_candidate_accepts, build_goods_candidate_rows}` with
   ids indexed by `equipment::DiscEquipInfo::install_goods`, and take the

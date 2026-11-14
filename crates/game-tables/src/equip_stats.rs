@@ -329,6 +329,18 @@ impl EquipStatTable {
             .copied()
     }
 
+    /// The record the item's table byte `+1` indexes, whatever its kind.
+    ///
+    /// Retail's equip applier `FUN_801E5A08` reads its destination class this
+    /// way (`lbu v0,0x1(v0)` at `0x801E5A70`, then `+7` of that row at
+    /// `0x801E5A80`) with no kind test ahead of it, so an id that is not
+    /// equipment still resolves a row. `None` only past the parsed rows.
+    pub fn row_for_item(&self, id: u8) -> Option<EquipBonus> {
+        self.bonuses
+            .get(self.bonus_index[id as usize] as usize)
+            .copied()
+    }
+
     /// Number of bonus records parsed.
     pub fn record_count(&self) -> usize {
         self.bonuses.len()
