@@ -127,6 +127,7 @@ Flags worth knowing:
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
+| `--no-cast-rand` | Engine: a spell film enters the cast on the replay's own `rand()` stream instead of the default seat on retail's word under the cast's begin key ([below](#the-cast-begin-seat)) |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
 | `LEGAIA_SEAT_DRIVE_SEEK=<vsyncs>` (engine child) | Every seek of the cast drive takes this many vsyncs in place of the modelled law; the driver passes `2` ([the drive seek seat](#the-drive-seek-seat)) |
@@ -781,6 +782,37 @@ step drop and the ring's one-pass lag were found
 ([the frame step](../subsystems/battle-stage-camera.md#what-the-ring-holds));
 with both in, the draws hold word for word through `0x34` and part at the
 module's CD-seek hold.
+
+### The cast-begin seat
+
+A spell film (`--spell`, not `--physical`) seats the stream by default: the driver
+takes the key of retail's row on the cast's begin (`done.txt`'s `cast` vsync, the key
+the engine recording opens on) and passes retail's word there as `--rand-at` would
+(`LEGAIA_CAST_RAND_SEED`). The replay reaches the cast through rounds of its own, so
+without it the stream enters the cast on another word and a module that draws its
+look, Earthquake's rocks or a ray fan, plays another pattern every time.
+`--no-cast-rand` leaves the replay's stream, and `--rand-at` / `--rand-track`
+replace the seat. A `--physical` film keeps the state's own word
+(`LEGAIA_FILM_RAND`) or its strike deal. A harness seat.
+
+On the enemy cast set, of the films measured both ways none falls: Rock Lizard's
+Earthquake `.786` to `.950` (its rocks now fall on retail's draws), Jewel Beam
+`.933` to `.941`, Vacuum Slicer `.980` to `.986`; over the Seru set from `.9279` to `.9303` plain and
+`.9407` to `.9572` on `--retail-steps`, every cue score unchanged at `1.000`
+(Odd Dimension `.860` to `.984`, Iota `.875` to `.987`, Ozma `.773` to `.881` on
+the steps; `sA0` `.771` to `.843` plain).
+
+The films that fall do so by a draw or two, and the seat is not their cause. Counted
+from the seated word, `s85`'s draws match retail's through `0x32` and stand one
+ahead from `0x33` on: retail's summon invoke ran `7` passes there and the engine's
+`8`. That state waits on the drive's read, which runs on the wall clock
+(`SUMMON_INVOKE_DRIVE_VSYNCS`, [state `0x32`](../subsystems/battle-action.md#state-0x32---summon---invoke)), so
+retail's pass count varies by recording (`s93`'s ran `8` and its draws stay word for
+word through arm 9). From there the module plays retail's stream one word late, which
+can match its pattern worse than a stream no closer to it: `s85` `.952` to `.943`
+plain, `.975` to `.968` on the steps; `s92` `.985` to `.978` on the steps. On the
+plain seat the lone-caster films also part at the module's CD-seek hold (`s85`'s
+arm 3 draws `117` in retail and `101` in the engine), as noted above.
 
 `--rand-track` seats the summon flash `0x34` too, on phase `0`. The pass that leaves
 the flash opens in it and runs the module's arm 0 in the same pass, and a verdict

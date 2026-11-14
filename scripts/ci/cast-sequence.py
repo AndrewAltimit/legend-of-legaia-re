@@ -615,6 +615,19 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
     return None if seed is None else f"{st7}:{phase}:{seed}"
 
 
+def retail_cast_begin_key(out: Path, done: dict) -> str | None:
+    """`st7:phase` of the retail row on the cast's begin (`done.txt`'s
+    `cast` vsync), the key the engine recording opens on."""
+    cast = int(done.get("cast", "-1"))
+    if cast < 0:
+        return None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if int(r["vsync"]) >= cast:
+                return f"{int(r['st7'])}:{int(r['phase'])}"
+    return None
+
+
 def record_key(exe: str, env: dict, args: list[str]) -> str:
     """What an engine recording is a function of: the binary's bytes, the
     child's `LEGAIA_*` environment and arguments, the contents of every file
@@ -995,6 +1008,14 @@ def run_engine(a, out: Path) -> bool:
     if (a.physical and not (a.rand_at or a.rand_track or a.no_state_rand or a.strike_deal)
             and (w := state_rand_word(out)) is not None):
         env["LEGAIA_FILM_RAND"] = str(w)
+    # A spell film enters the cast on the replay's own stream, whose draws
+    # before the cast are not retail's: seat retail's word on the cast's
+    # begin key unless another rand seat or `--no-cast-rand` says otherwise.
+    # A harness seat (docs/tooling/cast-sequence-oracle.md, the rand stream).
+    if (not a.physical and not (a.rand_at or a.rand_track or a.no_cast_rand)
+            and (key := retail_cast_begin_key(out, done)) is not None
+            and (seed := retail_rand_seed(out, key)) is not None):
+        env["LEGAIA_CAST_RAND_SEED"] = seed
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -1225,6 +1246,9 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--no-cast-rand", action="store_true",
+                    help="engine: a spell film enters the cast on the replay's own rand() stream, not on "
+                         "retail's word under the cast's begin key (the default seat, LEGAIA_CAST_RAND_SEED)")
     ap.add_argument("--rand-track", action="store_true",
                     help="engine: seat every module-band pass on the rand() word retail's frame before it "
                          "ended on (a harness seat: an arm that draws each pass, such as Earthquake's "
