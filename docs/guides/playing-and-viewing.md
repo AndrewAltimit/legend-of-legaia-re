@@ -397,8 +397,9 @@ started; the *Saves folder* button opens it. Right-click or `Shift+Enter` on tha
 button (Triangle on a controller), or dropping the file on the window, picks
 a memory card from another emulator (`.mcr`, `.mcd`, `.srm`, DexDrive `.gme`,
 single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
-through the game's own reader, says how many Legend of Legaia saves it holds,
-remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
+through the game's own reader, says how many Legend of Legaia saves it holds
+(the disc card's first line keeps naming the card and its save count while it
+is mounted), remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
 those saves load and save in place - what the browser play page's card import
 does. `Delete` on the button removes it. The last few cards are remembered
 too (`recent_cards`): the same right-click steps through those that still

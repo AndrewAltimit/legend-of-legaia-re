@@ -2635,6 +2635,21 @@ impl LauncherApp {
         let tx = card.x + 10 + c.width("Disc") + 10;
         c.text(tx, card.y + 6, &head, accent);
         let inner = card.x + card.w - 8 - tx;
+        // The mounted memory card, at the end of the headline: the main
+        // screen said nothing of it, so whether the next game would see the
+        // emulator's saves took a trip to *Saves folder* or *Recent*.
+        if let Some((badge, ink)) = card_badge(self.card.as_ref()) {
+            let room = inner - c.width(&head) - 16;
+            if room >= c.width(CARD_BADGE_MIN) {
+                let shown = c.ellipsize_middle(&badge, room);
+                c.text(
+                    card.x + card.w - 8 - c.width(&shown),
+                    card.y + 6,
+                    &shown,
+                    ink,
+                );
+            }
+        }
         let (line, ink) = if !self.typed.is_empty() {
             (format!("Path: {}_", self.typed), GOLD)
         } else if let Some(d) = self.disc.as_ref().or(self.found_disc.as_ref()) {
@@ -3867,6 +3882,30 @@ fn card_summary(info: &launcher::CardInfo) -> String {
 /// The advice under a memory card that would not mount.
 const CARD_FIX: &str = "Choose a .mcr, .mcd, .gme or .mcs card (Shift+Enter), or Delete.";
 
+/// The narrowest the disc card's memory-card note is worth drawing.
+const CARD_BADGE_MIN: &str = "Card 2: a...b.mcr";
+
+/// The disc card's note of the mounted memory card and its ink: the file's
+/// name and how many saves the game will list, or that it cannot be read.
+/// `None` with no card mounted.
+fn card_badge(card: Option<&Result<launcher::CardInfo, String>>) -> Option<(String, Role)> {
+    match card? {
+        Ok(info) => {
+            let name = info
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let saves = match info.saves {
+                1 => "1 save".to_string(),
+                n => format!("{n} saves"),
+            };
+            Some((format!("Card 2: {name}, {saves}"), DIM))
+        }
+        Err(_) => Some(("Card 2 cannot be read".to_string(), WARN)),
+    }
+}
+
 /// *Saves folder*'s help: the game's own card is in that folder; an
 /// emulator card can ride beside it as card 2 (`--card`).
 ///
@@ -4566,6 +4605,40 @@ mod tests {
                 "{row:?}: a glyph of the row above lies under the band"
             );
         }
+    }
+
+    #[test]
+    fn the_disc_card_names_the_mounted_memory_card() {
+        assert_eq!(card_badge(None), None);
+        let info = |saves| launcher::CardInfo {
+            path: PathBuf::from("/cards/epsxe000.mcr"),
+            format: "mcr",
+            saves,
+        };
+        assert_eq!(
+            card_badge(Some(&Ok(info(1)))),
+            Some(("Card 2: epsxe000.mcr, 1 save".to_string(), DIM))
+        );
+        assert_eq!(
+            card_badge(Some(&Ok(info(3)))).unwrap().0,
+            "Card 2: epsxe000.mcr, 3 saves"
+        );
+        assert_eq!(
+            card_badge(Some(&Err("no".into()))),
+            Some(("Card 2 cannot be read".to_string(), WARN))
+        );
+        // The note is drawn on the disc card's headline, right of it.
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.card = Some(Ok(info(2)));
+        let font = legaia_font::Font::placeholder();
+        let count = |app: &LauncherApp| {
+            let mut c = canvas(&font);
+            app.layout(&mut c, &mut Vec::new());
+            c.draws.len()
+        };
+        let with = count(&app);
+        app.card = None;
+        assert!(with > count(&app), "the note adds its glyphs");
     }
 
     /// Dark-on-gold text takes its glyphs from the shadowless copy of the
