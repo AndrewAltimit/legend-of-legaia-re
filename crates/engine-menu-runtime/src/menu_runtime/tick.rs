@@ -76,7 +76,7 @@ impl MenuRuntime {
             // `FUN_801DB7F4` case 4: `_DAT_800846D0 | _DAT_800846D4` - the
             // confirm and cancel masks - then SFX `0x20` and sub-screen
             // `0x1B`. Nothing else on the pad dismisses it.
-            if input.cross || input.circle || input.triangle {
+            if input.cross || input.cancel() {
                 self.point_card_toast = None;
                 self.ui_cue = Some(legaia_engine_menus::shop_cues::POINT_CARD_DISMISS_CUE);
             }

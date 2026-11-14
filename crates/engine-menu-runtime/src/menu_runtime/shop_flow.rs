@@ -21,7 +21,7 @@ impl MenuRuntime {
         };
         let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
-            input.circle || input.triangle,
+            input.cancel(),
             input.up,
             input.down,
         );
@@ -348,7 +348,7 @@ impl MenuRuntime {
         // the other axis.
         let buttons = legaia_engine_system::menu_input::NavButtons::new(
             input.cross,
-            input.circle || input.triangle,
+            input.cancel(),
             input.up,
             input.down,
         );

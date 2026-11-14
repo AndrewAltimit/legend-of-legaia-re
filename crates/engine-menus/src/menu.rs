@@ -202,7 +202,7 @@ pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
     }
 }
 
-/// Where a Triangle (cancel / back) routes the state machine. Multi-step
+/// Where a cancel (Circle, or Triangle) routes the state machine. Multi-step
 /// flows back up one screen; status sub-screens return to the status
 /// top-level; top-of-flow screens close the menu. Routing to
 /// [`MenuState::Closing`] also fires [`MenuHost::cancel`] so the engine
@@ -246,6 +246,15 @@ fn is_transient(state: MenuState) -> bool {
 /// Menu input - narrowed to the buttons the menu screens read. The full
 /// PSX pad has more, but the menu only checks Cross / Circle / Triangle /
 /// Square + the d-pad.
+///
+/// **Circle is cancel.** Retail's menus test the pad edge against two mask
+/// words the new-game init seeds (`FUN_80034A6C`, `0x80034A9C..0x80034AA8`):
+/// confirm `0x800846D0 = 0x44` (Cross | L1) and cancel `0x800846D4 = 0x21`
+/// (Circle | L2). The shop's lists read the cancel word in the list kernel
+/// (`FUN_80032A44`, `0x80032D5C..0x80032D74`) and its pickers in
+/// `FUN_801D688C`. Triangle is not in either word - it is the field's
+/// open-the-menu button - and [`step`] takes it as a second cancel, an
+/// engine convenience retail does not have.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MenuInput {
     pub cross: bool,
@@ -256,6 +265,16 @@ pub struct MenuInput {
     pub down: bool,
     pub left: bool,
     pub right: bool,
+}
+
+impl MenuInput {
+    /// A cancel press: Circle (retail's cancel mask) or Triangle (the
+    /// engine's second cancel). Every screen that backs out and every cue
+    /// that sounds a cancel reads this one predicate, so the two cannot
+    /// disagree about which button it was.
+    pub fn cancel(self) -> bool {
+        self.circle || self.triangle
+    }
 }
 
 /// Menu execution context. Holds per-frame state the state machine reads
@@ -301,7 +320,7 @@ pub trait MenuHost {
         None
     }
 
-    /// Called when [`step`] decides the menu should close (Triangle in
+    /// Called when [`step`] decides the menu should close (a cancel in
     /// most states). Default: no-op - the VM still transitions to
     /// [`MenuState::Closing`] regardless.
     fn cancel(&mut self) {}
@@ -336,7 +355,8 @@ pub trait MenuHost {
 /// (`is_transient`) fire their one-shot side effect on entry, hold, then
 /// auto-advance. Every other (interactive) screen advances the cursor on
 /// the d-pad, commits on Cross - then routes forward via [`commit_route`] -
-/// and on Triangle routes back via [`back_route`].
+/// and on a cancel ([`MenuInput::cancel`]: Circle, or Triangle) routes back
+/// via [`back_route`].
 pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuInput) -> u8 {
     ctx.frame = ctx.frame.wrapping_add(1);
     let state = MenuState::from_byte(ctx.state);
@@ -382,7 +402,7 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
             }
         }
         // Interactive screens: advance cursor on d-pad, commit on Cross
-        // (then route forward), back up on Triangle. The `screen_item_count`
+        // (then route forward), back up on a cancel. The `screen_item_count`
         // hook clamps wrap-around per-screen.
         Some(s) => {
             let count = host.screen_item_count(s).max(1);
@@ -405,7 +425,7 @@ pub fn step<H: MenuHost + ?Sized>(host: &mut H, ctx: &mut MenuCtx, input: MenuIn
                     ctx.frame = 0;
                     ctx.cursor = 0;
                 }
-            } else if input.triangle {
+            } else if input.cancel() {
                 let next = back_route(s);
                 if next == MenuState::Closing {
                     host.cancel();

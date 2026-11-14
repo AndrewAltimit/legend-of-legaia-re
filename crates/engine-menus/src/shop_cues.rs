@@ -76,7 +76,7 @@ pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: boo
             MENU_CONFIRM_CUE
         });
     }
-    if input.circle || input.triangle {
+    if input.cancel() {
         return Some(MENU_CANCEL_CUE);
     }
     moved.then_some(MENU_CURSOR_CUE)
