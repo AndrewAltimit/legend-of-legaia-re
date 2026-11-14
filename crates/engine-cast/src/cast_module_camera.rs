@@ -693,6 +693,11 @@ pub enum SpawnAnchor {
     /// 0x801F7980`) and stores `creature[+0x46] + 0x800` as the yaw
     /// (`0x801F7984..0x801F7998`).
     ShotPointFacing { y: i16, yaw: i16 },
+    /// [`Self::ShotPointFacing`] turned to `yaw` **less** the creature's
+    /// facing: PROT 0919 arm 7 stores `0x800 - creature[+0x46]` as its shot's
+    /// yaw (`0x801F7DF8..0x801F7E14`) and hands that same angle trio to its
+    /// spawns, adding `0x400` after the second (`0x801F7E78..0x801F7E88`).
+    ShotPointAgainstFacing { y: i16, yaw: i16 },
     /// A point at a literal `x` and `y` on the creature's live `z`: PROT 0917's
     /// arm `0xB` stands its records on `z = -2 * word` (`0x801F7998..0x801F79B8`),
     /// the word arm 5 took off the victim's height and arm 6 walked the creature
@@ -873,6 +878,14 @@ pub fn spawn_anchor_point_with(
                 [0, f.wrapping_add(yaw), 0],
             )
         }
+        SpawnAnchor::ShotPointAgainstFacing { y, yaw } => {
+            let s = shot?;
+            let f = creature.map_or(0, |c| c.facing as i16);
+            (
+                [s.focus[0].wrapping_neg(), y, s.focus[2].wrapping_neg()],
+                [0, yaw.wrapping_sub(f), 0],
+            )
+        }
         SpawnAnchor::PartySeat(n) => seat_at((*seats.party.get(usize::from(n))?)?),
         SpawnAnchor::CasterRing { index, count, div } => {
             let c = seats.caster?;
@@ -1026,7 +1039,7 @@ pub fn spawn_anchor_scale(
         }
         // The tween builder rewrites the shot's stack TR z in place
         // (`(z << 8) / 0xA0`, `FUN_801D829C`) before the call reads it back.
-        SpawnAnchor::ShotPointFacing { .. } => shot
+        SpawnAnchor::ShotPointFacing { .. } | SpawnAnchor::ShotPointAgainstFacing { .. } => shot
             .map(|s| s.tr[2])
             .filter(|&z| z > 0)
             .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
