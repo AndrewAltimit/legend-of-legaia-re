@@ -860,8 +860,8 @@ pub const DEAD_END_CRISIS_COUNTDOWN: u32 = 0x801F_82E4;
 /// | arm | camera |
 /// |---|---|
 /// | 0 (`0x801F6AC0`) | cut: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, h, depth)`, `h` `0x800` in `0xB5`, else `0x200` |
-/// | 1 (`0x801F6C8C`) | drift: TR z `+s`, TR y `-s/4`, pitch `+s/8` (`s = scalar * delta`); passing, `0xB5`: pitch `-0x70`, yaw `0x800 - facing`, TR `(0, 0xA20, depth - 0x280)`; else pitch `-0x80`, yaw `0x980 - facing`, TR `(0x200, 0x300, depth)` |
-/// | 2 (`0x801F6E78`) | drift in `0xB5` only: TR y `+delta`, pitch `+delta`, TR z `+s`; passing: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0xA00, depth + 0x400)` in `0xB5`, else `(0, 0x600, depth)` |
+/// | 1 (`0x801F6C8C`) | drift: TR z `+s`, TR y `-s/4`, pitch `+s/8` (`s = scalar * delta`); passing, `0xB5`: the caster's rate `3`, pitch `-0x70`, yaw `0x800 - facing`, TR `(0, 0xA20, depth - 0x280)`; else pitch `-0x80`, yaw `0x980 - facing`, TR `(0x200, 0x300, depth)` |
+/// | 2 (`0x801F6E78`) | drift in `0xB5` only: TR y `+delta`, pitch `+delta`, TR z `+s`, the caster's rate `3`; passing: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0xA00, depth + 0x400)` in `0xB5`, else `(0, 0x600, depth)` |
 /// | 3 (`0x801F7098`) | drift: TR z `+3s`, TR y `-s`, pitch `+s/8` |
 /// | 5 (`0x801F7520`) | passing with a party seat standing: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x800, depth)` |
 /// | 6 (`0x801F7780`) | drift: TR z `+s` |
@@ -950,6 +950,15 @@ pub fn dead_end_crisis_camera(
         4 | 5 => Some(2),
         _ => None,
     };
+    // The evolved Cort's own rate `+0x21D = 3` (`li s3,0x3` at `0x801F6A1C`):
+    // stored beside the clip `6` arm 1 stages as it passes in the `0xB5`
+    // formation (`sb v0,0x1da(s2)` / `sb s3,0x21d(s2)` at
+    // `0x801F6D58..0x801F6D5C`) and again on every pass of arm 2, ahead of
+    // its gate (`0x801F6ED4`), so the clip plays at three eighths of its
+    // speed through the low shot. The other formation's branch
+    // (`0x801F6DDC`) bumps the stage and stores no rate.
+    let caster_rate =
+        (b5 && (phase == 2 || (phase == 1 && !hold))).then_some(FINAL_CRISIS_CASTER_RATE);
     CaptureCamArm {
         shot: if hold { None } else { shot },
         drift,
@@ -959,9 +968,17 @@ pub fn dead_end_crisis_camera(
             rate: party_rate,
             ..Default::default()
         },
+        caster_write: CaptureSeatWrite {
+            rate: caster_rate,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
+
+/// The anim rate PROT 0961 holds the evolved Cort's staged clip `6` at
+/// ([`dead_end_crisis_camera`], arms 1 and 2 of the `0xB5` formation).
+pub const FINAL_CRISIS_CASTER_RATE: u8 = 3;
 
 /// PROT 0961's terminal arm.
 const DEAD_END_CRISIS_DONE: u8 = 0xFF;
