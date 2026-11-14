@@ -111,6 +111,9 @@ impl LegaiaRuntime {
                             break;
                         }
                         edge = 0;
+                        // The scheduler steps under every host-held screen,
+                        // as the window's `tick_menu_sfx` does.
+                        self.play_tick_overlay_sfx();
                         self.tick_field_party_hud();
                         continue;
                     }
@@ -136,8 +139,14 @@ impl LegaiaRuntime {
                         {
                             session.count_play_tick();
                         }
-                        self.tick_field_party_hud();
+                        // The world's frame tail is skipped, and with it the
+                        // tick's audio frame: a cue still on the scheduler
+                        // when the party fell matures here, as it does under
+                        // the window's hold (`tick_menu_sfx`), and not over
+                        // whatever the title starts.
                         let picked = self.game_over_input(if g == s { edge } else { 0 });
+                        self.play_tick_overlay_sfx();
+                        self.tick_field_party_hud();
                         if picked == "quit" {
                             // The battle score must not outlive the battle: the
                             // title card plays the title theme (the native

@@ -687,6 +687,15 @@ impl LegaiaRuntime {
         self.scene_host.session()
     }
 
+    /// [`Self::debug_session`], mutable: a native test seats the same state
+    /// on this host and on the window (a raised party wipe, a queued cue)
+    /// ahead of the frames it compares. Not a wasm export.
+    pub fn debug_session_mut(
+        &mut self,
+    ) -> Option<&mut legaia_engine_session::BootSession<legaia_engine_audio::TestAudioSink>> {
+        self.scene_host.session_mut()
+    }
+
     /// The page's menu-overlay screen (shop, prize exchange, inn) - read-only,
     /// for the same native tests. Not a wasm export.
     pub fn debug_menu_runtime(&self) -> &legaia_engine_menu_runtime::menu_runtime::MenuRuntime {

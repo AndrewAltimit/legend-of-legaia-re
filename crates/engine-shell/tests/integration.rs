@@ -28,6 +28,7 @@ mod field_walk_host_parity;
 mod full_game_ladder;
 mod gte_sin_lut_real;
 mod host_frame_parity;
+mod host_screen_sfx_host_parity;
 mod host_vram_parity;
 mod menu_replay;
 mod menu_window_dispatch_real;
