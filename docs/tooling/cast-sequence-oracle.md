@@ -1277,20 +1277,43 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the still's command carries where the
   two part), not on the displayed frame's ground the still stands a walker on.
   The film runs on from the gate on the RAM's clip cursors, so a walker seated on
-  its ring slot two passes back starts that far back along its walk. A walk
-  whose live pair is cut back at each loop end (the end-of-clip step) then
-  reaches the cut on another pass than retail's, commits its strike clip from
+  its ring slot two passes back starts that far back along its walk. A walker in
+  the strike loop stands at the edge of its reach: each in-range pass the
+  back-off steps it `12` units back (`0x80047C3C..0x80047D1C`), and the pass that
+  carries it out of reach lets the walk's root motion (`+0x0C`) step it forward
+  again, `60` units on Mad Ogre's and Warman's walks (speed `20` at step `3`, less
+  that pass's back-off). Seated another pass along, a walk takes that forward step on another pass than retail's,
+  commits its strike clip from
   another pair, and its hits push the target along another heading, which every
   later re-face and the case-7 yaw inherit. `battle_nilboa_gi_delilas_strike`
   seated `384` against the RAM's `204` and ended its film `42` yaw units off
   retail's; on the RAM's pair it tracks retail's walk pass for pass. A harness
   seat. Over the strike set (with the four lowest strike stills added) the mean
   `within` goes from `.966` to `.969`: Gi Delilas `.874` to `.962`, Mad Mantis
-  `.919` to `.981`, Warhalf `.937` to `.969`, Twin Tomb `.943` to `.965`, and
-  Warman `.975` to `.955`: on the RAM's pair its walk runs retail's passes
-  but commits the strike clip one pass early, without the loop-end step
-  retail's last walk pass takes, and so strikes from `(130, 335)` where
-  retail's does from `(136, 325)`.
+  `.919` to `.981`, Warhalf `.937` to `.969`, Twin Tomb `.943` to `.965`.
+  The acting body's clip and cursor come off the state's own RAM too (its anim
+  node's `+0x68`); a recording whose state the driver cannot read falls back to
+  the recording's first row, a pass later. `battle_tunnelb_warman_strike` seated
+  so stood on `192` against the RAM's `168`, reached its walk's natural end a
+  pass early and struck from `(130, 335)` where retail's strikes from
+  `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Walk phase.** A monster saved in the strike loop still on its walk
+  (`battle_map02_mad_ogre_strike`, `+0x1DC = 3` with its swing staged) holds the
+  swing until the walk's natural end: the arrival stages idle under bit 0
+  (`0x801E35BC..0x801E35C8`), the loop its swing under bit 1 (`0x801E3758`),
+  and a walk entry carrying the `+0x76` lock refuses both cuts
+  (`0x80047940..0x80047948`), so whatever is staged at the natural end
+  commits there (`0x80047B54`). Which byte that is follows where the walk's
+  cycle stood at the arrival. The replay walks from its own commit, and placed
+  on distance alone its Ogre arrived on its walk's last pass: idle committed
+  with the arrival, the swing a pass later, before the gate, where retail's
+  walked ten more passes with the swing staged and the cursor seat found no
+  walk to land on (`.817`). The approach seat now stands the walk's cursor
+  too, at the first walk step, where it reaches the RAM's cursor on the pass
+  the counter reaches the capture's (`CaptureApproach::walk_phase`,
+  `World::seat_capture_walk_phase`; a cycle is whole passes, since the
+  re-commit zeroes the cursor at `0x8004B068`). The Ogre arrives with
+  `+0x1DC = 3`, walks retail's ten passes and reads `.992`. A harness seat.
 
 A heal's state stands in the Spirit / Item flow (`0x3C..=0x40`, the harvester saves it at
 `0x3E`), which the probe also takes as the recording's start: before it did, a

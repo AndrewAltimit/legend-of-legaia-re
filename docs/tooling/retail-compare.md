@@ -1760,8 +1760,27 @@ So a monster-melee capture also places the walk's start (`BattleState::capture_a
 | arrival reading | harness | the capture's counter less the passes since the walk ended: the accumulator dates the strike clip the capture sits in (`8 * step` a framing call), plus the arrival pass and the loop's first |
 | seed `0x0C` | `World::stand_capture_attacker_off_reach` | stands the attacker on the ray, back by the tag-`1` walk entry's speed (`FUN_80050E2C`'s fallback at `0x801E32B0`; `speed * scale / 8` a vsync) times the counter units to arrival, so the bystanders' make-way at `0x14` reads its path and `0x14`'s in-reach shortcut (`0x801E320C`) cannot skip the walk |
 | first walk step | `World::seat_capture_approach_start` | re-seats it on the ray from the counter it walks off, now that the playing clip's speed is known |
+| walk phase | `World::seat_capture_walk_phase` | on a capture still on its walk, stands the walk's cursor where it reaches the RAM's on the capture's counter ([the walk phase](#the-walk-phase)) |
 
 Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
+
+#### The walk phase
+
+A capture still on its walk in `0x1E` holds its swing staged behind the walk (`+0x1DC =
+3`): the arrival staged idle under bit 0 (`0x801E35BC..0x801E35C8`), the loop its swing
+under bit 1 (`0x801E3758`), and a walk entry carrying the `+0x76` lock refuses both cuts
+(`0x80047940..0x80047948`), so the walk's natural end commits whatever is staged
+(`0x80047B54`). Where the walk's cycle stands at the arrival therefore decides the
+swing's pass, and the counter alone does not place it: the replay's walk runs from its
+own commit. `battle_map02_mad_ogre_strike`'s replay arrived on its walk's last pass,
+committed idle with the arrival and its swing a pass later, before the gate, where
+retail's Ogre walks ten more passes with the swing staged. So the first walk step also
+stands the walk's cursor where, a pass at a time, it reaches the RAM's node cursor
+(`RetailBattle::caster_cursor`) on the pass the counter reaches the capture's
+(`CaptureApproach::walk_phase`, the `:yaw:cursor` tail of `LEGAIA_BATTLE_APPROACH_YAW`).
+A cycle is whole passes: the re-commit zeroes the cursor (`sh zero,0x68` at
+`0x8004B068`), so Mad Ogre's `320`-sixteenth walk at `24` a pass cycles on `336`. A
+harness seat.
 
 Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
 A walk-clip capture saved on the arrival itself, the cursor `ctx[+0x15]` still `0`, is the exception (`ActionSteer::arrival`): the poll `0x19` has just stored `0x1E` with idle staged, and a one-swing stream's first loop pass stages its byte and leaves for `0x1F` together (`0x801E3734`, `0x801E3998`), so the state lasts one pass. A replay whose walk was shorter arrives with its counter short of retail's and is past the state before the clock is due, so the gate is that pass and the counter is pinned to retail's word there.
