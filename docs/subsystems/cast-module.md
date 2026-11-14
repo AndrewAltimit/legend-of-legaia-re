@@ -3802,6 +3802,11 @@ hidden through arm 5, the miss line raised on a hit and a draw on every passing
 pass, the same film read `.815`; with them `.848` (arm 5 `.770` to `.883`, the
 HP-bar settle `0x51` `.688` to `.793`). Grade `disassembly` + `capture`.
 
+The hit leg throws a numeral: `FUN_801F44A0(1, seat)` at `0x801F8D6C`, behind the
+Stone guard at `0x801F8D60` that also gates its one-point HP write, so a landed
+Kiss of Death shows a `1` over its victim. The miss leg throws none. Port:
+`World::run_cast_module_code`'s PROT 0955 arm. Grade `disassembly`.
+
 Retail runs the cast's arms 1 to 4 at frame step `4` (the lips and the burst records fill the frame) and arm 5, the victim alone, at `2`; the engine takes those steps from the capture band's table (`cast_module_frame_step::CAPTURE_ARM_STEPS`). With the roll held on retail's draw (`--rand-at 0x70:4`) the film reads `.859` on the ordinary step and `.886` on these (module phase 1 `.692` to `.826`, phase 2 under the pull-in `.649` to `.689`). Arm 0's table and countdown at the film's gate are the replay's, which is what keeps arm 1 a pass long. Grade `capture`.
 
 The roll decides the cast's sound as well as its outcome. Only the hit leg cues: a
