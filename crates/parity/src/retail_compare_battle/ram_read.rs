@@ -1478,6 +1478,7 @@ impl RetailBattle {
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
             strike_stream_steer: false,
             strike_aim_steer: false,
+            pose_seat: false,
             approach_terms: (
                 game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
                 game_anchors::u16_at(ram, ctx + 0x6D4) as i16,

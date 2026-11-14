@@ -343,6 +343,15 @@ pub struct ActionSteer {
     /// ([`BattleDrive::press`]). A pacing of the capture's own input, read
     /// off the manifest; no play path reads it.
     pub harvest_pacing: bool,
+    /// The win pose the capture's battle-end sequence latched
+    /// (`RetailBattle::win_pose`), on a capture past the end signal. The
+    /// pose pick draws it from `rand()` (`0x8004E78C..0x8004EAF0`), and the
+    /// results framing is that pose's script, so a replay that finishes the
+    /// fight on another stream frames another shot. The drive seats it
+    /// (`BattleState::forced_victory_pose`) as retail's own held-button
+    /// select would (`0x8004EAF4..0x8004EB8C`): over the pick, after its two
+    /// draws, which it does not undo.
+    pub win_pose: Option<u8>,
     /// The acting party seat's target and its idle-loop cursor on the frame
     /// the seat's action entered the seed state `0x0C`, read off the
     /// capture's cursor history ring (`RetailBattle::approach_start`). The
@@ -965,6 +974,9 @@ impl BattleDrive {
                 if steer.harvest_pacing {
                     s.push_str(",d");
                 }
+                if let Some(w) = steer.win_pose {
+                    s.push_str(&format!(",W{w}"));
+                }
                 if let Some((t, c)) = steer.approach_idle {
                     s.push_str(&format!(",i{t}/{c}"));
                 }
@@ -1059,6 +1071,8 @@ impl BattleDrive {
                 steer.tough = true;
             } else if last == "d" {
                 steer.harvest_pacing = true;
+            } else if let Some(w) = last.strip_prefix('W') {
+                steer.win_pose = Some(w.parse().ok()?);
             } else if let Some(i) = last.strip_prefix('i') {
                 let (t, c) = i.split_once('/')?;
                 steer.approach_idle = Some((t.parse().ok()?, c.parse().ok()?));
@@ -1260,6 +1274,12 @@ impl BattleDrive {
         {
             let pc = world.party.party_count.clamp(1, 3);
             world.battle.forced_victory_seat = Some(engine_seat(seat, pc));
+        }
+        // ... and the pose the capture's sequence latched on it.
+        if let Self::Action { end, steer, .. } = *self
+            && end.is_end()
+        {
+            world.battle.forced_victory_pose = steer.win_pose;
         }
         // Likewise the drop a results-frame capture's report shows.
         if let Self::Action { steer, .. } = *self

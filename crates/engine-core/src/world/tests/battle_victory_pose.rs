@@ -149,3 +149,28 @@ fn a_seeded_victory_seat_poses_whoever_closed_the_fight() {
     assert_eq!(pose_seat(&mut world), 0, "the capture's seat, not Gala");
     assert_eq!(world.retail_acting_slot(), 0);
 }
+
+/// The retail-compare seed's win pose (`BattleState::forced_victory_pose`)
+/// stands over the table's pick, as retail's held-button select does, and
+/// the pick still draws its two words.
+#[test]
+fn a_seeded_win_pose_stands_over_the_pick() {
+    let build = || {
+        let mut w = world_won_by(0);
+        w.tables.victory_pose_table = Some([[0x12; 6]; 4]);
+        w.battle.active_formation = Some(FormationDef::new(1, vec![FormationSlot::new(0x10)]));
+        w
+    };
+    let mut drawn = build();
+    let mut seeded = build();
+    seeded.battle.forced_victory_pose = Some(0x14);
+    pose_seat(&mut drawn);
+    pose_seat(&mut seeded);
+    assert_eq!(drawn.battle.victory.and_then(|s| s.pose_id), Some(0x12));
+    assert_eq!(seeded.battle.victory.and_then(|s| s.pose_id), Some(0x14));
+    assert_eq!(
+        drawn.next_rand(),
+        seeded.next_rand(),
+        "the same draws either way"
+    );
+}

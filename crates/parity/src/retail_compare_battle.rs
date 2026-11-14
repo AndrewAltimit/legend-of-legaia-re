@@ -664,6 +664,11 @@ pub struct RetailBattle {
     /// raises it only once no stream reached the phase on the targets the
     /// replay picked itself.
     pub strike_aim_steer: bool,
+    /// A battle-end capture's win pose seated over the replay's own pick
+    /// (`ActionSteer::win_pose`, `BattleState::forced_victory_pose`). Not a
+    /// capture fact: the battle search raises it only once every stream that
+    /// reached the phase drew another pose.
+    pub pose_seat: bool,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts

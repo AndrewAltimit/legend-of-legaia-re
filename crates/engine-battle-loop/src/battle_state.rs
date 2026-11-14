@@ -574,6 +574,14 @@ pub struct BattleState {
     /// fight, so the pose stands on the capture's seat instead. `None` on
     /// every ordinary fight.
     pub forced_victory_seat: Option<u8>,
+    /// The same kind of seed for the pose the capture's results sequencer
+    /// latched on that seat (`+0x1DB`): it stands over the pose pick
+    /// (`0x8004E78C..0x8004EAF0`) after the pick's two `rand()` draws, as
+    /// retail's held-button select does (`0x8004EAF4..0x8004EB8C`), so the
+    /// stream is the replay's either way. A replay that ends the fight on
+    /// another stream draws another pose, and the results framing is the
+    /// pose's script. `None` on every ordinary fight.
+    pub forced_victory_pose: Option<u8>,
     /// The same kind of seed for a capture on the results frame or past it:
     /// the item the report's drop row names (`0` for a report with none),
     /// which the replay's own drop roll `rand()` draws do not share. The
@@ -1630,6 +1638,7 @@ impl BattleState {
             party_melee_pushes: 0,
             forced_absorb: false,
             forced_victory_seat: None,
+            forced_victory_pose: None,
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,

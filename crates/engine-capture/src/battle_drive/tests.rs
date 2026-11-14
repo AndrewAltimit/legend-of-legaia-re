@@ -130,6 +130,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 loot: Some(0x1D),
                 park: true,
                 harvest_pacing: true,
+                win_pose: Some(0x14),
                 approach_idle: Some((3, 208)),
                 ..ActionSteer::default()
             },

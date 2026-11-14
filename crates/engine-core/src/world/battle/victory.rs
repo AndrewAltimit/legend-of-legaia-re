@@ -240,6 +240,9 @@ impl World {
         let pose = picked.map(|p| {
             victory_pose_formation_override(victory_pose_pad_select(p, held), first_monster)
         });
+        // A debug seed's pose (`BattleState::forced_victory_pose`), over the
+        // pick as the held-button select stands over it.
+        let pose = self.battle.forced_victory_pose.or(pose);
         log::info!(
             "battle end: seat {seat} (char {char_id}) hp {hp}/{hp_max} round {round} \
              status {status:#06x} -> pose tier {tier}, win pose {pose:#04x?}"

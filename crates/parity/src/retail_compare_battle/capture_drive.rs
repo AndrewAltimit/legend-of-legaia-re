@@ -2053,6 +2053,9 @@ impl RetailBattle {
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which
                     // commit the capture's age counts from.
+                    win_pose: (self.pose_seat && self.span_gate.is_end())
+                        .then_some(self.win_pose)
+                        .flatten(),
                     latched: (seat < 3
                         && self.queued_category == 3
                         && self.arts_queue

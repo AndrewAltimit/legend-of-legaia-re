@@ -192,7 +192,7 @@ pub(super) fn run_battle(
                         && e.inflight != Some(None) =>
                 {
                     if battle.win_pose.is_some() && e.win_pose != battle.win_pose {
-                        off_pose.get_or_insert(e);
+                        off_pose.get_or_insert((e, victims));
                         continue;
                     }
                     if ring_pushes.is_some() && e.action_pushes != ring_pushes {
@@ -225,6 +225,54 @@ pub(super) fn run_battle(
         reached = Some(e);
         reached_victims = victims;
     }
+    // A battle-end capture no stream reached on retail's win pose: the pose
+    // is a draw of the replay's own stream (`0x8004E78C..0x8004EAF0`) and the
+    // results framing is its script, so the first stream that reached the
+    // phase runs again with the capture's pose seated over the pick
+    // (`RetailBattle::pose_seat`). `battle_jou_gala_finisher_hold_retail`'s
+    // replays finish the fight on other streams once the frame pacing moves,
+    // and every one of them drew another pose for Gala.
+    let posed;
+    let battle = match off_pose.take() {
+        Some((e, victims)) if reached.is_none() => {
+            let mut b = battle.clone();
+            b.pose_seat = true;
+            let run = crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                &b,
+                e.rng_seed,
+                victims,
+            );
+            if seed_trace() {
+                eprintln!(
+                    "[seed] {} pose seat seed={:#010X}: {:?}",
+                    entry.label,
+                    e.rng_seed,
+                    run.as_ref().map(|r| (r.driven, r.win_pose))
+                );
+            }
+            match run {
+                Ok(r)
+                    if r.mode == legaia_engine_mode::mode::SceneMode::Battle
+                        && r.driven.is_some_and(|d| d.is_some()) =>
+                {
+                    reached = Some(r);
+                    reached_victims = victims;
+                    posed = b;
+                    &posed
+                }
+                _ => {
+                    off_pose = Some((e, victims));
+                    battle
+                }
+            }
+        }
+        other => {
+            off_pose = other;
+            battle
+        }
+    };
     // A monster strike gated on its first swing clip that no stream reached
     // on the picks the replay drew: the streams again, with the attacker's
     // strike stream stood on the capture's (`RetailBattle::strike_stream_steer`).
@@ -486,7 +534,7 @@ pub(super) fn run_battle(
         }
         r => (battle, r),
     };
-    let engine = match reached.or(off_pose).map(Ok).or(first) {
+    let engine = match reached.or(off_pose.map(|(e, _)| e)).map(Ok).or(first) {
         Some(Ok(e)) => e,
         Some(Err(e)) => {
             report.unseeded = format!("seeding failed: {e:#}");
