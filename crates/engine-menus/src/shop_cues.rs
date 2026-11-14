@@ -66,6 +66,7 @@ pub fn shop_ui_cue(state: MenuState, input: MenuInput, moved: bool, refused: boo
             | MenuState::ShopSell
             | MenuState::ShopConfirm
             | MenuState::ShopTrade
+            | MenuState::ShopTradeConfirm
     ) {
         return None;
     }
