@@ -932,10 +932,16 @@ edge rule. The buy list (built by `FUN_80030628` case `0x0B`) and the sell
 list are paged by the kind-4 list kernel `FUN_80032A44`, which pushes a cursor step `0x21` only when the hand
 actually moved, a confirm `0x20` on an enabled row or the dim-row buzz
 `0x23` on a dim one (a buy the purse cannot cover), and a cancel `0x37`.
-The Buy / Sell / Trade picker is given the same rule: its renderer
-`FUN_801D4868` keys no cue of its own, and that it is a kernel-paged list is
-an inference rather than a traced call. The sub-screens add their own ring
-writes:
+The Buy / Sell / Quit mode select is not a kernel list. Its handler
+`FUN_801DAFD4` pages it with the overlay's picker
+`FUN_801D688C(&DAT_801E46BC, 3, 1)` (`0x801DB09C`), whose confirm pushes
+`0x36`, and writes over that pick only twice: Quit silences it and pushes the
+cancel `0x37` (`0x801DB0D0` / `0x801DB0D8`), and Sell over an empty bag
+buzzes `0x23` (`0x801DB184`). Buy, and Sell with goods, sound the bare `0x36`;
+the engine-only Trade row does too. Port:
+`engine-menus::shop_cues::shop_root_confirm_cue`. The Point Card notice's
+dismiss sounds `0x20` (`0x801DBC2C` after a quantity buy, `0x801DB7B4` after
+a recipient buy). The sub-screens add their own ring writes:
 
 | Screen | Step | Commit | Cancel |
 |---|---|---|---|

@@ -1000,6 +1000,22 @@ overwrites it with `0x23` instead (`0x801D8480`, `0x801D96E0`). Engine:
 (`FieldMenuSubsession::confirm_blip`, a step on a copy of the session) before
 `field_menu::pause_edge_blip`.
 
+The rest of the Items and Equip screens answer the same call:
+
+| Screen | Confirm | Site |
+|---|---|---|
+| Items command window | `0x23` on an empty bag; `0x20` for Use and Throw Out; Arrange silences the pick and pushes `0x37` | `FUN_801D7C00`, `0x801D7D44`, `0x801D7D64` / `0x801D7D88`, `0x801D7DAC` / `0x801D7DCC` |
+| Use and Throw Out lists | the kernel's `0x23` on a disabled row (the confirm opens nothing), else `0x20` | `FUN_80032A44`, `0x80032D04..0x80032D24` |
+| Throw-out Yes / No | Yes overwrites the pick with `0x37` as the stack goes; No keeps `0x36` | `FUN_801D8734`, `0x801D88E0` |
+| Incense / Door of Light Yes / No | Incense's Yes silences the pick and pushes `0x25`; the rest keep `0x36` | `FUN_801D8D94`, `0x801D8E4C` / `0x801D8E54`; `FUN_801D8A58` |
+| Equip character picker | `0x20` | `FUN_801D98F0`, `0x801D99BC` |
+| Equip slot browse | Best Equipment `0x24`, or `0x23` when nothing changes; a slot row keeps `0x36` | `FUN_801D99F0`, `0x801D9B7C` / `0x801D9B9C` |
+| Equip candidate list | a candidate or an occupied Remove `0x24`; an empty Remove pushes `0x37`; a worn row is silent | `FUN_801D9C14`, `0x801DA154` / `0x801DA110`, `0x801DA12C`, `0x801DA274` |
+
+The Throw Out list's disabled rows are its own build's (content id `0x22`: a
+key item, a no-discard piece), so a key item buzzes there rather than opening
+the Yes / No.
+
 ### The kind-4 list kernel (SCUS `FUN_80032A44`)
 
 Runs per frame for each live list window whose content id (live `+0x1C`) is in
