@@ -13,6 +13,7 @@
 //! no text field).
 
 use super::*;
+use std::path::PathBuf;
 
 /// One row of the page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +40,9 @@ pub(super) enum ToolRow {
     LearnSpell,
     /// Read and apply a GameShark code file (`--cheat-file`).
     GameShark,
+    /// The memory card in port 2 (`--card`, or a card file dropped on the
+    /// window); picked, then inserted.
+    MemoryCard,
     /// Arm a fight from the scene's own encounter table (`--battle first`).
     StartBattle,
     /// A press of the window key that enters a minigame or a mode.
@@ -46,7 +50,7 @@ pub(super) enum ToolRow {
 }
 
 /// The rows: control, label, one line of help.
-pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 19] = [
+pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 20] = [
     (
         ToolRow::DevMenu,
         "Developer menu",
@@ -101,6 +105,11 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 19] = [
         ToolRow::GameShark,
         "GameShark file",
         "Cross: apply the --cheat-file codes, or legaia-codes.txt in the settings folder.",
+    ),
+    (
+        ToolRow::MemoryCard,
+        "Memory card 2",
+        "Left/Right pick, Cross insert: a card the launcher mounted before, or one in the saves folder.",
     ),
     (
         ToolRow::StartBattle,
@@ -178,6 +187,69 @@ fn party_label(spec: &str) -> String {
 /// The spell picks: the player Seru block the Cheats page's Seru grant covers.
 const SPELL_PICKS: std::ops::RangeInclusive<u8> = legaia_engine_cheats::cheats::SERU_SPELL_IDS;
 
+/// The most card files the memory-card row offers.
+const CARD_PICKS_MAX: usize = 32;
+/// The most characters of a card's file name the row shows.
+const CARD_LABEL_CHARS: usize = 24;
+/// What the memory-card row shows for an empty port.
+const NO_CARD: &str = "No card";
+
+/// The card files the memory-card row steps through: the mounted one, then
+/// the ones the launcher remembers, then every card file in `folders`, by
+/// name. Each file once, only files that are there now, never port 1's own
+/// card (mounting it twice would let two ports write one file), at most
+/// [`CARD_PICKS_MAX`].
+pub(super) fn card_picks(
+    mounted: Option<&Path>,
+    remembered: &[PathBuf],
+    folders: &[PathBuf],
+    port_one: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    for dir in folders {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut here: Vec<PathBuf> = read
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| crate::launcher::is_card_file(p))
+            .collect();
+        here.sort();
+        found.extend(here);
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in mounted
+        .into_iter()
+        .map(Path::to_path_buf)
+        .chain(remembered.iter().cloned())
+        .chain(found)
+    {
+        if Some(p.as_path()) != port_one && p.is_file() && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out.truncate(CARD_PICKS_MAX);
+    out
+}
+
+/// A card pick as its row shows it: the file's name, cut in the middle when
+/// it is long so both its start and its extension stay.
+fn card_label(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let chars: Vec<char> = name.chars().collect();
+    if chars.len() <= CARD_LABEL_CHARS {
+        return name;
+    }
+    let keep = CARD_LABEL_CHARS - 3;
+    let head: String = chars[..keep - keep / 2].iter().collect();
+    let tail: String = chars[chars.len() - keep / 2..].iter().collect();
+    format!("{head}...{tail}")
+}
+
 /// The file a Cross on the GameShark row reads when `--cheat-file` named none.
 const DEFAULT_CODES_FILE: &str = "legaia-codes.txt";
 
@@ -198,6 +270,12 @@ pub(super) struct ToolsPage {
     party: usize,
     bgm: usize,
     spell: usize,
+    /// The memory-card row's pick: `0` is the empty port, `n` is
+    /// `cards[n - 1]`.
+    card: usize,
+    /// The card files the memory-card row steps through, listed on the
+    /// row's first press ([`card_picks`]); `None` until then.
+    cards: Option<Vec<PathBuf>>,
     /// What the last press did, or why it did nothing.
     note: Option<String>,
 }
@@ -268,6 +346,20 @@ impl PlayWindowApp {
                 return ToolValue::Pick(spell_pick_label(world, id));
             }
             ToolRow::GameShark => return ToolValue::Press("Cross: apply"),
+            ToolRow::MemoryCard => {
+                // Before the first press the row names what port 2 holds.
+                let picked = match &page.cards {
+                    Some(cards) => page.card.checked_sub(1).and_then(|i| cards.get(i)).cloned(),
+                    None => self.card.as_ref().and_then(|c| c.path.clone()),
+                };
+                return ToolValue::Pick(match picked {
+                    Some(path) => card_label(&path),
+                    None => match (&page.cards, &self.card) {
+                        (None, Some(card)) => card.label.clone(),
+                        _ => NO_CARD.to_string(),
+                    },
+                });
+            }
             ToolRow::StartBattle => return ToolValue::Press("Cross: start"),
             ToolRow::Enter(_) => return ToolValue::Press("Cross: start"),
         })
@@ -277,12 +369,23 @@ impl PlayWindowApp {
     /// row does nothing.
     pub(super) fn tools_change(&mut self, dir: i8) {
         let (row, _, _) = TOOL_ROWS[self.tools_page.cursor];
+        if row == ToolRow::MemoryCard {
+            self.list_cards();
+            let page = &mut self.tools_page;
+            let n = page.cards.as_ref().map_or(0, Vec::len) as i32 + 1;
+            page.card = (page.card as i32 + i32::from(dir)).rem_euclid(n) as usize;
+            page.note = (n == 1).then(|| {
+                "No card files found. Mount one in the launcher, or put it in the saves folder."
+                    .to_string()
+            });
+            return;
+        }
         if self.tools_page.pick(row, dir) {
             return;
         }
         if !matches!(
             row,
-            ToolRow::Enter(_) | ToolRow::GameShark | ToolRow::StartBattle
+            ToolRow::Enter(_) | ToolRow::GameShark | ToolRow::StartBattle | ToolRow::MemoryCard
         ) {
             self.tools_apply();
         }
@@ -365,6 +468,25 @@ impl PlayWindowApp {
                     None => format!("No settings folder to find {DEFAULT_CODES_FILE} in."),
                 });
             }
+            ToolRow::MemoryCard => {
+                self.list_cards();
+                let page = &self.tools_page;
+                let pick = page
+                    .card
+                    .checked_sub(1)
+                    .and_then(|i| page.cards.as_ref()?.get(i))
+                    .cloned();
+                self.tools_page.note = Some(match pick {
+                    Some(path) => match self.mount_port_two(&path) {
+                        Ok(name) => format!("Memory card 2: {name}. The save screen shows it."),
+                        Err(name) => format!("Not a memory card: {name}."),
+                    },
+                    None => {
+                        self.card = None;
+                        "Memory card 2 taken out.".to_string()
+                    }
+                });
+            }
             ToolRow::StartBattle => {
                 let world = &mut self.session.host.world;
                 if !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
@@ -386,6 +508,37 @@ impl PlayWindowApp {
                 }
             }
         }
+    }
+
+    /// List the memory-card row's picks on its first press, with the cursor
+    /// on the card port 2 holds now.
+    fn list_cards(&mut self) {
+        if self.tools_page.cards.is_some() {
+            return;
+        }
+        let mounted = self.card.as_ref().and_then(|c| c.path.clone());
+        let port_one = self.port1_card.as_ref().and_then(|c| c.path.clone());
+        let remembered: Vec<PathBuf> = crate::launcher::settings_path()
+            .and_then(|f| crate::launcher::LauncherSettings::load(&f).ok())
+            .map(|s| s.card.into_iter().chain(s.recent_cards).collect())
+            .unwrap_or_default();
+        // The saves folder: where port 1's own card lives.
+        let folders: Vec<PathBuf> = port_one
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .into_iter()
+            .collect();
+        let cards = card_picks(
+            mounted.as_deref(),
+            &remembered,
+            &folders,
+            port_one.as_deref(),
+        );
+        self.tools_page.card = mounted
+            .and_then(|m| cards.iter().position(|p| *p == m))
+            .map_or(0, |i| i + 1);
+        self.tools_page.cards = Some(cards);
     }
 
     /// Read a code file and apply it the way the page's GameShark box does.
@@ -589,6 +742,48 @@ mod tests {
             assert!(y >= 0 && y + h <= track);
             p.move_cursor(1);
         }
+    }
+
+    /// The memory-card row offers the mounted card, the launcher's, then the
+    /// saves folder's: each file once, never port 1's own, never a file that
+    /// is gone or is not a card container by name.
+    #[test]
+    fn the_card_row_lists_mounted_then_remembered_then_folder_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, b"x").unwrap();
+            p
+        };
+        let port_one = file("memcard1.mcr");
+        let (b, a) = (file("b.mcd"), file("a.gme"));
+        file("notes.txt");
+        let other = tempfile::tempdir().unwrap();
+        let remembered_card = other.path().join("epsxe000.mcr");
+        std::fs::write(&remembered_card, b"x").unwrap();
+        let gone = other.path().join("gone.mcr");
+
+        let picks = card_picks(
+            Some(&b),
+            &[gone, remembered_card.clone(), b.clone(), port_one.clone()],
+            &[dir.path().to_path_buf()],
+            Some(&port_one),
+        );
+        assert_eq!(picks, vec![b, remembered_card, a]);
+        // Nothing mounted, nothing remembered, no folder: an empty list,
+        // which the row shows as the empty port alone.
+        assert!(card_picks(None, &[], &[], None).is_empty());
+    }
+
+    #[test]
+    fn a_long_card_name_keeps_its_start_and_its_extension() {
+        assert_eq!(card_label(Path::new("/x/epsxe000.mcr")), "epsxe000.mcr");
+        let long = card_label(Path::new("/x/Legend of Legaia (USA) playthrough two.mcr"));
+        assert_eq!(long.chars().count(), CARD_LABEL_CHARS);
+        assert!(
+            long.starts_with("Legend of") && long.ends_with(".mcr"),
+            "{long}"
+        );
     }
 
     #[test]

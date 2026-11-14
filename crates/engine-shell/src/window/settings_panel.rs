@@ -158,6 +158,11 @@ pub(super) enum PanelInput {
     Close,
 }
 
+/// With a scripted `--screenshot` run: step the cursor of each panel page this
+/// many rows down as the page is shown, then press the buttons lettered after
+/// a colon (`PlayWindowApp::scripted_panel_focus`).
+const PANEL_FOCUS_ENV: &str = "LEGAIA_PANEL_FOCUS_ROW";
+
 /// A frame's pad edges as a panel action. Up and Down come first, so a
 /// diagonal on a stick moves the cursor and changes nothing by accident.
 pub(super) fn panel_input(edge: u16) -> Option<PanelInput> {
@@ -314,6 +319,56 @@ impl PlayWindowApp {
         self.hotkey_help = true;
         self.panel_page = PanelPage::Settings;
         self.startup_hint.dismiss();
+        self.scripted_panel_focus();
+    }
+
+    /// Capture aid: in a scripted run, whose pad word goes to the game and
+    /// never to the panel, [`PANEL_FOCUS_ENV`] steps the cursor of the page
+    /// just shown that many rows down - so a `--screenshot` can show a list
+    /// scrolled, as `LEGAIA_LAUNCHER_FOCUS_ROW` does for the launcher. A
+    /// `page=` prefix (`settings`, `cheats`, `scenes`, `tools`) keeps it to
+    /// that page, and only then are the letters after a colon pressed in
+    /// order on the row (`L`, `R`, `U`, `D`, `X` for Cross): `tools=11:RX`
+    /// steps the Tools page to row 11, presses Right, then Cross.
+    fn scripted_panel_focus(&mut self) {
+        if !self.scripted_run() {
+            return;
+        }
+        let Ok(spec) = std::env::var(PANEL_FOCUS_ENV) else {
+            return;
+        };
+        let (page, spec) = match spec.split_once('=') {
+            Some((page, rest)) => (Some(page.trim().to_ascii_lowercase()), rest),
+            None => (None, spec.as_str()),
+        };
+        let here = match self.panel_page() {
+            PanelPage::Settings => "settings",
+            PanelPage::Cheats => "cheats",
+            PanelPage::Scenes => "scenes",
+            PanelPage::Tools => "tools",
+            PanelPage::Keys => "keys",
+        };
+        if page.as_deref().is_some_and(|p| p != here) {
+            return;
+        }
+        let (rows, presses) = spec.split_once(':').unwrap_or((spec, ""));
+        let rows = rows.trim().parse::<u32>().unwrap_or(0);
+        for _ in 0..rows.min(512) {
+            self.panel_pad_edge(PadButton::Down.mask());
+        }
+        // Presses act (a Cross on the Scenes page leaves the scene), so they
+        // need the page named.
+        for press in presses.chars().filter(|_| page.is_some()) {
+            let button = match press.to_ascii_uppercase() {
+                'L' => PadButton::Left,
+                'R' => PadButton::Right,
+                'U' => PadButton::Up,
+                'D' => PadButton::Down,
+                'X' => PadButton::Cross,
+                _ => continue,
+            };
+            self.panel_pad_edge(button.mask());
+        }
     }
 
     /// One frame's pad edges while the panel owns the frame.
@@ -359,6 +414,7 @@ impl PlayWindowApp {
         if self.panel_page == PanelPage::Scenes {
             self.scenes_page_shown();
         }
+        self.scripted_panel_focus();
     }
 
     /// Step the row under the cursor and push it to everything that reads it,
