@@ -273,6 +273,10 @@ pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_jou_gola_gola_v3_strike", 0x0BAD_F00D),
     ("gaza2_pre_neo_star_slash", 0x3C6E_F372),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
+    // The first reaching stream plays a Divide into the driven rounds, and
+    // the capture's label then reads one slime of two.
+    ("battle_map03_acid_slime_strike", 0xB5C0_FBCF),
+    ("battle_korb2_ghost_knight_strike", 0x9B05_688C),
 ];
 
 /// The stream a state's search tries first, when it has one.
