@@ -1860,7 +1860,9 @@ impl LauncherApp {
             row(
                 RecentEntry {
                     label: FINDER_UP.to_string(),
-                    value: "..".to_string(),
+                    // The key that does the same from any row: the other
+                    // rows' tags say what a row is, and `..` said neither.
+                    value: "Backspace".to_string(),
                     value_ink: DIM,
                     help: format!("Go up to {}.", up.display()),
                     kind: RecentKind::Folder(up.to_path_buf()),

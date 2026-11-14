@@ -24,6 +24,7 @@ mod duel;
 mod golf;
 mod hunt;
 mod items;
+pub mod light;
 pub mod netplay;
 pub mod party;
 mod poker;

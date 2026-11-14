@@ -138,13 +138,10 @@ impl PlayWindowApp {
         }
     }
 
-    /// The field party HUD's two draw halves for this frame, or empty when
-    /// the kernel's decision is anything but `Draw`.
-    pub(in crate::window) fn field_party_hud_draws(
-        &self,
-        w: u32,
-        h: u32,
-    ) -> legaia_engine_ui::BattleHudDraws {
+    /// The stage row the field party HUD draws at this frame, or `None`
+    /// when it draws nothing: the kernel's decision is anything but `Draw`,
+    /// or one of this window's own layers has the readout step aside.
+    pub(in crate::window) fn field_party_hud_row(&self) -> Option<i16> {
         // Ask the suppress gate on the DRAW path too, not only on the tick.
         // Retail evaluates it once because `FUN_801D0D38` is both halves in
         // one function; the port splits them, and a split decision is only
@@ -153,7 +150,7 @@ impl PlayWindowApp {
         // draw then paints the kernel's last pre-suppression answer - which
         // is exactly how this readout came to sit under the pause menu.
         if self.field_party_hud_suppressed() {
-            return Default::default();
+            return None;
         }
         // The `F12` panel's plate sits over the readout, and its bright
         // digits and dark backing showed through between the rows (most of
@@ -161,21 +158,32 @@ impl PlayWindowApp {
         // own state machine keeps ticking as it would, so it comes back in
         // place when the panel closes.
         if self.hotkey_help {
-            return Default::default();
+            return None;
         }
         // The Multiplayer screen covers the stage with its own backdrop, and
         // the readout drew over its title and its player list.
         if self.multiplayer_screen_up() {
-            return Default::default();
+            return None;
         }
         // The developer menu lists its rows in this same corner, and the two
         // drawn through each other read as neither.
         if !self.dev_menu_draws.is_empty() {
-            return Default::default();
+            return None;
         }
-        let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
-            self.field_party_hud.decision()
-        else {
+        match self.field_party_hud.decision() {
+            Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) => Some(y),
+            _ => None,
+        }
+    }
+
+    /// The field party HUD's two draw halves for this frame, or empty when
+    /// it draws nothing ([`Self::field_party_hud_row`]).
+    pub(in crate::window) fn field_party_hud_draws(
+        &self,
+        w: u32,
+        h: u32,
+    ) -> legaia_engine_ui::BattleHudDraws {
+        let Some(y) = self.field_party_hud_row() else {
             return Default::default();
         };
         legaia_engine_screens::field_screens::field_party_hud_draws(

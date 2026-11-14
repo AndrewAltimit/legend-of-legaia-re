@@ -413,15 +413,72 @@ impl PlayWindowApp {
                 .is_some_and(|nh| legaia_engine_netplay::screens::screen_owns_frame(&nh.net))
     }
 
+    /// The light palette for the port's own menu screens, while the window
+    /// chrome draws light (`chrome_dark` off, its shadowless atlas loaded).
+    pub(in crate::window) fn light_menu_chrome(
+        &self,
+    ) -> Option<legaia_engine_ui::expansion_modes::light::LightChrome> {
+        if self.chrome_dark || self.chrome_atlas.is_none() {
+            return None;
+        }
+        let p = &legaia_app_theme::LIGHT;
+        let fill = |c: legaia_app_theme::Rgb| [c.0, c.1, c.2];
+        let pen = |c: legaia_app_theme::Rgb| {
+            let f = c.to_f32();
+            [f[0], f[1], f[2]]
+        };
+        Some(legaia_engine_ui::expansion_modes::light::LightChrome {
+            backdrop: fill(p.band),
+            bar: fill(p.stripe),
+            panel: fill(p.card),
+            edge: fill(p.outline),
+            select: fill(p.selection),
+            highlight: fill(p.selection_stroke),
+            text: pen(p.ink),
+            dim: pen(p.ink_dim),
+            accent: pen(p.accent),
+            good: pen(p.good),
+            bad: pen(p.error),
+        })
+    }
+
+    /// [`Self::light_menu_chrome`] while the Multiplayer screen covers the
+    /// stage: the screen then draws light, with the `F12` panel. The roaming
+    /// panel sits over the field and keeps the dark palette.
+    pub(in crate::window) fn light_multiplayer_screen(
+        &self,
+    ) -> Option<legaia_engine_ui::expansion_modes::light::LightChrome> {
+        self.light_menu_chrome()
+            .filter(|_| self.multiplayer_screen_up())
+    }
+
+    /// [`Self::light_menu_chrome`] while the game-mode picker is up. A mode
+    /// in play draws over the field or its own table and stays dark.
+    pub(in crate::window) fn light_mode_picker(
+        &self,
+    ) -> Option<legaia_engine_ui::expansion_modes::light::LightChrome> {
+        use legaia_engine_ui::expansion_modes::ModeScreen;
+        self.light_menu_chrome().filter(|_| {
+            matches!(
+                legaia_engine_screens::expansion_modes::pack_mode_screen(&self.session.host.world),
+                Some(ModeScreen::Picker { .. })
+            )
+        })
+    }
+
     /// The room screen / roaming panel's prims, in stage pixels.
     pub(in crate::window) fn netplay_prims(&self) -> Vec<ScreenPrim> {
-        match (&self.netplay, &self.netplay_menu) {
+        let mut prims = match (&self.netplay, &self.netplay_menu) {
             (Some(nh), _) => {
                 legaia_engine_netplay::screens::net_overlay_prims(&nh.net, &self.session.host.world)
             }
             (None, Some(m)) => legaia_engine_netplay::screens::connect_overlay_prims(&m.menu),
             (None, None) => Vec::new(),
+        };
+        if let Some(light) = self.light_multiplayer_screen() {
+            legaia_engine_ui::expansion_modes::light::light_prims(&mut prims, &light);
         }
+        prims
     }
 
     /// The room screen / roaming panel's labels, in stage pixels.

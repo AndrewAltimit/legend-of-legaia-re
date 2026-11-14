@@ -25,6 +25,29 @@ impl PlayWindowApp {
         d
     }
 
+    /// The Multiplayer screen's and the game-mode picker's labels in the
+    /// light palette, in stage pixels: empty on a dark chrome, where the HUD
+    /// pass draws them as the page does. They ride the chrome pass, under
+    /// the `F12` panel and the notice lines.
+    fn light_menu_texts(&self) -> Vec<TextDraw> {
+        use legaia_engine_ui::expansion_modes::light::light_texts;
+        let mut out = Vec::new();
+        if let Some(light) = self.light_mode_picker() {
+            let mut t = legaia_engine_screens::expansion_modes::pack_mode_stage_texts(
+                &self.session.host.world,
+                &self.font,
+            );
+            light_texts(&mut t, &light);
+            out.extend(t);
+        }
+        if let Some(light) = self.light_multiplayer_screen() {
+            let mut t = self.netplay_stage_texts();
+            light_texts(&mut t, &light);
+            out.extend(t);
+        }
+        out
+    }
+
     /// The window's own chrome, drawn over everything else in the text
     /// layer: the "press Escape again" line while a first `Escape` waits for
     /// its confirmation (`handle_keyboard`), the last hotkey's notice line
@@ -36,7 +59,7 @@ impl PlayWindowApp {
         if self.font_atlas.is_none() {
             return Vec::new();
         }
-        let mut stage: Vec<TextDraw> = Vec::new();
+        let mut stage: Vec<TextDraw> = self.light_menu_texts();
         let mut rows: Vec<(&str, [f32; 4])> = Vec::new();
         // The timed lines are a player's: a `--screenshot` capture leaves
         // them out unless `--screenshot-chrome` asks for them (a scripted key
@@ -315,8 +338,11 @@ impl PlayWindowApp {
                 self.session.host.world.frame,
                 self.meshes.len()
             );
+            // The party readout is game surface and keeps its seat; the
+            // rows take the other end of the window while it is up.
+            let y0 = diag_rows_top(self.field_party_hud_row(), h);
             let layout1 = self.font.layout_ascii(&line1);
-            out.extend(text_draws_for(&layout1, (8, 8), white));
+            out.extend(text_draws_for(&layout1, (8, y0), white));
             let audio_str = if self.session.audio.is_none() {
                 "no audio"
             } else if self.options_state.muted {
@@ -392,7 +418,7 @@ impl PlayWindowApp {
                 fog_str
             );
             let layout2 = self.font.layout_ascii(&line2);
-            out.extend(text_draws_for(&layout2, (8, 26), dim));
+            out.extend(text_draws_for(&layout2, (8, y0 + DIAG_ROW_PITCH), dim));
             if let Some(ctrl) = &self.session.host.world.world_map.ctrl {
                 let mode_str = if ctrl.is_top_view() {
                     "top-view"
@@ -404,7 +430,11 @@ impl PlayWindowApp {
                     mode_str, ctrl.camera_x, ctrl.camera_z, ctrl.azimuth, ctrl.zoom
                 );
                 let layout3 = self.font.layout_ascii(&line3);
-                out.extend(text_draws_for(&layout3, (8, 44), white));
+                out.extend(text_draws_for(
+                    &layout3,
+                    (8, y0 + 2 * DIAG_ROW_PITCH),
+                    white,
+                ));
             }
         }
         // Dance minigame HUD. Withheld while the pre-song count-in is up -
@@ -665,10 +695,17 @@ impl PlayWindowApp {
         // results), from the composition the browser play page draws too
         // (`legaia_engine_screens::expansion_modes`); its panels ride the
         // screen-prim pass under this layer.
-        let mut pack_mode = legaia_engine_screens::expansion_modes::pack_mode_stage_texts(
-            &self.session.host.world,
-            &self.font,
-        );
+        // On a light chrome the picker's and the Multiplayer screen's labels
+        // are the chrome pass's (`light_menu_texts`): dark ink needs the
+        // font without its shadow.
+        let mut pack_mode = if self.light_mode_picker().is_some() {
+            Vec::new()
+        } else {
+            legaia_engine_screens::expansion_modes::pack_mode_stage_texts(
+                &self.session.host.world,
+                &self.font,
+            )
+        };
         if !pack_mode.is_empty() {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             legaia_engine_ui::scale_stage_text_draws(&mut pack_mode, stage_origin, stage_scale);
@@ -676,7 +713,11 @@ impl PlayWindowApp {
         }
         // The multiplayer room screen / roaming panel's labels
         // (`legaia_engine_netplay::screens`), as on the browser page.
-        let mut net = self.netplay_stage_texts();
+        let mut net = if self.light_multiplayer_screen().is_some() {
+            Vec::new()
+        } else {
+            self.netplay_stage_texts()
+        };
         if !net.is_empty() {
             let (stage_origin, stage_scale) = self.save_select_stage(w, h);
             legaia_engine_ui::scale_stage_text_draws(&mut net, stage_origin, stage_scale);
@@ -950,6 +991,27 @@ pub(in crate::window) fn fit_plate_draws(
 }
 
 /// The help panel's fixed rows.
+/// The `F1` diagnostic rows: their pitch, how many there can be and their
+/// margin from the window's edge, in window pixels.
+const DIAG_ROW_PITCH: i32 = 18;
+const DIAG_ROWS: i32 = 3;
+const DIAG_MARGIN: i32 = 8;
+
+/// Where the `F1` diagnostic rows start, in window pixels, for a window `h`
+/// tall. Their seat is the top left, which is the party readout's too
+/// (`field_party_hud_row`: its stage row, `None` when it draws nothing):
+/// while the readout is in the top half the rows go to the bottom left, and
+/// while it has dropped to its low row, or is away, they keep the top.
+pub(in crate::window) fn diag_rows_top(readout_row: Option<i16>, h: u32) -> i32 {
+    let readout_on_top =
+        readout_row.is_some_and(|y| i32::from(y) < legaia_engine_ui::BOOT_UI_STAGE_H as i32 / 2);
+    if readout_on_top {
+        (h as i32 - DIAG_MARGIN - DIAG_ROWS * DIAG_ROW_PITCH).max(DIAG_MARGIN)
+    } else {
+        DIAG_MARGIN
+    }
+}
+
 const HELP_QUIT: &str = "Close (2x: quit)";
 const HELP_SELF: &str = "Close (also ?)";
 const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
@@ -1218,6 +1280,20 @@ fn help_panel_layout_with(
 
 #[cfg(test)]
 mod help_panel_tests {
+    /// The diagnostic rows leave the corner the party readout is in.
+    #[test]
+    fn the_diagnostic_rows_step_aside_for_the_party_readout() {
+        use super::diag_rows_top;
+        // No readout, or one on its low row: the rows keep the top.
+        assert_eq!(diag_rows_top(None, 720), 8);
+        assert_eq!(diag_rows_top(Some(0xB8), 720), 8);
+        // The readout in the top half: the rows end a margin above the foot.
+        let top = diag_rows_top(Some(8), 720);
+        assert_eq!(top + 3 * 18 + 8, 720);
+        // A window too short for both keeps the rows on it.
+        assert_eq!(diag_rows_top(Some(8), 40), 8);
+    }
+
     /// The reset row takes two presses, and every footer it shows is one the
     /// panel's width already covers.
     #[test]

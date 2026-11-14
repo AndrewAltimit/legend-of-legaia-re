@@ -395,9 +395,9 @@ impl ToolsPage {
 }
 
 const X0: i32 = 10;
-const Y0: i32 = 2;
+const Y0: i32 = super::settings_panel::Y0;
 const WIDTH: i32 = 300;
-const ROW_H: i32 = 11;
+const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Cross use  Esc close";
@@ -807,7 +807,7 @@ impl PlayWindowApp {
             (right - width(FLIP_HINT), Y0 + 1),
             text,
         );
-        let mut y = Y0 + 15;
+        let mut y = Y0 + super::settings_panel::HEAD_H;
         let first = self.tools_page.first_shown();
         // The scroll bar on the plate's edge, as the settings page draws it:
         // without it nothing says the minigame rows sit under the last one
@@ -851,7 +851,7 @@ impl PlayWindowApp {
             put(&mut out, &shown, (right - width(&shown), y - 2), ink);
             y += ROW_H;
         }
-        y += 3;
+        y += super::settings_panel::ROWS_GAP;
         let note = self
             .tools_page
             .note

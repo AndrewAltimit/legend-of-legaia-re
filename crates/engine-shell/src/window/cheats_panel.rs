@@ -124,9 +124,9 @@ const FIRST_ITEM: &str = "Healing Leaf";
 
 /// Stage geometry, matching the settings page's plate.
 const X0: i32 = 10;
-const Y0: i32 = 2;
+const Y0: i32 = super::settings_panel::Y0;
 const WIDTH: i32 = 300;
-const ROW_H: i32 = 11;
+const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 /// The help / outcome line budget under the rows.
 const NOTE_LINES: usize = 2;
@@ -207,7 +207,7 @@ impl PlayWindowApp {
             (right - width(FLIP_HINT), Y0 + 1),
             text,
         );
-        let mut y = Y0 + 15;
+        let mut y = Y0 + super::settings_panel::HEAD_H;
         for (i, (key, label)) in PLAYER_CHEAT_LIST.iter().enumerate() {
             let focused = i == self.cheats_page.cursor;
             if focused {
@@ -229,7 +229,7 @@ impl PlayWindowApp {
             put(&mut out, &shown, (right - width(&shown), y - 2), ink);
             y += ROW_H;
         }
-        y += 3;
+        y += super::settings_panel::ROWS_GAP;
         let (key, _) = PLAYER_CHEAT_LIST[self.cheats_page.cursor];
         let note = self
             .cheats_page
