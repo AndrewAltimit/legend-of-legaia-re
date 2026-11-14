@@ -696,6 +696,31 @@ impl World {
                     }
                     continue;
                 }
+                // The touched mark on a talk placement (`B1 <id> 08`, the
+                // `+0x10 |= 0x100` the touch post `FUN_801D5B5C` raises): the
+                // context runner `FUN_80039B7C` steps that actor's record from
+                // then on, so the press that reached this prop opens the
+                // other actor's conversation. `dolk2`'s market counters
+                // (P0[26..=28], interact class `31 1E`) carry nothing else -
+                // the keepers stand a tile behind the counter, out of the
+                // facing probe's reach (64 ahead, a 72-unit box) from its
+                // front, and the counter's own 80-unit box is what the probe
+                // meets. Stepped on the counter's context, the bit landed on
+                // the counter and the press opened nothing.
+                // REF: FUN_801D5B5C, FUN_80039B7C, FUN_801CF9F4
+                if b == 0xB1
+                    && id
+                        .bytecode
+                        .get(id.pc + 2)
+                        .is_some_and(|bit| bit & 0x1F == 8)
+                    && let Some(slot) = vm::field::peek_extended(&id.bytecode, id.pc)
+                        .and_then(|t| host.world.placement_slot_for_target(t))
+                    && host.world.npcs.dialog_prologue.contains_key(&slot)
+                {
+                    host.world.props.proxy_talk = Some(slot);
+                    id.pc += 3;
+                    continue;
+                }
                 // An op aimed at another actor that no arm below routes to
                 // that actor (an id no placement or object answers, an op on
                 // an object with no word routing) runs on the record's own
@@ -904,6 +929,11 @@ impl World {
         }
         self.set_player_engaged(false);
         self.dialog.inline = None;
+        // A touched mark the record raised on a talk placement: that
+        // actor's conversation runs next, as the context runner picks it up.
+        if let Some(slot) = self.props.proxy_talk.take() {
+            self.trigger_field_interact(0, slot);
+        }
     }
 
     /// Move prop `anchor`'s actor to `seat`: its position, its contact-box

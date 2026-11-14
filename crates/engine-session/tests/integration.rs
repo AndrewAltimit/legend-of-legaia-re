@@ -22,6 +22,7 @@ mod cd_reverb_minigame_disc;
 mod dance_sfx_disc;
 mod dead_target_redirect_disc;
 mod dialog_font_metrics;
+mod dolk2_counter_talk_proxy_disc;
 mod dolk2_door_landing_beat_camera_disc;
 mod dolk2_throne_seat_near_bucket_disc;
 mod dolk_pens_remodel_clip_disc;

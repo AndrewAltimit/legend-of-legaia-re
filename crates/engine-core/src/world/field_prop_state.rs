@@ -41,6 +41,13 @@ pub struct FieldPropState {
     /// entry. Drained by [`crate::world::World::tick_prop_interactions`], which starts the
     /// record's field-VM run.
     pub pending_touch: Option<(u8, u8)>,
+    /// The placement a prop record raised the touched mark on (`B1 <id>
+    /// 08`, `+0x10 |= 0x100`), whose conversation the context runner
+    /// `FUN_80039B7C` steps once the prop's own run lets go: a shop
+    /// counter's bind record hands the button press across the counter to
+    /// its keeper (`dolk2` P0[26..=28] for P1[11..=13]). Drained by
+    /// [`crate::world::World::step_prop_interaction`].
+    pub proxy_talk: Option<u8>,
     /// Per-placement walk-touch events, keyed by placement `slot`: the
     /// placements whose script fires on body contact (door warps, player
     /// throw-back teleports - [`legaia_engine_field::man_field_scripts::placement_walk_touch_event`]),
@@ -120,6 +127,7 @@ impl FieldPropState {
             resolved_cold_spawn: None,
             bank: Default::default(),
             pending_touch: None,
+            proxy_talk: None,
             walk_touch: std::collections::BTreeMap::new(),
             walk_touch_records: std::collections::BTreeMap::new(),
             active_walk_touch: None,
