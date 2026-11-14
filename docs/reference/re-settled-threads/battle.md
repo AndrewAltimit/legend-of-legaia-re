@@ -2613,3 +2613,23 @@ So the pass before the RAM's chased `3936` and stood at `3694`, and the pass bef
 The focus follows the same law with an endpoint the bodies move. A film of `battle_ropeway_party_gala_flying_knee_mid` from the strike loop to the fade-down holds `focus = previous + step * ceil((endpoint - previous) / 12)` on `42` of `48` pass edges through `0x1E`, `0x1F` and the return `0x20` (the rest land within a unit of the endpoint, or split a pass across two rows). Walked back two passes on each pass's own endpoint, the focus lands within `8` units of the frame's; on the RAM's endpoint alone, up to `36` units off during the return.
 
 Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#battle-states).
+
+### Which frame the effect-script walk reads as a loop ends
+
+*Status:* resolved - the advanced cursor, on the walk ahead of the commit. Evidence: `disassembly` + `capture`
+
+`FUN_80047430` hands `(+0x68 >> 4) & 0xFF` to `FUN_801DEA50` at `0x800478B8`, ahead of both the
+`+0x1DC` cut (`0x800478F4`) and the natural-end test (`0x80047A48`). A PCSX-Redux run of
+`cort_evolved_card_first_menu`, breaking on the walker's floor-part seat (`0x801DEF08`), shows the
+evolved Cort's first approach stomp its walk entry's gates `1`, `4`, `7`, `10` and then gate `13` on
+frame `12` of the 12-keyframe clip (cursor `200`), on the pass the arrival's staged idle cuts the walk.
+`battle_jou_cort_181_strike` holds the same walk: three rings `12` vsyncs apart, the newest on the
+ground Cort arrived on, spaced as the body pair stands at keyframes `6`, `9` and `12`.
+
+On that pass the cut commits the staged idle, so the walk is not re-committed and the new cycle's
+gate `1` does not fire beside gate `13`. A walk that runs past its clip's end without arriving
+re-commits the loop and walks frame `0` on the same pass (`0x80047B54`, then the post-commit walk at
+`0x80047C08`); no recording holds that pass.
+
+Owning page: [`battle-action.md`](../../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
+

@@ -1400,6 +1400,18 @@ gate, which cost `battle_jou_gola_gola_v3_strike`'s camera `1.000` to `.873`. If
 the rescue misses too, the child drops to the default step, unaimed and then
 aimed.
 
+A later turn than retail's can open the phase as well. The replay runs rounds
+the capture's history may not hold, and a party swing in one of them can leave
+another monster on its knockdown when the striker's turn comes up again:
+`battle_dohaty_nova_v2_strike`'s replay met the gate some `2400` ticks in with
+the second Nova off its ground on clip `8`, where the capture's stands idle on
+its pair and draws as the near-camera ghost above the striker. So a monster
+strike's drive also names the pool slots the capture holds on clip `0`, the
+striker and its target aside (`ActionSteer::idle_bystanders`, the drive's
+`B<mask>` token, `RetailBattle::idle_bystanders`), and the gate waits for a
+turn that finds each of them idle or down. Both halves read it, so the
+headless search and the child miss the same turns and take the same rescue.
+
 The headless search takes the same aim once no stream reached the phase on the
 targets the replay picked itself (`RetailBattle::strike_aim_steer`, carried on the
 drive as `ActionSteer::strike_aim`), so a strike the replay only ever aims at another
@@ -2186,6 +2198,18 @@ own clock, and its depth cue ramps with its age, so `0x801F5EB0` seats its
 position `+0x14..+0x18` and its level `+0x78` taken back the lag
 (`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
 his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
+
+A ring the replay stomped past the capture's count is retired. The capture
+holds every ring its walk left live, and the replay's walk is not retail's: it
+starts where the yaw counter places it and runs on the replay's frame step, so
+on a finer step than retail's it is longer. Cort's walk is one cycle of his
+12-keyframe clip in retail, five stomps with the last (gate `13`, read on the
+crossing's frame `12`) on the pass he arrives; the replay, on step `2` where
+retail's sixteen-entry history reads `3`, walks a third further, re-commits
+the loop and stomps gate `13` and the new cycle's gate `1` on one pass. The
+snapshot seats the capture's rings over the replay's first and marks the rest
+finished (`World::install_action_fx_part_snapshot`), only for a capture that
+holds a ring at all.
 
 A ring the replay never stomped is seated outright. The seed carries the ring's
 scale `+0x72` beside its ground point, and the snapshot seats each ring past the

@@ -1601,7 +1601,11 @@ Its inputs resolve entirely out of state this page already names:
   three effect-`130` records at gate `29` over 28 keyframes this way, `0x4B`'s
   entry 3 one effect-`133` record, and `0xB5`'s walk one effect-`131` record
   at gate `13` over 12 keyframes once a cycle, on the ending cycle's walk ahead
-  of the re-commit that zeroes `+0x1F5`. Party reaction entries carry the same
+  of the re-commit that zeroes `+0x1F5`. A recording of the evolved Cort's
+  approach holds that stomp on frame `12`, on the pass he arrives: the arrival's
+  staged idle cuts the walk there (`+0x1DC` bit 0, `0x800478F4`), so the commit
+  is the idle's and the walk's gate `1` does not fire beside it
+  ([settled](../reference/re-settled-threads/battle.md#which-frame-the-effect-script-walk-reads-as-a-loop-ends)). Party reaction entries carry the same
   shape: the get-up (entry 5) spawns a direct effect `7` (`0x87`) on its
   crossing (frame 28), and the flinches (entries 2 and 3) one on theirs (frame 9). Port:
   `MonsterAnimPlayer::crossing_frame`, census
