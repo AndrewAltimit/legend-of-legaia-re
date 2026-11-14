@@ -388,6 +388,15 @@ impl World {
             owner: self.battle_ctx.active_actor,
             subject: None,
         });
+        // A mode-`0` raise (`clear a1` at `0x801F7160` / `0x801F7178`, then
+        // `jal 0x801D8DE8` at `0x801F7188`): the bar spawns at seat A and
+        // glides up to seat B over the readout, which stays in view until
+        // the frame covers it. `ctx[+0x18] = 0x5B` right behind the call
+        // (`0x801F7198..0x801F719C`).
+        self.battle_ctx.message_id = legaia_overlay_images::cast_presentation::MESSAGE_BAR_ELEMENT;
+        self.battle.message_bar_glide = Some(
+            legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+        );
     }
 
     /// The two stores the class-9 (Stone) arm makes **after** the bit, and
