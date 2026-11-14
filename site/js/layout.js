@@ -1097,6 +1097,119 @@ function revealActiveRow(sidebar) {
   }
 }
 
+/* ---------- Shell probe ---------- */
+/* What a phone actually does with the fixed chrome, read off the phone itself:
+   a browser with a collapsing address bar has a visual viewport, a `vh` and a
+   fixed containing block that no desktop emulation reproduces, and a tab kept
+   open across a deploy can still be running the previous shell. Adding
+   `?shell-probe` to any page URL pins a readout of the build, the viewports
+   and the chrome's rectangles to the bottom of the screen; it follows the tab
+   from page to page until `?shell-probe=off`. Nothing here runs without it. */
+const SHELL_PROBE_KEY = 'shell-probe';
+
+function shellProbeWanted() {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.has(SHELL_PROBE_KEY)) {
+      if (q.get(SHELL_PROBE_KEY) === 'off') sessionStorage.removeItem(SHELL_PROBE_KEY);
+      else sessionStorage.setItem(SHELL_PROBE_KEY, '1');
+    }
+    return sessionStorage.getItem(SHELL_PROBE_KEY) === '1';
+  } catch (e) {
+    return /[?&]shell-probe(?!=off)/.test(location.search);
+  }
+}
+
+/* The readout as text: one line per fact, short enough for a phone. */
+function shellProbeReport() {
+  const n = (v) => Math.round(v * 10) / 10;
+  const rect = (el) => {
+    if (!el) return 'none';
+    const r = el.getBoundingClientRect();
+    return n(r.left) + ',' + n(r.top) + ' ' + n(r.width) + 'x' + n(r.height);
+  };
+  const ver = (sel, attr) => {
+    const el = document.querySelector(sel);
+    const m = el && /[?&]v=([0-9a-f]+)/.exec(el.getAttribute(attr) || '');
+    return m ? m[1] : '?';
+  };
+  /* A viewport unit resolved to pixels, through a box of that height. */
+  const unit = (u) => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:-9px;top:0;width:1px;visibility:hidden;height:100' + u;
+    document.body.appendChild(d);
+    const h = d.getBoundingClientRect().height;
+    d.remove();
+    return n(h);
+  };
+  const sb = document.getElementById('sidebar');
+  const bar = document.querySelector('.topbar');
+  const strip = sb && sb.querySelector('.sidebar-zones');
+  const zone = sb && sb.querySelector('.sidebar-zone');
+  const list = sb && sb.querySelector('.sidebar-list');
+  const vv = window.visualViewport;
+  const lines = [
+    'build css ' + ver('link[href*="styles.css"]', 'href') + ' js ' + ver('script[src*="layout.js"]', 'src'),
+    'inner ' + innerWidth + 'x' + innerHeight + ' client ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight +
+      ' screen ' + screen.width + 'x' + screen.height + ' dpr ' + n(devicePixelRatio),
+    'visual ' + (vv ? n(vv.offsetLeft) + ',' + n(vv.offsetTop) + ' ' + n(vv.width) + 'x' + n(vv.height) + ' scale ' + n(vv.scale) : 'none'),
+    'vh ' + unit('vh') + ' svh ' + unit('svh') + ' lvh ' + unit('lvh') + ' dvh ' + unit('dvh'),
+    'page scroll ' + n(scrollX) + ',' + n(scrollY) + ' doc ' + document.documentElement.scrollWidth + 'x' + document.documentElement.scrollHeight +
+      ' body overflow ' + getComputedStyle(document.body).overflowY,
+    'bar ' + rect(bar),
+  ];
+  if (sb) {
+    const cs = getComputedStyle(sb);
+    lines.push('drawer ' + rect(sb) + ' ' + cs.position + (sb.classList.contains('open') ? ' open' : ' closed') +
+      ' scroll ' + n(sb.scrollTop) + '/' + sb.scrollHeight + '/' + sb.clientHeight);
+    lines.push('strip ' + rect(strip) + ' list ' + rect(list) + ' scroll ' + (list ? n(list.scrollTop) + '/' + list.scrollHeight + '/' + list.clientHeight : '-'));
+    if (zone) {
+      const r = zone.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      lines.push('first tab ' + rect(zone) + ' hit ' + (hit ? (zone.contains(hit) ? 'itself' : hit.tagName.toLowerCase() + '.' + String(hit.className).split(' ')[0]) : 'nothing'));
+    }
+    /* An ancestor with any of these is the drawer's fixed containing block,
+       and the drawer then scrolls with the page. */
+    for (let a = sb.parentElement; a; a = a.parentElement) {
+      const as = getComputedStyle(a);
+      const why = ['transform', 'filter', 'backdropFilter', 'perspective', 'contain', 'willChange', 'containerType']
+        .filter((k) => as[k] && !/^(none|auto|normal)$/.test(as[k])).map((k) => k + ':' + as[k]);
+      if (why.length) lines.push('holds fixed: ' + a.tagName.toLowerCase() + ' ' + why.join(' '));
+    }
+  }
+  lines.push(navigator.userAgent);
+  return lines.join('\n');
+}
+
+function wireShellProbe() {
+  if (!shellProbeWanted()) return;
+  const box = document.createElement('div');
+  box.id = 'shell-probe';
+  box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:2000;max-height:45%;overflow:auto;' +
+    'padding:4px 6px;background:rgba(0,0,0,.86);color:#9f9;font:10px/1.3 monospace;white-space:pre-wrap;overflow-wrap:anywhere';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.textContent = 'copy';
+  copy.style.cssText = 'float:right;font:inherit;color:#000;background:#9f9;border:0;border-radius:3px;padding:3px 8px';
+  const text = document.createElement('span');
+  copy.addEventListener('click', () => {
+    if (navigator.clipboard) navigator.clipboard.writeText(text.textContent).catch(() => {});
+  });
+  box.appendChild(copy);
+  box.appendChild(text);
+  document.body.appendChild(box);
+  const draw = () => { text.textContent = shellProbeReport(); };
+  for (const ev of ['scroll', 'resize', 'click', 'touchend', 'orientationchange']) {
+    window.addEventListener(ev, () => requestAnimationFrame(draw), { passive: true, capture: true });
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', draw);
+    window.visualViewport.addEventListener('scroll', draw);
+  }
+  setInterval(draw, 500);
+  draw();
+}
+
 /* ---------- Main ---------- */
 function injectLayout(opts) {
   const { active } = opts || {};
@@ -1179,6 +1292,7 @@ function injectLayout(opts) {
   }
 
   wireDiscChip();
+  wireShellProbe();
 
   fitTables();
   window.addEventListener('resize', fitTables);
