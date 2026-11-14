@@ -1140,6 +1140,18 @@ on the same frame (`opens_in_band` in `cast_sequence::compare_with`). A harness 
 Wave `.917` to `.992`, Lapis Wave `.923` to `.997` (arm 1 `.714` to `.998`), Glare `.903` to
 `.958`.
 
+The rule stops at the capture band. Seventeen plain-path films open in the magic band's state
+`0x2B`; pairing that segment from its end lifts Aluru Cannon `.845` to `.954` but lowers Grand
+Claw `.964` to `.953` and Thunder Burst `.984` to `.970`, so whether a `0x2B` opening is cut
+short needs a reading of its own before the pairing takes it.
+
+A frame's HP readout is not a damage reading: the bar counts down, and Rogue Thunder's films
+showed Noa a few points apart from retail mid-count. A `--wrapper-trace` recording of
+`rugi_rogue_pre_rogue_thunder` lands `818`, `833` and `723` on the three guarding seats
+(`pre` minus `def`, halved by the guard), and the engine on the rand track ends on the same
+`855`, `727` and `1079`. The older recording the film set points at ends Noa `20` lower: two
+recordings of one cast deal apart, and the fresh one is the measurement.
+
 ## The game clock
 
 Retail's frames do not all last their step. The frame driver `FUN_80016B6C`
