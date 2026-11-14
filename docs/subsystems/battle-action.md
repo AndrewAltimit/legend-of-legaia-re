@@ -1593,7 +1593,17 @@ Its inputs resolve entirely out of state this page already names:
   [`monster-animation.md` § Effect-script records](../formats/monster-animation.md#effect-script-records-entry-0x140x53).
 - **cursor** = actor `+0x1F5`, zeroed by every anim commit
   (`FUN_8004AD80`, `0x8004B060`).
-- **frame** = the node's 12.4 anim cursor (`node[+0x68] >> 4`).
+- **frame** = the node's 12.4 anim cursor (`node[+0x68] >> 4`), as the rate
+  advance left it: the walk runs before the natural-end test (`0x80047A48`),
+  so on the tick a clip ends it reads the frame count, not the last keyframe,
+  and with the walker's `frame + 1 >= gate` test a record gated one past the
+  count fires as the clip ends. The get-up of monsters `0x53..0x55` spawns its
+  three effect-`130` records at gate `29` over 28 keyframes this way, `0x4B`'s
+  entry 3 one effect-`133` record, and `0xB5`'s walk one effect-`131` record
+  at gate `13` over 12 keyframes once a cycle, on the ending cycle's walk ahead
+  of the re-commit that zeroes `+0x1F5`. Port:
+  `MonsterAnimPlayer::crossing_frame`, census
+  `actor-formats/tests/monster_cue_track_end_frame_real.rs`.
 - **facing** = actor `+0x46`, the SM's bearing writes
   ([the cast-begin facing store](#the-cast-begin-facing-store) and the
   attack-band's `FUN_80019B28 + 0x800` stores).

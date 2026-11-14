@@ -139,6 +139,10 @@ pub struct MonsterAnimPlayer {
     /// end wraps or clamps it (8.8 phase): what the anim tick's walks read
     /// ([`Self::walked_frame`]).
     walked_phase: u32,
+    /// The last [`Self::advance`] crossed the frame count: what
+    /// [`Self::crossing_frame`] answers from. Cleared by the next advance,
+    /// a rewind or a seek.
+    crossed: bool,
     /// The entry's two clip-morph lane indices (`+0x04`, `+0x08`): the
     /// 1-based on-disc indices `FUN_800542C8` resolves to the
     /// [`legaia_actor_formats::monster_archive::ClipMorph`]s the battle draw
@@ -277,6 +281,7 @@ impl MonsterAnimPlayer {
             tween: None,
             natural_end: false,
             walked_phase: 0,
+            crossed: false,
             morph_lanes: [
                 head_u32(&anim.effect_script, 0x04),
                 head_u32(&anim.effect_script, 0x08),
@@ -320,7 +325,7 @@ impl MonsterAnimPlayer {
         std::mem::take(&mut self.natural_end)
     }
 
-    /// The keyframe the anim tick's cue walk reads: the node cursor as the
+    /// The keyframe the anim tick's walks read: the node cursor as the
     /// rate advance left it, before the natural-end test. Retail stores the
     /// advanced cursor (`sh v0,0x68(s5)` at `0x80047764`), runs only the
     /// loop window over it, and hands `(+0x68 >> 4) & 0xFF` to the walks
@@ -334,6 +339,19 @@ impl MonsterAnimPlayer {
     // PORT: FUN_80047430 (`0x80047764..0x800478E8`, the walks on the advanced cursor)
     pub fn walked_frame(&self) -> i16 {
         (self.walked_phase >> PHASE_FRAC_BITS) as i16
+    }
+
+    /// [`Self::walked_frame`] while the last advance crossed the frame
+    /// count, `None` otherwise: the frame the hit, effect-script and cue
+    /// walks read on the crossing tick (`0x80047890..0x800478E8`), all three
+    /// on the advanced cursor. The effect and hit walks fire a gate `g` once
+    /// `frame + 1 >= g`, so the clamped last keyframe reaches a gate on the
+    /// frame count and the crossing one past it: the ropeway monster
+    /// `0x53`'s get-up spawns its three effect-`130` records at gate `29`
+    /// over 28 keyframes as it stands.
+    // PORT: FUN_80047430 (`0x80047890..0x800478BC`, the hit and effect walks on the advanced cursor)
+    pub fn crossing_frame(&self) -> Option<i16> {
+        self.crossed.then(|| self.walked_frame())
     }
 
     /// The committed entry's hit-event side, or `None` for a clip built
@@ -501,6 +519,7 @@ impl MonsterAnimPlayer {
         let max = self.frame_count().saturating_sub(1) << PHASE_FRAC_BITS;
         self.phase = (u32::from(sixteenths) << 4).min(max);
         self.finished = false;
+        self.crossed = false;
     }
 
     /// [`Self::seek_sixteenths`] and the pose the cursor now stands on, with
@@ -517,6 +536,7 @@ impl MonsterAnimPlayer {
     pub fn rewind(&mut self) {
         self.phase = 0;
         self.finished = false;
+        self.crossed = false;
     }
 
     /// Advance one tick and return the interpolated per-object pose. A looping
@@ -636,6 +656,7 @@ impl MonsterAnimPlayer {
         // A finished one-shot holds: retail would have committed the queued
         // clip on the crossing tick; the engine keeps the player until the
         // world installs the next one (or forever, for the downed hold).
+        self.crossed = false;
         if !self.looping && self.finished {
             return self.hold_pose();
         }
@@ -646,6 +667,7 @@ impl MonsterAnimPlayer {
         // (`FUN_80047430` `0x80047A48..0x80047A60`, `slt frame, frames`).
         if raw >= total {
             self.natural_end = true;
+            self.crossed = true;
             if !self.looping {
                 self.finished = true;
                 self.phase = last as u32 * PHASE_ONE;
@@ -975,6 +997,36 @@ mod one_shot_tests {
         assert!(l.take_natural_end());
         assert_eq!(l.current_frame(), 0);
         assert_eq!(l.walked_frame(), 3);
+    }
+
+    #[test]
+    fn the_crossing_frame_lives_one_advance() {
+        // The hit and effect walks read the advanced cursor only on the tick
+        // it crossed the frame count; any other tick, and a held one-shot's
+        // later ticks, read the pose cursor.
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        p.step = 256;
+        let _ = p.tick();
+        assert_eq!(p.crossing_frame(), None);
+        let _ = p.tick();
+        assert_eq!(p.crossing_frame(), None);
+        let _ = p.tick();
+        assert_eq!(p.crossing_frame(), Some(3));
+        let _ = p.tick();
+        assert_eq!(
+            p.crossing_frame(),
+            None,
+            "the held pose does not cross again"
+        );
+        // A loop's re-commit rewinds the cursor, and the crossing with it.
+        let mut l = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        l.step = 256;
+        for _ in 0..3 {
+            let _ = l.tick();
+        }
+        assert_eq!(l.crossing_frame(), Some(3));
+        l.rewind();
+        assert_eq!(l.crossing_frame(), None);
     }
 
     #[test]

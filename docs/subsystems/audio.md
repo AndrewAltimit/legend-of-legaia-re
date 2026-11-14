@@ -2738,8 +2738,8 @@ the monster stands on `battle_ropeway_party_noa_sonic_javelin_open`. Port:
 `MonsterAnimPlayer::walked_frame` is the advanced cursor before the wrap or
 clamp; the crossing tick walks the cue track on it (for a loop, the ending
 cycle's walk runs ahead of the re-commit that zeroes `+0x1F6`). The hit walk
-and the effect-script walk take the same frame in retail; the port's still read
-the clamped keyframe.
+and the effect-script walk take the same frame
+([the effect script](battle-action.md#the-per-action-effect-script-fun_801dea50)).
 
 The shout band is the smallest part of the track. Most of what a fight sounds
 like rides it: a party swing's entry carries `(0, 0xA7)` / `(0, 0x51)`,
