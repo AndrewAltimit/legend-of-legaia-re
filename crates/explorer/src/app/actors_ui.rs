@@ -237,17 +237,49 @@ impl App {
                     return;
                 }
             };
-            ui.horizontal_wrapped(|ui| {
+            // The name, then the view's tools on one row. A wrapping row put
+            // Export on a line of its own under a longer name ("Gold Bison")
+            // at the minimum window; when the name and the tools do not fit
+            // side by side, the name takes the row above them instead. The
+            // tools' width is only known once they are placed, so it is the
+            // last frame's.
+            let tools_id = ui.id().with("actor_tools_width");
+            let tools_w: Option<f32> = ui.data(|d| d.get_temp(tools_id));
+            let name_w = ui
+                .painter()
+                .layout_no_wrap(
+                    a.label.clone(),
+                    egui::TextStyle::Heading.resolve(ui.style()),
+                    egui::Color32::WHITE,
+                )
+                .size()
+                .x;
+            // The separator: its own 6 points and a gap each side.
+            let gap = 6.0 + 2.0 * ui.spacing().item_spacing.x;
+            let inline = name_fits_beside_tools(name_w, gap, tools_w, ui.available_width());
+            if !inline {
                 ui.heading(&a.label);
-                ui.separator();
-                v.view.controls(ui, "texel x colour / 128 from the actor's own battle VRAM band");
-                if ui
-                    .button("Export .glb...")
-                    .on_hover_text("Save this model with its animation clips as glTF binary (Ctrl+E)")
-                    .clicked()
-                    || key
-                {
-                    export = Some(v.pick);
+            }
+            ui.horizontal(|ui| {
+                if inline {
+                    ui.heading(&a.label);
+                    ui.separator();
+                }
+                let tools = ui.horizontal(|ui| {
+                    v.view.controls(ui, "texel x colour / 128 from the actor's own battle VRAM band");
+                    if ui
+                        .button("Export .glb...")
+                        .on_hover_text("Save this model with its animation clips as glTF binary (Ctrl+E)")
+                        .clicked()
+                        || key
+                    {
+                        export = Some(v.pick);
+                    }
+                });
+                let w = tools.response.rect.width();
+                if tools_w != Some(w) {
+                    ui.data_mut(|d| d.insert_temp(tools_id, w));
+                    ui.ctx().request_repaint();
                 }
             });
             if let (Pick::Character(c), Some(Ok(cats))) = (v.pick, &st.catalogs)
@@ -468,6 +500,13 @@ fn flow_rows(widths: &[f32], max: f32) -> Vec<Vec<usize>> {
     rows
 }
 
+/// Whether an actor's name fits on the tools' row: its width, the
+/// separator's `gap`, and the tools' measured width within `avail`. Before
+/// the tools are first measured the name goes inline.
+fn name_fits_beside_tools(name_w: f32, gap: f32, tools_w: Option<f32>, avail: f32) -> bool {
+    tools_w.is_none_or(|t| name_w + gap + t <= avail)
+}
+
 /// The folded equipment header: how many of the character's sections
 /// carry something other than the default piece.
 fn equipment_header(changed: usize) -> String {
@@ -490,10 +529,23 @@ fn short_section(label: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{Pick, flow_rows};
+    use super::{Pick, flow_rows, name_fits_beside_tools};
 
     /// The pick the settings file reopens reads back as written, and a hand
     /// edit that means nothing opens on no one.
+    #[test]
+    fn a_long_name_takes_its_own_row() {
+        // A short name fits beside the tools, a longer one in the same
+        // panel goes above them, and a wide panel takes either inline.
+        assert!(name_fits_beside_tools(0.0, 22.0, Some(345.0), 380.0));
+        assert!(!name_fits_beside_tools(88.0, 22.0, Some(345.0), 380.0));
+        assert!(name_fits_beside_tools(88.0, 22.0, Some(345.0), 700.0));
+        assert!(
+            name_fits_beside_tools(500.0, 22.0, None, 380.0),
+            "unmeasured: inline"
+        );
+    }
+
     #[test]
     fn a_pick_round_trips_its_settings_form() {
         for p in [Pick::Character(2), Pick::Monster(10)] {
