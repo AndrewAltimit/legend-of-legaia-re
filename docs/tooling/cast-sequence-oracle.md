@@ -2140,7 +2140,12 @@ Three things the table and the recordings behind it say about the frame-cost mod
   action-state table reads rms `84` and `.76`. The Done band is the plainest case:
   eleven enemy films' settles cost `300` to `688` on a full party and track the linked
   count (`1481` to `3424`) at `.19` a polygon, where the table says `595` for all of
-  them, and four in ten full-party settles cost under `0x1FF` (step `2`).
+  them, and four in ten full-party settles cost under `0x1FF` (step `2`). The cue
+  channel has its own case, `jou_gimard_v3_tail_flare`: retail runs every `0x2B` frame
+  of the cast on step `4`, the table prices the band's first `54` ticks `570` to `708`
+  (step `3`), and cue `0x17` lands seven ticks late against a six-tick window. Priced
+  from the linked polygons (`LEGAIA_BATTLE_POLY_COST=1`) the band's agreement goes from
+  `.17` to `.94`, the cue lands and the film reads `.986` against `.972`.
 - **No count the world holds stands in for the linked one.** `LEGAIA_DIAG_CAST_BODIES=1`
   writes `bodies.csv` beside the engine recording (every body a tick: drawn,
   triangles, position), and three world-side terms were fitted to the linked count on
