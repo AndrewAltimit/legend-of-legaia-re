@@ -9,6 +9,16 @@ use super::*;
 /// The PROT entry of Jedo's module (`summon_jedo`).
 const JEDO_ENTRY: u32 = 931;
 
+/// The party formation points `0x800775E0` (SCUS), `(x, z)` by party count
+/// and seat: the `+0` / `+4` halfwords of each 8-byte entry, a row of three
+/// entries per count. Row 0 is never read by a cast with a party.
+const HORN_FORMATION: [[[i16; 2]; 3]; 4] = [
+    [[0, -800], [600, -1000], [-600, -1000]],
+    [[300, -800], [-300, -800], [0, -1000]],
+    [[0, -825], [600, -775], [-600, -775]],
+    [[0, 800], [-600, 900], [600, 900]],
+];
+
 impl World {
     /// Draw PROT 0916's arm-0 verdict once per cast and hold it on the
     /// module state ([`ModuleCamState::kill`]), the way retail parks it in
@@ -536,6 +546,7 @@ impl World {
         phase_in: u8,
         passed: bool,
         seat_slot: u8,
+        caster_slot: usize,
     ) {
         use legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
         /// The white word arms 4 and `0xA` store (`lui 0x3FFF; ori 0xFFFF`).
@@ -576,6 +587,15 @@ impl World {
                 set(a, hidden);
             }
         }
+        // Arm 0's pass stands every party seat below `ctx[+0]` on its
+        // formation point, two thirds of the x and half the z, facing `0`,
+        // keeping the pair and heading for arm `0xB`'s pass to restore
+        // (`0x801F6B94..0x801F6C68`, `0x801F7D3C..0x801F7D88`).
+        match phase_in {
+            0 => self.seat_party_for_horn(caster_slot),
+            0xB => self.restore_lined_up_party(),
+            _ => {}
+        }
         // Arm `0xA`'s pass raises the roster panels the heal's tally reads
         // on: `FUN_801D8DE8(6, 0)`, then `(0x4E + i, 0)` for `i` below
         // `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7BF0..0x801F7C5C`),
@@ -583,6 +603,44 @@ impl World {
         if phase_in == 0xA {
             self.battle.raise_module_roster_panels();
         }
+    }
+
+    /// PROT 0930's (Horn) arm-0 re-seat: party seat `i` of `n` goes to
+    /// `x = 2 * fx / 3`, `z = fz / 2`, facing `0`, `(fx, fz)` the formation
+    /// point `*(0x800775E0 + (n * 3 + i) * 8)` (both quotients toward zero:
+    /// `mult 0x55555556` / `mfhi` less the sign, `srl 31` / `sra 1`). The
+    /// pair and heading go to `party_saved` for arm `0xB`
+    /// ([`Self::restore_lined_up_party`]).
+    fn seat_party_for_horn(&mut self, caster_slot: usize) {
+        let n = usize::from(self.party.party_count).clamp(1, 3);
+        for (i, &[fx, fz]) in HORN_FORMATION[n].iter().enumerate().take(n) {
+            let Some(a) = self.actors.get_mut(i) else {
+                continue;
+            };
+            let (x, z) = (((2 * i32::from(fx)) / 3) as i16, fz / 2);
+            self.casting.module_cam.party_saved[i] = Some((
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.battle.facing_angle,
+            ));
+            let (dx, dz) = (
+                x.wrapping_sub(a.move_state.world_x),
+                z.wrapping_sub(a.move_state.world_z),
+            );
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            if let Some((bx, bz)) = a.battle.seat {
+                a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+            }
+            a.battle.facing_angle = 0;
+        }
+        self.casting.module_cam.caster_saved = self
+            .casting
+            .module_cam
+            .party_saved
+            .get(caster_slot)
+            .copied()
+            .flatten();
     }
 
     /// PROT 0929's (Mule) monster-row visibility. Arm 1 shows every living

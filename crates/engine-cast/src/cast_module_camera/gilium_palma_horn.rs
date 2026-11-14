@@ -554,7 +554,7 @@ pub const HORN_LAST_ARM: u8 = 0xB;
 /// Arm `0x1E`, the creature's clip cycler, is in the jump table but no arm
 /// stores it.
 ///
-/// PORT: FUN_801F6A74, overlay_summon_horn_0930_801f6a74 (PROT 0930; the whole phase chain's gates, camera writes, captions, creature seat and clips - the party re-seat, part spawns and the stage words not carried)
+/// PORT: FUN_801F6A74, overlay_summon_horn_0930_801f6a74 (PROT 0930; the whole phase chain's gates, camera writes, captions, creature seat and clips - the part spawns and the stage words not carried; the party re-seat is the host's)
 pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let gated = |st: &mut ModuleCamState, add: i32| -> bool {
         if counted(st, D) {
@@ -628,7 +628,13 @@ pub fn horn_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             if gated(st, 0) {
                 return held(d);
             }
-            let c = seats.caster;
+            // The pass restores arm 0's re-seat ahead of the cut
+            // (`0x801F7D3C..0x801F7D88`), so the cut reads the caster's own
+            // pair and heading.
+            let mut c = seats.caster;
+            if let Some((x, z, facing)) = st.caster_saved.take() {
+                (c.x, c.z, c.facing) = (x, z, facing);
+            }
             finish(caption(
                 with_drift(
                     cut(

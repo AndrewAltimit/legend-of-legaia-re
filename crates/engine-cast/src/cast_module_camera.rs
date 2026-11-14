@@ -301,6 +301,11 @@ pub struct ModuleCamState {
     /// The party seats' pairs and headings as a line-up arm found them
     /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
     pub party_saved: [Option<(i16, i16, u16)>; 3],
+    /// The caster's entry of [`Self::party_saved`], where a re-seat moved a
+    /// party caster: PROT 0930's arm `0xB` restores the seats before its cut
+    /// reads the caster (`0x801F7D3C..0x801F7DDC`), so the director frames
+    /// the restored pair.
+    pub caster_saved: Option<(i16, i16, u16)>,
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host

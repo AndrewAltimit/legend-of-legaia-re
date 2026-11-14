@@ -3447,6 +3447,17 @@ arm `0xD` steps the countdown word by `p / 8` a pass as the creature arcs
 `0x56`, a third of its length from zero; arm `0xE`'s pass puts the creature
 into the defeat fade (`+0x21C = 2`, `+0x225 = 2`, `0x801F7FE4..`), so it is
 gone when arm `0xF` frames the struck row.
+Horn's arm 0 re-seats the party for the whole cast (`0x801F6B94..0x801F6C68`): each
+seat below `ctx[+0]` keeps its pair and heading in module words, then stands at two
+thirds of its formation point's `x` and half its `z` (the SCUS table `0x800775E0`, a row
+of three 8-byte entries per party count, both quotients toward zero), facing `0`. Arm
+`0xB`'s pass puts them back (`0x801F7D3C..0x801F7D88`) before its cut reads the caster,
+so the closing shot frames the caster's own seat. A lone Vahn stands at `(200, -400)`
+through arms 1..`0xB` (a recording's `body.csv`), and every record arm `0xA` seats on him
+with him. Seated where the fight left him, arm `0xB`'s burst stood a hundred units off
+retail's in the frame, and the `0x9C` film's arm `0xB` read `.893` on every seat; re-seated
+it reads `.998` on `--retail-steps --rand-track` (`World::seat_party_for_horn`,
+`ModuleCamState::caster_saved`). Grade `disassembly` + `capture`.
 Mushura's arms 0 and 1 show the latched victim the band's freeze hid
 (`World::apply_mushura_writes`). Horn's seat visibility is carried
 (`World::apply_horn_writes`): arm 1 shows
