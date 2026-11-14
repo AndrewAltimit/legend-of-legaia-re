@@ -879,11 +879,17 @@ def run_engine(a, out: Path) -> bool:
     if a.physical and ram_ground is not None:
         env["LEGAIA_BATTLE_GROUND_SNAP"] = ram_ground
     # A monster strike's drive (`action,<seat>,<state>,3,...`) plays the
-    # state's own queue unless the still already steered it.
+    # state's own queue unless the still already steered it: by its own `q`,
+    # or by a gate on the first swing's clip and cursor (`k` / `u`), which
+    # reaches the phase only on a replay that drew the swing itself. Steered
+    # again on top of that gate, `battle_rugi_barra_strike` and
+    # `battle_taiku_topaz_strike` never met it and recorded no frame.
     drive = env.get("LEGAIA_BATTLE_DRIVE", "")
     f = drive.split(",")
+    clip_gated = any(x[:1] == "k" and x[1:].isdigit() for x in f[4:])
     if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
             and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
+            and not clip_gated
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:

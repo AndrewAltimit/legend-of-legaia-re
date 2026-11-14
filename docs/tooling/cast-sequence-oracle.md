@@ -505,7 +505,11 @@ another clip. `battle_geremi_ogre_strike`'s Ogre walked from cursor `72` where
 retail's stood on `96`, then swung `09` where retail's queue holds `07 07`; seated
 on both, every segment runs retail's length and the film reads `.983` for `.920`.
 Neither is a deal: both are bytes the state holds, and `--strike-deal` still owns
-the later draws.
+the later draws. A still gated on the first swing's clip and cursor (the drive's `k`
+/ `u`) has steered it already, and the driver adds no `q` there: steered again on
+top of that gate, `battle_rugi_barra_strike` and `battle_taiku_topaz_strike` never
+met it and recorded no frame (now `.995` and `.987`), and
+`battle_dohaty_nova_v2_strike` reads `.993` for `.976`. A harness seat.
 
 A cast whose hits are the melee kernel's takes the deal too. PROT 0952's Astral
 Slash stages Gaza's four-beat clip, each beat a block roll: retail's first roll
