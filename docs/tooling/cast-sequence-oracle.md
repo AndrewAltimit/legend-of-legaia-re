@@ -70,7 +70,20 @@ pin Mystic Circle read `.717` against `.852` without it. Over the strike and ene
 cast films the drop lifts most (`ropeway_curry_devil` `.63` to `.90`,
 `geremi_ogre_strike` `.72` to `.93`); the two Death Game films and
 `jou_cort_181_strike` read lower off the pin, which had held them on the step their
-bodies were tuned to ([the frame step](../subsystems/battle-stage-camera.md#the-capture-band-against-the-films)). The scroller rects
+bodies were tuned to ([the frame step](../subsystems/battle-stage-camera.md#the-capture-band-against-the-films)).
+
+The drop has one fallback. A `--physical` film replays the round the seed found, and
+the seed found it on the pin: on the party's step the walk up to the gate draws other
+`rand()` words, and the round can part from the capture's before the gate.
+`battle_taiku_topaz_strike`'s Topaz then picks seat `0` where the drive waits for a
+swing at seat `2`, the gate never opens and the film runs to its deadline with no
+frame. A physical film that records nothing off the pin is recorded again on it
+(`engine-pin.txt` in the film directory remembers, so a re-run starts there). The pin
+is not kept for every pinned strike film, because it costs the ones that reach their
+gate without it: over the thirteen of them the strike set's image mean reads `.978`
+off the pin and `.917` on it.
+
+The scroller rects
 (`LEGAIA_SEAT_VRAM_RECTS`) are the exception: the child holds them only until the
 cast's first action pass (`LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION`), then lets them
 roll. A scrolled page's phase is time since its scroller started, which a pre-cast

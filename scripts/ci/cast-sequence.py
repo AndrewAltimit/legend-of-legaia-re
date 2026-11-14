@@ -905,9 +905,37 @@ def retail_hit_words(out: Path) -> list[str]:
 
 
 def run_engine(a, out: Path) -> bool:
+    """Record the engine side. A `--physical` film whose child carries the
+    still's pin to the default step (`LEGAIA_BATTLE_PARTY_STEP=0`) drops it,
+    and falls back to it when the drop loses the gate: the seed found the
+    round on the pin, and on the party's step the replay can draw another
+    (`battle_taiku_topaz_strike`'s Topaz picks seat 0 where the drive waits
+    for seat 2, and the film ran to its deadline with no frame). Kept for
+    every pinned strike film the pin costs image (the 13 that reach their
+    gate without it read a mean `.978` without and `.917` with), so it is the
+    fallback and not the rule. `engine-pin.txt` remembers a film that needed
+    it, so a re-run goes there first."""
+    marker = out / "engine-pin.txt"
+    order = [True, False] if marker.exists() else [False, True]
+    for n, keep_pin in enumerate(order):
+        ok, frames, pinned = record_engine(a, out, keep_pin)
+        if not ok or frames or not (a.physical and pinned) or n == 1:
+            if ok and frames and keep_pin and pinned:
+                marker.write_text("LEGAIA_BATTLE_PARTY_STEP=0\n")
+            elif ok and frames:
+                marker.unlink(missing_ok=True)
+            return ok
+        print("[engine] no frame: the gate was not met "
+              + ("on the still's pin to the default step; replaying on the party's step" if keep_pin
+                 else "on the party's step; replaying on the still's pin to the default step"))
+    return False
+
+
+def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
+    """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
     if kept is None:
-        return False
+        return False, 0, False
     toks = shlex.split(kept.read_text())
     assert toks[0] == "cd" and toks[2] == "&&", f"unexpected child command shape in {kept}"
     work = Path(toks[1])
@@ -915,12 +943,16 @@ def run_engine(a, out: Path) -> bool:
     env = dict(os.environ)
     i = 0
     child_inflight = None
+    keep = set(PHYSICAL_KEEP_ENV) if a.physical else set()
+    pinned = any(t == "LEGAIA_BATTLE_PARTY_STEP=0" for t in rest)
+    if a.physical and keep_pin:
+        keep.add("LEGAIA_BATTLE_PARTY_STEP")
     while i < len(rest) and "=" in rest[i] and not rest[i].startswith("/"):
         k, v = rest[i].split("=", 1)
         if k == "LEGAIA_BATTLE_INFLIGHT":
             child_inflight = v
         # A physical recording walks the state's own pad path to the strike.
-        if k not in DROP_ENV or (a.physical and k in PHYSICAL_KEEP_ENV):
+        if k not in DROP_ENV or k in keep:
             env[k] = v
         i += 1
     args = rest[i + 1:]
@@ -1079,14 +1111,14 @@ def run_engine(a, out: Path) -> bool:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
-            return False
+            return False, 0, False
         env["LEGAIA_CAST_RAND_SEED"] = seed
     if a.rand_track:
         track = out / "retail-rand.txt"
         text = retail_rand_track(out)
         if not text:
             print("[engine] --rand-track: the retail recording has no rand words inside a module band")
-            return False
+            return False, 0, False
         track.write_text(text)
         env["LEGAIA_CAST_RAND_TRACK"] = str(track)
     if a.retail_steps:
@@ -1116,7 +1148,7 @@ def run_engine(a, out: Path) -> bool:
     if (not a.rerecord and (edir / "meta.csv").exists() and key_file.exists()
             and key_file.read_text() == key):
         print(f"[engine] cached: {edir} (same binary, command and inputs; --rerecord to run it again)")
-        return True
+        return True, sum(1 for _ in edir.glob("e_*.png")), pinned
     key_file.unlink(missing_ok=True)
     if edir.exists():
         shutil.rmtree(edir)
@@ -1127,11 +1159,12 @@ def run_engine(a, out: Path) -> bool:
     (out / "engine.log").write_text(r.stdout + r.stderr)
     if not (edir / "meta.csv").exists():
         print(f"[engine] FAILED: the action never began (status {r.returncode}); see {out / 'engine.log'}")
-        return False
+        return False, 0, False
     if r.returncode == 0:
         key_file.write_text(key)
-    print(f"[engine] {sum(1 for _ in edir.glob('e_*.png'))} frames")
-    return True
+    frames = sum(1 for _ in edir.glob("e_*.png"))
+    print(f"[engine] {frames} frames")
+    return True, frames, pinned
 
 
 def score(a, out: Path) -> int:
