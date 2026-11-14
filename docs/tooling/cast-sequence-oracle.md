@@ -1064,6 +1064,17 @@ the 29 films, no sound cue moving:
 | `--retail-steps` | `.9366` | `.9396` | `0x91` `.893` to `.967`, `0x9C` `.864` to `.875` |
 | `--retail-steps --rand-track` | `.9592` | `.9631` | `0x91` `.893` to `.967`, `0x86` `.936` to `.960`, `0x9C` `.972` to `.983` |
 
+Gilium's and Juggernaut's stager calls then seated their records a battle frame late,
+on the module's next tick, where retail seats them inside the calling part's step
+([cast module](../subsystems/cast-module.md#summon-creature-directors)). Seated on the
+caller's frame, no cue moving:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9269` | `.9279` | `0x95` `.942` to `.960`, `0x99` `.927` to `.938` |
+| `--retail-steps` | `.9396` | `.9407` | `0x95` `.967` to `.985`, `0x99` `.925` to `.937` |
+| `--retail-steps --rand-track` | `.9631` | `.9642` | `0x95` `.967` to `.986`, `0x99` `.979` to `.991` |
+
 Juggernaut's arm 26 reads `.44` against one retail recording and `.80` against another of
 the same cast, so its ring phase is the recording's, and Terra's vortex parts on phase
 rather than shape. The rest is listed in the
