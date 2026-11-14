@@ -192,6 +192,8 @@ jobs:
         run: |
           python3 scripts/ci/check-baseline-loosening.py --self-test
           python3 scripts/ci/film-cues.py --self-test
+          python3 scripts/ci/film-images.py --self-test
+          python3 scripts/ci/walk-film-rand.py --self-test
           if [[ -n "${BASE_SHA}" && ! "${BASE_SHA}" =~ ^0+$ ]]; then
             git fetch --quiet --depth=1 origin "${BASE_SHA}"
             python3 scripts/ci/check-baseline-loosening.py --base "${BASE_SHA}"

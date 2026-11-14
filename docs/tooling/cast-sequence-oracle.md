@@ -1849,6 +1849,29 @@ baseline, each film at the better of baseline and measurement. A lower value nee
 [`baseline-loosenings.toml`](../../scripts/ci/baseline-loosenings.toml) entry, which
 [`check-baseline-loosening.py`](ratchet-integrity.md) enforces on the file alone.
 
+### The gate set
+
+Filming all four sets takes most of an hour, so the
+[full gate](build-and-test-speed.md#the-full-gate) films one small fixed set,
+[`film-sets/gate.txt`](../../scripts/ci/film-sets/gate.txt): a dozen short films drawn
+from the four sets, each line naming its recording with `--retail-from` under
+`captures/film-retail/<film>/retail`, so the gate never starts the emulator. The set
+films in about three minutes, one engine window at a time.
+
+```bash
+scripts/ci/film-cues.py --gate scripts/ci/film-sets/gate.txt --out target/film-gate
+```
+
+`--gate` films the set (engine side only) and checks it under `--set`, which turns the
+set's films from "checked if measured" into "owed": a film of the set with no report,
+no baseline row or another recording than the baseline's fails, as a fallen cue does. It
+skips when none of the set's recordings is on the machine and fails when only some
+are, or when `pcsxr-state` is unbuilt (a film then seats off its recording's first row
+and scores as another film). A film enters the gate set by being short, by holding its
+cue score over repeated runs, and by its recording being copied under
+`captures/film-retail/`; a film that leaves one of the four sets leaves the gate set
+with it.
+
 Each strike and enemy film is pinned to the battle stream it was baselined on
 (`--pin-seed`, retail-compare's `LEGAIA_RC_PIN_SEED`): the seed tries that stream
 ahead of the search list, and a change to the draws before the phase no longer hands
@@ -1863,6 +1886,41 @@ per-pass rate store when reactions began to commit in the seat's own node tick: 
 strike's `2` met the commit's decay to `4`, and both of the knockdown's `0x17` cues
 rang 48 and 68 ticks early. Four of the five Seru films' images moved by `.001` and Chaos
 Flare's by `.003`: only the cue channel said anything was wrong.
+
+## The image table
+
+The image channel is not a ratchet, and it is still the number film work is measured
+in. [`film-image-table.tsv`](../../scripts/ci/film-image-table.tsv) holds the last
+blessed per-film table of the four sets, and
+[`film-images.py`](../../scripts/ci/film-images.py) says what a fresh run moved against
+it:
+
+```bash
+scripts/ci/cast-sequence-batch.py scripts/ci/film-sets/strike.txt --out captures/films/strike
+scripts/ci/film-images.py --report captures/films/strike
+scripts/ci/film-images.py --report --tsv lane-table.tsv        # a summary table instead of film directories
+scripts/ci/film-images.py --write captures/films/strike        # take the measurement as the table
+```
+
+| Column | Holds |
+|---|---|
+| `set`, `film` | The batch file under `film-sets/` that names the film, and its name there. |
+| `image` | The film's mean block score over its valid pairs (`mean_within`). |
+| `min`, `pairs` | The lowest pair and the pair count. |
+| `low_part`, `low_image`, `low_pairs` | The lowest-scoring part of four pairs or more: one action state or module arm. |
+
+`--report` prints each set's mean over the films both sides hold, every film that
+moved by `--min-move` or more (falls first), and the films only one side holds. It
+exits 0 whatever it finds. `--write` replaces the measured films' rows and keeps the
+rest, so one set is re-blessed without filming the other three; a film no set names
+any more is dropped. `--tsv` reads a table with `film` and `image` columns in place of
+film directories (a column the source does not carry reads `-`), which is how a set
+filmed elsewhere is fed in.
+
+The table is blessed with the cue baseline, from one run of each set on one build. A
+row is a measurement on that build with that film's recording and seats: a film
+re-recorded or re-seated since reads as a move with no engine change behind it, which
+is what the cue channel's recording digest is for.
 
 ## Reading the report
 

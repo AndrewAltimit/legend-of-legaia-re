@@ -90,4 +90,49 @@ not a finding by itself; a placement off retail from the first row is.
 Retail's pass runs once every frame step of vsyncs, and a state is saved on one vsync of that frame. The frame pacer `FUN_80016B6C` waits each frame out with libetc `VSync(step)` (`jal 0x8005FB84` at `0x800171C0`), which stores the vblank count on return (`0x800797D4`, `0x8005FC8C..0x8005FCA0`), so the vblank counter `0x8007A894` less that store is the vsync of its frame the state holds (`RetailObs::vsync_phase`), and the next pass opens `step - phase` vsyncs into the film.
 The engine side seats its game-tick accumulators to match (`actor_vsync_accum`, the CLUT bank's twin): `phase - 1`, and on a phase of `0` it holds the first vsync. `conc_field_card_boot` (phase `0`) read `12` placements off on the seed's own phase and reads `0`, `conc2_field_route_walk` (`0`) `14` to `0`, `dolk2_market_noa` (`1`) `9` to `1`, `koin1_field_route_walk` (phase `2` of a step-`3` frame) `5` to `3`, `town01_field_card_boot` `5` to `0`. A harness seat.
 
+## The rand ratchet
+
+How far a film's `rng` column agrees with retail's is one number for "the field runs
+retail's draws on retail's clock", and
+[`walk-film-rand.py`](../../scripts/ci/walk-film-rand.py) holds it to
+[`walk-film-rand-baseline.json`](../../scripts/ci/walk-film-rand-baseline.json), a
+film at a time:
+
+```bash
+scripts/ci/walk-film-rand.py --check                     # every cached film, engine side only
+scripts/ci/walk-film-rand.py --only 'kor*' --keep        # a few films, engine CSVs kept
+scripts/ci/walk-film-rand.py --propose /tmp/rand.json    # a candidate baseline
+```
+
+The retail side is a cache of recordings, `captures/walk-film-retail/<state>/`:
+`walk_film.csv`, `walk_film_actors.csv` and the `manifest.txt` that names the pad and
+the length, one idle film (`--pad 900-901:L2 --frames 300`) for each field state. A
+film is added by recording it into that directory (`walk-film.py <state> --pad ..
+--frames .. --out captures/walk-film-retail/<state>`). The ratchet runs only the
+engine side, several films at once (the child is headless, and a film is a fraction
+of a second, so the whole cache runs in seconds), and skips when the cache is absent.
+The count is the same from run to run and at any `--jobs`.
+
+Each side's word column is reduced to its changes, one entry a draw burst. Up to
+three leading entries are dropped from either side, which absorbs the vsync inside its
+frame the state was saved on, and the entries are compared in order up to the first
+that differs: `agree` is that run's length, `draws` the retail film's entries. A film
+that agrees to its end reads `agree == draws`, or one short when retail's last vsync
+drew.
+
+A baselined film fails `--check` when its `agree` falls, or when it produces no
+engine film. A cached state the engine writes no film for (one saved inside a scene
+change, `doman_arrival_from_korb2`) has no baseline row and is listed as `[no film]`. One whose retail side holds another number of entries was re-recorded
+and is listed, not scored. A state captured on a patched disc (`resident_patch` in
+`scripts/scenarios.toml`) is run and reported and never baselined. `--propose` writes
+a candidate, each film at the better of baseline and measurement; a lower value needs
+a [`baseline-loosenings.toml`](../../scripts/ci/baseline-loosenings.toml) entry
+([ratchet integrity](ratchet-integrity.md)). The [full gate](build-and-test-speed.md#the-full-gate)
+runs it as `walk-film-rand`.
+
+A film that parts early is not by itself a defect: an engage, a touch or a CD load
+the engine answers at once separates the two runs for good, and the count stops
+there. The ratchet holds what agrees, so a consumer moved onto the wrong clock shows
+as a fall on every film that draws through it.
+
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).

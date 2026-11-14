@@ -13,7 +13,7 @@ bottom, every rung assumes the ones below it.
 | 2. Port provenance | Does a `// PORT:` address name the routine the Rust implements? | The executable's and overlays' bytes at the tagged address | `check-port-provenance.py --check` |
 | 3. Retail kernel differential | Does the Rust compute what the bytes compute? | The routine itself, run off the disc in an R3000 interpreter | `differential-coverage.py --check` |
 | 4. Retail-compare stills | Does the engine stand where retail stood, at one instant? | A save state's RAM and VRAM | `retail-compare-baseline.json` ratchet |
-| 5. Films | Does it unfold the same over time? | An emulator recording, one row a vsync | Report, before and after on one command; `film-cues.py` ratchets the cue channel |
+| 5. Films | Does it unfold the same over time? | An emulator recording, one row a vsync | `film-cues.py` ratchets the cue channel and `walk-film-rand.py` the walk films' `rand()` agreement; images are reported against `film-image-table.tsv` |
 | 6. Full-game ladder | Does the whole game play, New Game to credits, on pad input? | Retail saves at each story milestone | `full_game_baseline.toml` ratchet |
 
 ## Contents
@@ -103,14 +103,21 @@ The [cast-sequence oracle](cast-sequence-oracle.md) records one cast on both
 sides and pairs frames on the game's own clock (the action state, then the
 cast module's phase), and the [walk film](walk-film.md) does the same for a
 field walk under a fixed pad schedule. Recordings carry retail pixels and stay
-out of the repository, so a film's image score has no committed baseline: a
-change reports its before and after on the same command.
+out of the repository. A film's image score moves a little with every engine
+change, so it is reported, not gated: `film-images.py --report` reads a fresh
+run against the committed per-film table
+([the image table](cast-sequence-oracle.md#the-image-table)).
 
-One channel of a film is ratcheted. A cast plays the cue retail plays, on the
-same clock, or it does not, so `film-cues.py --check` holds the sound cues of
-the committed film sets to `scripts/ci/film-cue-baseline.json`
-([the cue ratchet](cast-sequence-oracle.md#the-cue-ratchet)). A cue that stops
-playing fails there while the picture's score barely moves.
+Two channels of a film are ratcheted, because each is discrete. A cast plays
+the cue retail plays, on the same clock, or it does not, so `film-cues.py
+--check` holds the sound cues of the committed film sets to
+`scripts/ci/film-cue-baseline.json`
+([the cue ratchet](cast-sequence-oracle.md#the-cue-ratchet)), and the full gate
+films a fixed dozen of them on every run. A cue that stops playing fails there
+while the picture's score barely moves. A walk film's `rand()` word agrees with
+retail's draw for draw or parts from it, so `walk-film-rand.py --check` holds
+how far each field state's idle film agrees
+([the rand ratchet](walk-film.md#the-rand-ratchet)).
 
 A film also separates a wrong routine from a different deal: it logs retail's
 `rand()` seed word on every vsync and can seat the engine's stream on it at a
