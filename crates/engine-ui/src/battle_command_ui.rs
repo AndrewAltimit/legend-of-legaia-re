@@ -542,13 +542,11 @@ pub fn battle_command_chip_sprites(
                 dw * scale,
                 dh * scale,
             ),
-            // The leaf's quad runs its UVs `0..16` over fifteen pixels, a
-            // texel step of `16 / 15`, so pixel `k` samples texel
-            // `floor(k * 16 / 15)` = `k`: the top-left 15x15 texels one to
-            // one, as the arts-entry diamond draws the same leaf
-            // (`arts_input::DPAD_SIZE`). The full 16x16 rect scaled into the
-            // seat resamples the outline.
-            src: (atlas.dpad.0, atlas.dpad.1, dw, dh),
+            // The leaf's quad runs its UVs `0..16` over fifteen pixels, so
+            // the whole sixteen-texel cell is squeezed into the seat. The
+            // mednafen command-menu frames agree with that squeeze to three
+            // pixels of the glyph; a 15x15 one-to-one crop costs eighty.
+            src: atlas.dpad,
             color: CHIP_COLOR,
         });
     }
@@ -1139,12 +1137,7 @@ mod tests {
             // for the 36-wide prompt), plus the single glyph.
             assert_eq!(sprites.len(), n * 5 + 1, "{phase:?}");
             let g = sprites.last().unwrap();
-            // The glyph is `FUN_801DB8F4`'s quad: sixteen texels of UV over
-            // fifteen pixels, which the GPU samples as the cell's top-left
-            // 15x15 one to one - the crop the arts-entry diamond draws.
-            let (u, v, _, _) = title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD;
-            let (w, h) = crate::arts_input::DPAD_SIZE;
-            assert_eq!(g.src, (u, v, w, h), "{phase:?} glyph resampled");
+            assert_eq!(g.src, title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD);
             assert_eq!(g.dst, glyph, "{phase:?} glyph drifted");
         }
     }
