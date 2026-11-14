@@ -335,6 +335,18 @@ of the scene shows no figure at the controller. Port:
 `FieldHaltHost::spawn_bracket`, up while `entry_prerun` or `object_prerun`
 is; disc-gated in `engine-scene-host/tests/suimon_controller_disc.rs`.
 
+Two other spawn sections on the disc poke their own halted actor inside the
+bracket, and both reach the same state a later frame would have given them.
+`jagaroom`'s six statue triggers (`P1[2..=7]`) seat themselves with a
+run-to-tile, aim the halt-acquire at their own id (`CC <self> 85 00 00 26`,
+facing flat `0x26`) and raise their no-shadow bit (`B1 <self> 15`);
+`jagaroom_field_door_hop` holds all six with `+0x10` bits 21 and 22 up, the
+halt down, each heading the bearing to that figure
+(`engine-scene-host/tests/jagaroom_statue_spawn_disc.rs`). `geremi` `P1[58]`,
+with `0x1C3` up, steps a compass leg (`41 02 01`) and then clears its
+party-bank bit and binds scene clip `31` on its own id. A sweep of every
+scene's entry under five flag sets finds no fourth record.
+
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
 `a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN
