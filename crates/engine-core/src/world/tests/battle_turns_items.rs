@@ -233,11 +233,9 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
     // The band's applier call lands it.
     world.fold_battle_item_action(0, 0, 0);
     assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
-    let fx = world.drain_battle_hit_fx();
-    assert_eq!(fx.len(), 1);
-    assert!(fx[0].is_heal);
-    assert_eq!(fx[0].amount, 100);
-    assert_eq!(fx[0].target_slot, 0);
+    // A restore throws no numeral: retail's applier pushes nothing onto the
+    // ring; the HP figure rolls up on the readout word instead.
+    assert!(world.drain_battle_hit_fx().is_empty());
 }
 
 #[test]

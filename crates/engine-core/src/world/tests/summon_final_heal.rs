@@ -283,12 +283,8 @@ fn final_heal_revives_and_consumes_one_lost_grail() {
         "the Final Heal bit clears with no second Grail equipped"
     );
     assert!(
-        world
-            .battle
-            .hit_fx
-            .iter()
-            .any(|fx| fx.target_slot == 0 && fx.is_heal && fx.amount == 250),
-        "heal popup recorded"
+        world.battle.hit_fx.is_empty(),
+        "the revive throws no numeral (FUN_801E6968 pushes nothing)"
     );
 }
 
