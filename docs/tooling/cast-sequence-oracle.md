@@ -1029,7 +1029,12 @@ in another place; a `--watch 0x80009010` recording names each draw's caller (`ra
   ([effect VM](../subsystems/effect-vm.md#engine-port)), and on
   `--retail-steps --rand-track` every arm-8 pass ends on retail's word (`105` of `105`,
   `64` of `102` before). The arm's image did not move (`.585` to `.586`): no spawn was
-  missing, and what holds it is elsewhere.
+  missing. What held it was the heal's turn: a `--retail-parts` recording holds every
+  arm-7 fan and column, and every part they spawn, `68` yaw units short of the engine's
+  through the whole arm, twice the creature's facing. Arm 7 turns them to
+  `0x800 - facing` where the port added the facing as Orb's arm 9 does
+  ([cast module](../subsystems/cast-module.md#summon-creature-directors)); turned
+  retail's way, arm 8 reads `.980` against `.737`.
 - **Ozma's arm 21** draws retail's words once the walker moved and reads as before: its
   residue is the step's fall partway through the arm
   ([open threads](../reference/open-rev-eng-threads.md#battle--rendering)).

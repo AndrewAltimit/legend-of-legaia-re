@@ -3026,7 +3026,15 @@ objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 
 Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`). Both arms pass the healed
 group's extent as their records' scale with `lh a3,0x2C(sp)`, which reads the stack TR z
 after the tween builder `FUN_801D829C` rewrote it in place (`(z << 8) / 0xA0`), so an
-extent of `0x400` seats Spoon's column and fans at `0x666`.
+extent of `0x400` seats Spoon's column and fans at `0x666`. Arm 7 turns those records to
+the arm's shot yaw, `0x800 - creature[+0x46]` (`0x801F7DF8..0x801F7E14`), and adds `0x400`
+after the second (`0x801F7E78..0x801F7E88`): the creature's facing is **subtracted**, where
+Orb's arm 9 adds it (`0x801F7984..0x801F7998`). The two share the shot-point anchor but not
+its turn (`SpawnAnchor::ShotPointAgainstFacing` for Spoon). Turned the Orb way, every fan
+and column of the heal, and every part they spawn, stood twice the facing off retail's
+yaw (`68` units on the Gobu Gobu cast, a constant offset part for part in a
+`--retail-parts` recording), and the spinning heal of arm 8 read `.737` frame by frame;
+turned the Spoon way it reads `.980`. Grade `disassembly` + `capture`.
 Jedo's creature advances `+0x38 += step << 2` on every pass of arms 5 and 6
 (`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400`, which is where arm 10's
 framing expects it. Arm 23's pass stands it at `y = 0x400`, facing `0x200`, and shows the row
