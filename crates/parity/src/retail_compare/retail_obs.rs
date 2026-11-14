@@ -69,6 +69,9 @@ pub struct RetailObs {
     /// [`RetailObs::seat_view_window`] from the state's scratchpad, on a
     /// field state only - `None` when the state carries no scratchpad.
     pub view_window: Option<[i8; 4]>,
+    /// The packets and fog sheets in the table the state's frame is building
+    /// ([`retail_frame_table`]); `None` without a scratchpad image.
+    pub frame_table: Option<(usize, usize)>,
     /// The live game-state window lifted as a save.
     pub save: Option<legaia_save::SaveFile>,
     /// The field party HUD's idle countdown `_DAT_801F348C` (field-overlay
@@ -381,6 +384,7 @@ impl RetailObs {
                 rd32(ram, ENTRY_OPERAND + 4) as i16,
             ),
             view_window: None,
+            frame_table: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd16(ram, HUD_COUNTDOWN)),
@@ -1118,6 +1122,10 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_view_window(st.scratch_ram().ok());
             obs.seat_walk_rewind(st.scratch_ram().ok());
+            obs.frame_table = st
+                .scratch_ram()
+                .ok()
+                .and_then(|s| retail_frame_table(ram, s));
             Ok(obs)
         }
         _ => {
@@ -1129,6 +1137,9 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_view_window(st.scratchpad());
             obs.seat_walk_rewind(st.scratchpad());
+            obs.frame_table = st
+                .scratchpad()
+                .and_then(|s| retail_frame_table(st.main_ram(), s));
             Ok(obs)
         }
     }

@@ -127,7 +127,13 @@ impl WalkFilm {
         if std::env::var_os("LEGAIA_RC_NO_PART_VM").is_none() {
             let (seated, of) = session.host.world.seat_ambient_part_vm(&retail.part_vm);
             if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
-                eprintln!("part vm seated {seated} of {of}");
+                eprintln!(
+                    "part vm seated {seated} of {of} phase {} fog {} live {} table {:?}",
+                    retail.vsync_phase,
+                    retail.fog_live.len(),
+                    retail.fog_live_count,
+                    retail.frame_table
+                );
             }
         }
         // The fog pool as the state left it: its live count gates the next
@@ -334,12 +340,19 @@ fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) ->
     phase == 0
 }
 
-/// Whether the state was saved with its frame's fog walk still to run: a
-/// record the spawner seated this frame stands at age `0` until the render
-/// pass walks it (`FUN_8003F3FC` adds `rate * dt` to every live record), and
-/// the live count `_DAT_8007BCA8` is the last walk's.
+/// Whether the state was saved with its frame's fog walk still to run.
+///
+/// The table the frame is building holds packets but no fog sheet
+/// ([`RetailObs::frame_table`]): the render pass has not reached its fog
+/// stage. Or the pool says so itself: a record the spawner seated this frame
+/// stands at age `0` until a walk adds `rate * dt` to it (`FUN_8003F3FC`),
+/// and the live count `_DAT_8007BCA8` is the last walk's.
 fn pending_fog_walk(retail: &RetailObs) -> bool {
-    retail.fog_live.iter().any(|r| r.age == 0)
+    if retail.fog_live.is_empty() {
+        return false;
+    }
+    retail.frame_table.is_some_and(|(n, fog)| n > 0 && fog == 0)
+        || retail.fog_live.iter().any(|r| r.age == 0)
         || retail.fog_live.len() > usize::from(retail.fog_live_count)
 }
 

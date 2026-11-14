@@ -1071,6 +1071,40 @@ pub fn retail_part_vm(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient::Amb
         .collect()
 }
 
+/// What the ordering table the frame on the CPU is building holds, as
+/// `(packets, fog sheets)`: `None` without a scratchpad image.
+///
+/// The frame opener `FUN_8001698C` points scratchpad `0x1F8003F4` at the
+/// current buffer's table and clears it (`sw a0,0xe0(a2)` and the
+/// `ClearOTagR` call `jal 0x8005860C` at `0x80016AEC`), and the pacer
+/// `FUN_80016B6C` submits it from there (`DrawOTag` at `0x80017288`, head
+/// `table + (len - 1) * 4`, `len` the halfword at `0x1F8003A6`). A state
+/// whose table holds no packet was saved before its frame's render pass ran.
+pub fn retail_frame_table(ram: &[u8], scratch: &[u8]) -> Option<(usize, usize)> {
+    let rd32 = |o: usize| Some(u32::from_le_bytes(scratch.get(o..o + 4)?.try_into().ok()?));
+    let ot = rd32(0x3F4)?;
+    let len = usize::from(u16::from_le_bytes(
+        scratch.get(0x3A6..0x3A8)?.try_into().ok()?,
+    ));
+    if (ot & 0xFFE0_0000) != 0x8000_0000 || len == 0 {
+        return None;
+    }
+    let head = (ot & 0x1F_FFFF) as usize + (len - 1) * 4;
+    let prims = psx_ram_image::prim_pool::chain_walk(ram, 0x8000_0000, head);
+    let fog = prims
+        .iter()
+        .filter(|c| {
+            matches!(c.prim, psx_ram_image::prim_pool::Prim::PolyFt4 { clut, tpage, .. }
+                if clut == legaia_engine_field::fog_particles::FOG_CLUT
+                    && tpage == legaia_engine_field::fog_particles::FOG_TPAGE)
+        })
+        .count();
+    let undecoded: usize = psx_ram_image::prim_pool::chain_undecoded(ram, 0x8000_0000, head)
+        .values()
+        .sum();
+    Some((prims.len() + undecoded, fog))
+}
+
 /// The `4C E1` text balloon's handler word (`FUN_801DA7F0`, field overlay),
 /// which the place-name banner shares.
 const BALLOON_TICK: u32 = 0x801D_A7F0;
