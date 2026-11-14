@@ -253,7 +253,7 @@ impl World {
     /// one scene per cast. Seeds go onto the live parts of their tag in
     /// scene order, one each; a part with no seed is left alone, and a seed
     /// with no part left is skipped - the snapshot re-poses parts the
-    /// replay spawned and retires none.
+    /// replay spawned and retires none but a floor ring (below).
     ///
     /// The HP-restore cue's pillars
     /// ([`legaia_engine_effects::action_effect_script::HEAL_CUE_RECORDS`])
@@ -272,6 +272,18 @@ impl World {
     /// Koru in on his run clip, whose script stomps a ring every four
     /// frames (code `0x83` at frames `1`, `5`, `9`, `13`), and the three
     /// `koru_*_mid_cast` states hold three of them under him.
+    ///
+    /// The ring is also the one part the snapshot retires. A capture that
+    /// holds rings holds every ring its walk left live, each with its ground
+    /// point, so a ring the replay stomped past that count is a footfall
+    /// retail's walk never took: the replay walks on its own frame step from
+    /// where the yaw counter places it, and a walk run on a finer step than
+    /// retail's is longer and crosses its clip's end where retail's arrived
+    /// on it. `battle_jou_cort_181_strike`'s Cort walks one cycle of his
+    /// 12-keyframe clip in retail and arrives on its crossing tick, where
+    /// the last of five stomps (gates `1`, `4`, `7`, `10`, `13`) lands; the
+    /// replay's walk runs a third longer, re-commits the loop and stomps the
+    /// crossing's gate `13` and the new cycle's gate `1` on one tick.
     pub fn install_action_fx_part_snapshot(
         &mut self,
         seeds: &[legaia_engine_effects::summon::CastPartSeed],
@@ -328,6 +340,18 @@ impl World {
                     part.poke(off, value);
                 }
             }
+        }
+        // A floor ring past the capture's count is a footfall retail's walk
+        // never took.
+        let rings = seeds.iter().filter(|s| s.tag == FLOOR_PART_RECORD).count();
+        if rings > 0 {
+            self.casting
+                .active_action_fx
+                .iter_mut()
+                .flat_map(|s| s.parts.iter_mut())
+                .filter(|p| !p.finished && p.tag == Some(FLOOR_PART_RECORD))
+                .skip(rings)
+                .for_each(|p| p.finished = true);
         }
     }
 
