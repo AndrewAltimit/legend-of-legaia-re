@@ -1615,7 +1615,9 @@ scripts/ci/film-cues.py --check captures/films/seru captures/films/enemy --propo
 ```
 
 The sets are batch files under [`film-sets/`](../../scripts/ci/film-sets/): the Seru
-casts from the Gobu Gobu opener, the enemy casts and the dealt monster strikes. A film's
+casts from the Gobu Gobu opener, the enemy casts, the dealt monster strikes and the
+party arts (each party art state's own action, Hyper and Super Arts among them,
+dealt its traced hit words). A film's
 `retail/` may be a symlink to an existing recording, which the batch driver reuses. A
 baselined film fails when its cue score falls or it matches fewer cues; one whose
 retail side holds another number of cues was re-recorded and is listed, not scored; one
