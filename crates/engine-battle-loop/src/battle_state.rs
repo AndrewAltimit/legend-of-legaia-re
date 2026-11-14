@@ -887,6 +887,11 @@ pub struct BattleState {
     /// pass's frame out on the step the pass ran at and only then copies the
     /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
     pub pending_frame_step: Option<u8>,
+    /// A pass whose frame cost is still to be pushed
+    /// (`World::stage_pass_frame_cost`), with the arm table's step when one
+    /// names it: the SM stages it and the pass's close pushes it behind the
+    /// node ticks (`World::close_pass_frame_cost`).
+    pub pass_frame_cost_due: Option<Option<u8>>,
     /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
     /// that opens a later frame takes it. The effect scene graphs claim the
     /// same frame after the pass that set it, on the same tick.
@@ -1385,6 +1390,11 @@ pub struct BattleState {
     /// `+0x87` commit's draw takes the value standing a few frames on.
     /// Empty outside that oracle.
     pub capture_track_coin: Vec<(u64, u8)>,
+    /// The swing camera's yaw-seed coins as retail's recording of the same
+    /// strike drew them, in order (`legaia_engine_capture::strike_deal`):
+    /// each re-seed of `ctx[+0x6DA]` takes the next. Empty outside that
+    /// oracle.
+    pub capture_yaw_coin: std::collections::VecDeque<u8>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1687,6 +1697,7 @@ impl BattleState {
             drawn_polys: None,
             cast_arm_pass: None,
             pending_frame_step: None,
+            pass_frame_cost_due: None,
             pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,
@@ -1764,6 +1775,7 @@ impl BattleState {
             capture_reseat_bars: Vec::new(),
             capture_hit_rand: std::collections::VecDeque::new(),
             capture_track_coin: Vec::new(),
+            capture_yaw_coin: std::collections::VecDeque::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

@@ -1532,7 +1532,11 @@ impl World {
                 && self.battle_ctx.gauge_rearm_latch != 2
                 && self.battle_ctx.active_actor < self.party.party_count
             {
-                let coin = (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
+                let drawn = (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
+                // A capture's strike deal hands out retail's coin for the
+                // draw (`BattleState::capture_yaw_coin`); the word is drawn
+                // either way.
+                let coin = self.battle.capture_yaw_coin.pop_front().unwrap_or(drawn);
                 self.battle_ctx.swing_yaw_seeds = self.battle_ctx.swing_yaw_seeds.wrapping_add(1);
                 self.battle_ctx.swing_yaw_coin = coin;
                 self.battle_ctx.camera_variant = 0;

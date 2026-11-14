@@ -829,6 +829,29 @@ def retail_track_coins(out: Path) -> list[str]:
     return pts
 
 
+def retail_yaw_coins(out: Path) -> list[str]:
+    """The swing camera's yaw-seed coins through the recording, in order. The
+    value-2 arm of `FUN_8004E13C` (`0x8004E254..0x8004E2B4`) re-seeds the yaw
+    counter `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` at a party attacker's
+    commit of a clip whose `+0x87` byte is `2`, a Super Art finisher's first.
+    The counter climbs by `4` or `5` a pass, so a re-seed reads as a row
+    standing within a pass of `0x280` or `0xA80` that the row before it did
+    not lead up to. Empty for a recording without the `c6da` column."""
+    coins, prev = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            v = r.get("c6da")
+            if v is None or v == "":
+                return []
+            v = int(v)
+            if prev is not None and not 0 <= v - prev <= 8:
+                for coin, seed in ((0, 0x280), (1, 0xA80)):
+                    if 0 <= v - seed <= 8:
+                        coins.append(str(coin))
+            prev = v
+    return coins
+
+
 def game_clock(rows: list[dict]) -> list[int]:
     """Each `meta.csv` row's time on the recording's game clock, from `1` on
     the first row: a frame (one value of the `frame` column) advances it by
@@ -1075,6 +1098,9 @@ def run_engine(a, out: Path) -> bool:
         coins = retail_track_coins(out)
         if coins:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
+        yaws = retail_yaw_coins(out)
+        if yaws:
+            env["LEGAIA_STRIKE_DEAL_YAW"] = ",".join(yaws)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
     # The recordings are PCSX-Redux's, and so is the engine's default CD
