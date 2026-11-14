@@ -98,9 +98,11 @@ fn knockdown_rate(st: &ModuleCamState) -> u8 {
 ///
 /// Every cut is one frame. The phase chain, the strike and the victim's
 /// settle are [`crate::cast_module_ticks::CHAOS_FLARE_TICK`]'s and the band's,
-/// so `next` stays `None`. Not carried: arms 2 and 6's stores into the first
-/// monster record's node (`+0x85` / `+0x86`), arm 6's and 7's light words
-/// behind `0x800845C8`.
+/// so `next` stays `None`. Arms 2 and 6 also move clip 8's loop bounds
+/// (`+0x85` / `+0x86` of the action entry at `record[+0x6C]`, the record
+/// `0x801C9348` names) to `0x0C..0x11` and `0x15..0x17`, the stores Genocidal
+/// Cannon's arms 2 and 6 make on the same clip. Not carried: arm 6's and 7's
+/// light words behind `0x800845C8`.
 ///
 /// PORT: overlay_cast_chaos_flare_0951_801f6a20 (PROT 0951 `0x36`; the camera arms, the record runs and the seat hides)
 pub fn chaos_flare_camera(
@@ -157,6 +159,9 @@ pub fn chaos_flare_camera(
                 ..Default::default()
             };
             arm.party_skip_victim = true;
+            // `record[+0x6C]`, clip 8's action entry: `+0x85 = 0x0C`,
+            // `+0x86 = 0x11` (`0x801F6E94..0x801F6EC0`).
+            arm.caster_clip_bounds = Some((CHARGE_CLIP, [0x0C, 0x11]));
             st.countdown.0 = SPEED_SCALAR * 0xE0;
         }
         3 => {
@@ -190,6 +195,9 @@ pub fn chaos_flare_camera(
             arm.ctx_278 = Some(3);
             arm.backdrop_off = true;
             arm.caster_write.rate = Some(5);
+            // The same entry's window moved on: `0x15..0x17`
+            // (`0x801F7214..0x801F7238`).
+            arm.caster_clip_bounds = Some((CHARGE_CLIP, [0x15, 0x17]));
             st.countdown.add(0x60);
         }
         7 => {
@@ -286,6 +294,7 @@ mod tests {
         assert_eq!(a.party_write.render_flag, Some(0xFF));
         assert_eq!(a.caster_write.stage, Some(CHARGE_CLIP));
         assert!(a.caster_write.restage);
+        assert_eq!(a.caster_clip_bounds, Some((CHARGE_CLIP, [0x0C, 0x11])));
         let s = a.shot.unwrap();
         assert_eq!(s.tr, [0, 0x800, 0x800]);
         assert_eq!(s.frames, 1);
@@ -309,6 +318,7 @@ mod tests {
         assert!(a.flushes_pool && a.backdrop_off);
         assert_eq!(a.ctx_278, Some(3));
         assert_eq!(a.charge_spawns.iter().flatten().count(), 7);
+        assert_eq!(a.caster_clip_bounds, Some((CHARGE_CLIP, [0x15, 0x17])));
         st.countdown.0 = SPEED_SCALAR;
         let a = chaos_flare_camera(&mut st, 11, seats());
         assert_eq!(a.others_write.rate, Some(8));

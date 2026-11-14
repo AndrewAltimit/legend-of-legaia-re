@@ -945,6 +945,15 @@ impl World {
         let (slot, clip) = (run.slot, run.clips[i]);
         run.cursor = i;
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            // A director that makes the arm's store itself (PROT 0951's
+            // Chaos Flare stages `8` with the bump in its arm-2 seat write,
+            // `0x801F6D60`) has already committed the clip on this pass:
+            // the one store is not made twice, so the fresh clip keeps the
+            // hold budget its commit seeded (`+0x176`, the loop window the
+            // arm moves).
+            if a.battle.current_anim == clip {
+                return;
+            }
             if let Some(p) = a.battle_animation.as_mut() {
                 p.release_loop_window();
             }
