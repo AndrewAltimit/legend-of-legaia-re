@@ -121,6 +121,10 @@ const THUNDER: StrikeRecords = StrikeRecords {
 const THUNDER_RING: u32 = 0x801F_9A34;
 /// Thunder's `k = 5` spray pair, every pass (`0x801F76F0`, `0x801F7708`).
 pub const THUNDER_SPRAY: [u32; 2] = [0x801F_9AD0, 0x801F_9B20];
+/// The rounds of [`THUNDER_SPRAY`] a pass seats: the loop at
+/// `0x801F7680..0x801F7714` runs `s8 = 0, 1`, each round two `rand() % 257`
+/// draws (`x`, then `y`, each `0x80 - r`) and the pair at `(x, y, 0x100)`.
+pub const THUNDER_SPRAY_ROUNDS: usize = 2;
 /// Arm 0's records: on the caster's display trio `+0x3C..+0x40`, then at the negated point, then
 /// the element's own there (`0x801F6C94..0x801F6D28`).
 const OPEN_BODY: u32 = 0x801F_8FF0;

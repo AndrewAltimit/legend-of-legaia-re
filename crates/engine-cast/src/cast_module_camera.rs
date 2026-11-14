@@ -1280,8 +1280,8 @@ pub use doomsday::{
 };
 pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
 pub use element_change::{
-    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, element_change_camera,
-    element_strike_camera,
+    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, THUNDER_SPRAY_ROUNDS,
+    element_change_camera, element_strike_camera,
 };
 pub use evil_seru_magic::*;
 pub use freed::*;
