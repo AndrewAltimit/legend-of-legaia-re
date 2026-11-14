@@ -136,6 +136,24 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn sound_bank_ready(&self, _: u8) -> bool {
         self.world.audio.sound_bank_ready && !self.world.capture_read_pending()
     }
+    /// The read `0x32` waits on is the cast's module, so the hold reads the
+    /// module image's length off the disc's copy; disc-free, the long read.
+    fn summon_invoke_drive_vsyncs(&self, slot: u8) -> u8 {
+        use legaia_engine_battle_vm::battle_action as ba;
+        self.world
+            .actors
+            .get(usize::from(slot))
+            .map(|a| a.battle.params[0])
+            .and_then(|spell| self.world.cast_module_for(spell))
+            .and_then(|entry| {
+                let pool = self.world.casting.effect_pool.as_ref()?;
+                Some(pool.module(entry)?.bytes.len())
+            })
+            .map_or(
+                ba::SUMMON_INVOKE_DRIVE_VSYNCS,
+                ba::summon_invoke_drive_vsyncs,
+            )
+    }
     /// The disc spell table's class byte, read off the same
     /// [`legaia_engine_menus::pause_screens::MenuTextTables`] copy the live cast path
     /// classifies capture-class moves from (`World::spell_table_class`).

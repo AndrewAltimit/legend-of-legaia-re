@@ -141,14 +141,39 @@ fn summon_close_up<H: BattleActionHost + ?Sized>(
 
 /// Vsyncs `0x32` holds on the drive. The engine's drive is resident and has no
 /// read in flight, so this stands in for retail's read, which runs on the wall
-/// clock and not on passes: `14` or `16` vsyncs at step `2` on every party
-/// summon recorded from `party_basic_attack_vs_gobu_gobu`, and `15` at step `3`
-/// on the full-party recordings from `battle_kor_spoon_strike` and
-/// `battle_tower_swordie_strike` (`capture`, a constant fitted to those
-/// recordings; the read itself is the emulator's CD model). Counted in passes,
-/// the hold ran a step-`3` party eight passes (`24` vsyncs) where retail's ran
-/// five. It keeps the case-6 walk the arm runs on retail's length.
+/// clock and not on passes: `16` vsyncs at step `2` on the party summons
+/// recorded from `party_basic_attack_vs_gobu_gobu` whose module is five
+/// sectors or more, and `15` at step `3` on the full-party recordings from
+/// `battle_kor_spoon_strike` and `battle_tower_swordie_strike` (`capture`, a
+/// constant fitted to those recordings; the read itself is the emulator's CD
+/// model). Counted in passes, the hold ran a step-`3` party eight passes (`24`
+/// vsyncs) where retail's ran five. It keeps the case-6 walk the arm runs on
+/// retail's length.
 pub const SUMMON_INVOKE_DRIVE_VSYNCS: u8 = 15;
+
+/// [`SUMMON_INVOKE_DRIVE_VSYNCS`] for a module of at most
+/// [`SUMMON_INVOKE_SHORT_READ_SECTORS`] sectors. The read `0x32` waits on is
+/// the cast's own module, paged by loader B a few states earlier, so its
+/// length is the module's: of the 29 summons recorded from
+/// `party_basic_attack_vs_gobu_gobu`, the nine whose PROT entry is `4096`,
+/// `6144` or `8192` bytes hold `0x32` for `14` vsyncs (seven passes at step
+/// `2`) and the twenty of `10240` bytes or more for `16`. At step `3` both
+/// read `15`, as the full-party Gimard recording does. One pass fewer is one
+/// frame-driver `rand()` fewer ahead of the whole band.
+pub const SUMMON_INVOKE_SHORT_READ_VSYNCS: u8 = 13;
+
+/// The longest module (in 2048-byte sectors) whose read ends a pass early
+/// ([`SUMMON_INVOKE_SHORT_READ_VSYNCS`]).
+pub const SUMMON_INVOKE_SHORT_READ_SECTORS: usize = 4;
+
+/// The vsyncs `0x32` holds for a cast module of `bytes` bytes.
+pub const fn summon_invoke_drive_vsyncs(bytes: usize) -> u8 {
+    if bytes.div_ceil(2048) <= SUMMON_INVOKE_SHORT_READ_SECTORS {
+        SUMMON_INVOKE_SHORT_READ_VSYNCS
+    } else {
+        SUMMON_INVOKE_DRIVE_VSYNCS
+    }
+}
 
 pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     host: &mut H,
@@ -164,7 +189,7 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     // Each pass waits out its own step, so the read has had the passes' vsyncs.
     let dt = host.frame_dt().clamp(1, 0xFF) as u8;
     ctx.summon_invoke_vsyncs = ctx.summon_invoke_vsyncs.saturating_add(dt);
-    if ctx.summon_invoke_vsyncs < SUMMON_INVOKE_DRIVE_VSYNCS {
+    if ctx.summon_invoke_vsyncs < host.summon_invoke_drive_vsyncs(slot) {
         return stay(ctx);
     }
     ctx.summon_invoke_vsyncs = 0;
@@ -493,6 +518,22 @@ pub(super) fn summon_done<H: BattleActionHost + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The nine short modules of the player summons end `0x32` a pass early.
+    #[test]
+    fn the_invoke_hold_reads_the_modules_sectors() {
+        for bytes in [4096, 6144, 8192] {
+            assert_eq!(summon_invoke_drive_vsyncs(bytes), 13, "{bytes}");
+        }
+        for bytes in [8193, 10240, 12288, 16384] {
+            assert_eq!(summon_invoke_drive_vsyncs(bytes), 15, "{bytes}");
+        }
+        // At step `2` that is seven passes against eight; at step `3` five
+        // either way.
+        assert_eq!(13u8.div_ceil(2), 7);
+        assert_eq!(15u8.div_ceil(2), 8);
+        assert_eq!(13u8.div_ceil(3), 15u8.div_ceil(3));
+    }
 
     /// The applier's slot count off its base byte: two for a `readef`
     /// group, three for a `summon.dat` base below `0xCB`, four above.
