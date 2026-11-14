@@ -381,6 +381,10 @@ Bank 2 is the tint bank (bank 1) with two handlers swapped. Kinds `12..=17` shar
 
 The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost's OT depth is pushed `0x50` buckets deeper than the live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
 
+**The commit pass stamps the new clip.** The anim tick's natural-end commit (`jal 0x8004AD80` at `0x80047B54`, which stores `+0x1D9` at `0x8004BDE0`, behind an art install's ring clear) runs ahead of the ring shift (`0x80047E58`) and of the id store (`lbu 0x1d9` / `sb 0x1fb` at `0x80047FCC..0x80047FD4`; a monster's record pointer is reloaded at `0x80047B60` before its bytes are read at `0x80048044`). So slot 0 of the pass that commits a clip holds that clip's id, not the one it left.
+
+The same recording reads it: the Somersault's install pass is frame `1547`, the depth-`2` ghost draws in `1549` and `1550` and both from `1551`; the plain swing that follows commits in `1533`, which still draws two, `1534` draws one at depth `2` (the rate is back at `8`, so the walk samples depths `1` and `2`) and `1535` none. Stamped with the clip the pass left, the port's ghosts came and went one pass late. Port: `World::show_committed_first_keyframe` re-stamps the front entry's id with its pose. Grade `disassembly` + `capture`.
+
 **Port.** Kernel `engine-battle::battle_afterimage` (schedule / gate / colour law, file `crates/engine-battle/src/battle_afterimage.rs`), history ring on `Actor::battle_pose_history`, plan API `engine-world-views::battle_draws::battle_ghost_draws`.
 
 **The ring's clock.** Retail's ring takes one slot a battle frame and the walk reads slot `step` itself, with slot 0 the live frame (`+0x1FB + s0`, `+0x4C + 8 * s0`, `+0x17A + 2 * s0`, `0x80049454..0x800494A0`). `battle_melee_hit_spark` shows the cadence: Vahn's cursor ring steps `12` a slot at frame step `3` and `8` at step `2`, one whole battle frame per slot at rate `4`, and his position ring climbs `5` / `3` units a slot.

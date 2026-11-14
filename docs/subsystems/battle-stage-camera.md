@@ -2121,21 +2121,40 @@ film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 <a id="a-party-members-ghosts"></a>
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
-ghosts of the acting member, and each costs about what a monster's body of the same size
-does. PCSX-Redux recordings of the three Super Arts on a full party
+ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party
 (`battle_jou_party_vahn_tri_somersault_super_open`, `_gala_super_ironhead_super_open`,
-`_noa_dragon_fangs_super_open`, `--ghost-trace --gpu-cost`) drop `90` to `105` hblanks a
-ghost on the passes the slow motion's ghosts go (Tri-Somersault's `0x1E` from about `800`
-to `600`), and the finisher's rise `140` a ghost. So the ghost passes cost over `0x2D0` and
-run step `4`. Costed at the flat `36` a ghost the engine's read `694` and ran `3`; the pass
-that leaves the slow motion ran three vsyncs where retail's runs four, the flinch cursor the
-juggle counter reads ([a party strike's damage](../tooling/cast-sequence-oracle.md#a-party-strikes-damage))
-came one frame short, and the last four hits rolled on juggle `3` to `6` for retail's `1` to
-`4`. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`, Noa's `1536` over the
-whole form) the passes read `4`, all ten hits roll retail's numerals, and the chain finishers'
-`0x1F` and `0x20` read `4` with them: the party arts' films go from `.9034` to `.9183` (Gala's
-chain `.858` to `.951`, Lizard Tail `.917` to `.983`). Grade `disassembly` for the walk (`FUN_80049348` re-runs
-`FUN_80048A08` per ghost), `capture` for the costs.
+`_noa_dragon_fangs_super_open`, `--ghost-trace`) hold five frames that draw exactly one
+ghost beside frames that draw none, outside any clip's polls: Vahn's cost `687` and `685`
+over `596` to `608`, Gala's `535` and `537` over `442`, Noa's `716` over `620`. A ghost
+is `85` to `96` hblanks whichever member draws it, and Gala's body, the lightest of the
+three by triangles, costs the most, so the port prices a party ghost flat
+(`PARTY_GHOST_DRAW_COST`, `90`) where a monster's follows its mesh. Two of them carry a
+full party's `0x1E` frame over `0x2D0` (step `4`) and one leaves it under (step `3`): the
+frame that draws the slow motion's first ghost alone costs `692`, and retail's next pass
+runs `3`. Priced by the triangles the seat draws (`143` for Vahn) the one-ghost frames
+read `4`. Grade `disassembly` for the walk (`FUN_80049348` re-runs `FUN_80048A08` per
+ghost), `capture` for the cost.
+
+Not every ghost frame fits one number. Where an art's shot stands close on the member, or
+monsters are down, the frame's base falls well under the table's row: Super Ironhead with
+one Theeder left alive costs `442` bare and `615` to `647` under both ghosts, so its slow
+motion runs step `3` where the table's `622` puts the port on `4`, and Sonic Javelin's
+return frames cost `665` to `714` under both. The base is what the port does not model
+there ([the open thread](../reference/open-rev-eng-threads.md)).
+
+<a id="a-frames-cost-is-its-own-node-ticks"></a>
+
+**A frame's cost is its own node ticks and draw.** The frame driver measures a frame from
+one `VSync` return to the next (`FUN_800173BC` at the flip), so what a pass's node ticks
+change is in that pass's cost: the ring shift that brings a ghost into reach, the parts a
+hit spawns. The Tri-Somersault recording draws the first ghost in frames `1549` and
+`1550`, the second of them (the first outside the voice line's polls) costs `692`, and
+frame `1551` runs step `3`. The port pushes a pass's cost behind its node ticks
+(`World::close_pass_frame_cost`, staged by the action SM's step); pushed from the SM, the
+draw load was the pass before's and reached the step a frame late. Over the party arts'
+films the two changes and the ring id lift the mean from `.9242` to `.9293` on the same
+harness seats, and the dealt strike films from `.9805` to `.9816` (`retona_king_frog_strike`
+`.865` to `.905`). Grade `capture`.
 
 Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
 `0x2B` frames sit at `504` to `510` with both ghosts up, on the edge of `0x1FF`, and the

@@ -1537,6 +1537,18 @@ on both sides, so a clip both sides played can be read cue for cue.
   `0` before it and filmed the finale on the other column (`0x1F` reads `.496`; on the game
   clock `.79`, the film `.793` to `.862`). A harness seat.
 
+- the swing camera's side. The same routine's value-`2` arm (`0x8004E254..0x8004E2B4`) re-seeds the
+  yaw counter `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` at a party attacker's commit of a clip
+  whose `+0x87` byte is `2`, a Super Art finisher's first, and the finisher is framed from that
+  side until the return shot. The replay follows retail's stream between dealt hits, but one frame
+  step apart by the commit it draws the coin on another word: all three Super Art films drew the
+  other side (`2688` for retail's `640` on Super Ironhead and Dragon Fangs, `640` for `2688` on
+  Tri-Somersault) and filmed the finisher mirrored. The driver reads the re-seeds off the
+  recording's `c6da` column (a row within a pass of `0x280` or `0xA80` that the row before did
+  not lead up to) and hands the coins over in order as `LEGAIA_STRIKE_DEAL_YAW`
+  (`World::battle.capture_yaw_coin`): Tri-Somersault `.778` to `.810`, Super Ironhead `.880` to
+  `.908`, Dragon Fangs `.844` to `.869`, the arts set `.9199` to `.9242`. A harness seat.
+
 ```bash
 scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
 scripts/ci/cast-sequence.py --physical --state battle_jou_nova_v3_strike --strike-deal --hit-trace
