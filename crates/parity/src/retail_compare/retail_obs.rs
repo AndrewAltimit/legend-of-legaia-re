@@ -166,6 +166,12 @@ pub struct RetailObs {
     /// The same records with no step back to the displayed frame
     /// ([`retail_fog_live`]): what the walk film resumes from.
     pub fog_live: Vec<legaia_engine_field::fog_particles::FogParticle>,
+    /// `_DAT_8007BCA8`, the live count the last render step wrote and the
+    /// next pass's spawner tests against the cap. A state saved between a
+    /// pass's spawns and its render step holds more alive records than this:
+    /// the spawns are in, and the records the step is about to free are
+    /// still up.
+    pub fog_live_count: u16,
     /// `_DAT_8007BCAC`, the camera's eased vertical offset, which the sheets
     /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
     /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
@@ -436,6 +442,7 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            fog_live_count: game_anchors::u16_at(ram, 0x8007_BCA8),
             fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
             vsync_phase: game_anchors::u32_at(ram, 0x8007_A894)
                 .wrapping_sub(game_anchors::u32_at(ram, 0x8007_97D4)),

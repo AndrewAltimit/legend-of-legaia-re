@@ -106,6 +106,13 @@ impl WalkFilm {
         // pool draws past the cap until it fills. The seed's warm-up ticks
         // accumulated a step the state's records have already taken.
         session.host.world.fog.install_snapshot(&retail.fog_live);
+        // The count the spawner reads is the word the last render step wrote,
+        // not the records alive at the save: a state saved between a pass's
+        // spawns and its render step holds both (`field_walled_collision_pin`:
+        // 73 records up, the word 66, and retail's first pass spawns).
+        if !retail.fog_live.is_empty() {
+            session.host.world.fog.live = retail.fog_live_count;
+        }
         session.host.world.fog.pending_dt = 0;
         // The game frame's phase: retail's next pass opens `step - phase`
         // vsyncs into the film, which the engine's accumulators reach from
