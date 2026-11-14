@@ -135,6 +135,10 @@ pub struct MonsterAnimPlayer {
     /// one-shot finishing, a looping clip wrapping); taken by
     /// [`Self::take_natural_end`].
     natural_end: bool,
+    /// The advanced cursor of the last [`Self::advance`] before the natural
+    /// end wraps or clamps it (8.8 phase): what the anim tick's walks read
+    /// ([`Self::walked_frame`]).
+    walked_phase: u32,
     /// The entry's two clip-morph lane indices (`+0x04`, `+0x08`): the
     /// 1-based on-disc indices `FUN_800542C8` resolves to the
     /// [`legaia_actor_formats::monster_archive::ClipMorph`]s the battle draw
@@ -272,6 +276,7 @@ impl MonsterAnimPlayer {
             end_root_step: anim.entry_end_root_step().unwrap_or(0),
             tween: None,
             natural_end: false,
+            walked_phase: 0,
             morph_lanes: [
                 head_u32(&anim.effect_script, 0x04),
                 head_u32(&anim.effect_script, 0x08),
@@ -313,6 +318,22 @@ impl MonsterAnimPlayer {
     /// Clears on read.
     pub fn take_natural_end(&mut self) -> bool {
         std::mem::take(&mut self.natural_end)
+    }
+
+    /// The keyframe the anim tick's cue walk reads: the node cursor as the
+    /// rate advance left it, before the natural-end test. Retail stores the
+    /// advanced cursor (`sh v0,0x68(s5)` at `0x80047764`), runs only the
+    /// loop window over it, and hands `(+0x68 >> 4) & 0xFF` to the walks
+    /// (`0x800478D8..0x800478E8`) ahead of the natural-end test at
+    /// `0x80047A48`. So on the crossing tick the walk reads the frame count
+    /// (or past it), where [`Self::current_frame`] reads the clamped last
+    /// keyframe (a one-shot) or the wrapped cursor (a loop): a cue authored
+    /// on a clip's frame count sounds as the clip ends. A get-up whose
+    /// track is `(28, 0x17)` over 28 keyframes thuds as it stands
+    /// (`battle_ropeway_party_noa_sonic_javelin_open`).
+    // PORT: FUN_80047430 (`0x80047764..0x800478E8`, the walks on the advanced cursor)
+    pub fn walked_frame(&self) -> i16 {
+        (self.walked_phase >> PHASE_FRAC_BITS) as i16
     }
 
     /// The committed entry's hit-event side, or `None` for a clip built
@@ -605,6 +626,7 @@ impl MonsterAnimPlayer {
         }
         // Window before natural end, exactly like the tick.
         let raw = self.apply_loop_window(self.phase + step);
+        self.walked_phase = raw;
         // The natural end: the cursor crossed the stream's frame count
         // (`FUN_80047430` `0x80047A48..0x80047A60`, `slt frame, frames`).
         if raw >= total {
@@ -913,6 +935,31 @@ mod one_shot_tests {
         assert_eq!(f2.bone_outputs[0].0[0], 20);
         assert!(f2.finished);
         assert!(!p.take_natural_end());
+    }
+
+    #[test]
+    fn the_walks_read_the_crossing_cursor_unclamped() {
+        // `FUN_80047430` hands the walks `+0x68 >> 4` as the advance left
+        // it, ahead of the natural-end test: on the crossing tick that is
+        // the frame count, one past the keyframe the pose holds.
+        let mut p = MonsterAnimPlayer::new_one_shot(&clip(3)).unwrap();
+        p.step = 256;
+        let _ = p.tick();
+        let _ = p.tick();
+        assert_eq!(p.walked_frame(), 2);
+        let _ = p.tick();
+        assert!(p.take_natural_end());
+        assert_eq!(p.current_frame(), 2);
+        assert_eq!(p.walked_frame(), 3);
+        // A loop wraps its pose cursor and still walks the count.
+        let mut l = MonsterAnimPlayer::new(&clip(3)).unwrap();
+        l.step = 256;
+        for _ in 0..3 {
+            let _ = l.tick();
+        }
+        assert!(l.take_natural_end());
+        assert_eq!(l.current_frame(), 0);
+        assert_eq!(l.walked_frame(), 3);
     }
 
     #[test]

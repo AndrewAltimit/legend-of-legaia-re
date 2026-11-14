@@ -403,6 +403,9 @@ impl World {
                 player.set_tween_target(tween);
             }
             let mut looped_recommit = false;
+            // The keyframe the cue walk reads ([`MonsterAnimPlayer::walked_frame`]
+            // on the crossing tick, else the cursor).
+            let mut cue_frame = None;
             let mut slice_natural_end = false;
             let frame = if let Some(player) = &mut actor.battle_animation {
                 let before = player.current_frame();
@@ -593,6 +596,11 @@ impl World {
                     }
                 }
                 looped_recommit = recommit;
+                cue_frame = Some(if natural_end {
+                    player.walked_frame()
+                } else {
+                    after
+                });
                 Some(after)
             } else {
                 None
@@ -607,6 +615,15 @@ impl World {
             // wrap, not from the idle's first commit 58 vsyncs back.
             // PORT: FUN_80047430 (`0x80047B54`, the natural-end commit of a
             // looping clip)
+            // The crossing tick walks the ending cycle's cue track on the
+            // advanced cursor, ahead of the re-commit that zeroes `+0x1F6`
+            // (the walk at `0x800478E4` runs before the natural-end commit
+            // at `0x80047B54`): a cue authored on a loop's frame count sounds
+            // once a cycle, as it ends.
+            // PORT: FUN_80047430 (`0x800478D8..0x800478E8` ahead of `0x80047B54`)
+            if looped_recommit && let Some(f) = cue_frame {
+                self.step_actor_anim_cues(i, f);
+            }
             if looped_recommit {
                 // The commit's rate decay runs on this path too
                 // (`0x8004B080..0x8004B090`): a seat at any rate but `8` loops
@@ -693,7 +710,10 @@ impl World {
                 self.step_actor_effect_script(i, frame);
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
-                self.step_actor_anim_cues(i, frame);
+                // A loop's crossing walked its ending cycle above; this walk
+                // is the new cycle's, retail's post-commit walk.
+                let cue_frame = cue_frame.filter(|_| !looped_recommit).unwrap_or(frame);
+                self.step_actor_anim_cues(i, cue_frame);
             }
             // A reaction a hit staged on this seat commits here, behind the
             // advance and the old clip's walks

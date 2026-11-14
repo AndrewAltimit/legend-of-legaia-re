@@ -2725,6 +2725,22 @@ the juggle window then stores `1`, so its first cue is skipped). A party
 member's approach walk therefore steps once a cycle: a retail capture of Noa's
 walk-in fires `0x11` three times in 33 vsyncs, on the cycle's fifth vsync.
 
+**The walk reads the advanced cursor, so a pair on the frame count sounds as
+the clip ends.** `FUN_80047430` stores the rate-advanced node cursor
+(`sh v0,0x68(s5)` at `0x80047764`), runs only the loop window over it, and hands
+the three walks `(+0x68 >> 4) & 0xFF` (`0x80047890..0x800478E8`) before its
+natural-end test at `0x80047A48`. On the tick a clip ends, the cue walk
+therefore reads the frame count, one past the last keyframe the pose holds, and
+a pair authored there fires before the commit installs the next entry. Four
+monster entries carry one; the ropeway monster `0x53`'s get-up is one of them,
+with a single `(28, 0x17)` pair over 28 keyframes, the thud retail plays as
+the monster stands on `battle_ropeway_party_noa_sonic_javelin_open`. Port:
+`MonsterAnimPlayer::walked_frame` is the advanced cursor before the wrap or
+clamp; the crossing tick walks the cue track on it (for a loop, the ending
+cycle's walk runs ahead of the re-commit that zeroes `+0x1F6`). The hit walk
+and the effect-script walk take the same frame in retail; the port's still read
+the clamped keyframe.
+
 The shout band is the smallest part of the track. Most of what a fight sounds
 like rides it: a party swing's entry carries `(0, 0xA7)` / `(0, 0x51)`,
 `(3, 0x1A)`, `(7, 0x08)`, a walk cycle `(5, 0x12)` / `(0xB, 0x12)`, a
