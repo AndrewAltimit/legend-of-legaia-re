@@ -23,7 +23,13 @@ const fn on_victim(record: u32) -> ModuleSpawn {
     }
 }
 
-/// Arm 0's fourteen calls at the stack's zeroed trios (`0x801F6AF0..0x801F6C60`).
+/// Arm 0's fourteen calls (`0x801F6AF0..0x801F6C60`). The first thirteen
+/// take the stack's zeroed trios (`a0 = sp+0x20`, `a1 = sp+0x10`); the last
+/// takes the caster's own seat (`addiu a0,s4,0x34` / `addiu a1,s4,0x44` at
+/// `0x801F6C4C..0x801F6C50`), so the sea disc `0x801F7720` lies centred on
+/// Freed, not on the stage origin. A `--retail-parts` recording of
+/// `battle_jou_freed_v3_water_crystals_mid_cast` holds the node at the
+/// caster's `(-600, 0, 825)` from arm 1 on.
 pub(super) const ARM0_SPAWNS: [ModuleSpawn; 14] = [
     seat(0x801F_76BC, [0; 3], [0; 3]),
     seat(0x801F_7C18, [0; 3], [0; 3]),
@@ -38,7 +44,10 @@ pub(super) const ARM0_SPAWNS: [ModuleSpawn; 14] = [
     seat(0x801F_7FB4, [0; 3], [0; 3]),
     seat(0x801F_8024, [0; 3], [0; 3]),
     seat(0x801F_8094, [0; 3], [0; 3]),
-    seat(0x801F_7720, [0; 3], [0; 3]),
+    ModuleSpawn {
+        record: SpawnRecord::Module(ORB_RECORD),
+        anchor: SpawnAnchor::CasterShifted { dy: 0, dz: 0 },
+    },
 ];
 /// Arm 0's last record, the one arm 2 keeps alive and moves to the victim.
 pub(super) const ORB_RECORD: u32 = 0x801F_7720;
@@ -167,6 +176,25 @@ pub fn water_crystals_camera(
 mod tests {
     use super::super::ModuleSeat;
     use super::*;
+
+    /// `0x801F6C4C..0x801F6C60`: the sea disc is the one arm-0 call whose
+    /// trios are the caster's seat, not the zeroed stack.
+    #[test]
+    fn the_sea_disc_is_seated_on_the_caster() {
+        let (last, rest) = ARM0_SPAWNS.split_last().expect("fourteen calls");
+        assert_eq!(last.record, SpawnRecord::Module(ORB_RECORD));
+        assert_eq!(last.anchor, SpawnAnchor::CasterShifted { dy: 0, dz: 0 });
+        for s in rest {
+            assert!(matches!(
+                s.anchor,
+                SpawnAnchor::LiteralScaled {
+                    pos: [0, 0, 0],
+                    rot: [0, 0, 0],
+                    scale: 0x1000
+                }
+            ));
+        }
+    }
 
     #[test]
     fn the_swap_cuts_to_the_victim_on_the_gate() {
