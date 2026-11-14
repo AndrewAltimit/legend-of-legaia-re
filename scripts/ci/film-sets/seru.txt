@@ -29,4 +29,5 @@ s9C --spell 0x9C --state party_basic_attack_vs_gobu_gobu --target 8 --engine-env
 s9D --spell 0x9D --state party_basic_attack_vs_gobu_gobu --target 9
 s9E --spell 0x9E --state party_basic_attack_vs_gobu_gobu --target 9
 s9F --spell 0x9F --state party_basic_attack_vs_gobu_gobu --target 9
-sA0 --spell 0xA0 --state party_basic_attack_vs_gobu_gobu --target 9
+# Ozma's arms 7..10 play the deal the stream holds as arm 6 ends (--rand-at seats that pass on retail's word).
+sA0 --spell 0xA0 --state party_basic_attack_vs_gobu_gobu --target 9 --rand-at 0x36:6
