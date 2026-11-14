@@ -123,6 +123,24 @@ impl PlayWindowApp {
         legaia_app_theme::chrome::inks(self.chrome_dark)
     }
 
+    /// The focused row of an `F12` page: [`focus_row_draws`] at stage row
+    /// `y` across the panel at `x0` that is `width` wide.
+    pub(in crate::window) fn push_focus_row(
+        &self,
+        out: &mut Vec<TextDraw>,
+        (x0, y): (i32, i32),
+        (width, row_h): (i32, i32),
+    ) {
+        if let Some(src) = self.battle_hud_solid_src() {
+            out.extend(focus_row_draws(
+                src,
+                (x0, y),
+                (width, row_h),
+                &self.chrome(),
+            ));
+        }
+    }
+
     pub(in crate::window) fn push_scrim(
         &self,
         out: &mut Vec<TextDraw>,
@@ -873,6 +891,35 @@ const HELP_LEGEND: &str = "Green: not as in the original game";
 /// [`HOST_HOTKEYS`](legaia_engine_session::hotkeys::HOST_HOTKEYS) table:
 /// the browser page has its own fullscreen button, so only this window
 /// lists it.
+/// Stage pixels the focus bar takes at a focused row's left edge.
+pub(in crate::window) const FOCUS_BAR_W: i32 = 2;
+
+/// The focused row of an `F12` page, as the launcher marks its own: the
+/// hover fill, then a bar in the heading gold down the row's left edge. The
+/// fill alone sat within 1.4:1 of the light panel, so a cursor on the
+/// light theme was all but invisible; the bar is the accent the panel's
+/// heading and controls line already use, so it reads on either palette.
+pub(in crate::window) fn focus_row_draws(
+    src: (u32, u32, u32, u32),
+    (x0, y): (i32, i32),
+    (width, row_h): (i32, i32),
+    ink: &legaia_app_theme::chrome::Inks,
+) -> [TextDraw; 2] {
+    let (w, h) = ((width - 4).max(0) as u32, row_h.max(0) as u32);
+    [
+        TextDraw {
+            dst: (x0 + 2, y, w, h),
+            src,
+            color: ink.hover,
+        },
+        TextDraw {
+            dst: (x0 + 2, y, FOCUS_BAR_W as u32, h),
+            src,
+            color: ink.heading,
+        },
+    ]
+}
+
 fn fullscreen_entry(on: bool) -> (&'static str, String) {
     (
         "F11",
@@ -1176,5 +1223,34 @@ mod help_panel_tests {
             "disc font",
         );
         eprintln!("disc font help layout: {l:?}");
+    }
+}
+
+#[cfg(test)]
+mod focus_row_tests {
+    use super::*;
+
+    /// The focused row carries a bar in the heading ink, and that bar holds
+    /// 3:1 (the WCAG floor for a non-text marker) against the fill under it
+    /// on both palettes: the fill alone did not on the light one.
+    #[test]
+    fn focused_row_has_an_accent_bar_on_both_palettes() {
+        for dark in [false, true] {
+            let ink = legaia_app_theme::chrome::inks(dark);
+            let [fill, bar] = focus_row_draws((0, 0, 1, 1), (10, 17), (300, 11), &ink);
+            assert_eq!(fill.dst, (12, 17, 296, 11));
+            assert_eq!(bar.dst, (12, 17, FOCUS_BAR_W as u32, 11));
+            assert_eq!(bar.color, ink.heading);
+            let p = ink.palette;
+            assert!(
+                p.accent.contrast(p.hover) >= 3.0,
+                "dark={dark}: bar {:.2}:1 on the fill",
+                p.accent.contrast(p.hover)
+            );
+            assert!(
+                p.hover.contrast(p.ground) < 3.0,
+                "dark={dark}: the fill alone is the weak cue the bar is for"
+            );
+        }
     }
 }

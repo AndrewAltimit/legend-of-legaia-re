@@ -703,12 +703,8 @@ impl PlayWindowApp {
             .take(SHOWN_ROWS)
         {
             let focused = i == self.settings_cursor;
-            if focused && let Some(src) = self.battle_hud_solid_src() {
-                out.push(TextDraw {
-                    dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
-                    src,
-                    color: self.chrome().hover,
-                });
+            if focused {
+                self.push_focus_row(&mut out, (X0, y), (WIDTH, ROW_H));
             }
             let label_at = (left, y - 2);
             put(&mut out, row.label(), label_at, text);

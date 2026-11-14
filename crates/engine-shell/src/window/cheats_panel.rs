@@ -210,12 +210,8 @@ impl PlayWindowApp {
         let mut y = Y0 + 15;
         for (i, (key, label)) in PLAYER_CHEAT_LIST.iter().enumerate() {
             let focused = i == self.cheats_page.cursor;
-            if focused && let Some(src) = self.battle_hud_solid_src() {
-                out.push(TextDraw {
-                    dst: (X0 + 2, y, (WIDTH - 4) as u32, ROW_H as u32),
-                    src,
-                    color: self.chrome().hover,
-                });
+            if focused {
+                self.push_focus_row(&mut out, (X0, y), (WIDTH, ROW_H));
             }
             put(&mut out, label, (left, y - 2), text);
             let on = cheat_switch_on(world, key);
