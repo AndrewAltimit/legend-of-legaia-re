@@ -383,10 +383,9 @@ pub trait PrimHost {
     /// 15-byte status buffer at `DAT_801F2A76` (rewinding from
     /// `+0xE` to `+0x0`).
     ///
-    /// REF: FUN_801E373C - a no-op hook, not a port: the card-init body's
-    /// pieces are ported where they live (`FUN_801E0598` / `FUN_801E435C`
-    /// in `legaia_engine_menus::card_bu_io`, the fault-counter seed in
-    /// `legaia_engine_menus::card_flow`).
+    /// REF: FUN_801E373C - a no-op hook, not a port: the card-init body is
+    /// ported as `legaia_engine_menus::card_flow::card_init`, over
+    /// `FUN_801E0598` / `FUN_801E435C` in `legaia_engine_menus::card_bu_io`.
     ///
     /// The retail body is a flat sequence of opaque global writes; the
     /// engine owns the UI state and rewires whatever

@@ -46,7 +46,9 @@
 //! file is reachable.
 //!
 //! REF: FUN_801e1114 - the per-frame ticker that drives all three
-//! REF: FUN_801e373c - card-subsystem init (seeds the fault counter to 1)
+//!
+//! [`card_init`] is the card-subsystem init `FUN_801E373C`, which seeds the
+//! fault counter to `1` around the session reset.
 //!
 //! Source: `ghidra/scripts/funcs/overlay_menu_801e13b8.txt`,
 //! `overlay_menu_801e16e0.txt`, `overlay_menu_801e1934.txt`,
@@ -199,17 +201,101 @@ impl Default for CardHealth {
     }
 }
 
+/// Slots on a card the save screen keeps a scanned flag for.
+pub const CARD_SCANNED_SLOTS: usize = 15;
+
+/// The grace countdown [`card_init`] seeds (`_DAT_801F0228 = 0x78`): frames
+/// the screens let a fresh fault stand before they surface it.
+pub const CARD_INIT_GRACE: i32 = 0x78;
+
+/// The words [`card_init`] writes beside the health block and the I/O reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CardInitWords {
+    /// `DAT_801EF134` - the frames the front end's fault arm has waited on a
+    /// card that does not answer (it adds the frame scalar at `0x801DE4E4`
+    /// and calls the init again past `0xB4`, `0x801DE5F0`).
+    pub reinit_timer: i32,
+    /// `DAT_801EF148` - the card-pulled latch the I/O machine raises.
+    pub removed: i32,
+    /// `_DAT_801F0228` - the grace countdown.
+    pub grace: i32,
+    /// `0x801F2A68..=0x801F2A76` - one "read off the card" flag per slot.
+    pub scanned: [u8; CARD_SCANNED_SLOTS],
+}
+
+/// The card-subsystem init (`FUN_801E373C(arg)`): what the front end runs on
+/// entry (`0x801DD8CC`, with its own argument) and again, cold, whenever a
+/// card stops answering (`0x801DE008`, `0x801DE170`, `0x801DE5F0`).
+///
+/// In retail's order: clear the re-init timer and the pulled latch, seed the
+/// fault counter to `1`, run the session reset `FUN_801E0598(arg)`
+/// ([`CardIoState::reset`](crate::card_bu_io::CardIoState::reset) and
+/// [`CardHealth::reset_session`]; a non-zero `arg` is the warm path that
+/// keeps the cached directory), seed the grace countdown and the rescan
+/// request, poll event array A once (`FUN_801E435C`, whose `TestEvent`
+/// consumes the first handle that fired and whose answer is dropped), and
+/// clear the fifteen scanned flags from the last down.
+///
+/// Returns the 1-based handle the poll consumed, `0` for none, so a host
+/// that keeps the array can drop it.
+///
+/// PORT: FUN_801E373C
+/// REPLACED-BY: `legaia_save::emu::CardView` synchronous block I/O - the card
+/// session this arms is the `bu` device layer's (see `card_bu_io`'s module
+/// heading); the save screen's read beat runs off the host's block backend.
+pub fn card_init(
+    health: &mut CardHealth,
+    io: &mut crate::card_bu_io::CardIoState,
+    words: &mut CardInitWords,
+    keep_directory: bool,
+    events: [bool; crate::card_bu_io::CARD_EVENTS],
+) -> u32 {
+    words.reinit_timer = 0;
+    words.removed = 0;
+    health.fault_count = 1;
+    io.reset(keep_directory);
+    health.reset_session(keep_directory);
+    words.grace = CARD_INIT_GRACE;
+    health.rescan_requested = true;
+    let consumed = crate::card_bu_io::poll_events_a(events);
+    words.scanned = [0; CARD_SCANNED_SLOTS];
+    consumed
+}
+
 impl CardHealth {
-    /// The post-`FUN_801E373C` state: the card subsystem starts *faulted*
-    /// (`_DAT_801F0218 = 1`) with a rescan pending, so the first good poll
-    /// is what clears it rather than what confirms it.
-    ///
-    /// REF: FUN_801e373c
+    /// The state a cold [`card_init`] leaves a zeroed block in: the card
+    /// subsystem starts *faulted* (`_DAT_801F0218 = 1`) with a rescan pending
+    /// and no cached directory, so the first good poll is what clears it
+    /// rather than what confirms it.
     pub fn at_init() -> Self {
-        Self {
-            fault_count: 1,
-            rescan_requested: true,
+        let mut h = Self {
+            directory_cache_valid: false,
             ..Self::default()
+        };
+        card_init(
+            &mut h,
+            &mut crate::card_bu_io::CardIoState::default(),
+            &mut CardInitWords::default(),
+            false,
+            [false; crate::card_bu_io::CARD_EVENTS],
+        );
+        h
+    }
+
+    /// The health words the session reset `FUN_801E0598` clears: the change
+    /// debounce (`0x801E05E4`), the phase word (`0x801E0634`) and the
+    /// unformatted latch (`0x801E05B8`), with the rescan request raised
+    /// (`0x801E0628`). Only the cold path (`keep_directory` clear) zeroes the
+    /// cached directory counts (`0x801E0694` / `0x801E069C`).
+    ///
+    /// REF: FUN_801E0598
+    pub fn reset_session(&mut self, keep_directory: bool) {
+        self.change_count = 0;
+        self.phase = 0;
+        self.unformatted = false;
+        self.rescan_requested = true;
+        if !keep_directory {
+            self.directory_cache_valid = false;
         }
     }
 
