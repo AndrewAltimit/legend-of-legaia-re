@@ -527,6 +527,19 @@ pub const XA_STREAM_ONSET_COST: u16 = 122;
 /// they appear, before any effect part is live.
 pub const GHOST_DRAW_COST: u16 = 36;
 
+/// Hblanks one after-image ghost of a party member adds to a frame. PCSX-Redux
+/// recordings of the three Super Arts on a full party
+/// (`battle_jou_party_*_super_open`, `--ghost-trace`) hold five frames that
+/// draw one ghost beside frames that draw none, outside any clip's polls:
+/// Vahn's cost `687` and `685` over `596`..`608`, Gala's `535` and `537` over
+/// `442`, Noa's `716` over `620`: `85` to `96` a ghost whoever draws it, and
+/// Gala's body, the lightest of the three by triangles, costs the most. So a
+/// flat price, not the mesh's: two ghosts carry a full party's `0x1E` frame
+/// over `0x2D0` (step `4`) and one leaves it under (step `3`), as the frame
+/// that draws the slow motion's first ghost alone reads (`692`, then a
+/// step-`3` pass). One emulated machine's measurement.
+pub const PARTY_GHOST_DRAW_COST: u16 = 90;
+
 /// Hblanks one live move-VM effect part adds to a frame (its tick
 /// `FUN_80021DF4` and its sprite or mesh draw). Read off the lone-member strike
 /// recordings: each hit's spark burst of about sixteen parts raises
@@ -564,13 +577,8 @@ pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
 
 /// What one after-image ghost of a body of `triangles` costs a frame
 /// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose
-/// polygon count the frame does not know. A party member's count is that of
-/// the objects its seat draws: on PCSX-Redux recordings of the Super Arts
-/// (`battle_jou_party_*_super_open`, `--ghost-trace`) a full party's frame
-/// drops `90` to `105` hblanks a ghost where the slow motion's two ghosts go,
-/// and rises `140` a ghost where they come back in the finisher, against the
-/// flat `36` that left those frames under `0x2D1` (step `3` where retail's
-/// run `4`).
+/// polygon count the frame does not know. A monster's price: a party
+/// member's ghost is [`PARTY_GHOST_DRAW_COST`].
 pub const fn ghost_draw_cost(triangles: Option<u16>) -> u16 {
     match triangles {
         Some(t) => {

@@ -602,10 +602,12 @@ pub struct Actor {
     pub battle_body_triangles: Option<(u16, u16)>,
 
     /// A party member's battle form, its triangles per TMD object (a quad
-    /// counts two): what one after-image ghost of the drawn objects
-    /// ([`Self::battle_drawn_objects`]) costs a battle frame, as
-    /// [`Self::battle_body_triangles`] is a monster's. Installed with the
-    /// form (`World::install_party_battle_form`); `None` for a monster.
+    /// counts two). A seat whose form is known prices an after-image ghost
+    /// at the party's flat cost
+    /// ([`legaia_engine_battle_loop::frame_clock::PARTY_GHOST_DRAW_COST`]),
+    /// where a monster's follows [`Self::battle_body_triangles`]. Installed
+    /// with the form (`World::install_party_battle_form`); `None` for a
+    /// monster.
     pub battle_object_triangles: Option<std::sync::Arc<[u16]>>,
 
     /// Pose id the current `battle_animation` was selected for, in the pose-id

@@ -109,6 +109,9 @@ impl World {
         // host (`crate::battle_cam_inputs`).
         self.tick_battle_camera();
         self.tick_battle_anim_pass();
+        // The frame this pass opened is priced with its node ticks behind it
+        // (`World::close_pass_frame_cost`).
+        self.close_pass_frame_cost();
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).
         self.tick_fog_volume();

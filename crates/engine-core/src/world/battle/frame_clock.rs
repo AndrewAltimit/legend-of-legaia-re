@@ -228,14 +228,16 @@ impl World {
     /// ([`EFFECT_PART_COST`](legaia_engine_battle_loop::frame_clock::EFFECT_PART_COST)),
     /// the effect pool's live children
     /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)),
-    /// and each planned after-image ghost at its body's polygon load
-    /// ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)):
-    /// a ghost re-runs the body's whole draw (`FUN_80049348` calls
+    /// and each planned after-image ghost: a monster's at its body's polygon
+    /// load ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)),
+    /// a party member's at
+    /// [`PARTY_GHOST_DRAW_COST`](legaia_engine_battle_loop::frame_clock::PARTY_GHOST_DRAW_COST).
+    /// A ghost re-runs the body's whole draw (`FUN_80049348` calls
     /// `FUN_80048A08` per ghost), so a boss's ghost costs what its mesh does.
     pub fn battle_frame_load_cost(&self) -> u16 {
         use legaia_engine_battle::battle_afterimage as ai;
         use legaia_engine_battle_loop::frame_clock::{
-            EFFECT_PART_COST, effect_pool_cost, ghost_draw_cost,
+            EFFECT_PART_COST, PARTY_GHOST_DRAW_COST, effect_pool_cost, ghost_draw_cost,
         };
         let (parts, _) = self.battle_frame_load();
         let pool = self
@@ -283,7 +285,12 @@ impl World {
                 }),
             }
             .filter(|&t| t > 0);
-            let each = ghost_draw_cost(triangles);
+            // A party member's ghost is a flat cost once its form is known
+            // (`PARTY_GHOST_DRAW_COST`); a monster's follows its mesh.
+            let each = match (a.battle_monster_id, triangles) {
+                (None, Some(_)) => PARTY_GHOST_DRAW_COST,
+                _ => ghost_draw_cost(triangles),
+            };
             cost = cost.saturating_add(each.saturating_mul(u16::try_from(n).unwrap_or(u16::MAX)));
         }
         cost
@@ -429,8 +436,18 @@ impl World {
     /// [`Self::apply_battle_frame_step_seed`], which a replay's own step
     /// outranks, and only on retail's cadence: the per-vsync cadence has no
     /// frames to stretch.
+    #[cfg(test)]
     pub(in crate::world) fn apply_cast_arm_frame_step(&mut self) {
+        self.stage_pass_frame_cost();
+        self.close_pass_frame_cost();
+    }
+
+    /// The SM half of a pass's frame cost: which arm table, if any, names the
+    /// step of the frame this pass opened ([`Self::close_pass_frame_cost`]
+    /// pushes it once the pass's node ticks have run).
+    pub(in crate::world) fn stage_pass_frame_cost(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
+        self.battle.pass_frame_cost_due = None;
         if !self.toggles.battle_sm_frame_cadence {
             self.battle.pending_frame_step = None;
             return;
@@ -499,6 +516,24 @@ impl World {
                 self.toggles.battle_cd_timing,
             )
         });
+        self.battle.pass_frame_cost_due = Some(measured);
+    }
+
+    /// Close a pass's frame: push what it cost and leave the step that reads
+    /// for the next pass. Runs behind the pass's node ticks
+    /// ([`Self::tick_battle_anim_pass`]), so the draw load it prices is the
+    /// frame's own: the ghosts the ring holds after this pass's shift and the
+    /// parts its hits spawned. Retail measures a frame from one `VSync`
+    /// return to the next (`FUN_800173BC` at the flip), its node ticks and
+    /// its draw inside it. A `--ghost-trace` recording of
+    /// `battle_jou_party_vahn_tri_somersault_super_open` draws the slow
+    /// motion's first ghost in frames `1549` and `1550`, the second of them
+    /// costs `692`, and frame `1551` runs step `3`; priced a pass late, the
+    /// ghost's cost reached the ring one frame on and the step with it.
+    pub(in crate::world) fn close_pass_frame_cost(&mut self) {
+        let Some(measured) = self.battle.pass_frame_cost_due.take() else {
+            return;
+        };
         // `FUN_80016B6C` closes a pass by storing the step this frame's cost
         // reads, waits `VSync` on the one the pass ran at (`0x8001719C`) and
         // only then copies the new one across (`0x800171D8`): the frame this
@@ -1753,13 +1788,13 @@ mod tests {
         );
     }
 
-    /// A party member's two Super Art ghosts cost what the objects its seat
-    /// draws link, as a monster's cost its body's: on a full party they carry
-    /// a strike frame over `0x2D0`, where two flat ghosts left it on step 3.
+    /// A party member's ghost costs the flat party price once its form is
+    /// known: two carry a full party's strike frame over `0x2D0`, one leaves
+    /// it under, as the Super Art recordings' one-ghost frames read.
     #[test]
-    fn a_party_members_ghosts_cost_the_objects_it_draws() {
+    fn a_party_members_ghosts_cost_the_party_price() {
         use legaia_engine_battle_loop::frame_clock::{
-            GHOST_DRAW_COST, ghost_draw_cost, measured_frame_cost, step_of_cost,
+            GHOST_DRAW_COST, PARTY_GHOST_DRAW_COST, measured_frame_cost, step_of_cost,
         };
         let mut w = World::new();
         w.mode = legaia_engine_mode::mode::SceneMode::Battle;
@@ -1787,11 +1822,52 @@ mod tests {
         let a = &mut w.actors[0];
         a.battle_object_triangles = Some(vec![600, 400, 300].into());
         a.battle_drawn_objects = Some(vec![true, true, false]);
-        let each = ghost_draw_cost(Some(1000));
-        assert_eq!(w.battle_frame_load_cost(), 2 * each);
+        assert_eq!(w.battle_frame_load_cost(), 2 * PARTY_GHOST_DRAW_COST);
         let base = measured_frame_cost(3, 0x1E);
         assert_eq!(step_of_cost(base + 2 * GHOST_DRAW_COST), 3);
-        assert_eq!(step_of_cost(base + 2 * each), 4);
+        assert_eq!(step_of_cost(base + PARTY_GHOST_DRAW_COST), 3);
+        assert_eq!(step_of_cost(base + 2 * PARTY_GHOST_DRAW_COST), 4);
+    }
+
+    /// A pass's cost is pushed behind its node ticks: the SM's half only
+    /// stages it, and the close prices the draw load the world holds then.
+    #[test]
+    fn a_pass_cost_is_pushed_at_its_close() {
+        use legaia_engine_battle_loop::frame_clock::{PARTY_GHOST_DRAW_COST, measured_frame_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_party_cost_step = true;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.actors.push(crate::world::Actor::default());
+        w.actors[0].battle_object_triangles = Some(vec![1000].into());
+        let before = w.battle.frame_cost_ring;
+        w.stage_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, before, "staged, not pushed");
+        // The pass's node tick brings two ghosts into the walk's reach.
+        let frame = crate::world::BattleGhostFrame {
+            pose: legaia_anm::player::PoseFrame {
+                bone_outputs: Vec::new(),
+                factor: 0,
+                finished: false,
+            },
+            pos: [0; 3],
+            ghost_eligible: true,
+            clip_key: 0,
+            variant_track: Default::default(),
+            frame: 0,
+        };
+        w.actors[0].battle_pose_history = std::iter::repeat_n(frame, 8).collect();
+        w.close_pass_frame_cost();
+        assert_eq!(
+            w.battle.frame_work,
+            measured_frame_cost(3, 0x1E) + 2 * PARTY_GHOST_DRAW_COST
+        );
+        // One close a pass.
+        let after = w.battle.frame_cost_ring;
+        w.close_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, after);
     }
 
     #[test]
