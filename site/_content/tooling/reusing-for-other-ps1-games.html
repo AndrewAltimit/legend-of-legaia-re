@@ -124,11 +124,15 @@
 
 <section class="doc-section" id="method" data-doc="the-transferable-method">
   <h2>The transferable method</h2>
-  <p>The parts most worth taking to another game are practices, not crates. <a href="retail-oracle-method.html">The retail-oracle method</a> writes them up engine-neutral, in the order to adopt them. Each page below documents one for Legaia; nothing in them depends on Legaia beyond the examples.</p>
+  <p>The parts most worth taking to another game are practices, not crates. <a href="retail-oracle-method.html">The retail-oracle method</a> writes them up engine-neutral, in the order to adopt them. Each page below documents one for Legaia. The practices do not depend on Legaia; much of the code that carries them out does, and <a href="#instruments">the table below</a> says where.</p>
   <div class="card-grid">
     <a class="card" href="retail-compare.html">
       <div class="card-title">Measure against retail RAM and VRAM</div>
       <div class="card-body">Seed the reimplementation from each retail save state, score every channel against the state's own RAM and displayed VRAM, and ratchet the scores. The save state is the oracle; no emulator runs.</div>
+    </a>
+    <a class="card" href="retail-kernel-differential.html">
+      <div class="card-title">Run the original's routines beside their ports</div>
+      <div class="card-body">A user-mode R3000 interpreter runs a routine off the disc on generated inputs, and every byte it wrote is compared with the port's. It reaches inputs no save state holds, and <code>psx-retail-exec</code> is a generic crate.</div>
     </a>
     <a class="card" href="../reference/re-settled-threads.html#grades">
       <div class="card-title">Grade every claim by its evidence</div>
@@ -152,6 +156,28 @@
     </a>
   </div>
   <p>Related pages: <a href="byte-accounting.html">byte accounting</a>, <a href="address-reference-scan.html">address reference scans</a> and the <a href="soak-harness.html">soak harness</a>.</p>
+  <h3 id="instruments">How far each instrument carries</h3>
+  <p>The method pages transfer as method. The code behind them does not transfer evenly: some of it describes the PlayStation or nothing but git, and some of it is this game's addresses from the first line. The table says which, so a second project knows what it takes and what it writes.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Instrument</th><th>What carries</th><th>What is Legaia's</th></tr></thead>
+    <tbody>
+      <tr><td><a href="retail-kernel-differential.html">Routine differential</a></td><td><code>psx-retail-exec</code> as a crate: the R3000 interpreter, its GTE, call hooks and the entry ledger</td><td>The image loaders for <code>SCUS_942.54</code> and the PROT overlays, the <code>differential!</code> macro in the crate's tests, every comparison</td></tr>
+      <tr><td><a href="retail-compare.html">State corpus</a></td><td>The state readers, the manifest (<code>psx_ram_image::scenarios</code>), the seed-and-score method</td><td><code>legaia-parity</code>: every observable's address, the seeding, the channels</td></tr>
+      <tr><td><a href="cast-sequence-oracle.html">Films</a></td><td>The probe library, the pairing-on-the-game's-clock idea, the per-vsync seed log</td><td>The probes' addresses, the action-state and module-phase keys, the cue ring</td></tr>
+      <tr><td><a href="../subsystems/audio.html#state-sweep">Sound</a></td><td>The SPU and sequencer models, the state readers' SPU side, recording the emulator's output</td><td>The libsnd record addresses, the keying and cue differentials</td></tr>
+      <tr><td><a href="ratchet-integrity.html">Ratchet integrity</a></td><td><code>check-baseline-loosening.py</code>'s mechanism and ledger, <code>disc-test-tally.py</code>'s skip count</td><td>The <code>RULES</code> table of this repository's baselines, the <code>LEGAIA_*</code> variable names</td></tr>
+      <tr><td><a href="build-and-test-speed.html#full-gate">Revert scan</a></td><td><code>revert-scan.py</code> as it stands: it reads git and nothing else</td><td>Nothing</td></tr>
+      <tr><td><a href="disc-coverage.html">Disc denominators</a></td><td>The counting method, <code>psx-iso</code> for the walk</td><td>The PROT archive, the overlay map, the format classes</td></tr>
+      <tr><td><a href="port-catalog.html">Port catalog, provenance</a></td><td>The <code>// PORT:</code> tag convention, deriving status from the tree, gating the delta</td><td>The dump corpus layout and its address ranges</td></tr>
+      <tr><td><a href="full-game-ladder.html">Full-game ladder</a></td><td>Tiers per story segment, a continuous run, a seed set</td><td>The scripted hand, the milestones, the saves</td></tr>
+      <tr><td><a href="determinism-replay.html">Determinism, soak</a></td><td>A pad-transition text file, the twice-run test, seeded random play with detectors</td><td>Both drive this engine's session</td></tr>
+      <tr><td><a href="host-drift.html">Host pair, frame hash, cost ratchet</a></td><td>The methods: paired hosts, hashed frames, counted costs</td><td>The scripts drive this project's window and play page</td></tr>
+      <tr><td><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/doc-density.md" target="_blank" rel="noopener">Doc and shell gates</a></td><td><code>check-doc-density.py</code>, <code>check-md-links.py</code>, <code>check-shell-observer-traps.py</code></td><td>The paths they scan</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Two rows are worth taking first. The routine differential needs only the executable's bytes and an interpreter, so it works before any engine runs, and <code>psx-retail-exec</code> knows nothing of Legaia. The ratchet's two guards (a baseline may not loosen without a ledger entry, a skip is not a pass) cost an afternoon and protect every score that comes after. <a href="porting-by-reimplementation.html#coverage">The coverage map</a> lists every instrument by the gap it closes.</p>
   <h3>Traps any PS1 project meets</h3>
   <ul class="bullets">
     <li>A save state replays the RAM of the disc that booted it: a state loaded onto a patched image still runs the old code. Verify disc edits from a cold boot or a memory-card load.</li>
