@@ -2306,10 +2306,14 @@ whose contribution the half-width keeps is always zero. The draws on the
 world `rand()` stream are the spawner's, in the emitter on the actor pass.
 
 Port: `engine-field::fog_particles` is the pool and the pass's arithmetic,
-`World::fog_render_step` is the render pass's step, which both hosts run once
-per sim tick through `BootSession::step_field_fog` with the follow camera (one
-`World::tick` is one game frame, and the tick's display frame step is banked
-as the step's `dt`), and the quads join this pass through
+`World::fog_render_step` is the render pass's step, which both hosts call once
+per sim tick through `BootSession::step_field_fog` with the follow camera. One
+`World::tick` is one vsync, and only the tick the actor pass fires on banks a
+`dt` (the frame step); a tick between passes banks nothing, and the step then
+walks nothing and keeps the last pass's quads, as retail's screen keeps the last
+frame. A retail state films each record's age moving `rate * 2` on the pass
+vsync and holding on the one between, and a record the pass aged past its
+fade-out is freed on the next pass, not on the vsync after. The quads join this pass through
 `screen_prim::fog_puff_prim`. The retail comparison's capture frame is the
 one frame that steps twice: it installs the retail state's records and
 re-runs the frame's step over them (`BootSession::seat_field_fog`), since a

@@ -31,11 +31,10 @@ pub struct AmbientFxState {
     /// [`crate::world::World::spawn_ambient_record`] at scene entry, ticked on the retail
     /// game-tick clock by [`crate::world::World::step_ambient_fx`].
     pub fx: Vec<crate::world::ambient::AmbientPart>,
-    /// Retail game ticks banked for the ambient effect parts (the sibling
-    /// of [`crate::world::AmbientFxState::clut_pending_game_ticks`], same clock law).
+    /// Retail game ticks banked for the ambient effect parts, one per pass
+    /// of the actor walk they belong to (`World::tick` banks it where the
+    /// actor pool fires).
     pub pending_game_ticks: u32,
-    /// Vsync sub-accumulator for the ambient game-tick bank.
-    pub vsync_accum: u8,
     /// Per-rect VRAM capture cache for the ambient CLUT-cell cyclers: the
     /// texels op `0x2C` stored (`FUN_8005842C` StoreImage) keyed by the
     /// captured rect. Filled lazily by [`crate::world::World::step_ambient_fx`] from the
@@ -151,7 +150,6 @@ impl AmbientFxState {
             venue_restore: None,
             fx: Vec::new(),
             pending_game_ticks: 0,
-            vsync_accum: 0,
             cell_captures: std::collections::HashMap::new(),
             cell_restores: Vec::new(),
             flash_applied: std::collections::HashMap::new(),

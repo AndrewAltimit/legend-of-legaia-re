@@ -257,16 +257,6 @@ impl World {
                     (self.ambient.clut_pending_game_ticks + 1).min(600);
             }
         }
-        // Same game-tick law for the ambient move-VM effect parts (jou's
-        // CLUT-cell cyclers / lightning director); drained by the host's
-        // `step_ambient_fx` against its VRAM.
-        if self.clock.display_frame_step == 1 && !self.ambient.fx.is_empty() {
-            self.ambient.vsync_accum += 1;
-            if self.ambient.vsync_accum >= self.clock.frame_step.max(1) {
-                self.ambient.vsync_accum = 0;
-                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
-            }
-        }
         // The modelled CD drive under a field XA one-shot: one vsync of its
         // read span elapses per world tick (`World::push_field_xa_cue`).
         self.tick_field_xa_busy();
@@ -421,6 +411,17 @@ impl World {
         self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
+            // The ambient move-VM effect parts (jou's CLUT-cell cyclers and
+            // lightning director, every stager part) are nodes of the same
+            // actor lists: the part tick `FUN_80021DF4` is their node handler,
+            // so they step on this pass and no other vsync. Banked here for
+            // the host's `step_ambient_fx`, which drains it against its VRAM
+            // on the same tick. A clock of their own drifted half a pass off
+            // the walk, and a part's `rand()` op then drew on a vsync where
+            // retail draws nothing (`deroa`'s, every second pass).
+            if !self.ambient.fx.is_empty() {
+                self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
+            }
             self.tick_actor_physics();
             // The `jalr node[+0x0C]` arm of the same walk: run the ported
             // per-frame handler kernels (the colour tween, the field VM
@@ -578,9 +579,18 @@ impl World {
                 self.rng_state = rng.state();
             }
             // The fog pool's render step (`FUN_8003F348`, run from the field
-            // render pass) sees `DAT_1F800393` as its `dt`; the hosts call
-            // it from their draw path, so the ticks accumulate until then.
-            self.fog.pending_dt = self.fog.pending_dt.saturating_add(u32::from(delta));
+            // render pass) sees `DAT_1F800393` as its `dt`, and the pass draws
+            // once a game frame: a retail state films each record's age moving
+            // `rate * 2` on the pass vsync and holding on the vsync between.
+            // So the pass banks its frame step and the vsync between banks
+            // nothing, where the hosts' per-tick step re-emits the same frame.
+            // A per-vsync `dt = 1` aged the pool half a pass ahead of retail
+            // on every second vsync, so a record aged out and freed its slot a
+            // vsync early and the next pass's spawner drew past retail's.
+            if actor_tick_fired {
+                let step = u32::from(self.clock.frame_step.max(1));
+                self.fog.pending_dt = self.fog.pending_dt.saturating_add(step);
+            }
         }
         // The three-actor-talk controller's per-frame flag poll: when the
         // scene script drops the talk lock (system flag 0xD), the controller

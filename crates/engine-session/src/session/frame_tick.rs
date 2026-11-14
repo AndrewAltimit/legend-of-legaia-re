@@ -36,8 +36,10 @@ impl<S: AudioSink> BootSession<S> {
     /// every headless driver. The quads land on `World::fog_quads`, which
     /// the draw passes read; nothing else steps the pool.
     ///
-    /// Per tick, not per redraw: one `World::tick` is one retail display
-    /// frame and `FUN_8003F348` runs once in each frame's field render pass.
+    /// Per tick, not per redraw: one `World::tick` is one vsync, and the
+    /// tick the actor pass fires on banks the step's `dt` (`FUN_8003F348`
+    /// runs once in each game frame's field render pass); a tick between
+    /// passes walks nothing and keeps the last pass's quads.
     /// The native window used to step it from its draw prep, once per
     /// redraw - so a redraw carrying two ticks aged the pool by `dt = 2` in
     /// one step, a redraw carrying none ran an extra `dt = 0` step, and since
