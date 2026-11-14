@@ -1556,3 +1556,10 @@ reason = "A patched-executable state (the shiny-seru mod), outside the retail-di
 changes = [
   ["states/shiny_refactor_gimard_levelup/image", 0.832, 0.83],
 ]
+
+[[loosening]]
+file = "scripts/ci/film-cue-baseline.json"
+reason = "The row was never one measurement: it paired a measured score of 0.964 with the 28 matched cues of another run. Six recordings of the film on one binary, one of them under a load average of 28, read the same report: 27 of 28 cues matched and cue 0x019 seven ticks early against the six-tick window (score 0.9643, image 0.7787 each time). The cue does not move with machine load on that binary; the row now holds the measured pair."
+changes = [
+  ["films/jou_vahn_tri_somersault_super_open/matched", 28, 27],
+]
