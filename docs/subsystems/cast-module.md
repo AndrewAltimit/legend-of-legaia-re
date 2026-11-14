@@ -3879,6 +3879,21 @@ point off two `rand() % 1023 + 0x100` draws, the quadrant walking with the same 
 Arms 3 and 4 re-arm their countdown by `step << 8`, not `scalar << 8`, so the rock
 arms last as long as retail's frame step says.
 
+The window arm 1 waits on is the module's own. Arm 0 writes clip `9`'s action entry
+through the caster's monster record (`*(0x801C9348 + (seat - 3) * 4) + 0x70`, entry
+`9` of the `+0x4C` array): `+0x85 = +0x86 = 0x13` (`0x801F6BCC..0x801F6C00`), a park
+on frame `0x13`. The first pass the cursor reaches `0x130` the park spends the
+overshoot from the `0xFF`-cycle budget, `+0x21B` leaves `0xFF`
+(`0x800477A4..0x800477E8`), and arm 1 runs. On its pass arm 2 puts the window back
+at `0x16..0x21` (`0x801F702C..0x801F7060`) and moves the start to `0x20` unless the
+first formation monster is Van Saryu (`0x89`, `0x801F7064..0x801F70A4`), so a Rock
+Lizard's clip loops on frames `0x20..0x21` through the rock arms. The disc entry reads
+`0x16..0x21`: without the park the clip ran on to frame `0x21` before the counter
+moved, arm 1 held `17` step-`4` passes where retail's holds `11`, and every later arm
+opened six passes late. On `nilboa_rock_lizard_pre_earthquake`'s film arm 1 now runs
+retail's `43` game frames and the `rand()` draws from the cast's begin agree with the
+recording's up to arm 4's opening. Grade `disassembly` + `capture`.
+
 Each rock pass ends on a dust puff at the rocks' point and yaw:
 `FUN_801DFDF0(2, &point, yaw)` (`0x801F7698..0x801F76A0`, arm 5's at `0x801F7A40`).
 The puff's particles draw two `rand()` words each as they spawn (`0x801DFF64` /
