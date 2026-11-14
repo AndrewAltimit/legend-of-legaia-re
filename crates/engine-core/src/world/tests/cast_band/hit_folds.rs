@@ -300,3 +300,29 @@ fn plasma_strike_burst_pushes_its_popup_and_holds_the_cluster() {
         "the burst's cleared flag holds the cluster"
     );
 }
+
+/// A summon's hit bookkeeping is its own cast's. A split cast (Zenoir's two
+/// hits) raises the skip-the-fold word on each of its hit arms, and the arm
+/// after the one that folded leaves it up with no cast left to spend it on.
+/// Carried into the next summon it ate that cast's fold: a Kemaro behind a
+/// Zenoir spent its MP and landed nothing. Arming a summon clears the word
+/// and the arm latch, as arming a capture-band module does.
+#[test]
+fn arming_a_summon_drops_the_last_casts_hit_bookkeeping() {
+    let mut world = module_code_world();
+    world.casting.module_skips_fold = true;
+    world.casting.module_hit_arm = Some(0x12);
+    world.arm_summon_stager(0, 0x90);
+    assert!(!world.casting.module_skips_fold, "the fold is owed again");
+    assert_eq!(world.casting.module_hit_arm, None, "no arm has opened it");
+
+    // The capture band's arming is the same reset.
+    let mut world = module_code_world();
+    world.casting.module_skips_fold = true;
+    world.casting.module_hit_arm = Some(7);
+    world.arm_capture_cast_module(0x87);
+    if world.cast_module_for(0x87).is_some() {
+        assert!(!world.casting.module_skips_fold);
+        assert_eq!(world.casting.module_hit_arm, None);
+    }
+}

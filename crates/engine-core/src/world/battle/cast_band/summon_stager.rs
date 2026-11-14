@@ -39,6 +39,16 @@ impl World {
         self.casting.module_phase = 0;
         self.casting.module_ctx_278 = 0;
         self.casting.module_handover_waits = false;
+        // The hit bookkeeping is one cast's: which arm has opened its fold,
+        // and whether the module's own sites land the hits so the fold owes
+        // nothing. A split cast raises the second on each of its hit arms,
+        // and the arm after the one that folded leaves it up with no cast
+        // left to spend it on - the next summon's fold then took it and
+        // landed nothing (a Kemaro behind a Zenoir spent its MP for no
+        // damage). The capture band's arming clears both the same way
+        // ([`Self::arm_capture_cast_module`]).
+        self.casting.module_skips_fold = false;
+        self.casting.module_hit_arm = None;
         // A new cast re-arms the Nighto verdict; the roll happens on the first
         // tick of the module, the way retail's arm 0 draws it. The ring sweep
         // starts from zero for the same reason.

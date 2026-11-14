@@ -842,7 +842,10 @@ exit's clear.
 **Port.** `World::run_cast_module_code` parks the caster's strike index on arm
 2 and marks the band's fold as owed nothing (`module_skips_fold`), so the
 cast's outcome is the hits `World::tick_battle_hit_events` lands off the
-staged clip. The clip commits from inside the action SM's step, which runs on
+staged clip. That word and the arm latch beside it (`module_hit_arm`) are one
+cast's bookkeeping: both arming seams clear them (`World::arm_summon_stager`,
+`World::arm_capture_cast_module`), so a split cast whose second hit arm raises
+the word after its fold has run cannot hand it to the next cast. The clip commits from inside the action SM's step, which runs on
 a copy of the context: in the module band `World::step_battle` carries the
 commit's stores (`CommitCtxStores`: the latch, the swing re-seed, the coin)
 over the copy's write-back, as retail's commit writes the context in the anim
