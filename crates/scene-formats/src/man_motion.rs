@@ -257,6 +257,21 @@ pub fn motion_records(man: &[u8], man_file: &ManFile) -> Vec<MotionRecord> {
     out
 }
 
+/// The record whose stream actor id `actor_id` runs: the **last** record in
+/// chain order that binds it. `FUN_8003A9D4` walks the whole chain and stores
+/// `actor+0x80` (and `+0x8A`) for every binding with no test of what the actor
+/// already holds (`sw v0,0x80(v1)` at `0x8003AAD4`), so a later record that
+/// names the same actor replaces an earlier one. `dolk2` binds placement
+/// `0x31` twice: the first record wanders it round its spawn tile, the second,
+/// which retail runs, waits and then retires two wanders whose boxes it stands
+/// outside.
+pub fn bound_record(records: &[MotionRecord], actor_id: u8) -> Option<&MotionRecord> {
+    records
+        .iter()
+        .rev()
+        .find(|r| r.bindings.iter().any(|b| b.actor_id == actor_id))
+}
+
 /// Walk a motion stream's variant header table (`FUN_80038158` preamble).
 ///
 /// Stops at the `0xFFFF` default (included in the result), a non-positive
@@ -312,9 +327,7 @@ pub fn placement_default_move(
         return None;
     }
     let records = motion_records(man, man_file);
-    let rec = records
-        .iter()
-        .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))?;
+    let rec = bound_record(&records, bind_id)?;
     for v in stream_variants(man, rec) {
         let mut pc = v.code_offset;
         while pc < v.code_end {
@@ -484,6 +497,29 @@ mod tests {
         assert_eq!(sites[1].flag, 7);
         assert_eq!(sites[1].kind, MotionFlagKind::Clear);
         assert_eq!(sites[1].gate, None);
+    }
+
+    /// `FUN_8003A9D4` stores every binding's stream, so an actor two records
+    /// name runs the later one.
+    #[test]
+    fn an_actor_bound_twice_runs_the_later_record() {
+        let rec = |index: usize, ids: &[u8]| MotionRecord {
+            index,
+            offset: index * 0x10,
+            bindings: ids
+                .iter()
+                .map(|&actor_id| MotionBinding {
+                    actor_id,
+                    enable: 1,
+                })
+                .collect(),
+            stream_offset: index * 0x10 + 3 + 2 * ids.len(),
+            end_offset: index * 0x10 + 0x10,
+        };
+        let records = [rec(0, &[0x2E, 0x31]), rec(1, &[0x2D]), rec(2, &[0x31])];
+        assert_eq!(bound_record(&records, 0x31).map(|r| r.index), Some(2));
+        assert_eq!(bound_record(&records, 0x2E).map(|r| r.index), Some(0));
+        assert_eq!(bound_record(&records, 0x40), None);
     }
 
     #[test]

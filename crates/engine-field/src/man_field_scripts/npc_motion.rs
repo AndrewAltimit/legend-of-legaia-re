@@ -181,10 +181,9 @@ pub fn placement_wander_step(
     if bind_id >= man_motion::ACTOR_PLAYER {
         return None; // collides with the 0xF8/0xFB special ids
     }
-    let rec = man_motion::motion_records(man, man_file)
-        .into_iter()
-        .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))?;
-    let mut variants = man_motion::stream_variants(man, &rec);
+    let records = man_motion::motion_records(man, man_file);
+    let rec = man_motion::bound_record(&records, bind_id)?;
+    let mut variants = man_motion::stream_variants(man, rec);
     // Default variant first: it is the fresh-game state the interpreter
     // falls through to when no gating flag is set.
     variants.sort_by_key(|v| (!v.is_default(), v.index));
@@ -379,10 +378,11 @@ pub fn motion_default_move_writes(man_file: &ManFile, man: &[u8]) -> Vec<(u8, [u
         return Vec::new();
     };
     let mut out: Vec<(u8, [u8; 2])> = Vec::new();
-    for rec in man_motion::motion_records(man, man_file) {
+    let records = man_motion::motion_records(man, man_file);
+    for rec in &records {
         // First 0x17 in default-variant-first order (the fresh-game write).
         let mut pair: Option<[u8; 2]> = None;
-        let mut variants = man_motion::stream_variants(man, &rec);
+        let mut variants = man_motion::stream_variants(man, rec);
         variants.sort_by_key(|v| (!v.is_default(), v.index));
         'vars: for var in variants {
             let mut pc = var.code_offset;
@@ -405,6 +405,13 @@ pub fn motion_default_move_writes(man_file: &ManFile, man: &[u8]) -> Vec<(u8, [u
             // Mirror the retail `actor_id < 0x8C` table guard, then resolve
             // the +0x50 id back to a partition-1 placement slot.
             if usize::from(bind.actor_id) >= 0x8C {
+                continue;
+            }
+            // The actor runs the last record that binds it (the installer
+            // stores every binding's stream).
+            if !man_motion::bound_record(&records, bind.actor_id)
+                .is_some_and(|r| r.index == rec.index)
+            {
                 continue;
             }
             let Some(slot) = usize::from(bind.actor_id).checked_sub(n0) else {
