@@ -320,7 +320,10 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
         return match &m.phase {
             SpellPhase::Select { cursor } => match wanted_spell(w, m) {
                 Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
-                Some(_) => PadButton::Down.mask(),
+                // The list kernel's walk, as the item window's: Down wraps
+                // inside its page, so a row on another page is reached with
+                // Right / Left first.
+                Some(i) => m.browse_pad_toward(i).unwrap_or(PadButton::Down.mask()),
                 // A heal the window cannot cast is not asked for again until
                 // someone's HP moves; a window with no damage spell worth
                 // casting is not reopened for one this battle. The two are
