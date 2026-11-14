@@ -60,6 +60,14 @@ fn build_world() -> World {
     // Zeroed records first: retail's member walk hands no command ring to a
     // member with no HP.
     w.load_party(legaia_save::Party::zeroed(3));
+    // The ring's Magic arm reads the member's Ra-Seru marker (`ctx[+0x25F]`,
+    // the record's Ra-Seru equipment byte): bind one to every member.
+    for rec in &mut w.party.roster.members {
+        let mut eq = rec.equipment();
+        eq.slots[2] = 1;
+        eq.slots[3] = 1;
+        rec.set_equipment(eq);
+    }
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 200;

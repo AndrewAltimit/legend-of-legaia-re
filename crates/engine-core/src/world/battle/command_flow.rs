@@ -45,6 +45,10 @@ pub(crate) fn ring_arm_refused(
     }
 }
 
+/// The special-battle word's bit that forbids the ring's Item arm
+/// (`andi v0,v0,0x100` at `0x801D1378`): an arena course rule.
+pub(crate) const SPECIAL_ITEM_FORBIDDEN: u32 = 0x100;
+
 /// The spirit clip a Spirit commit stages behind the action (`+0x1E7`,
 /// `li v0,0x10` at `0x801D16A8`); the item commit's is `9`.
 pub(crate) const SPIRIT_COMMIT_CLIP: u8 = 0x10;

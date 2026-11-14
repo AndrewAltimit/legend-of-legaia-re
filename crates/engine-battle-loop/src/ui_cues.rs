@@ -151,14 +151,25 @@ pub fn item_events_cue(
 
 /// The blip an arts-entry frame fires. `confirm` is whether the frame's
 /// confirm button was down: leaving the entry on the confirm keys the commit
-/// cue, while the press that exhausts the gauge advances silently (the
+/// cue, while the advance off an exhausted gauge is silent (the
 /// `bne s0,zero,0x801D3290` at `0x801D20CC` skips the tail's cue).
+///
+/// `direction` is whether the entry took a direction this frame - one its
+/// limb's Rot did not refuse. The state stores it in `ctx[+0x1A]`, runs HUD
+/// step `0xB` and jumps to the commit tail (`0x801D1F80..0x801D1F98`, `j
+/// 0x801D20D4`), so every arrow sounds the commit cue, including one the
+/// gauge cannot pay (step `0xB` returns ahead of its append, the tail still
+/// runs). The frame's confirm and cancel are not read behind it.
 pub fn arts_phase_cue(
     before: &ArtsInputPhase,
     after: &ArtsInputPhase,
     confirm: bool,
+    direction: bool,
 ) -> Option<BattleUiCue> {
     use ArtsInputPhase as P;
+    if direction && matches!(before, P::Entering) {
+        return Some(BattleUiCue::Confirm);
+    }
     match (before, after) {
         (P::Entering, P::Aborted) => Some(BattleUiCue::Back),
         (P::Entering, P::Review | P::Targeting { .. } | P::Confirmed { .. }) => {

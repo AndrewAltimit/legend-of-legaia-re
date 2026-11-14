@@ -127,7 +127,33 @@ pub enum SpellResolution {
     Aborted,
 }
 
+/// Rows on one page of the battle spell list: the list kernel's `visible`
+/// for the magic window, which shares the item window's rect.
+pub const BATTLE_SPELL_LIST_ROWS: usize = 8;
+
 impl BattleSpellSession {
+    /// The pad press that moves the list's hand one step toward row `row`
+    /// under the list kernel's law - Right / Left to reach its page, then
+    /// Down inside it - or `None` when the hand is on it (or the list is not
+    /// up). For a scripted hand: Down alone never leaves a page.
+    pub fn browse_pad_toward(&self, row: usize) -> Option<u16> {
+        use legaia_engine_system::input::PadButton;
+        let SpellPhase::Select { cursor } = self.phase else {
+            return None;
+        };
+        let cursor = usize::from(cursor);
+        if cursor == row || row >= self.spells.len() {
+            return None;
+        }
+        let rows = BATTLE_SPELL_LIST_ROWS;
+        let pad = match (row / rows).cmp(&(cursor / rows)) {
+            std::cmp::Ordering::Greater => PadButton::Right,
+            std::cmp::Ordering::Less => PadButton::Left,
+            std::cmp::Ordering::Equal => PadButton::Down,
+        };
+        Some(pad.mask())
+    }
+
     /// Build from the caster's learned spells. `learned` is the spell-id list;
     /// `catalog` resolves names + MP cost; `caster_mp` greys out unaffordable
     /// rows. `ability_bits` is the caster's character-record ability bitmask

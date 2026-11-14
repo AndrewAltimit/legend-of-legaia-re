@@ -207,6 +207,14 @@ fn build_world() -> World {
     }
     w.party.party_count = 3;
     w.load_party(legaia_save::Party::zeroed(3));
+    // The ring's Magic arm reads the member's Ra-Seru marker (`ctx[+0x25F]`,
+    // the record's Ra-Seru equipment byte): bind one to every member.
+    for rec in &mut w.party.roster.members {
+        let mut eq = rec.equipment();
+        eq.slots[2] = 1;
+        eq.slots[3] = 1;
+        rec.set_equipment(eq);
+    }
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
@@ -393,9 +401,18 @@ fn a_live_cast_stages_its_module_records() {
             w.battle.spell_menu.is_some(),
             "the Magic arm opens the list"
         );
-        // The list cursor is per-session, so walk from the top each time.
-        for _ in 0..row {
-            press(&mut w, PadButton::Down); // walk to this cast's row
+        // The list cursor is per-session, so walk from the top each time,
+        // as the list kernel moves: Right to the row's page, Down inside it.
+        while let Some(pad) = w
+            .battle
+            .spell_menu
+            .as_ref()
+            .and_then(|s| s.browse_pad_toward(row))
+        {
+            w.set_pad(0);
+            frame(&mut w);
+            w.set_pad(pad);
+            frame(&mut w);
         }
         let picked = w
             .battle
