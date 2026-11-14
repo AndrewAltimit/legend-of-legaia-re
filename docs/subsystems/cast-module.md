@@ -2062,6 +2062,16 @@ off the calling parts (`World::run_part_stager_calls`):
 | 1 | `0x801F880C` (arm 6): a loop of count `5`, `0x13` frames apart | the flash `0x801F8880` on the creature's body point `+0x3C..+0x40`, then eight rays `0x801F8828` on the same point, each written as Nighto's are but with spin `(rand & 0xFF) - 0x80`, length `-0x80` and radius `rand % 0x1F + 0x20` (`0x801F83D4..0x801F84A0`) |
 | 2 | the slam `0x801F8AA0` (arm 11): a loop of count `0xF` with no wait, turning `+0x26` by `0x100` between calls | two blasts `0x801F8ABC` on the caller, the second's speed `+0x98` halved (`0x801F84E0..0x801F8500`): the final explosion's fireballs |
 
+The body point stager arm 1 reads is the creature's whole display trio `+0x3C / +0x3E /
++0x40` (`a0 = creature + 0x3C` at `0x801F83E0..0x801F83EC`): the pose centroid off the
+ground pair, at the centroid's height. The port seated the flash and the rays on the
+creature's live ground `x` / `z` at its seat height `0`, so they fanned out from the floor
+a few hundred units off retail's point (`(256, 0, -2304)` against retail's
+`(273, -316, -2488)` in a `--retail-parts` recording, whose ray spins, radii and rolls the
+engine matched word for word on the rand track); on the display trio arm 7 of the `0x86`
+film reads `.962` against `.822` on `--retail-steps --rand-track`. PROT 0906's arms 4 and 5
+read the same point. Grade `disassembly` + `capture`.
+
 ### PROT 0909 (Viguro)
 
 The two phases the tick does not name (`3`, `8`) are released by the module's

@@ -140,15 +140,31 @@ impl World {
             return;
         }
         // PROT 0908's arm 1 and PROT 0906's arms 4 / 5 read the creature's
-        // body point `+0x3C..+0x40`.
-        let body = self
+        // body point `+0x3C..+0x40` (PROT 0908: `a0 = creature + 0x3C` at
+        // `0x801F83E0..0x801F83EC`, the flash on an unaligned copy of the
+        // same eight bytes): the display trio, the pose centroid off the
+        // ground pair at its height `+0x3E`. A host without the creature's
+        // seat falls back to the director's seat.
+        let display = self
             .casting
-            .module_cam
-            .creature
-            .map(|c| (c, self.casting.module_cam.creature_live))
-            .map(|(c, live)| match live {
-                Some(l) => [l.x, c.y, l.z],
-                None => [c.x, c.y, c.z],
+            .summon_actor_slot
+            .map(usize::from)
+            .filter(|&s| self.actors.get(s).is_some_and(|a| a.active))
+            .and_then(|s| {
+                let (x, z) = self.live_body_pair(s)?;
+                let y = self.battle_display_trio(s)?[1] as i16;
+                Some([x, y, z])
+            });
+        let body = display
+            .or_else(|| {
+                self.casting
+                    .module_cam
+                    .creature
+                    .map(|c| (c, self.casting.module_cam.creature_live))
+                    .map(|(c, live)| match live {
+                        Some(l) => [l.x, c.y, l.z],
+                        None => [c.x, c.y, c.z],
+                    })
             })
             .or_else(|| {
                 self.casting
