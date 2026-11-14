@@ -132,6 +132,10 @@ impl CameraWorld for World {
         self.npcs.cull_view = view;
     }
 
+    fn drop_staged_camera_shot(&mut self) {
+        self.camera.state.params.clear();
+    }
+
     fn set_fog_view_window(&mut self, window: [i8; 4]) {
         self.fog.view_window = Some(window);
     }
@@ -1320,6 +1324,86 @@ mod tests {
             assert!(!c.recenter_follow(&w), "mode {mode:?}");
             assert_eq!(c.manual_orbit, 0.0, "mode {mode:?}");
         }
+    }
+
+    /// A staged shot no record holds goes back to the follow ease, as
+    /// retail's ease `FUN_801DB510` never asks what the staging block holds:
+    /// the shot stands while a talk holds the player, stands after it until
+    /// the player moves (no hand-back snap), then eases toward the follow
+    /// pose. The port's latch used to outlive the talk and freeze the
+    /// follow camera on the shot for the rest of the scene.
+    #[test]
+    fn an_unapplied_shot_returns_to_the_follow_ease_once_nothing_holds_it() {
+        use legaia_engine_field::field_regions::ZONE_RECORD_STRIDE;
+        use legaia_engine_vm::field::CameraParam;
+        let mut w = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.actors[0].move_state.world_x = 0x1040;
+        w.actors[0].move_state.world_z = 0x2040;
+        let mut rec = [0u8; ZONE_RECORD_STRIDE];
+        rec[0] = 1;
+        rec[1..5].copy_from_slice(&[0, 0, 0x7F, 0x7F]);
+        rec[5] = 0x10;
+        rec[6] = 0x10;
+        rec[7] = 0x30;
+        rec[9] = 0x20;
+        rec[10..12].copy_from_slice(&(-160i16).to_le_bytes());
+        rec[12..14].copy_from_slice(&450i16.to_le_bytes());
+        rec[14..16].copy_from_slice(&0x3000i16.to_le_bytes());
+        rec[16..18].copy_from_slice(&512i16.to_le_bytes());
+        let mut zone_table = vec![1u8];
+        zone_table.extend_from_slice(&rec);
+        w.load_field_region_tables(&[], &zone_table);
+        let mut c = Camera::default();
+        c.reset_globals_for_scene_entry();
+        w.tick();
+        c.tick_on_stream(&mut w);
+        assert_eq!(c.globals.angles()[0], 450, "the follow pose snapped in");
+
+        // A talk stages a snap shot: pitch 182, yaw -707.
+        w.dialog.inline =
+            Some(legaia_engine_field::inline_dialogue::InlineDialogue::from_inline(vec![0x21]));
+        let shot = [(0u8, 182i16), (1, -707)];
+        for (slot, value) in shot {
+            w.camera.state.params.push(CameraParam {
+                slot,
+                value: value as u16,
+            });
+        }
+        w.pending_field_events = vec![FieldEvent::CameraConfigure {
+            params: w.camera.state.params.clone(),
+            apply_trigger: 0,
+            mode: 0,
+        }];
+        c.route_camera_events(&mut w);
+        c.tick_on_stream(&mut w);
+        assert!(c.script_owns_focus(), "the talk holds its shot");
+        assert_eq!(c.globals.angles()[0], 182);
+
+        // The talk ends with no APPLY: the latch and the staged mirror go,
+        // the shot stands on a frame the player does not move.
+        w.dialog.inline = None;
+        c.tick_on_stream(&mut w);
+        assert!(!c.script_owns_focus(), "nothing holds the shot");
+        assert!(
+            w.camera.state.params.is_empty(),
+            "the stale shot is dropped"
+        );
+        assert_eq!(c.globals.angles()[0], 182, "no hand-back snap");
+        assert_eq!(c.globals.angles()[1] as i16, -707);
+
+        // The player walks: the ease closes on the follow pose.
+        for _ in 0..240 {
+            w.actors[0].move_state.world_x += 2;
+            w.clock.display_frames += 1;
+            c.tick_on_stream(&mut w);
+        }
+        assert_eq!(c.globals.angles()[0], 450, "eased back to the follow pitch");
+        assert_eq!(c.globals.angles()[1] as i16, -160);
     }
 
     /// Tilt and zoom clamp at the knob bounds and never accumulate beyond

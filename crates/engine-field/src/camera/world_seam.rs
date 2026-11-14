@@ -112,6 +112,10 @@ pub trait CameraWorld {
     fn scripted_shot_holds_camera(&self) -> bool {
         false
     }
+    /// Drop the world's mirror of the op-`0x45` staging slots
+    /// (`camera.state.params`): the staged shot no longer owns the camera,
+    /// so a later record must not read it back as its own framing.
+    fn drop_staged_camera_shot(&mut self) {}
     /// Whether a scripted arc drives the follow camera.
     fn script_arc_follow_camera(&self) -> bool;
     /// Whether the per-frame camera-zone re-query flag is raised.

@@ -100,6 +100,7 @@ mod field_actor_clone_burst_disc;
 mod field_actor_clone_op4c14;
 mod field_actor_spawn_materialize_e2e;
 mod field_ambient_fx_disc;
+mod field_camera_shot_census_disc;
 mod field_dialog_smoke;
 mod field_floor_wave;
 mod field_interact_dialogue_disc;
