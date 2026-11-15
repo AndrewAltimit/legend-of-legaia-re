@@ -508,7 +508,7 @@ cast channel's residual is therefore a term of the comparison (its one offset pe
 absorb a step that changes arm by arm), not a cue the player hears late. What would still close
 the number: the cast render delaying each ring cue by retail's step on that arm, in the oracle.
 
-What is left is the oracle's, not the game's: a cast render that delays each ring cue by retail's step on that arm, which needs the battle frame step itself on those arms ([the cast channel](../../subsystems/audio.md#the-cast-channel)).
+What is left is the oracle's, not the game's: a cast render that delays each ring cue by retail's step on that arm. The `cast_steps` channel, which runs the cast on a recording's own steps, does that ([a ring cue keys at its frame's end](../../subsystems/audio.md#a-ring-cue-keys-at-its-frames-end)); `cast`, on the engine's steps, does not.
 
 ### No script changes the BGM word inside a swap's read
 

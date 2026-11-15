@@ -26,8 +26,11 @@ Two channels per state:
            frame steps (`<label>.steps` beside the WAV, mednafen's, from
            `scripts/mednafen/drive-timeline.py --steps-out`): the battle frame
            step is a measure of the emulated machine's frame cost, so this is
-           the cast's sound with the two emulators' costs taken out. Harness-only:
-           `cast` stays the engine's own clock
+           the cast's sound with the two emulators' costs taken out. The step
+           track opens on the state's own instant (a state inside the summon
+           sustain names it by its band word), and each battle ring cue keys
+           a frame step after its push, where retail's drain keys it.
+           Harness-only: `cast` stays the engine's own clock
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
     scripts/ci/audio-pcm.py --capture --jobs 6    # the recordings side by side
@@ -156,6 +159,30 @@ def main_ram_offset(b: bytes | bytearray) -> int:
     if i < 0:
         raise RuntimeError("no MainRAM.data8 entry")
     return i + 1 + len(name) + 4
+
+
+BATTLE_CTX_PTR = 0x07_BD24  # gp+0xA0C, the battle context pointer
+SUMMON_SUSTAIN = 0x35
+
+
+def band_instant(state: Path) -> str | None:
+    """`state,phase,word` of a state that stands inside the summon sustain.
+
+    The `cast_steps` run arms its step track on the first engine pass that
+    leaves the action SM there with the band word `ctx[+0x6D8]` at or below
+    the state's (`LEGAIA_CAST_STEP_ARM`): the recording's frames open on the
+    state's instant, and an arm that waits on the word reading exactly `0`
+    (PROT 0908's arm 3) only meets it when they drain the word the state
+    held. `None` outside `0x35`, where the word is no clock of the state's.
+    """
+    raw = state.read_bytes()
+    b = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    ram = b[main_ram_offset(b):][:0x20_0000]
+    ctx = struct.unpack_from("<I", ram, BATTLE_CTX_PTR)[0] & 0x1F_FFFF
+    if not ctx or ram[ctx + 0x07] != SUMMON_SUSTAIN:
+        return None
+    word = struct.unpack_from("<h", ram, ctx + 0x6D8)[0]
+    return f"{ram[ctx + 0x07]},{ram[ctx + 0x279]},{word}" if word >= 0 else None
 
 
 def silenced_copy(state: Path, out: Path) -> None:
@@ -312,6 +339,13 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
     wav.unlink(missing_ok=True)
     if steps:
         env["LEGAIA_CAST_STEP_TRACK"] = str(steps.resolve())
+        # On retail's steps a ring cue keys where retail's does, a frame step
+        # after the pass that pushed it (`LEGAIA_CAST_RING_AT_FRAME_END`); on
+        # the engine's own steps that lag is on steps retail does not run.
+        env["LEGAIA_CAST_RING_AT_FRAME_END"] = "1"
+        manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
+        if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
+            env["LEGAIA_CAST_STEP_ARM"] = at
     env.update({
         "LEGAIA_AUDIO_DETACHED": "1",
         # The frame is not taken: the child plays on past its gate.

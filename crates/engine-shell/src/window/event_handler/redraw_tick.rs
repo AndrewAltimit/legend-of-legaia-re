@@ -600,9 +600,38 @@ impl PlayWindowApp {
                 .retail_step_track
                 .as_ref()
                 .is_some_and(|t| !t.armed());
-        if waiting && self.cast_film_begun() {
+        if waiting && self.cast_step_track_begins() {
             self.session.host.world.arm_retail_step_track();
         }
+    }
+
+    /// Where a step track opens. `LEGAIA_CAST_STEP_ARM=state,phase,word`
+    /// names the state's own instant inside a summon band: the first pass
+    /// that leaves the action SM under `(state, phase)` with the band word
+    /// `ctx[+0x6D8]` at or below `word`. A mid-cast state's recording opens
+    /// there, not on the cast's begin, and an arm that waits on the word
+    /// reading exactly `0` (PROT 0908's `beq v0,zero` at `0x801F6E10`) only
+    /// meets it when the recording's steps drain the word the state held:
+    /// armed at the cast's begin, `zenoir_summon_mid_cast`'s arm 3 took
+    /// retail's eleven step-`3` frames from `112` where the state stands on
+    /// `97`, stepped over `0` on the step-`2` frames, and the band left
+    /// `0x35` there. Without it, [`Self::cast_film_begun`]. A harness seat.
+    fn cast_step_track_begins(&self) -> bool {
+        let at = std::env::var("LEGAIA_CAST_STEP_ARM").ok().and_then(|v| {
+            let f: Vec<i32> = v.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+            match f[..] {
+                [s, p, w] => Some((s, p, w)),
+                _ => None,
+            }
+        });
+        let Some((state, phase, word)) = at else {
+            return self.cast_film_begun();
+        };
+        let w = &self.session.host.world;
+        w.mode == SceneMode::Battle
+            && i32::from(w.battle_ctx.action_state) == state
+            && i32::from(w.casting.module_phase) == phase
+            && i32::from(w.battle_ctx.frame_timer) <= word
     }
 
     /// Whether a cast film's recording has opened, by the recorder's own

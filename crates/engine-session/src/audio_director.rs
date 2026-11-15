@@ -201,6 +201,11 @@ pub struct AudioDirector<S: AudioSink> {
     /// retail mode init (`FUN_8001DCF8`), which tears down the held
     /// sustained cue run (`FUN_80017910` at `0x8001DDA8`).
     sfx_in_battle: Option<bool>,
+    /// The battle ring calls held to their frame's end
+    /// ([`Self::route_world_sfx`], `LEGAIA_CAST_RING_AT_FRAME_END`): each
+    /// tick's batch with the display tick it is released on. Empty unless
+    /// the harness asks for it.
+    ring_held: Vec<(u64, Vec<SfxRingOp>)>,
     /// The CD input's reverb send last handed the output
     /// ([`Self::set_cd_reverb`]); `SPUCNT` bit 2, clear at boot.
     cd_reverb: bool,
@@ -278,6 +283,7 @@ impl<S: AudioSink> AudioDirector<S> {
             resident_slot0: None,
             sfx_evicted: false,
             sfx_in_battle: None,
+            ring_held: Vec::new(),
             cd_reverb: false,
             commands: AudioCommandLog::default(),
             pack: Default::default(),
