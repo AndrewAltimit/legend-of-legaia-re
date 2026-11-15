@@ -47,8 +47,11 @@ pub struct DanceGame {
     pub(super) judging_closed: bool,
     /// Vsyncs since the last game frame ([`Self::advance_vsync`]).
     pub(super) vsync_phase: u32,
-    /// Press edges held for the next game frame, in the packed pad layout.
+    /// Press edges made since the last game frame, in the packed pad layout.
     pub(super) pending_edges: u16,
+    /// The edges the pad pump latched at the last game frame's start: what
+    /// this game frame judges ([`Self::advance_vsync`]).
+    pub(super) polled_edges: u16,
     /// The mode global (`DAT_801d514c`), which the HUD driver's score-box
     /// permutation and its solo arm both key off.
     pub(super) mode: DanceMode,
@@ -156,6 +159,7 @@ impl DanceGame {
             judging_closed: false,
             vsync_phase: 0,
             pending_edges: 0,
+            polled_edges: 0,
             mode: DanceMode::Qualifier,
             widgets: Vec::new(),
             kinds: Vec::new(),
@@ -1275,10 +1279,16 @@ impl DanceGame {
     /// retail capture of the dance: the state machine and the dancers run once
     /// every three vsyncs, on a delta of three. The judge therefore reads the
     /// beat phase in steps of thirty, and a rival's feed gets one turn per
-    /// game frame, not per vsync. A press is held until the game frame that
-    /// follows it, as the pad pump's edge word holds it, and is judged there in
-    /// the handler's own order (Triangle, Square, Circle). Returns that frame's
-    /// event.
+    /// game frame, not per vsync.
+    ///
+    /// The pad pump builds the new-press word `_DAT_8007B874` once, at the
+    /// start of the game frame, from the buttons down by the vsync before it:
+    /// a retail film reads the word change on the first vsync of the frame
+    /// that judges it, and a press made during one game frame's three vsyncs
+    /// is judged by the frame after (the next frame's own presses wait for
+    /// the one after that). So the edges made while a frame runs are held
+    /// a frame, then judged in the handler's own order (Triangle, Square,
+    /// Circle). Returns that frame's event.
     pub fn advance_vsync(&mut self, press: Option<DanceDir>) -> Option<DanceEvent> {
         if let Some(d) = press {
             self.pending_edges |= d.pad_bit();
@@ -1288,11 +1298,25 @@ impl DanceGame {
             return None;
         }
         self.vsync_phase = 0;
-        let edges = std::mem::take(&mut self.pending_edges);
+        let edges = std::mem::replace(
+            &mut self.polled_edges,
+            std::mem::take(&mut self.pending_edges),
+        );
         let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
             .into_iter()
             .find(|d| edges & d.pad_bit() != 0);
         self.advance_pressing(HALL_FRAME_STEP, dir)
+    }
+
+    /// The result wipe's accumulator (`DAT_801D515C` in states `0xB` / `0xC`)
+    /// while the finish countdown runs.
+    pub fn finish_wipe(&self) -> Option<i32> {
+        self.finish.as_ref().map(|f| f.wipe())
+    }
+
+    /// The last [`Self::advance_vsync`] ran a game frame.
+    pub fn ran_game_frame(&self) -> bool {
+        self.vsync_phase == 0
     }
 
     /// [`Self::advance`] with this frame's press, judged where retail's handler

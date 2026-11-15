@@ -186,13 +186,14 @@ fn exit_dance_with_a_run_still_clears_the_pad_latch() {
     );
 }
 
-/// Press `mask` and run the hall to its next game frame: it runs one every
-/// third vsync, and a press is judged on the one that follows it.
+/// Press `mask` and run the hall through the game frame that judges it: it
+/// runs one every third vsync, and a press made while one runs is polled at
+/// the next one's start and judged there.
 fn dance_press(world: &mut World, mask: u16) {
     world.set_pad(0);
     world.set_pad(mask);
     let _ = world.tick();
-    for _ in 0..2 {
+    for _ in 0..5 {
         world.set_pad(mask);
         let _ = world.tick();
     }

@@ -253,6 +253,11 @@ pub struct MinigameState {
     /// The `GO!` banner's brightness (`acc * 2`, `FUN_801cf470` states 4 / 5)
     /// the last dance tick produced. `None` outside those states.
     pub dance_countin_go: Option<i32>,
+    /// The last dance tick ran one of the hall's game frames: the count-in's
+    /// animator or the song's frame, once every three vsyncs. The camera
+    /// keyframe track steps on these frames alone, by their delta
+    /// (`FUN_801CF470` runs its camera block once a game frame).
+    pub dance_hall_frame: bool,
     /// The global `music_01` track the dance's own overlay loads, held until
     /// the count-in ends (retail starts the song when the banner clears).
     /// Chosen by song length in `World::enter_dance`.
@@ -406,6 +411,7 @@ impl MinigameState {
             dance_countin: None,
             dance_countin_banner: None,
             dance_countin_go: None,
+            dance_hall_frame: false,
             dance_pending_bgm: None,
             dance_tutorial: None,
             dance_tutorial_frame: None,

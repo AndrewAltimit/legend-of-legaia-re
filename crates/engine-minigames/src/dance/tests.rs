@@ -727,15 +727,27 @@ fn the_countin_animator_runs_once_every_three_vsyncs() {
     );
 
     // The whole count-in - READY to its 0x6F exit, GO! in and out - lasts
-    // COUNTIN_TOTAL_VSYNCS: 38 + 11 + 11 animator runs of three vsyncs, with
-    // `done` on the first vsync of the run after.
+    // 38 + 11 + 11 animator runs of three vsyncs; state 6's run after them
+    // opens the song, and three lead-in runs (state 7 taking its count from
+    // 4 to 1) follow before `done`. The beat clock's first frame is the run
+    // after, the one that takes the count to 0.
     assert_eq!(COUNTIN_RUNS, 38 + 11 + 11);
     let mut ci = CountIn::new();
     let mut vsyncs = 1;
-    while !ci.step().done {
+    let mut song_start = None;
+    loop {
+        let s = ci.step();
+        if s.song_start {
+            song_start = Some(vsyncs);
+        }
+        if s.done {
+            break;
+        }
         vsyncs += 1;
         assert!(vsyncs < 1000, "count-in never finished");
     }
+    assert_eq!(song_start, Some(COUNTIN_SONG_START_VSYNCS));
+    assert_eq!(vsyncs, COUNTIN_SONG_START_VSYNCS + 3 * 3);
     assert_eq!(vsyncs, COUNTIN_TOTAL_VSYNCS);
 }
 
@@ -1378,8 +1390,9 @@ fn free_play_draws_the_saved_best_panel() {
     assert!(g.hud_frame_rows(false).iter().any(|r| r.text == "BEST 568"));
 }
 
-/// The hosts' tick runs a game frame every third vsync on a delta of three,
-/// and judges a press on the game frame that follows it.
+/// The hosts' tick runs a game frame every third vsync on a delta of three.
+/// A press made while a frame runs is polled at the next frame's start and
+/// judged there, as the retail film reads the new-press word.
 #[test]
 fn the_hall_runs_a_game_frame_every_third_vsync() {
     let mut g = game();
@@ -1390,14 +1403,22 @@ fn the_hall_runs_a_game_frame_every_third_vsync() {
         0,
         "the clock stands between game frames"
     );
-    let ev = g.advance_vsync(None);
-    assert!(ev.is_some(), "the held press is judged on the game frame");
+    assert_eq!(
+        g.advance_vsync(None),
+        None,
+        "the frame the press was made in polled ahead of it"
+    );
     assert_eq!(g.intra_beat_phase(), HALL_FRAME_STEP * PHASE_PER_DELTA);
+    assert_eq!(g.advance_vsync(None), None);
+    assert_eq!(g.advance_vsync(None), None);
+    let ev = g.advance_vsync(None);
+    assert!(ev.is_some(), "the next frame's poll carries the press");
+    assert_eq!(g.intra_beat_phase(), 2 * HALL_FRAME_STEP * PHASE_PER_DELTA);
     // No press held over: the next game frame judges nothing.
     for _ in 0..3 {
         assert_eq!(g.advance_vsync(None), None);
     }
-    assert_eq!(g.intra_beat_phase(), 2 * HALL_FRAME_STEP * PHASE_PER_DELTA);
+    assert_eq!(g.intra_beat_phase(), 3 * HALL_FRAME_STEP * PHASE_PER_DELTA);
 }
 
 /// State 3's song pick: the mode's, and free play's three by its counter.
