@@ -956,6 +956,17 @@ slow motion. Four **tick** bodies sweep the party row
 | 965 `0xB6` Doomsday | phase `0x0B` (the `beq v1,0x0C` / `slt` pair at `0x801F6AE8` sends it to `0x801F7648`) | |
 | 966 tick | arm 26 | power `0x327`, see [PROT 0966](#prot-0966-evil-seru-magic) |
 
+**Only Chaos Breath draws between seats.** Its seat body follows the wrapper with two
+`rand()` calls for Venom and Toxic (`jal 0x80056798` at `0x801F7888` / `0x801F78B0`).
+Mystic Circle's (`jal 0x801DD4B0` at `0x801F70EC`, the numeral at `0x801F7100`) and
+Doomsday's (`0x801F77B4..0x801F7840`: the wrapper, the numeral, the clamp, the HP store
+and the knockdown stage) run from one wrapper call to the next with no draw. A
+`--wrapper-trace` recording of Doomsday enters its three rolls on seeds exactly three
+draws apart. The port drew the status pair for all three bodies, so the second and
+third victims rolled on other words: on retail's seed the film landed `2243`, `2370`
+and `2359` against the recording's `2243`, `2188` and `2308`, and lands all three with
+the two draws gone (`World::sweep_status_rolls`). Grade `disassembly` + `capture`.
+
 ### The hit tint: colour, blend and impact selector
 
 Beside its HP write a hit arm stores the struck seat's colour word `+0x04`,
@@ -1112,6 +1123,7 @@ retail's.
 | 0937 Hyper Lightning | the `0xFF` arm, the trio (`0x801F780C..0x801F7814`) | the park to the band's end |
 | 0950 `0x5A` Rolling Flare | arm 3's pass, the trio (`0x801F8000..0x801F8008`) | clip `8` parked on `304`, running out through arm 4 |
 | 0940 `0x3C` Glare | arm 1 stages the idle bare on every pass (`0x801F6D94`); its cut hides the caster (`sw zero,0x4` / `sb 0xFF,0x21c` at `0x801F6EC4..0x801F6EC8`) | Medusa's clip `8` on cursor `1024` through arms 2 and 3, running out in `0x51` |
+| 0960 `0x7B` Plasma Strike | arm 16's pass, the trio with the bump (`0x801F8568..0x801F857C`) | the close clip `0x0F` cut to idle on the pass, at cursor `382` |
 
 Glare's arm 1 also hides every party seat but the victim and every monster seat but the
 caster on each pass, ahead of its gate (`+0x21C = 0xFF`, `+0x04 = 0`,
@@ -1125,6 +1137,22 @@ Charge), `.900` to `.913` (Rolling Flare), `.899` to `.904` (Hyper Crush) and `.
 `.990` (Van Saryu's Earthquake) on the plain seat, with no cue moved. A body whose
 closing store is not ported keeps the one play and the converge on idle. Grade
 `disassembly` + `capture`.
+
+**The close decides the Done band's rates.** Plasma Strike's trio comes with the
+`+0x1DC` bump, so Lu Delilas is on idle when the band leaves. The action SM's rate
+restore `FUN_801E93C8` runs only while the acting monster's committed clip carries a
+zero `+0x87`, and the close clip `0x0F` is a solo clip: left to play out, it held the
+caster on rate `2` and the victim on `4` through `0x51` where the recording reads `8`
+on both from the band's first pass. With the store the film's `0x71` reads `.782` to
+`.987` and `0x51` `.955` to `.985`.
+
+**What the films still list.** A pass over every enemy film on the recording's own
+steps, holding each seat's clip, cursor (off the idle) and rate against retail's at
+each pair, lists no other capture caster on another clip than retail's for more than a
+handful of pairs: the rows of `CAPTURE_CASTER_STAGES` whose clips park on a window
+never reach a natural end while staged, and Ultra Charge is the one whose clip wraps
+there. Cross Beam's caster stands on clip `8`, cursor `416`, for the three passes of
+`0x71` and `0x50` where the port's is already on idle.
 
 ### One owner per hit
 
@@ -4308,8 +4336,39 @@ fold.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
 
-Not ported: the `FUN_801D5854(caster, 8)` framing arms 11 and 12 re-arm each
-pass, and the full heal's party-seat CLUT reload and effect-list spawn
+- **The message bar.** The body calls the element spawner on the bar four
+  times with mode `0` and once with mode `1`. Arm 5's exit raises the stop
+  prompt (`li a0,0x5b` / `move a1,zero` / `jal 0x801D8DE8` at
+  `0x801F7564..0x801F7598`), and the steal and gold outcomes raise their lines
+  the same way (`0x801F82EC`, `0x801F8374`): each spawns the bar at seat A and
+  glides it up. Arm 6's exit, on a party victim, calls it with mode `1`
+  (`li a0,0x5b` at `0x801F7704`, `li a1,0x1` in the delay slot of the `jal`
+  at `0x801F7708`): the bar spawns at seat B and glides down to seat A with
+  its line still on it, under the display's last rows, and the readout shows
+  again as its frame clears the plate. The call at `0x801F7CD4` is not the
+  bar's: it is arm 9 re-opening the move-name label, element `0x4C`.
+- **The outcome stays in the label.** Arm 9 stores the outcome's name pointer
+  into the label's own placement record (`sw v0,0x734(a2)` at `0x801F7CD8`,
+  the table at `0x80076C10`) and nothing in the body puts the spell's name
+  back, so the label reads the outcome through arms 10 to 12 and the Done
+  band.
+- **The camera's counter.** Arm 10 zeroes the yaw ladder and the framing style
+  as its countdown passes (`sh zero,0x6da(a0)` / `sb zero,0xd(a0)` at
+  `0x801F7D68..0x801F7D6C`), so the case-8 framings arms 11 and 12 arm each
+  pass, and the Done band's pan, count from `0`. The band stores the style `1`
+  back on its next pass and the `0xFF` arm (`0x801F8504..0x801F852C`) holds no
+  `sb zero,0xd`, so the Done band's case 6 frames half a turn round
+  (`capture_exit_clears_style`). A recording of Shade's cast reads the counter
+  `4288` on arm 10's last pass and `0` on arm 12's first, and the `0x50`
+  endpoint `4580` on counter `146` over heading `1710`.
+
+Against a recording of `kor_shade_pre_fatal_decision` on its own frame steps
+the three read arm 12 `.928` to `.975`, `0x50` `.898` to `.988` and `0x51`
+`.737` to `.997`. On the engine's own steps arm 6 stays low: retail runs the
+hold on step `1` for most of its `1202` vsyncs, which is the frame's cost and
+not the body's. Grade `disassembly` + `capture`.
+
+Not ported: the full heal's party-seat CLUT reload and effect-list spawn
 (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's settle wait has no bound in retail;
 the port lets go after `600` ticks.
 

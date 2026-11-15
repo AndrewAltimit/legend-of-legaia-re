@@ -150,6 +150,7 @@ Flags worth knowing:
 | `LEGAIA_SEAT_SIDEBAND_SEEK=<vsyncs>` (engine child) | The recording drive's seek into the first `summon.dat` slot; the driver passes `0` ([the side-band read](#the-side-band-reads-seek)), `--engine-env` overrides it |
 | `LEGAIA_CAST_SEQ_EXE=<path>` (environment) | Score another `legaia-engine` build (a before / after pair) without rebuilding the tree's |
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
+| `LEGAIA_PARK=<vsyncs>` (environment) | Retail: how long the action state and the module phase may stand still before the probe calls the cast parked and quits (default `900`). Fatal Decision's arm 6 holds its wheel for `1202` vsyncs with no button, so its recording needs `1500` |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
 The engine recorder also writes `rates.csv` (no header), per tick and per retail seat the
@@ -1379,7 +1380,25 @@ What the audit still lists on the plain seat, by cause:
 |---|---|
 | Jette's Clone, the acting seat `1021` off in arm 3 | the split's side is the parity of the arm's passes, which follows the frame steps; `--retail-steps` lands it |
 | Scythe Wind's victim at rate `4` for retail's `1` | the replay's idle stands `72` cursor units on, so it wraps and commits inside the arm |
-| Final Crisis, a party seat down where retail's gets up | the replay's own damage roll |
+| Final Crisis, a party seat down where retail's gets up | the replay's own damage roll: on `--retail-steps` the three seats end on the recording's HP and arm 6 reads `1.000` |
+
+Two lines of the set are not the engine's to answer. `garmel_zeto_pre_call_wave_all`
+(`.448` on either seat) films two casts: the recording forced the party-wide target
+onto Call Wave, a self-buff, and retail then draws the roster panels and frames the
+cast from the group's depth, while the engine's seed keeps the cast's own class
+(`LEGAIA_BATTLE_MONSTER_CAST`, where a group target stays the cast's). And
+`jou_gizam_v3_water_hazard` opens on the edge of arm 1 with arm 0's shot still
+walking: the replay's shot stands `169` yaw units from the recording's
+`0x800 - 2364`, as a shot armed from the replay's own seats before the film's ground
+went in would, and the difference holds through every arm to the Done band. The seat
+that re-arms a walking shot (`RetailBattle::module_shot_seat`) does not fire on this
+state.
+
+Fatal Decision's film reads low on the plain seat for another reason again: retail runs
+the wheel's hold on step `1` for `986` of its `1202` vsyncs, and the replay's own roll
+lands another outcome, so arm 11 and the settle run where the recording skips them.
+On `--retail-steps --rand-track` the wheel, the prompt and the Done band read `.92`
+to `.997` ([the body](../subsystems/cast-module.md#prot-0954-fatal-decision)).
 
 ### A recording that opens inside an arm
 

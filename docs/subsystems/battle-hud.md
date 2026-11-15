@@ -1404,8 +1404,20 @@ plates' glides, read by `battle_hud::battle_message_bar_dy` into
 `BattleHudFrame::message_bar_dy`; started by a cast module's raise
 (`World::raise_module_message_bar`). Glare's raise is a mode-`0` call like the
 rest (`clear a1` at `0x801F7160` / `0x801F7178`, `jal 0x801D8DE8` at
-`0x801F7188`) and glides the same way. The steal and Fatal Decision raises
-still draw at rest.
+`0x801F7188`) and glides the same way. So are the melee steal's two raises
+(`jal 0x801D8DE8` / `move a1,zero` at `0x8004B37C` and `0x8004B628`) and
+Fatal Decision's prompt and outcome lines.
+
+**A mode-`1` call sends it back down.** Fatal Decision's arm 6 calls the
+spawner with `a1 = 1` as the wheel is stopped (`0x801F7708`): mode bit 0 set
+spawns the element at seat B and glides it to seat A (`0x801D935C..0x801D93D8`),
+so the bar sinks with its line still on it and the readout shows again as the
+frame clears the plate. Seat A's row `234` puts the frame's top edge at `226`,
+under the battle display's last row (`224`), so a landed bar is out of view;
+the port retires it there. A recording of Shade's cast holds the bar eight
+rows down two vsyncs after the stop and gone by the twelfth. Port:
+`LogLaunch::inbound` on `BattleState::message_bar_glide`, read by
+`battle_message_bar_dy`. Grade `disassembly` + `capture`.
 
 **The readout bar stays under it until it is covered.** The bar is queued behind
 the readout on the same seat, so a bar still rising from below leaves the plate

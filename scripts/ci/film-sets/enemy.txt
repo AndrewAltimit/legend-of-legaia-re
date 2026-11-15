@@ -39,7 +39,7 @@ dohaty_nova_v2_pre_scythe_wind__5B --spell 0x5B --state dohaty_nova_v2_pre_scyth
 jou_nova_v3_pre_scythe_wind__5B --spell 0x5B --state jou_nova_v3_pre_scythe_wind --caster 3 --target 1 --pin-seed 0x12345678
 jou_orb_v3_pre_grand_beam__63 --spell 0x63 --state jou_orb_v3_pre_grand_beam --caster 3 --target 8 --pin-seed 0x12345678
 kor_ghost_knight_pre_v_windhash__57 --spell 0x57 --state kor_ghost_knight_pre_v_windhash --caster 4 --target 0 --pin-seed 0x12345678
-kor_shade_pre_fatal_decision__5F --spell 0x5F --state kor_shade_pre_fatal_decision --caster 3 --target 1 --pin-seed 0x12345678
+kor_shade_pre_fatal_decision__5F --spell 0x5F --state kor_shade_pre_fatal_decision --caster 3 --target 1 --pin-seed 0x12345678 --retail-from captures/film-retail/kor_shade_pre_fatal_decision__5F/retail
 nilboa_lava_face_pre_fissure__32 --spell 0x32 --state nilboa_lava_face_pre_fissure --caster 3 --target 1 --pin-seed 0x12345678
 nilboa_lucifer_pre_cross_beam__58 --spell 0x58 --state nilboa_lucifer_pre_cross_beam --caster 4 --target 2 --pin-seed 0x12345678
 nilboa_neo_grude_pre_power_up__52 --spell 0x52 --state nilboa_neo_grude_pre_power_up --caster 4 --target 4 --pin-seed 0x12345678
