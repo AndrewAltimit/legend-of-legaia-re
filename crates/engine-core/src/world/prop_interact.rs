@@ -186,22 +186,28 @@ impl World {
         }
     }
 
-    /// Carry the object's clip end latch onto its channel's copy of the
-    /// control word before a script op runs on that channel. The clip tick
-    /// `FUN_800204F8` latches `+0x62 & 0x100` on the actor's one word; the
-    /// port's tick writes the prop's copy and the context copy never saw it,
-    /// so `AC <id> 08` found nothing to clear and the prop's latch survived.
-    /// `edbylon`'s second door swing clears the latch left by the first and
-    /// spins on it, and the spin then passed at once.
+    /// Carry the bits the object's clip tick owns onto its channel's copy of
+    /// the control word before a script op runs on that channel. The clip
+    /// tick `FUN_800204F8` works on the actor's one `+0x62` word: it latches
+    /// the end `0x100` and consumes a restart request `0x200`. The port's tick
+    /// writes the prop's copy, and a context copy that never saw it went
+    /// wrong two ways. `AC <id> 08` found no latch to clear and the prop's
+    /// latch survived: `edbylon`'s second door swing clears the latch left by
+    /// the first and spins on it, and the spin then passed at once. And the
+    /// copy kept the spawn's `4C 35` restart long after the tick had taken it,
+    /// so a later `CC <id> 36` (`|= 0x28A`) moved only the reverse bit and the
+    /// prop never re-seated on its last frame: `bylon` P2[12] opens the meal
+    /// hall door that way, and it stood shut through the dinner.
     ///
-    /// REF: FUN_800204F8 (0x800206E4..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C)
-    pub(crate) fn mirror_object_end_latch(&self, key: usize, word: &mut u16) {
-        use legaia_engine_scene::field_env::ANIM_END;
+    /// REF: FUN_800204F8 (0x800205F0..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C, 0x4C 0x35 / 0x36)
+    pub(crate) fn mirror_object_tick_bits(&self, key: usize, word: &mut u16) {
+        use legaia_engine_scene::field_env::{ANIM_END, ANIM_RESTART};
         let Some(anchor) = self.object_key_anchor(key) else {
             return;
         };
         if let Some(p) = self.props.bank.props.get(&anchor) {
-            *word = (*word & !ANIM_END) | (p.anim.flags & ANIM_END);
+            let owned = ANIM_END | ANIM_RESTART;
+            *word = (*word & !owned) | (p.anim.flags & owned);
         }
     }
 

@@ -1367,7 +1367,7 @@ impl World {
                     if channels[ci].object_bind {
                         let key = channels[ci].placement_index;
                         host.world
-                            .mirror_object_end_latch(key, &mut channels[ci].ctx.local_flags);
+                            .mirror_object_tick_bits(key, &mut channels[ci].ctx.local_flags);
                     }
                     let clip_words = (channels[ci].ctx.local_flags, channels[ci].ctx.field_6a);
                     let class_before = channels[ci].ctx.flags;

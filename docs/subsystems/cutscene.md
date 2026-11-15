@@ -2089,8 +2089,13 @@ the dojo door (`AC 04 07`, `AC 04 01`, `AB 04 03`, `B1 04 00`) and holds the doo
 door with the same spin (`AB 04 07` reverses the clip, `AD 04 08` at `+0x393`), so the `AC 04 08`
 before it has to clear the latch the opening swing left. Retail's clip tick and script ops share
 one actor word; the port keeps the prop's cursor word apart from the channel's context word, and
-carries the end latch across before each op (`World::mirror_object_end_latch`). A retail film of
+carries the end latch across before each op (`World::mirror_object_tick_bits`). A retail film of
 the chain holds this shot `380` vsyncs against the engine's `380` ticks with both spins in place.
+The tick also consumes a restart request (`0x200`) on that word, so the same mirror carries its
+clear: `bylon` `P2[12]`, the dinner's opening, opens the meal hall door with `CC 04 36` (`|= 0x28A`,
+re-seat on the last frame and hold), and a context word still holding the spawn's `4C 35` restart
+moved only the reverse bit, leaving the door shut through the dinner (disc-gated
+`bylon_dinner_disc`).
 
 A helper record's shot frames through the follow arm (`camera_view::field_follow_view`), which
 for a follow shot folds a negative eye depth into its magnitude. Under a scripted shot it keeps
