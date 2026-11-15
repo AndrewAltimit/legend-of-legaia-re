@@ -366,12 +366,9 @@ seats, and the MAN loader's sweep is `World::man_load_actor_reset`.
 | `FieldVmState::object_glide_legs` | object actors re-spawn with the bind list | a leg in flight walked the next scene's object of the same record and cleared its halt |
 | `FieldNpcState::tilts` | the actor's own `+0x24` / `+0x28` | a `juui1` tilt drew on the next scene's NPC in that slot |
 | `FieldLocomotion::eased_mirror_y` | the fresh player (`0x801D6D68`) carries no `+0x8E` mirror | a lift cut short by a door held the player's height in every later scene |
+| `FieldTerrain::floor_ladder_ramps`, `CameraRig::offset_ramps` | the MAN loader's inlined pool reset on an ordinary scene change (`0x8003B854..0x8003B898`, a copy of `FUN_8003CDA8` that respawns the driver) | a floor-rung or timed `4C 49` ramp running at the door wrote on into the next scene |
 
-Still open: the property-ramp pool's timed writers (`floor_ladder_ramps`,
-`CameraRig::offset_ramps`) outlive a load, and so does retail's pool, whose
-reset `FUN_8003CDA8` nothing calls; whether its driver actor survives the
-list re-allocation decides whether a ramp in flight finishes in the next
-scene. `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
+Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
 `_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
 `uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
 stands in a bridge box and writes `4C CF 00 00` outside them, so a door
@@ -1387,7 +1384,7 @@ and the only thing that can be stale is a marker that exists.
 | Anchor | Verdict | `REPLACED-BY:` mechanism |
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
-| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
+| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image; the MAN loader carries its own inlined copy (`0x8003B854..0x8003B898`), the seat `World::man_load_actor_reset` takes for the floor-rung and camera-offset ramps. |
 | `nested_record_copy::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_actor_formats::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
 | `rgb_wash_scale::scale_rgb24` (`80046978`) | `REPLACE` | `render-kernels::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |

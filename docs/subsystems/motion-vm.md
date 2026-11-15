@@ -931,9 +931,14 @@ with no free slot bumps the `DAT_80073ED0` overflow counter and is dropped.
 Installers are `FUN_8003C5F0` and this op's inlined copy. `FUN_8003CDA8`
 resets the pool, but nothing on the disc calls it: an address-reference scan
 over SCUS and every PROT entry finds no `jal`, jump, branch, word or `lui`
-pair naming `0x8003CDA8`, so "scene-entry reset" describes the body, not a
-caller. The port runs it on the player's scale-ramp scheduler at
-`World::install_field_player`, the one scheduler that outlives a scene.
+pair naming `0x8003CDA8`. The body has an inlined twin that does run: the
+MAN loader `FUN_8003AEB0` resets the pool at `0x8003B854..0x8003B898` on
+every ordinary scene change (`_DAT_8007B8B8 != 2`; the return from a battle,
+a minigame or an FMV jumps past it at `0x8003B650`), and spawns a fresh driver
+from `0x800742EC` where the routine frees one. The port resets each world-held
+scheduler of the pool at that seat: the floor-rung and camera-offset ramps in
+`World::man_load_actor_reset`, the player's scale and slot ramps in
+`World::install_field_player`.
 
 The reset is worth reading for one asymmetric store. It zeroes the busy word
 `+0x1E` of all **64** raw slots and clears slot 0's `+0x1A` / `+0x1C`, then

@@ -146,9 +146,11 @@ impl RampScheduler {
     // `find-address-word-refs.py --prot 8003cda8` finds no reference of any
     // form (`jal`, `j`, branch, word, `lui` pair) to `0x8003CDA8` in SCUS or
     // in any PROT entry, and the instruction before it is the previous
-    // routine's `jr ra` delay slot, so nothing falls into it either. The
-    // routine is shipped but unreferenced; "scene-entry reset" names what it
-    // does, not who calls it.
+    // routine's `jr ra` delay slot, so nothing falls into it either. Its body
+    // runs inlined instead: the MAN loader `FUN_8003AEB0` resets the pool at
+    // `0x8003B854..0x8003B898` on every ordinary scene change, which is where
+    // `World::man_load_actor_reset` resets the floor-rung and camera-offset
+    // schedulers.
     /// PORT: FUN_8003CDA8 - the scene-entry pool reset.
     ///
     /// Retail zeroes the busy word `+0x1E` of all **64** raw slots, clears
