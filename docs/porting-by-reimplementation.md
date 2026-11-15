@@ -68,7 +68,7 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 - **The measuring instruments are a project of their own.** Seeding the engine from retail RAM, scoring frames and keeping baselines honest take real, ongoing engineering.
 - **Being faithful is a discipline.** Every enhancement must leave the faithful mode bit-identical when off, or "faithful" stops being a testable claim.
 - **Fidelity is a long tail, paid continuously.** The first playable game is far from the last divergence. Every scene, cast and menu screen the corpus has not seen is unmeasured, and parity on what it has seen says nothing about the rest ([step 6](#step-6-measure-against-a-retail-corpus)).
-- **It rests on decompilation-grade analysis; it does not replace it.** Every port is read from the disassembly with the care a decompilation takes, routine by routine. Reimplementing changes what gets written from that reading, not how much of the original has to be understood.
+- **It needs accurate reading of the disassembly, not a decompilation.** Each routine the port depends on is read as exactly as a decompilation would read it: the arithmetic, the order of random draws, the timing. What it skips is the matching work, which is most of a matching decompilation's cost: no compilable source, no reproduced compiler and flags, no byte match, and no obligation to read routines the port never relies on. The price of skipping the byte match is that a misreading is not caught at once; the oracles below exist to catch it.
 
 ### What it buys
 

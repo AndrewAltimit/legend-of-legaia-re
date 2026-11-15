@@ -212,7 +212,7 @@
         <li><strong>The instruments are a project of their own.</strong> Seeding from retail RAM, scoring frames and keeping baselines honest take ongoing engineering.</li>
         <li><strong>Being faithful is a discipline.</strong> An enhancement must leave the faithful mode bit-identical when off.</li>
         <li><strong>Fidelity is a long tail, paid continuously.</strong> The first playable game is far from the last divergence, and parity on what the corpus has seen says nothing about what it has not.</li>
-        <li><strong>It rests on decompilation-grade analysis; it does not replace it.</strong> Every port is read from the disassembly with the care a decompilation takes. Reimplementing changes what gets written from that reading, not how much has to be understood.</li>
+        <li><strong>It needs accurate reading of the disassembly, not a decompilation.</strong> Each routine the port depends on is read as exactly as a decompilation would read it: the arithmetic, the order of random draws, the timing. What it skips is the matching work, which is most of a matching decompilation&rsquo;s cost: no compilable source, no reproduced compiler and flags, no byte match, and no obligation to read routines the port never relies on. The price of skipping the byte match is that a misreading is not caught at once; the oracles below exist to catch it.</li>
       </ul>
     </div>
     <div>
