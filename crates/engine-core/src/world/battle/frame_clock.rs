@@ -69,23 +69,32 @@ impl World {
         // The frame's own work: what it links, when the host prices its
         // draw (`WorldToggles::battle_poly_frame_cost`), else the state's
         // measured base plus the draw load the world counts.
-        // A summon module's arms keep their table: their clips' polls and
-        // the engine's linked count part from retail's frames there (the
-        // Seru films read lower priced, `.9146` to `.889` on a partial set).
-        let summon_arm = arm_step.is_some()
-            && (state
-                == legaia_engine_battle_vm::battle_action::ActionState::SummonSustain.as_byte()
-                || state
-                    == legaia_engine_battle_vm::battle_action::ActionState::SummonReturn.as_byte());
+        // The summon band keeps its table: its arms' clips poll and the
+        // linked count parts from retail's frames there (the Seru films read
+        // lower priced, `.9146` to `.889` on a partial set), and its opening
+        // states `0x33` / `0x34` run step `1` or `2` on retail's ring where
+        // the census prices them at `2` or `3` (step agreement `.98` to `.58`
+        // over the 29 Seru films).
+        // The capture band's arms keep theirs too when the census prices
+        // (step agreement in `0x70` `.88` to `.81` over the enemy films priced,
+        // the engine a third of a step over retail); the window's diagnostic
+        // count prices them as it always has.
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        let window_source = self.toggles.battle_poly_window_count;
+        let table_kept = (arm_step.is_some()
+            && (!window_source
+                || state == ActionState::SummonSustain.as_byte()
+                || state == ActionState::SummonReturn.as_byte()))
+            || state == ActionState::SummonFadeIn.as_byte()
+            || state == ActionState::SummonActorFreeze.as_byte();
         // The census of world state (`World::note_linked_polys`), or the
         // window's own drawn table under the diagnostic source.
-        let window = self.toggles.battle_poly_window_count;
-        let poly = if window {
+        let poly = if window_source {
             self.battle.drawn_polys.map(polygon_frame_work)
         } else {
             self.battle.linked_polys.map(linked_frame_work)
         }
-        .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
+        .filter(|_| self.toggles.battle_poly_frame_cost && !table_kept);
         let work = match poly {
             Some(w) => w,
             None => measured_frame_cost_at(self.party.party_count, state, passes)
@@ -2327,6 +2336,28 @@ mod tests {
         w.note_linked_polys(3000);
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_work, linked_frame_work(3000));
+    }
+
+    /// Under the census an arm table's step and the summon band's opening
+    /// states keep the table: the census prices neither.
+    #[test]
+    fn the_census_leaves_the_arm_tables_and_the_summon_opening() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        for (state, arm) in [
+            (0x70u8, Some(4u8)),
+            (0x33, None),
+            (0x34, None),
+            (0x36, Some(2)),
+        ] {
+            let mut w = World::new();
+            w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+            w.party.party_count = 3;
+            w.battle_ctx.action_state = state;
+            w.toggles.battle_poly_frame_cost = true;
+            w.note_linked_polys(3000);
+            w.push_frame_cost(arm);
+            assert_ne!(w.battle.frame_work, linked_frame_work(3000), "{state:#x}");
+        }
     }
 
     /// A capture-band module's line loads a priced frame at its work over the

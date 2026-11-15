@@ -2190,17 +2190,18 @@ Three things the table and the recordings behind it say about the frame-cost mod
   `.17` to `.94`, the cue lands and the film reads `.986` against `.972`. No table row
   can stand for both stages: `bylon_gimard_v2_tail_fire`, the same cast with the same
   party on another stage, costs `440` to `464` on the frames the table prices `605`.
-- **No count the world holds stands in for the linked one.** `LEGAIA_DIAG_CAST_BODIES=1`
-  writes `bodies.csv` beside the engine recording (every body a tick: drawn,
-  triangles, position), and three world-side terms were fitted to the linked count on
-  a sample of all four sets: the drawn bodies' triangles, those triangles weighted by
-  how much of each body the camera holds, and the ground grid's drawn cells. Together
-  they explain half of it in-sample and none of it held out by film. The stage is the
-  part they miss (its meshes link `900` to `2600` polygons from shot to shot), and a
-  party body links about `470` of its triangles' `700` polygons whichever way it
-  faces, which is the `90` hblanks a party ghost costs. So pricing the default from
-  polygons needs the count itself in host-independent code, not a proxy
-  ([the open thread](../reference/open-rev-eng-threads.md#the-party-arts-frame-cost)).
+- **No proxy stands in for the linked count; a census of world state does.**
+  `LEGAIA_DIAG_CAST_BODIES=1` writes `bodies.csv` beside the engine recording
+  (every body a tick: drawn, triangles, position), and three world-side terms
+  fitted to the window's linked count (the drawn bodies' triangles, those
+  weighted by how much of each body the camera holds, the ground grid's drawn
+  cells) explain half of it in-sample and none of it held out by film. The
+  stage is the part they miss (its meshes link `900` to `2600` polygons from
+  shot to shot in the window's count). What holds is counting the primitives
+  themselves from world state through the dispatcher's rules, which
+  `legaia_engine_scene_host::battle_link_census` does on every host
+  ([the census](../subsystems/battle-stage-camera.md#the-census)); with
+  `LEGAIA_DIAG_GPU_COST=<path>` the window logs it by class beside its own count.
 
 ## Reading the report
 

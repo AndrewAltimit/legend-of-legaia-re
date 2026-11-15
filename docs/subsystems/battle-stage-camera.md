@@ -1662,17 +1662,104 @@ between. Grade `disassembly` for the per-polygon path, `capture` for the coeffic
 
 Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
 `xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
-`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`, on top of the span
-law). The native window prices each battle frame's table and hands its count over
-(`World::note_drawn_polys`); a host that does not price its frames keeps the tables. A priced
-frame's work replaces the state's base and draw load, a capture-band module's line loads it
-like the funnel's, and a capture arm's table step no longer stands in for its cost: the ring
-reads the priced cost. A summon module's arms keep their table: their clips poll on
+`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`). The count is the
+[census](#the-census) of world state every host runs (`World::note_linked_polys`, priced by
+`linked_frame_work`); the native window's own count of its drawn table stays a diagnostic
+source (`LEGAIA_BATTLE_POLY_SOURCE=window`, priced by `polygon_frame_work`, the line above). A priced
+frame's work replaces the state's base and draw load and a capture-band module's line loads it
+like the funnel's. Under the window's count a capture arm's table step no longer stands in for
+its cost (the ring reads the priced cost); under the census every arm table keeps its step
+([below](#the-census)). A summon module's arms keep their table: their clips poll on
 PCSX-Redux too (`84` to `676` polls a frame from the line's arm on), but the engine's linked
 count overshoots retail's work under them, and the Seru films read lower priced. The cast
 recorder's `meta.csv` carries each pass's `work`.
 
-The three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
+<a id="the-census"></a>
+
+**The census.** The window's count is not retail's, and only the window has one. It
+counts its draw lists, not an ordering table: the grid's quads arrive as unpaired
+triangles and count twice, every effect billboard twice, the backdrop's off-screen
+primitives once each. Against retail's own tables, read out of `62` battle states with
+`display-list` (the polygon packets of the chain the frame links), the window counts `1.45`
+times retail's. And a headless session, the play page and the window each priced a frame
+differently, so a replay seeded headless parted from its windowed recording.
+
+`legaia_engine_scene_host::battle_link_census` counts the frame from world state alone,
+in the scene host's tick, which every host runs. The geometry is the disc's, built once a
+fight: the backdrop's objects, each party member's battle form, each monster's archive
+mesh, the summon creature's, the effect library's meshes the live parts draw. What moves is
+read off the world through the kernels the hosts draw with: the battle camera, each body's
+placement, pose, drawn objects and draw plan, the ghost walk, the grid's cell culls. The
+rules are the dispatcher's:
+
+| Class | What links | Grade |
+|---|---|---|
+| Every primitive | Not under the near floor (mean corner `SZ` under `64`, `OTZ` `0x10` at shift `2`), no corner behind the eye | disassembly |
+| A single-sided draw | Front faces only; a quad is kept when either half faces the eye (`0x80045A38..0x80045A6C`) | disassembly |
+| The backdrop pair | Copy A front faces, copy B by its word, slot 1 under the frame's angle; a primitive with every corner past one screen edge is dropped | disassembly (quads), capture (triangles) |
+| The ground grid | Four `POLY_GT4` a visible cell (`visible_cell_count`) | disassembly, capture |
+| A drawn body's ground shadow | `24` packets, gated as the disc is | capture |
+| The effects | Each part through its library mesh (a bank-3 quad as sixteen `GT3`), each kind-4 node's quads, one `POLY_FT4` a pool sprite | port |
+
+The backdrop's off-screen reject is `FUN_80044798`, which the quad leaves call under a
+colour word carrying `0x40` in its top byte, as the backdrop arm's always does. The
+retail tables drop the backdrop's off-screen triangles too: on `jou`'s stage the census
+reads `105` backdrop primitives with them dropped and `259` without, where retail's table
+holds `111`. The shadows are the `0x7F80` CLUT family of every battle table read, always a
+multiple of `24`. The HUD and the other 2D layers are not counted; they ride the base.
+
+Over the `62` states the census reads `1.04` times retail's polygon count, median error
+`174` primitives, correlation `.91` (the window `.906`); what is left is mostly the still's
+engine frame standing a pass or an effect away from retail's. On a strike state
+(`battle_jou_gimard_v3_strike`) it reads `2505` against retail's `2591`: stage `105` and
+`111`, grid `464` and `452`, the bodies `1936` against `1884`. Tail Flare's flight is the
+known miss: from the flame's spread on, retail's table holds about `3750` and the census
+`3000` to `3400`.
+
+The work line is fitted on retail's unloaded frames (cost under the clamp, frame inside
+its step plus one, summon band arms left out) paired with the census on the engine tick
+the film scorer pairs them on, half the films to train and the other half to score, over
+the four film sets (`165` films):
+
+| Work model | Held-out rms (hblanks) | Step read right |
+|---|---:|---:|
+| Action-state table (the default) | `137` | `.747` |
+| Census, `117 + .200` a primitive (`linked_frame_work`) | `82` | `.798` |
+| Window count, `82 + .163` a polygon | `75` | `.887` |
+
+On the strike and arts films the census reads rms `37` to `54` and `.92` to `.95`; the
+enemy casts are where it is weakest (rms `119`, `.68`, the table `.52` to `.64`): their
+effects are what it counts least well, Tail Flare's flame above all.
+
+Priced from the census, a frame's work keeps the table in three places: every arm an arm
+table steps (the capture band's as the summon band's), and the summon band's opening states
+`0x33` / `0x34`. Priced there too, the enemy casts' capture band `0x70` agrees with retail
+on `.81` of its game time against the table's `.88` (the engine a third of a step over), the
+summon opening on `.58` against `.98`, and the cues fall as they did under the window's
+count with the span law: enemy casts `.9985` to `.9775` (both Kiss of Death films lose their
+cue, Death Game three), Seru casts `1.0` to `.9754` (`0x8E` to `.286`). So the cue losses
+earlier seen with the polygon cost on are the pricing of those arms, not the window's
+host-bound count. The four sets, one build, default against the census-priced opt-in (image
+mean, cue mean, step agreement over the game time):
+
+| Set | Films | Default | Census priced |
+|---|---:|---|---|
+| Player arts | 20 | `.9300` / `.9982` / `.837` | `.9294` / `1.0` / `.925` |
+| Monster strikes | 64 | `.9815` / `.9996` / `.955` | `.9787` / `.9996` / `.939` |
+| Seru casts | 29 | `.9567` / `1.0` / `.993` | `.9567` / `1.0` / `.992` |
+| Enemy casts | 110 | `.9348` / `.9985` / `.841` | `.9351` / `.9975` / `.867` |
+
+Priced, the arts' strike states agree with retail on `.90` to `.94` of their game time
+(`.79` to `.92` on the table) and Tri-Somersault's arts voice lands (`.964` to `1.0`); the
+enemy casts' `0x2B..0x2E` rise from `.55..73` to `.71..83` and their Done band from `.78` to
+`.82`; Gimard's Tail Flare plays all fifteen cues (`.933` to `1.0`) with no window. It stays
+opt-in for three things (grade `capture`): the strikes run a twentieth of a step under
+retail (`2.92` against `2.97`; their frames sit within some `30` hblanks of `0x2D0`, where
+the fight's offset decides, [a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so
+their images fall `.0028`; Death Game's cue (`1.0` to `.824`) on its line's frames; and the
+Seru casts' `0x36` passes no arm table steps (`.994` to `.965`).
+
+Under the window's count, the three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
 `3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's
 ring holds it), so its two homing slots land on one frame and the film's cues read `1.0`
 from `.933`. Neo Star Slash's capture arms run retail's long frames under the line, the

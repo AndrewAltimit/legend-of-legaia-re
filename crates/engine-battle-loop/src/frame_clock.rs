@@ -523,13 +523,19 @@ pub const fn polygon_frame_work(polys: u32) -> u16 {
 /// Hblanks of a battle frame's work that do not scale with what it links,
 /// the intercept of [`linked_frame_work`]: the frame driver, the battle VMs,
 /// the 2D layers the census does not count.
-pub const LINKED_FRAME_BASE: u16 = 138;
+pub const LINKED_FRAME_BASE: u16 = 117;
 
 /// Hblanks a battle frame's work spends per primitive it links, in
 /// thousandths, over the census of world state
 /// (`legaia_engine_scene_host::battle_link_census`), which counts what
 /// retail's ordering table holds rather than what a host's draw lists carry.
-pub const LINKED_WORK_MILLI: u32 = 195;
+/// Fitted on retail's unloaded frames (cost under the clamp, frame inside its
+/// step plus one, the summon band's arms left out) of half the four film sets
+/// against the census on the paired engine tick: scored on the other half, rms
+/// `82` hblanks and the step read right on `.80` of frames, where the
+/// action-state table reads rms `137` and `.75`
+/// (`docs/subsystems/battle-stage-camera.md`, "The census").
+pub const LINKED_WORK_MILLI: u32 = 200;
 
 /// The work a battle frame whose census counts `linked` primitives costs
 /// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
