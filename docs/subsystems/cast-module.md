@@ -4606,8 +4606,7 @@ close to a minute. It is ported whole.
   never fires. Every other seat off its idle, the get-up before its release
   included, slides instead: `+0x38 +=
   dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), and Noa's release
-  takes `0x10` off it; the port leaves the slide out with the rest of arm 0's
-  seats. A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
+  takes `0x10` off it (`esm_get_up_slide`). A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
   (`0x801F765C` / `0x801F7674`, `stream[1] - 2` = `23`, `26`, `13`) and the cut
   at `0x80047A40` on one pass. Port `evil_seru_magic_seat_writes` with
   `esm_releases_get_up`, held to the image by the differential
@@ -4619,10 +4618,20 @@ close to a minute. It is ported whole.
   ends, until arm 28 stores `2` again. The recording walks each member's node
   cursor through the arm and reads rate `0` from the clip's end.
 
-Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row of
-half-size models at `z = 0x190`, and restore them; arm 10 seats the creature
-at seat 7. The engine keeps every seat where the battle put it, so the cuts
-frame the stage rather than the moved seats. The arm-20 spell-name banner is
+- **Arm 0 stands the party in a half-size row.** For party seat `i` of `n`
+  the loop (`0x801F6BE0..0x801F6D1C`) saves `+0x34..+0x3B` and the heading,
+  then stores `+0x34` = the formation point's x (`0x800775E0 + (n * 3 + i) *
+  8`) over three toward zero, `+0x38 = 0x190`, `+0x46 = 0`, node `+0x72 =
+  0x800` and the node radius `+0x58` halved (the ground shadow's scale). Arm
+  21 lifts the caster to `+0x36 = -0x380`, `x = 0`, heading `0x800` at the
+  same half scale (`0x801F7E88..0x801F7EB4`). Arm 27's pass copies every
+  saved seat back and doubles the scales and radii (`0x801F8828..0x801F8904`),
+  and arm 28 copies the party's back on every pass (`0x801F89E0..0x801F8A3C`).
+  Port `World::evil_seru_magic_row` over `esm_row_x`. Grade `disassembly`.
+
+Not carried: arm 0 also halves a halfword `+0xE` of each member's command
+record `0x801C9360[i] + 0x14` (restored at arm 27), whose reader is not
+traced; arm 10 seats the creature at seat 7. The arm-20 spell-name banner is
 also left out. The screen fades are carried on the engine's one fade seat; arm
 26 spawns three at once, and the seat keeps the last, the delayed white-in that
 arm 27 fades out of.

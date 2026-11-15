@@ -58,9 +58,8 @@ pub const ESM_RELEASE_ARM_LAST: u8 = 15;
 /// The Evil Seru Magic recording stores the release at `0x801F765C` /
 /// `0x801F7674` with `stream[1] - 2` = `23`, `26`, `13` for the three seats'
 /// 25-, 28- and 15-keyframe get-ups, and the cut at `0x80047A40` the same
-/// pass. The other arms of the loop (the `+0x38` slide by `dt *
-/// 0x801FA460[id]` and Noa's `-0x10` on release) move the seats the port
-/// does not stand where arm 0 stands them.
+/// pass. The loop's other half, the `+0x38` slide by `dt *
+/// 0x801FA460[id]` and Noa's `-0x10` on release, is [`esm_get_up_slide`].
 // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F7418..0x801F7490`, the arms 12..15 release loop)
 pub fn esm_releases_get_up(s: &CastActorState) -> bool {
     s.playing_anim != 0
@@ -151,10 +150,13 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 /// it to the live HP, and stages the seat's own knockdown `+0x1F1` at rate
 /// `2` - the stager's writes with the other clamp.
 ///
-/// Not carried: the creature seat 7's stages and rate bytes (the engine seats
-/// no creature for a capture cast), the seat poses and model scales arms 0 /
-/// 27 / 28 save and restore, the effect records and the arm-20 banner (the
-/// screen fades are the band seam's, `World::run_cast_module_code`).
+/// The seat moves (arm 0's half-size row, the arms 12..15 slide, arm 21's
+/// caster seat, the arm 27 / 28 restore) are the host's, over these
+/// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`]). Not carried:
+/// the creature seat 7's stages and rate bytes (the engine seats no creature
+/// for a capture cast), the command record `+0xE` halfword arm 0 halves
+/// beside the scale, the effect records and the arm-20 banner (the screen
+/// fades are the band seam's, `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)
 pub fn evil_seru_magic_seat_writes(
