@@ -46,7 +46,7 @@
 //! # The screens themselves
 //!
 //! The shop's retail descriptor windows, the gold-shop screen, the prize
-//! exchange, the coin counter, the fallback panel (seru trade, inn, the
+//! exchange, the coin counter, the fallback panel (seru trade, the
 //! `[label]` stand-in) with its gold frame, and the level-up / capture
 //! banners all come from one composition the native window calls too:
 //! [`legaia_engine_screens::shop_overlay_frame`]. This page only assembles its
@@ -260,7 +260,8 @@ impl LegaiaRuntime {
     }
 
     /// The screen's step after a field tick the screen did not take: an open
-    /// inn prompt steps on the tick's own `edge`, and a screen that closed
+    /// screen that leaves the field running steps on the tick's own `edge`
+    /// (none does today), and a screen that closed
     /// unparks its script - the native window's call after its frame tail.
     /// Skipped on the tick the field VM opened the screen, whose first step
     /// the poll inside [`Self::tick_frame`] already took on no edge.

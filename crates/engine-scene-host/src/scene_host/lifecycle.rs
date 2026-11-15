@@ -78,7 +78,6 @@ impl SceneHost {
             field_triggers: (Vec::new(), Vec::new()),
             field_intra_teleports: (Vec::new(), Vec::new()),
             field_man_cache: None,
-            scene_gold_charges: Vec::new(),
             last_trigger_tile: None,
             new_game_defaults: None,
             // DAT_8007B6EC boot value - FUN_8001FFA4 stores -1.
@@ -337,13 +336,6 @@ impl SceneHost {
         //       `legaia_scene_formats::place_names::world_map_table`)
         self.world
             .install_world_map_locations(self.field_man_cache.as_deref().map(|m| m.as_slice()));
-        // Scan the cached MAN for scripted gold charges (inn gate + debit
-        // pairs) so the inn UI can open with this scene's real cost.
-        self.scene_gold_charges = self
-            .field_man_cache
-            .as_ref()
-            .map(|man| legaia_scene_formats::inn_costs::scan(man))
-            .unwrap_or_default();
         // The scene's CD-XA one-shots, for a host that stages clips
         // asynchronously to have them resident before the op fires - plus the
         // announcer lines a minigame door in this scene opens onto.
@@ -386,32 +378,6 @@ impl SceneHost {
         &self,
     ) -> &[legaia_engine_field::man_field_scripts::SceneDestination] {
         &self.scene_destinations
-    }
-
-    /// The current scene's disc-sourced **scripted gold charges**: every
-    /// op-`0x4E` gold-gate + negative `0x3A` debit pair in its field-VM
-    /// script (inn stays, paid tours, casino gold-to-coin counters), in
-    /// script order. Scanned from the MAN at [`Self::load_scene`] via
-    /// [`legaia_scene_formats::inn_costs::scan`]. Empty when no scene is loaded or
-    /// the scene charges nothing.
-    pub fn scene_gold_charges(&self) -> &[legaia_scene_formats::inn_costs::GoldCharge] {
-        &self.scene_gold_charges
-    }
-
-    /// The current scene's **inn cost** in gold: the first sub-op-3 (u16
-    /// literal) gold charge in its script - the inn / paid-lodging class of
-    /// site (sub-op-10 u32 sites are the casino counters). `None` when the
-    /// scene has no scripted charge: free rests (Rim Elm's bed, Biron) have
-    /// no gate + debit pair at all. Feed this to
-    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::open_inn`] (or call
-    /// [`legaia_engine_menu_runtime::menu_runtime::MenuRuntime::open_scene_inn`], which resolves
-    /// it for you) when the scene's innkeeper dialogue hands off to the
-    /// inn prompt.
-    pub fn scene_inn_cost(&self) -> Option<u32> {
-        self.scene_gold_charges
-            .iter()
-            .find(|c| c.sub_op == 3)
-            .map(|c| c.cost)
     }
 
     /// Seat the player on raw world `(x, z)` ([`legaia_engine_core::world::World::debug_seat_player`])

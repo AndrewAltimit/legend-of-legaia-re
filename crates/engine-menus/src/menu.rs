@@ -1,4 +1,4 @@
-//! The engine's pause / shop / inn menu state machine.
+//! The engine's pause / shop menu state machine.
 //!
 //! REF: FUN_801DD35C
 //! REF: FUN_801E38D0
@@ -14,7 +14,7 @@
 //!
 //! - Its 56 `sw ..,0x204(..)` sub-mode writes only ever store `0x02..=0x18`,
 //!   inside the 25-slot jump table's `sltiu v0,s2,0x19` bound at
-//!   `0x801DD7F8`. None of this module's `0x19..=0x25` shop / inn / item
+//!   `0x801DD7F8`. None of this module's `0x19..=0x25` shop / item
 //!   screens, and neither `0x6E` nor `0x70` / `0x71`, is ever written by it.
 //!   The `0x70` literals in its body are the `y = 0x70` argument of the
 //!   centred-text helper `FUN_801E1C1C`, not state bytes.
@@ -26,18 +26,19 @@
 //!   transitions, not menu ones.
 //!
 //! What this module actually is: the engine's own screen graph for the
-//! pause menu, shop and inn - a state machine driven by input plus a frame
+//! pause menu and the shop - a state machine driven by input plus a frame
 //! counter, in the shape of [`legaia_engine_battle_vm::battle_action`]'s. Its state bytes are
 //! engine-chosen (one of them, `MenuState::ShopTrade`, is a randomizer
 //! feature retail has no screen for), and the per-screen behaviour is
 //! retail-sourced from the subsystem page for each screen - `shop.md`,
-//! `inn.md`, `field-menu.md` - rather than from one dispatcher.
+//! `field-menu.md` - rather than from one dispatcher. Retail has no inn
+//! screen (a stay is the innkeeper's field-VM record, `inn.md`), so the
+//! graph has none: bytes `0x1E` / `0x1F` are unassigned.
 //!
 //! The module establishes the typed surface (state enum + host trait + step
 //! entry point) plus the per-screen routing graph. [`commit_route`] and
 //! [`back_route`] encode that graph: the multi-step shop (browse ->
-//! quantity -> confirm -> back-to-list / exit) and inn (confirm -> sleep)
-//! flows advance on Cross and back up one screen on Triangle, on top of the
+//! quantity -> confirm -> back-to-list / exit) flow advances on Cross and back up one screen on Triangle, on top of the
 //! host's commit kernels. Status sub-screens back up to the status
 //! top-level. Per-screen specifics that still need a side-effect kernel
 //! (item-use apply, the standalone save/load progress states - the live
@@ -98,10 +99,6 @@ pub enum MenuState {
     ShopConfirm = 0x1C,
     /// Shop - exit.
     ShopExit = 0x1D,
-    /// Inn - confirm.
-    InnConfirm = 0x1E,
-    /// Inn - sleep transition.
-    InnSleep = 0x1F,
     /// Item-use - pick target.
     ItemPickTarget = 0x20,
     /// Item-use - apply.
@@ -155,8 +152,6 @@ impl MenuState {
             0x1B => Self::ShopQuantity,
             0x1C => Self::ShopConfirm,
             0x1D => Self::ShopExit,
-            0x1E => Self::InnConfirm,
-            0x1F => Self::InnSleep,
             0x20 => Self::ItemPickTarget,
             0x21 => Self::ItemApply,
             0x22 => Self::ItemDone,
@@ -179,10 +174,11 @@ impl MenuState {
 ///
 /// The routing is engine-designed, not lifted from a retail dispatcher:
 /// the shop flow returns to the buy list after every confirm (the player
-/// buys repeatedly and leaves with Triangle), and the inn rest routes
-/// through the sleep fade only on "yes". The retail behaviour each screen
-/// has to match is on `shop.md` / `inn.md`, per screen.
-pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
+/// buys repeatedly and leaves with Triangle). The retail behaviour each
+/// screen has to match is on `shop.md`, per screen. Every route is
+/// slot-independent; the slot stays in the signature for the hosts that
+/// pass it.
+pub fn commit_route(state: MenuState, _slot: u8) -> Option<MenuState> {
     match state {
         // Shop: pick an item (buy or sell), choose a quantity, confirm,
         // then drop back to the buy list to shop again.
@@ -195,9 +191,6 @@ pub fn commit_route(state: MenuState, slot: u8) -> Option<MenuState> {
         // enabled), so it's resolved by `commit_route_override`, not here.
         MenuState::ShopTrade => Some(MenuState::ShopTradeConfirm),
         MenuState::ShopTradeConfirm => Some(MenuState::ShopTrade),
-        // Inn: "yes" (slot 0) plays the rest fade; "no" closes the prompt.
-        MenuState::InnConfirm if slot == 0 => Some(MenuState::InnSleep),
-        MenuState::InnConfirm => Some(MenuState::Closing),
         _ => None,
     }
 }
@@ -237,10 +230,9 @@ pub fn back_route(state: MenuState) -> MenuState {
 /// Transient screens auto-advance: they fire a one-shot
 /// [`MenuHost::commit`] side effect on entry, hold for the render layer's
 /// animation, then route forward along [`commit_route`] (falling back to
-/// [`MenuState::Closing`]). They ignore input. Used for the shop teardown
-/// and the inn rest fade.
+/// [`MenuState::Closing`]). They ignore input. Used for the shop teardown.
 fn is_transient(state: MenuState) -> bool {
-    matches!(state, MenuState::ShopExit | MenuState::InnSleep)
+    matches!(state, MenuState::ShopExit)
 }
 
 /// Menu input - narrowed to the buttons the menu screens read. The full
@@ -337,7 +329,7 @@ pub trait MenuHost {
         16
     }
 
-    /// Number of frames a transient screen (shop teardown, inn rest fade)
+    /// Number of frames a transient screen (the shop teardown)
     /// holds before auto-advancing along its forward route. The one-shot
     /// side effect fires on entry; the hold gives the render layer time to
     /// play the fade. Default `8`; engines that drive their own animation
@@ -648,51 +640,6 @@ mod tests {
         for _ in 0..8 {
             step(&mut h, &mut ctx, MenuInput::default());
         }
-        assert_eq!(ctx.state, MenuState::Closing.as_byte());
-    }
-
-    #[test]
-    fn inn_yes_routes_through_sleep_fade_then_closes() {
-        let mut ctx = MenuCtx {
-            state: MenuState::InnConfirm.as_byte(),
-            ..Default::default()
-        };
-        let mut h = H::default();
-        h.item_counts.insert(MenuState::InnConfirm.as_byte(), 2);
-        // Cursor on slot 0 (yes) -> InnSleep fade.
-        step(
-            &mut h,
-            &mut ctx,
-            MenuInput {
-                cross: true,
-                ..Default::default()
-            },
-        );
-        assert_eq!(ctx.state, MenuState::InnSleep.as_byte());
-        assert_eq!(h.commits, vec![(MenuState::InnConfirm.as_byte(), 0)]);
-        // Sleep fade holds, then closes.
-        for _ in 0..8 {
-            step(&mut h, &mut ctx, MenuInput::default());
-        }
-        assert_eq!(ctx.state, MenuState::Closing.as_byte());
-    }
-
-    #[test]
-    fn inn_no_closes_without_sleeping() {
-        let mut ctx = MenuCtx {
-            state: MenuState::InnConfirm.as_byte(),
-            cursor: 1, // slot 1 = no
-            ..Default::default()
-        };
-        let mut h = H::default();
-        step(
-            &mut h,
-            &mut ctx,
-            MenuInput {
-                cross: true,
-                ..Default::default()
-            },
-        );
         assert_eq!(ctx.state, MenuState::Closing.as_byte());
     }
 

@@ -860,8 +860,7 @@ input. `shop_cancel_levels` (`engine-menu-runtime`) walks each level with
 each button and counts the cue. `ShopExit` is auto-advancing: on entry it fires its
 one-shot commit (clears the trade and recipient sessions), holds while the
 windows slide out (`transient_hold_frames`, [above](#screen-composition)), then
-routes to the menu's `Closing` state, dropping the shop session as it leaves. The same routing drives the inn (`InnConfirm` Yes →
-transient `InnSleep` fade → close; No → close).
+routes to the menu's `Closing` state, dropping the shop session as it leaves.
 
 ## Gold-shop stock source
 

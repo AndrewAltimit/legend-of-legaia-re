@@ -129,7 +129,6 @@ impl MenuRuntime {
             pending: &mut self.pending,
             selected_char: &mut self.selected_char,
             shop_session: &mut self.shop_session,
-            inn_session: &mut self.inn_session,
             trade_session: &mut self.trade_session,
             trade_pending_offer: &mut self.trade_pending_offer,
             equip_info: &self.equip_info,

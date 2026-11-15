@@ -2038,7 +2038,7 @@ the requested screen, takes its first no-edge step and queues that step's blip
 on the director, so the shop's tick-counted fade starts on the opening tick on
 both hosts and its cue sounds on that tick's audio frame; both hosts poll
 after the session tick and ahead of the effect step. The window's per-tick
-session step (an inn prompt does not suspend the field) skips the tick the
+session step (for a screen that would not suspend the field) skips the tick the
 poll answered on. The Trade row's spell / seru names are read once per disc on
 both hosts: the window at launch, the page at disc load.
 
@@ -2121,7 +2121,7 @@ What differs, and what each difference is:
 | option knobs after the pad (page) | Harmless: the knobs are also pushed on every options change, so the pad's run-button latch never reads a stale one; `option_hotkey_frames_match_across_hosts` agrees on `switches` and `pad` |
 | minigame side channels after the effect step and the VRAM effects (page) | Harmless: they read the tick's minigame events and queue cues ahead of the audio frame on both; the minigame scenarios of the frame-body trace agree channel by channel |
 | battle edge after the effect step (page) | Harmless: `encounter_and_battle` and `battle_to_exit` agree on `battle_stage`, `bindings` and `audio` at three cadences |
-| a non-suspending overlay screen stepped after the audio frame (page) | Harmless today: only the inn session does not suspend the field, and no production path opens one (`MenuRuntime::open_scene_inn` has no caller; an inn's prompt is the scene script's own dialogue). A screen of that kind would sound its cues a tick late on the page |
+| a non-suspending overlay screen stepped after the audio frame (page) | Moot today: every overlay screen suspends the field (an inn's prompt is the scene script's own dialogue, not a screen). A screen of that kind would sound its cues a tick late on the page |
 | pack preload every tick (window) against after half a second idle (page) | Deliberate: the page has one thread, so a slice of preparation waits for a still frame |
 | ticks claimed under a movie (page) against none (window) | Deliberate: the page's movie lane is serviced from the tick; the play clock and the room frame agree (the window counts the first and steps the second in its movie hold; `movie_play_clock_host_parity`, `netplay_room_frame_movie_host_parity`) |
 | dialogue panel and text balloon mirrored per tick (window) | Deliberate: the page's draw reads the world's dialogue state |

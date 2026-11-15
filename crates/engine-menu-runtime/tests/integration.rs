@@ -9,7 +9,6 @@ mod bag_row_payload_is_a_slot;
 mod bag_use_list_rows;
 mod field_menu_subsession_e2e;
 mod incense_encounter_window;
-mod inn_cost_scene_disc;
 mod item_use_applier_legs;
 mod list_order_reorder;
 mod magic_list_relevance;

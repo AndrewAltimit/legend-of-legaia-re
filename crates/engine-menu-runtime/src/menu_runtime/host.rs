@@ -279,38 +279,6 @@ impl MenuRuntimeHost<'_> {
             }
         }
     }
-
-    /// `InnConfirm` commit: on Yes (slot 0) charge the fee and restore the
-    /// active party's HP/MP; clear the session regardless.
-    fn commit_inn_confirm(&mut self, slot: u8) {
-        if slot == 0 {
-            // slot 0 = yes; slot 1 = no
-            let can = self
-                .inn_session
-                .as_ref()
-                .is_some_and(|s| s.can_afford(self.world.party.money));
-            if can {
-                let cost = self.inn_session.as_ref().unwrap().cost as i32;
-                self.world.party.money -= cost;
-                // Restore HP/MP for every present-party member: on the
-                // record, which is the pool outside a fight, then projected
-                // onto the member's actor mirror as every field heal does.
-                let party_count = self.world.party.party_count as usize;
-                for member in 0..party_count {
-                    let rslot = self.world.party_roster_slot(member);
-                    if let Some(rec) = self.world.party.roster.members.get_mut(rslot) {
-                        let mut hms = rec.hp_mp_sp();
-                        hms.hp_cur = hms.hp_max;
-                        hms.mp_cur = hms.mp_max;
-                        rec.set_hp_mp_sp(hms);
-                    }
-                    self.world.mirror_roster_hp_mp(rslot);
-                }
-            }
-        }
-        // Clear session regardless of yes/no.
-        *self.inn_session = None;
-    }
 }
 
 impl<'a> MenuHost for MenuRuntimeHost<'a> {
@@ -347,7 +315,7 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 .count()
                 .min(u8::MAX as usize) as u8,
             MenuState::ShopQuantity => self.shop_quantity_row_count(),
-            MenuState::ShopConfirm | MenuState::InnConfirm => 2, // slot 0 = yes, 1 = no/cancel
+            MenuState::ShopConfirm => 2, // slot 0 = yes, 1 = no/cancel
             MenuState::ShopMenu => self.shop_menu_rows().len() as u8,
             MenuState::ShopTrade => self
                 .trade_session
@@ -482,19 +450,16 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
                 *self.trade_session = None;
                 *self.recipient_session = None;
             }
-            // --- Inn states ---
-            MenuState::InnConfirm => self.commit_inn_confirm(slot),
             _ => {}
         }
     }
 
     /// Triangle from a top-of-flow screen closes the menu. Tear down any
-    /// active shop / inn session so a re-open starts clean (the routed
-    /// `ShopExit` teardown already clears the shop session; this catches
-    /// the inn-cancel path and any direct close).
+    /// active shop session so a re-open starts clean (the routed `ShopExit`
+    /// teardown already clears the shop session; this catches any direct
+    /// close).
     fn cancel(&mut self) {
         *self.shop_session = None;
-        *self.inn_session = None;
         *self.trade_session = None;
         *self.recipient_session = None;
     }

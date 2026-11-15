@@ -24,7 +24,6 @@ use legaia_save::{EquipmentSlots, Party, SpellList};
 
 use legaia_engine_core::world::World;
 use legaia_engine_menus::equipment::DiscEquipInfo;
-use legaia_engine_menus::inn::InnSession;
 use legaia_engine_menus::shop::{
     BuyListRoute, BuyRecipientEvent, BuyRecipientSession, ShopSession,
 };
@@ -96,9 +95,6 @@ pub struct MenuRuntime {
     /// Active shop session. Set via [`MenuRuntime::open_shop`] before
     /// entering `ShopBuy`; cleared on `ShopExit` commit.
     pub shop_session: Option<ShopSession>,
-    /// Active inn session. Set via [`MenuRuntime::open_inn`] before
-    /// entering `InnConfirm`; cleared after the player confirms or cancels.
-    pub inn_session: Option<InnSession>,
     /// Active seru-trade session, opened when the player picks **Trade** in the
     /// `ShopMenu` top picker (the randomizer's `--seru-trade` feature). Holds the
     /// vendor's offers for the current two-hour window; cleared on shop exit.
@@ -300,7 +296,6 @@ impl MenuRuntime {
             slot_count: 3,
             selected_char: 0,
             shop_session: None,
-            inn_session: None,
             trade_session: None,
             trade_pending_offer: 0,
             equip_info: None,
@@ -332,7 +327,6 @@ struct MenuRuntimeHost<'a> {
     pending: &'a mut Option<PendingOp>,
     selected_char: &'a mut usize,
     shop_session: &'a mut Option<ShopSession>,
-    inn_session: &'a mut Option<InnSession>,
     trade_session: &'a mut Option<legaia_engine_battle::seru_trade::SeruTradeSession>,
     trade_pending_offer: &'a mut usize,
     equip_info: &'a Option<DiscEquipInfo>,

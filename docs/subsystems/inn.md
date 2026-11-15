@@ -16,8 +16,8 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What marks a dialogue as an inn? | Nothing. The option picker's Yes jump simply lands on the gate. |
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
-| Cost scanner | `legaia_scene_formats::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
-| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-menu-runtime/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+| Cost scanner | `legaia_scene_formats::inn_costs`, the disc census behind the cost list below. The engine reads no cost from it: the record's own ops charge the stay. |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs` (both disc-gated). |
 
 ```mermaid
 flowchart TD
@@ -181,11 +181,6 @@ casino gold-to-coin counters (`koin*`; `koin4` carries the only sub-10 u32
 sites, 8,500..90,000 G). Free rests (Rim Elm's bed, Biron) simply have no
 gate + debit pair in their scripts.
 
-At scene load `SceneHost::load_scene` scans the cached MAN into
-`scene_gold_charges`; `scene_inn_cost()` is the first sub-3 charge. Oracle:
-`inn_cost_scene_disc` (`retock`'s 240 G stay resolves; free-rest `town01`
-resolves nothing).
-
 ### The dream hand-off
 
 Some inns append a story-flag-gated tail that warps to a `DREAM` scene after
@@ -205,46 +200,12 @@ shows its wake-up page and sets `0x5F7`, so a later entry seats the four
 again. Disc-gated `conc3_inn_arrival_disc` (engine-scene-host) pins both arms;
 the `conc3_field_inn_night` capture holds the post-record end state.
 
-## The engine-side `InnSession` prompt
+## No engine-side inn screen
 
-`engine-menus::inn` also carries a
-menu-style prompt with its own cost window. **Retail has no such screen and no
-play host opens it**: the reachable stay is the field-VM record above, and
-routing a host into the prompt would replace the innkeeper's real dialogue
-with an invented panel. It stays as a direct entry for tests and tooling
-(`MenuRuntime::open_inn(cost)`, or `open_scene_inn(&SceneHost)` which uses the
-scanned cost and installs nothing in a free-rest scene). When that entry opens
-one, both hosts draw it through the shared fallback panel
-(`legaia_engine_screens::fallback_panel_draws`).
-
-| Phase | Sub-screen | Description |
-|---|---|---|
-| Cost prompt | `InnConfirm` | Shows the cost for one night and a Yes / No cursor. |
-| Rest beat | `InnSleep` | Transient hold after a Yes. Draws nothing: retail's rest prints no caption over its fade. |
-| Commit | - | Deducts gold, restores all active party members' HP / MP. |
-| Exit | - | Returns to field without resting on No or insufficient gold. |
-
-The menu state machine (`engine-menus::menu`) routes the prompt: `InnConfirm` Yes
-(slot 0) commits the rest and routes to the transient `InnSleep` fade, which
-auto-advances to the menu's `Closing` state after `transient_hold_frames`;
-`InnConfirm` No (slot 1) and a cancel (Circle, or Triangle) route straight to `Closing`. Either way the
-inn session is cleared (`MenuRuntimeHost::commit` / `cancel`).
-
-On confirmation the engine calls `InnSession::can_afford(world_money)` before
-committing. The commit path (`commit_inn_confirm`):
-1. Deducts `InnSession::cost` from `World::party.money`.
-2. For each present-party member (the first `World::party.party_count`
-   ordinals, through `party_roster_slot`): sets the roster record's `hp_cur`
-   to `hp_max` and `mp_cur` to `mp_max`, then projects the record onto the
-   member's actor mirror (`mirror_roster_hp_mp`). The reserve bench is
-   untouched.
-
-The record is written directly because outside a battle it is the pool:
-`World::save_party` folds actor mirrors back only in battle, since a field's
-actor slots past the walking player belong to the scene.
-
-`InnSession` holds one field, `cost: u32`, and one method,
-`can_afford(world_money: i32) -> bool` (`world_money >= cost`).
+Retail has no inn screen, and neither has the engine: the stay a player
+reaches is the field-VM record above, which both hosts run. The menu state
+graph (`engine-menus::menu`) carries no inn states, and its bytes `0x1E` /
+`0x1F` are unassigned.
 
 ## Relationship to `legaia_save`
 

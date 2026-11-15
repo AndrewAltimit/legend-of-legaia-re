@@ -14,7 +14,7 @@ nothing. This crate is the projection between them for:
   detail (39), equipment-buy recipient list (36) and the Point Card toast (31);
 - the casino **prize exchange** (windows 43..46) and **coin counter**;
 - the **fallback panel** when no gold-shop screen is up - the seru-trade offer
-  list / confirm, the inn prompt and resting caption, the `[label]` stand-in -
+  list / confirm and the `[label]` stand-in -
   with its gold frame sized off the panel's own rows;
 - the **expansion game modes** (`expansion_modes`): the world's mode seat
   projected into `engine-ui::expansion_modes` - its panels as the whole

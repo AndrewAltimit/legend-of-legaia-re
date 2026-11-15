@@ -1,4 +1,4 @@
-//! The shop / prize-exchange / inn / banner screens, through the shared
+//! The shop / prize-exchange / banner screens, through the shared
 //! composition both play hosts call (`legaia-engine-screens`).
 //!
 //! This host only assembles the inputs from its own holders. The frame is

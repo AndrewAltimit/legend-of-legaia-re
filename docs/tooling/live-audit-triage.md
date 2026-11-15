@@ -319,7 +319,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `DevMenuSession::closed_gate` | `_DAT_8007B868`, the dual-mode word (`dual_mode_gate` above) |
 | `BattleState::forced_monster_ground` | a cast-sequence capture seat, written by the native host's debug seeding through a tuple assignment the tool does not read as a write |
 | `Sequencer::set_exact_tempo` | an engine option for the score's written tempo; the default is retail's rounded vsync budget (`FUN_80061954`) |
-| `MenuRuntime::open_scene_inn`, `open_inn` | retail has no inn screen: a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), which both hosts run; the prompt is a tooling entry |
+| `MenuRuntime::open_scene_inn`, `open_inn` | deleted with the whole prompt (`InnSession`, the two menu states, `SceneHost::scene_inn_cost`): retail has no inn screen, a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), and only tests opened it |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 | `BakaUi::player_char` | deleted: nothing wrote it, so the play page's minigame JSON named Vahn for every fighter, and no page script read the key; the duel draws its fighters from the engine's own scene surface |
