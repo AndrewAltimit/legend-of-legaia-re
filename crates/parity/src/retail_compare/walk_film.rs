@@ -291,7 +291,7 @@ impl WalkFilm {
                 let mut p = self.out.clone();
                 p.set_extension("fog.csv");
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
-                writeln!(w, "tick,live,cap,recs")?;
+                writeln!(w, "tick,live,cap,recs,box,view")?;
                 Some(w)
             }
             None => None,
@@ -347,7 +347,23 @@ impl WalkFilm {
                         )
                     })
                     .collect();
-                writeln!(w, "{t},{},{},{}", pool.live, pool.cap, recs.join(" "))?;
+                let b = session.host.world.terrain.region_attributes.box_bytes;
+                let v = pool.view_window.unwrap_or_default();
+                writeln!(
+                    w,
+                    "{t},{},{},{},{}:{}:{}:{},{}:{}:{}:{}",
+                    pool.live,
+                    pool.cap,
+                    recs.join(" "),
+                    b[0],
+                    b[1],
+                    b[2],
+                    b[3],
+                    v[0],
+                    v[1],
+                    v[2],
+                    v[3]
+                )?;
             }
             if let Some(w) = cost.as_mut() {
                 let world = &session.host.world;

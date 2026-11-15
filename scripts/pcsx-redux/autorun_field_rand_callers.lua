@@ -15,7 +15,11 @@
 -- vsync that drew) and fog_pool.csv (`vsync,live,cap,recs`: the fog pool's
 -- live count `_DAT_8007BCA8`, its cap `_DAT_8007BCB0` and every live record
 -- as `slot:age:rate:x:z:y`, the rows `LEGAIA_RC_WALK_FOG=1` writes on the
--- engine side). Interpreter mode required (exec BP); not for --fast.
+-- engine side), plus `box` (the walk-region box `0x1F800384..87` as
+-- `x0:z0:x1:z1`), and spawner_calls.csv (`vsync,tile_x,tile_z,box,view`: every
+-- entry to the fog spawner FUN_801D629C with its tile, the box it tests and
+-- the emitter's visible-tile span `0x1F8003E8..EB`).
+-- Interpreter mode required (exec BP); not for --fast.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -29,11 +33,25 @@ local fh = assert(io.open(probe.out_path("rand_callers.csv"), "w"))
 fh:write("vsync,ra,draws,seed\n")
 
 local pool_fh = assert(io.open(probe.out_path("fog_pool.csv"), "w"))
-pool_fh:write("vsync,live,cap,recs\n")
+pool_fh:write("vsync,live,cap,recs,box\n")
+local spawn_fh = assert(io.open(probe.out_path("spawner_calls.csv"), "w"))
+spawn_fh:write("vsync,tile_x,tile_z,box,view\n")
+local SPAWNER = 0x801D629C
+local vsync_now = 0
 local FOG_POOL_PTR, FOG_LIVE, FOG_CAP = 0x8007B7E0, 0x8007BCA8, 0x8007BCB0
 
 local function s16(v) if v >= 0x8000 then return v - 0x10000 end return v end
 local function s32(v) if v >= 0x80000000 then return v - 0x100000000 end return v end
+
+local function s8(v) if v >= 0x80 then return v - 0x100 end return v end
+local function box()
+    return string.format("%d:%d:%d:%d", probe.read_scratch_u8(0x384), probe.read_scratch_u8(0x385),
+        probe.read_scratch_u8(0x386), probe.read_scratch_u8(0x387))
+end
+local function view_window()
+    return string.format("%d:%d:%d:%d", s8(probe.read_scratch_u8(0x3E8)), s8(probe.read_scratch_u8(0x3E9)),
+        s8(probe.read_scratch_u8(0x3EA)), s8(probe.read_scratch_u8(0x3EB)))
+end
 
 local function log_pool(el)
     local pool = probe.read_u32(FOG_POOL_PTR)
@@ -48,8 +66,8 @@ local function log_pool(el)
             end
         end
     end
-    pool_fh:write(string.format("%d,%d,%d,%s\n", el, probe.read_u16(FOG_LIVE),
-        probe.read_u16(FOG_CAP), table.concat(recs, " ")))
+    pool_fh:write(string.format("%d,%d,%d,%s,%s\n", el, probe.read_u16(FOG_LIVE),
+        probe.read_u16(FOG_CAP), table.concat(recs, " "), box()))
     pool_fh:flush()
 end
 
@@ -70,9 +88,14 @@ probe.run({
             end
             counts[ra] = counts[ra] + 1
         end)
+        probe.arm_breakpoint(SPAWNER, "Exec", 4, "fog_spawner", function()
+            local g = PCSX.getRegisters().GPR.n
+            spawn_fh:write(string.format("%d,%d,%d,%s,%s\n", vsync_now, g.a0, g.a1, box(), view_window()))
+        end)
         return {}
     end,
     on_capture = function(_, el)
+        vsync_now = el + 1
         for _, ra in ipairs(order) do
             fh:write(string.format("%d,%08X,%d,%08x\n", el, ra, counts[ra],
                 probe.read_u32(RAND_SEED)))
@@ -80,5 +103,6 @@ probe.run({
         fh:flush()
         counts, order = {}, {}
         log_pool(el)
+        spawn_fh:flush()
     end,
 })
