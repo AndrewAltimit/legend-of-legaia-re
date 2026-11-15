@@ -1115,7 +1115,7 @@ The port models the same two layers and shares every rule between the native `pl
 | formation cell `DAT_8007BD0C` = the rung's monster, slots 1..3 cleared | `0x801D15A4..0x801D15BC` | a one-slot `FormationDef` through `World::enter_battle_from_formation` |
 | `DAT_8007BD60 = 0x80` | `0x801D156C` | `header_flags != 0`: the scripted-fight byte battle init derives from it (`(x >> 5) & 4`) |
 | `_DAT_80084540 = 0x4C6` (`other6`) | `0x801D1558` | `battle.map_id`; `SceneHost::battle_stage_entry` names `other6`'s stage stream (variant `0x80 & 0x1F = 0`), extraction **1225** |
-| game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome` |
+| game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome`; retail's `BattleInit` (`FUN_80055B6C`) stands on CD loads - the loader machine `FUN_80052770` and the drive-status test `FUN_8003DE7C` - so the vsyncs a capture spends in mode `0x14` (48 on PCSX-Redux from the welcome state) are drive time, which the port's synchronous loads do not spend |
 
 The leg's fighter is Vahn alone: the hub's prologue stores the present-party list `DAT_8007BD10 = [1, 0, 0]` every frame (`0x801CF884..0x801CF8A0`), so retail offers no fighter pick *(disassembly)*. The port swaps the party list for one record and puts it back at the exit; the record is `World::muscle_fighter_record`, retail's Vahn unless a host picks Noa or Gala (`World::set_muscle_fighter`, the minigames page's "Fight as" through `play_mg_set_muscle_fighter`) - a port option, refused for a record the roster does not fill.
 

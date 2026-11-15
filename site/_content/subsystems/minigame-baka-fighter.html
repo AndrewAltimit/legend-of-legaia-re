@@ -49,6 +49,7 @@
 <section class="doc-section" id="cabinet" data-doc="cabinet-state-machine-fun_801cf388">
   <h2>A visit, start to finish</h2>
   <p>Above the fight sits the <strong>cabinet</strong>: one state word with 37 branch targets covering the whole run - attract, player select, per-rung setup, the round bracket, the duel, the win / lose / all-clear sequences, the NEXT GAME / PAY OUT menu, the pause menu and an unreachable developer menu. Only state <code>0x64</code> is &ldquo;a round is live&rdquo;.</p>
+  <p>The player select draws one random number for a lineup highlight that never shows. The draw still matters: every exchange after it reads the random stream one step on. With it, a retail duel filmed from the title card matches the port exchange for exchange through both rounds, every damage roll included.</p>
   <figure class="diagram">
     <svg viewBox="0 0 930 440" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The cabinet's flow. Attract, player select, install opponent, round setup and READY / FIGHT lead into the duel. The duel loops back to round setup for the next round and can open the pause menu. A won match goes to the flourish and tally, then the NEXT GAME / PAY OUT menu: NEXT GAME reloads and installs the next opponent, PAY OUT exits and banks the pot. A lost match goes to GAME OVER, which zeroes the pot before exiting. The all-clear sequence also exits.">
       <defs><marker id="bkf-a1" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>

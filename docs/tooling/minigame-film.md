@@ -62,6 +62,32 @@ along as an engine-only `emode` column: retail spends the vsyncs after the hand-
 in game mode `0x14` before the fight's `0x15`, while the engine enters the fight on the
 hand-over tick.
 
+## The fishing replay
+
+`--set fishing --replay` records a catch from `minigame_fishing_retail_shore` with
+Cross driven closed-loop on the fishing globals (`LEGAIA_FILM_POLICY=fishing_catch`:
+tap on the shore, lock the meter at `0xF00`, pump the cadence, then hold under the
+tension band), and the engine side ticks the pond once per retail game frame on
+that frame's step and pad words instead of running its own clock
+(`LEGAIA_RC_MINIGAME_FILM_REPLAY`). A game frame is a move of the frame driver's
+counter `_DAT_8007B798`; the step it runs on is read a vsync after the move, its
+pad words on the move, and its results on the next move. Two harness seats stand
+the pond on the capture: its `rand()` stream on the state's BIOS seed and the pad
+pump's free-running auto-repeat clock `_DAT_8007B940` on the capture's phase. The
+replay compares rules, not pace: the pace question is the [venue's game
+tick](../subsystems/minigame-fishing.md#the-venues-game-tick).
+
+## The Baka Fighter film
+
+`--set baka` from `minigame_baka_fighter_retail_attract`, START at vsync `30` and
+Cross every `20` vsyncs: the cabinet's state, its clocks, both fighters' HP, wins,
+chosen attacks and combo counters, and the `rand()` word (the cabinet's stream
+seated on the capture's, harness). Map each side's `rand()` words to their index
+in the BIOS stream to read which exchange took which draw; the two sides then
+agree exchange for exchange through both rounds. The cabinet's opponent install
+(state `0x1E`) blocks on its CD load for `26` vsyncs in the film and costs the port
+one; that is drive time.
+
 ## Adding a minigame
 
 Add the words to `SETS` in the driver (address, kind, a key per pre-play phase and
