@@ -117,6 +117,7 @@ impl BattleCamera {
         let g = Glide::linear(&mut from, target, raw_z, steps, true);
         self.pose = from;
         self.module_glide = Some(g);
+        self.module_end_frame_fresh = true;
     }
 
     /// A module arm's direct writes into the live camera globals (pitch, TR
@@ -369,6 +370,7 @@ impl BattleCamera {
     /// One camera step while the module owns the camera: walk the armed shot,
     /// land it on its last step, and otherwise hold the landed pose.
     pub(super) fn step_module_shot(&mut self) {
+        self.module_end_frame_fresh = false;
         let Some(g) = self.module_glide else {
             return;
         };
@@ -511,6 +513,15 @@ impl BattleCamera {
         }
         if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 && state != CAPTURE_MODULE_STATE
         {
+            // The done arm's case 8 (Aluru `0x801F8894`, Viguro `0x801F78D4`)
+            // is armed on the pass that ends the band. Retail's walker takes
+            // its first step in that frame, and the next state's case 6 builds
+            // from the walked pose: Aluru's pitch reads `108` there, a
+            // quarter of the way to the death framing's `0x140`.
+            if self.module_end_frame_fresh {
+                self.step_module_shot();
+                self.end_frame_owns_pass = true;
+            }
             self.module_glide = None;
         }
     }

@@ -142,6 +142,7 @@ fn row_focus(st: &ModuleCamState) -> [i16; 3] {
 /// | 12 | drift yaw `+P/2`; the word **climbs** by `P/4`, sixteen streaks ([`viguro_charge_ring`]); hold while below [`VIGURO_CHARGE_TOP`] | - |
 /// | 13 | drift yaw `+P/4` | the sweep (the body's); pitch `0xC0`, the live yaw, TR z `0x1800`, focus the enemy row, over `0x100` frames |
 /// | 14 | drift yaw `+P/4` | the settle (the body's) |
+/// | `0xFF` | - | case 8 on the caster (`0x801F78D4`) |
 ///
 /// Arm 11's pass draws one streak and seats [`VIGURO_CHARGE_SPAWNS`] on the
 /// camera's focus; arm 12 draws [`viguro_charge_ring`] on every pass, ahead
@@ -149,7 +150,7 @@ fn row_focus(st: &ModuleCamState) -> [i16; 3] {
 /// live yaw the arms have been drifting, which the host feeds in
 /// ([`ModuleCamState::live_yaw`]).
 ///
-/// PORT: FUN_801F69F4 (PROT 0909; the camera arms 0/4/5/6/9/10/13, the countdown gates of arms 5/7/9/11/12, arm 4's arrival gate, the yaw drift of arms 11..14 and the spawn calls of arms 2/7)
+/// PORT: FUN_801F69F4 (PROT 0909; the camera arms 0/4/5/6/9/10/13 and the done arm's case 8, the countdown gates of arms 5/7/9/11/12, arm 4's arrival gate, the yaw drift of arms 11..14 and the spawn calls of arms 2/7)
 pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
     let p = MODULE_DRAIN_PER_TICK;
     let creature = st.creature_live.or(st.creature).unwrap_or_default();
@@ -297,6 +298,14 @@ pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> A
             .drifted(drift(p / 4))
         }
         14 => ArmDirection::PASS.drifted(drift(p / 4)),
+        // The done arm frames the caster through the action SM's case 8
+        // (`jal 0x801D5854` with `(ctx[+0x13], 8)` at `0x801F78D4`, reached by
+        // `beq s0,0xFF` at `0x801F6B18`) before it hands the creature to the
+        // defeat fade.
+        0xFF => ArmDirection {
+            end_frame: true,
+            ..ArmDirection::PASS
+        },
         _ => ArmDirection::PASS,
     }
 }

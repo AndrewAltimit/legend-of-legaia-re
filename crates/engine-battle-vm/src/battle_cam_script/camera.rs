@@ -329,6 +329,15 @@ pub struct BattleCamera {
     /// which owns the camera through the summon band's `0x35` / `0x36`
     /// ([`BattleCamera::arm_module_shot`]).
     pub(super) module_glide: Option<Glide>,
+    /// A case-8 frame a module arm armed this pass that the camera has not
+    /// yet walked ([`BattleCamera::arm_module_end_frame`]): the walker
+    /// `FUN_8002149C` runs in the frame the builder armed it, so a pass that
+    /// also leaves the module's states still takes that step.
+    pub(super) module_end_frame_fresh: bool,
+    /// The release walked that frame on this pass: the pass is the module's,
+    /// and the next state's framing arms from the walked pose on the pass
+    /// after.
+    pub(super) end_frame_owns_pass: bool,
     /// Set once a successful flee arms its shot
     /// ([`BattleCamera::arm_escape_shot`]): from then on the shot owns the
     /// camera for the rest of the battle, whatever the phase or state.

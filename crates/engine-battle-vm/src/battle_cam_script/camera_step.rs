@@ -105,6 +105,8 @@ impl BattleCamera {
             attack: AttackChannel::default(),
             rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
+            module_end_frame_fresh: false,
+            end_frame_owns_pass: false,
             escape_shot: false,
             framing_held: false,
             cursor: None,
@@ -1846,6 +1848,11 @@ impl BattleCamera {
         }
         if self.framing_held {
             self.step_front_glide();
+            return;
+        }
+        // The pass that ended the summon band walked the done arm's case 8
+        // ([`Self::release_module_shot`]); the next state frames on the next.
+        if std::mem::take(&mut self.end_frame_owns_pass) {
             return;
         }
         // The per-art attack camera runs AFTER `FUN_801D5854` has armed its
