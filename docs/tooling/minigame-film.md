@@ -52,6 +52,16 @@ stock, chain, latch and miss counter too. The words the engine does not keep pas
 their phase (the READY counter after state 3, the song timer past its limit) are
 the columns that stay apart.
 
+## What the hub film pins
+
+`--set hub` from `minigame_muscle_dome_retail_welcome`, hands off: the contest
+hub's arm byte `0x801D1A78` and its counter family (`0x801D1A70`, `0x801D1A7C..0x801D1A8C`)
+agree on every game frame from the Welcome hold through the ROUND card's fade-out,
+and the hub hands the leg over on the same vsync. The engine's own scene mode rides
+along as an engine-only `emode` column: retail spends the vsyncs after the hand-over
+in game mode `0x14` before the fight's `0x15`, while the engine enters the fight on the
+hand-over tick.
+
 ## Adding a minigame
 
 Add the words to `SETS` in the driver (address, kind, a key per pre-play phase and

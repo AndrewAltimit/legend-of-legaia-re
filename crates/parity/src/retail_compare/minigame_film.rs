@@ -118,6 +118,16 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
             "latch0", "latcht0", "miss0", "banked1", "banked2", "camkey", "camtimer", "pitch",
             "yaw", "roll", "eye_x", "eye_y", "eye_z",
         ],
+        MinigameSubId::MuscleDome => vec![
+            "arm",
+            "backdrop",
+            "intro",
+            "card",
+            "scale",
+            "hold",
+            "card_hold",
+            "emode",
+        ],
         _ => vec!["mode"],
     }
 }
@@ -127,6 +137,7 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
 fn values(sub: MinigameSubId, w: &legaia_engine_core::world::World) -> Vec<i64> {
     match sub {
         MinigameSubId::Dance => dance_values(w),
+        MinigameSubId::MuscleDome => hub_values(w),
         _ => vec![w.mode as i64],
     }
 }
@@ -197,5 +208,36 @@ fn dance_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         }
         None => v.extend([-1; 6]),
     }
+    v
+}
+
+fn hub_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
+    use legaia_engine_minigames::muscle_ringside::FirstVisitArm as A;
+    // The engine's own scene mode, for the hand-over to the fight (no
+    // retail column: retail's mode word is `0x19` / `0x14` / `0x15`).
+    let emode = w.mode as i64;
+    let Some(h) = w.minigames.muscle_hub.first_visit.as_ref() else {
+        let mut v = vec![-1; columns(MinigameSubId::MuscleDome).len() - 1];
+        v.push(emode);
+        return v;
+    };
+    let arm = match h.arm() {
+        A::IntroIn => 0,
+        A::IntroHold => 1,
+        A::IntroOut => 2,
+        A::TitleZoom => 3,
+        A::CardIn => 4,
+        A::CardHold => 5,
+        A::Drain => 6,
+        A::Return => 0x14,
+        A::RoundIn => 0x15,
+        A::RoundOut => 0x16,
+        A::Done => 0x17,
+    };
+    let [backdrop, intro, card, scale, hold, card_hold] = h.words();
+    let mut v = [arm, backdrop, intro, card, scale, hold, card_hold]
+        .map(i64::from)
+        .to_vec();
+    v.push(emode);
     v
 }

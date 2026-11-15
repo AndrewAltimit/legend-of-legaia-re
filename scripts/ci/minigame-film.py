@@ -51,6 +51,21 @@ SETS = {
         moved=["phase", "state"],
         skip=lambda r: r["state"] < 3 or r["state"] > 20,
     ),
+    # The Muscle Dome hub's first visit (PROT 0977): the arm byte and its
+    # counter family, each arm's frames by their ordinal in the arm.
+    "hub": dict(
+        words=[
+            ("arm", 0x801D1A78, "u8"),
+            ("backdrop", 0x801D1A7C, "s32"), ("intro", 0x801D1A80, "s32"), ("card", 0x801D1A84, "s32"),
+            ("scale", 0x801D1A88, "s32"), ("hold", 0x801D1A70, "s32"), ("card_hold", 0x801D1A8C, "s32"),
+            ("dt", 0x1F800393, "u8"),
+        ],
+        key=lambda r: None,
+        song=lambda r: True,
+        moved=["arm", "backdrop", "intro", "card", "scale", "hold", "card_hold"],
+        group="arm",
+        skip=lambda r: r["arm"] < 0 or r["arm"] > 0x16,
+    ),
 }
 
 
@@ -77,8 +92,11 @@ def frames(rows, spec):
             continue
         if spec["song"](r):
             if prev is None or any(r[c] != prev[c] for c in spec["moved"]):
+                group = r[spec["group"]] if "group" in spec else "song"
+                if "group" in spec and (prev is None or prev[spec["group"]] != group):
+                    n = 0
                 n += 1
-                out.append((("song", n), r))
+                out.append(((group, n), r))
             prev = r
             continue
         k = spec["key"](r)
