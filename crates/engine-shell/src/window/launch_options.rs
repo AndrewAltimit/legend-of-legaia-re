@@ -267,6 +267,13 @@ pub struct ScreenshotConfig {
     /// that moved between that frame and the RAM's. Set by the
     /// retail-compare image channel (`RetailBattle::engine_image_displayed_seats`).
     pub battle_displayed_seat: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_DISPLAYED_BYSTANDERS=slot:x:z:facing,...`: bystanders a
+    /// melee's make-way step was still moving inside the display lag, stood
+    /// on the displayed frame's live pairs after every ghost bit is derived,
+    /// so they keep the bits their RAM ground gave them. Set by the
+    /// retail-compare image channel
+    /// (`RetailBattle::engine_image_displayed_bystanders`).
+    pub battle_displayed_bystanders: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
     /// `LEGAIA_BATTLE_GHOST_POSE`: the pose the near-camera ghost pass read for
     /// the displayed frame, one pass older than the pose it stands on
     /// ([`legaia_engine_core::world::World::refresh_battle_camera_ghost_on`]).
@@ -1163,6 +1170,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             battle_displayed_seat: std::env::var("LEGAIA_BATTLE_DISPLAYED_SEAT")
+                .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_displayed_bystanders: std::env::var("LEGAIA_BATTLE_DISPLAYED_BYSTANDERS")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
             battle_cam_align_displayed: std::env::var("LEGAIA_BATTLE_CAM_ALIGN_DISPLAYED")

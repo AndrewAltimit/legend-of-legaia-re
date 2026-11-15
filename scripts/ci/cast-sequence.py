@@ -65,6 +65,10 @@ DROP_ENV = {
     # (-978, 339) cast from (1977, 2207)).
     "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP", "LEGAIA_BATTLE_APPROACH_YAW",
     "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_SEAT_DISPLAYED_CLIPS",
+    # The bystanders a make-way step moved inside the display lag: the
+    # displayed frame's ground, which a film running on from the RAM's does not
+    # stand on.
+    "LEGAIA_BATTLE_DISPLAYED_BYSTANDERS",
     # The still's pin to the default step, for a replay whose gate counts
     # passes from a prompt the capture's history did not run on: a film plays
     # the whole cast from there, and retail's ring ran the party's step

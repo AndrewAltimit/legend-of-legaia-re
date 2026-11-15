@@ -737,6 +737,18 @@ impl PlayWindowApp {
                 let (seat, target) = prior.engine_seats(world.party.party_count.clamp(1, 3));
                 world.refresh_prior_action_ghost(seat, prior.category, target);
             }
+            // Bystanders the make-way step moved inside the display lag
+            // (`LEGAIA_BATTLE_DISPLAYED_BYSTANDERS`), stood on the displayed
+            // ground after the ghost bits: those stay the RAM ground's.
+            let bystanders = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.battle_displayed_bystanders.clone())
+                .unwrap_or_default();
+            if !bystanders.is_empty() {
+                let world = &mut self.session.host.world;
+                let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &bystanders);
+            }
         }
     }
 

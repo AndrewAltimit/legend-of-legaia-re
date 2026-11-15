@@ -1037,6 +1037,62 @@ impl RetailBattle {
         }]
     }
 
+    /// The bystanders a melee's make-way step was still moving inside the
+    /// display lag, on the displayed frame's live pairs
+    /// (`LEGAIA_BATTLE_DISPLAYED_BYSTANDERS`).
+    ///
+    /// While the countdown `ctx[+0x6D6]` is above zero, the action SM's
+    /// shared tail (`0x801E6824..0x801E6934`) steps every pool slot but the
+    /// pass's attacker and its target `(sin[h] * step) >> 9`,
+    /// `(cos[h] * step) >> 9` along its make-way heading, so a capture taken
+    /// in the first passes of a short walk holds bystanders that drew two
+    /// ring slots back on screen. Next to the camera a few tens of units
+    /// move a body a long way: `battle_rikuroa_party_vahn_chain_open`'s
+    /// second monster, whose ghosted wing panels are the purple band, steps
+    /// `(14, -8)` a pass and draws at ring slot 2's `(505, -26)` where the
+    /// RAM holds `(533, -42)`.
+    ///
+    /// The ghost bits stay the ones derived on the RAM's ground: the pass
+    /// that drew the displayed frame derived its bits on the poses a pass
+    /// older still, and on the RAM's ground the engine's test agrees with
+    /// the RAM's own bits (`battle_ropeway_party_noa_sonic_javelin_open`:
+    /// Vahn clear, Gala `0x83000000`), where on the displayed ground it
+    /// ghosts Vahn, whom retail draws solid.
+    pub fn engine_image_displayed_bystanders(
+        &self,
+    ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        if self.make_way_countdown <= 0 {
+            return Vec::new();
+        }
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let active = usize::from(self.active_actor);
+        let target = usize::from(self.target_code);
+        self.captured
+            .iter()
+            .enumerate()
+            .filter_map(|(pool, c)| {
+                let (live, _, _, _) = (*c)?;
+                if pool == active || pool == target {
+                    return None;
+                }
+                let slot = if pool < 3 {
+                    (pool < pc).then_some(pool)?
+                } else {
+                    let m = pool - 3;
+                    (m < usize::from(self.monster_count)).then_some(pc + m)?
+                };
+                let then = (*self.displayed_ground.get(pool)?)?;
+                (then != live).then(|| legaia_engine_capture::ground_snap::GroundSnap {
+                    slot: u8::try_from(slot).unwrap_or(u8::MAX),
+                    x: then[0],
+                    z: then[1],
+                    facing: self.facing.get(pool).copied().flatten(),
+                    body: None,
+                })
+            })
+            .collect()
+    }
+
     /// [`Self::engine_image_displayed_seats`]' seat for a monster strike
     /// whose displayed clip is the RAM's (no commit inside the lag, not a
     /// walk on the clock) but whose live pair moved inside the lag: the

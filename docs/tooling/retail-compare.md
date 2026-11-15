@@ -5118,6 +5118,29 @@ before case 7 armed, so it holds the displayed pose:
 `17` units inside the radius on the further walk, where the displayed pose
 clears him by `43` and retail draws him solid (`.854` to `.861`).
 
+### Bystanders the make-way step is still moving
+
+A melee's bystanders step out of the attacker's lane for as long as the countdown
+`ctx[+0x6D6]` lasts: the action SM's shared tail (`0x801E6824..0x801E6934`) moves every
+pool slot but the pass's attacker and its target along its make-way heading each pass
+([the make-way step](../subsystems/battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail)).
+A capture taken in the first passes of a short walk-in holds them still on the move, and
+the frame on screen drew them two ring slots back. Beside the camera that is a long way:
+`battle_rikuroa_party_vahn_chain_open`'s second monster, whose ghosted wing panels are the
+purple band, steps `(14, -8)` a pass, and `battle_ropeway_party_noa_sonic_javelin_open`'s
+Gala `(18, 14)`, her ghost the translucent figure across the left of the frame.
+
+So while the countdown is above zero the image child stands each bystander whose ring
+moved on the displayed frame's pair (`RetailBattle::engine_image_displayed_bystanders`,
+`LEGAIA_BATTLE_DISPLAYED_BYSTANDERS`), after every ghost bit is derived. The bits stay the
+RAM ground's: the pass that drew the frame on screen derived its bits on poses a pass older
+still, and on the RAM's ground the engine's test agrees with the RAM's own bits (Noa's
+capture: Vahn clear, Gala `0x83000000`), where on the displayed ground it ghosts Vahn,
+whom retail draws solid. `battle_rikuroa_party_vahn_chain_open` `image` `.882` to `.986`,
+`battle_ropeway_party_noa_sonic_javelin_open` `.875` to `.988`,
+`battle_cave01_blue_piura_strike` `.991` to `1.000`; no battle state falls. A film runs on
+from the RAM's ground, so `cast-sequence.py` drops the seat. A harness seat.
+
 ### A rung's phase is time since the install
 
 Op `4C 90` sets a rung of the floor ladder swinging (`FUN_801DA930`), and nothing

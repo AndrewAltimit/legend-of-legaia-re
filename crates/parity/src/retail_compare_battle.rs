@@ -773,6 +773,12 @@ pub struct RetailBattle {
     /// game frames before the RAM's ([`display_lag_vsyncs`]), and a seat
     /// that moved inside those two frames drew where the ring says.
     pub displayed_ground: Vec<Option<[i16; 2]>>,
+    /// The make-way countdown `ctx[+0x6D6]`: while it is above zero the
+    /// action SM's shared tail (`0x801E6814`) steps every bystander - each
+    /// pool slot but the pass's attacker and its target - along its make-way
+    /// heading `ctx[+0x6E6 + slot*2]` each pass
+    /// ([`Self::engine_image_displayed_bystanders`]).
+    pub make_way_countdown: i16,
     /// The acting seat's position-ring slot `1`: the live pair the RAM's
     /// pass began on. The action SM arms its framing before that pass's
     /// anim tick moves the body (`FUN_801E295C` ahead of `FUN_80047430` in
