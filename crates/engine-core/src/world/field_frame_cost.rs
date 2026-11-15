@@ -111,41 +111,56 @@ impl FieldCostTable {
 
 /// The frame time, in hblanks, a field frame that draws `f` costs.
 ///
-/// A fit of retail's measured frame times (PCSX-Redux walk films' `frame_cost`
-/// column, and the sixteen-sample ring of every library field state) against
-/// these counts on the same frames: a 30% quantile fit, so a frame near the
-/// `0x1FE` rung is priced under it rather than over, with each film weighing
-/// the same. Integer arithmetic, so every host prices a frame alike; weights
-/// in 1/1024 hblank.
+/// Every weight is **fitted**, not read off a routine: the counts are what
+/// the ported gates say the frame's passes walk, and the weights price them
+/// against retail's measured frame times (PCSX-Redux walk films' `frame_cost`
+/// and `step` columns, and the sixteen-sample ring of every retail library
+/// field state). The fit maximises how many measured frames land on
+/// retail's rung of the step law, four hblanks clear of each rung, under the
+/// rule that no frame the previous model stepped right steps wrong; it was
+/// solved as a mixed-integer program over the films' frames and the states'
+/// rings. The terms follow the frame profile's parts (`autorun_field_frame_profile.lua`):
+/// the decoration pass's primitives and the cells its loop visits, the ground
+/// emitter's cells, the actor passes' primitives and NPCs, the tick pass's
+/// ambient parts, and the fog walk's records and the half-sheets it emits.
+/// Integer arithmetic, so every host prices a frame alike; weights in
+/// 1/1024 hblank.
 ///
-/// Capped at the ring's clamp `0x2BC`: the model never prices a frame past
-/// the `0x2D0` rung, so it steps a scene at `3` at most.
+/// Not capped: a frame priced past the `0x2D0` rung is a spike, which the
+/// pacer stores as `0x2BC` and steps at `4` on the frame itself
+/// (`0x8001709C`, `0x800170F8`), as retail runs `concend` on every frame.
 pub fn field_frame_cost(f: &FieldFrameFeatures) -> i32 {
-    let terms: [(u32, i64); 6] = [
+    let terms: [(u32, i64); 8] = [
         (f.decoration_prims, COST_PER_DECORATION_PRIM),
+        (f.decoration_loop_cells, COST_PER_DECORATION_LOOP_CELL),
         (f.ground_cells, COST_PER_GROUND_CELL),
         (f.placed_prims, COST_PER_PLACED_PRIM),
         (f.npcs, COST_PER_NPC),
         (f.fog, COST_PER_FOG_RECORD),
+        (f.fog_quads, COST_PER_FOG_HALF_SHEET),
         (f.parts, COST_PER_PART),
     ];
     let sum: i64 = terms.iter().map(|&(n, w)| i64::from(n) * w).sum();
-    (FIELD_FRAME_BASE_COST + (sum >> 10)).clamp(0, FIELD_FRAME_COST_CAP) as i32
+    (FIELD_FRAME_BASE_COST + (sum >> 10)).clamp(0, FIELD_FRAME_COST_MAX) as i32
 }
 
-/// The hblanks a field frame costs with nothing in view.
-pub const FIELD_FRAME_BASE_COST: i64 = 90;
-/// The most [`field_frame_cost`] prices a frame at: the ring's clamp `0x2BC`.
-pub const FIELD_FRAME_COST_CAP: i64 = 0x2BC;
-/// Weights of [`field_frame_cost`], 1/1024 hblank a unit: a decoration
-/// primitive, a ground cell, a placed-object primitive, a visible placement
-/// NPC, a live fog record and a live ambient part.
-pub const COST_PER_DECORATION_PRIM: i64 = 103;
-pub const COST_PER_GROUND_CELL: i64 = 179;
-pub const COST_PER_PLACED_PRIM: i64 = 93;
-pub const COST_PER_NPC: i64 = 18_012;
-pub const COST_PER_FOG_RECORD: i64 = 1_331;
-pub const COST_PER_PART: i64 = 1_988;
+/// The hblanks a field frame costs with nothing in view (fitted).
+pub const FIELD_FRAME_BASE_COST: i64 = 123;
+/// The most [`field_frame_cost`] prices a frame at: a bound on the integer,
+/// far past the `0x2D0` rung, not a model term.
+pub const FIELD_FRAME_COST_MAX: i64 = 0x7FFF;
+/// Weights of [`field_frame_cost`], 1/1024 hblank a unit (fitted): a
+/// decoration primitive, a cell of the decoration loop's span, a ground
+/// cell, a placed-object primitive, a visible placement NPC, a live fog
+/// record, an emitted fog half-sheet and a live ambient part.
+pub const COST_PER_DECORATION_PRIM: i64 = 73;
+pub const COST_PER_DECORATION_LOOP_CELL: i64 = 22;
+pub const COST_PER_GROUND_CELL: i64 = 176;
+pub const COST_PER_PLACED_PRIM: i64 = 87;
+pub const COST_PER_NPC: i64 = 16_692;
+pub const COST_PER_FOG_RECORD: i64 = 1_277;
+pub const COST_PER_FOG_HALF_SHEET: i64 = 958;
+pub const COST_PER_PART: i64 = 1_784;
 
 /// What one field frame draws ([`World::field_frame_features`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -168,6 +183,10 @@ pub struct FieldFrameFeatures {
     /// (`ViewCells::span`), each a gate test whether it draws or not.
     pub decoration_loop_cells: u32,
     pub fog: u32,
+    /// Of [`Self::fog`]'s records: the half-sheets the last walk emitted
+    /// (`FUN_8003F86C` past its screen cull), each a `POLY_FT4` the GPU
+    /// fills.
+    pub fog_quads: u32,
     pub parts: u32,
 }
 
@@ -294,6 +313,12 @@ impl World {
             }
         }
         f.fog = u32::from(self.fog.live);
+        // The quads the last walk left; a closed gate runs no walk.
+        f.fog_quads = if self.fog.gate {
+            self.fog.quads.len() as u32
+        } else {
+            0
+        };
         f.parts = self.ambient.fx.iter().filter(|p| !p.finished).count() as u32;
         Some(f)
     }
@@ -436,16 +461,38 @@ mod tests {
         );
     }
 
+    /// The model is not capped at the ring's clamp: `concend`'s view (a
+    /// `2704`-cell ground and a `4900`-cell loop span, two NPCs) prices past
+    /// the `0x2D0` rung, so the pacer steps it at `4` as retail does on every
+    /// frame of its film, while `ending_vignette_fullscreen`'s (retail `502`,
+    /// step `2`) stays under `0x1FF`.
     #[test]
-    fn the_model_never_prices_a_frame_past_the_clamp() {
-        let f = FieldFrameFeatures {
-            decoration_prims: 100_000,
+    fn concend_prices_past_the_spike_rung_and_the_vignette_stays_under_three() {
+        let concend = FieldFrameFeatures {
+            decoration_prims: 24,
+            decoration_loop_cells: 4900,
+            ground_cells: 2704,
+            npcs: 2,
             ..FieldFrameFeatures::default()
         };
-        assert_eq!(field_frame_cost(&f), 0x2BC);
+        assert!(field_frame_cost(&concend) > 0x2D0);
+        let vignette = FieldFrameFeatures {
+            decoration_prims: 1674,
+            decoration_loop_cells: 2436,
+            ground_cells: 400,
+            placed_prims: 540,
+            npcs: 6,
+            ..FieldFrameFeatures::default()
+        };
+        assert!(field_frame_cost(&vignette) <= 0x1FE);
         assert_eq!(
             field_frame_cost(&FieldFrameFeatures::default()),
             FIELD_FRAME_BASE_COST as i32
         );
+        let mut t = legaia_engine_vm::actor_tick::FrameStepTelemetry::new();
+        let step = t
+            .resolve(field_frame_cost(&concend), true, 2)
+            .vsyncs_per_tick();
+        assert_eq!(step, 4);
     }
 }
