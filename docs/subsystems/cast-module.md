@@ -4572,6 +4572,24 @@ close to a minute. It is ported whole.
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp
   (`0x801F8610` / `0x801F863C`), so it can kill a member the sweeps left
   low. It also stages the seat's knockdown at rate `2`.
+- **Arms 12..15 cut each get-up two keyframes short.** Each arm opens, ahead
+  of its countdown, on the same walk over the party row (`0x801F7418` in arm
+  12, copies at `0x801F75FC`, `0x801F77CC`, `0x801F7998`): a seat whose
+  committed clip `+0x1D9` is its get-up `+0x1F2` and whose node cursor has
+  reached `stream[1] - 2` (`node[+0x4C][+0x88][1]`) gets `+0x1DA = 0` with the
+  `+0x1DC` bump. The module runs ahead of the pass's anim tick, which advances
+  the cursor once more and takes the bump's bit 0 to the cut (`FUN_80047430`
+  `0x800478F4` -> `0x80047A3C`), so the get-up ends on keyframe `frames - 1`,
+  a pass before its natural end, and its effect record gated on `frames + 1`
+  never fires. Every other seat off its idle, the get-up before its release
+  included, slides instead: `+0x38 +=
+  dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), and Noa's release
+  takes `0x10` off it; the port leaves the slide out with the rest of arm 0's
+  seats. A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
+  (`0x801F765C` / `0x801F7674`, `stream[1] - 2` = `23`, `26`, `13`) and the cut
+  at `0x80047A40` on one pass. Port `evil_seru_magic_seat_writes` with
+  `esm_releases_get_up`, held to the image by the differential
+  (`esm_release.rs`). Grade `disassembly` + `capture`.
 - **Arm 27 lets the knockdown play.** Every pass it stores rate `2` on each
   party seat and then `0` only on a seat whose committed clip `+0x1D9` is not
   its knockdown `+0x1F1` (`beq` at `0x801F8730` over the store at

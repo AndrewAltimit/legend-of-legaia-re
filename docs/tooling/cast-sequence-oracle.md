@@ -1255,14 +1255,25 @@ cast names it. Each sweep's hit draws the damage path's rolls a target (`0x801DD
 `0x801DD510`, `0x801DD594`) and the evade roll at `0x801DD640` only for a target whose
 defence term passes its test, then the effect pool's child spawns (`0x801E01D4`, one word a
 child). In the arm behind a sweep (13, 15, 28) the recording draws three such children,
-two on one frame and one nine frames on; the engine draws a fourth four passes later. It
-is the left member's knockdown clip: `28` keyframes, effect records gated on frames `25`
-and `29`. Retail's node cursor reads `400`, `416` and then `0` on the next clip, all three
-members' knockdown clips ending one pass sooner than the engine's (`368` then `0` over
-`25` keyframes, `216` then `0` over `15`), so the walk never reads the frame the second
-record waits for. The engine runs the cursor on to the frame count and walks it. Every
-word after arm 13 follows from that one: the next sweep's evade roll falls on another
-target, and arms 22, 23 and 27 (`.51`, `.76`, `.52`) stand on the parted stream. A row's
+two on one frame and one nine frames on; the engine drew a fourth four passes later. It
+is the left member's get-up (`+0x1F2`, clip `5`): `28` keyframes, effect records gated on
+frames `25` and `29`. Retail's node cursor reads `400`, `416` and then `0` on the next
+clip, all three members' get-ups ending a pass ahead of their natural end (`368` then `0`
+over `25` keyframes, `216` then `0` over `15`), so the walk never reads the frame the
+second record waits for. The anim tick is not the cause: its natural end is exact, and the
+second sweep's get-ups end on it (`398`, `446`, `239`). Arms 12..15 cut the get-ups: each
+opens on a walk that stages idle with the `+0x1DC` bump on a seat whose cursor has reached
+`frames - 2`, and the same pass's anim tick advances once more and cuts
+([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)). A watch on the
+seats' `+0x1DA` / `+0x1DC` names the stores (`0x801F765C`, `0x801F7674`) and the cut
+(`0x80047A40`) on one pass. With the release the engine's get-ups end on retail's
+cursors in both of sweep 1's passes. The film's image falls `.819` to `.803` (arms 15,
+16 and 26): the members stand up where the battle seated them, near the lens, where
+retail's stand small at arm 0's row; the image waits on arm 0's seats. Without the
+release every word after arm 13 followed from the fourth child: the next sweep's evade
+roll fell on another target, and arms 22, 23 and 27 (`.51`, `.76`, `.52`) stood on the
+parted stream; the words behind arm 13 are not yet re-read against the watch recording.
+A row's
 `rand` column is sampled per vsync, so a burst inside a frame eight vsyncs long can read
 as two rows (`82` and `3` for one frame's `85`); the recording's frames and the engine's
 passes draw the same bursts.
@@ -2312,6 +2323,19 @@ Koru's Ultra Charge, whose pick stores `+0x1DD = 3`) is re-keyed as the caster i
 a one-member party, the cast fell back to the spell's own class, and the near-camera
 ghost pass and the HUD read a party target: Vahn drew solid in front of Koru, with
 his plate up, where retail ghosts him and shows Koru's alone.
+
+A party cast's inject lands at the same `0x0A`, ahead of the turn picker, so a
+`--target` naming a monster that died before the turn is redirected on both sides:
+the picker calls `FUN_801DB124` at `0x801DAF14`, whose Magic arm re-rolls a living
+seat (`rand() % monster_count + 3` until one lives), and the engine's film seed runs
+the same kernel (`World::dispatch_inflight_seed`, gated on `seed_mp_unpaid` so a
+mid-cast still's seed keeps its byte). Barra on `battle_tower_swordie_strike`
+(`--target 3`, seat 3 dead from the strike) shows it: retail's `cast_target` is `4`,
+and the cues are seat 4's death clip (`0x2DB`, three `0x14`, `0x0D` over arms `0xE`
+and `0xF`). Left on the corpse, the engine's creature dropped nobody and the film read
+cue `.286` and image `.789`; redirected, cue `1.000` and image `.860`. The full party in
+frame has nothing to do with it: the same cast on `battle_kor_spoon_strike`, whose
+target lives, always read `1.000`.
 
 A cast with a pad-driven hold needs `LEGAIA_PARK` past it: Fatal Decision's arm 6
 holds about `1200` vsyncs on an undecided party victim, which the default bound
