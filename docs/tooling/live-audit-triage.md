@@ -372,6 +372,7 @@ ends one fight by a flee and by a win, enters a second, and holds every
 | `FieldTerrain::floor_ladder_ramps`, `CameraRig::offset_ramps` | the MAN loader's inlined pool reset on an ordinary scene change (`0x8003B854..0x8003B898`, a copy of `FUN_8003CDA8` that respawns the driver) | a floor-rung or timed `4C 49` ramp running at the door wrote on into the next scene |
 | `BattleState` context mirrors (`BattleState::reset_context_mirrors`) | battle init zeroes the whole battle block, context included (`0x80055F14..0x80055F24`) | a second fight priced its first hit with the last strike's guard ramp and held its first prompt a pass on the last glide gate |
 | `BattleState::frame_cost_ring` | the frame driver's ring is the one global history field frames rewrite (`FUN_80016B6C`) | a second fight opened at step `3` on the first one's battle costs |
+| `CameraRig::offset_ease` on a fight's return | the field initialiser's seed runs ahead of its warp test (`0x801D67B8`), so the return from a fight takes it too | the field came back from every fight with the fog's offset at `0` |
 
 Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
 `_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
