@@ -62,6 +62,7 @@ pub use battle_run::*;
 mod baseline_report;
 mod corpus_run;
 mod engine_run;
+mod minigame_film;
 mod minigame_run;
 mod movie_run;
 mod pause_menu_drive;
