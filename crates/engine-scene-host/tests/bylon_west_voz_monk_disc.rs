@@ -241,3 +241,71 @@ fn without_permission_the_door_stays_shut() {
         run.max_z
     );
 }
+
+/// The same routing on another talk that drives its object: `retock`'s
+/// dresser (`P0[13]`, examined with Cross once `0x357` is up) engages
+/// `P1[46]`, whose talk swings the dresser open (`AC 0D 07`, `AC 0D 01`,
+/// `AB 0D 03`, `B1 0D 00`), tests its cursor (`CC 0D 8C 18 00`), swings it
+/// shut again and waits on its end latch (`AD 0D 08`) before the line.
+/// Stepped on the talker's context the dresser never moved.
+#[test]
+fn retock_dresser_swings_around_its_talk() {
+    let Some(mut host) = open_host() else {
+        return;
+    };
+    set_flag(&mut host, 0x357);
+    host.world.toggles.use_vm_dialogue = true;
+    host.enter_field_scene("retock", 0).expect("enter retock");
+    for _ in 0..90 {
+        host.tick().expect("tick");
+    }
+    let (key, collider) = host
+        .world
+        .props
+        .bank
+        .props
+        .iter()
+        .find(|(_, p)| p.record == 13)
+        .map(|(k, p)| (*k, p.collider))
+        .expect("P0[13] is banked");
+    let s = usize::from(host.world.player_actor_slot.expect("player"));
+    host.world.actors[s].move_state.world_x = collider.0 as i16;
+    host.world.actors[s].move_state.world_z = (collider.1 - 200) as i16;
+    let (mut talked, mut swung) = (false, false);
+    for f in 0..600u32 {
+        let pad = if host.world.dialogue_owns_input() {
+            if f % 6 == 0 {
+                PadButton::Cross.mask()
+            } else {
+                0
+            }
+        } else if talked {
+            0
+        } else if f % 10 == 5 {
+            PadButton::Cross.mask()
+        } else {
+            PadButton::Up.mask()
+        };
+        host.world.set_pad(pad);
+        host.tick().expect("tick");
+        talked |= host
+            .world
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|d| d.panel.is_some());
+        swung |= host.world.props.bank.props[&key].anim.cursor != 0;
+    }
+    let dresser = &host.world.props.bank.props[&key];
+    eprintln!(
+        "[retock dresser] talked {talked} swung {swung} cursor {} flags {:#x}",
+        dresser.anim.cursor, dresser.anim.flags
+    );
+    assert!(talked, "the dresser's touch engages P1[46]");
+    assert!(swung, "P1[46]'s AB / AC 0D ops swing the dresser");
+    assert!(
+        dresser.anim.flags & ANIM_END != 0,
+        "the closing swing latches its end, so AD 0D 08 passes"
+    );
+    assert!(!host.world.dialogue_owns_input(), "the talk ends");
+}
