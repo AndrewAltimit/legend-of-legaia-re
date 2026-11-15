@@ -1753,5 +1753,18 @@ pub fn module_director(prot_entry: u32) -> Option<ModuleDirector> {
     module_profile(prot_entry).map(|p| p.direct)
 }
 
+/// The capture-class bodies whose directors frame or turn on the cast's
+/// target group as `FUN_801DCEAC` measures it
+/// ([`ModuleCamState::target_aim`]): Earthquake (0935), Mystic Circle (0938),
+/// Curse All (0944), Water Hazard (0956, arm 0's turn: `jal 0x801DCEAC` at
+/// `0x801F73A0`) and Genocidal Cannon (0963). The world feeds the aim to these.
+pub const CAPTURE_TARGET_AIM_BODIES: &[u32] = &[935, 938, 944, 956, 963];
+
+/// Whether PROT `prot_entry`'s capture-class director reads the target
+/// group's aim ([`CAPTURE_TARGET_AIM_BODIES`]).
+pub fn capture_body_reads_target_aim(prot_entry: u32) -> bool {
+    CAPTURE_TARGET_AIM_BODIES.contains(&prot_entry)
+}
+
 #[cfg(test)]
 mod tests;

@@ -1336,8 +1336,7 @@ The films that read low on `--retail-steps` alone are mostly the stream, not the
 `.990`, Gigaton Press `.859` to `.928` and Rogue Thunder `.853` to `.917`: their rocks, rays
 and bolts are dealt off `rand()`, and a replay whose stream is its own deals them elsewhere
 (Gigaton Press's first hit lands `403` against retail's `402`, and a rock stands in front of
-the camera where retail's does not). Water Hazard (`.879`) and Hyper Crush (`.908` to `.912`)
-hardly move: their residuals are the law's. The cue channel's two plain-seat losses are the
+the camera where retail's does not). Hyper Crush (`.908` to `.912`) hardly moves: its residual is the law's. The cue channel's two plain-seat losses are the
 same kind. Final Crisis (`cort_evolved_card_pre_doomsday__B4`) rolls Noa's hit `3090` or more
 on the plain seat, where retail's roll leaves her `203`, so her dead branch's reaction `7`
 sounds `0x10` in arm 6; Fatal Decision's plain-seat outcome takes arm 11's reaction and its three cues
@@ -1440,13 +1439,13 @@ Two lines of the set are not the engine's to answer. `garmel_zeto_pre_call_wave_
 (`.448` on either seat) films two casts: the recording forced the party-wide target
 onto Call Wave, a self-buff, and retail then draws the roster panels and frames the
 cast from the group's depth, while the engine's seed keeps the cast's own class
-(`LEGAIA_BATTLE_MONSTER_CAST`, where a group target stays the cast's). And
-`jou_gizam_v3_water_hazard` opens on the edge of arm 1 with arm 0's shot still
-walking: the replay's shot stands `169` yaw units from the recording's
-`0x800 - 2364`, as a shot armed from the replay's own seats before the film's ground
-went in would, and the difference holds through every arm to the Done band. The seat
-that re-arms a walking shot (`RetailBattle::module_shot_seat`) does not fire on this
-state.
+(`LEGAIA_BATTLE_MONSTER_CAST`, where a group target stays the cast's).
+`jou_gizam_v3_water_hazard` opens on the edge of arm 1, and its replay runs arm 0's turn
+again; that turn was the engine's. Retail's arm 0 turns Gizam onto the party's centroid
+(`FUN_801DCEAC` at `0x801F73A0`, the bearing at `0x801F73D4`), the recording's facing
+`2364`; the director was never handed the centroid and turned it onto the victim seat's
+pair, `2533`, and every arm's shot framed that heading `169` units off. Fed the centroid
+(`World::feed_seru_cam` for PROT 0956), the film reads `.878` to `.991`.
 
 Fatal Decision's film reads low on the plain seat for another reason again: retail runs
 the wheel's hold on step `1` for `986` of its `1202` vsyncs, and the replay's own roll

@@ -1679,3 +1679,45 @@ fn module_caption_pens_follow_each_modules_constant() {
     assert_eq!(pen(924, C::ModuleString(0x801F_69D8)), P::At(0x64));
     assert_eq!(pen(927, C::ModuleString(0x801F_69D8)), P::At(0x70));
 }
+
+/// Water Hazard's arm 0 turns its caster onto the target group's centroid
+/// (`FUN_801DCEAC` at `0x801F73A0`), so the world must feed it the aim; with
+/// the aim the turn faces the centroid, without it the victim seat's pair.
+#[test]
+fn water_hazard_turns_onto_the_fed_centroid() {
+    use legaia_engine_battle_vm::battle_target_group::GroupAim;
+    assert!(super::capture_body_reads_target_aim(956));
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 944,
+            y: 0,
+            z: 1024,
+            facing: 2364,
+        },
+        victim: ModuleSeat {
+            x: 0,
+            y: 0,
+            z: 0,
+            facing: 0,
+        },
+        ..Default::default()
+    };
+    let mut fed = ModuleCamState {
+        target_aim: Some(GroupAim {
+            centroid_x: -16,
+            centroid_z: 731,
+            extent: 0,
+        }),
+        ..Default::default()
+    };
+    let aimed = super::water_hazard_camera(&mut fed, 0, seats)
+        .caster_write
+        .facing;
+    let mut unfed = ModuleCamState::default();
+    let seat = super::water_hazard_camera(&mut unfed, 0, seats)
+        .caster_write
+        .facing;
+    let a = i32::from(aimed.unwrap());
+    assert!((a - 2364).abs() <= 4, "faces the party's centroid: {a}");
+    assert_ne!(aimed, seat);
+}

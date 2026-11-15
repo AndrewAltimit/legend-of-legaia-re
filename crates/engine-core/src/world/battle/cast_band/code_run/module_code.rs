@@ -437,7 +437,13 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 || entry == 935 || entry == 938 || entry == 963 {
+            // Water Hazard's arm 0 turns its caster onto the same centroid for
+            // a group target (`jal 0x801DCEAC` at `0x801F73A0`, the bearing at
+            // `0x801F73D4`); unfed, its director turned Gizam onto the victim
+            // seat's pair, `169` units off retail's heading on
+            // `battle_jou_gizam_v3_water_hazard_mid_cast`, and every arm's
+            // shot framed that heading.
+            if legaia_engine_cast::cast_module_camera::capture_body_reads_target_aim(entry) {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             // PROT 0964's strike picks its opening record off the last roll.

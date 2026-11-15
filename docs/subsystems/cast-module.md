@@ -3891,6 +3891,13 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   Noa sounded `0x62` and two `0x15` where retail's recording holds no cue at all; the fold
   now lands that hit quietly (`chain_hit_stages_no_reaction`), and a victim the hit downs
   still takes the dead branch's knockdown.
+- PROT 0956's Water Hazard arm 0 turns the caster onto its target before the cut: for a
+  group code the centroid `FUN_801DCEAC` measures (`jal 0x801DCEAC` at `0x801F73A0`), a
+  seat's pair otherwise, through the bearing `FUN_80019B28` plus a half turn
+  (`0x801F73D4..0x801F73E4`). Every later shot frames `0x800 - facing`, so a caster turned
+  onto the wrong point frames the whole cast off it: the port's director took the victim
+  seat's pair for the party code and stood `169` yaw units off retail's on
+  `battle_jou_gizam_v3_water_hazard_mid_cast`. Grade `disassembly` + `capture`.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 
