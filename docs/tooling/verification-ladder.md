@@ -123,6 +123,16 @@ A film also separates a wrong routine from a different deal: it logs retail's
 `rand()` seed word on every vsync and can seat the engine's stream on it at a
 named phase ([the rand stream](cast-sequence-oracle.md#the-rand-stream)).
 
+Two report-only tables read a film's pace rather than its picture.
+`film-step-agreement.py` says, band by band, on how many frames the engine ran
+retail's frame step ([the step agreement table](cast-sequence-oracle.md#the-step-agreement-table)),
+and a walk film records retail's frame time beside the engine's
+[field frame-cost model](../subsystems/engine.md#the-field-frame-cost-model)
+counts and price (`LEGAIA_RC_WALK_COST=1`), which is what that model is fitted
+and held out on. The [minigame film](minigame-film.md) does for a minigame what
+the walk film does for a field: the dance, the Muscle Dome hub, the fishing pond
+and the Baka Fighter cabinet, paired on each one's game frames.
+
 **Blind to:** everything outside the recorded stretch, and residuals smaller
 than two retail recordings of one cast differ from each other.
 
@@ -148,6 +158,7 @@ rung below it.
 | Does a run stay with retail between two states? | [Gate replay](gate-replay.md), [recomp differential](recomp-differential.md) | The engine's pad on retail, beat by beat; a recomp's trace | Report only |
 | Does the page draw what the window draws? | [Host drift](host-drift.md) gates, the [host pair run](host-drift.md#the-host-pair-run) | The other host, on the same pad script | Retail |
 | Does the same input give the same run? | [Determinism replay](determinism-replay.md#determinism-gate), [frame hash](frame-hash.md) | The same run, twice | Whether the run is right |
+| Does a talker lose a line, or speak one retail does not? | [Talker sweep](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts) (`field_talker_sweep_disc`) | Each silent record's own bytes, every scene from every standable tile | Talks gated on anything but position and story flags |
 | Does anything panic, stall or loop? | [Soak harness](soak-harness.md) | Its own detectors | Retail divergence |
 | Did a frame get more expensive? | [Cost ratchet](frame-bench.md#cost-ratchet) | Committed counts of draws, allocations, bundle bytes | Time |
 | Did a baseline loosen, or a check not run? | [Ratchet integrity](ratchet-integrity.md) | Baselines at the base revision; skips counted | A value wrong when blessed |
