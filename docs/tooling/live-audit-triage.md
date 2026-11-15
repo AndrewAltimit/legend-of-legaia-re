@@ -356,7 +356,10 @@ new one reads before writing. Retail re-allocates its actor lists, the scene
 control block and the player on a load, so their words start clean; the
 engine keeps one `World`, so every such field needs an explicit reset at the
 retail seat. `SceneHost::load_scene` and `enter_field_scene` are the two
-seats, and the MAN loader's sweep is `World::man_load_actor_reset`.
+seats, and the MAN loader's sweep is `World::man_load_actor_reset`. A fight is
+the same shape between two battles: `battle_second_fight_resets` (engine-core)
+ends one fight by a flee and by a win, enters a second, and holds every
+`BattleState` field to a fresh first entry's, each allowed difference named.
 
 | Field | Retail reset | What a player saw |
 |---|---|---|
@@ -367,14 +370,20 @@ seats, and the MAN loader's sweep is `World::man_load_actor_reset`.
 | `FieldNpcState::tilts` | the actor's own `+0x24` / `+0x28` | a `juui1` tilt drew on the next scene's NPC in that slot |
 | `FieldLocomotion::eased_mirror_y` | the fresh player (`0x801D6D68`) carries no `+0x8E` mirror | a lift cut short by a door held the player's height in every later scene |
 | `FieldTerrain::floor_ladder_ramps`, `CameraRig::offset_ramps` | the MAN loader's inlined pool reset on an ordinary scene change (`0x8003B854..0x8003B898`, a copy of `FUN_8003CDA8` that respawns the driver) | a floor-rung or timed `4C 49` ramp running at the door wrote on into the next scene |
+| `BattleState` context mirrors (`BattleState::reset_context_mirrors`) | battle init zeroes the whole battle block, context included (`0x80055F14..0x80055F24`) | a second fight priced its first hit with the last strike's guard ramp and held its first prompt a pass on the last glide gate |
+| `BattleState::frame_cost_ring` | the frame driver's ring is the one global history field frames rewrite (`FUN_80016B6C`) | a second fight opened at step `3` on the first one's battle costs |
 
 Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
 `_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
 `uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
 stands in a bridge box and writes `4C CF 00 00` outside them, so a door
 taken from inside a box carries the pin - in the port, and in retail too
-unless an undumped routine clears the pair. A capture across that door
-settles it.
+unless an undumped routine clears the pair. Two walk-on exits sit inside a
+box: `P2[29]` at tiles `(110..112, 35)` (box `103..121` x `7..49`, X pinned on
+tile `0x6F`) changes to `urudre1`, and `P2[33]` at `(10..12, 98)` (box
+`4..17` x `83..111`) to `urudre2`; no other scene authors the op, so nothing
+there releases it. The library's one uru state stands at the `map03` exit,
+outside every box, so a capture walked to either door settles it.
 
 ### Host hooks nothing implements
 
