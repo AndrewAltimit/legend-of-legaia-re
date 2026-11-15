@@ -1844,6 +1844,31 @@ impl LauncherApp {
         }
     }
 
+    /// A finder file row's tag, ink and help. For the disc the file is
+    /// checked as *Choose disc* would check it, so the disc in use reads
+    /// "In use" (as on the Recent page) and another release, or a `.bin` that
+    /// is no disc at all, says so before it is picked rather than after.
+    fn finder_file_tag(&self, target: FinderTarget, path: &Path) -> (&'static str, Role, String) {
+        let (tag, help) = target.file_row();
+        if target != FinderTarget::Disc {
+            return (tag, GOOD, help.to_string());
+        }
+        if self.disc.as_ref().is_some_and(|d| d.path == path) {
+            return ("In use", GOOD, "The disc Play starts.".to_string());
+        }
+        match launcher::validate_disc(path) {
+            Ok(_) => (tag, GOOD, help.to_string()),
+            Err(p) => {
+                let tag = match p {
+                    DiscProblem::WrongDisc { .. } => "Wrong disc",
+                    DiscProblem::Unreadable { .. } => "Unreadable",
+                    _ => "Not usable",
+                };
+                (tag, WARN, p.to_string())
+            }
+        }
+    }
+
     /// The disc finder's rows for `dir`: the way up, its folders and disc
     /// images, then the places a dump usually is.
     fn build_finder(&mut self, dir: &Path) {
@@ -1887,12 +1912,10 @@ impl LauncherApp {
                             ),
                             RecentKind::Folder(e.path),
                         ),
-                        launcher::FolderEntryKind::File => (
-                            target.file_row().0,
-                            GOOD,
-                            target.file_row().1.to_string(),
-                            RecentKind::FinderFile(e.path),
-                        ),
+                        launcher::FolderEntryKind::File => {
+                            let (value, ink, help) = self.finder_file_tag(target, &e.path);
+                            (value, ink, help, RecentKind::FinderFile(e.path))
+                        }
                     };
                     row(
                         RecentEntry {
