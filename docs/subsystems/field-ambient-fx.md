@@ -578,6 +578,17 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+Nothing carries over from one draw to the next: the copy
+(`0x8001C680..0x8001C6A0`) runs on every draw before any lane is added, and
+each lane adds its records scaled by its live weight (`lhu a3,0xa0(s4)` into
+`FUN_8005B038`). So an envelope that has drained every lane to `0`, or a
+dropped gate, draws the authored mesh. Both hosts re-stage a slot at rest
+when its last live lane goes: the native window re-uploads the rest mesh over
+its morphed one (`take_field_morph_rebuilds`), and the page's
+`field_morph_reach` turns negative and `field_morph_positions` builds the rest
+positions. Holding the last live frame left `vell`'s grown Bridge Grass one
+envelope step short of its rest pose.
+
 The substitution belongs to the part's own draw, not to every mesh of its
 pack slot: `FUN_8001ADA4` copies the drawn actor's `+0x10` to the scratchpad
 (`0x8001ADF4..0x8001ADFC`) and tests that copy per group. So a mesh-bearing
