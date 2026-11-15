@@ -245,6 +245,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_SFX_CALLERS"] = "1"
     if a.pose_objects:
         env["LEGAIA_POSE_OBJECTS"] = "1"
+    if a.body_decode:
+        env["LEGAIA_BODY_DECODE"] = "1"
     if a.watch:
         env["LEGAIA_WATCH_W"] = a.watch
     if a.range_trace:
@@ -272,7 +274,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects or a.body_decode
             or a.range_trace or a.hit_trace or a.wrapper_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
@@ -1407,6 +1409,9 @@ def main() -> int:
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
+    ap.add_argument("--body-decode", action="store_true",
+                    help="retail: decode.csv, each seat's body-pair store in FUN_8004998C (0x8004A5FC): "
+                         "clip, cursor, pose centroid, facing, live and body pairs (breakpoint core)")
     ap.add_argument("--cd-trace", action="store_true",
                     help="retail: cd.csv, every libcd command, CdSync span, CD interrupt and its callbacks "
                          "with the CPU cycle, and each frame's CPU-done mark (breakpoint core)")

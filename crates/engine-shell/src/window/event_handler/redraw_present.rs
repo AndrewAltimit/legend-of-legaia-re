@@ -590,7 +590,7 @@ impl PlayWindowApp {
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
             let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
-            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz,bx,bz,facing,tlx,tlz,tbx,tbz");
+            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz,bx,bz,facing,tlx,tlz,tbx,tbz,tfacing");
             let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
             let _ = writeln!(sfx, "tick,st7,phase,id,kind");
             let mut xa = std::io::BufWriter::new(std::fs::File::create(dir.join("xa.csv")).ok()?);
@@ -1089,13 +1089,12 @@ impl PlayWindowApp {
             };
             let (_, _, bx, bz) = pairs(a);
             let body = (bx, bz);
-            let tgt = w
-                .actors
-                .get(usize::from(a.battle.active_target))
-                .map_or((0, 0, 0, 0), pairs);
+            let tgt_actor = w.actors.get(usize::from(a.battle.active_target));
+            let tgt = tgt_actor.map_or((0, 0, 0, 0), pairs);
+            let tfacing = tgt_actor.map_or(-1, |t| i32::from(t.battle.facing_angle));
             let _ = writeln!(
                 rec.body,
-                "{tick},{st},{acting},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{tick},{st},{acting},{},{},{},{},{},{},{},{},{},{},{},{},{},{tfacing}",
                 a.battle.current_anim,
                 a.battle.queued_anim,
                 p.map_or(-1, |p| i32::from(p.is_looping())),
