@@ -1043,6 +1043,29 @@ impl World {
             // `+0x14B6`, `23 47 43`) left her where the talk's walk had
             // stopped, short of the `(71, 67)` spot her next stage talks from.
             // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC)
+            // The talker's own clip rate (`4C 41 ..`, or `CC <own id> 41 ..`)
+            // is its actor's `+0x6A`, which the clip tick steps its cursor by
+            // every frame (`World::tick_npc_clips` reads the channel's copy).
+            // The stand-in keeps the rate for the talk's own clip binds; the
+            // channel takes it so a clip already playing slows or speeds up:
+            // `doman` `P1[15]` (`CC 18 41 10 ..`), `koin3` `P1[25]` and
+            // `ropeway2` `P1[33]` (`4C 41 10 ..`).
+            // REF: FUN_801DE840 (the nibble-4 sub-1 arm), FUN_800204F8
+            if op == 0x4C
+                && id.bytecode.get(id.pc + if b & 0x80 != 0 { 2 } else { 1 }) == Some(&0x41)
+                && matches!(step, FieldStepResult::Advance { .. })
+                && id.prop_anchor.is_none()
+                && let Some(ci) = talker_channel
+                && (ext_target.is_none()
+                    || ext_target.and_then(|t| {
+                        legaia_engine_field::field_channels::resolve_target(
+                            &host.world.field_vm.channels,
+                            t,
+                        )
+                    }) == Some(ci))
+            {
+                host.world.field_vm.channels[ci].ctx.field_6a = id.ctx.field_6a;
+            }
             // `A3 <own id> x z` is the same seat behind the talker's id
             // (`balden` `P1[61]`'s `A3 54 61 0F`).
             if op == 0x23

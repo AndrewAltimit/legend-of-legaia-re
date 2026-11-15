@@ -639,10 +639,16 @@ in `crates/engine-scene-host/tests/field_context_routing_disc.rs`:
   the talker's own id it lands on the talker's bridged word, and a seat
   behind its own id (`balden` `P1[61]`, `A3 54 61 0F`) seats the talker.
 
-Two kinds of site the census lists are left: a talk's own `31 16` / `32 16`
-(`+0x10 & 0x400000`, a bit nothing in the port reads) and the player-aimed
-`B1 F8 13` / `B1 F8 0D` (`conc`, `suimon`, `town01`), which land on the
-issuing context.
+- The player-aimed `B1 F8 0D` (the slow-fall class `0x2000`, which halves
+  the floor glide; `town01` `P2[3]`) and `B1 F8 13` (the movement lock;
+  `conc` `P1[9]` and `suimon` `P1[4]`, ahead of a fade and a scene change)
+  land on the player's flag word.
+- A talk's own clip rate (`4C 41`, `CC <own id> 41`; `doman` `P1[15]`,
+  `koin3` `P1[25]`, `ropeway2` `P1[33]`) reaches the talker's channel, whose
+  `+0x6A` its clip tick reads.
+
+The one kind of site the census still lists is a talk's own `31 16` /
+`32 16` (`+0x10 & 0x400000`), a bit nothing in the port reads.
 
 The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is

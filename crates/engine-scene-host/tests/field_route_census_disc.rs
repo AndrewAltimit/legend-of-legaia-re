@@ -352,6 +352,7 @@ fn field_route_probe() {
     let &(nx, nz) = host.world.npcs.positions.get(&slot).expect("talker");
     let npc = (i32::from(nx - 0x40) >> 7, i32::from(nz - 0x40) >> 7);
     let stand = stand_near(&host, npc.0, npc.1).expect("stand");
+    eprintln!("talker tile {npc:?} stand tile {stand:?}");
     seat_player(&mut host, stand);
     host.world.trigger_field_interact(0, slot);
     let mut last = None;
@@ -378,6 +379,48 @@ fn field_route_probe() {
         }
         if pc.is_none() && f > 20 {
             break;
+        }
+    }
+}
+
+/// Probe: `LEGAIA_ROUTE_MODELS=<scene>:<id>,<id>..` prints each object's own
+/// env-pack slots beside the live model a script set.
+#[test]
+fn field_route_models() {
+    let Ok(spec) = std::env::var("LEGAIA_ROUTE_MODELS") else {
+        return;
+    };
+    let Some(dir) = extracted_dir() else {
+        return;
+    };
+    let (scene, ids) = spec.split_once(':').unwrap();
+    let mut host = SceneHost::open_extracted(&dir).expect("open the host");
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&dir).expect("index");
+    let sc = legaia_engine_scene::scene::Scene::load(&index, scene).expect("scene");
+    let bank = legaia_engine_scene::model_bank::SceneModelBank::build(&sc);
+    assert!(enter(&mut host, scene, &[], 4));
+    for id in ids.split(',') {
+        let id = u8::from_str_radix(id, 16).unwrap();
+        let v = host.world.channel_view();
+        let ci = legaia_engine_field::field_channels::resolve_target(v, id).unwrap();
+        let key = v[ci].placement_index;
+        eprintln!(
+            "id {id:#x} key {key} own slots {:?} live {:?}",
+            host.world.npcs.object_pack_slots.get(&(key as u16)),
+            host.world.object_live_models().get(&key)
+        );
+        if let (Some(own), Some(&live)) = (
+            host.world.npcs.object_pack_slots.get(&(key as u16)),
+            host.world.object_live_models().get(&key),
+        ) {
+            let a = bank.tmd_bytes(&sc, own[0] as i16);
+            let b = bank.tmd_bytes(&sc, live);
+            eprintln!(
+                "  own {} bytes, live {} bytes, identical {}",
+                a.as_ref().map_or(0, |v| v.len()),
+                b.as_ref().map_or(0, |v| v.len()),
+                a.is_some() && a == b
+            );
         }
     }
 }

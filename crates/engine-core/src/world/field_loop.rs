@@ -7,6 +7,10 @@ use legaia_engine_mode::mode::SceneMode;
 /// the player's.
 pub(crate) const PLAYER_Y_FROM_8E: u32 = 0x2000_0000;
 
+/// The player's `+0x10` slow-fall class bit: the settle glide runs at half
+/// rate while it is up (`0x801D1C30..0x801D1C68`).
+pub(crate) const PLAYER_SLOW_FALL_BIT: u32 = 0x0000_2000;
+
 /// The AI companion's roster record: char id `4`, Terra
 /// (`DAT_8007BD10[slot] == 4`, `docs/subsystems/battle-action-helpers.md`).
 pub(crate) const AI_COMPANION_ROSTER_SLOT: u8 = 3;
@@ -937,7 +941,8 @@ impl World {
             // the field initializer allocates a fresh player object from its
             // template on a load (`FUN_801D6704`, `0x801D6D68..0x801D6D7C`).
             // REF: FUN_801D6704
-            actor.move_state.flags &= !legaia_render_kernels::drop_shadow::SHADOW_SUPPRESS_BIT;
+            actor.move_state.flags &=
+                !(legaia_render_kernels::drop_shadow::SHADOW_SUPPRESS_BIT | PLAYER_SLOW_FALL_BIT);
             // ...and so do its `+0x24` / `+0x28` angles: the tweens that
             // drive them were just dropped, and a tilt the last scene left
             // would otherwise draw on this one (`World::player_draw_tilt`).

@@ -1100,20 +1100,6 @@ impl World {
                     {
                         host.world.player_clip_flag_op(op == 0x2B, bit);
                     }
-                    // `CC F8 41 <s16 rate> <u16 ticks>`: the player's clip
-                    // rate `+0x6A`, halved with a floor of 1 (the op's
-                    // nibble-4 sub-1 arm). The immediate form only; a ramp
-                    // (`ticks != 0`) is left to the generic step.
-                    // REF: FUN_801DE840 (op 0x4C nibble 4 sub 1)
-                    if op == 0x4C
-                        && tl.bytecode.get(pc + 2) == Some(&0x41)
-                        && let Some(b) = tl.bytecode.get(pc + 3..pc + 7)
-                        && b[2] == 0
-                        && b[3] == 0
-                    {
-                        let rate = i16::from_le_bytes([b[0], b[1]]);
-                        host.world.locomotion.player_clip_rate = (rate >> 1).max(1);
-                    }
                     // Halt-acquire of the player (`CC F8 85|8E|8F`): the
                     // player turns to face the op's actor bind, and the record
                     // runs on (`CutsceneTimeline::player_face`). `jouine` `P2[5]`
