@@ -9,6 +9,8 @@
 //! (`field_placement_models`) and re-stages a morphing slot's positions
 //! (`field_morph_slots` / `field_morph_positions`). With neither op reaching
 //! the object, the page kept drawing the sprout and the bridge never formed.
+//! Once the last lane drains the page draws the rest mesh, as retail's
+//! per-draw staging does, not the last frame a lane was above `0`.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
@@ -88,4 +90,24 @@ fn the_page_swaps_in_the_bridge_and_grows_it() {
         "the page re-staged the bridge mesh under the growth lanes"
     );
     assert!(reach_max > 100.0, "the growth moves the bridge visibly");
+    // Grown, every lane at 0: `FUN_8001C604` stages the rest vertices on
+    // every draw, so the page draws the authored bridge, not the last frame
+    // a lane was still above 0.
+    assert!(
+        rt.field_morph_reach(BRIDGE) < 0.0,
+        "no live lane once the bridge stands"
+    );
+    let staged = rt.field_morph_positions(BRIDGE);
+    rt.field_mesh(BRIDGE).expect("build the bridge slot");
+    let rest = rt.field_mesh_positions();
+    assert_eq!(staged.len(), rest.len());
+    let off = staged
+        .iter()
+        .zip(&rest)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        off < 0.01,
+        "the grown bridge draws its rest pose (off by {off})"
+    );
 }

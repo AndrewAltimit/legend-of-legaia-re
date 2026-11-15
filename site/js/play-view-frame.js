@@ -892,14 +892,12 @@
       const r = this.renderer;
       const held = this._morphHeld;
       let byMesh = null;
-      for (const [slot, waited] of held) {
+      for (const slot of held.keys()) {
         let reach = rt.field_morph_reach(slot);
-        /* The lanes are gone. With nothing held back the mesh is already the
-         * last state; held back, it still has to get there. */
-        if (reach < 0) {
-          if (!waited) { held.delete(slot); continue; }
-          reach = -1 - reach;
-        }
+        /* The lanes are gone: the slot's state is its rest pose (retail
+         * stages the rest vertices afresh on every draw), and the bound
+         * covers the mesh the buffer may still hold. */
+        if (reach < 0) reach = -1 - reach;
         const m = r.sceneMeshes.get(slot);
         if (m && m.aabb && !m.blendedRest) {
           if (!byMesh) {
@@ -937,19 +935,19 @@
       this.renderer.updateSceneMeshPositions(slot, pos);
     }
 
-    /* A morph with no settling to wait for: the mesh now, if a lane is live. */
+    /* A morph with no settling to wait for: the mesh now - the live state, or the rest pose once the lanes are gone. */
     _morphNow(rt, slot) {
       const reach = typeof rt.field_morph_reach === 'function' ? rt.field_morph_reach(slot) : 0;
-      if (reach >= 0) this._morphBuild(rt, slot, reach);
+      /* Negative: the lanes are gone and the build is the rest pose. */
+      this._morphBuild(rt, slot, reach >= 0 ? reach : -1 - reach);
     }
 
     /* What was held back when the frame stopped settling (PSX mode came on, a VR
      * session began): draw it as it stands. */
     _flushMorphHeld(rt) {
-      for (const [slot, waited] of this._morphHeld) {
+      for (const slot of this._morphHeld.keys()) {
         const reach = rt.field_morph_reach(slot);
-        if (reach >= 0) this._morphBuild(rt, slot, reach);
-        else if (waited) this._morphBuild(rt, slot, -1 - reach);
+        this._morphBuild(rt, slot, reach >= 0 ? reach : -1 - reach);
       }
       this._morphHeld.clear();
     }

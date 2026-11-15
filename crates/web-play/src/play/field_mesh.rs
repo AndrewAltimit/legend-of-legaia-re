@@ -302,10 +302,15 @@ impl LegaiaRuntime {
     /// How far env-pack slot `slot`'s morph moves any vertex coordinate from
     /// its authored place, in world units, for the page to judge whether the
     /// morph can be seen before it pays for the mesh build. Reads the live
-    /// deltas and holds them, so [`Self::field_morph_positions`] builds the last
-    /// state a morph reached even once its lanes are gone. With no live lane
-    /// the answer is negative: `-1 - reach` of the held state, or `-1` if there
-    /// is none.
+    /// deltas and holds them, so [`Self::field_morph_positions`] builds the
+    /// state the world asked for when the page gets round to it. With no live
+    /// lane the slot's state is its rest pose: `FUN_8001C604` copies the rest
+    /// vertices into scratch on every draw and adds each lane scaled by its
+    /// weight (`0x8001C680..0x8001C6A0`, then `lhu a3,0xa0(s4)` into
+    /// `FUN_8005B038`), so a drained envelope or a dropped gate draws the
+    /// authored mesh. The held state becomes rest and the answer is negative:
+    /// `-1 - reach` of the state it replaced (the mesh the buffer may still
+    /// hold), or `-1` if there was none.
     pub fn field_morph_reach(&mut self, slot: u32) -> f32 {
         let s = slot as usize;
         let live = self
@@ -319,9 +324,6 @@ impl LegaiaRuntime {
             })
             .unwrap_or_default();
         let is_live = !live.is_empty();
-        if is_live {
-            self.field_morph_last.insert(slot, live);
-        }
         let reach = self
             .field_morph_last
             .get(&slot)
@@ -331,7 +333,22 @@ impl LegaiaRuntime {
             .map(|c| c.unsigned_abs())
             .max()
             .map_or(0.0, f32::from);
-        if is_live { reach } else { -1.0 - reach }
+        if is_live {
+            let now = live
+                .iter()
+                .flat_map(|(_, deltas)| deltas.iter().flatten())
+                .map(|c| c.unsigned_abs())
+                .max()
+                .map_or(0.0, f32::from);
+            self.field_morph_last.insert(slot, live);
+            now
+        } else {
+            // Rest: an empty held state stages no delta.
+            if self.field_morph_last.contains_key(&slot) {
+                self.field_morph_last.insert(slot, Vec::new());
+            }
+            -1.0 - reach
+        }
     }
 
     /// Morphed vertex positions for env-pack slot `slot`: the plain
