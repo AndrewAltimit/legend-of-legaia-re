@@ -1248,12 +1248,24 @@ three times as its parts gather, and arm 28 draws the party alone
 (`CAPTURE_ARM_STEPS`, `CAPTURE_ARM_COST_TAILS`). With the row every arm of the band runs
 retail's pass count and the plain seat reads the step seat's score (`.784` to `.818`;
 arm 24 `.61` to `.74`, arms 25 and 26 `.36` to `.63`, arm 28 `.83` to `.998`). The
-stager's sweep calls run inside the calling part's frame, as retail's `jal` does. What
-parts the words now is the deal, one word at a time: arm 12's burst spreads `82`, `3`,
-`9`, `9` words over four frames on retail and `85`, `9`, `9` over three in the engine,
-arms 13 and 15 each draw one word the recording does not (four passes behind the arm's
-second two-word frame), and arm 14's second frame draws `10` for retail's `11`. Arms 22
-and 23 (`.51`, `.76`) and arm 27 (`.52`) stand on that parted stream.
+stager's sweep calls run inside the calling part's frame, as retail's `jal` does.
+
+What parts the words after that is one word, and a `--watch 0x80009010` recording of the
+cast names it. Each sweep's hit draws the damage path's rolls a target (`0x801DD508`,
+`0x801DD510`, `0x801DD594`) and the evade roll at `0x801DD640` only for a target whose
+defence term passes its test, then the effect pool's child spawns (`0x801E01D4`, one word a
+child). In the arm behind a sweep (13, 15, 28) the recording draws three such children,
+two on one frame and one nine frames on; the engine draws a fourth four passes later. It
+is the left member's knockdown clip: `28` keyframes, effect records gated on frames `25`
+and `29`. Retail's node cursor reads `400`, `416` and then `0` on the next clip, all three
+members' knockdown clips ending one pass sooner than the engine's (`368` then `0` over
+`25` keyframes, `216` then `0` over `15`), so the walk never reads the frame the second
+record waits for. The engine runs the cursor on to the frame count and walks it. Every
+word after arm 13 follows from that one: the next sweep's evade roll falls on another
+target, and arms 22, 23 and 27 (`.51`, `.76`, `.52`) stand on the parted stream. A row's
+`rand` column is sampled per vsync, so a burst inside a frame eight vsyncs long can read
+as two rows (`82` and `3` for one frame's `85`); the recording's frames and the engine's
+passes draw the same bursts.
 
 ### The enemy set on the rand-track seat
 

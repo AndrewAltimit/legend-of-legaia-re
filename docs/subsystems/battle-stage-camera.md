@@ -2387,6 +2387,16 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
   `0xF1`. Priced off the ordinary row, each stored a step-`2` entry (`3` on a full party)
   that held the band's first arm for sixteen passes: Gimard's arm 2 ran `49` frames where
   retail's runs `64`, one frame-driver `rand()` short on each.
+- **A full party costs some arms more, and the tables do not say which.** Six full-party
+  recordings (Gimard, Barra and Gizam on `battle_kor_spoon_strike`; Zenoir, Barra and Iota
+  on `battle_tower_swordie_strike`) against the lone caster's: every clamped arm reads the
+  same, most arms under the clamp `0`..`25` hblanks more, and four `29`..`135` more
+  (Barra's arm 3 `338` to `473` and `423`, its arm 4 `231` to `274` and `272`, Gimard's
+  arm 6 `182` to `211`, Iota's arm 3 `77` to `110`). Where that crosses a rung the pass
+  count parts: Barra's arms 3, 4, 6, 7 and 8 run `25` / `33` / `92` / `79` / `60` engine
+  passes for retail's `22` / `29` / `88` / `72` / `52`. A flat lift of the frames on a
+  rung's edge would be wrong on Zenoir's arm 7, an edge run that reads `3` on both, and the
+  engine's own seats cannot gate it: all three members stand hidden through the band.
 - **A long seek hold loads the frame it ends on.** A module's seek arm waits on the drive
   when the selector's seek is still in flight. One of PCSX-Redux's ordinary `1..4`-vsync
   seeks fits inside the frame's own wait and stores nothing dear
