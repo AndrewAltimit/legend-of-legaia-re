@@ -1571,3 +1571,26 @@ changes = [
   ["films/jou_gimard_v3_tail_flare/cue", 1.0, 0.933],
   ["films/jou_gimard_v3_tail_flare/matched", 15, 14],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle-entry sweep's opening passes now run on their own step (counter 0x80, 0x82..0x85, then the fight's step, as the walked-encounter film reads), so the first command prompt lands two vsyncs later in every fight and re-deals the driven rounds. Fifteen states were re-pinned to the stream that restores their baseline; for these three no stream over 27 does: the Lizard Tail hit-spark rays deal differently, and the other two move by one block."
+changes = [
+  ["states/battle_garmel_party_noa_lizard_tail_mid/image", 0.979, 0.977],
+  ["states/battle_target_cursor_rugi_barra_retail/image", 0.994, 0.993],
+  ["states/minigame_muscle_dome_retail_red_piura_vahn_strike/image", 0.975, 0.974],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The dance's beat clock now holds through retail's four-frame lead-in and its camera steps once per game frame by 3 (both from the minigame film, which now matches retail on every column through the song). go_in and go_out rise; ready, captured during the count-in, differs by one 8x8 block."
+changes = [
+  ["states/minigame_dance_retail_ready/image", 0.982, 0.981],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 99500626e: the commit pass stamps the ghost ring with the clip it commits, as FUN_80047430 orders the natural-end commit (0x80047B54) ahead of the ring shift and id store. This state's after-image ghosts change by a pass; which side is short is not measured."
+changes = [
+  ["states/noaru_songi_pre_genocidal_cannon/image", 0.986, 0.984],
+]
