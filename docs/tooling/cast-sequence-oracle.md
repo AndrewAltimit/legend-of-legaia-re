@@ -520,7 +520,9 @@ Thunderbolt `32` units behind the body retail's recording shows. The other bodie
 (`state_body_cursors`, `LEGAIA_DIAG_CAST_SEQ_SEAT_CLIPS`, loops only): the still's
 clip seeds land on a capture frame a film never reaches, so the party idled on the
 replay's phases (`132`, `72`, `108` where the `_2_` state holds `96`, `112`, `48`),
-and seated the two films read `.967` / `.963`. And a monster
+and seated the two films read `.967` / `.963`.
+A cursor inside a loop's last keyframe span seats where it stands (`MonsterAnimPlayer::seek_sixteenths` clamps on the last sixteenth, not the last keyframe's start): the natural-end test reads whole keyframes, so retail's `132` on a nine-keyframe idle wraps on the next step-`3` pass. Seated on `128`, `chitei2_gilium_strike`'s Vahn wrapped a pass late, stood one idle keyframe behind when Gilium's hit turned him, and took heading `108`, where the bearing off retail's pose that pass is `110`; his backstep's `x` then floored a unit short of retail's `-3` each pass and Gilium's strike yaw ran `+9`. Seated, the film's camera is retail's to the unit.
+And a monster
 striker's committed queue `+0x1DF..` goes on the drive (`state_strike_queue`, the
 `q` field) unless the still already steered it: the picker drew those clips before
 the state was saved, and a replay that reached the gate on another pick swings
