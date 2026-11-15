@@ -1770,12 +1770,42 @@ agreement over the game time):
 Over the four sets step agreement goes `.909` to `.926`. Priced, the arts' strike states
 agree with retail on `.90` to `.94` of their game time and Tri-Somersault's arts voice lands
 (`.964` to `1.0`); the enemy casts' `0x2B..0x2E` and Done band agree further, and Gimard's
-Tail Flare plays all fifteen cues with no window. It stays opt-in by a small margin (grade
-`capture`): the arts' image mean falls `.0005` and the strikes' `.0013`, and the Seru casts'
-step agreement `.001`, all of it the post-band state `0x38` (`.943` to `.800`, `70` vsyncs of
-game time). Among the strikes the images part both ways at the same step agreement (Gel Frog
-`.922` to `.987`, Caruban `.917` to `.950`; Ghost Knight `.998` to `.938`, Topaz `.987` to
-`.942`, Warman `.996` to `.954`), which reads as harness seats built on the table's step.
+Tail Flare plays all fifteen cues with no window.
+
+**The film's lead-in.** A film replays rounds to reach its state (a physical strike) or the
+cast it seeds, and those rounds draw `rand()` on the frame step, so pricing them moves the
+round the film reaches its gate on. Ghost Knight's film reached its gate at tick `15705`
+priced against `1786` on the table, the replay's own rounds stood the bystanders elsewhere,
+and Gala's near ghost left the frame (`.998` to `.938`); Topaz and Warman part the same way,
+and Gilium's film recorded nothing. The rounds before the gate are a harness device, not the
+cast under test, so `LEGAIA_LEADIN_TABLE_COST=1` (through `--engine-env`) prices them on the
+table and raises the census where the film starts: the capture's gate, or the recorder's cast
+begin on a seeded spell. A harness seat. With it the strike films' census falls are gone
+(Ghost Knight, Topaz and Warman back on their default reading) and the four sets read, one
+build, the default against the census with the seat (image mean, cue mean):
+
+| Set | Films | Default | Census, lead-in on the table |
+|---|---:|---|---|
+| Monster strikes | 65 | `.9816` / `.9996` | `.9825` / `.9996` |
+| Player arts | 20 | `.9300` / `.9982` | `.9295` / `1.0` |
+| Seru casts | 29 | `.9556` / `1.0` | `.9557` / `1.0` |
+| Enemy casts | 109 | `.9351` / `.9985` | `.9360` / `.9991` |
+| Gate | 12 | `.9664` / `.9944` | `.9710` / `1.0` |
+
+The Seru band's two tail states keep the table under the census like the band
+(`0x37` / `0x38`, `World::push_frame_cost`): their own frames' work sits under the step-`2`
+edge on every Seru film (retail's `172..370` hblanks), and retail still runs them at `2` and
+`3` off the band's frames left in the ring, which the band's arm tables stand in for with their
+step alone; priced, `0x38` agreed on `.800` of its game time against the table's `.943`.
+
+It stays opt-in (grade `capture`): the arts' image mean still falls `.0005`, and single films
+fall past the noise of two retail runs, all on the cast's own frames with the lead-in held.
+Genocidal Cannon (both films, `-.054`) parts in capture phase `6` (`.993` to `.754`) though the
+band's arms keep their table; Caruban's Fire Breath (`-.040`) in its Done band `0x51`; King
+Frog's strike (`-.025`) and Super Ironhead (`-.026`) sit on the step-`4` edge, where the census
+reads retail's frames within a few hblanks of the rung (King Frog's `0x1E` alternates `700` and
+`714..719` priced, as retail's does, the table holding `700`), and which pass lands on which
+side is the frame-to-frame noise no cost model holds.
 
 Under the window's count, the three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
 `3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's

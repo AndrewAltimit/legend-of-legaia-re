@@ -89,11 +89,21 @@ impl World {
         let summon_band = (ActionState::SummonFadeIn.as_byte()
             ..=ActionState::SummonReturn.as_byte())
             .contains(&state);
+        // So do the band's two tail states `0x37` / `0x38`: their frames' own
+        // work sits under the step-2 edge on every Seru film (retail's
+        // `172..370` hblanks), and retail still runs them at `2` to `3` off
+        // the band's frames still in the ring, which the band's arm tables
+        // stand in for with their step alone. Their measured rows hold
+        // retail's step (`0x38` `.943` against `.800` priced).
+        let summon_tail = matches!(
+            ActionState::from_byte(state),
+            Some(ActionState::SummonVerifyAlive | ActionState::SummonDone)
+        );
         let table_kept = (arm_step.is_some()
             && (!window_source
                 || state == ActionState::SummonSustain.as_byte()
                 || state == ActionState::SummonReturn.as_byte()))
-            || (!window_source && summon_band)
+            || (!window_source && (summon_band || summon_tail))
             || state == ActionState::SummonFadeIn.as_byte()
             || state == ActionState::SummonActorFreeze.as_byte();
         // The census of world state (`World::note_linked_polys`), or the

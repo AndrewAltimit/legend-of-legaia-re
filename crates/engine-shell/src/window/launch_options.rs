@@ -261,6 +261,15 @@ pub struct ScreenshotConfig {
     /// (the state's instant) opens. Set by the cast-sequence oracle; `None`
     /// in play.
     pub film_rand: Option<u32>,
+    /// `LEGAIA_LEADIN_TABLE_COST=1`: the replay's lead-in to the capture's
+    /// gate prices its battle frames on the action-state table, and the
+    /// polygon census takes over when the gate opens
+    /// (`WorldToggles::battle_poly_frame_cost` is raised there). A film
+    /// scores the cast from the gate on; the rounds the drive replays to
+    /// reach it are a harness device whose `rand()` draws follow the frame
+    /// step, so pricing them moves the streams a pinned film was found on.
+    /// Set by the cast-sequence oracle on request; `false` in play.
+    pub leadin_table_cost: bool,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -1163,6 +1172,7 @@ impl ScreenshotConfig {
             film_rand: std::env::var("LEGAIA_FILM_RAND")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

@@ -53,6 +53,7 @@ impl PlayWindowApp {
     /// was dealt (`LEGAIA_STRIKE_DEAL`), once.
     pub(super) fn seat_strike_deal(&mut self) {
         self.seat_film_guard();
+        self.seat_leadin_cost();
         let Some(sc) = self.screenshot.as_ref() else {
             return;
         };
@@ -83,6 +84,27 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &deal,
             ),
+        }
+    }
+
+    /// `LEGAIA_LEADIN_TABLE_COST`: hold the polygon census off through the
+    /// lead-in and raise it, once, where the film starts: the capture's gate,
+    /// or the cast-sequence recorder's cast begin (a seeded spell film has no
+    /// gate).
+    fn seat_leadin_cost(&mut self) {
+        if !self
+            .screenshot
+            .as_ref()
+            .is_some_and(|sc| sc.leadin_table_cost)
+        {
+            return;
+        }
+        let met = self.capture_gate_met()
+            || super::redraw_present::CAST_SEQ_STARTED.load(std::sync::atomic::Ordering::Relaxed);
+        let toggles = &mut self.session.host.world.toggles;
+        toggles.battle_poly_frame_cost = met;
+        if met && let Some(sc) = self.screenshot.as_mut() {
+            sc.leadin_table_cost = false;
         }
     }
 

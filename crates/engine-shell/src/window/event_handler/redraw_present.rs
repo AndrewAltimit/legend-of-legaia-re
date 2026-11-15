@@ -164,6 +164,12 @@ pub(super) fn capture_sweep_frame<'a>(
     }
 }
 
+/// Raised when the cast-sequence recorder starts its film (the cast's begin,
+/// or the capture's gate), which `LEGAIA_LEADIN_TABLE_COST` reads to end the
+/// lead-in.
+pub(super) static CAST_SEQ_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 impl PlayWindowApp {
     /// `LEGAIA_DIAG_DRAWS=<path>`: write this frame's textured draws as
     /// texture families.
@@ -696,6 +702,7 @@ impl PlayWindowApp {
                 }
                 eprintln!("cast sequence: the capture's gate at tick {tick} (seat {acting})");
                 rec.start = Some(tick);
+                CAST_SEQ_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
                 tick
             }
             None if (st == CAST_BEGIN_STATE || st == HEAL_BEGIN_STATE)
@@ -703,6 +710,7 @@ impl PlayWindowApp {
             {
                 eprintln!("cast sequence: cast begin at tick {tick} (seat {acting})");
                 rec.start = Some(tick);
+                CAST_SEQ_STARTED.store(true, std::sync::atomic::Ordering::Relaxed);
                 tick
             }
             None => return,
