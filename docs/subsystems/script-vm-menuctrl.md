@@ -1541,7 +1541,9 @@ others. The census is `crates/engine-scene/tests/object_record_placement_ops_dis
 ## Port notes
 
 The cutscene timeline and the placement channels step every cross-context
-op on the resolved channel's context. The prop runner
+op on the resolved channel's context, and the system script steps these
+sub-ops there too (`step_on_resolved_channel`; the runner table is in
+[`script-vm.md`](script-vm.md#which-context-an-op-runs-on)). The prop runner
 (`World::step_prop_interaction`) and the talk runner
 (`World::drive_inline_dialogue`) run on a stand-in context of their own, so
 they route the resolved-actor sub-ops above (`is_resolved_actor_4c`) onto the
