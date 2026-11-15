@@ -1604,5 +1604,5 @@ changes = [
   ["counts/browser/cast/enhanced/gl_draws_per_frame", 128.75, 130.46],
   ["counts/browser/cast/retail/gl_draws_per_frame", 106.14, 108.39],
   ["counts/browser/town01/retail/gl_draws_per_frame", 43.81, 43.92],
-  ["counts/bundle/play_gzip_bytes", 5101437, 5125136],
+  ["counts/bundle/play_gzip_bytes", 5101437, 5125685],
 ]
