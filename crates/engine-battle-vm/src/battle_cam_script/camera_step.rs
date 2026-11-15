@@ -1855,6 +1855,12 @@ impl BattleCamera {
         if std::mem::take(&mut self.end_frame_owns_pass) {
             return;
         }
+        // `0x38` calls no framing case (`0x801E4EB8..0x801E4EF8`): the walker
+        // steps the tween `0x37` armed.
+        if self.phase == BattleCamPhase::Action && self.last_action_state == SUMMON_DONE_STATE {
+            self.step_front_glide();
+            return;
+        }
         // The per-art attack camera runs AFTER `FUN_801D5854` has armed its
         // own tween (`0x801D7180`), builds a pose of its own and calls the
         // same tween builder again - so whenever an arm fires it is the

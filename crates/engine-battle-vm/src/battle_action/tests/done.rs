@@ -499,3 +499,23 @@ fn seru_absorb_hold_press_clamps_the_wait_to_the_teardown() {
         "below the threshold a press is a plain decrement"
     );
 }
+
+/// `0x37` stores the exit depth behind its case-6 call, so the camera reads
+/// the route depth on that pass; the host takes `0x800` on `0x38`'s pass,
+/// which calls no framing case (`0x801E4D68` / `0x801E4E70`,
+/// `0x801E4EB8..0x801E4EF8`).
+#[test]
+fn the_summon_exit_depth_reaches_the_camera_on_0x38() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 0);
+    ctx.action_state = ActionState::SummonVerifyAlive.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::SummonDone.as_byte());
+    assert_eq!(ctx.camera_frame_height, 0x800);
+    assert!(
+        !host.take().contains(&Event::FrameHeight(0x800)),
+        "not on the 0x37 pass"
+    );
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::DoneCleanup.as_byte());
+    assert!(host.take().contains(&Event::FrameHeight(0x800)));
+}

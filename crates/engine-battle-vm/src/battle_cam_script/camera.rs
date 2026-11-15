@@ -230,6 +230,8 @@ pub(super) const ACTION_SEED_STATE: u8 = 0x0C;
 pub(super) const ATTACK_BAND_FIRST: u8 = 0x14;
 pub(super) const ATTACK_BAND_LAST: u8 = 0x20;
 pub(super) const ACTION_DONE_STATE: u8 = 0x50;
+/// The summon band's last state `0x38`, which calls no framing case.
+pub(super) const SUMMON_DONE_STATE: u8 = 0x38;
 
 /// The Battle Camera option's Close value (`_DAT_800846C0 == 0`), the one
 /// every dynamic arm of the action shots runs under.
