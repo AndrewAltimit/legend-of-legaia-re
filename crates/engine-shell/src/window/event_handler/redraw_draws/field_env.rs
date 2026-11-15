@@ -338,13 +338,21 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 // A motion stream's model swap (op `0x0E`) draws
-                // the record's object with the swapped-in mesh.
+                // the record's object with the swapped-in mesh, morph and
+                // all: the lanes ride the drawn model
+                // (`World::object_morph_draw_slots`) - `vell`'s Bridge
+                // Grass grows as the swapped-in bridge.
                 let swapped = object_swaps
                     .get(di)
                     .copied()
                     .flatten()
                     .and_then(|id| app.field_pack_meshes.get(id).copied().flatten())
-                    .and_then(|m| store.meshes.get(m));
+                    .and_then(|m| {
+                        store
+                            .field_morph_live
+                            .get(&m)
+                            .or_else(|| store.meshes.get(m))
+                    });
                 let mesh = swapped
                     .or_else(|| store.field_morph_live.get(mesh_idx))
                     .or_else(|| {

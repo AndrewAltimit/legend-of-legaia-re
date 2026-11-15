@@ -66,6 +66,7 @@ mod showcase_skip_disc;
 mod soft_reset_records_page;
 mod status_marks_page;
 mod title_backdrop_parity;
+mod vell_bridge_grass_page;
 mod view_window_crop_page;
 mod water_gate_menu_wipe;
 mod world_map_entrance_crossing_page;

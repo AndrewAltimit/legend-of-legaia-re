@@ -287,12 +287,7 @@ impl World {
                 let Some(st) = self.npcs.morphs.get(&owner) else {
                     return;
                 };
-                let slots = self
-                    .npcs
-                    .object_pack_slots
-                    .get(&r)
-                    .cloned()
-                    .unwrap_or_default();
+                let slots = self.object_morph_draw_slots(r);
                 let mut dirty = Vec::new();
                 for &(vdf_idx, _) in &vdf_morph::actor_morph_lanes(st) {
                     let Some(entry) = self.vdf_record_bytes(vdf_idx) else {
@@ -416,8 +411,8 @@ impl World {
         // one owner's lanes - summing them multiplied the delta by the number
         // of objects (town01's four shoreline objects all bind slot 82 and
         // run the same tide envelope).
-        for (&record, slots) in &self.npcs.object_pack_slots {
-            if !slots.contains(&pack_slot) {
+        for &record in self.npcs.object_pack_slots.keys() {
+            if !self.object_morph_draw_slots(record).contains(&pack_slot) {
                 continue;
             }
             if let Some(l) = self.live_morph_lanes(MorphOwner::Object(record)) {
@@ -427,12 +422,47 @@ impl World {
         Vec::new()
     }
 
+    /// The env-pack slots placed-object record `record`'s morph stages onto:
+    /// the model its actor draws now. `FUN_8001C604` substitutes into the
+    /// drawn actor's own TMD, so once a `4C 50` (or a stream's op `0x0E`)
+    /// has swapped the object's model (`World::object_live_models`), the
+    /// lanes ride the swapped-in mesh, not the `.MAP` slot it was placed
+    /// with. `vell`'s Bridge Grass sways as the sprout (model `41`) and
+    /// grows as the bridge (model `40`, its `.MAP` slot).
+    ///
+    /// REF: FUN_8001ADA4 (0x8001B424..0x8001B43C), FUN_8001C604
+    pub(crate) fn object_morph_draw_slots(&self, record: u16) -> Vec<usize> {
+        let live = self.npcs.object_models.iter().find_map(|(&key, &id)| {
+            (self.object_key_record(key as u16) == record && (0..0xF0).contains(&id))
+                .then_some(id as usize)
+        });
+        match live {
+            Some(id) => vec![id],
+            None => self
+                .npcs
+                .object_pack_slots
+                .get(&record)
+                .cloned()
+                .unwrap_or_default(),
+        }
+    }
+
+    /// A placed object's model changed under its morph: the swapped-in mesh
+    /// re-stages with the object's lanes ([`Self::object_morph_draw_slots`]).
+    pub(crate) fn object_model_swapped(&mut self, key: u16) {
+        let owner = MorphOwner::Object(self.object_key_record(key));
+        if self.npcs.morphs.contains_key(&owner) {
+            self.mark_morph_dirty(owner);
+        }
+    }
+
     /// Whether a placed object whose draws use env-pack slot `pack_slot`
     /// carries op-`0x4B` morph lanes at all (armed, whatever their current
     /// weight) - a retail carrier owns that mesh's morph.
     pub(crate) fn slot_has_object_morph_owner(&self, pack_slot: usize) -> bool {
-        self.npcs.object_pack_slots.iter().any(|(&record, slots)| {
-            slots.contains(&pack_slot) && self.npcs.morphs.contains_key(&MorphOwner::Object(record))
+        self.npcs.object_pack_slots.keys().any(|&record| {
+            self.npcs.morphs.contains_key(&MorphOwner::Object(record))
+                && self.object_morph_draw_slots(record).contains(&pack_slot)
         })
     }
 

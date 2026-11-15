@@ -1627,7 +1627,7 @@ impl World {
     /// [`InlineDialogue::player_turn`]: legaia_engine_field::inline_dialogue::InlineDialogue::player_turn
     // PORT: FUN_8003774C (case 0x47 target decode)
     // REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DEFC0..0x801DF054)
-    pub(super) fn arm_talk_player_leg(
+    pub(crate) fn arm_talk_player_leg(
         &mut self,
         id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
     ) -> Option<usize> {
@@ -1750,7 +1750,7 @@ impl World {
     }
 
     /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
-    pub(super) fn step_npc_rotate_leg(
+    pub(crate) fn step_npc_rotate_leg(
         &mut self,
         leg: &mut legaia_engine_field::cutscene_timeline::TimelineFacing,
     ) -> bool {
