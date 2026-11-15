@@ -548,6 +548,28 @@ releases him (the village gathering, which raises `0x231`); the elder's
 sets `0x141` and changes to `map01`. The south gate stays painted shut
 (`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
 
+A placed object is a target like any other. A talk's `AB` / `AC` / `AD <id>`
+(the clip-control word `+0x62`), `CC <id> 35|36|41` and the cursor test
+`CC <id> 8C` (`+0x68`) read and write the door or prop `<id>` names. A door
+can hand its touch to a guard: `bylon`'s hall door `P0[19]` engages the West
+Voz monk `P1[33]` with `B1 44 08` and ends, for as long as `0x2A0` is
+clear. Once Maya has given her word (`0x29E`) his talk tests the door with
+`CC 13 8C 06 00`, and the door on frame 0 sends it to the opening: `52 A0`,
+the door's swing (`AC 13 07`, `AC 13 01`, `AB 13 03`, `B1 13 00`) and a
+wait on `P0[15]`'s end latch (`AD 0F 08`). From then on the door's own
+`0x2A0` arm answers the push.
+
+The port routes those ops onto the object's prop words, as the prop runner
+and the spawned-record slice do (`World::cross_context_object_prop`). Run
+on the talker's context, the cursor test read the monk's idle clip. Off
+frame 0 it ended the talk at its `21` with `0x2A0` still clear, so every
+push replayed his lines. On frame 0 the channel poke `B1 13 00` dropped the
+door's collision but the swing never reached it, so the player walked
+through a shut door. `retock`'s dresser talk (`P1[46]`, `CC 0D 8C 18 00`)
+and `ropeway`'s paper (`P1[21]`, `CC 07 8C 18 00`) drive their objects the
+same way. Disc-gated:
+`crates/engine-scene-host/tests/bylon_west_voz_monk_disc.rs`.
+
 The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is
 `0x24` / `0x25`) and leaves after the op it ran was `0x21`
