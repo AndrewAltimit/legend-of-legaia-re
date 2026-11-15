@@ -412,7 +412,7 @@ impl World {
         // of objects (town01's four shoreline objects all bind slot 82 and
         // run the same tide envelope).
         for &record in self.npcs.object_pack_slots.keys() {
-            if !self.object_morph_draw_slots(record).contains(&pack_slot) {
+            if !self.object_morph_draws_slot(record, pack_slot) {
                 continue;
             }
             if let Some(l) = self.live_morph_lanes(MorphOwner::Object(record)) {
@@ -447,6 +447,24 @@ impl World {
         }
     }
 
+    /// Whether placed-object record `record`'s morph stages onto env-pack
+    /// slot `pack_slot`: [`Self::object_morph_draw_slots`] as a membership
+    /// test, without the list, for the per-draw checks.
+    fn object_morph_draws_slot(&self, record: u16, pack_slot: usize) -> bool {
+        let live = self.npcs.object_models.iter().find_map(|(&key, &id)| {
+            (self.object_key_record(key as u16) == record && (0..0xF0).contains(&id))
+                .then_some(id as usize)
+        });
+        match live {
+            Some(id) => id == pack_slot,
+            None => self
+                .npcs
+                .object_pack_slots
+                .get(&record)
+                .is_some_and(|slots| slots.contains(&pack_slot)),
+        }
+    }
+
     /// A placed object's model changed under its morph: the swapped-in mesh
     /// re-stages with the object's lanes ([`Self::object_morph_draw_slots`]).
     pub(crate) fn object_model_swapped(&mut self, key: u16) {
@@ -462,7 +480,7 @@ impl World {
     pub(crate) fn slot_has_object_morph_owner(&self, pack_slot: usize) -> bool {
         self.npcs.object_pack_slots.keys().any(|&record| {
             self.npcs.morphs.contains_key(&MorphOwner::Object(record))
-                && self.object_morph_draw_slots(record).contains(&pack_slot)
+                && self.object_morph_draws_slot(record, pack_slot)
         })
     }
 
