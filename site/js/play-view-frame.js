@@ -554,8 +554,6 @@
           || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15], d.placeIdx));
       }
 
-      this._stageFieldPrimOrder(rt, draws);
-
       /* Field party-status HUD: retail's decision kernel compares the
        * lead's PROJECTED screen Y against a band (the native window's
        * `field_hud_projected_player_y`). Project the same point the native
@@ -650,6 +648,14 @@
       if (fieldVp && typeof rt.play_field_fx_sync === 'function') {
         this._fieldFxDraws(rt, fieldVp, draws);
       }
+      /* Every draw the frame holds takes its link word, the script-spawned
+       * actors and the field effects above included: the native window
+       * stages a word on every draw (`set_draw_order`, a missing entry the
+       * corners' mean). Staged ahead of them, `rugi`'s landing tunnel (a
+       * spawned actor's semi-transparent rings) tested per pixel against
+       * NPCs drawn by link, and no field effect model took its far-corner
+       * word. */
+      this._stageFieldPrimOrder(rt, draws);
       this._applyEffectClips(rt, draws);
       this._applySceneClear(rt);
       this._draws = draws;
