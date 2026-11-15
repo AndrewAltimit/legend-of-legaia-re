@@ -2360,4 +2360,26 @@ mod tests {
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
     }
+
+    /// A seek arm held past one ordinary seek stores a step-`3` entry on the
+    /// summon band and nowhere else; a hold inside one stores nothing dear.
+    #[test]
+    fn a_long_seek_hold_loads_the_summon_frame_it_ends_on() {
+        use legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS;
+        let pass = |state: u8, held: u8| {
+            let mut w = World::new();
+            w.party.party_count = 1;
+            w.battle_ctx.action_state = state;
+            w.casting.drive_held_vsyncs = held;
+            w.push_frame_cost(None);
+            assert_eq!(w.casting.drive_held_vsyncs, 0, "the hold is spent");
+            w.battle.frame_cost_step
+        };
+        assert_eq!(pass(0x35, 0), 1);
+        assert_eq!(pass(0x35, SEEK_HOLD_FREE_VSYNCS), 1);
+        assert_eq!(pass(0x35, SEEK_HOLD_FREE_VSYNCS + 1), 3);
+        assert_eq!(pass(0x36, 9), 3);
+        // A capture cast's hold keeps its frame's cost.
+        assert_eq!(pass(0x70, 9), pass(0x70, 0));
+    }
 }

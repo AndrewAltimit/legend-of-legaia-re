@@ -516,3 +516,55 @@ impl World {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use legaia_engine_battle_vm::battle_cast_cue::ModuleDriveArms;
+
+    fn armed(entry: u32) -> World {
+        let mut w = World::new();
+        w.casting.module_running_entry = Some(entry);
+        w.casting.drive_arms = Some((
+            ModuleDriveArms {
+                seek_arm: 2,
+                poll_arm: 3,
+                slot: 0xC,
+            },
+            false,
+        ));
+        w
+    }
+
+    /// PROT 0905's seek leaves on the pass that leaves its seek arm, so the
+    /// arm does not hold on the drive and the poll arm does.
+    #[test]
+    fn veras_seek_goes_out_on_its_seek_arms_exit() {
+        let mut w = armed(905);
+        assert!(w.module_seek_on_arm_exit());
+        assert!(!w.module_drive_holds(2), "the seek arm runs its own gates");
+        w.step_module_drive(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(false));
+        w.issue_module_seek_on_exit(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(true));
+        assert!(w.module_drive_holds(3), "the poll's first pass is busy");
+        while !w.casting.drive.idle() {
+            w.casting.drive.tick();
+        }
+        assert!(!w.module_drive_holds(3));
+    }
+
+    /// Every other module seeks at its seek arm's head and holds the arm
+    /// until the seek is out.
+    #[test]
+    fn another_module_seeks_at_its_seek_arms_head() {
+        let mut w = armed(904);
+        assert!(!w.module_seek_on_arm_exit());
+        assert!(w.module_drive_holds(2));
+        w.issue_module_seek_on_exit(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(false));
+        w.step_module_drive(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(true));
+        assert!(!w.module_drive_holds(2));
+    }
+}
