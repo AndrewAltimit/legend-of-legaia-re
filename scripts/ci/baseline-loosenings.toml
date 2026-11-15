@@ -1594,3 +1594,15 @@ reason = "Bisected to 99500626e: the commit pass stamps the ghost ring with the 
 changes = [
   ["states/noaru_songi_pre_genocidal_cannon/image", 0.986, 0.984],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play page now merges blend order across meshes whose blends meet, far to near, as the native window does (host-pair: arts ticks 1351/1381 0.50/0.51% to 0.48/0.49%, results tick 1321 0.38% to 0.33%, no scene higher): cast and town01 take extra GL draws for the merged runs. The two battle rows already read over the baseline on the wave's base. The play bundle grows 0.46% with the wave's ports and fixes (D-pad glyph, card init, CD wait, minigame films' engine side, field and battle census code)."
+changes = [
+  ["counts/browser/battle/enhanced/gl_draws_per_frame", 185.12, 185.16],
+  ["counts/browser/battle/retail/gl_draws_per_frame", 154.86, 154.88],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 128.75, 130.46],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 106.14, 108.39],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.81, 43.92],
+  ["counts/bundle/play_gzip_bytes", 5101437, 5125136],
+]

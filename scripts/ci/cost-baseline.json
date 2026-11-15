@@ -11,21 +11,21 @@
   "browser": {
    "battle": {
     "enhanced": {
-     "gl_draws_per_frame": 185.12,
+     "gl_draws_per_frame": 185.16,
      "wasm_bytes_per_frame": 119540
     },
     "retail": {
-     "gl_draws_per_frame": 154.86,
+     "gl_draws_per_frame": 154.88,
      "wasm_bytes_per_frame": 114475
     }
    },
    "cast": {
     "enhanced": {
-     "gl_draws_per_frame": 128.75,
+     "gl_draws_per_frame": 130.46,
      "wasm_bytes_per_frame": 109486
     },
     "retail": {
-     "gl_draws_per_frame": 106.14,
+     "gl_draws_per_frame": 108.39,
      "wasm_bytes_per_frame": 102259
     }
    },
@@ -35,7 +35,7 @@
      "wasm_bytes_per_frame": 54951
     },
     "retail": {
-     "gl_draws_per_frame": 43.81,
+     "gl_draws_per_frame": 43.92,
      "wasm_bytes_per_frame": 48668
     }
    },
@@ -52,7 +52,7 @@
   },
   "bundle": {
    "gzip_bytes": 7236818,
-   "play_gzip_bytes": 5101437
+   "play_gzip_bytes": 5125136
   },
   "native": {
    "battle": {
