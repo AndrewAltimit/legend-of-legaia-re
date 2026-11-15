@@ -415,7 +415,8 @@ def state_ram(sstate: str) -> bytes | None:
         sstate = str(REPO / "saves" / "library" / "pcsx-redux" / Path(sstate).name)
         if not Path(sstate).exists():
             return None
-    tmp = REPO / "target" / "cast-sequence-state-ram.bin"
+    # One file a process: two batches in one tree read states at once.
+    tmp = REPO / "target" / f"cast-sequence-state-ram-{os.getpid()}.bin"
     r = subprocess.run([str(exe), "extract", sstate, "--start", hex(RAM_BASE), "--end", hex(RAM_TOP),
                         "--out", str(tmp)], capture_output=True)
     if r.returncode != 0 or not tmp.exists():
@@ -719,11 +720,17 @@ def retail_step_track(out: Path) -> str:
     (Water Crystals' arm 3 runs `33` frames, one of them at step `3`).
     Keyed by the frame's last row instead, a frame's step went to the pass
     after it."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    state_rand = str(ram_u32(ram, RAND_WORD)) if ram is not None else None
     with open(out / "retail" / "meta.csv") as f:
-        return frame_step_rows(list(csv.DictReader(f)))
+        return frame_step_rows(list(csv.DictReader(f)), state_rand)
 
 
-def frame_step_rows(rows: list[dict]) -> str:
+# The BIOS `rand()` seed word (`A(2Fh)`'s state), the probe's `rand` column.
+RAND_WORD = 0x80009010
+
+
+def frame_step_rows(rows: list[dict], state_rand: str | None = None) -> str:
     """The step track's lines off `meta.csv` rows ([`retail_step_track`]).
 
     A recording that opens on a state's own instant can open on a frame whose
@@ -731,7 +738,16 @@ def frame_step_rows(rows: list[dict]) -> str:
     pass makes the frame driver's discarded draw, `FUN_80046A20`), and its
     step belongs to no pass the engine runs from the gate. That frame is
     left out; Lip King's Kiss of Death otherwise ran its first arm-1 pass on
-    the leftover frame's step `3` and arm 1 a pass long."""
+    the leftover frame's step `3` and arm 1 a pass long.
+
+    The same quiet first frame also comes from a pass that ran between the
+    state's instant and the first row, its draw already in that row: the
+    state's own seed word (`state_rand`) then differs from the first row's,
+    and the engine, seated on the state, runs that pass, so the frame stays.
+    Dropped, every pass took the next frame's step: `nilboa_neo_grude_strike`
+    stepped `4` a pass before retail's step-`4` frame, its swing ended a pass
+    late and the walk behind it drifted, and `retona_king_frog_strike`'s
+    block ended a pass late and slid its Vahn `12` units on."""
     frames, first, last = [], None, None
     for r in rows + [None]:
         if last is not None and (r is None or r["frame"] != last["frame"]):
@@ -743,7 +759,8 @@ def frame_step_rows(rows: list[dict]) -> str:
     if frames and frames[0][2] is not None and "rand" in frames[0][0]:
         f0, _, nxt = frames[0]
         run0 = [r for r in rows if r["frame"] == f0["frame"]]
-        if all(r["rand"] == nxt["rand"] for r in run0):
+        ran_before_state = state_rand is None or state_rand == f0["rand"]
+        if ran_before_state and all(r["rand"] == nxt["rand"] for r in run0):
             frames = frames[1:]
     return "".join(_step_row(f, l) for f, l, _ in frames)
 
