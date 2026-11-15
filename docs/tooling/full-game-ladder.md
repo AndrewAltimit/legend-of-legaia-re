@@ -203,7 +203,12 @@ pass toward each milestone in turn, never re-seeding:
 - At each milestone reached it takes the engine's own save
   (`World::save_full`). After a party wipe it reloads that save, as a
   player would, with the same guard retry and reload allowance the pad
-  tier has.
+  tier has. A walk that stalls with nothing holding the player (no
+  script, the stall's next cell open) reloads it too, at most twice a
+  stretch, on another hand of the stream: a corridor that wedged one deal
+  of the dice is a reload for a player, not the end of the game. Every
+  such reload is counted in the headline's reloads, and the trace names it
+  (`[reload]`).
 - It stops at the first milestone it cannot reach and prints the stall.
 
 Its score is `[continuous] reached` in the baseline: the count of
