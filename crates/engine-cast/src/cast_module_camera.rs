@@ -306,6 +306,10 @@ pub struct ModuleCamState {
     /// reads the caster (`0x801F7D3C..0x801F7DDC`), so the director frames
     /// the restored pair.
     pub caster_saved: Option<(i16, i16, u16)>,
+    /// The caster's height `+0x36` beside [`Self::caster_saved`], where a
+    /// re-seat also lifts it: PROT 0966's arm 21 stands Cort at `-0x380`
+    /// and arm 27 copies the saved `+0x34..+0x3B` back.
+    pub caster_saved_y: Option<i16>,
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host

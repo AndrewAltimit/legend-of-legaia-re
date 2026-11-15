@@ -673,6 +673,7 @@ impl World {
                     .find(|(seat, _)| *seat == s)
                     .map_or(0, |(_, r)| *r)
             };
+            let before = seats.clone();
             let hits = ticks::evil_seru_magic_seat_writes(
                 phase,
                 passed,
@@ -682,6 +683,7 @@ impl World {
                 take,
             );
             self.write_cast_seat_row(&seats);
+            self.evil_seru_magic_row(phase, passed, usize::from(caster_slot), &before);
             run.aoe_hits = stager_hits;
             let hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                 seat: h.seat,

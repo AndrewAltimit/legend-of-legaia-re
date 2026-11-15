@@ -492,4 +492,113 @@ impl World {
             a.battle.facing_angle = facing;
         }
     }
+
+    /// PROT 0966's (Evil Seru Magic) seat moves: arm 0 stands the party in a
+    /// half-size row at the back of the stage, arms 12..15 slide each struck
+    /// member back while it plays its reaction, arm 21 lifts the caster above
+    /// the row at half size, arm 27 puts every seat back and arm 28 repeats
+    /// the party's restore every pass. `before` is the party row as the arm
+    /// found it (the slide reads the clip the release loop read).
+    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 0 `0x801F6BE0..0x801F6D58`, arms 12..15 `0x801F7418..0x801F750C`, arm 21 `0x801F7E88..0x801F7EB4`, arm 27 `0x801F8828..0x801F8904`, arm 28 `0x801F89E0..0x801F8A3C`)
+    pub(in crate::world::battle::cast_band) fn evil_seru_magic_row(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        caster_slot: usize,
+        before: &[legaia_engine_cast::cast_module_ticks::CastActorState],
+    ) {
+        use legaia_engine_cast::cast_module_ticks::{
+            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_ROW_SCALE, ESM_ROW_Z, esm_get_up_slide, esm_row_x,
+        };
+        let pc = usize::from(self.party.party_count).clamp(1, 3);
+        let move_to = |a: &mut crate::world::types::Actor, x: i16, z: i16| {
+            let (dx, dz) = (
+                x.wrapping_sub(a.move_state.world_x),
+                z.wrapping_sub(a.move_state.world_z),
+            );
+            a.move_state.world_x = x;
+            a.move_state.world_z = z;
+            if let Some((bx, bz)) = a.battle.seat {
+                a.battle.seat = Some((bx.wrapping_add(dx), bz.wrapping_add(dz)));
+            }
+        };
+        match phase {
+            0 if self.casting.module_cam.party_saved[0].is_none() => {
+                let row = super::summon_body_writes::HORN_FORMATION[pc];
+                for (i, &[fx, _]) in row.iter().enumerate().take(pc) {
+                    let radius = self.battle_node_radius(i);
+                    let Some(a) = self.actors.get_mut(i) else {
+                        continue;
+                    };
+                    self.casting.module_cam.party_saved[i] = Some((
+                        a.move_state.world_x,
+                        a.move_state.world_z,
+                        a.battle.facing_angle,
+                    ));
+                    move_to(a, esm_row_x(fx), ESM_ROW_Z);
+                    a.battle.facing_angle = 0;
+                    a.battle.render_scale = Some(ESM_ROW_SCALE);
+                    a.battle.render_radius = Some(radius >> 1);
+                }
+                if let Some(c) = self.actors.get(caster_slot) {
+                    self.casting.module_cam.caster_saved = Some((
+                        c.move_state.world_x,
+                        c.move_state.world_z,
+                        c.battle.facing_angle,
+                    ));
+                    self.casting.module_cam.caster_saved_y = Some(c.move_state.world_y);
+                }
+            }
+            12..=15 => {
+                let step = self.module_frame_step();
+                for (i, s) in before.iter().enumerate().take(pc) {
+                    let char_id = self.party_roster_slot(i) as u8 + 1;
+                    let dz = esm_get_up_slide(s, char_id, step);
+                    if dz != 0
+                        && let Some(a) = self.actors.get_mut(i)
+                    {
+                        let (x, z) = (a.move_state.world_x, a.move_state.world_z.wrapping_add(dz));
+                        move_to(a, x, z);
+                    }
+                }
+            }
+            21 if passed => {
+                if let Some(c) = self.actors.get_mut(caster_slot) {
+                    move_to(c, 0, c.move_state.world_z);
+                    c.move_state.world_y = ESM_CASTER_Y;
+                    c.battle.facing_angle = ESM_CASTER_FACING;
+                    c.battle.render_scale = Some(ESM_ROW_SCALE);
+                }
+            }
+            27 | 28 if passed || phase == 28 => {
+                for i in 0..pc {
+                    let Some((x, z, facing)) = self.casting.module_cam.party_saved[i] else {
+                        continue;
+                    };
+                    let radius = (phase == 27).then(|| self.battle_node_radius(i));
+                    let Some(a) = self.actors.get_mut(i) else {
+                        continue;
+                    };
+                    move_to(a, x, z);
+                    a.battle.facing_angle = facing;
+                    if let Some(r) = radius {
+                        a.battle.render_scale = Some(0x1000);
+                        a.battle.render_radius = Some(r.wrapping_shl(1));
+                    }
+                }
+                if phase == 27
+                    && let Some((x, z, facing)) = self.casting.module_cam.caster_saved
+                    && let Some(c) = self.actors.get_mut(caster_slot)
+                {
+                    move_to(c, x, z);
+                    if let Some(y) = self.casting.module_cam.caster_saved_y {
+                        c.move_state.world_y = y;
+                    }
+                    c.battle.facing_angle = facing;
+                    c.battle.render_scale = Some(0x1000);
+                }
+            }
+            _ => {}
+        }
+    }
 }
