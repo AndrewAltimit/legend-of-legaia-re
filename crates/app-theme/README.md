@@ -9,7 +9,7 @@ its own colour type.
 
 | Consumer | What it takes |
 |---|---|
-| `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
+| `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, the button padding and item spacing, and the smallest text size (`SMALL_TEXT`, its hint lines); `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | Both palettes by `Role` for its software canvas (`resolve_dark` over the *Menu colours* row); `game_exit` for its help box after a failed game. |
 | The play window's chrome (`window/hud/text_list.rs`) | `chrome::inks(dark)` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::option_value` for a settings row's value (the launcher's list draws its values by the same rule, so a row reads alike in both), and the chrome inset and line gap. |
 

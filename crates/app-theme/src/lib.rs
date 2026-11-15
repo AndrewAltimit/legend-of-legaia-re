@@ -249,6 +249,11 @@ pub mod spacing {
     /// stage edge, and the gap between stacked lines (stage pixels).
     pub const CHROME_INSET: i32 = 6;
     pub const CHROME_LINE_GAP: i32 = 4;
+    /// The smallest text a toolkit program sets, in logical points: the
+    /// size of a hint line (a key reminder under a dialog, the orbit hint on
+    /// a 3D view). egui's own small style is 9 pt, which next to its 12.5 pt
+    /// body reads as fine print a player has to lean in for.
+    pub const SMALL_TEXT: f32 = 11.0;
 }
 
 /// A colour by what it is for, so a surface drawn in either palette names
