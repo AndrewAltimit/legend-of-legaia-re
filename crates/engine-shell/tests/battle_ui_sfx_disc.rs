@@ -242,54 +242,31 @@ fn a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let mut rig = Rig::open(&disc);
-    rig.walk_into_battle();
-    let start = rig.t;
-
     // Fight on pulsed confirms (Begin, Attack, Auto, the first target, the
-    // round's Begin) until a sustained cue keys from voice 7.
+    // round's Begin) until a sustained cue keys from voice 7. Which fight
+    // the walk meets is the encounter roll's, and not every formation rings
+    // a sustained cue (two of monster `0x68` ring none), so a fight that
+    // keys none is walked into again from a fresh boot, a few idle ticks
+    // later, which rolls another.
     let mut keyed: Option<(u32, Vec<i16>)> = None;
     let mut released: Option<u32> = None;
     let mut rekeys = 0u32;
-    while rig.world().mode == SceneMode::Battle && rig.t < start + 6000 {
-        let rel = rig.t - start;
-        let tick = rig.step(if rel % 30 < 2 { CROSS } else { 0 });
-        if keyed.is_none() && tick.keyed_on(|v| v == 7) {
-            let rings = tick
-                .cmds
-                .iter()
-                .filter_map(|c| match c {
-                    AudioCommand::RingDue(id) => Some(*id),
-                    _ => None,
-                })
-                .collect();
-            keyed = Some((rig.t, rings));
-            continue;
-        }
-        if keyed.is_some()
-            && released.is_none()
-            && tick
-                .keys
-                .iter()
-                .any(|e| e.ev == NoteEventKind::Off && e.voice == 7)
-        {
-            if tick.cmds.contains(&AudioCommand::SfxReleaseSustained) {
-                released = Some(rig.t);
-            } else {
-                // A looping clip re-arms its cue track on every cycle's
-                // re-commit, so a sustained cue on it comes due again, and
-                // the drainer's sustained arm releases the held run before
-                // it re-keys voices from 7 (`FUN_80016B6C`). That key-off
-                // belongs to a re-key on the same tick, not to a teardown.
-                assert!(
-                    tick.keyed_on(|v| v == 7),
-                    "a voice-7 key-off is the sustained teardown's or a re-key's"
-                );
-                rekeys += 1;
+    let mut rig = Rig::open(&disc);
+    for attempt in 0..6u32 {
+        if attempt > 0 {
+            rig = Rig::open(&disc);
+            for _ in 0..attempt * 37 {
+                rig.step(0);
             }
         }
+        rig.walk_into_battle();
+        let start = rig.t;
+        fight(&mut rig, start, &mut keyed, &mut released, &mut rekeys);
+        if keyed.is_some() {
+            break;
+        }
     }
-    let (on_at, rings) = keyed.expect("the fight keyed a sustained cue");
+    let (on_at, rings) = keyed.expect("a fight keyed a sustained cue");
     let off_at = released.unwrap_or_else(|| {
         panic!("the sustained cue keyed at t={on_at} (rings {rings:x?}) was never keyed off")
     });
@@ -305,4 +282,53 @@ fn a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way() {
         rig.longest.1,
         rig.longest.0
     );
+}
+
+/// One fight of [`a_sustained_battle_cue_is_keyed_off_when_its_clip_gives_way`],
+/// from `start`: the first sustained key-on and its release.
+fn fight(
+    rig: &mut Rig,
+    start: u32,
+    keyed: &mut Option<(u32, Vec<i16>)>,
+    released: &mut Option<u32>,
+    rekeys: &mut u32,
+) {
+    while rig.world().mode == SceneMode::Battle && rig.t < start + 6000 {
+        let rel = rig.t - start;
+        let tick = rig.step(if rel % 30 < 2 { CROSS } else { 0 });
+        if keyed.is_none() && tick.keyed_on(|v| v == 7) {
+            let rings = tick
+                .cmds
+                .iter()
+                .filter_map(|c| match c {
+                    AudioCommand::RingDue(id) => Some(*id),
+                    _ => None,
+                })
+                .collect();
+            *keyed = Some((rig.t, rings));
+            continue;
+        }
+        if keyed.is_some()
+            && released.is_none()
+            && tick
+                .keys
+                .iter()
+                .any(|e| e.ev == NoteEventKind::Off && e.voice == 7)
+        {
+            if tick.cmds.contains(&AudioCommand::SfxReleaseSustained) {
+                *released = Some(rig.t);
+            } else {
+                // A looping clip re-arms its cue track on every cycle's
+                // re-commit, so a sustained cue on it comes due again, and
+                // the drainer's sustained arm releases the held run before
+                // it re-keys voices from 7 (`FUN_80016B6C`). That key-off
+                // belongs to a re-key on the same tick, not to a teardown.
+                assert!(
+                    tick.keyed_on(|v| v == 7),
+                    "a voice-7 key-off is the sustained teardown's or a re-key's"
+                );
+                *rekeys += 1;
+            }
+        }
+    }
 }
