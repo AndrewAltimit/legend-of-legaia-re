@@ -76,6 +76,26 @@ SETS = {
         group="state",
         skip=lambda r: r["state"] < 0xC or r["state"] > 0x28,
     ),
+    # The Baka Fighter cabinet (PROT 0976): the cabinet's state and clocks,
+    # the round, both fighters' HP, wins, chosen attack and combo, and the
+    # rand() word the cabinet's stream is seated on (harness). Frames pair
+    # by their ordinal in each cabinet state.
+    "baka": dict(
+        words=[
+            ("state", 0x801DBF44, "u32"), ("scene", 0x801DC128, "s32"), ("stimer", 0x801DBF88, "s32"),
+            ("intro", 0x801DBE94, "s32"), ("round", 0x801DBF8C, "s32"), ("mphase", 0x801DBF78, "s32"),
+            ("hp0", 0x801DBFC4, "s32"), ("hp1", 0x801DC06C, "s32"), ("wins0", 0x801DBFF0, "s32"),
+            ("wins1", 0x801DC098, "s32"), ("type0", 0x801DBFE0, "s32"), ("type1", 0x801DC088, "s32"),
+            ("combo0", 0x801DBFEC, "s32"), ("combo1", 0x801DC094, "s32"), ("rng", 0x80009010, "u32"),
+            ("dt", 0x1F800393, "u8"), ("gframe", 0x8007B798, "u32"), ("held", 0x8007B850, "u16"),
+            ("edge", 0x8007B874, "u16"),
+        ],
+        key=lambda r: None,
+        song=lambda r: True,
+        moved=["state", "scene", "stimer", "intro", "hp0", "hp1", "type0", "type1", "rng"],
+        group="state",
+        skip=lambda r: r["state"] > 200,
+    ),
     # The Muscle Dome hub's first visit (PROT 0977): the arm byte and its
     # counter family, each arm's frames by their ordinal in the arm.
     "hub": dict(

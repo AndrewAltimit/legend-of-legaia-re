@@ -77,14 +77,24 @@ impl MinigameFilm {
         rand_seed: Option<u32>,
     ) -> Result<()> {
         let sub = mg.minigame_id().context("sub-id names no overlay")?;
-        // Harness seat: the pond draws every roll off its own stream, which
-        // stands on the capture's `rand()` word at the aligned tick.
-        if let (MinigameSubId::Fishing, Some(seed), Some(pond)) = (
-            sub,
-            rand_seed,
-            session.host.world.minigames.fishing.as_mut(),
-        ) {
-            pond.seat_rng(seed);
+        // Harness seat: the pond and the cabinet draw every roll off their
+        // own streams, which stand on the capture's `rand()` word at the
+        // aligned tick.
+        if let Some(seed) = rand_seed {
+            let m = &mut session.host.world.minigames;
+            match sub {
+                MinigameSubId::Fishing => {
+                    if let Some(p) = m.fishing.as_mut() {
+                        p.seat_rng(seed);
+                    }
+                }
+                MinigameSubId::BakaFighter => {
+                    if let Some(f) = m.baka_fighter.as_mut() {
+                        f.seat_rng(seed);
+                    }
+                }
+                _ => {}
+            }
         }
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(f, "vsync,aligned_at,{}", columns(sub).join(","))?;
@@ -145,6 +155,10 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
             "state", "power", "record", "height", "band", "bandcd", "tension", "casts", "rng",
             "lx", "lz", "species", "strength", "pull", "sway", "points",
         ],
+        MinigameSubId::BakaFighter => vec![
+            "state", "scene", "stimer", "intro", "round", "mphase", "hp0", "hp1", "wins0", "wins1",
+            "type0", "type1", "combo0", "combo1", "rng",
+        ],
         _ => vec!["mode"],
     }
 }
@@ -156,6 +170,7 @@ fn values(sub: MinigameSubId, w: &legaia_engine_core::world::World) -> Vec<i64> 
         MinigameSubId::Dance => dance_values(w),
         MinigameSubId::MuscleDome => hub_values(w),
         MinigameSubId::Fishing => fishing_values(w),
+        MinigameSubId::BakaFighter => baka_values(w),
         _ => vec![w.mode as i64],
     }
 }
@@ -391,4 +406,35 @@ fn replay_pond(
         )?;
     }
     Ok(())
+}
+
+fn baka_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
+    let Some(f) = w.minigames.baka_fighter.as_ref() else {
+        return vec![-1; columns(MinigameSubId::BakaFighter).len()];
+    };
+    let words = f.cabinet().retail_words();
+    let word = |addr: u32| {
+        words
+            .iter()
+            .find(|(a, _)| *a == addr)
+            .map_or(-1, |&(_, v)| i64::from(v))
+    };
+    let chosen = |slot| f.chosen(slot).map_or(0, |a| i64::from(a.type_id()));
+    vec![
+        word(0x801D_BF44),
+        word(0x801D_C128),
+        word(0x801D_BF88),
+        word(0x801D_BE94),
+        word(0x801D_BF8C),
+        word(0x801D_BF78),
+        i64::from(f.hp(0)),
+        i64::from(f.hp(1)),
+        i64::from(f.round_wins(0)),
+        i64::from(f.round_wins(1)),
+        chosen(0),
+        chosen(1),
+        i64::from(f.combo(0)),
+        i64::from(f.combo(1)),
+        i64::from(f.rng_state()),
+    ]
 }

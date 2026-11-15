@@ -99,6 +99,15 @@ impl BakaFight {
         // secret tally `0x6D` stores `4` on every frame it runs
         // (`0x801D0FA0..0x801D0FAC`), the opponent install `0x1E` stores `1`
         // (`0x801CFCB8..0x801CFCC4`). The store paces the frames after it.
+        // The select setup's lineup roll: `DAT_801DBF74 = rand() % 5 + 100`
+        // (`jal 0x80056798` at `0x801CF88C`, the store at `0x801CF954`). The
+        // id names no lineup fighter (their roster ids are `0..3`), so the
+        // draw is all that reaches play: it moves the stream every exchange
+        // after it reads.
+        // PORT: FUN_801cf388 (state `10`'s `rand()` draw)
+        if ran == crate::baka_cabinet::ST_SELECT_SETUP {
+            let _ = self.rng.next_u15();
+        }
         match ran {
             crate::baka_cabinet::ST_CHOICE_SECRET => self.step_floor = SECRET_TALLY_FRAME_STEP,
             crate::baka_cabinet::ST_OPPONENT_INSTALL => self.step_floor = 1,

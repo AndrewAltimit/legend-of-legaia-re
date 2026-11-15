@@ -648,6 +648,13 @@ impl BakaFight {
         self.rumble
     }
 
+    /// Seat the `rand()` stream, as a harness standing the cabinet on a
+    /// capture's BIOS seed does (the minigame film).
+    #[doc(hidden)]
+    pub fn seat_rng(&mut self, state: u32) {
+        self.rng = BiosRand::new(state);
+    }
+
     /// The `rand()` stream's state, for the differential.
     pub fn rng_state(&self) -> u32 {
         self.rng.state()
