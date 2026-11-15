@@ -91,6 +91,19 @@ pub const ESM_GET_UP_SLIDE: [u8; 4] = [0, 1, 1, 2];
 /// `0x801F74B4`, behind `li v0,0x2` / `bne` on her character id).
 pub const ESM_NOA_RELEASE_PULL: i16 = 0x10;
 
+/// The party action entry whose end-of-clip step arm 0 halves: the sixth
+/// pointer of each member's entry table `0x801C9360[i]` (`lw v0,0x14(v0)`
+/// at `0x801F6CD0`), its `+0x0E` halfword (`lhu` / `sll 16` / `sra 0x11`,
+/// `0x801F6CD8..0x801F6D04`): the displacement the commit paths apply in
+/// proportion to how far the clip got, halved with the model.
+pub const ESM_END_STEP_ENTRY: usize = 5;
+
+/// Arm 0's half of an entry's end-of-clip step: an arithmetic shift, so a
+/// negative step rounds toward minus infinity.
+pub const fn esm_half_end_step(step: i16) -> i16 {
+    step >> 1
+}
+
 /// Arm 0's row column for party seat `i` of `n`: the formation point's x
 /// `*(0x800775E0 + (n * 3 + i) * 8)` over three, toward zero
 /// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`).
@@ -152,11 +165,11 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 ///
 /// The seat moves (arm 0's half-size row, the arms 12..15 slide, arm 21's
 /// caster seat, the arm 27 / 28 restore) are the host's, over these
-/// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`]). Not carried:
-/// the creature seat 7's stages and rate bytes (the engine seats no creature
-/// for a capture cast), the command record `+0xE` halfword arm 0 halves
-/// beside the scale, the effect records and the arm-20 banner (the screen
-/// fades are the band seam's, `World::run_cast_module_code`).
+/// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`],
+/// [`esm_half_end_step`]). Not carried: the creature seat 7's stages and
+/// rate bytes (the engine seats no creature for a capture cast), the effect
+/// records and the arm-20 banner (the screen fades are the band seam's,
+/// `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)
 pub fn evil_seru_magic_seat_writes(
@@ -324,6 +337,9 @@ mod esm_tests {
         assert_eq!(esm_row_x(600), 200);
         assert_eq!(esm_row_x(-600), -200);
         assert_eq!(esm_row_x(-301), -100);
+        // The entry-5 end step halves on an arithmetic shift.
+        assert_eq!(esm_half_end_step(64), 32);
+        assert_eq!(esm_half_end_step(-3), -2);
         let mut s = seat(100);
         // Idle slides nothing.
         assert_eq!(esm_get_up_slide(&s, 3, 4), 0);

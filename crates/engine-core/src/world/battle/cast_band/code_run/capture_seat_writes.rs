@@ -508,7 +508,8 @@ impl World {
         before: &[legaia_engine_cast::cast_module_ticks::CastActorState],
     ) {
         use legaia_engine_cast::cast_module_ticks::{
-            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_ROW_SCALE, ESM_ROW_Z, esm_get_up_slide, esm_row_x,
+            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_ROW_SCALE, ESM_ROW_Z, esm_get_up_slide,
+            esm_half_end_step, esm_row_x,
         };
         let pc = usize::from(self.party.party_count).clamp(1, 3);
         let move_to = |a: &mut crate::world::types::Actor, x: i16, z: i16| {
@@ -539,6 +540,9 @@ impl World {
                     a.battle.facing_angle = 0;
                     a.battle.render_scale = Some(ESM_ROW_SCALE);
                     a.battle.render_radius = Some(radius >> 1);
+                    // The entry-5 end step goes to half with the model.
+                    self.casting.module_cam.party_end_step_saved[i] =
+                        rescale_end_step(a, |s| Some(esm_half_end_step(s)));
                 }
                 if let Some(c) = self.actors.get(caster_slot) {
                     self.casting.module_cam.caster_saved = Some((
@@ -584,6 +588,10 @@ impl World {
                     if let Some(r) = radius {
                         a.battle.render_scale = Some(0x1000);
                         a.battle.render_radius = Some(r.wrapping_shl(1));
+                        if let Some(saved) = self.casting.module_cam.party_end_step_saved[i].take()
+                        {
+                            rescale_end_step(a, |_| Some(saved));
+                        }
                     }
                 }
                 if phase == 27
@@ -601,4 +609,29 @@ impl World {
             _ => {}
         }
     }
+}
+
+/// Rewrite the `+0x0E` end step of `a`'s action entry
+/// [`legaia_engine_cast::cast_module_ticks::ESM_END_STEP_ENTRY`] through
+/// `f` (the module writes the entry in place, so the next commit of that
+/// clip reads it), returning the step it found.
+fn rescale_end_step(
+    a: &mut crate::world::types::Actor,
+    f: impl FnOnce(i16) -> Option<i16>,
+) -> Option<i16> {
+    use legaia_actor_formats::monster_archive::ENTRY_END_STEP_OFFSET as OFF;
+    let clips = a.battle_action_clips.as_mut()?;
+    let k = legaia_engine_cast::cast_module_ticks::ESM_END_STEP_ENTRY;
+    let old = {
+        let head = &clips.get(k)?.as_ref()?.effect_script;
+        let b = head.get(OFF..OFF + 2)?;
+        i16::from_le_bytes([b[0], b[1]])
+    };
+    let new = f(old)?;
+    if new != old
+        && let Some(Some(c)) = std::sync::Arc::make_mut(clips).get_mut(k)
+    {
+        c.effect_script[OFF..OFF + 2].copy_from_slice(&new.to_le_bytes());
+    }
+    Some(old)
 }
