@@ -382,6 +382,10 @@ async function main() {
           } else {
             await page.touchscreen.tap(toggle[0], toggle[1]);
             await page.waitForTimeout(400);
+            // The slide is a transition; a cold first page can still be mid-way after
+            // 400ms on a software rasteriser, and a drawer half on screen takes no tap.
+            await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().left >= -1,
+              null, { timeout: 3000 }).catch(() => {});
             if (!(await page.evaluate(() => document.querySelector('.sidebar').classList.contains('open')))) {
               failures.push(`${where}: a tap on the hamburger did not open the drawer`);
               continue;
