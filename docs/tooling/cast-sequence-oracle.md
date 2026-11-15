@@ -1224,6 +1224,24 @@ Three more places then parted the stream, each a pass or a deal a frame off:
 No film falls on either seat and the cue score holds `1.000`. Ozma's arm 21 reads `.765`
 for `.474`, what `--rand-track` read: its deal is retail's.
 
+Iota's film then read `.860` plain against `.984` on retail's steps, its arms 5..8 near
+`.75`. The plain stream held retail's words through arm 3 and its state change and arm
+end landed a pass late: the arm ran `43` passes for retail's `42`, one more at step `1`
+at its head. The arm's first frame overran its vsync, so the cost rows had read it on the
+frame before's entry ([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is));
+read on its own, the arm opens on step `2` as retail's does. Barra's arm 3 opens on the
+same kind of frame. Over the set, the plain seat:
+
+| Film | Before | After |
+|---|---|---|
+| `0x93` Iota | `.8595` | `.9837` (arms 5..8 `.74`..`.79` to `.99`) |
+| `0x8F` Barra | `.9743` | `.9751` |
+| the 29 films | `.9567` | `.9610` |
+
+No other lone film moves and the cue score holds `1.000`. Of the full-party films, the
+Barra pair moves less than `.001` and the tower Iota `.8043` to `.8038`: its arm 3 runs
+`65` step-`1` frames in that fight, which no lone row reads.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
