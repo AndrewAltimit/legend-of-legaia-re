@@ -537,6 +537,22 @@ pub const LINKED_FRAME_BASE: u16 = 117;
 /// (`docs/subsystems/battle-stage-camera.md`, "The census").
 pub const LINKED_WORK_MILLI: u32 = 200;
 
+/// Hblanks a strike state's frame (`0x1E..=0x20`, the swing, the hit and the
+/// return) spends over what it links. Retail's unloaded strike frames sit a
+/// steady offset over the census line, and no class the census counts
+/// explains it held out by film (the parts, the bodies, the stage each add
+/// nothing past a constant): it is the strike's own CPU work, the hit tests
+/// and the reaction and damage bookkeeping the passes run. Fitted with the
+/// census's ghost and sprite weights on the training half of the strike and
+/// arts films' strike-state frames: held out, the step reads right on `.970`
+/// of them (`.964` unweighted with no offset).
+pub const LINKED_STRIKE_WORK: u16 = 15;
+
+/// Whether `state` is one of the strike states [`LINKED_STRIKE_WORK`] loads.
+pub const fn is_strike_state(state: u8) -> bool {
+    matches!(state, 0x1E..=0x20)
+}
+
 /// The work a battle frame whose census counts `linked` primitives costs
 /// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
 pub const fn linked_frame_work(linked: u32) -> u16 {

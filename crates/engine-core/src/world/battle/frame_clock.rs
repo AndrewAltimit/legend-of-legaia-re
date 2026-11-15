@@ -56,8 +56,8 @@ impl World {
     /// inside its step.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
         use legaia_engine_battle_loop::frame_clock::{
-            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, linked_frame_work,
-            measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
+            CdTiming, LINKED_STRIKE_WORK, XA_STREAM_ONSET_COST, cost_of_step, is_strike_state,
+            linked_frame_work, measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -74,17 +74,23 @@ impl World {
         // lower priced, `.9146` to `.889` on a partial set), and its opening
         // states `0x33` / `0x34` run step `1` or `2` on retail's ring where
         // the census prices them at `2` or `3` (step agreement `.98` to `.58`
-        // over the 29 Seru films).
+        // over the 29 Seru films). Under the census the whole band keeps it:
+        // the `0x36` passes no arm table steps part from retail priced
+        // (`.994` to `.965`), as the band's measured rows hold them.
         // The capture band's arms keep theirs too when the census prices
         // (step agreement in `0x70` `.88` to `.81` over the enemy films priced,
         // the engine a third of a step over retail); the window's diagnostic
         // count prices them as it always has.
         use legaia_engine_battle_vm::battle_action::ActionState;
         let window_source = self.toggles.battle_poly_window_count;
+        let summon_band = (ActionState::SummonFadeIn.as_byte()
+            ..=ActionState::SummonReturn.as_byte())
+            .contains(&state);
         let table_kept = (arm_step.is_some()
             && (!window_source
                 || state == ActionState::SummonSustain.as_byte()
                 || state == ActionState::SummonReturn.as_byte()))
+            || (!window_source && summon_band)
             || state == ActionState::SummonFadeIn.as_byte()
             || state == ActionState::SummonActorFreeze.as_byte();
         // The census of world state (`World::note_linked_polys`), or the
@@ -92,7 +98,14 @@ impl World {
         let poly = if window_source {
             self.battle.drawn_polys.map(polygon_frame_work)
         } else {
-            self.battle.linked_polys.map(linked_frame_work)
+            self.battle.linked_polys.map(|n| {
+                let w = linked_frame_work(n);
+                if is_strike_state(state) {
+                    w.saturating_add(LINKED_STRIKE_WORK)
+                } else {
+                    w
+                }
+            })
         }
         .filter(|_| self.toggles.battle_poly_frame_cost && !table_kept);
         let work = match poly {

@@ -123,14 +123,14 @@ impl PlayWindowApp {
                 if new {
                     let _ = writeln!(
                         f,
-                        "tick,frame,state,phase,step,draw,dma,polys,census,stage,grid,bodies,ghosts,shadows,effects"
+                        "tick,frame,state,phase,step,draw,dma,polys,census,stage,grid,bodies,ghosts,shadows,effects,sprites,trails"
                     );
                 }
                 let w = &self.session.host.world;
                 let c = self.session.host.battle_link_last;
                 let _ = writeln!(
                     f,
-                    "{},{},{},{},{},{draw:.1},{dma:.1},{},{},{},{},{},{},{},{}",
+                    "{},{},{},{},{},{draw:.1},{dma:.1},{},{},{},{},{},{},{},{},{},{}",
                     self.tick_no,
                     w.battle_frame_id(),
                     w.battle_ctx.action_state,
@@ -143,7 +143,9 @@ impl PlayWindowApp {
                     c.bodies,
                     c.ghosts,
                     c.shadows,
-                    c.effects
+                    c.effects,
+                    c.sprites,
+                    c.trails
                 );
             }
         }

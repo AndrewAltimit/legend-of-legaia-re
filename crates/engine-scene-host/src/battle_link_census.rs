@@ -168,15 +168,53 @@ pub struct LinkCount {
     /// The drawn bodies' ground shadows, [`SHADOW_COLUMNS`] packets each.
     pub shadows: u32,
     /// The effects: the summon and move-FX parts, the effect models, the
-    /// draw-kind-4 nodes and the effect-pool sprites.
+    /// draw-kind-4 nodes.
     pub effects: u32,
+    /// The effect-pool sprites, one `POLY_FT4` each.
+    pub sprites: u32,
+    /// The swept bands the hosts draw as screen primitives: the weapon
+    /// trails, the move-FX after-image streak and the cast ribbons, one
+    /// packet a quad.
+    pub trails: u32,
 }
 
 impl LinkCount {
     pub fn total(&self) -> u32 {
-        self.stage + self.grid + self.bodies + self.ghosts + self.shadows + self.effects
+        self.stage
+            + self.grid
+            + self.bodies
+            + self.ghosts
+            + self.shadows
+            + self.effects
+            + self.sprites
+            + self.trails
     }
 }
+
+impl LinkCount {
+    /// The count the frame cost prices, in body-primitive units: a ghost's
+    /// flat packet costs [`GHOST_PRIM_WEIGHT_MILLI`] of a body primitive's
+    /// work and an effect-pool sprite [`SPRITE_PRIM_WEIGHT_MILLI`], every other
+    /// primitive one.
+    pub fn priced(&self) -> u32 {
+        let rest = self.total() - self.ghosts - self.sprites;
+        rest + (self.ghosts * GHOST_PRIM_WEIGHT_MILLI + self.sprites * SPRITE_PRIM_WEIGHT_MILLI)
+            / 1000
+    }
+}
+
+/// A ghost primitive's work over a body primitive's, in thousandths: the
+/// after-image walk hands the dispatcher a flat bank-2 word
+/// (`FUN_80049348`), whose leaves skip the texture and colour work. Fitted on
+/// the strike and arts films' unloaded frames (`.125` against `.200`
+/// hblanks), held out by film.
+pub const GHOST_PRIM_WEIGHT_MILLI: u32 = 625;
+
+/// An effect-pool sprite's work over a body primitive's, in thousandths: one
+/// `POLY_FT4` links, but its centre goes through the camera and its corners
+/// are formed in view space (`FUN_800195A8`) for each one (`.95` against
+/// `.200` hblanks, fitted as [`GHOST_PRIM_WEIGHT_MILLI`] is).
+pub const SPRITE_PRIM_WEIGHT_MILLI: u32 = 4750;
 
 /// The packets a body's ground shadow links: the 24-column disc
 /// `FUN_80028158` builds in mode `1`
@@ -551,12 +589,22 @@ pub fn battle_link_count(
         );
     }
     out.effects = count_effects(world, geom, &pose, &actor_cam, scratch);
+    out.sprites = world.active_effect_sprites().len() as u32;
+    {
+        use legaia_engine_world_views::screen_passes::{
+            cast_ribbon_prims, move_fx_streak_quads, weapon_trail_prims,
+        };
+        let ot = legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
+        out.trails = (weapon_trail_prims(world).len()
+            + move_fx_streak_quads(world, &actor_cam).len()
+            + cast_ribbon_prims(world, &actor_cam, ot).len()) as u32;
+    }
     out
 }
 
 /// The effects' packets: each part and effect model through the library mesh
 /// it draws, under its own model and winding rule; each draw-kind-4 node's
-/// quads; one `POLY_FT4` an effect-pool sprite.
+/// quads.
 fn count_effects(
     world: &World,
     geom: &BattleLinkGeometry,
@@ -601,7 +649,7 @@ fn count_effects(
         let tris = (k.mesh.indices.len() / 3) as u32;
         n += if k.tessellated { tris } else { tris / 2 };
     }
-    n + world.active_effect_sprites().len() as u32
+    n
 }
 
 /// [`count_mesh`] without the backdrop's off-screen reject.
@@ -726,7 +774,7 @@ impl crate::scene_host::SceneHost {
         };
         let count = battle_link_count(&self.world, geom, &mut self.battle_link_scratch);
         self.battle_link_last = count;
-        self.world.note_linked_polys(count.total());
+        self.world.note_linked_polys(count.priced());
     }
 
     /// A seat's body mesh: a party member's battle form, a monster's archive

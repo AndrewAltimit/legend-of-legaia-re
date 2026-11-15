@@ -20,7 +20,7 @@ korb2_ghost_knight_strike --physical --state battle_korb2_ghost_knight_strike --
 korb2_kemaro_strike --physical --state battle_korb2_kemaro_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01
 korb2_mage_strike --physical --state battle_korb2_mage_strike --every 8 --hit-trace --strike-deal --pin-seed 0x0BADF00D
 korb2_medusa_strike --physical --state battle_korb2_medusa_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9
-korb2_warhalf_strike --physical --state battle_korb2_warhalf_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678
+korb2_warhalf_strike --physical --state battle_korb2_warhalf_strike --every 8 --hit-trace --strike-deal --pin-seed 0xC0FFEE01 --played-queue
 kor_dead_bone_strike --physical --state battle_kor_dead_bone_strike --every 8 --hit-trace --strike-deal --pin-seed 0x428A2F98
 kor_shade_strike --physical --state battle_kor_shade_strike --every 8 --hit-trace --strike-deal --pin-seed 0xA54FF53A
 kor_spoon_strike --physical --state battle_kor_spoon_strike --every 8 --hit-trace --strike-deal --pin-seed 0x12345678

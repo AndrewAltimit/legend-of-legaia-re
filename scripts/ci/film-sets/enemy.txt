@@ -10,7 +10,9 @@ doman_boogie_pump_windcutter --physical --state battle_doman_boogie_pump_windcut
 garmel_songi_hyper_wave --physical --state battle_garmel_songi_hyper_wave_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
 jou_freed_v3_water_crystals --physical --state battle_jou_freed_v3_water_crystals_mid_cast --caster 3 --target 2 --pin-seed 0x12345678
 jou_gizam_v3_water_hazard --physical --state battle_jou_gizam_v3_water_hazard_mid_cast --caster 5 --target 8 --pin-seed 0x12345678
-jou_puera_v3_death_game --physical --state battle_jou_puera_v3_death_game_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
+# Death Game rolls its verdict on a module pass; --rand-track seats retail's words so the
+# verdict does not follow the pass count before it (a harness seat).
+jou_puera_v3_death_game --physical --state battle_jou_puera_v3_death_game_mid_cast --caster 3 --target 3 --pin-seed 0x12345678 --rand-track
 jou_spoon_v3_white_shield --physical --state battle_jou_spoon_v3_white_shield_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 jouind_gilium_lv3_thunder_storm --physical --state battle_jouind_gilium_lv3_thunder_storm_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 kor_gaza_166_astral_wave --physical --state battle_kor_gaza_166_astral_wave_mid_cast --caster 3 --target 1 --pin-seed 0x12345678

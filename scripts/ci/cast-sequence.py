@@ -990,7 +990,7 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     clip_gated = any(x[:1] == "k" and x[1:].isdigit() for x in f[4:])
     if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
             and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
-            and not clip_gated
+            and not clip_gated and not a.played_queue
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
@@ -1442,6 +1442,10 @@ def main() -> int:
     ap.add_argument("--console-cd", action="store_true",
                     help="engine: price a voice clip's CD stop watch at a console's response time (opt-in, "
                          "LEGAIA_BATTLE_CD_TIMING=console), not the recording's and the default PCSX-Redux one")
+    ap.add_argument("--played-queue", action="store_true",
+                    help="--physical: leave the drive's own played queue (`b`) as the steer and add no "
+                         "`q` rewrite of the state's queue; korb2_warhalf_strike's replay never reaches "
+                         "its gate with both (the party wins first)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")
