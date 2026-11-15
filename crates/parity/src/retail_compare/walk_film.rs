@@ -165,6 +165,7 @@ impl WalkFilm {
         // stretch runs on at the raised step until those samples leave the
         // ring, and falls to the floor when retail's does. A harness seat;
         // `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step instead.
+        let mut anchor_cost = None;
         if std::env::var_os("LEGAIA_RC_NO_FRAME_RING").is_none()
             && let Some((history, cursor, step, cost)) = retail.frame_cost_seat()
         {
@@ -177,12 +178,13 @@ impl WalkFilm {
             }
             // The frame-cost model, where it prices the field, carries the
             // change from the state's measured cost, not its own level
-            // (`World::anchor_field_frame_cost`). A harness seat;
+            // (`World::anchor_field_frame_cost`), once the camera and the
+            // fog pool stand where the state's do (below). A harness seat;
             // `LEGAIA_RC_NO_COST_ANCHOR=1` runs the model as play does.
             if world.toggles.field_frame_cost
                 && std::env::var_os("LEGAIA_RC_NO_COST_ANCHOR").is_none()
             {
-                world.anchor_field_frame_cost(cost);
+                anchor_cost = Some(cost);
             }
         }
         let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
@@ -228,6 +230,21 @@ impl WalkFilm {
                 pool.records[i].alive = true;
             }
             pool.live += walked.len() as u16;
+        }
+        // The anchor prices the seat with the fog sheets the state's pool
+        // draws, which the seat itself has not emitted (an installed
+        // snapshot carries no quads): a walk over a copy of the pool counts
+        // them, and only the count is kept. Anchored on an empty sheet list,
+        // `retona_field_card_boot`'s `45` sheets had read as a cost rise the
+        // moment the first walk drew them.
+        if let Some(cost) = anchor_cost {
+            let saved = session.host.world.fog.clone();
+            session.host.world.fog.pending_dt = 1;
+            session.fog_render_tick();
+            let quads = std::mem::take(&mut session.host.world.fog.quads);
+            session.host.world.fog = saved;
+            session.host.world.fog.quads = quads;
+            session.host.world.anchor_field_frame_cost(cost);
         }
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
@@ -300,7 +317,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads"
                 )?;
                 Some(w)
             }
@@ -337,7 +354,7 @@ impl WalkFilm {
                 let f = world.field_frame_features().unwrap_or_default();
                 writeln!(
                     w,
-                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
                     world.clock.frame_step,
                     f.decoration_draws,
@@ -359,6 +376,7 @@ impl WalkFilm {
                     world.clock.frame_cost.unwrap_or(-1),
                     f.npc_prims,
                     f.decoration_loop_cells,
+                    f.fog_quads,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {
