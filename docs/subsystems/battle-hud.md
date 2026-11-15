@@ -503,11 +503,13 @@ sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. The quad
 is `FUN_801DB8F4`'s (`battle_party_panel::dpad_glyph`), whose UVs run `0..16`
 over those fifteen pixels, and the two emulators sample it differently. The
 mednafen command-menu frames (`v0_1_battle_command_menu`, `_submenu`) hold the
-whole cell squeezed into the seat, which is what the clusters draw. The
-PCSX-Redux frame `party_basic_attack_vs_gobu_gobu` holds the cell's top-left
-15x15 texels one to one, which is what the arts-entry diamond draws
-(`arts_input::DPAD_SIZE`). The same leaf draws both, so one of the two seats
-is an emulator's rasteriser rather than the console's. Every
+whole cell squeezed into the seat. PCSX-Redux holds the cell's top-left 15x15
+texels one to one, on the ring, the attack-mode prompt and the arts entry
+alike. One emulator's rasteriser is not the console's, but the draw is one
+leaf at one anchor in every state, so the port draws one glyph: the arts
+entry's is the clusters' squeeze at the clusters' seat
+(`arts_input::DPAD_SEAT`). Drawn as a crop beside the clusters' squeeze, it
+changed size the frame the arts entry opened. Every
 chip in one cluster is built at the **same** interior width. The label is
 left-aligned at the interior's left edge, four rows down.
 
@@ -666,6 +668,21 @@ prompt shows none: the older of `koru_strip_forced`'s two ordering tables
 holds `Begin` and `Run` five pixels short of their seats, the panel nine rows
 short of its own, and no glyph packet.
 
+The same holds at every edge between the glyph's states. Each of `0x28`,
+`0x78` and `0x50` calls the leaf first thing (`0x801D118C`, `0x801D16EC`,
+`0x801D1D84`), and each edge between them runs a sub-draw step whose records
+glide: step `0x2A` slides `Auto` / `Command` in from `168` right of their
+seats while the ring's other arms leave, step `9` or `0x2C` slides the arts
+entry's four chips in the same way. A PCSX-Redux film of
+`battle_menu_rugi_barra_retail` (`CROSS`, `LEFT`, `RIGHT`) drops the glyph
+for eighteen vsyncs at each edge while the chips move and puts it back at
+the same seat and size once they land. The stepper walks the arts chips on the
+passes the gate holds, so they land as the hold opens, not a hold later.
+Port: `battle_hud::battle_chip_dpad_visible` reads the surface hold beside
+the prompt and ring glides, `ArtsCommandInputSession::step_glides` runs on a
+held battle pass, and `battle_chip_offsets` slides the attack-mode prompt's
+chips in over the hold.
+
 #### The ring opens on a glide
 
 Step 1 is `[12][1][4]` with pairs
@@ -796,8 +813,10 @@ Differences from retail:
   held-for-32-vsyncs term (`_DAT_8007B938`);
 - the `ctx[+0x26A]` term of the exit is not modelled;
 - `Run` sliding off the right edge as the ring opens is not drawn;
-- the steps past the ring - the windows, the attack-mode prompt, the target
-  cursors, the commit confirm - draw at rest. Their records still cost the
+- the steps past the ring - the windows, the arms the attack-mode prompt
+  sends off, the target cursors, the commit confirm - draw at rest (the
+  prompt's own `Auto` / `Command` and the arts entry's chips do slide in).
+  Their records still cost the
   hold: every `ctx[+0x06]` edge runs a sub-draw step whose records glide
   sixteen vsyncs (every step the menu SM runs has at least one pair with
   mode bit 1 clear; the `0x50` screen's own presses use the empty step

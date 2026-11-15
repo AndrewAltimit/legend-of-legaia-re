@@ -485,6 +485,12 @@ impl World {
             || self.battle.item_menu.is_some()
             || self.battle.round_armed;
         if surface_up && self.battle_command_glide_gate() {
+            // The stepper ran ahead of the gate: the arts entry's chips and
+            // pennants glide on a held pass too.
+            // REF: FUN_801D9BBC
+            if let Some(session) = self.battle.arts_input.as_mut() {
+                session.step_glides();
+            }
             return None;
         }
         // `0xFE`'s arm, on the first dispatched pass after its step landed.

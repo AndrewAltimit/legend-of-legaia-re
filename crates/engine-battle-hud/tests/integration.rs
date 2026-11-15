@@ -12,5 +12,6 @@ mod battle_menu_windows;
 mod battle_plaque_badge_census_disc;
 mod commit_confirm;
 mod counterattack;
+mod dpad_glyph_hold;
 mod round_prompt_gate;
 mod spirit_gauge;

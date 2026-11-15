@@ -424,6 +424,23 @@ pub(super) fn run_confirm_glide(
         .filter(|g| !g.settled())
 }
 
+/// The attack-mode prompt's open glide while it is what the frame draws:
+/// steps `0x2A` (from the ring's Attack arm) and `0x2E` (a target cursor
+/// backed out of) both open `Auto` / `Command` - records `0x55` / `0x54` -
+/// on mode `0`, so each spawns at seat A, `168` right of its seat
+/// (`x = 328 -> 160` and `416 -> 248`, the ring arms' own offset), and slides
+/// in over the sixteen vsyncs the surface hold counts
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::surface_hold_glide`]).
+fn attack_mode_glide(
+    world: &legaia_engine_core::world::World,
+) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
+    (world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && battle_command_surface(world) == Some(CommandSurface::AttackMode))
+    .then_some(world.battle.surface_hold_glide.as_ref())
+    .flatten()
+    .filter(|g| !g.settled())
+}
+
 pub(super) fn ring_open_glide(
     world: &legaia_engine_core::world::World,
 ) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
@@ -538,6 +555,10 @@ pub fn battle_chip_offsets(world: &legaia_engine_core::world::World) -> [(i32, i
         let (a, b) = RING_ARM_SEATS_X;
         return [(LogLaunch::seat_dy(Some(g), a, b), 0); 4];
     }
+    if let Some(g) = attack_mode_glide(world) {
+        let (a, b) = RING_ARM_SEATS_X;
+        return [(LogLaunch::seat_dy(Some(g), a, b), 0); 4];
+    }
     let g = round_prompt_glide(world);
     for (o, (a, b)) in out.iter_mut().zip(ROUND_PROMPT_CHIP_SEATS_X) {
         o.0 = LogLaunch::seat_dy(g, a, b);
@@ -571,7 +592,11 @@ pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 
     LogLaunch::seat_dy(ring_open_glide(world), a, b)
 }
 
-/// Whether the command cluster's D-pad glyph draws this frame. The menu
+/// Whether the D-pad glyph draws this frame - the command clusters' and the
+/// arts entry's alike, since retail draws both with one leaf from the state
+/// arms `0x1E`, `0x32`, `0x28`, `0x78`, `0x50` and `0x6E`, each of which
+/// calls `FUN_801DB8F4` first thing (`0x801D1030`, `0x801D10F8`,
+/// `0x801D118C`, `0x801D16EC`, `0x801D1D84`, `0x801D3028`). The menu
 /// SM runs the glide stepper ahead of its state switch and leaves without
 /// dispatching while it reports a glide in flight (`jal 0x801D9BBC` at
 /// `0x801D0B2C`, `bne s0,zero` at `0x801D0B38`, the exit at `0x801D0BA0`;
@@ -588,6 +613,15 @@ pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 
 /// still exits - the stepper returns the record's flag there - so the glyph
 /// first draws on the pass after.
 ///
+/// Every edge between these states runs a sub-draw step whose records glide
+/// (`BattleState::surface_hold_glide`), so the glyph goes for the length of
+/// each: a PCSX-Redux film of the ring's Attack arm into the attack-mode
+/// prompt and on into the arts entry
+/// (`battle_menu_rugi_barra_retail`, `CROSS`, `LEFT`, `RIGHT`) drops it for
+/// eighteen vsyncs at each edge while the chips slide, and puts it back at
+/// the same seat and size once they land. The edge pass itself still draws
+/// it: the arm that takes the press drew it before it read the pad.
+///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> bool {
     // The exit's records gate the `0xFE` arm; no state arm draws a glyph.
@@ -600,12 +634,17 @@ pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> boo
     {
         return false;
     }
-    let ring_landing = battle_command_surface(world) == Some(CommandSurface::Ring)
-        && world.battle.ring_open_glide.is_some()
-        && world.battle.widget_glide_return != 0;
-    !ring_landing
-        && round_prompt_glide(world)
-            .is_none_or(|g| g.settled() && world.battle.widget_glide_return == 0)
+    let b = &world.battle;
+    let in_flight = [
+        round_prompt_glide(world),
+        b.ring_open_glide.as_ref(),
+        b.surface_hold_glide.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|g| !g.settled());
+    // The landing pass still returns the flag (`0x801D9D1C`).
+    !in_flight && b.widget_glide_return == 0
 }
 
 /// Seat A / seat B rows of the actor-name plaque (record `0x44`: `(16,

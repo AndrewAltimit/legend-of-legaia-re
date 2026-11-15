@@ -52,21 +52,18 @@ pub const CHIP_ANCHOR_LOW: (i32, i32) = (216, 90);
 /// Stage seat of the 16x16 D-pad glyph in the middle of the chip diamond
 /// (captured FT4 `(220,62)-(235,77)`, so a 15x15 draw).
 ///
-/// The battle **command-select** diamond (Item / Attack / element / Spirit)
-/// is a different cluster with different art, but its capture puts its
-/// D-pad at this same rect and its centre at the same `(228, 70)` these
-/// four chip anchors imply - two independent captures agreeing, which is
-/// what says the arts entry reuses the command diamond's seat rather than
-/// merely sitting near it. Do not confuse the two clusters: this one
-/// carries High / Left / Right / Low.
+/// It is the command clusters' own glyph: retail's `0x50` arm calls
+/// `FUN_801DB8F4(0xDC, 0x42)` (`0x801D1D84`), the leaf and the anchor the
+/// ring (`0x801D118C`) and the attack-mode prompt (`0x801D16EC`) call, so
+/// the seat is [`crate::battle_command_ui::CLUSTER_COMMAND`]'s
+/// `dpad_rect` and the draw is the cluster's draw, squeeze and all. A crop
+/// of its top-left 15x15 texels here against the cluster's squeeze put two
+/// different glyphs one frame apart as the arts entry opened (#626). Do
+/// not confuse the two chip sets: this one carries High / Left / Right /
+/// Low.
 pub const DPAD_SEAT: (i32, i32) = (220, 62);
-/// Drawn size of the D-pad glyph (the FT4 spans 15 texels, not 16).
-///
-/// The quad's UVs run `0..16` over those 15 pixels, a texel step of
-/// `16 / 15`, so pixel `k` samples texel `floor(k * 16 / 15)` = `k`: the
-/// glyph draws its top-left 15x15 texels one to one and drops the last
-/// row and column. The builder crops the source to this size rather than
-/// scaling 16 texels into 15 pixels, which resamples the outline.
+/// Drawn size of the D-pad glyph: the FT4 spans 15 pixels each way, and
+/// the cluster draw squeezes the whole sixteen-texel cell into them.
 pub const DPAD_SIZE: (u32, u32) = (15, 15);
 
 /// Texel span of a label strip's quad: retail's FT4 puts `u0` on the left
@@ -441,6 +438,11 @@ pub struct ArtsInputFrame<'a> {
     /// The direction chips' slide-in, `(elapsed, total)` frames, while it
     /// runs ([`Self::chip_anchor`]); `None` draws them on seat B.
     pub chip_slide: Option<(u8, u8)>,
+    /// Draw the D-pad glyph between the chips. Retail's `0x50` arm draws it
+    /// first thing on every pass it is dispatched, and no pass is dispatched
+    /// while a sub-draw step's records glide - the chips' slide-in among them
+    /// (`engine-battle-hud::battle_chip_dpad_visible`).
+    pub dpad: bool,
 }
 
 /// Record-space `y` a committed pennant lands on: case `0xB` stores the
@@ -736,13 +738,18 @@ pub fn arts_input_chrome_draws(
                 rects.diamond_r.3,
             );
         }
-        push(
-            (rects.dpad.0, rects.dpad.1, DPAD_SIZE.0, DPAD_SIZE.1),
-            DPAD_SEAT.0,
-            DPAD_SEAT.1,
-            DPAD_SIZE.0,
-            DPAD_SIZE.1,
-        );
+        // The glyph comes and goes with the menu SM's dispatch: no state arm
+        // runs while the chips are still sliding in
+        // (`engine-battle-hud::battle_chip_dpad_visible`).
+        if frame.dpad {
+            push(
+                rects.dpad,
+                DPAD_SEAT.0,
+                DPAD_SEAT.1,
+                DPAD_SIZE.0,
+                DPAD_SIZE.1,
+            );
+        }
     }
 
     out
@@ -1321,6 +1328,7 @@ mod tests {
             phase: ArtsInputScreen::Entering,
             glides: &[],
             chip_slide: None,
+            dpad: true,
         }
     }
 
@@ -1749,16 +1757,32 @@ mod tests {
     /// The D-pad draws its top-left 15x15 texels one to one, not the whole
     /// 16x16 glyph squeezed into 15 pixels.
     #[test]
-    fn the_dpad_samples_fifteen_texels_one_to_one() {
+    fn the_dpad_is_the_command_clusters_glyph() {
+        // One leaf, one anchor: the arts entry's glyph is the ring's and the
+        // attack-mode prompt's to the pixel, so it holds its size and seat as
+        // the entry opens over them (#626).
         let r = ArtsInputAtlasRects::BAKED;
         let draws = arts_input_chrome_draws(&r, &frame(&[], &[]), (0, 0), 1);
         let dpad = draws
             .iter()
             .find(|d| (d.src.0, d.src.1) == (r.dpad.0, r.dpad.1))
             .expect("D-pad drawn while entering");
-        assert_eq!(dpad.src.2, DPAD_SIZE.0);
-        assert_eq!(dpad.src.3, DPAD_SIZE.1);
-        assert_eq!((dpad.dst.2, dpad.dst.3), DPAD_SIZE);
+        let (x, y, w, h) = crate::battle_command_ui::CLUSTER_COMMAND.dpad_rect();
+        assert_eq!(dpad.dst, (x, y, w, h));
+        assert_eq!(dpad.src, r.dpad);
+        assert_eq!(r.dpad, title_pak::OVERLAY_SYSTEM_UI_ARTS_DPAD);
+        // No state arm runs while the chips slide in: no glyph.
+        let held = ArtsInputFrame {
+            dpad: false,
+            ..frame(&[], &[])
+        };
+        let draws = arts_input_chrome_draws(&r, &held, (0, 0), 1);
+        assert!(
+            !draws
+                .iter()
+                .any(|d| (d.src.0, d.src.1) == (r.dpad.0, r.dpad.1)),
+            "no glyph under the hold"
+        );
     }
 
     #[test]
