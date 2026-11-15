@@ -340,11 +340,34 @@ pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<Commit
             // neither reaches a logged commit.
             PendingPartyAction::Run | PendingPartyAction::StandBy => continue,
         };
+        // A single monster target's column is the target-select record's
+        // string, the display name escape and all (`FUN_801D5718`).
+        let target_abs = match action {
+            PendingPartyAction::Attack { target } => Some(*target),
+            PendingPartyAction::Art {
+                target_row,
+                target_slot,
+                ..
+            }
+            | PendingPartyAction::Spell {
+                target_row,
+                target_slot,
+                ..
+            } if matches!(target, CommitLogTarget::Single(_)) => Some(match target_row {
+                CursorRow::Enemy => pc.saturating_add(*target_slot),
+                CursorRow::Ally => *target_slot,
+            }),
+            _ => None,
+        };
+        let target_badge = target_abs
+            .filter(|&abs| abs >= pc)
+            .and_then(|abs| crate::plaques::monster_element_badge(world, abs));
         rows.push(CommitLogRow {
             name: party_member_name(world, slot),
             command,
             command_record,
             target,
+            target_badge,
             slide_x,
         });
     }

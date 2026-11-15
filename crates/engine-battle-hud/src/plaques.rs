@@ -361,6 +361,23 @@ pub fn battle_message_bar(world: &legaia_engine_core::world::World) -> Option<St
         })
 }
 
+/// The element badge leading [`battle_message_bar`]'s line, or `None`. A
+/// composed line copies its subject's display name `+0x1BC` escape and all
+/// (`FUN_8003CA78`), so a victim whose name carries the caret badge - `Vera`
+/// under Nighto's "has been annihilated." - prints it in front of the name,
+/// as the plaques do; a line with no subject, or a party subject, has none.
+pub fn battle_message_bar_badge(world: &legaia_engine_core::world::World) -> Option<u8> {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return None;
+    }
+    let slot = world.battle.steal_caption.as_ref()?.subject?;
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    if usize::from(slot) < pc {
+        return None;
+    }
+    monster_element_badge(world, slot)
+}
+
 /// Seat A / seat B rows of the message bar's glide record (placement record
 /// 91): `y = 234` -> `192`, the record `zeto_call_wave_mid_cast` holds
 /// mid-raise.

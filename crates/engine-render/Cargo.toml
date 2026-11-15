@@ -36,3 +36,5 @@ legaia-overlay-images.workspace = true
 legaia-engine-vm.workspace = true
 # The free-vantage ground sweep loads town01's ground grid (disc-gated).
 legaia-engine-scene.workspace = true
+# The battle HUD tests build a commit-log row (`battle_commit_log`).
+legaia-engine-battle-vm.workspace = true

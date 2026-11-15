@@ -151,3 +151,34 @@ fn the_names_wait_out_the_entry_sweep() {
         1
     );
 }
+
+/// A group whose display name carries the caret escape wears its element
+/// badge on the intro label, as the plaques do: the composer copies `+0x1BC`
+/// escape and all and measures it with its trailing space, so the label is
+/// [`legaia_engine_battle_hud::INTRO_BADGE_LEAD`] wider and its centred seat
+/// half that further left (#627: Vera and Nighto opened with bare names).
+#[test]
+fn an_escaped_name_wears_its_badge_on_the_intro_label() {
+    let font = legaia_font::synthetic_for_tests();
+    let mut world = intro_world();
+    world.arm_battle_intro_names();
+    world.battle.intro_lead_ticks = 0;
+    let bare = legaia_engine_battle_hud::battle_intro_names(&world, &font);
+    assert_eq!(bare.len(), 1);
+    assert_eq!(bare[0].2, None, "no escape, no badge");
+    world
+        .tables
+        .monster_catalog
+        .get_mut(7)
+        .expect("Killer Bee")
+        .plaque_badge = Some(5);
+    let badged = legaia_engine_battle_hud::battle_intro_names(&world, &font);
+    assert_eq!(badged[0].0, bare[0].0, "the text is the name");
+    assert_eq!(badged[0].2, Some(5), "the name's own badge");
+    let shift = bare[0].1 - badged[0].1;
+    let half = legaia_engine_battle_hud::INTRO_BADGE_LEAD / 2;
+    assert!(
+        (half..=half + 1).contains(&shift),
+        "the wider label centres over the same group: {shift}"
+    );
+}

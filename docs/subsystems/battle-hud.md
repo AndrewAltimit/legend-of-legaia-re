@@ -1534,6 +1534,21 @@ every pair, splits an overlap evenly once the gap between two labels falls
 under 20 pixels, clamps each label to `6 <= x <= 0x13A - width`, and repeats
 until a whole pass moves nothing.
 
+**A badged name wears its badge.** The label is the group's display name
+`+0x1BC` copied into the composer's buffer at `ctx + 0x29 + group * 0x20`
+(`jal 0x8003CA78` at `0x801D9DF0`), caret escape and all, and the width
+`FUN_80035F04` measures (`0x801D9F7C`) covers the escape and its trailing
+space. So an escaped name prints its
+[element badge](#the-element-badges-and-their-per-badge-palette) at the pen
+and the name `20 + 5` right of it, and the seat law centres the wider label:
+retail footage of a Gimard opening shows the fire badge in front of the name,
+and a Karisto opening on `Moldy Worm` and `Grude`, neither escaped, shows
+none. The commit log's target column is the same string: the commit arm copies
+record `0x29`'s string pointer and width into it (`FUN_801D5718`, `+0x14` and
+`+0x06`), so a badged target wears its badge there too. So does a composed
+message-bar line whose subject is an escaped monster (Nighto's "... has been
+annihilated."), since the module copies the name with `FUN_8003CA78`.
+
 **No slide.** The intro labels are spawned at their final seat; this path calls
 neither `FUN_801D8DE8` nor the glide `FUN_801DB7B0`. The round HUD that
 replaces the banner is spawned from records 68 and 7 at their disc seats and
@@ -1584,7 +1599,11 @@ prompt builds `Begin` / `Run` on ids `3` and `4`.
 **Port.** `engine-battle-hud::battle_intro_names` builds the labels (the
 grouping and run suffix of `target_picker::enemy_menu_rows`, the layout of
 `target_picker::layout_enemy_menu_rows`), measured with the host's
-`legaia-font` and reading `+0x34` off the live actor position.
+`legaia-font` and reading `+0x34` off the live actor position, with the
+group's badge (`MonsterDef::plaque_badge`) in front of the name and in the
+measured width (`battle_hud::INTRO_BADGE_LEAD`). The commit log carries the
+target's badge as `CommitLogRow::target_badge`, the message bar its subject's
+as `battle_hud::battle_message_bar_badge`.
 `engine-core::world::battle::intro_names` owns the `ctx[+0x6D6]` timer, armed
 beside the formation banner and drained by the frame step. `engine-ui`'s HUD
 builder draws each label on the class-0 frame

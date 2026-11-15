@@ -330,6 +330,7 @@ pub fn battle_hud_frame_draws(
                 .and_then(|s| s.outgoing.as_ref())
                 .map(|p| (p.name.as_str(), p.badge)),
             message_bar: message_bar.as_deref(),
+            message_bar_badge: bh::battle_message_bar_badge(w),
             message_bar_dy: bh::battle_message_bar_dy(w),
             ap_plate_value: bh::battle_ring_ap_plate_value(w),
             ap_plate_dx: bh::battle_ring_ap_plate_dx(w),

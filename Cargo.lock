@@ -2345,6 +2345,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
+ "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-scene",
  "legaia-engine-ui",

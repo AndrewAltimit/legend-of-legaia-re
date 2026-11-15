@@ -1118,7 +1118,7 @@ pub fn battle_hud_draws_for(
             .zip(log::commit_log_layout(&commits))
         {
             let content = [row.name.as_str(), row.command.as_str(), row.target_text()];
-            for (el, content) in elements.iter().zip(content) {
+            for (k, (el, content)) in elements.iter().zip(content).enumerate() {
                 if content.is_empty() {
                     continue;
                 }
@@ -1131,7 +1131,20 @@ pub fn battle_hud_draws_for(
                     i32::from(el.width),
                     true,
                 );
-                stage_text(&mut text, font, content, x, y - 2, READOUT_NORMAL);
+                // The target column's name escape: badge at the pen, the name
+                // `20 + 5` right of it (`TARGET_BADGE_LEAD`).
+                let badge = (k == 2)
+                    .then_some(row.target_badge)
+                    .flatten()
+                    .and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+                let lead = match badge {
+                    Some(src) => {
+                        stage_sprite(&mut sprites, src, x, y - 2);
+                        PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+                    }
+                    None => 0,
+                };
+                stage_text(&mut text, font, content, x + lead, y - 2, READOUT_NORMAL);
             }
         }
     }
@@ -1142,9 +1155,19 @@ pub fn battle_hud_draws_for(
     // spawned on the message banner's class-0 frame (kind 3) at pen
     // `(x, 48)` over the same marbled fill. Frame origin is the pen less
     // `(8, 8)`, so `Moldy Worm` on `(86, 48)` frames `(78, 40)..(159, 67)`.
-    for (label, x) in frame.intro_names.iter().filter(|(l, _)| !l.is_empty()) {
+    //
+    // The label is the group's display name, escape and all, so an escaped
+    // name prints its element badge at the pen and the name `20 + 5` right
+    // of it, inside a frame measured over both - the plaque's badge law.
+    for (label, x, badge) in frame.intro_names.iter().filter(|(l, _, _)| !l.is_empty()) {
         let pen = (*x, BATTLE_INTRO_NAME_Y);
-        let w = font.layout_ascii(label).advance_x as i32;
+        let badge = badge.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        let w = lead + font.layout_ascii(label).advance_x as i32;
         if let Some(rects) = frame.chrome {
             sprites.extend(crate::battle_hud_chrome::class0_frame_draws_at(
                 rects,
@@ -1154,7 +1177,17 @@ pub fn battle_hud_draws_for(
                 scale as u32,
             ));
         }
-        stage_text(&mut text, font, label, pen.0, pen.1, crate::MENU_TEXT_WHITE);
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, pen.0, pen.1);
+        }
+        stage_text(
+            &mut text,
+            font,
+            label,
+            pen.0 + lead,
+            pen.1,
+            crate::MENU_TEXT_WHITE,
+        );
     }
 
     // ---- The battle-stage module's boss-name banner ----
@@ -1211,6 +1244,18 @@ pub fn battle_hud_draws_for(
                 _ => b'?',
             })
             .collect();
+        // A composed line leads with its subject's display name, escape and
+        // all: the badge at the pen, the line `20 + 5` right of it.
+        let badge = frame
+            .message_bar_badge
+            .and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let pen = match badge {
+            Some(src) => {
+                stage_sprite(&mut sprites, src, pen.0, pen.1);
+                (pen.0 + PLAQUE_BADGE_W + PLAQUE_BADGE_GAP, pen.1)
+            }
+            None => pen,
+        };
         let mut draws = text_draws_for(&font.layout(&bytes), pen, ink);
         scale_stage_text_draws(&mut draws, origin, scale as u32);
         text.extend(draws);

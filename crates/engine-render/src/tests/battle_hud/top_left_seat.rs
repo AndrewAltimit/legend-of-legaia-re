@@ -246,3 +246,122 @@ fn the_plaque_badge_widens_the_plate_and_shifts_the_name() {
         "the element badge is not on the plaque's content pen"
     );
 }
+
+/// The intro label wears the group's element badge at its pen and moves the
+/// name `20 + 5` right of it, inside a frame measured over both - the
+/// plaque's law, because the composer copies the display name escape and
+/// all (#627).
+#[test]
+fn the_intro_label_wears_the_names_badge() {
+    let font = legaia_font::synthetic_for_tests();
+    let rects = chrome_rects();
+    let badges = badge_rects();
+    let frame = |badge: Option<u8>| {
+        let names = [("Vera".to_string(), 100, badge)];
+        battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                chrome: Some(&rects),
+                badges: Some(&badges),
+                intro_names: &names,
+                ..Default::default()
+            },
+            PEN,
+        )
+    };
+    let bare = frame(None);
+    let with = frame(Some(5));
+    let seat = with
+        .sprites
+        .iter()
+        .find(|s| s.src == element_badge_cell(5))
+        .map(|s| (s.dst.0 / STAGE_SCALE, s.dst.1 / STAGE_SCALE));
+    assert_eq!(seat, Some((100, 48)), "the badge sits on the label's pen");
+    assert!(
+        !bare.sprites.iter().any(|s| s.src == element_badge_cell(5)),
+        "no escape, no badge"
+    );
+    let first_x = |d: &BattleHudDraws| d.text.iter().map(|t| t.dst.0).min().unwrap_or(0);
+    assert_eq!(
+        (first_x(&with) - first_x(&bare)) / STAGE_SCALE,
+        20 + 5,
+        "the name moves past the badge"
+    );
+    let right = |d: &BattleHudDraws| d.sprites.iter().map(|s| s.dst.0).max().unwrap_or(0);
+    assert_eq!(
+        (right(&with) - right(&bare)) / STAGE_SCALE,
+        20 + 5,
+        "the frame grows by the badge"
+    );
+}
+
+/// A composed message-bar line leads with its subject's badge when the
+/// subject's display name carries one ("Vera has been annihilated.").
+#[test]
+fn the_message_bar_wears_its_subjects_badge() {
+    let font = legaia_font::synthetic_for_tests();
+    let rects = chrome_rects();
+    let badges = badge_rects();
+    let frame = |badge: Option<u8>| {
+        battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                chrome: Some(&rects),
+                badges: Some(&badges),
+                message_bar: Some("Vera has been annihilated."),
+                message_bar_badge: badge,
+                ..Default::default()
+            },
+            PEN,
+        )
+    };
+    let bare = frame(None);
+    let with = frame(Some(5));
+    assert!(with.sprites.iter().any(|s| s.src == element_badge_cell(5)));
+    let first_x = |d: &BattleHudDraws| d.text.iter().map(|t| t.dst.0).min().unwrap_or(0);
+    assert_eq!((first_x(&with) - first_x(&bare)) / STAGE_SCALE, 20 + 5);
+}
+
+/// The commit log's target column is the target-select record's string
+/// (`FUN_801D5718` copies its `+0x14` and width), so a target whose display
+/// name carries the caret escape wears its badge there too, the column
+/// `20 + 5` wider.
+#[test]
+fn the_commit_log_target_wears_its_badge() {
+    use legaia_engine_battle_vm::battle_commit_log as log;
+    let font = legaia_font::synthetic_for_tests();
+    let rects = chrome_rects();
+    let badges = badge_rects();
+    let frame = |badge: Option<u8>| {
+        let rows = [log::CommitLogRow {
+            name: "Vahn".to_string(),
+            command: "Attack".to_string(),
+            command_record: log::RECORD_CHIP_ATTACK,
+            target: log::CommitLogTarget::Single("Vera".to_string()),
+            target_badge: badge,
+            slide_x: 0,
+        }];
+        battle_hud_draws_for(
+            &font,
+            &BattleHudFrame {
+                solid_src: Some(SOLID),
+                surface: SURFACE,
+                chrome: Some(&rects),
+                badges: Some(&badges),
+                commit_log: &rows,
+                ..Default::default()
+            },
+            PEN,
+        )
+    };
+    let bare = frame(None);
+    let with = frame(Some(5));
+    assert!(with.sprites.iter().any(|s| s.src == element_badge_cell(5)));
+    assert!(!bare.sprites.iter().any(|s| s.src == element_badge_cell(5)));
+    let right = |d: &BattleHudDraws| d.sprites.iter().map(|s| s.dst.0).max().unwrap_or(0);
+    assert_eq!((right(&with) - right(&bare)) / STAGE_SCALE, 20 + 5);
+}
