@@ -335,6 +335,18 @@ of the scene shows no figure at the controller. Port:
 `FieldHaltHost::spawn_bracket`, up while `entry_prerun` or `object_prerun`
 is; disc-gated in `engine-scene-host/tests/suimon_controller_disc.rs`.
 
+Two other spawn sections on the disc poke their own halted actor inside the
+bracket, and both reach the same state a later frame would have given them.
+`jagaroom`'s six statue triggers (`P1[2..=7]`) seat themselves with a
+run-to-tile, aim the halt-acquire at their own id (`CC <self> 85 00 00 26`,
+facing flat `0x26`) and raise their no-shadow bit (`B1 <self> 15`);
+`jagaroom_field_door_hop` holds all six with `+0x10` bits 21 and 22 up, the
+halt down, each heading the bearing to that figure
+(`engine-scene-host/tests/jagaroom_statue_spawn_disc.rs`). `geremi` `P1[58]`,
+with `0x1C3` up, steps a compass leg (`41 02 01`) and then clears its
+party-bank bit and binds scene clip `31` on its own id. A sweep of every
+scene's entry under five flag sets finds no fourth record.
+
 The partition-1 spawn loop itself runs only when the scene load actually
 loaded a MAN. The field-scene initializer (`FUN_801D6704` in PROT 0897) passes
 `a0 = loader mask & 4` to `FUN_8003AEB0` (`0x801D6D98`; bit `4` is the MAN
@@ -535,6 +547,28 @@ releases him (the village gathering, which raises `0x231`); the elder's
 `[30..33, 91..92]` does its `0x231` arm run - it waits eight frames, then
 sets `0x141` and changes to `map01`. The south gate stays painted shut
 (`P1[0]`'s `4C 71` rectangles while `0x147` is set and `0x141` clear).
+
+A placed object is a target like any other. A talk's `AB` / `AC` / `AD <id>`
+(the clip-control word `+0x62`), `CC <id> 35|36|41` and the cursor test
+`CC <id> 8C` (`+0x68`) read and write the door or prop `<id>` names. A door
+can hand its touch to a guard: `bylon`'s hall door `P0[19]` engages the West
+Voz monk `P1[33]` with `B1 44 08` and ends, for as long as `0x2A0` is
+clear. Once Maya has given her word (`0x29E`) his talk tests the door with
+`CC 13 8C 06 00`, and the door on frame 0 sends it to the opening: `52 A0`,
+the door's swing (`AC 13 07`, `AC 13 01`, `AB 13 03`, `B1 13 00`) and a
+wait on `P0[15]`'s end latch (`AD 0F 08`). From then on the door's own
+`0x2A0` arm answers the push.
+
+The port routes those ops onto the object's prop words, as the prop runner
+and the spawned-record slice do (`World::cross_context_object_prop`). Run
+on the talker's context, the cursor test read the monk's idle clip. Off
+frame 0 it ended the talk at its `21` with `0x2A0` still clear, so every
+push replayed his lines. On frame 0 the channel poke `B1 13 00` dropped the
+door's collision but the swing never reached it, so the player walked
+through a shut door. `retock`'s dresser talk (`P1[46]`, `CC 0D 8C 18 00`)
+and `ropeway`'s paper (`P1[21]`, `CC 07 8C 18 00`) drive their objects the
+same way. Disc-gated:
+`crates/engine-scene-host/tests/bylon_west_voz_monk_disc.rs`.
 
 The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is
@@ -3089,15 +3123,45 @@ empty!" loop behind it, and a pickup spot ends on `21`, `21`, `26 FE FF`, so the
 second touch is silent. Restarting every talk at the scan's entry re-ran the
 grant. Engine port: the spawn pre-run hands a clean stop (an executed raw
 `0x21`, or a text lead) to the talk as its entry, a talk that ends on an
-executed `0x21` writes its cursor back, and a talk resumed from that cursor
+executed `0x21` writes its cursor back, and a talk run from either cursor
 ends on an executed `0x21` before any box, as the SM does, rather than falling
 back to the first segment (`InlineDialogPrologue::resume`). The static scan
 stays the entry for a record whose load slice does not run (its first opcode is
-not `0x24` / `0x25`) or stops on a halt. A first talk keeps the fallback: it is
-the port's net for a talk started from outside a record's own position test,
-which retail never sees (`rayman` `P1[44..=46]` bbox-test the player before
-they speak, and the full-game ladder's hand talks from where it stands). Pinned
-disc-wide by `engine-scene-host/tests/field_pickup_once_disc.rs`.
+not `0x24` / `0x25`) or stops on a halt, and only that entry keeps the
+fallback. A record that tests where the player stands before it speaks is
+therefore silent from anywhere else, on the first talk as on any other:
+`rayman` `P1[44..=46]` open on `CD F8 6B 46 6B 50` (column 107, rows 70..=80)
+and skip to their closing `0x21` outside it. Pinned disc-wide by
+`engine-scene-host/tests/field_pickup_once_disc.rs`.
+
+**Which talkers say nothing.** A disc sweep talks to every talkable placement
+of every field scene from every standable tile around it, under a cold flag
+bank and under the bank of each milestone of the playthrough spine
+(`engine-scene-host/tests/field_talker_sweep_disc.rs`). The talks that open no
+box where a first-segment fallback would have opened one belong to nineteen
+records, and each is silent by its own bytes:
+
+| Shape | Records | What the record does at the cursor |
+|---|---|---|
+| A player box test ahead of every line | `rayman` `P1[44..=46]`, `doman` `P1[18]`, `station3` `P1[4]` | `CD F8 x0 z0 x1 z1` skips to the closing `0x21` from outside the box: the three on `rayman`'s ledge from column `107`, the research centre's desk from its two front tiles `(40..=41, 81)`, the station poster from `(80..=81, 37..=38)` |
+| No text at all | `bylon` `P1[39]`, `P1[41]`, `P1[42]`; `edbylon` `P1[27]`, `P1[29]`, `P1[30]` | `31 1D`, `31 00`, `31 1F`, `4C 42 50 ..`, `38 82 00`, then a `21` / `26 FE FF` park. The fallback's "first segment" was the `1F` operand of `31 1F` read as a text lead |
+| A story-flag test that jumps to a bare `0x21` | `concnow` `P1[12]`, `P1[13]` (`75 F8`); `dolk` `P1[27]` (`71 7B` / `71 78` / `71 42`); `station3` `P1[6]`, `P1[8]` (`73 8F`); `town0b` `P1[36]`, `town0c` `P1[21]` (`75 C4`); `vell` `P1[3]` (`72 B0` behind its box test) | The record has nothing to say once the flag is up, and loops back to the test |
+
+The cursor each of them starts from is one past the spawn section's executed
+`0x21`, and the retail save states that hold those scenes carry the same word
+at `actor[+0x9E]`. The comparison holds disc-wide: over the library's retail
+field states, every placement nobody has talked to and no cutscene is driving
+holds the cursor the engine's pre-run leaves.
+
+One talker has no pre-run cursor. `dolk2` `P1[13]` opens on `38 87 00` (face
+the compass point) rather than `24` / `25`, so the load slice's first-opcode
+gate (`0x8003A480..0x8003A48C`) skips it and its cursor stays on that first
+opcode: `dolk2_field_door_hop` holds `+0x9E = 9`. Run from there, a first talk
+executes the `38` and the `21` behind it and ends with nothing said, and the
+second talk speaks *(inferred from the cursor and the SM's run loop; no film of
+the two presses)*. The port enters it at the static scan's estimate, one past
+that `21`, and speaks on the first press - the one place it keeps the kinder
+reading over retail's, pinned by the same test file.
 
 The engine keeps that one cursor in two places - the placement channel's, which
 an engagement and the return from a talk-staged battle run as the interaction

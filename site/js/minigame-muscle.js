@@ -708,6 +708,7 @@ window.MgMuscle = (function () {
       if (q1.length > q0.length) spawnPennant(q1[q1.length - 1], q1.length - 1);
       if (q1.length < q0.length) pennantFx = [];
       if (ev === 'cursor') playCue('cursor', 0.4);
+      else if (ev === 'back') playCue('blip', 0.3);
       else if (ev === 'confirm' || ev === 'fight') playCue('confirm', 0.5);
       else if (ev === 'refused') {
         magicWhy = selectSub === 'magic' ? 'not_enough_mp' : '';

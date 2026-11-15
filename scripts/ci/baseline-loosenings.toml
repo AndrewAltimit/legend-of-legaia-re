@@ -1556,3 +1556,53 @@ reason = "A patched-executable state (the shiny-seru mod), outside the retail-di
 changes = [
   ["states/shiny_refactor_gimard_levelup/image", 0.832, 0.83],
 ]
+
+[[loosening]]
+file = "scripts/ci/film-cue-baseline.json"
+reason = "The row was never one measurement: it paired a measured score of 0.964 with the 28 matched cues of another run. Six recordings of the film on one binary, one of them under a load average of 28, read the same report: 27 of 28 cues matched and cue 0x019 seven ticks early against the six-tick window (score 0.9643, image 0.7787 each time). The cue does not move with machine load on that binary; the row now holds the measured pair."
+changes = [
+  ["films/jou_vahn_tri_somersault_super_open/matched", 28, 27],
+]
+
+[[loosening]]
+file = "scripts/ci/film-cue-baseline.json"
+reason = "Battle frames are now priced after their node ticks, so draw load reaches the frame step one pass earlier (ff1af61c0, a change that lifted the arts and strike films). Retail runs every 0x2B frame of this cast on step 4 from its second frame; the default action-state table prices the band's first 54 ticks at 570-708 hblanks (step 3), so cue 0x17 lands 7 ticks off against the 6-tick window. The same cast on another stage (bylon_gimard_v2_tail_fire) costs 440-464 where the table says 605, so no table row can hold both. The opt-in census-priced model (LEGAIA_BATTLE_POLY_COST=1) lands the cue (15 of 15) but does not yet hold every film set."
+changes = [
+  ["films/jou_gimard_v3_tail_flare/cue", 1.0, 0.933],
+  ["films/jou_gimard_v3_tail_flare/matched", 15, 14],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The battle-entry sweep's opening passes now run on their own step (counter 0x80, 0x82..0x85, then the fight's step, as the walked-encounter film reads), so the first command prompt lands two vsyncs later in every fight and re-deals the driven rounds. Fifteen states were re-pinned to the stream that restores their baseline; for these three no stream over 27 does: the Lizard Tail hit-spark rays deal differently, and the other two move by one block."
+changes = [
+  ["states/battle_garmel_party_noa_lizard_tail_mid/image", 0.979, 0.977],
+  ["states/battle_target_cursor_rugi_barra_retail/image", 0.994, 0.993],
+  ["states/minigame_muscle_dome_retail_red_piura_vahn_strike/image", 0.975, 0.974],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The dance's beat clock now holds through retail's four-frame lead-in and its camera steps once per game frame by 3 (both from the minigame film, which now matches retail on every column through the song). go_in and go_out rise; ready, captured during the count-in, differs by one 8x8 block."
+changes = [
+  ["states/minigame_dance_retail_ready/image", 0.982, 0.981],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 99500626e: the commit pass stamps the ghost ring with the clip it commits, as FUN_80047430 orders the natural-end commit (0x80047B54) ahead of the ring shift and id store. This state's after-image ghosts change by a pass; which side is short is not measured."
+changes = [
+  ["states/noaru_songi_pre_genocidal_cannon/image", 0.986, 0.984],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play page now merges blend order across meshes whose blends meet, far to near, as the native window does (host-pair: arts ticks 1351/1381 0.50/0.51% to 0.48/0.49%, results tick 1321 0.38% to 0.33%, no scene higher): cast and town01 take extra GL draws for the merged runs. The two battle rows already read over the baseline on the wave's base. The play bundle grows 0.46% with the wave's ports and fixes (D-pad glyph, card init, CD wait, minigame films' engine side, field and battle census code)."
+changes = [
+  ["counts/browser/battle/enhanced/gl_draws_per_frame", 185.12, 185.16],
+  ["counts/browser/battle/retail/gl_draws_per_frame", 154.86, 154.88],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 128.75, 130.46],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 106.14, 108.39],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.81, 43.92],
+  ["counts/bundle/play_gzip_bytes", 5101437, 5125685],
+]

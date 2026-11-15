@@ -188,6 +188,42 @@ fn real_tables_drive_the_rival_dancers() {
     );
 }
 
+/// The qualifier played hands off ends where retail's does. A retail film
+/// of `minigame_dance_retail_ready` with no press (the minigame film,
+/// `scripts/ci/minigame-film.py --set dance`) closes the song with the two
+/// rivals on `460` and `388`, both gauges at the `2999` cap, and three and
+/// two triangles spent; the run here takes the hall's own cadence (a game
+/// frame every third vsync on a delta of three) and the rivals' clips.
+#[test]
+fn a_hands_off_qualifier_ends_on_retails_rival_scores() {
+    let Some(overlay) = dance_overlay() else {
+        eprintln!("[skip] dance overlay unavailable (disc-gated)");
+        return;
+    };
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (the rivals' clip bank)");
+        return;
+    };
+    let host = legaia_engine_scene_host::scene_host::SceneHost::open_disc(&disc).expect("disc");
+    let bank = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&host.index)
+        .expect("the hall's clip bank");
+    let mut game = DanceGame::from_overlay(&overlay).expect("real chart + tables load");
+    game.attach_clip_bank(&bank);
+    let mut vsyncs = 0;
+    while !game.finished() {
+        game.advance_vsync(None);
+        vsyncs += 1;
+        assert!(vsyncs < 20_000, "the song never finished");
+    }
+    let rivals: Vec<u32> = (1..3).map(|i| game.dancer_score(i)).collect();
+    let gauges: Vec<u32> = (1..3).map(|i| game.dancer_gauge(i)).collect();
+    let spent: Vec<u32> = (1..3).map(|i| 3 - game.dancer_triangles(i)).collect();
+    assert_eq!(rivals, [460, 388], "the rivals' closing scores");
+    assert_eq!(gauges, [2999, 2999], "both gauges at the cap");
+    assert_eq!(spent, [3, 2], "the triangles the schedule spent");
+    assert_eq!(game.score(), 0);
+}
+
 /// Mirror the **play-window K-key path** exactly: open the disc as a
 /// [`ProtIndex`], read the dance overlay through `entry_bytes_extended`, lift it
 /// to loaded form, parse the chart, then drive it through `World::enter_dance` +

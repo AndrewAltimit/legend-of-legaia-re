@@ -495,6 +495,20 @@ engine verdict:
   (flat `10`) onto index `3`, `0x600`, with `B8 0A 83 12`, on the tile his
   record `P1[4]` seats him on facing index `7` (`4C 51 92 BD 07 ..`), so a
   state past the beat otherwise scores his record's `0xE00`.
+  A spawn under flags a probe has since lowered is the last of these. A
+  capture made by loading a state inside a scene and clearing story flags
+  there keeps every placement where its spawn section stood it under the
+  flags as they were, since the spawn ran once at the scene entry. The
+  scenario names those flags (`spawned_under_flags`), the corpus spawns the
+  scene once with them raised and once as the save holds them, and a
+  placement retail holds exactly on the first run's seat and off the
+  second's is stood there (`retail_compare::spawn_history_seats`, the same
+  `LEGAIA_SEAT_PLACEMENTS`). `bylon_mist_gala_goes_ahead` and
+  `bylon_mist_noa_vahn` were made from `bylon_field_door_hop` with `0x2A2` /
+  `0x2A6` / `0x2A7` lowered: flat `65` (`P1[30]`) stands on `(15232, 13376)`,
+  the `23 76 68` / `41 06 01` arm its record takes with `0x2A7` up, and a
+  load with the flag down leaves it on its MAN seat `(14784, 12864)` (`npcs`
+  `.975` to `1` on both).
   A walk-on beat's draw flags are seated too: an object actor whose `+0x74`
   word carries the semi-transparency bit (field-VM `4C D6`) hands its flag
   byte to the image child (`retail_object_draw_flags`,
@@ -1304,6 +1318,16 @@ draws it takes.
   behind every capture, so the entry takes neither
   ([the seat order](#the-seat-order-is-the-captures)) and the fight's first
   draw is the stream's first.
+- A stream whose replay seats a monster the capture does not hold is another
+  fight. The gate reads the acting seat alone, so a round ahead of the phase
+  that cast Divide or Clone still reaches it, with the twin on the field. The
+  search keeps such a run as a fallback while the remaining streams are tried
+  (`EngineBattle::seated_monsters` against the capture's seat count), and an
+  [undrift](#a-push-the-capture-already-holds) re-run that seats more than the
+  first run did is refused: `battle_map01_green_slime_strike`, a lone Green
+  Slime, reached its phase with one slime and its re-run, seeded on other
+  ground, had the slime divide two rounds earlier (plaque "Green Slime A").
+  `LEGAIA_RC_SEED_TRACE=1` prints the count as `seated=`.
 - The world stream is set to a fixed seed just before `World::force_encounter`,
   on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
 - It is held there at the head of every tick of the field-side intro transition

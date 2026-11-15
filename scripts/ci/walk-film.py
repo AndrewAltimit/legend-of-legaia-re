@@ -50,7 +50,7 @@ def main():
     ap.add_argument("--no-retail", action="store_true", help="reuse the retail film")
     ap.add_argument("--no-engine", action="store_true", help="reuse the engine film")
     ap.add_argument("--window", action="store_true", help="show the PCSX-Redux window (default: --headless)")
-    ap.add_argument("--run", action="store_true", help="the engine's Field Move option on Run (retail reads it off the state)")
+    ap.add_argument("--run", action="store_true", help="force the engine's Field Move option to Run (default: the state's own option word, as retail reads it)")
     ap.add_argument("--show", type=int, default=40, help="pass rows printed")
     a = ap.parse_args()
     out = Path(a.out or REPO / "captures" / "walk-film" / a.label)

@@ -98,6 +98,15 @@ pub(super) fn run_battle(
             .then_some(seed.hits.len() as u32)
     };
     let mut off_hits = None;
+    // A capture's fight holds the monsters its seat table counts. A replay
+    // round ahead of the phase can add one - Divide and Clone seat a body
+    // after the formation's own - and the gate, which reads the acting seat
+    // alone, takes the round all the same. `battle_map01_green_slime_strike`
+    // is a lone Green Slime; its first reaching stream had the slime cast
+    // Divide two rounds earlier, so the frame drew the twin beside it and
+    // the plaque read "Green Slime A". Such a run is kept as a fallback
+    // while the remaining streams are tried.
+    let mut off_field = None;
     let opening = battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Opening;
     // A replayed cast tries its victims revived first: unlike a pad-driven
     // swing, a cast onto a corpse still reaches its phase, so the HP-as-read
@@ -167,7 +176,7 @@ pub(super) fn run_battle(
                 match &run {
                     Ok(e) => eprintln!(
                         "[seed] {} seed={seed:#010X} victims={victims} end={:#010X} mode={:?} prompt={:?} \
-                         surprise={} driven={:?} inflight={:?} age_short={:?} drift={:?}",
+                         surprise={} driven={:?} inflight={:?} age_short={:?} seated={} drift={:?}",
                         entry.label,
                         e.rng_at_end,
                         e.mode,
@@ -176,6 +185,7 @@ pub(super) fn run_battle(
                         e.driven,
                         e.inflight,
                         e.age_short,
+                        e.seated_monsters,
                         e.ground_drift,
                     ),
                     Err(err) => {
@@ -197,6 +207,10 @@ pub(super) fn run_battle(
                     }
                     if ring_pushes.is_some() && e.action_pushes != ring_pushes {
                         off_hits.get_or_insert((e, victims));
+                        continue;
+                    }
+                    if e.seated_monsters > battle.monster_ids.len() {
+                        off_field.get_or_insert((e, victims));
                         continue;
                     }
                     if reached.is_none() {
@@ -221,6 +235,13 @@ pub(super) fn run_battle(
     // kept, as it was before the count was asked for.
     if reached.is_none()
         && let Some((e, victims)) = off_hits.take()
+    {
+        reached = Some(e);
+        reached_victims = victims;
+    }
+    // No stream reached the phase on the capture's own field of monsters.
+    if reached.is_none()
+        && let Some((e, victims)) = off_field.take()
     {
         reached = Some(e);
         reached_victims = victims;
@@ -456,7 +477,12 @@ pub(super) fn run_battle(
                     }
                     let reaches = e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.driven.is_some_and(|d| d.is_some())
-                        && e.age_short.is_none();
+                        && e.age_short.is_none()
+                        // Seeded elsewhere, the rounds ahead of the phase
+                        // draw on other passes and can hold another cast:
+                        // a re-run that seats a monster the first run did
+                        // not (`off_field` above) is another fight.
+                        && e.seated_monsters <= first_run.seated_monsters;
                     if !reaches {
                         break;
                     }

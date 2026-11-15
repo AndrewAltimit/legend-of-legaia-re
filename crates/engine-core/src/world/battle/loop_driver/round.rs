@@ -397,6 +397,33 @@ impl World {
         use legaia_engine_battle::target_picker::CursorRow;
         use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
         use legaia_engine_battle_vm::battle_cue_group::MONSTER_SLOT_FIRST;
+        let mut seed = seed;
+        // A film's inject (`seed_mp_unpaid`) writes the cast at the command
+        // state `0x0A`, ahead of the turn picker, so retail's dead-target
+        // redirect still runs on it (`FUN_801DABA4` calls `FUN_801DB124` at
+        // `0x801DAF14`, as for any queued command): a single cast left on a
+        // monster that died before the turn re-rolls a living one. A
+        // mid-cast still's seed is past the picker and keeps its byte. The
+        // Barra recording on `battle_tower_swordie_strike` aims at seat 3,
+        // dead from the strike, and retail's creature drops seat 4, whose
+        // death clip sounds the module's five cues.
+        // REF: FUN_801DB124 (the Magic arm, `0x801DB198..0x801DB1D8`)
+        if self.battle.seed_mp_unpaid && seed.target < 8 {
+            let pc = self.party.party_count.max(1);
+            let engine = if seed.target < MONSTER_SLOT_FIRST {
+                seed.target
+            } else {
+                pc + (seed.target - MONSTER_SLOT_FIRST)
+            };
+            let moved = self.redirect_dead_battle_target(engine, 2, seed.spell_id);
+            if moved != engine {
+                seed.target = if moved < pc {
+                    moved
+                } else {
+                    MONSTER_SLOT_FIRST + (moved - pc)
+                };
+            }
+        }
         let (target_row, target_slot) = match seed.target {
             8 => (CursorRow::Ally, 0),
             9 => (CursorRow::Enemy, 0),

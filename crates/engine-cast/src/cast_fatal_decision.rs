@@ -437,6 +437,11 @@ pub struct FatalDecisionPass {
     pub applied: Option<FatalOutcome>,
     /// Arm 11 staged the victim's reaction.
     pub react: bool,
+    /// Arm 10 zeroed the yaw ladder `ctx[+0x6DA]` and the framing style
+    /// `ctx[+0x0D]` (`0x801F7D68..0x801F7D6C`): the case-8 framings of arms
+    /// 11 and 12, and the Done band's pan after them, count from a counter
+    /// of `0` on the default side.
+    pub camera_reset: bool,
 }
 
 /// What the body asks of its battle.
@@ -706,7 +711,10 @@ pub fn fatal_decision_tick(
             }
             p.retire_wheel = true;
             st.countdown += scalar << 7;
+            // `sh zero,0x6da(a0)` / `sb zero,0xd(a0)` at
+            // `0x801F7D68..0x801F7D6C`.
             ctx.ctx_0d = 0;
+            p.camera_reset = true;
             advance(ctx);
             if let Some(o) = FatalOutcome::from_slot(st.slots[st.landed % WHEEL_SLOTS]) {
                 p.applied = Some(o);

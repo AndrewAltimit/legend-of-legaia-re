@@ -28,8 +28,15 @@ pub const COUNTIN_START_CUE_AT: i32 = 0x1F;
 /// The run-start cue (`li v0,0x201` / `sh v0,-0x4928(v1)` at `0x801CFBF0`).
 pub const COUNTIN_START_CUE: u16 = 0x201;
 
-/// Where the count-in is: retail's states 3 (READY), 4 (`GO!` in) and 5
-/// (`GO!` out) of `FUN_801cf470`.
+/// State 6's lead-in count (`li v0,0x4` / `sw v0,0x513c` at `0x801CFD04`):
+/// state 7 takes `DAT_801D513C` down by one a run and hands over to state
+/// `10` on the run that takes it below one (`addiu v0,v0,-0x1` / `bgtz` at
+/// `0x801CFD1C..0x801CFD34`). That run is the song's first clocked frame,
+/// since the tail clocks every frame whose state is `10..=12` when it reads.
+pub const COUNTIN_LEAD_IN: i32 = 4;
+
+/// Where the count-in is: retail's states 3 (READY), 4 (`GO!` in), 5
+/// (`GO!` out), 6 (the song opens) and 7 (the lead-in) of `FUN_801cf470`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CountInStage {
     /// State 3: the READY banner animator `FUN_801d2d98`.
@@ -39,8 +46,10 @@ pub enum CountInStage {
     GoIn,
     /// State 5: `GO!` fades out.
     GoOut,
-    /// State 6 reached: the song starts.
+    /// State 6 reached: its run opens the song and arms the lead-in.
     Done,
+    /// State 7: the lead-in count runs down ahead of the beat clock.
+    LeadIn,
 }
 
 /// The pre-song count-in as an advancing object - the READY banner's frame
@@ -79,6 +88,8 @@ pub struct CountIn {
     pub(super) start_cue_fired: bool,
     /// What the last run drew: the READY envelope, or the `GO!` brightness.
     pub(super) view: CountInView,
+    /// `DAT_801D513C`, state 7's lead-in count.
+    pub(super) lead: i32,
 }
 
 /// What the count-in draws this vsync.
@@ -109,9 +120,15 @@ pub const COUNTIN_RUNS: i32 = (COUNTIN_READY_EXIT + COUNTIN_ANIM_STEP - 1) / COU
     + 1
     + 2 * ((0x3D + COUNTIN_GO_STEP - 1) / COUNTIN_GO_STEP);
 
-/// Vsyncs from the count-in's first frame to the one that reports `done`
+/// Vsyncs from the count-in's first frame to the one that opens the song
 /// (the first vsync of state 6's run).
-pub const COUNTIN_TOTAL_VSYNCS: i32 = COUNTIN_RUNS * COUNTIN_ANIM_PERIOD_VSYNCS as i32 + 1;
+pub const COUNTIN_SONG_START_VSYNCS: i32 = COUNTIN_RUNS * COUNTIN_ANIM_PERIOD_VSYNCS as i32 + 1;
+
+/// Vsyncs from the count-in's first frame to the one that reports `done`:
+/// state 6's run, then the lead-in runs that leave the count at one. The
+/// beat clock's first frame is the run after, the lead-in's last.
+pub const COUNTIN_TOTAL_VSYNCS: i32 =
+    COUNTIN_SONG_START_VSYNCS + (COUNTIN_LEAD_IN - 1) * COUNTIN_ANIM_PERIOD_VSYNCS as i32;
 
 /// What one [`CountIn::step`] produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,8 +140,15 @@ pub struct CountInStep {
     /// The intro cue ([`COUNTIN_INTRO_CUE`]) on the READY hold's first frame,
     /// or the start cue ([`COUNTIN_START_CUE`]) during the `GO!` fade-in.
     pub cue: Option<u16>,
-    /// State 6 reached: the caller starts the song this frame.
+    /// State 6's run: the caller opens the song this frame
+    /// (`func_0x8001E54C(5, ..)` at the end of state 5, `0x801CFC90`, opens
+    /// the stream state 3 loaded; state 6 attaches it).
+    pub song_start: bool,
+    /// The lead-in's last held run: the caller starts the beat clock, whose
+    /// first frame is the next run.
     pub done: bool,
+    /// This vsync ran the animator: one of the hall's game frames.
+    pub ran: bool,
 }
 
 impl CountIn {
@@ -135,6 +159,11 @@ impl CountIn {
     /// Frames elapsed (the banner animator's own counter).
     pub fn frame(&self) -> i32 {
         self.frame
+    }
+
+    /// State 7's lead-in count `DAT_801D513C` (`0` before state 6).
+    pub fn lead(&self) -> i32 {
+        self.lead
     }
 
     /// Which state the count-in is in.
@@ -153,9 +182,13 @@ impl CountIn {
         dance_countin_banner_envelope(self.frame)
     }
 
-    /// One animator run: retail's per-tick body of the current state.
-    fn run(&mut self) -> Option<u16> {
+    /// One animator run: retail's per-tick body of the current state, with
+    /// its cue, whether it opened the song and whether it left the lead-in at
+    /// its last held frame.
+    fn run(&mut self) -> (Option<u16>, bool, bool) {
         let mut cue = None;
+        let mut song_start = false;
+        let mut done = false;
         match self.stage {
             CountInStage::Ready => {
                 let banner = dance_countin_banner_envelope(self.frame);
@@ -199,11 +232,23 @@ impl CountIn {
                     go: Some(self.go_acc * 2),
                 };
             }
+            // State 6: open the song, arm the lead-in (`0x801CFCD0..0x801CFD0C`).
             CountInStage::Done => {
                 self.view = CountInView::default();
+                self.lead = COUNTIN_LEAD_IN;
+                self.stage = CountInStage::LeadIn;
+                song_start = true;
+            }
+            // State 7. The run that takes the count below one is the beat
+            // clock's first frame, which the caller's game frame runs; this
+            // object stops a run short of it.
+            CountInStage::LeadIn => {
+                self.view = CountInView::default();
+                self.lead -= 1;
+                done = self.lead <= 1;
             }
         }
-        cue
+        (cue, song_start, done)
     }
 
     /// Advance one **vsync**.
@@ -212,11 +257,11 @@ impl CountIn {
     /// [`COUNTIN_ANIM_PERIOD_VSYNCS`] and its picture holds for the period -
     /// so this returns the same view three vsyncs running and then jumps.
     pub fn step(&mut self) -> CountInStep {
-        let (cue, done) = if self.phase == 0 {
-            let done = self.stage == CountInStage::Done;
-            (self.run(), done)
+        let ran = self.phase == 0;
+        let (cue, song_start, done) = if ran {
+            self.run()
         } else {
-            (None, false)
+            (None, false, false)
         };
         self.phase += 1;
         if self.phase >= COUNTIN_ANIM_PERIOD_VSYNCS {
@@ -226,7 +271,9 @@ impl CountIn {
             banner: self.view.banner,
             go: self.view.go,
             cue,
+            song_start,
             done,
+            ran,
         }
     }
 }

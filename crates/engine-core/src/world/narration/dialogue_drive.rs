@@ -646,9 +646,31 @@ impl World {
                         || Some(c.placement_index)
                             != host.world.dialog.stepping_inline_npc.map(usize::from)
                 });
+            // An actor-word op aimed at a **placed object** (a partition-0
+            // door or prop) lands on that object's words, as the prop runner
+            // and the spawned-record slice step it: its clip-control word
+            // `+0x62` (`AB` / `AC` / `AD`, `CC <id> 35|36`), its rate `+0x6A`
+            // (`CC <id> 41`) and the clip-cursor test `CC <id> 8C` (`+0x68`).
+            // `bylon`'s West Voz monk (`P1[33]`, engaged by the hall door
+            // `P0[19]`'s `B1 44 08`) tests the door's cursor with
+            // `CC 13 8C 06 00` and, while the door stands shut, swings it
+            // (`AC 13 07`, `AC 13 01`, `AB 13 03`, `B1 13 00`), sets `0x2A0`
+            // and waits on `P0[15]`'s end latch (`AD 0F 08`). Stepped on the
+            // talker's context, the test read the monk's own idle clip -
+            // mostly off frame 0, so the talk ended at the `21` without
+            // `0x2A0` and every push into the door re-engaged him - and when
+            // it did take the skip the door dropped its collision but never
+            // swung, and the talk parked on a latch nothing raised.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4, 0x801E23EC), FUN_8003C83C, FUN_800204F8
+            let object_target = ext_target
+                .filter(|_| morph_target.is_none())
+                .filter(|_| {
+                    crate::world::prop_interact::is_talk_object_word_op(&id.bytecode, id.pc)
+                })
+                .and_then(|t| host.world.cross_context_object_prop(t));
             let saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
-                .filter(|_| morph_target.is_none())
+                .filter(|_| morph_target.is_none() && object_target.is_none())
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
                     let hint = host.world.player_clip_frames_hint();
@@ -864,6 +886,20 @@ impl World {
                 r
             } else if let Some(ci) = morph_target {
                 crate::world::npc_morph::step_channel_morph_op(&mut host, &mut id, ci)
+            } else if let Some(key) = object_target {
+                let mut target_ctx = host.world.object_prop_ctx(key);
+                host.world.field_vm.executing_object = u16::try_from(key).ok();
+                let r = vm::field::step_with_caller(
+                    &mut host,
+                    &mut target_ctx,
+                    &mut id.ctx,
+                    false,
+                    &id.bytecode,
+                    id.pc,
+                );
+                host.world.field_vm.executing_object = None;
+                host.world.store_object_prop_ctx(key, &target_ctx);
+                r
             } else if let Some(slot) = reseat.or(actor_target).or(seat_target) {
                 host.world.dialog.stepping_inline_npc = None;
                 crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
@@ -1627,7 +1663,7 @@ impl World {
     /// [`InlineDialogue::player_turn`]: legaia_engine_field::inline_dialogue::InlineDialogue::player_turn
     // PORT: FUN_8003774C (case 0x47 target decode)
     // REF: FUN_801DE840 (0x801DEE90..0x801DEF24, 0x801DEFC0..0x801DF054)
-    pub(super) fn arm_talk_player_leg(
+    pub(crate) fn arm_talk_player_leg(
         &mut self,
         id: &mut legaia_engine_field::inline_dialogue::InlineDialogue,
     ) -> Option<usize> {
@@ -1750,7 +1786,7 @@ impl World {
     }
 
     /// One frame of a free-standing `0x38` rotate leg; `true` once it snaps.
-    pub(super) fn step_npc_rotate_leg(
+    pub(crate) fn step_npc_rotate_leg(
         &mut self,
         leg: &mut legaia_engine_field::cutscene_timeline::TimelineFacing,
     ) -> bool {
@@ -1963,8 +1999,8 @@ impl World {
                         prologue.entry_pc,
                         prologue.first_segment,
                     );
-                // A resumed cursor runs as the dialog SM runs it: an
-                // executed `0x21` before any box ends the talk (see
+                // A live cursor runs as the dialog SM runs it: an executed
+                // `0x21` before any box ends the talk (see
                 // `InlineDialogPrologue::resume`).
                 runner.resumed = prologue.resume;
                 runner.npc_slot = self.dialog.active_inline_slot.take();

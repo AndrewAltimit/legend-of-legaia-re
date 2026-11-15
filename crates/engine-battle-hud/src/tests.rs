@@ -1037,6 +1037,35 @@ fn the_message_bar_leads_a_composed_line_with_its_subject() {
     assert_eq!(battle_message_bar(&w).as_deref(), Some(" tail."));
 }
 
+/// A mode-`0` raise starts the bar a seat below its rest and climbs; a
+/// mode-`1` launch (Fatal Decision's stop, `0x801F7708`) starts at rest and
+/// sinks to seat A, where it stays.
+#[test]
+fn the_message_bar_glides_both_ways() {
+    use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+    let mut w = battle_world(3);
+    w.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
+        text: "line".into(),
+        owner: 0,
+        subject: None,
+    });
+    w.battle.message_bar_glide = Some(LogLaunch::new(false));
+    assert_eq!(battle_message_bar_dy(&w), 42);
+    let mut half = LogLaunch::new(false);
+    half.elapsed = half.total / 2;
+    w.battle.message_bar_glide = Some(half);
+    assert_eq!(battle_message_bar_dy(&w), 21);
+    w.battle.message_bar_glide = Some(LogLaunch::new(true));
+    assert_eq!(battle_message_bar_dy(&w), 0);
+    let mut half = LogLaunch::new(true);
+    half.elapsed = half.total / 2;
+    w.battle.message_bar_glide = Some(half);
+    assert_eq!(battle_message_bar_dy(&w), 21);
+    half.elapsed = half.total;
+    w.battle.message_bar_glide = Some(half);
+    assert_eq!(battle_message_bar_dy(&w), 42);
+}
+
 /// The target-select plaque (record `0x29`) prints the pointed monster's
 /// name payload `+0x1BC` (`FUN_801D5854`, `0x801D5B40`) - the buffer whose
 /// caret escape the bottom-right target plaque already draws as the element

@@ -101,6 +101,7 @@ impl World {
             self.casting.active_summon = Some(scene);
         }
         self.run_summon_part_stager_calls();
+        self.deal_late_seated_draw_rands();
     }
 
     /// The op-`0x20` stager calls this frame's part tick queued, run on the
@@ -131,21 +132,26 @@ impl World {
         // PROT 0927's spawn arms seat on the caller's frame the same way; its
         // fades, shake word and row sweep stay queued for the module's tick
         // (`World::run_juggernaut_stager_calls`, which seats nothing).
-        if matches!(entry, 923 | 927) {
+        //
+        // PROT 0966's stager is PROT 0927's over its own records
+        // (`World::run_evil_seru_stager_calls` for the rest).
+        if matches!(entry, 923 | 927 | 966) {
             use legaia_engine_cast::cast_module_ticks as ticks;
             let calls = std::mem::take(&mut self.casting.module_stager_calls);
-            let (now, later): (Vec<_>, Vec<_>) = if entry == 923 {
-                calls.into_iter().partition(|(arm, _)| *arm == 2)
-            } else {
-                (calls.clone(), calls)
+            let (now, later): (Vec<_>, Vec<_>) = match entry {
+                923 => calls.into_iter().partition(|(arm, _)| *arm == 2),
+                // PROT 0966's sweep, fade and shake arms run in the caller's
+                // step too: the HP falls on the calling frame.
+                966 => (calls, Vec::new()),
+                _ => (calls.clone(), calls),
             };
             self.casting.module_stager_calls = later;
             let mut seated = false;
             for (arm, caller) in &now {
-                let spawns = if entry == 923 {
-                    ticks::gilium_stager_spawns(*arm, *caller)
-                } else {
-                    ticks::juggernaut_stager_spawns(*arm, *caller)
+                let spawns = match entry {
+                    923 => ticks::gilium_stager_spawns(*arm, *caller),
+                    966 => ticks::evil_seru_magic_stager_spawns(*arm, *caller),
+                    _ => ticks::juggernaut_stager_spawns(*arm, *caller),
                 };
                 seated |= !spawns.is_empty();
                 for s in &spawns {
@@ -168,6 +174,15 @@ impl World {
             }
             if seated {
                 self.seat_walk_active_summon();
+            }
+            if entry == 966
+                && let Some(spell) = self.casting.capture_spell
+            {
+                let caster = self.battle_ctx.active_actor;
+                for (arm, _) in &now {
+                    let hits = self.evil_seru_stager_arm(caster, spell, *arm);
+                    self.casting.module_esm_hits.extend(hits);
+                }
             }
             return;
         }

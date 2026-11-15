@@ -301,3 +301,88 @@ fn play_runtime_animates_field_vram_or_skip() {
         "garmel play VRAM texels actually changed"
     );
 }
+
+/// `edson`'s script walks out of the scene, so the live preview re-enters it
+/// ([`legaia_engine_scene_host::scene_live::MAX_RESTARTS`] times, then it
+/// stops). Each re-entry rebuilds the host's VRAM from the scene's TIMs,
+/// which do not carry the CLUT walker's source strips: the walker the viewer
+/// keeps would copy blank cells onto the waterfall and water palettes. The
+/// strips are parked again on every re-entry, and the stopped preview's host
+/// still holds `edson`, the scene whose meshes the page draws.
+#[test]
+fn a_restarted_preview_keeps_its_walker_strips_or_skip() {
+    use legaia_engine_scene::clut_walk_anim::ClutWalkAnim;
+    let Some(index) = index() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let index = Arc::new(index);
+    let mut pack = build_field_scene(&index, "edson").expect("build edson");
+    build_field_scene_live(index.clone(), &mut pack);
+    let scene = legaia_engine_scene::scene::Scene::load(&index, "edson").expect("edson");
+    let mut scratch = psx_tim::Vram::new();
+    let Some(ClutWalkAnim::Walk { table, .. }) =
+        ClutWalkAnim::install(&scene, &index, &mut scratch).map(|i| i.anim)
+    else {
+        panic!("edson carries a walker table");
+    };
+    let blank = |v: &psx_tim::Vram, x: u16, y: u16| {
+        (0..16).all(|i| v.pixel(usize::from(x) + i, usize::from(y)) == 0)
+    };
+    let blank_cells = |pack: &legaia_web_viewer::field_scene::FieldScenePack| {
+        let v = pack.display_vram();
+        let sources = table
+            .entries
+            .iter()
+            .flat_map(|e| e.frames.iter())
+            .filter(|f| blank(v, f.src_x, f.src_y))
+            .count();
+        let dests = table
+            .entries
+            .iter()
+            .filter(|e| blank(v, e.dest_x, e.dest_y))
+            .count();
+        (sources, dests)
+    };
+    assert_eq!(blank_cells(&pack).0, 0, "parked at the build");
+    // A destination the scene's own TIMs leave empty stays blank until its
+    // walker first fires.
+    for _ in 0..256 {
+        tick_field_scene_vsync(&mut pack);
+    }
+    assert_eq!(blank_cells(&pack), (0, 0), "every walker has fired");
+
+    let restarts = |pack: &legaia_web_viewer::field_scene::FieldScenePack| {
+        pack.live.as_ref().map_or(0, |l| l.restarts())
+    };
+    let mut seen = 0;
+    let mut since = 256u32;
+    for vsync in 0..20_000u32 {
+        tick_field_scene_vsync(&mut pack);
+        since += 1;
+        if restarts(&pack) != seen {
+            seen = restarts(&pack);
+            since = 0;
+        }
+        let (sources, dests) = blank_cells(&pack);
+        assert_eq!(
+            sources, 0,
+            "blank walker source cells at vsync {vsync}, after {seen} re-entries"
+        );
+        // A re-entered image's destinations fill as the walkers fire again.
+        if since >= 256 {
+            assert_eq!(
+                dests, 0,
+                "blank walker destination cells at vsync {vsync}, after {seen} re-entries"
+            );
+        }
+    }
+    assert!(seen > 0, "edson's preview re-enters (non-vacuous)");
+    let live = pack.live.as_ref().expect("edson runs live");
+    assert!(!live.is_live(), "the preview stops after its re-entries");
+    assert_eq!(
+        live.host.scene.as_ref().map(|s| s.name.as_str()),
+        Some("edson"),
+        "the stopped preview's host holds the viewed scene"
+    );
+}

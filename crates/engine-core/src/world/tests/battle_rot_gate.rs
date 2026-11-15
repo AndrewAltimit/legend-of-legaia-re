@@ -52,7 +52,8 @@ fn rotted_legs_refuse_up_and_down_with_the_buzz() {
     assert_eq!(world.audio.sfx_ring_ops, vec![REFUSED_RING]);
     assert_eq!(press(&mut world, PadButton::Down), 0, "Down refused");
     assert_eq!(press(&mut world, PadButton::Left), 1, "an arm still enters");
-    assert!(world.audio.sfx_ring_ops.is_empty());
+    // An entered arrow sounds the commit cue (`j 0x801D20D4`).
+    assert_eq!(world.audio.sfx_ring_ops, vec![SfxRingOp::Push(0x20)]);
 }
 
 #[test]

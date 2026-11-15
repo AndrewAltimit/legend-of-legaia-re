@@ -123,6 +123,11 @@ impl PlayWindowApp {
                 self.scene_aabb = b;
             }
             self.scene_res = Some(res);
+            // The CLUT-walk animator steps against that image too, and its
+            // install parks the walker's source strips in it: without one
+            // the headless window held an image no windowed run holds, and
+            // nothing compared the two hosts' images across a door.
+            self.ocean_anim = self.resolve_ocean_anim();
             return;
         };
 

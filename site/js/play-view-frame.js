@@ -892,14 +892,12 @@
       const r = this.renderer;
       const held = this._morphHeld;
       let byMesh = null;
-      for (const [slot, waited] of held) {
+      for (const slot of held.keys()) {
         let reach = rt.field_morph_reach(slot);
-        /* The lanes are gone. With nothing held back the mesh is already the
-         * last state; held back, it still has to get there. */
-        if (reach < 0) {
-          if (!waited) { held.delete(slot); continue; }
-          reach = -1 - reach;
-        }
+        /* The lanes are gone: the slot's state is its rest pose (retail
+         * stages the rest vertices afresh on every draw), and the bound
+         * covers the mesh the buffer may still hold. */
+        if (reach < 0) reach = -1 - reach;
         const m = r.sceneMeshes.get(slot);
         if (m && m.aabb && !m.blendedRest) {
           if (!byMesh) {
@@ -937,19 +935,19 @@
       this.renderer.updateSceneMeshPositions(slot, pos);
     }
 
-    /* A morph with no settling to wait for: the mesh now, if a lane is live. */
+    /* A morph with no settling to wait for: the mesh now - the live state, or the rest pose once the lanes are gone. */
     _morphNow(rt, slot) {
       const reach = typeof rt.field_morph_reach === 'function' ? rt.field_morph_reach(slot) : 0;
-      if (reach >= 0) this._morphBuild(rt, slot, reach);
+      /* Negative: the lanes are gone and the build is the rest pose. */
+      this._morphBuild(rt, slot, reach >= 0 ? reach : -1 - reach);
     }
 
     /* What was held back when the frame stopped settling (PSX mode came on, a VR
      * session began): draw it as it stands. */
     _flushMorphHeld(rt) {
-      for (const [slot, waited] of this._morphHeld) {
+      for (const slot of this._morphHeld.keys()) {
         const reach = rt.field_morph_reach(slot);
-        if (reach >= 0) this._morphBuild(rt, slot, reach);
-        else if (waited) this._morphBuild(rt, slot, -1 - reach);
+        this._morphBuild(rt, slot, reach >= 0 ? reach : -1 - reach);
       }
       this._morphHeld.clear();
     }
@@ -988,6 +986,7 @@
         ? Math.min(rt.play_screen_prim_over_run_start() >>> 0, total) : total;
       const back = (typeof rt.play_screen_prim_backdrop_run_end === 'function')
         ? Math.min(rt.play_screen_prim_backdrop_run_end() >>> 0, split) : 0;
+      this._screenPrims.psxNative = this._psxNativePrims();
       this._screenPrims.upload(
         this._psxScreenVertices(rt.play_screen_prim_vertex_bytes()),
         rt.play_screen_prim_indices(),
@@ -1002,26 +1001,29 @@
      * rasterisation on the native 320 x 240 canvas: the corners take the
      * GPU's pixel centre and the textured corners its half-texel bias, the
      * native renderer's `stage_screen_overlay_split`. ScreenVertex: pos at
-     * byte 0, uv at 8, flags at 40, 48-byte stride. PSX_TIE_NDC_Y is why a
-     * sprite's first row lands where the window's does (webgl-shaders.js).
-     * Every screen-primitive stream the page draws takes it: the frame's
-     * own and the dome hub's (play-minigames.js `drawHub`). */
+     * byte 0, uv at 8, flags at 40, 48-byte stride. Which row a corner on a
+     * sample point lands in is the pass's to settle (`ScreenPrimPass.drawRuns`,
+     * told by `psxNative`). Every screen-primitive stream the page draws
+     * takes it: the frame's own and the dome hub's (play-minigames.js
+     * `drawHub`). */
     _psxScreenVertices(vbytes) {
-      if (this.psxRender && this.canvas && this.canvas.width === 320 && this.canvas.height === 240) {
+      if (this._psxNativePrims()) {
         vbytes = new Uint8Array(vbytes);
         const f = new Float32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         const u = new Uint32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         for (let o = 0; o + 12 <= f.length; o += 12) {
           f[o] += 1 / 320;
-          if (u[o + 10] & 1) {
-            f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;
-            f[o + 2] += 0.5; f[o + 3] += 0.5;
-          } else {
-            f[o + 1] -= 1 / 240 - PSX_TIE_FLAT_NDC_Y;
-          }
+          f[o + 1] -= 1 / 240;
+          if (u[o + 10] & 1) { f[o + 2] += 0.5; f[o + 3] += 0.5; }
         }
       }
       return vbytes;
+    }
+
+    /* Whether screen primitives draw as PSX rasterisation's on the native
+     * 320 x 240 canvas (a pass's `psxNative`). */
+    _psxNativePrims() {
+      return !!(this.psxRender && this.canvas && this.canvas.width === 320 && this.canvas.height === 240);
     }
 
     /* The backdrops, from inside the 3D pass (`preSceneHook`). */

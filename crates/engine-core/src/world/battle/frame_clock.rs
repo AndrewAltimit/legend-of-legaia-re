@@ -3,6 +3,16 @@
 
 use super::*;
 
+/// Vsyncs a frame under a capture-band module's own line runs on the
+/// PCSX-Redux recordings: the median of the enemy casts' full-party step-`4`
+/// frames at the clamp in the band `0x70` (`3207` frames, `4` to `11`).
+const MODULE_LINE_FRAME_VSYNCS: u8 = 6;
+
+/// Action state `0x50`, the Done band's first pass.
+const DONE_CLEANUP_STATE: u8 = 0x50;
+/// Action state `0x51`, the HP-bar settle.
+const DONE_SETTLE_STATE: u8 = 0x51;
+
 impl World {
     /// The battle frame the current tick falls in
     /// ([`BattleFrameClock::frame_of`](legaia_engine_battle_loop::frame_clock::BattleFrameClock::frame_of) at `display_frames`).
@@ -46,8 +56,8 @@ impl World {
     /// inside its step.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
         use legaia_engine_battle_loop::frame_clock::{
-            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, measured_frame_cost_at,
-            polygon_frame_work, xa_polled_work_cost,
+            CdTiming, LINKED_STRIKE_WORK, XA_STREAM_ONSET_COST, cost_of_step, is_strike_state,
+            linked_frame_work, measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -59,20 +69,51 @@ impl World {
         // The frame's own work: what it links, when the host prices its
         // draw (`WorldToggles::battle_poly_frame_cost`), else the state's
         // measured base plus the draw load the world counts.
-        // A summon module's arms keep their table: their clips' polls and
-        // the engine's linked count part from retail's frames there (the
-        // Seru films read lower priced, `.9146` to `.889` on a partial set).
-        let summon_arm = arm_step.is_some()
-            && (state
-                == legaia_engine_battle_vm::battle_action::ActionState::SummonSustain.as_byte()
-                || state
-                    == legaia_engine_battle_vm::battle_action::ActionState::SummonReturn.as_byte());
-        let poly = self
-            .battle
-            .drawn_polys
-            .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
+        // The summon band keeps its table: its arms' clips poll and the
+        // linked count parts from retail's frames there (the Seru films read
+        // lower priced, `.9146` to `.889` on a partial set), and its opening
+        // states `0x33` / `0x34` run step `1` or `2` on retail's ring where
+        // the census prices them at `2` or `3` (step agreement `.98` to `.58`
+        // over the 29 Seru films). Under the census the whole band keeps it:
+        // the `0x36` passes no arm table steps part from retail priced
+        // (`.994` to `.965`), as the band's measured rows hold them.
+        // The capture band's arms keep theirs too when the census prices
+        // (step agreement in `0x70` `.88` to `.81` over the enemy films priced,
+        // the engine a third of a step over retail); the window's diagnostic
+        // count prices them as it always has.
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        let window_source = self.toggles.battle_poly_window_count;
+        let summon_band = (ActionState::SummonFadeIn.as_byte()
+            ..=ActionState::SummonReturn.as_byte())
+            .contains(&state);
+        let table_kept = (arm_step.is_some()
+            && (!window_source
+                || state == ActionState::SummonSustain.as_byte()
+                || state == ActionState::SummonReturn.as_byte()))
+            || (!window_source && summon_band)
+            || state == ActionState::SummonFadeIn.as_byte()
+            || state == ActionState::SummonActorFreeze.as_byte();
+        // The census of world state (`World::note_linked_polys`), or the
+        // window's own drawn table under the diagnostic source.
+        let poly = if window_source {
+            self.battle.drawn_polys.map(polygon_frame_work)
+        } else {
+            self.battle.linked_polys.map(|n| {
+                let w = linked_frame_work(n);
+                let monster_acting = self
+                    .actors
+                    .get(usize::from(self.battle_ctx.active_actor))
+                    .is_some_and(|a| a.battle_monster_id.is_some());
+                if is_strike_state(state) && monster_acting {
+                    w.saturating_add(LINKED_STRIKE_WORK)
+                } else {
+                    w
+                }
+            })
+        }
+        .filter(|_| self.toggles.battle_poly_frame_cost && !table_kept);
         let work = match poly {
-            Some(p) => polygon_frame_work(p),
+            Some(w) => w,
             None => measured_frame_cost_at(self.party.party_count, state, passes)
                 .saturating_add(self.battle_frame_load_cost()),
         };
@@ -106,6 +147,24 @@ impl World {
             Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
             _ => cost,
         };
+        // A frame the seek arm's `CdlSetloc` held for longer than one of
+        // PCSX-Redux's ordinary seeks ran past its step. The full-party
+        // Zenoir recording (`battle_tower_swordie_strike`) spends `11` vsyncs
+        // on the seek arm's five frames, and the ring reads `3` for the
+        // sixteen frames behind them on arm 3's own `164` hblanks; the
+        // full-party Barra recording (`battle_kor_spoon_strike`) holds `3`
+        // vsyncs and its arm 1 runs on at the close-up's `2`, then `1`. The
+        // lone caster's seek holds nothing: its arm 3 runs `118` frames at `1`.
+        // Measured on the summon band alone; a capture cast's hold keeps its
+        // frame's cost.
+        let held = std::mem::take(&mut self.casting.drive_held_vsyncs);
+        let cost = if held > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS
+            && matches!(state, 0x35 | 0x36)
+        {
+            cost.max(cost_of_step(3))
+        } else {
+            cost
+        };
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
         // A capture-band module's own line leaves its arms their table's
         // length: retail's frames under one run anywhere from inside the step
@@ -128,6 +187,19 @@ impl World {
     pub fn note_drawn_polys(&mut self, polys: u32) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.drawn_polys = Some(polys);
+        }
+    }
+
+    /// Note the polygons the battle frame the world stands on links, counted
+    /// from world state by the scene host's census
+    /// (`legaia_engine_scene_host::battle_link_census`), which every host
+    /// runs. The next pass prices its work from it while
+    /// `WorldToggles::battle_poly_frame_cost` is up, unless
+    /// `WorldToggles::battle_poly_window_count` names the window's own count
+    /// ([`Self::note_drawn_polys`]). A no-op outside a battle.
+    pub fn note_linked_polys(&mut self, polys: u32) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.linked_polys = Some(polys);
         }
     }
 
@@ -155,6 +227,11 @@ impl World {
             _ => 0,
         };
         self.audio.battle_xa_load_frames = self.audio.battle_xa_busy_frames.saturating_add(tail);
+        // Retail's polls run the read tail past the span whatever the law.
+        self.audio.battle_xa_retail_left = self
+            .audio
+            .battle_xa_busy_frames
+            .saturating_add(XA_READ_TAIL_VSYNCS);
         // The drive word `0x8007BC20` holds `2` from the start (`0x8003D65C`)
         // until the stop `FUN_8003EE00` clears it once the read is done
         // (`0x8003EE2C`), not for the span alone: a `--watch` recording of
@@ -228,14 +305,16 @@ impl World {
     /// ([`EFFECT_PART_COST`](legaia_engine_battle_loop::frame_clock::EFFECT_PART_COST)),
     /// the effect pool's live children
     /// ([`effect_pool_cost`](legaia_engine_battle_loop::frame_clock::effect_pool_cost)),
-    /// and each planned after-image ghost at its body's polygon load
-    /// ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)):
-    /// a ghost re-runs the body's whole draw (`FUN_80049348` calls
+    /// and each planned after-image ghost: a monster's at its body's polygon
+    /// load ([`ghost_draw_cost`](legaia_engine_battle_loop::frame_clock::ghost_draw_cost)),
+    /// a party member's at
+    /// [`PARTY_GHOST_DRAW_COST`](legaia_engine_battle_loop::frame_clock::PARTY_GHOST_DRAW_COST).
+    /// A ghost re-runs the body's whole draw (`FUN_80049348` calls
     /// `FUN_80048A08` per ghost), so a boss's ghost costs what its mesh does.
     pub fn battle_frame_load_cost(&self) -> u16 {
         use legaia_engine_battle::battle_afterimage as ai;
         use legaia_engine_battle_loop::frame_clock::{
-            EFFECT_PART_COST, effect_pool_cost, ghost_draw_cost,
+            EFFECT_PART_COST, PARTY_GHOST_DRAW_COST, effect_pool_cost, ghost_draw_cost,
         };
         let (parts, _) = self.battle_frame_load();
         let pool = self
@@ -283,7 +362,12 @@ impl World {
                 }),
             }
             .filter(|&t| t > 0);
-            let each = ghost_draw_cost(triangles);
+            // A party member's ghost is a flat cost once its form is known
+            // (`PARTY_GHOST_DRAW_COST`); a monster's follows its mesh.
+            let each = match (a.battle_monster_id, triangles) {
+                (None, Some(_)) => PARTY_GHOST_DRAW_COST,
+                _ => ghost_draw_cost(triangles),
+            };
             cost = cost.saturating_add(each.saturating_mul(u16::try_from(n).unwrap_or(u16::MAX)));
         }
         cost
@@ -429,8 +513,18 @@ impl World {
     /// [`Self::apply_battle_frame_step_seed`], which a replay's own step
     /// outranks, and only on retail's cadence: the per-vsync cadence has no
     /// frames to stretch.
+    #[cfg(test)]
     pub(in crate::world) fn apply_cast_arm_frame_step(&mut self) {
+        self.stage_pass_frame_cost();
+        self.close_pass_frame_cost();
+    }
+
+    /// The SM half of a pass's frame cost: which arm table, if any, names the
+    /// step of the frame this pass opened ([`Self::close_pass_frame_cost`]
+    /// pushes it once the pass's node ticks have run).
+    pub(in crate::world) fn stage_pass_frame_cost(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
+        self.battle.pass_frame_cost_due = None;
         if !self.toggles.battle_sm_frame_cadence {
             self.battle.pending_frame_step = None;
             return;
@@ -465,6 +559,19 @@ impl World {
         }
         let state = self.battle_ctx.action_state;
         let band = state == S::SummonSustain.as_byte() || state == S::SummonReturn.as_byte();
+        // The pass of the arm this one runs, counted from the arm's first. A
+        // summon arm runs through the band's two states.
+        let phase = self.casting.module_phase;
+        let pass_state = if band {
+            S::SummonSustain.as_byte()
+        } else {
+            state
+        };
+        let arm_pass = match self.battle.cast_arm_pass {
+            Some((s, p, n)) if s == pass_state && p == phase => n.saturating_add(1),
+            _ => 0,
+        };
+        self.battle.cast_arm_pass = Some((pass_state, phase, arm_pass));
         let measured = self
             .casting
             .summon_stager
@@ -472,19 +579,13 @@ impl World {
             .filter(|_| band)
             .and_then(|st| self.cast_module_for(st.spell_id))
             .and_then(|entry| {
-                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
+                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step_on_pass(
                     entry,
-                    self.casting.module_phase,
+                    phase,
+                    arm_pass,
                     self.toggles.battle_cd_timing,
                 )
             });
-        // The pass of the arm this one runs, counted from the arm's first.
-        let phase = self.casting.module_phase;
-        let arm_pass = match self.battle.cast_arm_pass {
-            Some((s, p, n)) if s == state && p == phase => n.saturating_add(1),
-            _ => 0,
-        };
-        self.battle.cast_arm_pass = Some((state, phase, arm_pass));
         let measured = measured.or_else(|| {
             let spell = self
                 .casting
@@ -499,6 +600,47 @@ impl World {
                 self.toggles.battle_cd_timing,
             )
         });
+        self.battle.pass_frame_cost_due = Some(measured);
+    }
+
+    /// Close a pass's frame: push what it cost and leave the step that reads
+    /// for the next pass. Runs behind the pass's node ticks
+    /// ([`Self::tick_battle_anim_pass`]), so the draw load it prices is the
+    /// frame's own: the ghosts the ring holds after this pass's shift and the
+    /// parts its hits spawned. Retail measures a frame from one `VSync`
+    /// return to the next (`FUN_800173BC` at the flip), its node ticks and
+    /// its draw inside it. A `--ghost-trace` recording of
+    /// `battle_jou_party_vahn_tri_somersault_super_open` draws the slow
+    /// motion's first ghost in frames `1549` and `1550`, the second of them
+    /// costs `692`, and frame `1551` runs step `3`; priced a pass late, the
+    /// ghost's cost reached the ring one frame on and the step with it.
+    pub(in crate::world) fn close_pass_frame_cost(&mut self) {
+        let Some(measured) = self.battle.pass_frame_cost_due.take() else {
+            return;
+        };
+        // A voice line's read span is vsyncs, and retail's frames under its
+        // polls run six to nine of them where the port's default law runs a
+        // loaded frame its step plus one. So the same line covers more of the
+        // port's passes, and a cast's line reached into its Done band: the
+        // HP-bar settle panned on step `4` where retail's runs `3` or `2`
+        // (`17` of the film recordings' `2144` full-party `0x51` frames read
+        // the clamp, in a handful of films whose line starts late in the
+        // action). The line's span is counted a second time on retail's
+        // frames ([`crate::world::AudioState::battle_xa_retail_left`]), and
+        // the Done band loads only what that count has left. The drive word
+        // keeps its own span, and the span law, whose frames run retail's
+        // length, needs no second count.
+        if !self.toggles.battle_frame_span_law
+            && matches!(
+                self.battle_ctx.action_state,
+                DONE_CLEANUP_STATE | DONE_SETTLE_STATE
+            )
+        {
+            self.audio.battle_xa_load_frames = self
+                .audio
+                .battle_xa_load_frames
+                .min(self.audio.battle_xa_retail_left);
+        }
         // `FUN_80016B6C` closes a pass by storing the step this frame's cost
         // reads, waits `VSync` on the one the pass ran at (`0x8001719C`) and
         // only then copies the new one across (`0x800171D8`): the frame this
@@ -518,6 +660,26 @@ impl World {
         // (`XA_POLL_COST_RATIO_MILLI`), arm or not.
         let step = self.battle.frame_clock.step;
         let law = self.toggles.battle_frame_span_law;
+        // The pass's share of the line on retail's frames: a frame the polls
+        // load runs its work under them (`frame_span` of
+        // `xa_loaded_frame_cost`), a capture-band module's line the
+        // recordings' median (`MODULE_LINE_FRAME_VSYNCS`), and the cue's own
+        // pass and the one after it their step.
+        if let Some(n) = self.battle_xa_passes_since_cue() {
+            use legaia_engine_battle_loop::frame_clock as fc;
+            let own = step.max(1);
+            let retail = if n < 2 {
+                own
+            } else if self.audio.battle_xa_poll_load {
+                fc::frame_span(fc::xa_loaded_frame_cost(self.battle.frame_work), own)
+            } else {
+                MODULE_LINE_FRAME_VSYNCS.max(own)
+            };
+            self.audio.battle_xa_retail_left = self
+                .audio
+                .battle_xa_retail_left
+                .saturating_sub(u16::from(retail));
+        }
         let extra = if !self.toggles.battle_party_cost_step
             || (law && self.battle.frame_stretch.is_some())
         {
@@ -1753,19 +1915,20 @@ mod tests {
         );
     }
 
-    /// A party member's two Super Art ghosts cost what the objects its seat
-    /// draws link, as a monster's cost its body's: on a full party they carry
-    /// a strike frame over `0x2D0`, where two flat ghosts left it on step 3.
+    /// A party member's ghost costs the flat party price once its form is
+    /// known: two carry a full party's strike frame over `0x2D0`, one leaves
+    /// it under, as the Super Art recordings' one-ghost frames read.
     #[test]
-    fn a_party_members_ghosts_cost_the_objects_it_draws() {
+    fn a_party_members_ghosts_cost_the_party_price() {
         use legaia_engine_battle_loop::frame_clock::{
-            GHOST_DRAW_COST, ghost_draw_cost, measured_frame_cost, step_of_cost,
+            GHOST_DRAW_COST, PARTY_GHOST_DRAW_COST, measured_frame_cost, step_of_cost,
         };
         let mut w = World::new();
         w.mode = legaia_engine_mode::mode::SceneMode::Battle;
         w.toggles.battle_sm_frame_cadence = true;
         w.actors.push(crate::world::Actor::default());
         let frame = crate::world::BattleGhostFrame {
+            morphs: Vec::new(),
             pose: legaia_anm::player::PoseFrame {
                 bone_outputs: Vec::new(),
                 factor: 0,
@@ -1787,11 +1950,53 @@ mod tests {
         let a = &mut w.actors[0];
         a.battle_object_triangles = Some(vec![600, 400, 300].into());
         a.battle_drawn_objects = Some(vec![true, true, false]);
-        let each = ghost_draw_cost(Some(1000));
-        assert_eq!(w.battle_frame_load_cost(), 2 * each);
+        assert_eq!(w.battle_frame_load_cost(), 2 * PARTY_GHOST_DRAW_COST);
         let base = measured_frame_cost(3, 0x1E);
         assert_eq!(step_of_cost(base + 2 * GHOST_DRAW_COST), 3);
-        assert_eq!(step_of_cost(base + 2 * each), 4);
+        assert_eq!(step_of_cost(base + PARTY_GHOST_DRAW_COST), 3);
+        assert_eq!(step_of_cost(base + 2 * PARTY_GHOST_DRAW_COST), 4);
+    }
+
+    /// A pass's cost is pushed behind its node ticks: the SM's half only
+    /// stages it, and the close prices the draw load the world holds then.
+    #[test]
+    fn a_pass_cost_is_pushed_at_its_close() {
+        use legaia_engine_battle_loop::frame_clock::{PARTY_GHOST_DRAW_COST, measured_frame_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_party_cost_step = true;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.actors.push(crate::world::Actor::default());
+        w.actors[0].battle_object_triangles = Some(vec![1000].into());
+        let before = w.battle.frame_cost_ring;
+        w.stage_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, before, "staged, not pushed");
+        // The pass's node tick brings two ghosts into the walk's reach.
+        let frame = crate::world::BattleGhostFrame {
+            morphs: Vec::new(),
+            pose: legaia_anm::player::PoseFrame {
+                bone_outputs: Vec::new(),
+                factor: 0,
+                finished: false,
+            },
+            pos: [0; 3],
+            ghost_eligible: true,
+            clip_key: 0,
+            variant_track: Default::default(),
+            frame: 0,
+        };
+        w.actors[0].battle_pose_history = std::iter::repeat_n(frame, 8).collect();
+        w.close_pass_frame_cost();
+        assert_eq!(
+            w.battle.frame_work,
+            measured_frame_cost(3, 0x1E) + 2 * PARTY_GHOST_DRAW_COST
+        );
+        // One close a pass.
+        let after = w.battle.frame_cost_ring;
+        w.close_pass_frame_cost();
+        assert_eq!(w.battle.frame_cost_ring, after);
     }
 
     #[test]
@@ -1908,6 +2113,42 @@ mod tests {
         w.casting.module_phase = 1;
         w.seat_retail_rand_word();
         assert_eq!(w.rng_state, 21, "the band goes on from the flash's count");
+    }
+
+    /// A voice line that has run out on retail's frames loads no Done-band
+    /// frame, the settle runs the state's own cost and the drive word keeps
+    /// its span; a line cued late loads the band still.
+    #[test]
+    fn a_spent_voice_line_loads_no_done_band_frame() {
+        use legaia_engine_battle_loop::frame_clock::{CdTiming, measured_frame_cost};
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.toggles.battle_sm_frame_cadence = true;
+        w.toggles.battle_party_cost_step = true;
+        w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
+        w.party.party_count = 3;
+        w.audio.battle_xa_busy_frames = 60;
+        w.audio.battle_xa_load_frames = 60;
+        w.audio.battle_xa_frame_load = true;
+        w.battle_ctx.action_state = 0x2E;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.battle.frame_cost_step, 4, "the line loads a cast frame");
+        // The line has run out on retail's frames: the settle is not loaded.
+        w.audio.battle_xa_retail_left = 0;
+        w.battle_ctx.action_state = 0x51;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.audio.battle_xa_load_frames, 0);
+        assert_eq!(w.audio.battle_xa_busy_frames, 60);
+        assert_eq!(
+            w.battle.frame_cost_ring.newest(),
+            measured_frame_cost(3, 0x51)
+        );
+        // A line cued just ahead of the Done band still loads it.
+        w.audio.battle_xa_load_frames = 60;
+        w.audio.battle_xa_retail_left = 80;
+        w.apply_cast_arm_frame_step();
+        assert_eq!(w.audio.battle_xa_load_frames, 60);
+        assert_eq!(w.battle.frame_cost_step, 4);
     }
 
     #[test]
@@ -2088,9 +2329,52 @@ mod tests {
             "off: the table"
         );
         w.toggles.battle_poly_frame_cost = true;
+        w.toggles.battle_poly_window_count = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_work, polygon_frame_work(3900));
         assert_eq!(w.battle.frame_cost_step, 4);
+    }
+
+    /// The default source is the census of world state: a pass prices the
+    /// count the scene host noted, not the window's, and keeps the table
+    /// while no census has come in.
+    #[test]
+    fn a_priced_frame_reads_the_census() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x2B;
+        w.toggles.battle_poly_frame_cost = true;
+        w.note_drawn_polys(9000);
+        w.push_frame_cost(None);
+        let table = w.battle.frame_work;
+        assert_ne!(table, linked_frame_work(9000), "no census: the table");
+        w.note_linked_polys(3000);
+        w.push_frame_cost(None);
+        assert_eq!(w.battle.frame_work, linked_frame_work(3000));
+    }
+
+    /// Under the census an arm table's step and the summon band's opening
+    /// states keep the table: the census prices neither.
+    #[test]
+    fn the_census_leaves_the_arm_tables_and_the_summon_opening() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        for (state, arm) in [
+            (0x70u8, Some(4u8)),
+            (0x33, None),
+            (0x34, None),
+            (0x36, Some(2)),
+        ] {
+            let mut w = World::new();
+            w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+            w.party.party_count = 3;
+            w.battle_ctx.action_state = state;
+            w.toggles.battle_poly_frame_cost = true;
+            w.note_linked_polys(3000);
+            w.push_frame_cost(arm);
+            assert_ne!(w.battle.frame_work, linked_frame_work(3000), "{state:#x}");
+        }
     }
 
     /// A capture-band module's line loads a priced frame at its work over the
@@ -2108,6 +2392,7 @@ mod tests {
             w.mode = legaia_engine_mode::mode::SceneMode::Battle;
             w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
             w.toggles.battle_poly_frame_cost = true;
+            w.toggles.battle_poly_window_count = true;
             w.party.party_count = 3;
             w.battle_ctx.action_state = 0x70;
             let mut spans = vec![0u16; 0x60];
@@ -2162,5 +2447,27 @@ mod tests {
         w.battle.frame_clock.step = w.battle.frame_cost_step;
         w.apply_cast_arm_frame_step();
         assert_eq!(w.battle.frame_clock.span_extra, 0);
+    }
+
+    /// A seek arm held past one ordinary seek stores a step-`3` entry on the
+    /// summon band and nowhere else; a hold inside one stores nothing dear.
+    #[test]
+    fn a_long_seek_hold_loads_the_summon_frame_it_ends_on() {
+        use legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS;
+        let pass = |state: u8, held: u8| {
+            let mut w = World::new();
+            w.party.party_count = 1;
+            w.battle_ctx.action_state = state;
+            w.casting.drive_held_vsyncs = held;
+            w.push_frame_cost(None);
+            assert_eq!(w.casting.drive_held_vsyncs, 0, "the hold is spent");
+            w.battle.frame_cost_step
+        };
+        assert_eq!(pass(0x35, 0), 1);
+        assert_eq!(pass(0x35, SEEK_HOLD_FREE_VSYNCS), 1);
+        assert_eq!(pass(0x35, SEEK_HOLD_FREE_VSYNCS + 1), 3);
+        assert_eq!(pass(0x36, 9), 3);
+        // A capture cast's hold keeps its frame's cost.
+        assert_eq!(pass(0x70, 9), pass(0x70, 0));
     }
 }

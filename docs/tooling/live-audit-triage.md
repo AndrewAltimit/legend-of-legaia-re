@@ -255,6 +255,7 @@ A row settles the way any audit row does, from the disassembly:
 | `BattleActionHost::pad_held_32` | `_DAT_8007B938`, `0x801E5978` / `0x801E6090` | a button held through a failed run's message or a level-up banner waited it out |
 | `CabinetInput::pad_edge_alt` | `_DAT_8007B938`, `0x801CFA6C` | a direction held on the Baka Fighter player select stepped the cursor once |
 | `BattleSidebandInputs::pad_edge` | `_DAT_8007B938`, `0x8005638C` | a button held through the sparring fight's opening caption waited it out |
+| `DevMenuSession::equip_slot_bits` | equip record `+7` through the item table, `0x801E5A58..0x801E5A8C`; weapon bytes `0x8007B42C` | the developer menu's `EQUIP` confirm put every item on the body byte, and Noa's weapon on Vahn's weapon byte |
 | `VictorySequence::pose_actor`, `BattleActionHost::first_monster_id` | `ctx[+0x13]`, stored by the victory arm (`0x801E66EC..0x801E6760`); `DAT_8007BD0C[0]` | the leader struck every win pose, whoever finished the fight, and Songi's two fights posed the wrong seat |
 
 The short-idle marker was not partial once its missing terms were read off
@@ -314,6 +315,11 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `TopLevelView::cursor_static` | the pause list's cursor word never carries `0x1000`: the root picker masks `DAT_801E46BC` to its row on entry (`0x801D6B64..0x801D6B78`), and the four routines that raise the bit are the shop's mode select's (`0x801DB270`, `0x801DB3F8`, `0x801DBCB8`, `0x801DBDF4`) |
 | `SettleInputs::warp_timer`, `warp_hold` | the settle head's hop probe is the caller's: `World::step_field_vertical` tests the same pair (`_DAT_8007B6B0`, `_DAT_8007B6B4`, `0x801D1C6C..0x801D1CA8`) through `field_warp_tile::pad_suppressed` with the step delta, and hands the head zeros |
 | `TransitionGlobals::bgm_voice_id` | read only by phase 0's `SsSeqSetVol` re-apply (`FUN_80062004`), which restores the live level to a field track the engine already plays at it; the effect is a disclosed no-op |
+| `FieldActorInputs::path_target_present` | it gates `FieldMotionDispatch::run_spline` alone, which no caller reads: the arm it names is the dialogue state machine `FUN_80039B7C`, driven by `World::drive_inline_dialogue` |
+| `DevMenuSession::closed_gate` | `_DAT_8007B868`, the dual-mode word (`dual_mode_gate` above) |
+| `BattleState::forced_monster_ground` | a cast-sequence capture seat, written by the native host's debug seeding through a tuple assignment the tool does not read as a write |
+| `Sequencer::set_exact_tempo` | an engine option for the score's written tempo; the default is retail's rounded vsync budget (`FUN_80061954`) |
+| `MenuRuntime::open_scene_inn`, `open_inn` | retail has no inn screen: a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), which both hosts run; the prompt is a tooling entry |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 ### Open rows
@@ -530,7 +536,7 @@ crates; each row's site names the owning crate.
 | `801d9d30` | `apply_shake` | `crates/engine-camera/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` / `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs` | FALSE INERT |
 | `801e36c4` | `exec_centered_bar` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
-| `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
+| `801e373c` | `card_init` (the `title_prim` hook is a `REF`) | `crates/engine-menus/src/card_flow.rs` | REPLACE |
 | `801e3ee0` | `exec_centered_text` | `crates/engine-title/src/title_prim.rs` | DISCLOSE |
 | `801f0348` | `camera_height_from_size_class` | `crates/engine-battle-vm/src/battle_formulas/round.rs` | DELETE |
 

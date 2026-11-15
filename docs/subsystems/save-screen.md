@@ -477,6 +477,18 @@ the header tab, pill and grid (`0x801DFCDC..0x801DFCE4`, only while
 `_DAT_801F01CC != 0x1000`), so the parked panel and the result line sit alone
 on black.
 
+**A box covers the text under it.** Each panel's strings are linked with the
+panel, so a later box hides the earlier screen's text as well as its sprites.
+A parked overwrite prompt over a filled block shows it: the `Yes` / `No` box
+cuts the info panel's location line at its left edge (a PCSX-Redux film of
+`save_grid_endgame_card_conc`, `RIGHT`, `CROSS`). Both hosts draw every text
+quad after every sprite, so the composition cuts the glyphs already emitted
+to what each box leaves showing before the box's own text joins
+(`occlude_text_under_frames` over the confirm's two frames, the write / read
+panel's and the "Now checking" panel's; the menu root's refusal notice does
+the same). Without the cut a long location line (`Jette's Fortress`,
+`West Voz Forest`) printed across the `Yes` / `No` box's frame.
+
 **Text slots.** Six `0x80`-byte text slots sit at `0x801EED24`, closed by the
 region filename prefixes at `0x801EF024`. Slot 0 is the play-time line, whose
 digits `FUN_801DD35C` pokes from `0x801EED29`; slot 3 is a two-digit counter

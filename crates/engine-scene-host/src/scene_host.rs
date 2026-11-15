@@ -282,6 +282,22 @@ pub struct SceneHost {
     party_form_memo: legaia_engine_battle::battle_party_form::PartyFormMemo,
     /// The last fight's stage resources ([`Self::battle_stage_resources`]).
     battle_stage_memo: std::sync::Mutex<Option<battle_stage::MemoisedStage>>,
+    /// The fight in progress's census geometry (the stage and each seat's
+    /// body), built by [`SceneHost::refresh_battle_link_census`] once per
+    /// battle entry serial and per seat identity.
+    pub(crate) battle_link: Option<crate::battle_link_census::BattleLinkGeometry>,
+    /// The census's reusable projection buffer.
+    pub(crate) battle_link_scratch: crate::battle_link_census::LinkScratch,
+    /// The stage's second backdrop copy as the battle edge resolved it
+    /// (`battle_stage::stage_battle_world` in `legaia-engine-session`), for
+    /// the census's stage; the half turn when no edge named one.
+    pub(crate) battle_link_second: Option<legaia_scene_formats::battle_backdrop::SecondCopy>,
+    /// The summon creature's census body and the slot it is seated in
+    /// (`battle_stage::seat_summon_creature` in `legaia-engine-session`).
+    pub(crate) battle_link_creature:
+        Option<(usize, std::sync::Arc<crate::battle_link_census::LinkMesh>)>,
+    /// The last frame's census, by class (`LEGAIA_DIAG_GPU_COST` logs it).
+    pub battle_link_last: crate::battle_link_census::LinkCount,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the

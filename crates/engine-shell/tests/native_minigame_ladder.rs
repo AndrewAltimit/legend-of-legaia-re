@@ -445,7 +445,9 @@ fn baka_attacks() -> String {
     }
     out
 }
-const BAKA_TICKS: usize = 2600;
+// The duel this schedule plays runs past tick 2600 since the cabinet takes
+// the player select's lineup draw (`rand()` in state `0x0A`) retail takes.
+const BAKA_TICKS: usize = 3600;
 const BAKA_THROW_EVERY: usize = 20;
 
 /// The Baka Fighter duel played to a **player win** - which is the only thing

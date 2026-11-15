@@ -127,7 +127,30 @@ impl World {
         if let Some((a, issued)) = self.casting.drive_arms
             && !issued
             && arm >= a.seek_arm
+            && !(arm == a.seek_arm && self.module_seek_on_arm_exit())
             && self.module_seek_ready()
+            && let Some(lba) = legaia_engine_battle_vm::battle_cd_drive::clip_lba(a.slot)
+        {
+            self.casting.drive.seek_when_ready(lba);
+            self.casting.drive_arms = Some((a, true));
+        }
+    }
+
+    /// Whether the resident module's seek call sits at its seek arm's way out
+    /// and not at its head. PROT 0905's arm 2 (`0x801F6DA4`) drains its
+    /// countdown and waits on `ctx[+0x276]` before `jal 0x8003EAE4`, so the
+    /// seek goes out on the pass that leaves the arm and arm 3's
+    /// `FUN_8003F2B8(1)` poll returns busy on its first pass.
+    pub(in crate::world::battle::cast_band) fn module_seek_on_arm_exit(&self) -> bool {
+        self.casting.module_running_entry == Some(905)
+    }
+
+    /// The pass that leaves a [`Self::module_seek_on_arm_exit`] seek arm
+    /// issues the seek.
+    pub(in crate::world::battle::cast_band) fn issue_module_seek_on_exit(&mut self, arm: u8) {
+        if let Some((a, false)) = self.casting.drive_arms
+            && arm == a.seek_arm
+            && self.module_seek_on_arm_exit()
             && let Some(lba) = legaia_engine_battle_vm::battle_cd_drive::clip_lba(a.slot)
         {
             self.casting.drive.seek_when_ready(lba);
@@ -154,7 +177,10 @@ impl World {
             && self.casting.drive_ticked_at + 1 >= self.clock.display_frames
             && self.battle_ctx.menu_open == 0
             && self.casting.drive_arms.is_some_and(|(a, issued)| {
-                !issued && self.casting.module_phase == a.seek_arm && !self.casting.drive.ready()
+                !issued
+                    && self.casting.module_phase == a.seek_arm
+                    && !self.casting.drive.ready()
+                    && !self.module_seek_on_arm_exit()
             })
     }
 
@@ -167,6 +193,7 @@ impl World {
     pub fn step_blocked_cast_frame(&mut self) {
         let arm = self.casting.module_phase;
         self.step_module_drive(arm);
+        self.casting.drive_held_vsyncs = self.casting.drive_held_vsyncs.saturating_add(1);
     }
 
     /// Whether the resident module's current arm waits on the drive: the
@@ -193,8 +220,8 @@ impl World {
         let Some((a, issued)) = self.casting.drive_arms else {
             return false;
         };
-        (arm == a.seek_arm && !issued)
-            || (arm == a.poll_arm && issued && !self.casting.drive.idle())
+        (arm == a.seek_arm && !issued && !self.module_seek_on_arm_exit())
+            || (arm == a.poll_arm && issued && self.casting.drive.poll_busy())
     }
 
     /// The module's pass on `arm` makes the head cue's call once `arm` has
@@ -487,5 +514,57 @@ impl World {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use legaia_engine_battle_vm::battle_cast_cue::ModuleDriveArms;
+
+    fn armed(entry: u32) -> World {
+        let mut w = World::new();
+        w.casting.module_running_entry = Some(entry);
+        w.casting.drive_arms = Some((
+            ModuleDriveArms {
+                seek_arm: 2,
+                poll_arm: 3,
+                slot: 0xC,
+            },
+            false,
+        ));
+        w
+    }
+
+    /// PROT 0905's seek leaves on the pass that leaves its seek arm, so the
+    /// arm does not hold on the drive and the poll arm does.
+    #[test]
+    fn veras_seek_goes_out_on_its_seek_arms_exit() {
+        let mut w = armed(905);
+        assert!(w.module_seek_on_arm_exit());
+        assert!(!w.module_drive_holds(2), "the seek arm runs its own gates");
+        w.step_module_drive(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(false));
+        w.issue_module_seek_on_exit(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(true));
+        assert!(w.module_drive_holds(3), "the poll's first pass is busy");
+        while !w.casting.drive.idle() {
+            w.casting.drive.tick();
+        }
+        assert!(!w.module_drive_holds(3));
+    }
+
+    /// Every other module seeks at its seek arm's head and holds the arm
+    /// until the seek is out.
+    #[test]
+    fn another_module_seeks_at_its_seek_arms_head() {
+        let mut w = armed(904);
+        assert!(!w.module_seek_on_arm_exit());
+        assert!(w.module_drive_holds(2));
+        w.issue_module_seek_on_exit(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(false));
+        w.step_module_drive(2);
+        assert_eq!(w.casting.drive_arms.map(|(_, issued)| issued), Some(true));
+        assert!(!w.module_drive_holds(2));
     }
 }

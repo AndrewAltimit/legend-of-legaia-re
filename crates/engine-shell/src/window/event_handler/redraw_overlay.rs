@@ -502,6 +502,13 @@ impl PlayWindowApp {
         if self.session.host.world.cast_frame_persists() {
             under.extend(self.session.host.world.cast_armed_wash_prim());
         }
+        // The game-mode picker follows a light window chrome, as the
+        // Multiplayer screen below does (`light_mode_picker`).
+        if let Some(light) = self.light_mode_picker() {
+            use legaia_engine_ui::expansion_modes::light::light_prims;
+            light_prims(&mut under, &light);
+            light_prims(&mut over, &light);
+        }
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.
         under.extend(self.netplay_prims());

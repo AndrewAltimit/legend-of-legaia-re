@@ -95,19 +95,32 @@ impl World {
         {
             self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Cursor);
         }
-        // The ring's two status refusals (`ring_arm_refused`): a press on
-        // a refused arm is dropped with the buzz cue, and the ring stays up.
+        // The ring's refusals: a press on a refused arm is dropped with the
+        // buzz cue, and the ring stays up. Two are status bits
+        // (`ring_arm_refused`); the Magic arm's first test is the member's
+        // Ra-Seru marker (`beq v0,zero,0x801D2968` at `0x801D1420`), and the
+        // Item arm's only one is the special word's `0x100`
+        // (`0x801D1370..0x801D137C`).
         if let CommandPhase::Menu { .. } = session.phase {
             use legaia_engine_battle_menus::battle_input::BattleCommand;
             let status = self.raw_status_word(session.actor);
             let cursor_arm = session.menu_command();
+            let no_raseru = !self.ring_member_has_raseru(session.actor);
+            let no_items = self.special_battle_word() & SPECIAL_ITEM_FORBIDDEN != 0;
             let mut refused = false;
             for (pressed, arm) in [
+                (&mut ev.up, Some(BattleCommand::Item)),
                 (&mut ev.left, Some(BattleCommand::Attack)),
                 (&mut ev.right, Some(BattleCommand::Magic)),
                 (&mut ev.cross, cursor_arm),
             ] {
-                if *pressed && arm.is_some_and(|a| ring_arm_refused(status, a)) {
+                if *pressed
+                    && arm.is_some_and(|a| {
+                        ring_arm_refused(status, a)
+                            || (a == BattleCommand::Magic && no_raseru)
+                            || (a == BattleCommand::Item && no_items)
+                    })
+                {
                     *pressed = false;
                     refused = true;
                 }
@@ -462,6 +475,29 @@ impl World {
             a.battle.strike_index = 0;
         }
         written
+    }
+
+    /// Whether the ring's Magic arm finds a Ra-Seru on the member at battle
+    /// ordinal `actor`: the marker `ctx[+0x25F + member]` the arm reads at
+    /// `0x801D1418`.
+    ///
+    /// A member who knows a spell reads bound whatever the equipment byte
+    /// holds. On retail the two never part - a spell is absorbed through the
+    /// Ra-Seru - so the rule changes nothing a disc save can hold; it keeps
+    /// the Magic arm for the states only the port makes (the Seru cheat on a
+    /// scene-picker party, whose starter loadout carries no story gear). A
+    /// member with no roster record reads bound too.
+    ///
+    /// REF: FUN_801D0748 (`0x801D1408..0x801D1420`)
+    pub(in crate::world) fn ring_member_has_raseru(&self, actor: u8) -> bool {
+        let roster_slot = self.party_roster_slot(usize::from(actor));
+        let Some(record) = self.party.roster.members.get(roster_slot) else {
+            return true;
+        };
+        self.miracle_marker_armed_for(roster_slot as u8)
+            || record.spell_list().count != 0
+            || !self.seru.log.learned_spells(roster_slot as u8).is_empty()
+            || !self.expansion_pack_spell_ids(roster_slot as u8).is_empty()
     }
 
     /// The acting slot's Miracle marker `ctx[+0x25F + slot]`, as retail's

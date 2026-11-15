@@ -160,6 +160,13 @@ pub struct Scenario {
     /// and the poke is named here so nothing downstream reads it as such.
     #[serde(default)]
     pub ram_poked: Vec<String>,
+    /// System flags that stood when the state's scene spawned and that the
+    /// capture probe lowered before the state was saved (a `ram_poked` flag
+    /// clear on a state loaded inside the scene). The placements still stand
+    /// where their records seated them under those flags, which a seeding
+    /// harness reproduces by spawning the scene with them raised.
+    #[serde(default)]
+    pub spawned_under_flags: Vec<u16>,
     /// The door a walked capture last came through: the scene it was taken
     /// from and, when that scene has several into this one, the
     /// partition-2 record. A state reached through a door carries history a

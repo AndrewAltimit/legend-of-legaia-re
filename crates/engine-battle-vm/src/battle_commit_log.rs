@@ -156,10 +156,22 @@ pub struct CommitLogRow {
     /// Placement record of the command chip ([`RECORD_CHIP_ATTACK`] etc).
     pub command_record: usize,
     pub target: CommitLogTarget,
+    /// The element badge a single monster target's column wears: the commit
+    /// arm copies the target-select record's string pointer and width into
+    /// the column (`FUN_801D5718`, `+0x14` and `+0x06`), and that string is
+    /// the target's display name `+0x1BC`, caret escape and all, so the
+    /// column is [`TARGET_BADGE_LEAD`] wider and carries the badge in front
+    /// of the name.
+    pub target_badge: Option<u8>,
     /// Horizontal offset of the whole row from its resting seats while the
     /// log is launching ([`LogLaunch::x_offset`]); `0` at rest.
     pub slide_x: i16,
 }
+
+/// How much wider a badged target column is: the 20-pixel element badge and
+/// the 5-pixel gap the name escape's trailing space leaves (the plaques'
+/// `20 + 5`).
+pub const TARGET_BADGE_LEAD: u16 = 25;
 
 /// The whole-enemy-side label - record [`RECORD_ALL_ENEMIES`]'s content,
 /// leading spaces included.
@@ -187,7 +199,14 @@ impl CommitLogRow {
             command_record: self.command_record,
             command_width: CHIP_WIDTH,
             target: match &self.target {
-                CommitLogTarget::Single(t) => LogTarget::Single { width: width(t) },
+                CommitLogTarget::Single(t) => LogTarget::Single {
+                    width: width(t)
+                        + if self.target_badge.is_some() {
+                            TARGET_BADGE_LEAD
+                        } else {
+                            0
+                        },
+                },
                 CommitLogTarget::AllEnemies => LogTarget::AllEnemies,
                 CommitLogTarget::AllAllies => LogTarget::AllAllies,
                 CommitLogTarget::None => LogTarget::None,

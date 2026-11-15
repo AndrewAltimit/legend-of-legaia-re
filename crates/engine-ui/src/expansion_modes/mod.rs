@@ -24,6 +24,7 @@ mod duel;
 mod golf;
 mod hunt;
 mod items;
+pub mod light;
 pub mod netplay;
 pub mod party;
 mod poker;
@@ -81,6 +82,8 @@ pub(crate) mod ink {
 pub(crate) mod pen {
     pub const WHITE: [f32; 4] = [0.92, 0.92, 0.92, 1.0];
     pub const DIM: [f32; 4] = [0.58, 0.62, 0.68, 1.0];
+    /// A row that can be picked and is not under the cursor.
+    pub const SOFT: [f32; 4] = [0.78, 0.80, 0.84, 1.0];
     pub const GOLD: [f32; 4] = [0.93, 0.74, 0.26, 1.0];
     pub const RED: [f32; 4] = [0.86, 0.18, 0.16, 1.0];
     pub const INK: [f32; 4] = [0.08, 0.08, 0.10, 1.0];

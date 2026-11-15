@@ -956,6 +956,17 @@ slow motion. Four **tick** bodies sweep the party row
 | 965 `0xB6` Doomsday | phase `0x0B` (the `beq v1,0x0C` / `slt` pair at `0x801F6AE8` sends it to `0x801F7648`) | |
 | 966 tick | arm 26 | power `0x327`, see [PROT 0966](#prot-0966-evil-seru-magic) |
 
+**Only Chaos Breath draws between seats.** Its seat body follows the wrapper with two
+`rand()` calls for Venom and Toxic (`jal 0x80056798` at `0x801F7888` / `0x801F78B0`).
+Mystic Circle's (`jal 0x801DD4B0` at `0x801F70EC`, the numeral at `0x801F7100`) and
+Doomsday's (`0x801F77B4..0x801F7840`: the wrapper, the numeral, the clamp, the HP store
+and the knockdown stage) run from one wrapper call to the next with no draw. A
+`--wrapper-trace` recording of Doomsday enters its three rolls on seeds exactly three
+draws apart. The port drew the status pair for all three bodies, so the second and
+third victims rolled on other words: on retail's seed the film landed `2243`, `2370`
+and `2359` against the recording's `2243`, `2188` and `2308`, and lands all three with
+the two draws gone (`World::sweep_status_rolls`). Grade `disassembly` + `capture`.
+
 ### The hit tint: colour, blend and impact selector
 
 Beside its HP write a hit arm stores the struck seat's colour word `+0x04`,
@@ -1080,6 +1091,68 @@ directors carry their bumps (`creature_restage`). PROT 0932 is one: its arms `0x
 scale `0x1800` (`0x801F6EF4`). Modules outside the list keep the at-once commit
 until their stage stores are read the same way: enlarging the list without the
 bumps parks the arms that wait on a cut.
+
+### A staged caster clip between its stage and its idle
+
+A capture-class body stages its caster's clip once and says nothing more until its
+closing store, and three rules of the anim tick decide what the body does in between.
+Each was read off a film whose caster stood on another clip, or another keyframe, than
+retail's.
+
+- **The natural end commits whatever is staged.** `FUN_80047430` zeroes `+0x1DA` only
+  when `+0x1DC` bit 2 is up (`0x80047B30..0x80047B44`), then calls the commit
+  unconditionally (`0x80047B54`). The action SM routes a capture cast past the state
+  that raises bit 2 (`0x2A`'s terminator), so a clip the module staged and left staged
+  re-commits from its first keyframe at every end. Ultra Charge stages `7` with the bump
+  in arm 0 and stores nothing until arm 1's pass: `nilboa_koru_pre_ultra_charge`'s
+  recording wraps the clip at cursor `464` three times. Port:
+  `cast_module_ticks::capture_caster_clip_loops`, read by `World::finish_staged_clip`.
+- **A park stands until the module clears its budget.** The closing store is a trio,
+  `sb zero,0x21b` / `sh zero,0x176` / `sb zero,0x1da`, on one arm's pass: the park is
+  released, the clip runs on from its window to its natural end, and the idle commits
+  there. The idle byte alone leaves the clip on its park until the band ends.
+- **A monster under a zero colour word does not tick** (`0x800474D4..0x800474E0`), so a
+  cut that hides the caster by colour stands it on the keyframe the cut found until
+  something shows it again.
+
+| Body | Closing store | What the recording holds |
+|---|---|---|
+| 0962 `0xA5` Ultra Charge | arm 1's pass, `sb zero,0x1da` with the bump (`0x801F6D14..0x801F6D20`) | clip `7` wrapping through arm 1, cut to idle on the pass |
+| 0935 Earthquake | arm 5's pass, the trio (`0x801F7A80..0x801F7A8C`) | clip `9` off its window at `512`, idle from cursor `712` in arm 6 |
+| 0936 Hyper Crush | arm 6's pass, the trio (`0x801F78B0..0x801F78B8`) | clip `0x0B` parked on `128` through arms 4 to 6, idle after `272` in arm 7 |
+| 0937 Hyper Lightning | the `0xFF` arm, the trio (`0x801F780C..0x801F7814`) | the park to the band's end |
+| 0950 `0x5A` Rolling Flare | arm 3's pass, the trio (`0x801F8000..0x801F8008`) | clip `8` parked on `304`, running out through arm 4 |
+| 0940 `0x3C` Glare | arm 1 stages the idle bare on every pass (`0x801F6D94`); its cut hides the caster (`sw zero,0x4` / `sb 0xFF,0x21c` at `0x801F6EC4..0x801F6EC8`) | Medusa's clip `8` on cursor `1024` through arms 2 and 3, running out in `0x51` |
+| 0960 `0x7B` Plasma Strike | arm 16's pass, the trio with the bump (`0x801F8568..0x801F857C`) | the close clip `0x0F` cut to idle on the pass, at cursor `382` |
+
+Glare's arm 1 also hides every party seat but the victim and every monster seat but the
+caster on each pass, ahead of its gate (`+0x21C = 0xFF`, `+0x04 = 0`,
+`0x801F6CB8..0x801F6D80`), and its cut shows the victim (`0x20080200`, flag `0`). Zora's
+rate drops to `4` on the same passes (`0x801F6C90..0x801F6C9C`). Ultra Charge's `0xB5`
+formation stores rate `4` on both arms (`0x801F6AF4`, `0x801F6C30`). Ports: the bodies'
+directors (`CaptureSeatWrite::loop_release`, `CaptureCamArm::others_every_pass`).
+
+Over the enemy set the six films read `.952` to `.987` (Glare), `.839` to `.864` (Ultra
+Charge), `.900` to `.913` (Rolling Flare), `.899` to `.904` (Hyper Crush) and `.988` to
+`.990` (Van Saryu's Earthquake) on the plain seat, with no cue moved. A body whose
+closing store is not ported keeps the one play and the converge on idle. Grade
+`disassembly` + `capture`.
+
+**The close decides the Done band's rates.** Plasma Strike's trio comes with the
+`+0x1DC` bump, so Lu Delilas is on idle when the band leaves. The action SM's rate
+restore `FUN_801E93C8` runs only while the acting monster's committed clip carries a
+zero `+0x87`, and the close clip `0x0F` is a solo clip: left to play out, it held the
+caster on rate `2` and the victim on `4` through `0x51` where the recording reads `8`
+on both from the band's first pass. With the store the film's `0x71` reads `.782` to
+`.987` and `0x51` `.955` to `.985`.
+
+**What the films still list.** A pass over every enemy film on the recording's own
+steps, holding each seat's clip, cursor (off the idle) and rate against retail's at
+each pair, lists no other capture caster on another clip than retail's for more than a
+handful of pairs: the rows of `CAPTURE_CASTER_STAGES` whose clips park on a window
+never reach a natural end while staged, and Ultra Charge is the one whose clip wraps
+there. Cross Beam's caster stands on clip `8`, cursor `416`, for the three passes of
+`0x71` and `0x50` where the port's is already on idle.
 
 ### One owner per hit
 
@@ -1404,6 +1477,18 @@ readout rolls up on its own; none of the three healing images (PROT 0905, 0911,
 beside its HP write. The `0x83` and `0x89` recordings show the readout roll and
 no number. The fold drops its heal popup for these casts.
 
+A sweep arm throws its numbers where it rolls. Each of the three trampoline-arm
+sweeps calls the push per swept seat on the raw wrapper roll, between the roll
+and the clamp: PROT 0941 `0xB9` (`jal 0x801dd4b0` / `jal 0x801f44a0` at
+`0x801F6FAC..0x801F6FC0`), PROT 0950 `0xAB` (`0x801F770C..0x801F7720`) and PROT
+0956 `0x71` (`0x801F78D0..0x801F78E4`, the other leg's at `0x801F7A40`). The
+tick lands the HP and the fold is waived, so the numerals are the tick's to
+raise as well (`World::push_sweep_popups`): Water Hazard's three stand over the
+party through the whole of arm 3 on retail's recording, where the port's sweep
+landed the same HP on the same pass and showed nothing. An audit of the arm in
+which each seat's HP column moves finds no other cast of the enemy set landing
+on another arm than retail's. Grade `disassembly` + `capture`.
+
 #### Other directly-called ticks
 
 | Tick | Owner | Reached from | Phase arms | Damage |
@@ -1649,6 +1734,19 @@ re-arms literals. Four arms do not fit one word:
 
 Each pass of arm 2 stands the caster off that point by `axis * (0x200 - word) >> 12` along its side axis (the cosine view at `0xFFF - facing`, the sine base at `0x1000 - facing`), on the side the counter's parity names, then bumps the counter. The passing pass pushes the point by `axis / 8` and the body seats the clone there (the spawn-node builder at `0x801F7F44`). The clone's node wears the caster's heading, and its colour word is stamped `0x3FCFF3FC`, full white, which eases back to neutral. The caster stays where its last shake left it, so the two halves stand about a thousand units apart across the old seat.
 
+The passing pass makes one shake step, on the counter as it stands, and pushes the point on the
+counter that step bumped, so the caster and the clone always land on opposite sides. The port steps
+the shake on the tick that opens a battle frame; stepped again on the tick the word runs out, inside
+a frame already stepped, the caster crossed back and stood on its clone
+(`battle_map01_green_slime_divide_mid_cast` and `battle_deroa_jette_clone_mid_cast` both read the
+acting seat about `1025` units off through arm 3).
+
+Which side each half takes is the parity of the passes the arm ran, and the word drains by twice the
+frame step a pass, so the side follows the frame steps: on `--retail-steps` both films land retail's
+way (`.962` to `.990` and `.962` to `.979`), and on the engine's own steps Divide does (`.955` to
+`.972`) while Clone runs one pass more than retail and lands mirrored (`.961` to `.949`), which is
+[the frame step's thread](../reference/open-rev-eng-threads.md). Grade `disassembly` + `capture`.
+
 Evidence: `battle_map01_green_slime_divide_mid_cast` played forward in PCSX-Redux. The caster faces `0x800` on `(26, -178)` and rocks out to `-485` by the passing pass. The point moves to `537`, where the clone (pool slot 6) is seated, and the two separate a few units more on the next frame. Arm 1's flag `10` eases the caster toward white from its neutral colour word. In the port the engine's resting word is `0`, which reads as a blacked-out body under a raised flag, so the host seeds the neutral word when the flag goes up.
 
 **Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. Arm 4 adds `step * scalar` to the TR z global `0x800840C0` every pass ahead of its gate (`0x801F6FD0..0x801F7014`), so the shot pulls back through the hits. The finishing arm shows the caster again.
@@ -1869,14 +1967,21 @@ arm 2 (`ctx[+0x279] += 1`) moves it on. The stager is reached through move-VM
 op `0x20`, from record `0x801F7B80`, one of the three parts arm 4 spawns. Its
 program runs `WAIT 95, WAIT 63, WAIT 30, op20(0), WAIT 0, op20(1), WAIT 63,
 op20(2)`: the white and blue flash pair, the creature shown (`+0x21C = 0`,
-`+0x0C = 0x1000`), then the release. The engine runs the stager's spawn
-arms off the parts' calls ([spawn reports](#a-module-that-reports-its-spawns))
-but keeps these three on `cast_module_camera::gizam_direct`, which holds
-phase 5 on that program's clock
-(256 ticks, a wait `v` lasting `v + 1` frames) and the host fires stager arms
-0 and 1 on ticks 191 and 192. Retail's hole lasts 309 vsyncs and its flash
-lands about 60 vsyncs later than the clock puts it; the difference is not
-traced. Arm 4 hides the creature behind both its flag and its colour word
+`+0x0C = 0x1000`), then the release. The engine runs all of the stager's
+arms off the part's own calls ([spawn reports](#a-module-that-reports-its-spawns)):
+the record is seated by arm 4 and its three state calls reach the module's next
+tick (`World::run_gizam_record_calls`), where arm 2 steps the phase. The hole's
+length is therefore the record's own: each wait is `v << 3`, drained
+`scalar * step` a pass until it runs out, so a wait that does not divide by the
+pass's step runs a pass over, and the hole lasts as many passes as the step
+history gives it. `cast_module_camera::gizam_direct` keeps the same program as
+one 256-vsync clock (a wait `v` lasting `v + 1` frames, arms 0 and 1 on ticks
+191 and 192) for a host that seats no record. Counted on that clock where the
+record runs, arm 5 ran `65` passes on a recording's own steps for retail's
+`66`, one frame-driver `rand()` short for the rest of the cast: the `0x84` film
+reads `.965` plain and on `--retail-steps` (`.899` on both) off the
+record. Retail's hole lasts 309 vsyncs on that recording, its frames running
+past their step. Arm 4 hides the creature behind both its flag and its colour word
 (`+0x21C = 0xFF`, `sw zero,4(s4)` at `0x801F6D34`), so through the hole it
 neither draws nor ticks its node: retail's clip waits on its first frames
 until stager arm 1 lights it. With the flag alone the port drew the creature
@@ -3746,8 +3851,14 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   shell's sixteen arm-2 parts match retail's at each paired frame field for field (colour
   word, level and `+0x7A` ramps, radius and height channels, UV / tpage / CLUT, the `+0x26`
   spin), and the shell's texture page `0x88` and CLUT rows `488` / `490` match the
-  state's VRAM byte for byte. What the film still parts on is the shell's texture phase
-  and the backdrop's star field, not the cast's parts.
+  state's VRAM byte for byte. Arm 0 seats `0x801F7720` on the caster's own seat
+  (`addiu a0,s4,0x34` / `addiu a1,s4,0x44` at `0x801F6C4C..0x801F6C50`), where its first
+  thirteen calls take the stack's zeroed trios: the record is the sea disc under Freed,
+  and a `--retail-parts` recording of `battle_jou_freed_v3_water_crystals_mid_cast`
+  holds its node at the caster's `(-600, 0, 825)` from arm 1 on. Seated at the stage
+  origin the disc's far edge fell short of the horizon and the stage floor showed
+  through to it: the film reads `.782` to `.981` on `--retail-steps --rand-track`, its
+  long arm `.726` to `.996`. Grade `disassembly` + `capture`.
 - PROT 0943's arm 2 seats two records on each party seat (`0x801F6C9C..0x801F6D30`),
   `capture_arm_party_records`. Its gate drains the bare step, its seeds are literals.
 - PROT 0956's `0x75` (Paralyzing Wave) arm 2 marks a live victim `+0x16E |= 0x400` and
@@ -3931,6 +4042,20 @@ for the per-turn seed. Arm `k = 5`'s pass flushes again, takes the golem off (no
 `+0x10 |= 8`, HP `0`) and lights the crystal in the element's colour with `+0x0C = 0x1000`
 (`0xFFC00`, `0x3FF00000`, `0x3FF`), the word the hold state `0xFF` keeps until the `0xFF`
 arm clears it.
+
+**The golem's rate is the last strike's leftover.** The `0xFF` arm stages seat 7's idle
+with the bump (`sb zero,0x1da` at `0x801F8880`, `+0x1DC += 1` at `0x801F888C..0x801F8898`)
+after `k = 5` took the node off, so no tick consumes the bit, and the installer leaves
+`+0x1DC` alone. The next golem's first node tick, on the install pass, finds bit 0 up
+(`0x800478F4`) and commits the staged idle: the commit's decay row lifts the installer's
+rate `2` to `4` (`0x8004B080..0x8004B090`) and the golem idles at `4` from cursor `0`. A
+`--watch` recording of `rugi_rogue_pre_rogue_wind` holds the installer's store
+(`0x801F1DFC`) and the commit's on one vsync, and the state's seat 7 reads `+0x1DC = 1`
+before the cast; `rugi_rogue_pre_rogue_flame`'s state reads `0` and its golem runs at
+the installer's `2`. So the first strike of a battle opens at a quarter rate and every
+later one at half. Port: `BattleState::creature_seat_restage`, raised by the chain's
+`0xFF` stage on the bare seat and spent by `World`'s creature spawn. Grade `disassembly`
++ `capture`.
 
 Thunder's `k = 5` arm (phase `0x69`, `0x801F75F8`) seats its spray every pass ahead of the
 countdown test, in two rounds (`s8 = 0, 1`, `sltiu v0,s8,0x2` at `0x801F7710`): each round draws
@@ -4211,8 +4336,39 @@ fold.
 - **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
   party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
 
-Not ported: the `FUN_801D5854(caster, 8)` framing arms 11 and 12 re-arm each
-pass, and the full heal's party-seat CLUT reload and effect-list spawn
+- **The message bar.** The body calls the element spawner on the bar four
+  times with mode `0` and once with mode `1`. Arm 5's exit raises the stop
+  prompt (`li a0,0x5b` / `move a1,zero` / `jal 0x801D8DE8` at
+  `0x801F7564..0x801F7598`), and the steal and gold outcomes raise their lines
+  the same way (`0x801F82EC`, `0x801F8374`): each spawns the bar at seat A and
+  glides it up. Arm 6's exit, on a party victim, calls it with mode `1`
+  (`li a0,0x5b` at `0x801F7704`, `li a1,0x1` in the delay slot of the `jal`
+  at `0x801F7708`): the bar spawns at seat B and glides down to seat A with
+  its line still on it, under the display's last rows, and the readout shows
+  again as its frame clears the plate. The call at `0x801F7CD4` is not the
+  bar's: it is arm 9 re-opening the move-name label, element `0x4C`.
+- **The outcome stays in the label.** Arm 9 stores the outcome's name pointer
+  into the label's own placement record (`sw v0,0x734(a2)` at `0x801F7CD8`,
+  the table at `0x80076C10`) and nothing in the body puts the spell's name
+  back, so the label reads the outcome through arms 10 to 12 and the Done
+  band.
+- **The camera's counter.** Arm 10 zeroes the yaw ladder and the framing style
+  as its countdown passes (`sh zero,0x6da(a0)` / `sb zero,0xd(a0)` at
+  `0x801F7D68..0x801F7D6C`), so the case-8 framings arms 11 and 12 arm each
+  pass, and the Done band's pan, count from `0`. The band stores the style `1`
+  back on its next pass and the `0xFF` arm (`0x801F8504..0x801F852C`) holds no
+  `sb zero,0xd`, so the Done band's case 6 frames half a turn round
+  (`capture_exit_clears_style`). A recording of Shade's cast reads the counter
+  `4288` on arm 10's last pass and `0` on arm 12's first, and the `0x50`
+  endpoint `4580` on counter `146` over heading `1710`.
+
+Against a recording of `kor_shade_pre_fatal_decision` on its own frame steps
+the three read arm 12 `.928` to `.975`, `0x50` `.898` to `.988` and `0x51`
+`.737` to `.997`. On the engine's own steps arm 6 stays low: retail runs the
+hold on step `1` for most of its `1202` vsyncs, which is the frame's cost and
+not the body's. Grade `disassembly` + `capture`.
+
+Not ported: the full heal's party-seat CLUT reload and effect-list spawn
 (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's settle wait has no bound in retail;
 the port lets go after `600` ticks.
 
@@ -4382,26 +4538,72 @@ close to a minute. It is ported whole.
   1's pass, hides at arm 10, comes back on clip `0` at arm 21, takes the
   defeat-fade tint state `2` at arm 23 and is shown again at arm 27. Because
   the body stages its own caster, it has no row in the caster-stage table.
-- **The first hit is the stager's.** Arm 10 spawns record `0x801F937C`, whose
-  script is `WAIT 0x7F` then op `0x20` with arm `4`. Op `0x20` calls
+- **The first two hits are the stager's.** Arm 10 seats record `0x801F937C`,
+  whose script is `WAIT 0x7F` then op `0x20` with arm `4`, and record
+  `0x801F94D0`, `WAIT 0x187` then op `0x20` with arm `3`. Op `0x20` calls
   `gp[+0x714]`, which holds the stager `0x801F8D64` in the
-  `cort_evil_seru_magic_mid_cast` capture. Arm 4 is the `0x100` never-kill
-  sweep. The wait is `0x7F << 3`, drained `scalar * delta` a battle frame, so
-  it lasts 127 vsyncs, one short of arm 11's `0x80`. The port lands that sweep
-  on arm 11's pass and raises the band's skip-fold.
-- **The second hit is the tick's.** Arm 26 walks `actor_table[0 .. ctx[+0]]`,
+  `cort_evil_seru_magic_mid_cast` capture. Arm 4 (`0x801F8E4C`) is the `0x100`
+  never-kill sweep, and arm 3 (`0x801F8E38`) adds `0xC` to the shake word and
+  falls into it, so the party row is swept twice before the tick's hit. A
+  retail recording of the cast (`chitei2_cort_pre_mystic_circle` with the
+  action rewritten to `0xAD`) drops every member's HP on three frames: arm
+  11's last, arm 14's first and arm 26's pass. Each wait is `n << 3`, drained
+  `scalar * delta` a battle frame. The port runs both calls off the seated
+  records' own programs, inside the calling part's frame as retail's stager
+  does (`World::run_summon_part_stager_calls`), and reports the hits on the
+  module's next tick: the recording's HP falls one battle frame ahead of the
+  hit's cues. A host that seats no record lands them on the passes of arms 11
+  and 13. Grade `disassembly` + `capture`.
+- **The stager is PROT 0927's over its own records.** Nine arms behind
+  `sltiu a1, 9` and the table at `0x801F6A50`: arms 0, 1, 2, 6 and 8 seat
+  records on the calling part (`evil_seru_magic_stager_spawns`: the pulses
+  record `0x801F94D0` and `0x801F937C` loop out every `0x0B` vsyncs, the four
+  records `0x801F96B8` seats seven times, the pair arm 26's emitter
+  `0x801FA2D0` seats for as long as it lives), arm 5 is the long salmon flash,
+  and arm 7 jitters its caller's `+0x84` / `+0x28` off three `rand()`s, the six
+  rays of arm 23. The seats land on the caller's frame, as
+  [Gilium's and Juggernaut's](#summon-creature-directors) do. Grade
+  `disassembly`, each arm held to the module image by the
+  [differential](../tooling/retail-kernel-differential.md); the cast's
+  [film](../tooling/cast-sequence-oracle.md#evil-seru-magic) reads `.672` to
+  `.788` with the calls run.
+- **The last hit is the tick's.** Arm 26 walks `actor_table[0 .. ctx[+0]]`,
   skips a dead or non-targetable seat, and calls
   `FUN_801DD4B0(0x327, ctx[+0x13], seat)` with the shape-A clamp
-  (`0x801F8610` / `0x801F863C`), so it can kill a member the first hit left
+  (`0x801F8610` / `0x801F863C`), so it can kill a member the sweeps left
   low. It also stages the seat's knockdown at rate `2`.
+- **Arms 12..15 cut each get-up two keyframes short.** Each arm opens, ahead
+  of its countdown, on the same walk over the party row (`0x801F7418` in arm
+  12, copies at `0x801F75FC`, `0x801F77CC`, `0x801F7998`): a seat whose
+  committed clip `+0x1D9` is its get-up `+0x1F2` and whose node cursor has
+  reached `stream[1] - 2` (`node[+0x4C][+0x88][1]`) gets `+0x1DA = 0` with the
+  `+0x1DC` bump. The module runs ahead of the pass's anim tick, which advances
+  the cursor once more and takes the bump's bit 0 to the cut (`FUN_80047430`
+  `0x800478F4` -> `0x80047A3C`), so the get-up ends on keyframe `frames - 1`,
+  a pass before its natural end, and its effect record gated on `frames + 1`
+  never fires. Every other seat off its idle, the get-up before its release
+  included, slides instead: `+0x38 +=
+  dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), and Noa's release
+  takes `0x10` off it; the port leaves the slide out with the rest of arm 0's
+  seats. A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
+  (`0x801F765C` / `0x801F7674`, `stream[1] - 2` = `23`, `26`, `13`) and the cut
+  at `0x80047A40` on one pass. Port `evil_seru_magic_seat_writes` with
+  `esm_releases_get_up`, held to the image by the differential
+  (`esm_release.rs`). Grade `disassembly` + `capture`.
+- **Arm 27 lets the knockdown play.** Every pass it stores rate `2` on each
+  party seat and then `0` only on a seat whose committed clip `+0x1D9` is not
+  its knockdown `+0x1F1` (`beq` at `0x801F8730` over the store at
+  `0x801F8738`): a struck member falls at rate `2` and freezes where the clip
+  ends, until arm 28 stores `2` again. The recording walks each member's node
+  cursor through the arm and reads rate `0` from the clip's end.
 
 Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row of
 half-size models at `z = 0x190`, and restore them; arm 10 seats the creature
 at seat 7. The engine keeps every seat where the battle put it, so the cuts
-frame the stage rather than the moved seats. The effect records and the arm-20
-spell-name banner are also left out. The screen fades are carried on the
-engine's one fade seat; arm 26 spawns three at once, and the seat keeps the
-last, the delayed white-in that arm 27 fades out of.
+frame the stage rather than the moved seats. The arm-20 spell-name banner is
+also left out. The screen fades are carried on the engine's one fade seat; arm
+26 spawns three at once, and the seat keeps the last, the delayed white-in that
+arm 27 fades out of.
 
 ## The module owns the camera
 
@@ -4698,7 +4900,7 @@ three units). The bodies without that store keep the half turn
 | 0940 `0xAC` Mystic Shield, `0x801F7240` | arm 0's shot behind the caster (pitch `0x200`, TR `(0, -0x100, 0x400)`, `0x40` frames); drifts on arms 2, 4, 5, 6 | `0x801F864C` gates arms 1..7: seeded `scalar * 0x60`, re-armed `scalar << 8` / `<< 6` / `* 0xC0`. `cort_mystic_shield_mid_cast` sits in arm 1 with `496` left, 34 vsyncs into the shot |
 | 0944 `0x37` Guilty Cross, `0x801F6A04` | arm 0's `0x20`-frame shot behind the caster (TR `(0, 0x600, 0x800)`), arm 2's cut to the victim (pitch `0x100`, TR `(0, 0x400, 0xA00)`), arm 4's cut back; TR z drift on arms 1 / 2 / 5 (`+4`) and 3 (`+32`); arm 3 drops the cross arm 2 parked at `0x801F836C` (`+0x16 += step << 8` once the word is at or under `scalar << 4`, `-0x200` as it passes) | `0x801F8360` gates arms 1..5 |
 | 0962 `0xA5` Ultra Charge, `0x801F69D8` | arm 0's `0xC`-frame shot behind the caster (TR y `0xC00` when the formation's first monster is `0xB5`, `0x240` otherwise; TR z `0xC00`); arm 1's TR z drift of `scalar * delta` | `0x801F89AC`, seeded `scalar * 0x180`. The body has no other port, so the director owns the phase (`0 -> 1 -> 0xFF`) |
-| 0961 `0xA1` / `0xB4` Dead End Crisis / Final Crisis, `0x801F69D8` | four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`: arm 0 behind it (TR y `0x800` in formation `0xB5`, `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in `0xB5`), arm 5's return (TR y `0x800`); drifts below | `0x801F82E4`; the phase chain is ported (`DEAD_END_CRISIS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
+| 0961 `0xA1` / `0xB4` Dead End Crisis / Final Crisis, `0x801F69D8` | four `a3 = 1` cuts on the caster at depth `ctx[+0x6D0]`: arm 0 behind it (TR y `0x800` in formation `0xB5`, `0x200` otherwise), arm 1's low cut, arm 2's pull-out (`depth + 0x400` in `0xB5`), arm 5's return (TR y `0x800`); drifts below; in `0xB5` the caster's rate `+0x21D = 3` beside the clip `6` arm 1 stages (`0x801F6D5C`) and on every arm-2 pass (`0x801F6ED4`) | `0x801F82E4`; the phase chain is ported (`DEAD_END_CRISIS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`); the caster's rate `+0x21D = 4` beside the clip `7` arm 1 stages (`0x801F6CD8`) and on every arm-2 pass (`0x801F6D9C`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
 | 0938 `0x4E` Chaos Breath, `0x801F726C` | arm 0's `0x100`-frame shot on the caster (pitch `-0x40`, TR `(0, depth / 3, depth / 2)`, the caster turned on the row's centroid), arm 1's `0x100`-frame pull-out (pitch `0x40`, TR `(0, depth / 2, 3 * depth)`); records `0x801F7BC8` at the model scale and `0x801F7C40` ahead; every arm-1 pass pulls the party row in `2 * step` | `0x801F8040`, the `CHAOS_BREATH` table |
 | 0950 `0xAB` Shadow Break, `0x801F6A24` | arm 0's `0xC`-frame shot, the party hidden through arms 1 and 2 and shown on 2's pass, `0x20`-frame cut (pitch `0x180`, TR `(0, -0x200, 0x600)`) and three one-frame cuts on the caster (arms 4, 6, 7); each arm's TR z, TR y, pitch and yaw drift ahead of its gate; arm 2's blades, arm 8's rise, arm 9's fall with its blade halt, arm 10's burst and a thirteen-point ring of three records; arm 11 fades every record | `ROLLING_FLARE_SWEEP` table |
@@ -5258,8 +5460,12 @@ Its one damage site is `FUN_801DD4B0(0x2C6, ...)` per live party seat at arm
 (`capture_site_power`). Arm 5 seats two records on the caster, three on each
 point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
-`0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
-left out, as the chain leaves it.
+`0x1000 / 3`) and three on every live party seat. Arm 4's pass freezes the
+caster (`sb zero,0x21d(s4)` at `0x801F6F8C`, past its gate and the two fades):
+a recording holds Gaza on cursor `288` at rate `0` through arms 5 and 6, the
+`0xFF` arm, `0x71` and `0x50`, and the Done band's restore runs the clip on
+from there on `0x51`. The band's close does not wait on a frozen caster, whose
+clip cannot end (`World::close_caster_stages`). Grade `disassembly` + `capture`.
 Arm 5's spawns all sit behind its countdown's expiry (`bgtz t0,0x801F74B0` at
 `0x801F708C`), so they are seated on arm 6's first pass. Its two caster
 records are radius-`0x800` cylinders textured off page `0x9` / `0x8A` (op `0x1F`
@@ -5337,6 +5543,13 @@ takes over the seek and the one the battle's seek-ahead selector issued before i
 on a drive model ([the drive holds a summon's voice](audio.md#the-drive-holds-a-summons-voice)). So a cast
 is heard well after it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
 call is outside its tick, and raises at the arming seam.
+
+PROT 0905 (Vera) seeks on its seek arm's way out, not at its head. Arm 2 (`0x801F6DA4`)
+drains its countdown and waits on `ctx[+0x276]` before the `jal 0x8003EAE4`, so the seek
+goes out on the pass that leaves the arm and arm 3's `FUN_8003F2B8(1)` returns busy on its
+first pass (`World::module_seek_on_arm_exit`). Issued at the arm's head, the seek was long
+done when arm 3 came round thirty passes on, and the poll arm ran one frame where the
+`0x83` recording runs two: one frame-driver `rand()` short for the rest of the cast.
 
 A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who
 is casting or which branch arm 0 takes (`forked_head_cue`, `latch_forked_head_cue`): Call Wave's `0x150`
@@ -6269,7 +6482,7 @@ and scatter build to white ([Thunder Storm](#prot-0957-thunder-storm)).
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather
 than off `ctx[+0x279]` (PROT 0906, 0909, 0912, 0916, 0923, 0927, 0929, 0948,
-0959, 0963, 0966). PROT 0906's flash pair rides its director's phase-5 clock,
+0959, 0963, 0966). PROT 0906's flash pair rides its record's own call,
 and PROT 0912's blue fade and PROT 0929's arm-3 pair ride their stager ports ([spawn reports](#a-module-that-reports-its-spawns)). The streak ribbon's anchor is a trio the arm builds from a
 seat or the camera plus a random spread, which the constant tracker does not
 fold. The party CLUT reload on a status cure (`LoadImage` of a 240x1 row at
@@ -6527,12 +6740,12 @@ module's stager `0x801F7740` through op `0x20` (`World::run_part_stager_calls`, 
 bubble sprite `0x801F7C8C` on the point with `x += rand() % 129 - 0x40`,
 `y += rand() % 65 - 0x20`; `0x801F7EBC` calls arm 5 twelve times
 (`0x801F7E68` on the creature's `+0x3C`) and arm 6 once (`0x801F7F44` on
-the calling part). Record `0x801F7B80`'s calls with arms 0..2 are left to the
-director's phase-5 clock, which also releases the phase hole where no record
-runs. Retail's pillar program runs about a third slower than its wait words
-in the capture (the flash 259 vsyncs into the hole against the program's
-191 frames), the frame step held while heavy frames run long, which the port
-does not model.
+the calling part). Record `0x801F7B80`'s calls with arms 0..2 run on the
+module's tick behind the part that made them ([PROT 0906](#prot-0906-gizam));
+the director's phase-5 clock stands in where no record runs. Retail's pillar
+program runs about a third slower than its wait words in the capture (the
+flash 259 vsyncs into the hole against the program's 191 frames), the frame
+step held while heavy frames run long.
 
 PROT 0912 (Freed) seats its records on its tick body's own passes
 (`World::freed_body_effects`, `cast_module_camera::freed_arm_spawns`):

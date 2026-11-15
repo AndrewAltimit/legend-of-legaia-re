@@ -1,0 +1,372 @@
+{
+  "films": {
+    "balden_field_route_walk": {
+      "agree": 58,
+      "draws": 150
+    },
+    "bubu2_field_door_hop": {
+      "agree": 100,
+      "draws": 101
+    },
+    "bylon_mist_gala_goes_ahead": {
+      "agree": 150,
+      "draws": 151
+    },
+    "bylon_mist_noa_vahn": {
+      "agree": 150,
+      "draws": 151
+    },
+    "cave01_attached_light": {
+      "agree": 1,
+      "draws": 1
+    },
+    "chapter2_garmel_pre_songi": {
+      "agree": 7,
+      "draws": 150
+    },
+    "chapter2_garmel_pre_zeto": {
+      "agree": 10,
+      "draws": 150
+    },
+    "chest_open_trace_pcsx": {
+      "agree": 20,
+      "draws": 20
+    },
+    "chitei2_corridor_pillars_before": {
+      "agree": 150,
+      "draws": 150
+    },
+    "chitei2_corridor_pillars_lit": {
+      "agree": 150,
+      "draws": 150
+    },
+    "chitei2_field_card_boot": {
+      "agree": 150,
+      "draws": 151
+    },
+    "conc2_field_route_walk": {
+      "agree": 150,
+      "draws": 151
+    },
+    "conc_field_card_boot": {
+      "agree": 150,
+      "draws": 151
+    },
+    "concend_field_door_hop": {
+      "agree": 1,
+      "draws": 1
+    },
+    "concnow_field_door_hop": {
+      "agree": 15,
+      "draws": 100
+    },
+    "concnow_field_door_hop_settled": {
+      "agree": 100,
+      "draws": 100
+    },
+    "deene_field_card_walk": {
+      "agree": 150,
+      "draws": 150
+    },
+    "deroa_field_door_hop": {
+      "agree": 150,
+      "draws": 151
+    },
+    "dohaty_field_card_walk": {
+      "agree": 1,
+      "draws": 150
+    },
+    "dolk2_field_door_hop": {
+      "agree": 82,
+      "draws": 82
+    },
+    "doman_field_card_boot": {
+      "agree": 45,
+      "draws": 139
+    },
+    "drake_castle_to_worldmap": {
+      "agree": 150,
+      "draws": 150
+    },
+    "field_walled_collision_pin": {
+      "agree": 43,
+      "draws": 96
+    },
+    "first_town_interactive": {
+      "agree": 34,
+      "draws": 34
+    },
+    "garmel_field_card_boot": {
+      "agree": 12,
+      "draws": 151
+    },
+    "garmel_zeto_appears_rising": {
+      "agree": 3,
+      "draws": 146
+    },
+    "garmel_zeto_appears_taunt": {
+      "agree": 2,
+      "draws": 150
+    },
+    "geremi_field_door_hop": {
+      "agree": 150,
+      "draws": 150
+    },
+    "jagaroom_field_door_hop": {
+      "agree": 4,
+      "draws": 38
+    },
+    "jou_field_card_walk": {
+      "agree": 3,
+      "draws": 3
+    },
+    "jouina_field_door_hop": {
+      "agree": 1,
+      "draws": 1
+    },
+    "jouinb_field_door_hop": {
+      "agree": 1,
+      "draws": 1
+    },
+    "jouinc_field_door_hop_settled": {
+      "agree": 1,
+      "draws": 1
+    },
+    "jouind_field_card_boot": {
+      "agree": 1,
+      "draws": 1
+    },
+    "koin1_field_route_walk": {
+      "agree": 9,
+      "draws": 35
+    },
+    "koin3_gold_card_guard_talk": {
+      "agree": 1,
+      "draws": 1
+    },
+    "koin4_field_route_walk": {
+      "agree": 20,
+      "draws": 20
+    },
+    "koin6_field_route_walk": {
+      "agree": 13,
+      "draws": 91
+    },
+    "kor3_field_route_walk": {
+      "agree": 84,
+      "draws": 84
+    },
+    "kor4_field_route_walk": {
+      "agree": 97,
+      "draws": 98
+    },
+    "kor5_post_436_organic": {
+      "agree": 1,
+      "draws": 1
+    },
+    "kor5_post_43a_checkpoint": {
+      "agree": 1,
+      "draws": 1
+    },
+    "kor_field_route_walk": {
+      "agree": 150,
+      "draws": 151
+    },
+    "korb2_field_card_boot": {
+      "agree": 150,
+      "draws": 151
+    },
+    "korb3_field_walk": {
+      "agree": 150,
+      "draws": 151
+    },
+    "korout_field_door_hop": {
+      "agree": 83,
+      "draws": 142
+    },
+    "map01_field_door_hop": {
+      "agree": 100,
+      "draws": 101
+    },
+    "map01_tree_revival_cutscene": {
+      "agree": 2,
+      "draws": 76
+    },
+    "map02_field_door_hop": {
+      "agree": 5,
+      "draws": 101
+    },
+    "map03_field_door_hop": {
+      "agree": 101,
+      "draws": 101
+    },
+    "mei_house_door_pcsx": {
+      "agree": 37,
+      "draws": 38
+    },
+    "mei_house_inside_pcsx": {
+      "agree": 33,
+      "draws": 33
+    },
+    "nilboa_field_door_hop": {
+      "agree": 150,
+      "draws": 150
+    },
+    "noaru_field_card_walk": {
+      "agree": 1,
+      "draws": 1
+    },
+    "overworld_into_town_man_load": {
+      "agree": 100,
+      "draws": 100
+    },
+    "retock_field_card_boot": {
+      "agree": 150,
+      "draws": 150
+    },
+    "retock_inn_stay_prompt": {
+      "agree": 10,
+      "draws": 151
+    },
+    "retock_innkeeper_talk_open": {
+      "agree": 1,
+      "draws": 150
+    },
+    "retona_field_card_boot": {
+      "agree": 150,
+      "draws": 151
+    },
+    "rikuroa2_field_door_hop": {
+      "agree": 46,
+      "draws": 151
+    },
+    "rikuroa_field_card_walk": {
+      "agree": 150,
+      "draws": 151
+    },
+    "rikuroa_field_cave_exit_arrival": {
+      "agree": 71,
+      "draws": 151
+    },
+    "rim_elm_queen_bee_battle": {
+      "agree": 1,
+      "draws": 1
+    },
+    "ropeway2_field_door_hop": {
+      "agree": 150,
+      "draws": 151
+    },
+    "ropeway_field_route_walk": {
+      "agree": 150,
+      "draws": 150
+    },
+    "rugi_field_card_boot": {
+      "agree": 1,
+      "draws": 1
+    },
+    "s1_newgame_field": {
+      "agree": 1,
+      "draws": 1
+    },
+    "s2_rimelm_town01": {
+      "agree": 5,
+      "draws": 18
+    },
+    "s4_rimelm_door_transition": {
+      "agree": 32,
+      "draws": 32
+    },
+    "son_arrival_from_doman": {
+      "agree": 2,
+      "draws": 17
+    },
+    "son_field_door_hop": {
+      "agree": 1,
+      "draws": 1
+    },
+    "stone_field_door_hop": {
+      "agree": 100,
+      "draws": 101
+    },
+    "stone_field_route_walk": {
+      "agree": 100,
+      "draws": 100
+    },
+    "suimon_field_door_hop": {
+      "agree": 150,
+      "draws": 150
+    },
+    "taiku2_field_door_hop": {
+      "agree": 51,
+      "draws": 151
+    },
+    "taiku_field_card_walk": {
+      "agree": 150,
+      "draws": 150
+    },
+    "teien_field_run": {
+      "agree": 38,
+      "draws": 101
+    },
+    "tower_field_walk": {
+      "agree": 44,
+      "draws": 150
+    },
+    "town01_field_card_boot": {
+      "agree": 36,
+      "draws": 36
+    },
+    "town01_npc16_dialogue_first_page": {
+      "agree": 1,
+      "draws": 1
+    },
+    "town01_tetsu_topic_prompt": {
+      "agree": 1,
+      "draws": 1
+    },
+    "tunnela_field_door_hop": {
+      "agree": 150,
+      "draws": 150
+    },
+    "tunnelb_field_card_boot": {
+      "agree": 150,
+      "draws": 150
+    },
+    "uru2_field_door_hop": {
+      "agree": 1,
+      "draws": 101
+    },
+    "vell_dead_genesis_tree": {
+      "agree": 150,
+      "draws": 150
+    },
+    "vell_fog_field": {
+      "agree": 29,
+      "draws": 151
+    },
+    "vozz_field_card_boot": {
+      "agree": 150,
+      "draws": 151
+    },
+    "vozz_genesis_tree_gala_at_tree": {
+      "agree": 150,
+      "draws": 151
+    },
+    "vozz_genesis_tree_songi": {
+      "agree": 150,
+      "draws": 151
+    },
+    "vozz_ozma_hatching_crawl": {
+      "agree": 18,
+      "draws": 19
+    },
+    "vozz_ozma_hatching_hover": {
+      "agree": 150,
+      "draws": 151
+    },
+    "vozz_tree_revival_return": {
+      "agree": 150,
+      "draws": 150
+    }
+  }
+}

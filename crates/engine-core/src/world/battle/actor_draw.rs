@@ -724,7 +724,7 @@ mod tests {
 
     /// Battle init holds the screen on the intro's tail colour until the
     /// stage loads, and the loader fades the fight in from it over `0x14`
-    /// frames, stepping once on its own pass; the evolved Cort is blanked on
+    /// frames from the pass after its own; the evolved Cort is blanked on
     /// the same pass.
     #[test]
     fn the_entry_fade_holds_until_the_stage_load_then_fades_in() {
@@ -746,10 +746,10 @@ mod tests {
             }
             assert!(!world.battle.stage_registration_pending);
             assert!(!world.battle.entry_fade_white, "the loader clears the word");
-            // One step of `0xFF / 0x14` on the spawn pass.
+            // The loader's own pass leaves the new fade unstepped.
             let (rgb, kind, ot) = world.screen_fade_draws()[0];
             assert_eq!((kind, ot), (abr, 1));
-            assert_eq!(rgb & 0xFF, 0xFF - 0xFF / 0x14 - 1);
+            assert_eq!(rgb & 0xFF, 0xFF);
             assert!(
                 world.battle_body_hidden(3),
                 "the arrival's boss waits hidden"

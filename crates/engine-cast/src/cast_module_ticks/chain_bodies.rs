@@ -63,10 +63,11 @@
 //!
 //! **One rate rule.** A `+0x21D` store is carried only where the body itself
 //! puts the actor back to the normal rate `8` before it ends. A body that
-//! leaves its caster slowed or frozen relies on a reset outside the module
-//! that the port does not have, so carrying the store would leave the
-//! actor frozen for the rest of the battle; those stores are named in the
-//! body's docs instead. `every_chain_body_leaves_its_actors_at_the_normal_rate`
+//! leaves its caster slowed or frozen relies on the reset outside the module
+//! (the action SM's Done tail, `FUN_801E93C8`), which a chain walked on its
+//! own never reaches; those stores are named in the body's docs and made by
+//! the body's camera director instead (PROT 0938's `4`, PROT 0961's `3`,
+//! PROT 0960's freeze). `every_chain_body_leaves_its_actors_at_the_normal_rate`
 //! holds the rule. Two stores sit beside it because they reach seats the
 //! runner's three views do not name: a hit arm's rate on each seat it struck
 //! ([`ChainArm::hit_rate`]) and an arm's per-pass rate on the party row
@@ -1141,8 +1142,9 @@ pub const MEGATON_PRESS_CHAIN: ChainBody = ChainBody {
 /// guard. Arm 6 waits for the row to settle and stores `0xFF`; `0xFF` zeroes
 /// `ctx[+0x0D]`.
 ///
-/// Rate left out under the module's rate rule: arm 4's caster
-/// `+0x21D = 0` (`0x801F6F8C`) is never restored inside the body. Not
+/// Rate left to the director under the module's rate rule: arm 4's caster
+/// `+0x21D = 0` (`0x801F6F8C`) is never restored inside the body
+/// ([`crate::cast_module_camera::neo_star_slash_camera`] makes the store). Not
 /// ported: the packet arms and the party-row presentation stores.
 /// Countdowns: `capture_countdown`; arm 6's settle: [`ChainSettle::PartyRow`].
 ///

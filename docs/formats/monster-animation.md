@@ -604,7 +604,7 @@ phase += (frame_dt * actor[+0x21D] * entry[+0x78]) >> 1
 
 - `actor[+0x21D]` is the actor's speed scale: `8` in normal play (a live watch reads `8` on every actor of a plain Gobu Gobu fight), dropped to `4` / `2` on everyone by an Art's slow-motion arms.
 - `entry[+0x78]` is the **playback rate**, `1` or `2` across the retail corpus: `rate/4` keyframes per 60 Hz tick at scale `8`.
-- When the cursor passes the stream's frame count, or the `+0x1DC` event flags fire mid-clip, the tick calls the commit `FUN_8004AD80`. The commit swaps the entry, zeroes the cursor, and converges `+0x1D9 = +0x1DA`.
+- When the cursor passes the stream's frame count, or the `+0x1DC` event flags fire mid-clip, the tick calls the commit `FUN_8004AD80`. The natural end is `(+0x68 << 16 >> 20) < stream[1]` on the cursor the pass's advance already stored (`0x80047764`, then `0x80047A48..0x80047A60`, `stream` = `entry[+0x88]`): byte `1` of the packed stream, the frame count itself, not count minus one. The [differential](../tooling/retail-kernel-differential.md) pins it at advances `2`, `3`, `4`, `8` and `16` over every count to `40`. A clip that ends a pass earlier is cut by a stage, as Evil Seru Magic's arms 12..15 cut the party's get-ups ([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)). The commit swaps the entry, zeroes the cursor, and converges `+0x1D9 = +0x1DA`.
 - On the last frame the decoder cross-blends toward frame 0 of the queued entry's stream (looked up by `+0x1DA`), so transitions tween rather than snap.
 
 #### Head bytes the tick and the commit read

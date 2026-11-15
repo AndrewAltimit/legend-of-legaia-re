@@ -583,7 +583,7 @@
       '.disc-info-hash button:hover{border-color:var(--accent-line,rgba(61,132,255,.38));}',
       '.disc-info-more{display:none;margin-left:auto;flex:none;cursor:pointer;font:inherit;',
       'font-size:.78rem;color:var(--accent,#6ba3ff);background:transparent;',
-      'border:1px solid var(--border,#272c37);border-radius:6px;padding:.3rem .7rem;min-height:40px;}',
+      'border:1px solid var(--border,#272c37);border-radius:6px;padding:.3rem .7rem;min-height:44px;}',
       /* A phone shows the identification line and keeps the cover and the rows
        * one tap away: open, the card took a screen and a half above the tool
        * on every disc page. */

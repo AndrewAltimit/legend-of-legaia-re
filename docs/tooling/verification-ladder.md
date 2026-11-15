@@ -13,7 +13,7 @@ bottom, every rung assumes the ones below it.
 | 2. Port provenance | Does a `// PORT:` address name the routine the Rust implements? | The executable's and overlays' bytes at the tagged address | `check-port-provenance.py --check` |
 | 3. Retail kernel differential | Does the Rust compute what the bytes compute? | The routine itself, run off the disc in an R3000 interpreter | `differential-coverage.py --check` |
 | 4. Retail-compare stills | Does the engine stand where retail stood, at one instant? | A save state's RAM and VRAM | `retail-compare-baseline.json` ratchet |
-| 5. Films | Does it unfold the same over time? | An emulator recording, one row a vsync | Report, before and after on one command; `film-cues.py` ratchets the cue channel |
+| 5. Films | Does it unfold the same over time? | An emulator recording, one row a vsync | `film-cues.py` ratchets the cue channel and `walk-film-rand.py` the walk films' `rand()` agreement; images are reported against `film-image-table.tsv` |
 | 6. Full-game ladder | Does the whole game play, New Game to credits, on pad input? | Retail saves at each story milestone | `full_game_baseline.toml` ratchet |
 
 ## Contents
@@ -103,18 +103,35 @@ The [cast-sequence oracle](cast-sequence-oracle.md) records one cast on both
 sides and pairs frames on the game's own clock (the action state, then the
 cast module's phase), and the [walk film](walk-film.md) does the same for a
 field walk under a fixed pad schedule. Recordings carry retail pixels and stay
-out of the repository, so a film's image score has no committed baseline: a
-change reports its before and after on the same command.
+out of the repository. A film's image score moves a little with every engine
+change, so it is reported, not gated: `film-images.py --report` reads a fresh
+run against the committed per-film table
+([the image table](cast-sequence-oracle.md#the-image-table)).
 
-One channel of a film is ratcheted. A cast plays the cue retail plays, on the
-same clock, or it does not, so `film-cues.py --check` holds the sound cues of
-the committed film sets to `scripts/ci/film-cue-baseline.json`
-([the cue ratchet](cast-sequence-oracle.md#the-cue-ratchet)). A cue that stops
-playing fails there while the picture's score barely moves.
+Two channels of a film are ratcheted, because each is discrete. A cast plays
+the cue retail plays, on the same clock, or it does not, so `film-cues.py
+--check` holds the sound cues of the committed film sets to
+`scripts/ci/film-cue-baseline.json`
+([the cue ratchet](cast-sequence-oracle.md#the-cue-ratchet)), and the full gate
+films a fixed dozen of them on every run. A cue that stops playing fails there
+while the picture's score barely moves. A walk film's `rand()` word agrees with
+retail's draw for draw or parts from it, so `walk-film-rand.py --check` holds
+how far each field state's idle film agrees
+([the rand ratchet](walk-film.md#the-rand-ratchet)).
 
 A film also separates a wrong routine from a different deal: it logs retail's
 `rand()` seed word on every vsync and can seat the engine's stream on it at a
 named phase ([the rand stream](cast-sequence-oracle.md#the-rand-stream)).
+
+Two report-only tables read a film's pace rather than its picture.
+`film-step-agreement.py` says, band by band, on how many frames the engine ran
+retail's frame step ([the step agreement table](cast-sequence-oracle.md#the-step-agreement-table)),
+and a walk film records retail's frame time beside the engine's
+[field frame-cost model](../subsystems/engine.md#the-field-frame-cost-model)
+counts and price (`LEGAIA_RC_WALK_COST=1`), which is what that model is fitted
+and held out on. The [minigame film](minigame-film.md) does for a minigame what
+the walk film does for a field: the dance, the Muscle Dome hub, the fishing pond
+and the Baka Fighter cabinet, paired on each one's game frames.
 
 **Blind to:** everything outside the recorded stretch, and residuals smaller
 than two retail recordings of one cast differ from each other.
@@ -141,6 +158,7 @@ rung below it.
 | Does a run stay with retail between two states? | [Gate replay](gate-replay.md), [recomp differential](recomp-differential.md) | The engine's pad on retail, beat by beat; a recomp's trace | Report only |
 | Does the page draw what the window draws? | [Host drift](host-drift.md) gates, the [host pair run](host-drift.md#the-host-pair-run) | The other host, on the same pad script | Retail |
 | Does the same input give the same run? | [Determinism replay](determinism-replay.md#determinism-gate), [frame hash](frame-hash.md) | The same run, twice | Whether the run is right |
+| Does a talker lose a line, or speak one retail does not? | [Talker sweep](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts) (`field_talker_sweep_disc`) | Each silent record's own bytes, every scene from every standable tile | Talks gated on anything but position and story flags |
 | Does anything panic, stall or loop? | [Soak harness](soak-harness.md) | Its own detectors | Retail divergence |
 | Did a frame get more expensive? | [Cost ratchet](frame-bench.md#cost-ratchet) | Committed counts of draws, allocations, bundle bytes | Time |
 | Did a baseline loosen, or a check not run? | [Ratchet integrity](ratchet-integrity.md) | Baselines at the base revision; skips counted | A value wrong when blessed |

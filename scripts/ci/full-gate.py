@@ -19,7 +19,8 @@ What it runs, in groups:
              revert-scan
     tests    the workspace tests with the disc (read from the Disc-Gated Tests job)
     ladder   part B, part C default, and every seed `[continuous_seeds]` names
-    retail   retail-compare --images --check, audio sweep, PCM check, capture coverage
+    retail   retail-compare --images --check, audio sweep, PCM check, the film cue
+             gate, the walk films' rand ratchet, capture coverage
     wasm     the bundle build, its freshness, headless page checks, the cost ratchet
 
 Run lines come out of the workflow file each time, so a step added there is a
@@ -90,7 +91,7 @@ SKIP_LINE = re.compile(r"^\s*\[skip\]|\bSKIPPED\b|^\[no baseline\]", re.M)
 START_FIRST = (
     "engine-bin", "ladder-bin", "tests-build", "tests-disc",
     "lint-clippy", "lint-clippy-engine-shell-oracles", "lint-wasm32-type-check",
-    "retail-compare", "smoke-clean", "smoke-enhanced",
+    "retail-compare", "smoke-clean", "smoke-enhanced", "film-cues",
     "wasm-build", "wasm-freshness", "pages", "quality-ladder", "cost-ratchet",
 )
 
@@ -423,7 +424,9 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
 
     # -- what the rest shares: one build of each binary ----------------------
     build = (
-        f"cargo build -p legaia-engine-shell --profile {PROFILE} --features oracles --bin legaia-engine\n"
+        # pcsxr-state beside it: the film gate's runner reads each state's RAM with it.
+        f"cargo build -p legaia-engine-shell -p psx-pcsx-redux --profile {PROFILE} "
+        "--features legaia-engine-shell/oracles --bin legaia-engine --bin pcsxr-state\n"
         f'mkdir -p "{p.bin}"\ncp -f target/{PROFILE}/legaia-engine "{p.bin}/legaia-engine"\n'
     )
     p.add(
@@ -591,6 +594,32 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
             needs=("engine-bin",),
             scope=True,
             read_log=tail_detail(r"^\[(?:skip|no baseline)\].*$"),
+        )
+    )
+    p.add(
+        Gate(
+            "film-cues",
+            "retail",
+            f"python3 scripts/ci/film-cues.py --gate scripts/ci/film-sets/gate.txt --out \"{drop('film-cues')}\"",
+            # The runner takes the engine from this variable and opens a window per film.
+            env={"LEGAIA_CAST_SEQ_EXE": str(p.bin / "legaia-engine")},
+            cpu=2,
+            locks=("display",),
+            scope=True,
+            needs=("engine-bin",),
+            read_log=tail_detail(r"^\[(?:film-cues|skip)\].*$"),
+        )
+    )
+    p.add(
+        Gate(
+            "walk-film-rand",
+            "retail",
+            f"python3 scripts/ci/walk-film-rand.py --check --no-build --jobs {a.jobs} --out \"{drop('walk-film-rand')}\"",
+            env=engine_env,
+            cpu=a.jobs,
+            scope=True,
+            needs=("engine-bin",),
+            read_log=tail_detail(r"^\[(?:walk-film-rand|skip)\].*$"),
         )
     )
     p.add(

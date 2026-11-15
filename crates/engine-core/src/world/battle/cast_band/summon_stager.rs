@@ -55,6 +55,10 @@ impl World {
         self.casting.module_nighto_outcome = None;
         self.casting.module_stager_calls.clear();
         self.casting.module_barra_counter = 0;
+        self.casting.summon_parts_dealt = 0;
+        self.casting.summon_parts_ticked = 0;
+        self.casting.module_gizam_calls.clear();
+        self.casting.module_gizam_waited = 0;
         self.casting.module_barra_scroll = (0, 0);
         self.casting.module_running_entry = None;
         self.casting.module_spikefish_words = Default::default();

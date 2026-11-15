@@ -1906,7 +1906,8 @@ Every `lui`+`lw` of the word across SCUS and PROT 0898:
 | `FUN_801D0748` | `0x801D322C` | with the leader's category `5`, clears `ctx+0x274` and sets `0x80084448 = 4`, except for first monster `0xAF` / `0x3D..=0x3F` |
 
 The remaining readers test a bit: `0x100` at `0x80046DF0` / `0x80046E38` /
-`0x80046E90` and in the escape roll (`0x801E7978` / `0x801E7B40`), and `0x200`
+`0x80046E90`, in the escape roll (`0x801E7978` / `0x801E7B40`) and in
+`FUN_801D0748`'s Item arm, which refuses under it (`0x801D1378`); and `0x200`
 in `FUN_801D0748`'s Ra-Seru chip arm. A Ra-Seru-forbidden fight therefore pays
 no gold, no EXP, no drop and no steal, cannot absorb or train a Seru, and its
 monsters cannot flee.

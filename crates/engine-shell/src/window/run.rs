@@ -728,6 +728,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     if app.netplay.is_none() && debug_seeds.netplay.menu {
         app.netplay_menu = Some(super::netplay::NetMenu::new(
             debug_seeds.netplay.name.as_deref(),
+            &app.remembered_room(),
         ));
     }
     app.cheat_file = cheat_file.map(Path::to_path_buf);

@@ -1259,6 +1259,7 @@
     "engine-minigames",
     "engine-render",
     "engine-scene",
+    "engine-scene-host",
     "engine-screens",
     "engine-session",
     "engine-shell",
@@ -2291,6 +2292,7 @@
     "tim"
    ],
    "dev_deps": [
+    "engine-battle-vm",
     "engine-scene",
     "engine-vm",
     "overlay-images",
@@ -2481,6 +2483,7 @@
     "engine-battle",
     "engine-battle-menus",
     "engine-battle-vm",
+    "engine-camera",
     "engine-core",
     "engine-dev-menu",
     "engine-dialog",
@@ -2514,7 +2517,6 @@
     "disc-patch",
     "engine-battle-hud",
     "engine-battle-loop",
-    "engine-camera",
     "engine-modes",
     "font",
     "gamedata",
@@ -2528,6 +2530,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "battle_link_census",
     "disc_readers",
     "expansion_preload",
     "fishing_venue",

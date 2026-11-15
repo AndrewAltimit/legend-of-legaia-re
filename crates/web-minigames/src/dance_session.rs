@@ -132,15 +132,17 @@ impl LegaiaMinigames {
 
     /// Step the count-in one vsync - the engine's `dance::CountIn`, which the
     /// play hosts' `World::tick_dance` steps the same way. Returns
-    /// `[active, ready, x_offset, brightness, hold, go, cue, done]`:
-    /// `active` `0` once the song runs (the rest then zero); `ready` `1`
-    /// while the READY banner draws, with its envelope in the next three;
-    /// `go` the `GO!` brightness or `-1`; `cue` the cue id this vsync fires
-    /// (`0x200` intro, `0x201` run start) or `0`; `done` `1` on the vsync the
-    /// song starts. The page holds the beat clock and the music until `done`.
+    /// `[active, ready, x_offset, brightness, hold, go, cue, done,
+    /// song_start]`: `active` `0` once the song runs (the rest then zero);
+    /// `ready` `1` while the READY banner draws, with its envelope in the
+    /// next three; `go` the `GO!` brightness or `-1`; `cue` the cue id this
+    /// vsync fires (`0x200` intro, `0x201` run start) or `0`; `done` `1` on
+    /// the vsync the lead-in clears; `song_start` `1` on the vsync state 6
+    /// opens the song. The page starts the music on `song_start` and holds
+    /// the beat clock until `done`.
     pub fn dance_countin_step(&mut self) -> Vec<i32> {
         let Some(ci) = self.dance_countin.as_mut() else {
-            return vec![0; 8];
+            return vec![0; 9];
         };
         let s = ci.step();
         if s.done {
@@ -159,6 +161,7 @@ impl LegaiaMinigames {
             s.go.unwrap_or(-1),
             s.cue.map_or(0, i32::from),
             i32::from(s.done),
+            i32::from(s.song_start),
         ]
     }
 
@@ -168,15 +171,15 @@ impl LegaiaMinigames {
     /// and award routine the human's presses take, so their scores climb here.
     ///
     /// The run's camera keyframe track steps with it (`FUN_801CF470`'s
-    /// camera block, `frames` as its frame delta), which is what
+    /// camera block, on each game frame by the hall's delta), which is what
     /// `dance_venue_vp` frames the hall through.
     pub fn dance_tick(&mut self, frames: u32) {
         if let Some(g) = self.dance.as_mut() {
             // One game frame every third vsync, as the hall runs.
             for _ in 0..frames {
                 g.advance_vsync(None);
+                step_hall_camera(g);
             }
-            g.advance_camera(frames.min(u32::from(u8::MAX)) as u8);
         }
     }
 
@@ -209,8 +212,8 @@ impl LegaiaMinigames {
             if let Some(e) = g.advance_vsync(press.take()) {
                 event = Some(e);
             }
+            step_hall_camera(g);
         }
-        g.advance_camera(frames.min(u32::from(u8::MAX)) as u8);
         event.map_or_else(String::new, |e| dance_event_name(e).to_string())
     }
 
@@ -434,6 +437,14 @@ fn dance_event_name(e: DanceEvent) -> &'static str {
     }
 }
 
+/// The camera keyframe track's step on the play hosts' cadence
+/// (`dance_venue::sync_dance_venue`): once a game frame, by the hall's delta.
+fn step_hall_camera(g: &mut DanceGame) {
+    if g.ran_game_frame() {
+        g.advance_camera(legaia_engine_minigames::dance::HALL_FRAME_STEP as u8);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,7 +484,7 @@ mod tests {
                 _ => None,
             };
             let expect = host.advance_vsync(dir);
-            host.advance_camera(1);
+            super::step_hall_camera(&mut host);
             assert_eq!(
                 page,
                 expect.map_or_else(String::new, |e| dance_event_name(e).to_string()),

@@ -303,8 +303,8 @@ pub fn battle_enemy_target_rows(
 /// ([`legaia_engine_battle::target_picker::layout_enemy_menu_rows`]) and spawns each as a
 /// text actor with the message banner's class-0 frame; the labels live until
 /// the `0x0B` expiry sweeps every text actor, which is the
-/// [`legaia_engine_battle_loop::battle_state::BattleState::intro_names_frames`] timer. The pair returned
-/// is `(label, pen x)`; the drawer takes the pen y from
+/// [`legaia_engine_battle_loop::battle_state::BattleState::intro_names_frames`] timer. Each entry
+/// is `(label, pen x, element badge)`; the drawer takes the pen y from
 /// [`legaia_engine_battle::target_picker::MENU_ROW_Y`]'s value, `48`.
 ///
 /// `font` is the width measure retail's `FUN_80035F04` is (the `legaia-font`
@@ -313,7 +313,7 @@ pub fn battle_enemy_target_rows(
 pub fn battle_intro_names(
     world: &legaia_engine_core::world::World,
     font: &legaia_font::Font,
-) -> Vec<(String, i32)> {
+) -> Vec<(String, i32, Option<u8>)> {
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return dome_intro_names(world, font);
     }
@@ -325,13 +325,52 @@ pub fn battle_intro_names(
         return Vec::new();
     }
     let mut rows = battle_enemy_target_rows(world);
+    let pc = (world.party.party_count.clamp(1, 3) as usize).min(world.actors.len());
+    // The label is the group's display name `+0x1BC` copied into the
+    // composer's buffer (`ctx + 0x29 + group * 0x20`, `jal 0x8003CA78` at
+    // `0x801D9DF0`), escape and all, so a name that carries the caret badge
+    // prints it in front of the name and `FUN_80035F04` measures it with its
+    // space (`0x801D9F7C`): the label is the plaque's badge law, wider by
+    // [`INTRO_BADGE_LEAD`], and every seat the layout derives moves with it.
+    // The layout measures by label, so each row's badge is keyed by its
+    // label's hash: no per-frame allocation.
+    let key = |label: &str| -> u64 {
+        label.bytes().fold(0xCBF2_9CE4_8422_2325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01B3)
+        })
+    };
+    let mut badges = [(0u64, None::<u8>); legaia_engine_battle::target_picker::FORMATION_SLOTS];
+    for (b, r) in badges.iter_mut().zip(&rows) {
+        let slot = u8::try_from(pc + usize::from(r.first_slot)).unwrap_or(u8::MAX);
+        *b = (
+            key(&r.label),
+            crate::plaques::monster_element_badge(world, slot),
+        );
+    }
+    let lead = |label: &str| -> i16 {
+        let k = key(label);
+        badges
+            .iter()
+            .find(|(h, _)| *h == k)
+            .and_then(|(_, b)| *b)
+            .map_or(0, |_| INTRO_BADGE_LEAD as i16)
+    };
     legaia_engine_battle::target_picker::layout_enemy_menu_rows(&mut rows, |s| {
-        font.layout_ascii(s).advance_x as i16
+        font.layout_ascii(s).advance_x as i16 + lead(s)
     });
     rows.into_iter()
-        .map(|r| (r.label, i32::from(r.x)))
+        .enumerate()
+        .map(|(i, r)| {
+            let badge = badges.get(i).and_then(|(_, b)| *b);
+            (r.label, i32::from(r.x), badge)
+        })
         .collect()
 }
+
+/// How much wider an intro label is for its element badge: the 20-pixel
+/// badge and the 5-pixel gap the name escape's trailing space leaves (the
+/// actor-name plaque's `20 + 5`).
+pub const INTRO_BADGE_LEAD: i32 = 25;
 
 /// The dome leg's battle-open banner: the composer `FUN_801D9D3C` over a
 /// one-monster formation is one label, the opponent's display name, laid out
@@ -343,7 +382,7 @@ pub fn battle_intro_names(
 fn dome_intro_names(
     world: &legaia_engine_core::world::World,
     font: &legaia_font::Font,
-) -> Vec<(String, i32)> {
+) -> Vec<(String, i32, Option<u8>)> {
     let Some(s) = world.minigames.muscle_dome.as_ref() else {
         return Vec::new();
     };
@@ -356,7 +395,7 @@ fn dome_intro_names(
     let width = i32::from(font.layout_ascii(name).advance_x as i16);
     let seat_x = i32::from(legaia_engine_battle::battle_seats::monster_seat(1, 0, false).x);
     let x = (0xA0 + (seat_x >> 3) - width / 2).clamp(6, (0x13A - width).max(6));
-    vec![(name.to_string(), x)]
+    vec![(name.to_string(), x, None)]
 }
 
 /// PROT 0957 `0x76` (Death Game) arm 3's labels this frame, as `(text, pen x,

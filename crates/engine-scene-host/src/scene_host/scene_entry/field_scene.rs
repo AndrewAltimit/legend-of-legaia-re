@@ -4,6 +4,13 @@ use super::*;
 
 use legaia_engine_scene::scene_arrivals::ArrivalClass;
 
+/// The frame step retail measures on a walked world map: a `map01..map03`
+/// frame costs `551..671` hblanks, past the resolver's `0x1FE` rung and
+/// under its `0x2D0` one, over the field floor of `2`.
+///
+/// REF: FUN_80016B6C
+pub const WORLD_MAP_MEASURED_FRAME_STEP: u8 = 3;
+
 impl SceneHost {
     /// Install the placed-prop collision + interaction layer for the current
     /// field scene: one [`legaia_engine_core::world::FieldPropCollider`] per placed `.MAP`
@@ -253,15 +260,25 @@ impl SceneHost {
         // still-queued rect operands belong to the previous scene's MAN.
         self.world.ambient.script_vram_moves.clear();
         self.world.ambient.script_vram_stp.clear();
-        // Retail installs this as the per-mode floor `DAT_8007B9D8`; the
+        // Retail installs `2` as the frame-step floor `DAT_8007B9D8` on every
+        // field entry, a world map's included (`0x801D6990`), and the
         // adaptive resolver (`World::resolve_frame_step`) can only raise it.
-        self.world.clock.frame_step_floor = if legaia_engine_scene::scene::is_world_map_scene(name)
-        {
-            3
+        // On a world map it does: a walked map frame costs more than two
+        // fields (`551..671` hblanks on `map01..map03`, past the `0x1FE`
+        // rung), so the measured step there is `3`, which the engine stands
+        // in as the scene's step over the floor of `2`. A scripted shot of
+        // the same map can cost less (the opening's pan over `map01` reads
+        // `406..457` and runs at `2`); a host standing the engine on a
+        // capture hands it the capture's step (`World::seed_frame_step`).
+        // REF: FUN_801D6704, FUN_80016B6C
+        self.world.clock.frame_step_floor = 2;
+        // A capture's frame-time ring is that scene's load history.
+        self.world.clock.clear_frame_cost();
+        self.world.clock.frame_step = if legaia_engine_scene::scene::is_world_map_scene(name) {
+            WORLD_MAP_MEASURED_FRAME_STEP
         } else {
             2
         };
-        self.world.clock.frame_step = self.world.clock.frame_step_floor;
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self
                 .scene
@@ -1223,14 +1240,11 @@ impl SceneHost {
                 // TIM covers a pool rect the scene's texels win - `dolk` keeps
                 // its own `(448, 0)` texels on the 1010 halfwords the two
                 // differ on. Writing the pool over the build clobbered them.
-                // Same order as the native window's build (`window/run.rs`).
+                // One step with the native window's build
+                // (`underlay_field_texture_pool`).
                 // Soft-fails (the pool just stays absent).
-                let mut effect_pool = psx_tim::Vram::new();
-                match upload_effect_textures_into_vram(&self.index, &mut effect_pool, true) {
-                    Ok(_) => res.vram.underlay(&effect_pool),
-                    Err(err) => {
-                        eprintln!("[scene] effect-texture VRAM underlay skipped: {err:#}");
-                    }
+                if let Err(err) = underlay_field_texture_pool(&self.index, &mut res.vram) {
+                    eprintln!("[scene] effect-texture VRAM underlay skipped: {err:#}");
                 }
                 self.world.init_scene_animations(&res);
                 // Scene-entry VDF pulse (enhancement): when the scene's VDF
@@ -1259,6 +1273,12 @@ impl SceneHost {
                             pack_objects.len()
                         );
                     }
+                }
+                // What the frame-cost model counts the scene's frames by
+                // (`World::field_frame_features`).
+                if let Some(scene) = self.scene.as_ref() {
+                    let table = field_cost_table(&self.index, scene, &res);
+                    self.world.install_field_cost_table(table);
                 }
                 self.resources = Some(res);
             }
@@ -1468,6 +1488,107 @@ impl SceneHost {
         }
         self.world.shops.scene_shops = shops;
     }
+}
+
+/// A field scene's static frame-cost inputs: each terrain decoration draw and
+/// placed object with its pack mesh's primitive and vertex counts, and the
+/// `.MAP` grid's walk-visible ground cells. `None` for a world map (its
+/// ground and sweep are another emitter's) or a scene with no `.MAP`.
+pub fn field_cost_table(
+    index: &ProtIndex,
+    scene: &Scene,
+    res: &legaia_engine_scene::scene_resources::SceneResources,
+) -> Option<legaia_engine_core::world::field_frame_cost::FieldCostTable> {
+    use legaia_engine_core::world::field_frame_cost::{CostCell, CostPlaced, FieldCostTable};
+    use legaia_engine_scene::field_env;
+    if legaia_engine_scene::scene::is_world_map_scene(&scene.name) {
+        return None;
+    }
+    let map = scene.field_map_bytes(index).ok().flatten()?;
+    let env = field_env::env_pack_tmd_indices(scene, res);
+    let lut = scene.field_floor_height_lut(index).ok().flatten();
+    // (prims, verts, quads, light-source rows) of one pack mesh.
+    let size = |ti: usize| {
+        res.tmds.get(ti).map_or([0u32; 4], |t| {
+            t.tmd.objects.iter().fold([0u32; 4], |mut acc, o| {
+                acc[0] += o.header.n_primitive;
+                acc[1] += o.vertices.len() as u32;
+                for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                    &t.raw,
+                    o.primitives_byte_offset,
+                    o.primitives_byte_size,
+                ) {
+                    let n = u32::from(g.header.count);
+                    if g.header.n_vertices() == 4 {
+                        acc[2] += n;
+                    }
+                    if (0x10..=0x17).contains(&g.header.flags) {
+                        acc[3] += n;
+                    }
+                }
+                acc
+            })
+        })
+    };
+    let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
+    let terrain: Vec<_> = scene
+        .field_terrain_tiles(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
+        .collect();
+    let (terrain, _) = field_env::resolve_env_draws(&env, &terrain, lut);
+    let placed = scene
+        .field_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let (placed, _) = field_env::resolve_env_draws(&env, &placed, lut);
+    Some(FieldCostTable {
+        decorations: terrain
+            .iter()
+            .map(|d| {
+                let [p, v, q, l] = size(d.res_tmd);
+                CostCell {
+                    col: d.cell.0,
+                    row: d.cell.1,
+                    radius: d.cull_radius,
+                    prims: clamp16(p),
+                    verts: clamp16(v),
+                    quads: clamp16(q),
+                    lit: clamp16(l),
+                }
+            })
+            .collect(),
+        placed: placed
+            .iter()
+            .map(|d| {
+                let [p, v, q, l] = size(d.res_tmd);
+                CostPlaced {
+                    x: d.world_x.clamp(-0x8000, 0x7FFF) as i16,
+                    z: d.world_z.clamp(-0x8000, 0x7FFF) as i16,
+                    radius: d.cull_radius,
+                    prims: clamp16(p),
+                    verts: clamp16(v),
+                    quads: clamp16(q),
+                    lit: clamp16(l),
+                }
+            })
+            .collect(),
+        ground: FieldCostTable::ground_from_map(&map),
+        npc_prims: {
+            let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
+            let mut v = vec![0u16; placements.iter().map(|p| p.index + 1).max().unwrap_or(0)];
+            for p in &placements {
+                if !p.special_model {
+                    v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
+                }
+            }
+            v
+        },
+    })
 }
 
 /// The field-entry resource build of `scene`, before the effect-texture

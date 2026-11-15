@@ -289,7 +289,9 @@ impl LegaiaMinigames {
             E::Idle => "idle",
             E::Cursor => "cursor",
             E::Confirm => "confirm",
-            E::Refused => "refused",
+            E::Refused | E::Buzz => "refused",
+            E::Back | E::ListCancel => "back",
+            E::ListStep => "cursor",
             E::Fight => "fight",
             E::Run => "run",
         }

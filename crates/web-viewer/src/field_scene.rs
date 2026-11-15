@@ -56,6 +56,9 @@ pub struct FieldScenePack {
     /// ([`LegaiaViewer::field_scene_anim_init`]). `None` until initialised
     /// (or when the scene has none).
     pub anim: Option<FieldSceneAnim>,
+    /// The live scene's re-entry count the walker's strips were last parked
+    /// at ([`tick_field_scene_vsync`]).
+    pub anim_restarts: u32,
     /// The scene running live and headless
     /// ([`legaia_engine_scene_host::scene_live::LiveScene`]): its world drives the
     /// floor-height ladder, the placed-prop clips, the ambient move-VM tree
@@ -115,6 +118,7 @@ pub fn build_field_scene(index: &ProtIndex, name: &str) -> Result<FieldScenePack
         coplanar_offsets,
         cur: None,
         anim: None,
+        anim_restarts: 0,
         live: None,
         scene_anm: None,
         ground_lut_applied: None,
@@ -143,7 +147,9 @@ pub fn build_field_scene_anim(
         pack.display_vram_mut(),
     )?
     .anim;
-    Some(FieldSceneAnim::clut_only(clut, frame_step))
+    let mut anim = FieldSceneAnim::clut_only(clut, frame_step);
+    anim.remember_sources(pack.display_vram());
+    Some(anim)
 }
 
 /// Enter the pack's scene live and headless
@@ -369,6 +375,7 @@ pub fn tick_field_scene_vsync(pack: &mut FieldScenePack) -> bool {
     let FieldScenePack {
         live,
         anim,
+        anim_restarts,
         res,
         actors,
         scene_anm,
@@ -383,6 +390,14 @@ pub fn tick_field_scene_vsync(pack: &mut FieldScenePack) -> bool {
         return wrote;
     };
     live.tick();
+    // The preview re-entered its scene (the script walked out of it): the
+    // host's image is the loader's again, without the walker's strips.
+    let restarts = live.restarts();
+    if std::mem::replace(anim_restarts, restarts) != restarts
+        && let (Some(anim), Some(hres)) = (anim.as_ref(), live.host.resources.as_mut())
+    {
+        wrote |= anim.repark(&mut hres.vram);
+    }
     if live.is_live() {
         // The actor layer's clip step, in the play runtime's place for it
         // (after the world tick).

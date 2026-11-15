@@ -89,6 +89,38 @@ fn the_message_bar_takes_the_active_actor_bars_seat() {
     assert_eq!(on_pen[0].dst.0, 16 * STAGE_SCALE);
 }
 
+/// The readout bar stays in view under a message bar still rising from
+/// below, and goes once the bar's frame reaches its plate (retail films of
+/// Glare and Melt Spray: the plate on its row, the frame's top edge under it).
+#[test]
+fn a_rising_message_bar_leaves_the_readout_up_until_its_frame_reaches_it() {
+    let font = legaia_font::synthetic_for_tests();
+    let slot = slot_view("Vahn", true, true, 250, 300, 12, 30);
+    let slots = [slot];
+    let frame = |dy: i32| BattleHudFrame {
+        slots: &slots,
+        solid_src: Some(SOLID),
+        surface: SURFACE,
+        active_slot: Some(0),
+        message_bar: Some("Line"),
+        message_bar_dy: dy,
+        ..Default::default()
+    };
+    let on_name_pen = |dy: i32| {
+        battle_hud_draws_for(&font, &frame(dy), PEN)
+            .text
+            .iter()
+            .filter(|d| d.src != SOLID && d.dst.1 == BAR_NAME_Y * STAGE_SCALE)
+            .count()
+    };
+    // Spawned 42 rows down: the readout's name and numbers hold the row.
+    assert!(on_name_pen(42) > 4, "the readout is up under a rising bar");
+    // Landed: the caption's four glyphs alone.
+    assert_eq!(on_name_pen(0), 4);
+    // The frame's top on the plate's bottom row: the readout is dropped.
+    assert_eq!(on_name_pen(20), 0);
+}
+
 /// A message bar still gliding up (`FUN_801D8DE8(0x5B, 0)` spawns it at
 /// seat A) draws its caption `message_bar_dy` below the pen, and leaves the
 /// target plaque on the row above it in view until its frame reaches the

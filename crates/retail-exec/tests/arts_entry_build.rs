@@ -116,6 +116,7 @@ fn the_arts_entry_seats_its_chips_as_retail() {
             phase: ArtsInputScreen::Entering,
             glides: &[],
             chip_slide: slide,
+            dpad: slide.is_none(),
         };
         let mut want = chips.clone();
         for (seat, d) in SEAT_DIRS.iter().enumerate() {

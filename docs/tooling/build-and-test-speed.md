@@ -146,10 +146,10 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
 |---|---|
 | `repo` | Every `run:` step of `main-ci.yml`'s Repo Gates job, in a clean `git worktree add HEAD`, with no disc in the environment and none of the gitignored data; and `git ls-files site \| git check-ignore --no-index --stdin`. |
 | `tree` | `fmt`, both clippy passes and the wasm type-check, read from the PR Lint job; Repo Gates' ratchet steps again where the data is; `byte-sweep`, which writes the sweep the byte-accounting ratchet reads; `check-baseline-loosening.py --base`; [`revert-scan.py`](../../scripts/ci/revert-scan.py). |
-| `build` | One build of `legaia-engine` and one of the ladder's test binary, each copied aside so the gates below it read one binary whatever cargo relinks later. |
+| `build` | One build of `legaia-engine` (with `pcsxr-state`, which the film runner reads states with) and one of the ladder's test binary, each copied aside so the gates below it read one binary whatever cargo relinks later. |
 | `tests` | The Disc-Gated Tests job's `run-disc-tests.sh`. `tests-no-disc`, PR Lint's disc-free suite in the clean tree, runs only when named: it is a second whole build. |
 | `ladder` | Part B, part C on the default stream, and each seed `[continuous_seeds]` lists. |
-| `retail` | `retail-compare.py --images --check`, the audio sweep, the PCM check, capture coverage. |
+| `retail` | `retail-compare.py --images --check`, the audio sweep, the PCM check, the [film cue gate](cast-sequence-oracle.md#the-gate-set), the [walk films' rand ratchet](walk-film.md#the-rand-ratchet), capture coverage. |
 | `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs), the [cost ratchet](frame-bench.md#cost-ratchet). |
 
 The workflow's steps are read from the file on every run, so a step added there is a gate here with no edit; the Repo Gates job runs `full-gate.py --selftest`, which fails on a step the reader cannot read or one carrying a forbidden command. An Actions expression has no value outside Actions, so a step's `${{ ... }}` variable is empty: `BASE_SHA`'s step takes its self-test branch, and `loosening-base` does the comparison, without the step's `git fetch --depth=1`, which would turn the shared repository shallow. The runner's `CARGO_TARGET_DIR` is replaced by a directory under `--out`, because `select-ci-target-dir.sh` prunes around whatever it is given.

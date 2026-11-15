@@ -470,7 +470,7 @@ skips = [
 
 [[frame_arm]]
 host = "web"
-arm = "movie_held && fmv_handoff_scene.is_empty()"
+arm = "movie_held && entered.is_empty()"
 reason = """
 A movie owns the frame. The native window runs zero sim ticks while its movie
 plays, so every kernel of its frame path is skipped at once; this arm is the

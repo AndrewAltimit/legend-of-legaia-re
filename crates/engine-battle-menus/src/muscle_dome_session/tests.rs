@@ -1553,3 +1553,97 @@ fn a_hyper_art_collapses_in_the_dome_only_with_the_ra_seru() {
     assert_eq!(play(true), vec![0x1A, 0x1E]);
     assert_eq!(play(false), vec![0x0D, 0x0D, 0x0C]);
 }
+
+/// The dome's flow is the battle's `FUN_801D0748`, so each surface keys the
+/// battle's cue sites: a cancel steps back with `0x23`, every arrow the
+/// entry takes commits with `0x21` (paid or not), the Ra-Seru list steps,
+/// buzzes and cancels on the list kernel's own words.
+#[test]
+fn each_surface_keys_the_battle_cue_sites() {
+    // The ring's cancel steps back (`0x801D2968`).
+    let mut s = session();
+    assert_eq!(
+        s.select_input(pad(|p| p.cancel = true)),
+        DomeMenuEvent::Back
+    );
+    // Escape opens the flee confirm through the commit tail; its cancel
+    // steps back (`0x801D1130`).
+    assert_eq!(
+        s.select_input(pad(|p| p.right = true)),
+        DomeMenuEvent::Confirm
+    );
+    assert_eq!(
+        s.select_input(pad(|p| p.cancel = true)),
+        DomeMenuEvent::Back
+    );
+
+    // The Attack arm commits (`0x801D15D0`), Command opens the entry.
+    let mut s = session();
+    assert_eq!(
+        s.select_input(pad(|p| p.left = true)),
+        DomeMenuEvent::Confirm
+    );
+    assert_eq!(
+        s.select_input(pad(|p| p.right = true)),
+        DomeMenuEvent::Confirm
+    );
+    assert!(matches!(s.menu(), DomeMenu::Input(_)));
+    // An arrow taken commits; one the gauge cannot pay commits too.
+    assert_eq!(
+        s.select_input(pad(|p| p.left = true)),
+        DomeMenuEvent::Confirm
+    );
+    if let DomeMenu::Input(e) = &mut s.menu {
+        e.pool = 0;
+    }
+    assert_eq!(s.select_input(pad(|p| p.up = true)), DomeMenuEvent::Confirm);
+    // The cancel drops the arrow (`0x801D2104`).
+    assert_eq!(
+        s.select_input(pad(|p| p.cancel = true)),
+        DomeMenuEvent::Back
+    );
+
+    // The Ra-Seru list: every Up / Down steps, the cancel is the kernel's.
+    let mut s = session();
+    s.install_magic(0, magic(60));
+    s.select_input(pad(|p| p.right = true));
+    assert!(matches!(s.menu(), DomeMenu::Magic));
+    assert_eq!(
+        s.select_input(pad(|p| p.down = true)),
+        DomeMenuEvent::ListStep
+    );
+    assert_eq!(
+        s.select_input(pad(|p| p.cancel = true)),
+        DomeMenuEvent::ListCancel
+    );
+}
+
+/// A rotted limb's arrow is refused before the gauge, as in battle
+/// (`0x801D1E60..0x801D1F7C`).
+#[test]
+fn a_rotted_limbs_arrow_is_refused_in_the_entry() {
+    let mut s = session();
+    let mut m = magic(60);
+    // Up and Down's limb (`0x20`).
+    m.ring.status = 0x20;
+    s.install_magic(0, m);
+    s.select_input(pad(|p| p.left = true));
+    s.select_input(pad(|p| p.right = true));
+    assert!(matches!(s.menu(), DomeMenu::Input(_)));
+    let before = match s.menu() {
+        DomeMenu::Input(e) => e.buffer.len(),
+        _ => unreachable!(),
+    };
+    let refused = s.select_input(pad(|p| p.up = true));
+    let after = match s.menu() {
+        DomeMenu::Input(e) => e.buffer.len(),
+        _ => unreachable!(),
+    };
+    assert_eq!(refused, DomeMenuEvent::Refused);
+    assert_eq!(after, before);
+    // Left's limb is whole: the arrow enters.
+    assert_eq!(
+        s.select_input(pad(|p| p.left = true)),
+        DomeMenuEvent::Confirm
+    );
+}

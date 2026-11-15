@@ -287,6 +287,51 @@ impl World {
             scene.deal_draw_rands(&mut next);
         }
         self.rng_state = state;
+        // A part the module's tick seated ahead of this draw has not run
+        // its program yet: the part tick behind the draw deals it
+        // (`Self::deal_late_seated_draw_rands`).
+        self.casting.summon_parts_dealt = self
+            .casting
+            .active_summon
+            .as_ref()
+            .map_or(0, |s| s.parts.len().min(self.casting.summon_parts_ticked));
+    }
+
+    /// Deal the draw's `rand()` words to the summon parts seated since the
+    /// frame's draw ran. Retail's module tick seats a part ahead of the
+    /// frame's part walk and draw, which reach it at the list's tail the same
+    /// frame: the ring PROT 0934's arm 15 seats on its pass (`0x801FA170`, 32
+    /// columns) draws its `96` words on that frame (`ra` `0x800289FC` /
+    /// `0x80028A80` / `0x80028AAC` in a watch of the seed word). The draw
+    /// here deals ahead of the part tick, so a part seated this pass is dealt
+    /// once the part tick has run its program.
+    pub(in crate::world) fn deal_late_seated_draw_rands(&mut self) {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            self.casting.summon_parts_ticked = 0;
+            return;
+        }
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            self.casting.summon_parts_ticked = 0;
+            self.casting.summon_parts_dealt = 0;
+            return;
+        };
+        let from = self.casting.summon_parts_dealt.min(scene.parts.len());
+        let mut state = self.rng_state;
+        for p in &mut scene.parts[from..] {
+            if p.finished {
+                continue;
+            }
+            let n = legaia_engine_effects::effect_default_arm::default_arm_rand_draws(&p.state);
+            if n != 0 {
+                p.state.draw_rand_seed = state;
+                for _ in 0..n {
+                    state = legaia_engine_system::rand::world_lcg_step(state);
+                }
+            }
+        }
+        self.casting.summon_parts_dealt = scene.parts.len();
+        self.casting.summon_parts_ticked = scene.parts.len();
+        self.rng_state = state;
     }
 
     /// A module arm's streak-ribbon calls draw on the game's one stream

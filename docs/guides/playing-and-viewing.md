@@ -190,7 +190,9 @@ The launcher and the game's own chrome draw in the same two palettes as Legaia
 Explorer. *Menu colours* in the Display group follows the desktop's light or dark
 preference (GNOME's colour scheme or `GTK_THEME` on Linux, the system setting
 elsewhere), or stays light or dark; the `F12` page changes it live and Explorer's
-*View* menu keeps its own choice.
+*View* menu keeps its own choice. The Multiplayer screen and the game-mode
+picker follow it too. A mode in play keeps its own colours: its text sits on
+the field and on its table, not on a plate.
 
 The launcher keeps the last few discs that passed (`recent_discs` in the same
 file, newest first), so a retail disc and a randomized or translated copy are
@@ -397,8 +399,9 @@ started; the *Saves folder* button opens it. Right-click or `Shift+Enter` on tha
 button (Triangle on a controller), or dropping the file on the window, picks
 a memory card from another emulator (`.mcr`, `.mcd`, `.srm`, DexDrive `.gme`,
 single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
-through the game's own reader, says how many Legend of Legaia saves it holds,
-remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
+through the game's own reader, says how many Legend of Legaia saves it holds
+(the disc card's first line keeps naming the card and its save count while it
+is mounted), remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
 those saves load and save in place - what the browser play page's card import
 does. `Delete` on the button removes it. The last few cards are remembered
 too (`recent_cards`): the same right-click steps through those that still
@@ -406,7 +409,10 @@ read, newest first, then offers the file dialog, so moving between two
 emulators' cards takes no browsing. While the game runs, dropping a card
 file on the game window swaps it into card 2 for the rest of the session
 (the notice line names it, or says the file is not a card); the launcher's
-remembered card is left as it was. `LEGAIA_ENGINE_CONFIG_DIR` and
+remembered card is left as it was. The `F12` panel's Tools page does the same
+from a controller: its *Memory card 2* row steps through the cards the
+launcher remembers and the card files in the saves folder, Cross inserts the
+picked one, and *No card* takes the card out. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 
@@ -478,9 +484,10 @@ is pressed again.
 
 A controller reaches everything inside the game: the title, every menu and
 screen, the launcher, and the window's `F12` panel (`Select` + `Start`). It does
-not reach what sits outside the game: the play page's own boxes and sliders
-beside the picture, its disc and save file pickers (a browser opens a file
-dialog only for a click or a key), and Legaia Explorer.
+not reach what sits outside the game on the play page: its own boxes and
+sliders beside the picture, and its disc and save file pickers (a browser
+opens a file dialog only for a click or a key). Legaia Explorer takes a
+controller as it takes the keyboard, its file pickers included.
 
 On a touch screen the browser play page draws an on-screen pad over the
 picture: a D-pad you can roll a thumb around (diagonals included), the four
@@ -515,7 +522,7 @@ enhancement has a retail-faithful off position
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off, remembered | `--no-audio` |
-| `F1` | The engine's diagnostic text rows | off | - |
+| `F1` | The engine's diagnostic text rows (top left; bottom left while the party readout has that corner) | off | - |
 | `F11`, `Alt+Enter` | Borderless fullscreen (on the play page `F11` alone puts the picture full screen, as its Fullscreen button) | off, remembered | `--fullscreen` / `--windowed` |
 | `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
@@ -573,7 +580,15 @@ minigame (fishing, slots, Baka Fighter, Muscle Dome, dance), the game-mode
 picker and the trading-card menu, then the play page's other debug controls:
 effect outlines, the party, the fight music, teaching the lead a spell, and a
 GameShark file (`--cheat-file`'s path, or `legaia-codes.txt` in the settings
-folder; the page's box is a text field, a window has none), and *Start a
+folder; the page's box is a text field, a window has none), *Memory card 2*
+(the card in the save screen's second port, picked from the launcher's
+remembered cards and the saves folder - the play page's card insert), *Export
+session* (the game as it stands, written as `session_<scene>_NNN.lgsf` in the
+saves folder; the play page's button, and a file the page imports and
+`--resume-save` lands), *Copy report* (what a bug report needs - version,
+system, scene, settings and the end of the log, no game data - on the
+clipboard, or in `legaia-report.txt` in the saves folder where there is no
+clipboard), and *Start a
 battle here*, the scene's first encounter formation through the normal
 transition (`--battle first`, the page's button of the same name). The list scrolls
 under the cursor, with a bar on the plate's edge showing where the view is, as
@@ -581,10 +596,15 @@ the settings page has. The play page has the debug camera and the diagnostics ba
 boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
 fullscreen among them; `End` only while an expansion pack is loaded), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
-Config table, and the mouse's camera controls.
+Config table, and the mouse's camera controls. Its last line is a reset:
+`Delete`, `Enter` or Cross, pressed twice, puts every key and controller
+button back on its default and writes `legaia-input.toml`, the way out of a
+rebind that left no way into the menu.
 `Esc`, `F12`, Circle or Start close the panel. Each page's last line names its
 keys, or, while a controller was the last thing pressed, that controller's
-buttons by the labels its maker prints (*D-pad pick, change  B close*). A state the original game does
+buttons by the labels its maker prints (*D-pad pick, change  B close*); on the
+Settings page a row whose help runs to three lines has that line for its
+third. A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
 stays hidden while the panel is up. In a multiplayer session, whose other
@@ -881,7 +901,10 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
 
 Without the flags, `Tab` (or the launcher's **Play online** button)
 opens the Multiplayer screen, which hosts a room or joins one by address
-and code from inside the game.
+and code from inside the game. It opens with the address you last joined
+and the name you last played under (`--name` wins over the remembered
+name); a room code is new for every room and is typed each time. The
+browser play page's Online panel remembers the same two.
 
 In a room, `Tab` opens the room screen: the room code and the address to join at,
 the players, Ready (guests), the game pick and Start (the host), emotes,

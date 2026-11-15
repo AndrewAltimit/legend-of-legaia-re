@@ -52,6 +52,12 @@
 #                                     the state was saved ("<va> = <value>
 #                                     (<why>)"). A poked state is not pure
 #                                     retail play; the poke is named here.
+#   spawned_under_flags        list   system flags that stood when the scene
+#                                     spawned and that a `ram_poked` clear
+#                                     lowered before the save. Placements keep
+#                                     the seats their records took under them;
+#                                     retail-compare spawns the scene with them
+#                                     raised to find those seats.
 #   [scenarios.overlay_slice]  block  mednafen overlay-slice range
 #   [[scenarios.watchpoints]]  block  mednafen diff watchpoint regions
 #
@@ -8171,6 +8177,7 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "bylon"
 ram_poked = ["system flags 0x2A2, 0x2A6, 0x2A7 cleared (the mist beat's latches)"]
+spawned_under_flags = [0x2A2, 0x2A6, 0x2A7]
 topics = ["field", "story beat", "bylon", "Mist", "Gala", "cutscene", "dialog"]
 
 [[scenarios]]
@@ -8181,6 +8188,7 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "bylon"
 ram_poked = ["system flags 0x2A2, 0x2A6, 0x2A7 cleared (the mist beat's latches)"]
+spawned_under_flags = [0x2A2, 0x2A6, 0x2A7]
 topics = ["field", "story beat", "bylon", "Mist", "Noa", "cutscene", "dialog", "camera"]
 
 [[scenarios]]

@@ -714,6 +714,19 @@ ghidra/scripts/funcs/800266e0.txt`, `80064370.txt`, `800641ec.txt`,
 `8006282c.txt`, `8006275c.txt`, `80062880.txt`, `800628f0.txt`,
 `80062f98.txt`.
 
+The replay also re-applies the audio level. `FUN_80026478` sets the slot's
+volume to `0` before it plays and to `_DAT_8007B910 >> 1` after
+(`FUN_8002657C` at `0x800264D4` and `0x80026504`, an `SsSeqSetVol` behind a
+cached-value test), so a score a [timed release](#the-timed-release-is-a-scheduled-bgm-pause)
+faded and stopped comes back at full volume; the replay leaves a running slide's
+flag alone (`FUN_800628F0` clears `0x200` and `0x4` only). `BgmDirector::resume`
+sets the sequencer's volume to the ducked level after the rewind. `bylon`
+`P2[13]`, Master Zopu's dinner talk, is the case that needs it: it fades the score
+(`5 (200)`) under "I will tell everyone", replays it with `2 · 4` when the hall
+cheers, and fades it for good after the meal (`5 (200)` at `+0x1377`). A replay
+that kept the faded volume ran silent from the cheer to the scene change
+(disc-gated `engine-session/tests/bylon_dinner_disc.rs`).
+
 Sub-op `3` is the pause and `4` the replay; the legacy labels have them the
 other way round, and routing by those labels silences the score where retail
 brings it back. The battle and minigame restores that stop the score when no
@@ -2357,9 +2370,106 @@ The item and magic windows are list windows paged by the SCUS list kernel
 `FUN_80032A44`, which writes the ring itself: `0x21` a step, `0x20` a confirm,
 `0x23` a disabled row, `0x37` a cancel ([`field-menu.md`](field-menu.md)). The
 item window's flow state reads the kernel's mode word `0x8007BB94` (`3`
-cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
-leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
-the tail's cue.
+cancelled, `2` chosen) at `0x801D17F8`, the magic window's at `0x801D1B78`.
+
+#### Every press, surface by surface
+
+The whole command UI, read off `FUN_801D0748` and the list kernel. The retail
+column is the id on the ring (the dispatcher's argument less one, or the
+kernel's own word); the port keys the same descriptor on every row.
+
+| Surface | Press | Ring id | Site | Port cue |
+|---|---|---|---|---|
+| Round prompt `0x1E` | Left or confirm (`Begin`), Right (`Escape`) | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Flee confirm `0x32` | Left (run) | `0x20` | `0x801D1158` | `Confirm` |
+| Flee confirm `0x32` | cancel or Right | `0x22` | `0x801D1130` | `Back` |
+| Ring `0x28` | Up (`Item`), Right (magic), Down (`Spirit`) | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Ring `0x28` | Left or confirm (`Attack`) | `0x20` | `0x801D15D0` | `Confirm` |
+| Ring `0x28` | a refused arm | `0x22` | tail `0x801D2968` | `Back` |
+| Ring `0x28` | cancel (step back a member, or back to the prompt) | `0x22` | tail `0x801D2968` | `Back` |
+| Ring, cross-button option | a direction that moves the highlight | `0x21` | `0x801D082C`, `0x801D08D0`, `0x801D0988`, `0x801D0A40` | `Cursor` |
+| Attack mode `0x78` | Left or confirm (`Auto`), Right (`Command`) | `0x20` | `0x801D17CC`, `0x801D175C` | `Confirm` |
+| Attack mode `0x78` | cancel | `0x22` | tail `0x801D2968` | `Back` |
+| Arts entry `0x50` | an arrow the entry takes | `0x20` | `0x801D1F98` into the tail | `Confirm` |
+| Arts entry `0x50` | an arrow its limb's Rot refuses | `0x22` | `0x801D1EA0`, `0x801D1EE8`, `0x801D1F30`, `0x801D1F78` | `Back` |
+| Arts entry `0x50` | confirm on an entered or preseeded string | `0x20` | tail `0x801D20D4` | `Confirm` |
+| Arts entry `0x50` | the advance off an exhausted gauge | none | `bne` at `0x801D20CC` | none |
+| Arts entry `0x50` | cancel (drop an arrow, or leave) | `0x22` | `0x801D2104` | `Back` |
+| Arts entry `0x50` | Triangle (the arts list window) | none | `FUN_801D3748` calls no cue routine | none |
+| Target cursor `0x5A` | a step onto another seat | `0x21` | `0x801D263C` | `Cursor` |
+| Target cursor `0x5A` | confirm | `0x20` | `0x801D22B0` | `Confirm` |
+| Target cursor `0x5A` | cancel | `0x22` | `0x801D2320` | `Back` |
+| Item `0x3C`, magic `0x46` lists | Up, Down | `0x21` | kernel `0x80032C74` | `Cursor` |
+| Item, magic lists | Left, Right when the page flips | `0x21` | kernel `0x80032B9C`, `0x80032C68` | `Cursor` |
+| Item, magic lists | confirm on an enabled row | `0x20` | kernel `0x80032D24` | `Confirm` |
+| Item, magic lists | confirm on a greyed row | `0x23` | kernel `0x80032D0C` | `Buzz` |
+| Item, magic lists | cancel | `0x37` | kernel `0x80032D74` | `ListCancel` |
+| One-enemy sub-cursors `0x5B` / `0x5C` | a step onto another seat | `0x21` | `0x801D263C` | `Cursor` |
+| One-ally sub-cursors `0x64` / `0x65` | Left, Right (a party of two or more) | `0x21` | `0x801D2BE8`, `0x801D2C78` | `Cursor` |
+| The eight sub-cursors `0x5B..0x5E`, `0x64..0x67` | confirm | `0x20` | `0x801D24AC`, `0x801D2690`, `0x801D2828`, `0x801D29B8`, `0x801D2AA4`, `0x801D2D6C`, `0x801D2E5C`, `0x801D2FDC` | `Confirm` |
+| The eight sub-cursors | cancel | `0x22` | `0x801D2560`, `0x801D26F4`, tail `0x801D2968` (`0x5D`, `0x5E`), `0x801D2A1C`, `0x801D2B58`, `0x801D2DD0`, `0x801D2F10` | `Back` |
+| Commit screen `0x6E` | Left or confirm (`Begin`) | `0x20` | `0x801D31A4` | `Confirm` |
+| Commit screen `0x6E` | Right or cancel (`Reselect`) | `0x22` | `0x801D3054` | `Back` |
+| Spoils window | a level gained | `0x50` | `FUN_8004E568`, `0x8004F6E8` | `dispatch_battle_cue(0x50)` |
+| Spoils window | the page presses | none | `FUN_8004E568` calls the dispatcher nowhere else but for the victory voice (`0x8004FAE8`) | none |
+
+Four rules in that table are easy to get wrong:
+
+- **An arrow sounds a commit.** The arts entry stores the arrow in
+  `ctx[+0x1A]`, runs HUD step `0xB` and jumps to the commit tail
+  (`0x801D1F80..0x801D1F98`). Step `0xB` returns ahead of its append when the
+  gauge cannot pay the arrow, and the tail still runs, so an unpaid arrow
+  sounds too. Only the advance off an exhausted gauge is silent: the `bne
+  s0,zero,0x801D3290` at `0x801D20CC` steps over the tail.
+- **The ring's Magic arm refuses three ways.** Its first test is the member's
+  Ra-Seru marker `ctx[+0x25F + member]` (`beq v0,zero,0x801D2968` at
+  `0x801D1420`), ahead of Curse (`+0x16E & 0x1000`, `0x801D1440`) and the
+  special word's `0x200` (`0x801D1454`). A member with no Ra-Seru hears the
+  refusal and the ring stays up; no empty window opens. The port reads a
+  member who knows a spell as bound whatever the equipment byte holds: the
+  two never part on a disc save, and the Seru cheat on a scene-picker party
+  keeps its Magic arm. The Item arm's one
+  refusal is the special word's `0x100` (`0x801D1370..0x801D137C`), an arena
+  course rule, and `Attack`'s is three rotted limbs (`0x801D1560..0x801D156C`).
+- **A list step sounds whether or not the hand moved.** The kernel's Up and
+  Down arms both fall into the queue at `0x80032C74` on every path, a one-row
+  list included; a page flip queues only when `top` moves (`blez` at
+  `0x80032B98`, the `slt` at `0x80032C2C`). The hand wraps inside its
+  eight-row page and the horizontal pad is the only way to another page.
+- **A greyed row is the list build's.** The battle arm of the spell list
+  builder writes a row disabled unless the spell record's `+2` carries the
+  battle bit `0x4` and the caster's MP covers the discounted cost
+  (`0x800310A0..0x800310D0`), so an unaffordable spell buzzes in the kernel
+  and the flow state's own MP test at `0x801D1C10` never meets one. Every
+  costed record of the disc's spell table carries the bit, so MP is the only
+  thing that greys a spell. The item
+  list greys by the descriptor's battle bit alone
+  ([`battle-hud.md`](battle-hud.md#the-battle-item-window-0x3c)). The kernel writes
+  its confirm word over the slot it last queued (`lh a0,0x15a(gp)` at
+  `0x80032D14` / `0x80032D2C`), so a step and a confirm on one frame sound
+  the confirm. A slot latched on an earlier frame has been aged to `-1` by
+  `FUN_8001698C` before the kernel runs, so the overwrite keys like a push:
+  the port's one cue a frame, the press winning, is the same sound.
+
+**The windows open on row 0.** The list kernel seats a new list's hand from the
+selection and scroll words `0x8007BB98` / `0x8007BB90` (`gp+0x880` / `gp+0x878`,
+`FUN_80030104` at `0x800301F0..0x80030220`: the selection clamped to the last row,
+the top to the selection), and writes them back every frame (`0x80032DEC`,
+`0x80032DFC`). In battle the window opener `FUN_801D388C` zeroes both for every
+sub-draw step whose record's second byte is `3` (`0x801D4C14..0x801D4C28`), ahead
+of the step's window build: steps `5` and `7` (the ring's Item and Magic arms)
+and `0x13`, `0x17`, `0x1A`, `0x1C`, `0x1E` (each target surface's cancel back to
+its window). So both windows open on row 0, a greyed row included, and a cancel
+off a target reopens the list on row 0, not on the row picked. The port opens
+`BattleSpellSession` on row 0 and returns both windows there on a target cancel;
+the pause menu's lists, which no such step resets, keep their row.
+
+**An empty list is a text window.** With a row count of `0`, `FUN_80030104`
+builds no list node: it allocates a text buffer, copies the window's message into
+it and marks the window's `+0x14` as `0x80` (`0x80030130..0x800301D4`). The
+kernel's count test (`0x80032AD8..0x80032AE0`) jumps a zero count straight to the
+confirm read; which window kind reaches it with no node, and whether a Ra-Seru
+bearer with no spell opens one in battle, is not traced here.
 
 The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
 drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
@@ -2385,7 +2495,11 @@ commit and nothing else.
 Port: `engine-core::world::battle::command_flow::ui_cues` derives one blip per
 frame from each surface's state before and after its input (the command
 session, the spell and item windows, the arts entry) and pushes its ring id,
-which both hosts drain through `AudioDirector::route_world_sfx`. Measured by
+which both hosts drain through `AudioDirector::route_world_sfx`; the kernels
+are `engine-battle-loop::ui_cues`, and the spell list steps through the same
+`list_kernel_navigate_rows` the pause lists and the item window use. The
+table's rows are pinned disc-free by
+`engine-core/src/world/tests/battle_ui_cue_routing.rs`. Measured by
 `engine-shell/tests/battle_ui_sfx_disc.rs` on the play window's frame body:
 `Begin`, the `Item` arm, the item list's cancel and the ring's cancel each come
 due on the ring and key a voice on the tick of the press.
@@ -3551,7 +3665,18 @@ activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 `map01`'s `P2[31]` and the flag `0x2C3` that `vozz`'s `P2[17]` cleared before the capture, so
 the engine keeps `2000` too ([the overworld's story cutscenes](#the-overworlds-story-cutscenes-are-door-records-too)).
 `map01_tree_revival_cutscene` reads `track` `0`: it sounds `2035`, kept by `vozz` `P1[7]`, and
-the card-load seed has no arrival through a partition-1 beat.
+the card-load seed has no arrival through a partition-1 beat. Its `ambient` `0` is the same
+history: the cue voices are the revival's own, scene cue `0x22A` pushed by `P2[31]`
+(`36 00 80 2A 02` at `+0x152` and `+0x1AF`) ahead of the PC the seed resumes the record on.
+Neither is a card load's music: a save cannot be made inside either record, and across the
+library's walkable states (the retail card boots among them) the seeded engine sounds
+retail's track on every other row.
+
+The still corpus scores the track word alone, and reads `2035` on both `vozz` states by the
+script gate: `P2[17]` cleared `0x2C3` before either capture, so the entry starts `2002`, and
+the resume of the record replays the `Bgm 2035` of the entry arm that spawns it
+(`72 C3` at `+0x8C`, the start at `+0x93`). The replay lands between two ticks, where a
+session with no director of its own would drop it as stale; the corpus routes it at once.
 
 The engine's sequence volume is read where a state is saved: at the vblank, after the frame
 body and before that vsync's `SsSeqCalc`, so the listener takes it ahead of the tick's mix.
@@ -3565,6 +3690,9 @@ emulator's `ENVX`, and its SPU runs on the host's audio clock
 sounding long after its sample ended. `son_field_door_hop` is the case: its records hold
 voices 22 and 23 at `7FFF`, where one ambient part keys a `40`-vsync sample every `63` vsyncs
 and only one voice sounds ([settled](../reference/re-settled-threads/audio.md#why-son_field_door_hops-records-hold-two-0x201-voices)).
+So the channel counts a PCSX-Redux state's records that agree on tone page, program, tone and
+VAB slot once (`RetailAudio::cue_sounds`); a mednafen state brings the SPU's own envelopes and
+every sounding voice counts.
 
 ## The keying differential
 

@@ -320,6 +320,13 @@ pub trait BattleActionHost {
         true
     }
 
+    /// The vsyncs the summon-invoke state `0x32` holds on the read of
+    /// `slot`'s cast module ([`super::summon_invoke_drive_vsyncs`]). Default:
+    /// the long read, for a host that knows no module.
+    fn summon_invoke_drive_vsyncs(&self, _slot: u8) -> u8 {
+        super::SUMMON_INVOKE_DRIVE_VSYNCS
+    }
+
     /// Equivalent of `func_0x8003EAE4(0, idx)` - load capture archive.
     /// Default no-op.
     fn load_capture_archive(&mut self, _idx: u8) {}

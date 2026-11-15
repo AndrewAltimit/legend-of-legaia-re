@@ -3,13 +3,16 @@
 
 use super::*;
 
-/// PROT 0966 (Cort's Evil Seru Magic, `0xAD`) hits the party exactly twice,
-/// in retail's order: the stager's `0x100` never-kill sweep on arm 11's pass
-/// (arm 10's record `0x801F937C` runs op `0x20` arm 4 after a 127-vsync
-/// wait), then the tick's own `0x327` sweep on arm 26. The band's fold adds
-/// no third hit.
+/// PROT 0966 (Cort's Evil Seru Magic, `0xAD`) hits the party three times, in
+/// retail's order: the stager's `0x100` never-kill sweep twice (arm 10's
+/// record `0x801F937C` runs op `0x20` arm 4 after a 127-vsync wait, and its
+/// record `0x801F94D0` arm 3, which falls into arm 4, after 391), then the
+/// tick's own `0x327` sweep on arm 26. A retail recording of the cast drops
+/// the party's HP on three frames (arm 11's last, arm 14's first, arm 26's
+/// pass). This world seats no record, so each stager call falls on the pass
+/// of the arm beside it. The band's fold adds no fourth hit.
 #[test]
-fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more() {
+fn evil_seru_magic_lands_two_stager_sweeps_then_the_tick_hit_and_folds_nothing_more() {
     let mut world = module_code_world();
     world.party.party_count = 3;
     let caster = 3u8;
@@ -59,12 +62,16 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
         "arm 27's white-out fade is up as the body ends"
     );
     let phases: Vec<u8> = hit_phases.iter().map(|(p, _)| *p).collect();
-    assert_eq!(phases, vec![11, 11, 11, 26, 26, 26], "{hit_phases:?}");
+    assert_eq!(
+        phases,
+        vec![11, 11, 11, 13, 13, 13, 26, 26, 26],
+        "{hit_phases:?}"
+    );
     let hp: Vec<u16> = (0..3).map(|i| world.actors[i].battle.hp).collect();
     world.fold_pending_cast();
     let after: Vec<u16> = (0..3).map(|i| world.actors[i].battle.hp).collect();
     assert_eq!(hp, after, "the fold owes nothing once the stager has run");
-    assert!(hp.iter().all(|&h| h < 5000), "both hits reached the party");
+    assert!(hp.iter().all(|&h| h < 5000), "the hits reached the party");
 }
 
 /// Every capture-class module, every choreography: a cast's HP outcome lands

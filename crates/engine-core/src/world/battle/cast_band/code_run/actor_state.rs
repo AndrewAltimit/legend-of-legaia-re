@@ -134,6 +134,11 @@ impl World {
                 && self.party_ability_word(usize::from(slot)) & (1 << 0x1B | 1 << 0x1C) != 0,
             loop_count: a.battle.hit_count_bound,
             loop_timer: a.battle_animation.as_ref().map_or(0, |p| p.loop_timer()),
+            anim_frame: a.battle_animation.as_ref().map_or(0, |p| p.current_frame()),
+            anim_frames: a
+                .battle_animation
+                .as_ref()
+                .map_or(0, |p| p.frame_count().min(255) as u8),
             hits_pending: a.battle_staged_anim.is_some()
                 && a.battle_animation
                     .as_ref()

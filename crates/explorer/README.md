@@ -302,7 +302,8 @@ These environment variables drive a run without a person at the keyboard
 | `LEGAIA_EXPLORER_SCREENSHOT` | Save a PNG of the window once settled (after the extraction, if one runs), then quit. With nothing to open it captures the start screen. |
 | `LEGAIA_EXPLORER_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
 | `LEGAIA_EXPLORER_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
-| `LEGAIA_EXPLORER_PLAY` | Press *Play* once the disc has loaded. |
+| `LEGAIA_EXPLORER_PLAY` | Press *Play* once the disc has loaded; `options` presses *Game options* instead. That window is the game's launcher, which reads its own `LEGAIA_LAUNCHER_SCREENSHOT` from the same environment. |
+| `LEGAIA_EXPLORER_MENU` | Hold one of the top bar's menus open by its title: `open`, `view`, `export`, or `menu` (the narrow window's one menu). |
 | `LEGAIA_EXPLORER_BROWSE` | Open the in-app file browser at start: `disc`, `folder` (an extracted folder), `out` (the extraction output folder) or `export` (the export folder). |
 | `LEGAIA_EXPLORER_SETTINGS` | Settings file to use instead of the per-user one. |
 

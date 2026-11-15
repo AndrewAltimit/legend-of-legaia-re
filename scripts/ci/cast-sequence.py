@@ -447,6 +447,22 @@ def state_guard_seats(sstate: str) -> str | None:
     return ",".join(seats)
 
 
+def state_creature_restage(out: Path) -> bool:
+    """Whether the recording's state holds a stage bump on the bare creature
+    seat (`+0x1DC` bit 0 of actor `(&DAT_801C9370)[7]`): an earlier cast of the
+    same battle staged the seat's idle with the bump after its node was taken
+    off (PROT 0964's `0xFF` arm), and the next creature's first tick commits
+    on it. The replay's fresh fight has played no such cast, so the engine is
+    told (`LEGAIA_SEAT_CREATURE_RESTAGE`). A harness seat."""
+    ram = state_ram(read_kv(out / "retail" / "manifest.txt").get("sstate", ""))
+    if ram is None:
+        return False
+    a = ram_u32(ram, 0x801C9370 + 4 * 7)
+    if not RAM_BASE <= a < RAM_TOP - 0x200:
+        return False
+    return ram[a - RAM_BASE + 0x1DC] & 1 != 0
+
+
 def state_opening_cursor(out: Path) -> str | None:
     """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
     anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
@@ -829,6 +845,29 @@ def retail_track_coins(out: Path) -> list[str]:
     return pts
 
 
+def retail_yaw_coins(out: Path) -> list[str]:
+    """The swing camera's yaw-seed coins through the recording, in order. The
+    value-2 arm of `FUN_8004E13C` (`0x8004E254..0x8004E2B4`) re-seeds the yaw
+    counter `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` at a party attacker's
+    commit of a clip whose `+0x87` byte is `2`, a Super Art finisher's first.
+    The counter climbs by `4` or `5` a pass, so a re-seed reads as a row
+    standing within a pass of `0x280` or `0xA80` that the row before it did
+    not lead up to. Empty for a recording without the `c6da` column."""
+    coins, prev = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            v = r.get("c6da")
+            if v is None or v == "":
+                return []
+            v = int(v)
+            if prev is not None and not 0 <= v - prev <= 8:
+                for coin, seed in ((0, 0x280), (1, 0xA80)):
+                    if 0 <= v - seed <= 8:
+                        coins.append(str(coin))
+            prev = v
+    return coins
+
+
 def game_clock(rows: list[dict]) -> list[int]:
     """Each `meta.csv` row's time on the recording's game clock, from `1` on
     the first row: a frame (one value of the `frame` column) advances it by
@@ -882,9 +921,37 @@ def retail_hit_words(out: Path) -> list[str]:
 
 
 def run_engine(a, out: Path) -> bool:
+    """Record the engine side. A `--physical` film whose child carries the
+    still's pin to the default step (`LEGAIA_BATTLE_PARTY_STEP=0`) drops it,
+    and falls back to it when the drop loses the gate: the seed found the
+    round on the pin, and on the party's step the replay can draw another
+    (`battle_taiku_topaz_strike`'s Topaz picks seat 0 where the drive waits
+    for seat 2, and the film ran to its deadline with no frame). Kept for
+    every pinned strike film the pin costs image (the 13 that reach their
+    gate without it read a mean `.978` without and `.917` with), so it is the
+    fallback and not the rule. `engine-pin.txt` remembers a film that needed
+    it, so a re-run goes there first."""
+    marker = out / "engine-pin.txt"
+    order = [True, False] if marker.exists() else [False, True]
+    for n, keep_pin in enumerate(order):
+        ok, frames, pinned = record_engine(a, out, keep_pin)
+        if not ok or frames or not (a.physical and pinned) or n == 1:
+            if ok and frames and keep_pin and pinned:
+                marker.write_text("LEGAIA_BATTLE_PARTY_STEP=0\n")
+            elif ok and frames:
+                marker.unlink(missing_ok=True)
+            return ok
+        print("[engine] no frame: the gate was not met "
+              + ("on the still's pin to the default step; replaying on the party's step" if keep_pin
+                 else "on the party's step; replaying on the still's pin to the default step"))
+    return False
+
+
+def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
+    """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
     if kept is None:
-        return False
+        return False, 0, False
     toks = shlex.split(kept.read_text())
     assert toks[0] == "cd" and toks[2] == "&&", f"unexpected child command shape in {kept}"
     work = Path(toks[1])
@@ -892,12 +959,16 @@ def run_engine(a, out: Path) -> bool:
     env = dict(os.environ)
     i = 0
     child_inflight = None
+    keep = set(PHYSICAL_KEEP_ENV) if a.physical else set()
+    pinned = any(t == "LEGAIA_BATTLE_PARTY_STEP=0" for t in rest)
+    if a.physical and keep_pin:
+        keep.add("LEGAIA_BATTLE_PARTY_STEP")
     while i < len(rest) and "=" in rest[i] and not rest[i].startswith("/"):
         k, v = rest[i].split("=", 1)
         if k == "LEGAIA_BATTLE_INFLIGHT":
             child_inflight = v
         # A physical recording walks the state's own pad path to the strike.
-        if k not in DROP_ENV or (a.physical and k in PHYSICAL_KEEP_ENV):
+        if k not in DROP_ENV or k in keep:
             env[k] = v
         i += 1
     args = rest[i + 1:]
@@ -919,7 +990,7 @@ def run_engine(a, out: Path) -> bool:
     clip_gated = any(x[:1] == "k" and x[1:].isdigit() for x in f[4:])
     if (a.physical and len(f) > 3 and f[0] == "action" and f[1].isdigit() and int(f[1]) >= 3
             and f[3] == "3" and not any(x.startswith("q") and len(x) == 33 for x in f)
-            and not clip_gated
+            and not clip_gated and not a.played_queue
             and (q := state_strike_queue(out))):
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
@@ -933,7 +1004,7 @@ def run_engine(a, out: Path) -> bool:
     # seek arm's whole frame `18..31` passes and the poll arm `14..30`, with the
     # fade and the rise spawned before it running on through the poll. A
     # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
-    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", "2")
+    env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", str(drive_seek_seat(out) or DRIVE_SEEK_DEFAULT))
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:
@@ -966,6 +1037,8 @@ def run_engine(a, out: Path) -> bool:
         # the seed credits the price back for the engine's own debit, as a
         # still's mid-cast replay does.
         env["LEGAIA_SEAT_SEED_MP_UNPAID"] = "1"
+    if state_creature_restage(out):
+        env["LEGAIA_SEAT_CREATURE_RESTAGE"] = "1"
     if a.physical:
         pass
     elif caster < 3:
@@ -1056,14 +1129,14 @@ def run_engine(a, out: Path) -> bool:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
-            return False
+            return False, 0, False
         env["LEGAIA_CAST_RAND_SEED"] = seed
     if a.rand_track:
         track = out / "retail-rand.txt"
         text = retail_rand_track(out)
         if not text:
             print("[engine] --rand-track: the retail recording has no rand words inside a module band")
-            return False
+            return False, 0, False
         track.write_text(text)
         env["LEGAIA_CAST_RAND_TRACK"] = str(track)
     if a.retail_steps:
@@ -1075,6 +1148,9 @@ def run_engine(a, out: Path) -> bool:
         coins = retail_track_coins(out)
         if coins:
             env["LEGAIA_STRIKE_DEAL_COIN"] = ",".join(coins)
+        yaws = retail_yaw_coins(out)
+        if yaws:
+            env["LEGAIA_STRIKE_DEAL_YAW"] = ",".join(yaws)
     if a.gpu_cost_step:
         env["LEGAIA_BATTLE_GPU_COST"] = "1"
     # The recordings are PCSX-Redux's, and so is the engine's default CD
@@ -1090,7 +1166,7 @@ def run_engine(a, out: Path) -> bool:
     if (not a.rerecord and (edir / "meta.csv").exists() and key_file.exists()
             and key_file.read_text() == key):
         print(f"[engine] cached: {edir} (same binary, command and inputs; --rerecord to run it again)")
-        return True
+        return True, sum(1 for _ in edir.glob("e_*.png")), pinned
     key_file.unlink(missing_ok=True)
     if edir.exists():
         shutil.rmtree(edir)
@@ -1101,11 +1177,78 @@ def run_engine(a, out: Path) -> bool:
     (out / "engine.log").write_text(r.stdout + r.stderr)
     if not (edir / "meta.csv").exists():
         print(f"[engine] FAILED: the action never began (status {r.returncode}); see {out / 'engine.log'}")
-        return False
+        return False, 0, False
     if r.returncode == 0:
         key_file.write_text(key)
-    print(f"[engine] {sum(1 for _ in edir.glob('e_*.png'))} frames")
-    return True
+    frames = sum(1 for _ in edir.glob("e_*.png"))
+    print(f"[engine] {frames} frames")
+    return True, frames, pinned
+
+
+DRIVE_SEEK_DEFAULT = 2
+
+
+def _drive_seek_file(out: Path) -> Path:
+    return out / "drive-seek.txt"
+
+
+def _recording_id(out: Path) -> str:
+    done = out / "retail" / "done.txt"
+    return hashlib.sha256(done.read_bytes()).hexdigest()[:12] if done.exists() else ""
+
+
+def drive_seek_seat(out: Path) -> int | None:
+    """The seek seat read off this recording on an earlier run
+    (`settle_drive_seek`), `None` when none was, or the recording changed."""
+    kv = read_kv(_drive_seek_file(out))
+    if kv.get("recording") != _recording_id(out) or not kv.get("seek", "").isdigit():
+        return None
+    return int(kv["seek"])
+
+
+def settle_drive_seek(a, out: Path) -> bool:
+    """Seat the cast drive's seek on the recording's own poll.
+
+    The scorer reads how long retail's drive held the module's seek and poll
+    arms on the game clock (`retail_live_wait`) against the engine's hold on
+    the seat it ran (`engine_frozen` + `engine_poll_hold`): `live_shift` is the
+    difference. A recording whose drive held longer than the seat gets the
+    seat raised by it and the engine side re-run, once; where that moves
+    nothing (the module's poll never holds on this drive) the default stays.
+    The seat is kept in `drive-seek.txt` beside the recording's id. One pass more or less in the poll arm is one frame-driver `rand()`,
+    which parts the stream for the rest of the cast. A harness seat. Returns
+    whether the engine side must run again."""
+    if a.physical or a.camera_only or any(kv.startswith("LEGAIA_SEAT_DRIVE_SEEK=") for kv in a.engine_env):
+        return False
+    kv = read_kv(_drive_seek_file(out))
+    fresh = kv.get("recording") == _recording_id(out)
+    if fresh and kv.get("settled") == "1":
+        return False
+    try:
+        rep = json.loads((out / "report.json").read_text())
+    except (OSError, ValueError):
+        return False
+    w = rep.get("drive_wait")
+    seat = int(kv["seek"]) if fresh and kv.get("seek", "").isdigit() else DRIVE_SEEK_DEFAULT
+    step = int(kv.get("step", "0")) if fresh else 0
+    shift = w["live_shift"] if w else 0
+
+    def keep(seek: int, step: int, settled: bool) -> None:
+        _drive_seek_file(out).write_text(
+            f"seek={seek}\nrecording={_recording_id(out)}\nstep={step}\nshift={shift}\nsettled={int(settled)}\n")
+
+    if step == 0 and shift < 0:
+        nxt = DRIVE_SEEK_DEFAULT - shift
+        keep(nxt, 1, False)
+        print(f"[engine] the recording's drive held {-shift} vsyncs past the seek seat: "
+              f"re-running on LEGAIA_SEAT_DRIVE_SEEK={nxt}")
+        return True
+    # A raise that moved nothing names no seat: the module's poll never held
+    # on this drive (its seek was issued an arm earlier), and the default
+    # stays without another run, the two recordings being the same.
+    moved = step == 1 and shift != int(kv.get("shift", "0"))
+    keep(seat if step == 0 or moved else DRIVE_SEEK_DEFAULT, step, True)
+    return False
 
 
 def score(a, out: Path) -> int:
@@ -1299,6 +1442,10 @@ def main() -> int:
     ap.add_argument("--console-cd", action="store_true",
                     help="engine: price a voice clip's CD stop watch at a console's response time (opt-in, "
                          "LEGAIA_BATTLE_CD_TIMING=console), not the recording's and the default PCSX-Redux one")
+    ap.add_argument("--played-queue", action="store_true",
+                    help="--physical: leave the drive's own played queue (`b`) as the steer and add no "
+                         "`q` rewrite of the state's queue; korb2_warhalf_strike's replay never reaches "
+                         "its gate with both (the party wins first)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")
@@ -1358,7 +1505,12 @@ def main() -> int:
     if not (out / "retail" / "meta.csv").exists():
         print(f"[score] no retail recording under {out / 'retail'}: engine side only")
         return 0
-    return score(a, out)
+    rc = score(a, out)
+    while rc == 0 and not a.score_only and settle_drive_seek(a, out):
+        if not run_engine(a, out):
+            return 1
+        rc = score(a, out)
+    return rc
 
 
 if __name__ == "__main__":

@@ -26,6 +26,9 @@ pub struct StrikeDeal {
     /// The attack camera's track coin `ctx[+0x26D]` through the recording,
     /// `(coin, vsync)` change points (`LEGAIA_STRIKE_DEAL_COIN`).
     pub track_coins: Vec<(u8, u32)>,
+    /// The swing camera's yaw-seed coins in order, one per re-seed of
+    /// `ctx[+0x6DA]` past the gate (`LEGAIA_STRIKE_DEAL_YAW`).
+    pub yaw_coins: Vec<u8>,
 }
 
 /// `w1,w2,..`, each decimal, or `w@vsync` with the recording's vsync of the
@@ -47,7 +50,18 @@ pub fn strike_deal_from_env(v: &str) -> Option<StrikeDeal> {
     Some(StrikeDeal {
         hit_words,
         track_coins: Vec::new(),
+        yaw_coins: Vec::new(),
     })
+}
+
+/// `coin,..`: the recording's yaw-seed coins in order. A malformed list
+/// deals none.
+pub fn yaw_coins_from_env(v: &str) -> Vec<u8> {
+    v.split(',')
+        .filter(|f| !f.trim().is_empty())
+        .map(|f| Some(f.trim().parse::<u8>().ok()? & 1))
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 /// `coin@vsync,..`: the recording's track-coin change points. A malformed
@@ -152,6 +166,12 @@ pub fn deal_hit_words(world: &mut World, deal: &StrikeDeal) {
         .iter()
         .map(|&(c, v)| (gate + u64::from(v.saturating_sub(1)), c))
         .collect();
+    // The swing camera's side: the same routine's value-2 arm draws
+    // `ctx[+0x6DA] = (rand() % 2) * 0x800 + 0x280` at a Super Art finisher's
+    // first commit, and a replay one frame step off retail's by then draws it
+    // on another word and films the finisher from the far side. Dealt in
+    // order: an action re-seeds once or not at all.
+    world.battle.capture_yaw_coin = deal.yaw_coins.iter().copied().collect();
 }
 
 /// The byte the replay's strike loop already staged from its own stream,
@@ -189,6 +209,13 @@ mod tests {
         assert_eq!(track_coins_from_env(""), vec![]);
         assert_eq!(track_coins_from_env("1@x"), vec![]);
         assert_eq!(strike_deal_from_env("5").unwrap().track_coins, vec![]);
+    }
+
+    #[test]
+    fn yaw_coins_parse_in_order() {
+        assert_eq!(yaw_coins_from_env("1,0"), vec![1, 0]);
+        assert_eq!(yaw_coins_from_env(""), Vec::<u8>::new());
+        assert_eq!(yaw_coins_from_env("x"), Vec::<u8>::new());
     }
 
     #[test]

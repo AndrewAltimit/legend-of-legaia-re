@@ -826,7 +826,7 @@ impl World {
                 }
                 if let Some(ci) = target.filter(|&ci| channels[ci].object_bind) {
                     let key = channels[ci].placement_index;
-                    self.mirror_object_end_latch(key, &mut channels[ci].ctx.local_flags);
+                    self.mirror_object_tick_bits(key, &mut channels[ci].ctx.local_flags);
                 }
                 let object_words = target
                     .filter(|&ci| channels[ci].object_bind)
@@ -982,6 +982,7 @@ impl World {
                 && pc < rec.body.len()
             {
                 rec.entry_pc = pc;
+                rec.resume = true;
             }
         }
     }

@@ -1161,7 +1161,7 @@ scheduled actor; **the script never waits on it**.
 | Sub | Slot | Notes |
 |---|---|---|
 | 0 | `ctx[+0x72]` | Plain s16 write or ramp. Speed multiplier and draw scale (`0` = not drawn); aimed at `0xF8` it lands on the player ([world-map.md](world-map.md#overworld-walk-speed-and-clip)). The ramp (`0x801E118C`) runs on whichever actor the op resolved, placements and objects included: `stone` P2[6] hides Gi Delilas with `CC 13 40 00 00 00 00` and grows him in with `CC 13 40 00 10 08 00`. |
-| 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). |
+| 1 | `ctx[+0x6A]` | Input is `(value >> 1).max(1)` (signed halve, floor 1). The actor's clip rate - [below](#4c-41-the-clip-rate). |
 | 2 | `ctx[+0x8E]` | When ramp == 0 and `flags & 0x20000000`, also writes `world_y = -value`. |
 | 3 | `ctx[+0x24]` | Plain s16 write or ramp (`0x801E1234`). No jump. The actor's X Euler angle, which the actor draw composes. |
 | 4 | `ctx[+0x28]` | Plain s16 write or ramp (`0x801E126C`). No jump. The Z Euler angle. |
@@ -1275,6 +1275,30 @@ ship (`rugi` `P2[72]`, to `900` and back; `uru2` `P2[11]`; `noaru`
 `P2[34]`); `rugi`'s is driven end to end by
 `engine-session/tests/player_tilt_live_disc.rs`. Scene entry clears the two
 angles with the tweens that drive them.
+
+#### `4C 41`: the clip rate
+
+`+0x6A` is the word the clip advance `FUN_800204F8` steps the cursor by, read
+from the actor on every tick: the plain arm takes it whole (`lh a0,0x6a(s0)`
+at `0x800205EC`) and the gated arm folds it through the record's divisor
+(`lh v0,0x6a(s0)` at `0x800205C8`). So the rate belongs to the actor, not to
+the clip, and it holds across every later bind.
+
+A placement's spawn section can write it before the header clip ever plays.
+`garmel` `P1[5]` (Zeto) opens with `4C 41 08` and `P1[7]` with `4C 41 04`, and
+`garmel_zeto_appears_rising` holds `4` and `2` on the two actors over header
+clips `55` and `56`: half and a quarter of the template's `8`. On a cold entry
+of each scene, twenty-one placements in fourteen scenes stand on a rate their
+spawn section set (`balden`, `balden2`, `bubu1`, `edstati3`, `garmel`, `jiji`,
+`koin2`, `koin3`, `nilboa`, `nilboa2`, `other7`, `station3`, `teien`,
+`town0d`), at `2`, `4` or `16`.
+
+Port: a clip a script binds steps live (`World::bind_npc_scene_clip`). A
+header clip is bound by the host from its clip player, at the step the record
+gives the template rate, and the NPC clip tick then moves that cursor onto the
+actor's own word once it is live (`World::tick_npc_clips_scaled`). The scene
+table has to describe the record and the actor has to be off the party bank,
+whose ids name another bank.
 
 #### `4C 45`: the 11-byte form
 

@@ -5,8 +5,8 @@
 //! party row `actor_table[0 .. ctx[+0]]` and the caster `actor_table[ctx+0x13]`.
 
 use super::{
-    CastActorState, CastDamageShape, CastWrapper, SweepHit, aoe_seat_is_hittable,
-    apply_hit_floor_zero, stage_clip,
+    CastActorState, CastDamageShape, CastWrapper, StagerCaller, StagerSpawn, SweepHit,
+    aoe_seat_is_hittable, apply_hit_floor_zero, stage_clip,
 };
 
 /// The neutral tint word the body shows a seat with (`lui 0x2008; ori 0x200`).
@@ -28,6 +28,46 @@ pub const EVIL_SERU_MAGIC_SWEEP_SHAPE: CastDamageShape = CastDamageShape {
     powers: &[0x327],
 };
 
+/// The first of the four arms (`12..=15`, `0x801F73E4` / `0x801F75C8` /
+/// `0x801F7798` / `0x801F7964`) that open on the party release loop.
+pub const ESM_RELEASE_ARM_FIRST: u8 = 12;
+/// The last arm carrying the release loop.
+pub const ESM_RELEASE_ARM_LAST: u8 = 15;
+
+/// Whether the release loop of arms `12..=15` cuts this party seat's get-up
+/// short this pass.
+///
+/// Each of the four arms opens on the same walk over the party row (bound
+/// `ctx[+0]`), ahead of its countdown, so it runs on every pass the arm
+/// holds:
+///
+/// ```text
+/// actor = table[i]
+/// if actor[+0x1D9] == 0                      { next }     ; idle
+/// if actor[+0x1D9] == actor[+0x1F2]                       ; the get-up
+///    && (node[+0x68] << 16 >> 20) >= stream[1] - 2:       ; two frames left
+///     actor[+0x1DA] = 0; actor[+0x1DC] += 1               ; stage idle, bump
+/// ```
+///
+/// (`0x801F7418..0x801F7490` in arm 12; the copies at `0x801F75FC`,
+/// `0x801F77CC`, `0x801F7998`). The test reads the cursor the module sees,
+/// before the pass's anim tick, which then advances it once more and takes
+/// the bump's bit 0 to the cut (`FUN_80047430` `0x800478F4` ->
+/// `0x80047A3C`): the get-up ends on keyframe `frames - 1`, a pass ahead of
+/// its natural end, so the effect record gated on `frames + 1` never fires.
+/// The Evil Seru Magic recording stores the release at `0x801F765C` /
+/// `0x801F7674` with `stream[1] - 2` = `23`, `26`, `13` for the three seats'
+/// 25-, 28- and 15-keyframe get-ups, and the cut at `0x80047A40` the same
+/// pass. The other arms of the loop (the `+0x38` slide by `dt *
+/// 0x801FA460[id]` and Noa's `-0x10` on release) move the seats the port
+/// does not stand where arm 0 stands them.
+// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F7418..0x801F7490`, the arms 12..15 release loop)
+pub fn esm_releases_get_up(s: &CastActorState) -> bool {
+    s.playing_anim != 0
+        && s.playing_anim == s.reaction_gate
+        && i32::from(s.anim_frame) >= i32::from(s.anim_frames) - 2
+}
+
 /// The seat writes of one pass of PROT 0966's arm `phase`. `passed` is
 /// whether the arm's countdown gate let it through this pass (the camera
 /// director's answer); the writes an arm makes before its gate run either
@@ -38,11 +78,12 @@ pub const EVIL_SERU_MAGIC_SWEEP_SHAPE: CastDamageShape = CastDamageShape {
 /// | 0 | party `+0x04 = 0`, `+0x21C = 0xFF` (`0x801F6C80` / `0x801F6C8C`) | - |
 /// | 1 | the same, again (`0x801F6D8C` / `0x801F6D98`) | caster stages clip `6`, rate `2` (`0x801F6DE4` / `0x801F6DF0`) |
 /// | 10 | - | caster hidden (`0x801F70E0` / `0x801F70E8`); party shown, neutral tint (`0x801F7310` / `0x801F731C`) |
+/// | 12..15 | a party seat on its get-up `+0x1F2` with two keyframes left stages idle with the bump ([`esm_releases_get_up`]) | - |
 /// | 18 | - | party hidden again (`0x801F7C34` / `0x801F7C40`) |
 /// | 21 | - | caster stages clip `0`, shown, neutral tint (`0x801F7EA8..0x801F7EC8`); party shown (`0x801F7EF8` / `0x801F7F04`) |
 /// | 23 | - | caster `+0x21C = 2`, the defeat-fade tint state (`0x801F8280`) |
 /// | 26 | - | the party hit, see [`EVIL_SERU_MAGIC_SWEEP_SHAPE`] |
-/// | 27 | party rate `0` (`0x801F8738`, the `beq` delay slot - it lands either way) | caster shown, neutral tint (`0x801F890C` / `0x801F8910`) |
+/// | 27 | party rate `2` (`0x801F8718`), then `0` on a seat whose committed clip `+0x1D9` is not its knockdown `+0x1F1` (`beq` at `0x801F8730` over the store at `0x801F8738`) | caster shown, neutral tint (`0x801F890C` / `0x801F8910`) |
 /// | 28 | party rate `2` (`0x801F89E8`) | - |
 ///
 /// The hit (`0x801F85D4..0x801F86C8`) walks the party row, skips a dead or
@@ -81,8 +122,19 @@ pub fn evil_seru_magic_seat_writes(
     };
     match phase {
         0 | 1 => each_party(seats, &mut |s| hide(s)),
-        27 => each_party(seats, &mut |s| s.anim_rate = 0),
+        27 => each_party(seats, &mut |s| {
+            s.anim_rate = if s.playing_anim == s.knockdown_anim {
+                2
+            } else {
+                0
+            };
+        }),
         28 => each_party(seats, &mut |s| s.anim_rate = 2),
+        ESM_RELEASE_ARM_FIRST..=ESM_RELEASE_ARM_LAST => each_party(seats, &mut |s| {
+            if esm_releases_get_up(s) {
+                stage_clip(s, 0);
+            }
+        }),
         _ => {}
     }
     if !passed {
@@ -132,6 +184,63 @@ pub fn evil_seru_magic_seat_writes(
     hits
 }
 
+/// The records whose programs call the stager's two sweep arms, with the
+/// tick arm on whose pass each call falls when no part runs the program
+/// (`0x801F937C`: `WAIT 0x7F`, op `0x20` arm 4; `0x801F94D0`: `WAIT 0x187`,
+/// op `0x20` arm 3). Arm 10 seats both (`0x801F7164`, `0x801F71C4`).
+pub const EVIL_SERU_MAGIC_SWEEP_CALLERS: [(u32, u8); 2] = [(0x801F_937C, 11), (0x801F_94D0, 13)];
+
+/// The records PROT 0966's stager `FUN_801F8D64` arm `arm` seats on its
+/// caller (`a0 = part + 0x14`, `a1 = part + 0x24`, scale `0x1000`, every call
+/// through the pool wrapper `FUN_80050ED4`), behind `sltiu a1, 9` and the
+/// table at `0x801F6A50`:
+///
+/// | arm | records |
+/// |---|---|
+/// | 0 (`0x801F8DAC`) | `0x801F9538` |
+/// | 1 (`0x801F8DC0`) | `0x801F93A0` |
+/// | 2 (`0x801F8DD4`) | `0x801F96E0`, `0x801F9778`, `0x801F97BC`, `0x801F9808` |
+/// | 6 (`0x801F9024`) | `0x801F98D0` |
+/// | 8 (`0x801F910C`) | `0x801FA2FC`, `0x801FA340` |
+///
+/// The other arms are PROT 0927's, instruction for instruction over this
+/// module's own words: arm 3 (`0x801F8E38`) adds `0xC` to the shake word
+/// `0x801FA468` and falls into arm 4 (`0x801F8E4C`), which adds `0x14`, spawns
+/// the `0x40`-vsync salmon fade and sweeps the party row
+/// ([`super::evil_seru_magic_stager`]); arm 5 (`0x801F8FD0`) spawns the
+/// `0x100`-vsync fade; arm 7 (`0x801F9038`) jitters the caller's `+0x84` /
+/// `+0x28` ([`super::juggernaut_stager_fade`], [`super::juggernaut_stager_shake`],
+/// [`super::juggernaut_stager_jitter`]).
+///
+/// So the cast lands **two** never-kill sweeps before arm 26's hit: record
+/// `0x801F937C` calls arm 4 `0x7F` vsyncs after arm 10 seats it, and record
+/// `0x801F94D0` calls arm 3 `0x187` vsyncs after.
+///
+/// PORT: FUN_801F8D64 (PROT 0966 stager; the spawn arms 0, 1, 2, 6 and 8)
+/// REF: FUN_80050ED4
+pub fn evil_seru_magic_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    let records: &[u32] = match arm {
+        0 => &[0x801F_9538],
+        1 => &[0x801F_93A0],
+        2 => &[0x801F_96E0, 0x801F_9778, 0x801F_97BC, 0x801F_9808],
+        6 => &[0x801F_98D0],
+        8 => &[0x801F_A2FC, 0x801F_A340],
+        _ => &[],
+    };
+    records
+        .iter()
+        .map(|&record| StagerSpawn {
+            record,
+            pos: caller.pos,
+            rot: caller.rot,
+            pokes: Vec::new(),
+            patches: Vec::new(),
+            halve_speed: false,
+            scale: 0x1000,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod esm_tests {
     use super::*;
@@ -144,6 +253,89 @@ mod esm_tests {
             present_04: ESM_NEUTRAL_TINT,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn the_stager_seats_its_records_on_the_caller() {
+        let caller = StagerCaller {
+            pos: [0, -768, 2048],
+            rot: [1, 2, 3],
+            ..Default::default()
+        };
+        let s = evil_seru_magic_stager_spawns(2, caller);
+        assert_eq!(
+            s.iter().map(|s| s.record).collect::<Vec<_>>(),
+            [0x801F_96E0, 0x801F_9778, 0x801F_97BC, 0x801F_9808]
+        );
+        assert!(
+            s.iter()
+                .all(|s| s.pos == caller.pos && s.rot == caller.rot && s.scale == 0x1000)
+        );
+        assert_eq!(evil_seru_magic_stager_spawns(8, caller).len(), 2);
+        // The sweep, fade and jitter arms seat nothing.
+        for arm in [3, 4, 5, 7, 9] {
+            assert!(evil_seru_magic_stager_spawns(arm, caller).is_empty());
+        }
+        // Both sweep callers are records arm 10 seats.
+        assert_eq!(EVIL_SERU_MAGIC_SWEEP_CALLERS.map(|c| c.1), [11, 13]);
+    }
+
+    /// Arm 27 keeps a struck seat's knockdown playing at rate `2` and
+    /// freezes only a seat that is on another clip: a retail recording walks
+    /// the party's cursors through the arm and reads rate `0` from each
+    /// clip's end.
+    #[test]
+    fn arm_27_freezes_only_a_seat_off_its_knockdown() {
+        let mut seats = vec![seat(500), seat(500), seat(500), seat(9000)];
+        seats[0].playing_anim = 0x0B;
+        seats[1].playing_anim = 0;
+        evil_seru_magic_seat_writes(27, false, 3, 3, &mut seats, |_| 0);
+        assert_eq!(seats[0].anim_rate, 2);
+        assert_eq!(seats[1].anim_rate, 0);
+        assert_eq!(seats[3].anim_rate, 8, "the caster is outside the row");
+    }
+
+    /// Arms 12..15 stage idle with the bump on a seat whose get-up `+0x1F2`
+    /// has two keyframes left, held or passed; the Evil Seru Magic
+    /// recording's Gala (28 keyframes) is released on the pass its module
+    /// reads keyframe 26, Vahn (25) on 23.
+    #[test]
+    fn arms_12_to_15_release_a_get_up_two_frames_short() {
+        let get_up = |frame: i16, frames: u8| CastActorState {
+            playing_anim: 5,
+            staged_anim: 5,
+            reaction_gate: 5,
+            anim_frame: frame,
+            anim_frames: frames,
+            ..seat(500)
+        };
+        for arm in ESM_RELEASE_ARM_FIRST..=ESM_RELEASE_ARM_LAST {
+            for passed in [false, true] {
+                let mut seats = vec![get_up(26, 28), get_up(22, 25), get_up(23, 25), seat(9000)];
+                seats[3].playing_anim = 5;
+                seats[3].reaction_gate = 5;
+                seats[3].anim_frames = 25;
+                seats[3].anim_frame = 24;
+                evil_seru_magic_seat_writes(arm, passed, 3, 3, &mut seats, |_| 0);
+                assert_eq!((seats[0].staged_anim, seats[0].restage), (0, 1));
+                assert_eq!(
+                    (seats[1].staged_anim, seats[1].restage),
+                    (5, 0),
+                    "three left"
+                );
+                assert_eq!((seats[2].staged_anim, seats[2].restage), (0, 1));
+                assert_eq!(seats[3].restage, 0, "the caster is outside the row");
+            }
+        }
+        // Only the get-up is released: the knockdown `+0x1F1` and the idle
+        // play on, and the arms either side of the band leave it alone.
+        let mut seats = vec![get_up(26, 28)];
+        seats[0].playing_anim = 4;
+        evil_seru_magic_seat_writes(13, true, 1, 3, &mut seats, |_| 0);
+        assert_eq!(seats[0].restage, 0);
+        let mut seats = vec![get_up(26, 28)];
+        evil_seru_magic_seat_writes(16, true, 1, 3, &mut seats, |_| 0);
+        assert_eq!(seats[0].restage, 0);
     }
 
     #[test]

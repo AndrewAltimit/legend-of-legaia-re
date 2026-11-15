@@ -9,10 +9,12 @@
 //! The browser play page's twins are its dev-menu box, Auto-battle box,
 //! *Overworld markers* box, *Retail battle cadence* box, Minigame list,
 //! *Effect outlines* box, Party field, Battle BGM field, Learn spell row,
-//! *Start a battle here* button and GameShark box (a file here: a window has
-//! no text field).
+//! *Start a battle here* button, GameShark box (a file here: a window has
+//! no text field), *Export session* button and *Copy report* button.
 
 use super::*;
+use legaia_engine_save_state::WorldSaveState;
+use std::path::PathBuf;
 
 /// One row of the page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +41,14 @@ pub(super) enum ToolRow {
     LearnSpell,
     /// Read and apply a GameShark code file (`--cheat-file`).
     GameShark,
+    /// The memory card in port 2 (`--card`, or a card file dropped on the
+    /// window); picked, then inserted.
+    MemoryCard,
+    /// Write the running game as an `.lgsf` file in the saves folder: the
+    /// page's *Export session* button.
+    ExportSession,
+    /// Put a bug report on the clipboard: the page's *Copy report* button.
+    CopyReport,
     /// Arm a fight from the scene's own encounter table (`--battle first`).
     StartBattle,
     /// A press of the window key that enters a minigame or a mode.
@@ -46,7 +56,7 @@ pub(super) enum ToolRow {
 }
 
 /// The rows: control, label, one line of help.
-pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 19] = [
+pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 22] = [
     (
         ToolRow::DevMenu,
         "Developer menu",
@@ -101,6 +111,21 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 19] = [
         ToolRow::GameShark,
         "GameShark file",
         "Cross: apply the --cheat-file codes, or legaia-codes.txt in the settings folder.",
+    ),
+    (
+        ToolRow::MemoryCard,
+        "Memory card 2",
+        "Left/Right pick, Cross insert: a card the launcher mounted before, or one in the saves folder.",
+    ),
+    (
+        ToolRow::ExportSession,
+        "Export session",
+        "Cross: write the running game to an .lgsf file in the saves folder.",
+    ),
+    (
+        ToolRow::CopyReport,
+        "Copy report",
+        "Cross: copy a bug report: version, system, scene, settings. No game data.",
     ),
     (
         ToolRow::StartBattle,
@@ -178,6 +203,69 @@ fn party_label(spec: &str) -> String {
 /// The spell picks: the player Seru block the Cheats page's Seru grant covers.
 const SPELL_PICKS: std::ops::RangeInclusive<u8> = legaia_engine_cheats::cheats::SERU_SPELL_IDS;
 
+/// The most card files the memory-card row offers.
+const CARD_PICKS_MAX: usize = 32;
+/// The most characters of a card's file name the row shows.
+const CARD_LABEL_CHARS: usize = 24;
+/// What the memory-card row shows for an empty port.
+const NO_CARD: &str = "No card";
+
+/// The card files the memory-card row steps through: the mounted one, then
+/// the ones the launcher remembers, then every card file in `folders`, by
+/// name. Each file once, only files that are there now, never port 1's own
+/// card (mounting it twice would let two ports write one file), at most
+/// [`CARD_PICKS_MAX`].
+pub(super) fn card_picks(
+    mounted: Option<&Path>,
+    remembered: &[PathBuf],
+    folders: &[PathBuf],
+    port_one: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut found: Vec<PathBuf> = Vec::new();
+    for dir in folders {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        let mut here: Vec<PathBuf> = read
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| crate::launcher::is_card_file(p))
+            .collect();
+        here.sort();
+        found.extend(here);
+    }
+    let mut out: Vec<PathBuf> = Vec::new();
+    for p in mounted
+        .into_iter()
+        .map(Path::to_path_buf)
+        .chain(remembered.iter().cloned())
+        .chain(found)
+    {
+        if Some(p.as_path()) != port_one && p.is_file() && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out.truncate(CARD_PICKS_MAX);
+    out
+}
+
+/// A card pick as its row shows it: the file's name, cut in the middle when
+/// it is long so both its start and its extension stay.
+fn card_label(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
+    let chars: Vec<char> = name.chars().collect();
+    if chars.len() <= CARD_LABEL_CHARS {
+        return name;
+    }
+    let keep = CARD_LABEL_CHARS - 3;
+    let head: String = chars[..keep - keep / 2].iter().collect();
+    let tail: String = chars[chars.len() - keep / 2..].iter().collect();
+    format!("{head}...{tail}")
+}
+
 /// The file a Cross on the GameShark row reads when `--cheat-file` named none.
 const DEFAULT_CODES_FILE: &str = "legaia-codes.txt";
 
@@ -191,6 +279,76 @@ fn bgm_pick(i: usize) -> Option<u16> {
 }
 const BGM_PICKS: usize = 2 + legaia_engine_system::music_labels::BATTLE_BANK_BGM_IDS.len();
 
+/// The most session files the export row numbers before it asks for room.
+const SESSION_FILES_MAX: u32 = 999;
+/// The file the report row writes when no clipboard takes the text.
+const REPORT_FILE: &str = "legaia-report.txt";
+
+/// The session file name for `scene` and number `n`: the scene's label
+/// reduced to file-safe characters, so a pack scene's name cannot leave the
+/// folder.
+fn session_file_name(scene: &str, n: u32) -> String {
+    let label: String = scene
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(24)
+        .collect();
+    let label = if label.is_empty() { "game" } else { &label };
+    format!("session_{label}_{n:03}.lgsf")
+}
+
+/// Write `bytes` as the next unused session file for `scene` in `dir`
+/// (created when missing): never over a file that is there.
+pub(super) fn write_session_file(dir: &Path, scene: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for n in 1..=SESSION_FILES_MAX {
+        let path = dir.join(session_file_name(scene, n));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut f) => {
+                use std::io::Write;
+                return f
+                    .write_all(bytes)
+                    .map(|()| path.clone())
+                    .map_err(|e| format!("{}: {e}", path.display()));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        }
+    }
+    Err("The saves folder is full of session files; move some out.".to_string())
+}
+
+/// The system clipboard, opened on the report row's first press and kept for
+/// the session: on X11 the text lives only as long as its owner does.
+#[derive(Default)]
+struct HeldClipboard(Option<arboard::Clipboard>);
+
+impl std::fmt::Debug for HeldClipboard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() { "open" } else { "closed" })
+    }
+}
+
+impl Clone for HeldClipboard {
+    /// A copy of the page holds no clipboard; it opens its own.
+    fn clone(&self) -> Self {
+        Self(None)
+    }
+}
+
+impl HeldClipboard {
+    fn set_text(&mut self, text: &str) -> Result<(), arboard::Error> {
+        if self.0.is_none() {
+            self.0 = Some(arboard::Clipboard::new()?);
+        }
+        self.0.as_mut().expect("just set").set_text(text)
+    }
+}
+
 /// The cursor, each picker's position and the last row's message.
 #[derive(Debug, Clone, Default)]
 pub(super) struct ToolsPage {
@@ -198,8 +356,16 @@ pub(super) struct ToolsPage {
     party: usize,
     bgm: usize,
     spell: usize,
+    /// The memory-card row's pick: `0` is the empty port, `n` is
+    /// `cards[n - 1]`.
+    card: usize,
+    /// The card files the memory-card row steps through, listed on the
+    /// row's first press ([`card_picks`]); `None` until then.
+    cards: Option<Vec<PathBuf>>,
     /// What the last press did, or why it did nothing.
     note: Option<String>,
+    /// The report row's clipboard.
+    clipboard: HeldClipboard,
 }
 
 impl ToolsPage {
@@ -229,9 +395,9 @@ impl ToolsPage {
 }
 
 const X0: i32 = 10;
-const Y0: i32 = 2;
+const Y0: i32 = super::settings_panel::Y0;
 const WIDTH: i32 = 300;
-const ROW_H: i32 = 11;
+const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Up/Down pick  Cross use  Esc close";
@@ -268,6 +434,22 @@ impl PlayWindowApp {
                 return ToolValue::Pick(spell_pick_label(world, id));
             }
             ToolRow::GameShark => return ToolValue::Press("Cross: apply"),
+            ToolRow::MemoryCard => {
+                // Before the first press the row names what port 2 holds.
+                let picked = match &page.cards {
+                    Some(cards) => page.card.checked_sub(1).and_then(|i| cards.get(i)).cloned(),
+                    None => self.card.as_ref().and_then(|c| c.path.clone()),
+                };
+                return ToolValue::Pick(match picked {
+                    Some(path) => card_label(&path),
+                    None => match (&page.cards, &self.card) {
+                        (None, Some(card)) => card.label.clone(),
+                        _ => NO_CARD.to_string(),
+                    },
+                });
+            }
+            ToolRow::ExportSession => return ToolValue::Press("Cross: write"),
+            ToolRow::CopyReport => return ToolValue::Press("Cross: copy"),
             ToolRow::StartBattle => return ToolValue::Press("Cross: start"),
             ToolRow::Enter(_) => return ToolValue::Press("Cross: start"),
         })
@@ -277,12 +459,28 @@ impl PlayWindowApp {
     /// row does nothing.
     pub(super) fn tools_change(&mut self, dir: i8) {
         let (row, _, _) = TOOL_ROWS[self.tools_page.cursor];
+        if row == ToolRow::MemoryCard {
+            self.list_cards();
+            let page = &mut self.tools_page;
+            let n = page.cards.as_ref().map_or(0, Vec::len) as i32 + 1;
+            page.card = (page.card as i32 + i32::from(dir)).rem_euclid(n) as usize;
+            page.note = (n == 1).then(|| {
+                "No card files found. Mount one in the launcher, or put it in the saves folder."
+                    .to_string()
+            });
+            return;
+        }
         if self.tools_page.pick(row, dir) {
             return;
         }
         if !matches!(
             row,
-            ToolRow::Enter(_) | ToolRow::GameShark | ToolRow::StartBattle
+            ToolRow::Enter(_)
+                | ToolRow::GameShark
+                | ToolRow::StartBattle
+                | ToolRow::MemoryCard
+                | ToolRow::ExportSession
+                | ToolRow::CopyReport
         ) {
             self.tools_apply();
         }
@@ -365,6 +563,38 @@ impl PlayWindowApp {
                     None => format!("No settings folder to find {DEFAULT_CODES_FILE} in."),
                 });
             }
+            ToolRow::MemoryCard => {
+                self.list_cards();
+                let page = &self.tools_page;
+                let pick = page
+                    .card
+                    .checked_sub(1)
+                    .and_then(|i| page.cards.as_ref()?.get(i))
+                    .cloned();
+                self.tools_page.note = Some(match pick {
+                    Some(path) => match self.mount_port_two(&path) {
+                        Ok(name) => format!("Memory card 2: {name}. The save screen shows it."),
+                        Err(name) => format!("Not a memory card: {name}."),
+                    },
+                    None => {
+                        self.card = None;
+                        "Memory card 2 taken out.".to_string()
+                    }
+                });
+            }
+            ToolRow::ExportSession => {
+                self.tools_page.note = Some(match self.export_session() {
+                    Ok(path) => format!(
+                        "Wrote {} in the saves folder.",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                    Err(e) => e,
+                });
+            }
+            ToolRow::CopyReport => {
+                let report = self.session_report();
+                self.tools_page.note = Some(self.hand_over_report(&report));
+            }
             ToolRow::StartBattle => {
                 let world = &mut self.session.host.world;
                 if !matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
@@ -386,6 +616,150 @@ impl PlayWindowApp {
                 }
             }
         }
+    }
+
+    /// Write the running game as an `.lgsf` session file in the saves
+    /// folder, with the resume trailer the save screen's files carry: the
+    /// page's `export_save`, by the same refusal and the same writer.
+    pub(super) fn export_session(&mut self) -> Result<PathBuf, String> {
+        if !self.session.host.world.host_save_allowed() {
+            return Err("A battle is starting - export once it is over.".into());
+        }
+        let resume = self.session.current_resume();
+        let bytes = self
+            .session
+            .host
+            .world
+            .save_full()
+            .write_with_resume(&resume);
+        let dir = self.menu_runtime.save_dir.clone();
+        write_session_file(&dir, &resume.scene, &bytes)
+    }
+
+    /// What a player pastes into a bug report while the game runs: the
+    /// launcher's failure report ([`legaia_app_theme::game_exit::report_text`])
+    /// with the running session in place of how the game ended. It names the
+    /// scene and the settings, never the disc's bytes or the save's.
+    pub(super) fn session_report(&self) -> String {
+        use legaia_app_theme::game_exit;
+        let world = &self.session.host.world;
+        let scene = self.session.current_resume().scene;
+        let headline = format!(
+            "Copied while playing: scene {}, mode {:?}, frame {}",
+            if scene.is_empty() { "(none)" } else { &scene },
+            world.mode,
+            world.frame
+        );
+        let (w, h) = self.win.surface_size();
+        let log_text = self.session_log_text();
+        let mut detail = vec![format!(
+            "window {w}x{h}{}",
+            if self.win.is_fullscreen() {
+                ", fullscreen"
+            } else {
+                ""
+            }
+        )];
+        // The adapter line is logged once at start, far above the log's end.
+        if let Some(gpu) = log_text.as_deref().and_then(|t| {
+            t.lines()
+                .find(|l| l.contains("wgpu adapter:"))
+                .map(game_exit::strip_log_prefix)
+        }) {
+            detail.push(gpu.to_string());
+        }
+        detail.push(format!(
+            "controller: {}",
+            match self.last_pad {
+                Some(style) => format!("{style:?}"),
+                None => "keyboard last".to_string(),
+            }
+        ));
+        detail.push(format!(
+            "not at the original's values: {}",
+            match world.toggles.retail_deviations() {
+                d if d.is_empty() => "nothing".to_string(),
+                d => d.join(", "),
+            }
+        ));
+        if let Some(sw) = self.launch_switches.as_ref() {
+            detail.push(format!("switches: {sw:?}"));
+        }
+        detail.push(format!("options: {:?}", self.options_state));
+        if let Some(pack) = world.expansion.pack.as_deref() {
+            detail.push(format!("expansion pack: {}", pack.manifest.id));
+        }
+        if self.netplay.is_some() {
+            detail.push("in a multiplayer room".to_string());
+        }
+        game_exit::report_text(
+            "legaia-engine play-window",
+            env!("CARGO_PKG_VERSION"),
+            &headline,
+            Some(&detail.join("\n")),
+            log_text.as_deref(),
+            game_exit::home_folder().as_deref(),
+        )
+    }
+
+    /// The log of this run, when the launcher is keeping one: its game log
+    /// in the working directory, written to since this window started (an
+    /// older file is some earlier run's).
+    fn session_log_text(&self) -> Option<String> {
+        let path = std::env::current_dir()
+            .ok()?
+            .join(crate::launcher::GAME_LOG);
+        let written = std::fs::metadata(&path).ok()?.modified().ok()?;
+        let started = std::time::SystemTime::now().checked_sub(self.started_at.elapsed())?;
+        (written >= started)
+            .then(|| std::fs::read_to_string(&path).ok())
+            .flatten()
+    }
+
+    /// Put `report` on the clipboard, or in a file beside the saves when no
+    /// clipboard takes it (a scripted capture never touches the player's).
+    fn hand_over_report(&mut self, report: &str) -> String {
+        if !self.scripted_run() && self.tools_page.clipboard.set_text(report).is_ok() {
+            return "Report copied. Paste it into your bug report.".to_string();
+        }
+        let path = self.menu_runtime.save_dir.join(REPORT_FILE);
+        let wrote = std::fs::create_dir_all(&self.menu_runtime.save_dir)
+            .and_then(|()| std::fs::write(&path, report));
+        match wrote {
+            Ok(()) => format!("No clipboard here: wrote {REPORT_FILE} in the saves folder."),
+            Err(e) => format!("The report could not be copied or written: {e}"),
+        }
+    }
+
+    /// List the memory-card row's picks on its first press, with the cursor
+    /// on the card port 2 holds now.
+    fn list_cards(&mut self) {
+        if self.tools_page.cards.is_some() {
+            return;
+        }
+        let mounted = self.card.as_ref().and_then(|c| c.path.clone());
+        let port_one = self.port1_card.as_ref().and_then(|c| c.path.clone());
+        let remembered: Vec<PathBuf> = crate::launcher::settings_path()
+            .and_then(|f| crate::launcher::LauncherSettings::load(&f).ok())
+            .map(|s| s.card.into_iter().chain(s.recent_cards).collect())
+            .unwrap_or_default();
+        // The saves folder: where port 1's own card lives.
+        let folders: Vec<PathBuf> = port_one
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .into_iter()
+            .collect();
+        let cards = card_picks(
+            mounted.as_deref(),
+            &remembered,
+            &folders,
+            port_one.as_deref(),
+        );
+        self.tools_page.card = mounted
+            .and_then(|m| cards.iter().position(|p| *p == m))
+            .map_or(0, |i| i + 1);
+        self.tools_page.cards = Some(cards);
     }
 
     /// Read a code file and apply it the way the page's GameShark box does.
@@ -433,7 +807,7 @@ impl PlayWindowApp {
             (right - width(FLIP_HINT), Y0 + 1),
             text,
         );
-        let mut y = Y0 + 15;
+        let mut y = Y0 + super::settings_panel::HEAD_H;
         let first = self.tools_page.first_shown();
         // The scroll bar on the plate's edge, as the settings page draws it:
         // without it nothing says the minigame rows sit under the last one
@@ -477,7 +851,7 @@ impl PlayWindowApp {
             put(&mut out, &shown, (right - width(&shown), y - 2), ink);
             y += ROW_H;
         }
-        y += 3;
+        y += super::settings_panel::ROWS_GAP;
         let note = self
             .tools_page
             .note
@@ -591,6 +965,48 @@ mod tests {
         }
     }
 
+    /// The memory-card row offers the mounted card, the launcher's, then the
+    /// saves folder's: each file once, never port 1's own, never a file that
+    /// is gone or is not a card container by name.
+    #[test]
+    fn the_card_row_lists_mounted_then_remembered_then_folder_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str| {
+            let p = dir.path().join(name);
+            std::fs::write(&p, b"x").unwrap();
+            p
+        };
+        let port_one = file("memcard1.mcr");
+        let (b, a) = (file("b.mcd"), file("a.gme"));
+        file("notes.txt");
+        let other = tempfile::tempdir().unwrap();
+        let remembered_card = other.path().join("epsxe000.mcr");
+        std::fs::write(&remembered_card, b"x").unwrap();
+        let gone = other.path().join("gone.mcr");
+
+        let picks = card_picks(
+            Some(&b),
+            &[gone, remembered_card.clone(), b.clone(), port_one.clone()],
+            &[dir.path().to_path_buf()],
+            Some(&port_one),
+        );
+        assert_eq!(picks, vec![b, remembered_card, a]);
+        // Nothing mounted, nothing remembered, no folder: an empty list,
+        // which the row shows as the empty port alone.
+        assert!(card_picks(None, &[], &[], None).is_empty());
+    }
+
+    #[test]
+    fn a_long_card_name_keeps_its_start_and_its_extension() {
+        assert_eq!(card_label(Path::new("/x/epsxe000.mcr")), "epsxe000.mcr");
+        let long = card_label(Path::new("/x/Legend of Legaia (USA) playthrough two.mcr"));
+        assert_eq!(long.chars().count(), CARD_LABEL_CHARS);
+        assert!(
+            long.starts_with("Legend of") && long.ends_with(".mcr"),
+            "{long}"
+        );
+    }
+
     #[test]
     fn the_cursor_wraps_and_a_move_clears_the_refusal() {
         let mut p = ToolsPage {
@@ -605,6 +1021,24 @@ mod tests {
     }
 
     /// The page stays on the stage with the row count it carries.
+    #[test]
+    fn a_session_file_never_lands_on_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let saves = dir.path().join("saves");
+        let a = write_session_file(&saves, "town01", b"one").unwrap();
+        let b = write_session_file(&saves, "town01", b"two").unwrap();
+        assert_eq!(a.file_name().unwrap(), "session_town01_001.lgsf");
+        assert_eq!(b.file_name().unwrap(), "session_town01_002.lgsf");
+        assert_eq!(std::fs::read(&a).unwrap(), b"one");
+        assert_eq!(std::fs::read(&b).unwrap(), b"two");
+        // A scene label is reduced to file-safe characters; none is "game".
+        let c = write_session_file(&saves, "../../etc/x y", b"3").unwrap();
+        assert_eq!(c.parent().unwrap(), saves);
+        assert_eq!(c.file_name().unwrap(), "session_etcxy_001.lgsf");
+        let d = write_session_file(&saves, "", b"4").unwrap();
+        assert_eq!(d.file_name().unwrap(), "session_game_001.lgsf");
+    }
+
     #[test]
     fn the_plate_fits_the_stage() {
         let h = super::super::settings_panel::plate_height(SHOWN, NOTE_LINES);

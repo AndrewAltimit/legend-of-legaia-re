@@ -65,6 +65,10 @@ pub struct EngineBattle {
     /// The active seat's target byte (`+0x1DD`) when sampled.
     pub active_target: u8,
     pub monster_ids: Vec<Option<u16>>,
+    /// Monster bodies seated when sampled, the formation's own and any a
+    /// replayed Divide / Clone added after them: retail's `ctx[+1]`, which a
+    /// capture's `monster_ids` is as long as.
+    pub seated_monsters: usize,
     pub party: Vec<Combatant>,
     pub monsters: Vec<Combatant>,
     pub flow: BattleFlowState,
@@ -1171,6 +1175,16 @@ pub fn run_engine_battle(
             .get(usize::from(world.battle_ctx.active_actor))
             .map_or(0, |a| a.battle.active_target),
         monster_ids: snap.monster_ids,
+        seated_monsters: {
+            let pc = usize::from(world.party.party_count.clamp(1, 3));
+            world
+                .actors
+                .iter()
+                .skip(pc)
+                .take(5)
+                .filter(|a| a.battle_monster_id.is_some())
+                .count()
+        },
         party: snap.party,
         monsters: snap.monsters,
         flow: world.battle.flow,

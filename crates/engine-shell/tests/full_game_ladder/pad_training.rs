@@ -356,6 +356,57 @@ fn party_xp(session: &NativeSession) -> u64 {
         .sum()
 }
 
+/// The legs of an outing with no landmark to head for: eight short ones
+/// round `home`, each walked to within a tile.
+fn pacing_goals(home: (i16, i16)) -> Vec<((i16, i16), i32)> {
+    [
+        (5i16, 0i16),
+        (-5, 0),
+        (0, 5),
+        (0, -5),
+        (4, 4),
+        (-4, -4),
+        (4, -4),
+        (-4, 4),
+    ]
+    .into_iter()
+    .map(|(dx, dz)| {
+        (
+            ((home.0 + dx).clamp(1, 126), (home.1 + dz).clamp(1, 126)),
+            1,
+        )
+    })
+    .collect()
+}
+
+/// Whether a leg's walk ended on a stall - pressed against something, or
+/// carried round by a script - rather than on a fight, a missing path or
+/// the budget.
+fn stalled_leg(e: &str) -> bool {
+    e.contains("pad walk stalled")
+}
+
+#[test]
+fn a_stalled_leg_is_told_from_the_other_ways_a_leg_ends() {
+    assert!(stalled_leg(
+        "pad walk stalled at tile (28, 16): a script on the walk carried it to the same spot 4 times"
+    ));
+    assert!(stalled_leg(
+        "pad walk stalled at tile (20, 95) (world (2680,12208)), 112 tiles short of (119, 82)"
+    ));
+    assert!(!stalled_leg(
+        "no walkable path: the walk component ends 9 tiles short"
+    ));
+    assert!(!stalled_leg("pad frame budget (324000) spent"));
+    assert!(!stalled_leg("battle on the walk to (1, 2): party wiped"));
+    let g = pacing_goals((2, 125));
+    assert_eq!(g.len(), 8);
+    assert!(
+        g.iter()
+            .all(|&((x, z), w)| (1..=126).contains(&x) && (1..=126).contains(&z) && w == 1)
+    );
+}
+
 /// One outing in a scene that rolls encounters: walk out from where the
 /// party stands and back, taking the fights the hand prices as winnable,
 /// until a member is under `floor` per-mille, the levels are there, or the
@@ -402,21 +453,7 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
         goals.truncate(8);
     }
     if goals.is_empty() {
-        for (dx, dz) in [
-            (5i16, 0i16),
-            (-5, 0),
-            (0, 5),
-            (0, -5),
-            (4, 4),
-            (-4, -4),
-            (4, -4),
-            (-4, 4),
-        ] {
-            goals.push((
-                ((home.0 + dx).clamp(1, 126), (home.1 + dz).clamp(1, 126)),
-                1,
-            ));
-        }
+        goals = pacing_goals(home);
     }
     let mut failed = 0usize;
     let mut pick = 0usize;
@@ -460,7 +497,25 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
                 // outing heads somewhere else. One that went nowhere at
                 // all counts toward giving the outing up.
                 if out {
-                    pick += 1;
+                    // A landmark the walk stalls on its way to is no leg
+                    // for this outing: the walk there ends pressed against
+                    // the same wall, or on the same ride back, every time
+                    // it is asked for, three hundred frames standing still
+                    // that roll nothing. `conc3`'s outings from (15, 93)
+                    // head for landmarks across the scene whose way runs
+                    // through P2[13]'s band at (27..28, 15..16), which
+                    // carries the party back; a stretch asked for the same
+                    // eight three thousand times and spent its frame budget
+                    // on them. The outing keeps the legs that arrive, and
+                    // paces round where it stands once none is left.
+                    if stalled_leg(&e) {
+                        goals.remove(pick % goals.len());
+                        if goals.is_empty() {
+                            goals = pacing_goals(home);
+                        }
+                    } else {
+                        pick += 1;
+                    }
                     if player_xz(session) == before {
                         failed += 1;
                         if failed >= goals.len() {

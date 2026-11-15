@@ -30,6 +30,7 @@ fn dirty_seat(world: &mut World, slot: usize) {
     // frames clear the ring-id gate.
     b.shatter = 0x800;
     let frame = crate::world::BattleGhostFrame {
+        morphs: Vec::new(),
         pose: legaia_anm::player::PoseFrame {
             bone_outputs: Vec::new(),
             factor: 0,

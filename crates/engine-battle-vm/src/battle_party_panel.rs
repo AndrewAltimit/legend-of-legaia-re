@@ -441,6 +441,46 @@ pub fn curse_plate_on_chip(x: i16, y: i16) -> StripQuad {
     }
 }
 
+/// CLUT the D-pad glyph samples (`0x7FC7` = VRAM `(112, 511)`).
+pub const DPAD_GLYPH_CLUT: u16 = 0x7FC7;
+
+/// Texture page the D-pad glyph samples (`0x1E`, the system-UI sheet).
+pub const DPAD_GLYPH_TPAGE: u16 = 0x1E;
+
+/// The two anchors the command flow hands [`dpad_glyph`]: the round prompt and
+/// the commit confirm seat it at `(0x98, 0x58)` (`0x801D1030`, `0x801D10F8`,
+/// `0x801D3028`), the command ring and both arts-entry arms at `(0xDC, 0x42)`
+/// (`0x801D118C`, `0x801D16EC`, `0x801D1D84`).
+pub const DPAD_ANCHOR_PROMPT: (i16, i16) = (0x98, 0x58);
+/// See [`DPAD_ANCHOR_PROMPT`].
+pub const DPAD_ANCHOR_RING: (i16, i16) = (0xDC, 0x42);
+
+/// The D-pad glyph at the centre of a command cluster, anchored at `(x, y)`
+/// (`FUN_801DB8F4`).
+///
+/// The chip marks' shape - the `ctx[+0x6CE]` early-out ([`strip_draws`]), tag
+/// `0x09000000`, code `0x2C808080` - on the system-UI sheet instead of the
+/// effect page: tpage `0x1E`, CLUT `0x7FC7`. The screen span is
+/// `x ..= x+0xF` by `y-4 ..= y+0xB` against texels `0 ..= 0x10` by
+/// `0x70 ..= 0x80`, so the sixteen-texel glyph is squeezed onto fifteen
+/// pixels each way; the far corners carry `0x10` and `0x80`, one texel past
+/// the inclusive span the cross-out mark uses.
+///
+/// PORT: FUN_801DB8F4
+pub fn dpad_glyph(x: i16, y: i16) -> StripQuad {
+    let x1 = x.wrapping_add(0x0F);
+    let y0 = y.wrapping_sub(4);
+    let y1 = y.wrapping_add(0x0B);
+    StripQuad {
+        tag: STRIP_OT_TAG,
+        code_colour: STRIP_CODE_COLOUR,
+        xy: [(x, y0), (x1, y0), (x, y1), (x1, y1)],
+        uv: [(0x00, 0x70), (0x10, 0x70), (0x00, 0x80), (0x10, 0x80)],
+        clut: DPAD_GLYPH_CLUT,
+        tpage: DPAD_GLYPH_TPAGE,
+    }
+}
+
 /// Which marks the command ring wears this frame. Retail's phase-`0x28` arm
 /// runs four independent tests, every frame of the phase, before it reads
 /// the pad (`0x801D12C0..0x801D1360`):

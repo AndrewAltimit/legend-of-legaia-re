@@ -81,21 +81,60 @@ impl World {
 
         // The window kernel's cursor auto-repeat, on the D-pad alone in battle.
         let repeat = self.input.take_menu_repeat();
-        let ev = BattleSpellInput {
-            up: self.input.just_pressed(PadButton::Up) || repeat & PadButton::Up.mask() != 0,
-            down: self.input.just_pressed(PadButton::Down) || repeat & PadButton::Down.mask() != 0,
-            left: self.input.just_pressed(PadButton::Left),
-            right: self.input.just_pressed(PadButton::Right),
+        let held = |b: PadButton| self.input.just_pressed(b) || repeat & b.mask() != 0;
+        let mut ev = BattleSpellInput {
+            up: held(PadButton::Up),
+            down: held(PadButton::Down),
+            left: held(PadButton::Left),
+            right: held(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
             circle: self.input.just_pressed(PadButton::Circle),
         };
+        // The spell list is a kind-4 list window, so the list kernel moves
+        // its hand: one direction a frame, Up ahead of Down ahead of the page
+        // flips, on eight-row pages. Up / Down always queue the step cue
+        // (`0x80032C74`), a single row included; a page flip only when it
+        // flipped (`blez` at `0x80032B98`, the `slt` at `0x80032C2C`).
+        // REF: FUN_80032A44 (`0x80032AE8..0x80032CC8`)
+        let mut step_cue = None;
+        if let legaia_engine_battle::battle_magic::SpellPhase::Select { cursor } = &mut menu.phase
+            && !menu.spells.is_empty()
+        {
+            let pad = [
+                (ev.up, PadButton::Up),
+                (ev.down, PadButton::Down),
+                (ev.left, PadButton::Left),
+                (ev.right, PadButton::Right),
+            ]
+            .into_iter()
+            .find_map(|(on, b)| on.then_some(b));
+            if let Some(pad) = pad {
+                let before = usize::from(*cursor);
+                let next = legaia_engine_menus::pause_screens::list_kernel_navigate_rows(
+                    before,
+                    menu.spells.len(),
+                    pad.mask(),
+                    legaia_engine_battle::battle_magic::BATTLE_SPELL_LIST_ROWS,
+                );
+                *cursor = next as u8;
+                if matches!(pad, PadButton::Up | PadButton::Down) || next != before {
+                    step_cue = Some(legaia_engine_battle_loop::ui_cues::BattleUiCue::Cursor);
+                }
+            }
+            (ev.up, ev.down, ev.left, ev.right) = (false, false, false, false);
+        }
         let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
+        // The kernel's confirm writes over the step it queued this frame
+        // (`lh a0,0x15a(gp)` at `0x80032D14` / `0x80032D2C`), so the press
+        // decides when both land together.
         if let Some(cue) = legaia_engine_battle_loop::ui_cues::spell_phase_cue(
             &phase_before,
             &menu.phase,
             ev.cross,
-        ) {
+        )
+        .or(step_cue)
+        {
             self.push_battle_ui_cue(cue);
         }
 
@@ -426,6 +465,17 @@ impl World {
             legaia_engine_battle_loop::ui_cues::item_events_cue(&state_before, &events)
         {
             self.push_battle_ui_cue(cue);
+        }
+        // A cancel off a target surface reopens the list on row 0: the
+        // cancels run sub-draw steps `0x13` / `0x17` / `0x1E`, type-3 records
+        // that zero the list kernel's selection and scroll words
+        // (`0x801D4C1C..0x801D4C28`) before the list is rebuilt. The pause
+        // menu's lists keep their row, so the shared session does not.
+        // REF: FUN_801D388C (`0x801D4BB8..0x801D4C28`)
+        if !matches!(state_before, InventoryUseState::Browsing { .. })
+            && matches!(menu.state, InventoryUseState::Browsing { .. })
+        {
+            menu.state = InventoryUseState::Browsing { cursor: 0 };
         }
         let used_slots = menu.used_slots.clone();
 

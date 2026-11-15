@@ -246,6 +246,11 @@ impl RetailMinigame {
             .and_then(MinigameSubId::from_sub_id)
     }
 
+    /// The overlay the sub-id names, for the film.
+    pub(super) fn minigame_id(&self) -> Option<MinigameSubId> {
+        self.minigame()
+    }
+
     /// Why the state is not seeded, or `None` when it is.
     pub fn unseeded_reason(&self) -> Option<String> {
         match (self.minigame(), self.slot) {
@@ -381,6 +386,24 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
     }
 }
 
+/// Whether the session stands where the capture's first vsync does, for the
+/// film: the dance's banner counter at the capture's own value (no display
+/// lag, the film pairs RAM words with RAM words); every other minigame at its
+/// still's phase.
+fn at_film_phase(world: &legaia_engine_core::world::World, mg: &RetailMinigame) -> bool {
+    match (mg.minigame(), mg.phase) {
+        (Some(MinigameSubId::Dance), Some((3, counter))) => {
+            world.mode == SceneMode::Dance
+                && world
+                    .minigames
+                    .dance_countin
+                    .as_ref()
+                    .is_some_and(|c| i64::from(c.frame()) >= i64::from(counter))
+        }
+        _ => at_captured_phase(world, mg),
+    }
+}
+
 /// The scene the warp departs from: the label, or for a venue overlay that
 /// loaded its own block over the scene word, the mode-24 init's backup.
 fn departure_scene(
@@ -411,6 +434,7 @@ fn run_engine_minigame(
     extracted: &Path,
     retail: &RetailObs,
     departure: &str,
+    film: Option<&super::minigame_film::MinigameFilm>,
 ) -> Result<EngineMinigame> {
     let mg = retail.minigame.context("no minigame observables")?;
     let sub = mg.minigame().context("sub-id names no overlay")?;
@@ -431,10 +455,26 @@ fn run_engine_minigame(
     let mut reached = None;
     for t in 0..ENTRY_DEADLINE {
         session.tick()?;
-        if at_captured_phase(&session.host.world, &mg) {
+        if film.is_some() {
+            // The film runs the venue step both play hosts run.
+            let _ = session.step_dance_tail();
+        }
+        let at = match film {
+            Some(_) => at_film_phase(&session.host.world, &mg),
+            None => at_captured_phase(&session.host.world, &mg),
+        };
+        if at {
             reached = Some(t);
             break;
         }
+    }
+    if let Some(film) = film {
+        film.run(
+            &mut session,
+            &mg,
+            WARP_TICK + 1 + reached.unwrap_or(ENTRY_DEADLINE),
+            retail.rand_seed,
+        )?;
     }
     let w = &session.host.world;
     Ok(EngineMinigame {
@@ -473,7 +513,8 @@ pub(super) fn run_minigame(
         return;
     }
     let departure = departure_scene(retail, &mg, cdname);
-    let engine = match run_engine_minigame(opts.extracted, retail, &departure) {
+    let film = super::minigame_film::MinigameFilm::from_env();
+    let engine = match run_engine_minigame(opts.extracted, retail, &departure, film.as_ref()) {
         Ok(e) => e,
         Err(e) => {
             report.unseeded = format!("seeding failed: {e:#}");

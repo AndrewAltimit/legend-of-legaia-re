@@ -326,6 +326,14 @@ fn seed_and_settle(
     // and its record never advances, so a capture inside a conversation
     // could not be reached headlessly while the child reached it.
     session.host.world.toggles.use_vm_dialogue = true;
+    // A still stands on the state's measured step (`seed_frame_step` below)
+    // for its whole seed and settle: the field frame-cost model is play's
+    // estimate where no capture says what a frame costs
+    // (`World::price_field_frame`), and the seed's own entry is no load of
+    // the state's. A harness seat, the image child's too
+    // (`LEGAIA_FIELD_FRAME_COST=0`); a walk film raises the model again,
+    // anchored on the state's ring (`walk_film`).
+    let field_cost_model = std::mem::take(&mut session.host.world.toggles.field_frame_cost);
     let opts = FieldLiveOpts::default();
     let mut director = RecordingDirector::default();
     let save = retail
@@ -355,6 +363,7 @@ fn seed_and_settle(
     }
     // Retail's measured frame step is load history (`World::seed_frame_step`).
     session.host.world.seed_frame_step(retail.frame_step());
+
     // The entry itself may already have queued a start.
     route_bgm(&mut session, &mut director)?;
     // A non-zero arrival facing is a door's (the card load the seed takes
@@ -526,6 +535,12 @@ fn seed_and_settle(
             }
             if g.drive_resume(&mut session.host, t) {
                 resumed = true;
+                // The resume replays the spawning arm's track words between
+                // two ticks. With no director of its own the session leaves
+                // them queued, behind a mark the route above has already
+                // shortened the queue under, and the next tick would drop
+                // them as stale: route them now.
+                route_bgm(&mut session, &mut director)?;
             }
         }
     }
@@ -590,6 +605,7 @@ fn seed_and_settle(
         _ => None,
     };
     if let Some(film) = super::walk_film::WalkFilm::from_env() {
+        session.host.world.toggles.field_frame_cost = field_cost_model;
         film.run(&mut session, retail)?;
     }
     if let Some(after) = after {

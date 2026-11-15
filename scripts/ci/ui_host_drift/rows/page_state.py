@@ -34,13 +34,14 @@ PAGE_STATE_RULES = [
         "frame reads its own strips back as the field",
     },
     {
-        "what": "a screen primitive on the PSX canvas takes the tie nudge",
-        "path": REPO / "site/js/play-view-frame.js",
+        "what": "the screen primitives on the PSX canvas draw upside down into a copy",
+        "path": REPO / "site/js/play-app.js",
         "kind": "contains",
-        "source": "f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;",
-        "why": "the canvas's bottom-up fill rule hands a corner's row tie to the "
-        "row under the GPU's: every sprite a row low, its last texel row past "
-        "the art, the slot machine's dot matrix missing its top rows",
+        "source": "const flipped = this.psxNative && window.__psxFlipPrims !== false && this._beginFlip();",
+        "why": "the canvas's framebuffer runs bottom-up, so the fill rule gave a "
+        "corner's row tie to the row under the GPU's and a slanted edge's pixels "
+        "to the other triangle: the battle intro's shards in hairlines, the slot "
+        "machine's dot matrix a row off (`cast_cannon` tick 81 2.2% of a frame)",
     },
     {
         "what": "leaving a dance takes the hall's ambient tree off the world",
@@ -82,6 +83,16 @@ PAGE_STATE_RULES = [
         "which the window draws over it (`cast_cannon` tick 1121, 1.7% of a frame)",
     },
     {
+        "what": "the scene blend pass orders overlapping meshes' semi prims as one list",
+        "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
+        "kind": "contains",
+        "source": "const n = this._orderSemiGroup(group, vp);",
+        "why": "the window keys every semi prim of every draw into one list and "
+        "blends it far to near; mesh by mesh, a subtractive prim of one mesh and "
+        "an additive prim of another over the same pixels landed in the page's "
+        "placement order, whichever was nearer",
+    },
+    {
         "what": "the opaque pass hands a depth tie to the first-drawn primitive",
         "path": REPO / "site/js/webgl-tmd-assembled-scene.js",
         "kind": "before",
@@ -94,13 +105,13 @@ PAGE_STATE_RULES = [
         "(`cast_cannon` 20% of a frame off)",
     },
     {
-        "what": "an untextured screen primitive's tie nudge is coarser than SwiftShader's sub-pixel grid",
-        "path": REPO / "site/js/play-view-frame.js",
+        "what": "a screen primitive that cannot draw upside down takes the tie nudge",
+        "path": REPO / "site/js/play-app.js",
         "kind": "contains",
-        "source": "f[o + 1] -= 1 / 240 - PSX_TIE_FLAT_NDC_Y;",
-        "why": "a 64th of a row rounded back onto the tie under SwiftShader, so "
-        "every flat band on the PSX canvas (the ending vignettes' letterbox) drew "
-        "a row low in the headless pair runs while a real GPU drew it right",
+        "source": "if (this.psxNative && !flipped) gl.uniform2f(this.locTie, PSX_TIE_NDC_Y, PSX_TIE_FLAT_NDC_Y);",
+        "why": "without the copy a flat edge still owes the window's row: a "
+        "textured primitive a 64th of a row up, an untextured one an eighth, "
+        "which is coarser than SwiftShader's sub-pixel grid",
     },
     {
         "what": "the dome hub draws through the screen-primitive pass",

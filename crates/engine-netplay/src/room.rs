@@ -324,6 +324,13 @@ impl NetPlay {
         Self::new(link, hello, false)
     }
 
+    /// Room frames stepped since the controller started
+    /// ([`Self::frame`]): a host that skips the room's frame on a tick it
+    /// holds (a movie's) falls behind here.
+    pub fn frames(&self) -> u32 {
+        self.frames
+    }
+
     /// Whether this player hosts the room.
     pub fn is_host(&self) -> bool {
         match (&self.lobby, self.me) {

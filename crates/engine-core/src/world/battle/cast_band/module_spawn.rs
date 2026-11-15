@@ -52,6 +52,10 @@ impl World {
             .summon_stager
             .as_ref()
             .and_then(|st| self.cast_module_for(st.spell_id));
+        // A stage bump the last cast left on the bare seat
+        // (`BattleState::creature_seat_restage`) is spent by this creature.
+        let stale_restage =
+            staged.is_some() && std::mem::take(&mut self.battle.creature_seat_restage);
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
@@ -107,6 +111,19 @@ impl World {
         a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(
             super::module_creature::SUMMON_SEAT_ANIM_RATE,
         );
+        // The installer does not touch `+0x1DC`. A bump a previous cast made
+        // on the seat with its node already off is still there, and the new
+        // node's first tick, on the install pass, takes bit 0 at once
+        // (`0x800478F4`): it commits the staged idle `0`, and the commit's
+        // decay row lifts the installer's `2` to `4` (`0x8004B080..
+        // 0x8004B090`). A `--watch` recording of `rugi_rogue_pre_rogue_wind`
+        // holds the installer's `sb s3,0x21d` and the commit's store of `4`
+        // on one vsync, and the golem then idles at `4` from cursor `0`.
+        // PORT: FUN_80047430 (`0x800478EC..0x800478F8`, the bit-0 commit on a fresh node)
+        if stale_restage {
+            a.battle.anim_rate =
+                legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(a.battle.anim_rate);
+        }
         // The installer hangs the record's first clip on the node directly
         // (`sw v1,0x4c(v0)` / `sh zero,0x68(v0)` at `0x801F1DCC..0x801F1DE8`)
         // without the commit `FUN_8004AD80`, so nothing seeds the clip's

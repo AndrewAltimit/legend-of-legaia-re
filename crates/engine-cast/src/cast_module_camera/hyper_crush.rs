@@ -218,6 +218,12 @@ pub fn hyper_crush_camera(
                 arm.hold = st.countdown.drain_above(0);
                 if !arm.hold && phase == 6 {
                     st.countdown.add(1 << 6);
+                    // Arm 6's pass stages the caster's idle and releases
+                    // clip `0x0B`'s park with it (`sb zero,0x1da` /
+                    // `sb zero,0x21b` / `sh zero,0x176` at
+                    // `0x801F78B0..0x801F78B8`): the clip runs out through
+                    // arm 7 and the idle commits at its natural end.
+                    arm.caster_write.loop_release = true;
                 }
             }
         }

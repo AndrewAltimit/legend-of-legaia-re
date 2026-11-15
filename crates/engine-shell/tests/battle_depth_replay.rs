@@ -442,11 +442,18 @@ fn reset_to_field(session: &mut NativeSession) -> bool {
 fn stock_player(session: &mut NativeSession) {
     let w = &mut session.host.world;
     w.party.inventory.insert(ITEM_HEALING_LEAF, 9);
-    for member in w.party.roster.members.iter_mut() {
+    for (i, member) in w.party.roster.members.iter_mut().enumerate() {
         // Prepend order fixes the menu rows: the last one prepended sits at
         // row 0, so the summon is row 0 and the MP-rung spell is row 1.
         legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_FOR_MP_RUNG);
         legaia_engine_battle::magic_xp::learn_spell_prepend(member, SPELL_SUMMON);
+        // The spells are a Ra-Seru's: the ring's Magic arm refuses a member
+        // whose Ra-Seru equipment byte is empty (`ctx[+0x25F + member]`).
+        // Noa's is the byte before the others' (`FUN_80053CB8`).
+        let slot = if i == 1 { 2 } else { 3 };
+        let mut eq = member.equipment();
+        eq.slots[slot] = eq.slots[slot].max(1);
+        member.set_equipment(eq);
     }
     // MP the casts are charged against, and a party that survives 999 HP of
     // sparring partner long enough to finish the ladder. (`BattleActor` has

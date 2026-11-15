@@ -253,6 +253,7 @@ impl LegaiaMinigames {
             phase: legaia_engine_ui::arts_input::ArtsInputScreen::Entering,
             glides: &glides,
             chip_slide: None,
+            dpad: true,
         };
         let (x, y) = frame.pennant_seat(slot as usize);
         format!("[{x},{y}]")
@@ -290,6 +291,7 @@ impl LegaiaMinigames {
                 elapsed.min(u32::from(CHIP_SLIDE_FRAMES)) as u8,
                 CHIP_SLIDE_FRAMES,
             )),
+            dpad: elapsed >= u32::from(CHIP_SLIDE_FRAMES),
         };
         let rows: Vec<String> = [
             (0x0C, ChipDirection::Left),

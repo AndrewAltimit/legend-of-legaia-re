@@ -1379,6 +1379,46 @@ the Visual enhancements panel alone. Pinned by
 exactly `OptionRow::in_preset`) and
 `play_toggles::tests::look_and_feel_steps_as_the_native_row`.
 
+## Output level: the field image
+
+The frame-body trace samples what the two worlds hold. The field's texture
+image is outside it, and it is where the hosts are built differently: the
+window keeps its own copy of the scene VRAM (`cpu_vram_base`) beside its own
+CLUT-walk animator, and the page animates the scene host's image in place and
+keeps its animator beside the host. An animator, a stamp or a layer one host
+applies to the other scene's image, or a tick late, changes texels and no
+world state. The disc-gated
+[`engine-shell/tests/host_vram_parity.rs`](../../crates/engine-shell/tests/host_vram_parity.rs)
+runs both hosts on one pad, the native run's words replayed to the page, and
+compares the two images row by row after every display frame outside a fight
+(each host stages a fight's image its own way).
+
+| Scenario | What it holds the hosts to |
+|---|---|
+| `map01` stood under, `jou` stood under | the world map's CLUT walkers and a scene's ambient palette cyclers step on the same ticks at 60, 30 and 120 Hz |
+| `map01` into `town0c`, `map01` into `izumi` | a door, at every idle offset of one cycle of the overworld walker that writes the entered scene's ground palette cell: no walker outlives the door |
+| `map03` into `bubu2` and back | a scene that ships its own cells where the field's resident texture pool lies, and an entry into a scene with a walker of its own |
+| `map01` through a fight | the field image each host puts back on the way out |
+
+The headless window installs its CLUT-walk animator with the image it steps
+against, as a windowed run does; without one it held an image no window
+holds and nothing compared the two hosts across a door.
+
+| What it found | What it looked like |
+|---|---|
+| A layer written over on one host, under on the other | The window wrote the field-character atlas over its scene build after underlaying the texture pool that already carries it; the scene host only underlays. Frozen Buma (`bubu2`) ships its own party palettes on CLUT row 478 (45 cells) and `other4` its own texels on the atlas pages at `(832, 256)`, and the window replaced both. A PCSX-Redux field state of `bubu2` holds the scene's words there. Both hosts and a pack map's occupancy image now call `scene::underlay_field_texture_pool` |
+| A rebuild after the steps that read it | The page rebuilt its render state at the end of the entry tick, so the tail between ran the old scene's CLUT-walk animator against the new scene's image: its 16x1 copies came out of an image its source strips were never parked in and blanked the palettes the new scene keeps on those cells (the walk ground of `izumi` and `town0c` drew black until the scene was left). With the animator retired on the entry tick the entered scene's own animator still started a tick behind the window's, so every walker cell changed a tick late for the whole stay. The page now rebuilds right after the session tick, where the window does |
+
+Two narrower pairs ride beside it.
+[`movie_play_clock_host_parity.rs`](../../crates/engine-shell/tests/movie_play_clock_host_parity.rs)
+holds both hosts under one movie and reads the play clock: the window claims
+no tick while a movie holds the world and used to count none, where the page
+counts each through `claim_tick`.
+[`host_screen_sfx_host_parity.rs`](../../crates/engine-shell/tests/host_screen_sfx_host_parity.rs)
+queues one cue under the party-wipe hold on both directors and compares their
+command records frame by frame: the page's hold stepped no scheduler, so the
+cue stayed queued for the length of the hold.
+
 ## The host pair run
 
 [`scripts/ci/host-pair.mjs`](../../scripts/ci/host-pair.mjs) runs the same scene
@@ -1461,9 +1501,59 @@ tick 90 for that reason.
 
 What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
 by a few tenths of a percent, hairline pixels on sloped 3D edges where a tie lands on
-the other side. That residual is there on a real GPU and on SwiftShader alike. The run prints;
-it asserts nothing and is not a CI gate, since it needs a disc, a built bundle and a
+the other side. That residual is there on a real GPU and on SwiftShader alike.
+
+The screen primitives used to read differently by rasteriser, so a row that stood out
+was read on both (`--gl egl` is the real GPU). They are level now:
+
+| Scene (retail mode) | SwiftShader mean, worst frame | Real GPU mean, worst frame | What it was |
+|---|---|---|---|
+| `slots` | `0.18%`, `0.29%` (was `1.05%`, `1.44%`) | `0.02%`, `0.26%` (was `0.28%`, `0.41%`) | textured tie rows: the dot matrix and the panel edges a row apart |
+| `cast_cannon` | `0.18%`, `0.64%` (was `0.47%`, `2.45%` at tick `921`) | `0.19%`, `0.64%` (was `0.23%`, `2.23%` at tick `81`) | tick `921` the wash's starfield page, one-texel stars a texel apart on SwiftShader; tick `81` the battle intro's rotated shards on the GPU |
+| `baka`, `dance`, `muscle` | `0.22%`, `0.31%`, `0.01%` (were `0.40%`, `0.40%`, `0.16%`) | `0.21%`, `0.31%`, `0.01%` (level) | the same tie rows |
+| `battle`, `arts`, `results`, `battle_menus` | `0.25%`, `0.28%`, `0.21%`, `0.18%` | `0.25%`, `0.28%`, `0.20%`, `0.18%` (were `0.29%`, `0.30%`, `0.22%`, `0.24%`; worst frame `0.78%` to about `0.5%`) | the intro's shards again, in every fight |
+| `lamp_walk`, `town_walk`, `cast_thunder` | `0.34%`, `0.20%`, `0.24%` | `0.34%`, `0.20%`, `0.23%` | level: sloped 3D edges |
+
+All of it was one thing: the fill rule, read upside down. A corner snapped to the
+GPU's sample point puts an edge exactly through pixel centres. The window's target
+runs top-down and the page's framebuffer bottom-up, so the rasteriser's tie rule
+handed those pixels the other way. On a flat edge that is a row, which a nudge of
+a fraction of a row gave back, on a real GPU at least. On a slanted edge, and on
+the seam between a rotated quad's two triangles, no nudge serves both slants: the
+battle intro's shards drew in hairlines (`cast_cannon`, every tick of the intro,
+`3.9%` of a frame at its worst). The page now draws its screen primitives upside
+down into a copy of the frame and flips the copy back
+(`ScreenPrimPass.drawRuns`), so every edge has the window's rule and the nudge is
+only the fallback for a framebuffer that cannot be copied. `--page-init
+"window.__psxFlipPrims=false"` draws them the old way for a comparison.
+
+The 3D pass on the native target still takes its own nudge (`PSX_NATIVE_TIE_ROWS`)
+and is where the remaining few tenths of a percent sit. The run prints; it asserts
+nothing and is not a CI gate, since it needs a disc, a built bundle and a
 display.
+
+### Black copies of a multisampled canvas
+
+On a real GPU (ANGLE over an NVIDIA driver) a multisampled canvas copied
+straight after its draws - `drawImage`, which is how the pair and a frame
+recorder take a frame - comes back all black on a share of frames: 112 of 330
+in a fight, on a regular beat of the fight's own frames, and one in eleven on
+a walk. It is the copy, not the picture:
+
+| Check | Black frames |
+|---|---|
+| copy straight after the draw, multisampled | 112 of 330 fight frames |
+| `finish`, or a one-pixel `readPixels`, ahead of the copy | 0 of 620 |
+| multisampling off | 0 of 700 |
+| compositor screenshots of the fight in real time (what a display shows) | 0 of 120 |
+| SwiftShader, multisampled | 0 |
+
+The GL state at the end of a black frame is the default one: no write mask,
+scissor, bound framebuffer or rasteriser discard left behind. The pair
+finishes and reads ahead of its copy, which brings `--gl egl` with
+multisampling back to the SwiftShader figures, short of one black copy in a
+few hundred frames that still gets through (`results`, one frame of 61 on each
+of two runs). `--no-msaa` has none.
 
 ### What it has found
 
@@ -1484,7 +1574,8 @@ the world was right and the picture was not:
 | A cut on half a buffer | The page cut the dance hall's triangles by the GPU's span rule but not the marker block, which holds the animated props: on the camera track's far poses the stage curtain, seen from behind, covered the whole frame for about a hundred ticks |
 | A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
 | A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
-| A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive now takes an eighth of a row; a textured one keeps the 64th, since more shifts the texels the battle intro's rotated shards sample |
+| A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive took an eighth of a row; a textured one kept the 64th, since more shifts the texels the battle intro's rotated shards sample |
+| A fill rule read upside down | The nudges settled flat edges and nothing else: along a slanted edge through pixel centres, and along the seam of a rotated quad's two triangles, the bottom-up rule still gave the pixels to the other triangle. The battle intro's shards drew in hairlines on a real GPU (`2.23%` of `cast_cannon` at tick `81`), and SwiftShader, whose grid swallowed the 64th, still drew the slot machine's rows apart (`1.05%`). The screen primitives now draw upside down into a copy of the frame that is flipped back, the window's rule on every edge: tick `81` reads `0.18%`, `slots` `0.02%` on the GPU and `0.18%` on SwiftShader, and no scene of twenty reads higher on either |
 | One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
 | One blend order for two | The same single-mesh draw blended its semi tail mode by mode, so in the Baka duel every additive glow prim drew before every subtractive shadow prim. The window blends a frame's semi prims far to near, prim by prim, as retail's ordering table does, and the glow's near half lands after the shadows there. Where both covered a saturating floor the page's frame went grey (`3.6%` of a frame). Hiding the glow on both hosts read `0.7%`, and drawing the glow's coverage in one flat colour on the page with the shadows dropped showed the shadows under it, which named the order. The single mesh now keys and sorts its semi prims per frame (`orderSemiPrims`) |
 | A facet in the wrong frame | A baked stream holds world positions, and the page lit a double-sided summon part off their facet where the window lights it off the object-space one. The battle frame flip between the two mirrored every crystal facet against the key light. Handing the page the window's smoothed normals changed nothing, which named the fallback: the paired copies cancel to the zero sentinel. The stream carries the object facet now |
@@ -1493,9 +1584,31 @@ the world was right and the picture was not:
 | A draw rule read off the menu's mode | The Start press switches the world into `SceneMode::Menu` while the field still draws under the pause wipe for six frames. The window read its NCLIP and per-primitive order off that mode, so on those frames it drew both sides and per pixel: `town01`'s windmill sails showed their back faces, `1.7%` of each frame off the page. Both hosts read `BootSession::frame_draw_mode` now, the suspended scene's mode while the menu holds the world; the span reads `0.2%` |
 | One matrix grouped two ways | The window recovers each draw's model as `view_proj^-1 * mvp`: the shading pass from that product, the lamp shadow pass as `(light_vp * view_proj^-1) * mvp`. The two roundings put a ground draw under its own shadow depth on about one frame in three, so under the village lamp whole tiles blinked dark (`70` against `82` mean luminance, `0.47%` of a frame off the page). `--mode no_shadows` closed the pair and skipping the tile's own draw in the shadow pass closed it too, which named the self-shadow. The shadow pass now multiplies `light_vp * (view_proj^-1 * mvp)` |
 | A depth tie broken the other way | The window's opaque pipelines test depth strictly (`Greater`, reversed-Z), so of two primitives at one depth the first drawn keeps the pixel; the page's opaque pass tested `LEQUAL`, so the last did. Genocidal Cannon's wash is four overlapping draw-kind-4 octagons, each mapping its own quadrant of one side-band page (CBA `0x7A80`, TSB `0x88AA`); at PSX mode's link depth they tie exactly. VRAM, the GL texture, the stream's CBA / TSB / UV and the coverage all agreed. The page's opaque pass tests `LESS` now (tier 17): `cast_cannon` `3.31%` to `0.78%` mean, worst frame `20.2%` to `3.3%` |
-| One blend order per mesh | The scene pass blended each mesh's semi prims a mode at a time, so in the FX stream Genocidal Cannon's additive rings drew before Songi's subtractive ground shadow; the window sorts every semi prim far to near, the shadow first, onto the black frame under the rings. Without the shadow's prims the page matched the window exactly. The scene pass now keys a placement's semi prims per frame when they span two or more modes, as the single mesh does (`orderSemiPrims`), one draw per change of mode; `cast_cannon` tick `1121` reads `0.45%` where it read `1.71%`, and `cast_thunder` `0.37%` mean where it read `0.47%` (worst frame `1.13%` to `0.90%`). Across meshes the order is still the page's placement order |
+| One blend order per mesh | The scene pass blended each mesh's semi prims a mode at a time, so in the FX stream Genocidal Cannon's additive rings drew before Songi's subtractive ground shadow; the window sorts every semi prim far to near, the shadow first, onto the black frame under the rings. Without the shadow's prims the page matched the window exactly. The scene pass now keys a placement's semi prims per frame when they span two or more modes, as the single mesh does (`orderSemiPrims`), one draw per change of mode; `cast_cannon` tick `1121` reads `0.45%` where it read `1.71%`, and `cast_thunder` `0.37%` mean where it read `0.47%` (worst frame `1.13%` to `0.90%`) |
+| One blend order per frame | Across meshes the page blended in placement order, where the window keys every semi prim of every draw into one list. The scene pass now keys the placements that hold a pair of overlapping prims whose blends do not commute into one list and draws it far to near (`_semiGroups`, `_orderSemiGroup`); the rest keep their own draws. `arts` ticks `1351` and `1381` read `0.48%` and `0.49%` where they read `0.50%` and `0.51%`, `results` tick `1321` `0.33%` where it read `0.38%`, on both rasterisers; no paired frame of twelve scenes reads higher. [The merge](#the-cross-mesh-blend-merge) |
 | A texel tie on float noise | Under PSX mode on the native target the snapped corners and byte UVs put a texel boundary exactly on many pixel centres (a battle ground grid tile's rows), and each host's float interpolation landed a hair either side, so the two read whole rows a texel apart. A page-only bias up or down made the pair worse, so neither host leaned one way. Both now read `PSX_TEXEL_TIE_BIAS` past the half texel: `battle` `0.41%` to `0.31%` mean, `town_walk` `0.24%` to `0.20%`, every paired scene down or level |
 | A wash run twice | The page washed its 2D overlay canvas for every over-text fade and then composited that canvas into the GL frame under the same fade, the older fallback left running beside the composite that replaced it. A battle's exit fade took the results box to black at twice the scene's rate (`results` ticks `2153..2180`, up to `21.9%` of a frame off). The canvas wash now runs only on a frame whose over half the GL pass cannot draw; the span reads `0.10%` |
+
+### The cross-mesh blend merge
+
+The window's blend pass has no draw boundaries: every semi prim of every draw
+is keyed by its centroid's depth and the one list is blended far to near
+(`psx_blend::sort_blend_list`). The page draws mesh by mesh, and keying every
+prim of every mesh costs a draw per run (`town01` went from 44 draws a frame
+to 550 when it was tried), so the page merges only where the order can show:
+
+| Step | What it does |
+|---|---|
+| which blends are ordered | Two saturating adds land the same either way round, and so do two subtractions (`semiCommute`); an add against a subtraction, or either against an average, does not. Two averages do not commute either, and are left in placement order, as a one-mode mesh's own average prims are |
+| which placements merge | Those with a pair of prims that overlap on screen (each prim's rectangle, a pixel and a half grown) and whose blends are ordered; the test runs on the placements' boxes first. A town's window glows and its actors' shadows meet nowhere and stay out |
+| the order | The window's key (clip `w` of the centroid, snapped to a whole `SZ`) and its tie: the entry submitted later first, where the window submits every textured draw's prims and then every untextured draw's |
+| the draws | An entry joins the last batch of its own placement and mode when no batch after that one both overlaps it and is ordered against it. A batch's indices are written past the mesh's semi tail, so a frame without a merge still draws from the tail |
+
+The usual group is a fight's additive effect stream against its subtractive
+ground shadows. The draw count is the cost: over the ratchet's runs `cast`
+draws `108.4` a frame where it drew `106.2` (`130.5` against `128.8` enhanced)
+and `town01` under PSX rasterisation `43.9` against `43.8`; the other scenes
+are level.
 
 ## Pairing frames: what a screenshot adds
 
@@ -1528,6 +1641,7 @@ Traps, each of which has produced a false drift report:
 | native stage | The stage is integer-scaled and centred (2x at 960x699): crop it out and halve before comparing. The 3D pass draws inside the same rect. |
 | page key layout | `Mapping::web_default`: `X` is Circle, `V` Square, `C` Triangle, the d-pad `WASD`. |
 | title confirm | `--pad-script` cannot confirm a boot-title row; the confirm lives in the keyboard handler, so use `--key-script "<tick>:Z"`. |
+| `F12` panel cursor | A scripted run's pad word goes to the game, never to the panel, so `--pad-script` moves nothing on it. `LEGAIA_PANEL_FOCUS_ROW=N` steps each page's cursor `N` rows down as it is shown; `tools=11:RX` keeps that to one page and then presses the lettered buttons (`L` `R` `U` `D`, `X` for Cross). `--key-script` still opens the panel (`F12`) and flips its pages (`Tab`). |
 | multi-save `.mcr` | The page's import raises a block picker in `#save-status`; until one is clicked no card session exists and CONTINUE stays dim by design. |
 | persisted options | Each host persists the camera-distance preset itself (`legaia-options.toml` in the working directory; `localStorage`). Pin it on both. Scripted native runs write neither options nor bindings. |
 | `--seed-party` | Resets story flags to a fresh New Game, which changes a scene's entry script; the page's picker has no such seed. |
@@ -1677,6 +1791,9 @@ decidable per instance, not from a source pattern.
 | **A simulation step on the draw path.** One host steps it per redraw, the other per tick. | The fog pool's render step ages the pool the next tick's spawner reads, and a spawn draws the world `rand()` stream. The window ran it per redraw, the page per tick, so at 30 Hz or 120 Hz the window's stream parted. | `BootSession::step_field_fog`, per tick on both; the draw only wraps the quads. |
 | **A seat left behind when its step moves.** A capture seat installed between a step and the draw it feeds. | Moving the fog step into the tick left the capture harness's `LEGAIA_SEAT_FOG` install in the draw prep, after the frame's step: the frame drew the engine's sheets, and the field image states fell (`field_walled_collision_pin` to 0.578). | `BootSession::seat_field_fog` installs and re-runs the frame's step over the seat. |
 | **A screen stepped per display frame against one stepped per tick.** | The page opened the pause menu, routed the naming prompt's edge and stepped a shop at display-frame level. At 120 Hz a press landed on a frame with no tick; on the closing frame the menu stepped `n` times and the field ticked `n` more. | One tick order both hosts hand each tick through: `BootSession::claim_tick`. |
+| **Host state rebuilt after the steps that read it.** | The page rebuilt its scene render state at the end of an entry tick; the tail between stepped the old scene's CLUT-walk animator against the new scene's image. | Rebuild where the window does, right after the session tick ([the field image pair](#output-level-the-field-image)). |
+| **A hold that claims no tick.** | The window runs no tick under a movie, so the play clock the tick claim advances stood still for the length of every movie. | Count the held ticks (`BootSession::count_play_tick`). |
+| **A scheduler one arm leaves unstepped.** | The page's party-wipe hold and Boss Rush screens skipped the frame tail and stepped nothing in its place; a cue queued when the party fell waited out the hold. | Step `step_overlay_sfx` under every host-held screen, as the window's `tick_menu_sfx` does. |
 | **A loop that ends on the tick it changed hands.** | After the prologue skip and on the tick a merchant opened a shop, the page broke out of its tick loop and dropped the frame's remaining ticks. The native arms return from one tick, not from the frame. | Continue the loop; the next tick goes to whoever owns it now. |
 
 ### A draw, queue or resource one side lacks
@@ -1688,6 +1805,7 @@ decidable per instance, not from a source pattern.
 | **A queue only a consumer empties.** | `World::pending_field_events` grew on the page: only the BGM router drained it and handed the rest back. | Drain every frame. |
 | **A retained pass no draw list shows.** | The WebGL ground pass (`uploadGround`) drew the field heightfield through the battle camera. | Tier-7 rule `setGroundEnable(false)`. |
 | **A texture upload one resource builder skips.** Reads as "the draw is broken": the quads exist, the texels do not. | Native field VRAM lacked the PROT 0874 section-2 effect pool, so fog quads (page `0x0027` = `(448, 0)`, CLUT `(0, 473)`) sampled zero. | Layer the pool under the scene build. |
+| **A layer one builder writes over and the other under.** Identical wherever the scene leaves the rect alone. | The window wrote the field-character atlas over its scene build; `bubu2`'s own row-478 party palettes and `other4`'s texels on the atlas pages were replaced. | One step for every host, `scene::underlay_field_texture_pool`. |
 | **A draw one host carries on a side channel.** | Fishing gauge fills came from a page-only `bars` payload. | The shared sprite pass emits the fill (`BarFrame::fill_rect`); `bars` is the no-table fallback. |
 | <a id="a-gl-state-word-the-engine-does-not-own"></a>**A GL state word the engine does not own.** | NCLIP cull, clear colour and the palette-collapse half of the prologue grade were JS decisions or had no uniform to land on. | `camera_frame::nclip_cull_mode`, `battle_stage_clear::scene_clear`, `World::frame_grade`; the GL call only applies the answer. |
 | **A host-side handle the world does not hold.** | The browser's summon actor seat survived `World::finish_battle` and was handed out twice. | - |
@@ -1735,7 +1853,7 @@ reverse-engineering questions, so they are not on
 | Difference | State |
 |---|---|
 | shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
-| battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`; the page orders blend passes per mesh, not per prim. |
+| battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`. The page orders a mixed-mode mesh's prims, and the prims of meshes whose blends meet and do not commute, as the window's one list does; average prims among themselves stay in placement order ([what it has found](#what-it-has-found), *One blend order per frame*). |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `WorldCheats::apply_cheat` call each, from one constructor (`PlayerCheat::from_key`). Every listed cheat is a runtime control on both hosts: the page's Cheats panel, the window's `F12` Cheats page (worked as `CheatControl` says, with no text field), and natively a launch switch too. GameShark codes are pasted text on the page (`cheat_apply_codes`) and a file natively, by launch switch or the `F12` Tools row, both through `apply_text`. |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
@@ -1748,18 +1866,26 @@ reverse-engineering questions, so they are not on
 | debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
 | offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
 | automatic quality step-down | Page only: on a machine that cannot hold the frame rate, `play-quality-ladder.js` turns ambient occlusion and lamp shadows off and lowers the 3D scale for the session, and says so; the saved options keep their values. A desktop player picks a window size and the options; neither retail nor PSX rasterisation steps down. |
+| menu screens on a light chrome | Native only, by platform: the window's chrome follows the desktop's theme, and on a light one its Multiplayer screen and game-mode picker draw in the light palette (`expansion_modes::light`, applied by the window to the shared composition's draws). The page has no window chrome and keeps the dark palette; a mode in play is dark on both. |
 | touch controls | Page only, by platform: on a touch screen the page draws an on-screen pad over the picture ([`touch-pad.js`](../subsystems/browser-host.md#the-touch-pad-touch-padjs)); the window takes keyboard, controller and mouse. |
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
 | pixel-exact presentation | Closed: the page sizes its stage to the largest whole multiple of the `320 x 240` target in device pixels and letterboxes the rest, under PSX rasterisation always, as the window presents its native target ([renderer-port](../subsystems/renderer-port.md#the-native-target)), and for the clean mode under *Pixel-exact scaling* (`OptionsState::integer_scale`, the window's launcher row; the page's box of the same name, `set_integer_scale`). Off, the page stretches its `960 x 720` canvas to the layout where the window shrinks a near step to fit. |
-| second card port mid-session | Port 2 closed, port 1 by design: a card file dropped on the window mounts in port 2 for the session (`insert_dropped_card`, validated before it takes the port, saves written back into the dropped file), the twin of the page's insert. The page also inserts, ejects and exports port 1 ([`cards`](../subsystems/browser-host.md#memory-card-rack-cards)); the window's port 1 is its own `memcard1.mcr` in the save directory, and it has no eject. |
+| second card port mid-session | Port 2 closed, port 1 by design: a card file dropped on the window mounts in port 2 for the session (`insert_dropped_card`, validated before it takes the port, saves written back into the dropped file), the twin of the page's insert. The `F12` Tools page's *Memory card 2* row reaches the same mount (`mount_port_two`) from the keyboard or a controller, over the launcher's remembered cards and the card files beside port 1's, and its *No card* pick is port 2's eject. The page also inserts, ejects and exports port 1 ([`cards`](../subsystems/browser-host.md#memory-card-rack-cards)); the window's port 1 is its own `memcard1.mcr` in the save directory, and it has no eject. |
 | dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F >> 3` steps, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
 | pause wipe, first frames | One half closed, one open. The frame the wipe spawns the menu: the window drew the lit field for one frame (the session hands the tick over on the next claim, and the wipe draws nothing once the menu exists), where the page draws the menu; the window now raises its menu state at the end of the spawning frame and holds the boot-UI arm off for the hand-over tick (`pause_menu_handover`), so `monkey_map`'s spawn frame reads `0.00%` where it read `95%`. Under the opening wipe the page dimmed the party HUD the window hides (`monkey_town` ticks 1680..1686); the window is retail ([field-menu.md](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)), and the page now clears its overlay there. |
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
 | save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
 | lit summon parts | Closed. With enhanced lighting on, a summon's crystals (spell `0x8A`) lit as their mirror image on the page, `1.7%` of the `cast` scene's frame at tick `721`. A double-sided part's paired copies cancel in the smoothing, so its normals are the zero sentinel and both hosts light it off the facet: the window off its object-space positions, the page off its baked, world-space stream, whose battle frame flip mirrors every facet against the key light. The baked FX stream now carries the normal the window lights each vertex with (`play_battle_fx_normals`: the smoothed object-space normal, else the object-space facet, a billboard's native face normal), and the page reads it on the untextured prims too. The pair reads `0.08%` at its worst frame. |
 | Baka floor glow colour | Closed. On the Baka duel's intro sweep (`baka`, ticks 195..235) the page drew the frame's bottom 25 rows grey where the window drew the floor glow warm (red and green equal, blue exact), `3.6%` of a retail-mode frame at tick `211`, `1.9%` enhanced. The window blends the additive glow's near half after the fighters' subtractive shadows, far to near per prim; the page blended by mode, glow first, so the glow saturated red and green and the shadow then took one amount off all three. The page now orders the single mesh's semi prims as the window does (`orderSemiPrims`); the pair reads `0.91%` retail and `0.08%` enhanced at its worst frame. [Retail's side](#the-baka-floor-fan-against-retail). |
+| session export while playing | Closed: the page's *Export session* (`export_save`) and the window's `F12` Tools row of the same name write the running game through one writer (`write_with_resume` over `current_resume`) behind one refusal (`host_save_allowed`). The page keeps the last few in the browser; the window numbers `session_<scene>_NNN.lgsf` files in the saves folder and never writes over one. `native_tools_page_parity` exports from both and imports the window's file on the page. |
+| room address and player name | Closed: both remember the address last joined and the name last used, and neither remembers a room code. The page keeps them in the browser; the window in `legaia-netplay.toml` in the settings folder (`NetRemembered`), a file of its own so it never races the launcher's settings write. `--name` wins over the remembered name. |
+| bug report while playing | Closed: the window's `F12` Tools row *Copy report* is the page's button, over the launcher's failure report (`game_exit::report_text`) with the running session in place of how the game ended: scene, mode, frame, window, adapter, controller, the switches off their retail value, the options, and the end of the launcher's game log when it is this run's. With no clipboard it writes `legaia-report.txt` in the saves folder. |
+| key reset while playing | Closed: the `F12` Keys page's footer is a reset row (`Delete`, `Enter` or Cross, pressed twice), the page's *Reset keys and buttons*: `Mapping::default` over the live table and into `legaia-input.toml`. A room's panel reads no press and offers none. |
+| `Alt+Enter` | Native only, on purpose: `Enter` is a bindable pad key on the page, so its fullscreen key is `F11` alone. |
+| near-black frames on a slow rasteriser | Not drift. A door's fade is about 80 ticks of dark frames on both hosts. The page drains at most four ticks a display frame and drops the rest, so on SwiftShader, at about four frames a second, the fade lasts 4 to 6 seconds of wall time where a real GPU shows 1.3; Enhanced lighting on or off changes nothing. |
+| black frames in a recording | Not the page's picture: the copy of it. On a real GPU a multisampled canvas copied straight after its draws comes back black on a share of frames, while the buffer holds the frame and a display shows it. See [black copies](#black-copies-of-a-multisampled-canvas). |
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | pack-map ground | Closed: a pack map's layout picks narrowed 64-bit words to `usize` (the ground's cell pick, the `[[edges]]` runs' `usize::MAX - e` stream key), so on `wasm32` the page painted and decorated the map differently from the window while VRAM and trace agreed. Both now take 64-bit words (`terrain::pick_index`, `TileRng::new_keyed`); a native-against-wasm dump of every sample map's decorations and paint matches. `pack_village` reads `1.6%` retail, `0.05%` enhanced; `pack_tower` `0.3%` / `0.01%`. The rest is one-row raster ties. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
@@ -1840,6 +1966,7 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | move-VM strips | `MoveVmGlobals::strip_frame` |
 | fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
 | who owns the tick | `BootSession::claim_tick` -> `TickOwner`: a host-held screen, the naming prompt, the prologue skip, the pause menu's spawn and press, a suspending overlay screen, the field (neutral pad or not). Each host matches on the answer (window: `sim_tick`; page: `frame_ticks`) and adds only what it holds; a `SIM_PAIRS` row pins both to the claim |
+| scene render state on an entry tick | rebuilt right after the session tick, ahead of the frame tail (window: `tick_session_step`; page: `tick_frame`), so the tail steps the entered scene's animator against the entered scene's image; pinned by [the field image pair](#output-level-the-field-image) |
 | field frame tail | `BootSession::step_effect_scene_graphs`, `World::step_field_vram_effects`, `drain_field_anim_cues`; headless: `World::step_world_frame_tail` ([`reach-triage.md`](reach-triage.md#what-a-pad-only-ladder-structurally-cannot-execute)) |
 | party-wipe probe | `BootSession::take_party_wipe` |
 | scheduler under a frozen field | `BootSession::step_overlay_sfx` |
@@ -1873,7 +2000,10 @@ the title run under `CARD`, a counting mode. `GameMode::play_counter_runs`
 holds the gate (the INIT row's `param`, which the mode init `FUN_8001DCF8`
 seeds into the word; the map display seeds nothing and keeps the field's).
 The page's party-wipe hold spends a frame's remaining ticks unclaimed and
-counts each through `BootSession::count_play_tick`.
+counts each through `BootSession::count_play_tick`. The window claims no tick
+while an in-window movie holds the world, and counts the held ticks the same
+way: a movie is a counting mode, and the page hands its ticks through the
+claim.
 
 Both hosts once read their wall clock instead, behind a stall guard for a
 backgrounded tab. A host that runs no ticks now counts nothing by
@@ -1959,6 +2089,40 @@ field frame around the prompt steps the camera mover once per vsync. The page
 used to pass the frame's steps in one call and run the camera half once per
 display frame - never on a 30 Hz frame's second step, and once too many on a
 redraw that owed no step - which also moved its draws of the shake stream.
+
+#### The field tick's order on each host
+
+The two frame paths run the same steps around one session tick, not in one
+order. Read side by side:
+
+| # | Window (`sim_tick`, `tick_field_tail`) | Page (`frame_ticks`, `tick_frame`) |
+|---|---|---|
+| 1 | party-wipe probe, run rules, tick claim, room frame | run rules, tick claim, room frame |
+| 2 | option knobs, then the pad | the pad, then the option knobs |
+| 3 | session tick; scene rebuild on an entry; pack preload; battle edge; NPC model re-binds | session tick; movie service; scene rebuild on an entry |
+| 4 | minigame side channels, fishing banners, arts list slide, dev menu | overlay poll, effect scene graphs, fishing banners |
+| 5 | overlay poll, effect scene graphs | field VRAM effects (CLUT walk, scripted effects) |
+| 6 | field VRAM effects (CLUT walk, scripted effects), fog step | battle edge and battle events, minigame side channels, arts list slide |
+| 7 | a non-suspending overlay screen's step | audio frame, battle intro (with the fog step), party-wipe probe |
+| 8 | battle events, audio frame, field events | party readout, dev menu, field events |
+| 9 | dialogue panel, clip cues and NPC clips, party readout | rig change, NPC clips, pack preload when idle; then a non-suspending overlay screen's step |
+
+What differs, and what each difference is:
+
+| Difference | Verdict |
+|---|---|
+| scene rebuild at the end of the entry tick (page) | Defect, closed: [the field image pair](#output-level-the-field-image) |
+| no play-clock count under a movie (window) | Defect, closed: the window counts the ticks its movie holds |
+| no scheduler step under the party-wipe and Boss Rush holds (page) | Defect, closed: `step_overlay_sfx` under every host-held screen |
+| party-wipe probe at the end of the wipe's tick (page) against the head of the next (window) | Harmless: the same tick is the hold's first on both; the page raises its panel a display frame sooner, on the hold's opening fade |
+| option knobs after the pad (page) | Harmless: the knobs are also pushed on every options change, so the pad's run-button latch never reads a stale one; `option_hotkey_frames_match_across_hosts` agrees on `switches` and `pad` |
+| minigame side channels after the effect step and the VRAM effects (page) | Harmless: they read the tick's minigame events and queue cues ahead of the audio frame on both; the minigame scenarios of the frame-body trace agree channel by channel |
+| battle edge after the effect step (page) | Harmless: `encounter_and_battle` and `battle_to_exit` agree on `battle_stage`, `bindings` and `audio` at three cadences |
+| a non-suspending overlay screen stepped after the audio frame (page) | Harmless today: only the inn session does not suspend the field, and no production path opens one (`MenuRuntime::open_scene_inn` has no caller; an inn's prompt is the scene script's own dialogue). A screen of that kind would sound its cues a tick late on the page |
+| pack preload every tick (window) against after half a second idle (page) | Deliberate: the page has one thread, so a slice of preparation waits for a still frame |
+| ticks claimed under a movie (page) against none (window) | Deliberate: the page's movie lane is serviced from the tick; the play clock and the room frame agree (the window counts the first and steps the second in its movie hold; `movie_play_clock_host_parity`, `netplay_room_frame_movie_host_parity`) |
+| dialogue panel and text balloon mirrored per tick (window) | Deliberate: the page's draw reads the world's dialogue state |
+| battle VRAM residency check, `--simple-dialogue` picker, capture seats (window) | Native only: a wgpu repair, a launch switch and the capture harness |
 
 <a id="host-hotkeys"></a>
 
@@ -2178,6 +2342,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | visible-tile crop | `field_view_window::field_view_cells`, `framing_is_retail`, `terrain_draw_visible` |
 | script arcs (op `0x43`), attached lights (op `0x34` sub-1) | `World::script_actors`; lights through `light_pool_prims` ([`script-vm.md`](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light)) |
 | CLUT-walk shimmer | `engine-scene::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
+| resident texture pool under the scene build | `scene::underlay_field_texture_pool`: the effect textures and the field-character atlas, under the scene's own TIMs |
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
 | lighting mood, fog-bank tint | `engine-screens::field_frame::lighting_mood`, `fog_volume_color` |

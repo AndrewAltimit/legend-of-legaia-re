@@ -330,6 +330,7 @@ pub fn battle_hud_frame_draws(
                 .and_then(|s| s.outgoing.as_ref())
                 .map(|p| (p.name.as_str(), p.badge)),
             message_bar: message_bar.as_deref(),
+            message_bar_badge: bh::battle_message_bar_badge(w),
             message_bar_dy: bh::battle_message_bar_dy(w),
             ap_plate_value: bh::battle_ring_ap_plate_value(w),
             ap_plate_dx: bh::battle_ring_ap_plate_dx(w),
@@ -536,6 +537,11 @@ pub fn arts_input_chrome_draws(
         list_page: view.list_page,
         list_pages: view.list_pages,
         phase: arts_input_screen(view.phase),
+        // The glyph is the `0x50` arm's first draw, and no arm runs while a
+        // step's records glide - the chips' own slide-in, or in a battle the
+        // whole edge's hold - so it lands with them, at the clusters' seat.
+        dpad: view.chip_slide.is_none()
+            && (world.mode != SceneMode::Battle || bh::battle_chip_dpad_visible(world)),
     };
     let mut out =
         ai::arts_input_chrome_draws(&ai::ArtsInputAtlasRects::BAKED, &frame, bar_origin, scale);
@@ -610,6 +616,7 @@ fn arts_list_caption_draws(
     let frame = ai::ArtsInputFrame {
         glides: &[],
         chip_slide: None,
+        dpad: false,
         buffer: view.pennants,
         spent: view.pennant_spent,
         chip_costs: view.costs,

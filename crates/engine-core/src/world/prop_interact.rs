@@ -186,22 +186,28 @@ impl World {
         }
     }
 
-    /// Carry the object's clip end latch onto its channel's copy of the
-    /// control word before a script op runs on that channel. The clip tick
-    /// `FUN_800204F8` latches `+0x62 & 0x100` on the actor's one word; the
-    /// port's tick writes the prop's copy and the context copy never saw it,
-    /// so `AC <id> 08` found nothing to clear and the prop's latch survived.
-    /// `edbylon`'s second door swing clears the latch left by the first and
-    /// spins on it, and the spin then passed at once.
+    /// Carry the bits the object's clip tick owns onto its channel's copy of
+    /// the control word before a script op runs on that channel. The clip
+    /// tick `FUN_800204F8` works on the actor's one `+0x62` word: it latches
+    /// the end `0x100` and consumes a restart request `0x200`. The port's tick
+    /// writes the prop's copy, and a context copy that never saw it went
+    /// wrong two ways. `AC <id> 08` found no latch to clear and the prop's
+    /// latch survived: `edbylon`'s second door swing clears the latch left by
+    /// the first and spins on it, and the spin then passed at once. And the
+    /// copy kept the spawn's `4C 35` restart long after the tick had taken it,
+    /// so a later `CC <id> 36` (`|= 0x28A`) moved only the reverse bit and the
+    /// prop never re-seated on its last frame: `bylon` P2[12] opens the meal
+    /// hall door that way, and it stood shut through the dinner.
     ///
-    /// REF: FUN_800204F8 (0x800206E4..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C)
-    pub(crate) fn mirror_object_end_latch(&self, key: usize, word: &mut u16) {
-        use legaia_engine_scene::field_env::ANIM_END;
+    /// REF: FUN_800204F8 (0x800205F0..0x8002072C), FUN_801DE840 (ops 0x2B / 0x2C, 0x4C 0x35 / 0x36)
+    pub(crate) fn mirror_object_tick_bits(&self, key: usize, word: &mut u16) {
+        use legaia_engine_scene::field_env::{ANIM_END, ANIM_RESTART};
         let Some(anchor) = self.object_key_anchor(key) else {
             return;
         };
         if let Some(p) = self.props.bank.props.get(&anchor) {
-            *word = (*word & !ANIM_END) | (p.anim.flags & ANIM_END);
+            let owned = ANIM_END | ANIM_RESTART;
+            *word = (*word & !owned) | (p.anim.flags & owned);
         }
     }
 
@@ -436,6 +442,11 @@ impl World {
                 }
             }
         }
+        // The player's face-at turn a `CC F8 85|8E|8F` acquire started runs
+        // from the player's actor tick, box or no box (the talk runner's
+        // `InlineDialogue::face_ramp`).
+        // REF: FUN_8003774C (the 0x4C arm), FUN_8003BC08
+        self.step_talk_face_ramp(&mut id);
         if id.done {
             if id.player_glide.is_none() {
                 self.finish_prop_interaction(&mut id, anchor);
@@ -538,6 +549,19 @@ impl World {
             let arrived = self.step_player_walk_leg(walk.target, walk.speed, 1, walk.approach);
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
+                self.dialog.inline = Some(id);
+                return;
+            }
+        }
+
+        // A budgeted player turn the record armed (`B8 F8 <op0> <op1>`): the
+        // walk kernel's RotateToAngle leg on the player, the record parked on
+        // the op until it lands, as in a talk record.
+        // REF: FUN_801DE840 (0x801DEE90..0x801DEF24), FUN_8003774C (case 0x38)
+        if let Some(mut leg) = id.player_turn.take() {
+            leg.state.speed = grid;
+            if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
+                id.player_turn = Some(leg);
                 self.dialog.inline = Some(id);
                 return;
             }
@@ -667,6 +691,47 @@ impl World {
                     && !(b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A))
                 {
                     break;
+                }
+                // Inside a player face-at window the player carries `0x400`,
+                // and the dispatcher's halted-target early-out returns an op
+                // aimed at it at its own PC until the turn lands.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE940)
+                if player_target && id.face_ramp.is_some() {
+                    break;
+                }
+                // Halt-acquire of the player (`CC F8 85|8E|8F <lo> <hi>
+                // <bind>`): the player turns toward the actor bind over the
+                // budget and the record runs on. `vell`'s Bridge Grass turns
+                // Vahn toward the grass (`CC F8 85 14 00 01`) and later toward
+                // Noa (`CC F8 85 1A 00 09`); stepped on a stand-in context the
+                // player kept the heading the examine found him with.
+                // REF: FUN_801DE840 (0x801E2148..0x801E21DC), FUN_8003774C (the 0x4C arm)
+                if player_target
+                    && let Some(ramp) =
+                        legaia_engine_field::inline_dialogue::TalkFaceRamp::from_acquire(
+                            &id.bytecode,
+                            id.pc,
+                        )
+                {
+                    id.pc += 6;
+                    id.face_ramp = Some(ramp);
+                    host.world.step_talk_face_ramp(&mut id);
+                    continue;
+                }
+                // A turn on the player (`B8 F8 <op0> <op1>`): a zero budget
+                // writes the compass heading at once, any other arms the
+                // RotateToAngle leg the record parks on. The grass's growth
+                // shot turns Vahn with `B8 F8 84 34`.
+                // REF: FUN_801DE840 (0x801DEE90..0x801DEF24)
+                if player_target
+                    && b == 0xB8
+                    && let Some(next_pc) = host.world.arm_talk_player_leg(&mut id)
+                {
+                    id.pc = next_pc;
+                    if id.player_turn.is_some() {
+                        break;
+                    }
+                    continue;
                 }
                 // A compass walk on the player (`B7 F8 b0 b1` / `C1 F8 b0
                 // b1`): arm the leg and run on past the op.
@@ -838,12 +903,33 @@ impl World {
                     host.world.store_object_prop_ctx(key, &target_ctx);
                     r
                 } else {
+                    // The record's own model set (`4C 50`) and morph arm
+                    // (`4B`) write the executing actor - the placed object -
+                    // so they reach the object's live model and lanes, as
+                    // they do from its bind channel. `vell`'s Bridge Grass
+                    // (`P0[1]`) swaps itself from the sprout (model `41`) to
+                    // the grown bridge (model `40`) with `4C 50 28 00` and
+                    // arms the growth lanes with `4B 07 00 ..`; run on the
+                    // record's own context alone, neither landed and the
+                    // sprout stayed where the bridge should have grown.
+                    // REF: FUN_801DE840 (the op-0x4B arm 0x801E0820..0x801E08C0), FUN_80024E08
+                    let own_actor_op = !player_target
+                        && !other_target
+                        && (b == 0x4B || (b == 0x4C && id.bytecode.get(id.pc + 1) == Some(&0x50)));
+                    if own_actor_op {
+                        host.world.field_vm.executing_object =
+                            own_record.and_then(|k| u16::try_from(k).ok());
+                    }
                     let ctx = if player_target {
                         &mut player_ctx
                     } else {
                         &mut id.ctx
                     };
-                    field_step_routed(&mut host, ctx, &id.bytecode, id.pc)
+                    let r = field_step_routed(&mut host, ctx, &id.bytecode, id.pc);
+                    if own_actor_op {
+                        host.world.field_vm.executing_object = None;
+                    }
+                    r
                 };
                 if other_target && own_halt.0 == 0 && id.ctx.flags & 0x400 != 0 {
                     id.ctx.flags &= !0x400;
@@ -1353,6 +1439,19 @@ fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
     match bytecode.get(pc).map(|b| b & 0x7F) {
         Some(0x2B..=0x2D | 0x31..=0x33) => true,
         Some(0x4C) => matches!(bytecode.get(pc + 2), Some(0x35 | 0x36 | 0x41)),
+        _ => false,
+    }
+}
+
+/// The actor-word ops a talk routes onto a placed object
+/// ([`World::cross_context_object_prop`]): the clip-control word `+0x62`
+/// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the rate `+0x6A` (`4C 41`) and
+/// the clip-cursor test `4C 8C` (`+0x68`). The flag word's `B1` / `B2` reach
+/// the object through the talk's channel poke already.
+pub(in crate::world) fn is_talk_object_word_op(bytecode: &[u8], pc: usize) -> bool {
+    match bytecode.get(pc).map(|b| b & 0x7F) {
+        Some(0x2B..=0x2D) => true,
+        Some(0x4C) => matches!(bytecode.get(pc + 2), Some(0x35 | 0x36 | 0x41 | 0x8C)),
         _ => false,
     }
 }

@@ -67,6 +67,27 @@ records the kingdoms use; resolution is **by type byte**, not slot position -
 the `rayman`-family carrier is the MAN-less count-4 table variant
 (`[1, 2, 6, 0x14]`).
 
+A walker is only meaningful against the image its strips were parked in. A
+host that keeps the stepper beside the scene must retire it on the tick the
+scene image is swapped, not at its next render-state rebuild: one step of the
+old scene's walker against the new image copies blank source cells onto the
+destination cells, and the new scene may own those. The kingdom table's
+destination `(32, 509)` is a ground palette in `izumi` (the dark strips along
+the hedges) and in `town0c` (the house floors), so a stale step there turns
+that ground into transparent texels for the whole visit. The play page drops
+its animator when the tick reports a scene entry
+(`crates/web-play/tests/door_entry_vram_page.rs`); the native window steps
+its animator against its own copy of the image and replaces both together.
+
+The map viewer has the opposite case: it keeps the walker while its live
+preview re-enters the viewed scene (a script that walks out of it, `edson`'s
+ending record for one), and the scene loader rebuilds the image from the
+bundle's TIMs, which do not carry the walker's strips. The viewer's animator
+remembers its source cells at the install and parks them again on every
+re-entry (`FieldSceneAnim::remember_sources` / `repark`), and a preview that
+stops after its last re-entry stops on the viewed scene, so the image the
+page draws is never the one the script left for.
+
 ## Mechanism 2 - the ambient move-VM effect tree
 
 Most ambience is a tree of small invisible actors ("stager parts") running
@@ -557,6 +578,17 @@ scaled by the lane weight (`FUN_8005B038`: `dst += delta * weight >>
 scratch for that draw, and the caller restores the authored pointer
 afterwards - the rest pose is never mutated.
 
+Nothing carries over from one draw to the next: the copy
+(`0x8001C680..0x8001C6A0`) runs on every draw before any lane is added, and
+each lane adds its records scaled by its live weight (`lhu a3,0xa0(s4)` into
+`FUN_8005B038`). So an envelope that has drained every lane to `0`, or a
+dropped gate, draws the authored mesh. Both hosts re-stage a slot at rest
+when its last live lane goes: the native window re-uploads the rest mesh over
+its morphed one (`take_field_morph_rebuilds`), and the page's
+`field_morph_reach` turns negative and `field_morph_positions` builds the rest
+positions. Holding the last live frame left `vell`'s grown Bridge Grass one
+envelope step short of its rest pose.
+
 The substitution belongs to the part's own draw, not to every mesh of its
 pack slot: `FUN_8001ADA4` copies the drawn actor's `+0x10` to the scratchpad
 (`0x8001ADF4..0x8001ADFC`) and tests that copy per group. So a mesh-bearing
@@ -641,6 +673,25 @@ context of its own. The prop runner therefore loads the envelope bits
 before each slice and stores them back after it
 (`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
 `engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
+
+The grass is two models. The bind prologue swaps the object to the sprout
+(`4C 50 29 00`, model `41`) before it arms the sway (`4B 04 07 ..`, lanes
+`7..=10`). The Yes branch swaps it to the bridge (`4C 50 28 00`, model `40`,
+its `.MAP` slot) and arms the growth lanes `0..=6`; the envelope primes them
+to full and drains them one by one, so the bridge grows out of its folded
+pose and stands at rest when the last lane reaches `0`.
+`vell_dead_genesis_tree`, a retail state walked on from the beat, holds the
+object at `+0x64 = 45` (model `40` over the bank base `5`), seven lanes at `0`
+and `+0x62 = 0x4815`.
+
+Both ops write the executing actor, which in retail is the object, so the
+prop runner marks the object executing for its record's own `4C 50` and `4B`,
+as the bind channel does. The lanes then stage onto the model the object
+draws now (`World::object_morph_draw_slots`): `FUN_8001ADA4` substitutes into
+the drawn actor's own TMD (`0x8001B424..0x8001B43C`), not into its `.MAP`
+slot. Run on the record's own context, neither op reached the object, and
+the sprout stood where the bridge should have grown. Disc-gated
+`web-play/tests/vell_bridge_grass_page.rs` pins the page's draw.
 
 A talk drives another actor's morph the same way, by target byte. `ropeway`'s
 ruins report (`P1[45]`, the book in Octam's shrine) seats the player on the

@@ -92,6 +92,40 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <figcaption>The phase is the vblank counter less the pacer's stamp. The engine seats its game-tick accumulators one short of it, and on a phase of 0 it holds the first vsync.</figcaption>
   </figure>
   <p>Seating the phase is a change to the comparison harness, not to the game code. It is what moved the placements that had turned a vsync early or late onto retail's vsync: <code>conc_field_card_boot</code>, <code>conc2_field_route_walk</code> and <code>town01_field_card_boot</code> now read no placement off retail, and <code>dolk2_market_noa</code> is down to its flat <code>70</code>.</p>
+  <p>The frame step itself is measured: the pacer keeps each frame's time in hblanks in a sixteen-entry ring and steps by the longest. The engine prices a field frame off what it draws - the decoration and ground cells in the visible tile window, the placed objects and NPCs the actor cull leaves, the fog and ambient parts - and runs the same law on that price, so a scene retail runs at three vsyncs a frame on cost runs at three. A film stands on the state's own ring and anchors the price on the state's measured cost, so the model carries only what changes inside the film. The recorder writes the pacer's ring cursor, newest frame time and step every vsync, and the engine side writes its counts and price beside them: the pairs the model is fitted on.</p>
+</section>
+
+<section class="doc-section" id="where-a-film-parts" data-doc="where-a-film-parts">
+  <h2>Where a film parts</h2>
+  <p>A film's random-number column says on which pass it leaves retail, not why. A second retail probe (<code>autorun_field_rand_callers.lua</code>) counts the calls of the game's <code>rand()</code> by return address, a vsync at a time, and writes the fog pool beside them. Run on a film's state up to the pass it parts on, it names the consumer that drew more or fewer times there.</p>
+  <table>
+    <thead><tr><th>Consumer</th><th>Draws</th></tr></thead>
+    <tbody>
+      <tr><td>Ambient emitter (<code>FUN_801D6058</code>)</td><td>72 a pass - twenty-four candidates, three draws each - plus one for a burst's size and two for each of its points</td></tr>
+      <tr><td>Fog spawner (<code>FUN_801D629C</code>)</td><td>Five for a record it seats, none for a point it rejects</td></tr>
+      <tr><td>Move-VM extension (<code>FUN_801D362C</code>)</td><td>One for an ambient part's random operand</td></tr>
+      <tr><td>Scripted-motion VM (<code>FUN_80038158</code>)</td><td>One for a wanderer's decision</td></tr>
+    </tbody>
+  </table>
+  <p>Every film that parts before its end parts on one of five causes:</p>
+  <table>
+    <thead><tr><th>Cause</th><th>Kind</th></tr></thead>
+    <tbody>
+      <tr><td>Ambient parts the state holds and the seed does not: a spawner part's children outlive the seed's settle, so the engine stands fewer of them (nine of retail's twenty-nine in <code>garmel</code>)</td><td>Harness seat</td></tr>
+      <tr><td>An open talk the seed does not resume: retail's wanderers stand still under it and draw nothing, the engine's roam and draw (the two <code>retock</code> inn films)</td><td>Harness seat</td></tr>
+      <tr><td>A wanderer's stream on another phase than the state's</td><td>Harness seat</td></tr>
+      <tr><td>The fog pool: a burst point the spawner seats on one side and rejects on the other</td><td>Engine or seat, film by film</td></tr>
+      <tr><td>The measured frame step changing inside the film</td><td>Retail's frame time</td></tr>
+    </tbody>
+  </table>
+  <p class="hint">The pass clock is the cause only in the last row. Retail measures its frame step - the longest of its last sixteen frame times, over a floor of two vsyncs on every field scene and world map - so the film seats that sixteen-entry ring too, and a state saved a few frames after a slow stretch falls back to the floor when retail's does.</p>
+</section>
+
+<section class="doc-section" id="the-rand-ratchet" data-doc="the-rand-ratchet">
+  <h2>The rand ratchet</h2>
+  <p>How far a film's random-number word agrees with retail's is one number for "the field runs retail's draws on retail's clock". <code>scripts/ci/walk-film-rand.py</code> holds it to a committed baseline, a film at a time. The retail side is a cache of recordings, one idle 300-vsync film for each field state; the ratchet runs only the engine side, several films at once, and skips when the cache is absent.</p>
+  <p>Each side's word column is reduced to its changes, one entry a burst of draws. Up to three leading entries are dropped from either side, which absorbs the vsync inside its frame the state was saved on, and the entries are compared in order up to the first that differs. A film fails when the length of that agreeing run falls. A film whose retail side was re-recorded is listed and not scored, and a state captured on a patched disc is reported and never baselined.</p>
+  <p class="hint">A film that parts early is not by itself a defect: an engage, a touch or a CD load the engine answers at once separates the two runs for good. The ratchet holds what agrees, so a consumer moved onto the wrong clock shows as a fall on every film that draws through it.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

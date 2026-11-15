@@ -389,6 +389,11 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     // yet (the cast-sequence oracle injects ahead of the `0x28` debit), so the
     // seed credits nothing back (`BattleState::seed_mp_unpaid`). A harness seat.
     world.battle.seed_mp_unpaid = std::env::var_os("LEGAIA_SEAT_SEED_MP_UNPAID").is_some();
+    // `LEGAIA_SEAT_CREATURE_RESTAGE=1`: the state's creature seat holds a
+    // stage bump an earlier cast of its battle left there
+    // (`BattleState::creature_seat_restage`), which the replay's fresh fight
+    // has not played. A harness seat.
+    world.battle.creature_seat_restage = std::env::var_os("LEGAIA_SEAT_CREATURE_RESTAGE").is_some();
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z[:facing],...[;cursor,...]]`:
     // dispatch that cast the moment the first command prompt opens - the
     // retail comparison corpus's replay of a capture taken mid-cast

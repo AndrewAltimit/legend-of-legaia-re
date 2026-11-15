@@ -379,6 +379,8 @@ Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the b
 
 The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (step `2`), and `15` on the full-party recordings from `battle_kor_spoon_strike` and `battle_tower_swordie_strike` (step `3`, five passes). The read runs on the wall clock, not on passes. The port has no read, so `SUMMON_INVOKE_DRIVE_VSYNCS` holds the arm until its passes have waited out `15` vsyncs, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk, and counted as eight passes it ran a full party's arm `24` vsyncs.
 
+The read is the cast's own module, which loader B pages a few states earlier, and its length splits the recordings: the nine summons whose PROT entry is `4096`, `6144` or `8192` bytes hold `14` vsyncs and the twenty of `10240` bytes or more hold `16`, with no exception over the 29. The port reads the module image's length off the disc and holds `13` vsyncs for one of four sectors or fewer (`summon_invoke_drive_vsyncs`), seven passes at step `2` and still five at step `3`. Grade `capture` (the read time is PCSX-Redux's CD model).
+
 **Next:** `0x33`.
 
 #### State `0x33` - Summon - fade in

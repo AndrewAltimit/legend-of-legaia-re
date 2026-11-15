@@ -78,11 +78,46 @@ impl LegaiaRuntime {
             self.persist_and_apply_options();
         }
         let fmv_handoff_scene = self.service_cutscene_fmv();
+        // The tick (or the movie hand-off, which loads a scene without the
+        // field VM's transition op and so raises no `SceneEntered`) entered
+        // a scene: the scene host has already swapped its world, its
+        // resources and its scene VRAM, so the page-side render state is
+        // rebuilt here, ahead of the frame tail, where the native window
+        // rebuilds (`tick_session_step`). Everything below then runs against
+        // the entered scene on both hosts.
+        //
+        // The rebuild used to close the tail, and each step in between ran
+        // on the old scene's page state against the new scene's world. The
+        // old CLUT-walk animator copied its 16x1 cells out of an image its
+        // source strips were never parked in, blanking whichever palettes
+        // the new scene keeps on its destination cells (the ground went
+        // black under them until the scene was left); the entered scene's
+        // own animator started a tick behind the window's; and an actor
+        // spawned on the entry tick would have been drained into the upload
+        // queue the rebuild then cleared (an ordering hazard: no scene
+        // sampled spawns on that tick).
+        //
+        // `town01` keeps its establishing-sweep timeline: the page draws
+        // the name-entry overlay its pinned op-0x49 opens
+        // (`crate::play_name_entry`), so the suspended script has a surface
+        // to resume from. No bank is staged and the dedupe latch is kept,
+        // so a track that carries across the transition keeps its playhead
+        // and its samples (the native `after_scene_swap` does the same).
+        let entered = if !fmv_handoff_scene.is_empty() {
+            fmv_handoff_scene
+        } else if let SceneTickEvent::SceneEntered { name } = event {
+            name
+        } else {
+            String::new()
+        };
+        if !entered.is_empty() {
+            self.rebuild_render_state()?;
+        }
         // ...and the rest of the frame tail is the world's, so it freezes
         // with the scene tick. A movie that ends this frame falls through, as
         // it does natively (the finish is drained before the window counts
         // its ticks).
-        if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
+        if movie_held && entered.is_empty() && self.fmv.armed_for().is_some() {
             return Ok(String::new());
         }
         // A field-VM op-0x49 sub-0 merchant (or sub-7 prize counter) armed a
@@ -155,34 +190,6 @@ impl LegaiaRuntime {
         // non-BGM events on it forever: a session's queue grew with every
         // camera beat, item grant and dialog open.
         self.drain_and_route_field_events();
-        // The FMV hand-off loaded a scene without going through the field
-        // VM's transition op, so it produces no `SceneEntered` event - the
-        // page still has to rebuild, or it draws the old scene's meshes over
-        // the new world. (Its SFX queue was already dropped above, before
-        // this tick's ring ops were replayed.)
-        //
-        // A door (`SceneEntered`) rebuilds the same way. `town01` keeps its
-        // establishing-sweep timeline: the page draws the name-entry overlay
-        // its pinned op-0x49 opens (`crate::play_name_entry`), so the
-        // suspended script has a surface to resume from. No bank is staged
-        // and the dedupe latch is kept, so a track that carries across the
-        // transition keeps its playhead and its samples (the native
-        // `after_scene_swap` does the same).
-        let entered = if !fmv_handoff_scene.is_empty() {
-            fmv_handoff_scene
-        } else if let SceneTickEvent::SceneEntered { name } = event {
-            name
-        } else {
-            String::new()
-        };
-        if !entered.is_empty() {
-            self.rebuild_render_state()?;
-        }
-        // The rest of the tick's tail runs on an entry tick too, as it does
-        // in the native window's loop, which rebuilds and carries on. This
-        // host used to return straight after the rebuild, so the entry
-        // tick's rig change, merchant arm and NPC clip step were skipped.
-        //
         // A `CC F8 50` re-staged the player's model this tick: rebuild the
         // rig from the new mesh, the native window's twin
         // (`rebind_live_npc_models` there drains the same signal).

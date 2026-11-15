@@ -59,7 +59,13 @@ impl PlayWindowApp {
                 }
                 any = true;
             }
-            if !any {
+            // No live lane: the slot draws its rest pose. `FUN_8001C604`
+            // stages the rest vertices afresh on every draw and adds each
+            // lane by its weight (`0x8001C680..0x8001C6A0`), so a drained
+            // envelope or a dropped gate shows the authored mesh. A slot
+            // that carries a morphed upload is re-staged at rest rather
+            // than left on its last live state.
+            if !any && !self.field_morph_live.contains_key(&mesh_idx) {
                 continue;
             }
             let mut vmesh =

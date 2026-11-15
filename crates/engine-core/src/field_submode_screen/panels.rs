@@ -84,48 +84,43 @@ pub(super) fn run_slot(
 /// Only entry codes below `3` draw a panel at all.
 pub const RETAIL_WEAPON_SLOTS: [i16; 3] = [2, 3, 2];
 
-/// The three fixed slots of retail's `+0x196` array, as
-/// `(retail index, the engine slot holding that item)`: byte `0` is **body
-/// armour**, `1` the **head** slot, `4` **footwear**. Bytes `2` / `3` are the
-/// weapon, per [`RETAIL_WEAPON_SLOTS`].
+/// The three fixed bytes of retail's `+0x196` array, as
+/// `(record byte, the equip class worn there)`: byte `0` is **body armour**,
+/// `1` the **head** slot, `4` **footwear**. Bytes `2` / `3` are the weapon
+/// and the Ra-Seru, per [`RETAIL_WEAPON_SLOTS`] and its complement.
 ///
-/// That is retail's own order, and it is not the engine's. Two disc tables pin
-/// it independently: the panel's own slot resolution
-/// (`(+7 & 0x60) >> 5` -> `0`, `1`, the weapon table, `4`) and the equip
-/// screen's row map `DAT_801E43E8` = `00 01 00 04 05 06 07`, whose seven rows
-/// are weapon (overridden by the per-character halfword), helmet `1`, body
-/// armour `0`, footwear `4` and three Goods slots `5..7`. The engine's own
-/// array is weapon-first with a hand-guard slot retail has no row for
-/// ([`legaia_engine_menus::equip_session::ARMAMENT_ENGINE_SLOTS`]), so a record has to be
-/// re-ordered before the ported kernel walks it - [`hub_panel_slots`].
+/// Two disc tables pin the order independently: the panel's own slot
+/// resolution (`(+7 & 0x60) >> 5` -> `0`, `1`, the weapon table, `4`,
+/// `0x801E5E24..0x801E5E80`) and the equip screen's row map `DAT_801E43E8` =
+/// `00 01 00 04 05 06 07`, whose seven rows are weapon (overridden by the
+/// per-character halfword), helmet `1`, body armour `0`, footwear `4` and
+/// three Goods slots `5..7`.
 pub const HUB_PANEL_FIXED_SLOTS: [(usize, EquipSlot); 3] = [
     (0, EquipSlot::BodyArmor),
     (1, EquipSlot::Helmet),
     (4, EquipSlot::Boot),
 ];
 
-/// Re-order a character's engine equip array into the five slots the sub-panel
-/// walks, in retail's own `+0x196` order.
+/// The five bytes the sub-panel walks: a character record's `+0x196..+0x19B`,
+/// verbatim.
 ///
-/// The aggregation itself is order-blind (it sums all five), so this matters
-/// for one thing: the **trial-equip destination**. `resolve_equip_slot` answers
-/// in retail's index space, so handing it an engine-ordered array would displace
-/// the wrong item - a body-armour candidate would replace the weapon.
+/// The roster record (`legaia_save::CharacterRecord::equipment`) **is**
+/// retail's array, body-first, so no re-ordering stands between it and the
+/// kernel: `FUN_801E5B4C` sums `char * 0x414 + 0x75E + i` for `i` in `0..5`
+/// (`0x801E5BE0..0x801E5C74`) and writes its trial candidate into the byte
+/// the class resolution names (`0x801E5EB4..0x801E5EC8`). That walk includes
+/// the per-character Ra-Seru byte (`3, 2, 3`), whose item row contributes
+/// whatever the disc holds for it; the three Goods bytes (`5..7`) are outside
+/// it.
 ///
-/// The engine's hand-guard slot has no retail counterpart and is dropped, which
-/// is retail's own five-slot sum; retail's three Goods slots (`5..7`) are
-/// outside the walk for both.
-pub fn hub_panel_slots(equip: &[u8; 8], char_index: usize) -> [u8; 5] {
+/// The engine's weapon-first [`EquipSlot`] order belongs to the equip
+/// *session*, not to the record. Reading the record through it swaps the body
+/// byte with Vahn's and Gala's weapon byte, so a body-armour candidate
+/// displaces the weapon and a weapon candidate the armour.
+// REF: FUN_801E5B4C
+pub fn hub_panel_slots(record_equip: &[u8; 8]) -> [u8; 5] {
     let mut out = [0u8; 5];
-    for (retail, engine) in HUB_PANEL_FIXED_SLOTS {
-        out[retail] = equip[engine.as_index() as usize];
-    }
-    let weapon = RETAIL_WEAPON_SLOTS
-        .get(char_index)
-        .copied()
-        .unwrap_or(0)
-        .clamp(0, 4) as usize;
-    out[weapon] = equip[EquipSlot::Weapon.as_index() as usize];
+    out.copy_from_slice(&record_equip[..5]);
     out
 }
 

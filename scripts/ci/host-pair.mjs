@@ -4,7 +4,7 @@
 //
 //   scripts/ci/host-pair.mjs --site site --engine target/release-test/legaia-engine --out DIR
 //       [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n]
-//       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n]
+//       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n] [--page-init js]
 //
 // The native side is `play-window`'s own capture sweep (`--screenshot-every`, `--pad-script`)
 // with `LEGAIA_SWEEP_TRACE` writing `engine-session::host_trace` beside each PNG. The page side
@@ -130,6 +130,11 @@ export const SCENES = {
   dolk2_audience: { scene: 'dolk2', flags: [0x142], record: [2, 7], ticks: 4000, every: 60, taps: every(200, 3990, 25, 'Cross') },
   /* Noa's first dream (dream P2[1]): the light her mother's voice hangs on a scale-zero marker. */
   dream_light: { scene: 'dream', record: [2, 1], ticks: 1200, every: 30, taps: every(120, 1190, 24, 'Cross') },
+  /* West Voz Forest's Bridge Grass (issue #629): with the first-visit beat seen, the Fertilizer
+   * swaps the sprout for the bridge model and grows it across the river; on the first visit the
+   * cutscene turns Vahn toward the grass, then toward Noa. */
+  grass629: { scene: 'vell', flags: [0x460, 0x078], seat: [2112, 4672], ticks: 1500, every: 50, hold: [[150, 153, 'Up']], taps: every(200, 1000, 40, 'Cross') },
+  grass629_cut: { scene: 'vell', flags: [0x078], seat: [2112, 4672], ticks: 1500, every: 50, hold: [[150, 153, 'Up']], taps: every(200, 1490, 40, 'Cross') },
   summit582: { scene: 'rikuroa', flags: [0x2FB, 0x281, 0x282, 0x283, 0x284, 0x285], seat: [7300, 9792], ticks: 1500, every: 60, hold: [[30, 55, 'Right']], taps: every(250, 1490, 20, 'Cross') },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */
@@ -303,6 +308,8 @@ async function pageRun(cfg) {
       if (n === at + 1) send('keyup', cfg.key[b]);
     }
   };
+  const syncGl = view.canvas.getContext('webgl2');
+  const syncPx = new Uint8Array(4);
   const comp = document.createElement('canvas');
   comp.width = 320; comp.height = 240;
   const cx = comp.getContext('2d', { willReadFrequently: true });
@@ -333,6 +340,12 @@ async function pageRun(cfg) {
       page.width = cfg.size[0]; page.height = cfg.size[1];
       const pc = page.getContext('2d');
       pc.imageSmoothingEnabled = false;
+      /* A finish and a read of the drawing buffer ahead of the copy. On a real GPU (ANGLE over
+       * an NVIDIA driver) a multisampled canvas copied straight after its draws comes back
+       * black on a share of frames, one in three in a fight, while the buffer itself holds the
+       * frame and a display shows it. Nothing the page left bound or masked (the state at the
+       * end of a black frame is the default one), and no frame without multisampling does it. */
+      if (syncGl) { syncGl.finish(); syncGl.readPixels(0, 0, 1, 1, syncGl.RGBA, syncGl.UNSIGNED_BYTE, syncPx); }
       pc.drawImage(view.canvas, 0, 0, page.width, page.height);
       /* Every layer stacked over it, in stacking order: the menu overlay and a minigame's hub layer. */
       for (const c of view.canvas.parentNode.querySelectorAll('canvas')) {
@@ -457,6 +470,9 @@ async function main() {
     const size = [first.readUInt32BE(16), first.readUInt32BE(20)];
     console.error(`[host-pair] ${name}/${mode}: ${ticks.length} native frames ${size.join('x')}, page`);
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    /* `--page-init <js>`: a script the page runs ahead of its own, for a switch an
+     * experiment reads off `window` (a pass drawn another way on the page alone). */
+    if (arg('page-init')) await context.addInitScript(String(arg('page-init')));
     const page = await context.newPage();
     const problems = [];
     page.on('pageerror', (e) => problems.push('page error: ' + e.message));

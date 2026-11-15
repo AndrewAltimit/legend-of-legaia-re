@@ -558,6 +558,10 @@ pub struct BattleHudFrame<'a> {
     /// nor the target plaque on the same row draws
     /// (`player_steal_skeleton_banner` shows the caption alone on the row).
     pub message_bar: Option<&'a str>,
+    /// The element badge leading [`Self::message_bar`]'s line: a composed
+    /// line whose subject's display name carries the caret escape
+    /// (`engine-battle-hud::battle_message_bar_badge`).
+    pub message_bar_badge: Option<u8>,
     /// The message bar's offset below its rest seat while its raise glide
     /// runs (`engine-battle-hud::battle_message_bar_dy`): positive from the
     /// raise until it lands. `0` at rest.
@@ -599,10 +603,12 @@ pub struct BattleHudFrame<'a> {
     /// this round (`engine-battle-hud::battle_commit_log`), laid out by
     /// `legaia_engine_battle_vm::battle_commit_log` and drawn as gold plates.
     pub commit_log: &'a [legaia_engine_battle_vm::battle_commit_log::CommitLogRow],
-    /// The battle-intro enemy-name labels, `(label, pen x)`, pen y
-    /// [`BATTLE_INTRO_NAME_Y`] (`engine-battle-hud::battle_intro_names`,
-    /// retail `FUN_801D9D3C`). Empty outside the intro timer.
-    pub intro_names: &'a [(String, i32)],
+    /// The battle-intro enemy-name labels, `(label, pen x, element badge)`,
+    /// pen y [`BATTLE_INTRO_NAME_Y`] (`engine-battle-hud::battle_intro_names`,
+    /// retail `FUN_801D9D3C`). A label whose display name carries the caret
+    /// escape wears that badge in front of the name, as the plaques do.
+    /// Empty outside the intro timer.
+    pub intro_names: &'a [(String, i32, Option<u8>)],
     /// The boss-name banner a battle-stage module raises, `(label, pen x,
     /// pen y)` (`engine-battle-hud::battle_stage_banner`, PROT 0968's
     /// phase 5): a bare text actor, no frame. `None` outside it.

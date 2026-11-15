@@ -164,6 +164,17 @@ impl PlayWindowApp {
     /// its rack from the ports each time it opens, and the title rescans
     /// both on its next open, as the page does after its insert.
     pub(super) fn insert_dropped_card(&mut self, path: &Path) {
+        match self.mount_port_two(path) {
+            Ok(name) => self.show_notice(format!("Memory card 2: {name}")),
+            Err(name) => self.show_notice(format!("Not a memory card: {name}")),
+        }
+    }
+
+    /// Mount the card image at `path` in port 2, in place of what is there:
+    /// the drop's work, shared with the `F12` Tools page's *Memory card 2*
+    /// row. Either way the answer is the file's name; an `Err` leaves the
+    /// port as it was.
+    pub(super) fn mount_port_two(&mut self, path: &Path) -> Result<String, String> {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -172,11 +183,11 @@ impl PlayWindowApp {
             Ok(card) => {
                 log::info!("play-window: {} mounted in card port 2", path.display());
                 self.card = Some(card);
-                self.show_notice(format!("Memory card 2: {name}"));
+                Ok(name)
             }
             Err(e) => {
-                log::warn!("play-window: dropped {} not mounted: {e}", path.display());
-                self.show_notice(format!("Not a memory card: {name}"));
+                log::warn!("play-window: {} not mounted: {e}", path.display());
+                Err(name)
             }
         }
     }

@@ -624,12 +624,16 @@ mod countin_tests {
     #[test]
     fn the_page_count_in_is_the_engine_count_in() {
         let mut mg = LegaiaMinigames::new();
-        assert_eq!(mg.dance_countin_step(), vec![0; 8], "no run, no count-in");
+        assert_eq!(mg.dance_countin_step(), vec![0; 9], "no run, no count-in");
         mg.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
         let (mut cues, mut saw_ready, mut saw_go, mut vsyncs) = (Vec::new(), false, false, 0);
+        let mut song_start = None;
         loop {
             let s = mg.dance_countin_step();
             vsyncs += 1;
+            if s[8] == 1 {
+                song_start = Some(vsyncs);
+            }
             saw_ready |= s[1] == 1;
             saw_go |= s[5] >= 0;
             if s[6] != 0 {
@@ -642,6 +646,11 @@ mod countin_tests {
         assert!(saw_ready && saw_go);
         assert_eq!(cues, vec![0x200, 0x201]);
         assert_eq!(vsyncs, legaia_engine_minigames::dance::COUNTIN_TOTAL_VSYNCS);
+        assert_eq!(
+            song_start,
+            Some(legaia_engine_minigames::dance::COUNTIN_SONG_START_VSYNCS),
+            "the music opens on state 6's run, ahead of the lead-in"
+        );
         assert_eq!(mg.dance_countin_step()[0], 0, "the song runs after done");
     }
 

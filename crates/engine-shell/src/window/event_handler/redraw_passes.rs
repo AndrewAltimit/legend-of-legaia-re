@@ -961,6 +961,11 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = self.scene_tmd_data.get(tmd_idx) else {
                 continue;
             };
+            // The ghost frame's clip morph: the walk's draw blends the
+            // lanes at the ghost's own entry and cursor
+            // (`World::battle_ghost_morphed_tmd`).
+            let morphed = world.battle_ghost_morphed_tmd(i, &g.morphs, tmd);
+            let tmd = morphed.as_ref().unwrap_or(tmd);
             // The ghost's own re-run of the mesh-variant swap
             // (`FUN_80049348` -> `FUN_8004CCD4`).
             let masked = g

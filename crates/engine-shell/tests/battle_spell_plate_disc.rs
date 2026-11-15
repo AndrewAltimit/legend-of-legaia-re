@@ -97,6 +97,11 @@ fn the_battle_magic_window_draws_each_spells_element_plate() {
         list.ids[0] = GIMARD;
         list.levels[0] = 1;
         rec.set_spell_list(list);
+        // A spell is a Ra-Seru's: the ring's Magic arm reads the member's
+        // Ra-Seru equipment byte (`ctx[+0x25F + member]`).
+        let mut eq = rec.equipment();
+        eq.slots[3] = 1;
+        rec.set_equipment(eq);
     }
     w.player_actor_slot = Some(0);
     w.actors[0].move_state.world_x = 300;

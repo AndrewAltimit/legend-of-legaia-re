@@ -202,3 +202,104 @@ fn the_readout_ramps_are_retails() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// The natural end pinned pass by pass at every per-pass advance the battle
+/// plays (`2`, `3`, `4`, `8`, `16` sixteenths: rate `4` / `2` / `8` with clip
+/// rates `1`, `2`, `4` and frame steps `1..3`) over every keyframe count up
+/// to `40`: the commit is called on exactly the pass the advanced cursor
+/// reaches `count << 4` (`slt` of `+0x68 >> 4` against the stream's byte `1`
+/// at `0x80047A48..0x80047A60`, the rate added at `0x80047764` first), and on
+/// that pass the walks read the advanced cursor - the frame count or past it -
+/// which is the port's `crossing_frame`.
+#[test]
+fn the_natural_end_lands_on_the_count_at_every_advance() {
+    differential!(scus(TICK));
+    let Some(mut cpu) = retail() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    // (actor rate, clip rate, frame step) -> advance in sixteenths.
+    let shapes: [(u8, u8, u8, u16); 6] = [
+        (4, 1, 1, 2),
+        (2, 1, 3, 3),
+        (8, 1, 1, 4),
+        (8, 2, 1, 8),
+        (8, 4, 1, 16),
+        (8, 2, 2, 16),
+    ];
+    let mut failures = Vec::new();
+    for &(r, clip_rate, dt, advance) in &shapes {
+        for frames in 2..=40usize {
+            cpu.mem.wr16(NODE + 0x5A, 0);
+            cpu.mem.wr32(NODE + 0x4C, ENTRY);
+            cpu.mem.wr16(NODE + 0x68, 0);
+            cpu.mem.wr8(ENTRY + 0x78, clip_rate);
+            cpu.mem.wr8(ENTRY + 0x85, 0);
+            cpu.mem.wr8(ENTRY + 0x86, 0);
+            cpu.mem.wr16(ENTRY + 0xE, 0);
+            cpu.mem.wr8(ENTRY + 0x76, 0);
+            cpu.mem.wr32(ENTRY + 0x88, STREAM);
+            cpu.mem.wr8(STREAM, 1);
+            cpu.mem.wr8(STREAM + 1, frames as u8);
+            cpu.mem.wr8(ACTOR + 0x21D, r);
+            cpu.mem.wr16(ACTOR + 0x176, 0);
+            cpu.mem.wr8(ACTOR + 0x21B, 0);
+            cpu.mem.wr16(ACTOR + 0x16E, 0);
+            cpu.mem.wr8(ACTOR + 0x1D9, 0);
+            cpu.mem.wr8(ACTOR + 0x1DC, 0);
+            cpu.mem.wr32(ACTOR + 0x10, 0);
+            cpu.mem.wr16(ACTOR + 0x178, 0);
+            cpu.mem.wr8(FRAME_STEP, dt);
+            let mut block = vec![1u8, frames as u8];
+            block.resize(2 + frames * 9, 0);
+            let anim = parse_animation_stream(&block, 0, clip_rate, 0, 0, vec![0u8; 0x88])
+                .expect("stream");
+            let mut p = MonsterAnimPlayer::new_one_shot(&anim).expect("player");
+            let total = (frames as u16) << 4;
+            let mut ended = false;
+            for pass in 1..=(u32::from(total) / u32::from(advance) + 2) {
+                cpu.calls.clear();
+                assert_eq!(cpu.call(TICK, &[NODE]), Stop::Returned);
+                // The commit is stubbed, so the node keeps the advanced cursor.
+                let retail_cursor = cpu.mem.rd16(NODE + 0x68);
+                let retail_end = cpu.calls.contains(&COMMIT);
+                let _ = p.tick_rated_vsyncs(AnimRate(r), false, dt);
+                let port_end = p.take_natural_end();
+                let expect_end = u32::from(advance) * pass >= u32::from(total);
+                let ctx = format!(
+                    "advance {advance} (r {r} clip {clip_rate} dt {dt}) frames {frames} pass {pass}"
+                );
+                if retail_cursor as u32 != u32::from(advance) * pass {
+                    failures.push(format!(
+                        "{ctx}: retail cursor {retail_cursor} is not pass * advance"
+                    ));
+                    break;
+                }
+                if retail_end != expect_end || port_end != retail_end {
+                    failures.push(format!(
+                        "{ctx}: retail end {retail_end}, port end {port_end}, cursor {retail_cursor} of {total}"
+                    ));
+                    break;
+                }
+                if retail_end {
+                    let walked = (retail_cursor >> 4) as i16;
+                    if p.crossing_frame() != Some(walked) {
+                        failures.push(format!(
+                            "{ctx}: retail walks frame {walked}, port crossing {:?}",
+                            p.crossing_frame()
+                        ));
+                    }
+                    ended = true;
+                    break;
+                }
+            }
+            if !ended && failures.len() < 16 {
+                failures.push(format!("advance {advance} frames {frames}: no natural end"));
+            }
+            if failures.len() >= 16 {
+                break;
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

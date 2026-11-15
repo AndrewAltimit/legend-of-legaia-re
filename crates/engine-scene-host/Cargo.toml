@@ -46,6 +46,8 @@ legaia-save.workspace = true
 legaia-scene-formats.workspace = true
 psx-tim.workspace = true
 legaia-tmd.workspace = true
+legaia-engine-camera.workspace = true
+glam.workspace = true
 anyhow.workspace = true
 log.workspace = true
 
@@ -59,7 +61,6 @@ legaia-engine-battle-hud.workspace = true
 legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-engine-battle-loop.workspace = true
 # Named only by tests: crates the disc-gated chains walk directly.
-legaia-engine-camera.workspace = true
 legaia-engine-modes.workspace = true
 legaia-disc-audit.workspace = true
 legaia-font.workspace = true

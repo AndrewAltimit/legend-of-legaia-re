@@ -387,8 +387,21 @@ impl<'a> PauseMenuCtx<'a> {
 /// the bands of it outside the window's frame. `content` is the window's
 /// content rect, stage pixels, as [`PauseMenuCtx::frame_around`] takes it.
 fn clip_text_under_window(texts: &mut Vec<TextDraw>, content: (i32, i32, i32, i32)) {
-    let (x0, y0) = (content.0 - 8, content.1 - 8);
-    let (x1, y1) = (content.0 + content.2 + 8, content.1 + content.3 + 8);
+    clip_text_under_frame(
+        texts,
+        (content.0 - 8, content.1 - 8, content.2 + 16, content.3 + 16),
+    );
+}
+
+/// Cut the text already emitted down to what an opaque frame drawn over it
+/// leaves showing: each glyph quad keeps only its bands outside `frame`
+/// (`(x, y, w, h)` in the same pixels as the quads), so a glyph the frame's
+/// edge crosses is cut where the frame starts, as retail's later-linked
+/// window covers it. The hosts draw every text quad after every sprite, so a
+/// modal's frame cannot hide the text under it any other way.
+pub fn clip_text_under_frame(texts: &mut Vec<TextDraw>, frame: (i32, i32, i32, i32)) {
+    let (x0, y0) = (frame.0, frame.1);
+    let (x1, y1) = (frame.0 + frame.2, frame.1 + frame.3);
     let mut out = Vec::with_capacity(texts.len());
     for t in texts.drain(..) {
         let (dx, dy) = (t.dst.0, t.dst.1);

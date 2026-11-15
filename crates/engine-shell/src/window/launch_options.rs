@@ -1145,6 +1145,9 @@ impl ScreenshotConfig {
                         d.track_coins =
                             legaia_engine_capture::strike_deal::track_coins_from_env(&v);
                     }
+                    if let Ok(v) = std::env::var("LEGAIA_STRIKE_DEAL_YAW") {
+                        d.yaw_coins = legaia_engine_capture::strike_deal::yaw_coins_from_env(&v);
+                    }
                     d
                 }),
             film_guard: std::env::var("LEGAIA_FILM_GUARD")

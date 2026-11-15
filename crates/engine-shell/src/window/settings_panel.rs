@@ -158,6 +158,11 @@ pub(super) enum PanelInput {
     Close,
 }
 
+/// With a scripted `--screenshot` run: step the cursor of each panel page this
+/// many rows down as the page is shown, then press the buttons lettered after
+/// a colon (`PlayWindowApp::scripted_panel_focus`).
+const PANEL_FOCUS_ENV: &str = "LEGAIA_PANEL_FOCUS_ROW";
+
 /// A frame's pad edges as a panel action. Up and Down come first, so a
 /// diagonal on a stick moves the cursor and changes nothing by accident.
 pub(super) fn panel_input(edge: u16) -> Option<PanelInput> {
@@ -215,11 +220,21 @@ pub(super) fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) ->
 /// Stage geometry of the settings page. Its plate is translucent and narrower
 /// than the stage, so a toggled light or fog shows around it.
 const X0: i32 = 10;
-const Y0: i32 = 2;
+/// The top of every list page's plate.
+pub(super) const Y0: i32 = 1;
 const WIDTH: i32 = 300;
-const ROW_H: i32 = 11;
+/// The pitch of a list row on every page of the panel. The font's ink is 11
+/// rows tall, capitals to descenders, so at an 11-row pitch a `g` or a `p`
+/// stood on the capitals of the row under it; one row more is the air
+/// between them.
+pub(super) const ROW_H: i32 = 12;
 /// The row help's line budget: the longest row help wraps to this many.
 const HELP_LINES: usize = 3;
+/// The help lines the Settings plate is sized for. A help that needs the
+/// third takes the controls line's place under them: 15 rows at
+/// [`ROW_H`], three help lines and a controls line are a dozen rows more
+/// than the stage is tall, and the controls are the same on every row.
+const PLATE_HELP_LINES: usize = 2;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Arrows pick, change  Del default  Esc close";
 /// [`CONTROLS`] while a controller was pressed last ([`pad_controls`]).
@@ -254,11 +269,16 @@ const FOOTER_GAP: i32 = legaia_app_theme::spacing::CHROME_LINE_GAP;
 /// (`p`, `g`, `y`) end 14 px down, two below the `HELP_H` line pitch.
 const INK_H: i32 = 14;
 
+/// The heading band over a page's rows: the heading's ink and a row of air.
+pub(super) const HEAD_H: i32 = 15;
+/// The air between the last row and the first help line.
+pub(super) const ROWS_GAP: i32 = 2;
+
 /// The height of a Settings / Cheats plate: the heading, `rows` rows, a
 /// `lines`-line help budget, the gap, and the controls line. The controls
 /// line is the plate's last `INK_H`, so its descenders stay on the plate.
 pub(super) const fn plate_height(rows: usize, lines: usize) -> i32 {
-    15 + rows as i32 * ROW_H + 3 + lines as i32 * HELP_H + FOOTER_GAP + INK_H
+    HEAD_H + rows as i32 * ROW_H + ROWS_GAP + lines as i32 * HELP_H + FOOTER_GAP + INK_H
 }
 
 /// Where a page's controls line starts, for a plate at `y0` of `height`
@@ -312,8 +332,59 @@ impl PlayWindowApp {
             return;
         }
         self.hotkey_help = true;
+        self.keys_reset = Default::default();
         self.panel_page = PanelPage::Settings;
         self.startup_hint.dismiss();
+        self.scripted_panel_focus();
+    }
+
+    /// Capture aid: in a scripted run, whose pad word goes to the game and
+    /// never to the panel, [`PANEL_FOCUS_ENV`] steps the cursor of the page
+    /// just shown that many rows down - so a `--screenshot` can show a list
+    /// scrolled, as `LEGAIA_LAUNCHER_FOCUS_ROW` does for the launcher. A
+    /// `page=` prefix (`settings`, `cheats`, `scenes`, `tools`) keeps it to
+    /// that page, and only then are the letters after a colon pressed in
+    /// order on the row (`L`, `R`, `U`, `D`, `X` for Cross): `tools=11:RX`
+    /// steps the Tools page to row 11, presses Right, then Cross.
+    fn scripted_panel_focus(&mut self) {
+        if !self.scripted_run() {
+            return;
+        }
+        let Ok(spec) = std::env::var(PANEL_FOCUS_ENV) else {
+            return;
+        };
+        let (page, spec) = match spec.split_once('=') {
+            Some((page, rest)) => (Some(page.trim().to_ascii_lowercase()), rest),
+            None => (None, spec.as_str()),
+        };
+        let here = match self.panel_page() {
+            PanelPage::Settings => "settings",
+            PanelPage::Cheats => "cheats",
+            PanelPage::Scenes => "scenes",
+            PanelPage::Tools => "tools",
+            PanelPage::Keys => "keys",
+        };
+        if page.as_deref().is_some_and(|p| p != here) {
+            return;
+        }
+        let (rows, presses) = spec.split_once(':').unwrap_or((spec, ""));
+        let rows = rows.trim().parse::<u32>().unwrap_or(0);
+        for _ in 0..rows.min(512) {
+            self.panel_pad_edge(PadButton::Down.mask());
+        }
+        // Presses act (a Cross on the Scenes page leaves the scene), so they
+        // need the page named.
+        for press in presses.chars().filter(|_| page.is_some()) {
+            let button = match press.to_ascii_uppercase() {
+                'L' => PadButton::Left,
+                'R' => PadButton::Right,
+                'U' => PadButton::Up,
+                'D' => PadButton::Down,
+                'X' => PadButton::Cross,
+                _ => continue,
+            };
+            self.panel_pad_edge(button.mask());
+        }
     }
 
     /// One frame's pad edges while the panel owns the frame.
@@ -343,12 +414,41 @@ impl PlayWindowApp {
             PanelInput::Move(d) if page == PanelPage::Tools => self.tools_page.move_cursor(d),
             PanelInput::Change(dir) if page == PanelPage::Tools => self.tools_change(dir),
             PanelInput::Confirm if page == PanelPage::Tools => self.tools_apply(),
+            PanelInput::Confirm if page == PanelPage::Keys => self.keys_reset_press(),
+            // Any other press on the Keys page takes the armed reset back.
+            _ if page == PanelPage::Keys => self.keys_reset = Default::default(),
             PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
         }
     }
 
+    /// The Keys page's reset row: Cross, `Enter` or `Delete`. The first
+    /// press arms it and the second puts every key and controller button
+    /// back to its default and writes the binding file - the play page's
+    /// *Reset keys and buttons*, the launcher's key reset and `legaia-engine
+    /// config reset`, here for a rebind that left no way into the menu.
+    pub(super) fn keys_reset_press(&mut self) {
+        use super::hud::KeysReset;
+        self.keys_reset = match self.keys_reset {
+            KeysReset::Idle | KeysReset::Done => KeysReset::Armed,
+            KeysReset::Armed => {
+                let defaults = legaia_engine_system::input::Mapping::default();
+                // A controller button still down would fold through the new
+                // table as a fresh press (`swallow_held`, as a rebind does).
+                if defaults.gamepad != self.mapping.gamepad
+                    && let Some(gp) = self.gamepad.as_mut()
+                {
+                    gp.swallow_held();
+                }
+                self.mapping = defaults;
+                self.persist_bindings();
+                KeysReset::Done
+            }
+        };
+    }
+
     /// `Tab`, `L1`, `R1`: the other page.
     pub(super) fn flip_panel(&mut self) {
+        self.keys_reset = Default::default();
         self.panel_page = match self.panel_page {
             PanelPage::Settings => PanelPage::Cheats,
             PanelPage::Cheats => PanelPage::Scenes,
@@ -359,6 +459,7 @@ impl PlayWindowApp {
         if self.panel_page == PanelPage::Scenes {
             self.scenes_page_shown();
         }
+        self.scripted_panel_focus();
     }
 
     /// Step the row under the cursor and push it to everything that reads it,
@@ -648,7 +749,7 @@ impl PlayWindowApp {
         let heading = self.chrome().heading;
         let text = self.chrome().text;
         let faint = self.chrome().faint;
-        let height = plate_height(SHOWN_ROWS.min(SETTINGS_ROWS.len()), HELP_LINES);
+        let height = plate_height(SHOWN_ROWS.min(SETTINGS_ROWS.len()), PLATE_HELP_LINES);
         let mut out = Vec::new();
         self.push_scrim(
             &mut out,
@@ -675,7 +776,7 @@ impl PlayWindowApp {
         );
         let switches = self.live_switches();
         let retail = switches.switches.retail;
-        let mut y = Y0 + 15;
+        let mut y = Y0 + HEAD_H;
         let scroll = scroll_to_cursor(self.settings_scroll, self.settings_cursor);
         if SETTINGS_ROWS.len() > SHOWN_ROWS
             && let Some(src) = self.battle_hud_solid_src()
@@ -749,18 +850,28 @@ impl PlayWindowApp {
             put(&mut out, &shown, (right - width(&shown), y - 2), ink);
             y += ROW_H;
         }
-        y += 3;
-        // The row's help, then the controls or what went wrong saving.
+        y += ROWS_GAP;
+        // The row's help, then the controls or what went wrong saving. A
+        // help of three lines has the controls' place for its third
+        // (`PLATE_HELP_LINES`); a save that failed keeps its line, and the
+        // help its first two.
         let row = SETTINGS_ROWS[self.settings_cursor];
         let help = wrap_lines(row.help(), WIDTH - 12, &width);
-        for line in help.iter().take(HELP_LINES) {
+        let failed = self.options_save_error.borrow();
+        let foot = foot_line(help.len(), failed.is_some());
+        let shown = match foot {
+            FootLine::Help => HELP_LINES,
+            FootLine::Controls | FootLine::SaveError => PLATE_HELP_LINES,
+        };
+        for line in help.iter().take(shown) {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
         y = controls_y(Y0, height);
-        match self.options_save_error.borrow().as_deref() {
-            Some(e) => put(&mut out, e, (left, y), heading),
-            None => put(
+        match (foot, failed.as_deref()) {
+            (FootLine::Help, _) => {}
+            (_, Some(e)) => put(&mut out, e, (left, y), heading),
+            (_, None) => put(
                 &mut out,
                 &self.panel_controls(CONTROLS, PAD_CONTROLS),
                 (left, y),
@@ -768,6 +879,30 @@ impl PlayWindowApp {
             ),
         }
         out
+    }
+}
+
+/// What the Settings plate's foot shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FootLine {
+    /// The controls line.
+    Controls,
+    /// Why the options file would not save, in the controls' place.
+    SaveError,
+    /// Nothing of its own: the focused row's help runs to a third line.
+    Help,
+}
+
+/// The foot for a help of `help_lines` lines: a failed save is said before
+/// anything, and otherwise a help past [`PLATE_HELP_LINES`] takes the
+/// controls' place.
+fn foot_line(help_lines: usize, save_failed: bool) -> FootLine {
+    if save_failed {
+        FootLine::SaveError
+    } else if help_lines > PLATE_HELP_LINES {
+        FootLine::Help
+    } else {
+        FootLine::Controls
     }
 }
 
@@ -1033,14 +1168,38 @@ mod tests {
     /// its controls line clear of the help budget.
     #[test]
     fn the_plate_fits_the_stage_with_a_gap_above_the_controls() {
-        let h = plate_height(SHOWN_ROWS, HELP_LINES);
+        let h = plate_height(SHOWN_ROWS, PLATE_HELP_LINES);
         // The controls line's descenders end on the plate's last row, and
         // the plate on the stage.
         let foot = controls_y(Y0, h);
         assert_eq!(foot + INK_H, Y0 + h);
         assert!(Y0 + h <= legaia_engine_ui::BOOT_UI_STAGE_H as i32, "{h}");
-        let help_end = Y0 + 15 + SHOWN_ROWS as i32 * ROW_H + 3 + HELP_LINES as i32 * HELP_H;
+        let help_top = Y0 + HEAD_H + SHOWN_ROWS as i32 * ROW_H + ROWS_GAP;
+        let help_end = help_top + PLATE_HELP_LINES as i32 * HELP_H;
         assert!(foot - help_end >= FOOTER_GAP);
+        // A third help line, drawn in the controls' place, keeps its
+        // descenders on the plate too.
+        let third = help_top + (HELP_LINES as i32 - 1) * HELP_H;
+        assert!(third + INK_H <= Y0 + h, "{third}");
+    }
+
+    /// The foot is the controls line unless the help needs it, and a failed
+    /// save is said whatever the help.
+    #[test]
+    fn the_foot_yields_to_a_long_help_and_never_hides_a_failed_save() {
+        assert_eq!(foot_line(1, false), FootLine::Controls);
+        assert_eq!(foot_line(PLATE_HELP_LINES, false), FootLine::Controls);
+        assert_eq!(foot_line(HELP_LINES, false), FootLine::Help);
+        assert_eq!(foot_line(HELP_LINES, true), FootLine::SaveError);
+        assert_eq!(foot_line(1, true), FootLine::SaveError);
+    }
+
+    /// A row's ink (11 rows in the disc font) leaves a row of air at the
+    /// list pitch.
+    #[test]
+    fn the_row_pitch_clears_the_fonts_ink() {
+        const FONT_INK_ROWS: i32 = 11;
+        const { assert!(ROW_H > FONT_INK_ROWS) };
     }
 
     #[test]

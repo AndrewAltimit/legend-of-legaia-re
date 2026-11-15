@@ -254,7 +254,8 @@ impl World {
         }
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
-        // below-10 state band. The song starts on the frame it clears.
+        // below-10 state band. The song opens on state 6's run and the beat
+        // clock's first frame is the one after the lead-in clears.
         // The lesson's load gate holds the hall on state `2`, ahead of the
         // count-in (`0x801CFA1C`).
         let gated = self
@@ -262,20 +263,30 @@ impl World {
             .dance_tutorial
             .as_ref()
             .is_some_and(|t| t.hall.load_gate != 0);
+        self.minigames.dance_hall_frame = false;
         if gated && self.minigames.dance_countin.is_some() {
             self.step_dance_tutorial();
             return;
         }
         if let Some(mut ci) = self.minigames.dance_countin.take() {
             let step = ci.step();
+            self.minigames.dance_hall_frame = step.ran;
             self.minigames.dance_countin_banner = step.banner;
             self.minigames.dance_countin_go = step.go;
             if let Some(cue) = step.cue {
                 self.write_dance_ring_cue(legaia_engine_minigames::dance::STAGE_CUE_RING_SLOT, cue);
             }
+            // State 6 opens the song; the lead-in (state 7) then holds the
+            // beat clock four more runs.
+            if step.song_start
+                && let Some(bgm) = self.minigames.dance_pending_bgm.take()
+            {
+                self.swap_to_minigame_bgm(bgm);
+            }
             if step.done {
                 self.minigames.dance_countin_banner = None;
                 self.minigames.dance_countin_go = None;
+                // A count-in that never ran state 6 still starts the song.
                 if let Some(bgm) = self.minigames.dance_pending_bgm.take() {
                     self.swap_to_minigame_bgm(bgm);
                 }
@@ -305,6 +316,7 @@ impl World {
         if let Some(event) = game.advance_vsync(dir) {
             self.minigames.dance_last_judge = Some(event.judge());
         }
+        self.minigames.dance_hall_frame = game.ran_game_frame();
         let finished = game.finished();
         if finished {
             // Retail's head runs again over the results state, so the last

@@ -165,6 +165,99 @@ pub fn scripted_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerS
         .collect()
 }
 
+/// The retail placements standing where their own records seat them when the
+/// scene spawns under `flags`, as seats.
+///
+/// A probe that lowers story flags on a state loaded inside a scene leaves
+/// every placement where its spawn section stood it under the flags as they
+/// were: the spawn ran once, at the scene entry, and nothing re-runs it.
+/// `bylon_mist_gala_goes_ahead` was made from `bylon_field_door_hop` with
+/// `0x2A2` / `0x2A6` / `0x2A7` lowered to replay the Mist beat, and flat `65`
+/// (`P1[30]`) still stands on `(15232, 13376)`, the `23 76 68` / `41 06 01`
+/// arm its record takes with `0x2A7` up; a load with the flag down leaves it
+/// on its MAN seat `(14784, 12864)`. The scenario names the flags
+/// (`spawned_under_flags`), and a placement whose retail position is exactly
+/// where a spawn of the scene under them stands it is stood there. A
+/// placement the spawn puts anywhere else still scores as a miss, and one the
+/// load already stands on retail's seat is left to the load.
+pub fn spawn_history_seats(
+    extracted: &std::path::Path,
+    retail: &super::RetailObs,
+    flags: &[u16],
+) -> Vec<WalkerSeed> {
+    if flags.is_empty() {
+        return Vec::new();
+    }
+    let Some(plain) = retail.seed_save() else {
+        return Vec::new();
+    };
+    let mut raised = plain.clone();
+    for &f in flags {
+        super::set_system_flag(&mut raised, f, true);
+    }
+    let (Some(under), Some(now)) = (
+        spawn_seats(extracted, &retail.scene, raised),
+        spawn_seats(extracted, &retail.scene, plain),
+    ) else {
+        return Vec::new();
+    };
+    retail
+        .actor_facings
+        .iter()
+        .filter(|a| {
+            let at = Some(&(a.x, a.z));
+            !a.ambient && under.get(&a.flat) == at && now.get(&a.flat) != at
+        })
+        .map(|a| WalkerSeed {
+            flat: a.flat,
+            x: a.x,
+            z: a.z,
+            heading: (a.facing as u16) & 0x0FFF,
+        })
+        .collect()
+}
+
+/// Where each placement stands, by flat index, a few frames after `scene`
+/// spawns over `save`.
+fn spawn_seats(
+    extracted: &std::path::Path,
+    scene: &str,
+    save: legaia_save::SaveFile,
+) -> Option<BTreeMap<u16, (i16, i16)>> {
+    use legaia_engine_save_state::WorldSaveState;
+    let mut host =
+        legaia_engine_scene_host::scene_host::SceneHost::open_extracted(extracted).ok()?;
+    host.world.load_full(save);
+    host.enter_field_scene(scene, 0).ok()?;
+    // A spawn section's compass step lands a few frames after the entry.
+    for _ in 0..SPAWN_SETTLE_TICKS {
+        host.tick().ok()?;
+        let _ = host.step_headless_frame_tail();
+    }
+    Some(
+        host.world
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| !c.object_bind)
+            .filter_map(|c| {
+                let slot = u8::try_from(c.placement_index).ok()?;
+                let at = host
+                    .world
+                    .npcs
+                    .positions
+                    .get(&slot)
+                    .copied()
+                    .unwrap_or((c.ctx.world_x as i16, c.ctx.world_z as i16));
+                Some((c.ctx.script_id, at))
+            })
+            .collect(),
+    )
+}
+
+/// Frames [`spawn_history_seats`] runs past the entry.
+const SPAWN_SETTLE_TICKS: usize = 16;
+
 /// The retail placements, standing on a seat, whose heading is a compass
 /// literal a beat turns them to ([`BeatMoves::turns`]), as heading seats:
 /// the seed stands the heading only where the engine already holds retail's

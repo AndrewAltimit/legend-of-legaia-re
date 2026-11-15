@@ -3135,8 +3135,10 @@ mod tests {
     fn page_twin(row: OptionRow) -> Option<&'static str> {
         use OptionRow::*;
         Some(match row {
-            // The page's canvas takes the size its layout gives it.
-            WindowSize | WholeStepScale | Theme => return None,
+            // The page's canvas takes the size its layout gives it, and its
+            // menus the site's theme.
+            WindowSize | Theme => return None,
+            WholeStepScale => "play-integer-scale",
             // The page's Look and feel selector, over the same shared preset.
             Preset => "play-look-and-feel",
             Fullscreen => "play-fullscreen",

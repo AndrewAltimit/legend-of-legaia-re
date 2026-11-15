@@ -516,6 +516,15 @@ pub struct BattleState {
     /// band's own debit lands on the state's MP, wrap and all. `false` on
     /// every ordinary fight and on a still's mid-cast replay.
     pub seed_mp_unpaid: bool,
+    /// Bit 0 of the creature seat's `+0x1DC` as the last cast left it: a
+    /// stage bump made on seat 7 after its node was taken off, which no tick
+    /// consumed. The seat installer `FUN_801F19EC` leaves the byte alone, so
+    /// the next creature's first node tick takes the bit at once
+    /// (`0x800478F4`) and commits the idle the installer left staged: the
+    /// creature opens at rate `4`, not the installer's `2`. PROT 0964's
+    /// strikes raise it in their `0xFF` arm (`0x801F888C..0x801F8898`), so
+    /// every Rogue strike of a battle but the first opens so.
+    pub creature_seat_restage: bool,
     /// The same seed's target: the party seat the capture's caster had
     /// aimed its cast at (`+0x1DD`), or the caster itself. A single-target
     /// cast replayed off [`Self::forced_monster_cast`] lands on it when it is
@@ -870,6 +879,12 @@ pub struct BattleState {
     /// `WorldToggles::battle_poly_frame_cost` is up. `None` before the first
     /// priced frame, and on a host that does not price its frames.
     pub drawn_polys: Option<u32>,
+    /// The polygons the frame the world last stood on links, counted from
+    /// world state by the scene host's census (`World::note_linked_polys`,
+    /// `legaia_engine_scene_host::battle_link_census`): the count a pass
+    /// prices its work from while `WorldToggles::battle_poly_frame_cost` is
+    /// up, the same on every host. `None` before the first census.
+    pub linked_polys: Option<u32>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -887,6 +902,11 @@ pub struct BattleState {
     /// pass's frame out on the step the pass ran at and only then copies the
     /// new one into `0x1F800392` (`0x800171C0..0x800171D8`).
     pub pending_frame_step: Option<u8>,
+    /// A pass whose frame cost is still to be pushed
+    /// (`World::stage_pass_frame_cost`), with the arm table's step when one
+    /// names it: the SM stages it and the pass's close pushes it behind the
+    /// node ticks (`World::close_pass_frame_cost`).
+    pub pass_frame_cost_due: Option<Option<u8>>,
     /// The battle frame [`Self::pending_frame_step`] was left by: only a pass
     /// that opens a later frame takes it. The effect scene graphs claim the
     /// same frame after the pass that set it, on the same tick.
@@ -1385,6 +1405,11 @@ pub struct BattleState {
     /// `+0x87` commit's draw takes the value standing a few frames on.
     /// Empty outside that oracle.
     pub capture_track_coin: Vec<(u64, u8)>,
+    /// The swing camera's yaw-seed coins as retail's recording of the same
+    /// strike drew them, in order (`legaia_engine_capture::strike_deal`):
+    /// each re-seed of `ctx[+0x6DA]` takes the next. Empty outside that
+    /// oracle.
+    pub capture_yaw_coin: std::collections::VecDeque<u8>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1620,6 +1645,7 @@ impl BattleState {
             art_seed_ra_seru: false,
             forced_monster_cast: None,
             seed_mp_unpaid: false,
+            creature_seat_restage: false,
             forced_monster_target: None,
             cue_clut_seed: None,
             element_roll_seed: None,
@@ -1685,8 +1711,10 @@ impl BattleState {
             frame_cost_state: None,
             frame_work: 0,
             drawn_polys: None,
+            linked_polys: None,
             cast_arm_pass: None,
             pending_frame_step: None,
+            pass_frame_cost_due: None,
             pending_frame_step_from: 0,
             retail_step_track: None,
             retail_rand_track: None,
@@ -1764,6 +1792,7 @@ impl BattleState {
             capture_reseat_bars: Vec::new(),
             capture_hit_rand: std::collections::VecDeque::new(),
             capture_track_coin: Vec::new(),
+            capture_yaw_coin: std::collections::VecDeque::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

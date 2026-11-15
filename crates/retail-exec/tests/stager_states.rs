@@ -378,10 +378,87 @@ fn the_juggernaut_and_esm_sweeps_match_retail() {
     }
 }
 
+/// The two stagers' spawn arms seat their records on the calling part
+/// (`a0 = part + 0x14`, `a1 = part + 0x24`) at scale `0x1000` and touch
+/// nothing else.
 #[test]
-fn the_juggernaut_caller_jitter_matches_retail() {
-    differential!(prot(927, JUGGERNAUT));
-    let Some((mut rig, module)) = Rig::new(927, 0x4A49_5454) else {
+fn the_juggernaut_and_esm_spawn_arms_match_retail() {
+    differential!(prot(927, JUGGERNAUT), prot(966, EVIL_SERU_MAGIC));
+    for (entry, va) in [(927usize, JUGGERNAUT), (966, EVIL_SERU_MAGIC)] {
+        let Some((mut rig, module)) = Rig::new(entry, 0x5350_4157) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let seats = Rc::new(RefCell::new(Vec::<[u32; 4]>::new()));
+        {
+            let seats = seats.clone();
+            rig.cpu.hook(SEAT_POOLED, move |r, _| {
+                seats
+                    .borrow_mut()
+                    .push([r.r[A0], r.r[A1], r.r[A2], r.r[psx_retail_exec::A3]]);
+                r.r[V0] = 0x8016_0000;
+            });
+        }
+        let mut seated = 0;
+        for round in 0..16 {
+            for arm in [0u8, 1, 2, 6, 8, 9] {
+                rig.seed(&module);
+                for o in (0..0x100u32).step_by(4) {
+                    let w = rig.rng.next();
+                    rig.cpu.mem.wr32(CALLER + o, w);
+                }
+                seats.borrow_mut().clear();
+                let (ctx, actors) = (rig.ctx(), rig.actors());
+                let before = rig.cpu.mem.read(CALLER, 0x100);
+                assert_eq!(
+                    rig.cpu.call(va, &[CALLER, u32::from(arm), 0]),
+                    Stop::Returned
+                );
+                let trio = |m: &mut psx_retail_exec::Memory, at: u32| {
+                    [0u32, 2, 4].map(|o| m.rd16(at + o) as i16)
+                };
+                let caller = t::StagerCaller {
+                    pos: trio(&mut rig.cpu.mem, CALLER + 0x14),
+                    rot: trio(&mut rig.cpu.mem, CALLER + 0x24),
+                    ..Default::default()
+                };
+                let want = if entry == 927 {
+                    t::juggernaut_stager_spawns(arm, caller)
+                } else {
+                    t::evil_seru_magic_stager_spawns(arm, caller)
+                };
+                let c = format!("PROT {entry:04} round {round} arm {arm}");
+                let got = seats.borrow();
+                assert_eq!(got.len(), want.len(), "{c}: seats");
+                for (g, w) in got.iter().zip(&want) {
+                    assert_eq!(
+                        *g,
+                        [CALLER + 0x14, CALLER + 0x24, w.record, u32::from(w.scale)],
+                        "{c}"
+                    );
+                    assert_eq!((w.pos, w.rot), (caller.pos, caller.rot), "{c}");
+                    assert!(w.pokes.is_empty() && w.patches.is_empty() && !w.halve_speed);
+                }
+                assert!(rig.cpu.mem.read(CALLER, 0x100) == before, "{c}: caller");
+                assert!(rig.ctx() == ctx, "{c}: ctx");
+                assert!(rig.actors() == actors, "{c}: actors");
+                seated += got.len();
+            }
+        }
+        assert_eq!(seated, 16 * 9, "PROT {entry:04}");
+    }
+}
+
+#[test]
+fn the_juggernaut_and_esm_caller_jitter_matches_retail() {
+    differential!(prot(927, JUGGERNAUT), prot(966, EVIL_SERU_MAGIC));
+    for (entry, va) in [(927usize, JUGGERNAUT), (966, EVIL_SERU_MAGIC)] {
+        jitter_matches(entry, va);
+    }
+}
+
+fn jitter_matches(entry: usize, stager: u32) {
+    let Some((mut rig, module)) = Rig::new(entry, 0x4A49_5454) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
@@ -408,7 +485,7 @@ fn the_juggernaut_caller_jitter_matches_retail() {
         let mut want = rig.cpu.mem.read(CALLER, 0x100);
         assert_eq!(
             rig.cpu.call(
-                JUGGERNAUT,
+                stager,
                 &[
                     CALLER,
                     u32::from(t::JUGGERNAUT_STAGER_JITTER_ARM),
@@ -426,7 +503,7 @@ fn the_juggernaut_caller_jitter_matches_retail() {
         });
         want[0x84..0x86].copy_from_slice(&v84.to_le_bytes());
         want[0x28..0x2A].copy_from_slice(&z.to_le_bytes());
-        let c = format!("round {round} arg {arg}");
+        let c = format!("PROT {entry:04} round {round} arg {arg}");
         let got = rig.cpu.mem.read(CALLER, 0x100);
         assert!(got == want, "{c}: {:?}", diffs(&got, &want));
         assert_eq!(stream.get(), n, "{c}: draws ({draws})");

@@ -498,6 +498,11 @@ impl World {
                     .muscle_dome
                     .as_mut()
                     .map(|s| s.select_input(pad));
+                // The flow's blip, on the ring both hosts drain - the
+                // battle's ring ids (`legaia_engine_battle_loop::ui_cues`).
+                if let Some(cue) = ev.and_then(dome_menu_cue) {
+                    self.push_battle_ui_cue(cue);
+                }
                 if ev == Some(legaia_engine_battle_menus::muscle_dome_session::DomeMenuEvent::Run) {
                     // Run on the round prompt: the leg is reported as ran,
                     // which settles the contest as a give-up - the shared
@@ -695,5 +700,65 @@ impl World {
         // ticks before the scene host drains the request.
         self.minigames.pending_warp =
             Some(legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.sub_id());
+    }
+}
+
+/// The ring cue a dome command-flow frame keys: the dome runs the battle's
+/// `FUN_801D0748` and the list kernel, so each event is one of the battle's
+/// command-surface blips.
+fn dome_menu_cue(
+    ev: legaia_engine_battle_menus::muscle_dome_session::DomeMenuEvent,
+) -> Option<legaia_engine_battle_loop::ui_cues::BattleUiCue> {
+    use legaia_engine_battle_loop::ui_cues::BattleUiCue as C;
+    use legaia_engine_battle_menus::muscle_dome_session::DomeMenuEvent as E;
+    match ev {
+        E::Idle => None,
+        E::Confirm | E::Fight | E::Run => Some(C::Confirm),
+        E::Cursor | E::ListStep => Some(C::Cursor),
+        E::Refused | E::Back => Some(C::Back),
+        E::Buzz => Some(C::Buzz),
+        E::ListCancel => Some(C::ListCancel),
+    }
+}
+
+#[cfg(test)]
+mod menu_cue_tests {
+    use crate::world::World;
+    use legaia_engine_battle_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession};
+    use legaia_engine_system::input::PadButton;
+    use legaia_engine_system::sound_state::SfxRingOp;
+
+    /// The dome's command flow keys the battle's blips on the ring both
+    /// hosts drain: `Begin` on the round prompt commits (`0x21` -> `0x20`),
+    /// the ring's cancel steps back (`0x23` -> `0x22`).
+    #[test]
+    fn a_dome_menu_press_rings_the_battle_blip() {
+        let hand = || {
+            [0u8, 1, 2, 3].map(|i| MuscleCard {
+                command_id: 0x0C + i,
+                cost: 1,
+            })
+        };
+        let mut w = World::new();
+        w.minigames.muscle_dome = Some(MuscleDomeSession::new(
+            hand(),
+            hand(),
+            [100, 100],
+            [500, 500],
+            1,
+        ));
+        let press = |w: &mut World, b: PadButton| {
+            w.minigames.muscle_leg_fresh = true;
+            w.input.set_pad(0);
+            w.input.set_pad(b.mask());
+            w.audio.sfx_ring_ops.clear();
+            w.tick_muscle_dome();
+            std::mem::take(&mut w.audio.sfx_ring_ops)
+        };
+        assert_eq!(press(&mut w, PadButton::Cross), vec![SfxRingOp::Push(0x20)]);
+        assert_eq!(
+            press(&mut w, PadButton::Circle),
+            vec![SfxRingOp::Push(0x22)]
+        );
     }
 }

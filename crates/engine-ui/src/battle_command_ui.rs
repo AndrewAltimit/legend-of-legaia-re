@@ -172,9 +172,27 @@ impl ChipCluster {
         (x + PLATE_CAP_W, y + CHIP_LABEL_DY)
     }
 
-    /// The D-pad glyph's drawn rect, centred on the cluster.
-    pub const fn dpad_rect(&self) -> (i32, i32, u32, u32) {
-        (self.centre.0 - 8, self.centre.1 - 8, DPAD_DRAW, DPAD_DRAW)
+    /// The anchor retail's command flow passes the D-pad glyph leaf for this
+    /// cluster: eight left of the centre, four above it. The round prompt's
+    /// `(160, 92)` gives `(0x98, 0x58)`, the ring's `(228, 70)` `(0xDC, 0x42)`.
+    pub const fn dpad_anchor(&self) -> (i16, i16) {
+        ((self.centre.0 - 8) as i16, (self.centre.1 - 4) as i16)
+    }
+
+    /// The D-pad glyph's drawn rect: the span of the quad
+    /// `legaia_engine_battle_vm::battle_party_panel::dpad_glyph` builds at
+    /// [`Self::dpad_anchor`].
+    pub fn dpad_rect(&self) -> (i32, i32, u32, u32) {
+        let (ax, ay) = self.dpad_anchor();
+        let q = legaia_engine_battle_vm::battle_party_panel::dpad_glyph(ax, ay);
+        let (x0, y0) = q.xy[0];
+        let (x1, y1) = q.xy[3];
+        (
+            i32::from(x0),
+            i32::from(y0),
+            (x1 - x0) as u32,
+            (y1 - y0) as u32,
+        )
     }
 }
 
@@ -524,6 +542,10 @@ pub fn battle_command_chip_sprites(
                 dw * scale,
                 dh * scale,
             ),
+            // The leaf's quad runs its UVs `0..16` over fifteen pixels, so
+            // the whole sixteen-texel cell is squeezed into the seat. The
+            // mednafen command-menu frames agree with that squeeze to three
+            // pixels of the glyph; a 15x15 one-to-one crop costs eighty.
             src: atlas.dpad,
             color: CHIP_COLOR,
         });
@@ -963,6 +985,26 @@ mod tests {
         };
         let bare = battle_command_menu_sprites(&no_rot, None, &frame, rotted, (0, 0), 1);
         assert_eq!(bare.len(), plates.len(), "no Rot cell, no stamp");
+    }
+
+    /// Each cluster hands the D-pad leaf the anchor retail's command flow
+    /// passes it, and the drawn rect is that leaf's quad.
+    #[test]
+    fn the_dpad_glyph_is_the_leafs_quad_at_retails_anchor() {
+        use legaia_engine_battle_vm::battle_party_panel::{
+            DPAD_ANCHOR_PROMPT, DPAD_ANCHOR_RING, dpad_glyph,
+        };
+        for (c, anchor) in [
+            (CLUSTER_TOP_LEVEL, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMIT_CONFIRM, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMAND, DPAD_ANCHOR_RING),
+        ] {
+            assert_eq!(c.dpad_anchor(), anchor);
+            let q = dpad_glyph(anchor.0, anchor.1);
+            let (x, y, w, h) = c.dpad_rect();
+            assert_eq!((x as i16, y as i16), q.xy[0]);
+            assert_eq!((x as i16 + w as i16, y as i16 + h as i16), q.xy[3]);
+        }
     }
 
     #[test]

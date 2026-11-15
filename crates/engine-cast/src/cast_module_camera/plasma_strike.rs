@@ -268,7 +268,14 @@ pub fn plasma_strike_camera(
         0x10 => {
             arm.hold = st.countdown.drain_above(0);
             if !arm.hold {
+                // The closing trio with the bump (`sb zero,0x21b` / `sh
+                // zero,0x176` / `sb zero,0x1da` and `+0x1DC += 1` at
+                // `0x801F8568..0x801F857C`): the close clip `0x0F` is cut to
+                // idle on the pass, so the Done band's rate restore finds the
+                // caster off its solo clip and puts every seat back on `8`.
                 arm.caster_write.loop_release = true;
+                arm.caster_write.stage = Some(0);
+                arm.caster_write.restage = true;
                 arm.caster_write.colour = Some(0x2008_0200);
                 arm.caster_write.render_flag = Some(0);
                 arm.victim_write.colour = Some(0x2008_0200);
@@ -295,7 +302,7 @@ pub const NEO_STAR_SLASH_BODY: u32 = 0x801F_69D8;
 /// | 1 (`0x801F6B48`) | TR z `+s/2` | word | (clip `0x0A`, rate `4`: the chain); `= 0x60 s` |
 /// | 2 (`0x801F6BCC`) | caster rate `4`; TR z `+s/2` | word | cut pitch `0xC0`, yaw `0x800 - facing`, TR `(0, 0, 3 depth)`; seven records on the caster; `+ 0xC0 s` |
 /// | 3 (`0x801F6D5C`) | caster rate `4`; TR z `-s/2` | word | the caster's loop released, rate `8`; cut pitch `0x60`, yaw `0x800 - facing`, TR `(0, 0x300, 3 depth / 4)`; the party seats hidden (`+0x04 = 0`, `+0x21C = 0xFF`); `+ 0x1C s` |
-/// | 4 (`0x801F6EB4`) | caster rate `4`; TR z `+8s` | word | pool flush; the white and red fades; the party shown; two records on the caster; `+ (s << 7)` (its caster rate `0` is left out, as the chain leaves it) |
+/// | 4 (`0x801F6EB4`) | caster rate `4`; TR z `+8s` | word | pool flush; the white and red fades; the party shown; two records on the caster; the caster's rate `0`; `+ (s << 7)` |
 /// | 5 (`0x801F7048`) | TR z `+8s` | word | two records on the caster, three on each point of a ten-point ring about it and three on each live party seat; (the `0x2C6` party sweep: the chain); `+ 0xA0 s` |
 /// | 6 (`0x801F73A8`) | TR z `+4s` | word | (the party row's settle: the chain) |
 ///
@@ -361,10 +368,12 @@ pub fn neo_star_slash_camera(
                     }
                     4 => {
                         st.countdown.add(1 << 7);
-                        // Arm 4's `sb zero,0x21d(s4)` (`0x801F6F8C`) is left
-                        // out under the module's rate rule: nothing in the
-                        // body restores it, and a frozen caster would hold
-                        // the band's close on a clip that never ends.
+                        // Arm 4's pass freezes the caster (`sb zero,0x21d(s4)`
+                        // at `0x801F6F8C`, past the gate and the two fades):
+                        // Gaza holds the slash's pose through the burst, the
+                        // settle and the band's exit, and the Done band's
+                        // restore `FUN_801E93C8` runs the clip on from there.
+                        arm.caster_write.rate = Some(0);
                         arm.party_write = CaptureSeatWrite {
                             colour: Some(0x2008_0200),
                             render_flag: Some(0),

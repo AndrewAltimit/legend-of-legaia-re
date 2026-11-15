@@ -68,6 +68,15 @@ pub struct World {
     /// spawns into and the render pass draws from - see
     /// [`legaia_engine_field::fog_particles`].
     pub fog: legaia_engine_field::fog_particles::FogPool,
+    /// The field scene's static frame-cost inputs (`field_frame_cost`),
+    /// installed at scene entry; `None` outside a field scene.
+    pub field_cost_table: Option<super::field_frame_cost::FieldCostTable>,
+    /// What a harness anchored the field frame-cost model by
+    /// (`World::anchor_field_frame_cost`); `0` in play.
+    pub field_cost_offset: i32,
+    /// The field frame cost in force is the model's (`World::price_field_frame`),
+    /// so a mode it does not price drops it.
+    pub field_cost_priced: bool,
     /// The volumetric ground-fog **enhancement** (not retail): a drifting
     /// mist bank the moving actors part, stepped once per tick while
     /// [`WorldToggles::volumetric_fog`] is raised - see
@@ -422,6 +431,9 @@ impl World {
             rumble: WorldRumble::default(),
             flags: StoryFlagState::new(),
             fog: legaia_engine_field::fog_particles::FogPool::new(),
+            field_cost_table: None,
+            field_cost_offset: 0,
+            field_cost_priced: false,
             fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,

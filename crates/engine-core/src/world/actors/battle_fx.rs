@@ -536,7 +536,10 @@ impl World {
         };
         let mut seated = player.clone();
         let pose = seated.seat_cursor(cursor);
+        let morphs =
+            super::battle_anim::clip_morph_weights(&seated, actor.battle_clip_morphs.as_deref());
         let frame = crate::world::BattleGhostFrame {
+            morphs,
             pose,
             pos: [pos[0], template.pos[1], pos[1]],
             ghost_eligible: true,
@@ -618,9 +621,21 @@ impl World {
         // step as its `dt` (`jal 0x80050120` at `0x8004712C`): on retail's
         // cadence the ramps move on the pass tick by the step and hold
         // between (`World::battle_anim_pass_vsyncs`).
-        let dt = self.battle.anim_pass_vsyncs;
+        let mut dt = self.battle.anim_pass_vsyncs;
         if dt == 0 {
             return;
+        }
+        // The entry sweep's opening passes run on their own step, the stage
+        // loader's among them (`BattleCamera::entry_sweep_opening_step`):
+        // `s5_tetsu_battle`'s 43 units of ramp at counter `0xAF` are one on
+        // the loader's pass at `0x84` and the 42 from `0x85`.
+        if let Some(step) = self
+            .battle
+            .camera
+            .as_ref()
+            .and_then(|c| c.entry_sweep_opening_step())
+        {
+            dt = step;
         }
         // The stage loader `FUN_800513F0` seeds the floor (`0x80051C84`) on
         // the frame driver's first pass at entry counter `0x84` or more
@@ -689,7 +704,7 @@ impl World {
     fn run_battle_stage_load(&mut self) {
         let kind = if self.battle.entry_fade_white { 1 } else { 2 };
         self.battle.entry_fade_white = false;
-        let mut fade = legaia_engine_system::fade::FadeState::load(
+        let fade = legaia_engine_system::fade::FadeState::load(
             &legaia_engine_system::fade::FadeTemplate {
                 kind,
                 duration: BATTLE_ENTRY_FADE_FRAMES,
@@ -698,11 +713,10 @@ impl World {
                 mode: [0, 1, BATTLE_ENTRY_FADE_ID],
             },
         );
-        // The new actor ticks on its spawn pass: the effect list runs after
-        // the frame driver. Both PCSX-Redux openings hold the block 18 units
-        // in at counter `0x97`, which only a first step on the loader's own
-        // pass reaches (step `3` from `0x85`, step `2` from `0x85`).
-        fade.step_vsyncs(self.battle.anim_pass_vsyncs);
+        // The new actor first ticks on the pass after its spawn. Both
+        // PCSX-Redux openings hold the block 18 units in at counter `0x97`,
+        // which is the passes from `0x85` alone (six on a step of `3`, nine
+        // on a step of `2`): the loader's own pass leaves the counter there.
         self.battle.entry_fade = Some(fade);
         let first = self
             .actors

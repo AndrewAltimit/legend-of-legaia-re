@@ -1520,6 +1520,14 @@ map as its street:
   raises `0x46A`, on which the cycler parks; a clock that has not flipped for
   4000 frames is not waited on.
 
+  A clock pad is a way across, not a beat. The continuous hand's beats pass
+  leaves out a band whose every tile is such a pad and whose record raises
+  no flag the world lacks: stepped on as beats, `rugi`'s twenty-two upper
+  pads P2[40..=61] each cost a few thousand frames of waiting on `0x462` and
+  riding, on every round of the tower's beats, and a run whose first walk to
+  Rogue's band P2[38] failed spent the stretch's frame budget before it
+  reached `deroa`.
+
   A phase's start is known only while the flag was watched. The follower
   does not look while a script runs, and every pad ride is three hundred
   frames of script, longer than `0x462` stays up: after such a gap the flag
@@ -1540,6 +1548,9 @@ map as its street:
 - **A ride a touch sets going.** A touch's prop record takes its first slice in the tick that posted it, so a record that spawns a ride and ends (`chitei2`'s lift P0[5], `44 56` then `21`) is over before the follower looks, and the ride is a helper context installed at the tick's end that has not stepped yet. The follower lets go of the pad for it as for any script it sets off. Pressing on through the ride, the walk landed on the far lift and touched it straight back, ten rides a stretch, until the frame budget ran out.
 - **Teleports and notches.** The follower presses a teleport waypoint until the jump lands, and backs out of a diagonal-wall notch where all four lattice steps read blocked. The lattice cannot say which neighbouring cell the free movement reaches, so each second the walk stays wedged it heads for the next open cell in turn: on `retona`'s stair landing at (16, 99) the nearest one lies west, and the slide toward it carries the player straight back.
 - **The action button.** Held against something for a second, the follower tries the action button. In a field the tap waits for a frame the player did not move: the stall counter also counts a run step that stays inside one cell, and a tap there would stand the player still one frame in every few. A tap that opens the same talk twice on one walk without changing a flag ends the tapping for that walk: `jiji`'s inn counter (P0[8..10], the witch's "Want to stay?") opened on every tap of the walk past it, two thousand frames each, and spent a stretch's budget on the walk to P1[19]'s pickup.
+- **A notice nobody scripted.** The walk tick that drains the Incense window's last count locks the player's movement and shows a one-line panel, and the panel waits for a confirm or cancel edge (retail `FUN_801D0B90`'s zero edge and `FUN_801F1E48`; [`field-menu.md`](../subsystems/field-menu.md)). No script runs under it, so none of the pad holders the hand pages is up. The walk and the lean answer it as a player does - pad released, Cross, until it is gone (`answer_notice`).
+  A walk that only held its direction stood there for good: the idle tap above used to close the panel by accident, a second into the stall, and that tap is withheld beside a person. `kor3`'s resident P1[9] stands at (18, 38) in the stair doorway, and a notice that came up within reach of the body stopped every walk through the doorway until the stretch gave up.
+- **A held player is not leaning on anybody.** With the engaged bit (`+0x10 & 0x80000`) up and no script running, no press moves the player and the interact probe is shut, so a body in reach of the probes is not what stops the walk and the idle tap is not withheld for it. The stall line names the hold (`the player is held ... with no script running`).
 - **Minigame cabinets.** The tap is never pressed at a minigame cabinet, a talk record that runs the minigame door-warp (`3E` with `op0 >= 100`) itself or through a record it spawns. `koin1`'s slot machines (P1[51..56]) are props the interact probe reaches but no NPC slot carries; a tap beside one on the walk to the Prize Counter (P1[5]) asked to play, the scripted-sequence hand answered, and the session sat at the slot machine. A session that lands in a minigame anyway leaves it with Start, the engine's shared minigame exit, which also closes the door-warp's round trip back to the field.
 - **A script that runs on the way and changes nothing** - no flag, no cell, no scene (an examined prop with nothing to say) - leaves the route as it was rather than re-planning the walk component.
 - **Walk-on bands.** Walks avoid the live walk-on bands unless one is the only way through. A band whose record's story gates shut it is walkable, and so is an inert band that only sets the camera, the view or an object's draw flags, such as `retona` P2[0] across the summit's passes and `chitei2`'s pillar bands (P2[0] / P2[1] / P2[9] / P2[10], `CC <ch> D6` alone), which once sealed a walk into the pocket east of (108..109, 115..117). A band that turns the party back (`retona` P2[24], until `0x367`) stays avoided.
@@ -1568,7 +1579,12 @@ The pad hand's beats are the seated tier's, played as a player plays them:
 
 - a **talk** walks up to the NPC (re-reading a routed NPC's position),
   leans toward it until the retail interact probe lands on it, presses Cross,
-  pages the conversation and steps away. Talks go nearest first;
+  pages the conversation and steps away. Talks go nearest first. A record
+  that tests a box of the player's tiles before it speaks (`CD F8` at the
+  cursor the talk runs from, its jumps followed) is spoken to from a tile of
+  that box beside the actor, in both tiers: `rayman` P1[44..=46] stand on
+  column 108 and answer only a player on column 107, and from the east side
+  the talk ends on the record's `0x21` with nothing said, as in retail;
 - a **walk-on** walks to an inert tile beside the band, then onto it. A band
   is often several tiles wide and boxed in on some of them (`retockin`
   P2[42], Lord Saryu's audience, spans (104..107, 50) and (107, 50) is walled
@@ -1782,6 +1798,12 @@ reserve keeps her from casting it a second time. The gap is the formula's
 Gala held Slippery at magic level 7 and Vahn at 3, which scales the attacker
 roll by 1.75 and 1.25 before the defender roll is subtracted, so a common
 roll of about 4600 against a defence of about 4900 gives 3171 and 862.
+A cast that spends its MP and takes nothing off the foes is a measurement
+too: the round's command window records a zero for that caster and spell
+(`unlanded_cast`), so the Magic row stops scoring it at its estimate. The
+zero is kept out of the ratio that scales the caster's unmeasured spells,
+and is not recorded in a round where a foe lost HP that no seat could be
+credited with.
 Treating a single-target hit within a quarter of a member's HP as one no heal
 outlasts did not change the outcome on two streams.
 
@@ -2055,6 +2077,7 @@ clips and matches the same arts a windowed one does. Beyond that:
 | `LEGAIA_FGL_WALK_DEBUG` | A stalled walk's wall map, the scene's teleports, tile triggers and door colliders. With `LEGAIA_FGL_STALL_PRESSES=1` as well, it holds each of the eight presses for 20 ticks from the stall and prints where each leaves the player (the walk is disturbed from then on: a diagnosis, not a run). |
 | `LEGAIA_FGL_PLAN_DEBUG` | Each object-door edge the planner adds. |
 | `LEGAIA_FGL_COMP_DEBUG` | The tile map of every walk component a plan failed inside (`o` reached, `A` avoided door tile, `b` actor box, `G` the goal), with the overworld's installed entities, the live NPCs, the solid props with their bind records, and the self-opening doors. Beside it, a sub-cell flood of the wall bits alone. |
+| `LEGAIA_FGL_FRAME_DEBUG=<scene>` | Every pad-walk frame in that scene: where the player stood and went, the pad, the stall count, the route head, the pad holder and the player's `+0x10` word. How a walk that presses and does not move is read. |
 | `LEGAIA_FGL_JUMP_DEBUG` | Every pad-walk frame that moves the player more than 64 units (a door or lift ride), with the live arrival bracket. |
 | `LEGAIA_FGL_CLOCK_DEBUG` | Each flip of a clock flag the follower watches (frame, whether it was timed, the shortest run of each phase), and each frame a walk steps toward a clock pad in the phase it wants; and each overworld clock a talk on the route wants, with its live value. |
 | `LEGAIA_FGL_POS_TRACE` | Every tick of a scripted run that moves the player or changes the pad holder's park site. |
@@ -2070,6 +2093,7 @@ Two reading notes. When the `COMP_DEBUG` wall-bit flood stops short of the goal 
 The ladder arms `npcs.solid` in every session it opens, as both play hosts do (`LEGAIA_FGL_SOLID_NPCS=0` disarms it). A body then stops the walk exactly as it stops a player, and the pad hand has to go round it or be let past by the story:
 
 - **A person is walked round, not spoken to.** A press held against an NPC re-plans from where the body now stands instead of tapping the action button. In the mist `town0b`'s villagers answer a tap with a fight, and the old stall tap fought one per lean. A door still gets its tap, and a committed teleport-maze route is dropped along with the path.
+- **A bystander explains a stall only for a while.** The lean test asks whether a body stops the player on any side, since a held diagonal slides. A body beside the walk but not ahead of its step stops counting after two seconds without progress: what the walk is pressed against is then a corner or a door that wants its tap, and the once-a-second re-plan and the tap come back.
 - **The planner reads the bodies the walk collides with** (the placements `World::field_moving_actor_centres` boxes), not the talk map: a placement tracked only by its script channel stops the player too, and one hidden does not.
 - **A body the camera window hides now is still planned round; one outside the region box is not.** The cull (`+0x10` bit 1, `FUN_801D79E8`) has two halves. The tile window follows the camera, so a body off it is solid again by the time the walker reaches it. The region box is latched at a landing and no walk re-latches it ([the latch](../subsystems/field-locomotion.md#the-region-type-mask-is-a-latch)), so a body outside it stays passable until the next warp. Some window-culled placements are plugs: `jouinc`'s item P1[17] and P1[16] ([below](#what-stopped-the-arm)).
 - **A body on the goal tile is the destination.** A talk's first walk aims at the NPC's own tile, so that box is left out of the search.

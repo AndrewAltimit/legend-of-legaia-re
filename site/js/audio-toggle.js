@@ -66,7 +66,7 @@
       'border:1px solid var(--border, #4a4668);' +
       'background:transparent;color:var(--text-muted, #9a96b8);' +
       /* A finger's target on a touch screen. */
-      (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'min-height:40px;' : '');
+      (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'min-height:44px;' : '');
     btn.addEventListener('click', function () { set(!enabled); });
     paint(btn);
     buttons.push(btn);

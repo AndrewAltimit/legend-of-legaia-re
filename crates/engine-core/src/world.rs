@@ -79,6 +79,7 @@ mod camera_hooks;
 mod config;
 mod cutscene_state;
 mod disc_tables;
+pub mod field_frame_cost;
 mod field_locomotion;
 mod field_npc_state;
 mod field_prop_state;

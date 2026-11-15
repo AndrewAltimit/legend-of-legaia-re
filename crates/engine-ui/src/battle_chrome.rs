@@ -570,14 +570,21 @@ impl ChipCluster {
         (x + PLATE_CAP_W as i16, y + PLAQUE_CONTENT_DY)
     }
 
-    /// The D-pad glyph's drawn rect, centred on the cluster.
-    pub const fn dpad_rect(&self) -> (i16, i16, u16, u16) {
-        (
-            self.centre.0 - 8,
-            self.centre.1 - 8,
-            DPAD_DRAW_W,
-            DPAD_DRAW_W,
-        )
+    /// The anchor retail's command flow passes the D-pad glyph leaf for this
+    /// cluster (`FUN_801DB8F4`): eight left of the centre, four above it.
+    pub const fn dpad_anchor(&self) -> (i16, i16) {
+        (self.centre.0 - 8, self.centre.1 - 4)
+    }
+
+    /// The D-pad glyph's drawn rect: the span of the quad
+    /// `legaia_engine_battle_vm::battle_party_panel::dpad_glyph` builds at
+    /// [`Self::dpad_anchor`].
+    pub fn dpad_rect(&self) -> (i16, i16, u16, u16) {
+        let (ax, ay) = self.dpad_anchor();
+        let q = legaia_engine_battle_vm::battle_party_panel::dpad_glyph(ax, ay);
+        let (x0, y0) = q.xy[0];
+        let (x1, y1) = q.xy[3];
+        (x0, y0, (x1 - x0) as u16, (y1 - y0) as u16)
     }
 }
 
@@ -994,6 +1001,26 @@ mod tests {
                 (252, 216, 8),
             ]
         );
+    }
+
+    /// Each cluster hands the D-pad leaf the anchor retail's command flow
+    /// passes it, and the drawn rect is that leaf's quad.
+    #[test]
+    fn the_dpad_glyph_is_the_leafs_quad_at_retails_anchor() {
+        use legaia_engine_battle_vm::battle_party_panel::{
+            DPAD_ANCHOR_PROMPT, DPAD_ANCHOR_RING, dpad_glyph,
+        };
+        for (c, anchor) in [
+            (CLUSTER_TOP_LEVEL, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMIT_CONFIRM, DPAD_ANCHOR_PROMPT),
+            (CLUSTER_COMMAND, DPAD_ANCHOR_RING),
+        ] {
+            assert_eq!(c.dpad_anchor(), anchor);
+            let q = dpad_glyph(anchor.0, anchor.1);
+            let (x, y, w, h) = c.dpad_rect();
+            assert_eq!((x, y), q.xy[0]);
+            assert_eq!((x + w as i16, y + h as i16), q.xy[3]);
+        }
     }
 
     #[test]

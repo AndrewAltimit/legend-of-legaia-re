@@ -41,7 +41,7 @@
   .npc-stage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   /* The tree scrolls inside its own column so the cast grid stays one
    * scroll away however long the conversation is. */
-  .npc-convo { max-height: calc(100vh - var(--topbar-h) - 2rem); overflow-y: auto; }
+  .npc-convo { max-height: calc(100vh - var(--topbar-h) - 2rem); max-height: calc(100dvh - var(--topbar-h) - 2rem); overflow-y: auto; }
 }
 /* Pin the model beside a long tree, but only where the whole card fits. */
 @media (min-height: 760px) {

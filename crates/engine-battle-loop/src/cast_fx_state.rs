@@ -111,6 +111,10 @@ pub struct CastFxState {
     /// (`World::tick_cast_drive`); the module's pass after it in the same
     /// tick does not run it again.
     pub drive_vsync_done: bool,
+    /// Vsyncs the seek arm's `CdlSetloc` has held the frame since the last
+    /// pass closed (`World::cast_drive_blocks_frame`): that pass's frame ran
+    /// over them, and its cost carries them.
+    pub drive_held_vsyncs: u8,
     /// The head cue's call sits behind its arm's own gate as well as the
     /// drive poll (`battle_cast_cue::head_cue_waits_arm_gate`): it lands on
     /// the pass the arm's hold lets through.
@@ -282,6 +286,23 @@ pub struct CastFxState {
     /// ([`legaia_engine_cast::cast_module_ticks::BARRA_STAGER_COUNTER`]),
     /// `0` in the image the band pages in for each cast.
     pub module_barra_counter: u16,
+    /// PROT 0906's record `0x801F7B80` calls into its stager with arms
+    /// `0..=2` (the flash pair, the creature shown, the phase release), kept
+    /// here from the part tick for the module's next tick, and the module
+    /// ticks phase 5 has waited on the part's release.
+    /// How many of the summon scene's parts the frame's draw has dealt its
+    /// `rand()` words to (`World::deal_battle_draw_rands`): a part seated
+    /// behind the draw in the same battle frame is dealt as it is seated.
+    pub summon_parts_dealt: usize,
+    /// How many parts the summon scene held when its last part tick ended:
+    /// the parts behind it have not run their program yet.
+    pub summon_parts_ticked: usize,
+    pub module_gizam_calls: Vec<u8>,
+    /// The seats PROT 0966's stager sweeps hit on their caller's frame, kept
+    /// for the module's next tick to report (the popups and cues come up a
+    /// battle frame behind the HP write, as retail's do).
+    pub module_esm_hits: Vec<legaia_engine_cast::cast_module_ticks::AoeHit>,
+    pub module_gizam_waited: i32,
     /// PROT 0917's backdrop scroll words `0x801F9360` (`u`) and
     /// `0x801F9362` (`v`), which its tick epilogue turns into the scanline
     /// wash's sample origin `ctx[+0x285]` / `+0x286` on every busy pass
@@ -610,6 +631,7 @@ impl CastFxState {
             drive_ticked_at: 0,
             selector_seek: None,
             drive_vsync_done: false,
+            drive_held_vsyncs: 0,
             module_voice_gated: false,
             module_ctx_278: 0,
             module_skips_fold: false,
@@ -653,6 +675,11 @@ impl CastFxState {
             module_stager_calls: Vec::new(),
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
+            summon_parts_dealt: 0,
+            summon_parts_ticked: 0,
+            module_gizam_calls: Vec::new(),
+            module_esm_hits: Vec::new(),
+            module_gizam_waited: 0,
             module_barra_scroll: (0, 0),
             dark_typhoon_swirl: (0, 0),
             dark_typhoon_marks: [(0, 0); 4],

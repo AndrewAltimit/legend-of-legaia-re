@@ -9,8 +9,8 @@
 
 use crate::common::{Rng, diff_offsets, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_party_panel::{
-    STRIP_PRIM_BYTES, StripQuad, cross_out_mark, curse_plate_on_chip, rot_stamp_on_arts_chip,
-    rot_stamp_on_chip, strip_draws,
+    DPAD_ANCHOR_PROMPT, DPAD_ANCHOR_RING, STRIP_PRIM_BYTES, StripQuad, cross_out_mark,
+    curse_plate_on_chip, dpad_glyph, rot_stamp_on_arts_chip, rot_stamp_on_chip, strip_draws,
 };
 use psx_retail_exec::{A1, Stop};
 use std::cell::RefCell;
@@ -20,6 +20,8 @@ const CROSS: u32 = 0x801D_BC30;
 const ROT: u32 = 0x801D_BD04;
 const ROT_ARTS: u32 = 0x801D_BDDC;
 const CURSE: u32 = 0x801D_BEC4;
+const DPAD: u32 = 0x801D_B8F4;
+const MENU_SM: u32 = 0x801D_0748;
 const ADD_PRIM: u32 = 0x8003_D2C4;
 const OVERLAY_BASE: u32 = 0x801C_E818;
 const CTX_PTR: u32 = 0x8007_BD24;
@@ -112,4 +114,98 @@ fn the_chip_marks_are_the_quads_retail_draws() {
         drawn += 1;
     }
     assert!(drawn > 20_000 && gated > 5000, "{drawn} {gated}");
+}
+
+/// The command cluster's D-pad glyph `FUN_801DB8F4` against `dpad_glyph`:
+/// the whole `POLY_FT4` at anchors across the `i16` plane and at the two the
+/// command flow passes, with the `ctx[+0x6CE]` gate up and down. The six call
+/// sites in the menu state machine are read for their literal anchors too.
+#[test]
+fn the_dpad_glyph_is_the_quad_retail_draws() {
+    differential!(prot(898, DPAD));
+    let (Some(mut cpu), Some(disc)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &disc.read_entry(898).expect("PROT 0898"));
+    // Every `jal 0x801DB8F4` in the menu state machine loads `a1` from a
+    // literal in its delay slot; the sites a branch does not land on load
+    // `a0` right ahead of the call.
+    let jal = 0x0C00_0000 | (DPAD >> 2 & 0x03FF_FFFF);
+    let li = |w: u32, reg: u32| {
+        let op = w >> 16;
+        (op == (0x2400 | reg) || op == (0x3400 | reg)).then_some(w as u16 as i16)
+    };
+    let (mut sites, mut pairs) = (0, Vec::new());
+    for at in (MENU_SM..MENU_SM + 0x2B74).step_by(4) {
+        if cpu.mem.rd32(at) != jal {
+            continue;
+        }
+        sites += 1;
+        let y = li(cpu.mem.rd32(at + 4), 5).expect("a1 literal");
+        assert!(
+            y == DPAD_ANCHOR_PROMPT.1 || y == DPAD_ANCHOR_RING.1,
+            "{at:#x} y {y:#x}"
+        );
+        if let Some(x) = li(cpu.mem.rd32(at - 4), 4) {
+            pairs.push((x, y));
+        }
+    }
+    assert_eq!(sites, 6);
+    assert!(
+        pairs
+            .iter()
+            .all(|a| *a == DPAD_ANCHOR_PROMPT || *a == DPAD_ANCHOR_RING),
+        "{pairs:?}"
+    );
+    assert!(pairs.contains(&DPAD_ANCHOR_PROMPT) && pairs.contains(&DPAD_ANCHOR_RING));
+
+    cpu.mem.wr32(CTX_PTR, CTX);
+    cpu.mem.wr32(OT_PTR, 0x8011_F000);
+    let added = Rc::new(RefCell::new(Vec::new()));
+    {
+        let added = added.clone();
+        cpu.hook(ADD_PRIM, move |r, _| added.borrow_mut().push(r.r[A1]));
+    }
+    let mut rng = Rng(0x4450_4144);
+    let (mut drawn, mut gated) = (0, 0);
+    for n in 0..20_000 {
+        let gate = if rng.below(5) == 0 {
+            rng.next() as i16
+        } else {
+            0
+        };
+        cpu.mem.wr16(CTX + 0x6CE, gate as u16);
+        cpu.mem.wr32(PRIM_CURSOR, PRIMS);
+        cpu.mem.load(PRIMS, &[0; 0x40]);
+        added.borrow_mut().clear();
+        let (x, y) = match rng.below(4) {
+            0 => (rng.next() as i16, rng.next() as i16),
+            1 => DPAD_ANCHOR_PROMPT,
+            2 => DPAD_ANCHOR_RING,
+            _ => (rng.below(0x140) as i16, rng.below(0xF0) as i16),
+        };
+        let reg = |v: i16, rng: &mut Rng| (v as u16 as u32) | (rng.next() & 0xFFFF_0000);
+        let args = [reg(x, &mut rng), reg(y, &mut rng)];
+        assert_eq!(cpu.call(DPAD, &args), Stop::Returned, "n {n}");
+        let added = added.borrow();
+        if !strip_draws(gate) {
+            assert!(added.is_empty(), "n {n} gate {gate}");
+            assert_eq!(cpu.mem.rd32(PRIM_CURSOR), PRIMS);
+            gated += 1;
+            continue;
+        }
+        assert_eq!(added.as_slice(), &[PRIMS], "n {n}");
+        assert_eq!(cpu.mem.rd32(PRIM_CURSOR), PRIMS + STRIP_PRIM_BYTES as u32);
+        let retail = cpu.mem.read(PRIMS, STRIP_PRIM_BYTES);
+        let want = bytes(&dpad_glyph(x, y));
+        assert!(
+            retail == want,
+            "n {n} ({x}, {y}): {:?}",
+            diff_offsets(&retail, &want)
+        );
+        drawn += 1;
+    }
+    assert!(drawn > 10_000 && gated > 2500, "{drawn} {gated}");
 }

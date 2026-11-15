@@ -686,6 +686,36 @@ pub fn cell_mask(
     mask
 }
 
+/// How many cells [`cell_mask`] keeps, counted without building the mask:
+/// the emitter links four `POLY_GT4` a kept cell, so this is the grid's share
+/// of a battle frame's ordering table, a quarter of it.
+pub fn visible_cell_count(
+    pose: &legaia_engine_camera::projection::BattleCamPose,
+    world_scale: f32,
+    width: i16,
+    height: i16,
+) -> usize {
+    let vp = legaia_engine_camera::projection::battle_vp(pose, world_scale, 320.0 / 240.0);
+    let mut kept = 0;
+    for row in 0..i32::from(height) {
+        for col in 0..i32::from(width) {
+            let (px, pz) = probe_point(width, height, col, row);
+            let ir3 = grid_clip(&vp, world_scale, px, pz)[3].clamp(-32768.0, 32767.0);
+            if classify_cell(ir3.floor() as i32) != CellVis::Visible {
+                continue;
+            }
+            let l = cell_lattice(width, height, col, row);
+            let corners = [l[0][0], l[0][2], l[2][0], l[2][2]]
+                .map(|(x, z)| grid_sxy(grid_clip(&vp, world_scale, x, z)));
+            kept += usize::from(quad_on_screen(corners));
+        }
+    }
+    kept
+}
+
+/// Quads the emitter links a kept cell (`POLY_GT4`, four a visible cell).
+pub const QUADS_PER_CELL: usize = 4;
+
 /// Indices one cell of the built grid carries: four quads of two triangles.
 pub const INDICES_PER_CELL: usize = 24;
 

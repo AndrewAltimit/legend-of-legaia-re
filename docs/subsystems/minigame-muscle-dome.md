@@ -901,6 +901,8 @@ Per arm (site addresses are `0x801D....`):
 
 Only two cue sites are `j` targets: `0x801D20D4` (from inside its own arm) and `0x801D2968`, targeted from phase `0x78`'s cancel branch at `0x801D1720` - a shared back tail belonging to both arms.
 
+The flow is the battle's, press for press: the battle's table ([audio](audio.md#every-press-surface-by-surface)) holds here too, the Ra-Seru list (`0x46`) included, which the list kernel pages with its own words (`0x21` a step on every Up / Down, `0x23` a greyed row, `0x37` the cancel). An arrow the entry takes commits whether or not the gauge pays it, and a rotted limb's arrow is refused before the gauge. Port: `MuscleDomeSession::select_input` reports each frame as a `DomeMenuEvent` that names its cue site, and `World::tick_muscle_dome` pushes the battle's ring id for it, so both play hosts drain the dome's blips as they drain a battle's.
+
 **Melee impact.** The shared battle path's: static row `0x09` (category 2 -> extraction PROT **0869**; pinned at the top of the Baka duel damage kernel `FUN_801D3B18`). A swing's move-power row carries cue `0`, so no per-move cue overrides it.
 
 **Bank residency.** A retail state parked at the hub (`minigame_muscle_dome`, mode `0x19`) has class-2 slot `2` closed and slot `6` open over PROT 0876's header - the field bank the warp left behind ([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)) - so a category-`2` cue is silent at the hub. A round is entered through mode word `0x14`, the value `FUN_8001DCF8`'s close-6 / clear-latch arm keys on, so a round takes the ordinary battle residency (PROT 0869 staged into slot 2); no retail capture of a round's residency exists. The port's `SceneMode::MuscleDome` is a leg, so `World::sync_sfx_residency` gives it the battle arm.
@@ -1115,7 +1117,7 @@ The port models the same two layers and shares every rule between the native `pl
 | formation cell `DAT_8007BD0C` = the rung's monster, slots 1..3 cleared | `0x801D15A4..0x801D15BC` | a one-slot `FormationDef` through `World::enter_battle_from_formation` |
 | `DAT_8007BD60 = 0x80` | `0x801D156C` | `header_flags != 0`: the scripted-fight byte battle init derives from it (`(x >> 5) & 4`) |
 | `_DAT_80084540 = 0x4C6` (`other6`) | `0x801D1558` | `battle.map_id`; `SceneHost::battle_stage_entry` names `other6`'s stage stream (variant `0x80 & 0x1F = 0`), extraction **1225** |
-| game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome` |
+| game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome`; retail's `BattleInit` (`FUN_80055B6C`) stands on CD loads - the loader machine `FUN_80052770` and the drive-status test `FUN_8003DE7C` - so the vsyncs a capture spends in mode `0x14` (48 on PCSX-Redux from the welcome state) are drive time, which the port's synchronous loads do not spend |
 
 The leg's fighter is Vahn alone: the hub's prologue stores the present-party list `DAT_8007BD10 = [1, 0, 0]` every frame (`0x801CF884..0x801CF8A0`), so retail offers no fighter pick *(disassembly)*. The port swaps the party list for one record and puts it back at the exit; the record is `World::muscle_fighter_record`, retail's Vahn unless a host picks Noa or Gala (`World::set_muscle_fighter`, the minigames page's "Fight as" through `play_mg_set_muscle_fighter`) - a port option, refused for a record the roster does not fill.
 

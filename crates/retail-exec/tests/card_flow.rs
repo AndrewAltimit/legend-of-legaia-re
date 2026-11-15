@@ -12,8 +12,10 @@
 
 use crate::card_bu::{Bios, Call, HANDLE_A, HANDLE_B, flags, pend, rig, tests_of};
 use crate::common::Rng;
+use legaia_engine_menus::card_bu_io::CardIoState;
 use legaia_engine_menus::card_flow::{
-    CardHealth, CardPollResult, CardWriteEvent, CardWriteIo, CardWriteMachine, CardWriteState,
+    CARD_SCANNED_SLOTS, CardHealth, CardInitWords, CardPollResult, CardWriteEvent, CardWriteIo,
+    CardWriteMachine, CardWriteState, card_init,
 };
 use legaia_engine_menus::save_select::{
     CARD_DIR_FRAMES, CardDirEntry, CardIoEffect, CardIoMachine, CardStatus, SlotContent,
@@ -915,4 +917,137 @@ fn the_write_machine_steps_as_retail_steps() {
         );
     }
     assert!(retried > 200, "{retried}");
+}
+
+const CARD_INIT: u32 = 0x801E_373C;
+const REINIT_TIMER: u32 = 0x801E_F134;
+const REMOVED: u32 = 0x801E_F148;
+const GRACE: u32 = 0x801F_0228;
+const WRITE_FAILED: u32 = 0x801E_F13C;
+const READ_FAILED: u32 = 0x801E_F140;
+const DIR_STRIDE: u32 = 0x28;
+
+/// The card-subsystem init `FUN_801E373C` against `card_init`, over seated
+/// health blocks, both failure latches, a full directory-name cache, raised
+/// scanned flags and every combination of pending array-A events: the health
+/// words, the four words of its own, the name cache on the cold path only,
+/// the `TestEvent` calls its one poll makes and the event that poll consumes.
+#[test]
+fn the_card_init_leaves_what_retail_leaves() {
+    differential!(prot(899, CARD_INIT));
+    let Some((mut cpu, bios)) = rig() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut rng = Rng(0x494E_4954);
+    let (mut cold, mut warm_runs, mut consumed_any) = (0, 0, 0);
+    for n in 0..4000 {
+        let arg = match rng.below(3) {
+            0 => 0,
+            1 => 1,
+            _ => rng.next(),
+        };
+        let keep = arg != 0;
+        let mut h = CardHealth {
+            fault_count: rng.below(0x401) as i32,
+            change_count: rng.below(0x401) as i32,
+            phase: [0, 3][rng.below(2) as usize],
+            rescan_requested: rng.below(2) != 0,
+            unformatted: rng.below(2) != 0,
+            directory_stale: rng.below(2) != 0,
+            directory_cache_valid: rng.below(2) != 0,
+        };
+        seat_health(&mut cpu, &h);
+        let mut words = CardInitWords {
+            reinit_timer: rng.below(0x100) as i32,
+            removed: rng.below(2) as i32,
+            grace: rng.below(0x79) as i32,
+            scanned: [0; CARD_SCANNED_SLOTS].map(|_| rng.below(2) as u8),
+        };
+        cpu.mem.wr32(REINIT_TIMER, words.reinit_timer as u32);
+        cpu.mem.wr32(REMOVED, words.removed as u32);
+        cpu.mem.wr32(GRACE, words.grace as u32);
+        for (i, f) in words.scanned.iter().enumerate() {
+            cpu.mem.wr8(SCANNED + i as u32, *f);
+        }
+        // The byte past the last scanned flag is not the routine's.
+        cpu.mem.wr8(SCANNED + CARD_SCANNED_SLOTS as u32, 0xA5);
+        cpu.mem.wr8(SCANNED - 1, 0x5A);
+        let mut io = CardIoState {
+            write_failed: rng.below(2) != 0,
+            read_failed: rng.below(2) != 0,
+            dir_names: (0..32).map(|i| format!("N{i}")).collect(),
+            ..Default::default()
+        };
+        cpu.mem.wr32(WRITE_FAILED, u32::from(io.write_failed));
+        cpu.mem.wr32(READ_FAILED, u32::from(io.read_failed));
+        for i in 0..32 {
+            cpu.mem.wr8(DIR_TABLE + i * DIR_STRIDE, b'N');
+        }
+        let e = flags(&mut rng);
+        {
+            let mut b = bios.borrow_mut();
+            *b = Bios {
+                pending: pend(HANDLE_A, e),
+                ..Bios::default()
+            };
+        }
+        assert_eq!(cpu.call(CARD_INIT, &[arg]), Stop::Returned, "n {n}");
+        let consumed = card_init(&mut h, &mut io, &mut words, keep, e);
+
+        assert_eq!(health_words(&mut cpu), health_of(&h), "n {n} arg {arg:#x}");
+        assert_eq!(
+            (
+                cpu.mem.rd32(REINIT_TIMER) as i32,
+                cpu.mem.rd32(REMOVED) as i32,
+                cpu.mem.rd32(GRACE) as i32,
+            ),
+            (words.reinit_timer, words.removed, words.grace),
+            "n {n}"
+        );
+        let scanned: Vec<u8> = (0..CARD_SCANNED_SLOTS as u32)
+            .map(|i| cpu.mem.rd8(SCANNED + i))
+            .collect();
+        assert_eq!(scanned, words.scanned, "n {n}");
+        assert_eq!(
+            (
+                cpu.mem.rd8(SCANNED + CARD_SCANNED_SLOTS as u32),
+                cpu.mem.rd8(SCANNED - 1)
+            ),
+            (0xA5, 0x5A),
+            "n {n}: the clear stays inside the fifteen flags"
+        );
+        assert_eq!(
+            (
+                cpu.mem.rd32(WRITE_FAILED) != 0,
+                cpu.mem.rd32(READ_FAILED) != 0
+            ),
+            (io.write_failed, io.read_failed),
+            "n {n}"
+        );
+        let names = (0..32)
+            .filter(|&i| cpu.mem.rd8(DIR_TABLE + i * DIR_STRIDE) != 0)
+            .count();
+        assert_eq!(names, io.dir_names.len(), "n {n} arg {arg:#x}");
+        // The one poll: array A in order, stopping at the first that fired,
+        // which `TestEvent` consumes.
+        let b = bios.borrow();
+        let want_tests = if consumed == 0 { 4 } else { consumed };
+        assert_eq!(b.log, tests_of(HANDLE_A, want_tests), "n {n} {e:?}");
+        let mut left = pend(HANDLE_A, e);
+        if consumed != 0 {
+            left.retain(|&hnd| hnd != HANDLE_A + consumed - 1);
+        }
+        assert_eq!(b.pending, left, "n {n} {e:?}");
+        if keep {
+            warm_runs += 1;
+        } else {
+            cold += 1;
+        }
+        consumed_any += u32::from(consumed != 0);
+    }
+    assert!(
+        cold > 1000 && warm_runs > 1000 && consumed_any > 1500,
+        "{cold} {warm_runs} {consumed_any}"
+    );
 }

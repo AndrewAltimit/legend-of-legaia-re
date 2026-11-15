@@ -522,6 +522,7 @@ fn a_monster_ghost_draws_only_its_streams_channels() {
     let mut player = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&clip).unwrap();
     let pose = player.seat_cursor(0);
     let ghost = |drawn, monster_parts| BattleGhostDraw {
+        morphs: Vec::new(),
         actor_slot: 1,
         pos: [0; 3],
         pose: pose.clone(),

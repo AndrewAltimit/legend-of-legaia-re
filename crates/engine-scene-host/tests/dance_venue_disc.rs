@@ -276,7 +276,9 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
         FieldCameraFrame::Venue(v) => v,
         other => panic!("the dance frames through the venue camera, got {other:?}"),
     };
-    // Staging frame = the tick's first: key 0 at weight 0, the entry pose.
+    // Staging frame = the tick's first, one of the hall's game frames: key 0
+    // at weight 0, the entry pose.
+    host.world.minigames.dance_hall_frame = true;
     sync_dance_venue(
         host.world.mode,
         &mut host.world.minigames,
@@ -284,22 +286,44 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
         &mut camera,
     );
     assert_eq!(frame(&host, &camera), venue_camera(&e));
-    let a = track.key_pose(DanceMode::Qualifier, 0).unwrap();
-    let b = track.key_pose(DanceMode::Qualifier, 1).unwrap();
-    // One beat (`BEAT_PERIOD` = 0x119 frames) later the camera is part-way
-    // along the first segment, on the half-cosine ease; at beat 2 it has
-    // already started the second segment.
+    let counters = |host: &SceneHost| {
+        host.world
+            .minigames
+            .dance
+            .as_ref()
+            .unwrap()
+            .camera_track()
+            .unwrap()
+            .counters()
+    };
+    assert_eq!(counters(&host), (0, DANCE_CAMERA_SEGMENT));
+    // The track steps once a game frame, every third vsync, by the hall's
+    // delta of three; the vsyncs between hold the pose.
+    let step = legaia_engine_minigames::dance::HALL_FRAME_STEP as i32;
     let period = legaia_engine_minigames::dance::BEAT_PERIOD as i32;
-    let mut ticks = 1;
+    let mut vsyncs = 1;
+    let mut frames = 0;
     for beat in 1..=2 {
-        while ticks < 1 + beat * period {
+        while vsyncs < 1 + beat * period {
+            let hall = vsyncs % step == 0;
+            host.world.minigames.dance_hall_frame = hall;
+            let before = frame(&host, &camera);
             sync_dance_venue(
                 host.world.mode,
                 &mut host.world.minigames,
                 &mut host.world.battle.map_id,
                 &mut camera,
             );
-            ticks += 1;
+            if hall {
+                frames += 1;
+            } else {
+                assert_eq!(
+                    frame(&host, &camera),
+                    before,
+                    "vsync {vsyncs}: the pose holds"
+                );
+            }
+            vsyncs += 1;
         }
         let v = frame(&host, &camera);
         let pose = host
@@ -311,16 +335,25 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
             .camera_pose()
             .unwrap();
         assert_eq!(v, venue_camera_at(&e, pose), "beat {beat}");
-        // Segment-local frame and the float model of the ease.
-        let into = (ticks - 1) % (DANCE_CAMERA_SEGMENT + 1);
-        let (from, to) = if ticks - 1 <= DANCE_CAMERA_SEGMENT {
-            (a, b)
-        } else {
-            let c = track.key_pose(DanceMode::Qualifier, 2).unwrap();
-            (b, c)
-        };
-        let step = f64::from((into << 10) / DANCE_CAMERA_SEGMENT);
-        let w = 0.5 * (1.0 - (std::f64::consts::PI * step / 1024.0).cos());
+        // The segment timer: `0x151` on the staging frame, less the delta a
+        // frame, reloaded the frame it would go negative.
+        let (key, timer) = counters(&host);
+        let per_segment = DANCE_CAMERA_SEGMENT / step + 1;
+        assert_eq!(key, frames / per_segment, "beat {beat}");
+        assert_eq!(
+            timer,
+            DANCE_CAMERA_SEGMENT - step * (frames % per_segment),
+            "beat {beat}"
+        );
+        let (from, to) = (
+            track.key_pose(DanceMode::Qualifier, key as usize).unwrap(),
+            track
+                .key_pose(DanceMode::Qualifier, key as usize + 1)
+                .unwrap(),
+        );
+        // The float model of the half-cosine ease.
+        let idx = f64::from(((DANCE_CAMERA_SEGMENT - timer) << 10) / DANCE_CAMERA_SEGMENT);
+        let w = 0.5 * (1.0 - (std::f64::consts::PI * idx / 1024.0).cos());
         for i in 0..3 {
             let want = f64::from(from.eye[i]) + f64::from(to.eye[i] - from.eye[i]) * w;
             assert!(
@@ -330,17 +363,8 @@ fn the_dance_camera_follows_the_overlay_keyframe_track() {
             );
         }
         eprintln!(
-            "beat {beat}: tick {ticks}, key {:?}, eye {:?}, angles {:?}",
-            host.world
-                .minigames
-                .dance
-                .as_ref()
-                .unwrap()
-                .camera_track()
-                .unwrap()
-                .counters(),
-            pose.eye,
-            pose.angles
+            "beat {beat}: vsync {vsyncs}, key {key}, timer {timer}, eye {:?}, angles {:?}",
+            pose.eye, pose.angles
         );
         assert_ne!(v, venue_camera(&e), "beat {beat}: the camera moved");
     }

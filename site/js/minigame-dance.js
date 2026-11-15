@@ -1112,8 +1112,15 @@ window.MgDance = (function () {
         }
         /* FUN_801cf470 states 4 / 5: GO! (widget 0x0C) at acc * 2. */
         if (c[5] >= 0) wdrawLevel(W.GO, 0xA0, 0x78, c[5], true);
-        if (c[7] || !c[0]) {
+        /* State 6 opens the song (c[8]); the lead-in then holds the beat
+         * clock until done (c[7]). A cached WASM without c[8] starts both
+         * on done. */
+        if (c[8] && !intro.bgm) {
           startBgm(intro.songSeconds);
+          intro.bgm = true;
+        }
+        if (c[7] || !c[0]) {
+          if (!intro.bgm) startBgm(intro.songSeconds);
           intro = null;
         }
       } else if (intro) {

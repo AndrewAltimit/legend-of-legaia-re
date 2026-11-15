@@ -451,7 +451,16 @@ RANGES = {
     # 0x8003B710; its only earlier dump was a zero-instruction stub. PROT
     # 0970's 0x801CFD78 (`lhu v0,0(a0); jr ra; nop`) is a halfword load no
     # reference of any form reaches.
-    "overlay_field_0897": [("801dd9d4", "801ddc20"), ("801e565c", "801e5668")],
+    #
+    # PROT 0897's 0x801E9F64 is the developer menu's EVENT FLAG page
+    # dispatcher (frame `-0x38`, closing at the `jr ra` 0x801EA9A8). Three
+    # ports name arms inside it - the list cursor's 0x801EA0CC / 0x801EA10C and
+    # the value step 0x801EA51C - and the only dumps over them were the
+    # `overlay_0897_*` ones printed 0xE818 low. This row dumps the whole body
+    # from the based image; the arm VAs are not entries and get no body of
+    # their own (a citation stub naming this entry stands for each).
+    "overlay_field_0897": [("801dd9d4", "801ddc20"), ("801e565c", "801e5668"),
+                           ("801e9f64", "801ea9b0")],
     "overlay_cutscene_str_0970": [("801d06dc", "801d070c"), ("801cfd78", "801cfd84")],
 }
 

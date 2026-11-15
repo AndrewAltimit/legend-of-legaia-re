@@ -119,9 +119,9 @@ impl ScenesPage {
 
 /// Stage geometry, matching the settings and cheats pages' plate.
 const X0: i32 = 10;
-const Y0: i32 = 2;
+const Y0: i32 = super::settings_panel::Y0;
 const WIDTH: i32 = 300;
-const ROW_H: i32 = 11;
+const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 /// The note line budget under the rows.
 const NOTE_LINES: usize = 2;
@@ -246,7 +246,7 @@ impl PlayWindowApp {
             (right - width(FLIP_HINT), Y0 + 1),
             text,
         );
-        let mut y = Y0 + 15;
+        let mut y = Y0 + super::settings_panel::HEAD_H;
         for (i, row) in rows.iter().enumerate().skip(page.scroll).take(SHOWN) {
             let focused = i == page.cursor;
             if focused {
@@ -288,14 +288,19 @@ impl PlayWindowApp {
             let track_h = SHOWN as i32 * ROW_H;
             let thumb_h = (track_h * SHOWN as i32 / rows.len() as i32).max(6);
             let max = (rows.len() - SHOWN) as i32;
-            let thumb_y = Y0 + 15 + (track_h - thumb_h) * page.scroll as i32 / max.max(1);
+            let thumb_y = Y0
+                + super::settings_panel::HEAD_H
+                + (track_h - thumb_h) * page.scroll as i32 / max.max(1);
             out.push(TextDraw {
                 dst: (X0 + WIDTH - 3, thumb_y, 2, thumb_h as u32),
                 src,
                 color: text,
             });
         }
-        y = Y0 + 15 + SHOWN as i32 * ROW_H + 3;
+        y = Y0
+            + super::settings_panel::HEAD_H
+            + SHOWN as i32 * ROW_H
+            + super::settings_panel::ROWS_GAP;
         let note = match (page.refused, rows.get(page.cursor)) {
             (Some(why), _) => why.to_string(),
             (None, Some(row)) => format!(

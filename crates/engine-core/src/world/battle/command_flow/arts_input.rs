@@ -483,6 +483,11 @@ impl World {
             legaia_engine_battle::arts_command_input::ArtsInputPhase::Targeting { .. }
         );
         let phase_before = session.phase.clone();
+        // A direction the entry takes sounds the commit cue whatever the
+        // gauge makes of it (`0x801D1F80..0x801D1F98`). The Triangle list
+        // toggle is read ahead of the arrows here.
+        let direction =
+            (ev.left || ev.up || ev.down || ev.right) && !(ev.triangle && session.list_pages > 0);
         session.input(ev, party, monsters);
         // `FUN_801D0748` runs the arts-list driver `FUN_801D3444` after the
         // frame's input: the Triangle list window slides by the frame step.
@@ -493,6 +498,7 @@ impl World {
             &phase_before,
             &session.phase,
             ev.cross,
+            direction,
         ) {
             self.push_battle_ui_cue(cue);
         }

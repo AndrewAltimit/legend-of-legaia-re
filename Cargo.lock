@@ -2345,6 +2345,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
+ "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-scene",
  "legaia-engine-ui",
@@ -2435,6 +2436,7 @@ name = "legaia-engine-scene-host"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "glam",
  "legaia-actor-formats",
  "legaia-art",
  "legaia-container-formats",

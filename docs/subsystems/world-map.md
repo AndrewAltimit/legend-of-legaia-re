@@ -604,7 +604,10 @@ columns, the `H:MM:SS` play clock and the treasure line) from the ported model
 plus caller-supplied labels; `records_screen_fields` is the structured
 emit-order intermediate the unit tests assert. `dev_menu_list_draws_for` ports
 the `FUN_801EAD98` row loop geometry (label column `x + 8`, 8-px row pitch,
-the `0x17` clamp). The per-character portrait / separator icons
+the `0x17` clamp). Retail steps the rows 8 px under its 8 x 8 debug font;
+the hosts draw the list in the dialogue font, whose ink is 11 px tall, so
+`engine-screens`' `dev_menu_list_draws` hands the row loop one row at a time
+at a 12-px pitch (`DEV_MENU_FONT_PITCH`) and keeps the kernel's columns. The per-character portrait / separator icons
 (`FUN_8002C488`) are a UI-icon-atlas sprite the host supplies, as with the
 status page's LV/HP/MP icons.
 
@@ -1005,7 +1008,7 @@ projects each onto world state (`World::submode_equip_env`):
 
 | Retail read | World source |
 |---|---|
-| `char[+0x75E..]`, the five equip slots | `World::party.roster`, re-ordered by `hub_panel_slots` |
+| `char[+0x75E..]`, the five equip slots | `World::party.roster`, bytes `+0x196..+0x19B` verbatim (`hub_panel_slots`) |
 | `char[+0x6DA/+0x6DC/+0x6DE]` ATK / UDF / LDF | the same record's `+0x112` / `+0x114` / `+0x116` |
 | `DAT_80074368[id].+0/+1` kind + stat index | `World::tables.item_effects` |
 | `DAT_80074F68[row][+0..+4]` the five bonuses | `World::tables.equipment_table`, re-keyed row-wise through the same `+1` byte |
@@ -1034,11 +1037,15 @@ the equip screen's row map `DAT_801E43E8` = `00 01 00 04 05 06 07` (weapon,
 overridden per character; helmet `1`; body armour `0`; footwear `4`; three
 Goods slots).
 
-The engine's equip array is weapon-first with a hand-guard slot retail has no
-row for (`equip_session::ARMAMENT_ENGINE_SLOTS`), so
-`field_submode_screen::hub_panel_slots` re-orders a record before the kernel
-walks it. The aggregation is order-blind, but the trial-equip destination is
-not.
+The roster record holds those bytes as retail does, so
+`field_submode_screen::hub_panel_slots` hands the kernel the first five
+verbatim - the walk at `0x801E5BE0..0x801E5C74` sums bytes `0..5`, the
+per-character Ra-Seru byte among them. The equip session's own array is
+weapon-first with a hand-guard slot retail has no row for
+(`equip_session::ARMAMENT_ENGINE_SLOTS`), and that order stops at the session:
+the aggregation is order-blind, but the trial-equip destination is not, and a
+record read through the session's indices swaps the body byte with the weapon
+byte.
 
 An empty slot holds id `0`, whose item-table `+1` byte names bonus row `0x6A`,
 eight zero bytes. Retail looks id `0` up like any other and adds zero; the

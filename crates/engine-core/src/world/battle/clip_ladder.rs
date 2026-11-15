@@ -380,8 +380,27 @@ impl World {
     // PORT: FUN_80047430 (`0x80047E58..0x80048060`, the history push after the commits)
     // REF: FUN_8004998C (the draw's decode at the zeroed cursor)
     pub(in crate::world) fn show_committed_first_keyframe(&mut self, i: usize) {
+        let creature_seat = self.casting.summon_actor_slot == Some(i as u8);
         let a = &mut self.actors[i];
         if let Some(p) = a.battle_animation.as_ref() {
+            // The ring's id for this pass is the committed clip's as well:
+            // the natural-end commit (`jal 0x8004AD80` at `0x80047B54`, which
+            // stores `+0x1D9` at `0x8004BDE0` behind an art install's ring
+            // clear) runs ahead of the shift and of the id store
+            // (`lbu 0x1d9` / `sb 0x1fb` at `0x80047FCC..0x80047FD4`, a
+            // monster's record bytes at `0x80048044..0x80048060`). So the
+            // after-image walk's gate opens `step` passes after an art's
+            // install and shuts `step` passes after the clip that follows it
+            // commits, not a pass later.
+            let ring_id = if a.battle_monster_id.is_none() && !creature_seat {
+                legaia_engine_battle::battle_afterimage::party_ring_id(a.battle.current_anim)
+            } else {
+                legaia_engine_battle::battle_afterimage::monster_ring_id(
+                    p.attach_key(),
+                    p.solo_flag(),
+                )
+            };
+            let ghost_eligible = legaia_engine_battle::battle_afterimage::ghost_eligible(ring_id);
             let mut pose = p.pose_at_sixteenths(0);
             if let Some(prev) = a.pose_frame.as_ref() {
                 let n = pose.bone_outputs.len();
@@ -395,6 +414,7 @@ impl World {
                 front.clip_key = key;
                 front.variant_track = variant;
                 front.frame = 0;
+                front.ghost_eligible = ghost_eligible;
             }
             a.pose_frame = Some(pose);
         }
@@ -515,19 +535,19 @@ impl World {
             return;
         }
         if idle {
-            Self::end_battle_reaction(&mut self.actors[slot]);
+            Self::release_battle_reaction_to_idle(&mut self.actors[slot]);
             return;
         }
         match self.actors[slot].battle_reaction_next.take() {
             // `+0x1DA = 0` is the idle loop (an actor whose `+0x1F2` names
             // no get-up entry): the reaction channel lets go.
-            Some(0) => Self::end_battle_reaction(&mut self.actors[slot]),
+            Some(0) => Self::release_battle_reaction_to_idle(&mut self.actors[slot]),
             Some(next) => {
                 if !self.commit_battle_reaction_entry(slot, next) {
                     // No playable clip (Terra's empty `7` / `8` streams): the
                     // downed actor keeps the finished frame it has.
                     if !(playing == 4 && hp_zero) {
-                        Self::end_battle_reaction(&mut self.actors[slot]);
+                        Self::release_battle_reaction_to_idle(&mut self.actors[slot]);
                     }
                 }
             }
@@ -537,7 +557,7 @@ impl World {
             }
             // A dead actor whose chain has nowhere to go holds its frame.
             None if playing == 4 && hp_zero => {}
-            None => Self::end_battle_reaction(&mut self.actors[slot]),
+            None => Self::release_battle_reaction_to_idle(&mut self.actors[slot]),
         }
     }
 
@@ -622,6 +642,20 @@ impl World {
                 legaia_engine_battle_vm::battle_action::Pose::Idle as u8,
             );
         }
+    }
+
+    /// A reaction clip's natural end handing the seat back to its idle:
+    /// the channel is released and the idle's commit runs the commit's
+    /// unconditional rate decay (`0x8004B080..0x8004B090`), as every other
+    /// commit does. A party seat a cast module left at `2` gets up and then
+    /// idles at `4` until the Done band's restore: Stone Circle's recording
+    /// reads `4` on each seat from the pass its knockdown chain ends in
+    /// `0x71`, and Final Crisis's arm 6 and the Rogue strikes' `0x71` the
+    /// same.
+    fn release_battle_reaction_to_idle(a: &mut Actor) {
+        Self::end_battle_reaction(a);
+        a.battle.anim_rate =
+            legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(a.battle.anim_rate);
     }
 
     /// Release the reaction channel; the idle restore resumes the loop.

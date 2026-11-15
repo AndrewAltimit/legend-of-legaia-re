@@ -98,6 +98,8 @@
    gets a smaller centred canvas instead of one taller than the window. */
 .play-viewport .play-canvas-wrap {
   max-width: max(320px, calc((100vh - var(--topbar-h) - 9rem) * 4 / 3));
+  /* what is on screen, where a phone's address bar makes `100vh` taller */
+  max-width: max(320px, calc((100dvh - var(--topbar-h) - 9rem) * 4 / 3));
   margin-inline: auto;
 }
 @media (max-width: 980px) {
@@ -113,7 +115,7 @@
    down by that much and the frame cut off the stage's bottom rows - a mode
    table's action menu and hint bar. */
 body.play-embedded { margin: 0; padding: 0; background: #000; overflow: hidden; }
-body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
+body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); max-width: calc(100dvh * 4 / 3); margin: 0 auto; }
 body.play-embedded .play-canvas-wrap { max-width: none; }
 body.play-embedded .play-canvas { border: 0; }
 /* The expansion workbench's 3D preview takes the frame's own shape: its view
@@ -260,6 +262,7 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   .play-viewport:has(.play-mg-caption:not([hidden])) .play-canvas-wrap,
   .play-mg-caption {
     max-width: max(320px, calc((100vh - var(--topbar-h) - 13rem) * 4 / 3));
+    max-width: max(320px, calc((100dvh - var(--topbar-h) - 13rem) * 4 / 3));
     margin-inline: auto;
   }
 }
@@ -290,6 +293,8 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   /* the viewport-height width cap must not shrink fullscreen */
   width: min(calc(100vw - 2 * var(--play-fs-pad)),
              calc((100vh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
+  width: min(calc(100vw - 2 * var(--play-fs-pad)),
+             calc((100dvh - var(--play-fs-cap) - 2 * var(--play-fs-pad)) * 4 / 3));
   max-width: none;
 }
 /* PSX rasterisation sizes the wrap to a whole multiple of the 320 x 240 stage
@@ -465,7 +470,7 @@ div.play-vis-head { cursor: default; }
   cursor: pointer; margin: 0.12rem 0.25rem 0.12rem 0;
 }
 .play-save-status button:hover { border-color: var(--accent); }
-@media (pointer: coarse) { .play-report-btn { min-height: 40px; } }
+@media (pointer: coarse) { .play-report-btn { min-height: 44px; } }
 </style>
 <script src="js/audio-toggle.js"></script>
 <script src="js/rom-cache.js"></script>

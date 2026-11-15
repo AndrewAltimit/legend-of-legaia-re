@@ -72,6 +72,7 @@ impl World {
             ..Default::default()
         };
 
+        let mut esm_stager_hits = Vec::new();
         // The seven state-touching spawn stagers, by owning entry.
         // PROT 0906's stager is called from its spawned record's program,
         // not off the phase: its arms are placed below on the director's
@@ -83,9 +84,17 @@ impl World {
             // PROT 0907's and 0908's stagers only seat more records off the
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
+            // PROT 0906's record also calls the stager's three state arms,
+            // the phase release among them.
+            906 => {
+                self.run_part_stager_calls(906, 0);
+                self.run_gizam_record_calls(&mut ctx, &mut seat);
+            }
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e, 0),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(spell_id),
+            // PROT 0966's stager is PROT 0927's over the party row.
+            966 => esm_stager_hits = self.run_evil_seru_stager_calls(caster_slot, spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
             // when the record that calls it does. A retail cast holds
@@ -285,6 +294,7 @@ impl World {
             })
         };
         if direction.as_ref().is_some_and(|d| !d.hold) {
+            self.issue_module_seek_on_exit(ctx.phase);
             self.raise_cast_voice_on_pass(ctx.phase);
         }
         // PROT 0903's settle arm halves the victim's animation rate on every
@@ -358,7 +368,10 @@ impl World {
         // on the clock the director runs through the phase-5 hole. Arm 0 is
         // the flash pair, arm 1 shows the creature; arm 2 is the director's
         // pass out of phase 5.
-        if entry == 906 {
+        // Where the record runs as a part its own calls are the clock
+        // (`World::run_gizam_record_calls`); this one stands in for a host
+        // that seats none.
+        if entry == 906 && !self.gizam_record_runs() {
             use legaia_engine_cast::cast_module_camera as cam;
             match cam::gizam_stager_arm_due(ctx.phase, self.casting.module_cam.countdown.0) {
                 Some(0) => {
@@ -603,35 +616,27 @@ impl World {
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
             }
-            // The module's own move-VM stager hit lands mid-cast, not at the
-            // fold: arm 10 spawns record `0x801F937C`, whose script waits
-            // `0x7F` (`<< 3`, drained `scalar * delta` - 127 vsyncs) and then
-            // runs op `0x20` with arm 4, the `0x100` never-kill sweep. That
-            // is arm 11's gate (`0x80` vsyncs), so it lands before arm 26's
-            // kill-capable hit, and the band's fold owes nothing more.
-            let mut stager_hits = Vec::new();
+            // The module's own move-VM stager hits land mid-cast, not at the
+            // fold: arm 10 seats records `0x801F937C` and `0x801F94D0`, whose
+            // scripts wait `0x7F` and `0x187` (`<< 3`, drained
+            // `scalar * delta`) and then run op `0x20` with arms 4 and 3, the
+            // `0x100` never-kill sweep both times (arm 3 falls into arm 4).
+            // The parts make those calls where the disc's records run
+            // (`run_evil_seru_stager_calls`, above). A host that seats no
+            // record keeps each call on the pass of the arm it falls beside.
+            let mut stager_hits = esm_stager_hits;
             if passed
-                && phase == legaia_engine_cast::cast_module_camera::EVIL_SERU_MAGIC_STAGER_HIT_ARM
+                && self
+                    .casting
+                    .effect_pool
+                    .as_ref()
+                    .is_none_or(|p| p.module(entry).is_none())
+                && let Some(k) = ticks::EVIL_SERU_MAGIC_SWEEP_CALLERS
+                    .iter()
+                    .position(|c| c.1 == phase)
             {
-                // The stager's arm 4 (`0x801F8E4C`) opens on Juggernaut's
-                // salmon flash and its shake (`+0x14` into `0x801FA468`)
-                // before the sweep.
-                if let Some(t) = ticks::juggernaut_stager_fade(AOE_STAGER_WORKING_ARM) {
-                    let mut fade = None;
-                    legaia_engine_system::fade::spawn_fade(
-                        &mut fade,
-                        &legaia_engine_battle_vm::battle_action::summon_fade_template(&t),
-                        1,
-                    );
-                    self.presentation.module_fades.extend(fade);
-                }
-                self.casting.module_shake += ticks::juggernaut_stager_shake(AOE_STAGER_WORKING_ARM);
-                if let Some(r) =
-                    self.run_cast_module_aoe_as(caster_slot, spell_id, AOE_STAGER_WORKING_ARM)
-                {
-                    stager_hits = r.aoe_hits;
-                }
-                self.casting.module_skips_fold = true;
+                let arm = if k == 0 { AOE_STAGER_WORKING_ARM } else { 3 };
+                stager_hits.extend(self.evil_seru_stager_arm(caster_slot, spell_id, arm));
             }
             let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
             let mut rolls: Vec<(u8, i32)> = Vec::new();
@@ -847,24 +852,38 @@ impl World {
             .as_ref()
             .and_then(|a| a.ribbons)
             .or(direction.and_then(|d| d.ribbons));
-        if pass_ribbons.is_none() {
+        // An arm that rings behind its gate makes no call on the pass that
+        // runs its countdown out. A pass here is `step` one-vsync ticks and
+        // the deal is its first tick's, where the word still holds: it is
+        // spent within this pass once it stands under the step.
+        let spent_behind_gate =
+            legaia_engine_cast::cast_module_camera::ring_behind_gate(entry, phase_in)
+                && direction.is_some_and(|d| d.hold)
+                && self.casting.module_cam.countdown.0 < i32::from(self.module_frame_step());
+        if pass_ribbons.is_none() || spent_behind_gate {
             self.battle.cast_ribbon_seeds = None;
         }
         if let Some(ring) = pass_ribbons.as_ref()
             && !capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y)
             && self.module_tick_opens_pass()
+            && !spent_behind_gate
         {
             self.deal_cast_ribbon_rands(ring);
         }
-        // The arm's controller rumble stores, on the edge each sits on.
+        // The arm's controller rumble stores, on the edge each sits on. An
+        // arm that rings behind its gate rumbles there too (PROT 0934's arm
+        // 9 draws its two words at `0x801F7830` / `0x801F7860`, past the
+        // ribbon loop).
         let rumble_passed = direction.map_or(!capture_held, |d| !d.hold);
-        self.apply_module_rumble(
-            entry,
-            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
-            phase_in,
-            rumble_passed,
-            countdown_before,
-        );
+        if !spent_behind_gate {
+            self.apply_module_rumble(
+                entry,
+                body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                phase_in,
+                rumble_passed,
+                countdown_before,
+            );
+        }
         run.camera_follow = direction.and_then(|d| d.follow);
         run.camera_end_frame = direction.is_some_and(|d| d.end_frame);
         // A capture director's framing-case calls (PROT 0962 `0xA2`): case 6
@@ -1360,6 +1379,7 @@ impl World {
                         take,
                     );
                     self.write_cast_seat_row(&seats);
+                    self.push_sweep_popups(hits.iter().map(|h| h.seat), &rolls);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                         seat: h.seat,
                         applied: h.applied as i32,
@@ -1374,6 +1394,7 @@ impl World {
                     // kernel names retail seats; the roll takes engine slots.
                     let shape = arms::arm_damage_shape_for(956, arms::WATER_HAZARD_TICK);
                     let map = self.cast_seat_map();
+                    let mut popups: Vec<(u8, i32)> = Vec::new();
                     let (step, hits) = arms::water_hazard_tick(
                         &mut ctx,
                         r_caster as u8,
@@ -1381,15 +1402,24 @@ impl World {
                         &mut caster,
                         &mut seats,
                         |seat| {
-                            let damage = map
-                                .engine(seat)
+                            let slot = map.engine(seat);
+                            let damage = slot
                                 .zip(shape)
                                 .and_then(|(e, sh)| self.capture_module_roll(sh, caster_slot, e))
                                 .unwrap_or(0);
+                            popups.push((seat, damage));
                             (damage, self.next_rand())
                         },
                     );
                     self.write_cast_seat_row(&seats);
+                    // Each swept seat's numeral: `FUN_801F44A0(roll, seat)` on
+                    // the raw wrapper roll, between the roll and the clamp
+                    // (`jal 0x801dd4b0` / `jal 0x801f44a0` at
+                    // `0x801F78D0..0x801F78E4`, the other leg's at
+                    // `0x801F7A40..0x801F7A54`), so the three numbers stand
+                    // over the party through the arm the sweep opens.
+                    let swept: Vec<u8> = popups.iter().map(|p| p.0).collect();
+                    self.push_sweep_popups(swept.into_iter(), &popups);
                     run.aoe_hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                         seat: h.seat,
                         applied: h.applied as i32,
@@ -1913,6 +1943,16 @@ impl World {
             live.fold_writes(orig, view);
             self.write_cast_view(slot, &live);
         }
+        // A stage bump made on the creature seat with no creature on it
+        // (PROT 0964's `0xFF` arm, `0x801F8880..0x801F8898`, after `k = 5`
+        // took the golem off): no tick consumes it, and the byte waits on
+        // the seat for the next creature (`BattleState::creature_seat_restage`).
+        if self.casting.summon_actor_slot.is_none()
+            && self.casting.pending_summon_spawn.is_none()
+            && seat.restage != seat_orig.restage
+        {
+            self.battle.creature_seat_restage = true;
+        }
         // A tick body that seats its creature and stages its clip on one pass
         // (PROT 0910's arm 2, `sb s8,0x1da` / `sb s8,0x1dc` at
         // `0x801F6DB0..0x801F6DB4` right behind the installer): the host seats
@@ -2098,8 +2138,8 @@ impl World {
             self.dark_typhoon_party_swirl(caster_slot, phase_in, !capture_held);
         }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
-        // none.
-        self.battle.cast_ribbons = pass_ribbons;
+        // none (and none on the pass a ring behind its gate is spent on).
+        self.battle.cast_ribbons = pass_ribbons.filter(|_| !spent_behind_gate);
         self.casting.module_ribbons_on_scatter_y =
             capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         if std::mem::take(&mut self.casting.module_storm_dealt) {
@@ -2164,15 +2204,19 @@ impl World {
                     });
                 self.casting.pending_summon_spawn = Some((spell_id, at));
             }
-            if !arm.others_write.is_empty() && !capture_held {
+            if !arm.others_write.is_empty() && (!capture_held || arm.others_every_pass) {
                 let monsters = self.party.party_count..self.actors.len() as u8;
+                let skips =
+                    |slot: u8| arm.others_skip_pair && (slot == caster_slot || slot == victim_slot);
                 for slot in 0..self.party.party_count {
-                    if !arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0 {
+                    if !skips(slot)
+                        && (!arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0)
+                    {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }
                 for slot in monsters {
-                    if self.actors[usize::from(slot)].battle.hp > 0 {
+                    if !skips(slot) && self.actors[usize::from(slot)].battle.hp > 0 {
                         self.apply_capture_seat_writes(slot, arm.others_write);
                     }
                 }

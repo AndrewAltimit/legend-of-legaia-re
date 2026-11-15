@@ -506,7 +506,6 @@ impl World {
         }
         // The band is leaving `0x70`; the module stops being re-entered.
         self.casting.capture_spell = None;
-        self.casting.fatal_banner = None;
         false
     }
 
@@ -651,6 +650,10 @@ impl World {
             slot,
             clips,
             at_arms: if placed { at_arms } else { Vec::new() },
+            loops: placed
+                && legaia_engine_cast::cast_module_ticks::capture_caster_clip_loops(
+                    entry, spell_id,
+                ),
             cursor: 0,
             approach,
             phase: if approach.is_some() {
@@ -936,6 +939,18 @@ impl World {
         gate
     }
 
+    /// Whether seat `i` is a capture caster on a clip its module staged and
+    /// left staged, which the natural end re-commits
+    /// ([`CasterStageRun::loops`]).
+    pub(in crate::world) fn capture_caster_clip_loops(&self, i: usize, clip: u8) -> bool {
+        self.casting.caster_stages.as_ref().is_some_and(|run| {
+            run.loops
+                && usize::from(run.slot) == i
+                && run.phase == CasterStagePhase::Module
+                && run.clips.get(run.cursor) == Some(&clip)
+        })
+    }
+
     /// The module's arm `arm` passed this tick: stage the caster clips the
     /// body stores in that arm ([`CasterStageRun::at_arms`]). Each goes in
     /// behind whatever the caster plays, its park released, and the arms run
@@ -970,8 +985,17 @@ impl World {
     }
 
     /// The module reported done: release the caster's park and stage idle
-    /// behind it. `true` when a [`CasterStageRun`] is now closing (the band
-    /// holds until the caster is back on idle).
+    /// behind the clip it still plays. The band does not wait for that clip:
+    /// retail leaves `0x70` on the pass the body reports done and the caster
+    /// plays its clip out, or is cut to idle, in the Done band. Recordings
+    /// hold Cort on clip `7` at cursor `264` as Mystic Circle's last arm ends
+    /// and on through `0x71` and `0x50`, Medusa parked on Glare's clip `8`
+    /// until `0x51`, and Gaza frozen at rate `0` after Neo Star Slash (arm 4's
+    /// `sb zero,0x21d` at `0x801F6F8C`; the Done band's restore
+    /// `FUN_801E93C8` runs the clip on). Held until the caster was back on
+    /// idle, the `0xFF` arm ran `15` to `45` ticks past retail's on six films
+    /// of the enemy set and the Done band's pan opened on another pose.
+    /// Always `false`: nothing is left for the band to wait on.
     fn close_caster_stages(&mut self) -> bool {
         let Some(run) = self.casting.caster_stages.as_mut() else {
             return false;
@@ -979,17 +1003,13 @@ impl World {
         if run.phase != CasterStagePhase::Module || run.clips.is_empty() {
             return false;
         }
-        run.phase = CasterStagePhase::Closing;
         if let Some(a) = self.actors.get_mut(usize::from(run.slot)) {
             if let Some(p) = a.battle_animation.as_mut() {
                 p.release_loop_window();
             }
             a.battle.queued_anim = 0;
-            if a.battle.current_anim == 0 {
-                self.casting.caster_stages = None;
-                return false;
-            }
         }
-        true
+        self.casting.caster_stages = None;
+        false
     }
 }

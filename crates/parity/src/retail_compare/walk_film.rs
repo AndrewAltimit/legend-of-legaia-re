@@ -96,8 +96,16 @@ impl WalkFilm {
         session.host.world.locomotion.vertical_settle = true;
         session.host.world.npcs.solid = true;
         session.host.world.npcs.animate = true;
+        // The Field Move option the state was saved under: a held pad walks
+        // at its run speed when the player had picked Run (`0x800846CC`,
+        // `World::field_run_active`). `LEGAIA_RC_WALK_RUN=1` forces Run,
+        // `=0` Walk.
         session.host.world.locomotion.run_default =
-            std::env::var_os("LEGAIA_RC_WALK_RUN").is_some();
+            match std::env::var("LEGAIA_RC_WALK_RUN").as_deref() {
+                Ok("0") => false,
+                Ok(_) => true,
+                Err(_) => retail.field_move_run,
+            };
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
@@ -153,6 +161,30 @@ impl WalkFilm {
         // vsyncs into the film, which the engine's accumulators reach from
         // `phase - 1`; a state saved on the pacer's return holds the first
         // vsync on `0`.
+        // The pacer's history: a state saved a few frames after a slow
+        // stretch runs on at the raised step until those samples leave the
+        // ring, and falls to the floor when retail's does. A harness seat;
+        // `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step instead.
+        if std::env::var_os("LEGAIA_RC_NO_FRAME_RING").is_none()
+            && let Some((history, cursor, step, cost)) = retail.frame_cost_seat()
+        {
+            let world = &mut session.host.world;
+            world.seed_frame_cost_history(history, cursor, step, cost);
+            // A state saved inside the pacer's wait is waiting out the step
+            // of the frame before (`0x1F800392`, stored after the wait).
+            if let Some((wait, _)) = retail.step_bytes.filter(|b| b.0 > 0) {
+                world.clock.pass_wait = Some(wait.max(world.clock.frame_step_floor));
+            }
+            // The frame-cost model, where it prices the field, carries the
+            // change from the state's measured cost, not its own level
+            // (`World::anchor_field_frame_cost`). A harness seat;
+            // `LEGAIA_RC_NO_COST_ANCHOR=1` runs the model as play does.
+            if world.toggles.field_frame_cost
+                && std::env::var_os("LEGAIA_RC_NO_COST_ANCHOR").is_none()
+            {
+                world.anchor_field_frame_cost(cost);
+            }
+        }
         let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
         let g = &mut session.camera.globals.0;
         let c = &retail.camera;
@@ -222,6 +254,33 @@ impl WalkFilm {
             }
             None => None,
         };
+        // `LEGAIA_RC_WALK_COST=1`: what each tick's field frame draws
+        // (`World::field_frame_features`) beside the step it runs at
+        // (`engine.cost.csv`), the engine side of a film's `frame_cost` column.
+        let mut cost = match std::env::var_os("LEGAIA_RC_WALK_COST") {
+            Some(_) => {
+                // The state's own frame-time ring beside it: the retail cost
+                // a state with no film of its own still carries.
+                let mut r = self.out.clone();
+                r.set_extension("ring.txt");
+                std::fs::write(
+                    &r,
+                    format!(
+                        "history={:?}\nstep_bytes={:?}\n",
+                        retail.frame_history, retail.step_bytes
+                    ),
+                )?;
+                let mut p = self.out.clone();
+                p.set_extension("cost.csv");
+                let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
+                writeln!(
+                    w,
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells"
+                )?;
+                Some(w)
+            }
+            None => None,
+        };
         for t in 0..self.ticks {
             let pad = self.pad_at(t);
             session.host.world.input.set_pad(pad);
@@ -247,6 +306,35 @@ impl WalkFilm {
                     })
                     .collect();
                 writeln!(w, "{t},{},{},{}", pool.live, pool.cap, recs.join(" "))?;
+            }
+            if let Some(w) = cost.as_mut() {
+                let world = &session.host.world;
+                let f = world.field_frame_features().unwrap_or_default();
+                writeln!(
+                    w,
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    u8::from(world.clock.game_tick_fired),
+                    world.clock.frame_step,
+                    f.decoration_draws,
+                    f.decoration_prims,
+                    f.decoration_verts,
+                    f.ground_cells,
+                    f.placed_draws,
+                    f.placed_prims,
+                    f.placed_verts,
+                    f.npcs,
+                    f.fog,
+                    f.parts,
+                    world.actors.iter().filter(|a| a.active).count(),
+                    world.active_scene_label,
+                    f.decoration_quads,
+                    f.decoration_lit,
+                    f.placed_quads,
+                    f.placed_lit,
+                    world.clock.frame_cost.unwrap_or(-1),
+                    f.npc_prims,
+                    f.decoration_loop_cells,
+                )?;
             }
             if session.host.world.active_scene_label != n0_scene {
                 n0 = partition0(session);
@@ -309,6 +397,9 @@ impl WalkFilm {
             )?;
         }
         session.host.world.input.set_pad(0);
+        if let Some(w) = cost.as_mut() {
+            w.flush()?;
+        }
         f.flush()?;
         a.flush()?;
         d.flush()?;
@@ -332,7 +423,7 @@ impl WalkFilm {
 /// returns on, its pass opening on the film's first vsync (`conc_field_card_boot`, `dolk2_market_noa`,
 /// `koin1_field_route_walk`). A harness seat.
 fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) -> bool {
-    let step = u32::from(world.clock.frame_step.max(1));
+    let step = u32::from(world.clock.game_frame_wait());
     if phase > step {
         return false;
     }

@@ -34,6 +34,35 @@ impl HeadlessPlayWindow {
         Self::open_with(disc, scene, false, None, &save_dir)
     }
 
+    /// [`Self::open`] over the save directory `save_dir`
+    /// (`play-window --save-dir <save_dir>`): where the Tools page's session
+    /// export and its report file land.
+    pub fn open_in(disc: &Path, scene: &str, save_dir: &Path) -> Result<Self> {
+        Self::open_with(disc, scene, false, None, save_dir)
+    }
+
+    /// The Tools page's *Export session* row: the running game as an
+    /// `.lgsf` file in the save directory; the path, or the refusal.
+    pub fn export_session(&mut self) -> std::result::Result<std::path::PathBuf, String> {
+        self.app.export_session()
+    }
+
+    /// The Tools page's *Copy report* text.
+    pub fn session_report(&self) -> String {
+        self.app.session_report()
+    }
+
+    /// One press of the Keys page's reset row (two presses reset).
+    pub fn keys_reset_press(&mut self) {
+        self.app.keys_reset_press();
+    }
+
+    /// The Keys page's footer line as it draws for a panel that holds the
+    /// game and a keyboard player.
+    pub fn keys_footer(&self) -> String {
+        super::hud::keys_footer(self.app.keys_reset, true, None)
+    }
+
     /// [`Self::open`] as `play-window --boot-ui [--card <card>]` launches:
     /// the boot front end (publisher logos, then the title card) owns the
     /// frames until the title resolves, over the pre-booted `scene`. `card`
@@ -206,6 +235,40 @@ impl HeadlessPlayWindow {
         self.app.session.enter_expansion_map_live(map, "", &opts)?;
         self.app.rebuild_scene_render_state();
         Ok(())
+    }
+
+    /// Stage an in-window movie of `frames` blank frames, as the redraw's
+    /// movie start does once a STR has decoded: the world's ticks are held
+    /// under it until its frames drain or it is skipped. The headless
+    /// driver draws nothing, so nothing advances the movie's frame.
+    pub fn stage_movie(&mut self, frames: usize) {
+        let blank = psx_mdec::VideoFrame {
+            rgba: Vec::new(),
+            width: 0,
+            height: 0,
+            frame_number: 0,
+        };
+        self.app.stage_windowed_cutscene((
+            vec![blank; frames],
+            std::time::Duration::from_millis(66),
+            None,
+        ));
+    }
+
+    /// Put the window in a room over `link`, as `--join` does over a socket:
+    /// the room's frame then runs on every tick ([`Self::room_frames`]).
+    pub fn join_room(
+        &mut self,
+        link: Box<dyn legaia_netplay::transport::Transport>,
+        code: legaia_netplay::protocol::RoomCode,
+    ) {
+        self.app.netplay = Some(super::netplay::NetHost::joined(link, code));
+    }
+
+    /// Room frames the window's room controller has stepped
+    /// (`NetPlay::frames`), `None` out of a room.
+    pub fn room_frames(&self) -> Option<u32> {
+        self.app.netplay.as_ref().map(|n| n.net.frames())
     }
 
     /// The field VRAM the window's draws sample (`cpu_vram_base`): the

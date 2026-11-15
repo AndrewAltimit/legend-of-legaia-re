@@ -828,6 +828,52 @@ impl PlayWindowApp {
             w.battle_frame_load().1,
             w.battle.frame_work,
         );
+        // `LEGAIA_DIAG_CAST_BODIES=1`: `bodies.csv`, every battle body a tick
+        // (tick, seat, monster flag, drawn, triangles, raw position, radius,
+        // HP): what a frame-cost term reads of the shot beside `cam.csv`'s
+        // pose and `LEGAIA_DIAG_GPU_COST`'s linked polygons.
+        if std::env::var_os("LEGAIA_DIAG_CAST_BODIES").is_some() {
+            use std::io::Write as _;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("bodies.csv"))
+            {
+                for (i, a) in w.actors.iter().enumerate() {
+                    if !a.active {
+                        continue;
+                    }
+                    let drawn = a.battle.render_color != 0 || a.battle.render_flag == 0;
+                    let tris: u32 = match a.battle_monster_id {
+                        Some(m) => a
+                            .battle_body_triangles
+                            .filter(|&(id, _)| id == m)
+                            .map_or(0, |(_, t)| u32::from(t)),
+                        None => a.battle_object_triangles.as_deref().map_or(0, |o| {
+                            let d = a.battle_drawn_objects.as_deref();
+                            o.iter()
+                                .enumerate()
+                                .filter(|&(k, _)| {
+                                    d.is_none_or(|d| d.get(k).copied().unwrap_or(false))
+                                })
+                                .map(|(_, &t)| u32::from(t))
+                                .sum()
+                        }),
+                    };
+                    let _ = writeln!(
+                        f,
+                        "{tick},{i},{},{},{tris},{},{},{},{},{}",
+                        u8::from(a.battle_monster_id.is_some()),
+                        u8::from(drawn),
+                        a.move_state.world_x,
+                        a.move_state.world_y,
+                        a.move_state.world_z,
+                        a.battle.render_radius.unwrap_or(-1),
+                        a.battle.hp,
+                    );
+                }
+            }
+        }
         // `LEGAIA_DIAG_CAST_VRAM_AT=<tick>[,<tick>..]`: the battle VRAM at
         // those ticks (`vram_<tick>.bin`, 1 MiB BGR555), for a byte comparison
         // with a retail recording's `sstate_vram.py` image.

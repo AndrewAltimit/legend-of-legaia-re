@@ -455,7 +455,16 @@
           for (let g = 0; g < count; g++) {
             const pose = rt.play_battle_actor_ghost_pose(i, g);
             if (!pose.length) continue;
-            poseInto(a.out, a.base, a.objectIds, pose, pose.length / 6, 0);
+            /* The ghost frame's own clip morph: the walk's draw blends the
+             * lanes at the ghost's entry and cursor (FUN_80049348 swaps both
+             * before FUN_80048A08). Empty = no lane active on that frame.
+             * Guarded against a cached WASM without the export. */
+            let gsrc = a.base;
+            if (typeof rt.play_battle_actor_ghost_morph === 'function') {
+              const gm = rt.play_battle_actor_ghost_morph(i, g);
+              if (gm.length === a.base.length) gsrc = gm;
+            }
+            poseInto(a.out, gsrc, a.objectIds, pose, pose.length / 6, 0);
             hideObjects(a.out, a.objectIds, hiddenOf(rt, i, g));
             this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
             const j = g * STRIDE;

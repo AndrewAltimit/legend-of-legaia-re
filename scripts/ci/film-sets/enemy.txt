@@ -10,13 +10,15 @@ doman_boogie_pump_windcutter --physical --state battle_doman_boogie_pump_windcut
 garmel_songi_hyper_wave --physical --state battle_garmel_songi_hyper_wave_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
 jou_freed_v3_water_crystals --physical --state battle_jou_freed_v3_water_crystals_mid_cast --caster 3 --target 2 --pin-seed 0x12345678
 jou_gizam_v3_water_hazard --physical --state battle_jou_gizam_v3_water_hazard_mid_cast --caster 5 --target 8 --pin-seed 0x12345678
-jou_puera_v3_death_game --physical --state battle_jou_puera_v3_death_game_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
+# Death Game rolls its verdict on a module pass; --rand-track seats retail's words so the
+# verdict does not follow the pass count before it (a harness seat).
+jou_puera_v3_death_game --physical --state battle_jou_puera_v3_death_game_mid_cast --caster 3 --target 3 --pin-seed 0x12345678 --rand-track
 jou_spoon_v3_white_shield --physical --state battle_jou_spoon_v3_white_shield_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 jouind_gilium_lv3_thunder_storm --physical --state battle_jouind_gilium_lv3_thunder_storm_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 kor_gaza_166_astral_wave --physical --state battle_kor_gaza_166_astral_wave_mid_cast --caster 3 --target 1 --pin-seed 0x12345678
 kor_ghost_knight_v_windhash --physical --state battle_kor_ghost_knight_v_windhash_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 korb2_ghost_knight_windhash --physical --state battle_korb2_ghost_knight_windhash_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
-map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0 --pin-seed 0x12345678
+map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0 --pin-seed 0x12345678 --retail-from captures/w29-A/lippian_kiss/retail
 map02_ogre_power_charge --physical --state battle_map02_ogre_power_charge_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 map03_acid_slime_melt_spray --physical --state battle_map03_acid_slime_melt_spray_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
 noaru_gilium_lv2_thunder_storm --physical --state battle_noaru_gilium_lv2_thunder_storm_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
@@ -27,7 +29,7 @@ rugi_caruban_2_fire_breath --physical --state battle_rugi_caruban_2_fire_breath_
 rugi_caruban_3_fire_breath --physical --state battle_rugi_caruban_3_fire_breath_mid_cast --caster 3 --target 8 --pin-seed 0x12345678
 rugi_gola_gola_v2_rolling_flare --physical --state battle_rugi_gola_gola_v2_rolling_flare_mid_cast --caster 4 --target 0 --pin-seed 0x12345678
 tunnelc_xain_bull_charge --physical --state battle_tunnelc_xain_bull_charge_mid_cast --caster 3 --target 0 --pin-seed 0x12345678
-tunnelc_xain_strike__5C --spell 0x5C --state battle_tunnelc_xain_strike --caster 3 --target 2 --pin-seed 0x9B05688C
+tunnelc_xain_strike__5C --spell 0x5C --state battle_tunnelc_xain_strike --caster 3 --target 2 --pin-seed 0xBB67AE85 --retail-from captures/film-retail/tunnelc_xain_strike__5C/retail
 tunnelc_xain_terio_punch --physical --state battle_tunnelc_xain_terio_punch_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
 vozz_gizam_water_column --physical --state battle_vozz_gizam_water_column_mid_cast --caster 3 --target 1 --pin-seed 0x12345678
 chitei2_kemaro_v2_pre_lava_breath__46 --spell 0x46 --state chitei2_kemaro_v2_pre_lava_breath --caster 3 --target 8 --pin-seed 0x12345678
@@ -39,7 +41,7 @@ dohaty_nova_v2_pre_scythe_wind__5B --spell 0x5B --state dohaty_nova_v2_pre_scyth
 jou_nova_v3_pre_scythe_wind__5B --spell 0x5B --state jou_nova_v3_pre_scythe_wind --caster 3 --target 1 --pin-seed 0x12345678
 jou_orb_v3_pre_grand_beam__63 --spell 0x63 --state jou_orb_v3_pre_grand_beam --caster 3 --target 8 --pin-seed 0x12345678
 kor_ghost_knight_pre_v_windhash__57 --spell 0x57 --state kor_ghost_knight_pre_v_windhash --caster 4 --target 0 --pin-seed 0x12345678
-kor_shade_pre_fatal_decision__5F --spell 0x5F --state kor_shade_pre_fatal_decision --caster 3 --target 1 --pin-seed 0x12345678
+kor_shade_pre_fatal_decision__5F --spell 0x5F --state kor_shade_pre_fatal_decision --caster 3 --target 1 --pin-seed 0x12345678 --retail-from captures/film-retail/kor_shade_pre_fatal_decision__5F/retail
 nilboa_lava_face_pre_fissure__32 --spell 0x32 --state nilboa_lava_face_pre_fissure --caster 3 --target 1 --pin-seed 0x12345678
 nilboa_lucifer_pre_cross_beam__58 --spell 0x58 --state nilboa_lucifer_pre_cross_beam --caster 4 --target 2 --pin-seed 0x12345678
 nilboa_neo_grude_pre_power_up__52 --spell 0x52 --state nilboa_neo_grude_pre_power_up --caster 4 --target 4 --pin-seed 0x12345678
@@ -78,6 +80,8 @@ nilboa_koru_pre_ultra_charge__A5 --spell 0xA5 --state nilboa_koru_pre_ultra_char
 chitei2_cort_pre_mystic_shield__AC --spell 0xAC --state chitei2_cort_pre_mystic_shield --caster 3 --target 3 --pin-seed 0x12345678
 chitei2_cort_pre_guilty_cross__37 --spell 0x37 --state chitei2_cort_pre_guilty_cross --caster 3 --target 0 --pin-seed 0x12345678
 chitei2_cort_pre_mystic_circle__B7 --spell 0xB7 --state chitei2_cort_pre_mystic_circle --caster 3 --target 8 --pin-seed 0x12345678
+# Evil Seru Magic runs 4713 vsyncs; its recording was made with LEGAIA_MAX_SHOTS=2600 (the probe's cap is 1500 frames).
+chitei2_cort_pre_mystic_circle__AD --spell 0xAD --state chitei2_cort_pre_mystic_circle --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/chitei2_cort_evil_seru_magic/retail
 rugi_berserker_2_pre_spore_gas__4F --spell 0x4F --state rugi_berserker_2_pre_spore_gas --caster 3 --target 0 --pin-seed 0x12345678
 deroa_jette_clone --physical --state battle_deroa_jette_clone_mid_cast --caster 3 --target 3 --pin-seed 0x12345678
 deroa_jette_shadow_break --physical --state battle_deroa_jette_shadow_break_mid_cast --caster 4 --target 3 --pin-seed 0x12345678
@@ -110,5 +114,5 @@ korb2_ghost_knight_neo_windhash --physical --state battle_korb2_ghost_knight_neo
 # Plasma Strike's third burst beat deals its cue pair off rand(); the pinned seed shares no word with the
 # recording's, so --rand-track seats retail's words for the module band.
 nivora_duel_pre_plasma_strike__7B --spell 0x7B --state nivora_duel_pre_plasma_strike --caster 3 --target 0 --pin-seed 0x12345678 --rand-track
-noaru_songi_pre_genocidal_cannon__B3 --spell 0xB3 --state noaru_songi_pre_genocidal_cannon --caster 3 --target 8 --pin-seed 0x12345678
-noaru_songi_genocidal_cannon --physical --state battle_noaru_songi_genocidal_cannon_mid_cast --caster 3 --target 8 --pin-seed 0x12345678
+noaru_songi_pre_genocidal_cannon__B3 --spell 0xB3 --state noaru_songi_pre_genocidal_cannon --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/noaru_songi_pre_genocidal_cannon__B3/retail
+noaru_songi_genocidal_cannon --physical --state battle_noaru_songi_genocidal_cannon_mid_cast --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/noaru_songi_genocidal_cannon/retail

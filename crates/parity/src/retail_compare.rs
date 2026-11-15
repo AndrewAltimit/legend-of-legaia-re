@@ -62,6 +62,7 @@ pub use battle_run::*;
 mod baseline_report;
 mod corpus_run;
 mod engine_run;
+mod minigame_film;
 mod minigame_run;
 mod movie_run;
 mod pause_menu_drive;
@@ -239,6 +240,9 @@ pub struct CorpusEntry {
     /// The scenario's `ram_injected` - combatant fields its capture probe
     /// wrote after battle init, which the battle channels do not score.
     pub ram_injected: Vec<String>,
+    /// The scenario's `spawned_under_flags` - system flags the scene spawned
+    /// under and a probe lowered since ([`spawn_history_seats`]).
+    pub spawned_under_flags: Vec<u16>,
     /// The scenario's `memory_card`, resolved under the library's `cards/`
     /// directory: `Ok` the image on disk, `Err` the file name that is not
     /// there. A card-screen state mounts it on the engine side.
@@ -289,6 +293,7 @@ pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<Corp
                     resident_patch: sc.resident_patch.clone(),
                     resident_disc: sc.resident_disc.clone(),
                     ram_injected: sc.ram_injected.clone(),
+                    spawned_under_flags: sc.spawned_under_flags.clone(),
                     memory_card: sc.memory_card.as_ref().map(|name| {
                         let p = library.join("cards").join(name);
                         if p.is_file() {

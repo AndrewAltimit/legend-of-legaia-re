@@ -204,6 +204,13 @@ pub struct CaptureCamArm {
     /// [`Self::others_write`] skips a downed party seat as it does a downed
     /// monster (PROT 0955 `0x70` walks seven seats behind one HP test).
     pub others_live_only: bool,
+    /// [`Self::others_write`] is made on every pass of the arm, held or not
+    /// (PROT 0940 `0x3C`'s arm 1 walks both rows ahead of its gate).
+    pub others_every_pass: bool,
+    /// [`Self::others_write`] walks past the caster and the victim (PROT
+    /// 0940 `0x3C`'s arm 1: `beq a0,s0` on the party row, `beq a0,v0` on
+    /// the monster row).
+    pub others_skip_pair: bool,
     /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
     pub vram_move: Option<super::ModuleVramMove>,
     /// PROT 0935's arms 4 and 5: the pass's rock pair at a point off the
@@ -488,6 +495,13 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
 /// body clears it on its last arm (`0x801F72CC`).
 ///
+/// PROT 0954's Fatal Decision clears it on arm 10 alone (`sb zero,0xd` at
+/// `0x801F7D6C`, beside the yaw ladder's zero) and its `0xFF` arm
+/// (`0x801F8504..0x801F852C`) holds no such store, so the band's next pass
+/// stores the `1` back and the Done band pans half a turn round: a film of
+/// Shade's cast reads the `0x50` endpoint `4580` on counter `146` and heading
+/// `1710`, `ctx[+0x6DA] - facing + 0x800` plus the full turn.
+///
 /// Three more bodies of split modules finish with no `sb zero,0xd` at all,
 /// where their module's other body has one: PROT 0945's Water Column (`0x54`,
 /// `0x801F6EDC`, finishing at `0x801F769C..0x801F76C4`), PROT 0938's Chaos
@@ -495,7 +509,7 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// `0x801F78B8`). A film of Water Column reads the half turn: the Done band's
 /// yaw endpoint `4177` against `ctx[+0x6DA] - facing = 2129`.
 pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+    !matches!(entry, 935 | 936 | 937 | 939 | 954 | 962)
         && !matches!(
             (entry, action),
             (938, 0x4E) | (940, 0x50 | 0xAE) | (941, 0x51) | (945, 0x54)
@@ -832,16 +846,38 @@ pub fn ultra_charge_camera(
                 drift: None,
                 hold: false,
                 next: Some(1),
+                // Cort's clip `6` runs at half rate (`li v0,0x4` /
+                // `sb v0,0x21d(s1)` at `0x801F6AF0..0x801F6AF4`, the `0xB5`
+                // branch only).
+                caster_write: CaptureSeatWrite {
+                    rate: (seats.first_monster == 0xB5).then_some(4),
+                    ..Default::default()
+                },
                 ..Default::default()
             }
         }
-        1 => CaptureCamArm {
-            shot: None,
-            drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
-            hold: st.countdown.drain_above(0),
-            next: Some(0xFF),
-            ..Default::default()
-        },
+        1 => {
+            let hold = st.countdown.drain_above(0);
+            CaptureCamArm {
+                shot: None,
+                drift: Some(drift(0, 0, 0, super::MODULE_DRAIN_PER_TICK as i16)),
+                hold,
+                next: Some(0xFF),
+                // The rate again on every pass in the `0xB5` formation
+                // (`0x801F6C1C..0x801F6C30`); the pass that spends the
+                // countdown cuts the caster back to idle with the bump
+                // (`sb zero,0x1da` at `0x801F6D18`, `+0x1DC += 1` at
+                // `0x801F6D14..0x801F6D20`). Until then the staged clip
+                // stays staged and wraps at each natural end.
+                caster_write: CaptureSeatWrite {
+                    rate: (seats.first_monster == 0xB5).then_some(4),
+                    stage: (!hold).then_some(0),
+                    restage: !hold,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        }
         _ => CaptureCamArm::default(),
     }
 }
@@ -860,8 +896,8 @@ pub const DEAD_END_CRISIS_COUNTDOWN: u32 = 0x801F_82E4;
 /// | arm | camera |
 /// |---|---|
 /// | 0 (`0x801F6AC0`) | cut: pitch `0`, yaw `0x800 - caster[+0x46]`, TR `(0, h, depth)`, `h` `0x800` in `0xB5`, else `0x200` |
-/// | 1 (`0x801F6C8C`) | drift: TR z `+s`, TR y `-s/4`, pitch `+s/8` (`s = scalar * delta`); passing, `0xB5`: pitch `-0x70`, yaw `0x800 - facing`, TR `(0, 0xA20, depth - 0x280)`; else pitch `-0x80`, yaw `0x980 - facing`, TR `(0x200, 0x300, depth)` |
-/// | 2 (`0x801F6E78`) | drift in `0xB5` only: TR y `+delta`, pitch `+delta`, TR z `+s`; passing: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0xA00, depth + 0x400)` in `0xB5`, else `(0, 0x600, depth)` |
+/// | 1 (`0x801F6C8C`) | drift: TR z `+s`, TR y `-s/4`, pitch `+s/8` (`s = scalar * delta`); passing, `0xB5`: the caster's rate `3`, pitch `-0x70`, yaw `0x800 - facing`, TR `(0, 0xA20, depth - 0x280)`; else pitch `-0x80`, yaw `0x980 - facing`, TR `(0x200, 0x300, depth)` |
+/// | 2 (`0x801F6E78`) | drift in `0xB5` only: TR y `+delta`, pitch `+delta`, TR z `+s`, the caster's rate `3`; passing: pitch `-0x80`, yaw `0x800 - facing`, TR `(0, 0xA00, depth + 0x400)` in `0xB5`, else `(0, 0x600, depth)` |
 /// | 3 (`0x801F7098`) | drift: TR z `+3s`, TR y `-s`, pitch `+s/8` |
 /// | 5 (`0x801F7520`) | passing with a party seat standing: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x800, depth)` |
 /// | 6 (`0x801F7780`) | drift: TR z `+s` |
@@ -950,6 +986,15 @@ pub fn dead_end_crisis_camera(
         4 | 5 => Some(2),
         _ => None,
     };
+    // The evolved Cort's own rate `+0x21D = 3` (`li s3,0x3` at `0x801F6A1C`):
+    // stored beside the clip `6` arm 1 stages as it passes in the `0xB5`
+    // formation (`sb v0,0x1da(s2)` / `sb s3,0x21d(s2)` at
+    // `0x801F6D58..0x801F6D5C`) and again on every pass of arm 2, ahead of
+    // its gate (`0x801F6ED4`), so the clip plays at three eighths of its
+    // speed through the low shot. The other formation's branch
+    // (`0x801F6DDC`) bumps the stage and stores no rate.
+    let caster_rate =
+        (b5 && (phase == 2 || (phase == 1 && !hold))).then_some(FINAL_CRISIS_CASTER_RATE);
     CaptureCamArm {
         shot: if hold { None } else { shot },
         drift,
@@ -959,9 +1004,17 @@ pub fn dead_end_crisis_camera(
             rate: party_rate,
             ..Default::default()
         },
+        caster_write: CaptureSeatWrite {
+            rate: caster_rate,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
+
+/// The anim rate PROT 0961 holds the evolved Cort's staged clip `6` at
+/// ([`dead_end_crisis_camera`], arms 1 and 2 of the `0xB5` formation).
+pub const FINAL_CRISIS_CASTER_RATE: u8 = 3;
 
 /// PROT 0961's terminal arm.
 const DEAD_END_CRISIS_DONE: u8 = 0xFF;
@@ -1439,9 +1492,13 @@ pub fn slime_divide_side_axis(facing: u16) -> (i32, i32) {
 /// the caster's old seat.
 ///
 /// Retail steps the shake once a battle frame; so does this, on the tick that
-/// opens a frame ([`ModuleCamState::opens_pass`]) and on the passing one.
+/// opens a frame ([`ModuleCamState::opens_pass`]), which reads the word as
+/// the whole pass's drain leaves it. The tick the word runs out on belongs
+/// to a frame whose shake has already been stepped, so it pushes the point
+/// and steps nothing: stepped again there, the caster crossed back over and
+/// stood on the clone, both halves on one side of the old seat.
 /// Measured on `battle_map01_green_slime_divide_mid_cast` (facing `0x800`,
-/// `P = (26, -178)`): the caster at `x = 11, -5, ..` early, `-490` at the
+/// `P = (26, -178)`): the caster at `x = 11, -5, ..` early, `-492` at the
 /// end, the point at `537`, and the clone seated there.
 ///
 /// PORT: overlay_cast_glare_divide_0940_801f78b8 (PROT 0940 `0x50` / `0xAE`; arm 2's shake and split point)
@@ -1465,7 +1522,7 @@ pub fn slime_divide_shake(
         return arm;
     };
     let (ax, az) = slime_divide_side_axis(caster.facing);
-    if st.opens_pass || !held {
+    if st.opens_pass {
         let reach = 0x200 - word;
         let (dx, dz) = ((ax * reach) / 4096, (az * reach) / 4096);
         let (x, z) = if st.split_passes & 1 == 1 {
@@ -1533,31 +1590,58 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
         1..=3 => {
             let d = if phase == 1 { drift(0, 0, 2, -8) } else { pull };
             let hold = st.countdown.drain_above(0);
-            if hold {
-                return CaptureCamArm {
-                    shot: None,
-                    drift: Some(d),
-                    hold: true,
-                    next: Some(phase),
+            let mut arm = CaptureCamArm {
+                drift: Some(d),
+                hold,
+                next: Some(phase),
+                ..Default::default()
+            };
+            if phase == 1 {
+                // Every pass of arm 1, ahead of its gate: Zora's rate `4`
+                // (`0x801F6C90..0x801F6C9C`), each party seat but the
+                // victim and each monster seat but the caster hidden
+                // (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F6CB8..0x801F6D80`),
+                // and the caster's idle staged with no bump
+                // (`sb zero,0x1da(s4)` at `0x801F6D94`), which the cast
+                // clip's natural end commits.
+                arm.others_write = super::v_windhash::HIDDEN;
+                arm.others_every_pass = true;
+                arm.others_skip_pair = true;
+                arm.caster_write = CaptureSeatWrite {
+                    rate: (seats.caster_monster == 0xA9).then_some(4),
+                    stage: Some(0),
                     ..Default::default()
                 };
+            }
+            if hold {
+                return arm;
             }
             if phase < 3 {
                 st.countdown.add(1 << 7);
             }
-            let shot = (phase == 1).then(|| ModuleShot {
-                angles: [0, yaw_from(0x800, seats.victim.facing), 0],
-                tr: [0, 0x400, 0xA00],
-                focus: focus_on(seats.victim),
-                frames: 1,
-            });
-            CaptureCamArm {
-                shot,
-                drift: Some(d),
-                hold: false,
-                next: (phase < 3).then_some(phase + 1),
-                ..Default::default()
+            if phase == 1 {
+                arm.shot = Some(ModuleShot {
+                    angles: [0, yaw_from(0x800, seats.victim.facing), 0],
+                    tr: [0, 0x400, 0xA00],
+                    focus: focus_on(seats.victim),
+                    frames: 1,
+                });
+                // The cut hides the caster and shows the victim
+                // (`sw zero,0x4(s4)` / `sb 0xFF,0x21c(s4)`,
+                // `sw 0x20080200,0x4(s6)` / `sb zero,0x21c(s6)` at
+                // `0x801F6EBC..0x801F6ED0`). A monster whose colour word
+                // reads zero does not tick, so the caster stands on the
+                // keyframe the cut found it on until the Done band shows
+                // it: `battle_korb2_medusa_glare_mid_cast`'s recording
+                // holds Medusa's clip `8` at cursor `1024` through arms 2
+                // and 3.
+                arm.caster_write.colour = Some(0);
+                arm.caster_write.render_flag = Some(0xFF);
+                arm.victim_write = super::v_windhash::SHOWN;
             }
+            arm.hold = false;
+            arm.next = (phase < 3).then_some(phase + 1);
+            arm
         }
         _ => CaptureCamArm::default(),
     }
@@ -1921,6 +2005,17 @@ mod slime_divide_tests {
         let arm = shake(&mut st, 4, 65);
         assert!(arm.hold && arm.caster_write.x.is_none());
         assert_eq!(st.split_passes, 65);
+        // The tick the word runs out on is inside a frame whose shake has
+        // been stepped: it pushes the point to the side the bumped counter
+        // names and leaves the caster on the other.
+        let arm = shake(&mut st, 0, 66);
+        assert!(!arm.hold);
+        assert_eq!(arm.caster_write.x, None);
+        assert_eq!(st.split_passes, 66);
+        assert_eq!(st.split_point, Some([537, -178]));
+        // A frame that opens on the passing tick steps the shake once.
+        st.split_point = Some([26, -178]);
+        st.opens_pass = true;
         let arm = shake(&mut st, 0, 65);
         assert!(!arm.hold);
         assert_eq!(arm.caster_write.x, Some(-485));

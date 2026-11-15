@@ -242,6 +242,17 @@ impl FrameStepTelemetry {
         }
     }
 
+    /// Telemetry standing where a capture's stood: the sixteen samples of
+    /// `DAT_80084098`, the write cursor `gp+0x440` (masked as the top of the
+    /// next frame masks it) and the cadence `0x1F800392` holds.
+    pub const fn from_state(history: [i16; Self::HISTORY], cursor: usize, previous: u8) -> Self {
+        Self {
+            history,
+            cursor: cursor % Self::HISTORY,
+            previous,
+        }
+    }
+
     /// One frame of `FUN_80016B6C`'s cadence block.
     ///
     /// `elapsed_hblanks` is the frame time `FUN_800173BC` returns (retail's

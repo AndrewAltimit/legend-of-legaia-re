@@ -43,13 +43,17 @@ pub fn sync_dance_venue(
     camera: &mut Camera,
 ) -> Option<DanceVenueEdge> {
     let edge = stage_or_restore(mode, minigames, scene_block_base, camera);
-    // The dance tick's camera keyframe track runs every staged frame - the
-    // staging frame included, which is the tick's first after the entry and
-    // lands on pose 0 exactly.
+    // The dance tick's camera keyframe track runs on every game frame of the
+    // hall, by the hall's delta - the staging frame included, which is the
+    // tick's first after the entry and lands on pose 0 exactly. Retail's
+    // block sits in `FUN_801CF470`, which runs once every three vsyncs on a
+    // delta of three, so the pose holds three vsyncs and then steps.
     if mode == SceneMode::Dance
+        && minigames.dance_hall_frame
         && let (Some(stage), Some(game)) =
             (minigames.dance_venue.as_mut(), minigames.dance.as_mut())
-        && let Some(pose) = game.advance_camera(1)
+        && let Some(pose) =
+            game.advance_camera(legaia_engine_minigames::dance::HALL_FRAME_STEP as u8)
     {
         stage.camera = venue_camera_at(&dance_scene_entry(), pose);
     }

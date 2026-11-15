@@ -24,6 +24,19 @@ pub const ENTRY_COUNTER_LAST: u32 = 0xC0;
 /// and TR z `-0x40` (`(fs * 3) << 4` / `fs << 6` at `0x80046FA4..0x80046FDC`).
 pub const ENTRY_DRIFT_TR_Y: f32 = 0x30 as f32;
 pub const ENTRY_DRIFT_TR_Z: f32 = 0x40 as f32;
+/// The first counter value of the sweep's measured passes. The game-mode
+/// transition `FUN_80016230` zeroes the frame-time ring (`0x80016234..0x80016274`),
+/// so the sweep's opening passes run on a step of `1` whatever the fight costs,
+/// and the stage loader's own pass (the first at `0x84` or more, `0x80046F04`)
+/// is the last of them: a walked encounter filmed a vsync at a time reads the
+/// counter `0x80`, `0x82`, `0x83`, `0x84`, `0x85` and then climbs by the fight's
+/// step, and both PCSX-Redux openings (`0x97` on a step of `3` and on a step of
+/// `2`) stand a whole number of steps past `0x85`.
+pub const ENTRY_MEASURED_FROM: u32 = 0x85;
+/// The step of the sweep's first pass: the one the transition's last frame
+/// left in `0x1F800393`, which the pacer has not yet rebuilt from the zeroed
+/// ring. The filmed entry reads `2`.
+pub const ENTRY_FIRST_PASS_STEP: u8 = 2;
 /// Case 2's TR (`0x801D5BB0..0x801D5BD0`): `(0, 0x600, 0x700)`, raw z.
 pub const ENTRY_CASE2_TR_Y: f32 = 0x600 as f32;
 pub const ENTRY_CASE2_TR_Z_RAW: i32 = 0x700;
@@ -72,6 +85,31 @@ impl BattleCamera {
         self.entry_sweep
     }
 
+    /// The frame step of the sweep pass that starts on `counter`: the fight's
+    /// own from [`ENTRY_MEASURED_FROM`], and below it the opening passes'
+    /// ([`ENTRY_FIRST_PASS_STEP`], then `1` up to and through the stage
+    /// load). Never more than the fight's step, so a per-vsync cadence keeps
+    /// its `1`.
+    fn entry_pass_step_at(&self, counter: u32) -> u8 {
+        let step = self.frame_step.max(1);
+        if counter >= ENTRY_MEASURED_FROM {
+            step
+        } else if counter == ENTRY_COUNTER_START {
+            step.min(ENTRY_FIRST_PASS_STEP)
+        } else {
+            1
+        }
+    }
+
+    /// The frame step of the sweep's next pass while it is one of the opening
+    /// passes below [`ENTRY_MEASURED_FROM`], for the frame driver's other
+    /// per-pass work (the stage colour ramp); `None` on every other pass.
+    pub fn entry_sweep_opening_step(&self) -> Option<u8> {
+        self.entry_sweep
+            .filter(|&c| c < ENTRY_MEASURED_FROM)
+            .map(|c| self.entry_pass_step_at(c))
+    }
+
     /// One camera step ([`BattleCamera::frame_step`] display frames) of the
     /// entry sweep. Returns
     /// `false` once the sweep is over.
@@ -98,14 +136,15 @@ impl BattleCamera {
             self.hand_over_from_entry_sweep();
             return false;
         }
-        let fs = f32::from(self.frame_step);
+        let step = self.entry_pass_step_at(counter);
+        let fs = f32::from(step);
         if counter < ENTRY_CASE2_FROM {
             self.pose.tr[1] += ENTRY_DRIFT_TR_Y * fs;
             self.pose.tr[2] -= ENTRY_DRIFT_TR_Z * fs;
         } else {
             self.step_entry_close_in();
         }
-        let next = counter + u32::from(self.frame_step);
+        let next = counter + u32::from(step);
         if next > ENTRY_COUNTER_LAST {
             self.entry_sweep = None;
             if self.open_held && matches!(self.phase, BattleCamPhase::Menu) {

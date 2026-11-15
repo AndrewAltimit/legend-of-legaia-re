@@ -109,6 +109,30 @@ pub fn upload_effect_textures_into_vram(
     Ok(uploaded)
 }
 
+/// Layer the field's resident texture pool **under** a scene build's image:
+/// the whole effect-texture section ([`upload_effect_textures_into_vram`],
+/// with its CLUT strips), which is also where the field-character atlas
+/// lives - the Vahn / Noa / Gala pages at `(832, 256)` and their palettes
+/// as flat strips on CLUT row 478.
+///
+/// Retail loads the pool ahead of the scene, so a scene TIM on an
+/// overlapping rect wins: `dolk` keeps its own `(448, 0)` texels, and a
+/// scene that ships its own character palettes keeps them. Frozen Buma
+/// (`bubu2`) writes 45 cells of row 478 (`x` in `0..32`, `70..76` and
+/// `128..135`), and a PCSX-Redux field state of that scene holds the
+/// scene's words there, not the pack's. A host that wrote the atlas over
+/// its build drew the party there on the pack's default palettes.
+///
+/// Every host layers its field image through this one step (the scene
+/// host's field entry, the native window's scene build, a pack map's
+/// occupancy image). Returns the number of pool TIMs uploaded.
+pub fn underlay_field_texture_pool(index: &ProtIndex, vram: &mut psx_tim::Vram) -> Result<usize> {
+    let mut pool = psx_tim::Vram::new();
+    let n = upload_effect_textures_into_vram(index, &mut pool, true)?;
+    vram.underlay(&pool);
+    Ok(n)
+}
+
 /// Decoded `befect_data` (PROT 874) etim-section bytes - the shared
 /// effect-texture TIM pool [`upload_effect_textures_into_vram`] and
 /// [`effect_texture_image_rects`] both walk.

@@ -2074,10 +2074,30 @@ impl BattleDrive {
                     .map(|m| m.menu_spell().map(|r| r.id))
             };
             if let Some(under) = under {
-                return Some(if pick != 0 && under != Some(pick) {
-                    PadButton::Down
+                if pick == 0 || under == Some(pick) {
+                    return Some(PadButton::Cross);
+                }
+                // Both windows are list-kernel windows: Down wraps inside
+                // its page, so a row on another page is reached with Right /
+                // Left first.
+                let toward = if window == BattleFlowState::ItemWindow {
+                    world.battle.item_menu.as_ref().and_then(|m| {
+                        let row = m
+                            .filtered_items
+                            .iter()
+                            .position(|&i| m.items.get(i) == Some(&pick))?;
+                        m.browse_pad_toward(row)
+                    })
                 } else {
-                    PadButton::Cross
+                    world.battle.spell_menu.as_ref().and_then(|m| {
+                        let row = m.spells.iter().position(|r| r.id == pick)?;
+                        m.browse_pad_toward(row)
+                    })
+                };
+                return Some(match toward {
+                    Some(pad) if pad == PadButton::Right.mask() => PadButton::Right,
+                    Some(pad) if pad == PadButton::Left.mask() => PadButton::Left,
+                    _ => PadButton::Down,
                 });
             }
         }
@@ -2351,8 +2371,10 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
         return true;
     }
     world.battle.camera.as_ref().is_some_and(|c| {
+        // The next pass's own step: the sweep's opening passes run on theirs.
+        let step = c.entry_sweep_opening_step().unwrap_or(c.frame_step());
         c.entry_sweep_counter()
-            .is_none_or(|n| entry != 0xFF && n + u32::from(c.frame_step()) / 2 >= u32::from(entry))
+            .is_none_or(|n| entry != 0xFF && n + u32::from(step) / 2 >= u32::from(entry))
     })
 }
 

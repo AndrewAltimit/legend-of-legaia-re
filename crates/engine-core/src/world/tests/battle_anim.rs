@@ -826,6 +826,7 @@ fn art_constant_commit_slows_everyone_and_rate_zero_freezes_the_pose() {
 fn an_art_install_clears_the_ghost_ring() {
     let mut world = pose_test_world();
     let frame = crate::world::BattleGhostFrame {
+        morphs: Vec::new(),
         pose: legaia_anm::player::PoseFrame {
             bone_outputs: Vec::new(),
             factor: 0,
@@ -850,6 +851,47 @@ fn an_art_install_clears_the_ghost_ring() {
             .all(|f| !f.ghost_eligible),
         "every ring entry fails the gate after the install"
     );
+}
+
+/// The pass that commits a clip stamps the ring's newest entry with that
+/// clip's id: the natural-end commit (`jal 0x8004AD80` at `0x80047B54`) runs
+/// ahead of the ring shift and of the id store (`0x80047FCC..0x80047FD4`). An
+/// art installed in slot `0x11` opens the ghost walk's gate from its own
+/// pass, and the plain swing after it shuts it from its own.
+#[test]
+fn the_commit_pass_stamps_the_ring_with_the_committed_clip() {
+    let mut world = pose_test_world();
+    let frame = crate::world::BattleGhostFrame {
+        morphs: Vec::new(),
+        pose: legaia_anm::player::PoseFrame {
+            bone_outputs: Vec::new(),
+            factor: 0,
+            finished: false,
+        },
+        pos: [0; 3],
+        ghost_eligible: false,
+        clip_key: 0,
+        variant_track: Default::default(),
+        frame: 0,
+    };
+    world.actors[0].battle_pose_history = std::iter::repeat_n(frame, 8).collect();
+    let mut bank: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    bank[0xA] = Some(pose_test_clip(0x1A, 60, 0));
+    world.set_actor_battle_art_bank(0, std::sync::Arc::new(bank));
+    world.actors[0].battle.queued_anim = 0x1A;
+    world.commit_staged_battle_anim(0);
+    assert_eq!(world.actors[0].battle.current_anim, 0x11);
+    world.show_committed_first_keyframe(0);
+    let ring = &world.actors[0].battle_pose_history;
+    assert!(
+        ring[0].ghost_eligible,
+        "the install pass holds the art's id"
+    );
+    assert!(ring.iter().skip(1).all(|f| !f.ghost_eligible));
+    // A committed id under `0x11` shuts the newest entry again.
+    world.actors[0].battle.current_anim = 0x0F;
+    world.show_committed_first_keyframe(0);
+    assert!(!world.actors[0].battle_pose_history[0].ghost_eligible);
 }
 
 // --- trail-keyed test clips -------------------------------------------------

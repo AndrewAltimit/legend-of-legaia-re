@@ -191,7 +191,7 @@
   .xw-badge { display: inline-block; min-width: 1.2em; padding: 0 0.3em; border-radius: 999px; font-size: 0.75em; font-weight: 700; text-align: center; background: var(--open); color: #fff; }
   .xw-badge.is-warn { background: var(--warn); color: #1d1500; }
   .xw-panel { padding: 0.7rem 0.8rem; background: var(--bg-raised); border-radius: 0 0 8px 8px; min-height: 24rem; container-type: inline-size; }
-  .xw-issues { position: sticky; top: calc(var(--topbar-h) + 4.5rem); max-height: calc(100vh - var(--topbar-h) - 5rem); overflow: auto; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .xw-issues { position: sticky; top: calc(var(--topbar-h) + 4.5rem); max-height: calc(100vh - var(--topbar-h) - 5rem); max-height: calc(100dvh - var(--topbar-h) - 5rem); overflow: auto; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
   .xw-issue-file { margin: 0.5rem 0 0.2rem; font-family: var(--font-mono); font-size: 0.8em; color: var(--accent-hi); }
   .xw-issue { display: block; width: 100%; text-align: left; padding: 0.25rem 0.4rem; margin: 0 0 2px; font: inherit; font-size: 0.82em; color: var(--text); background: var(--bg-raised); border: none; border-left: 3px solid var(--open); border-radius: 3px; cursor: pointer; }
   .xw-issue.is-warning { border-left-color: var(--warn); }
@@ -242,7 +242,7 @@
   .xw-setup-title { font-weight: 600; color: var(--text-bright); }
   .xw-setup-hint { margin-left: auto; }
   .xw-setup[open] .xw-setup-hint { display: none; }
-  .xw-keyhelp { position: fixed; z-index: 60; top: calc(var(--topbar-h) + 1rem); left: 50%; transform: translateX(-50%); width: min(46rem, calc(100vw - 2rem)); max-height: calc(100vh - var(--topbar-h) - 2rem); overflow: auto; padding: 0.6rem 0.8rem; border: 1px solid var(--border-hi); border-radius: 8px; background: var(--bg-raised); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+  .xw-keyhelp { position: fixed; z-index: 60; top: calc(var(--topbar-h) + 1rem); left: 50%; transform: translateX(-50%); width: min(46rem, calc(100vw - 2rem)); max-height: calc(100vh - var(--topbar-h) - 2rem); max-height: calc(100dvh - var(--topbar-h) - 2rem); overflow: auto; padding: 0.6rem 0.8rem; border: 1px solid var(--border-hi); border-radius: 8px; background: var(--bg-raised); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
   .xw-keyhelp[hidden] { display: none; }
   .xw-keyhelp th { white-space: nowrap; color: var(--text-muted); }
   .xw-findbox { margin-bottom: 0.6rem; }

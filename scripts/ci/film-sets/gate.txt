@@ -1,0 +1,16 @@
+# The full gate's film set (scripts/ci/film-cues.py --gate): a dozen short films from the four sets,
+# each line its set's own with the cached recording named. A recording is a copy under
+# captures/film-retail/<film>/retail; the gate films nothing on the emulator.
+# See docs/tooling/cast-sequence-oracle.md, "The gate set".
+rugi_barra_strike --physical --state battle_rugi_barra_strike --every 8 --hit-trace --strike-deal --pin-seed 0xA54FF53A --retail-from captures/film-retail/rugi_barra_strike/retail
+taiku_topaz_strike --physical --state battle_taiku_topaz_strike --every 8 --hit-trace --strike-deal --pin-seed 0x9E3779B9 --retail-from captures/film-retail/taiku_topaz_strike/retail
+map03_heavy_grude_strike --physical --state battle_map03_heavy_grude_strike --every 8 --hit-trace --strike-deal --pin-seed 0xBB67AE85 --retail-from captures/film-retail/map03_heavy_grude_strike/retail
+cave01_theeder_thunderbolt --physical --state battle_cave01_theeder_thunderbolt_mid_cast --caster 3 --target 0 --pin-seed 0x12345678 --retail-from captures/film-retail/cave01_theeder_thunderbolt/retail
+noaru_barra_v2_pre_multi_cutter__65 --spell 0x65 --state noaru_barra_v2_pre_multi_cutter --caster 3 --target 8 --pin-seed 0x12345678 --retail-from captures/film-retail/noaru_barra_v2_pre_multi_cutter__65/retail
+jou_gimard_v3_tail_flare --physical --state battle_jou_gimard_v3_tail_flare_mid_cast --caster 3 --target 0 --pin-seed 0x12345678 --retail-from captures/film-retail/jou_gimard_v3_tail_flare/retail
+map01_lippian_kiss_of_death --physical --state battle_map01_lippian_kiss_of_death_mid_cast --caster 5 --target 0 --pin-seed 0x12345678 --retail-from captures/film-retail/map01_lippian_kiss_of_death/retail
+s81 --spell 0x81 --state party_basic_attack_vs_gobu_gobu --target 3 --retail-from captures/film-retail/s81/retail
+s88 --spell 0x88 --state party_basic_attack_vs_gobu_gobu --target 3 --retail-from captures/film-retail/s88/retail
+rikuroa_vahn_chain_open --physical --state battle_rikuroa_party_vahn_chain_open --hit-trace --strike-deal --retail-from captures/film-retail/rikuroa_vahn_chain_open/retail
+garmel_vahn_hyper_elbow_mid --physical --state battle_garmel_party_vahn_hyper_elbow_mid --hit-trace --strike-deal --retail-from captures/film-retail/garmel_vahn_hyper_elbow_mid/retail
+jou_noa_chain_mid --physical --state battle_jou_party_noa_chain_mid --hit-trace --strike-deal --retail-from captures/film-retail/jou_noa_chain_mid/retail

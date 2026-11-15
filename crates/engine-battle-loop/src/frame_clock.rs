@@ -271,6 +271,7 @@ pub const fn step_of_cost(cost: u16) -> u8 {
 pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
     let row: [u16; 3] = match action_state {
         0x33 | 0x34 => [200, 330, 460],
+        0x35 | 0x36 => [SUMMON_BAND_FRAME_COST; 3],
         0x00 => [282, 411, 545],
         0x0A => [340, 457, 527],
         0x0C => [354, 463, 608],
@@ -293,6 +294,28 @@ pub const fn measured_frame_cost(party_count: u8, action_state: u8) -> u16 {
         _ => 2,
     }]
 }
+
+/// What a summon band's frame (`0x35` / `0x36`) costs on an arm no arm table
+/// prices: the band's opening arms, the page-in pass and the drive's seek.
+/// The module draws its own scene with the party and the stage off the frame,
+/// so the cost does not read the party: over the lone-caster films of
+/// `party_basic_attack_vs_gobu_gobu` the ring's entries on those arms run
+/// `122`..`236` hblanks (three casts whose opening is a black frame read under
+/// `100`), and the full-party films (`kor`, `tower`) `165`..`221`. All sit
+/// under `0xF1`, so the band opens on step `1` once the close-up's entries
+/// have left the ring. Priced off the ordinary row instead, each opening pass
+/// stored a step-`2` entry (`3` on a full party) and the band's first arm ran
+/// sixteen passes on it: Gimard's arm 2 drew `49` frames where retail's draws
+/// `64`, and the `rand()` stream stood fifteen frame-driver draws short from
+/// there on. One emulated machine's measurement, like the table.
+pub const SUMMON_BAND_FRAME_COST: u16 = 200;
+
+/// The longest hold of a summon module's seek arm that leaves its frame's
+/// cost alone, in vsyncs: PCSX-Redux's ordinary seek takes `1..4`, inside the
+/// frame's own wait for its step. A longer one loads the frame it ends on
+/// (the world's cost push). Two full-party recordings place it: a hold of `3`
+/// stores no dear entry, one of `9` stores a step-`3` one.
+pub const SEEK_HOLD_FREE_VSYNCS: u8 = 4;
 
 /// The passes the summon close-up `0x33` opens on at a higher cost
 /// ([`measured_frame_cost_at`]).
@@ -497,6 +520,49 @@ pub const fn polygon_frame_work(polys: u32) -> u16 {
     }
 }
 
+/// Hblanks of a battle frame's work that do not scale with what it links,
+/// the intercept of [`linked_frame_work`]: the frame driver, the battle VMs,
+/// the 2D layers the census does not count.
+pub const LINKED_FRAME_BASE: u16 = 117;
+
+/// Hblanks a battle frame's work spends per primitive it links, in
+/// thousandths, over the census of world state
+/// (`legaia_engine_scene_host::battle_link_census`), which counts what
+/// retail's ordering table holds rather than what a host's draw lists carry.
+/// Fitted on retail's unloaded frames (cost under the clamp, frame inside its
+/// step plus one, the summon band's arms left out) of half the four film sets
+/// against the census on the paired engine tick: scored on the other half, rms
+/// `82` hblanks and the step read right on `.80` of frames, where the
+/// action-state table reads rms `137` and `.75`
+/// (`docs/subsystems/battle-stage-camera.md`, "The census").
+pub const LINKED_WORK_MILLI: u32 = 200;
+
+/// Hblanks a monster's strike frame (`0x1E..=0x20` with a monster acting)
+/// spends over what it links. Retail's unloaded monster-strike frames sit a
+/// steady offset over the census line (`+25` at the mean over the strike
+/// films), and no class the census counts explains it held out by film (the
+/// effect sprites, the ghosts, the parts, the bodies, the stage each add
+/// nothing past a constant): it is the fight's own CPU work around the swing.
+/// The party's art strikes take none: their films already run at retail's
+/// step on the census alone.
+pub const LINKED_STRIKE_WORK: u16 = 25;
+
+/// Whether `state` is one of the strike states [`LINKED_STRIKE_WORK`] loads.
+pub const fn is_strike_state(state: u8) -> bool {
+    matches!(state, 0x1E..=0x20)
+}
+
+/// The work a battle frame whose census counts `linked` primitives costs
+/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
+pub const fn linked_frame_work(linked: u32) -> u16 {
+    let c = LINKED_FRAME_BASE as u32 + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What a frame the clip's polls load costs over its work, in thousandths,
 /// when the work is the frame's own ([`polygon_frame_work`]): the median of
 /// the `--cd-trace` recordings' polled state-and-arm medians, cost over cost
@@ -526,6 +592,19 @@ pub const XA_STREAM_ONSET_COST: u16 = 122;
 /// ghosts raise a lone member's `0x20` frame by `37` and `35` on the frames
 /// they appear, before any effect part is live.
 pub const GHOST_DRAW_COST: u16 = 36;
+
+/// Hblanks one after-image ghost of a party member adds to a frame. PCSX-Redux
+/// recordings of the three Super Arts on a full party
+/// (`battle_jou_party_*_super_open`, `--ghost-trace`) hold five frames that
+/// draw one ghost beside frames that draw none, outside any clip's polls:
+/// Vahn's cost `687` and `685` over `596`..`608`, Gala's `535` and `537` over
+/// `442`, Noa's `716` over `620`: `85` to `96` a ghost whoever draws it, and
+/// Gala's body, the lightest of the three by triangles, costs the most. So a
+/// flat price, not the mesh's: two ghosts carry a full party's `0x1E` frame
+/// over `0x2D0` (step `4`) and one leaves it under (step `3`), as the frame
+/// that draws the slow motion's first ghost alone reads (`692`, then a
+/// step-`3` pass). One emulated machine's measurement.
+pub const PARTY_GHOST_DRAW_COST: u16 = 90;
 
 /// Hblanks one live move-VM effect part adds to a frame (its tick
 /// `FUN_80021DF4` and its sprite or mesh draw). Read off the lone-member strike
@@ -564,13 +643,8 @@ pub const EFFECT_POOL_CHILD_COST_MILLI: u32 = 1600;
 
 /// What one after-image ghost of a body of `triangles` costs a frame
 /// ([`GHOST_TRIANGLE_COST_MILLI`]); [`GHOST_DRAW_COST`] for a body whose
-/// polygon count the frame does not know. A party member's count is that of
-/// the objects its seat draws: on PCSX-Redux recordings of the Super Arts
-/// (`battle_jou_party_*_super_open`, `--ghost-trace`) a full party's frame
-/// drops `90` to `105` hblanks a ghost where the slow motion's two ghosts go,
-/// and rises `140` a ghost where they come back in the finisher, against the
-/// flat `36` that left those frames under `0x2D1` (step `3` where retail's
-/// run `4`).
+/// polygon count the frame does not know. A monster's price: a party
+/// member's ghost is [`PARTY_GHOST_DRAW_COST`].
 pub const fn ghost_draw_cost(triangles: Option<u16>) -> u16 {
     match triangles {
         Some(t) => {

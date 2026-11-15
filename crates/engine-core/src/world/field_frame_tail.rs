@@ -502,6 +502,7 @@ impl World {
         }
         let slots: Vec<u8> = self.npcs.clip_cursors.keys().copied().collect();
         for slot in slots {
+            self.adopt_live_clip_rate(slot);
             let flags = self.npc_channel_local_flags(slot);
             let live_rate = self
                 .npcs
@@ -530,6 +531,47 @@ impl World {
                 ch.ctx.local_flags = out;
             }
         }
+    }
+
+    /// Put a host-bound scene-bank cursor on its actor's live rate.
+    ///
+    /// The advance reads the actor's `+0x6A` on every tick: the gated arm
+    /// folds it through the record's divisor (`lh v0,0x6a(s0)` at
+    /// `0x800205C8`), the plain arm takes it whole (`lh a0,0x6a(s0)` at
+    /// `0x800205EC`). A placement's header clip is bound by the host from its
+    /// clip player, at the step the record gives the template rate, so a
+    /// spawn section that rewrote the rate first (`garmel` `P1[5]`: `4C 41
+    /// 08`, rate `4`; `P1[7]`: `4C 41 04`, rate `2`) played its header clip
+    /// at the template's `8`. A script's own bind
+    /// ([`Self::bind_npc_scene_clip`]) already steps live, and a re-bind of
+    /// the id already playing is a no-op, so nothing later corrected it.
+    ///
+    /// Only a scene-bank clip whose record the scene's table describes, on an
+    /// actor whose rate word is live: the cursor takes the record's gate and
+    /// divisor and joins [`FieldNpcState::clip_rate_live`].
+    // REF: FUN_800204F8
+    fn adopt_live_clip_rate(&mut self, slot: u8) {
+        if self.npcs.clip_rate_live.contains(&slot) || self.npc_party_bank(slot) != Some(false) {
+            return;
+        }
+        if self.npc_channel_clip_rate(slot).is_none() {
+            return;
+        }
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        let meta = usize::from(c.anim_id)
+            .checked_sub(1)
+            .and_then(|i| self.locomotion.scene_clip_meta.get(i));
+        let Some(&(frames, gated, div)) = meta else {
+            return;
+        };
+        if frames != c.frames {
+            return;
+        }
+        c.scaled_step = gated;
+        c.step_div = div;
+        self.npcs.clip_rate_live.insert(slot);
     }
 
     /// The running clip of the field NPC a cross-context op's `target` byte
@@ -667,6 +709,44 @@ mod tests {
         assert!(frames > 1);
         assert_eq!(c.cursor, ((draw % frames) << 4) as i16);
         assert!(w.npcs.phase_draws.is_empty());
+    }
+
+    /// A header clip the host bound steps at the actor's own `+0x6A` once a
+    /// spawn section has written it (`4C 41`), as the advance reads the word
+    /// on every tick (`0x800205C8` / `0x800205EC`).
+    #[test]
+    fn a_host_bound_scene_clip_steps_at_the_actors_live_rate() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 30)]);
+        let player = FieldClipPlayer::from_record(&scene, 0).unwrap();
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.locomotion.scene_clip_meta = vec![(30, false, 0)];
+        let mut ch = party_channel(5, 0);
+        ch.ctx.field_6a = 4;
+        w.field_vm.channels.push(ch);
+        w.field_vm.channels.push(party_channel(6, 0));
+        w.bind_npc_clip_cursor(5, 1, &player);
+        w.bind_npc_clip_cursor(6, 1, &player);
+        let start = (
+            w.npcs.clip_cursors[&5].cursor,
+            w.npcs.clip_cursors[&6].cursor,
+        );
+        w.tick_npc_clips();
+        assert_eq!(w.npcs.clip_cursors[&5].cursor - start.0, 4, "the live rate");
+        assert_eq!(
+            w.npcs.clip_cursors[&6].cursor - start.1,
+            8,
+            "an actor on the template rate keeps the record's step"
+        );
+        // A party-bank actor's ids name the locomotion bank: left alone.
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
+        let mut ch = party_channel(7, party);
+        ch.ctx.field_6a = 4;
+        w.field_vm.channels.push(ch);
+        w.bind_npc_clip_cursor(7, 1, &player);
+        let at = w.npcs.clip_cursors[&7].cursor;
+        w.tick_npc_clips();
+        assert_eq!(w.npcs.clip_cursors[&7].cursor - at, 8);
     }
 
     fn party_channel(slot: usize, flags: u32) -> legaia_engine_field::field_channels::FieldChannel {

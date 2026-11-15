@@ -653,7 +653,11 @@ pub(super) fn play_beats(
             // once its `0x282` is up and P2[60] hops it back up, and a hand
             // that stepped onto one as a beat came back across the other,
             // ending the walk on whichever side the last hop left it.
-            if pad_hand() && band_is_bare_link(session, &mf, &man, rec, &band) {
+            if pad_hand()
+                && (band_is_bare_link(session, &mf, &man, rec, &band)
+                    || (continuous::PLAYS_ON.with(std::cell::Cell::get)
+                        && band_is_clock_link(session, &mf, &man, rec, &band)))
+            {
                 if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                     eprintln!("    [beat-skip] {name} P2[{rec}] is a way across");
                 }
@@ -1935,7 +1939,6 @@ pub(super) fn band_is_bare_link(
     rec: u8,
     band: &BTreeMap<u8, Vec<(u8, u8)>>,
 ) -> bool {
-    use legaia_engine_field::man_field_scripts::FlagBank;
     let Some(tiles) = band.get(&rec).filter(|t| !t.is_empty()) else {
         return false;
     };
@@ -1969,6 +1972,44 @@ pub(super) fn band_is_bare_link(
     if !hops {
         return false;
     }
+    band_raises_nothing_new(session, mf, man, rec)
+}
+
+/// Is walk-on record `rec` a clock pad under the live flags - every tile of
+/// its band a pad whose landing forks on a flag the scene's own clock flips
+/// ([`phased_pads`]) - that raises no system flag the world lacks? The
+/// planner routes across such a pad and the follower times the step onto
+/// it, so stepping on it as a beat only moves the party to the pad's other
+/// end: `rugi`'s upper pads P2[40..=61], twenty-two of them, each a few
+/// thousand frames of waiting on `0x462` and riding, walked one after the
+/// other on every round of the tower's beats while the way to Rogue's band
+/// P2[38] was still to be found.
+pub(super) fn band_is_clock_link(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    rec: u8,
+    band: &BTreeMap<u8, Vec<(u8, u8)>>,
+) -> bool {
+    let Some(tiles) = band.get(&rec).filter(|t| !t.is_empty()) else {
+        return false;
+    };
+    let pads = phased_pads(session);
+    tiles
+        .iter()
+        .all(|&(x, z)| pads.contains_key(&(i32::from(x), i32::from(z))))
+        && band_raises_nothing_new(session, mf, man, rec)
+}
+
+/// No system flag walk-on record `rec`, or a record it spawns, raises is
+/// still clear, outside the ones it lowers again itself (a hop's hold).
+fn band_raises_nothing_new(
+    session: &NativeSession,
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    rec: u8,
+) -> bool {
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut recs = spawned_p2(mf, man, 2, usize::from(rec), n0 + n1, 3);

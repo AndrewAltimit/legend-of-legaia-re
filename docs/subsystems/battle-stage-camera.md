@@ -937,6 +937,18 @@ and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
 | `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass |
 | past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
 
+The step is not the fight's own from the first pass. The game-mode transition
+`FUN_80016230` zeroes the frame-time ring (`0x80016234..0x80016274`), so the sweep
+opens on the step the transition's last frame left and then on `1` until a pass
+long enough to raise it has been pushed, and the stage loader's pass (the first at
+`0x84` or more, `0x80046F04`) is the last of those. A walked encounter filmed a
+vsync at a time (`autorun_battle_intro_rand.lua`) reads the counter `0x80`, `0x82`,
+`0x83`, `0x84`, the loader's pass, `0x85`, and from there `+3` a pass; both
+PCSX-Redux openings stand on `0x97` at `TR (0, 2384, 5696)`, a whole number of
+steps past `0x85` on a step of `2` and on a step of `3`. Port:
+`BattleCamera::entry_sweep_opening_step` (`ENTRY_FIRST_PASS_STEP`,
+`ENTRY_MEASURED_FROM`); the stage colour ramp takes the same step on those passes.
+
 Two captures of the sparring fight's entry pin it. `v0_1_battle_loading_tetsu`
 (counter `0x84`) reads pitch `60`, `TR (0, 1472, 6912)` - four frames of drift
 from `(0, 1280, 7168)` - with an empty step table. `s5_tetsu_battle` (`0xAF`)
@@ -989,16 +1001,17 @@ white-out holds white and fades in from white, and every other fight does
 the same from black. The loader clears the word after its spawn
 (`0x80051D44`).
 
-The new fade ticks on its spawn pass. Both PCSX-Redux openings
+The new fade first ticks on the pass after its spawn. Both PCSX-Redux openings
 (`gaza2_card_battle_init` at frame step `3`, `cort_evolved_card_battle_init`
 at `2`) hold the block 18 units into its ramp at counter `0x97` - level `25`
-in RAM, `102` and `76` on the displayed frame two passes older - which only
-a first step on the loader's own pass reaches.
+in RAM, `102` and `76` on the displayed frame two passes older - which is the
+passes from `0x85` alone, six on a step of `3` and nine on a step of `2`: the
+loader's own pass leaves the counter at `0x85` and the fade unstepped.
 
 Port: `World::battle_entry_fade_draw`, which `World::screen_fade_draws` leads
 with, so both hosts draw it. The held fade is the stage load still pending;
-the loader's ramp is `BattleState::entry_fade`, spawned and stepped once in
-`World::run_battle_stage_load`, then stepped with the other fade actors.
+the loader's ramp is `BattleState::entry_fade`, spawned in
+`World::run_battle_stage_load` and stepped with the other fade actors from the next pass.
 `legaia_render_kernels::battle_intro_styles::intro_leaves_white` is the
 `_DAT_8007B8FC` store, latched when the transition resolves its style.
 
@@ -1649,17 +1662,122 @@ between. Grade `disassembly` for the per-polygon path, `capture` for the coeffic
 
 Port: `frame_clock::polygon_frame_work` (`POLY_FRAME_BASE`, `POLY_WORK_MILLI`) and
 `xa_polled_work_cost` (`XA_POLL_WORK_RATIO_MILLI`), behind
-`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`, on top of the span
-law). The native window prices each battle frame's table and hands its count over
-(`World::note_drawn_polys`); a host that does not price its frames keeps the tables. A priced
-frame's work replaces the state's base and draw load, a capture-band module's line loads it
-like the funnel's, and a capture arm's table step no longer stands in for its cost: the ring
-reads the priced cost. A summon module's arms keep their table: their clips poll on
+`WorldToggles::battle_poly_frame_cost` (`LEGAIA_BATTLE_POLY_COST=1`). The count is the
+[census](#the-census) of world state every host runs (`World::note_linked_polys`, priced by
+`linked_frame_work`); the native window's own count of its drawn table stays a diagnostic
+source (`LEGAIA_BATTLE_POLY_SOURCE=window`, priced by `polygon_frame_work`, the line above). A priced
+frame's work replaces the state's base and draw load and a capture-band module's line loads it
+like the funnel's. Under the window's count a capture arm's table step no longer stands in for
+its cost (the ring reads the priced cost); under the census every arm table keeps its step
+([below](#the-census)). A summon module's arms keep their table: their clips poll on
 PCSX-Redux too (`84` to `676` polls a frame from the line's arm on), but the engine's linked
 count overshoots retail's work under them, and the Seru films read lower priced. The cast
 recorder's `meta.csv` carries each pass's `work`.
 
-The three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
+<a id="the-census"></a>
+
+**The census.** The window's count is not retail's, and only the window has one. It
+counts its draw lists, not an ordering table: the grid's quads arrive as unpaired
+triangles and count twice, every effect billboard twice, the backdrop's off-screen
+primitives once each. Against retail's own tables, read out of `62` battle states with
+`display-list` (the polygon packets of the chain the frame links), the window counts `1.45`
+times retail's. And a headless session, the play page and the window each priced a frame
+differently, so a replay seeded headless parted from its windowed recording.
+
+`legaia_engine_scene_host::battle_link_census` counts the frame from world state alone,
+in the scene host's tick, which every host runs. The geometry is the disc's, built once a
+fight: the backdrop's objects, each party member's battle form, each monster's archive
+mesh, the summon creature's, the effect library's meshes the live parts draw. What moves is
+read off the world through the kernels the hosts draw with: the battle camera, each body's
+placement, pose, drawn objects and draw plan, the ghost walk, the grid's cell culls. The
+rules are the dispatcher's:
+
+| Class | What links | Grade |
+|---|---|---|
+| Every primitive | Not under the near floor (mean corner `SZ` under `64`, `OTZ` `0x10` at shift `2`), no corner behind the eye | disassembly |
+| A single-sided draw | Front faces only; a quad is kept when either half faces the eye (`0x80045A38..0x80045A6C`) | disassembly |
+| The backdrop pair | Copy A front faces, copy B by its word, slot 1 under the frame's angle; a primitive with every corner past one screen edge is dropped | disassembly (quads), capture (triangles) |
+| The ground grid | Four `POLY_GT4` a visible cell (`visible_cell_count`) | disassembly, capture |
+| A drawn body's ground shadow | `24` packets, gated as the disc is | capture |
+| The effects | Each part through its library mesh (a bank-3 quad as sixteen `GT3`), each kind-4 node's quads, one `POLY_FT4` a pool sprite, one packet a weapon-trail, streak or ribbon quad | port |
+
+The backdrop's off-screen reject is `FUN_80044798`, which the quad leaves call under a
+colour word carrying `0x40` in its top byte, as the backdrop arm's always does. The
+retail tables drop the backdrop's off-screen triangles too: on `jou`'s stage the census
+reads `105` backdrop primitives with them dropped and `259` without, where retail's table
+holds `111`. The shadows are the `0x7F80` CLUT family of every battle table read, always a
+multiple of `24`. The HUD and the other 2D layers are not counted; they ride the base.
+
+Over the `62` states the census reads `1.04` times retail's polygon count, median error
+`174` primitives, correlation `.91` (the window `.906`); what is left is mostly the still's
+engine frame standing a pass or an effect away from retail's. On a strike state
+(`battle_jou_gimard_v3_strike`) it reads `2505` against retail's `2591`: stage `105` and
+`111`, grid `464` and `452`, the bodies `1936` against `1884`. Tail Flare's flight is the
+known miss: from the flame's spread on, retail's table holds about `3750` and the census
+`3000` to `3400`. Retail's tables at vsyncs `40`, `80` and `140` of the cast (states saved
+off the recording's state with nothing pressed) put the difference in the combatants'
+own CLUT families: the three party members link `763`, `724` and `651` packets and the
+Gimards `658`, where the cast's first frame holds `415`, `562`, `537` and `214`, and every
+one of those packets is flat-textured (`FT3` / `FT4`) where the first frame's Vahn was
+Gouraud. The grid, the stage and the shadows hold. The engine draws the bodies once each
+and the Gimards' two ghosts, about `640` packets short; what retail draws there (a second
+pass of each body under the flame's tint, or ghosts on the party) is not traced.
+
+The work line is fitted on retail's unloaded frames (cost under the clamp, frame inside
+its step plus one, summon band arms left out) paired with the census on the engine tick
+the film scorer pairs them on, half the films to train and the other half to score, over
+the four film sets (`165` films):
+
+| Work model | Held-out rms (hblanks) | Step read right |
+|---|---:|---:|
+| Action-state table (the default) | `137` | `.747` |
+| Census, `117 + .200` a primitive (`linked_frame_work`) | `82` | `.798` |
+| Window count, `82 + .163` a polygon | `75` | `.887` |
+
+On the strike and arts films the census reads rms `37` to `54` and `.92` to `.95`; the
+enemy casts are where it is weakest (rms `119`, `.68`, the table `.52` to `.64`): their
+effects are what it counts least well, Tail Flare's flame above all.
+
+Priced from the census, a frame's work keeps the table in two places: every arm an arm
+table steps (the capture band's as the summon band's), and the whole summon band
+`0x33..=0x36`. Priced there too, the enemy casts' capture band `0x70` agrees with retail on
+`.81` of its game time against the table's `.88` (the engine a third of a step over), the
+summon opening on `.58` against `.98`, the Seru band's unstepped `0x36` passes on `.965`
+against `.994`, and the cues fall as they did under the window's count with the span law:
+enemy casts `.9985` to `.9775` (both Kiss of Death films lose their cue), Seru casts `1.0` to
+`.9754` (`0x8E` to `.286`). So the cue losses earlier seen with the polygon cost on are the
+pricing of those arms, not the window's host-bound count.
+
+A monster's strike frame carries `LINKED_STRIKE_WORK` (`25` hblanks) over the census line:
+retail's unloaded monster-strike frames sit that far over it at the mean, and no counted
+class explains the offset held out by film (the effect sprites, the ghosts, the parts, the
+bodies and the stage each add nothing past a constant). Without it the strikes run a
+twentieth of a step under retail (`2.92` against `2.96`). Weighing the ghosts' flat packets
+lighter and the effect sprites heavier, as a fit on the strike and arts frames suggests,
+moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
+counts each primitive once.
+
+The four sets, one default build and the census-priced opt-in (image mean, cue mean, step
+agreement over the game time):
+
+| Set | Films | Default | Census priced |
+|---|---:|---|---|
+| Player arts | 20 | `.9300` / `.9982` / `.837` | `.9295` / `1.0` / `.924` |
+| Monster strikes | 65 | `.9816` / `.9996` / `.954` | `.9803` / `.9996` / `.956` |
+| Seru casts | 29 | `.9567` / `1.0` / `.993` | `.9567` / `1.0` / `.992` |
+| Enemy casts | 110 | `.9347` / `.9985` / `.841` | `.9355` / `.9991` / `.867` |
+
+Over the four sets step agreement goes `.909` to `.926`. Priced, the arts' strike states
+agree with retail on `.90` to `.94` of their game time and Tri-Somersault's arts voice lands
+(`.964` to `1.0`); the enemy casts' `0x2B..0x2E` and Done band agree further, and Gimard's
+Tail Flare plays all fifteen cues with no window. It stays opt-in by a small margin (grade
+`capture`): the arts' image mean falls `.0005` and the strikes' `.0013`, and the Seru casts'
+step agreement `.001`, all of it the post-band state `0x38` (`.943` to `.800`, `70` vsyncs of
+game time). Among the strikes the images part both ways at the same step agreement (Gel Frog
+`.922` to `.987`, Caruban `.917` to `.950`; Ghost Knight `.998` to `.938`, Topaz `.987` to
+`.942`, Warman `.996` to `.954`), which reads as harness seats built on the table's step.
+
+Under the window's count, the three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
 `3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's
 ring holds it), so its two homing slots land on one frame and the film's cues read `1.0`
 from `.933`. Neo Star Slash's capture arms run retail's long frames under the line, the
@@ -2121,21 +2239,65 @@ film scores `.728`, against `.729` on retail's own steps (`--retail-steps`).
 <a id="a-party-members-ghosts"></a>
 
 **A party member's ghosts.** The Super Arts' slow motion and the chain finishers draw two
-ghosts of the acting member, and each costs about what a monster's body of the same size
-does. PCSX-Redux recordings of the three Super Arts on a full party
+ghosts of the acting member. PCSX-Redux recordings of the three Super Arts on a full party
 (`battle_jou_party_vahn_tri_somersault_super_open`, `_gala_super_ironhead_super_open`,
-`_noa_dragon_fangs_super_open`, `--ghost-trace --gpu-cost`) drop `90` to `105` hblanks a
-ghost on the passes the slow motion's ghosts go (Tri-Somersault's `0x1E` from about `800`
-to `600`), and the finisher's rise `140` a ghost. So the ghost passes cost over `0x2D0` and
-run step `4`. Costed at the flat `36` a ghost the engine's read `694` and ran `3`; the pass
-that leaves the slow motion ran three vsyncs where retail's runs four, the flinch cursor the
-juggle counter reads ([a party strike's damage](../tooling/cast-sequence-oracle.md#a-party-strikes-damage))
-came one frame short, and the last four hits rolled on juggle `3` to `6` for retail's `1` to
-`4`. Costed by the drawn objects (Vahn's `1550` triangles, Gala's `1442`, Noa's `1536` over the
-whole form) the passes read `4`, all ten hits roll retail's numerals, and the chain finishers'
-`0x1F` and `0x20` read `4` with them: the party arts' films go from `.9034` to `.9183` (Gala's
-chain `.858` to `.951`, Lizard Tail `.917` to `.983`). Grade `disassembly` for the walk (`FUN_80049348` re-runs
-`FUN_80048A08` per ghost), `capture` for the costs.
+`_noa_dragon_fangs_super_open`, `--ghost-trace`) hold five frames that draw exactly one
+ghost beside frames that draw none, outside any clip's polls: Vahn's cost `687` and `685`
+over `596` to `608`, Gala's `535` and `537` over `442`, Noa's `716` over `620`. A ghost
+is `85` to `96` hblanks whichever member draws it, and Gala's body, the lightest of the
+three by triangles, costs the most, so the port prices a party ghost flat
+(`PARTY_GHOST_DRAW_COST`, `90`) where a monster's follows its mesh. Two of them carry a
+full party's `0x1E` frame over `0x2D0` (step `4`) and one leaves it under (step `3`): the
+frame that draws the slow motion's first ghost alone costs `692`, and retail's next pass
+runs `3`. Priced by the triangles the seat draws (`143` for Vahn) the one-ghost frames
+read `4`. Grade `disassembly` for the walk (`FUN_80049348` re-runs `FUN_80048A08` per
+ghost), `capture` for the cost.
+
+Not every ghost frame fits one number. Where an art's shot stands close on the member, or
+monsters are down, the frame's base falls well under the table's row: Super Ironhead with
+one Theeder left alive costs `442` bare and `615` to `647` under both ghosts, so its slow
+motion runs step `3` where the table's `622` puts the port on `4`, and Sonic Javelin's
+return frames cost `665` to `714` under both. The base is what the port does not model
+there ([the open thread](../reference/open-rev-eng-threads.md)).
+
+<a id="a-voice-line-loads-no-done-band-frame"></a>
+
+**A spent voice line loads no Done-band frame.** A clip's polls load every frame of its
+read span, and the span is vsyncs. Retail's frames under the polls run six to nine
+vsyncs, so a cast's line has run out by the time its action settles: across the film
+recordings, `17` of `2144` full-party `0x51` frames read the ring's clamp, and those
+sit in a handful of films whose line starts late in the action (both Grude strikes'
+settles are loaded throughout, Neo Star Slash's and Astral Slash's in part). The port's default law runs a loaded frame one vsync past its step, the same
+line covers more of its passes, and on the enemy casts it reached into the Done band:
+the HP-bar settle panned on step `4` where retail's runs `3` or `2`
+([the step agreement table](../tooling/cast-sequence-oracle.md#the-step-agreement-table)).
+
+So the port counts a line's span twice. The first count is its own ticks and loads the
+frames as before. The second is the same span on retail's frames
+(`AudioState::battle_xa_retail_left`): the read tail added, and each loaded pass taking
+the vsyncs retail's frame runs, its work under the polls for a clip the cue funnel or
+the arts voice starts and the recordings' median of `6` for a capture-band module's own
+line. When the action state reaches `0x50` / `0x51` the load is cut to what the second
+count has left (`World::close_pass_frame_cost`): a cast's line is spent and the settle
+runs its own cost, a line cued a few passes earlier is not and loads it as retail's does.
+The drive word keeps the line's own span, and the span law, whose frames run retail's
+length, needs no second count. Cutting every line at the Done band instead moved the
+replays behind four strike films (`noaru_gilium_lv2_strike` `.989` to `.871`). Grade
+`capture`.
+
+<a id="a-frames-cost-is-its-own-node-ticks"></a>
+
+**A frame's cost is its own node ticks and draw.** The frame driver measures a frame from
+one `VSync` return to the next (`FUN_800173BC` at the flip), so what a pass's node ticks
+change is in that pass's cost: the ring shift that brings a ghost into reach, the parts a
+hit spawns. The Tri-Somersault recording draws the first ghost in frames `1549` and
+`1550`, the second of them (the first outside the voice line's polls) costs `692`, and
+frame `1551` runs step `3`. The port pushes a pass's cost behind its node ticks
+(`World::close_pass_frame_cost`, staged by the action SM's step); pushed from the SM, the
+draw load was the pass before's and reached the step a frame late. Over the party arts'
+films the two changes and the ring id lift the mean from `.9242` to `.9293` on the same
+harness seats, and the dealt strike films from `.9805` to `.9816` (`retona_king_frog_strike`
+`.865` to `.905`). Grade `capture`.
 
 Caruban's Fire Breath is the case the polygon load decides. On a lone Vahn the breath's
 `0x2B` frames sit at `504` to `510` with both ghosts up, on the edge of `0x1FF`, and the
@@ -2304,6 +2466,54 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
 - **The step moves inside an arm.** Gimard's arm 6 runs `4` for 64 vsyncs, `3` for 46
   and `1` for 70, as the sixteen-frame ring empties, and the table holds one value. Over
   the 29 recordings the table agrees with the recording on 91% of band vsyncs.
+- **A frame's cost moves inside an arm too, and the ring cannot recover that.** Read
+  frame by frame off the recordings' `cost` column, Gimard's arm 6 is sixteen clamped
+  frames, while its cast line still loads, and then frames under `0xF1`: the ring walks
+  `4`, `3`, `1` from those two costs, where one modal `1` ran the arm half again as many
+  passes. Ozma's arm 21 costs the clamp for `24` frames and `674`..`712` hblanks for the
+  other `54`; Nova's arm 16 and Meta's arm 15 fall as their effect leaves the frame,
+  Terra's arm 3 climbs as its vortex fills it, Gimard's arm 4 opens on one frame under the
+  clamp, and Barra's arms 6 and 7 sit on a rung's edge and cross it now and then.
+  `CAST_ARM_COST_TAILS` carries a row wherever an arm's rung changes
+  (`cast_arm_frame_step_on_pass`, the pass counted through the band's two states),
+  generated by [`cast-arm-cost-rows.py`](../../scripts/ci/cast-arm-cost-rows.py): on a
+  frame's first row the recording's `cost` is the entry that frame's own pass stored, and
+  a step of `4` there is a raw cost past the clamp. It is the summon band's reading of
+  what `CAPTURE_ARM_READ_TAILS` holds for Kiss of Death, and the same kind of measurement
+  as the table: one emulated machine, one fight. With it the engine's arms run retail's
+  pass counts through the band (Gimard's arms 2..6 `64`, `1`, `9`, `8`, `99`, as the
+  recording), and since each pass draws the frame driver's `rand()`, the plain film's
+  stream stays on retail's words as far as the counts hold
+  ([the band's pass count](../tooling/cast-sequence-oracle.md#the-bands-pass-count)).
+- **The band opens cheap, whatever the party.** The arms no recording reads a step for
+  (the page-in pass and the drive's seek) cost `122`..`236` hblanks on the lone-caster
+  films and `165`..`221` on a full party's (`kor`, `tower`): the module draws its own
+  scene with the party off the frame. They are priced at `SUMMON_BAND_FRAME_COST`, under
+  `0xF1`. Priced off the ordinary row, each stored a step-`2` entry (`3` on a full party)
+  that held the band's first arm for sixteen passes: Gimard's arm 2 ran `49` frames where
+  retail's runs `64`, one frame-driver `rand()` short on each.
+- **A full party costs some arms more, and the tables do not say which.** Six full-party
+  recordings (Gimard, Barra and Gizam on `battle_kor_spoon_strike`; Zenoir, Barra and Iota
+  on `battle_tower_swordie_strike`) against the lone caster's: every clamped arm reads the
+  same, most arms under the clamp `0`..`25` hblanks more, and four `29`..`135` more
+  (Barra's arm 3 `338` to `473` and `423`, its arm 4 `231` to `274` and `272`, Gimard's
+  arm 6 `182` to `211`, Iota's arm 3 `77` to `110`). Where that crosses a rung the pass
+  count parts: Barra's arms 3, 4, 6, 7 and 8 run `25` / `33` / `92` / `79` / `60` engine
+  passes for retail's `22` / `29` / `88` / `72` / `52`. A flat lift of the frames on a
+  rung's edge would be wrong on Zenoir's arm 7, an edge run that reads `3` on both, and the
+  engine's own seats cannot gate it: all three members stand hidden through the band.
+- **A long seek hold loads the frame it ends on.** A module's seek arm waits on the drive
+  when the selector's seek is still in flight. One of PCSX-Redux's ordinary `1..4`-vsync
+  seeks fits inside the frame's own wait and stores nothing dear
+  (`SEEK_HOLD_FREE_VSYNCS`); a longer one stores a step-`3` entry, on the summon band's
+  states, which is where it is measured. The full-party Zenoir
+  recording (`battle_tower_swordie_strike`) spends `11` vsyncs on its seek arm and its
+  ring reads `3` for the sixteen frames behind, on arm 3's own `164` hblanks, where the
+  full-party Barra recording holds `3` vsyncs and runs on at the close-up's `2`. Without
+  the entry the engine ran the tower cast's arm 3 for `103` passes against retail's `76`
+  (`84` with it), and the mednafen stills `zenoir_summon_mid_cast` and
+  `slippery_summon_mid_cast`, which stand behind such a hold, landed a pass
+  off (camera `.991` and `.999`).
 
 The cause is the frame's cost, which a table of arms can only sample. Modelling it would
 take a per-frame cost out of the engine's own draw lists through the sixteen-entry ring;
@@ -2318,14 +2528,14 @@ at step `4` a pass moves it by 192 (`.863` to `.73`). Retail's own ring reads `4
 the table's value is right. That the replay's lattice is what moved is the reading of both
 falls, not a measurement of Gimard's; emptying the row restores both.
 
-Frame by frame the step is not what Gimard's late arms miss. A recording of the
-cast (`scripts/ci/cast-sequence.py --spell 0x81 --state party_basic_attack_vs_gobu_gobu`)
-scores arms 10, 11 and 12 at `.809`, `.707` and `.802`, and the same film run on
-retail's own steps (`--retail-steps`) at `.809`, `.714` and `.805`. Reading each
-arm's table step as that arm's cost through the ring, so a cheap arm after a dear
-one runs the ring's step until it empties, moves the film from `.866` to `.867`.
-What differs in those arms is the creature's pose and the burn puffs around it
-([open threads](../reference/open-rev-eng-threads.md)).
+What Gimard's late arms missed was the pass count ahead of them, not their own step.
+The film (`scripts/ci/cast-sequence.py --spell 0x81 --state party_basic_attack_vs_gobu_gobu`)
+read arms 10, 11 and 12 at `.869`, `.770` and `.946` on the engine's steps and the same on
+retail's (`--retail-steps`), with the burn puffs in other places: their jitter is a
+`rand()` deal, and the stream reached the arm on another word. With the invoke state and
+the arms ahead running retail's pass counts the film ends every arm on retail's seed
+word and reads `.982`, `.984` and `.975`
+([settled](../reference/re-settled-threads/battle.md#threads)).
 
 **A cheap arm runs the ring's step until it empties.** The port reads the arm's table
 step as its frames' cost through the ring (`World::apply_cast_arm_frame_step`): the step a

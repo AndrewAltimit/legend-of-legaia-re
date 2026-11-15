@@ -240,6 +240,12 @@
       "retail_cues": 3,
       "recording": "850878d1c893"
     },
+    "garmel_noa_frost_breath_open": {
+      "cue": 1.0,
+      "matched": 0,
+      "retail_cues": 0,
+      "recording": "2ce9c4003261"
+    },
     "garmel_noa_lizard_tail_mid": {
       "cue": 1.0,
       "matched": 9,
@@ -264,6 +270,12 @@
       "retail_cues": 10,
       "recording": "54fcae190fdf"
     },
+    "garmel_vahn_tornado_flame_open": {
+      "cue": 1.0,
+      "matched": 0,
+      "retail_cues": 0,
+      "recording": "2ce9c4003261"
+    },
     "garmel_zenoir_fire_claw": {
       "cue": 1.0,
       "matched": 8,
@@ -282,6 +294,12 @@
       "retail_cues": 0,
       "recording": "2ce9c4003261"
     },
+    "garmel_zeto_pre_call_wave_all__55": {
+      "cue": 1.0,
+      "matched": 0,
+      "retail_cues": 0,
+      "recording": "2ce9c4003261"
+    },
     "garmel_zeto_pre_poisonous_bubbles__28": {
       "cue": 1.0,
       "matched": 14,
@@ -289,8 +307,8 @@
       "recording": "67e9ddf8d863"
     },
     "gaza2_card_pre_neo_star_slash__A6": {
-      "cue": 0.9565,
-      "matched": 11,
+      "cue": 0.96,
+      "matched": 12,
       "retail_cues": 12,
       "recording": "86ba8e3295f4"
     },
@@ -331,8 +349,8 @@
       "recording": "4faeee2253ae"
     },
     "jou_gimard_v3_tail_flare": {
-      "cue": 1.0,
-      "matched": 15,
+      "cue": 0.933,
+      "matched": 14,
       "retail_cues": 15,
       "recording": "fa23bd26b990"
     },
@@ -427,8 +445,8 @@
       "recording": "4482d19cae0e"
     },
     "jou_vahn_tri_somersault_super_open": {
-      "cue": 0.964,
-      "matched": 28,
+      "cue": 0.9643,
+      "matched": 27,
       "retail_cues": 28,
       "recording": "3040218a9314"
     },
@@ -601,8 +619,8 @@
       "recording": "21054178a832"
     },
     "map02_mad_ogre_strike": {
-      "cue": 0.8571,
-      "matched": 6,
+      "cue": 1.0,
+      "matched": 8,
       "retail_cues": 8,
       "recording": "7f96a5959b7c"
     },
@@ -907,8 +925,8 @@
       "recording": "d36690f271c0"
     },
     "ropeway_noa_sonic_javelin_open": {
-      "cue": 0.96,
-      "matched": 12,
+      "cue": 1.0,
+      "matched": 13,
       "retail_cues": 13,
       "recording": "51d742cff7b8"
     },

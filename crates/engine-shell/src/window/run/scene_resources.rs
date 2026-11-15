@@ -78,61 +78,24 @@ pub(in crate::window) fn build_window_scene_resources(
             .0
         }
     };
-    // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
-    // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
-    // palettes live as **flat strips** on CLUT row 478. The generic TIM
-    // scan uploads the pages but places these CLUTs as declared rects
-    // (rows 478..481 col 0), so the meshes sample an unpopulated row and
-    // the VRAM filter drops them - the invisible-player symptom. Retail
-    // field load uploads the pack with strip semantics; replicate that.
-    // The rest of the section is layered *under* the build below, never
-    // written over it.
-    match session
-        .host
-        .index
-        .entry_bytes(legaia_actor_formats::field_char_textures::PROT_ENTRY_INDEX)
-        .and_then(|b| legaia_actor_formats::field_char_textures::parse(&b))
-    {
-        Ok(mut pack) => {
-            // Entries 1/2/3 only (the character atlas pages). The pack's
-            // other entries land on pages the town env meshes sample -
-            // uploading them here drops ~26 scene meshes to the filter.
-            pack.textures.retain(|t| (1..=3).contains(&t.index));
-            pack.upload_to_vram(&mut res.vram, false);
-            log::info!(
-                "play-window: field char atlas uploaded ({} TIMs, strip CLUTs)",
-                pack.textures.len()
-            );
-        }
-        Err(err) => {
-            log::warn!("play-window: field char atlas upload skipped: {err:#}");
-        }
-    }
-    // The whole effect-texture pool of that section (`etim`: the
-    // `(448, 0)` page, the `fb_y = 256` pages, CLUT strips on rows 473 /
-    // 475 / 478) is resident in retail field and world-map VRAM, and it
-    // is where the field fog sheets sample: texture page `0x27` is
-    // `(448, 0)`, the wisps sit at rows `0x40..0x6F` of it, CLUT `0x7640`
-    // is `(0, 473)`. Every PCSX-Redux field / world-map state in the
-    // library holds those cells byte-exact. Retail loads the pool before
-    // the scene, so a scene TIM on an overlapping rect wins (`dolk`'s
-    // `(448, 0)` page keeps its own texels in retail) - the boot-resident
-    // underlay order `SceneResources` uses for the system-UI bundle.
-    // Without it the fog quads sampled all-zero texels and the shader
-    // discarded every fragment. See `docs/subsystems/field-ambient-fx.md`.
-    let mut effect_pool = psx_tim::Vram::new();
-    match legaia_engine_scene::scene::upload_effect_textures_into_vram(
+    // The field's resident texture pool (`etim`: the `(448, 0)` page, the
+    // `fb_y = 256` pages, CLUT strips on rows 473 / 475 / 478), layered
+    // under the build by the step the scene host runs for the browser page
+    // (`underlay_field_texture_pool`). It carries the fog sheets' texels
+    // (texture page `0x27` is `(448, 0)`, CLUT `0x7640` is `(0, 473)`) and
+    // the field-character atlas with its row-478 palette strips; every
+    // PCSX-Redux field / world-map state in the library holds those cells.
+    // Retail loads the pool before the scene, so a scene TIM on an
+    // overlapping rect wins. This build used to write the character atlas
+    // *over* the scene as well, which replaced the palettes a scene ships
+    // for the party on row 478 (`bubu2`) with the pack's.
+    // See `docs/subsystems/field-ambient-fx.md`.
+    match legaia_engine_scene::scene::underlay_field_texture_pool(
         &session.host.index,
-        &mut effect_pool,
-        true,
+        &mut res.vram,
     ) {
-        Ok(n) => {
-            res.vram.underlay(&effect_pool);
-            log::info!("play-window: effect-texture pool underlaid ({n} TIMs)");
-        }
-        Err(err) => {
-            log::warn!("play-window: effect-texture pool underlay skipped: {err:#}");
-        }
+        Ok(n) => log::info!("play-window: field texture pool underlaid ({n} TIMs)"),
+        Err(err) => log::warn!("play-window: field texture pool underlay skipped: {err:#}"),
     }
     Ok(res)
 }

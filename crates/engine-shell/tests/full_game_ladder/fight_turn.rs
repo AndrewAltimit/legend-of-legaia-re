@@ -320,7 +320,10 @@ pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
         return match &m.phase {
             SpellPhase::Select { cursor } => match wanted_spell(w, m) {
                 Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
-                Some(_) => PadButton::Down.mask(),
+                // The list kernel's walk, as the item window's: Down wraps
+                // inside its page, so a row on another page is reached with
+                // Right / Left first.
+                Some(i) => m.browse_pad_toward(i).unwrap_or(PadButton::Down.mask()),
                 // A heal the window cannot cast is not asked for again until
                 // someone's HP moves; a window with no damage spell worth
                 // casting is not reopened for one this battle. The two are
@@ -818,6 +821,15 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             });
         }
     };
+    // Per member: whether a foe lost HP while it was the one acting this
+    // round, and its MP at the round's command window ([`unlanded_cast`]).
+    let mut landed = [false; 3];
+    let mut stray_drop = false;
+    let mp_of = |s: &NativeSession| -> [u16; 3] {
+        let w = &s.host.world;
+        std::array::from_fn(|i| w.actors.get(i).map_or(0, |a| a.battle.mp))
+    };
+    let mut mp_mark = mp_of(session);
     let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
@@ -944,6 +956,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         if foe_now < foe_prev
             && let Some(kind) = act_kind.get(usize::from(who)).copied().flatten()
         {
+            landed[usize::from(who)] = true;
             match &mut acting {
                 Some((_, k, d)) if *k == kind => *d += foe_prev - foe_now,
                 _ => {
@@ -951,6 +964,8 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                     acting = Some((who, kind, foe_prev - foe_now));
                 }
             }
+        } else if foe_now < foe_prev {
+            stray_drop = true;
         }
         if foe_now < foe_prev {
             foe_dropped_at = t;
@@ -988,6 +1003,51 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         }
         if window && !was_window {
             flush(&mut acting);
+            // A cast that spent its MP and took nothing off the foes is a
+            // measured zero, not an unmeasured spell.
+            let mp_now = mp_of(session);
+            for i in 0..3usize {
+                let w = &session.host.world;
+                let still_pending = w
+                    .battle
+                    .round_flow
+                    .pending
+                    .get(i)
+                    .is_some_and(Option::is_some);
+                let hp = w.actors.get(i).map_or(0, |a| a.battle.hp);
+                if let Some(kind) = unlanded_cast(
+                    act_kind[i],
+                    still_pending,
+                    landed[i],
+                    stray_drop,
+                    hp,
+                    (mp_mark[i], mp_now[i]),
+                )
+                // A heal or a buff takes nothing off the foes by design.
+                .filter(|&k| {
+                    w.tables.spell_catalog.get(k as u8).is_some_and(|d| {
+                        matches!(
+                            d.effect,
+                            legaia_engine_battle::spells::SpellEffect::Damage { .. }
+                        )
+                    })
+                }) {
+                    DEALT.with(|m| {
+                        m.borrow_mut().insert((i as u8, kind), 0);
+                    });
+                    if trace_hits || std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!(
+                            "    [cast] member {i}'s spell {kind:#04X} took nothing off the foes"
+                        );
+                    }
+                }
+                if !still_pending {
+                    act_kind[i] = None;
+                    landed[i] = false;
+                }
+            }
+            stray_drop = false;
+            mp_mark = mp_now;
             AOE_STREAK.with(|s| {
                 s.set(if run.iter().filter(|&&l| l > 0).count() >= 2 {
                     s.get() + 1

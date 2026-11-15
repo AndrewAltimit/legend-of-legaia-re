@@ -180,14 +180,30 @@ pub struct WorldToggles {
     /// The native session raises it from `LEGAIA_BATTLE_FRAME_SPAN=1`.
     pub battle_frame_span_law: bool,
     /// Opt-in, off by default: price a battle frame's work from the polygons
-    /// the host's last drawn table links (`World::note_drawn_polys`,
-    /// `frame_clock::polygon_frame_work`) in place of the action state's
-    /// measured base, the draw load and the cast arm tables, and a clip-loaded
-    /// frame at that work over the polls' share
-    /// (`frame_clock::xa_polled_work_cost`). Only a host that prices its
-    /// frames feeds it (the native window); without a count the tables stand.
-    /// The native session raises it from `LEGAIA_BATTLE_POLY_COST=1`.
+    /// the frame links (`frame_clock::polygon_frame_work`) in place of the
+    /// action state's measured base, the draw load and the cast arm tables,
+    /// and a clip-loaded frame at that work over the polls' share
+    /// (`frame_clock::xa_polled_work_cost`). The count is the scene host's
+    /// census of world state (`World::note_linked_polys`), the same on every
+    /// host; without a count the tables stand. The native session raises it
+    /// from `LEGAIA_BATTLE_POLY_COST=1`.
     pub battle_poly_frame_cost: bool,
+    /// Step each field frame by the frame time the field frame-cost model
+    /// prices it at (`World::field_frame_features`, `field_frame_cost`)
+    /// under retail's own law, `FUN_80016B6C`'s longest-of-sixteen against
+    /// the hblank rungs over the field floor of `2`: a scene whose frames cost
+    /// past `0x1FE` runs at `3`, as retail's `son` / `stone` / `kor3` do, and
+    /// the frames after a scene load run on the load's long frame. On by
+    /// default; off, the field holds the floor. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
+    pub field_frame_cost: bool,
+    /// Diagnostic, off by default: [`Self::battle_poly_frame_cost`] reads the
+    /// native window's own count of its drawn table
+    /// (`World::note_drawn_polys`) in place of the census, the window-only
+    /// source the census replaces. The native session raises it from
+    /// `LEGAIA_BATTLE_POLY_SOURCE=window`.
+    pub battle_poly_window_count: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -479,6 +495,8 @@ impl WorldToggles {
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: false,
             battle_poly_frame_cost: false,
+            field_frame_cost: true,
+            battle_poly_window_count: false,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

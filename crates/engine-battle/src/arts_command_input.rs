@@ -621,21 +621,35 @@ impl ArtsCommandInputSession {
         }
     }
 
-    /// Advance one frame. `party` / `monsters` describe slot occupancy for
-    /// the Begin target picker. A no-op once the session has resolved.
-    pub fn input(&mut self, ev: ArtsCommandPad, party: [SlotState; 3], monsters: [SlotState; 5]) {
-        // `FUN_801D9BBC`: every gliding pennant steps one frame; the step
-        // that reaches the total snaps it home and frees the handle.
-        // PORT: FUN_801d9bbc (the pennant handles' per-frame step)
+    /// One pass of `FUN_801D9BBC` over the entry's own records: every
+    /// gliding pennant steps one frame (the step that reaches the total
+    /// snaps it home and frees the handle), and so do the chips' slide-in.
+    ///
+    /// The stepper runs ahead of the menu SM's gate (`jal 0x801D9BBC` at
+    /// `0x801D0B2C`), so it walks these records on the passes the gate
+    /// holds too: the chips step 9 / `0x2C` spawn slide in **during** the
+    /// edge's hold, and land as it opens. [`Self::input`] runs it first; a
+    /// battle pass the gate holds runs it alone. Stepped only on dispatched
+    /// passes, the chips sat on seat A, off screen, for the whole hold and
+    /// slid in only after it, leaving the D-pad glyph alone between the two
+    /// clusters (#626).
+    ///
+    /// PORT: FUN_801d9bbc (the pennant and chip handles' per-frame step)
+    pub fn step_glides(&mut self) {
         self.pennant_glides.retain_mut(|g| {
             g.1 = g.1.saturating_add(1);
             g.1 < PENNANT_GLIDE_FRAMES
         });
-        // The chip records step alike (`FUN_801D9BBC`).
         self.chip_slide = self
             .chip_slide
             .map(|e| e.saturating_add(1))
             .filter(|&e| e < CHIP_SLIDE_FRAMES);
+    }
+
+    /// Advance one frame. `party` / `monsters` describe slot occupancy for
+    /// the Begin target picker. A no-op once the session has resolved.
+    pub fn input(&mut self, ev: ArtsCommandPad, party: [SlotState; 3], monsters: [SlotState; 5]) {
+        self.step_glides();
         let was_review = matches!(self.phase, ArtsInputPhase::Review);
         // Triangle cycles the learned-arts list in the entry phases
         // (closed -> page 0 -> .. -> last page -> closed); inert with no

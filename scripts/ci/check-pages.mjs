@@ -128,10 +128,27 @@ const SHELL_STATES = [
   { name: 'upright phone, page scrolled', size: [360, 780], scroll: 1200 },
   { name: 'upright phone, loaded at a heading', size: [360, 780], hash: true },
   { name: 'short upright phone', size: [320, 480], scroll: 600 },
+  { name: 'upright phone, address bar showing', size: [360, 640], scroll: 0, bar: 56 },
+  { name: 'upright phone, address bar showing, page scrolled', size: [390, 844], scroll: 1200, bar: 56 },
+  { name: 'phone on its side, address bar showing', size: [780, 304], scroll: 0, bar: 56 },
   { name: 'phone on its side', size: [780, 304], scroll: 1200 },
   { name: 'wide phone on its side', size: [915, 356], scroll: 1200 },
   { name: 'short desktop window', size: [1280, 360], scroll: 0, desktop: true },
 ];
+// `bar` is a phone browser's collapsing address bar. With it showing, `100vh` is the screen
+// with the bar hidden, taller by the bar than the area on screen that fixed boxes are laid
+// out against, and no desktop browser has such a viewport. The state models it from the
+// other side: every `vh` length in the served CSS, HTML and scripts gains its share of the
+// bar, while the window (and so `svh`, `dvh` and the fixed containing block) stays the
+// visible area. A drawer sized `calc(100vh - top bar)` between `top` and `bottom` insets is
+// then too tall for its insets, and current browsers move such a box back inside the
+// screen: up, under the top bar.
+const withAddressBar = (context, bar) => context.route(/\.(css|html|js)(\?.*)?$|\/$/, async (route) => {
+  const resp = await route.fetch();
+  if (!/css|html|javascript/.test(resp.headers()['content-type'] || '')) return route.fulfill({ response: resp });
+  const body = (await resp.text()).replace(/(?<![\w.-])(\d+(?:\.\d+)?)vh\b/g, (m, n) => `calc(${n}vh + ${(+n * bar / 100).toFixed(2)}px)`);
+  return route.fulfill({ response: resp, body });
+});
 // Every problem with the left-hand chrome as it stands: the open drawer's zone tabs must
 // lie inside the visual viewport, below the top bar, and take a tap where they are drawn
 // (no scrolling brings a pinned strip back); the page list must reach its first and last
@@ -334,6 +351,7 @@ async function main() {
       const context = await browser.newContext(st.desktop
         ? { viewport: { width: W, height: H } }
         : { viewport: { width: W, height: H }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      if (st.bar) await withAddressBar(context, st.bar);
       const page = await context.newPage();
       const cdp = await context.newCDPSession(page);
       for (const label of SHELL_PAGES) {
@@ -364,6 +382,10 @@ async function main() {
           } else {
             await page.touchscreen.tap(toggle[0], toggle[1]);
             await page.waitForTimeout(400);
+            // The slide is a transition; a cold first page can still be mid-way after
+            // 400ms on a software rasteriser, and a drawer half on screen takes no tap.
+            await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().left >= -1,
+              null, { timeout: 3000 }).catch(() => {});
             if (!(await page.evaluate(() => document.querySelector('.sidebar').classList.contains('open')))) {
               failures.push(`${where}: a tap on the hamburger did not open the drawer`);
               continue;

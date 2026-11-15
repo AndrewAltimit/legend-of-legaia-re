@@ -75,6 +75,10 @@ RULES: dict[str, list[tuple[str, str]]] = {
         ("films/*/retail_cues", "skip"),
         ("films/*", "up"),
     ],
+    "scripts/ci/walk-film-rand-baseline.json": [
+        ("films/*/draws", "skip"),
+        ("films/*", "up"),
+    ],
     "scripts/ghidra-analysis/dump-base-baseline.json": [("shifted", "set")],
     "scripts/ghidra-analysis/jal-target-baseline.json": [("unresolved", "set")],
     "scripts/replays/boot_logos_baseline.toml": [("*", "up")],

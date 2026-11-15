@@ -143,6 +143,16 @@ pub fn field_menu_root_draws(
         ctx.font, world, ctx.origin, ctx.scale,
     ));
     if let Some(message) = refusal {
+        // The notice's box covers the root's rows and party lines under it;
+        // every host draws text after sprites, so those go first.
+        if ctx.chrome.is_some() {
+            ui::occlude_text_under_frames(
+                &mut out.texts,
+                &[ui::save_refusal_frame()],
+                ctx.origin,
+                ctx.scale,
+            );
+        }
         out.extend(save_refusal_draws(ctx, message));
     }
     out

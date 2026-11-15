@@ -28,6 +28,12 @@
 --   LEGAIA_SHOT_EVERY  vsyncs between screenshots after the signal (default 2;
 --                   0 = none)
 --   LEGAIA_PREFIX   save-state name prefix (default "battle_end")
+--   LEGAIA_WATCH_CTX  comma list of battle-context offsets (e.g. "0xD"): each
+--                   store into those bytes goes to watch.csv with its pc, ra,
+--                   the value stored and the action state, and cam.csv takes
+--                   one row per vsync of the whole run (flow, action state,
+--                   acting seat, ctx[+0xD], the camera's pitch / yaw / TR).
+--                   Breakpoint core: run without --fast.
 --
 -- Output (probe.out_path): end.csv (one row a vsync from the signal),
 -- shot_<vsync>.raw + .raw.meta, <prefix>_{signal,results,hold80,fade}.rawsstate.
@@ -134,6 +140,29 @@ local csv = probe.csv_open(probe.out_path("end.csv"),
     "vsync,step,signal,cause,mode,ctx13,phase6ce,hold,pose_id,first_monster,ctx6da,ctx0d," ..
     "seat_cur,seat_staged,seat_latched,seat_flags,seat_rate,seat_176,seat_21b,seat_1fa,node_cur,seat_hp")
 
+local WATCH_CTX = probe.getenv("LEGAIA_WATCH_CTX", "")
+local watch_csv, cam_csv, watch_armed = nil, nil, false
+local now_vsync = 0
+local function arm_ctx_watch(cp)
+    watch_csv = probe.csv_open(probe.out_path("watch.csv"), "vsync,flow,st7,seat,off,old,pc,ra,v0,v1,a0")
+    cam_csv = probe.csv_open(probe.out_path("cam.csv"), "vsync,step,flow,st7,seat,ctx0d,pitch,yaw,tr_y,tr_z")
+    for word in string.gmatch(WATCH_CTX, "[^,]+") do
+        local off = tonumber(word)
+        probe.arm_breakpoint(cp + off, "Write", 1, "ctx_watch", function()
+            local R = PCSX.getRegisters()
+            local n = R.GPR.n
+            local function w(v)
+                v = tonumber(v) or 0
+                return v < 0 and v + 0x100000000 or v
+            end
+            watch_csv:row("%d,%d,%d,%d,0x%X,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", now_vsync,
+                probe.read_u8(cp + 6) or 0, probe.read_u8(cp + 7) or 0, probe.read_u8(cp + 0x13) or 0,
+                off, probe.read_u8(cp + off) or 0, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a0))
+        end)
+    end
+    watch_armed = true
+end
+
 local signal_at = nil
 local last_flow, next_press = nil, 0
 local saved = {}
@@ -153,6 +182,14 @@ probe.run({
         if not ok_ptr(cp) then return end
         local signal = probe.read_u8(SIGNAL) or 0
         local mode = probe.read_u16(GAME_MODE) or 0
+        now_vsync = vsync
+        if WATCH_CTX ~= "" then
+            if not watch_armed then arm_ctx_watch(cp) end
+            cam_csv:row("%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", vsync, probe.read_u8(STEP) or 0,
+                probe.read_u8(cp + 6) or 0, probe.read_u8(cp + 7) or 0, probe.read_u8(cp + 0x13) or 0,
+                probe.read_u8(cp + 0xD) or 0, probe.read_u16(0x8007B790) or 0, probe.read_u16(0x8007B792) or 0,
+                probe.read_u32(0x800840BC) or 0, probe.read_u32(0x800840C0) or 0)
+        end
         if signal_at == nil and signal == 0xFE then
             signal_at = vsync
             if held ~= nil then probe.pad.release(held); held = nil end

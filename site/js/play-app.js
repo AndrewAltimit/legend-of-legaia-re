@@ -94,6 +94,10 @@ out float v_log_depth;
  * (play_fx_depth_affine), so a corner's depth goes back to its exact w and
  * onto the scale the mesh program writes. x = 0 keeps the rasterised depth. */
 uniform vec3 u_log_depth;
+/* -1 while the pass draws upside down, else 1; and the tie nudge of a
+ * textured (x) and an untextured (y) primitive when it does not. */
+uniform float u_flip_y;
+uniform vec2 u_tie;
 ${LOG_DEPTH_GLSL}
 
 void main() {
@@ -107,7 +111,10 @@ void main() {
    * Every other quad sits on the near plane (-1) and passes against any
    * scene depth, which is how it composited before the channel existed. */
   float z = (a_flags & 2u) != 0u ? a_depth : -1.0;
-  gl_Position = vec4(a_pos, z, 1.0);
+  /* The fill rule's tie on the native canvas (u_tie), or the whole pass
+   * upside down (u_flip_y, ScreenPrimPass.drawRuns). */
+  float tie = (a_flags & 1u) != 0u ? u_tie.x : u_tie.y;
+  gl_Position = vec4(a_pos.x, (a_pos.y + tie) * u_flip_y, z, 1.0);
   v_log_depth = 0.0;
   if (u_log_depth.x > 0.5 && (a_flags & 2u) != 0u) {
     float den = a_depth - u_log_depth.y;
@@ -149,6 +156,7 @@ uniform int u_stp_pass;
 /* The framebuffer's height: the dither matrix's rows run top-down, the
  * native renderer's clip position, and gl_FragCoord counts from the bottom. */
 uniform float u_fb_h;
+uniform float u_flip_y;
 
 vec4 bgr555_to_rgba(uint c) {
   float r = float(c & 31u) / 31.0;
@@ -219,7 +227,8 @@ vec4 opaqueOut(vec4 c) {
   }
   float dm[16] = float[16](${PSX_DITHER_MATRIX.map(glslFloat).join(', ')});
   int xi = int(gl_FragCoord.x) & 3;
-  int yi = int(u_fb_h - gl_FragCoord.y) & 3;
+  /* Upside down, the row from the bottom is the stage row. */
+  int yi = (u_flip_y < 0.0 ? int(gl_FragCoord.y) : int(u_fb_h - gl_FragCoord.y)) & 3;
   vec3 c5 = floor(clamp(m + dm[yi * 4 + xi], 0.0, 255.0) / 8.0);
   return vec4((c5 * 8.0 + floor(c5 / 4.0)) / 255.0, c.a);
 }
@@ -298,6 +307,14 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.locStpPass = gl.getUniformLocation(this.program, 'u_stp_pass');
       this.locSemiMode = gl.getUniformLocation(this.program, 'u_semi_mode');
       this.locFbH = gl.getUniformLocation(this.program, 'u_fb_h');
+      this.locFlipY = gl.getUniformLocation(this.program, 'u_flip_y');
+      this.locTie = gl.getUniformLocation(this.program, 'u_tie');
+      /* The stream is PSX rasterisation's on the native 320 x 240 canvas
+       * (`PlayView._psxScreenVertices`): its corners sit on the GPU's sample
+       * points, and `drawRuns` owes them the window's fill rule. */
+      this.psxNative = false;
+      /* The upside-down copy `drawRuns` draws such a stream into. */
+      this.flip = null;
       this.vao = gl.createVertexArray();
       this.vbo = gl.createBuffer();
       this.ibo = gl.createBuffer();
@@ -359,6 +376,20 @@ void main() { o_color = texture(u_layer, v_uv); }
       gl.bindTexture(gl.TEXTURE_2D, this.texture || this.renderer.tex);
       gl.uniform1i(this.locVram, 0);
       if (this.locFbH) gl.uniform1f(this.locFbH, gl.drawingBufferHeight);
+      /* A corner on the GPU's sample point puts an edge exactly through
+       * pixel centres, and the rasteriser's fill rule decides who gets them.
+       * The window's target runs top-down and this framebuffer bottom-up, so
+       * the rule read the other way: a flat edge drew a row low, and along a
+       * slanted edge and the seam of a rotated quad's two triangles the
+       * pixels went to the other triangle (the battle intro's shards, 2.2%
+       * of a frame in hairlines on a real GPU). The runs are drawn upside
+       * down into a copy of the frame and the copy is flipped back, which
+       * gives every edge the window's rule. Where the copy cannot be made
+       * the flat edges at least take the tie nudge. */
+      const flipped = this.psxNative && window.__psxFlipPrims !== false && this._beginFlip();
+      gl.uniform1f(this.locFlipY, flipped ? -1 : 1);
+      if (this.psxNative && !flipped) gl.uniform2f(this.locTie, PSX_TIE_NDC_Y, PSX_TIE_FLAT_NDC_Y);
+      else gl.uniform2f(this.locTie, 0, 0);
       /* The log-depth scale the mesh program wrote this frame: a depth-tested
        * corner goes back to its w through the engine's own (a, b). */
       if (this.locLogDepth) {
@@ -403,6 +434,71 @@ void main() { o_color = texture(u_layer, v_uv); }
       gl.depthMask(true);
       if (!depthWasOn) gl.disable(gl.DEPTH_TEST);
       gl.bindVertexArray(null);
+      if (flipped) this._endFlip();
+    }
+
+    /* The frame so far, upside down, on a framebuffer of its own and bound
+     * for the runs: its colour, and its depth for the one depth-tested kind.
+     * Only from the screen's own framebuffer (PSX rasterisation's target):
+     * `false` on any other, or when the copy cannot be made. */
+    _beginFlip() {
+      const gl = this.gl;
+      if (gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) !== null) return false;
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      let f = this.flip;
+      if (!f || f.w !== w || f.h !== h) {
+        if (f) { gl.deleteFramebuffer(f.fbo); gl.deleteTexture(f.tex); gl.deleteRenderbuffer(f.depth); }
+        f = this.flip = { w, h, fbo: gl.createFramebuffer(), tex: gl.createTexture(), depth: gl.createRenderbuffer(), ok: false };
+        const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
+        gl.activeTexture(gl.TEXTURE0);
+        const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(gl.TEXTURE_2D, f.tex);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, w, h);
+        gl.bindTexture(gl.TEXTURE_2D, was);
+        gl.activeTexture(unit);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, f.depth);
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, 0);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, f.depth);
+        f.ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        if (f.ok) {
+          /* One trial copy: a screen whose depth is another format, or a
+           * multisampled one, refuses it, and says so once here. */
+          while (gl.getError() !== gl.NO_ERROR);
+          this._blitFlip(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          f.ok = gl.getError() === gl.NO_ERROR;
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        }
+      }
+      if (!f.ok) return false;
+      this._blitFlip(null, f.fbo, gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+      return true;
+    }
+
+    /* The copy back onto the frame, the right way up. */
+    _endFlip() {
+      const gl = this.gl;
+      this._blitFlip(this.flip.fbo, null, gl.COLOR_BUFFER_BIT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    /* `from` onto `to`, top for bottom, texel for texel. */
+    _blitFlip(from, to, bits) {
+      const gl = this.gl;
+      const f = this.flip;
+      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+      if (scissor) gl.disable(gl.SCISSOR_TEST);
+      const mask = gl.getParameter(gl.COLOR_WRITEMASK);
+      gl.colorMask(true, true, true, true);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, from);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, to);
+      gl.blitFramebuffer(0, 0, f.w, f.h, 0, f.h, f.w, 0, bits, gl.NEAREST);
+      gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
+      if (scissor) gl.enable(gl.SCISSOR_TEST);
     }
 
     /* Composite a 2D canvas (the page's text / HUD layer) into the GL frame,

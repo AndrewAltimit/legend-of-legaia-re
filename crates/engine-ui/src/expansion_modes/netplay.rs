@@ -224,7 +224,10 @@ fn player_state(p: &NetPlayerRow) -> &'static str {
 fn compose_screen(s: &NetScreen<'_>) -> Canvas {
     let mut c = Canvas::default();
     c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
-    header(&mut c, s.title, "Multiplayer");
+    // The screen before a room is titled with the kind's own word; the bar
+    // says it once.
+    let kind = "Multiplayer";
+    header(&mut c, s.title, if s.title == kind { "" } else { kind });
     let mut y = 20;
     if let Some(a) = s.address {
         c.text(format!("Join at {a}"), 8, y, pen::DIM);
@@ -264,7 +267,7 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         let ink = match (r.enabled, on) {
             (false, _) => pen::DIM,
             (true, true) => pen::WHITE,
-            (true, false) => [0.78, 0.80, 0.84, 1.0],
+            (true, false) => pen::SOFT,
         };
         c.text(r.label.clone(), mx + 9, ry, ink);
         if let Some(v) = &r.value {
@@ -277,8 +280,11 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         }
     }
 
-    // Chat along the bottom.
-    let rows = 5usize;
+    // Chat along the bottom, under whichever column runs lower: a long menu
+    // (the seven rows before a room) takes a line from the chat rather than
+    // losing its last row under the chat's panel.
+    let columns_end = y + 2 + ph.max(mh);
+    let rows = screen_chat_rows(columns_end);
     let cy = STAGE_H - 17 - (rows as i32 + 1) * LINE - 6;
     c.panel(
         6,
@@ -307,11 +313,24 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         if s.draft.is_some() {
             "Enter: send   Esc: cancel"
         } else {
-            "Up/Down: row  Left/Right: change  Cross: go  Circle: close"
+            "Arrows pick, change  Cross go  Circle close"
         },
     );
     c
 }
+
+/// Chat lines the room screen shows under columns that end at stage row
+/// `columns_end`: [`SCREEN_CHAT_LINES`] when they fit, fewer (never under
+/// one) when a long menu needs the rows.
+fn screen_chat_rows(columns_end: i32) -> usize {
+    // The chat panel is its lines, the draft line and 4 px of frame, 6 px
+    // above the footer's 17; 2 px clear of the columns.
+    let room = STAGE_H - 17 - 6 - (columns_end + 2);
+    ((room / LINE) - 1).clamp(1, SCREEN_CHAT_LINES as i32) as usize
+}
+
+/// Wrapped chat lines the room screen shows at most, newest last.
+const SCREEN_CHAT_LINES: usize = 5;
 
 /// Characters a roaming-panel line holds (the panel is 128 px, its
 /// labels inset 4; a player row's dot takes 9 more).
@@ -437,6 +456,59 @@ mod tests {
             );
         }
         assert!(net_screen_prims(&s).len() > 5);
+    }
+
+    /// The screen before a room: its seven menu rows all sit above the chat
+    /// panel, and the bar says "Multiplayer" once.
+    #[test]
+    fn a_long_menu_keeps_its_last_row_clear_of_the_chat() {
+        let menu: Vec<NetMenuRow> = [
+            "Host on port",
+            "Host a room",
+            "Address",
+            "Room code",
+            "Name",
+            "Join",
+            "Close",
+        ]
+        .iter()
+        .map(|l| NetMenuRow {
+            label: (*l).into(),
+            value: None,
+            enabled: true,
+        })
+        .collect();
+        let hints = vec!["Host: others join here.".to_string()];
+        let s = NetScreen {
+            title: "Multiplayer",
+            address: None,
+            players: &[],
+            rows: &menu,
+            cursor: 0,
+            chat: &hints,
+            draft: None,
+            notice: None,
+        };
+        let c = compose_screen(&s);
+        let y_of = |text: &str| {
+            c.labels
+                .iter()
+                .find(|l| l.text == text)
+                .unwrap_or_else(|| panic!("`{text}` is not drawn"))
+                .y
+        };
+        assert!(
+            y_of("Close") + LINE <= y_of("Host: others join here."),
+            "the last menu row ends above the first chat line"
+        );
+        assert_eq!(
+            c.labels.iter().filter(|l| l.text == "Multiplayer").count(),
+            1
+        );
+        // A short menu keeps every chat line.
+        assert_eq!(screen_chat_rows(20 + 2 + 3 * 16 + 6), SCREEN_CHAT_LINES);
+        // However long the menu, one chat line and the draft line stay.
+        assert_eq!(screen_chat_rows(STAGE_H), 1);
     }
 
     #[test]

@@ -303,8 +303,8 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         }
         // PROT 0927's arm 7 jitters its caller and seats nothing: it runs
         // here, inside the caller's step, so its three draws land where
-        // retail's do.
-        if self.world.casting.module_running_entry == Some(927)
+        // retail's do. PROT 0966's arm 7 is the same code (`0x801F9038`).
+        if matches!(self.world.casting.module_running_entry, Some(927 | 966))
             && arg0 as u8 == legaia_engine_cast::cast_module_ticks::JUGGERNAUT_STAGER_JITTER_ARM
         {
             let world = &mut *self.world;

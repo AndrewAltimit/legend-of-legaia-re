@@ -436,7 +436,7 @@ impl World {
         // `0x801E3A84`, `s5 = ctx + 0x11`), for monsters' chains as well as
         // the party's - so each attacking action gets one steal roll.
         self.apply_battle_frame_step_seed();
-        self.apply_cast_arm_frame_step();
+        self.stage_pass_frame_cost();
         if let StepOutcome::Transition { to, .. } = out {
             self.arm_capture_read_wait(to);
         }

@@ -139,6 +139,7 @@
   </table>
   </div>
   <p><strong>Attack is a door, not a strike.</strong> It opens the Auto / Command prompt, and the option word decides whether that prompt is shown (<code>0</code>), skipped to auto-target (<code>1</code>) or skipped to directional entry (<code>2</code>). With the Battle Command setting's highlight widget up, the same table reads as highlight-then-confirm: a pre-dispatch block walks the highlight and rewrites the input word to the highlighted arm's mask on confirm, so each handler's direction test doubles as &ldquo;take the highlighted chip&rdquo;.</p>
+  <p><strong>An arm can refuse.</strong> Item refuses under an arena course's no-item rule; the magic arm refuses a member who carries no Ra-Seru, a cursed one, and every member in the two fights that forbid Ra-Seru; Attack refuses a fighter whose three limbs are all rotted. A refused press sounds the cancel cue and leaves the ring up - no empty window opens.</p>
   <p>The ring's cancel is its first test and forks on the step counter <code>ctx[+0x1F]</code> - how many members the cursor has walked past this round. On the first member it returns to Begin / Run; otherwise it steps back to the previous member's ring and discards that member's commit.</p>
 </section>
 

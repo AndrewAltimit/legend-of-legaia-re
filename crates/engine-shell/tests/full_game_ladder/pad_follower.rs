@@ -661,6 +661,12 @@ pub(super) fn pad_walk(
         if close_scripted_menu(session) {
             continue;
         }
+        // A notice the field put up on its own (the Incense wearing off)
+        // holds the player until it is answered ([`answer_notice`]).
+        if answer_notice(session) {
+            pressed_at = None;
+            continue;
+        }
         if session.host.world.mode != walking_mode {
             return Err(format!("mode changed to {:?}", session.host.world.mode));
         }
@@ -873,7 +879,8 @@ pub(super) fn pad_walk(
                 d.signum()
             }
         };
-        let mut pad = pad_for_step(session, lean(dx, dz), lean(dz, dx));
+        let step_dir = (lean(dx, dz), lean(dz, dx));
+        let mut pad = pad_for_step(session, step_dir.0, step_dir.1);
         if walking_mode == SceneMode::WorldMap && !corner_failed {
             let t = dispatch_tile(wx, wz);
             if corner_route.is_empty() && !corner_planned {
@@ -929,7 +936,13 @@ pub(super) fn pad_walk(
         if since == 0 {
             tap_owed = false;
         }
-        let on_a_person = !moved && pressing_into_npc(session, pad);
+        let on_a_person = !moved
+            && leaning_on_a_person(
+                pressing_into_npc(session, pad),
+                npc_blocks_step(session, step_dir),
+                player_held(session),
+                since,
+            );
         if on_a_person {
             // A person in the way is walked round, not spoken to: the tap
             // below talks to whoever the press is facing, and in the mist
@@ -1032,6 +1045,23 @@ pub(super) fn pad_walk(
             Ok(SceneTickEvent::SceneEntered { name }) => return Ok(Walk::Entered(name)),
             Ok(_) => {}
             Err(e) => return Err(format!("tick: {e:#}")),
+        }
+        if std::env::var_os("LEGAIA_FGL_FRAME_DEBUG").is_some_and(|v| *v == *scene_name(session)) {
+            eprintln!(
+                "      [frame] step {step} {jump_from:?} -> {:?} pad {pad:#06x} since {since} moved {moved} person {on_a_person} head {:?} cell {cell:?} holder {} lock {:?}",
+                player_xz(session),
+                path.iter()
+                    .take(3)
+                    .map(|&c| cell_center(c))
+                    .collect::<Vec<_>>(),
+                holder(session),
+                session
+                    .host
+                    .world
+                    .player_actor_slot
+                    .and_then(|sl| session.host.world.actors.get(usize::from(sl)))
+                    .map(|a| a.move_state.flags),
+            );
         }
         if session.host.world.mode == SceneMode::Battle {
             continue;
@@ -1359,8 +1389,15 @@ pub(super) fn pad_walk(
                         }
                     })
                     .collect();
+                // A player the engine holds with no script to show for it
+                // did not stall on the lattice: name the hold.
+                let held = if player_held(session) {
+                    "; the player is held (+0x10 & 0x80000) with no script running"
+                } else {
+                    ""
+                };
                 return Err(format!(
-                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of {goal:?}; route head {next:?}; cell Z-/X-/Z+/X+ {block}",
+                    "pad walk stalled at tile {:?} (world ({px},{pz})), {d} tiles short of {goal:?}; route head {next:?}; cell Z-/X-/Z+/X+ {block}{held}",
                     here(session)
                 ));
             }
@@ -1385,6 +1422,51 @@ fn pressing_into_npc(session: &NativeSession, pad: u16) -> bool {
     (0..4).any(|d| w.field_npc_dir_blocked(x, z, d))
 }
 
+/// Frames a walk held beside a person keeps treating that person as what
+/// stops it before it asks whether the step itself is the one the body
+/// blocks ([`leaning_on_a_person`]).
+const NPC_YIELD_FRAMES: u32 = 120;
+
+/// Whether a field NPC's body stops the step the walk is taking, `step`
+/// being its world direction as `(dx, dz)` signs.
+fn npc_blocks_step(session: &NativeSession, step: (i16, i16)) -> bool {
+    let w = &session.host.world;
+    if !w.npcs.solid || w.mode != SceneMode::Field {
+        return false;
+    }
+    let (x, z) = player_xz(session);
+    let dirs = [
+        (step.1 < 0).then_some(0),
+        (step.0 < 0).then_some(1),
+        (step.1 > 0).then_some(2),
+        (step.0 > 0).then_some(3),
+    ];
+    dirs.into_iter()
+        .flatten()
+        .any(|d| w.field_npc_dir_blocked(x, z, d))
+}
+
+/// Whether a press that did not move the player is a lean on a person, the
+/// case the walk answers by planning round the body instead of tapping the
+/// action button or waiting out its once-a-second re-plan.
+///
+/// - `beside`: a body stops the player in some direction
+///   ([`pressing_into_npc`]).
+/// - `ahead`: a body stops the step the walk is taking ([`npc_blocks_step`]).
+/// - `held`: the engine holds the player with no script running
+///   ([`player_held`]).
+/// - `since`: frames since the walk last made progress.
+///
+/// A held player is never leaning: no press moves it, the interact probe is
+/// shut under the hold, and what the hold waits for is a button. And a body
+/// that is beside the walk but not ahead of it stops being the explanation
+/// after [`NPC_YIELD_FRAMES`]: what the walk is pressed against is then a
+/// wall corner or a door that wants its tap, with a bystander in reach of
+/// the probes on another side.
+pub(super) fn leaning_on_a_person(beside: bool, ahead: bool, held: bool, since: u32) -> bool {
+    beside && !held && (ahead || since < NPC_YIELD_FRAMES)
+}
+
 /// Hold the d-pad toward world point `at` until `done` holds, for at most
 /// `frames` ticks. A press toward a solid body turns the player to face it
 /// and the collision stops the step, which is how a player lines up a talk
@@ -1399,6 +1481,8 @@ pub(super) fn pad_lean(
         if done(session) || !walking(session) {
             break;
         }
+        // A lean walks too, and the walk tick is what runs the Incense out.
+        answer_notice(session);
         let Some((ax, az)) = at(session) else { break };
         let (px, pz) = player_xz(session);
         let axis = |d: i16| if d.abs() > 16 { d.signum() } else { 0 };
@@ -1503,4 +1587,30 @@ pub(super) fn pad_step_onto(session: &mut NativeSession, tile: (u8, u8)) -> Resu
 pub(super) fn on_tile(session: &NativeSession, tile: (i16, i16)) -> bool {
     let (x, z) = player_xz(session);
     dispatch_tile(x, z) == (i32::from(tile.0), i32::from(tile.1))
+}
+
+/// A body ahead of the step is a lean for as long as it stands there; a body
+/// only beside the walk explains a stall for [`NPC_YIELD_FRAMES`] and no
+/// longer; and a held player is never leaning, whoever stands by.
+#[test]
+fn a_lean_on_a_person_is_a_body_ahead_of_a_free_player() {
+    // (beside, ahead, held, since) -> leaning
+    assert!(leaning_on_a_person(true, true, false, 0));
+    assert!(leaning_on_a_person(true, true, false, 10_000));
+    assert!(leaning_on_a_person(
+        true,
+        false,
+        false,
+        NPC_YIELD_FRAMES - 1
+    ));
+    assert!(!leaning_on_a_person(true, false, false, NPC_YIELD_FRAMES));
+    assert!(!leaning_on_a_person(false, false, false, 0));
+    for since in [0, 7, NPC_YIELD_FRAMES, 10_000] {
+        for ahead in [false, true] {
+            assert!(
+                !leaning_on_a_person(true, ahead, true, since),
+                "a held player beside a body (ahead {ahead}, since {since})"
+            );
+        }
+    }
 }

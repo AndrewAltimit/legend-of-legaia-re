@@ -485,7 +485,23 @@ fn battle_end_cam_inputs(
             });
             inputs.phase = script::BattleCamPhase::ActionEnd;
         }
-        VictoryPhase::Results { .. } | VictoryPhase::Exit { .. } => {
+        VictoryPhase::Results { hold } => {
+            inputs.action.style = 0;
+            inputs.phase = script::BattleCamPhase::Action;
+            // The results frame stages the win pose into `+0x1DA`
+            // (`0x8004EF14`) on the pass it opens, and frames at its tail
+            // (`jal 0x801d5854` at `0x8004FC90`) before the anim tick has
+            // latched that byte into `+0x1DB`, the one the script indexes
+            // (`0x801D61E8`). So the opening pass frames the arm's bare base
+            // and the pose's own shot starts a pass later:
+            // `battle_jou_gala_finisher_results_retail`, `3` vsyncs into the
+            // hold on a step of `3`, holds the table's endpoints on
+            // `(0, -5 * y, 0x500)` with the accumulator at `96`.
+            if u32::from(hold) < u32::from(world.battle_frame_step().max(1)) {
+                inputs.action.anim_id = 0;
+            }
+        }
+        VictoryPhase::Exit { .. } => {
             inputs.action.style = 0;
             inputs.phase = script::BattleCamPhase::Action;
         }

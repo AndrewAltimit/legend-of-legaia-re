@@ -280,6 +280,11 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
     }
     assert_eq!(w.casting.module_phase, 6);
     assert!(w.battle.steal_caption.is_some(), "the stop prompt is up");
+    // The raise is a mode-0 launch: the bar glides up from seat A.
+    assert!(
+        w.battle.message_bar_glide.is_some_and(|g| !g.inbound),
+        "the prompt rises on a glide"
+    );
     w.advance_battle_pass();
     w.run_fatal_decision(fd::FATAL_DECISION_ENTRY);
     w.tick_summon(1);
@@ -313,12 +318,32 @@ fn the_wheel_draws_its_icons_off_the_disc_records() {
             break;
         }
     }
+    // The stop is a mode-1 launch (`0x801F7708`): the bar sinks to seat A
+    // with its line, and is retired once it lands there.
     assert!(
-        w.battle.steal_caption.is_none(),
-        "the prompt closed on the stop"
+        w.battle.steal_caption.is_some() && w.battle.message_bar_glide.is_some_and(|g| g.inbound),
+        "the prompt sinks on the stop"
     );
     let st = w.casting.fatal_decision.unwrap();
     let landed = FatalOutcome::from_slot(st.slots[st.landed]).unwrap();
     let banner = w.casting.fatal_banner.clone().expect("the banner is up");
-    assert!(!banner.is_empty(), "{landed:?} names itself");
+    assert!(!banner.is_empty(), "{landed:?} names itself"); // The banner stands through the Done band, and the next action's seed
+    // band takes it down.
+    w.battle_ctx.action_state =
+        legaia_engine_battle_vm::battle_action::ActionState::DoneFadeDown.as_byte();
+    for _ in 0..32 {
+        w.battle.step_action_plate_glides();
+        w.tick_steal_caption();
+    }
+    assert!(
+        w.casting.fatal_banner.is_some(),
+        "the banner holds through Done"
+    );
+    assert!(
+        w.battle.steal_caption.is_none() && w.battle.message_bar_glide.is_none(),
+        "the landed bar is retired"
+    );
+    w.battle_ctx.action_state = 0x0C;
+    w.tick_steal_caption();
+    assert!(w.casting.fatal_banner.is_none(), "the next seed clears it");
 }

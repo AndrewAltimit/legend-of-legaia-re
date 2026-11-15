@@ -14,7 +14,11 @@
 --                         a `LEGAIA_DIAG_TICK_DIGEST` run's pad replays as is.
 --
 -- Outputs: walk_film.csv (one row a vsync), walk_film_actors.csv (one row per
--- placement per vsync).
+-- placement per vsync). The last three walk_film.csv columns are the frame
+-- pacer's: its ring cursor (`0x8007B758`, the slot the next frame stores to),
+-- the newest frame time in hblanks there (`0x80084098`, clamped to `0x2BC`)
+-- and the frame step `0x1F800393` - the retail side of the field frame-cost
+-- model (`legaia_engine_core::world::field_frame_cost`).
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -33,6 +37,8 @@ local STAGING     = 0x801F3580
 local OFFSET_EASE = 0x8007BCAC
 local GAME_MODE   = 0x8007B83C
 local RAND_SEED   = 0x80009010
+local RING        = 0x80084098
+local RING_CURSOR = 0x8007B758
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -70,7 +76,8 @@ end
 local held = {}
 local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
-    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record,mode,rng\n")
+    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record,mode,rng," ..
+    "ring_cur,frame_cost,step\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
 afh:write("vsync,flat,x,y,z,heading,flags,model\n")
@@ -127,7 +134,7 @@ probe.run({
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
         fh:write(string.format(
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x,%d,%d,%d\n",
             el, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
             s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
             s16(PITCH), s16(YAW), s16(H),
@@ -136,7 +143,10 @@ probe.run({
             s16(STAGING + 0x02), s16(STAGING + 0x06), s16(STAGING + 0x26),
             s16(STAGING + 0x0E), s16(STAGING + 0x12), s16(STAGING + 0x16),
             s16(OFFSET_EASE), s16(p + 0x68), s16(p + 0x6A), s16(p + 0x5E),
-            probe.read_u32(GAME_MODE) % 256, probe.read_u32(RAND_SEED)))
+            probe.read_u32(GAME_MODE) % 256, probe.read_u32(RAND_SEED),
+            (probe.read_u32(RING_CURSOR) or 0) % 16,
+            probe.read_u16(RING + (((probe.read_u32(RING_CURSOR) or 1) - 1) % 16) * 2) or 0,
+            probe.read_scratch_u8(0x1F800393) or 0))
         fh:flush()
         log_actors(el, p)
     end,

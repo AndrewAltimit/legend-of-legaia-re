@@ -499,7 +499,17 @@ falls back to a labelled tag for that badge only.
 ### The command chips
 
 Chips are blue plate runs around a D-pad glyph - texels `(0, 112)` 16x16,
-sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. Every
+sub-palette 7, drawn 15x15 as a textured quad centred on the cluster. The quad
+is `FUN_801DB8F4`'s (`battle_party_panel::dpad_glyph`), whose UVs run `0..16`
+over those fifteen pixels, and the two emulators sample it differently. The
+mednafen command-menu frames (`v0_1_battle_command_menu`, `_submenu`) hold the
+whole cell squeezed into the seat. PCSX-Redux holds the cell's top-left 15x15
+texels one to one, on the ring, the attack-mode prompt and the arts entry
+alike. One emulator's rasteriser is not the console's, but the draw is one
+leaf at one anchor in every state, so the port draws one glyph: the arts
+entry's is the clusters' squeeze at the clusters' seat
+(`arts_input::DPAD_SEAT`). Drawn as a crop beside the clusters' squeeze, it
+changed size the frame the arts entry opened. Every
 chip in one cluster is built at the **same** interior width. The label is
 left-aligned at the interior's left edge, four rows down.
 
@@ -658,6 +668,21 @@ prompt shows none: the older of `koru_strip_forced`'s two ordering tables
 holds `Begin` and `Run` five pixels short of their seats, the panel nine rows
 short of its own, and no glyph packet.
 
+The same holds at every edge between the glyph's states. Each of `0x28`,
+`0x78` and `0x50` calls the leaf first thing (`0x801D118C`, `0x801D16EC`,
+`0x801D1D84`), and each edge between them runs a sub-draw step whose records
+glide: step `0x2A` slides `Auto` / `Command` in from `168` right of their
+seats while the ring's other arms leave, step `9` or `0x2C` slides the arts
+entry's four chips in the same way. A PCSX-Redux film of
+`battle_menu_rugi_barra_retail` (`CROSS`, `LEFT`, `RIGHT`) drops the glyph
+for eighteen vsyncs at each edge while the chips move and puts it back at
+the same seat and size once they land. The stepper walks the arts chips on the
+passes the gate holds, so they land as the hold opens, not a hold later.
+Port: `battle_hud::battle_chip_dpad_visible` reads the surface hold beside
+the prompt and ring glides, `ArtsCommandInputSession::step_glides` runs on a
+held battle pass, and `battle_chip_offsets` slides the attack-mode prompt's
+chips in over the hold.
+
 #### The ring opens on a glide
 
 Step 1 is `[12][1][4]` with pairs
@@ -788,8 +813,10 @@ Differences from retail:
   held-for-32-vsyncs term (`_DAT_8007B938`);
 - the `ctx[+0x26A]` term of the exit is not modelled;
 - `Run` sliding off the right edge as the ring opens is not drawn;
-- the steps past the ring - the windows, the attack-mode prompt, the target
-  cursors, the commit confirm - draw at rest. Their records still cost the
+- the steps past the ring - the windows, the arms the attack-mode prompt
+  sends off, the target cursors, the commit confirm - draw at rest (the
+  prompt's own `Auto` / `Command` and the arts entry's chips do slide in).
+  Their records still cost the
   hold: every `ctx[+0x06]` edge runs a sub-draw step whose records glide
   sixteen vsyncs (every step the menu SM runs has at least one pair with
   mode bit 1 clear; the `0x50` screen's own presses use the empty step
@@ -1394,8 +1421,31 @@ total `16`, elapsed `11`; the older ordering table draws the frame's top edge at
 (elapsed `3`). Port: `BattleState::message_bar_glide`, stepped with the action
 plates' glides, read by `battle_hud::battle_message_bar_dy` into
 `BattleHudFrame::message_bar_dy`; started by a cast module's raise
-(`World::raise_module_message_bar`). The steal, Glare and Fatal Decision raises
-still draw at rest.
+(`World::raise_module_message_bar`). Glare's raise is a mode-`0` call like the
+rest (`clear a1` at `0x801F7160` / `0x801F7178`, `jal 0x801D8DE8` at
+`0x801F7188`) and glides the same way. So are the melee steal's two raises
+(`jal 0x801D8DE8` / `move a1,zero` at `0x8004B37C` and `0x8004B628`) and
+Fatal Decision's prompt and outcome lines.
+
+**A mode-`1` call sends it back down.** Fatal Decision's arm 6 calls the
+spawner with `a1 = 1` as the wheel is stopped (`0x801F7708`): mode bit 0 set
+spawns the element at seat B and glides it to seat A (`0x801D935C..0x801D93D8`),
+so the bar sinks with its line still on it and the readout shows again as the
+frame clears the plate. Seat A's row `234` puts the frame's top edge at `226`,
+under the battle display's last row (`224`), so a landed bar is out of view;
+the port retires it there. A recording of Shade's cast holds the bar eight
+rows down two vsyncs after the stop and gone by the twelfth. Port:
+`LogLaunch::inbound` on `BattleState::message_bar_glide`, read by
+`battle_message_bar_dy`. Grade `disassembly` + `capture`.
+
+**The readout bar stays under it until it is covered.** The bar is queued behind
+the readout on the same seat, so a bar still rising from below leaves the plate
+in view and a risen one hides it: films of Glare and Melt Spray hold the
+victim's readout through the first half of the glide, the frame's top edge
+climbing under it. The readout's numbers ride the text layer, so the builder
+drops the readout once the frame's top reaches the plate's bottom row
+(`battle_hud_draws_for`). Dropped on the raise, the plate went a half glide
+early. Grade `capture`.
 
 **It is queued after the target plaque.** The same capture's ordering table
 links the target plaque's sprites ahead of the bar's, so a bar risen over the
@@ -1484,6 +1534,21 @@ every pair, splits an overlap evenly once the gap between two labels falls
 under 20 pixels, clamps each label to `6 <= x <= 0x13A - width`, and repeats
 until a whole pass moves nothing.
 
+**A badged name wears its badge.** The label is the group's display name
+`+0x1BC` copied into the composer's buffer at `ctx + 0x29 + group * 0x20`
+(`jal 0x8003CA78` at `0x801D9DF0`), caret escape and all, and the width
+`FUN_80035F04` measures (`0x801D9F7C`) covers the escape and its trailing
+space. So an escaped name prints its
+[element badge](#the-element-badges-and-their-per-badge-palette) at the pen
+and the name `20 + 5` right of it, and the seat law centres the wider label:
+retail footage of a Gimard opening shows the fire badge in front of the name,
+and a Karisto opening on `Moldy Worm` and `Grude`, neither escaped, shows
+none. The commit log's target column is the same string: the commit arm copies
+record `0x29`'s string pointer and width into it (`FUN_801D5718`, `+0x14` and
+`+0x06`), so a badged target wears its badge there too. So does a composed
+message-bar line whose subject is an escaped monster (Nighto's "... has been
+annihilated."), since the module copies the name with `FUN_8003CA78`.
+
 **No slide.** The intro labels are spawned at their final seat; this path calls
 neither `FUN_801D8DE8` nor the glide `FUN_801DB7B0`. The round HUD that
 replaces the banner is spawned from records 68 and 7 at their disc seats and
@@ -1534,7 +1599,11 @@ prompt builds `Begin` / `Run` on ids `3` and `4`.
 **Port.** `engine-battle-hud::battle_intro_names` builds the labels (the
 grouping and run suffix of `target_picker::enemy_menu_rows`, the layout of
 `target_picker::layout_enemy_menu_rows`), measured with the host's
-`legaia-font` and reading `+0x34` off the live actor position.
+`legaia-font` and reading `+0x34` off the live actor position, with the
+group's badge (`MonsterDef::plaque_badge`) in front of the name and in the
+measured width (`battle_hud::INTRO_BADGE_LEAD`). The commit log carries the
+target's badge as `CommitLogRow::target_badge`, the message bar its subject's
+as `battle_hud::battle_message_bar_badge`.
 `engine-core::world::battle::intro_names` owns the `ctx[+0x6D6]` timer, armed
 beside the formation banner and drained by the frame step. `engine-ui`'s HUD
 builder draws each label on the class-0 frame

@@ -34,6 +34,7 @@ impl FieldHostImpl<'_> {
                 .npcs
                 .object_models
                 .insert(usize::from(record), value);
+            self.world.object_model_swapped(record);
         } else if let Some(slot) = self.world.field_vm.executing_channel {
             self.world.set_field_npc_live_model(slot, value);
         }
