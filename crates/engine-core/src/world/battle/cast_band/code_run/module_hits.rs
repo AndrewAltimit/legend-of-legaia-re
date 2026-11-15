@@ -307,7 +307,8 @@ impl World {
     /// Pre-roll the status draws one whole-row sweep makes, in the order
     /// retail visits its seats: the two `FUN_80056798` calls PROT 0938's
     /// `0x4E` body makes per hittable seat (`0x801F7888` / `0x801F78B0`),
-    /// which decide Venom then Toxic.
+    /// which decide Venom then Toxic. The other two sweeps draw nothing
+    /// beside their wrapper and report `(1, 1)`, no status.
     ///
     /// The **damage** roll comes first, per seat, because retail's loop calls
     /// the wrapper before the status draws: each of the three sweeps opens
@@ -361,7 +362,19 @@ impl World {
                 Some(sh) => self.capture_module_roll(sh, caster, seat).unwrap_or(0),
                 None => 0,
             };
-            out.push((seat, damage, (self.next_rand(), self.next_rand())));
+            // The two status draws are the `0x4E` body's alone
+            // (`jal 0x80056798` at `0x801F7888` / `0x801F78B0`). PROT 0938's
+            // `0xB7` seat body (`jal 0x801DD4B0` at `0x801F70EC`, the popup at
+            // `0x801F7100`) and PROT 0965's (`0x801F77B4..0x801F7840`) run
+            // from one wrapper call to the next with no `rand()` between
+            // them: a traced Doomsday chains its three rolls three draws
+            // apart, seed to seed.
+            let status = if body == ticks::CHAOS_BREATH_TICK {
+                (self.next_rand(), self.next_rand())
+            } else {
+                (1, 1)
+            };
+            out.push((seat, damage, status));
         }
         out
     }
