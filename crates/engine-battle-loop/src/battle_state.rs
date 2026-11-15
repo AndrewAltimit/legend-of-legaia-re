@@ -73,6 +73,7 @@ pub const INFLIGHT_GROUND_SLOTS: usize = 8;
 pub type CellRestore = ((u16, u16, u16, u16), Option<Vec<u16>>);
 
 /// Live battle session state: per-seat stat arrays, command / submenu sessions, flow + round state, tutorial, intro transition, escape timer, buffs, hit / effect queues and the end-of-battle latches.
+#[derive(Debug)]
 pub struct BattleState {
     /// The loaded scene's **map id** - retail's `_DAT_80084540`, the scene's
     /// raw CDNAME `#define` number (`town01` = `3`, `map01` = `0x55`; every
@@ -1880,6 +1881,55 @@ pub struct BattleRewards {
 }
 
 impl BattleState {
+    /// The battle context's words and the HUD element records this state
+    /// mirrors, as battle init leaves them: zero.
+    ///
+    /// Battle init allocates one block per fight, points the context at
+    /// `base + 0x37B4` (`sw v1,-0x42dc(at)` at `0x80055EC8`, the context
+    /// pointer `0x8007BD24`) and zeroes the whole block, `0x1E8D` words from
+    /// `base` (`sw zero,0x0(v1)` loop at `0x80055F14..0x80055F24`). Every
+    /// context word up to `+0x4280` therefore opens a fight at zero: the
+    /// melee ramps `+0x6D2` / `+0x6D4`, the juggle `+0x0A`, the defeat cue
+    /// cursor `+0x09`, the part-emit accumulator `+0x328`, the glide gate
+    /// `+0x6B2`, the pad buffer `+0x884`. The engine keeps these on this
+    /// state, which outlives the fight, so a second fight opened on the
+    /// first one's: its first hit priced with the last strike's walk-in
+    /// guard, its first prompt held a pass by the last pass's glide gate,
+    /// its burning-body emits on the last fight's phase. The HUD glides
+    /// read `None` before their first raise, as their own records say.
+    ///
+    /// REF: FUN_80055B6C (`0x80055E98..0x80055F24`)
+    pub fn reset_context_mirrors(&mut self) {
+        self.attack_ramp = 0;
+        self.guard_ramp = 0;
+        self.juggle = 0;
+        self.party_melee_pushes = 0;
+        self.defeat_cue_cursor = 0;
+        self.burn_emit_accum = 0;
+        self.widget_glide_return = 0;
+        self.widget_glide_latch = 0;
+        self.pass_glide_live = false;
+        self.pass_glide_gated = false;
+        self.command_pad_buffer = None;
+        self.action_plaque_glide = None;
+        self.target_plaque_glide = None;
+        self.target_plaque_seat = None;
+        self.action_panels_glide = None;
+        self.round_prompt_glide = None;
+        self.ring_open_glide = None;
+        self.surface_hold_glide = None;
+        self.action_hud_wiped = false;
+        self.action_hud_close = None;
+        self.target_plate_cleared = false;
+        self.counter_hud = None;
+        self.round_armed = false;
+        self.commit_exit = None;
+        self.readout_bar_glide = None;
+        self.spirit_gauge_glide = None;
+        self.message_bar_glide = None;
+        self.message_banner = None;
+    }
+
     /// The battle-end presentation is up: the scene is still in
     /// [`SceneMode::Battle`] but the action SM no longer runs.
     pub fn battle_end_sequence_active(&self) -> bool {
