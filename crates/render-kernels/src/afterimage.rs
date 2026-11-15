@@ -82,8 +82,10 @@
 //! wired path takes a different one: [`crate::streak_pass`] hands the packets
 //! to the shared battle FX layer (`legaia_engine_screens::battle_fx`), which
 //! links them into the screen-prim pass over the actors on both hosts.
-//! Retail links each packet inside the scene, so that ordering is an engine
-//! departure, not a reproduction.
+//! Retail links each packet inside the scene: in PSX mode the shared layer
+//! depth-tests each packet at its anchor's depth
+//! (`legaia_engine_world_views::screen_passes::move_fx_streak_prims`), and
+//! only a clean frame keeps the packets over the scene.
 
 /// Units the source point is pushed down (+Y) before projection
 /// (retail adds `0x120` to the Y of `*(_DAT_8007bd24 + 0x1144)`). Applied

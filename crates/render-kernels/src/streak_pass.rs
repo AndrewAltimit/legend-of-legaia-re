@@ -223,9 +223,9 @@ pub fn streak_quads(src: &StreakSource, mvp: &Mat4, frame: u32) -> Vec<Afterimag
 /// Overlay OT bucket the move-FX streak links at when drawn through the
 /// screen-prim pass (nearer than the weapon trail's
 /// `crate::battle_trail::WEAPON_TRAIL_OT`; retail links each packet at the
-/// projected billboard's own scene-depth bucket, which the overlay cannot
-/// express - the same disclosed simplification as the native window's
-/// streak batch).
+/// projected billboard's own scene-depth bucket, which PSX mode's
+/// depth-tested packets carry - `move_fx_streak_prims` - and a clean frame
+/// does not).
 pub const MOVE_FX_STREAK_OT: u32 = 0x18;
 
 /// The single-quad afterimage draws while the streak counter `ctx[+0x6C6]`

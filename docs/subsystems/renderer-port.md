@@ -473,7 +473,9 @@ battle units the port draws `SZ` is `w` itself.
 | After-image ghosts | per pixel, pushed past the body about the eye | corner mean twenty buckets deeper |
 | Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean; farthest corner on a `0x10000000` word |
 | Effect-pool billboards | per pixel | corner mean (the quad's centre) |
-| Screen primitives (trails, streaks, cast-arm packets) | over the 3D frame in their own order | unchanged |
+| Weapon-trail bands, move-FX streak, clip-tag ribbon | over the 3D frame in their own order | depth-tested at their own link |
+| Cast-arm ribbons | depth-tested at their anchor | depth-tested at their anchor |
+| Other screen primitives (Theeder beam, value readout, HUD) | over the 3D frame in their own order | unchanged |
 
 A part or node whose colour word carries `0x10000000` links at its farthest corner,
 the field's rule for a record flag `0x800`. The dispatcher stages the word's top
@@ -535,8 +537,24 @@ equal whole-`SZ` keys later-submitted first, and the opaque pass keeps the first
 primitive drawn. Keying the blend list by slot instead moved no still of the
 battle and field corpus, so it keeps whole-`SZ` keys.
 
-Not modelled: the order of opaque primitives inside one slot, and the screen
-primitives' links, which composite over the 3D frame rather than among it. Clean rendering keeps
+The battle's screen-space packets link among the scene's. `FUN_800485BC` links
+each weapon-trail band at its four corners' projector depths averaged
+(`0x80048950..0x80048980`; an entry is `(SZ >> 2) >> 2`, sixteen `SZ`: the
+projector `FUN_800195A8` shifts by the table's shift byte `0x1F8003A4`, `srlv` at
+`0x80019694`, which the port's trail placement had left at `0`), and
+`FUN_801E1AB0` / `FUN_801E1D98` link the move-FX afterimage and each ribbon packet
+at the projector's return for their anchor: the launch point (lifted `+0x120` for
+the single afterimage) or the clip-tag ribbon's target seat. In PSX mode both hosts
+draw those packets depth-tested at that depth (`battle_fx_prims_by_link`, the
+screen-prim pass's per-corner depth): the band takes its entry's middle, the
+streak and ribbon the anchor's own depth, so a body linked nearer covers them and
+they cover what is linked behind. They still draw after the scene's semi-transparent
+primitives, so among those they keep the overlay's order. The clean frame
+composites them over the 3D frame.
+
+Not modelled: the order of opaque primitives inside one slot, the Theeder beam's
+depth-averaged packets, and a screen packet's order among the scene's
+semi-transparent primitives. Clean rendering keeps
 per-pixel depth: a mean pops as the camera turns, which the retail frame shows
 and the clean frame need not.
 

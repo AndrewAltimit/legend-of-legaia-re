@@ -39,8 +39,10 @@
 //!   ladder (white lead + tint restack on segment 0) only composes
 //!   sensibly under `B + F`. The port pins ABR mode 1.
 //! * **Depth**: retail interleaves the bands with the scene through the
-//!   software OT; the screen-prim overlay draws over the scene instead
-//!   (the same disclosed simplification as the move-FX streak).
+//!   software OT, each at its averaged entry. In PSX mode the hosts draw
+//!   each band depth-tested at that entry ([`weapon_trail_prims_linked`]),
+//!   against a scene that draws by link too; a clean frame composites the
+//!   bands over the scene.
 
 mod schedule;
 
@@ -286,6 +288,42 @@ pub fn weapon_trail_prims(
     rgb: [u8; 3],
     ot_index: u32,
 ) -> Vec<ScreenPrim> {
+    trail_prims(steps, rgb, ot_index, None)
+}
+
+/// The battle view depth (`SZ`, the battle draws' clip `w`) an OT entry of
+/// the projector's scale stands for: an entry is `(SZ >> 2) >> 2` under the
+/// battle table shift `2` ([`TrailVertex::otz`]), sixteen `SZ` wide, and the
+/// band takes the entry's middle, so a scene primitive whose mean falls in
+/// the same entry splits evenly over and under it.
+pub fn ot_entry_view_depth(entry: i32) -> f32 {
+    (entry as f32 + 0.5) * 16.0
+}
+
+/// [`weapon_trail_prims`] with each band quad depth-tested at its own
+/// ordering-table entry: `link_depth` maps the quad's [`TrailQuad::ot_entry`]
+/// (the four corners' projector depths averaged, `0x80048950..0x80048980`,
+/// the entry `FUN_800485BC` hands `AddPrim`) to the shared view-projection's
+/// normalised depth ([`crate::screen_prim::CornerDepth`]), so a body linked
+/// nearer covers the band and the band covers what is linked behind it. The
+/// hosts take it in PSX mode, where the scene draws by link.
+///
+/// PORT: FUN_800485BC (the band's link entry)
+pub fn weapon_trail_prims_linked(
+    steps: &[[TrailVertex; TRAIL_POINTS]],
+    rgb: [u8; 3],
+    ot_index: u32,
+    link_depth: &dyn Fn(i32) -> f32,
+) -> Vec<ScreenPrim> {
+    trail_prims(steps, rgb, ot_index, Some(link_depth))
+}
+
+fn trail_prims(
+    steps: &[[TrailVertex; TRAIL_POINTS]],
+    rgb: [u8; 3],
+    ot_index: u32,
+    link_depth: Option<&dyn Fn(i32) -> f32>,
+) -> Vec<ScreenPrim> {
     let bands = band_schedule(steps.len(), rgb);
     let mut out = Vec::with_capacity(bands.len() * (TRAIL_POINTS - 1));
     for band in bands {
@@ -306,7 +344,7 @@ pub fn weapon_trail_prims(
                 semi_transparent: true,
                 abr_mode: TRAIL_ABR_MODE,
                 ot_index,
-                depth: None,
+                depth: link_depth.map(|f| crate::screen_prim::CornerDepth::new([f(q.ot_entry); 4])),
             }));
         }
     }
@@ -330,6 +368,34 @@ mod tests {
                 })
             })
             .collect()
+    }
+
+    /// Linked, each band quad carries its own entry's depth on all four
+    /// corners: the averaged `otz` of its corners, the entry retail links.
+    #[test]
+    fn a_linked_band_takes_its_own_entry_depth() {
+        let mut s = steps(3);
+        for (k, step) in s.iter_mut().enumerate() {
+            for (i, v) in step.iter_mut().enumerate() {
+                v.otz = 0x100 + 8 * k as i16 + 4 * i as i16;
+            }
+        }
+        let depth = |e: i32| e as f32;
+        let plain = weapon_trail_prims(&s, [0x80, 0x20, 0x40], 8);
+        let linked = weapon_trail_prims_linked(&s, [0x80, 0x20, 0x40], 8, &depth);
+        assert_eq!(plain.len(), linked.len());
+        assert!(!linked.is_empty());
+        // Band 0 (steps 0, 1), first pair (points 0, 1): (256 + 264 + 260 + 268) / 4.
+        let ScreenPrim::Flat(q) = linked[0] else {
+            panic!("trail bands are flat quads");
+        };
+        assert_eq!(q.depth.map(|d| d.get()), Some([262.0; 4]));
+        assert!(
+            plain
+                .iter()
+                .all(|p| matches!(p, ScreenPrim::Flat(q) if q.depth.is_none()))
+        );
+        assert_eq!(ot_entry_view_depth(0x20), 520.0);
     }
 
     #[test]

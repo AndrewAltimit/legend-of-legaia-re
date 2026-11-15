@@ -463,7 +463,12 @@ impl PlayWindowApp {
             // The weapon-trail bands, the move-FX afterimage streak and the
             // Theeder beam: one placement and projection, the page's too
             // (`engine-screens::battle_fx`).
-            battle_fx: legaia_engine_screens::battle_fx::battle_fx_prims(&self.session.host.world),
+            // In PSX mode each packet is depth-tested at its own link, as
+            // the bodies around it are drawn.
+            battle_fx: legaia_engine_screens::battle_fx::battle_fx_prims_by_link(
+                &self.session.host.world,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ),
             field_fog: field_fog_prims,
             // The actor drop shadows (`FUN_8001C394`), through the same
             // `World::field_drop_shadows` kernel as the page.

@@ -55,10 +55,17 @@ impl LegaiaRuntime {
             // The weapon-trail bands, the move-FX afterimage streak and
             // the Theeder beam: one placement and projection, the native
             // window's too (`engine-screens::battle_fx`).
+            // In PSX mode each packet is depth-tested at its own link, as
+            // the bodies around it are drawn (the window's rule too).
             battle_fx: self
                 .scene_host
                 .host()
-                .map(|h| legaia_engine_screens::battle_fx::battle_fx_prims(&h.world))
+                .map(|h| {
+                    legaia_engine_screens::battle_fx::battle_fx_prims_by_link(
+                        &h.world,
+                        self.page_toggles.psx_render,
+                    )
+                })
                 .unwrap_or_default(),
             field_fog: self.tick_field_fog_prims(),
             drop_shadows: self.field_drop_shadow_prims(),
@@ -91,6 +98,17 @@ impl LegaiaRuntime {
             world_map_sky: self.world_map_sky_prims(),
             pack_mode_world: self.pack_mode_world_prims(),
         };
+        // A battle frame's depth-tested screen primitives (the linked trail
+        // and streak, the cast ribbons) carry the battle view-projection's
+        // depth: the screen-prim pass inverts it through this pair, not the
+        // last field projection's.
+        if let Some(h) = self.scene_host.host()
+            && h.world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        {
+            let vp = legaia_engine_screens::battle_fx::battle_fx_vp(&h.world);
+            self.fx_depth_affine =
+                Some(legaia_engine_field::overworld_draw_order::depth_affine(&vp));
+        }
         self.screen_prims_base = host;
         self.rebuild_screen_geom();
     }

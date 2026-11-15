@@ -297,6 +297,23 @@ impl<'a> HostView<'a> {
 /// `FieldGteView::from_battle_pose(world.battle_cam_pose())`), onto the
 /// retail 320x240 stage. No host projects a trail point of its own.
 pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
+    trail_prims(world, None)
+}
+
+/// [`weapon_trail_prims`] with every band depth-tested at the OT entry
+/// `FUN_800485BC` links it at, through `vp` (the battle view-projection the
+/// scene draws with): PSX mode's battle frame, which sorts the bodies by
+/// link too.
+pub fn weapon_trail_prims_linked(world: &World, vp: &[f32; 16]) -> Vec<ScreenPrim> {
+    trail_prims(world, Some(vp))
+}
+
+/// The battle ordering table's shift byte `0x1F8003A4` (`2` in every
+/// catalogued battle state), which the projector `FUN_800195A8` shifts its
+/// depth by (`srlv` at `0x80019694`): a band's corners carry `(SZ >> 2) >> 2`.
+const BATTLE_OT_SHIFT: u32 = legaia_render_kernels::prim_near_reject::BATTLE_SHIFT_DEFAULT;
+
+fn trail_prims(world: &World, link_vp: Option<&[f32; 16]>) -> Vec<ScreenPrim> {
     use legaia_render_kernels::battle_trail as bt;
     let draws = crate::battle_draws::battle_weapon_trail_draws(world);
     if draws.is_empty() {
@@ -314,10 +331,97 @@ pub fn weapon_trail_prims(world: &World) -> Vec<ScreenPrim> {
             .steps
             .iter()
             .map(|s| {
-                s.map(|t| bt::project_trail_point(&view, 0, bt::trail_world_point(base, yaw, t)))
+                s.map(|t| {
+                    bt::project_trail_point(
+                        &view,
+                        BATTLE_OT_SHIFT,
+                        bt::trail_world_point(base, yaw, t),
+                    )
+                })
             })
             .collect();
-        out.extend(bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT));
+        match link_vp {
+            Some(vp) => {
+                let depth = |entry: i32| {
+                    legaia_engine_field::overworld_draw_order::ndc_at_w(
+                        vp,
+                        bt::ot_entry_view_depth(entry).max(1.0),
+                    )
+                };
+                out.extend(bt::weapon_trail_prims_linked(
+                    &steps,
+                    d.rgb,
+                    bt::WEAPON_TRAIL_OT,
+                    &depth,
+                ));
+            }
+            None => out.extend(bt::weapon_trail_prims(&steps, d.rgb, bt::WEAPON_TRAIL_OT)),
+        }
+    }
+    out
+}
+
+/// [`move_fx_streak_quads`] as screen primitives at `ot_index`, each
+/// depth-tested at its billboard's own depth when `by_link`: retail links the
+/// afterimage and every ribbon packet at the projector's return for the
+/// anchor (`FUN_800195A8` -> `AddPrim` in `FUN_801E1AB0` / `FUN_801E1D98`),
+/// the launch point (lifted `+0x120` for the single afterimage) or the
+/// clip-tag ribbon's seat. PSX mode's battle frame takes it; otherwise the
+/// packets composite over the scene.
+pub fn move_fx_streak_prims(
+    world: &World,
+    mvp: &glam::Mat4,
+    ot_index: u32,
+    by_link: bool,
+) -> Vec<ScreenPrim> {
+    use legaia_render_kernels::screen_prim::CornerDepth;
+    use legaia_render_kernels::streak_pass::{
+        AFTERIMAGE_COUNTER_MIN, StreakSource, clip_ribbon_quads, streak_quads_scheduled,
+    };
+    let anchor = |p: [f32; 3]| {
+        let clip = *mvp * glam::Vec4::new(p[0], p[1], p[2], 1.0);
+        (by_link && clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]))
+    };
+    let frame = world.clock.display_frames as u32;
+    let mut out = Vec::new();
+    let mut push = |quads: Vec<legaia_render_kernels::afterimage::AfterimageQuad>,
+                    depth: Option<CornerDepth>| {
+        out.extend(quads.iter().map(|q| {
+            let mut prim = q.to_screen_prim(ot_index);
+            if let ScreenPrim::Textured(t) = &mut prim {
+                t.depth = depth;
+            }
+            prim
+        }));
+    };
+    if let Some(trail) = world.active_move_fx_trail_texpage() {
+        let block = world.move_fx_streak();
+        if let Some(src) = StreakSource::from_block(block.launch, block.half_width(), Some(trail)) {
+            let party = world
+                .battle_seat_map()
+                .is_party(world.battle_ctx.active_actor);
+            // The single afterimage projects the launch point pushed down
+            // `+0x120`; the ribbon anchors on the point itself
+            // (`streak_pass::project_streak_corners_mvp` /
+            // `project_ribbon_corners_mvp`).
+            let lift = if party && block.counter_word >= AFTERIMAGE_COUNTER_MIN {
+                f32::from(legaia_render_kernels::afterimage::SCREEN_Y_OFFSET)
+            } else {
+                0.0
+            };
+            let depth = anchor([src.launch[0], src.launch[1] + lift, src.launch[2]]);
+            push(
+                streak_quads_scheduled(&src, mvp, frame, block.counter_word, party),
+                depth,
+            );
+        }
+    }
+    if let Some(c) = world.battle.clip_ribbon {
+        let seat = c.seat.map(f32::from);
+        push(
+            clip_ribbon_quads(seat, c.trail_id, mvp, frame),
+            anchor(seat),
+        );
     }
     out
 }
@@ -465,6 +569,8 @@ mod tests {
         assert_eq!(v.curve_scale(None), 0.0);
         assert!(weapon_trail_prims(&world).is_empty());
         assert!(move_fx_streak_quads(&world, &glam::Mat4::IDENTITY).is_empty());
+        assert!(move_fx_streak_prims(&world, &glam::Mat4::IDENTITY, 0x18, true).is_empty());
+        assert!(weapon_trail_prims_linked(&world, &[0.0; 16]).is_empty());
     }
 
     /// Under a scripted shot each blob's centre grid point (`FUN_800460AC`'s
