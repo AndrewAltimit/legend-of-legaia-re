@@ -11,6 +11,7 @@
 //! rules, the battle loop - is `legaia-engine-core`; this crate sits above it
 //! and below the play hosts.
 
+pub mod battle_link_census;
 pub mod disc_readers;
 pub mod expansion_preload;
 pub mod fishing_venue;

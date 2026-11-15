@@ -195,6 +195,11 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
         Ok("0") => toggles.field_frame_cost = false,
         _ => {}
     }
+    // Diagnostic: the polygon cost reads the window's drawn table, not the
+    // census (`WorldToggles::battle_poly_window_count`).
+    if std::env::var("LEGAIA_BATTLE_POLY_SOURCE").is_ok_and(|v| v.trim() == "window") {
+        toggles.battle_poly_window_count = true;
+    }
     // Which machine's CD response time the battle frame step reads
     // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
     // `pcsx-redux` names the default.

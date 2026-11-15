@@ -879,6 +879,12 @@ pub struct BattleState {
     /// `WorldToggles::battle_poly_frame_cost` is up. `None` before the first
     /// priced frame, and on a host that does not price its frames.
     pub drawn_polys: Option<u32>,
+    /// The polygons the frame the world last stood on links, counted from
+    /// world state by the scene host's census (`World::note_linked_polys`,
+    /// `legaia_engine_scene_host::battle_link_census`): the count a pass
+    /// prices its work from while `WorldToggles::battle_poly_frame_cost` is
+    /// up, the same on every host. `None` before the first census.
+    pub linked_polys: Option<u32>,
     /// The action state the last ring push was made in and the passes made
     /// in it before that one (`measured_frame_cost_at`).
     pub frame_cost_state: Option<(u8, u8)>,
@@ -1705,6 +1711,7 @@ impl BattleState {
             frame_cost_state: None,
             frame_work: 0,
             drawn_polys: None,
+            linked_polys: None,
             cast_arm_pass: None,
             pending_frame_step: None,
             pass_frame_cost_due: None,

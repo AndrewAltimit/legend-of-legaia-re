@@ -2436,6 +2436,7 @@ name = "legaia-engine-scene-host"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "glam",
  "legaia-actor-formats",
  "legaia-art",
  "legaia-container-formats",

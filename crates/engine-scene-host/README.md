@@ -36,6 +36,11 @@ scene, tick it, drain what the tick queued.
   (`CardLoadHost`).
 - **`scene_live`** - the headless live-scene preview the viewers animate: a
   scene entered through the real `SceneHost` and ticked with no pad.
+- **`battle_link_census`** - what a battle frame links into its ordering
+  table, counted from world state (the stage, the grid, each posed body, the
+  ghosts, the shadows, the effects) over geometry built once a fight off the
+  disc; the count the battle frame cost prices from, the same on every host
+  ([the census](../../docs/subsystems/battle-stage-camera.md#the-census)).
 - **`disc_readers`** - the PROT reads that feed parsed tables to kernels at
   scene entry (the battle tutorial script, the field MAN encounter table).
 - **`fishing_venue`** - the fishing venue's floor and per-frame tick read off

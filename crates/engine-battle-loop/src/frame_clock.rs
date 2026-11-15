@@ -520,6 +520,28 @@ pub const fn polygon_frame_work(polys: u32) -> u16 {
     }
 }
 
+/// Hblanks of a battle frame's work that do not scale with what it links,
+/// the intercept of [`linked_frame_work`]: the frame driver, the battle VMs,
+/// the 2D layers the census does not count.
+pub const LINKED_FRAME_BASE: u16 = 138;
+
+/// Hblanks a battle frame's work spends per primitive it links, in
+/// thousandths, over the census of world state
+/// (`legaia_engine_scene_host::battle_link_census`), which counts what
+/// retail's ordering table holds rather than what a host's draw lists carry.
+pub const LINKED_WORK_MILLI: u32 = 195;
+
+/// The work a battle frame whose census counts `linked` primitives costs
+/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
+pub const fn linked_frame_work(linked: u32) -> u16 {
+    let c = LINKED_FRAME_BASE as u32 + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
+    if c > u16::MAX as u32 {
+        u16::MAX
+    } else {
+        c as u16
+    }
+}
+
 /// What a frame the clip's polls load costs over its work, in thousandths,
 /// when the work is the frame's own ([`polygon_frame_work`]): the median of
 /// the `--cd-trace` recordings' polled state-and-arm medians, cost over cost

@@ -94,6 +94,9 @@ pub fn stage_battle_world(
     archive: Option<&[u8]>,
 ) -> Option<BattleStage> {
     let stage = resolve_battle_stage(host, scus);
+    // The census's stage draws the same second copy
+    // (`legaia_engine_scene_host::battle_link_census`).
+    host.set_battle_link_second(stage.as_ref().map(|s| s.second));
     if let Some(st) = host.pack_stage_resolved() {
         log::info!(
             "battle stage: pack stage {:?} index {:?} -> entry {:?}{}",
@@ -295,7 +298,7 @@ pub fn seat_summon_creature(
             summon_dat.as_ref().map(|b| b.as_slice()),
         )?,
     };
-    legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
+    let creature_tmd = legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
     // The creature node's size `+0x58`, which the seat installer takes from
     // the cast's own actor record (`+0x1F << 5`, `0x801F1DE4..0x801F1DF0`).
     let cast = strike.or_else(|| {
@@ -318,6 +321,12 @@ pub fn seat_summon_creature(
     // monsters' slots drew them nothing.
     let tex_slot = SUMMON_CREATURE_TEX_SLOT;
     let slot = seat.unwrap_or(8 + world.party.party_count as usize);
+    // The census counts the creature's body like any seat's
+    // (`legaia_engine_scene_host::battle_link_census`).
+    let census_body = legaia_engine_scene_host::battle_link_census::LinkMesh::from_tmd(
+        &creature_tmd,
+        asset.mesh.tmd_bytes(),
+    );
     if let Some(a) = world.actors.get_mut(slot) {
         a.active = true;
         // Bound whichever way the host holds the mesh; a window re-points it
@@ -351,6 +360,7 @@ pub fn seat_summon_creature(
     // enemy) and retires it when the choreography ends; a debug spawn keeps
     // the placement above.
     world.seat_summon_actor(slot);
+    host.seat_battle_link_creature(slot, census_body);
     Some(SummonSeat {
         slot,
         tex_slot,

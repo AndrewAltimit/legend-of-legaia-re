@@ -56,8 +56,8 @@ impl World {
     /// inside its step.
     fn push_frame_cost(&mut self, arm_step: Option<u8>) -> u16 {
         use legaia_engine_battle_loop::frame_clock::{
-            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, measured_frame_cost_at,
-            polygon_frame_work, xa_polled_work_cost,
+            CdTiming, XA_STREAM_ONSET_COST, cost_of_step, linked_frame_work,
+            measured_frame_cost_at, polygon_frame_work, xa_polled_work_cost,
         };
         let state = self.battle_ctx.action_state;
         let passes = match self.battle.frame_cost_state {
@@ -77,12 +77,17 @@ impl World {
                 == legaia_engine_battle_vm::battle_action::ActionState::SummonSustain.as_byte()
                 || state
                     == legaia_engine_battle_vm::battle_action::ActionState::SummonReturn.as_byte());
-        let poly = self
-            .battle
-            .drawn_polys
-            .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
+        // The census of world state (`World::note_linked_polys`), or the
+        // window's own drawn table under the diagnostic source.
+        let window = self.toggles.battle_poly_window_count;
+        let poly = if window {
+            self.battle.drawn_polys.map(polygon_frame_work)
+        } else {
+            self.battle.linked_polys.map(linked_frame_work)
+        }
+        .filter(|_| self.toggles.battle_poly_frame_cost && !summon_arm);
         let work = match poly {
-            Some(p) => polygon_frame_work(p),
+            Some(w) => w,
             None => measured_frame_cost_at(self.party.party_count, state, passes)
                 .saturating_add(self.battle_frame_load_cost()),
         };
@@ -156,6 +161,19 @@ impl World {
     pub fn note_drawn_polys(&mut self, polys: u32) {
         if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
             self.battle.drawn_polys = Some(polys);
+        }
+    }
+
+    /// Note the polygons the battle frame the world stands on links, counted
+    /// from world state by the scene host's census
+    /// (`legaia_engine_scene_host::battle_link_census`), which every host
+    /// runs. The next pass prices its work from it while
+    /// `WorldToggles::battle_poly_frame_cost` is up, unless
+    /// `WorldToggles::battle_poly_window_count` names the window's own count
+    /// ([`Self::note_drawn_polys`]). A no-op outside a battle.
+    pub fn note_linked_polys(&mut self, polys: u32) {
+        if self.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            self.battle.linked_polys = Some(polys);
         }
     }
 
@@ -2285,9 +2303,30 @@ mod tests {
             "off: the table"
         );
         w.toggles.battle_poly_frame_cost = true;
+        w.toggles.battle_poly_window_count = true;
         w.push_frame_cost(None);
         assert_eq!(w.battle.frame_work, polygon_frame_work(3900));
         assert_eq!(w.battle.frame_cost_step, 4);
+    }
+
+    /// The default source is the census of world state: a pass prices the
+    /// count the scene host noted, not the window's, and keeps the table
+    /// while no census has come in.
+    #[test]
+    fn a_priced_frame_reads_the_census() {
+        use legaia_engine_battle_loop::frame_clock::linked_frame_work;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x2B;
+        w.toggles.battle_poly_frame_cost = true;
+        w.note_drawn_polys(9000);
+        w.push_frame_cost(None);
+        let table = w.battle.frame_work;
+        assert_ne!(table, linked_frame_work(9000), "no census: the table");
+        w.note_linked_polys(3000);
+        w.push_frame_cost(None);
+        assert_eq!(w.battle.frame_work, linked_frame_work(3000));
     }
 
     /// A capture-band module's line loads a priced frame at its work over the
@@ -2305,6 +2344,7 @@ mod tests {
             w.mode = legaia_engine_mode::mode::SceneMode::Battle;
             w.toggles.battle_cd_timing = CdTiming::PcsxRedux;
             w.toggles.battle_poly_frame_cost = true;
+            w.toggles.battle_poly_window_count = true;
             w.party.party_count = 3;
             w.battle_ctx.action_state = 0x70;
             let mut spans = vec![0u16; 0x60];

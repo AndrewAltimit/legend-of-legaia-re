@@ -165,8 +165,10 @@ impl SceneHost {
             }
             self.install_battle_monster_action_clips();
             self.ensure_battle_party_forms();
+            self.refresh_battle_link_census();
         } else {
             self.battle_party_forms = None;
+            self.battle_link = None;
         }
         // Post-battle field return: retail re-enters the field scene after a
         // battle (game-mode battle -> field reload), which re-runs the
