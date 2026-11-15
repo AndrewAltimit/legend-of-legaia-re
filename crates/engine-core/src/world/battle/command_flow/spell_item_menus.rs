@@ -466,6 +466,17 @@ impl World {
         {
             self.push_battle_ui_cue(cue);
         }
+        // A cancel off a target surface reopens the list on row 0: the
+        // cancels run sub-draw steps `0x13` / `0x17` / `0x1E`, type-3 records
+        // that zero the list kernel's selection and scroll words
+        // (`0x801D4C1C..0x801D4C28`) before the list is rebuilt. The pause
+        // menu's lists keep their row, so the shared session does not.
+        // REF: FUN_801D388C (`0x801D4BB8..0x801D4C28`)
+        if !matches!(state_before, InventoryUseState::Browsing { .. })
+            && matches!(menu.state, InventoryUseState::Browsing { .. })
+        {
+            menu.state = InventoryUseState::Browsing { cursor: 0 };
+        }
         let used_slots = menu.used_slots.clone();
 
         if !used_slots.is_empty() {

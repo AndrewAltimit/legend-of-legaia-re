@@ -163,7 +163,7 @@ impl BattleSpellSession {
     /// ([`legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits`]),
     /// so an MP-saver lets the caster select a spell whose raw cost exceeds
     /// their MP - matching `World::cast_spell_on_slots`. The cursor starts on
-    /// the first affordable spell (or row 0 when none are affordable). Spell ids
+    /// row 0, greyed or not, as retail's does. Spell ids
     /// missing from the catalog are dropped.
     pub fn new(
         actor: u8,
@@ -186,12 +186,16 @@ impl BattleSpellSession {
                 })
             })
             .collect();
-        let cursor = spells.iter().position(|s| s.affordable).unwrap_or(0) as u8;
+        // The window opens on row 0, greyed or not: the ring's Magic arm
+        // runs sub-draw step 7, a type-3 record, which zeroes the list
+        // kernel's selection and scroll words (`0x8007BB98` / `0x8007BB90`,
+        // `0x801D4C1C..0x801D4C28`) before the window's list is built
+        // (`FUN_80030104` seats the node from them).
         Self {
             actor,
             party_slot,
             spells,
-            phase: SpellPhase::Select { cursor },
+            phase: SpellPhase::Select { cursor: 0 },
         }
     }
 
@@ -276,14 +280,10 @@ impl BattleSpellSession {
                         target_row: row,
                         target_slot: 0,
                     },
-                    // Backing out of targeting returns to the spell list.
-                    Some(PickerOutcome::Cancelled) => SpellPhase::Select {
-                        cursor: self
-                            .spells
-                            .iter()
-                            .position(|s| s.id == spell_id)
-                            .unwrap_or(0) as u8,
-                    },
+                    // Backing out of targeting reopens the spell list on
+                    // row 0: the cancel runs step `0x1A` / `0x1C`, type-3
+                    // records that zero the kernel's words as step 7 does.
+                    Some(PickerOutcome::Cancelled) => SpellPhase::Select { cursor: 0 },
                     Some(PickerOutcome::NoCandidates) => SpellPhase::Aborted,
                     None => SpellPhase::Targeting { spell_id, picker },
                 };
@@ -293,13 +293,8 @@ impl BattleSpellSession {
             // `0x801D28C0..0x801D28D4`), then the confirm.
             SpellPhase::SweepConfirm { spell_id, row } => {
                 self.phase = if ev.circle {
-                    SpellPhase::Select {
-                        cursor: self
-                            .spells
-                            .iter()
-                            .position(|s| s.id == spell_id)
-                            .unwrap_or(0) as u8,
-                    }
+                    // Step `0x1A` / `0x1C`: back on row 0.
+                    SpellPhase::Select { cursor: 0 }
                 } else if ev.cross {
                     SpellPhase::Confirmed {
                         spell_id,
@@ -428,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn cursor_starts_on_first_affordable_spell() {
+    fn affordability_follows_the_caster_mp() {
         let cat = SpellCatalog::vanilla();
         // Heal (0x10, cost 4) and Flame (0x20, cost 5). With 4 MP only Heal is
         // affordable -> cursor on row 0.
@@ -482,15 +477,29 @@ mod tests {
         ));
     }
 
+    /// The cancel runs step `0x1A` / `0x1C`, whose type-3 record zeroes the
+    /// list kernel's selection: the list reopens on row 0.
     #[test]
-    fn a_sweep_surface_cancels_back_to_its_row() {
+    fn a_sweep_surface_cancels_back_to_row_zero() {
         let cat = SpellCatalog::vanilla();
         let mut s = BattleSpellSession::new(0, 0, &[0x10, 0x11], &cat, 50, 0);
         s.input(press("D"), &cat, party3(), one_monster());
         s.input(press("c"), &cat, party3(), one_monster());
         assert!(matches!(s.phase, SpellPhase::SweepConfirm { .. }));
         s.input(press("o"), &cat, party3(), one_monster());
-        assert!(matches!(s.phase, SpellPhase::Select { cursor: 1 }));
+        assert!(matches!(s.phase, SpellPhase::Select { cursor: 0 }));
+    }
+
+    /// Step 7 zeroes the kernel's selection before the list is built: the
+    /// window opens on row 0 even when that row is greyed.
+    #[test]
+    fn the_list_opens_on_row_zero_greyed_or_not() {
+        let cat = SpellCatalog::vanilla();
+        // Flame (0x20, cost 5) then Heal (0x10, cost 4): with 4 MP row 0 is
+        // greyed and the hand still rests on it.
+        let s = BattleSpellSession::new(0, 0, &[0x20, 0x10], &cat, 4, 0);
+        assert!(!s.spells[0].affordable);
+        assert!(matches!(s.phase, SpellPhase::Select { cursor: 0 }));
     }
 
     #[test]
@@ -536,7 +545,6 @@ mod tests {
             half.spells[0].affordable,
             "an MP-saver makes the spell selectable"
         );
-        // The cursor lands on the now-affordable row (not the row-0 fallback).
         assert_eq!(half.menu_spell().map(|r| r.id), Some(0x12));
     }
 }
