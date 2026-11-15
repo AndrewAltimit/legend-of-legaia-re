@@ -1267,9 +1267,17 @@ from the first. Mushura's and Viguro's part on yaw (`256` against `3008`, `3670`
 arm that frames the caster through case 8 and returns done on the same pass, and retail's
 walker steps that tween before `0x37`'s case 6 rebuilds from it on the next pass
 ([summon-band camera](../subsystems/cast-module.md#summon-band-camera)). The port dropped
-the module's shot on the state change before stepping it. With the step, Viguro's and
-Theeder's `0x37` poses read retail's to a unit or two (films `0x8E` `.9778` to `.9789`, `0x82` `.9668` to `.9673`, `0x87` `.9099` to `.9101`); what parts after that is case 6's own
-walk, which the port eases where retail's walker takes `ceil(gap / 12)` a vsync. Mushura's
+the module's shot on the state change before stepping it. It also framed the band's exit a
+state early twice over: `0x37` stores the exit depth `0x800` behind its own case-6 call, so
+that pass still frames on the route depth (Aluru's TR z endpoint holds `4915` through `0x38`),
+and `0x38` calls no framing case at all. The walk law itself is retail's: case 6, 7 and 8
+re-arm the builder every pass and the walker adds `ceil(gap / 12) * step`
+(`Glide::chase`), which the recordings' step tables read. What was left of a slower ease was
+the frame step, `3` where retail's runs `4` on Theeder's `0x37` pass, the cost model's. With
+the exit timing in, Viguro's camera reads retail's to a unit or two from `0x37` to the end of
+`0x51`, and the Seru set reads `.9618` to `.9622` plain and `.9631` to `.9635` on retail's
+steps, no film falling more than `.0003`; the full-party Gimard, Gizam and Iota films gain
+about `.0016`. Mushura's
 yaw is its arm-13 shot's, framed on where its chase left the creature.
 
 ### Evil Seru Magic

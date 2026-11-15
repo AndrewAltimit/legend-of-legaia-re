@@ -4733,7 +4733,11 @@ the done arm holds the dead victim's colour word `0x20080200` and `+0x21C = 0xC8
 framing, pitch `0x140` and TR y `0x300`, and the walker's first pass reads pitch
 `108`. The port's camera walks a case-8 frame the module armed on the band's last
 pass before it lets the shot go, and holds the next framing for that pass
-(`BattleCamera::release_module_shot`).
+(`BattleCamera::release_module_shot`). The same holds for a module with no done-arm call:
+`0x36`'s exit pass frames nothing (`0x801E4CA8..0x801E4D4C`), so the walker steps the
+module's last shot there, and `0x37`'s case 6 starts a pass later. `0x37` stores the exit
+depth `0x800` behind its case-6 call (`0x801E4D68`, `0x801E4E70`) and `0x38` calls no
+framing case, so the camera first reads `0x800` at `0x50`'s call.
 
 Directors, each read off its own tick's disassembly:
 
