@@ -8,6 +8,9 @@ use super::*;
 /// frames at the clamp in the band `0x70` (`3207` frames, `4` to `11`).
 const MODULE_LINE_FRAME_VSYNCS: u8 = 6;
 
+/// Action state `0x71`, the capture band's finalize: the module has returned
+/// done and the state waits on the victim to settle (`FUN_801E4490`'s table).
+const CAPTURE_FINALIZE_STATE: u8 = 0x71;
 /// Action state `0x50`, the Done band's first pass.
 const DONE_CLEANUP_STATE: u8 = 0x50;
 /// Action state `0x51`, the HP-bar settle.
@@ -630,10 +633,16 @@ impl World {
         // the Done band loads only what that count has left. The drive word
         // keeps its own span, and the span law, whose frames run retail's
         // length, needs no second count.
+        //
+        // The capture band's finalize `0x71` takes the same cut: it is the
+        // module's line outliving the module. Over the enemy films' PCSX-Redux
+        // recordings `2.5%` of retail's `0x71` vsyncs read the clamp where the
+        // port's read it on `48%`, and the state's step agreed on `.30` of its
+        // game time (the port on a mean step of `3.42` against `2.42`).
         if !self.toggles.battle_frame_span_law
             && matches!(
                 self.battle_ctx.action_state,
-                DONE_CLEANUP_STATE | DONE_SETTLE_STATE
+                CAPTURE_FINALIZE_STATE | DONE_CLEANUP_STATE | DONE_SETTLE_STATE
             )
         {
             self.audio.battle_xa_load_frames = self
