@@ -567,8 +567,11 @@ impl RetailObs {
                 ram.get(lo..lo + 0x200)
                     .map(|b| std::array::from_fn(|i| i16::from_le_bytes([b[i * 2], b[i * 2 + 1]])))
             },
-            rand_seed: matches!(class, StateClass::Field | StateClass::WorldMap)
-                .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
+            rand_seed: matches!(
+                class,
+                StateClass::Field | StateClass::WorldMap | StateClass::Minigame
+            )
+            .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
         };
         // A walking capture's frame is two passes old ([`super::walk_rewind`]);
         // a focus off the player is a poked or script-carried seat, which

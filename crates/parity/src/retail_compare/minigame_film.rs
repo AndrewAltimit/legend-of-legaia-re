@@ -74,8 +74,18 @@ impl MinigameFilm {
         session: &mut NativeSession,
         mg: &RetailMinigame,
         aligned_tick: u64,
+        rand_seed: Option<u32>,
     ) -> Result<()> {
         let sub = mg.minigame_id().context("sub-id names no overlay")?;
+        // Harness seat: the pond draws every roll off its own stream, which
+        // stands on the capture's `rand()` word at the aligned tick.
+        if let (MinigameSubId::Fishing, Some(seed), Some(pond)) = (
+            sub,
+            rand_seed,
+            session.host.world.minigames.fishing.as_mut(),
+        ) {
+            pond.seat_rng(seed);
+        }
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(f, "vsync,aligned_at,{}", columns(sub).join(","))?;
         let row = |session: &NativeSession| values(sub, &session.host.world);
@@ -88,6 +98,9 @@ impl MinigameFilm {
                 .collect::<Vec<_>>()
                 .join(",")
         )?;
+        if let Some(path) = std::env::var_os("LEGAIA_RC_MINIGAME_FILM_REPLAY") {
+            return replay_pond(session, sub, &path, aligned_tick, &mut f);
+        }
         for t in 1..self.ticks {
             // The tick that writes row `t + 1` holds that row's pad, as
             // retail's row `v` is the vsync the probe held the pad on.
@@ -128,6 +141,10 @@ pub(super) fn columns(sub: MinigameSubId) -> Vec<&'static str> {
             "card_hold",
             "emode",
         ],
+        MinigameSubId::Fishing => vec![
+            "state", "power", "record", "height", "band", "bandcd", "tension", "casts", "rng",
+            "lx", "lz", "species", "strength", "pull", "sway", "points",
+        ],
         _ => vec!["mode"],
     }
 }
@@ -138,6 +155,7 @@ fn values(sub: MinigameSubId, w: &legaia_engine_core::world::World) -> Vec<i64> 
     match sub {
         MinigameSubId::Dance => dance_values(w),
         MinigameSubId::MuscleDome => hub_values(w),
+        MinigameSubId::Fishing => fishing_values(w),
         _ => vec![w.mode as i64],
     }
 }
@@ -240,4 +258,137 @@ fn hub_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
         .to_vec();
     v.push(emode);
     v
+}
+
+fn fishing_values(w: &legaia_engine_core::world::World) -> Vec<i64> {
+    use legaia_engine_fishing::fishing::PondPhase as P;
+    let Some(p) = w.minigames.fishing.as_ref() else {
+        return vec![-1; columns(MinigameSubId::Fishing).len()];
+    };
+    // The driver's state word for each phase: the wait and the fight are
+    // both state `0x19`, the lure in the water.
+    let state = match p.phase() {
+        P::Idle => 0xC,
+        P::WindUp => 0xD,
+        P::Power => 0x14,
+        P::Flight => 0x15,
+        P::Waiting | P::Hooked => 0x19,
+        P::Landed => 0x1E,
+        P::Snapped => 0x28,
+        _ => -1,
+    };
+    let lure = p.lure_actor();
+    vec![
+        state,
+        i64::from(p.cast_power()),
+        i64::from(p.line_record()),
+        lure.map_or(-1, |l| i64::from(l.y_fixed)),
+        i64::from(p.band()),
+        i64::from(p.band_countdown()),
+        i64::from(p.tension()),
+        i64::from(p.persist().casts),
+        i64::from(p.rng_state()),
+        lure.map_or(-1, |l| i64::from(l.x_fixed)),
+        lure.map_or(-1, |l| i64::from(l.z_fixed)),
+        p.hooked().map_or(0, |s| s.index as i64),
+        i64::from(p.strength()),
+        lure.map_or(0, |l| i64::from(l.pull)),
+        lure.map_or(0, |l| i64::from(l.sway.0)),
+        i64::from(p.persist().record.points),
+    ]
+}
+
+/// `LEGAIA_RC_MINIGAME_FILM_REPLAY`: a rules differential over a retail film.
+/// The pond is ticked once per retail game frame (a move of the master frame
+/// driver's counter `_DAT_8007B798`, `gp + 0x480` at the head of
+/// `FUN_80016B6C`) on that frame's step `DAT_1F800393` and its pad words
+/// (held `_DAT_8007B850`, new-press `_DAT_8007B874`), so the venue's measured
+/// frame step and its pad timing come from the capture and what the film
+/// compares is the rules. Each row is labelled with the retail vsync it
+/// stands beside.
+fn replay_pond(
+    session: &mut NativeSession,
+    sub: MinigameSubId,
+    path: &std::ffi::OsStr,
+    aligned_tick: u64,
+    f: &mut impl Write,
+) -> Result<()> {
+    anyhow::ensure!(
+        sub == MinigameSubId::Fishing,
+        "the replay drives the fishing pond only"
+    );
+    let text = std::fs::read_to_string(path)?;
+    let mut lines = text.lines();
+    let head: Vec<&str> = lines
+        .next()
+        .context("empty retail film")?
+        .split(',')
+        .collect();
+    let col = |name: &str| head.iter().position(|h| *h == name);
+    let (Some(vs), Some(gf), Some(dt), Some(held), Some(edge)) = (
+        col("vsync"),
+        col("gframe"),
+        col("dt"),
+        col("held"),
+        col("edge"),
+    ) else {
+        anyhow::bail!("the retail film lacks vsync / gframe / dt / held / edge");
+    };
+    // One `(vsync, step, held, new-press)` per game frame: the row the
+    // frame driver's counter moved on carries that frame's pad pump, and the
+    // frame's results stand on the row the counter moves on next.
+    let repcd = col("repcd");
+    // The driver moves the counter, waits out a vsync and only then stores
+    // the frame's step: the step a frame runs on is the one the vsync after
+    // the counter's move reads.
+    let mut frames: Vec<[i64; 5]> = Vec::new();
+    let mut last = None;
+    let mut step_due = false;
+    for line in lines {
+        let v: Vec<i64> = line.split(',').map(|x| x.parse().unwrap_or(0)).collect();
+        if step_due && let Some(fr) = frames.last_mut() {
+            fr[1] = v[dt];
+        }
+        step_due = false;
+        if last != Some(v[gf]) {
+            last = Some(v[gf]);
+            frames.push([v[vs], v[dt], v[held], v[edge], repcd.map_or(0, |c| v[c])]);
+            step_due = true;
+        }
+    }
+    // Harness seat: the auto-repeat clock's phase, off the capture.
+    if let (Some(_), Some(first), Some(p)) = (
+        repcd,
+        frames.first(),
+        session.host.world.minigames.fishing.as_mut(),
+    ) {
+        p.seat_repeat_countdown(first[4] as i32);
+    }
+    for w in frames.windows(2).skip(1) {
+        // The pad is the pump's at the frame's start.
+        let [_, step, held, edge, _] = w[0];
+        // The packed layout is the engine word with its bytes swapped.
+        let held_e = (held as u16).rotate_left(8);
+        let edge_e = (edge as u16).rotate_left(8);
+        let input =
+            legaia_engine_fishing::fishing::PondInput::from_engine_pad(held_e, held_e & !edge_e);
+        if let Some(p) = session.host.world.minigames.fishing.as_mut() {
+            p.tick(
+                input,
+                step.max(1) as i32,
+                legaia_engine_fishing::fishing::CAST_POWER_STEP,
+            );
+        }
+        let vals = values(sub, &session.host.world);
+        writeln!(
+            f,
+            "{},{aligned_tick},{}",
+            w[1][0],
+            vals.iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        )?;
+    }
+    Ok(())
 }

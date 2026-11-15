@@ -51,6 +51,31 @@ SETS = {
         moved=["phase", "state"],
         skip=lambda r: r["state"] < 3 or r["state"] > 20,
     ),
+    # The fishing pond (PROT 0972): the driver's state word, the cast, the
+    # lure's accumulators, the band check and the fight; the rand() word is
+    # the BIOS seed, which the engine's pond stream is seated on (harness).
+    # A game frame is a move of any word; each state's frames pair by their
+    # ordinal in the state.
+    "fishing": dict(
+        words=[
+            ("state", 0x801D926C, "u32"), ("power", 0x801D9274, "s32"), ("record", 0x801D927C, "s32"),
+            ("height", 0x801D9178, "s32"), ("band", 0x801D90E8, "u32"), ("bandcd", 0x801D90EC, "s32"),
+            ("tension", 0x801D9168, "s32"), ("casts", 0x80084460, "s32"), ("rng", 0x80009010, "u32"),
+            ("lx", 0x801D9174, "s32"), ("lz", 0x801D917C, "s32"), ("species", 0x801D91CC, "u32"),
+            ("strength", 0x801D91B8, "s32"), ("dt", 0x1F800393, "u8"),
+            ("gframe", 0x8007B798, "u32"), ("held", 0x8007B850, "u16"), ("edge", 0x8007B874, "u16"),
+            ("pull", 0x801D9148, "s32"), ("redge", 0x801D90D8, "u32"), ("sway", 0x801D9140, "s32"),
+            ("onhook", 0x801D91B4, "u32"), ("fmove", 0x801D910C, "u32"), ("points", 0x8008444C, "s32"),
+            ("rep", 0x8007B93C, "u32"), ("repcd", 0x8007B940, "s32"),
+        ],
+        # The replay's pad: Cross closed-loop on the fishing globals.
+        policy="fishing_catch",
+        key=lambda r: None,
+        song=lambda r: True,
+        moved=["state", "power", "record", "height", "band", "bandcd", "tension", "rng", "lx", "lz"],
+        group="state",
+        skip=lambda r: r["state"] < 0xC or r["state"] > 0x28,
+    ),
     # The Muscle Dome hub's first visit (PROT 0977): the arm byte and its
     # counter family, each arm's frames by their ordinal in the arm.
     "hub": dict(
@@ -120,6 +145,9 @@ def main():
     ap.add_argument("--no-retail", action="store_true", help="reuse the retail film")
     ap.add_argument("--no-engine", action="store_true", help="reuse the engine film")
     ap.add_argument("--show", type=int, default=12, help="diverging frames printed per column")
+    ap.add_argument("--replay", action="store_true",
+                    help="rules differential: the engine ticks the session once per retail game frame on "
+                         "retail's step and pad words (fishing; harness-only), paired by retail vsync")
     a = ap.parse_args()
     spec = SETS[a.set]
     out = Path(a.out or REPO / "captures" / "minigame-film" / a.label).resolve()
@@ -130,6 +158,7 @@ def main():
             os.environ,
             LEGAIA_PAD_SCRIPT=a.pad,
             LEGAIA_FILM_WORDS=",".join(f"{n}=0x{addr:08X}:{k}" for n, addr, k in spec["words"]),
+            LEGAIA_FILM_POLICY=spec.get("policy", "") if a.replay else "",
             LEGAIA_PCSX_PROFILE_DIR=str(out / ".pcsx-profile"),
             TMPDIR=str(out / ".tmp"),
         )
@@ -150,6 +179,8 @@ def main():
             LEGAIA_RC_MINIGAME_FILM_TICKS=str(a.frames),
             RUST_LOG="error",
         )
+        if a.replay:
+            env["LEGAIA_RC_MINIGAME_FILM_REPLAY"] = str(out / "minigame_film.csv")
         exe = os.environ.get("LEGAIA_ENGINE_BIN") or REPO / "target" / "release-test" / "legaia-engine"
         subprocess.run(
             [str(exe), "retail-compare", "--out", str(out / "rc"), "--library", str(REPO / "saves/library"),
@@ -159,8 +190,13 @@ def main():
         )
     retail = read(out / "minigame_film.csv")
     engine = read(out / "engine.csv")
-    rf = frames(retail, spec)
-    ef = frames(engine, spec)
+    if a.replay:
+        by_v = {r["vsync"]: r for r in retail}
+        ef = [(e["vsync"], e) for e in engine[1:]]
+        rf = [(v, by_v[v]) for v, _ in ef if v in by_v]
+    else:
+        rf = frames(retail, spec)
+        ef = frames(engine, spec)
     by_key = dict(ef)
     paired = [(r, by_key.get(k)) for k, r in rf]
     keys = {id(r): k for k, r in rf}

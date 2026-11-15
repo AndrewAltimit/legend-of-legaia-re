@@ -119,6 +119,21 @@ impl PondSession {
         self.rng.state()
     }
 
+    /// Seat the session's `rand()` state, as a harness standing the pond on
+    /// a capture's stream does (the minigame film).
+    #[doc(hidden)]
+    pub fn seat_rng(&mut self, state: u32) {
+        self.rng = BiosRand::new(state);
+    }
+
+    /// Seat the pad pump's auto-repeat countdown (`_DAT_8007B940`,
+    /// `gp + 0x628` of `FUN_8001822C`): a free-running clock the whole game
+    /// shares, so a capture's phase is the pond's only by a harness seat.
+    #[doc(hidden)]
+    pub fn seat_repeat_countdown(&mut self, countdown: i32) {
+        self.reel_repeat_in = countdown;
+    }
+
     /// The band check's strike countdown (`DAT_801D90EC`).
     pub fn band_countdown(&self) -> i32 {
         self.band.countdown

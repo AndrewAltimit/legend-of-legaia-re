@@ -473,6 +473,7 @@ fn run_engine_minigame(
             &mut session,
             &mg,
             WARP_TICK + 1 + reached.unwrap_or(ENTRY_DEADLINE),
+            retail.rand_seed,
         )?;
     }
     let w = &session.host.world;

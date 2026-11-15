@@ -14,6 +14,13 @@
 --                          u32 only). `name=*PTR+OFF:KIND` reads through the
 --                          word at PTR (both hex), e.g. a sequencer slot's
 --                          record off its pointer table.
+--      LEGAIA_FILM_POLICY  `fishing_catch`: drive Cross closed-loop on the
+--                          fishing globals instead of the spans, as
+--                          autorun_fishing_catch_film.lua does (tap it on the
+--                          shore, lock the meter at power 0xF00, pump the
+--                          cadence 25 held / 40 idle until a fish is on, then
+--                          hold it under tension 0xB00 and release it to
+--                          0x700); nothing once the catch state 0x1E is up.
 --
 -- Output: minigame_film.csv, one row a vsync: `vsync,<name>...`.
 
@@ -24,6 +31,34 @@ local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 600)
 local SCRIPT = probe.getenv("LEGAIA_PAD_SCRIPT", "")
 local WORDS = probe.getenv("LEGAIA_FILM_WORDS", "")
+local POLICY = probe.getenv("LEGAIA_FILM_POLICY", "")
+local tap, pump, cross, caught = 0, 0, false, false
+
+-- The fishing_catch policy's Cross for this vsync.
+local function fishing_cross()
+    local st = probe.read_u32(0x801D926C) or 0
+    local hooked = probe.read_u32(0x801D91B4) or 0
+    local tension = probe.read_u32(0x801D9168) or 0
+    local power = probe.read_u32(0x801D9274) or 0
+    if st == 0x1E then caught = true end
+    if caught then
+        cross = false
+    elseif st == 0xC then
+        tap = (tap + 1) % 40
+        cross = tap < 4
+    elseif st == 0x14 then
+        cross = power >= 0xF00 and not cross
+    elseif st ~= 0x19 then
+        cross = false
+    elseif hooked ~= 0 then
+        if cross and tension >= 0xB00 then cross = false
+        elseif not cross and tension < 0x700 then cross = true end
+    else
+        pump = (pump + 1) % 65
+        cross = pump < 25
+    end
+    return cross
+end
 
 local words = {}
 for item in string.gmatch(WORDS, "[^,]+") do
@@ -94,6 +129,7 @@ probe.run({
         for _, s in ipairs(spans) do
             if el >= s.from and el < s.to then want[s.btn] = true end
         end
+        if POLICY == "fishing_catch" and fishing_cross() then want[probe.BTN.CROSS] = true end
         for btn, _ in pairs(held) do
             if not want[btn] then probe.pad_release(btn); held[btn] = nil end
         end
