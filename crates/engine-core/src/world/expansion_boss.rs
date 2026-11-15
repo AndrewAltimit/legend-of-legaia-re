@@ -209,11 +209,11 @@ impl World {
 
     fn show_boss_banner(&mut self, text: String) {
         self.battle.message_banner = Some(
-            legaia_engine_battle_loop::message_banner::BattleMessageBanner {
-                element: legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+            legaia_engine_battle_loop::message_banner::BattleMessageBanner::raised(
+                legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
                 text,
-                hold: BOSS_BANNER_HOLD,
-            },
+                BOSS_BANNER_HOLD,
+            ),
         );
     }
 

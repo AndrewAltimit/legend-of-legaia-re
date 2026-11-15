@@ -282,6 +282,7 @@ pub fn battle_hud_frame_draws(
                 .map(|(_, n)| n.as_str()),
             plaque_badge: bh::battle_plaque_element_badge(w),
             banner: banner.as_deref(),
+            banner_dy: bh::battle_message_banner_dy(w),
             // The sparring-tutorial prompt is a box the host draws itself,
             // and its rect starts on the plaque's own content pen - so while
             // it is up the plaque must not draw, or the two text runs land on

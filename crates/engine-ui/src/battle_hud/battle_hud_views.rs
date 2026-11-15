@@ -458,6 +458,11 @@ pub struct BattleHudFrame<'a> {
     /// `(16, 12)`), so this wins: while a message is up the builder draws
     /// the class-0 frame and its text and emits no plaque.
     pub banner: Option<&'a str>,
+    /// The banner's row offset from its rest seat while its record glides
+    /// (`engine-battle-hud::battle_message_banner_dy`): `-38` parked at
+    /// seat A above the top edge, `0` landed. While the frame clears the
+    /// plaque's row the plaque still draws under it, as retail's does.
+    pub banner_dy: i32,
     /// The host is already drawing its own box on that seat (the sparring
     /// tutorial prompt). Suppresses the plaque without drawing a banner -
     /// two text runs on one pen is the artifact this exists to stop.

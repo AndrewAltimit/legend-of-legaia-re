@@ -137,6 +137,7 @@ impl BattleState {
             self.target_plaque_glide.as_mut(),
             self.readout_bar_glide.as_mut(),
             self.message_bar_glide.as_mut(),
+            self.message_banner.as_mut().and_then(|b| b.glide.as_mut()),
             self.spirit_gauge_glide.as_mut(),
             self.action_panels_glide.as_mut(),
             self.result_windows_glide.as_mut(),
@@ -211,6 +212,7 @@ impl BattleState {
             self.target_plaque_glide.as_mut(),
             self.readout_bar_glide.as_mut(),
             self.message_bar_glide.as_mut(),
+            self.message_banner.as_mut().and_then(|b| b.glide.as_mut()),
             self.spirit_gauge_glide.as_mut(),
             self.action_panels_glide.as_mut(),
             self.round_prompt_glide.as_mut(),
@@ -234,6 +236,9 @@ impl BattleState {
             }
         }
         self.widget_glide_return = ret;
+        // The message line's record retires like the others; an unload's
+        // takes the line with it.
+        self.retire_landed_message_banner();
         // The confirm's exit records ride the same pass; the hold they would
         // gate is the surface hold's, raised beside them, so they stay out of
         // the return.
@@ -250,6 +255,7 @@ impl BattleState {
             self.target_plaque_glide.as_ref(),
             self.readout_bar_glide.as_ref(),
             self.message_bar_glide.as_ref(),
+            self.message_banner.as_ref().and_then(|b| b.glide.as_ref()),
             self.spirit_gauge_glide.as_ref(),
             self.action_panels_glide.as_ref(),
             self.round_prompt_glide.as_ref(),
@@ -306,6 +312,7 @@ impl BattleState {
             self.target_plaque_glide.as_ref(),
             self.readout_bar_glide.as_ref(),
             self.message_bar_glide.as_ref(),
+            self.message_banner.as_ref().and_then(|b| b.glide.as_ref()),
             self.spirit_gauge_glide.as_ref(),
             self.action_panels_glide.as_ref(),
             self.round_prompt_glide.as_ref(),

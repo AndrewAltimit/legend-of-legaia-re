@@ -141,7 +141,38 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
         legaia_engine_battle_loop::message_banner::ABSORB_BANNER_ELEMENT,
         1,
     );
+    // The unload glides it back up to seat A (`-38` rows), then retires it.
+    let leaving = world.battle.message_banner.clone().expect("still gliding");
+    assert!(leaving.leaving());
+    assert_eq!(leaving.dy(), 0);
+    for _ in 0..32 {
+        world.battle.step_action_plate_glides();
+    }
     assert!(world.battle.message_banner.is_none());
+}
+
+/// A raise spawns the line at seat A above the top edge and glides it down
+/// onto seat B over the record's sixteen frames.
+#[test]
+fn the_message_banner_glides_down_from_seat_a() {
+    let mut world = World::new();
+    world.mode = SceneMode::Battle;
+    world.battle.raise_magic_level_banner("line".into());
+    let dy = |w: &World| w.battle.message_banner.as_ref().map(|b| b.dy());
+    assert_eq!(dy(&world), Some(-38));
+    world.battle.step_action_plate_glides();
+    assert!(dy(&world).is_some_and(|d| -38 < d && d < 0));
+    for _ in 0..32 {
+        world.battle.step_action_plate_glides();
+    }
+    assert_eq!(dy(&world), Some(0));
+    assert!(
+        world
+            .battle
+            .message_banner
+            .as_ref()
+            .is_some_and(|b| b.glide.is_none())
+    );
 }
 
 /// `FUN_801D8DE8` is the HUD screen-element spawner; it calls no effect

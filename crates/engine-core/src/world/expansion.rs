@@ -597,11 +597,11 @@ impl World {
                 arrivals.seats.len()
             );
             self.battle.message_banner = Some(
-                legaia_engine_battle_loop::message_banner::BattleMessageBanner {
-                    element: legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+                legaia_engine_battle_loop::message_banner::BattleMessageBanner::raised(
+                    legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
                     text,
-                    hold: WAVE_BANNER_HOLD,
-                },
+                    WAVE_BANNER_HOLD,
+                ),
             );
         }
         true

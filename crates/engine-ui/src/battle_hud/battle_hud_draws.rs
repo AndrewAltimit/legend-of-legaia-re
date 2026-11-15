@@ -781,29 +781,20 @@ pub fn battle_hud_draws_for(
         );
     }
 
-    // ---- The top-left seat: banner OR plaque, never both ----
+    // ---- The top-left seat: banner over plaque ----
     //
     // Retail's message banner and the actor-name plaque share content pen
-    // `(16, 12)`; they are alternatives on one seat. Drawing both is two
-    // text runs on the same pixels, so the banner wins when a message is
-    // up and the host can also claim the seat outright
-    // (`plaque_seat_taken`) for a box it draws itself.
-    if let Some(message) = frame.banner.filter(|m| !m.is_empty()) {
-        // The class-0 nine-slice over its marbled fill, on the record's fixed
-        // 280-wide content box (`battle_hud_chrome::BANNER_BOX_W`).
-        if let Some(rects) = frame.chrome {
-            let content = message_banner_content(font, message);
-            sprites.extend(message_banner_chrome_draws_for(
-                rects,
-                content,
-                origin,
-                scale as u32,
-            ));
-        }
-        let mut rows = message_banner_text_draws_for(font, message);
-        scale_stage_text_draws(&mut rows, origin, scale as u32);
-        text.extend(rows);
-    } else if let Some(name) = frame.plaque
+    // `(16, 12)`. Drawing both is two text runs on the same pixels, so the
+    // banner wins once its glide reaches the plaque's row, and the host can
+    // also claim the seat outright (`plaque_seat_taken`) for a box it draws
+    // itself.
+    let banner = frame.banner.filter(|m| !m.is_empty());
+    // The banner's frame spans rows `8..36` at rest; gliding in from seat A
+    // it covers the plaque's text row from `dy > -24`, and until then the
+    // plaque, which retail keeps drawn under it, still shows.
+    let plaque_clear = banner.is_none() || frame.banner_dy <= -BANNER_CLEARS_PLAQUE_DY;
+    if plaque_clear
+        && let Some(name) = frame.plaque
         && !name.is_empty()
         && !frame.plaque_seat_taken
     {
@@ -899,6 +890,23 @@ pub fn battle_hud_draws_for(
                 ink,
             );
         }
+    }
+    if let Some(message) = banner {
+        let banner_origin = (origin.0, origin.1 + frame.banner_dy * scale);
+        // The class-0 nine-slice over its marbled fill, on the record's fixed
+        // 280-wide content box (`battle_hud_chrome::BANNER_BOX_W`).
+        if let Some(rects) = frame.chrome {
+            let content = message_banner_content(font, message);
+            sprites.extend(message_banner_chrome_draws_for(
+                rects,
+                content,
+                banner_origin,
+                scale as u32,
+            ));
+        }
+        let mut rows = message_banner_text_draws_for(font, message);
+        scale_stage_text_draws(&mut rows, banner_origin, scale as u32);
+        text.extend(rows);
     } else if frame.begin_tab && !frame.plaque_seat_taken {
         // The commit-confirm screen `0x6E`: the tab stays on its seat and
         // the plaque has gone back up behind the top edge, so the tab

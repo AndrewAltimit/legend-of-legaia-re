@@ -83,16 +83,27 @@ fn the_timed_message_unloads_when_its_hold_runs_out() {
     let mut world = World::new();
     world.mode = SceneMode::Battle;
     world.battle.message_banner = Some(
-        legaia_engine_battle_loop::message_banner::BattleMessageBanner {
-            element: legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
-            text: "line".into(),
-            hold: 3,
-        },
+        legaia_engine_battle_loop::message_banner::BattleMessageBanner::raised(
+            legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+            "line".into(),
+            3,
+        ),
     );
     world.clock.frame_step = 1;
     world.battle.tick_timed_message();
     world.battle.tick_timed_message();
     assert!(world.battle.message_banner.is_some());
     world.battle.tick_timed_message();
+    // The unload glides the line back up to seat A; it goes once that lands.
+    assert!(
+        world
+            .battle
+            .message_banner
+            .as_ref()
+            .is_some_and(|b| b.leaving())
+    );
+    for _ in 0..32 {
+        world.battle.step_action_plate_glides();
+    }
     assert!(world.battle.message_banner.is_none());
 }
