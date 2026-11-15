@@ -289,7 +289,13 @@ impl PlayWindowApp {
                 .prompt_label("Cross", Some(style))
                 .unwrap_or_else(|| "Cross".to_string())
         });
-        let footer = keys_footer(self.keys_reset, self.panel_holds_game(), cross.as_deref());
+        // A documentation shot (`--screenshot-chrome`) shows the footer a
+        // player's panel has, though a scripted panel holds no game.
+        let holds = self.panel_holds_game()
+            || (self.netplay.is_none()
+                && self.netplay_menu.is_none()
+                && self.screenshot.as_ref().is_some_and(|s| s.chrome));
+        let footer = keys_footer(self.keys_reset, holds, cross.as_deref());
         let footer_ink = match self.keys_reset {
             KeysReset::Idle => ink.heading,
             KeysReset::Armed | KeysReset::Done => ink.changed,

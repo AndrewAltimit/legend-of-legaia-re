@@ -65,7 +65,10 @@ fn light_fill(c: [u8; 4], l: &LightChrome) -> [u8; 4] {
 fn light_pen(c: [f32; 4], l: &LightChrome) -> [f32; 4] {
     let is = |p: [f32; 4]| c[0] == p[0] && c[1] == p[1] && c[2] == p[2];
     let to = |rgb: [f32; 3]| [rgb[0], rgb[1], rgb[2], c[3]];
-    if is(pen::WHITE) {
+    if is(pen::WHITE) || is(pen::SOFT) {
+        // A row off the cursor is as readable as the one on it: the
+        // cursor's band marks the row, and a paler ink on a light plate
+        // reads as a disabled row.
         to(l.text)
     } else if is(pen::DIM) {
         to(l.dim)
@@ -131,7 +134,14 @@ mod tests {
         ] {
             assert_ne!(light_fill(c, &L), c, "{c:?}");
         }
-        for c in [pen::WHITE, pen::DIM, pen::GOLD, pen::GREEN, pen::RED] {
+        for c in [
+            pen::WHITE,
+            pen::SOFT,
+            pen::DIM,
+            pen::GOLD,
+            pen::GREEN,
+            pen::RED,
+        ] {
             assert_ne!(light_pen(c, &L), c, "{c:?}");
         }
     }

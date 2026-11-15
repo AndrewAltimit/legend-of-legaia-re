@@ -267,7 +267,7 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         let ink = match (r.enabled, on) {
             (false, _) => pen::DIM,
             (true, true) => pen::WHITE,
-            (true, false) => [0.78, 0.80, 0.84, 1.0],
+            (true, false) => pen::SOFT,
         };
         c.text(r.label.clone(), mx + 9, ry, ink);
         if let Some(v) = &r.value {
