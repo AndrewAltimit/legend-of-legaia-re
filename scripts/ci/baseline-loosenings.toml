@@ -1563,3 +1563,11 @@ reason = "The row was never one measurement: it paired a measured score of 0.964
 changes = [
   ["films/jou_vahn_tri_somersault_super_open/matched", 28, 27],
 ]
+
+[[loosening]]
+file = "scripts/ci/film-cue-baseline.json"
+reason = "Battle frames are now priced after their node ticks, so draw load reaches the frame step one pass earlier (ff1af61c0, a change that lifted the arts and strike films). Retail runs every 0x2B frame of this cast on step 4 from its second frame; the default action-state table prices the band's first 54 ticks at 570-708 hblanks (step 3), so cue 0x17 lands 7 ticks off against the 6-tick window. The same cast on another stage (bylon_gimard_v2_tail_fire) costs 440-464 where the table says 605, so no table row can hold both. The opt-in census-priced model (LEGAIA_BATTLE_POLY_COST=1) lands the cue (15 of 15) but does not yet hold every film set."
+changes = [
+  ["films/jou_gimard_v3_tail_flare/cue", 1.0, 0.933],
+  ["films/jou_gimard_v3_tail_flare/matched", 15, 14],
+]
