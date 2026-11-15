@@ -1259,8 +1259,14 @@ pairs a film) besides the banner is the summon return's camera. On Aluru's recor
 pitch opens at `108` on `0x37`'s first frame and eases to `0` (`81`, `54`, `39`, `27`, ..)
 while TR z holds `4915` three more frames; the port's pitch stays `0` and its TR z eases
 from the first. Mushura's and Viguro's part on yaw (`256` against `3008`, `3670` against
-`18`). The state's case-6 call runs every pass with style `1` (`0x801E4D5C..0x801E4D6C`);
-which pose it arms from is not traced.
+`18`). The pose `0x37` arms from is the done arm's: Aluru, Theeder and Viguro end on an
+arm that frames the caster through case 8 and returns done on the same pass, and retail's
+walker steps that tween before `0x37`'s case 6 rebuilds from it on the next pass
+([summon-band camera](../subsystems/cast-module.md#summon-band-camera)). The port dropped
+the module's shot on the state change before stepping it. With the step, Viguro's and
+Theeder's `0x37` poses read retail's to a unit or two; what parts after that is case 6's own
+walk, which the port eases where retail's walker takes `ceil(gap / 12)` a vsync. Mushura's
+yaw is its arm-13 shot's, framed on where its chase left the creature.
 
 ### Evil Seru Magic
 

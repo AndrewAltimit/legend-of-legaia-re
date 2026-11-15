@@ -4640,9 +4640,14 @@ close to a minute. It is ported whole.
   and arm 28 copies the party's back on every pass (`0x801F89E0..0x801F8A3C`).
   Port `World::evil_seru_magic_row` over `esm_row_x`. Grade `disassembly`.
 
-Not carried: arm 0 also halves a halfword `+0xE` of each member's command
-record `0x801C9360[i] + 0x14` (restored at arm 27), whose reader is not
-traced; arm 10 seats the creature at seat 7. The arm-20 spell-name banner is
+- **Arm 0 halves each member's entry-5 end step.** The halfword it halves
+  beside the scale is `+0x0E` of the sixth pointer of the member's action-entry
+  table `0x801C9360[i]` (`lw 0x14` / `lhu 0xE` / `sra` at `0x801F6CD0..0x801F6D04`,
+  saved at `0x801FA49C`): the end-of-clip displacement the commit paths apply in
+  proportion to how far the clip got. Arm 27 copies it back. The port rewrites
+  the installed entry in place (`esm_half_end_step`). Grade `disassembly`.
+
+Not carried: arm 10 seats the creature at seat 7. The arm-20 spell-name banner is
 also left out. The screen fades are carried on the engine's one fade seat; arm
 26 spawns three at once, and the seat keeps the last, the delayed white-in that
 arm 27 fades out of.
@@ -4717,6 +4722,18 @@ keeps drifting it, and once the module returns, the Done band's case 6 frames
 the caster from whatever the walk and the drift left. The port loads the
 director's `yaw_base` from the battle camera's counter before each pass and
 stores it back after (as it does for PROT 0966's `0x780`).
+
+A done arm can hand the camera back the same way. Aluru (`0x801F8894`), Theeder
+(`0x801F80E4`) and Viguro (`0x801F78D4`) end on an arm that calls
+`FUN_801D5854(ctx[+0x13], 8)` and returns done on that pass, so `0x36` leaves for
+`0x37` there. The walker `FUN_8002149C` steps the case-8 tween in that frame, and
+`0x37`'s case 6 builds from the walked pose on the next pass. An Aluru RAM image at
+the done arm holds the dead victim's colour word `0x20080200` and `+0x21C = 0xC8`
+(the arm hides it only after the call, `0x801F88BC`), so case 8 takes the death
+framing, pitch `0x140` and TR y `0x300`, and the walker's first pass reads pitch
+`108`. The port's camera walks a case-8 frame the module armed on the band's last
+pass before it lets the shot go, and holds the next framing for that pass
+(`BattleCamera::release_module_shot`).
 
 Directors, each read off its own tick's disassembly:
 
