@@ -253,6 +253,19 @@ impl World {
         self.mode != legaia_engine_mode::mode::SceneMode::Battle
     }
 
+    /// Whether the field's actor lists are the ones the frame walks: not
+    /// while a fight or a minigame other than the dance hall (which seats a
+    /// tree of its own) has re-seeded them (`FUN_8001E1B4`,
+    /// `0x8001E324..0x8001E364`). The parked pool comes back whole on the
+    /// return (`0x8001E308` / `0x8001E31C`), so a field-list handler stands
+    /// still until then.
+    ///
+    /// REF: FUN_8001E1B4
+    pub fn field_lists_walk(&self) -> bool {
+        self.field_pool_drawn()
+            && !(self.in_minigame() && self.mode != legaia_engine_mode::mode::SceneMode::Dance)
+    }
+
     /// The battle frame's draw takes its `rand()` words from the game's one
     /// stream: each jittered default-arm ring (`FUN_80028158` shapes `4` /
     /// `5`, three words a column) draws as the render pass reaches it, after

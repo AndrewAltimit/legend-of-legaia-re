@@ -81,3 +81,18 @@ fn field_ambient_parts_bank_no_passes_through_a_battle() {
     }
     assert!(w.ambient.pending_game_ticks > 0, "the field's passes bank");
 }
+
+/// The camera-offset ease's caller `FUN_801DA51C` is a field-list handler:
+/// it does not step in a fight, where the player's slot holds a battle seat.
+#[test]
+fn the_camera_offset_ease_stands_still_in_a_battle() {
+    let mut w = World::new();
+    w.install_field_player(0);
+    w.mode = SceneMode::Battle;
+    w.camera.offset_ease = 0x3C;
+    w.camera.scene_offset = 0x200;
+    for _ in 0..60 {
+        let _ = w.tick();
+    }
+    assert_eq!(w.camera.offset_ease, 0x3C);
+}

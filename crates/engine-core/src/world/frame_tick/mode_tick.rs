@@ -443,9 +443,7 @@ impl World {
             // once, every `rand()` op among them. The dance hall's tree is
             // its own (`World::stage_dance_ambient`) and does tick.
             // REF: FUN_8001E1B4
-            let field_lists_walk =
-                self.field_pool_drawn() && !(self.in_minigame() && self.mode != SceneMode::Dance);
-            if !self.ambient.fx.is_empty() && field_lists_walk {
+            if !self.ambient.fx.is_empty() && self.field_lists_walk() {
                 self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
             self.tick_actor_physics();
@@ -572,7 +570,10 @@ impl World {
         // `FUN_801DA51C` (`jal` at `0x801DA52C`), an actor-list handler, so it
         // steps on the actor game tick: its unit steps are one a pass, not one
         // a vsync.
-        if actor_tick_fired {
+        // Its caller is a field-list handler, so it stands still while a
+        // fight or a minigame holds the lists; the field init re-seeds the
+        // accumulator on the way back (`World::seat_warp_field_return`).
+        if actor_tick_fired && self.field_lists_walk() {
             self.tick_camera_offset_ease();
         }
         // The three frame-delta timer templates (`0x801F2858` bars,
