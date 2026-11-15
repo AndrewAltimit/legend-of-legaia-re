@@ -162,7 +162,10 @@ impl World {
         self.casting.fatal_decision_text(va)
     }
 
-    /// Put `text` in the message bar under the acting seat.
+    /// Put `text` in the message bar under the acting seat. The raise is a
+    /// mode-`0` call (`li a0,0x5b` / `move a1,zero` / `jal 0x801D8DE8` at
+    /// `0x801F7564..0x801F7598`), so the bar spawns at seat A and glides up
+    /// to seat B like every other module line.
     fn raise_fatal_message(&mut self, text: Option<String>) {
         if let Some(text) = text {
             self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
@@ -170,6 +173,22 @@ impl World {
                 owner: self.battle_ctx.active_actor,
                 subject: None,
             });
+            self.battle.message_bar_glide = Some(
+                legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+            );
+        }
+    }
+
+    /// Send the stop prompt back down: arm 6's exit calls the spawner with
+    /// mode `1` (`li a0,0x5b` at `0x801F7704`, `jal 0x801D8DE8` /
+    /// `li a1,0x1` at `0x801F7708..0x801F770C`, party victims only), which
+    /// spawns the bar at seat B and glides it to seat A, under the display's
+    /// last rows. The line stays on the bar while it sinks.
+    fn lower_fatal_message(&mut self) {
+        if self.battle.steal_caption.is_some() {
+            self.battle.message_bar_glide = Some(
+                legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(true),
+            );
         }
     }
 
@@ -235,12 +254,18 @@ impl World {
                 self.emit_battle_xa_cue(id);
             }
         }
+        if p.camera_reset {
+            self.battle_ctx.camera_variant = 0;
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_action_yaw_base(0);
+            }
+        }
         match p.prompt {
             Some(true) => {
                 let text = self.casting.fatal_decision_text(fd::PROMPT_TEXT);
                 self.raise_fatal_message(text);
             }
-            Some(false) => self.battle.steal_caption = None,
+            Some(false) => self.lower_fatal_message(),
             None => {}
         }
         if let Some(o) = p.banner {

@@ -495,6 +495,13 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// pass (`0x801F7BF8`), so it leaves the style set too; the module's `0xB9`
 /// body clears it on its last arm (`0x801F72CC`).
 ///
+/// PROT 0954's Fatal Decision clears it on arm 10 alone (`sb zero,0xd` at
+/// `0x801F7D6C`, beside the yaw ladder's zero) and its `0xFF` arm
+/// (`0x801F8504..0x801F852C`) holds no such store, so the band's next pass
+/// stores the `1` back and the Done band pans half a turn round: a film of
+/// Shade's cast reads the `0x50` endpoint `4580` on counter `146` and heading
+/// `1710`, `ctx[+0x6DA] - facing + 0x800` plus the full turn.
+///
 /// Three more bodies of split modules finish with no `sb zero,0xd` at all,
 /// where their module's other body has one: PROT 0945's Water Column (`0x54`,
 /// `0x801F6EDC`, finishing at `0x801F769C..0x801F76C4`), PROT 0938's Chaos
@@ -502,7 +509,7 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 /// `0x801F78B8`). A film of Water Column reads the half turn: the Done band's
 /// yaw endpoint `4177` against `ctx[+0x6DA] - facing = 2129`.
 pub fn capture_exit_clears_style(entry: u32, action: u8) -> bool {
-    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+    !matches!(entry, 935 | 936 | 937 | 939 | 954 | 962)
         && !matches!(
             (entry, action),
             (938, 0x4E) | (940, 0x50 | 0xAE) | (941, 0x51) | (945, 0x54)

@@ -377,7 +377,18 @@ pub fn battle_message_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
         return 0;
     }
     let (a, b) = MESSAGE_BAR_SEATS_Y;
-    LogLaunch::seat_dy(world.battle.message_bar_glide.as_ref(), a, b)
+    match world.battle.message_bar_glide.as_ref() {
+        // A mode-`1` launch spawns the bar at seat B and glides it down to
+        // seat A, where it stays (`0x801D935C..0x801D93D8`).
+        Some(g) if g.inbound => {
+            if g.settled() {
+                a - b
+            } else {
+                (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1))
+            }
+        }
+        g => LogLaunch::seat_dy(g, a, b),
+    }
 }
 
 /// Seat A / seat B rows of a roster panel (records 6 / `0x4E` / `0x4F`:

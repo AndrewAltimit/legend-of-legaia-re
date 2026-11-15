@@ -506,7 +506,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .get(usize::from(self.world.battle_ctx.active_actor))
             .and_then(|a| a.battle.params.first().copied())
             .unwrap_or(0);
-        self.world.casting.module_running_entry.is_none_or(|e| {
+        // PROT 0954 runs ahead of the seam that names the running entry
+        // (`World::run_cast_module_code`), so its exit is read off the action.
+        let entry = self.world.casting.module_running_entry.or_else(|| {
+            self.world
+                .cast_module_for(action)
+                .filter(|&e| e == legaia_engine_cast::cast_fatal_decision::FATAL_DECISION_ENTRY)
+        });
+        entry.is_none_or(|e| {
             legaia_engine_cast::cast_module_camera::capture_exit_clears_style(e, action)
         })
     }

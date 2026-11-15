@@ -506,7 +506,6 @@ impl World {
         }
         // The band is leaving `0x70`; the module stops being re-entered.
         self.casting.capture_spell = None;
-        self.casting.fatal_banner = None;
         false
     }
 

@@ -124,6 +124,12 @@ impl World {
                 owner: self.battle_ctx.active_actor,
                 subject: None,
             });
+            // Both raises are mode-`0` calls (`jal 0x801D8DE8` / `move
+            // a1,zero` at `0x8004B37C` and `0x8004B628`): the bar glides up
+            // from seat A.
+            self.battle.message_bar_glide = Some(
+                legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+            );
         }
     }
 
@@ -226,6 +232,28 @@ impl World {
             .is_some_and(|c| c.owner != self.battle_ctx.active_actor)
         {
             self.battle.steal_caption = None;
+        }
+        // PROT 0954's arm 9 stores the outcome's name into the move-name
+        // label's own record (`sw v0,0x734(a2)` at `0x801F7CD8`, record
+        // `0x4C` of the table at `0x80076C10`) and nothing in the module puts
+        // the spell's name back, so the label reads the outcome through the
+        // Done band. The next action's seed writes its own name.
+        if self.casting.fatal_banner.is_some()
+            && self.battle_ctx.action_state
+                < legaia_engine_battle_vm::battle_action::ActionState::MagicCastBegin.as_byte()
+        {
+            self.casting.fatal_banner = None;
+        }
+        // A bar a mode-`1` launch has landed on seat A sits under the
+        // display's last row (the record's `y = 234`, the frame's top edge
+        // at `226`, against a 224-row battle display): retired here.
+        if self
+            .battle
+            .message_bar_glide
+            .is_some_and(|g| g.inbound && g.settled())
+        {
+            self.battle.steal_caption = None;
+            self.battle.message_bar_glide = None;
         }
     }
 }
