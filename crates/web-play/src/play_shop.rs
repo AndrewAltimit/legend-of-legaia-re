@@ -414,6 +414,12 @@ impl LegaiaRuntime {
             && minigame_sprites.is_empty()
             && minigame_texts.is_empty()
             && pack_mode_texts.is_empty()
+            // A shop's closing frames, after its windows have slid off and
+            // before the session drops, draw nothing but still stand on
+            // black: the native window skips the 3D pass on
+            // `covers_field` alone. Closing the layer here let the frozen
+            // field show through for those frames.
+            && !self.menu.covers_field()
         {
             return CLOSED.to_string();
         }
