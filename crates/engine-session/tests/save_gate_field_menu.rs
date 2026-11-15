@@ -284,8 +284,8 @@ fn the_pause_press_ends_the_place_name_banner() {
 #[test]
 fn the_pause_press_leaves_a_linked_balloon() {
     let mut world = legaia_engine_core::world::World::new();
-    let mut b = legaia_engine_scene_host::place_name_banner::man_load_banner(b"x", true)
-        .expect("banner");
+    let mut b =
+        legaia_engine_scene_host::place_name_banner::man_load_banner(b"x", true).expect("banner");
     b.parent_link = true;
     b.timer = 5;
     world.cutscene.text_balloon = Some(b);
