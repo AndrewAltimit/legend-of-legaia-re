@@ -96,23 +96,16 @@ fn player_xz(host: &SceneHost) -> (i16, i16) {
 fn talk_to(host: &mut SceneHost, slot: u8) {
     let &(nx, nz) = host.world.npcs.positions.get(&slot).expect("the talker");
     let (tx, tz) = (i32::from(nx - 0x40) >> 7, i32::from(nz - 0x40) >> 7);
-    let stand = [
-        (0, 1),
-        (1, 0),
-        (0, -1),
-        (-1, 0),
-        (1, 1),
-        (-1, -1),
-        (1, -1),
-        (-1, 1),
-    ]
-    .into_iter()
-    .map(|(dx, dz)| (tx + dx, tz + dz))
-    .find(|&(sx, sz)| {
-        let (x, z) = ((sx * 128 + 0x40) as i16, (sz * 128 + 0x40) as i16);
-        host.world.field_tile_is_walk_visible(x, z) && !host.world.field_tile_is_wall(x, z)
-    })
-    .expect("a standable tile beside the talker");
+    // The census's order: the first standable tile, rows from `-z`.
+    let stand = (-1..=1)
+        .flat_map(|dz| (-1..=1).map(move |dx| (dx, dz)))
+        .filter(|&d| d != (0, 0))
+        .map(|(dx, dz)| (tx + dx, tz + dz))
+        .find(|&(sx, sz)| {
+            let (x, z) = ((sx * 128 + 0x40) as i16, (sz * 128 + 0x40) as i16);
+            host.world.field_tile_is_walk_visible(x, z) && !host.world.field_tile_is_wall(x, z)
+        })
+        .expect("a standable tile beside the talker");
     let p = usize::from(host.world.player_actor_slot.expect("a player"));
     host.world.actors[p].move_state.world_x = (stand.0 * 128 + 0x40) as i16;
     host.world.actors[p].move_state.world_z = (stand.1 * 128 + 0x40) as i16;
@@ -314,4 +307,20 @@ fn bylon_talk_slows_vahns_clip() {
         rates.contains(&0x10),
         "`CC F8 41 20 ..` halves to rate 0x10: {rates:x?}"
     );
+}
+
+#[test]
+fn town0b_talk_seats_the_object() {
+    let Some(mut host) = open() else {
+        return;
+    };
+    enter(&mut host, "town0b", &milestone_flags("ravine"), 4);
+    let ci = channel(&host, 0x08);
+    assert!(host.world.channel_view()[ci].object_bind);
+    talk_to(&mut host, 36);
+    let mut seated = false;
+    run_talk(&mut host, |h| {
+        seated |= h.world.channel_view()[ci].ctx.world_x == 0x1C * 0x80 + 0x40;
+    });
+    assert!(seated, "`CC 08 51 1C ..` seats object 8 on column 0x1C");
 }

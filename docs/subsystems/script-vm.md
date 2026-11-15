@@ -631,6 +631,18 @@ in `crates/engine-scene-host/tests/field_context_routing_disc.rs`:
 - `suimon`'s Water Gate talk (`P1[4]`) plays the gate's clip with `A2 00 02`
   and moves the sluice objects with `CC 05..09 42 ..`.
 - `bylon` `P1[47]`'s talk sets the player's clip rate with `CC F8 41 ..`.
+- `town0b` `P1[36]`'s talk seats object 8 with `CC 08 51 1C ..`, as the
+  system script seats an object.
+- A talk's `AB` / `AC <id> <bit>` on a placement writes that placement's
+  clip-control word, which its clip tick reads every frame, and not only the
+  cursor the talk times its waits on (`balden` `P1[4]`, `AB 1C 01`). Behind
+  the talker's own id it lands on the talker's bridged word, and a seat
+  behind its own id (`balden` `P1[61]`, `A3 54 61 0F`) seats the talker.
+
+Two kinds of site the census lists are left: a talk's own `31 16` / `32 16`
+(`+0x10 & 0x400000`, a bit nothing in the port reads) and the player-aimed
+`B1 F8 13` / `B1 F8 0D` (`conc`, `suimon`, `town01`), which land on the
+issuing context.
 
 The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is

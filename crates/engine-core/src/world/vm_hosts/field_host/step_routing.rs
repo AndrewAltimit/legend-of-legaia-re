@@ -249,6 +249,20 @@ pub(in crate::world) fn step_on_resolved_channel(
     let mut ctx = ch.ctx.clone();
     let effect_op = bytecode.get(pc).is_some_and(|b| b & 0x7F == 0x34);
     let slot = (!object).then(|| u8::try_from(key).ok()).flatten();
+    // An end-latch wait (`2D <id> <bit>`) on a placement the port binds no
+    // clip cursor to: nothing would ever raise the bit, where retail's anim
+    // tick always does once the clip runs out, so the wait is a clip of no
+    // length (as `step_npc_word_op` takes it).
+    if let Some(s) = slot
+        && bytecode.get(pc).is_some_and(|b| b & 0x7F == 0x2D)
+        && !world.npc_clip_cursor_bound(s)
+        && !world.placement_morph_spin(s, bytecode.get(pc + 2).copied())
+    {
+        let width = legaia_scene_formats::field_disasm::decode(bytecode, pc).map_or(3, |i| i.size);
+        return FieldStepResult::Advance {
+            next_pc: pc + width,
+        };
+    }
     if object {
         world.mirror_object_tick_bits(key, &mut ctx.local_flags);
     } else if effect_op && let Some(&(x, z)) = slot.and_then(|s| world.npcs.positions.get(&s)) {

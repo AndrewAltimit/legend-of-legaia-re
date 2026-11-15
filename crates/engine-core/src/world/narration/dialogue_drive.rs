@@ -669,7 +669,7 @@ impl World {
                     crate::world::prop_interact::is_talk_object_word_op(&id.bytecode, id.pc)
                 })
                 .and_then(|t| host.world.cross_context_object_prop(t));
-            let saved_local_flags = id.ctx.local_flags;
+            let mut saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
                 .filter(|_| morph_target.is_none() && object_target.is_none())
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
@@ -863,7 +863,13 @@ impl World {
             // REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
             let object_channel_target = ext_target
                 .filter(|_| morph_target.is_none() && object_target.is_none())
-                .filter(|_| crate::world::is_resolved_actor_word_op(&id.bytecode, id.pc))
+                .filter(|_| {
+                    crate::world::is_resolved_actor_word_op(&id.bytecode, id.pc)
+                        // The seat `CC <id> 51 x z ..` on an object, as the
+                        // system script steps it: `town0b` `P1[36]` seats
+                        // object 8 with `CC 08 51 1C ..`.
+                        || (b == 0xCC && id.bytecode.get(id.pc + 2) == Some(&0x51))
+                })
                 .and_then(|t| {
                     legaia_engine_field::field_channels::resolve_target(
                         &host.world.field_vm.channels,
@@ -1037,8 +1043,18 @@ impl World {
             // `+0x14B6`, `23 47 43`) left her where the talk's walk had
             // stopped, short of the `(71, 67)` spot her next stage talks from.
             // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC)
+            // `A3 <own id> x z` is the same seat behind the talker's id
+            // (`balden` `P1[61]`'s `A3 54 61 0F`).
             if op == 0x23
-                && ext_target.is_none()
+                && (ext_target.is_none()
+                    || (other_seat.is_none()
+                        && ext_target.and_then(|t| {
+                            legaia_engine_field::field_channels::resolve_target(
+                                &host.world.field_vm.channels,
+                                t,
+                            )
+                        }) == talker_channel
+                        && talker_channel.is_some()))
                 && let Some(slot) = talker
                 && matches!(step, FieldStepResult::Advance { .. })
                 && !host.world.field_vm.entry_prerun
@@ -1087,6 +1103,35 @@ impl World {
                 if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                     // The body's clip obeys the bits the talk just wrote.
                     host.world.mirror_player_clip_control(id.ctx.local_flags);
+                }
+                // A placement's `+0x62` is its channel's word, which its clip
+                // tick reads every frame (`World::tick_npc_clips`): the bit the
+                // op moved lands there too, or the clip a talk's `A2 <id>`
+                // binds plays under whatever the word held before (`balden`'s
+                // talks clamp their speakers' clips with `AB <id> 01` first).
+                // On the talker's own word the bridged stand-in takes it.
+                // REF: FUN_801DE840 (cases 0x2B / 0x2C), FUN_800204F8
+                if matches!(b & 0x7F, 0x2B | 0x2C)
+                    && let Some(&bit) = id.bytecode.get(id.pc + 2)
+                    && let Some(ci) = legaia_engine_field::field_channels::resolve_target(
+                        &host.world.field_vm.channels,
+                        target,
+                    )
+                    && !host.world.field_vm.channels[ci].object_bind
+                    && let Some(mask) = 1u16.checked_shl(u32::from(bit & 0x1F))
+                {
+                    let apply = |w: u16| {
+                        if b & 0x7F == 0x2B {
+                            w | mask
+                        } else {
+                            w & !mask
+                        }
+                    };
+                    let word = &mut host.world.field_vm.channels[ci].ctx.local_flags;
+                    *word = apply(*word);
+                    if Some(ci) == talker_channel {
+                        saved_local_flags = apply(saved_local_flags);
+                    }
                 }
                 id.ctx.local_flags = saved_local_flags;
             }

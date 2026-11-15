@@ -815,3 +815,52 @@ fn a_touch_records_first_slice_reads_the_pad_of_the_touch() {
     );
     assert_eq!(run(None).0, Some(5), "no touch: the tick's own pad, Cross");
 }
+
+/// A talk's `AB <id> <bit>` on another placement writes that placement's
+/// clip-control word, the one its clip tick reads every frame, not only the
+/// cursor the talk times its waits on. `balden` `P1[4]` clamps its
+/// neighbour's clip with `AB 1C 01` before it plays it.
+#[test]
+fn a_talks_clip_word_poke_lands_on_the_named_placement() {
+    let mut w = talk_world_with_target();
+    run_talk(&mut w, vec![0xAB, 0x26, 0x01, 0xAC, 0x26, 0x07, 0x21]);
+    let word = w.field_vm.channels[1].ctx.local_flags;
+    assert_ne!(word & 0x2, 0, "`AB 26 01` raised the clamp bit");
+    assert_eq!(
+        w.field_vm.channels[0].ctx.local_flags & 0x2,
+        0,
+        "the talker's word is untouched"
+    );
+}
+
+/// A talk's seat behind its own id (`A3 <own id> x z`) seats the talker, as
+/// the plain `23 x z` does: `balden` `P1[61]` runs `A3 54 61 0F`.
+#[test]
+fn a_talks_seat_behind_its_own_id_seats_the_talker() {
+    let mut w = talk_world_with_target();
+    run_talk(&mut w, vec![0xA3, 0x20, 0x10, 0x11, 0x21]);
+    assert_eq!(
+        w.npcs.positions.get(&1),
+        Some(&(0x10 * 128 + 64, 0x11 * 128 + 64))
+    );
+    assert_eq!(w.npcs.positions.get(&2), Some(&(900, 900)));
+}
+
+/// A talk's look turn behind its own id turns the talker's head, even for a
+/// talker whose context carries the party-bank bit (`31 18`): `bubu1`
+/// `P1[7]` / `P1[22]` turn their speakers with `CC 1E 45 ..` / `CC 2D 45 ..`.
+/// Keyed off the stand-in's bit, the turn went to the player's head.
+#[test]
+fn a_talks_own_look_turn_turns_the_talker() {
+    use legaia_engine_field::actor_look::LookKey;
+    let mut w = talk_world_with_target();
+    run_talk(
+        &mut w,
+        vec![
+            0x31, 0x18, // party-bank class bit on the talker
+            0xCC, 0x20, 0x45, 0x00, 0x00, 0x00, 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x21,
+        ],
+    );
+    assert_eq!(w.npcs.looks.get(LookKey::Npc(1)).angles, [0, 500, 0]);
+    assert_eq!(w.npcs.looks.get(LookKey::Player).angles, [0, 0, 0]);
+}
