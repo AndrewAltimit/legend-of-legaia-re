@@ -106,3 +106,34 @@ fn without_the_reseat_the_standing_player_keeps_the_battle_focus() {
     }
     assert_ne!(player_focus(&c), field_focus());
 }
+
+/// The same return re-runs the map install's tail (`FUN_8003ADAC`,
+/// `li v0,0x28; sw v0,-0x494c(v1)` at `0x8003ADF8`), so the pad is off for
+/// `0x28` vsyncs after every fight: the player tick drains `_DAT_8007B6B4`
+/// by the frame delta before it tests it (`0x801D1618..0x801D1630`) and
+/// skips the pad controller while it is non-zero (`0x801D16DC..0x801D16E4`).
+/// A held direction walks on the fortieth field tick, not before - the
+/// hold the full-game ladder reads after a fight, minus whatever ticks the
+/// hand spends in the field menu first.
+#[test]
+fn a_fights_return_holds_the_pad_for_the_map_installs_forty_vsyncs() {
+    use legaia_engine_field::field_warp_tile::POST_WARP_HOLD_FRAMES;
+    let (mut w, mut c) = field_world();
+    fight(&mut w, &mut c, BattleEndCause::Escaped);
+    assert_eq!(w.post_load_hold(), POST_WARP_HOLD_FRAMES);
+    // The field player's speed scalar (`+0x72 = 0x1000`), which the bare
+    // spawn leaves at zero.
+    w.actors[0].move_state.field_72 = 0x1000;
+    w.set_pad(input::PadButton::Right.mask());
+    let start = w.actors[0].move_state.world_x;
+    for tick in 1..POST_WARP_HOLD_FRAMES {
+        w.step_field_locomotion();
+        assert_eq!(w.actors[0].move_state.world_x, start, "held on tick {tick}");
+    }
+    w.step_field_locomotion();
+    assert_eq!(w.post_load_hold(), 0);
+    assert_ne!(
+        w.actors[0].move_state.world_x, start,
+        "the tick that drains the hold walks"
+    );
+}
