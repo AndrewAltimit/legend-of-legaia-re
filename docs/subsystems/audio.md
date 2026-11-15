@@ -2434,7 +2434,29 @@ Four rules in that table are easy to get wrong:
   ([`battle-hud.md`](battle-hud.md#the-battle-item-window-0x3c)). The kernel writes
   its confirm word over the slot it last queued (`lh a0,0x15a(gp)` at
   `0x80032D14` / `0x80032D2C`), so a step and a confirm on one frame sound
-  the confirm.
+  the confirm. A slot latched on an earlier frame has been aged to `-1` by
+  `FUN_8001698C` before the kernel runs, so the overwrite keys like a push:
+  the port's one cue a frame, the press winning, is the same sound.
+
+**The windows open on row 0.** The list kernel seats a new list's hand from the
+selection and scroll words `0x8007BB98` / `0x8007BB90` (`gp+0x880` / `gp+0x878`,
+`FUN_80030104` at `0x800301F0..0x80030220`: the selection clamped to the last row,
+the top to the selection), and writes them back every frame (`0x80032DEC`,
+`0x80032DFC`). In battle the window opener `FUN_801D388C` zeroes both for every
+sub-draw step whose record's second byte is `3` (`0x801D4C14..0x801D4C28`), ahead
+of the step's window build: steps `5` and `7` (the ring's Item and Magic arms)
+and `0x13`, `0x17`, `0x1A`, `0x1C`, `0x1E` (each target surface's cancel back to
+its window). So both windows open on row 0, a greyed row included, and a cancel
+off a target reopens the list on row 0, not on the row picked. The port opens
+`BattleSpellSession` on row 0 and returns both windows there on a target cancel;
+the pause menu's lists, which no such step resets, keep their row.
+
+**An empty list is a text window.** With a row count of `0`, `FUN_80030104`
+builds no list node: it allocates a text buffer, copies the window's message into
+it and marks the window's `+0x14` as `0x80` (`0x80030130..0x800301D4`). The
+kernel's count test (`0x80032AD8..0x80032AE0`) jumps a zero count straight to the
+confirm read; which window kind reaches it with no node, and whether a Ra-Seru
+bearer with no spell opens one in battle, is not traced here.
 
 The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
 drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
