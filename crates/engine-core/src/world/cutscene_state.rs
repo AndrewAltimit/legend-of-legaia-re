@@ -6,6 +6,7 @@
 use legaia_engine_mode::mode::SceneMode;
 
 /// Cutscene presentation state: narration, timeline, caption / card / balloon overlays, FMV handoff and the opening-chain latches.
+#[derive(Debug)]
 pub struct CutsceneState {
     /// Pending FMV trigger (field-VM op `0x4C 0xE2`). When `Some(fmv_id)`,
     /// the field VM has signalled that the next-game-mode global should

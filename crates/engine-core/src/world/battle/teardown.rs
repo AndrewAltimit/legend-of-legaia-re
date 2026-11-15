@@ -345,6 +345,14 @@ impl World {
             // leaves the post-load pad hold and the entry fade
             // (`FUN_8003ADAC`).
             self.seat_map_install_tail();
+            // ... and the field initialiser's own camera-offset seed, which
+            // it stores ahead of its warp test (`li v0,0x3c` / `sw v0,
+            // -0x4354(v1)` at `0x801D67B8`), so it runs on the way back from
+            // a fight too. The engine's ease had walked the accumulator
+            // toward the battle seat's footing all fight.
+            // REF: FUN_801D6704
+            self.camera.offset_ease = legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED;
+            self.camera.ease_prev_yz = None;
         }
     }
 

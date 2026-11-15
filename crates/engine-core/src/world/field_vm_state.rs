@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Field-VM execution state beyond the main context: per-record channels, helper contexts, spawn requests, the op-0x49 submode block / screen, eased moves and the entry / free-roam latches.
+#[derive(Debug)]
 pub struct FieldVmState {
     /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
     /// zero**; a non-zero value is the dev build's "not an ordinary field

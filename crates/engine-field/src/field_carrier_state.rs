@@ -6,6 +6,7 @@
 use crate::man_field_scripts::FieldCarrierConfig;
 
 /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
+#[derive(Debug)]
 pub struct FieldCarrierState {
     /// Per-entity **field** state machines - the same `FUN_801DA51C` SM the
     /// overworld uses ([`crate::world_map_entity`]), but ticked in [`legaia_engine_mode::mode::SceneMode::Field`]

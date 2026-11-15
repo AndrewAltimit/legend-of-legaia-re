@@ -6,6 +6,7 @@
 use super::*;
 
 /// Player field-locomotion state: run / slow / precise-movement gates, step deltas, ledge hop, vertical settle, wall probes and the per-tick movement cues.
+#[derive(Debug)]
 pub struct FieldLocomotion {
     /// The **arrival facing** `_DAT_80073EFC`, in retail heading space
     /// (`0` = facing -Z; the player's `render_26` is this plus `0x800`).

@@ -6,6 +6,7 @@
 use super::*;
 
 /// Field props + triggers: prop colliders and bank, walk-touch records, the scene's move-VM stager tables, boss stagers, live field effects and the resolved cold spawn.
+#[derive(Debug)]
 pub struct FieldPropState {
     /// Static prop colliders, one per placed object of the scene's field
     /// `.MAP` object grid - the engine's source for the **actor-collision

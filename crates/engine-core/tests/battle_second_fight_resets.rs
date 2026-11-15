@@ -214,3 +214,34 @@ fn a_fight_after_a_win_opens_as_the_first_did() {
     enter_battle(&mut w);
     assert_opens_fresh(&w, &fresh, "win");
 }
+
+/// The field a fight returns to comes up through the field initialiser, which
+/// seeds the camera-offset accumulator `_DAT_8007BCAC = 0x3C` ahead of its
+/// warp test (`0x801D67B8`); the ease had walked it toward the battle seat's
+/// footing all fight.
+#[test]
+fn the_field_a_fight_returns_to_reseeds_the_camera_offset() {
+    let mut w = build_world();
+    enter_battle(&mut w);
+    wait_for_prompt(&mut w);
+    w.set_battle_formation_latched(
+        legaia_engine_battle_vm::battle_formulas::FormationAdvantage::Preemptive,
+    );
+    press(&mut w, PadButton::Right);
+    press(&mut w, PadButton::Left);
+    for _ in 0..0x200 {
+        if w.mode == SceneMode::Field {
+            break;
+        }
+        w.set_pad(0);
+        let _ = w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Field, "the flee left the battle");
+    let seed = legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED;
+    let v = w.camera.offset_ease;
+    // The return tick may already have taken one ease step off the seed.
+    assert!(
+        (v - seed).abs() <= 12,
+        "the return seats the accumulator at {seed:#x}, not {v}"
+    );
+}

@@ -6,6 +6,7 @@
 use super::*;
 
 /// Overworld state: the world-map controller, its entity state machines and the encounter / region trackers.
+#[derive(Debug)]
 pub struct WorldMapState {
     /// World-map camera and entity state. `Some` when `mode == SceneMode::WorldMap`,
     /// `None` otherwise.

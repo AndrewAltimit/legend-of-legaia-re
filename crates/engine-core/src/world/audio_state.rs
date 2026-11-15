@@ -41,6 +41,7 @@ pub const BGM_SUB_OP_ENGINE_FIELD_CLOSE: u8 = 0xFD;
 pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
 
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
+#[derive(Debug)]
 pub struct AudioState {
     /// "Sound bank ready" gate.
     pub sound_bank_ready: bool,
