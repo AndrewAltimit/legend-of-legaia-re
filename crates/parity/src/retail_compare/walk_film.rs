@@ -96,8 +96,16 @@ impl WalkFilm {
         session.host.world.locomotion.vertical_settle = true;
         session.host.world.npcs.solid = true;
         session.host.world.npcs.animate = true;
+        // The Field Move option the state was saved under: a held pad walks
+        // at its run speed when the player had picked Run (`0x800846CC`,
+        // `World::field_run_active`). `LEGAIA_RC_WALK_RUN=1` forces Run,
+        // `=0` Walk.
         session.host.world.locomotion.run_default =
-            std::env::var_os("LEGAIA_RC_WALK_RUN").is_some();
+            match std::env::var("LEGAIA_RC_WALK_RUN").as_deref() {
+                Ok("0") => false,
+                Ok(_) => true,
+                Err(_) => retail.field_move_run,
+            };
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
@@ -267,7 +275,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells"
                 )?;
                 Some(w)
             }
@@ -304,7 +312,7 @@ impl WalkFilm {
                 let f = world.field_frame_features().unwrap_or_default();
                 writeln!(
                     w,
-                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
                     world.clock.frame_step,
                     f.decoration_draws,
@@ -324,6 +332,8 @@ impl WalkFilm {
                     f.placed_quads,
                     f.placed_lit,
                     world.clock.frame_cost.unwrap_or(-1),
+                    f.npc_prims,
+                    f.decoration_loop_cells,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {

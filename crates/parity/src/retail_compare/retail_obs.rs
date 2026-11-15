@@ -190,6 +190,9 @@ pub struct RetailObs {
     /// ([`crate::retail_compare_battle::frame_cost_ring`]). `None` where the
     /// history does not set the step.
     pub frame_history: Option<([i16; 16], usize)>,
+    /// The pause menu's Field Move word `0x800846CC` (Walk `0` / Run `1`):
+    /// the run default the walk film stands the engine on.
+    pub field_move_run: bool,
     /// The pacer's step bytes off the scratchpad, `(0x1F800392, 0x1F800393)`:
     /// the wait of the frame the state holds and the step resolved at its
     /// end. `None` without a scratchpad image. A history entry reading
@@ -467,6 +470,7 @@ impl RetailObs {
             frame_history: crate::retail_compare_battle::frame_cost_ring(ram)
                 .map(|(e, c)| (e.map(|v| v.min(0x7FFF) as i16), usize::from(c))),
             step_bytes: None,
+            field_move_run: game_anchors::u32_at(ram, 0x8008_46CC) & 1 != 0,
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_sprite_arms(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {

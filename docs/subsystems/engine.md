@@ -708,9 +708,23 @@ The step changes how often the per-actor passes run, never how many vsyncs a sec
 
 Held out by scene, the step it gives agrees with retail on `13788` of `14796` measured frames, against `12838` for the floor, and on `123` of `137` films and states, against `113`; no scene steps worse. The scenes it still runs at `2` cost more than their counts say (`son`, `teien`, `jou`: `590..650` hblanks priced at `450..500`), and one state it steps at `3` retail runs at `2` (`vahn_walks_out`, a Mednafen state, `426` priced at `526`). A residual near `55` hblanks says the counts miss work the model cannot see from engine state: which primitives the GTE rejects, fill rate, the scripts.
 
-The scene entry builds the static half (`field_cost_table` in `engine-scene-host`'s field entry: every terrain draw and placed object with its pack mesh's primitive count, and the ground bits) and starts the pacer's ring empty: retail's ring reads `0` on the first field frame after a load. A world map has no table and keeps its pin. The model prices only a field or cutscene frame; a minigame screen or a battle drops its price. `WorldToggles::field_frame_cost` holds it, on by default on both hosts; `LEGAIA_FIELD_FRAME_COST=0` runs the native session on the floor. A timing model, not a fidelity knob, so `pin_retail` leaves it alone.
+The scene entry builds the static half (`field_cost_table` in `engine-scene-host`'s field entry: every terrain draw and placed object with its pack mesh's primitive count, each placement slot's spawn mesh size, and the ground bits). The pacer's ring starts every scene empty, and so does a field the world comes back to: the mode transition `FUN_80016230` zeroes all sixteen entries on every mode change (`0x80016234..0x80016274`). A world map has no table and keeps its pin. The model prices only a field or cutscene frame; a minigame screen or a battle drops its price. `WorldToggles::field_frame_cost` holds it, on by default on both hosts; `LEGAIA_FIELD_FRAME_COST=0` runs the native session on the floor. A timing model, not a fidelity knob, so `pin_retail` leaves it alone.
 
-A load's own frame is not modelled. Retail stores one frame past the `0x2D0` rung a frame or a few into the scene it enters (`700` at step `4`: `son_arrival_from_doman` on its first field frame, `s2_rimelm_town01` after three cheap ones), which holds the next fifteen frames at `3` whatever the scene costs; `doman_arrival_from_korb2`'s first field frame costs `326`. Which frame carries it is the open question.
+There is no load frame to model. A PCSX-Redux film across each load reads the cleared ring and then the scene's own cost: `doman_arrival_from_korb2`'s first frames cost `326..360` and run at `2`, `son_arrival_from_doman`'s first costs one long frame (`700` at step `4`) and then son's `605..620`, and the `700` frames of `s2_rimelm_town01` are not a load's but the town01 opening shot's own: every frame of it runs past the `0x2D0` rung, at step `4` for as long as the film runs. The model caps that shot at `3`.
+
+### Where a field frame's time goes
+
+[`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua) stamps the CPU cycle counter on entry to and return from a list of routines and sums each over a game frame; at `2152` cycles an hblank, the master frame driver `FUN_80016444`'s total comes within a few hblanks of the pacer's stored frame time on every library field state, so the frame time is CPU time. Over the film states the parts fit as:
+
+| Part | Routine | Cost |
+|---|---|---|
+| Ground | the ground emitter `FUN_801F6D48` | `5 + 0.148` a walk-visible cell in the window |
+| Decoration | the decoration pass `FUN_801F7088` less its ground call | about `51 + 0.099` a primitive `+ 0.86` a draw, plus the cells its loop visits |
+| Actors | the render passes `FUN_8001D140` | about `41 + 0.091` a placed-object primitive `+ 15` an NPC; an NPC's cost follows its mesh |
+| Tick | the tick passes `FUN_8002519C` | about `37 + 1.2` an ambient part |
+
+`son`'s frames, which the counts priced at `450`, cost `610`: its decoration pass is the counts' (`382` hblanks for `2480` primitives) and its six NPCs draw `210` hblanks where six of an ordinary size draw `130`. Pricing each NPC by its spawn mesh's primitives (`FieldFrameFeatures::npc_prims`) and the decoration loop's cells (`decoration_loop_cells`) moves `son` to `550` and `3`, but it also steps `ending_vignette_fullscreen` (`502`, eight hblanks under the rung) to `3`, so the price keeps the counts above. The two counts are computed and written by the walk film for the next fit.
+`teien` (`589`, priced `471`) spends its excess in the ground emitter (`84` hblanks for `370` cells, `0.23` a cell) and the render passes (`182` for three placed objects and four NPCs); `jou` (`643`, priced `462`) in the tick passes (`116`, nineteen ambient parts) and the render passes (`224` for `1015` placed primitives and one NPC).
 
 ### Architectural principles
 
