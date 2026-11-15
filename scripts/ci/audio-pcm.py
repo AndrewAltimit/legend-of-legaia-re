@@ -170,7 +170,7 @@ def band_instant(state: Path) -> str | None:
 
     The `cast_steps` run arms its step track on the first engine pass that
     leaves the action SM there with the band word `ctx[+0x6D8]` at or below
-    the state's (`LEGAIA_CAST_STEP_ARM`): the recording's frames open on the
+    the state's (`LEGAIA_DIAG_CAST_STEP_ARM`): the recording's frames open on the
     state's instant, and an arm that waits on the word reading exactly `0`
     (PROT 0908's arm 3) only meets it when they drain the word the state
     held. `None` outside `0x35`, where the word is no clock of the state's.
@@ -340,12 +340,12 @@ def engine_cast_wav(exe: Path, label: str, out: Path, library: Path, disc: Path,
     if steps:
         env["LEGAIA_CAST_STEP_TRACK"] = str(steps.resolve())
         # On retail's steps a ring cue keys where retail's does, a frame step
-        # after the pass that pushed it (`LEGAIA_CAST_RING_AT_FRAME_END`); on
+        # after the pass that pushed it (`LEGAIA_DIAG_CAST_RING_AT_FRAME_END`); on
         # the engine's own steps that lag is on steps retail does not run.
-        env["LEGAIA_CAST_RING_AT_FRAME_END"] = "1"
+        env["LEGAIA_DIAG_CAST_RING_AT_FRAME_END"] = "1"
         manifest = tomllib.loads((REPO / "scripts" / "scenarios.toml").read_text())
         if (st := state_file(label, library, manifest)) and (at := band_instant(st)):
-            env["LEGAIA_CAST_STEP_ARM"] = at
+            env["LEGAIA_DIAG_CAST_STEP_ARM"] = at
     env.update({
         "LEGAIA_AUDIO_DETACHED": "1",
         # The frame is not taken: the child plays on past its gate.

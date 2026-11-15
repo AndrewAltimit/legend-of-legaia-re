@@ -739,8 +739,8 @@ impl<S: AudioSink> AudioDirector<S> {
 }
 
 /// Whether the harness holds battle ring cues to their frame's end
-/// (`LEGAIA_CAST_RING_AT_FRAME_END`, read once).
+/// (`LEGAIA_DIAG_CAST_RING_AT_FRAME_END`, read once).
 fn ring_at_frame_end() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("LEGAIA_CAST_RING_AT_FRAME_END").is_some())
+    *ON.get_or_init(|| std::env::var("LEGAIA_DIAG_CAST_RING_AT_FRAME_END").is_ok())
 }

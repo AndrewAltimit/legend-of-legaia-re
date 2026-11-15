@@ -4016,7 +4016,7 @@ cast's sound with the two emulators' frame costs taken out; `cast` stays the eng
 track must start there too, not at the cast's begin, where the child's replay of the cast's opening
 would spend them. A state inside the summon sustain `0x35` names its instant by the band word: the
 child arms the track on the first pass that leaves the SM in the state's `(state, arm)` with
-`ctx[+0x6D8]` at or below the state's (`LEGAIA_CAST_STEP_ARM`, read off the state by `audio-pcm.py`).
+`ctx[+0x6D8]` at or below the state's (`LEGAIA_DIAG_CAST_STEP_ARM`, read off the state by `audio-pcm.py`).
 On Zenoir it matters because PROT 0908's arm 3 waits for that word to read exactly `0`
 (`lh v0,0x0(s8)` / `beq v0,zero` at `0x801F6E08..0x801F6E10`), and `0x35` re-reads it after the stager
 call and leaves once it is negative ([state `0x35`](battle-action.md#state-0x35---summon---sustain)).
@@ -4028,7 +4028,7 @@ arm from 4 to the module's `0xFF` lands within `2` vsyncs of mednafen's frame-st
 
 <a id="a-ring-cue-keys-at-its-frames-end"></a>
 **A ring cue keys at its frame's end.** On retail's steps the channel also holds each battle ring batch
-one frame step before the director keys it (`LEGAIA_CAST_RING_AT_FRAME_END`, in
+one frame step before the director keys it (`LEGAIA_DIAG_CAST_RING_AT_FRAME_END`, in
 `AudioDirector::route_world_sfx`): the frame driver drains the ring after the frame's work, so a cue keys
 a frame step after the pass that pushed it ([settled](../reference/re-settled-threads/audio.md#when-does-a-ring-cue-sound-against-the-frame-that-pushed-it)).
 The engine itself keeps keying on the pushing tick, one step from retail's order where the held cue would

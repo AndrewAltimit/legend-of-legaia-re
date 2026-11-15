@@ -202,7 +202,7 @@ pub struct AudioDirector<S: AudioSink> {
     /// sustained cue run (`FUN_80017910` at `0x8001DDA8`).
     sfx_in_battle: Option<bool>,
     /// The battle ring calls held to their frame's end
-    /// ([`Self::route_world_sfx`], `LEGAIA_CAST_RING_AT_FRAME_END`): each
+    /// ([`Self::route_world_sfx`], `LEGAIA_DIAG_CAST_RING_AT_FRAME_END`): each
     /// tick's batch with the display tick it is released on. Empty unless
     /// the harness asks for it.
     ring_held: Vec<(u64, Vec<SfxRingOp>)>,
