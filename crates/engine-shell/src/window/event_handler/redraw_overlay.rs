@@ -509,6 +509,15 @@ impl PlayWindowApp {
             light_prims(&mut under, &light);
             light_prims(&mut over, &light);
         }
+        // The Multiplayer screen, when it owns the frame, is opaque and covers
+        // the stage: the scene's own layers have nothing to show under it,
+        // and the depth-tested ones (the actors' drop shadows) won through
+        // it as grey blobs over its rows. The roaming panel sits over the
+        // field and keeps them.
+        if self.multiplayer_screen_up() {
+            under.clear();
+            over.clear();
+        }
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.
         under.extend(self.netplay_prims());
