@@ -280,6 +280,11 @@ pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     // The first reaching stream gives the round to the other monster, and
     // the capture's strike is then another seat's.
     ("battle_retockin_evil_shadow_strike", 0x59F1_11F1),
+    // Strikes whose gate lands one pass apart by stream: about half the
+    // list frames each as the corpus does, the other half a pass off.
+    ("battle_cave01_theeder_strike", 0x3C6E_F372),
+    ("battle_teien_berserker_strike", 0x0BAD_F00D),
+    ("battle_map01_hornet_strike", 0x9E37_79B9),
     // Pre-cast and command-input captures whose driven round lands its
     // gate a few ticks apart by stream, on a HUD bar still unfolding.
     ("nilboa_lava_face_pre_fissure", 0x2545_F491),
