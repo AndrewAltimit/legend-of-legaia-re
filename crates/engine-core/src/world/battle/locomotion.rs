@@ -581,8 +581,48 @@ impl World {
     }
 
     pub(in crate::world) fn refresh_battle_body_pairs(&mut self) {
-        for a in self.actors.iter_mut() {
-            if a.battle.seat.is_none() {
+        self.refresh_battle_body_pairs_where(|_| true);
+    }
+
+    /// The draw's own body-pair store: [`Self::refresh_battle_body_pairs`]
+    /// for the bodies this frame draws, and no store for the rest. The pose
+    /// decode `FUN_8004998C` that writes `+0x3C` / `+0x40` runs only inside
+    /// the battle draw `FUN_80048A08` (`jal 0x8004998C` at `0x80048A84`, no
+    /// branch ahead of it), which the draw tick `FUN_800480D8` reaches only
+    /// for a body whose node colour word is lit or greyed (`0x800481CC`,
+    /// `jal 0x80048A08` at `0x800482E0` / `0x800482F8`), and which the
+    /// render dispatcher's mode-2 arm calls only at view depth `0xA1` or
+    /// deeper (`slti v0,v0,0xa1` at `0x8001AEE8`). A body the camera leaves
+    /// behind the lens, or a module hid, keeps the pair it last drew with,
+    /// and that stale pair is what the range law's target side and the
+    /// separation pass read: after Doomsday's line-up Noa, behind the
+    /// camera, holds the line-up spot and evolved Cort is pushed off it
+    /// until his own refreshed pair clears the window.
+    // PORT: FUN_8001ADA4 (`0x8001AEE0..0x8001AEF4`, the near reject ahead of the body-pair store)
+    // REF: FUN_800480D8, FUN_80048A08
+    pub(in crate::world) fn refresh_drawn_battle_body_pairs(&mut self) {
+        if self.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return self.refresh_battle_body_pairs();
+        }
+        let pose = (self.battle.camera.is_some() || self.battle.stage_camera.is_some())
+            .then(|| self.battle_cam_pose());
+        let undrawn: Vec<bool> = (0..self.actors.len())
+            .map(|i| {
+                self.battle_actor_draw_plan(
+                    i,
+                    pose.as_ref(),
+                    legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                    false,
+                )
+                .is_some_and(|p| !p.drawn)
+            })
+            .collect();
+        self.refresh_battle_body_pairs_where(|i| !undrawn[i]);
+    }
+
+    fn refresh_battle_body_pairs_where(&mut self, keep: impl Fn(usize) -> bool) {
+        for (i, a) in self.actors.iter_mut().enumerate() {
+            if a.battle.seat.is_none() || !keep(i) {
                 continue;
             }
             let centroid = stream_pose(a).map(pose_centroid_xz);
@@ -1242,6 +1282,64 @@ mod tests {
         w.toggles.battle_sm_frame_cadence = false;
         w.enter_battle(1, 1);
         w
+    }
+
+    /// The draw stores a body pair only for a body it draws
+    /// (`FUN_8004998C` runs inside `FUN_80048A08`, which the near reject at
+    /// `0x8001AEE8` and the draw tick's colour gate stand ahead of): a body
+    /// a module hid, or one the camera leaves at the lens, keeps the pair it
+    /// last drew with, and a drawn neighbour's pair follows its live pair.
+    #[test]
+    fn the_draw_stores_no_body_pair_for_a_body_it_does_not_draw() {
+        let mut w = battle_world();
+        w.actors[1].battle_monster_id = Some(4);
+        w.tick_battle_locomotion(); // seed seats
+        let (s0, s1) = (w.battle_seat_of(0), w.battle_seat_of(1));
+        for i in 0..2 {
+            w.actors[i].move_state.world_x += 100;
+        }
+        // Hidden: a zero word under the raised `0xFF`.
+        w.actors[0].battle.render_flag = 0xFF;
+        w.actors[0].battle.render_color = 0;
+        w.refresh_drawn_battle_body_pairs();
+        assert_eq!(w.battle_seat_of(0), s0, "the hidden body keeps its pair");
+        assert_eq!(w.battle_seat_of(1).0, s1.0 + 100, "a drawn body's follows");
+        // At the lens: the camera's translation puts every body nearer the
+        // eye than `0xA1`.
+        w.actors[0].battle.render_flag = 0;
+        w.actors[1].move_state.world_x += 100;
+        w.battle.stage_camera = Some(legaia_engine_battle::battle_stage_module::StageCamera {
+            pitch: 0,
+            yaw: 0,
+            tr: [0, 0, 0x80],
+            focus: [0; 3],
+        });
+        let drawn = |w: &World, i: usize| {
+            let pose = w.battle_cam_pose();
+            w.battle_actor_draw_plan(
+                i,
+                Some(&pose),
+                legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                false,
+            )
+            .is_some_and(|p| p.drawn)
+        };
+        let before = (w.battle_seat_of(0), w.battle_seat_of(1));
+        w.refresh_drawn_battle_body_pairs();
+        for (i, b) in [before.0, before.1].into_iter().enumerate() {
+            if drawn(&w, i) {
+                assert_ne!(w.battle_seat_of(i), b, "drawn seat {i} refreshes");
+            } else {
+                assert_eq!(w.battle_seat_of(i), b, "undrawn seat {i} holds");
+            }
+        }
+        assert!(
+            !drawn(&w, 0) || !drawn(&w, 1),
+            "the lens camera leaves a body undrawn"
+        );
+        // The plain refresh (harness seats, the per-vsync cadence) stores all.
+        w.refresh_battle_body_pairs();
+        assert_eq!(w.battle_seat_of(0).0, s0.0 + 100);
     }
 
     #[test]

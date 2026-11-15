@@ -1204,11 +1204,12 @@ impl World {
             self.tick_battle_cast_drive(n);
             self.battle.in_draw_cast_tick = false;
         }
-        // The draw: every body pair from the pose the pass left, for the
-        // next pass's SM and camera to read - a seat the root-motion pass
-        // has not seeded yet included (the draw stores every drawn actor's).
+        // The draw: every drawn body's pair from the pose the pass left, for
+        // the next pass's SM and camera to read - a seat the root-motion pass
+        // has not seeded yet included; a body the frame does not draw keeps
+        // its last pair.
         self.seed_battle_seats();
-        self.refresh_battle_body_pairs();
+        self.refresh_drawn_battle_body_pairs();
         // ... and the render pass's own `rand()` draws (the jittered rings).
         self.deal_battle_draw_rands();
         // The same draw sheds the burning bodies' puffs (the tail of
