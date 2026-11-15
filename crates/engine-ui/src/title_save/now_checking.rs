@@ -493,6 +493,31 @@ fn confirm_options_rect(slide_y: i32) -> (i32, i32, i32, i32) {
     messagebox_rect(CONFIRM_DIALOG_CENTER_X, slide_y + CONFIRM_OPTIONS_DY, w, h)
 }
 
+/// The confirm dialog's two frames for a given slide `y`, prompt bar first:
+/// the footprints [`confirm_dialog_panel_draws_for`] boxes, which cover the
+/// info panel's text under them.
+pub(crate) fn confirm_dialog_frames(slide_y: i32) -> [(i32, i32, i32, i32); 2] {
+    [confirm_prompt_rect(slide_y), confirm_options_rect(slide_y)]
+}
+
+/// The frame [`card_banner_draws_for`] boxes for `banner`: the sliding write
+/// / read panel, the damaged-data box or the result line's box.
+pub(crate) fn card_banner_frame(banner: &CardBannerView<'_>) -> (i32, i32, i32, i32) {
+    if banner.work {
+        let (y, w, h, _) = CARD_WORK_PANEL;
+        let x = CARD_WORK_SLIDE_START_X
+            + (NOW_CHECKING_SLIDE_TARGET_X - CARD_WORK_SLIDE_START_X) * i32::from(banner.slide_t)
+                / 0x1000;
+        messagebox_rect(x, y, w, h)
+    } else if !banner.note.is_empty() {
+        let half = (banner.note.len() as i32 + 1) / 2;
+        messagebox_rect(DIALOG_TEXT_CENTER_X, CARD_DAMAGED_Y, 13 * half, 0x30)
+    } else {
+        let half = (banner.lines.0.len() as i32 + 1) / 2;
+        messagebox_rect(DIALOG_TEXT_CENTER_X, CARD_RESULT_Y, 13 * half, 0xD)
+    }
+}
+
 /// The confirm's pointing-hand cursor, left of the stacked `Yes` / `No`
 /// rows: `FUN_8002C488(x - 0x1A, y + 0x24 + row * 0x10, 0x4E)` with
 /// `row = (_DAT_801F01FC + 1) & 1` (`0x801E28A0..0x801E28C4` in
@@ -684,6 +709,13 @@ pub fn save_refusal_panel_draws_for(
     let rect = messagebox_rect(CONFIRM_DIALOG_CENTER_X, REFUSAL_NOTICE_Y, w, h);
     nine_slice_panel_into(&mut out, rects, rect, stage_origin, stage_scale, false);
     out
+}
+
+/// The frame [`save_refusal_panel_draws_for`] boxes, in stage pixels: what
+/// the notice covers of the menu root it rides over.
+pub fn save_refusal_frame() -> (i32, i32, i32, i32) {
+    let (w, h) = REFUSAL_PANEL;
+    messagebox_rect(CONFIRM_DIALOG_CENTER_X, REFUSAL_NOTICE_Y, w, h)
 }
 
 /// Build the [`TextDraw`]s for a save-screen refusal notice: one line,

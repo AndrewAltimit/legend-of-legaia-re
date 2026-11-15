@@ -292,6 +292,14 @@ pub fn save_select_overlay_draws(
         );
         let offset = (x - NOW_CHECKING_SLIDE_TARGET_X, 0);
         if let Some(rects) = rects {
+            let (px, py) = NOW_CHECKING_PANEL_POS;
+            let (pw, ph) = NOW_CHECKING_PANEL_SIZE;
+            occlude_text_under_frames(
+                &mut out.texts,
+                &[(px + offset.0, py + offset.1, pw as i32, ph as i32)],
+                stage_origin,
+                stage_scale,
+            );
             out.sprites.extend(now_checking_panel_draws_for(
                 rects,
                 stage_origin,
@@ -365,6 +373,14 @@ pub fn save_select_overlay_draws(
         let block = view.preview.as_ref().map(|p| p.cell);
         let (sprites, texts) =
             card_banner_draws_for(font, rects, banner, block, stage_origin, stage_scale);
+        if rects.is_some() {
+            occlude_text_under_frames(
+                &mut out.texts,
+                &[super::now_checking::card_banner_frame(banner)],
+                stage_origin,
+                stage_scale,
+            );
+        }
         out.sprites.extend(sprites);
         out.texts.extend(texts);
     }
@@ -384,6 +400,17 @@ pub fn save_select_overlay_draws(
             stage_scale,
         );
         if let Some(rects) = rects {
+            // The two boxes are linked after the info panel, so their opaque
+            // fill hides the panel's lines under them - "Rogue's Tower" cut
+            // at the Yes / No box's left edge on a parked overwrite prompt.
+            // The hosts draw every text quad after every sprite, so the
+            // covered glyphs go here, before the confirm's own text joins.
+            occlude_text_under_frames(
+                &mut out.texts,
+                &super::now_checking::confirm_dialog_frames(y),
+                stage_origin,
+                stage_scale,
+            );
             out.sprites.extend(confirm_dialog_panel_draws_for(
                 rects,
                 y,
@@ -418,6 +445,25 @@ pub fn save_select_overlay_draws(
         ));
     }
     out
+}
+
+/// Cut the text emitted so far down to what `frames` (stage rects, each a
+/// 9-slice footprint about to be drawn over it) leave showing - for a
+/// messagebox composed over a screen whose text the hosts would otherwise
+/// draw on top of it ([`crate::pause_menu::clip_text_under_frame`]).
+pub fn occlude_text_under_frames(
+    texts: &mut Vec<TextDraw>,
+    frames: &[(i32, i32, i32, i32)],
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) {
+    let s = stage_scale.max(1) as i32;
+    for &(x, y, w, h) in frames {
+        crate::pause_menu::clip_text_under_frame(
+            texts,
+            (stage_origin.0 + x * s, stage_origin.1 + y * s, w * s, h * s),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -530,6 +576,100 @@ mod tests {
         let yes = hands(0);
         assert!(yes.contains(&(134, 124)), "hand on Yes: {yes:?}");
         assert_eq!(no.len(), 2);
+    }
+
+    /// The confirm's two boxes hide the info panel's lines under them, as
+    /// retail's later-linked boxes do (a parked overwrite prompt cuts
+    /// "Rogue's Tower" at the `Yes` / `No` box's left edge). Every host draws
+    /// text after sprites, so without the cut the location and play-time
+    /// lines printed straight across the box (#628).
+    #[test]
+    fn the_confirm_boxes_hide_the_info_panel_text_under_them() {
+        let font = legaia_font::Font::placeholder();
+        let t = (0, 0, 8, 8);
+        let rects = SaveMenuAtlasRects {
+            cursor: (7, 9, 16, 16),
+            panel_tl: t,
+            panel_tr: t,
+            panel_bl: t,
+            panel_br: t,
+            panel_top: t,
+            panel_bot: t,
+            panel_left: t,
+            panel_right: t,
+            panel_interior: t,
+            panel_filigree: t,
+            slot1: t,
+            slot2: t,
+            dialog_fill: t,
+            ..SaveMenuAtlasRects::default()
+        };
+        let cells = [SlotGridCell::default(); 15];
+        let info = SlotInfoView {
+            slot_no: 5,
+            location: "West Voz Forest",
+            location_valid: true,
+            old_filename: false,
+            play_time: (4, 29, 14),
+            members: &[],
+        };
+        let prompt = "Do you wish to overwrite?";
+        let view = |confirm| SaveSelectOverlayView {
+            title: "Save",
+            rows: &[],
+            cursor: 0,
+            single_pill: true,
+            pills: &[0],
+            pill_cursor: None,
+            slide_t: 0x1000,
+            info_t: 0x1000,
+            now_checking: false,
+            banner: None,
+            preview: Some(SaveSelectPreviewView {
+                cells: &cells,
+                cell: 4,
+                info: Some(info),
+                caption: None,
+                caption_icon: None,
+                panel_y_offset: 0,
+            }),
+            confirm,
+            location_tab: None,
+        };
+        let frames =
+            super::super::now_checking::confirm_dialog_frames(CONFIRM_DIALOG_SLIDE_TARGET_Y);
+        let inside = |d: &TextDraw| {
+            let (x0, y0) = (d.dst.0, d.dst.1);
+            let (x1, y1) = (x0 + d.dst.2 as i32, y0 + d.dst.3 as i32);
+            frames
+                .iter()
+                .any(|&(x, y, w, h)| x0 < x + w && x1 > x && y0 < y + h && y1 > y)
+        };
+        let bare = save_select_overlay_draws(&font, Some(&rects), &view(None), (0, 0), 1);
+        assert!(
+            bare.texts.iter().any(inside),
+            "the info panel prints where the boxes land"
+        );
+        let own: Vec<_> = confirm_dialog_text_draws_for(
+            &font,
+            prompt,
+            1,
+            CONFIRM_DIALOG_SLIDE_TARGET_Y,
+            (0, 0),
+            1,
+        )
+        .into_iter()
+        .map(|d| (d.dst, d.src))
+        .collect();
+        let up =
+            save_select_overlay_draws(&font, Some(&rects), &view(Some((prompt, 1))), (0, 0), 1);
+        let stray: Vec<_> = up
+            .texts
+            .iter()
+            .filter(|d| inside(d) && !own.contains(&(d.dst, d.src)))
+            .map(|d| d.dst)
+            .collect();
+        assert!(stray.is_empty(), "panel text under the confirm: {stray:?}");
     }
 
     /// A parked write panel is drawn alone: the header, pills and grid stop
