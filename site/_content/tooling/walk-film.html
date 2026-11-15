@@ -92,6 +92,7 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <figcaption>The phase is the vblank counter less the pacer's stamp. The engine seats its game-tick accumulators one short of it, and on a phase of 0 it holds the first vsync.</figcaption>
   </figure>
   <p>Seating the phase is a change to the comparison harness, not to the game code. It is what moved the placements that had turned a vsync early or late onto retail's vsync: <code>conc_field_card_boot</code>, <code>conc2_field_route_walk</code> and <code>town01_field_card_boot</code> now read no placement off retail, and <code>dolk2_market_noa</code> is down to its flat <code>70</code>.</p>
+  <p>The frame step itself is measured: the pacer keeps each frame's time in hblanks in a sixteen-entry ring and steps by the longest. The engine prices a field frame off what it draws - the decoration and ground cells in the visible tile window, the placed objects and NPCs the actor cull leaves, the fog and ambient parts - and runs the same law on that price, so a scene retail runs at three vsyncs a frame on cost runs at three. A film stands on the state's own ring and anchors the price on the state's measured cost, so the model carries only what changes inside the film. The recorder writes the pacer's ring cursor, newest frame time and step every vsync, and the engine side writes its counts and price beside them: the pairs the model is fitted on.</p>
 </section>
 
 <section class="doc-section" id="where-a-film-parts" data-doc="where-a-film-parts">

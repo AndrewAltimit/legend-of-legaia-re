@@ -94,7 +94,12 @@ The step is not a constant of the scene either. `FUN_80016B6C` measures it: each
 
 The film seats that ring (`RetailObs::frame_cost_seat`, `World::seed_frame_cost_history`): the history, its cursor, the step bytes `0x1F800392` / `0x1F800393` off the scratchpad, and the newest sample as the cost of every frame that follows. The engine then resolves each next step by the ported law and waits the step of the frame that just ran, as the pacer's `VSync(0x1F800392)` does before it stores the new one. A newest sample reading the clamp under a step of `4` is a frame past the `0x2D0` rung, and the seat costs it there (`map01_tree_revival_cutscene` holds `4`). A harness seat; `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step for the whole film.
 
-What the seat cannot know is a cost that changes after the save. `doman_field_card_boot` (`432..449` hblanks at the save) and `korout_field_door_hop` (`471..496`) sit under the `0x1FE` rung and cross it inside their films, retail stepping `3` from there on; `field_walled_collision_pin` (`700..718`) crosses `0x2D0` and steps `4`. The engine has no frame time to measure, so those films run on at the saved cost.
+What the seat cannot know is a cost that changes after the save. `doman_field_card_boot` (`432..449` hblanks at the save) and `korout_field_door_hop` (`471..496`) sit under the `0x1FE` rung and cross it inside their films, retail stepping `3` from there on; `field_walled_collision_pin` (`700..718`) crosses `0x2D0` and steps `4`.
+
+The engine prices a field frame off what it draws ([the field frame-cost model](../subsystems/engine.md#the-field-frame-cost-model)), and a film anchors that price on the state's measured cost (`World::anchor_field_frame_cost`): each frame costs the state's newest sample plus the change the model prices since the seat, so the model carries the film's changes and the ring its level. No film's step moves under the anchor: the model's change over `doman_field_card_boot` and `korout_field_door_hop` stays under the `0x1FE` rung that retail's crosses.
+A harness seat; `LEGAIA_RC_NO_COST_ANCHOR=1` runs the model unanchored, as play does. A still holds the state's measured step for its whole seed and settle, the image child too (`LEGAIA_FIELD_FRAME_COST=0`): the model is play's estimate where no capture says what a frame costs.
+
+The retail recorder writes the pacer's side of each vsync (`ring_cur`, the slot the next frame stores to; `frame_cost`, the newest frame time; `step`, `0x1F800393`), and `LEGAIA_RC_WALK_COST=1` writes the engine's beside it: each tick's `World::field_frame_features`, step and price (`engine.cost.csv`) and the state's own ring (`engine.ring.txt`). Those two files are what the model is fitted on.
 
 ## Where a film parts
 
