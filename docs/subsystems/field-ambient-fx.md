@@ -663,6 +663,25 @@ before each slice and stores them back after it
 (`World::load_object_morph_words` / `store_object_morph_words`). Disc-gated
 `engine-session/tests/vell_bridge_grass_disc.rs` pins the beat.
 
+The grass is two models. The bind prologue swaps the object to the sprout
+(`4C 50 29 00`, model `41`) before it arms the sway (`4B 04 07 ..`, lanes
+`7..=10`). The Yes branch swaps it to the bridge (`4C 50 28 00`, model `40`,
+its `.MAP` slot) and arms the growth lanes `0..=6`; the envelope primes them
+to full and drains them one by one, so the bridge grows out of its folded
+pose and stands at rest when the last lane reaches `0`.
+`vell_dead_genesis_tree`, a retail state walked on from the beat, holds the
+object at `+0x64 = 45` (model `40` over the bank base `5`), seven lanes at `0`
+and `+0x62 = 0x4815`.
+
+Both ops write the executing actor, which in retail is the object, so the
+prop runner marks the object executing for its record's own `4C 50` and `4B`,
+as the bind channel does. The lanes then stage onto the model the object
+draws now (`World::object_morph_draw_slots`): `FUN_8001ADA4` substitutes into
+the drawn actor's own TMD (`0x8001B424..0x8001B43C`), not into its `.MAP`
+slot. Run on the record's own context, neither op reached the object, and
+the sprout stood where the bridge should have grown. Disc-gated
+`web-play/tests/vell_bridge_grass_page.rs` pins the page's draw.
+
 A talk drives another actor's morph the same way, by target byte. `ropeway`'s
 ruins report (`P1[45]`, the book in Octam's shrine) seats the player on the
 vision spot and pages four lines, each behind a morph of placement `42`
