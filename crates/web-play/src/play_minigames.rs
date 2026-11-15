@@ -503,7 +503,7 @@ impl LegaiaRuntime {
     /// { "game": "slot" | "baka" | "muscle" | "dance" | null, "gen": 3,
     ///   "art": true,
     ///   "muscle": { "monster_id": 170, "char_slot": 0 },
-    ///   "baka": { "opponent": 5, "player_char": 0 } }
+    ///   "baka": { "opponent": 5, "opponent_side": 1 } }
     /// ```
     ///
     /// `art` says whether the presentation bundle decoded; without it the
@@ -537,7 +537,6 @@ impl LegaiaRuntime {
                 "opponent_side": u32::from(
                     opponent >= legaia_engine_minigames::baka_fighter::FIGHTER_PACK_FOLD
                 ),
-                "player_char": ui.baka.player_char,
             },
         })
         .to_string()
