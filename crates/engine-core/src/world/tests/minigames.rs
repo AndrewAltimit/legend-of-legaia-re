@@ -791,6 +791,33 @@ fn minigame_return_warp_restores_scene_and_commits_winnings() {
     assert!(world.minigames.scene_backup.is_none(), "backup consumed");
 }
 
+/// The return lands in MAIN INIT's warp arm, the same field-back load a
+/// fight's end makes: the MAN installer's tail leaves its post-load pad hold
+/// and entry fade (`FUN_8003ADAC`), the field initialiser re-seeds the camera
+/// offset (`0x801D67B8`) and re-centres the window, and the host camera is
+/// told to re-seat.
+#[test]
+fn minigame_return_warp_comes_back_through_the_field_init() {
+    let mut world = World::new();
+    world.install_field_player(0);
+    world.mode = SceneMode::Field;
+    world.arm_minigame_warp();
+    world.mode = SceneMode::SlotMachine;
+    world.camera.offset_ease = 0;
+    world.minigame_return_warp();
+    assert_eq!(world.mode, SceneMode::Field);
+    assert!(world.post_load_hold() > 0, "the post-load pad hold");
+    assert!(
+        !world.presentation.module_fades.is_empty(),
+        "the entry fade"
+    );
+    assert_eq!(
+        world.camera.offset_ease,
+        legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED
+    );
+    assert!(world.take_field_camera_reseat(), "the host camera re-seats");
+}
+
 /// Every minigame exit path closes a door-entered round trip through one
 /// kernel, `close_minigame_round_trip` - the Start escape, the native hotkeys
 /// and the page's fishing button. Those last two used to call the bare

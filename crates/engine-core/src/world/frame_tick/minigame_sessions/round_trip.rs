@@ -174,5 +174,10 @@ impl World {
         // The field entry it lands in is MAIN INIT's warp arm, which takes
         // twenty seconds off a running escape clock (`0x8003B62C`).
         self.battle.escape_timer.field_return_penalty();
+        // ... and is the same field-back load a fight's end makes: the
+        // post-load hold, the entry fade, the window re-centre and the
+        // camera-offset seed. A cabinet left by Start used to put the player
+        // straight back under the pad on a fully lit field.
+        self.seat_warp_field_return();
     }
 }
