@@ -1527,9 +1527,77 @@ fn call_wave_tints_the_caster_red_through_the_charge() {
         Some(0)
     );
     seats.action = 0x56;
-    for arm in [0, 4] {
-        assert!(wave_camera(&mut st, arm, seats).caster_write.is_empty());
+    // Big Wave's arm 0 turns the caster (`0x801F6B58`) and writes no tint.
+    let a0 = wave_camera(&mut st, 0, seats).caster_write;
+    assert_eq!(a0.render_flag, None);
+    assert!(a0.facing.is_some());
+    assert!(wave_camera(&mut st, 4, seats).caster_write.is_empty());
+}
+
+/// The capture-class bodies whose arm 0 turns the caster before the shot
+/// (`FUN_80019B28` plus a half turn into `+0x46`): Hyper Crush, Spore Gas,
+/// Big Wave and Hyper Lightning frame the turned heading on the same pass,
+/// and for the party code `8` the turn faces the row's centroid.
+#[test]
+fn arm_zero_turns_the_caster_onto_its_target() {
+    use legaia_engine_battle_vm::battle_target_group::GroupAim;
+    let seats = ModuleCamSeats {
+        caster: ModuleSeat {
+            x: 944,
+            y: 0,
+            z: 1024,
+            facing: 0,
+        },
+        victim: ModuleSeat {
+            x: 47,
+            y: 0,
+            z: -1023,
+            facing: 0,
+        },
+        action: 0x56,
+        ..Default::default()
+    };
+    let row = ModuleCamState {
+        target_code: Some(8),
+        target_aim: Some(GroupAim {
+            centroid_x: -16,
+            centroid_z: 731,
+            extent: 0,
+        }),
+        ..Default::default()
+    };
+    let seat_turn = super::heading(seats.victim, seats.caster).wrapping_add(0x800) & 0xFFF;
+    let centroid_turn = super::caster_turn_onto_target(&row, seats);
+    assert!(
+        (i32::from(centroid_turn) - 2364).abs() <= 4,
+        "{centroid_turn}"
+    );
+    // A seat code turns onto the seat even with an aim fed.
+    let seat_code = ModuleCamState {
+        target_code: Some(0),
+        ..row
+    };
+    assert_eq!(super::caster_turn_onto_target(&seat_code, seats), seat_turn);
+    type Arm0 = fn(&mut ModuleCamState, u8, ModuleCamSeats) -> CaptureCamArm;
+    let directors: [(&str, Arm0); 3] = [
+        ("hyper crush", super::hyper_crush_camera),
+        ("spore gas", super::spore_gas_camera),
+        ("big wave", wave_camera),
+    ];
+    for (name, direct) in directors {
+        let mut st = row;
+        let a = direct(&mut st, 0, seats);
+        assert_eq!(a.caster_write.facing, Some(centroid_turn), "{name}");
+        let yaw = a.shot.map(|s| s.angles[1]);
+        assert_eq!(
+            yaw,
+            Some(yaw_from(0x800, centroid_turn)),
+            "{name} frames the turn"
+        );
     }
+    let mut st = ModuleCamState::default();
+    let a = super::hyper_lightning_camera(&mut st, 0, seats);
+    assert_eq!(a.caster_write.facing, Some(seat_turn));
 }
 
 /// Guilty Cross's cut to the victim hides the caster by its colour word and

@@ -5,6 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-cast --test integration <name>::`.
 
+mod capture_target_aim_sites;
 mod cast_arm_retail_gating;
 mod cast_chain_bodies_real;
 mod cast_module_trampoline_bodies;

@@ -1281,7 +1281,21 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         0 => {
             st.countdown.0 = 0;
             if seats.action == 0x56 {
-                pass(Some(shot(0x20, z / 2, 1)), Some(4))
+                // Big Wave's branch turns the caster onto its target first
+                // (`0x801F6B04..0x801F6B58`); Call Wave's does not turn.
+                let facing = super::caster_turn_onto_target(st, seats);
+                let turned = super::ModuleSeat { facing, ..c };
+                let mut a = pass(
+                    Some(ModuleShot {
+                        angles: [0x20, yaw_from(0x800, facing), 0],
+                        tr: [0, 0x600, (z / 2) as i16],
+                        focus: focus_on(turned),
+                        frames: 1,
+                    }),
+                    Some(4),
+                );
+                a.caster_write.facing = Some(facing);
+                a
             } else {
                 pass(Some(shot(0x100, z * 2, 1)), Some(1))
             }
@@ -1725,7 +1739,9 @@ pub fn terio_punch_camera(
 ) -> CaptureCamArm {
     let c = seats.caster;
     let depth = seats.depth_raw as i16;
-    let h = super::heading(seats.victim, c).wrapping_add(0x800) & 0xFFF;
+    // The caster's turn: the party row's centroid for code `8`, the victim
+    // seat otherwise (`0x801F6BB4..0x801F6C08`).
+    let h = super::caster_turn_onto_target(st, seats);
     let shot = |angles: [i16; 3], tr: [i16; 3], frames: u16| {
         Some(ModuleShot {
             angles,

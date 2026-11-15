@@ -3898,6 +3898,17 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   onto the wrong point frames the whole cast off it: the port's director took the victim
   seat's pair for the party code and stood `169` yaw units off retail's on
   `battle_jou_gizam_v3_water_hazard_mid_cast`. Grade `disassembly` + `capture`.
+- The same opening turn is an idiom of the band. Every capture-class image that calls
+  `FUN_801DCEAC` (PROT 0935, 0936, 0938, 0939, 0944, 0946, 0953, 0956, 0963; the disc test
+  `capture_target_aim_sites` derives the list from the module bytes) turns its caster with
+  it, the centroid for the party code `8` and the victim seat otherwise, and PROT 0937 and
+  0954 turn onto the seat alone. Hyper Crush (`0x801F6B48..0x801F6B8C`), Hyper Lightning
+  (`0x801F6B04..0x801F6B30`), Spore Gas (`0x801F6AC4..0x801F6B18`), Big Wave's branch of
+  0946 (`0x801F6B04..0x801F6B58`, behind the caster's latch; Call Wave does not turn) and
+  Terio Punch's centroid case had no port of it, so a live cast kept the caster's previous
+  heading and framed its shots off that. `cast_module_camera::caster_turn_onto_target` is
+  the turn. A `*_mid_cast` film hides it, since the state carries retail's facing. Grade
+  `disassembly`.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 

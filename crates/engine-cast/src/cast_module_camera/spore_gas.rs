@@ -85,7 +85,12 @@ pub fn spore_gas_camera(
     }
     match phase {
         0 => {
-            arm.shot = Some(on_caster(c, -0x20, [0x600, 0x800], 0x80));
+            // The caster turns onto its target before the shot
+            // (`0x801F6AC4..0x801F6B18`).
+            let facing = super::caster_turn_onto_target(st, seats);
+            arm.caster_write.facing = Some(facing);
+            let turned = ModuleSeat { facing, ..c };
+            arm.shot = Some(on_caster(turned, -0x20, [0x600, 0x800], 0x80));
             st.countdown.0 = SPEED_SCALAR << 7;
         }
         1 => {

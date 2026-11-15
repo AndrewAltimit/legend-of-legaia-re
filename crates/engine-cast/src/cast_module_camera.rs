@@ -1164,6 +1164,29 @@ pub fn heading(a: ModuleSeat, b: ModuleSeat) -> u16 {
     bearing_12bit_approx(a.z, a.x, b.z, b.x)
 }
 
+/// The facing a capture-class body's opening turn gives its caster: the
+/// bearing `FUN_80019B28` from the caster onto its target plus a half turn,
+/// `+0x46 = (bearing + 0x800) & 0xFFF`. For the party code `8` the target is
+/// the row's centroid `FUN_801DCEAC(8, ..)` measures, negated off the stack
+/// (`ModuleCamState::target_aim`, fed for [`CAPTURE_TARGET_AIM_BODIES`]);
+/// for a seat code, the victim seat's live pair. The idiom, read off PROT
+/// 0936 (`0x801F6B48..0x801F6B8C`), 0939 (`0x801F6AC4..0x801F6B18`), 0946
+/// (`0x801F6B04..0x801F6B58`), 0953 (`0x801F6BB4..0x801F6C08`), 0956 and
+/// 0963; PROT 0937's (`0x801F6B04..0x801F6B30`) takes the seat alone.
+pub fn caster_turn_onto_target(st: &ModuleCamState, seats: ModuleCamSeats) -> u16 {
+    let c = seats.caster;
+    let onto = match st.target_aim.filter(|_| st.target_code == Some(8)) {
+        Some(a) => bearing_12bit_approx(
+            a.centroid_z.wrapping_neg(),
+            a.centroid_x.wrapping_neg(),
+            c.z,
+            c.x,
+        ),
+        None => heading(seats.victim, c),
+    };
+    onto.wrapping_add(0x800) & 0xFFF
+}
+
 /// Half a trig sample, rounded toward zero - the `srl 0x1f; addu; sra 1`
 /// idiom every placement arm uses.
 pub(super) fn half(v: i16) -> i32 {
@@ -1759,10 +1782,15 @@ pub fn module_director(prot_entry: u32) -> Option<ModuleDirector> {
 
 /// The capture-class bodies whose directors frame or turn on the cast's
 /// target group as `FUN_801DCEAC` measures it
-/// ([`ModuleCamState::target_aim`]): Earthquake (0935), Mystic Circle (0938),
-/// Curse All (0944), Water Hazard (0956, arm 0's turn: `jal 0x801DCEAC` at
-/// `0x801F73A0`) and Genocidal Cannon (0963). The world feeds the aim to these.
-pub const CAPTURE_TARGET_AIM_BODIES: &[u32] = &[935, 938, 944, 956, 963];
+/// ([`ModuleCamState::target_aim`]): every capture-class module image that
+/// calls the routine (`jal 0x801DCEAC`) - Earthquake (0935), Hyper Crush
+/// (0936), Mystic Circle and Chaos Breath (0938), Spore Gas (0939), Curse All
+/// (0944), Call Wave / Big Wave (0946), Terio Punch (0953), Water Hazard
+/// (0956) and Genocidal Cannon (0963). Each turns its caster onto the party
+/// row's centroid for the target code `8` ([`caster_turn_onto_target`]); the
+/// world feeds the aim to these. `capture_target_aim_sites` holds the table to
+/// the module bytes on a disc.
+pub const CAPTURE_TARGET_AIM_BODIES: &[u32] = &[935, 936, 938, 939, 944, 946, 953, 956, 963];
 
 /// Whether PROT `prot_entry`'s capture-class director reads the target
 /// group's aim ([`CAPTURE_TARGET_AIM_BODIES`]).
