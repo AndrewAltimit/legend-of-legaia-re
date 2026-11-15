@@ -67,6 +67,9 @@ pub struct FieldCostTable {
     /// The walk-visible ground cells, one bit a cell: row `r`'s bit `c`.
     /// Empty for a scene with no `.MAP` grid.
     pub ground: Vec<u128>,
+    /// Each placement slot's spawn mesh size in primitives, by slot (`0` for
+    /// a slot with no resolvable mesh).
+    pub npc_prims: Vec<u16>,
 }
 
 impl FieldCostTable {
@@ -159,16 +162,22 @@ pub struct FieldFrameFeatures {
     pub placed_quads: u32,
     pub placed_lit: u32,
     pub npcs: u32,
+    /// Of [`Self::npcs`]: their spawn meshes' primitives.
+    pub npc_prims: u32,
+    /// The decoration pass's loop: the cells its pre-clamp extents visit
+    /// (`ViewCells::span`), each a gate test whether it draws or not.
+    pub decoration_loop_cells: u32,
     pub fog: u32,
     pub parts: u32,
 }
 
 impl World {
     /// Install the scene's static cost inputs (a scene entry's), or drop them.
-    /// The pacer's ring starts the scene empty: retail's ring reads `0` on
-    /// the first field frame after a load (`doman_arrival_from_korb2`,
-    /// `son_arrival_from_doman`), so nothing the scene before cost carries
-    /// over.
+    /// The pacer's ring starts the scene empty: the mode transition
+    /// `FUN_80016230` zeroes all sixteen entries (`0x80016234..0x80016274`)
+    /// on every mode change, a field load's included, and retail's ring reads
+    /// `0` on the first field frame after one (`doman_arrival_from_korb2`,
+    /// `son_arrival_from_doman`).
     pub fn install_field_cost_table(&mut self, table: Option<FieldCostTable>) {
         self.field_cost_offset = 0;
         if table.is_some() {
@@ -212,11 +221,15 @@ impl World {
 
     /// Drop the model's price once the world has left the modes it prices
     /// (a minigame screen, a battle): every vsync, ahead of the cadence test,
-    /// so no other mode's wait runs on a field price.
+    /// so no other mode's wait runs on a field price. The ring goes with it,
+    /// as `FUN_80016230` zeroes it on the mode change, so a field the world
+    /// comes back to measures its step afresh.
     pub(in crate::world) fn release_field_frame_cost(&mut self) {
         if self.field_cost_priced && !self.field_frame_priced_mode() {
             self.field_cost_priced = false;
             self.clock.clear_frame_cost();
+            self.clock.frame_step_telemetry =
+                legaia_engine_vm::actor_tick::FrameStepTelemetry::new();
         }
     }
 
@@ -272,12 +285,14 @@ impl World {
                 f.placed_lit += u32::from(p.lit);
             }
         }
-        f.npcs = self
-            .npcs
-            .positions
-            .values()
-            .filter(|&&(x, z)| !self.field_npc_culled(x, z))
-            .count() as u32;
+        f.decoration_loop_cells = (cells.span[0].max(0) * cells.span[1].max(0)) as u32;
+        for (&slot, &(x, z)) in &self.npcs.positions {
+            if !self.field_npc_culled(x, z) {
+                f.npcs += 1;
+                f.npc_prims +=
+                    u32::from(table.npc_prims.get(usize::from(slot)).copied().unwrap_or(0));
+            }
+        }
         f.fog = u32::from(self.fog.live);
         f.parts = self.ambient.fx.iter().filter(|p| !p.finished).count() as u32;
         Some(f)
@@ -325,6 +340,7 @@ mod tests {
                 lit: 0,
             }],
             ground,
+            npc_prims: Vec::new(),
         }));
         assert_eq!(w.field_frame_features(), None, "no view published");
         w.npcs.cull_view = Some(FieldCullView {
@@ -395,6 +411,29 @@ mod tests {
         assert_eq!(s[0], 2, "the first frame runs on the step it opened with");
         assert!(s[1..].iter().all(|&x| x == 3), "{s:?}");
         assert!(steps(heavy, false, 24).iter().all(|&x| x == 2));
+    }
+
+    /// Leaving the field for a mode the model does not price drops its price
+    /// and empties the ring, as the mode transition `FUN_80016230` zeroes it.
+    #[test]
+    fn a_mode_change_drops_the_price_and_empties_the_ring() {
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Field;
+        w.toggles.field_frame_cost = true;
+        w.set_frame_step_floor(2);
+        w.install_field_cost_table(Some(FieldCostTable::default()));
+        w.npcs.cull_view = Some(town01_view());
+        for _ in 0..8 {
+            let _ = w.tick();
+        }
+        assert!(w.clock.frame_cost.is_some());
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.release_field_frame_cost();
+        assert_eq!(w.clock.frame_cost, None);
+        assert_eq!(
+            w.clock.frame_step_telemetry,
+            legaia_engine_vm::actor_tick::FrameStepTelemetry::new()
+        );
     }
 
     #[test]

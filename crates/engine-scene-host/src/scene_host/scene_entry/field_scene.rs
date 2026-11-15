@@ -1578,6 +1578,16 @@ pub fn field_cost_table(
             })
             .collect(),
         ground: FieldCostTable::ground_from_map(&map),
+        npc_prims: {
+            let placements = legaia_engine_scene::npc_catalog::live_scene_placements(index, scene);
+            let mut v = vec![0u16; placements.iter().map(|p| p.index + 1).max().unwrap_or(0)];
+            for p in &placements {
+                if !p.special_model {
+                    v[p.index] = clamp16(size(usize::from(p.model_index))[0]);
+                }
+            }
+            v
+        },
     })
 }
 
