@@ -268,7 +268,14 @@ pub fn plasma_strike_camera(
         0x10 => {
             arm.hold = st.countdown.drain_above(0);
             if !arm.hold {
+                // The closing trio with the bump (`sb zero,0x21b` / `sh
+                // zero,0x176` / `sb zero,0x1da` and `+0x1DC += 1` at
+                // `0x801F8568..0x801F857C`): the close clip `0x0F` is cut to
+                // idle on the pass, so the Done band's rate restore finds the
+                // caster off its solo clip and puts every seat back on `8`.
                 arm.caster_write.loop_release = true;
+                arm.caster_write.stage = Some(0);
+                arm.caster_write.restage = true;
                 arm.caster_write.colour = Some(0x2008_0200);
                 arm.caster_write.render_flag = Some(0);
                 arm.victim_write.colour = Some(0x2008_0200);
