@@ -373,6 +373,8 @@ ends one fight by a flee and by a win, enters a second, and holds every
 | `BattleState` context mirrors (`BattleState::reset_context_mirrors`) | battle init zeroes the whole battle block, context included (`0x80055F14..0x80055F24`) | a second fight priced its first hit with the last strike's guard ramp and held its first prompt a pass on the last glide gate |
 | `BattleState::frame_cost_ring` | the frame driver's ring is the one global history field frames rewrite (`FUN_80016B6C`) | a second fight opened at step `3` on the first one's battle costs |
 | `CameraRig::offset_ease` on a fight's return | the field initialiser's seed runs ahead of its warp test (`0x801D67B8`), so the return from a fight takes it too | the field came back from every fight with the fog's offset at `0` |
+| `AmbientFxState::pending_game_ticks` through a fight or a minigame | the mode switch re-seeds the lists (`FUN_8001E1B4`) and the return brings the parked pool back whole (`0x8001E308`): the parts stand still | the first field frame after a fight ran up to 600 of the parts' passes at once, `rand()` ops included |
+| A minigame's return (`World::minigame_return_warp`) | MAIN INIT's warp arm, the same field-back load a fight's end makes (`World::seat_warp_field_return`) | a cabinet left by Start put the player straight back under the pad on a fully lit field |
 
 Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
 `_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
