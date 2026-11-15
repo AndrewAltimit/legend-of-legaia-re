@@ -185,6 +185,16 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_POLY_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_poly_frame_cost = true;
     }
+    // The field frame step off the frame-cost model
+    // (`WorldToggles::field_frame_cost`), either way over the default.
+    match std::env::var("LEGAIA_FIELD_FRAME_COST")
+        .as_deref()
+        .map(str::trim)
+    {
+        Ok("1") => toggles.field_frame_cost = true,
+        Ok("0") => toggles.field_frame_cost = false,
+        _ => {}
+    }
     // Which machine's CD response time the battle frame step reads
     // (`WorldToggles::battle_cd_timing`): `console` opts in to a console's,
     // `pcsx-redux` names the default.

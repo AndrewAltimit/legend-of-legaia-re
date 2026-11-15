@@ -1274,6 +1274,12 @@ impl SceneHost {
                         );
                     }
                 }
+                // What the frame-cost model counts the scene's frames by
+                // (`World::field_frame_features`).
+                if let Some(scene) = self.scene.as_ref() {
+                    let table = field_cost_table(&self.index, scene, &res);
+                    self.world.install_field_cost_table(table);
+                }
                 self.resources = Some(res);
             }
         }
@@ -1482,6 +1488,97 @@ impl SceneHost {
         }
         self.world.shops.scene_shops = shops;
     }
+}
+
+/// A field scene's static frame-cost inputs: each terrain decoration draw and
+/// placed object with its pack mesh's primitive and vertex counts, and the
+/// `.MAP` grid's walk-visible ground cells. `None` for a world map (its
+/// ground and sweep are another emitter's) or a scene with no `.MAP`.
+pub fn field_cost_table(
+    index: &ProtIndex,
+    scene: &Scene,
+    res: &legaia_engine_scene::scene_resources::SceneResources,
+) -> Option<legaia_engine_core::world::field_frame_cost::FieldCostTable> {
+    use legaia_engine_core::world::field_frame_cost::{CostCell, CostPlaced, FieldCostTable};
+    use legaia_engine_scene::field_env;
+    if legaia_engine_scene::scene::is_world_map_scene(&scene.name) {
+        return None;
+    }
+    let map = scene.field_map_bytes(index).ok().flatten()?;
+    let env = field_env::env_pack_tmd_indices(scene, res);
+    let lut = scene.field_floor_height_lut(index).ok().flatten();
+    // (prims, verts, quads, light-source rows) of one pack mesh.
+    let size = |ti: usize| {
+        res.tmds.get(ti).map_or([0u32; 4], |t| {
+            t.tmd.objects.iter().fold([0u32; 4], |mut acc, o| {
+                acc[0] += o.header.n_primitive;
+                acc[1] += o.vertices.len() as u32;
+                for g in legaia_tmd::legaia_prims::iter_groups_lenient(
+                    &t.raw,
+                    o.primitives_byte_offset,
+                    o.primitives_byte_size,
+                ) {
+                    let n = u32::from(g.header.count);
+                    if g.header.n_vertices() == 4 {
+                        acc[2] += n;
+                    }
+                    if (0x10..=0x17).contains(&g.header.flags) {
+                        acc[3] += n;
+                    }
+                }
+                acc
+            })
+        })
+    };
+    let clamp16 = |v: u32| v.min(u32::from(u16::MAX)) as u16;
+    let terrain: Vec<_> = scene
+        .field_terrain_tiles(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
+        .collect();
+    let (terrain, _) = field_env::resolve_env_draws(&env, &terrain, lut);
+    let placed = scene
+        .field_object_placements(index)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let (placed, _) = field_env::resolve_env_draws(&env, &placed, lut);
+    Some(FieldCostTable {
+        decorations: terrain
+            .iter()
+            .map(|d| {
+                let [p, v, q, l] = size(d.res_tmd);
+                CostCell {
+                    col: d.cell.0,
+                    row: d.cell.1,
+                    radius: d.cull_radius,
+                    prims: clamp16(p),
+                    verts: clamp16(v),
+                    quads: clamp16(q),
+                    lit: clamp16(l),
+                }
+            })
+            .collect(),
+        placed: placed
+            .iter()
+            .map(|d| {
+                let [p, v, q, l] = size(d.res_tmd);
+                CostPlaced {
+                    x: d.world_x.clamp(-0x8000, 0x7FFF) as i16,
+                    z: d.world_z.clamp(-0x8000, 0x7FFF) as i16,
+                    radius: d.cull_radius,
+                    prims: clamp16(p),
+                    verts: clamp16(v),
+                    quads: clamp16(q),
+                    lit: clamp16(l),
+                }
+            })
+            .collect(),
+        ground: FieldCostTable::ground_from_map(&map),
+    })
 }
 
 /// The field-entry resource build of `scene`, before the effect-texture

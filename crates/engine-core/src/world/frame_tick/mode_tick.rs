@@ -407,11 +407,15 @@ impl World {
         if self.clock.display_frame_step == 1 && runs_master_driver {
             self.clock.actor_vsync_accum += 1;
         }
+        self.release_field_frame_cost();
         let cadence = self.clock.game_frame_wait();
         let actor_tick_fired = self.clock.actor_vsync_accum >= cadence && runs_master_driver;
         if actor_tick_fired {
-            // Under a seeded frame cost the frame opens on the step the one
-            // before resolved (`FrameClock::open_costed_game_frame`).
+            // The field frame-cost model prices the frame
+            // (`World::price_field_frame`); under a frame cost the frame
+            // opens on the step the one before resolved
+            // (`FrameClock::open_costed_game_frame`).
+            self.price_field_frame();
             self.clock.open_costed_game_frame();
         }
         self.clock.game_tick_fired = actor_tick_fired;

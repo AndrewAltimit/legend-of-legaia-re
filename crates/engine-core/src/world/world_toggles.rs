@@ -188,6 +188,16 @@ pub struct WorldToggles {
     /// frames feeds it (the native window); without a count the tables stand.
     /// The native session raises it from `LEGAIA_BATTLE_POLY_COST=1`.
     pub battle_poly_frame_cost: bool,
+    /// Step each field frame by the frame time the field frame-cost model
+    /// prices it at (`World::field_frame_features`, `field_frame_cost`)
+    /// under retail's own law, `FUN_80016B6C`'s longest-of-sixteen against
+    /// the hblank rungs over the field floor of `2`: a scene whose frames cost
+    /// past `0x1FE` runs at `3`, as retail's `son` / `stone` / `kor3` do, and
+    /// the frames after a scene load run on the load's long frame. On by
+    /// default; off, the field holds the floor. A timing model, not a fidelity knob, so
+    /// [`Self::pin_retail`] leaves it alone; the native session takes
+    /// `LEGAIA_FIELD_FRAME_COST=0` / `=1` over the default.
+    pub field_frame_cost: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -479,6 +489,7 @@ impl WorldToggles {
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
             battle_frame_span_law: false,
             battle_poly_frame_cost: false,
+            field_frame_cost: true,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,
