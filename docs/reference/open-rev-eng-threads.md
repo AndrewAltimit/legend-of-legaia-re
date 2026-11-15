@@ -139,11 +139,7 @@ stays short: an older correction leaves it and keeps its row in the
 
 ## Field / locomotion
 
-| Thread | Status | State |
-|---|---|---|
-| Which script work makes `son`'s first field frame cost past the `0x2D0` rung? | open (narrowed) | The clamped sample is the first frame-driver frame after the load: on a film from `son_arrival_from_doman` the first `FUN_80016444` frame costs `1002` hblanks, stores `700` and steps `4`; son's later frames cost `605..625`. The excess is the actor tick pass (`FUN_8002519C`, `407` against `13`), all of it the field VM's first pass: nine `FUN_801DE840` runs, `379` hblanks, against `0` to `8` after. `doman_arrival_from_korb2` runs its entry pass outside the frame driver and its first frame costs `312`. The port prices no VM work ([the field frame-cost model](../subsystems/engine.md#the-field-frame-cost-model)). A profile of son's entry script's op handlers on that frame would name the op. |
-
-Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
+No open threads. Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 
 ## Battle / rendering
 
