@@ -62,16 +62,34 @@ impl Default for DomeMenu {
 }
 
 /// What one frame of the command flow did - the cue a host plays for it.
+///
+/// The dome's command flow is the battle's own `FUN_801D0748`, so each event
+/// is one of its cue sites: `FUN_8004FCC8(0x21)` for [`Self::Confirm`],
+/// [`Self::Fight`] and [`Self::Run`], `0x22` for [`Self::Cursor`], `0x23` for
+/// [`Self::Refused`] and [`Self::Back`]; the Ra-Seru list is a kind-4 list
+/// window whose kernel `FUN_80032A44` writes its own words
+/// ([`Self::ListStep`], [`Self::Buzz`], [`Self::ListCancel`]). The press table
+/// is `docs/subsystems/audio.md`, "Every press, surface by surface".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DomeMenuEvent {
-    /// Nothing changed.
+    /// Nothing changed, or a change retail sounds nothing for (the Triangle
+    /// arts list).
     Idle,
-    /// A cursor moved or a screen changed without committing anything.
+    /// A cursor moved without committing anything.
     Cursor,
     /// Something was taken: a direction, a pick, a commit.
     Confirm,
-    /// The press was refused (unaffordable, forbidden, nothing to open).
+    /// The press was refused (a forbidden chip, a rotted limb).
     Refused,
+    /// A cancel that steps back a surface: the ring to the round prompt,
+    /// the entry's last arrow, the review to its prompt, `Reselect`.
+    Back,
+    /// A step in the Ra-Seru list: the kernel queues it on every Up / Down.
+    ListStep,
+    /// A confirm on a greyed Ra-Seru row.
+    Buzz,
+    /// A cancel out of the Ra-Seru list.
+    ListCancel,
     /// `Begin` was taken: both fighters' selections are closed and the turn
     /// is ready to resolve.
     Fight,
@@ -309,10 +327,23 @@ impl MuscleDomeSession {
         }
         match cmd.resolved() {
             None => {
-                let moved = command_cursor(&cmd.phase) != before
-                    || std::mem::discriminant(&cmd.phase) != before_screen;
+                let screen_changed = std::mem::discriminant(&cmd.phase) != before_screen;
+                let moved = command_cursor(&cmd.phase) != before;
+                // A surface left for the one before it is a cancel (the flee
+                // confirm's `0x801D1130`, the attack-mode prompt's tail
+                // `0x801D2968`); any other change of surface is a commit
+                // (the prompt's Escape through `0x801D20D4`, the Attack arm's
+                // `0x801D15D0`).
+                let back = matches!(
+                    cmd.phase,
+                    CommandPhase::RoundPrompt { .. } | CommandPhase::Menu { .. }
+                );
                 self.menu = DomeMenu::Command(cmd);
-                if moved {
+                if screen_changed && back {
+                    DomeMenuEvent::Back
+                } else if screen_changed {
+                    DomeMenuEvent::Confirm
+                } else if moved {
                     DomeMenuEvent::Cursor
                 } else {
                     DomeMenuEvent::Idle
@@ -362,16 +393,18 @@ impl MuscleDomeSession {
             Some(Resolution::Reselect) => {
                 // Retail's `0x6E` Reselect steps back to the last member's
                 // ring with its string thrown away; the dome fields one.
+                // `FUN_8004FCC8(0x23)` at `0x801D3054`.
                 self.reset_selection(0);
                 self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::Attack)));
-                DomeMenuEvent::Cursor
+                DomeMenuEvent::Back
             }
             // Cancel on the ring steps back to the round prompt: the dome
             // fields one member, so the first member's step-back is the
             // only one there is (`0x28`'s cancel arm, `0x801D11B4`).
             Some(Resolution::StepBack) => {
                 self.menu = DomeMenu::default();
-                DomeMenuEvent::Cursor
+                // Through the shared tail `0x801D2968`.
+                DomeMenuEvent::Back
             }
             // Run on the prompt. Inside a contest the round driver's `0xFE`
             // arm turns a party Run into the arena's "ran" outcome
@@ -411,7 +444,35 @@ impl MuscleDomeSession {
             let mut cmd = BattleCommandSession::new(0, 0);
             cmd.phase = CommandPhase::AttackMode { cursor: 0 };
             self.menu = DomeMenu::Command(cmd);
-            return DomeMenuEvent::Cursor;
+            // The cursor's cancel, `FUN_8004FCC8(0x23)` at `0x801D2320`.
+            return DomeMenuEvent::Back;
+        }
+        // A rotted limb's arrow is refused with `FUN_8004FCC8(0x23)` before
+        // it reaches the gauge (`0x801D1E60..0x801D1F7C`), as in battle.
+        let entering = matches!(
+            entry.phase,
+            legaia_engine_battle::arts_command_input::ArtsInputPhase::Entering
+        );
+        let mut pad = pad;
+        if entering {
+            use legaia_engine_battle::arts_command_input::rot_blocks;
+            let status = self.ring(0).status;
+            let mut refused = false;
+            for (pressed, cmd) in [
+                (&mut pad.left, legaia_art::Command::Left),
+                (&mut pad.up, legaia_art::Command::Up),
+                (&mut pad.down, legaia_art::Command::Down),
+                (&mut pad.right, legaia_art::Command::Right),
+            ] {
+                if *pressed && rot_blocks(status, cmd) {
+                    *pressed = false;
+                    refused = true;
+                }
+            }
+            if refused {
+                self.menu = DomeMenu::Input(entry);
+                return DomeMenuEvent::Refused;
+            }
         }
         entry.input(
             ArtsCommandPad {
@@ -460,7 +521,8 @@ impl MuscleDomeSession {
                 let mut cmd = BattleCommandSession::new(0, 0);
                 cmd.phase = CommandPhase::AttackMode { cursor: 1 };
                 self.menu = DomeMenu::Command(cmd);
-                DomeMenuEvent::Cursor
+                // The entry's cancel, `FUN_8004FCC8(0x23)` at `0x801D2104`.
+                DomeMenuEvent::Back
             }
             None => {
                 let pressed_dir = pad.up || pad.down || pad.left || pad.right;
@@ -472,12 +534,16 @@ impl MuscleDomeSession {
                     );
                 self.menu = DomeMenu::Input(entry);
                 self.sync_entry();
-                if after.0 > before.0 || to_review {
+                // An arrow the entry takes sounds the commit whether or not
+                // the gauge pays it: HUD step `0xB` returns ahead of its
+                // append and the tail `0x801D20D4` still runs
+                // (`0x801D1F80..0x801D1F98`). A rotted limb's arrow was
+                // refused above. The Triangle list calls no cue routine.
+                if after.0 > before.0 || to_review || (pressed_dir && !reviewing) {
                     DomeMenuEvent::Confirm
-                } else if pressed_dir && !reviewing {
-                    DomeMenuEvent::Refused
-                } else if after != before {
-                    DomeMenuEvent::Cursor
+                } else if after.0 < before.0 {
+                    // The cancel drops the last arrow (`0x801D2104`).
+                    DomeMenuEvent::Back
                 } else {
                     DomeMenuEvent::Idle
                 }
@@ -489,7 +555,8 @@ impl MuscleDomeSession {
         if pad.cancel {
             self.close_magic();
             self.menu = DomeMenu::Command(ring_at(ring_cursor(DomeRingChip::RaSeru)));
-            return DomeMenuEvent::Cursor;
+            // The list kernel's cancel word `0x37` (`0x80032D74`).
+            return DomeMenuEvent::ListCancel;
         }
         self.menu = DomeMenu::Magic;
         let mut moved = false;
@@ -510,11 +577,14 @@ impl MuscleDomeSession {
                     self.raise_commit_confirm();
                     DomeMenuEvent::Confirm
                 }
-                Err(_) => DomeMenuEvent::Refused,
+                // A row the list build greyed: the kernel's `0x23`
+                // (`0x80032D0C`).
+                Err(_) => DomeMenuEvent::Buzz,
             };
         }
+        // The kernel queues the step on every Up / Down (`0x80032C74`).
         if moved {
-            DomeMenuEvent::Cursor
+            DomeMenuEvent::ListStep
         } else {
             DomeMenuEvent::Idle
         }
