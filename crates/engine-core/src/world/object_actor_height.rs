@@ -562,6 +562,21 @@ mod tests {
         assert_ne!(c.ctx.flags & 0x400, 0, "the leg is 1280 units long");
     }
 
+    /// The same dome leg runs ~2560 vsyncs, long enough to leave `taiku2`
+    /// with it in flight. The next scene's bind install re-spawns every
+    /// object actor, so the leg goes with them and the new scene's record
+    /// 20 is neither walked nor unparked.
+    #[test]
+    fn a_scene_load_drops_the_object_legs_in_flight() {
+        let mut w = World::default();
+        w.arm_object_glide_leg(20, (0x84, 0x4A, 0x40));
+        w.install_object_binds(&[]);
+        assert!(w.field_vm.object_glide_legs.is_empty());
+        w.arm_object_glide_leg(20, (0x84, 0x4A, 0x40));
+        w.drop_man_installed_state();
+        assert!(w.field_vm.object_glide_legs.is_empty());
+    }
+
     /// `conc`'s tube floor (`P0[17]`): a prologue `37 02 01` parked on the
     /// object's own actor walks it one tile along `-X` over four speed
     /// units, then lifts the halt bit.

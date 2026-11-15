@@ -1095,6 +1095,12 @@ impl World {
     ) {
         self.field_vm.object_channel_binds = binds.to_vec();
         self.field_vm.retired_objects.clear();
+        // A compass walk is its object actor's own state, and the load that
+        // replaces the bind list re-spawns every object actor. A leg the last
+        // scene left in flight is keyed by a record index the new scene
+        // reuses for another object: kept, it walked that object and, on
+        // landing, cleared the `0x400` halt of a record it never parked.
+        self.field_vm.object_glide_legs.clear();
         self.field_vm.object_binds_by_key =
             legaia_engine_field::field_channels::object_channel_keys(binds)
                 .into_iter()

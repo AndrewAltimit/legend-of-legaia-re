@@ -286,6 +286,13 @@ impl World {
     ) {
         use legaia_scene_formats::man_motion;
         self.npcs.ambient.clear();
+        // The `+0x24` / `+0x28` angles the ambient tick publishes belong to
+        // the actor that tweened them, and the load re-spawns every actor.
+        // A slot the new scene binds no stream to never republishes, so a
+        // `juui1` tilt (op `0x16`) drew on whatever NPC the next scene seats
+        // in that slot.
+        // REF: FUN_8001ADA4
+        self.npcs.tilts.clear();
         let Some(n0) = man_file.partitions.first().map(|p| p.len()) else {
             return;
         };
