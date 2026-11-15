@@ -1264,7 +1264,7 @@ arm that frames the caster through case 8 and returns done on the same pass, and
 walker steps that tween before `0x37`'s case 6 rebuilds from it on the next pass
 ([summon-band camera](../subsystems/cast-module.md#summon-band-camera)). The port dropped
 the module's shot on the state change before stepping it. With the step, Viguro's and
-Theeder's `0x37` poses read retail's to a unit or two; what parts after that is case 6's own
+Theeder's `0x37` poses read retail's to a unit or two (films `0x8E` `.9778` to `.9789`, `0x82` `.9668` to `.9673`, `0x87` `.9099` to `.9101`); what parts after that is case 6's own
 walk, which the port eases where retail's walker takes `ceil(gap / 12)` a vsync. Mushura's
 yaw is its arm-13 shot's, framed on where its chase left the creature.
 
