@@ -537,16 +537,15 @@ pub const LINKED_FRAME_BASE: u16 = 117;
 /// (`docs/subsystems/battle-stage-camera.md`, "The census").
 pub const LINKED_WORK_MILLI: u32 = 200;
 
-/// Hblanks a strike state's frame (`0x1E..=0x20`, the swing, the hit and the
-/// return) spends over what it links. Retail's unloaded strike frames sit a
-/// steady offset over the census line, and no class the census counts
-/// explains it held out by film (the parts, the bodies, the stage each add
-/// nothing past a constant): it is the strike's own CPU work, the hit tests
-/// and the reaction and damage bookkeeping the passes run. Fitted with the
-/// census's ghost and sprite weights on the training half of the strike and
-/// arts films' strike-state frames: held out, the step reads right on `.970`
-/// of them (`.964` unweighted with no offset).
-pub const LINKED_STRIKE_WORK: u16 = 15;
+/// Hblanks a monster's strike frame (`0x1E..=0x20` with a monster acting)
+/// spends over what it links. Retail's unloaded monster-strike frames sit a
+/// steady offset over the census line (`+25` at the mean over the strike
+/// films), and no class the census counts explains it held out by film (the
+/// effect sprites, the ghosts, the parts, the bodies, the stage each add
+/// nothing past a constant): it is the fight's own CPU work around the swing.
+/// The party's art strikes take none: their films already run at retail's
+/// step on the census alone.
+pub const LINKED_STRIKE_WORK: u16 = 25;
 
 /// Whether `state` is one of the strike states [`LINKED_STRIKE_WORK`] loads.
 pub const fn is_strike_state(state: u8) -> bool {

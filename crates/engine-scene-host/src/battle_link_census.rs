@@ -191,31 +191,6 @@ impl LinkCount {
     }
 }
 
-impl LinkCount {
-    /// The count the frame cost prices, in body-primitive units: a ghost's
-    /// flat packet costs [`GHOST_PRIM_WEIGHT_MILLI`] of a body primitive's
-    /// work and an effect-pool sprite [`SPRITE_PRIM_WEIGHT_MILLI`], every other
-    /// primitive one.
-    pub fn priced(&self) -> u32 {
-        let rest = self.total() - self.ghosts - self.sprites;
-        rest + (self.ghosts * GHOST_PRIM_WEIGHT_MILLI + self.sprites * SPRITE_PRIM_WEIGHT_MILLI)
-            / 1000
-    }
-}
-
-/// A ghost primitive's work over a body primitive's, in thousandths: the
-/// after-image walk hands the dispatcher a flat bank-2 word
-/// (`FUN_80049348`), whose leaves skip the texture and colour work. Fitted on
-/// the strike and arts films' unloaded frames (`.125` against `.200`
-/// hblanks), held out by film.
-pub const GHOST_PRIM_WEIGHT_MILLI: u32 = 625;
-
-/// An effect-pool sprite's work over a body primitive's, in thousandths: one
-/// `POLY_FT4` links, but its centre goes through the camera and its corners
-/// are formed in view space (`FUN_800195A8`) for each one (`.95` against
-/// `.200` hblanks, fitted as [`GHOST_PRIM_WEIGHT_MILLI`] is).
-pub const SPRITE_PRIM_WEIGHT_MILLI: u32 = 4750;
-
 /// The packets a body's ground shadow links: the 24-column disc
 /// `FUN_80028158` builds in mode `1`
 /// (`legaia_engine_effects::effect_default_arm::ground_shadow_mesh`).
@@ -774,7 +749,7 @@ impl crate::scene_host::SceneHost {
         };
         let count = battle_link_count(&self.world, geom, &mut self.battle_link_scratch);
         self.battle_link_last = count;
-        self.world.note_linked_polys(count.priced());
+        self.world.note_linked_polys(count.total());
     }
 
     /// A seat's body mesh: a party member's battle form, a monster's archive

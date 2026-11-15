@@ -100,7 +100,11 @@ impl World {
         } else {
             self.battle.linked_polys.map(|n| {
                 let w = linked_frame_work(n);
-                if is_strike_state(state) {
+                let monster_acting = self
+                    .actors
+                    .get(usize::from(self.battle_ctx.active_actor))
+                    .is_some_and(|a| a.battle_monster_id.is_some());
+                if is_strike_state(state) && monster_acting {
                     w.saturating_add(LINKED_STRIKE_WORK)
                 } else {
                     w

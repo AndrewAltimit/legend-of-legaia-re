@@ -1699,7 +1699,7 @@ rules are the dispatcher's:
 | The backdrop pair | Copy A front faces, copy B by its word, slot 1 under the frame's angle; a primitive with every corner past one screen edge is dropped | disassembly (quads), capture (triangles) |
 | The ground grid | Four `POLY_GT4` a visible cell (`visible_cell_count`) | disassembly, capture |
 | A drawn body's ground shadow | `24` packets, gated as the disc is | capture |
-| The effects | Each part through its library mesh (a bank-3 quad as sixteen `GT3`), each kind-4 node's quads, one `POLY_FT4` a pool sprite | port |
+| The effects | Each part through its library mesh (a bank-3 quad as sixteen `GT3`), each kind-4 node's quads, one `POLY_FT4` a pool sprite, one packet a weapon-trail, streak or ribbon quad | port |
 
 The backdrop's off-screen reject is `FUN_80044798`, which the quad leaves call under a
 colour word carrying `0x40` in its top byte, as the backdrop arm's always does. The
@@ -1714,7 +1714,14 @@ engine frame standing a pass or an effect away from retail's. On a strike state
 (`battle_jou_gimard_v3_strike`) it reads `2505` against retail's `2591`: stage `105` and
 `111`, grid `464` and `452`, the bodies `1936` against `1884`. Tail Flare's flight is the
 known miss: from the flame's spread on, retail's table holds about `3750` and the census
-`3000` to `3400`.
+`3000` to `3400`. Retail's tables at vsyncs `40`, `80` and `140` of the cast (states saved
+off the recording's state with nothing pressed) put the difference in the combatants'
+own CLUT families: the three party members link `763`, `724` and `651` packets and the
+Gimards `658`, where the cast's first frame holds `415`, `562`, `537` and `214`, and every
+one of those packets is flat-textured (`FT3` / `FT4`) where the first frame's Vahn was
+Gouraud. The grid, the stage and the shadows hold. The engine draws the bodies once each
+and the Gimards' two ghosts, about `640` packets short; what retail draws there (a second
+pass of each body under the flame's tint, or ghosts on the party) is not traced.
 
 The work line is fitted on retail's unloaded frames (cost under the clamp, frame inside
 its step plus one, summon band arms left out) paired with the census on the engine tick
@@ -1731,33 +1738,44 @@ On the strike and arts films the census reads rms `37` to `54` and `.92` to `.95
 enemy casts are where it is weakest (rms `119`, `.68`, the table `.52` to `.64`): their
 effects are what it counts least well, Tail Flare's flame above all.
 
-Priced from the census, a frame's work keeps the table in three places: every arm an arm
-table steps (the capture band's as the summon band's), and the summon band's opening states
-`0x33` / `0x34`. Priced there too, the enemy casts' capture band `0x70` agrees with retail
-on `.81` of its game time against the table's `.88` (the engine a third of a step over), the
-summon opening on `.58` against `.98`, and the cues fall as they did under the window's
-count with the span law: enemy casts `.9985` to `.9775` (both Kiss of Death films lose their
-cue, Death Game three), Seru casts `1.0` to `.9754` (`0x8E` to `.286`). So the cue losses
-earlier seen with the polygon cost on are the pricing of those arms, not the window's
-host-bound count. The four sets, one build, default against the census-priced opt-in (image
-mean, cue mean, step agreement over the game time):
+Priced from the census, a frame's work keeps the table in two places: every arm an arm
+table steps (the capture band's as the summon band's), and the whole summon band
+`0x33..=0x36`. Priced there too, the enemy casts' capture band `0x70` agrees with retail on
+`.81` of its game time against the table's `.88` (the engine a third of a step over), the
+summon opening on `.58` against `.98`, the Seru band's unstepped `0x36` passes on `.965`
+against `.994`, and the cues fall as they did under the window's count with the span law:
+enemy casts `.9985` to `.9775` (both Kiss of Death films lose their cue), Seru casts `1.0` to
+`.9754` (`0x8E` to `.286`). So the cue losses earlier seen with the polygon cost on are the
+pricing of those arms, not the window's host-bound count.
+
+A monster's strike frame carries `LINKED_STRIKE_WORK` (`25` hblanks) over the census line:
+retail's unloaded monster-strike frames sit that far over it at the mean, and no counted
+class explains the offset held out by film (the effect sprites, the ghosts, the parts, the
+bodies and the stage each add nothing past a constant). Without it the strikes run a
+twentieth of a step under retail (`2.92` against `2.96`). Weighing the ghosts' flat packets
+lighter and the effect sprites heavier, as a fit on the strike and arts frames suggests,
+moved the arts images `.9300` to `.9195` and Tail Flare's cue back to `.800`, so the census
+counts each primitive once.
+
+The four sets, one default build and the census-priced opt-in (image mean, cue mean, step
+agreement over the game time):
 
 | Set | Films | Default | Census priced |
 |---|---:|---|---|
-| Player arts | 20 | `.9300` / `.9982` / `.837` | `.9294` / `1.0` / `.925` |
-| Monster strikes | 64 | `.9815` / `.9996` / `.955` | `.9787` / `.9996` / `.939` |
+| Player arts | 20 | `.9300` / `.9982` / `.837` | `.9295` / `1.0` / `.924` |
+| Monster strikes | 65 | `.9816` / `.9996` / `.954` | `.9803` / `.9996` / `.956` |
 | Seru casts | 29 | `.9567` / `1.0` / `.993` | `.9567` / `1.0` / `.992` |
-| Enemy casts | 110 | `.9348` / `.9985` / `.841` | `.9351` / `.9975` / `.867` |
+| Enemy casts | 110 | `.9347` / `.9985` / `.841` | `.9355` / `.9991` / `.867` |
 
-Priced, the arts' strike states agree with retail on `.90` to `.94` of their game time
-(`.79` to `.92` on the table) and Tri-Somersault's arts voice lands (`.964` to `1.0`); the
-enemy casts' `0x2B..0x2E` rise from `.55..73` to `.71..83` and their Done band from `.78` to
-`.82`; Gimard's Tail Flare plays all fifteen cues (`.933` to `1.0`) with no window. It stays
-opt-in for three things (grade `capture`): the strikes run a twentieth of a step under
-retail (`2.92` against `2.97`; their frames sit within some `30` hblanks of `0x2D0`, where
-the fight's offset decides, [a heavy fight's hit frames](#a-heavy-fights-hit-frames)), so
-their images fall `.0028`; Death Game's cue (`1.0` to `.824`) on its line's frames; and the
-Seru casts' `0x36` passes no arm table steps (`.994` to `.965`).
+Over the four sets step agreement goes `.909` to `.926`. Priced, the arts' strike states
+agree with retail on `.90` to `.94` of their game time and Tri-Somersault's arts voice lands
+(`.964` to `1.0`); the enemy casts' `0x2B..0x2E` and Done band agree further, and Gimard's
+Tail Flare plays all fifteen cues with no window. It stays opt-in by a small margin (grade
+`capture`): the arts' image mean falls `.0005` and the strikes' `.0013`, and the Seru casts'
+step agreement `.001`, all of it the post-band state `0x38` (`.943` to `.800`, `70` vsyncs of
+game time). Among the strikes the images part both ways at the same step agreement (Gel Frog
+`.922` to `.987`, Caruban `.917` to `.950`; Ghost Knight `.998` to `.938`, Topaz `.987` to
+`.942`, Warman `.996` to `.954`), which reads as harness seats built on the table's step.
 
 Under the window's count, the three cases the table missed come right priced. Tail Flare's flight `0x2B` links some
 `3900` polygons on a full party (work near `760`, step `4` from the first frame, as retail's
