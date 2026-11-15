@@ -1520,6 +1520,14 @@ map as its street:
   raises `0x46A`, on which the cycler parks; a clock that has not flipped for
   4000 frames is not waited on.
 
+  A clock pad is a way across, not a beat. The continuous hand's beats pass
+  leaves out a band whose every tile is such a pad and whose record raises
+  no flag the world lacks: stepped on as beats, `rugi`'s twenty-two upper
+  pads P2[40..=61] each cost a few thousand frames of waiting on `0x462` and
+  riding, on every round of the tower's beats, and a run whose first walk to
+  Rogue's band P2[38] failed spent the stretch's frame budget before it
+  reached `deroa`.
+
   A phase's start is known only while the flag was watched. The follower
   does not look while a script runs, and every pad ride is three hundred
   frames of script, longer than `0x462` stays up: after such a gap the flag
