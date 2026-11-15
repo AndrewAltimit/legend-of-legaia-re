@@ -51,6 +51,7 @@ mod picker_party_disc;
 mod picker_switch_audio_disc;
 mod player_one_shot_clip_disc;
 mod player_tilt_live_disc;
+mod prop_player_turn_spot_disc;
 mod rayman_collapse_audio_disc;
 mod record_shot_release_disc;
 mod restore_field_bgm_disc;
