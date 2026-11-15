@@ -164,6 +164,7 @@ mod equip_party_compare;
 mod equip_select;
 mod escape;
 mod escape_timer;
+mod esm_release;
 mod euler_rot;
 mod face_anim;
 mod far_arm_clip;

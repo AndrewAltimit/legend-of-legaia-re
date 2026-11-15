@@ -135,6 +135,15 @@ pub struct CastActorState {
     /// tests through `0x80084140 + (id - 1) * 0x414 + 0x6BC` before it marks
     /// the victim (`0x801F6F80..0x801F6F98`).
     pub numb_guard: bool,
+    /// Read-only: the playing clip's node cursor as a whole keyframe,
+    /// `node[+0x68]` shifted `<< 16 >> 20` (signed), with the node at
+    /// `actor[+0x22C]`. A module reads it before the pass's anim tick
+    /// advances it.
+    pub anim_frame: i16,
+    /// Read-only: the playing entry's stream frame count,
+    /// `node[+0x4C][+0x88][1]` - the byte the anim tick's natural end
+    /// compares the cursor against (`FUN_80047430` `0x80047A48..0x80047A60`).
+    pub anim_frames: u8,
 }
 
 impl CastActorState {
