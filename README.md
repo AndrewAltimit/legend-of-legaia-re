@@ -38,7 +38,7 @@ One engine runs behind every host. The simulation crates carry no GPU, windowing
 
 ## Three ways to port a PS1 game
 
-Most PS1 ports lately are static recompilations, and for good reason: the whole game runs early, with its retail behaviour nearly for free. This project takes the third route, **reimplementation**: a new engine that loads the game's data and is held to retail by measurement rather than by running the original code.
+Static recompilation has become a fast route to a PS1 port, and a strong one: the whole game runs early, with its retail behaviour nearly for free. Matching decompilation is the route that proves what the code says. This project takes the third route, **reimplementation**: a new engine that loads the game's data and ships none of the original code, held to retail by measurement. Part of that measurement runs the original's own routines, off your disc and inside the test suite, beside the Rust that ports them ([one routine, end to end](docs/porting-by-reimplementation.md#one-routine-end-to-end)).
 
 <p align="center">
   <picture>
