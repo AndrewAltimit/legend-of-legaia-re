@@ -1331,6 +1331,19 @@ draws a pass re-deal the bolts. What the scan still lists is the burning body of
 Flame arms (open), Hyper Crush's ribbon arm 6, whose counts follow the projection and step up
 a pass apart from retail's, Hyper Lightning's arm 7 and Rolling Flare's arm 4.
 
+The films that read low on `--retail-steps` alone are mostly the stream, not the law. On
+`--retail-steps --rand-track` Megaton Press reads `.839` to `.957`, Ultra Charge `.874` to
+`.990`, Gigaton Press `.859` to `.928` and Rogue Thunder `.853` to `.917`: their rocks, rays
+and bolts are dealt off `rand()`, and a replay whose stream is its own deals them elsewhere
+(Gigaton Press's first hit lands `403` against retail's `402`, and a rock stands in front of
+the camera where retail's does not). Water Hazard (`.879`) and Hyper Crush (`.908` to `.912`)
+hardly move: their residuals are the law's. The cue channel's two plain-seat losses are the
+same kind. Final Crisis (`cort_evolved_card_pre_doomsday__B4`) rolls Noa's hit `3090` or more
+on the plain seat, where retail's roll leaves her `203`, so her dead branch's reaction `7`
+sounds `0x10` in arm 6; Fatal Decision's plain-seat outcome takes arm 11's reaction and its three cues
+where retail's goes from arm 10 straight to arm 12. On
+`--retail-steps` both films hold retail's rolls, its HP and its cues exactly.
+
 The lowest film is not the cast's code. `garmel_zeto_pre_call_wave_all` (`.448`,
 arm 2 `.40`) injects `--target 8`, which no retail pick writes: Zeto's AI arm queues Call Wave
 on its own seat (`+0x1DD = s7 + 3` at `0x801EB9AC`) and only Big Wave on the party
