@@ -1242,6 +1242,26 @@ No other lone film moves and the cue score holds `1.000`. Of the full-party film
 Barra pair moves less than `.001` and the tower Iota `.8043` to `.8038`: its arm 3 runs
 `65` step-`1` frames in that fight, which no lone row reads.
 
+The Done band of every Seru film whose cast levels its spell carries the
+magic-level banner, which the port drew landed from its raise. Its record glides down from
+above the top edge over sixteen frames as every spawner element does
+([battle HUD](../subsystems/battle-hud.md#the-full-width-message-banner)); with the glide
+the 22 films that raise it read `.0004` to `.0021` higher plain and on retail's steps
+(`.9610` to `.9617` over the set), and the seven Ra-Seru films, which raise none, do not
+move.
+
+The full-party Gimard film's numeral reads `170` where retail's reads `181`. On
+`--rand-track` it reads `181`: the roll draws retail's words once each pass is seated on
+them, so the numeral follows the pass count ahead of it, not the roll.
+
+What holds the band's last states (`0x37`, `0x38`, `0x50`, `.72` to `.90` over two to five
+pairs a film) besides the banner is the summon return's camera. On Aluru's recording the
+pitch opens at `108` on `0x37`'s first frame and eases to `0` (`81`, `54`, `39`, `27`, ..)
+while TR z holds `4915` three more frames; the port's pitch stays `0` and its TR z eases
+from the first. Mushura's and Viguro's part on yaw (`256` against `3008`, `3670` against
+`18`). The state's case-6 call runs every pass with style `1` (`0x801E4D5C..0x801E4D6C`);
+which pose it arms from is not traced.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
@@ -1287,7 +1307,9 @@ seats' `+0x1DA` / `+0x1DC` names the stores (`0x801F765C`, `0x801F7674`) and the
 (`0x80047A40`) on one pass. With the release the engine's get-ups end on retail's
 cursors in both of sweep 1's passes. The film's image falls `.819` to `.803` (arms 15,
 16 and 26): the members stand up where the battle seated them, near the lens, where
-retail's stand small at arm 0's row; the image waits on arm 0's seats. Without the
+retail's stand small at arm 0's row. With arm 0's row, the arms 12..15 slide and arm 21's
+caster seat in ([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)) the
+film reads `.8035` to `.8191` plain and `.8059` to `.8215` on retail's steps. Without the
 release every word after arm 13 followed from the fourth child: the next sweep's evade
 roll fell on another target, and arms 22, 23 and 27 (`.51`, `.76`, `.52`) stood on the
 parted stream; the words behind arm 13 are not yet re-read against the watch recording.
