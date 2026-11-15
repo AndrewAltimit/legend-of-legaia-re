@@ -817,6 +817,9 @@ impl RetailObs {
             env.push(("LEGAIA_SEAT_CURVE_BIAS", bias.to_string()));
         }
         env.push(("LEGAIA_SEAT_FRAME_STEP", self.frame_step().to_string()));
+        // ... and holds it: the frame-cost model is play's estimate, the
+        // state's step a measurement (`run_engine`'s seat).
+        env.push(("LEGAIA_FIELD_FRAME_COST", "0".to_string()));
         if let Some(f) = self.page_mark {
             env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
         }

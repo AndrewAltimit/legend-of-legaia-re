@@ -167,6 +167,15 @@ impl WalkFilm {
             if let Some((wait, _)) = retail.step_bytes.filter(|b| b.0 > 0) {
                 world.clock.pass_wait = Some(wait.max(world.clock.frame_step_floor));
             }
+            // The frame-cost model, where it prices the field, carries the
+            // change from the state's measured cost, not its own level
+            // (`World::anchor_field_frame_cost`). A harness seat;
+            // `LEGAIA_RC_NO_COST_ANCHOR=1` runs the model as play does.
+            if world.toggles.field_frame_cost
+                && std::env::var_os("LEGAIA_RC_NO_COST_ANCHOR").is_none()
+            {
+                world.anchor_field_frame_cost(cost);
+            }
         }
         let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
         let g = &mut session.camera.globals.0;
@@ -237,6 +246,33 @@ impl WalkFilm {
             }
             None => None,
         };
+        // `LEGAIA_RC_WALK_COST=1`: what each tick's field frame draws
+        // (`World::field_frame_features`) beside the step it runs at
+        // (`engine.cost.csv`), the engine side of a film's `frame_cost` column.
+        let mut cost = match std::env::var_os("LEGAIA_RC_WALK_COST") {
+            Some(_) => {
+                // The state's own frame-time ring beside it: the retail cost
+                // a state with no film of its own still carries.
+                let mut r = self.out.clone();
+                r.set_extension("ring.txt");
+                std::fs::write(
+                    &r,
+                    format!(
+                        "history={:?}\nstep_bytes={:?}\n",
+                        retail.frame_history, retail.step_bytes
+                    ),
+                )?;
+                let mut p = self.out.clone();
+                p.set_extension("cost.csv");
+                let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
+                writeln!(
+                    w,
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost"
+                )?;
+                Some(w)
+            }
+            None => None,
+        };
         for t in 0..self.ticks {
             let pad = self.pad_at(t);
             session.host.world.input.set_pad(pad);
@@ -262,6 +298,33 @@ impl WalkFilm {
                     })
                     .collect();
                 writeln!(w, "{t},{},{},{}", pool.live, pool.cap, recs.join(" "))?;
+            }
+            if let Some(w) = cost.as_mut() {
+                let world = &session.host.world;
+                let f = world.field_frame_features().unwrap_or_default();
+                writeln!(
+                    w,
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    u8::from(world.clock.game_tick_fired),
+                    world.clock.frame_step,
+                    f.decoration_draws,
+                    f.decoration_prims,
+                    f.decoration_verts,
+                    f.ground_cells,
+                    f.placed_draws,
+                    f.placed_prims,
+                    f.placed_verts,
+                    f.npcs,
+                    f.fog,
+                    f.parts,
+                    world.actors.iter().filter(|a| a.active).count(),
+                    world.active_scene_label,
+                    f.decoration_quads,
+                    f.decoration_lit,
+                    f.placed_quads,
+                    f.placed_lit,
+                    world.clock.frame_cost.unwrap_or(-1),
+                )?;
             }
             if session.host.world.active_scene_label != n0_scene {
                 n0 = partition0(session);
@@ -324,6 +387,9 @@ impl WalkFilm {
             )?;
         }
         session.host.world.input.set_pad(0);
+        if let Some(w) = cost.as_mut() {
+            w.flush()?;
+        }
         f.flush()?;
         a.flush()?;
         d.flush()?;
