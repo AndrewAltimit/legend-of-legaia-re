@@ -82,7 +82,7 @@ impl World {
     /// Nothing counts down in a zone ramp, so a record never completes - it
     /// tracks the player and runs backwards when he walks back. Retail clears
     /// them on the MAN loader's retire sweep, which is
-    /// [`World::reset_for_scene_entry`] here. Two arms do drop a record:
+    /// [`World::man_load_actor_reset`] here. Two arms do drop a record:
     /// an out-of-range destination width (retail sets the actor's own
     /// `+0x10 |= 8` yield bit instead of writing) and a degenerate `z_lo ==
     /// z_hi` window (retail divides by the zero span and executes the MIPS

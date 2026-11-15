@@ -1146,6 +1146,17 @@ fn a_scene_load_clears_the_tile_board_with_the_control_block() {
     );
 }
 
+#[test]
+fn a_scene_load_zeroes_the_camera_scene_offset_with_the_control_block() {
+    // `sh zero,0x4a(v0)` at `0x8003A0D4`: the block's `+0x4A` is the camera
+    // vertical offset op `4C 49` writes, and the block is re-allocated per
+    // scene, so the next scene does not ease toward the last one's offset.
+    let mut world = World::new();
+    world.camera.scene_offset = 0x120;
+    world.reset_scene_control_block();
+    assert_eq!(world.camera.scene_offset, 0);
+}
+
 /// The swirl (formation slot 0 `0xB5`) runs retail's 252-frame transition;
 /// every other style keeps 132. The session arms before the style is known,
 /// so the world rebases it on the transition's first frame - and the entity

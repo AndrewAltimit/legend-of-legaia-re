@@ -204,6 +204,7 @@ mod scene_change_drops_prop_run_disc;
 mod scene_clut_row_packing_disc;
 mod scene_destinations_disc;
 mod scene_encounter_formations_disc;
+mod scene_entry_resets_disc;
 mod scene_host_effect_pool_underlay_disc;
 mod scene_live_disc;
 mod scene_resources_real_data;

@@ -544,6 +544,21 @@ impl World {
         self.presentation.fx.clear();
         self.presentation.fx_frame = Default::default();
         self.field_vm.eased_moves.clear();
+        // The second sweep's own class: `FUN_80037018` is the camera-register
+        // zone ramp's handler (op `43 03..06`), whose records the engine holds
+        // off the pool on `camera.register_ramps`. The sweep at
+        // `0x8003B414..0x8003B43C` ORs `+0x10 |= 8` into every node whose
+        // `+0x0C` is that handler, so no ramp of the last scene outlives the
+        // load. The four registers it wrote go back to the zone-miss set the
+        // file starts from: retail's registers ARE the zone block's words
+        // (`FUN_801DBC20` stores all four at `0x801DBD90..0x801DBE84`), which
+        // the new scene's first zone query rewrites. Kept, Ratayu's pitch
+        // ramp (`retockin` `P1[0]`) went on writing pitch in every later
+        // scene, and its last value overrode each next scene's zone pitch on
+        // the landing frame.
+        // REF: FUN_80037018, FUN_801DBC20
+        self.camera.register_ramps.clear();
+        self.camera.registers = Default::default();
         // The MAN loader resets the live audio level `_DAT_8007B910` to the
         // configured one, so a field script's duck (`4C 4D`) ends at the door.
         self.audio.field_duck_pct = Some(100);
@@ -756,6 +771,30 @@ mod tests {
         w.man_load_actor_reset();
         assert!(!w.presentation.fx.is_active(), "every widget freed");
         assert!(w.presentation.fx_frame.is_empty(), "nothing left to draw");
+    }
+
+    /// The MAN loader's second sweep retires every `FUN_80037018` node, the
+    /// camera-register zone ramp (`0x8003B414..0x8003B43C`), and the next
+    /// scene's zone query rewrites the four registers. A ramp spawned by
+    /// `retockin`'s entry script must not reach the next scene.
+    #[test]
+    fn a_scene_load_retires_the_camera_register_ramps() {
+        use legaia_engine_field::register_ramp::{
+            CameraRegisterFile, RampSlot, spawn_register_ramp,
+        };
+        let mut w = World::default();
+        // `retockin` P1[0]: `43 03 0E 5A 13 5F 58 01 A0 00`.
+        let ramp = spawn_register_ramp(3, [0x0E, 0x5A, 0x13, 0x5F], 0x158, 0xA0).unwrap();
+        w.camera.register_ramps.push(ramp);
+        w.camera.registers.set(RampSlot::Dat8007B60C, 0xA0);
+        assert!(w.camera.registers.written());
+        w.man_load_actor_reset();
+        assert!(w.camera.register_ramps.is_empty(), "the ramp is retired");
+        assert_eq!(w.camera.registers, CameraRegisterFile::default());
+        assert!(
+            !w.camera.registers.written(),
+            "the next scene's zone owns the pitch"
+        );
     }
 
     #[test]
