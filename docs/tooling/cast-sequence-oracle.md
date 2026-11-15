@@ -470,12 +470,6 @@ A recording that opens on a state's own instant can open on a frame whose pass r
 the first row; no `rand()` draw lands in it (every battle pass makes the frame driver's
 discarded draw), and the track leaves it out. Handed on, its step ran Lip King's first
 arm-1 pass on the leftover step `3`, and Kiss of Death read `.899` where it reads `.993`.
-The same quiet first frame comes from a pass that ran between the state's instant and the
-first row, its draw already in that row; there the state's seed word (`0x80009010`)
-differs from the first row's, the engine seated on the state runs that pass, and the frame
-stays. Left out, every pass took the next frame's step: `nilboa_neo_grude_strike`'s swing
-stepped `4` a pass before retail's step-`4` frame and ended a pass late, and
-`retona_king_frog_strike`'s block ended a pass late and slid Vahn `12` units on. A harness seat.
 
 `body.csv` and `seats.csv` are read at another point in the vsync than `rates.csv`, so on a
 commit vsync the clip column can still name the outgoing clip while the cursor is already
