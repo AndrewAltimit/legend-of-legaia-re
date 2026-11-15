@@ -266,11 +266,22 @@ impl World {
         let mut live = std::mem::take(&mut self.cutscene.elements);
         // The fog pool the ambient emitter spawns into (`FUN_801D629C`),
         // borrowed apart from the element list for the spawn closure. Its
-        // inputs are the walk-region box the spawner
-        // clips against (`0x1F800384..87`) and the player position the
-        // emitter's scene arm centres its bursts on (`_DAT_80089118/20`
-        // hold the negated player X/Z; the follow camera's focus).
+        // inputs are the walk-region box the spawner clips against
+        // (`0x1F800384..87`) and the camera translation the emitter's scene
+        // arm centres its bursts on: `-(_DAT_80089118 >> 7)` and
+        // `-(_DAT_80089120 >> 7)` (`0x801D6194..0x801D61B0`), the negated
+        // focus words whatever camera wrote them. Under the follow camera
+        // that is the player; under a scripted shot it is the shot's focus,
+        // and `taiku2_field_door_hop`'s door cut stands it `(6802, 2514)`
+        // with the player at `(6976, 2112)`. The pair the cull view carries
+        // is those words; before the first compose publishes one, the
+        // player stands in.
         let [player_x, _, player_z] = self.fog_player_world_pos();
+        let centre = self
+            .npcs
+            .cull_view
+            .as_ref()
+            .map_or([-player_x, -player_z], |v| v.focus_stored);
         let fog = &mut self.fog;
         // `_DAT_1F800394 & 1`, the overworld bit: the emitter's dense profile
         // and the spawner's overworld arm both key on it.
@@ -304,8 +315,7 @@ impl World {
                             y_max,
                         };
                     }
-                    scene.camera_x = -player_x;
-                    scene.camera_y = -player_z;
+                    [scene.camera_x, scene.camera_y] = centre;
                     emitter.step_with(scene, &mut rand, |p, rand| {
                         fog.spawn(p.x, p.y, window, trig, rand);
                         frame.particles.push(p);
