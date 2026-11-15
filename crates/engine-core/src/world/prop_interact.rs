@@ -1443,6 +1443,19 @@ fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
     }
 }
 
+/// The actor-word ops a talk routes onto a placed object
+/// ([`World::cross_context_object_prop`]): the clip-control word `+0x62`
+/// (`2B` / `2C` / `2D`, `4C 35` / `4C 36`), the rate `+0x6A` (`4C 41`) and
+/// the clip-cursor test `4C 8C` (`+0x68`). The flag word's `B1` / `B2` reach
+/// the object through the talk's channel poke already.
+pub(in crate::world) fn is_talk_object_word_op(bytecode: &[u8], pc: usize) -> bool {
+    match bytecode.get(pc).map(|b| b & 0x7F) {
+        Some(0x2B..=0x2D) => true,
+        Some(0x4C) => matches!(bytecode.get(pc + 2), Some(0x35 | 0x36 | 0x41 | 0x8C)),
+        _ => false,
+    }
+}
+
 impl World {
     /// Step the player one frame of a script walk-to-tile leg (op `0x47`
     /// on the player, `C7 F8 <tx> <tz> <mode>`), on the floor under every

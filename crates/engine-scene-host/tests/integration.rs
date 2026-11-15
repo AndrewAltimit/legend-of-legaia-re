@@ -25,6 +25,7 @@ mod battle_tutorial_disc;
 mod bgm_midscene_change_disc;
 mod bgm_swap_commit_disc;
 mod bgm_track_word_disc;
+mod bylon_west_voz_monk_disc;
 mod casino_coin_counter_disc;
 mod cave01_naming_lead_mesh_disc;
 mod cave01_terra_talk_disc;
