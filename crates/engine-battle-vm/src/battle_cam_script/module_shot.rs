@@ -507,21 +507,29 @@ impl BattleCamera {
     }
 
     /// Drop the module's shot on the way out of its states.
-    pub(super) fn release_module_shot(&mut self, state: u8) {
+    pub(super) fn release_module_shot(&mut self, state: u8, prev: u8) {
         if self.escape_shot {
             return;
         }
         if !SUMMON_MODULE_STATES.contains(&state) && state != 0x34 && state != CAPTURE_MODULE_STATE
         {
-            // The done arm's case 8 (Aluru `0x801F8894`, Viguro `0x801F78D4`)
-            // is armed on the pass that ends the band. Retail's walker takes
-            // its first step in that frame, and the next state's case 6 builds
-            // from the walked pose: Aluru's pitch reads `108` there, a
-            // quarter of the way to the death framing's `0x140`.
-            if self.module_end_frame_fresh {
-                self.step_module_shot();
+            // The pass that ends the summon band is `0x36`'s: its stager tick
+            // returns done and the state restores the seats, with no framing
+            // call of its own (`0x801E4CA8..0x801E4D4C`). The walker steps
+            // whatever tween stands - the module's last shot, or the done
+            // arm's case 8 (Aluru `0x801F8894`, Viguro `0x801F78D4`) armed on
+            // that pass - and `0x37`'s case 6 builds from the walked pose on
+            // the next pass: Aluru's pitch reads `108` there, a quarter of
+            // the way to the death framing's `0x140`.
+            if SUMMON_MODULE_STATES.contains(&prev) || self.module_end_frame_fresh {
+                if self.module_glide.is_some() {
+                    self.step_module_shot();
+                } else {
+                    self.step_front_glide();
+                }
                 self.end_frame_owns_pass = true;
             }
+            self.module_end_frame_fresh = false;
             self.module_glide = None;
         }
     }
