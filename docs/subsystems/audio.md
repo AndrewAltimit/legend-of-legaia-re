@@ -714,6 +714,19 @@ ghidra/scripts/funcs/800266e0.txt`, `80064370.txt`, `800641ec.txt`,
 `8006282c.txt`, `8006275c.txt`, `80062880.txt`, `800628f0.txt`,
 `80062f98.txt`.
 
+The replay also re-applies the audio level. `FUN_80026478` sets the slot's
+volume to `0` before it plays and to `_DAT_8007B910 >> 1` after
+(`FUN_8002657C` at `0x800264D4` and `0x80026504`, an `SsSeqSetVol` behind a
+cached-value test), so a score a [timed release](#the-timed-release-is-a-scheduled-bgm-pause)
+faded and stopped comes back at full volume; the replay leaves a running slide's
+flag alone (`FUN_800628F0` clears `0x200` and `0x4` only). `BgmDirector::resume`
+sets the sequencer's volume to the ducked level after the rewind. `bylon`
+`P2[13]`, Master Zopu's dinner talk, is the case that needs it: it fades the score
+(`5 (200)`) under "I will tell everyone", replays it with `2 · 4` when the hall
+cheers, and fades it for good after the meal (`5 (200)` at `+0x1377`). A replay
+that kept the faded volume ran silent from the cheer to the scene change
+(disc-gated `engine-session/tests/bylon_dinner_disc.rs`).
+
 Sub-op `3` is the pause and `4` the replay; the legacy labels have them the
 other way round, and routing by those labels silences the score where retail
 brings it back. The battle and minigame restores that stop the score when no

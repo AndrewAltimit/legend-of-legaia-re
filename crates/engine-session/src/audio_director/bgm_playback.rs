@@ -255,12 +255,27 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// Sub-op `4`: retail's re-attach replays the slot's sequence from its
     /// start (`FUN_800628F0` resets the read cursor before it plays), so the
     /// track rewinds, then the gate opens.
+    ///
+    /// The re-attach also re-applies the audio level: `FUN_80026478` ends on
+    /// `FUN_8002657C(_DAT_8007B910 >> 1, slot)` (`0x800264F0..0x80026508`),
+    /// an `SsSeqSetVol` of the halved level. So a track a timed release
+    /// (sub-op `5`) faded to nothing comes back at full volume: `bylon`
+    /// `P2[13]` fades the dinner score under "I will tell everyone" and
+    /// replays it with `2 · 4` when the hall cheers. Kept at the faded
+    /// volume, the replay ran silent to the end of the scene.
+    ///
+    /// REF: FUN_80026478 (the replay and the level re-apply), FUN_8002657C
     fn resume(&mut self) {
         if self.hold_for_switch(|| super::scene_switch::HeldCommand::Resume) {
             return;
         }
         self.commands.push(super::AudioCommand::BgmResume);
         self.audio.rewind_sequencer();
+        self.audio
+            .set_sequencer_master_vol(legaia_engine_audio::duck::ducked_master_vol(
+                self.master_vol,
+                self.duck_level,
+            ));
         self.audio.set_sequencer_paused(false);
         self.audio.with_pcm_bus(|b| {
             b.rewind_music();
