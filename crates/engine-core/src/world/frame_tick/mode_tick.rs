@@ -432,7 +432,20 @@ impl World {
             // on the same tick. A clock of their own drifted half a pass off
             // the walk, and a part's `rand()` op then drew on a vsync where
             // retail draws nothing (`deroa`'s, every second pass).
-            if !self.ambient.fx.is_empty() {
+            //
+            // Only while the field's lists are walked. A mode switch into a
+            // fight or a minigame re-seeds the actor free stack and the list
+            // sentinels (`FUN_8001E1B4`, `0x8001E324..0x8001E364`), and the
+            // return to the field skips the re-seed and brings the parked
+            // pool back whole (`0x8001E308` / `0x8001E31C`): the parts stand
+            // still while the field is away. Banked through a fight, the
+            // first field frame after it ran up to 600 of their passes at
+            // once, every `rand()` op among them. The dance hall's tree is
+            // its own (`World::stage_dance_ambient`) and does tick.
+            // REF: FUN_8001E1B4
+            let field_lists_walk =
+                self.field_pool_drawn() && !(self.in_minigame() && self.mode != SceneMode::Dance);
+            if !self.ambient.fx.is_empty() && field_lists_walk {
                 self.ambient.pending_game_ticks = (self.ambient.pending_game_ticks + 1).min(600);
             }
             self.tick_actor_physics();

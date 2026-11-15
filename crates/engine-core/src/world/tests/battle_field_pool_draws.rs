@@ -59,3 +59,25 @@ fn field_ambient_parts_draw_on_the_field_and_not_in_a_battle() {
         "back after the battle"
     );
 }
+
+/// The parked pool does not tick: a mode switch into a fight re-seeds the
+/// lists (`FUN_8001E1B4`), so no field part's pass is banked for the return,
+/// which would have run them all on its first frame.
+#[test]
+fn field_ambient_parts_bank_no_passes_through_a_battle() {
+    let mut w = World::new();
+    w.ambient.fx.push(mist_sheet());
+    w.mode = SceneMode::Battle;
+    for _ in 0..120 {
+        let _ = w.tick();
+    }
+    assert_eq!(
+        w.ambient.pending_game_ticks, 0,
+        "nothing banked in the fight"
+    );
+    w.mode = SceneMode::Field;
+    for _ in 0..8 {
+        let _ = w.tick();
+    }
+    assert!(w.ambient.pending_game_ticks > 0, "the field's passes bank");
+}
