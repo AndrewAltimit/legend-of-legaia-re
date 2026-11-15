@@ -532,7 +532,6 @@ pub const CAST_ARM_COST_TAILS: &[(u32, u8, u16, u8)] = &[
     (916, 19, 0, 1),
     (916, 19, 1, 4),
     // barra
-    (917, 3, 0, 1),
     (917, 3, 1, 2),
     (917, 3, 3, 3),
     (917, 3, 4, 2),
@@ -614,8 +613,6 @@ pub const CAST_ARM_COST_TAILS: &[(u32, u8, u16, u8)] = &[
     (920, 10, 37, 4),
     (920, 10, 39, 2),
     // iota
-    (921, 3, 0, 1),
-    (921, 3, 1, 2),
     (921, 3, 8, 1),
     (921, 11, 15, 3),
     (921, 11, 16, 2),
@@ -1430,6 +1427,12 @@ mod tests {
         assert_eq!(cast_arm_frame_step_on_pass(933, 3, 0, pcsx), Some(2));
         assert_eq!(cast_arm_frame_step_on_pass(933, 3, 32, pcsx), Some(3));
         assert_eq!(cast_arm_frame_step_on_pass(933, 3, 33, pcsx), Some(4));
+        // A frame that overruns its step-1 vsync is read on its own entry:
+        // Iota's arm 3 opens on a step-2 frame, Barra's on a step-3 one.
+        assert_eq!(cast_arm_frame_step_on_pass(921, 3, 0, pcsx), Some(2));
+        assert_eq!(cast_arm_frame_step_on_pass(921, 3, 8, pcsx), Some(1));
+        assert_eq!(cast_arm_frame_step_on_pass(917, 3, 0, pcsx), Some(3));
+        assert_eq!(cast_arm_frame_step_on_pass(917, 3, 1, pcsx), Some(2));
         // An arm with no row keeps its table step, an unread arm stays unread.
         assert_eq!(cast_arm_frame_step_on_pass(934, 20, 500, pcsx), Some(4));
         assert_eq!(cast_arm_frame_step_on_pass(903, 0, 0, pcsx), None);
