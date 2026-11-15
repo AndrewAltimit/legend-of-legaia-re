@@ -1,8 +1,8 @@
 //! Per-scene camera state a scene change must not carry.
 //!
 //! Ratayu (`retockin`) is the disc's one field scene whose entry script
-//! spawns a camera-register zone ramp (`P1[0]`: `43 03`, the pitch register
-//! `0x8007B60C` over tiles `14..19` x `90..95`). The MAN loader's second
+//! spawns a camera-register zone ramp (`P1[0]`: `43 03`, the GTE `H` register
+//! `0x8007B618` over tiles `14..19` x `90..95`). The MAN loader's second
 //! retire sweep marks every `FUN_80037018` node (`0x8003B414..0x8003B43C`), so
 //! the ramp ends at the door, and the next scene's zone query rewrites the
 //! four registers it fed. The same scene authors op `4C 49`, the camera
@@ -53,10 +53,13 @@ fn ratayu_camera_ramps_and_offset_end_at_the_door() {
             break;
         }
     }
-    assert!(armed.is_some(), "retockin's P1[0] spawns its pitch ramp");
+    assert!(
+        armed.is_some(),
+        "retockin's P1[0] spawns its projection ramp"
+    );
     // Stand in for a ramp write and an authored offset the walk would make.
     host.world.camera.registers.set(
-        legaia_engine_field::register_ramp::RampSlot::Dat8007B60C,
+        legaia_engine_field::register_ramp::RampSlot::Dat8007B618,
         0xA0,
     );
     host.world.camera.scene_offset = 0x120;

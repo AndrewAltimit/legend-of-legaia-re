@@ -552,10 +552,10 @@ impl World {
         // load. The four registers it wrote go back to the zone-miss set the
         // file starts from: retail's registers ARE the zone block's words
         // (`FUN_801DBC20` stores all four at `0x801DBD90..0x801DBE84`), which
-        // the new scene's first zone query rewrites. Kept, Ratayu's pitch
-        // ramp (`retockin` `P1[0]`) went on writing pitch in every later
-        // scene, and its last value overrode each next scene's zone pitch on
-        // the landing frame.
+        // the new scene's first zone query rewrites. Kept, Ratayu's
+        // projection ramp (`retockin` `P1[0]`, GTE `H` at `0x8007B618`) went
+        // on writing `H` in every later scene, and its last value overrode
+        // each next scene's zone `H` on the landing frame.
         // REF: FUN_80037018, FUN_801DBC20
         self.camera.register_ramps.clear();
         self.camera.registers = Default::default();
@@ -786,14 +786,14 @@ mod tests {
         // `retockin` P1[0]: `43 03 0E 5A 13 5F 58 01 A0 00`.
         let ramp = spawn_register_ramp(3, [0x0E, 0x5A, 0x13, 0x5F], 0x158, 0xA0).unwrap();
         w.camera.register_ramps.push(ramp);
-        w.camera.registers.set(RampSlot::Dat8007B60C, 0xA0);
+        w.camera.registers.set(RampSlot::Dat8007B618, 0xA0);
         assert!(w.camera.registers.written());
         w.man_load_actor_reset();
         assert!(w.camera.register_ramps.is_empty(), "the ramp is retired");
         assert_eq!(w.camera.registers, CameraRegisterFile::default());
         assert!(
             !w.camera.registers.written(),
-            "the next scene's zone owns the pitch"
+            "the next scene's zone owns H"
         );
     }
 
