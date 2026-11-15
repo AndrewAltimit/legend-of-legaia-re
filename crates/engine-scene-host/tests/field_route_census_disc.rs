@@ -405,7 +405,9 @@ fn field_route_models() {
         let ci = legaia_engine_field::field_channels::resolve_target(v, id).unwrap();
         let key = v[ci].placement_index;
         eprintln!(
-            "id {id:#x} key {key} own slots {:?} live {:?}",
+            "id {id:#x} key {key} at ({}, {}) own slots {:?} live {:?}",
+            v[ci].ctx.world_x,
+            v[ci].ctx.world_z,
             host.world.npcs.object_pack_slots.get(&(key as u16)),
             host.world.object_live_models().get(&key)
         );
