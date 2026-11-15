@@ -609,8 +609,10 @@ to the end of its talk and touches every prop, and lists each op a runner
 stepped on its fall-through context. The routes it showed missing, each pinned
 in `crates/engine-scene-host/tests/field_context_routing_disc.rs`:
 
-- `koin1` `P1[0]` re-stages six objects with `CC 02..07 50 <model>`; on the
-  system context the objects kept their `.MAP` meshes.
+- `koin1` `P1[0]` re-stages six objects with `CC 02..07 50 <model>`, the
+  stage's light rig over the hall (models `98..103`, none of them the mesh
+  its object's `.MAP` draw carries); on the system context the objects kept
+  their `.MAP` meshes and the stage stood dark.
 - `town0e` `P1[0]` installs an ambient tree on each of four villagers
   (`B4 07 30 01` behind `CC 07 8C 05 00`); on the system context the trees
   staged at the system context's seat.
