@@ -159,6 +159,20 @@ fn scene_entry_drops_a_running_player_scale_ramp() {
     assert_eq!(w.actors[0].move_state.field_72, 0x1000);
 }
 
+/// The player the field initialiser allocates carries no `+0x8E` mirror: a
+/// lift a scene change cut short does not hold the next scene's player at
+/// its height (`World::field_actor_mirrored_y`).
+#[test]
+fn scene_entry_drops_an_eased_moves_mirror_latch() {
+    let mut w = field_world();
+    w.locomotion.eased_mirror_y = Some(-0x80);
+    assert_eq!(w.field_actor_mirrored_y(0), Some(0x80));
+    w.man_load_actor_reset();
+    w.install_field_player(0);
+    assert_eq!(w.locomotion.eased_mirror_y, None);
+    assert_eq!(w.field_actor_mirrored_y(0), None);
+}
+
 /// The overworld walk lands retail's `dt = 3` displacement over time: the
 /// slow step `(5 * 0xC00) >> 12 = 3`, times the frame step, rounded up to
 /// `10` by the 2-unit stepper, every three vsyncs - `130` units per `39`

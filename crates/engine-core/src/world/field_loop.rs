@@ -935,6 +935,12 @@ impl World {
         // the player on this one.
         self.locomotion.player_slot_ramps.reset_pool();
         self.locomotion.player_8e = 0;
+        // ...and so does the eased move's `+0x8E` mirror. The MAN load drops
+        // the moves themselves (`World::man_load_actor_reset`), so the tick
+        // that would take the latch down with its last move never runs: a
+        // lift that a scene change cut short held the player at its height
+        // in every scene after.
+        self.locomotion.eased_mirror_y = None;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.flags &= !PLAYER_Y_FROM_8E;
             // A shadow a script dropped (`B1 F8 15`) belongs to that scene:
