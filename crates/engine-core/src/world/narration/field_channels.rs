@@ -849,6 +849,12 @@ impl World {
                         }
                         None => {
                             let bc = &man[record_offset..];
+                            host.world.note_route_fallthrough(
+                                crate::world::route_census::RouteRunner::PlacementPrologue,
+                                u16::try_from(channels[i].placement_index).ok(),
+                                bc,
+                                pc,
+                            );
                             field_step_routed(&mut host, &mut channels[i].ctx, bc, pc)
                         }
                     }
@@ -1139,6 +1145,12 @@ impl World {
                 // here arms the bound object's morph lanes.
                 self.field_vm.executing_object = Some(c.placement_index as u16);
                 let result = {
+                    self.note_route_fallthrough(
+                        crate::world::route_census::RouteRunner::ObjectPrologue,
+                        u16::try_from(c.placement_index).ok(),
+                        bc,
+                        pc,
+                    );
                     let mut host = FieldHostImpl { world: self };
                     field_step_routed(&mut host, &mut c.ctx, bc, pc)
                 };

@@ -117,6 +117,10 @@ pub struct FieldVmState {
     /// flat record for the first object a record binds, a per-object key for
     /// the rest. `None` outside such a step.
     pub(crate) executing_object: Option<u16>,
+    /// The routing census ([`crate::world::route_census`]): when `Some`,
+    /// every op a script runner steps on its fall-through path is noted
+    /// here. `None` (the default) outside a disc sweep.
+    pub route_census: Option<Vec<crate::world::route_census::RouteCensusHit>>,
     /// Placement indices whose context a cross-context `CFLAG_SET` bit 8
     /// (`B1 <id> 08`, `+0x10 |= 0x100`) engaged: retail's per-actor tick
     /// `FUN_8003BC08` runs an engaged context through `FUN_80039B7C` from
@@ -280,6 +284,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             executing_object: None,
+            route_census: None,
             pending_engagements: Vec::new(),
             retired_placements: Default::default(),
             pending_placement_respawns: Vec::new(),

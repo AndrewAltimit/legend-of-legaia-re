@@ -1439,6 +1439,15 @@ impl World {
                     }
                     r
                 } else {
+                    host.world.note_route_fallthrough(
+                        crate::world::route_census::RouteRunner::Spawned,
+                        Some(
+                            tl.interaction_slot
+                                .map_or(tl.ctx.script_id, |s| 0x100 | u16::from(s)),
+                        ),
+                        &tl.bytecode,
+                        pc,
+                    );
                     field_step_routed(&mut host, &mut tl.ctx, &tl.bytecode, pc)
                 };
                 let (mut next_pc, kind, mut stop) = match result {

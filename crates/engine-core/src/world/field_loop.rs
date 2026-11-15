@@ -933,6 +933,11 @@ impl World {
         self.locomotion.player_8e = 0;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.flags &= !PLAYER_Y_FROM_8E;
+            // A shadow a script dropped (`B1 F8 15`) belongs to that scene:
+            // the field initializer allocates a fresh player object from its
+            // template on a load (`FUN_801D6704`, `0x801D6D68..0x801D6D7C`).
+            // REF: FUN_801D6704
+            actor.move_state.flags &= !legaia_render_kernels::drop_shadow::SHADOW_SUPPRESS_BIT;
             // ...and so do its `+0x24` / `+0x28` angles: the tweens that
             // drive them were just dropped, and a tilt the last scene left
             // would otherwise draw on this one (`World::player_draw_tilt`).
@@ -1088,6 +1093,12 @@ impl World {
         let mut ctx = std::mem::take(&mut self.field_ctx);
         let bc = std::mem::take(&mut self.field_bytecode);
         let pc = self.field_pc;
+        self.note_route_fallthrough(
+            crate::world::route_census::RouteRunner::System,
+            None,
+            &bc,
+            pc,
+        );
         let mut host = FieldHostImpl { world: self };
         // A player-aimed `+0x72` write (every kingdom map's entry script
         // opens with `CC F8 40 00 0C 00 00`) lands on the player, not on the
@@ -1253,6 +1264,36 @@ impl World {
             || op == 0xAC
             || (op == 0xCC && matches!(self.field_bytecode.get(pc + 2), Some(&(0x35 | 0x36))));
         let object_seat = op == 0xCC && self.field_bytecode.get(pc + 2) == Some(&0x51);
+        // Every other op whose arm works off `s5` lands on the actor the id
+        // names, as it does from any record: `koin1`'s entry re-stages the
+        // six cabinet objects with `CC 02..07 50 <model>`, `town0e`'s loop
+        // waits on a villager's clip cursor (`CC 07 8C 05 00`) before it
+        // installs the ambient tree at the villager (`B4 07 30 01`), and
+        // `nilboa` lifts its objects with `CC 09 42 ..`. Run on the system
+        // context, the models never changed, the cursor test always passed
+        // and the tree staged at the system context's seat.
+        // REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+        if is_resolved_actor_word_op(&self.field_bytecode, pc)
+            && let Some(ci) =
+                legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)
+            && !(clip_control && self.field_vm.channels[ci].object_bind)
+        {
+            let bc = std::mem::take(&mut self.field_bytecode);
+            let res = {
+                let mut host = FieldHostImpl { world: self };
+                step_on_resolved_channel(&mut host, ci, 0xFB, &bc, pc)
+            };
+            self.field_bytecode = bc;
+            match &res {
+                FieldStepResult::Advance { next_pc } => self.field_pc = *next_pc,
+                FieldStepResult::Yield { resume_pc } => self.field_pc = *resume_pc,
+                FieldStepResult::Halt { final_pc } => self.field_pc = *final_pc,
+                FieldStepResult::Pending { pc, .. } | FieldStepResult::Unknown { pc, .. } => {
+                    self.field_pc = *pc;
+                }
+            }
+            return Some(res);
+        }
         if op != 0xA3 && !clip_control && !object_seat {
             return None;
         }

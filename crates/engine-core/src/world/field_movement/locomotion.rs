@@ -1149,6 +1149,30 @@ impl World {
             }
             return true;
         }
+        // `B1 F8 15` / `B2 F8 15`: the player's drop-shadow suppress bit,
+        // which the renderer's shadow gate reads off the flag word
+        // (`0x8001BE20..0x8001BE48`). A scene that collapses the player to a
+        // point (`CC F8 40 00 00 ..`) raises it beside the scale, because the
+        // renderer's zero-scale early-out branches to the gate rather than
+        // past it: `opdeene`'s and `town01`'s opening records, `juui2`'s
+        // entry and `cave01`'s Seru-lesson records all hide Vahn this way.
+        // Stepped on the issuing record's own context, the bit never reached
+        // the player and the blob stayed on the floor under nobody.
+        // REF: FUN_8001B964 (0x8001BE20..0x8001BE48), FUN_801DE840 (cases 0x31 / 0x32)
+        if mask == legaia_render_kernels::drop_shadow::SHADOW_SUPPRESS_BIT {
+            let Some(actor) = self
+                .player_actor_slot
+                .and_then(|slot| self.actors.get_mut(usize::from(slot)))
+            else {
+                return false;
+            };
+            if set {
+                actor.move_state.flags |= mask;
+            } else {
+                actor.move_state.flags &= !mask;
+            }
+            return true;
+        }
         if mask != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
             return false;
         }
