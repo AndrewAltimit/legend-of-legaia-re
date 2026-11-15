@@ -1668,6 +1668,15 @@ crosses the zone. Ports: `engine-field::register_ramp` (spawn + record) +
 `World::tick_register_ramps` (the handler) + `Camera::tick_globals` (the
 consumer).
 
+Nothing counts down, so a ramp lives until the scene does. The MAN loader's
+second retire sweep (`0x8003B414..0x8003B43C` in `FUN_8003AEB0`) ORs the
+kill bit into every node whose `+0x0C` is `0x80037018`, and the next scene's
+zone query (`FUN_801DBC20`, stores at `0x801DBD90..0x801DBE84`) rewrites all
+four registers. The port does both in `World::man_load_actor_reset`: the
+records go and the register file returns to its zone-miss set. The two
+decoded sites are `retockin` (Ratayu) `P1[0]` and its ending twin
+`edretoin` `P1[0]`, the same `43 03 0E 5A 13 5F 58 01 A0 00`.
+
 Not a "sound register ramp" writing four target values over a `ticks`
 duration with a `curve`; see
 [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md).

@@ -322,6 +322,10 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `MenuRuntime::open_scene_inn`, `open_inn` | retail has no inn screen: a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), which both hosts run; the prompt is a tooling entry |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
+| `BakaUi::player_char` | deleted: nothing wrote it, so the play page's minigame JSON named Vahn for every fighter, and no page script read the key; the duel draws its fighters from the engine's own scene surface |
+| `PlayWindowApp::persist_cards` | the headless window's opt-in; the play window writes cards whenever persistence is not disabled |
+| `StaticQuestWorld::pack_bosses`, `pack_formations` | a quest-test double; `World` answers the same trait from the loaded pack |
+| `SeqChannel::alt_start`, `loop_marker`, `repeat_target`, `chain_channel` | the libsnd channel mirror `decode_event` / `track_end` read in `note-trace` only; BGM plays through `Sequencer`, which holds a `SeqChannel` for its volume slide alone |
 ### Open rows
 
 - `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested` are the
@@ -344,6 +348,36 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   ramped its lanes to zero and the grey gate draws it. Whether that frame is
   darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
   fade frame before anything is carried across frames.
+
+### State a scene change carries
+
+The same shape from the other side: a field the old scene wrote that the
+new one reads before writing. Retail re-allocates its actor lists, the scene
+control block and the player on a load, so their words start clean; the
+engine keeps one `World`, so every such field needs an explicit reset at the
+retail seat. `SceneHost::load_scene` and `enter_field_scene` are the two
+seats, and the MAN loader's sweep is `World::man_load_actor_reset`.
+
+| Field | Retail reset | What a player saw |
+|---|---|---|
+| `CameraRig::register_ramps`, `registers` | the MAN loader's sweep of `FUN_80037018` nodes (`0x8003B414`); the zone query rewrites the four registers (`FUN_801DBC20`) | after Ratayu, the next scene landed on its projection ramp's last `H` |
+| `CameraRig::scene_offset` | the control-block reset's `sh zero,0x4a` (`0x8003A0D4`) | a scene with no `4C 49` eased the fog toward the last scene's offset |
+| `CameraRig::offset_ease` | the field initialiser's `0x3C` (`0x801D67B8`) | the same, from the accumulator's side |
+| `FieldVmState::object_glide_legs` | object actors re-spawn with the bind list | a leg in flight walked the next scene's object of the same record and cleared its halt |
+| `FieldNpcState::tilts` | the actor's own `+0x24` / `+0x28` | a `juui1` tilt drew on the next scene's NPC in that slot |
+| `FieldLocomotion::eased_mirror_y` | the fresh player (`0x801D6D68`) carries no `+0x8E` mirror | a lift cut short by a door held the player's height in every later scene |
+
+Still open: the property-ramp pool's timed writers (`floor_ladder_ramps`,
+`CameraRig::offset_ramps`) outlive a load, and so does retail's pool, whose
+reset `FUN_8003CDA8` nothing calls; whether its driver actor survives the
+list re-allocation decides whether a ramp in flight finishes in the next
+scene. `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
+`_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
+`uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
+stands in a bridge box and writes `4C CF 00 00` outside them, so a door
+taken from inside a box carries the pin - in the port, and in retail too
+unless an undumped routine clears the pair. A capture across that door
+settles it.
 
 ### Host hooks nothing implements
 
