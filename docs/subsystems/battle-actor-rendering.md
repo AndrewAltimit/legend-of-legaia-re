@@ -379,7 +379,7 @@ Bank 2 is the tint bank (bank 1) with two handlers swapped. Kinds `12..=17` shar
 
 `battle_melee_hit_spark` shows it: Vahn's two ghosts carry his texture's light and dark (skin reads near `(132, 49, 41)`, the vest near `(66, 8, 8)`), where a flat fill of the second ghost's `0x50/0x20/0x20` would read one colour throughout.
 
-The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost's OT depth is pushed `0x50` buckets deeper than the live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms).
+The base colour is per character, from the SCUS word table `0x80076908` (Vahn red `0x60/0x30/0x30`, Noa green, Gala blue; monsters `0x80076914` olive `0x50/0x50/0x30`), stepped down `0x101010` per drawn ghost. The ghost links twenty ordering-table buckets deeper than its own corners put it: the table base moves `0x50` bytes, twenty word slots (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms at `0x80048E60` and `0x80048FEC`; [renderer port](renderer-port.md#the-battle-sorts-by-each-primitives-link)).
 
 **The commit pass stamps the new clip.** The anim tick's natural-end commit (`jal 0x8004AD80` at `0x80047B54`, which stores `+0x1D9` at `0x8004BDE0`, behind an art install's ring clear) runs ahead of the ring shift (`0x80047E58`) and of the id store (`lbu 0x1d9` / `sb 0x1fb` at `0x80047FCC..0x80047FD4`; a monster's record pointer is reloaded at `0x80047B60` before its bytes are read at `0x80048044`). So slot 0 of the pass that commits a clip holds that clip's id, not the one it left.
 

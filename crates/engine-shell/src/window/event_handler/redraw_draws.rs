@@ -324,19 +324,20 @@ impl<'m> DrawCtx<'_, 'm> {
             self.push_actors(&mut out, &cues, in_battle, actor_cam);
             // Arts after-image ghosts trail the live bodies: additive
             // flat-colour copies at the rate-scheduled historical poses.
-            // Retail pushes each ghost 0x50 OT buckets deeper than the
-            // live body (FUN_80048A08), so under painter ordering the
-            // body covers the coincident screen area REGARDLESS of true
-            // depth - including the attack camera's behind-the-attacker
-            // framings, where the trailing ghost is genuinely nearer the
-            // camera than the body. A depth buffer cannot express that
-            // with any compare function (the blend pass's GreaterEqual
-            // passed every coincident fragment and washed the whole mesh
-            // additive - the "monster glows yellow" defect), so each
-            // ghost is scaled uniformly ABOUT THE EYE until it sits past
-            // the body's distance: every vertex slides along its own
-            // camera ray (screen silhouette unchanged) while the body's
-            // opaque depth wins wherever they overlap.
+            // Retail links each ghost 0x50 bytes (twenty buckets) deeper
+            // than its own corners (FUN_80048A08), so under painter
+            // ordering the body covers the coincident screen area -
+            // including the attack camera's behind-the-attacker framings,
+            // where the trailing ghost is genuinely nearer the camera than
+            // the body. PSX mode draws that link (`DRAW_ORDER_FAR_BUCKETS`).
+            // A clean frame's per-pixel depth cannot express it with any
+            // compare function (the blend pass's GreaterEqual passed every
+            // coincident fragment and washed the whole mesh additive - the
+            // "monster glows yellow" defect), so there each ghost is scaled
+            // uniformly ABOUT THE EYE until it sits past the body's
+            // distance: every vertex slides along its own camera ray
+            // (screen silhouette unchanged) while the body's opaque depth
+            // wins wherever they overlap.
             if in_battle {
                 self.push_battle_ghosts(&mut out, actor_cam);
             }

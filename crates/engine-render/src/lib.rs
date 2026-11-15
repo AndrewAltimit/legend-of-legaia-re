@@ -55,9 +55,18 @@ pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
 /// Drake in his throne (`dolk2` `P2[7]`), Vahn against the cliff behind
 /// `rikuroa2`'s chest ledge.
 pub const DRAW_ORDER_NEAR_CLEAN: u8 = 4;
+/// [`Renderer::set_draw_order`]: this draw links twenty ordering-table
+/// buckets deeper than its corners put it, `0x50` bytes past the table base
+/// (`FUN_80048A08` at `0x80048E60..0x80048E80`, undone at
+/// `0x80048FEC..0x8004900C`, for a node whose `+0x10` carries `0x800000`):
+/// an arts after-image ghost, whose live body then covers it wherever the two
+/// overlap. The span is the frame's twenty slots
+/// (`legaia_render_kernels::prim_near_reject::ot_buckets_view_depth`), `320`
+/// `SZ` in battle. PSX mode only.
+pub const DRAW_ORDER_FAR_BUCKETS: u8 = 8;
 /// The `flags.w` word that stages [`DRAW_ORDER_NEAR_CLEAN`] on a clean field
-/// frame, below every PSX-mode order word (`-1 - order`, `-1..=-8`).
-pub(crate) const CLEAN_NEAR_FLAG_W: f32 = -16.0;
+/// frame, below every PSX-mode order word (`-1 - order`, `-1..=-16`).
+pub(crate) const CLEAN_NEAR_FLAG_W: f32 = -32.0;
 
 pub mod battle_intro;
 pub mod gte_trace;

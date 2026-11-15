@@ -35,7 +35,8 @@ pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 // mean `SZ` of its corners, so its whole area sorts as that mean. `-flags.w - 1`
 // is the draw's `DRAW_ORDER_*` word: bit 0 sorts at the farthest corner
 // instead (colour word bit `0x10000000`, `FUN_80045194` at
-// `0x800452AC..0x800452F8`), bit 1 draws ten ordering-table buckets nearer
+// `0x800452AC..0x800452F8`), bit 3 twenty buckets deeper (a ghost's table
+// offset, `FUN_80048A08` at `0x80048E7C`), bit 1 draws ten ordering-table buckets nearer
 // (`actor[+0x10] & 0x80800000`, `FUN_8001ADA4` at `0x8001B204..0x8001B21C`:
 // the table base less `0x28`, ten slots of `32` `SZ`, `320 / 6` port units on
 // the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
@@ -44,7 +45,7 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
     // A clean frame's near shift (`DRAW_ORDER_NEAR_CLEAN`, staged as
     // `flags.w = -16`): each vertex tests depth ten buckets nearer than it
     // stands, so a seated actor paints over the furniture it sits in.
-    if (u.flags.w < -15.5) {
+    if (u.flags.w < -31.5) {
         if (clip.w <= 0.0) {
             return clip;
         }
@@ -84,6 +85,19 @@ fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>,
             near = 320.0 / u.flags.w;
         }
         mean_w = max(mean_w - near, 1.0);
+    }
+    if ((order & 8u) != 0u) {
+        // Twenty buckets deeper (`DRAW_ORDER_FAR_BUCKETS`, the ghost's
+        // `0x50`-byte table offset): twenty slots of `4 << shift` `SZ` over
+        // the frame's `sz_per_w`, read as the battle camera's (`320`) when
+        // the near-reject parameters are off
+        // (`prim_near_reject::ot_buckets_view_depth`).
+        let p = prim_near_params();
+        var far_shift = 320.0;
+        if (p.x >= 0.5 && p.y > 0.0) {
+            far_shift = 20.0 * f32(4u << u32(p.z)) / p.y;
+        }
+        mean_w = mean_w + far_shift;
     }
     if (mean_w <= 0.0) {
         return clip;

@@ -516,6 +516,17 @@ impl Renderer {
                                 (lo[2] + hi[2]) * 0.5,
                             ]
                         };
+                        // A draw linked twenty buckets deeper
+                        // (`DRAW_ORDER_FAR_BUCKETS`) keys its semi prims
+                        // there too, as its opaque depth does.
+                        let far_buckets = self.prim_link_order_active().then(|| {
+                            legaia_render_kernels::prim_near_reject::ot_buckets_view_depth(
+                                self.prim_near.get(),
+                                20,
+                            )
+                        });
+                        let draw_order = self.draw_order.borrow();
+                        let order_textured = &draw_order.0;
                         for (i, draw) in scene.draws.iter().enumerate() {
                             if let Some(mode) = forced(draw.cue) {
                                 psx_blend::push_forced_draw(
@@ -529,6 +540,7 @@ impl Renderer {
                                 );
                                 continue;
                             }
+                            let from = list.len();
                             psx_blend::push_draw_prims(
                                 &mut list,
                                 false,
@@ -536,6 +548,15 @@ impl Renderer {
                                 &draw.mvp,
                                 draw.mesh.semi_prims(),
                             );
+                            if let Some(shift) = far_buckets
+                                && order_textured
+                                    .get(i)
+                                    .is_some_and(|o| o & crate::DRAW_ORDER_FAR_BUCKETS != 0)
+                            {
+                                for e in &mut list[from..] {
+                                    e.key += shift;
+                                }
+                            }
                         }
                         for (i, draw) in scene.color_draws.iter().enumerate() {
                             if let Some(mode) = forced(draw.cue) {

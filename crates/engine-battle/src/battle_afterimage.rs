@@ -43,7 +43,7 @@
 //!   RGB is per-character (SCUS table `0x80076908`, indexed by character id;
 //!   monsters share `0x80076914`), and each drawn ghost then steps the word
 //!   down by `0x101010` (`0x80049520..0x80049530`) so the older ghost is
-//!   dimmer. The ghost's OT depth is pushed `+0x50` buckets deeper than the
+//!   dimmer. The ghost's table base moves `+0x50` bytes, twenty buckets deeper than the
 //!   live body (`FUN_80048A08`, the `+0x10` bit-`0x800000` arms), so it
 //!   draws behind it.
 //!

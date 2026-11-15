@@ -517,10 +517,14 @@ float primMeanW(mat4 m, float vw) {
     n = 4.0;
   }
   /* u_prim_mean_depth - 1 is the draw's DRAW_ORDER_* word (engine-render's
-   * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer. */
+   * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer,
+   * bit 3 twenty buckets deeper. */
   int order = word & 3;
   float w = (order == 1 || order == 3) ? far : sum / n;
   if (order >= 2) w = max(w - 320.0 / (u_curve > 0.0 ? u_curve : 6.0), 1.0);
+  /* Bit 3, twenty buckets deeper (DRAW_ORDER_FAR_BUCKETS): a battle ghost's
+   * table offset, twenty 16-SZ battle slots; staged on battle ghosts only. */
+  if ((word & 8) != 0) w += 320.0;
   return w;
 }
 

@@ -470,7 +470,7 @@ battle units the port draws `SZ` is `w` itself.
 | Backdrop shell and spun slot | per pixel | corner mean |
 | Ground grid | far bucket (`pin_to_far_bucket`, the page's `u_far_slice`) | far bucket |
 | Party and monster bodies | per pixel | corner mean |
-| After-image ghosts | per pixel, pushed past the body about the eye | corner mean of the pushed pose |
+| After-image ghosts | per pixel, pushed past the body about the eye | corner mean twenty buckets deeper |
 | Effect models, parts, draw-kind-4 nodes, ground shadows | per pixel | corner mean; farthest corner on a `0x10000000` word |
 | Effect-pool billboards | per pixel | corner mean (the quad's centre) |
 | Screen primitives (trails, streaks, cast-arm packets) | over the 3D frame in their own order | unchanged |
@@ -512,10 +512,31 @@ test. The page bakes those nodes into one stream in the window's draw order,
 so the tie lands on the same node on both
 ([host drift](../tooling/host-drift.md#what-it-has-found)).
 
-Not modelled: the order inside one bucket (retail's last-linked-first), a ghost's
-`0x50`-byte table offset (`FUN_80048A08` at `0x80048E7C`, twenty buckets deeper
-than its body; the hosts' eye push stands in), and the screen primitives' links,
-which composite over the 3D frame rather than among it. Clean rendering keeps
+An arts after-image ghost links twenty buckets behind its own corners. The ghost
+walk draws each ghost through the body draw `FUN_80048A08` on a node whose `+0x10`
+carries `0x800000`, and that arm adds `0x50` bytes to the table base before the
+leaves link (`0x80048E60..0x80048E80`) and takes them off after
+(`0x80048FEC..0x8004900C`): twenty slots, `320` `SZ` in battle. So the live body
+covers its ghost wherever the two overlap, and a ghost trailing a caster covers
+what stands more than twenty slots behind it and no nearer. In PSX mode both hosts
+draw a ghost at its own pose with `DRAW_ORDER_FAR_BUCKETS` (the page's `meanDepth`
+`9`), and the window keys its semi prims twenty slots deeper too
+(`prim_near_reject::ot_buckets_view_depth`). The clean frame keeps the stand-in,
+each ghost scaled about the eye until it stands past its body, which a depth
+buffer needs and a link does not. On the battle stills the link rises fifteen and
+drops none: `battle_jou_nighto_v3_eye_beam_mid_cast` `.976` to `.994`,
+`battle_deene_ironman_jagged_earth_mid_cast` `.986` to `.996`,
+`battle_vahn_tri_somersault_super` `.971` to `.977`.
+
+Inside one slot the hosts compare each primitive's exact mean, where retail draws
+every primitive whose mean falls in the slot (`16` `SZ` in battle, `32` on the
+field) last-linked first. Ties already land retail's way: the blend list draws
+equal whole-`SZ` keys later-submitted first, and the opaque pass keeps the first
+primitive drawn. Keying the blend list by slot instead moved no still of the
+battle and field corpus, so it keeps whole-`SZ` keys.
+
+Not modelled: the order of opaque primitives inside one slot, and the screen
+primitives' links, which composite over the 3D frame rather than among it. Clean rendering keeps
 per-pixel depth: a mean pops as the camera turns, which the retail frame shows
 and the clean frame need not.
 

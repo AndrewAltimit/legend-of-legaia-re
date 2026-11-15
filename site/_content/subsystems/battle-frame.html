@@ -154,7 +154,7 @@
   <p>Nothing is drawn as it is emitted. Each packet is linked into an <em>ordering table</em>, an array of buckets indexed by depth, and the GPU later walks the array from the far end to the near end. There is no depth buffer: a nearer bucket paints over a farther one, and inside one bucket the packet linked last is drawn first.</p>
   <p>3D primitives and screen-space packets share the one table. A plain battle frame's table reads, from far to near:</p>
   <figure class="diagram">
-    <svg viewBox="0 0 900 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A battle frame's ordering table drawn as a strip from the far bucket on the left to bucket 0 on the right. Farthest bucket: a cast's armed wash, drawn through the fade quad with a draw-mode packet that clears the dither bit. Next, the ground grid at bucket 0x3FEC shifted, bracketed by two draw-mode packets: dither on before it, then the frame's own dither word after it. Then the backdrop shell and the bodies and effects, each primitive in the bucket of its mean depth; a body flagged 0x00800000 draws 0x50 buckets deeper. Last, buckets 1 and 0 hold the HUD's sprite pages. Below the strip a line shows the dither bit as the GPU walks: off behind an armed wash, on from the grid onward.">
+    <svg viewBox="0 0 900 356" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A battle frame's ordering table drawn as a strip from the far bucket on the left to bucket 0 on the right. Farthest bucket: a cast's armed wash, drawn through the fade quad with a draw-mode packet that clears the dither bit. Next, the ground grid at bucket 0x3FEC shifted, bracketed by two draw-mode packets: dither on before it, then the frame's own dither word after it. Then the backdrop shell and the bodies and effects, each primitive in the bucket of its mean depth; a body flagged 0x00800000 draws twenty buckets (0x50 bytes) deeper. Last, buckets 1 and 0 hold the HUD's sprite pages. Below the strip a line shows the dither bit as the GPU walks: off behind an armed wash, on from the grid onward.">
       <defs>
         <marker id="bf-ot-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
       </defs>
@@ -183,7 +183,7 @@
       <text class="dg-label" x="633" y="76">bodies and effects</text>
       <text class="dg-sub" x="633" y="96">each primitive at its mean Z</text>
       <text class="dg-sub" x="633" y="114">flag 0x00800000:</text>
-      <text class="dg-sub" x="633" y="132">0x50 buckets deeper</text>
+      <text class="dg-sub" x="633" y="132">20 buckets deeper</text>
 
       <rect class="dg-node" x="744" y="52" width="136" height="92" rx="4"/>
       <text class="dg-label" x="812" y="76">HUD</text>

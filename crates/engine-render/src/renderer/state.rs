@@ -772,6 +772,13 @@ impl Renderer {
         self.field_prim_order.set(on);
     }
 
+    /// Whether the next scene render draws by link: the order
+    /// [`Self::set_field_prim_order`] asked for, under PSX mode (the gate
+    /// the per-draw `DRAW_ORDER_*` words are staged under).
+    pub fn prim_link_order_active(&self) -> bool {
+        self.field_prim_order.get() && self.psx_mode.get()
+    }
+
     /// Stage each draw's `DRAW_ORDER_*` word for
     /// [`Self::set_field_prim_order`]: `textured[i]` for `Scene::draws[i]`,
     /// `color[i]` for `Scene::color_draws[i]`; a missing entry is `0`, the

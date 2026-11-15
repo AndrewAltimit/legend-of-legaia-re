@@ -133,16 +133,28 @@ impl<'m> DrawCtx<'_, 'm> {
 }
 
 impl<'m> DrawCtx<'_, 'm> {
-    /// The arts after-image ghosts, pushed past their bodies about the eye.
+    /// The arts after-image ghosts: by link twenty buckets behind their own
+    /// corners under PSX mode, as retail's table holds them; otherwise pushed
+    /// past their bodies about the eye.
     pub(super) fn push_battle_ghosts(&self, out: &mut DrawLists<'m>, actor_cam: Mat4) {
         let store = &self.store;
         let battle_ghost_uploads = &store.posed.battle_ghost_uploads;
         let DrawLists {
-            draws, nclip_marks, ..
+            draws,
+            nclip_marks,
+            order_marks,
+            ..
         } = out;
         use legaia_engine_battle::battle_afterimage as ai;
-        let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array());
+        // Drawn by link, a ghost takes the walk's `0x50`-byte table offset
+        // (`DRAW_ORDER_FAR_BUCKETS`) at its own pose, which is what puts it
+        // behind its body; the eye push is the stand-in a depth buffer needs.
+        let by_link = self.r.prim_link_order_active();
+        let eye = ai::camera_eye_from_vp(&actor_cam.to_cols_array()).filter(|_| !by_link);
         for g in battle_ghost_uploads {
+            if by_link {
+                order_marks.push((draws.len(), legaia_engine_render::DRAW_ORDER_FAR_BUCKETS));
+            }
             let push = match eye {
                 Some(e) => {
                     let k = ai::ghost_eye_push_scale(

@@ -643,7 +643,10 @@ fn a_world_map_prim_order_word_picks_its_link() {
 
 /// `flags.w = -2`, `DRAW_ORDER_FAR_CORNER`: a field prim of a record carrying
 /// `0x800` sorts at its farthest corner (`FUN_80045194`'s max of `SZ0..SZ3`),
-/// and `-3`, `DRAW_ORDER_NEAR_BUCKETS`, ten buckets nearer than its mean.
+/// and `-3`, `DRAW_ORDER_NEAR_BUCKETS`, ten buckets nearer than its mean;
+/// `-9`, `DRAW_ORDER_FAR_BUCKETS`, twenty battle buckets (`320` `SZ`) deeper,
+/// the ghost's table offset, read at the battle camera's slots while the
+/// near-reject parameters are off.
 #[test]
 fn a_field_prim_order_word_picks_its_link() {
     let Some((device, queue)) = headless_device() else {
@@ -655,6 +658,7 @@ fn a_field_prim_order_word_picks_its_link() {
         (-2.0, 600.0),
         (-3.0, 500.0 - 320.0 / 6.0),
         (-4.0, 600.0 - 320.0 / 6.0),
+        (-9.0, 500.0 + 320.0),
     ] {
         let (flat, _) = render_cell(&device, &queue, word, false, 0x7FFF, FarBucket::MeanPrim);
         let drawn: Vec<f32> = flat.iter().copied().filter(|&d| d < 1.0).collect();
