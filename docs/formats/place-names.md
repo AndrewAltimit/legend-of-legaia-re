@@ -127,7 +127,11 @@ text balloon - template `0x8007431C`, whose handler word is `0x801DA7F0` -
 with the spawner `FUN_8003C764` inlined, one difference apart: the parent-link
 word `+0x94` is stored zero. With no link, the balloon's handshake reads a new
 engagement as its cue to end early, so talking to someone during the banner
-dismisses it. See [`cutscene.md`](../subsystems/cutscene.md) and
+dismisses it, and so does opening the pause menu: the menu accept raises the
+same engaged bit ([`field-menu.md`](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)),
+so the banner is gone under the wipe and does not come back when the menu
+closes (`World::end_unlinked_balloon_on_engage`, called from the session's
+`open_field_menu`). See [`cutscene.md`](../subsystems/cutscene.md) and
 `engine-dialog::text_balloon` for the balloon itself.
 
 The gate is **system flag `2`** (`0x80085758` bit `0x20`), a one-shot the

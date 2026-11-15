@@ -62,6 +62,9 @@ impl<S: AudioSink> BootSession<S> {
         // byte, so a locked context opens on the notice panel rather than on
         // the root picker (`FUN_801DC6B4`, `0x801dc8d0..0x801dc8e4`).
         session.open_entry_screen();
+        // The accept raises the player's engaged bit, which ends a balloon
+        // with no parent link (the place-name banner).
+        world.end_unlinked_balloon_on_engage();
         self.field_menu_resume = world.mode;
         world.mode = SceneMode::Menu;
         // A fresh menu: no window is up, and the root picker's slide-in is
