@@ -2157,8 +2157,8 @@ the rows a cost term is fitted on. Report-only.
 | enemy | 109 | `.835` | `.783` | `2.82` / `3.02` |
 | all four | 222 | `.908` | `.878` | `2.78` / `2.89` |
 
-The bands that part furthest are the enemy set's: state `0x71` (`.344`, the engine on
-`3.49` where retail runs `2.48`), the cast states `0x2B` to `0x2E` (`.55` to `.73`,
+The bands that part furthest are the enemy set's: state `0x71` (`.485`, the engine on
+`3.12` where retail runs `2.42`), the cast states `0x2B` to `0x2E` (`.55` to `.73`,
 the engine under retail) and the capture band `0x70` (`.869`, the engine over). On
 the party's side it is the arts' strike state `0x20` (`.786`, the engine over).
 

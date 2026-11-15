@@ -1154,6 +1154,21 @@ never reach a natural end while staged, and Ultra Charge is the one whose clip w
 there. Cross Beam's caster stands on clip `8`, cursor `416`, for the three passes of
 `0x71` and `0x50` where the port's is already on idle.
 
+That one is the tick, not the close. Arm 5 shows the Curry Devil (`+0x04 = 0x20080200`)
+and stages idle with the bump on one pass (`0x801F7238..0x801F7240`), and the bump's
+commit is the anim tick's (`0x800478EC..0x80047948`); the clip carries no `+0x76` lock.
+But the tick skips a seat whose render node's colour word is zero
+(`0x800474D4..0x800474E0`), arm 2's hide left it zero, and only the body's next deep
+draw refreshes it. A `--ghost-trace` recording of `ropeway_curry_devil_pre_cross_beam`
+holds the staged byte at `0` from vsync `559` and the clip on `416` until `569`, four
+passes into `0x51`, as the Done band's pan brings the body back into the frame; its
+first after-image ghosts are drawn from `565`, and the frames cost `327` to `505` until
+then and the clamp after. The port commits the bump in the module's write-back, on the pass
+itself, and its ghosts load `0x71`'s frames onto step `4`. Gating that commit on the
+latched colour word holds the clip for the rest of the film instead: the port's latch
+never reads the Curry Devil drawn at `0xA1` or deeper there, which is still open. Grade
+`disassembly` + `capture`.
+
 ### One owner per hit
 
 **The flurry lands in the module, not in the hit kernel.** A cast clip's hit

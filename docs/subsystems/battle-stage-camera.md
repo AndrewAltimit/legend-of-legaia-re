@@ -2285,6 +2285,16 @@ length, needs no second count. Cutting every line at the Done band instead moved
 replays behind four strike films (`noaru_gilium_lv2_strike` `.989` to `.871`). Grade
 `capture`.
 
+The capture band's finalize `0x71` takes the same cut. It sits between the module's last
+arm and the Done band, and a module line that outlives its module loads it as it loads the
+settle: over the enemy films' PCSX-Redux recordings `2.5%` of retail's `0x71` vsyncs read the
+clamp where the port's read it on `48%`. Cut there, the state's step agreement over the enemy
+set goes from `.30` to `.49` and the Done band's from `.78` to `.79`, with no film's image
+falling by more than `.002`. Most of what is left is the count itself: retail's frames
+under a module line run `4.5` to `9` vsyncs from cast to cast against the median's `6`, so
+the second count still has vsyncs left at Koru's four casts (`7.2` to `8` a frame), whose
+settles stay loaded through `0x51`. Grade `capture`.
+
 <a id="a-frames-cost-is-its-own-node-ticks"></a>
 
 **A frame's cost is its own node ticks and draw.** The frame driver measures a frame from
