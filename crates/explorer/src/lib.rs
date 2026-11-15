@@ -106,6 +106,30 @@ pub fn kind_of_class(class: &str) -> &'static str {
     }
 }
 
+/// The Overview's note after a scene bundle's contents when it carries no
+/// texture list: some bundles (`town01`'s, and the other forms with no
+/// `TimList` descriptor, `docs/formats/scene-bundles.md`) leave the place's
+/// textures to another entry of the block, and an empty Textures tab under a
+/// kind named for textures otherwise reads as a fault.
+pub fn bundle_texture_note(kind: &str, textures: usize) -> Option<&'static str> {
+    (kind == "Scene textures and models" && textures == 0).then_some(
+        "; no textures of its own: this place loads them from another entry of its block",
+    )
+}
+
+#[cfg(test)]
+mod bundle_note_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_texture_less_bundle_gets_the_note() {
+        assert!(bundle_texture_note("Scene textures and models", 0).is_some());
+        assert!(bundle_texture_note("Scene textures and models", 18).is_none());
+        assert!(bundle_texture_note("Packed data", 0).is_none());
+        assert!(KINDS.contains(&"Scene textures and models"));
+    }
+}
+
 /// One sentence on what a [`kind_of_class`] kind is, for a player: the
 /// Overview tab's line under the kind, with the format names kept for its
 /// technical details.

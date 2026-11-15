@@ -2261,11 +2261,17 @@ impl App {
                      TMD meshes, sound banks VAB, music tracks SEQ, text blocks MES, \
                      compressed sections LZS. The tabs above show each.",
                 );
-                let holds_text = if holds.is_empty() {
+                let mut holds_text = if holds.is_empty() {
                     "nothing this program can show; the Hex tab has the bytes".to_string()
                 } else {
                     holds.join(", ")
                 };
+                // A bundle with no texture list (`town01`'s count-6 table and
+                // the other TimList-less forms, docs/formats/scene-bundles.md)
+                // reads as a broken Textures tab under its kind's name.
+                if let Some(note) = crate::bundle_texture_note(kind, counts.tims) {
+                    holds_text.push_str(note);
+                }
                 ui.add(egui::Label::new(&holds_text).wrap());
                 ui.end_row();
                 ui.label("Size");
