@@ -79,6 +79,7 @@ impl World {
         n.ambient_engage_owner = None;
         n.object_ambient.clear();
         n.object_models.clear();
+        n.models.clear();
         n.clip_cursors.clear();
         n.phase_draws.clear();
         n.faces.clear();

@@ -1039,6 +1039,18 @@ impl World {
         self.npcs.face_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
         self.npcs.clip_rate_live.clear();
         self.npcs.clip_bones.clear();
+        // Every placement's actor is a fresh allocation whose model is its
+        // header byte: `FUN_8003A1E4` stores the byte (plus the scene-bank
+        // base, or the player-bank base at `>= 0xF0`) into the spawn
+        // template's model word (`sh v0,0x3e5c(a0)` at `0x8003A300` /
+        // `sh v1,0x3e5c(a1)` at `0x8003A324`) and allocates the actor from
+        // it (`jal 0x80024C88` at `0x8003A398`). A swap the previous scene
+        // made (`4C 50`, `CC <id> 50`, motion op `0x0E`) dies with that
+        // scene's actors; kept, it named a model id in the new scene's bank:
+        // after `uru`'s beat (`P2[35]`, `CC 1C..23 50 4B 00`) the
+        // `bubu1` villagers in placements 7..14 drew `bubu1`'s one-object
+        // bank model `0x4B`, and placement 14 walked its loop as that prop.
+        self.npcs.models.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
