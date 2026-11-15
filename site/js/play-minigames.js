@@ -334,6 +334,7 @@
       hub.key = key;
     }
     const runs = rt.play_mg_muscle_hub_prim_runs();
+    hub.pass.psxNative = view._psxNativePrims();
     hub.pass.upload(view._psxScreenVertices(rt.play_mg_muscle_hub_prim_vertex_bytes()),
       rt.play_mg_muscle_hub_prim_indices(), runs, null);
     hub.pass.drawRuns(0, (runs.length / 3) | 0);

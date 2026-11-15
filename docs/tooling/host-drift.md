@@ -1503,25 +1503,33 @@ What a healthy pair reads: the trace agrees on every sampled frame, and the pixe
 by a few tenths of a percent, hairline pixels on sloped 3D edges where a tie lands on
 the other side. That residual is there on a real GPU and on SwiftShader alike.
 
-Which rasteriser draws the page decides part of the rest, so a row that stands out is
-read on both (`--gl egl` is the real GPU):
+The screen primitives used to read differently by rasteriser, so a row that stood out
+was read on both (`--gl egl` is the real GPU). They are level now:
 
-| Scene (retail mode) | SwiftShader mean, worst frame | Real GPU mean, worst frame | What the difference is |
+| Scene (retail mode) | SwiftShader mean, worst frame | Real GPU mean, worst frame | What it was |
 |---|---|---|---|
-| `slots` | `1.05%`, `1.44%` | `0.28%`, `0.41%` | textured tie rows: the 64th-of-a-row nudge is finer than SwiftShader's sub-pixel grid, so the dot matrix and the panel edges draw a row apart there |
-| `cast_cannon` | `0.46%`, `2.65%` at tick `921` | `0.23%`, `2.23%` at tick `81` | tick `921` is the wash's starfield page, one-texel stars the near tunnel magnifies and SwiftShader samples a texel apart (`0.29%` on the GPU); tick `81` is the battle intro's rotated shards, below |
-| `baka` | `0.40%`, `0.65%` | `0.22%`, `0.45%` | the same tie rows |
-| `battle`, `lamp_walk`, `town_walk`, `cast_thunder` | `0.31%`, `0.35%`, `0.20%`, `0.30%` | `0.30%`, `0.34%`, `0.20%`, `0.29%` | level: sloped 3D edges |
+| `slots` | `0.18%`, `0.29%` (was `1.05%`, `1.44%`) | `0.02%`, `0.26%` (was `0.28%`, `0.41%`) | textured tie rows: the dot matrix and the panel edges a row apart |
+| `cast_cannon` | `0.18%`, `0.64%` (was `0.47%`, `2.45%` at tick `921`) | `0.19%`, `0.64%` (was `0.23%`, `2.23%` at tick `81`) | tick `921` the wash's starfield page, one-texel stars a texel apart on SwiftShader; tick `81` the battle intro's rotated shards on the GPU |
+| `baka`, `dance`, `muscle` | `0.22%`, `0.31%`, `0.01%` (were `0.40%`, `0.40%`, `0.16%`) | `0.21%`, `0.31%`, `0.01%` (level) | the same tie rows |
+| `battle`, `arts`, `results`, `battle_menus` | `0.25%`, `0.28%`, `0.21%`, `0.18%` | `0.25%`, `0.28%`, `0.20%`, `0.18%` (were `0.29%`, `0.30%`, `0.22%`, `0.24%`; worst frame `0.78%` to about `0.5%`) | the intro's shards again, in every fight |
+| `lamp_walk`, `town_walk`, `cast_thunder` | `0.34%`, `0.20%`, `0.24%` | `0.34%`, `0.20%`, `0.23%` | level: sloped 3D edges |
 
-The intro shards are the one residue a real GPU shows and SwiftShader hides: hairlines
-along the slanted edges of each rotated quad and along the seam between its two
-triangles. The reading that fits, not yet tested by drawing it: a corner snapped to the
-pixel grid puts a slanted edge exactly through pixel centres, the page's window is
-bottom-up, and the rasteriser's tie rule then hands those pixels to the other triangle
-than the window's top-down target does. Lifting the pass a fraction of a row settles a
-flat edge and one slant direction only. A pass drawn upside down into the native target
-and flipped at the present would have the window's rule on every edge. Open. The run prints;
-it asserts nothing and is not a CI gate, since it needs a disc, a built bundle and a
+All of it was one thing: the fill rule, read upside down. A corner snapped to the
+GPU's sample point puts an edge exactly through pixel centres. The window's target
+runs top-down and the page's framebuffer bottom-up, so the rasteriser's tie rule
+handed those pixels the other way. On a flat edge that is a row, which a nudge of
+a fraction of a row gave back, on a real GPU at least. On a slanted edge, and on
+the seam between a rotated quad's two triangles, no nudge serves both slants: the
+battle intro's shards drew in hairlines (`cast_cannon`, every tick of the intro,
+`3.9%` of a frame at its worst). The page now draws its screen primitives upside
+down into a copy of the frame and flips the copy back
+(`ScreenPrimPass.drawRuns`), so every edge has the window's rule and the nudge is
+only the fallback for a framebuffer that cannot be copied. `--page-init
+"window.__psxFlipPrims=false"` draws them the old way for a comparison.
+
+The 3D pass on the native target still takes its own nudge (`PSX_NATIVE_TIE_ROWS`)
+and is where the remaining few tenths of a percent sit. The run prints; it asserts
+nothing and is not a CI gate, since it needs a disc, a built bundle and a
 display.
 
 ### Black copies of a multisampled canvas
@@ -1566,7 +1574,8 @@ the world was right and the picture was not:
 | A cut on half a buffer | The page cut the dance hall's triangles by the GPU's span rule but not the marker block, which holds the animated props: on the camera track's far poses the stage curtain, seen from behind, covered the whole frame for about a hundred ticks |
 | A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
 | A generic attribute default | A mesh with no ground cells leaves `a_ground_ref_xz` disabled, and GL reads a disabled attribute as `(0, 0, 0, 1)`, not the zeros the window's `flat_a` carries. The vertex stage's "not a ground cell" test is a compare against zeros, so no field mesh took its link depth and PSX mode's per-primitive sort never ran on the page: off retail's vantage the sea covered town01's beach. Forcing every draw's order word changed no pixel, which is what named it |
-| A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive now takes an eighth of a row; a textured one keeps the 64th, since more shifts the texels the battle intro's rotated shards sample |
+| A nudge under a rasteriser's grid | The tie nudge above was a 64th of a row, finer than SwiftShader's sub-pixel grid, so on the software rasteriser the tie came back and every flat band drew a row low: the ending vignettes' letterbox, the slot machine's panels. A real GPU drew them right. An untextured primitive took an eighth of a row; a textured one kept the 64th, since more shifts the texels the battle intro's rotated shards sample |
+| A fill rule read upside down | The nudges settled flat edges and nothing else: along a slanted edge through pixel centres, and along the seam of a rotated quad's two triangles, the bottom-up rule still gave the pixels to the other triangle. The battle intro's shards drew in hairlines on a real GPU (`2.23%` of `cast_cannon` at tick `81`), and SwiftShader, whose grid swallowed the 64th, still drew the slot machine's rows apart (`1.05%`). The screen primitives now draw upside down into a copy of the frame that is flipped back, the window's rule on every edge: tick `81` reads `0.18%`, `slots` `0.02%` on the GPU and `0.18%` on SwiftShader, and no scene of twenty reads higher on either |
 | One blend equation for four | The page's single-mesh draw, which every minigame venue uses, re-drew its semi-transparent prims under one additive stand-in, so the Baka duel's `B - F` drop shadows drew as pools of light, while the window blends each prim under its own ABR mode. The run named the shadows by showing them at the title card, where the window's subtraction from black hid the same stray prims: both hosts drew shadows the front end never draws. The single mesh now carries the per-mode semi tail `renderAssembled` blends from (`buildSemiTail`, `_setSemiBlend`), and the scene collapses the shadows outside the duel |
 | One blend order for two | The same single-mesh draw blended its semi tail mode by mode, so in the Baka duel every additive glow prim drew before every subtractive shadow prim. The window blends a frame's semi prims far to near, prim by prim, as retail's ordering table does, and the glow's near half lands after the shadows there. Where both covered a saturating floor the page's frame went grey (`3.6%` of a frame). Hiding the glow on both hosts read `0.7%`, and drawing the glow's coverage in one flat colour on the page with the shadows dropped showed the shadows under it, which named the order. The single mesh now keys and sorts its semi prims per frame (`orderSemiPrims`) |
 | A facet in the wrong frame | A baked stream holds world positions, and the page lit a double-sided summon part off their facet where the window lights it off the object-space one. The battle frame flip between the two mirrored every crystal facet against the key light. Handing the page the window's smoothed normals changed nothing, which named the fallback: the paired copies cancel to the zero sentinel. The stream carries the object facet now |

@@ -240,6 +240,13 @@ edge that crosses a pixel centre exactly, and of a centre within a sixteenth of 
 row of an edge, which the window's column rule decides: those are the hairline
 pixels the pair still reads. A finer lift is under the page's sub-pixel grid on a
 real GPU and moves nothing; drawing the pass top-down is what would settle both.
+The screen-primitive pass does exactly that: it draws upside down into a copy of
+the frame and flips the copy back (`ScreenPrimPass.drawRuns` in
+[`play-app.js`](../../site/js/play-app.js)), which took the battle intro's shards
+from `2.2%` of a frame in hairlines to the level of the 3D pass's own residue
+([host drift](../tooling/host-drift.md#the-host-pair-run)). The 3D pass keeps the
+lift: its flip would turn every winding, screen-space derivative and frame read
+with it.
 
 At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
 at a window-sized target could. The snapped vertices move half a stage pixel
