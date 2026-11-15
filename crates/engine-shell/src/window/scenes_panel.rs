@@ -59,8 +59,9 @@ pub(super) fn scene_rows() -> &'static [SceneRow] {
     })
 }
 
-/// How many rows the plate shows at once; the list scrolls under it.
-const SHOWN: usize = 15;
+/// How many rows the plate shows at once; the list scrolls under it. The
+/// Settings page's count, so the two tallest plates match.
+const SHOWN: usize = super::settings_panel::SHOWN_ROWS;
 /// Left / Right move the cursor a page of rows.
 pub(super) const PAGE_STEP: i32 = SHOWN as i32;
 
@@ -125,9 +126,9 @@ const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 /// The note line budget under the rows.
 const NOTE_LINES: usize = 2;
-const CONTROLS: &str = "Up/Down pick  Left/Right page  Cross go";
+const CONTROLS: &str = "Arrows pick, page  Enter go  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
-const PAD_CONTROLS: &str = "D-pad pick, page  {cross} go";
+const PAD_CONTROLS: &str = "D-pad pick, page  {cross} go  {circle} close";
 const FLIP_HINT: &str = "L1/R1 or Tab: tools";
 
 impl PlayWindowApp {

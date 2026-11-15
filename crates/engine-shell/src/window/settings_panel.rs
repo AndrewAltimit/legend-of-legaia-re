@@ -116,8 +116,14 @@ pub(super) fn group_of(row: OptionRow) -> &'static str {
     ""
 }
 
-/// How many rows the plate shows at once; the list scrolls under it.
-pub(super) const SHOWN_ROWS: usize = 15;
+/// How many rows a list page's plate shows at once; the list scrolls under
+/// it. Fourteen at the [`ROW_H`] pitch leave the tallest plate (Settings,
+/// Scenes) a stage margin under its controls line: at fifteen the plate ran
+/// to the stage's last row and its controls line sat on the window's edge.
+pub(super) const SHOWN_ROWS: usize = 14;
+/// The stage rows a list plate leaves free under it, at the least.
+#[cfg(test)]
+const PLATE_FOOT_MARGIN: i32 = 8;
 
 /// The first shown row that keeps `cursor` in view from `scroll`.
 pub(super) fn scroll_to_cursor(scroll: usize, cursor: usize) -> usize {
@@ -231,9 +237,9 @@ pub(super) const ROW_H: i32 = 12;
 /// The row help's line budget: the longest row help wraps to this many.
 const HELP_LINES: usize = 3;
 /// The help lines the Settings plate is sized for. A help that needs the
-/// third takes the controls line's place under them: 15 rows at
-/// [`ROW_H`], three help lines and a controls line are a dozen rows more
-/// than the stage is tall, and the controls are the same on every row.
+/// third takes the controls line's place under them: [`SHOWN_ROWS`] at
+/// [`ROW_H`], three help lines and a controls line run past the stage's
+/// foot margin, and the controls are the same on every row.
 const PLATE_HELP_LINES: usize = 2;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Arrows pick, change  Del default  Esc close";
@@ -1173,7 +1179,10 @@ mod tests {
         // the plate on the stage.
         let foot = controls_y(Y0, h);
         assert_eq!(foot + INK_H, Y0 + h);
-        assert!(Y0 + h <= legaia_engine_ui::BOOT_UI_STAGE_H as i32, "{h}");
+        assert!(
+            Y0 + h + PLATE_FOOT_MARGIN <= legaia_engine_ui::BOOT_UI_STAGE_H as i32,
+            "{h}"
+        );
         let help_top = Y0 + HEAD_H + SHOWN_ROWS as i32 * ROW_H + ROWS_GAP;
         let help_end = help_top + PLATE_HELP_LINES as i32 * HELP_H;
         assert!(foot - help_end >= FOOTER_GAP);

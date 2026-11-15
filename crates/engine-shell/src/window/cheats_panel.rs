@@ -130,9 +130,9 @@ const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 /// The help / outcome line budget under the rows.
 const NOTE_LINES: usize = 2;
-const CONTROLS: &str = "Up/Down pick  Left/Right choose  Cross apply";
+const CONTROLS: &str = "Arrows pick, choose  Enter apply  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
-const PAD_CONTROLS: &str = "D-pad pick, choose  {cross} apply";
+const PAD_CONTROLS: &str = "D-pad pick, choose  {cross} apply  {circle} close";
 const FLIP_HINT: &str = "L1/R1 or Tab: scenes";
 
 impl PlayWindowApp {
