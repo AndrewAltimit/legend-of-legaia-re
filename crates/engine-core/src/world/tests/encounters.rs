@@ -1056,6 +1056,7 @@ fn the_intro_drops_an_emitters_key_latch() {
         finished: false,
         cell_fx: None,
         scroll_fx: Vec::new(),
+        cycler: Default::default(),
         prev_morph_weights: Vec::new(),
     });
     let mut session = legaia_engine_battle::encounter::EncounterSession::new(

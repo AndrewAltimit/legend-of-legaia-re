@@ -1457,6 +1457,7 @@ impl World {
         let into = clock.ticks_into_frame(self.clock.display_frames);
         let vsyncs = step - into;
         self.clock.display_frames += vsyncs;
+        self.clock.credited_frames += vsyncs;
         vsyncs as u8
     }
 }

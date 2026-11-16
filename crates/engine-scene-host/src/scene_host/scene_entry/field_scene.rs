@@ -279,12 +279,30 @@ impl SceneHost {
         // REF: FUN_801D6704
         self.world.camera.offset_ease = legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED;
         self.world.camera.ease_prev_yz = None;
+        // The step the departing field's pacer left behind: retail's step
+        // byte `0x1F800393` is not the field init's to write (it stores only
+        // the floor), and the load's mode-2 frames run no pacer, so a field
+        // entered from a priced field opens on the departing scene's step
+        // (`opstati` opens at `opdeene`'s `3`, `opurud` at `opstati`'s `2`)
+        // and the cleared ring resolves the next one off its first frame.
+        // REF: FUN_801D6704, FUN_80016B6C
+        let carried = self
+            .world
+            .clock
+            .frame_cost
+            .filter(|_| self.world.toggles.field_frame_cost)
+            .map(|_| {
+                self.world
+                    .clock
+                    .next_frame_step
+                    .unwrap_or(self.world.clock.frame_step)
+            });
         // A capture's frame-time ring is that scene's load history.
         self.world.clock.clear_frame_cost();
         self.world.clock.frame_step = if legaia_engine_scene::scene::is_world_map_scene(name) {
             WORLD_MAP_MEASURED_FRAME_STEP
         } else {
-            2
+            carried.unwrap_or(2).clamp(2, 4)
         };
         let (record_bytes, stager_entry_bytes): (Vec<u8>, Vec<u8>) = {
             let scene = self

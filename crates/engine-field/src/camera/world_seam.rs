@@ -95,8 +95,11 @@ pub trait CameraWorld {
     fn script_focus_override(&self) -> [i16; 2];
     /// Whether the scene allows saving - the composer's half-eye term.
     fn scene_save_allowed(&self) -> bool;
-    /// Displayed frames so far.
-    fn display_frames(&self) -> u64;
+    /// Display frames so far, as the game frames credit them: a frame that
+    /// runs past its step credits only its step
+    /// (`FrameClock::credited_frames`), which is what the mover's clock
+    /// reads.
+    fn credited_frames(&self) -> u64;
     /// Vsyncs a game pass takes (`DAT_1F800393`), the cadence the follow ease
     /// steps at.
     fn camera_frame_step(&self) -> u8 {

@@ -81,8 +81,8 @@ impl CameraWorld for World {
         self.party.scene_save_allowed
     }
 
-    fn display_frames(&self) -> u64 {
-        self.clock.display_frames
+    fn credited_frames(&self) -> u64 {
+        self.clock.credited_frames
     }
 
     fn cutscene_timeline_active(&self) -> bool {
@@ -468,6 +468,7 @@ mod tests {
 
         // Advance 50 of the 100 display frames - halfway on a linear curve.
         w.clock.display_frames = 50;
+        w.clock.credited_frames = 50;
         c.tick(&w);
         let mid = c.globals.tr_eye()[2];
         assert!(
@@ -477,6 +478,7 @@ mod tests {
 
         // Run out the duration: exact arrival, and the one-shot mover retires.
         w.clock.display_frames = 100;
+        w.clock.credited_frames = 100;
         c.tick(&w);
         assert_eq!(c.globals.tr_eye()[2], 17420, "glide arrives exactly");
         assert!(c.mover.is_none(), "the mover is one-shot");
@@ -505,6 +507,7 @@ mod tests {
         let mut c = Camera::default();
         c.route_camera_events(&mut w);
         w.clock.display_frames = 50;
+        w.clock.credited_frames = 50;
         c.tick(&w);
         let mid = c.globals.tr_eye()[2];
         assert!((16420..17420).contains(&mid));
@@ -515,6 +518,7 @@ mod tests {
         c.route_camera_events(&mut w);
         assert!(c.mover.is_none(), "the mover is dead");
         w.clock.display_frames = 100;
+        w.clock.credited_frames = 100;
         c.tick(&w);
         assert_eq!(c.globals.tr_eye()[2], mid, "the shot holds mid-glide");
     }
@@ -1408,6 +1412,7 @@ mod tests {
         for _ in 0..240 {
             w.actors[0].move_state.world_x += 2;
             w.clock.display_frames += 1;
+            w.clock.credited_frames += 1;
             c.tick_on_stream(&mut w);
         }
         assert_eq!(c.globals.angles()[0], 450, "eased back to the follow pitch");
@@ -1464,6 +1469,7 @@ mod tests {
             for _ in 0..(hz as u32 * 2) {
                 for _ in 0..stepper.drain(1.0 / hz) {
                     world.clock.display_frames += 1;
+                    world.clock.credited_frames += 1;
                 }
                 camera.tick(&world);
                 if arrived_at.is_none() && camera.globals.0[6] == -600 {

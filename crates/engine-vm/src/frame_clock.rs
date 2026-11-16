@@ -157,6 +157,18 @@ pub struct FrameClock {
     /// separate counter because it names a *unit* (retail display frames) that
     /// the sim-tick counter does not promise.
     pub display_frames: u64,
+    /// The display frames the game frames have credited: what a clock
+    /// retail runs once a game frame and steps by `DAT_1F800393` reads
+    /// ([`Self::count_credited_frame`]). Equal to [`Self::display_frames`]
+    /// until a frame outlasts its step ([`frame_wall_vsyncs`]); the vsyncs
+    /// past the step credit nothing, so a cutscene camera glide lands that
+    /// much later on the wall clock, as retail's does.
+    pub credited_frames: u64,
+    /// Vsyncs since the current game frame opened (`0` on its first).
+    pub frame_vsync: u8,
+    /// Whether this world tick's display frame was credited
+    /// ([`Self::count_credited_frame`]).
+    pub frame_credited: bool,
     /// `1` on every sim tick that maps to a retail display frame - which, under
     /// the 1:1 denomination `World::tick` documents, is every sim tick.
     ///
@@ -199,6 +211,9 @@ impl FrameClock {
             sim_ticks: 0,
             display_frame_step: 0,
             display_frames: 0,
+            credited_frames: 0,
+            frame_vsync: 0,
+            frame_credited: true,
             battle_frame_step_seed: None,
         }
     }
@@ -210,9 +225,9 @@ impl FrameClock {
     }
 
     /// Open a game frame under a seeded frame cost: install the step the
-    /// frame before resolved, make it the wait that follows this frame, and
-    /// resolve the next frame's step off the ring with this frame's cost in
-    /// it. No-op without a seeded cost.
+    /// frame before resolved, make the frame's length the wait that follows
+    /// it ([`frame_wall_vsyncs`]), and resolve the next frame's step off the
+    /// ring with this frame's cost in it. No-op without a seeded cost.
     ///
     /// REF: FUN_80016B6C (`0x80017044..0x800171D8`)
     pub fn open_costed_game_frame(&mut self) {
@@ -222,7 +237,7 @@ impl FrameClock {
         if let Some(step) = self.next_frame_step.take() {
             self.frame_step = step;
         }
-        self.pass_wait = Some(self.frame_step.max(1));
+        self.pass_wait = Some(frame_wall_vsyncs(self.frame_step, cost));
         self.next_frame_step = Some(
             self.frame_step_telemetry
                 .resolve(cost, true, self.frame_step_floor)
@@ -268,6 +283,29 @@ impl FrameClock {
         }
     }
 
+    /// Count this world tick's display frame against the game frame it
+    /// falls in: one credited frame while the frame is within its step,
+    /// none on the vsyncs a long frame runs past it. Every tick credits one
+    /// while the game-tick clock is down.
+    ///
+    /// REF: FUN_801DC0BC (the camera mover adds `DAT_1F800393` once a
+    /// frame), FUN_8005FB84
+    pub fn count_credited_frame(&mut self) {
+        self.frame_credited = if self.game_tick_live {
+            self.frame_vsync = if self.game_tick_fired {
+                0
+            } else {
+                self.frame_vsync.saturating_add(1)
+            };
+            self.frame_vsync < self.frame_step.max(1)
+        } else {
+            true
+        };
+        if self.frame_credited {
+            self.credited_frames += 1;
+        }
+    }
+
     /// Whether a field script context runs its slice on this world tick.
     ///
     /// Retail runs every script context from the actor-list walk
@@ -284,6 +322,31 @@ impl FrameClock {
     pub fn script_slice_due(&self) -> bool {
         !self.game_tick_live || self.game_tick_fired
     }
+}
+
+/// Hblanks a vsync holds: the NTSC field's `263` lines, which is what libetc
+/// `VSync(1)` counts the frame time in (root counter 1 on hblank).
+pub const HBLANKS_PER_VSYNC: i32 = 263;
+
+/// The vsyncs a game frame lasts at step `step` when its work costs
+/// `cost_hblanks`.
+///
+/// The pacer ends each frame with libetc `VSync(step)` (`jal 0x8005FB84` at
+/// `0x800171C0`). `VSync(n)` waits for the vblank count to reach the count
+/// its previous call returned on plus `n - 1` (`FUN_8005FCCC` at
+/// `0x8005FC14`) and then for one more vblank past wherever the count
+/// stands (`0x8005FC38`), so a frame whose work outlasts its step ends on
+/// the first vblank after the work: `max(step, cost / 263 + 1)`. A frame
+/// past four vsyncs therefore lasts longer than the step it credits.
+///
+/// REF: FUN_8005FB84, FUN_80016B6C
+pub fn frame_wall_vsyncs(step: u8, cost_hblanks: i32) -> u8 {
+    let step = step.max(1);
+    if cost_hblanks < i32::from(step) * HBLANKS_PER_VSYNC {
+        return step;
+    }
+    let ran = cost_hblanks / HBLANKS_PER_VSYNC + 1;
+    step.max(ran.clamp(1, i32::from(u8::MAX)) as u8)
 }
 
 impl Default for FrameClock {
@@ -314,5 +377,52 @@ mod tests {
             sum += c.script_frame_delta();
         }
         assert_eq!(sum, 6);
+    }
+
+    /// A frame whose work fits its step lasts the step; one that runs past
+    /// it ends on the vblank after the work.
+    #[test]
+    fn a_frame_lasts_its_step_or_its_work() {
+        assert_eq!(frame_wall_vsyncs(3, 616), 3);
+        assert_eq!(frame_wall_vsyncs(4, 1051), 4);
+        assert_eq!(frame_wall_vsyncs(3, 1940), 8);
+        assert_eq!(frame_wall_vsyncs(4, 1796), 7);
+        assert_eq!(frame_wall_vsyncs(2, 789), 4);
+    }
+
+    /// A frame priced past its step lasts its work, and the spike steps the
+    /// frame after it at `4` and leaves the clamp in the ring.
+    #[test]
+    fn a_long_frame_waits_its_work_and_steps_the_next_at_four() {
+        let mut c = FrameClock::new();
+        c.frame_cost = Some(400);
+        c.open_costed_game_frame();
+        assert_eq!(c.game_frame_wait(), 2);
+        assert_eq!(c.next_frame_step, Some(2));
+        c.frame_cost = Some(1940);
+        c.open_costed_game_frame();
+        assert_eq!(c.game_frame_wait(), 8);
+        assert_eq!(c.next_frame_step, Some(4));
+        c.frame_cost = Some(600);
+        c.open_costed_game_frame();
+        assert_eq!(c.frame_step, 4);
+        assert_eq!(c.game_frame_wait(), 4);
+        assert_eq!(c.next_frame_step, Some(3));
+    }
+
+    /// A frame that lasts eight vsyncs at step three credits three of them.
+    #[test]
+    fn a_long_frame_credits_its_step() {
+        let mut c = FrameClock::new();
+        c.frame_step = 3;
+        c.game_tick_live = true;
+        for v in 0..8 {
+            c.game_tick_fired = v == 0;
+            c.count_credited_frame();
+        }
+        assert_eq!(c.credited_frames, 3);
+        c.game_tick_fired = true;
+        c.count_credited_frame();
+        assert_eq!(c.credited_frames, 4);
     }
 }

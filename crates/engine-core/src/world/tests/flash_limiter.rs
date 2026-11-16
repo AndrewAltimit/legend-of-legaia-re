@@ -39,6 +39,7 @@ fn part_with(
         finished: true,
         cell_fx: Some(fx),
         scroll_fx: Vec::new(),
+        cycler: Default::default(),
         prev_morph_weights: Default::default(),
     }
 }

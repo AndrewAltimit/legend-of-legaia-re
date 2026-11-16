@@ -1137,6 +1137,7 @@ fn the_hall_hook_copies_the_leader_and_sets_v() {
         finished: false,
         cell_fx: None,
         scroll_fx: Vec::new(),
+        cycler: Default::default(),
         prev_morph_weights: Vec::new(),
     });
     let mut host = crate::world::vm_hosts::MoveVmHostImpl {

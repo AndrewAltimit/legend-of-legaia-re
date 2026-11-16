@@ -657,6 +657,7 @@ mod tests {
             finished: false,
             cell_fx: None,
             scroll_fx: Vec::new(),
+            cycler: Default::default(),
             prev_morph_weights: Vec::new(),
         }
     }

@@ -33,6 +33,7 @@ fn mist_sheet() -> crate::world::ambient::AmbientPart {
         finished: false,
         cell_fx: None,
         scroll_fx: Vec::new(),
+        cycler: Default::default(),
         prev_morph_weights: Default::default(),
     }
 }

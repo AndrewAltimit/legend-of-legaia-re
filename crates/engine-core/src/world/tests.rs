@@ -16,6 +16,7 @@ use legaia_engine_mode::mode::SceneMode;
 /// this harness skips, so it runs the ramp itself.
 fn live_tick(w: &mut World) -> Option<legaia_engine_battle_vm::battle_action::StepOutcome> {
     w.clock.display_frames += 1;
+    w.clock.credited_frames += 1;
     let out = w.live_battle_tick();
     if w.toggles.battle_sm_frame_cadence {
         w.tick_battle_hp_bars();
@@ -352,6 +353,7 @@ mod cast_band;
 mod cast_presentation_disc;
 mod commit_confirm;
 mod counterattack;
+mod cycler_capture;
 mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;

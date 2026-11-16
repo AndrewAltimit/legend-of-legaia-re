@@ -429,6 +429,7 @@ impl World {
         // The script contexts stepped below time themselves on this clock
         // (`FrameClock::script_frame_delta`).
         self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
+        self.clock.count_credited_frame();
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             // The ambient move-VM effect parts (jou's CLUT-cell cyclers and

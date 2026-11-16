@@ -844,8 +844,12 @@ impl World {
         if self.clock.display_frame_step != 1 {
             return;
         }
-        let glide = &mut self.camera.state.glide_frames;
-        *glide = (*glide - 1).max(0);
+        // The mover's clock: a frame that runs past its step credits only
+        // the step (`FrameClock::frame_credited`).
+        if self.clock.frame_credited {
+            let glide = &mut self.camera.state.glide_frames;
+            *glide = (*glide - 1).max(0);
+        }
         self.step_cutscene_timeline();
         self.step_helper_contexts();
         self.field_vm.slice_pad = None;
