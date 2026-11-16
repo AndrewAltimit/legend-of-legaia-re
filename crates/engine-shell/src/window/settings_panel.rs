@@ -226,8 +226,12 @@ pub(super) fn wrap_lines(text: &str, max_w: i32, width: &dyn Fn(&str) -> i32) ->
 /// Stage geometry of the settings page. Its plate is translucent and narrower
 /// than the stage, so a toggled light or fog shows around it.
 const X0: i32 = 10;
-/// The top of every list page's plate.
-pub(super) const Y0: i32 = 1;
+/// The top of every list page's plate. The tallest plate (Settings, Scenes:
+/// [`SHOWN_ROWS`] rows and a two-line help) is 227 stage rows, so a plate
+/// on row 1 hugged the window's top edge with twelve free rows under it;
+/// row 5 splits the air and keeps eight rows (`PLATE_FOOT_MARGIN`) under
+/// the controls line.
+pub(super) const Y0: i32 = 5;
 const WIDTH: i32 = 300;
 /// The pitch of a list row on every page of the panel. The font's ink is 11
 /// rows tall, capitals to descenders, so at an 11-row pitch a `g` or a `p`
