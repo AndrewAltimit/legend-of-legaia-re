@@ -1093,7 +1093,17 @@ pub struct ModuleSpawn {
 pub struct ModuleEffect {
     pub id: u8,
     pub anchor: SpawnAnchor,
-    pub angle: i16,
+    pub angle: EffectAngle,
+}
+
+/// The `a2` a module's [`ModuleEffect`] passes the pool spawner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectAngle {
+    /// A literal the arm loads.
+    Literal(i16),
+    /// The heading `+0x46` of the seat the anchor stands on (`lh a2,0x46(sN)`)
+    /// plus this offset.
+    AnchorFacing(i16),
 }
 
 /// One `FUN_80058490(&rect, dst_x, dst_y)` - a VRAM-to-VRAM `MoveImage` - out

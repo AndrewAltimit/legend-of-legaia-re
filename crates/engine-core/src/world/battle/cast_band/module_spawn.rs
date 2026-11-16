@@ -569,8 +569,14 @@ impl World {
                     anchor_seats,
                 ),
             };
-            if let Some((pos, _)) = point {
-                self.try_spawn_effect(fx.id, pos, (fx.angle as u16) & 0xFFF);
+            if let Some((pos, rot)) = point {
+                let angle = match fx.angle {
+                    legaia_engine_cast::cast_module_camera::EffectAngle::Literal(a) => a,
+                    legaia_engine_cast::cast_module_camera::EffectAngle::AnchorFacing(d) => {
+                        rot[1].wrapping_add(d)
+                    }
+                };
+                self.try_spawn_effect(fx.id, pos, (angle as u16) & 0xFFF);
             }
         }
     }
