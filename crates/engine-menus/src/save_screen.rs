@@ -160,6 +160,10 @@ pub struct SaveScreenFlow {
     refusal: Option<(SaveRefusal, u16)>,
     /// The card Save written inside the commit beat ([`Self::written_save`]).
     written: Option<SaveCommit>,
+    /// The grid's blocks from before a write whose store the host has not
+    /// answered yet ([`Self::save_written_pending_store`]): what the grid
+    /// goes back to when the store fails.
+    pre_write_blocks: Option<Option<(u8, Vec<SlotSnapshot>)>>,
     /// This frame's grid confirm was refused on its cell
     /// ([`Self::blip_edge`]).
     grid_refused: bool,
@@ -637,10 +641,38 @@ impl SaveScreenFlow {
     pub fn finish_save_request(&mut self, session: &mut SaveSelectSession, ok: bool) {
         let req = self.save_request(session);
         session.report_commit(ok);
-        if ok {
-            self.blocks = None;
-            self.written = req;
+        match (self.pre_write_blocks.take(), ok) {
+            // The grid re-read the card when the bytes went down; keep it.
+            (Some(_), true) => {}
+            // The store failed after the write: the grid shows the card as
+            // it stood, as a host whose one write failed never re-reads it.
+            (Some(before), false) => {
+                self.blocks = before;
+                self.written = None;
+            }
+            (None, true) => {
+                self.blocks = None;
+                self.written = req;
+            }
+            (None, false) => {}
         }
+    }
+
+    /// The bytes of [`Self::save_request`] are down in the host's card, and
+    /// the host still has to store that card before it can answer
+    /// [`Self::finish_save_request`] (the browser page stores the card image
+    /// itself, a few frames later). The grid re-reads the card now, as it
+    /// does on the frame after a write that is stored at once, so the new
+    /// save shows in its cell under "Saving to MEMORY CARD" on both hosts;
+    /// the result line still waits for the store's answer. A failed store
+    /// then puts the grid back as it was.
+    pub fn save_written_pending_store(&mut self, session: &SaveSelectSession) {
+        if self.pre_write_blocks.is_some() {
+            return;
+        }
+        let req = self.save_request(session);
+        self.pre_write_blocks = Some(self.blocks.take());
+        self.written = req;
     }
 
     /// The card Save this screen wrote through [`Self::save_request`], if
@@ -1315,6 +1347,45 @@ mod tests {
                 assert!(matches!(s.phase(), SelectPhase::SlotPreview { .. }));
                 assert_eq!(flow.written_save(), None);
             }
+        }
+    }
+
+    /// A host that stores its card after the write (the browser page) has the
+    /// grid re-read the written card at once, as a host that stores in the
+    /// write does on the next frame, while the result line waits for the
+    /// store; a failed store puts the grid back as it was.
+    #[test]
+    fn a_write_awaiting_its_store_shows_in_the_grid_at_once() {
+        for ok in [false, true] {
+            let mut s =
+                SaveSelectSession::for_rack(SaveSelectMode::Save, &card_rack(&[true, false]));
+            let mut flow = SaveScreenFlow::new();
+            s.tick(SelectInput {
+                cross: true,
+                ..Default::default()
+            });
+            let beat = s.now_checking_frames() + 1;
+            run_beat(&mut flow, &mut s, beat);
+            for e in [cross(), PadButton::Left.mask(), cross()] {
+                let edge = flow.before_tick(&mut s, e);
+                s.tick(SelectInput::from_pad_edge(edge));
+            }
+            assert!(flow.save_request(&s).is_some(), "a write is asked for");
+            assert!(!flow.blocks()[0].present, "cell 0 starts empty");
+            flow.save_written_pending_store(&s);
+            assert_eq!(flow.pending_read(&s), Some(0), "the grid re-reads now");
+            flow.install_blocks(0, (0..15).map(|i| block(i, i == 0 || i == 2)).collect());
+            assert!(
+                flow.blocks()[0].present,
+                "the new save shows before the store"
+            );
+            assert_eq!(s.committing_work(), Some(true), "the result line waits");
+            flow.save_written_pending_store(&s);
+            assert_eq!(flow.pending_read(&s), None, "one re-read per write");
+            flow.finish_save_request(&mut s, ok);
+            assert_eq!(flow.read_port(), Some(0));
+            assert_eq!(flow.blocks()[0].present, ok, "a failed store restores");
+            assert_eq!(flow.written_save().is_some(), ok);
         }
     }
 

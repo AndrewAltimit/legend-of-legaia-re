@@ -124,6 +124,13 @@ impl LegaiaRuntime {
         if ok && self.card_store_handshake {
             if let Some(m) = self.play_menu.as_mut() {
                 m.store_wait = Some(0);
+                // The grid re-reads the written card now, as the window's
+                // does on the frame after its write; the result line waits.
+                if let Some(PlaySub::Session(session)) = m.sub.as_ref()
+                    && let FieldMenuSubsession::Save(s) = session.as_ref()
+                {
+                    m.save_flow.save_written_pending_store(s);
+                }
             }
             return;
         }
