@@ -375,6 +375,7 @@
    "track": "tooling",
    "scope": "The desktop programs' one palette (dark and light) and spacing values: Explorer's egui theme, the game launcher, the play window's own chrome; plus the failed-game wording (<code>game_exit</code>) the launcher and Explorer share. No dependencies.",
    "dependents": [
+    "asset-viewer",
     "engine-shell",
     "explorer",
     "web-play"
@@ -503,6 +504,7 @@
   "asset-viewer": {
    "package": "legaia-asset-viewer",
    "deps": [
+    "app-theme",
     "container-formats",
     "disc-audit",
     "engine-audio",
