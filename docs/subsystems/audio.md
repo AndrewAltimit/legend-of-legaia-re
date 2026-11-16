@@ -521,11 +521,14 @@ the poller every vsync (frame step 2 throughout):
 |---|---|---|---|---|---|---|
 | `retock_field_card_boot`, `2001` | 989, 78 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
 | `town01_field_card_boot`, `2045` | 1033, 74 sectors | +2..+6 | +7..+62 | +63 | +67 | +69 |
+| `retock_field_card_boot`, `2022` | 1010, 27 sectors | +1..+5 | +6..+61 | +62 | +66 | +68 |
+| `retock_field_card_boot`, `2044` | 1032, 101 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
 
 The old track's slot closes at stage 2, about six vsyncs in. The read, not
-the settle, holds the walk: stage 3 waits 56 vsyncs on both entries, so the
-settle has long run out when stage 4 is reached, and a new track is first
-heard a little over a second after the op.
+the settle, holds the walk: stage 3 waits 56 vsyncs on every entry, from 27
+sectors to 101, so the read's length is not the entry's and the settle has
+long run out when stage 4 is reached. A new track is first heard a little
+over a second after the op.
 
 Engine side: `legaia_engine_system::sound_state::BgmSwapPoller` is the walk
 on the vsync clock, seated at `AudioState::bgm_swap`, with the measured

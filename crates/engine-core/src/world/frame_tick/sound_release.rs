@@ -39,8 +39,10 @@ impl World {
     /// stages `0..=2` (three game frames) and the payload read stage 3 waits
     /// on. `autorun_bgm_swap_latency.lua` measures 62 (`retock`, word `2001`,
     /// entry 989 of 78 sectors) and 63 (`town01`, word `2045`, entry 1033 of
-    /// 74 sectors) at frame step 2: the read takes 56 vsyncs whatever the
-    /// entry's length, past the 30-vsync settle, so it is what holds the walk.
+    /// 74 sectors) at frame step 2, and 62 again for words `2022` (27 sectors)
+    /// and `2044` (101 sectors) from `retock`: the read takes 56 vsyncs
+    /// whatever the entry's length, past the 30-vsync settle, so it is what
+    /// holds the walk and one constant serves every track.
     pub const BGM_SWAP_READ_VSYNCS: u16 = 62;
 
     /// One vsync of the swap poller's clock (`FUN_800243F0`, see
