@@ -1280,6 +1280,38 @@ steps, no film falling more than `.0003`; the full-party Gimard, Gizam and Iota 
 about `.0016`. Mushura's
 yaw is its arm-13 shot's, framed on where its chase left the creature.
 
+<a id="where-a-plain-film-leaves-retails-words"></a>
+
+**Where a plain film leaves retail's words.** The engine's `meta.csv` carries the
+stream's word each tick, the recording's each vsync, so the first pass whose word is not
+retail's is a place to look, and the LCG distance of each side's next words from the last
+shared one says how many draws the two frames made. A `--watch 0x80009010` recording of
+the same cast names each draw's `ra`. Read that way, the plain films parted at pool
+spawns a tick body makes and the port did not, at a selector stored behind the
+installer, and at draws the port made a pass late or not at all
+([the draws a recording names](../subsystems/cast-module.md#the-draws-a-recording-names)).
+With them, the plain seat over the 29 films:
+
+| Film | Before | After | Stream now holds to |
+|---|---|---|---|
+| `0x86` Zenoir | `.9242` | `.9638` | arm 11 (was arm 5) |
+| `0x89` Orb | `.9483` | `.9530` | arm 9 (was arm 3) |
+| `0x9D` Jedo | `.9522` | `.9560` | - |
+| `0x90` Kemaro | `.9780` | `.9787` | the end (was arm 9) |
+| `0x83` Vera | `.9556` | `.9556` | the end (was arm 10) |
+| `0x82` Theeder | `.9682` | `.9680` | arm 6 (was arm 5) |
+| `0x8D` Mushura | `.9330` | `.9313` | arm 6 (was arm 1) |
+| the 29 films | `.9622` | `.9638` | |
+
+No cue moves. Mushura's stream now holds through the creature's seat, and its arm-12
+chase still reads what it did: the chase's residue is not the stream's. Three places the
+recordings name stay open: Viguro's creature sheds its first sparks on the frame its
+stager seats it, which the port's part tick reaches only after that frame's draw
+(retail's walker runs inside the draw, ahead of the burning-body loop); the body-paced
+directors (Orb, Ozma) hand an arm's calls over on the next arm's first tick, so their
+pass draws land a pass late; and Iota's stager stops being called at arm 9, where
+retail's caller keeps calling it through the arm.
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
