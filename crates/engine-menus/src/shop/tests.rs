@@ -657,3 +657,30 @@ fn the_point_card_toast_rides_over_a_closed_stepper() {
     assert_eq!(w, vec![33, 32, 34, 41, 31]);
     assert!(shop_screen_windows(ShopScreenPhase::BuyQuantity, false).contains(&35));
 }
+
+/// A shop window rides the window walker: created on the park
+/// `FUN_800326AC` puts it on (right edge, class 6: `x = 0x140 + 0xC`), a
+/// twelfth of the way home on its first frame, home on the twelfth; going
+/// out it retraces the same line back to the park.
+#[test]
+fn shop_windows_slide_on_the_walker_line() {
+    use crate::menu_widget::WidgetDescriptor;
+    let desc = WidgetDescriptor {
+        home: legaia_engine_vm::Position::new(174, 22),
+        size: (132, 182),
+        park_edge: 6,
+        kind: 3,
+    };
+    let park = 0x140 + 0xC;
+    let xs: Vec<i32> = (1..=SHOP_SLIDE_FRAMES)
+        .map(|p| shop_window_origin(&desc, p, false).0)
+        .collect();
+    let want: Vec<i32> = (1..=12).map(|p| park + (174 - park) * p / 12).collect();
+    assert_eq!(xs, want);
+    assert_eq!(*xs.last().unwrap(), 174);
+    assert_eq!(shop_window_origin(&desc, 0, true), (park, 22));
+    assert_eq!(
+        shop_window_origin(&desc, 11, true),
+        (174 + (park - 174) / 12, 22)
+    );
+}

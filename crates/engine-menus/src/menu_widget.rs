@@ -182,6 +182,18 @@ pub struct WidgetDescriptor {
     pub kind: u16,
 }
 
+impl WidgetDescriptor {
+    /// The fields a creation reads off a disc-parsed descriptor record.
+    pub fn from_window(w: &legaia_game_tables::menu_windows::MenuWindowDescriptor) -> Self {
+        Self {
+            home: vm::Position::new(w.x, w.y),
+            size: (w.w, w.h),
+            park_edge: w.park_edge,
+            kind: w.kind,
+        }
+    }
+}
+
 /// The display rect the park edges are measured from: the scratchpad
 /// halfwords `0x1F800388` (left), `0x1F80038A` (top), `0x1F80038C` (right)
 /// and `0x1F80038E` (bottom).
@@ -286,12 +298,7 @@ impl MenuWidgetState {
         self.descriptors = table
             .windows
             .iter()
-            .map(|w| WidgetDescriptor {
-                home: vm::Position::new(w.x, w.y),
-                size: (w.w, w.h),
-                park_edge: w.park_edge,
-                kind: w.kind,
-            })
+            .map(WidgetDescriptor::from_window)
             .collect();
     }
 
@@ -334,6 +341,16 @@ impl MenuWidgetState {
     /// The live window for `id`, closing or not.
     pub fn window(&self, id: u8) -> Option<&WidgetWindow> {
         self.windows.get(&id)
+    }
+
+    /// Every closing window's live origin (node `+0xA/+0xC`), ascending id:
+    /// where the walker has carried it toward its park this frame.
+    pub fn closing_origins(&self) -> Vec<(usize, (i32, i32))> {
+        self.windows
+            .iter()
+            .filter(|(_, w)| w.closing())
+            .map(|(&id, w)| (usize::from(id), (i32::from(w.pos.x), i32::from(w.pos.y))))
+            .collect()
     }
 
     /// Where the draw places each window this frame, by descriptor id, or

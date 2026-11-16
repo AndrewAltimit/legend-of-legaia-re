@@ -654,52 +654,25 @@ pub fn prize_screen_draws(
     out
 }
 
-/// Stage displacement of window `id` at slide `progress` out of `frames`:
-/// zero at home, and at progress `0` just far enough toward the
-/// descriptor's park edge (`+0x1`: 0 bottom, 2 left, 4 top, 6 right) that
-/// the frame sits wholly off the 320x240 stage. The Retock capture moves
-/// every window linearly between the two, so a window travels its own
-/// distance in the same number of frames. No table, no slide.
-pub fn shop_slide_offset(
-    ctx: &ShopScreenCtx<'_>,
-    id: usize,
-    progress: u8,
-    frames: u8,
-) -> (i32, i32) {
-    let Some(d) = ctx.rects.table().and_then(|t| t.window(id)) else {
-        return (0, 0);
-    };
-    let (fx, fy, fw, fh) = ctx.rects.frame_rect(id);
-    let (dx, dy) = match d.park_edge {
-        0 => (0, crate::BOOT_UI_STAGE_H as i32 - fy),
-        2 => (-(fx + fw), 0),
-        4 => (0, -(fy + fh)),
-        6 => (crate::BOOT_UI_STAGE_W as i32 - fx, 0),
-        _ => (0, 0),
-    };
-    let frames = i32::from(frames.max(1));
-    let rest = frames - i32::from(progress.min(frames as u8));
-    (dx * rest / frames, dy * rest / frames)
-}
-
 /// Move every draw of a composed shop frame with the window it belongs to.
 ///
 /// The composition and the per-window painters lay everything out at the
 /// windows' home rects; this assigns each text (stage pixels) and sprite
 /// (surface pixels) to the last window in `slides` whose home frame holds
 /// its origin - window 39's widget box counting as 39 - and shifts it by
-/// that window's [`shop_slide_offset`]. A draw in no window stays put.
+/// that window's offset from home (`(window id, (dx, dy))`, stage pixels:
+/// where the window walker has it this frame,
+/// `legaia_engine_menus::shop::shop_window_origin`). A draw in no window
+/// stays put.
 pub fn apply_shop_slides(
     ctx: &ShopScreenCtx<'_>,
-    slides: &[(usize, u8)],
-    frames: u8,
+    slides: &[(usize, (i32, i32))],
     texts: &mut Vec<TextDraw>,
     sprites: &mut [SpriteDraw],
 ) {
     // (home frame rect, slide offset) per window region, in draw order.
     let mut regions: Vec<(StageRect, (i32, i32))> = Vec::new();
-    for &(id, p) in slides {
-        let off = shop_slide_offset(ctx, id, p, frames);
+    for &(id, off) in slides {
         regions.push((ctx.rects.frame_rect(id), off));
         if id == WIN_SHOP_SELL_DETAIL {
             let (x, y, w, h) = sell_detail_box_rect(ctx.rects.rect(id));

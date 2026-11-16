@@ -581,6 +581,27 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
 /// then every per-window painter above, the painters' hand and pictogram
 /// requests resolved to atlas sprites.
 ///
+/// Each sliding shop window's offset from its home rect this frame, stage
+/// pixels: where the window walker has it
+/// (`legaia_engine_menus::shop::shop_window_origin`) off its descriptor's
+/// home and park edge. A window with no descriptor stays home.
+pub fn shop_slide_offsets(
+    table: Option<&legaia_game_tables::menu_windows::MenuWindowTable>,
+    motion: &[(usize, u8, bool)],
+) -> Vec<(usize, (i32, i32))> {
+    motion
+        .iter()
+        .map(|&(id, p, leaving)| {
+            let off = table.and_then(|t| t.window(id)).map_or((0, 0), |w| {
+                let desc = legaia_engine_menus::menu_widget::WidgetDescriptor::from_window(w);
+                let (x, y) = legaia_engine_menus::shop::shop_window_origin(&desc, p, leaving);
+                (x - i32::from(w.x), y - i32::from(w.y))
+            });
+            (id, off)
+        })
+        .collect()
+}
+
 /// Texts are stage pixels; sprites are surface pixels for
 /// `surface_w x surface_h`.
 pub fn gold_shop_screen(
@@ -786,8 +807,7 @@ pub fn gold_shop_screen(
     // Every window's draws ride its open / close slide.
     ss::apply_shop_slides(
         &ctx,
-        &slides,
-        legaia_engine_menus::shop::SHOP_SLIDE_FRAMES,
+        &shop_slide_offsets(inputs.table, &menu.shop_slide_motion()),
         &mut out.texts,
         &mut out.sprites,
     );
