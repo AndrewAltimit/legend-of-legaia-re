@@ -1113,6 +1113,27 @@ mod tests {
         assert!(st.creature_floor_clip);
     }
 
+    /// PROT 0908's arm 4 spawns its two pool effects behind its seats, and
+    /// PROT 0905's arm 9 its effect `0x14` on the restored target, turned
+    /// its heading.
+    #[test]
+    fn zenoir_and_vera_arms_report_their_pool_effects() {
+        let mut st = ModuleCamState::default();
+        let d = zenoir_direct(&mut st, 4, seats());
+        assert_eq!(d.spawns.len(), 7);
+        let ids: Vec<u8> = d.effects.iter().map(|e| e.id).collect();
+        assert_eq!(ids, [3, 0x20]);
+        assert!(
+            d.effects
+                .iter()
+                .all(|e| e.anchor == SpawnAnchor::CreatureGround { y: 0 }
+                    && e.angle == EffectAngle::Literal(0))
+        );
+        assert_eq!(VERA_RESTORE_EFFECTS[0].id, 0x14);
+        assert_eq!(VERA_RESTORE_EFFECTS[0].anchor, SpawnAnchor::Victim);
+        assert_eq!(VERA_RESTORE_EFFECTS[0].angle, EffectAngle::AnchorFacing(0));
+    }
+
     /// PROT 0908's arm 11 raises the floor clip inside the targetable-victim
     /// branch only (`0x801F7C04`): a non-targetable victim leaves it down.
     #[test]

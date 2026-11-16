@@ -1227,3 +1227,33 @@ fn retail_nighto_boss_immunity_beats_a_landing_roll() {
     assert_eq!(nighto_outcome(&immune), NightoOutcome::KillResisted);
     assert!(nighto_outcome(&immune).resisted());
 }
+
+/// Arm 4 raises the summon seat with the spark selector (`0x801F6EDC`) and
+/// arm 5's pass clears it with the render flag (`0x801F70AC`).
+#[test]
+fn theeder_rise_arms_the_spark_selector_and_the_show_clears_it() {
+    let mut seats = row();
+    for (phase, flag, sel) in [
+        (
+            THEEDER_RISE_ARM,
+            THEEDER_RISE_RENDER_FLAG,
+            THEEDER_RISE_RENDER_21F,
+        ),
+        (THEEDER_SHOW_ARM, 0, 0),
+    ] {
+        let mut ctx = CastModuleCtx {
+            phase,
+            ..Default::default()
+        };
+        theeder_tick(
+            &mut ctx,
+            &mut seats,
+            WHO,
+            TheederGeom::default(),
+            &mut TheederFx::default(),
+            |_| None,
+        );
+        assert_eq!(seats[WHO.summon as usize].render_flag, flag);
+        assert_eq!(seats[WHO.summon as usize].render_21f, sel);
+    }
+}
