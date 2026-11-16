@@ -51,6 +51,7 @@ impl World {
         let rearm = std::mem::take(&mut self.casting.module_cam.creature_loop_arm);
         let seek = self.casting.module_cam.creature_seek.take();
         let rate = self.casting.module_cam.creature_rate.take();
+        let impact = self.casting.module_cam.creature_impact.take();
         let Some(slot) = self.casting.summon_actor_slot else {
             return;
         };
@@ -90,6 +91,10 @@ impl World {
             && let Some(p) = a.battle_animation.as_mut()
         {
             p.seek_sixteenths(c);
+        }
+        // An impact-selector store behind the installer (PROT 0904's arm 4).
+        if let Some(sel) = impact {
+            a.battle.impact_state = sel;
         }
         // An anim-rate store `+0x21D` (PROT 0914's arm `0xC` ramp).
         if let Some(r) = rate {

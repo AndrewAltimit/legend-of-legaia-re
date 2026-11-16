@@ -11,7 +11,7 @@ impl World {
     /// PROT 0911's writes around its tick, every tick of the module:
     ///
     /// - arm 2's pass seats the sixteen stars ([`orb_star_pair`]) on the
-    ///   caster's facing, on arm 3's first tick with the pass's other calls;
+    ///   caster's facing, on the pass's own tick;
     /// - while arm 3 holds, each star moves to [`orb_star_place`] of the
     ///   countdown the pass left;
     /// - arms 3 and 9 flush the part pool on their pass (`FUN_80050E74`):
@@ -24,13 +24,13 @@ impl World {
     /// REF: FUN_80050E74, FUN_801D8DE8
     pub(in crate::world::battle) fn orb_arm_writes(&mut self, phase_in: u8, phase_out: u8) {
         let passed = phase_out != phase_in;
-        // Arm 2's pass seats the swarm beside its flash discs; the
-        // body-paced director hands that pass's calls over on arm 3's first
-        // tick, and the stars go with them.
+        // Arm 2's pass seats the swarm on the pass itself: its forty
+        // `rand()` words (`jal 0x80056798` at `0x801F6CDC..0x801F6D70`, five
+        // a star pair) fall on the arm-2 frame of a `--watch 0x80009010`
+        // recording, ahead of arm 3's first frame driver word. Seated on
+        // arm 3's first tick, as the body-paced director hands over the
+        // flash discs, the stream ran a pass behind retail's from there on.
         if phase_in == 2 && passed {
-            self.casting.module_orb.stars_owed = true;
-        }
-        if phase_in == 3 && std::mem::take(&mut self.casting.module_orb.stars_owed) {
             self.orb_seat_stars();
         }
         if phase_in == 3 && !passed {

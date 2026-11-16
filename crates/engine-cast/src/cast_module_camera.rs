@@ -228,6 +228,12 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// An impact selector `+0x21F` a tick body stored on the creature on the
+    /// pass its installer `FUN_801F19EC` ran, behind the installer's own
+    /// clear (PROT 0904's arm 4, `0x801F6EDC`). The host seats the creature
+    /// after the tick, so the store waits for the seat; the host takes it
+    /// once.
+    pub creature_impact: Option<u8>,
     /// The [`Self::creature_stage`] store came with the `+0x1DC` bump (the
     /// paired `lbu; addiu 1; sb` on both bytes), whose bit 0 cuts the
     /// playing clip at once; without it the staged byte waits for the

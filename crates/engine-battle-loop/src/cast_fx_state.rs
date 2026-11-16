@@ -593,8 +593,6 @@ pub struct ModuleOrb {
     /// The creature's `(x, y, z)` after arm 5's step and lift, not yet on
     /// the actor.
     pub deferred_seat: Option<[i16; 3]>,
-    /// Arm 2 passed and its stars are owed on the next tick.
-    pub stars_owed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

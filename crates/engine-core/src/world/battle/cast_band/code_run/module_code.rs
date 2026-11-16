@@ -1978,6 +1978,16 @@ impl World {
             self.casting.module_cam.creature_stage = Some(seat.staged_anim);
             self.casting.module_cam.creature_restage = seat.restage & 1 != 0;
         }
+        // The same for the impact selector a tick stores behind the
+        // installer (PROT 0904's arm 4, `0x801F6ECC..0x801F6EDC`): the
+        // seat's reset would otherwise clear it.
+        if self.casting.summon_actor_slot != Some(seat_slot)
+            && (self.casting.summon_seat_owed.is_some()
+                || self.casting.pending_summon_spawn.is_some())
+            && seat.render_21f != seat_orig.render_21f
+        {
+            self.casting.module_cam.creature_impact = Some(seat.render_21f);
+        }
         // PROT 0903's depth stores: arm 10's pass parks the walk-in's
         // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -
         // re-runs the target-size framing `FUN_801F0348` (`jal` at

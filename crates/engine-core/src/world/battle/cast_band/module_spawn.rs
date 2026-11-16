@@ -641,6 +641,15 @@ impl World {
                     };
                 }
             }
+            // PROT 0931's sparks over the creature (arms 5..7, every pass):
+            // `x = rand() % 0x301 - 0x180` and then `y = rand() % 0x301 -
+            // 0x600`, absolute, on the creature's `z + 0x180`
+            // (`0x801F6FA0..0x801F7028`, `0x801F7138..0x801F71BC`,
+            // `0x801F72BC..0x801F7340`).
+            if prot_entry == 931 && spawn.record == SpawnRecord::Module(0x801F_8E20) {
+                pos[0] = (self.next_rand() % 0x301) as i16 - 0x180;
+                pos[1] = (self.next_rand() % 0x301) as i16 - 0x600;
+            }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {
                     let Some(module) = self

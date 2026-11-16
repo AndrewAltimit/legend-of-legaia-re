@@ -57,6 +57,27 @@ impl World {
         // The module's two wrapper sites are its only hits: nothing rolls the
         // whole power afterwards.
         self.casting.module_skips_fold = true;
+        // Arm 0's pass scatters the monster seats the fight left empty: for
+        // each retail seat `3 + i`, `i` from `ctx[+1]` to `3`, the ground pair
+        // `+0x34` / `+0x38` takes `rand() % 1025 - 0x200` each, `x` first
+        // (`0x801F6BC8..0x801F6C58`, `jal 0x80056798` at `0x801F6BEC` /
+        // `0x801F6C1C`). Six words on a lone-monster fight, drawn ahead of
+        // every later deal of the cast.
+        if phase == 0 && passed {
+            let map = self.cast_seat_map();
+            for i in monster_count..4 {
+                let x = (self.next_rand() % 1025) as i16 - 0x200;
+                let z = (self.next_rand() % 1025) as i16 - 0x200;
+                if let Some(a) = map
+                    .engine(3 + i)
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                    .filter(|a| !a.active && a.battle_monster_id.is_none())
+                {
+                    a.move_state.world_x = x;
+                    a.move_state.world_z = z;
+                }
+            }
+        }
         // Arm 5's pass raises `+0x42 = 2` over object-effect row 1, tilted by
         // `-0x400` and cut at the victim's plane less `0x800`; arm 9's drops it
         // to the floor row: the creature comes up out of a slanted plane.

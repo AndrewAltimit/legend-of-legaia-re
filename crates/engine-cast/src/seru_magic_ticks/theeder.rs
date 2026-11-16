@@ -83,6 +83,10 @@ pub const fn theeder_pass_tested(ctx_6d8: u16) -> bool {
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
 pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 
+/// The impact selector PROT 0904 gives the summon seat in arm 4
+/// (`0x801F6EDC`): the spark emitter, until arm 5's pass clears it.
+pub const THEEDER_RISE_RENDER_21F: u8 = 2;
+
 /// PROT 0904 (Theeder, spell id `0x82`) tick body - 6020 bytes, 1505
 /// instructions.
 ///
@@ -108,7 +112,8 @@ pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 /// twice. A seat outside the swing's arc is never hit.
 ///
 /// Other simulation state: `ctx+0x278 = 0` in arm 0 (`0x801F6C10`), the
-/// summon seat's render flag `= 4` in arm 4 and `= 0` in arm 5, its clip pair
+/// summon seat's render flag `= 4` and impact selector `= 2` in arm 4 and
+/// both `= 0` in arm 5, its clip pair
 /// `+= 1` in arm 6, and in arm 11 both the caster's and the summon seat's
 /// `+0x1DD = ` [`TARGET_CODE_ENEMY_ROW`] with the original victim index
 /// latched into the module word `0x801F9200`. Arm `0xFF` restores the caster's
@@ -151,14 +156,22 @@ pub fn theeder_tick(
             CastArmStep::Advance
         }
         THEEDER_RISE_ARM => {
+            // `li v0,0x4; sb v0,0x21c(s4)` / `li v0,0x2; sb v0,0x21f(s4)`
+            // (`0x801F6ECC..0x801F6EDC`): the creature is raised with the
+            // spark selector, so the anim decode's burning-body emitter
+            // sheds effect-`0x10` sparks off it through arm 5's hold.
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.render_flag = THEEDER_RISE_RENDER_FLAG;
+                s.render_21f = THEEDER_RISE_RENDER_21F;
             }
             CastArmStep::Advance
         }
         THEEDER_SHOW_ARM => {
+            // `sb zero,0x21c(s4)` / `sb zero,0x21f(s4)` (`0x801F70A4` /
+            // `0x801F70AC`): shown, and the sparks stop.
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.render_flag = 0;
+                s.render_21f = 0;
             }
             CastArmStep::Advance
         }
