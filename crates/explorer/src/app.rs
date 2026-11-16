@@ -1568,11 +1568,7 @@ impl App {
         ui.separator();
         ui.label(RichText::new("Export folder").strong());
         let dir = self.export_dir();
-        let name = dir.file_name().map_or_else(
-            || dir.display().to_string(),
-            |n| n.to_string_lossy().into_owned(),
-        );
-        ui.label(RichText::new(name).weak())
+        ui.label(RichText::new(export_folder_label(&dir)).weak())
             .on_hover_text(dir.display().to_string());
         if ui
             .button("Change...")
@@ -4582,9 +4578,34 @@ fn draw_wave(ui: &mut egui::Ui, peaks: &[u8], width: usize) {
     }
 }
 
+/// The View menu's line for the export folder: the folder with the one it
+/// sits in (`Pictures/Legaia Explorer`), since the bare name - the app's own,
+/// by default - read as a heading rather than a place. The full path is the
+/// line's hover text.
+fn export_folder_label(dir: &std::path::Path) -> String {
+    let name = |p: &std::path::Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
+    match (dir.parent().and_then(name), name(dir)) {
+        (Some(parent), Some(leaf)) => format!("{parent}/{leaf}"),
+        (None, Some(leaf)) => leaf,
+        _ => dir.display().to_string(),
+    }
+}
+
 #[cfg(test)]
 mod layout_tests {
     use super::*;
+
+    /// The export folder reads as a place: its parent and its name.
+    #[test]
+    fn the_export_folder_line_names_its_parent() {
+        use std::path::Path;
+        assert_eq!(
+            export_folder_label(Path::new("/home/me/Pictures/Legaia Explorer")),
+            "Pictures/Legaia Explorer"
+        );
+        assert_eq!(export_folder_label(Path::new("/exports")), "exports");
+        assert_eq!(export_folder_label(Path::new("/")), "/");
+    }
 
     /// A menu opened with `Enter` on its focused button (a controller's
     /// Cross) puts the focus on its first item, `Down` walks the items, and
