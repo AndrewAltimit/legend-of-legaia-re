@@ -117,3 +117,26 @@ pub fn pause_slide_settled(
     let screen = menu.and_then(|m| pause_screen(m, sub));
     world.menu.pause_slide_lock.screen() == screen && world.menu.widgets.slide_latch() == 0
 }
+
+/// Where the pause menu's draw places each window this frame
+/// (`MenuWidgetState::live_origins`): the walker's live origin for a window on
+/// the list, the park for a window the screen programs create on the frame
+/// the press requests the screen, before its phase 0 has spawned it. `None` - every window on its descriptor rect -
+/// with no menu, without the overlay's programs, or on a port-only screen,
+/// which runs no program and whose windows are never on the list.
+pub fn pause_window_origins<const N: usize>(
+    world: &World,
+    menu: Option<&FieldMenuSession>,
+    sub: Option<&FieldMenuSubsession>,
+) -> Option<[Option<(i32, i32)>; N]> {
+    let scripts = world.menu.widget_scripts.as_ref()?;
+    let screen = pause_screen(menu?, sub)?;
+    if screen.subscreen == PORT_ONLY_SUBSCREEN {
+        return None;
+    }
+    let pending = world.menu.pause_slide_lock.screen() != Some(screen);
+    world
+        .menu
+        .widgets
+        .live_origins(&scripts.lock_window_ids::<N>(), pending)
+}

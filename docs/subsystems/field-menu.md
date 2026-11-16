@@ -982,6 +982,23 @@ page's `play_menu_press`) rather than on a frame count. Not keyed yet: the
 Options value popup (`[01 47]`), the shop's sub-screens (their own slide model,
 [shop.md](shop.md)) and the save screen's inner card steps.
 
+**The draw follows the window list.** Retail draws each window where the walker
+left it, so every screen change slides its windows in from their parks over
+twelve frames. Both hosts hand the composition the list's live origins
+(`field_menu_dispatch::pause_window_origins` into
+`MenuRects::with_live_origins`), and every rect, pen and painter rect follows
+them. On the frame a press requests a new screen, before its phase 0 has run,
+a window the screen's programs create stands on its park (`FUN_800326AC`
+creates it off the screen edge its descriptor names), so the new layout does
+not flash up whole; retail still shows the previous screen on that frame. A
+window the list closes, or one no lock program creates (a list window the
+list kernel opens, the Options popup), keeps its descriptor rect. Both hosts
+clip the menu's quads to the 320x240 stage (`pause_menu::clip_to_stage`), so
+a parked or sliding window never shows in a wide surface's margins. The
+menu-overlay loads either side of the menu, about `50` and `65` black vsyncs
+on retail, are not modelled
+([save-screen.md](save-screen.md#outer-dispatcher-fun_801dc6b4)).
+
 ### Which cue a confirm sounds
 
 Two pickers page the menu's rows, with different cues. The command windows run the

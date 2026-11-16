@@ -12,8 +12,8 @@ use super::*;
 pub const MENU_PRESS_GAP: u64 = 14;
 
 /// Extra ticks the first press after `Start` waits: the field darkens before
-/// the menu exists (`NativeSession::pause_wipe`, retail `FUN_801ED308` phase
-/// 1) for as many game frames as the session needs to pass `0x82` - seven
+/// the menu exists (`NativeSession::pause_wipe`, retail `FUN_801ED308`'s
+/// phase `1`) for as many game frames as the session needs to pass `0x82` - seven
 /// passes of two vsyncs at the field's step of `2`, five of three at `3`,
 /// four of four at `4`, so up to sixteen ticks - and the root picker's
 /// windows then slide in for twelve more before it reads the pad. With one

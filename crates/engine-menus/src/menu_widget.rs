@@ -83,6 +83,26 @@ impl MenuWidgetScripts {
         })
     }
 
+    /// The windows the sub-screen programs the slide lock runs can create
+    /// (ops `0x01`, `0x02` and `0x09`, each a `[op][window][arg u16]`
+    /// entry), as a flag per descriptor id.
+    pub fn lock_window_ids<const N: usize>(&self) -> [bool; N] {
+        let mut out = [false; N];
+        for (_, bytes) in &self.lock_programs {
+            for e in bytes.as_chunks::<4>().0 {
+                if e[0] == 0 {
+                    break;
+                }
+                if matches!(e[0], 0x01 | 0x02 | 0x09)
+                    && let Some(f) = out.get_mut(usize::from(e[1]))
+                {
+                    *f = true;
+                }
+            }
+        }
+        out
+    }
+
     /// The program at `va`, terminator included.
     pub fn program(&self, va: u32) -> Option<&[u8]> {
         self.lock_programs
@@ -314,6 +334,46 @@ impl MenuWidgetState {
     /// The live window for `id`, closing or not.
     pub fn window(&self, id: u8) -> Option<&WidgetWindow> {
         self.windows.get(&id)
+    }
+
+    /// Where the draw places each window this frame, by descriptor id, or
+    /// `None` for a window that keeps its descriptor rect:
+    ///
+    /// - a window on the list and not closing stands at the live origin the
+    ///   walker's motion pass left (node `+0xA/+0xC`), so it slides in from
+    ///   its park over twelve frames;
+    /// - on the frame a press requests a new screen (`pending`: its phase 0
+    ///   has not run), a window the screen programs create (`managed`) that
+    ///   is not on the list yet stands on its park, where `FUN_800326AC`
+    ///   creates it, off the screen edge its descriptor names - the request
+    ///   is dispatched the frame after the press, so nothing of the new
+    ///   screen is on screen yet;
+    /// - any other window keeps its descriptor rect: a list window the list
+    ///   kernel opens rather than a program, or one the screen draws while
+    ///   the list closes it.
+    ///
+    /// `None` with no descriptors, so a host without the overlay's table
+    /// keeps the descriptor rects.
+    pub fn live_origins<const N: usize>(
+        &self,
+        managed: &[bool; N],
+        pending: bool,
+    ) -> Option<[Option<(i32, i32)>; N]> {
+        if self.descriptors.is_empty() {
+            return None;
+        }
+        let mut out = [None; N];
+        for (id, slot) in out.iter_mut().enumerate() {
+            let Ok(key) = u8::try_from(id) else { break };
+            let pos = match self.windows.get(&key) {
+                Some(w) if !w.closing() => w.pos,
+                Some(_) => continue,
+                None if pending && managed[id] => park_position(&self.descriptor(key), self.screen),
+                None => continue,
+            };
+            *slot = Some((i32::from(pos.x), i32::from(pos.y)));
+        }
+        Some(out)
     }
 
     /// The live window for `id`, for the walker that moves it.
@@ -562,6 +622,76 @@ mod tests {
         assert_eq!(st.open_ids(), vec![2]);
         assert_eq!(st.window(2).unwrap().target, vm::Position::new(40, 60));
         assert_eq!(st.global_updates, 1);
+    }
+
+    /// A window a program creates is drawn where the walker has it: on the
+    /// press frame (pending) at its park, then each walker pass moves it a
+    /// twelfth of the way home, and a closing window keeps its descriptor
+    /// rect (the screen that draws it is not the one closing it).
+    #[test]
+    fn live_origins_follow_the_slide_frame_by_frame() {
+        let mut st = MenuWidgetState::default();
+        // Window 2 parks on the left edge (class 2): x = left - w - 0x14.
+        st.set_descriptors(vec![
+            WidgetDescriptor {
+                home: vm::Position::new(24, 24),
+                size: (104, 94),
+                park_edge: 2,
+                ..Default::default()
+            };
+            4
+        ]);
+        let managed = [false, false, true, false];
+        let park = 0 - 104 - 0x14;
+        // The press frame: nothing on the list, the managed window parked,
+        // an unmanaged one on its descriptor rect.
+        let o = st.live_origins(&managed, true).expect("descriptors");
+        assert_eq!(o[2], Some((park, 24)));
+        assert_eq!(o[1], None);
+        // Not pending: an off-list window keeps its rect.
+        assert_eq!(st.live_origins(&managed, false).unwrap()[2], None);
+        // Phase 0 creates it at the park and the walker passes once a frame.
+        vm::run(&mut st, &[0x01, 0x02, 0, 0, 0, 0, 0, 0]).unwrap();
+        let mut xs = Vec::new();
+        for _ in 0..13 {
+            st.step_motion(1);
+            xs.push(st.live_origins(&managed, false).unwrap()[2].unwrap().0);
+        }
+        let want: Vec<i32> = (1..=12)
+            .map(|p| {
+                if p == 12 {
+                    24
+                } else {
+                    park + (24 - park) * p / 12
+                }
+            })
+            .chain([24])
+            .collect();
+        assert_eq!(xs, want);
+        // A close: the closing window is drawn on its rect, not mid-flight.
+        vm::run(&mut st, &[0x04, 0x02, 0, 0, 0, 0, 0, 0]).unwrap();
+        st.step_motion(1);
+        assert_eq!(st.live_origins(&managed, false).unwrap()[2], None);
+    }
+
+    /// The windows the lock's programs create: ops 01, 02 and 09.
+    #[test]
+    fn lock_window_ids_reads_the_create_ops() {
+        let scripts = MenuWidgetScripts {
+            shop_open: Vec::new(),
+            shop_sell_away: Vec::new(),
+            programs: Vec::new(),
+            lock_programs: vec![(
+                0,
+                vec![
+                    0x05, 0, 0, 0, 0x01, 3, 0, 0, 0x06, 4, 0, 0, 0x0A, 5, 0, 0, 0x09, 6, 0, 0,
+                    0x02, 7, 0, 0, 0, 0, 0, 0, 0x01, 8, 0, 0,
+                ],
+            )],
+        };
+        let ids = scripts.lock_window_ids::<10>();
+        let set: Vec<usize> = (0..10).filter(|&i| ids[i]).collect();
+        assert_eq!(set, vec![3, 6, 7], "the terminator ends the program");
     }
 
     #[test]

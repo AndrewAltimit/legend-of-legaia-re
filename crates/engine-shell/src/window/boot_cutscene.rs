@@ -1054,6 +1054,10 @@ impl PlayWindowApp {
                 );
                 draws.extend(self.magic_level_notice_draws(surface_w, surface_h));
                 draws.extend(self.art_learned_notice_window_draws(surface_w, surface_h));
+                // Nothing past the game area: a parked or sliding window
+                // would show in a wide surface's margins.
+                let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+                legaia_engine_ui::pause_menu::clip_to_stage(&mut draws, origin, scale);
                 draws
             }
             // The wipe hand-off draws nothing: retail's next frame after the

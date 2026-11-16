@@ -34,6 +34,7 @@ mod new_game_flow_parity;
 mod occlusion_fade_page;
 mod page_compose_ladder;
 mod passive_badge_page;
+mod pause_window_slide;
 mod play_actor_tints_disc;
 mod play_audio_parity;
 mod play_baka_ladder_host;

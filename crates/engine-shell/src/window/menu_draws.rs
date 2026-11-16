@@ -24,11 +24,26 @@ impl PlayWindowApp {
         let (origin, scale) = self.save_select_stage(surface_w, surface_h);
         PauseMenuCtx {
             font: &self.font,
-            rects: MenuRects::new(self.menu_window_table.as_ref()),
+            rects: MenuRects::new(self.menu_window_table.as_ref())
+                .with_live_origins(self.pause_window_origins()),
             chrome: self.save_menu.as_ref().map(|a| &a.rects),
             origin,
             scale,
         }
+    }
+
+    /// The pause menu's windows where the walker has them this frame
+    /// (`field_menu_dispatch::pause_window_origins`), off the sub-session the
+    /// boot-UI arm steps the slide lock with; `None` outside the pause menu.
+    fn pause_window_origins(&self) -> Option<legaia_engine_ui::pause_menu::LiveWindowOrigins> {
+        let BootUiState::FieldMenu { sub } = &self.boot_ui else {
+            return None;
+        };
+        legaia_engine_menu_runtime::field_menu_dispatch::pause_window_origins(
+            &self.session.host.world,
+            self.session.field_menu.as_ref(),
+            sub.as_ref(),
+        )
     }
 
     /// Windows 6 and 5 - the pair the pause menu draws when the op-`0x49`

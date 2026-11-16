@@ -206,6 +206,8 @@ impl PlayWindowApp {
             self.menu_runtime.spell_level_notice().is_some(),
             self.menu_runtime.art_learned_notice().is_some(),
         ));
+        let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+        legaia_engine_ui::pause_menu::clip_to_stage(&mut sprites, origin, scale);
         sprites
     }
 
