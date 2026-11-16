@@ -111,12 +111,19 @@ impl World {
         //
         // koin6's two cribbed babies carry it, which is why they used to
         // rotate ~51 degrees out of their cribs to look at the player.
-        if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
-            return;
-        }
         let Some(&(nx, nz)) = self.npcs.positions.get(&slot) else {
             return;
         };
+        // The touch post's save is unconditional (`FUN_801D5B5C`
+        // `0x801D5BE4`): the class test only gates the snap below, and the
+        // exit's restore makes its own.
+        if self.npcs.facing_save.is_none() {
+            let prev = self.npcs.heading(slot);
+            self.npcs.facing_save = Some((slot, prev));
+        }
+        if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
+            return;
+        }
         let Some(pslot) = self.player_actor_slot else {
             return;
         };
@@ -131,10 +138,6 @@ impl World {
         if dx == 0.0 && dz == 0.0 {
             return;
         }
-        if self.npcs.facing_save.is_none() {
-            let prev = self.npcs.heading(slot);
-            self.npcs.facing_save = Some((slot, prev));
-        }
         self.npcs.headings.insert(slot, engine_bearing(dx, dz));
     }
 
@@ -143,13 +146,14 @@ impl World {
     /// SM's teardown performs at `0x80039CE8` / `0x80039EBC` (`lhu v0,0x5a` /
     /// `sh v0,0x26`) on the way out.
     ///
-    /// A no-op with no save outstanding, and - deliberately - a no-op for a
-    /// slot whose heading has been rewritten since the snap. That covers the
-    /// case retail covers with its `0x400000` class test in the other
-    /// direction: an NPC that *walked* during the conversation (a scripted
-    /// interaction leg, an ambient wander step) has earned a new
-    /// heading, and restoring the pre-talk one would teleport its facing.
-    ///
+    /// The restore's only gate is the talker's class word at that moment:
+    /// `+0x10 & 0x01020000` non-zero (every placement: the seater ORs
+    /// `0x20000`) and `+0x10 & 0x400000` clear (`0x80039CC8..0x80039CE0`,
+    /// `0x80039E9C..0x80039EB4`). There is no compare against the snapped
+    /// bearing, so a turn or walk the talk record gave its own placement is
+    /// undone unless the record raised `0x400000` (`31 16`) first, and a
+    /// placement whose talk dropped the bit (`32 16`) is restored even though
+    /// the snap skipped it. A no-op with no save outstanding.
     /// Whether the outstanding talk-pose save belongs to a placement whose
     /// own context runs as the interaction timeline
     /// (`CutsceneTimeline::interaction_slot`, a boss stager): the dialog SM
@@ -170,23 +174,7 @@ impl World {
         let Some((slot, prev)) = self.npcs.facing_save.take() else {
             return;
         };
-        // Only restore when the talk pose is still the live heading.
-        let posed = match (
-            self.npcs.positions.get(&slot),
-            self.player_actor_slot
-                .and_then(|p| self.actors.get(p as usize)),
-        ) {
-            (Some(&(nx, nz)), Some(pactor)) => {
-                let (px, pz) = (pactor.move_state.world_x, pactor.move_state.world_z);
-                let (dx, dz) = (
-                    (px as i32 - nx as i32) as f32,
-                    (pz as i32 - nz as i32) as f32,
-                );
-                (dx != 0.0 || dz != 0.0).then(|| engine_bearing(dx, dz))
-            }
-            _ => None,
-        };
-        if posed.is_some() && self.npcs.headings.get(&slot).copied() != posed {
+        if self.field_channel_flags(slot) & 0x0040_0000 != 0 {
             return;
         }
         self.npcs.headings.insert(slot, prev);

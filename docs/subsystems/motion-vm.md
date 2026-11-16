@@ -417,13 +417,17 @@ heading: both exit paths write `+0x5A` back when `+0x10 & 0x01020000` is
 non-zero and `+0x10 & 0x400000` is clear (`0x80039CC8..0x80039CE0`,
 `0x80039E9C..0x80039EB4`), with no compare against the snapped bearing. So a
 talk record that turns its own placement (`38`, `4C 85`, a `C1` walk) and does
-not raise `0x400000` (`31 16`) has that turn undone when the talk ends. The
-port skips the restore when the heading has moved since the snap, which keeps
-such a turn; a census of the disc's placement records finds a few dozen talks
-of that shape (`bubu1` `P1[2]` / `P1[3]`, `doman` `P1[28]`, `nilboa` `P1[6]`'s
-walk); whether any of them ends on a heading retail would visibly undo is not
-yet filmed. A walk film
-of `town01_field_card_boot` agrees on the plain case: the talker snaps to the
+not raise `0x400000` (`31 16`) has that turn undone when the talk ends, and the
+save is taken at the touch whatever the class (`0x801D5BE4`), so a talk that
+drops the bit (`32 16`) restores a placement the snap skipped. The port does
+the same: `World::face_field_npc_at_player` saves before its class test,
+`World::release_talk_facing` tests only the talker's live `0x400000`, and a
+talk's `31 16` / `32 16` writes the talker's channel word rather than the
+talk's stand-in context. `nilboa` `P1[6]` ends its talk loop on another
+heading and turns back onto its pre-talk one; `bubu1` `P1[2]` / `P1[3]` end on
+the player bearing and restore as before
+(`engine-scene-host/tests/talk_heading_restore_disc.rs`). A walk film of
+`town01_field_card_boot` agrees on the plain case: the talker snaps to the
 player as the box opens and its `+0x5A` lands back as the last page closes, on
 both sides ([walk-film](../tooling/walk-film.md#what-it-has-settled)).
 
