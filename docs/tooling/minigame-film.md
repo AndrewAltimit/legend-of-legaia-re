@@ -69,13 +69,18 @@ Cross driven closed-loop on the fishing globals (`LEGAIA_FILM_POLICY=fishing_cat
 tap on the shore, lock the meter at `0xF00`, pump the cadence, then hold under the
 tension band), and the engine side ticks the pond once per retail game frame on
 that frame's step and pad words instead of running its own clock
-(`LEGAIA_RC_MINIGAME_FILM_REPLAY`). A game frame is a move of the frame driver's
+(`LEGAIA_RC_MINIGAME_FILM_REPLAY`), then runs the venue's actor frame on the same
+step (`tick_fishing_venue_on_host`), whose re-target roll and catch trail draw from
+the pond's `rand()` stream. A game frame is a move of the frame driver's
 counter `_DAT_8007B798`; the step it runs on is read a vsync after the move, its
 pad words on the move, and its results on the next move. Two harness seats stand
 the pond on the capture: its `rand()` stream on the state's BIOS seed and the pad
 pump's free-running auto-repeat clock `_DAT_8007B940` on the capture's phase. The
 replay compares rules, not pace: the pace question is the [venue's game
-tick](../subsystems/minigame-fishing.md#the-venues-game-tick).
+tick](../subsystems/minigame-fishing.md#the-venues-game-tick). Over a catch the
+`rand()` word and the point total agree on every game frame through the close-up
+and the plate; the state column keeps `0x1E` past the close-up, since the port
+holds the showcase states `0x20..0x22` in the venue camera, not the session.
 
 ## The Baka Fighter film
 

@@ -393,7 +393,13 @@ fn replay_pond(
                 step.max(1) as i32,
                 legaia_engine_fishing::fishing::CAST_POWER_STEP,
             );
+            session.host.world.minigames.fishing_events = p.take_events();
         }
+        // The venue's actors on the same game frame, as both play hosts run
+        // them after the world tick: the lead's re-target roll and the
+        // landed fish's trail draw from the pond's `rand()` stream.
+        session.host.world.input.set_pad(held_e);
+        legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(&mut session.host);
         let vals = values(sub, &session.host.world);
         writeln!(
             f,

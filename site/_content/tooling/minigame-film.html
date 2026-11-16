@@ -65,11 +65,12 @@ scripts/ci/minigame-film.py minigame_dance_retail_ready --set dance --no-retail 
 
 <section class="doc-section" id="the-fishing-replay" data-doc="the-fishing-replay">
   <h2>The fishing replay</h2>
-  <p><code>--set fishing --replay</code> records a catch from <code>minigame_fishing_retail_shore</code> with Cross driven closed-loop on the fishing globals (<code>LEGAIA_FILM_POLICY=fishing_catch</code>: tap on the shore, lock the meter at <code>0xF00</code>, pump the cadence, then hold under the tension band). The engine side then ticks the pond once per retail game frame on that frame's step and pad words instead of running its own clock (<code>LEGAIA_RC_MINIGAME_FILM_REPLAY</code>).</p>
+  <p><code>--set fishing --replay</code> records a catch from <code>minigame_fishing_retail_shore</code> with Cross driven closed-loop on the fishing globals (<code>LEGAIA_FILM_POLICY=fishing_catch</code>: tap on the shore, lock the meter at <code>0xF00</code>, pump the cadence, then hold under the tension band). The engine side then ticks the pond once per retail game frame on that frame's step and pad words instead of running its own clock (<code>LEGAIA_RC_MINIGAME_FILM_REPLAY</code>), then runs the venue's actor frame on the same step, whose re-target roll and catch trail draw from the pond's <code>rand()</code> stream.</p>
   <ul class="bullets">
     <li>A game frame is a move of the frame driver's counter <code>_DAT_8007B798</code>; the step it runs on is read a vsync after the move, its pad words on the move, and its results on the next move.</li>
     <li>Two harness seats stand the pond on the capture: its <code>rand()</code> stream on the state's BIOS seed, and the pad pump's free-running auto-repeat clock <code>_DAT_8007B940</code> on the capture's phase.</li>
   </ul>
+  <p>Over a catch, the <code>rand()</code> word and the point total agree on every game frame through the close-up and the result plate. The state column keeps <code>0x1E</code> past the close-up, since the port holds the showcase states <code>0x20..0x22</code> in the venue camera, not the session.</p>
   <p class="hint">The replay compares rules, not pace. The pace question is the venue's game tick, in the <a href="../subsystems/minigame-fishing.html#states">fishing state machine</a>.</p>
 </section>
 
