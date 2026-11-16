@@ -243,9 +243,9 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 /// The seat moves (arm 0's half-size row, the arms 12..15 slide, arm 21's
 /// caster seat, the arm 27 / 28 restore) are the host's, over these
 /// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`],
-/// [`esm_half_end_step`]). Not carried: the creature seat 7's stages and
-/// rate bytes (the engine seats no creature for a capture cast), the effect
-/// records and the arm-20 banner (the screen fades are the band seam's,
+/// [`esm_half_end_step`]). The creature seat 7's stores are
+/// [`esm_creature_writes`]. Not carried here: the effect records and the
+/// arm-20 banner (the screen fades are the band seam's,
 /// `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)

@@ -4571,6 +4571,23 @@ close to a minute. It is ported whole.
   1's pass, hides at arm 10, comes back on clip `0` at arm 21, takes the
   defeat-fade tint state `2` at arm 23 and is shown again at arm 27. Because
   the body stages its own caster, it has no row in the caster-stage table.
+- **Arm 10 seats Juggernaut.** The arm calls the seat installer `FUN_801F19EC`
+  (`0x801F70E4`), which installs the cast's streamed actor record as seat 7,
+  Juggernaut's body (the caption reads "Juggernaut"; the engine seats
+  `summon.dat` group `72`, the `0x99` cast's). The arm then stands it at
+  `z = 0x1C0`, `x = 0`, heading `0x800`, rate `0`, with the node's floor clip
+  `+0x42 = 2` and object-effect row 1's bounds `(-0x300, 0)`
+  (`0x801F7108..0x801F7148`). From there the body runs PROT 0927's creature
+  stores on the same arm numbers: rate `8` on arm 11's pass, rate `0` once
+  the cursor reaches `0x240` (arm 12) or `0x2D0` (arm 14), a stage with the
+  bump on the passes of arms 13, 18 (rate `8`) and 23 (rate `2`), clip `3` bare
+  on every arm-19 pass and `5` on every arm-24 pass, arm 18's lift to
+  `y = 0x100`, `z = 0x800`, arm 19's walk of `3 * dt` a pass
+  (`0x801F7C94..0x801F7CA8`), the floor clip off on arm 26 and the hide and
+  node kill on arm 27 (`0x801F8918..0x801F8990`). The bare stores wait for the
+  playing clip's end, as the recording's creature rows read (clip `2` runs to
+  cursor `1024`, clip `4` to `1536`). Port `esm_creature_writes`,
+  `World::evil_seru_magic_creature`. Grade `disassembly` + `capture`.
 - **The first two hits are the stager's.** Arm 10 seats record `0x801F937C`,
   whose script is `WAIT 0x7F` then op `0x20` with arm `4`, and record
   `0x801F94D0`, `WAIT 0x187` then op `0x20` with arm `3`. Op `0x20` calls
@@ -4616,8 +4633,9 @@ close to a minute. It is ported whole.
   a pass before its natural end, and its effect record gated on `frames + 1`
   never fires. Every other seat off its idle, the get-up before its release
   included, slides instead: `+0x38 +=
-  dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), and Noa's release
-  takes `0x10` off it (`esm_get_up_slide`). A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
+  dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), `dt` the frame delta
+  `0x1F800393` (one vsync a tick on the engine's clock, not the battle frame
+  step), and Noa's release takes `0x10` off it (`esm_get_up_slide`). A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
   (`0x801F765C` / `0x801F7674`, `stream[1] - 2` = `23`, `26`, `13`) and the cut
   at `0x80047A40` on one pass. Port `evil_seru_magic_seat_writes` with
   `esm_releases_get_up`, held to the image by the differential
@@ -4634,8 +4652,9 @@ close to a minute. It is ported whole.
   then stores `+0x34` = the formation point's x (`0x800775E0 + (n * 3 + i) *
   8`) over three toward zero, `+0x38 = 0x190`, `+0x46 = 0`, node `+0x72 =
   0x800` and the node radius `+0x58` halved (the ground shadow's scale). Arm
-  21 lifts the caster to `+0x36 = -0x380`, `x = 0`, heading `0x800` at the
-  same half scale (`0x801F7E88..0x801F7EB4`). Arm 27's pass copies every
+  21 lifts the caster to `+0x36 = -0x380`, `x = 0`, `z = 0x400`, heading
+  `0x800` at the same half scale (`0x801F7E80..0x801F7EB4`); the recording's
+  caster stands at `z = 1024` from arm 21 to arm 28. Arm 27's pass copies every
   saved seat back and doubles the scales and radii (`0x801F8828..0x801F8904`),
   and arm 28 copies the party's back on every pass (`0x801F89E0..0x801F8A3C`).
   Port `World::evil_seru_magic_row` over `esm_row_x`. Grade `disassembly`.

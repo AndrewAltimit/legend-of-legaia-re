@@ -1336,6 +1336,18 @@ A row's
 as two rows (`82` and `3` for one frame's `85`); the recording's frames and the engine's
 passes draw the same bursts.
 
+From arm 10 the recording's frames hold Juggernaut, seat 7, which the port had not seated:
+the arms from 11 on framed an empty stage where retail's frames hold the creature. Seated and
+driven through its clip, rate and walk stores, with the arms 12..15 slide and arm 19's
+walk paced by the frame delta and the caster on arm 21's `z = 0x400`
+([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)), the film reads
+`.819` to `.864` plain: arms 11 to 21 from `.83..99` to `.94..1.00`, arm 22 `.43` to `.58`,
+arm 23 `.86` to `.92`, arm 24 `.75` to `.87`, arm 25 `.64` to `.78`. Arm 28 falls `.997` to
+`.745`: its first frames draw the white fade over a grey stage where retail's read violet,
+and the old replay read violet only while its caster stood on the wrong depth. Still open
+there: arm 22's sphere grows and goes some forty ticks ahead of retail's, and arms 26 and
+27 (`.65`, `.51`) hold the flash.
+
 ### The enemy set on the rand-track seat
 
 The same reading runs over [`film-sets/enemy.txt`](../../scripts/ci/film-sets/enemy.txt). A
