@@ -1031,7 +1031,10 @@ off `s1_newgame_field` reads it on the opening: `opstati`'s closing record arms
 `5 (90)` as it changes scene, the count climbs `2` a frame to `72` before the
 init, holds there through `opurud`'s load, and expires in `opurud` at `91`,
 after the fade has left `2063` at volume `16` and before `opurud`'s `2064`
-commit. The world ticks once a vsync and counts one a tick: a count that took
+commit. From `nilboa_delilas_family_pose`, inside `P2[7]`'s `9 (2028) · 5 (60) · 0xA`,
+the count reads `24` and climbs one a vsync to `62`, where the release stops
+`2032` (`39` vsyncs on); the commit follows `165` vsyncs later. The world ticks
+once a vsync and counts one a tick: a count that took
 the frame step on every tick would expire a field release at half its
 deadline and an overworld one at a third, cutting each fade at its midpoint.
 Pinned by `engine-scene-host/tests/opening_audio_timeline_disc.rs`.
@@ -1082,7 +1085,9 @@ Three calls disarm a release before it expires, each with `sw zero,0x808(gp)`:
 the slot's stop `FUN_800266E0` (`0x800266F4`, ahead of its active test) and
 re-attach `FUN_80026478` (`0x800264A0`). So the commit, the stop (sub-op `2`),
 the replay (sub-op `4`), a mid-scene start's stage-2 teardown and stage-6
-attach, and the field init's close each end it. A `9 · 5 · 0xA` committed
+attach, the field init's close and a fight's attach of the battle source
+(`0x801CF930`, sound set `0` and up) each end it; a set of `-1` attaches
+nothing, and the release counts on through the fight. A `9 · 5 · 0xA` committed
 before its deadline never stops the track the commit brings in, and a release
 armed right after a commit (`jouine`'s `P2[16]`, `9 (2040) · 0xA · 5 (60)`) is
 disarmed by `2040`'s attach two frames on (`inference` from the script words:
