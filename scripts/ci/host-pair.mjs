@@ -3,7 +3,7 @@
 // browser play page, paired by world frame, frame against frame and state against state.
 //
 //   scripts/ci/host-pair.mjs --site site --engine target/release-test/legaia-engine --out DIR
-//       [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n]
+//       [--scene town_walk,menu,...] [--mode retail,enhanced,night,...] [--every n] [--ticks n]
 //       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n] [--page-init js]
 //
 // The native side is `play-window`'s own capture sweep (`--screenshot-every`, `--pad-script`)
@@ -207,6 +207,10 @@ const MODES = {
   /* The two passes that default off, on for both hosts: the window has no switch that turns
    * either on, so its run reads them from the options file in its own working directory. */
   fog_bloom: { native: [], options: 'volumetric_fog = true\nbloom = true\n', boxes: ['play-ground-fog', 'play-bloom'] },
+  /* Enhanced lighting under a forced time of day (`F8` natively, the page's selector): the
+   * lamps, lit windows and halos `auto` leaves off in a daylight scene. */
+  dusk: { native: [], options: 'lighting_time_of_day = "dusk"\n', boxes: [], selects: { 'play-time-of-day': 'dusk' } },
+  night: { native: [], options: 'lighting_time_of_day = "night"\n', boxes: [], selects: { 'play-time-of-day': 'night' } },
 };
 
 function nativeRun(engine, name, sc, mode, dir, opts) {
@@ -254,6 +258,11 @@ async function pageRun(cfg) {
   if (!btn) throw new Error('no scene button ' + sc.scene);
   for (const id of cfg.boxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (!el.checked) el.click(); }
   for (const id of cfg.unboxes) { const el = document.getElementById(id); if (!el) throw new Error('no box ' + id); if (el.checked) el.click(); }
+  for (const [id, v] of Object.entries(cfg.selects)) {
+    const el = document.getElementById(id); if (!el) throw new Error('no select ' + id);
+    el.value = v; el.dispatchEvent(new Event('change', { bubbles: true }));
+    if (el.value !== v) throw new Error(`select ${id} refused ${v}`);
+  }
   const P = (window.__pair = window.__pair);
   P.vt = 1e6; P.virtual = true;
   /* The window seeds ahead of its scene entry and again after its seeds: this page seeds ahead of
@@ -500,7 +509,7 @@ async function main() {
       if (b.status !== 0) throw new Error(`asset expansion bundle: ${b.stderr}`);
       lxpack = fs.readFileSync(bundle).toString('base64');
     }
-    const r = await page.evaluate(pageRun, { lgsf, lxpack, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
+    const r = await page.evaluate(pageRun, { lgsf, lxpack, sc, ticks, boxes: MODES[mode].boxes, unboxes: MODES[mode].unboxes || [], selects: MODES[mode].selects || {}, ssaoView: !!process.env.LEGAIA_SSAO_VIEW, key: KEY, rngSeed: CARD_RNG_SEED, size, threshold: opts.threshold, report: opts.report, keepAll: opts.keepAll });
     await context.close();
     let worst = null, sum = 0, offFrames = 0, firstTrace = null, traceOff = 0;
     let reached = [!sc.reach, !sc.reach];

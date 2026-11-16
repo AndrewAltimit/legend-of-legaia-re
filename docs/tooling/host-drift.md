@@ -1437,8 +1437,10 @@ difference by the pass behind it, `psx_only` or `retail_only` (one of retail mod
 switches), which splits it by rasterisation and gameplay rules, or `fog_bloom`, the two passes that default
 off turned on for both hosts. The window has no switch that turns either on, so
 that run writes them into the options file of its own working directory; the
-`fog_walk` scene (the Ravine) carries a fog bank for it. `LEGAIA_SSAO_VIEW=1`
-draws the AO term alone on both sides.
+`fog_walk` scene (the Ravine) carries a fog bank for it. `dusk` and `night` force
+enhanced lighting's time of day the same way (the page's selector on the other
+side), which lights the lamps, windows and halos a daylight scene's `auto` leaves
+off. `LEGAIA_SSAO_VIEW=1` draws the AO term alone on both sides.
 
 | Side | How it runs |
 |---|---|
@@ -1891,6 +1893,7 @@ reverse-engineering questions, so they are not on
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | pack-map ground | Closed: a pack map's layout picks narrowed 64-bit words to `usize` (the ground's cell pick, the `[[edges]]` runs' `usize::MAX - e` stream key), so on `wasm32` the page painted and decorated the map differently from the window while VRAM and trace agreed. Both now take 64-bit words (`terrain::pick_index`, `TileRng::new_keyed`); a native-against-wasm dump of every sample map's decorations and paint matches. `pack_village` reads `1.6%` retail, `0.05%` enhanced; `pack_tower` `0.3%` / `0.01%`. The rest is one-row raster ties. |
 | an NPC inside `rugi`'s semi-transparent tunnel, PSX mode | Closed: the page staged each field draw's link word (`meanDepth`, `_stageFieldPrimOrder`) before it appended the script-spawned actors and the field effects, so the landing tunnel, a spawned actor, tested per pixel against NPC `4`, which both hosts draw by link; the window stages a word on every draw. Staged after the frame's last draw, `lamp_walk` under `--mode psx_only` reads tick `241` `0.78%` to `0.42%` and tick `211` `0.40%` to `0.31%`, the rest ring edges. NPC `4` carries no near-bucket bit on either host: a script holds its height (`+0x10 & 0x20000000`), so the actor tick never runs the floor sampler on it (`FUN_8003BC08` at `0x8003BC50`). A `PAGE_STATE_RULES` row pins the order. |
+| effect prims through the eye plane, clean rasterisation | Open: with PSX rasterisation off, beams that run past the camera draw differently on the two hosts (`cast_big_wave` up to `1.5%`, `cast_cannon` `1.5%`); retail mode pairs. See [effect prims through the eye plane](#effect-prims-through-the-eye-plane). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The Baka floor fan against retail
@@ -1922,6 +1925,31 @@ The round HUD now waits for the spin as retail's does: the spin is cabinet state
 from `0x36` on ([Baka Fighter](../subsystems/minigame-baka-fighter.md#duel-hud-fun_801d2afc)).
 The window's bars rise at tick `244`, `14` ticks after the pose that matches retail's
 vsync `216`; retail's are absent at vsync `231` and up at `234` of the same film.
+
+### Effect prims through the eye plane
+
+With PSX rasterisation off, a cast whose beams run past the camera draws them
+differently on the two hosts. Big Wave's fan of beams (`cast_big_wave` ticks
+`571..661`, up to `1.5%` of a `960 x 720` frame) splits into two narrow beams
+on the page where the window draws one wide one, and Genocidal Cannon's red
+beam (`cast_cannon` tick `1521`) takes dark blotches on the page. Retail mode
+pairs within `0.6%` on the same ticks, and the window's clean frame keeps the
+wide beam retail mode draws.
+
+| Ruled out | How |
+|---|---|
+| depth | the page's blend pass with its depth test forced off still splits the beam |
+| blend order | the page's subtractive draws skipped: the same split |
+| culling, the near and span rejects | face culling off, `u_prim_near` zeroed on the page: the same |
+| the enhancement passes | `no_ssao`, `no_lighting`, `no_shadows` keep it |
+
+What is left is the affine UV of a prim with a corner near or behind the eye.
+The window interpolates it `@interpolate(linear)` over the vertices the clipper
+makes; the page carries `uv * w` and `w` and divides, which is screen-linear
+over the whole unclipped triangle. The two are one law until a corner is
+clipped. Under PSX mode the GTE register limits clamp that corner on both hosts
+first, which is why retail mode pairs. Evidence grade: inference from the
+experiments above, with no per-prim dump of the frame.
 
 ### The minigames page has no `World`
 
