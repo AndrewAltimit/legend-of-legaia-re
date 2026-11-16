@@ -1,0 +1,97 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; minigame film</div>
+  <h1>The minigame film: one minigame, both sides, game frame by game frame</h1>
+  <p class="lede">The retail comparison corpus scores a minigame state on one frame, which cannot see a rhythm game's timing: when the beat clock starts against the music, which game frame judges a press, how the camera track steps. The minigame film holds a pad schedule on one retail minigame state on both sides and compares a named set of the minigame's words game frame by game frame. It reports and asserts nothing; its output reads retail RAM, so it stays under <code>captures/</code>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A retail minigame state and a pad schedule feed two sides. Retail: a PCSX-Redux probe writes one row per vsync of the words the set names. Engine: the retail comparison corpus seeds the same state and writes the same names off the session, one row per tick. The film cuts both sides into game frames, pairs them on the minigame's own key, and writes each column's agreement and first diverging frame.">
+      <defs><marker id="mf-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="64" width="170" height="72" rx="4"/>
+      <text class="dg-label" x="95" y="88">Minigame state</text>
+      <text class="dg-sub" x="95" y="106">+ pad schedule</text>
+      <text class="dg-sub" x="95" y="122">--set dance</text>
+      <path class="dg-edge" d="M180 88 L236 52" marker-end="url(#mf-ah)"/>
+      <path class="dg-edge" d="M180 112 L236 148" marker-end="url(#mf-ah)"/>
+      <rect class="dg-node-accent" x="240" y="16" width="290" height="64" rx="4"/>
+      <text class="dg-label" x="385" y="40">Retail: PCSX-Redux probe</text>
+      <text class="dg-sub" x="385" y="60">the set's words: a row a vsync</text>
+      <rect class="dg-node-accent" x="240" y="120" width="290" height="64" rx="4"/>
+      <text class="dg-label" x="385" y="144">Engine: corpus seed</text>
+      <text class="dg-sub" x="385" y="164">the same names: a row a tick</text>
+      <path class="dg-edge" d="M530 48 L590 90" marker-end="url(#mf-ah)"/>
+      <path class="dg-edge" d="M530 152 L590 110" marker-end="url(#mf-ah)"/>
+      <rect class="dg-node-ok" x="594" y="64" width="270" height="72" rx="4"/>
+      <text class="dg-label" x="729" y="88">Pair by game frame</text>
+      <text class="dg-sub" x="729" y="106">on the minigame's own key</text>
+      <text class="dg-sub" x="729" y="122">film-score.tsv</text>
+    </svg>
+    <figcaption>The engine side takes the seeded state's warp and starts writing on the tick the session stands where the capture does; it runs the venue step after every tick, as both play hosts do, so the camera track moves.</figcaption>
+  </figure>
+<pre><code>scripts/ci/minigame-film.py minigame_dance_retail_ready --set dance --frames 3300
+scripts/ci/minigame-film.py minigame_dance_retail_ready --set dance --frames 2000 --shift 3 \
+    --pad 130-133:SQUARE,144-147:CIRCLE,407-410:TRIANGLE
+scripts/ci/minigame-film.py minigame_dance_retail_ready --set dance --no-retail   # engine side only</code></pre>
+  <table>
+    <thead><tr><th>Side</th><th>Piece</th><th>Writes</th></tr></thead>
+    <tbody>
+      <tr><td>Retail</td><td><code>autorun_minigame_film.lua</code> under PCSX-Redux</td><td><code>minigame_film.csv</code>, one row a vsync of the words <code>LEGAIA_FILM_WORDS</code> names</td></tr>
+      <tr><td>Engine</td><td><code>LEGAIA_RC_MINIGAME_FILM_OUT</code> on <code>legaia-engine retail-compare</code></td><td><code>engine.csv</code>, the same names off the session, one row a tick</td></tr>
+    </tbody>
+  </table>
+  <p>A word is <code>name=ADDR:KIND</code>, or <code>name=*PTR+OFF:KIND</code> through a pointer. The driver writes <code>film-score.tsv</code> beside the two films: each column's agreement and its first diverging frame. The engine side's seed is the corpus's <a href="retail-compare.html#minigame">minigame state</a> warp.</p>
+</section>
+
+<section class="doc-section" id="reading-it" data-doc="reading-it">
+  <h2>Reading it</h2>
+  <ul class="bullets">
+    <li><strong>Pairing.</strong> Both sides are cut into game frames and paired on the minigame's own key. For the dance that is the READY counter through state 3, the <code>GO!</code> accumulator through states 4 and 5, the lead-in count through states 6 and 7, then the song's game frames by their ordinal from the first. A vsync of entry latency on either side therefore does not read as a divergence.</li>
+    <li><strong>The offset.</strong> The driver prints the vsync offset of every pair; a constant offset is the save state's own vsync phase.</li>
+    <li><strong>Pressed runs.</strong> A save state's RAM is the vsync before the film's first row, so the engine's row 1 stands a few vsyncs ahead of retail's. A hands-off run prints that offset; pass it as <code>--shift</code> on a pressed run, so the engine holds each press on the vsync that matches retail's.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="what-the-dance-film-pins" data-doc="what-the-dance-film-pins">
+  <h2>What the dance film pins</h2>
+  <p>Hands off, from <code>minigame_dance_retail_ready</code> to the results: the count-in states, the beat phase and song timer, both rivals' scores, gauges, triangle stock, chain cursors and banked combo slots, and the camera key, segment timer, angles and eye, on every game frame of the song. With a press schedule, the human's score, gauge, stock, chain, latch and miss counter too. The words the engine does not keep past their phase (the READY counter after state 3, the song timer past its limit) are the columns that stay apart. The minigame itself: <a href="../subsystems/minigame-dance.html#timing">Noa's dance</a>.</p>
+</section>
+
+<section class="doc-section" id="what-the-hub-film-pins" data-doc="what-the-hub-film-pins">
+  <h2>What the hub film pins</h2>
+  <p><code>--set hub</code> from <code>minigame_muscle_dome_retail_welcome</code>, hands off: the contest hub's arm byte <code>0x801D1A78</code> and its counter family (<code>0x801D1A70</code>, <code>0x801D1A7C..0x801D1A8C</code>) agree on every game frame from the Welcome hold through the ROUND card's fade-out, and the hub hands the leg over on the same vsync. The engine's own scene mode rides along as an engine-only <code>emode</code> column: retail spends the vsyncs after the hand-over in game mode <code>0x14</code> before the fight's <code>0x15</code>, while the engine enters the fight on the hand-over tick.</p>
+</section>
+
+<section class="doc-section" id="the-fishing-replay" data-doc="the-fishing-replay">
+  <h2>The fishing replay</h2>
+  <p><code>--set fishing --replay</code> records a catch from <code>minigame_fishing_retail_shore</code> with Cross driven closed-loop on the fishing globals (<code>LEGAIA_FILM_POLICY=fishing_catch</code>: tap on the shore, lock the meter at <code>0xF00</code>, pump the cadence, then hold under the tension band). The engine side then ticks the pond once per retail game frame on that frame's step and pad words instead of running its own clock (<code>LEGAIA_RC_MINIGAME_FILM_REPLAY</code>).</p>
+  <ul class="bullets">
+    <li>A game frame is a move of the frame driver's counter <code>_DAT_8007B798</code>; the step it runs on is read a vsync after the move, its pad words on the move, and its results on the next move.</li>
+    <li>Two harness seats stand the pond on the capture: its <code>rand()</code> stream on the state's BIOS seed, and the pad pump's free-running auto-repeat clock <code>_DAT_8007B940</code> on the capture's phase.</li>
+  </ul>
+  <p class="hint">The replay compares rules, not pace. The pace question is the venue's game tick, in the <a href="../subsystems/minigame-fishing.html#states">fishing state machine</a>.</p>
+</section>
+
+<section class="doc-section" id="the-baka-fighter-film" data-doc="the-baka-fighter-film">
+  <h2>The Baka Fighter film</h2>
+  <p><code>--set baka</code> from <code>minigame_baka_fighter_retail_attract</code>, START at vsync <code>30</code> and Cross every <code>20</code> vsyncs: the cabinet's state, its clocks, both fighters' HP, wins, chosen attacks and combo counters, and the <code>rand()</code> word, the cabinet's stream seated on the capture's (a harness seat). Map each side's <code>rand()</code> words to their index in the BIOS stream to read which exchange took which draw; the two sides then agree exchange for exchange through both rounds.</p>
+  <p class="hint">The cabinet's opponent install (state <code>0x1E</code>) blocks on its CD load for <code>26</code> vsyncs in the film and costs the port one; that is drive time, not game logic.</p>
+</section>
+
+<section class="doc-section" id="adding-a-minigame" data-doc="adding-a-minigame">
+  <h2>Adding a minigame</h2>
+  <p>Add the words to <code>SETS</code> in the driver (address, kind, a key per pre-play phase and the columns that mark a play frame) and the same names to <code>columns</code> / <code>values</code> in <code>crates/parity/src/retail_compare/minigame_film.rs</code>. A minigame whose play phase reads <code>rand()</code> needs the stream seated at the aligned tick before the film can pair past its first roll.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="walk-film.html">Field walk film</a>
+    <a href="cast-sequence-oracle.html">Cast-sequence oracle</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="verification-ladder.html">The verification ladder</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/minigame-film.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

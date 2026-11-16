@@ -800,6 +800,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/retail-compare.html", "Retail comparison corpus", "tooling/retail-compare", "tooling/retail-compare.html"),
     ("tooling/cast-sequence-oracle.html", "Cast-sequence oracle", "tooling/cast-sequence-oracle", "tooling/cast-sequence-oracle.html"),
     ("tooling/walk-film.html", "Field walk film", "tooling/walk-film", "tooling/walk-film.html"),
+    ("tooling/minigame-film.html", "Minigame film", "tooling/minigame-film", "tooling/minigame-film.html"),
     ("tooling/gate-replay.html", "Gate replay", "tooling/gate-replay", "tooling/gate-replay.html"),
     ("tooling/ratchet-integrity.html", "Ratchet integrity", "tooling/ratchet-integrity", "tooling/ratchet-integrity.html"),
     ("tooling/capture-coverage.html", "Capture coverage", "tooling/capture-coverage", "tooling/capture-coverage.html"),
