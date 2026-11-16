@@ -209,10 +209,11 @@ impl PlayWindowApp {
             // `End` reloads an `--expansion` pack; with none loaded the row
             // names a key that only says there is nothing to reload.
             .filter(|&&(hk, _)| hk != HostHotkey::ReloadPack || self.pack_reload.is_some())
-            // The panel is full at the disc font's metrics (one more row
-            // overflows the 320x240 stage both ways); `Print Screen` is a
-            // one-shot action the guide and the notice it raises name.
-            .filter(|&&(hk, _)| hk != HostHotkey::Screenshot)
+            // The panel is full at the disc font's metrics with both one-shot
+            // rows (one more row overflows the 320x240 stage both ways), so
+            // `Print Screen` takes the seat the pack reload leaves free: it
+            // is listed whenever no pack is loaded, which is most play.
+            .filter(|&&(hk, _)| hk != HostHotkey::Screenshot || self.pack_reload.is_none())
             .map(|&(hk, _)| {
                 let line = if hk.is_action() {
                     states.push(None);
@@ -1343,11 +1344,18 @@ mod help_panel_tests {
     }
     use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
 
-    /// Every hotkey in its widest state.
+    /// Every hotkey in its widest state, with a pack loaded (the pack
+    /// reload's row in, `Print Screen`'s out).
     fn worst_entries() -> Vec<(&'static str, String)> {
+        entries_without(HostHotkey::Screenshot)
+    }
+
+    /// Every hotkey but `left_out` in its widest state: the panel lists
+    /// either the pack reload or `Print Screen`, never both.
+    fn entries_without(left_out: HostHotkey) -> Vec<(&'static str, String)> {
         let mut e: Vec<(&'static str, String)> = HOST_HOTKEYS
             .iter()
-            .filter(|&&(hk, _)| hk != HostHotkey::Screenshot)
+            .filter(|&&(hk, _)| hk != left_out)
             .map(|&(hk, _)| {
                 let state = match hk {
                     HostHotkey::AudioMute => "muted",
@@ -1367,8 +1375,25 @@ mod help_panel_tests {
         e
     }
 
+    /// [`assert_fits_entries`] over both sets the panel lists: with a pack
+    /// (the reload row) and without one (`Print Screen` in its seat).
     fn assert_fits(width: &dyn Fn(&str) -> i32, line_h: i32, what: &str) -> HelpPanelLayout {
-        let entries = worst_entries();
+        assert_fits_entries(
+            width,
+            line_h,
+            &entries_without(HostHotkey::ReloadPack),
+            &format!("{what}, no pack"),
+        );
+        assert_fits_entries(width, line_h, &worst_entries(), what)
+    }
+
+    fn assert_fits_entries(
+        width: &dyn Fn(&str) -> i32,
+        line_h: i32,
+        entries: &[(&'static str, String)],
+        what: &str,
+    ) -> HelpPanelLayout {
+        let entries = entries.to_vec();
         let pad = pad_key_rows(&legaia_engine_system::input::Mapping::default());
         let l = help_panel_layout_with(width, line_h, &entries, &pad);
         let stage_w = legaia_engine_ui::BOOT_UI_STAGE_W as i32;
