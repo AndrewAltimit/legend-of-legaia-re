@@ -202,6 +202,10 @@ impl World {
             if seated {
                 self.seat_walk_active_summon();
             }
+            if entry == 927 {
+                let arms: Vec<u8> = now.iter().map(|(a, _)| *a).collect();
+                self.run_juggernaut_sweeps_now(&arms);
+            }
             if entry == 966
                 && let Some(spell) = self.casting.capture_spell
             {

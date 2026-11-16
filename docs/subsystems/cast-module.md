@@ -1128,6 +1128,13 @@ the plain films parted named one unported site:
   the volley stopped a whole arm early. The hand port makes the kill
   (`World::apply_iota_writes`): the `0x93` film reads `.995` against `.986` (arm 9
   `.913` to `.996`) and holds retail's words to the Done band.
+- **Orb's heal effects fall on arm 9's own pass.** The body-paced director hands an
+  arm's calls over on the next arm's first tick; the arm's pool spawns
+  (`0x801F7A4C..0x801F7A60`) are made from `World::orb_arm_writes` on the pass instead.
+- **Juggernaut's row sweeps fall on the caller's frame.** Stager arms 3 and 4 roll the
+  summon damage inside the calling part's step (`0x801F8698` falls into arm 4); their
+  rolls run with the frame's other stager calls (`World::run_juggernaut_sweeps_now`),
+  and the fades and shakes the same calls make stay on the module's tick.
 - **Jedo's sparks are jittered.** Arms 5..7 seat record `0x801F8E20` every pass at
   `x = rand() % 0x301 - 0x180`, `y = rand() % 0x301 - 0x600`, on the creature's
   `z + 0x180` (`0x801F6FA0..0x801F7028` and its two copies).

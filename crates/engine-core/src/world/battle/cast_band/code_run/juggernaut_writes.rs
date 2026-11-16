@@ -367,6 +367,18 @@ impl World {
                 self.presentation.module_fades.extend(fade);
             }
             self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
+        }
+        let _ = spell_id;
+    }
+
+    /// The row sweeps of this frame's stager calls, on the caller's frame:
+    /// retail's arms 3 and 4 run inside the calling part's step (`0x801F8698`
+    /// falls into arm 4), so their `FUN_801DD0AC` rolls draw on that frame.
+    /// Run on the module's next tick, the two roll words a sweep draws landed
+    /// a battle frame after a `--watch 0x80009010` recording's.
+    pub(in crate::world) fn run_juggernaut_sweeps_now(&mut self, arms: &[u8]) {
+        let spell_id = (927 - 903 + 0x81) as u8;
+        for &arm in arms {
             if arm == super::super::AOE_STAGER_WORKING_ARM || arm == 3 {
                 self.juggernaut_stager_sweep(spell_id);
             }

@@ -39,6 +39,17 @@ impl World {
         if passed && ORB_POOL_FLUSH_ARMS.contains(&phase_in) {
             self.casting.orb_pool_flush();
         }
+        // Arm 9's pass spawns effect `0x14` on each live member inside its
+        // ring loop (`0x801F7A1C..0x801F7A60`), on the pass's own frame: the
+        // children's seeding words land there on a `--watch 0x80009010`
+        // recording, a pass ahead of the director's hand-over.
+        if passed && phase_in == ORB_PANEL_ARM {
+            self.stage_module_arm_effects(
+                &legaia_engine_cast::cast_module_camera::ORB_HEAL_EFFECTS,
+                None,
+                None,
+            );
+        }
         if passed && phase_in == ORB_PANEL_ARM {
             self.battle.raise_module_roster_panels();
             // `li v0,0x800` / `sh v0,0x78(..)` into both backdrop records

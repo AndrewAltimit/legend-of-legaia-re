@@ -57,7 +57,8 @@ pub const ORB_HEAL_SPAWNS: [ModuleSpawn; 7] = [
 ];
 
 /// PROT 0911 arm 9's pool spawns, one behind each live member's light
-/// ring: effect `0x14` on the member's `+0x34` trio turned its heading less
+/// ring, made on the arm's own pass (`World::orb_arm_writes`) where the
+/// body-paced director hands the rest of the pass's calls over a tick late: effect `0x14` on the member's `+0x34` trio turned its heading less
 /// `0x800` (`li a0,0x14; lhu a2,0x46(a1); addiu a2,a2,-0x800; jal
 /// 0x801DFDF0` at `0x801F7A4C..0x801F7A60`, in the loop at `0x801F7A1C`).
 pub const ORB_HEAL_EFFECTS: [ModuleEffect; 3] = [orb_effect(0), orb_effect(1), orb_effect(2)];
@@ -144,7 +145,6 @@ pub fn orb_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> 
                         let (focus, extent) = group_aim(st);
                         ArmDirection {
                             spawns: &ORB_HEAL_SPAWNS,
-                            effects: &ORB_HEAL_EFFECTS,
                             ..captioned(
                                 shot(
                                     [0x80, yaw_from(0x600, c.facing)],

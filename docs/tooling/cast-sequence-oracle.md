@@ -1312,8 +1312,10 @@ arm cost rows read a stale first row at any step, not only at step `1`
 Gilium's `0x95` reads `.9864` for `.9639`, and the 29 films `.9649` for `.9641`. Open:
 Viguro's first sparks land a frame after retail's (the creature now takes its selector
 on the stager call's frame, as retail's does, but the engine's frame grid around the
-call sits a vsync off the recording's); Orb's body-paced director hands an arm's calls
-over on the next arm's first tick, a pass late; and a pool effect retail first walks on
+call sits a vsync off the recording's); Orb's arm-9 pool effects now fall on the arm's own
+pass and Juggernaut's row sweeps on the stager call's frame (`0x89` and `0x99` hold
+retail's words to the end of the cast, `.9529` to `.9531` and `.9930` flat); and a pool
+effect retail first walks on
 the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11 draws
 its `30` stager words and the effect's `64` seeding words on one tick where retail draws
 them a frame apart; Meta's arm-7 mirror words land a frame early).
