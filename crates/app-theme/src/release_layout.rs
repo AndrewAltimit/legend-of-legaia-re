@@ -50,6 +50,31 @@ pub fn find_engine(exe: &Path) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// Legaia Explorer as it belongs with the program at `exe`, walked as
+/// [`find_engine`] walks: `Legaia Explorer` (the archive's name for it, at
+/// its top level), the `legaia-explorer` a `cargo build` puts beside every
+/// binary, or the binary inside `Legaia Explorer.app` on macOS. The command
+/// line programs in [`TOOLS_DIR`] point a player at it.
+pub fn find_explorer(exe: &Path) -> Option<PathBuf> {
+    let suffix = std::env::consts::EXE_SUFFIX;
+    let archive = std::format!("Legaia Explorer{suffix}");
+    let built = std::format!("legaia-explorer{suffix}");
+    exe.ancestors()
+        .skip(1)
+        .take(4)
+        .flat_map(|d| {
+            [
+                d.join(&archive),
+                d.join(&built),
+                d.join("Legaia Explorer.app")
+                    .join("Contents")
+                    .join("MacOS")
+                    .join("legaia-explorer"),
+            ]
+        })
+        .find(|p| p.is_file())
+}
+
 /// The [`PACKS_DIR`] folder of bundled expansion packs that belongs with
 /// the program at `exe`: the first of the four folders above `exe` (the
 /// same walk as [`find_engine`]) holding a `packs` folder. In the release
@@ -67,6 +92,32 @@ pub fn find_bundled_packs(exe: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Explorer is found from `command-line-tools/` in the archive layout
+    /// and beside a program in a `cargo build`.
+    #[test]
+    fn explorer_is_found_from_the_tools_folder_and_a_build() {
+        let root =
+            std::env::temp_dir().join(std::format!("legaia-find-explorer-{}", std::process::id()));
+        let tools = root.join(TOOLS_DIR);
+        std::fs::create_dir_all(&tools).unwrap();
+        let exe = tools.join("asset-viewer");
+        assert_eq!(find_explorer(&exe), None);
+        let top = root.join(std::format!(
+            "Legaia Explorer{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        std::fs::write(&top, b"").unwrap();
+        assert_eq!(find_explorer(&exe), Some(top.clone()));
+        std::fs::remove_file(&top).unwrap();
+        let built = tools.join(std::format!(
+            "legaia-explorer{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        std::fs::write(&built, b"").unwrap();
+        assert_eq!(find_explorer(&exe), Some(built));
+        std::fs::remove_dir_all(&root).ok();
+    }
 
     fn touch(p: &Path) {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
