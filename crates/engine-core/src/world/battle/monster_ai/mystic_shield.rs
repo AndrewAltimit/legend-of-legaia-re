@@ -29,6 +29,14 @@ const SCUS_RECORD_RUN: [u32; 5] = [
 /// `SCUS_942.54` is linked at `0x80010000` behind a `0x800`-byte header.
 const SCUS_FILE_BIAS: u32 = 0x8000_F800;
 
+/// The cue the break sounds: `FUN_8004FE5C(0x10D, 3)` at `0x8004D660`
+/// (`li a0,0x10d` / `li a1,0x3`), the last thing the break arm does after it
+/// retires the sphere and clears the shield word.
+pub const MYSTIC_SHIELD_BREAK_CUE: u16 = 0x10D;
+/// The break cue's category: retail actor-table index `3`, the first monster
+/// seat the shield sits on.
+const MYSTIC_SHIELD_BREAK_CUE_CATEGORY: u8 = 3;
+
 /// The scale `FUN_80021B04` seats both shield parts at (`li a3,0x1000`).
 const SHIELD_SCALE: u16 = 0x1000;
 
@@ -160,9 +168,9 @@ impl World {
     /// sphere's position and rotation, retires the sphere (`+0x10 |= 8`) and
     /// clears the word (`sw zero` at `0x8004D658`) - so the finisher's halve
     /// lifts and the `0xB4` pick's Evil Seru Magic arm, gated on the word
-    /// being null, opens.
-    ///
-    /// Not ported: the break's cue `0x10D` (`FUN_8004FE5C`).
+    /// being null, opens. Last, it sounds the break: `FUN_8004FE5C(0x10D, 3)`
+    /// (`0x8004D648..0x8004D660`), routed through the battle cue funnel
+    /// ([`World::route_battle_cue`]).
     ///
     /// PORT: FUN_8004CE2C (the Mystic Shield arm, `0x8004D534..0x8004D674`)
     pub(in crate::world) fn tick_mystic_shield(&mut self) {
@@ -238,6 +246,7 @@ impl World {
             self.casting.active_action_fx.push(s);
         }
         self.battle.monster_ai_state.flag_bd84 = 0;
+        self.route_battle_cue(MYSTIC_SHIELD_BREAK_CUE, MYSTIC_SHIELD_BREAK_CUE_CATEGORY);
     }
 
     /// Advance the Mystic Shield's parts one battle pass through the move VM -

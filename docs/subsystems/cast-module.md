@@ -4991,7 +4991,9 @@ actor pass `FUN_8004CE2C` (`0x8004D534..0x8004D674`). Every frame of an
 scale and its display trio (`+0x3C..+0x43` over the node's `+0x14..+0x1B`),
 and the half-HP break test runs; zero, the sphere is hidden
 (`sh zero,0x56(v1)` at `0x8004D670`) and the test is skipped. The break seats
-the burst `0x800786C4` on the sphere, retires it and clears the word.
+the burst `0x800786C4` on the sphere, retires it, clears the word and sounds
+`FUN_8004FE5C(0x10D, 3)` (`0x8004D648..0x8004D660`) - the cue funnel's high
+runtime leg on the first monster seat's bank.
 
 Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shield`
 in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
