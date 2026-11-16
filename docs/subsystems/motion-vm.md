@@ -412,6 +412,21 @@ previous heading in `World::npcs.facing_save`;
 frame. Both are called from the field tick, so the walk-up talk and the
 scripted `0x3E` interact get the same behaviour.
 
+The restore's own gate is the class word at the end of the talk, not the
+heading: both exit paths write `+0x5A` back when `+0x10 & 0x01020000` is
+non-zero and `+0x10 & 0x400000` is clear (`0x80039CC8..0x80039CE0`,
+`0x80039E9C..0x80039EB4`), with no compare against the snapped bearing. So a
+talk record that turns its own placement (`38`, `4C 85`, a `C1` walk) and does
+not raise `0x400000` (`31 16`) has that turn undone when the talk ends. The
+port skips the restore when the heading has moved since the snap, which keeps
+such a turn; a census of the disc's placement records finds a few dozen talks
+of that shape (`bubu1` `P1[2]` / `P1[3]`, `doman` `P1[28]`, `nilboa` `P1[6]`'s
+walk); whether any of them ends on a heading retail would visibly undo is not
+yet filmed. A walk film
+of `town01_field_card_boot` agrees on the plain case: the talker snaps to the
+player as the box opens and its `+0x5A` lands back as the last page closes, on
+both sides ([walk-film](../tooling/walk-film.md#what-it-has-settled)).
+
 ## Per-frame speed
 
 `DAT_1f800393` is the per-frame speed scalar (also drives the [move VM](move-vm.md) frame-time scratchpad). The motion VM consumes it as the budget for incremental motion - engines update once per frame, the VM consumes per opcode.
