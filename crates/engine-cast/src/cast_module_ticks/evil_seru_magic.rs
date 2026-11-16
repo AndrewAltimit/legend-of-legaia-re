@@ -80,6 +80,10 @@ pub const ESM_ROW_SCALE: u16 = 0x800;
 /// `+0x46 = 0x800` (`0x801F7E80..0x801F7EA4`), above the row and facing it.
 /// The recording's caster stands at `z = 1024` from arm 21 on.
 pub const ESM_CASTER_Y: i16 = -0x380;
+/// Arm 18's party depth: every party seat goes to `+0x38 = -0x400` on the
+/// arm's pass beside the hide (`0x801F7C10..0x801F7C28`), where a watch on
+/// the recording's seats reads the store; arm 27 copies the saved seats back.
+pub const ESM_PARTY_RISE_Z: i16 = -0x400;
 /// Arm 21's caster depth (`li v0,0x400` / `sh v0,0x38(s2)` at `0x801F7E80`).
 pub const ESM_CASTER_Z: i16 = 0x400;
 /// Arm 21's caster heading.
@@ -182,15 +186,18 @@ pub const fn esm_half_end_step(step: i16) -> i16 {
 }
 
 /// Arm 0's row column for party seat `i` of `n`: the formation point's x
-/// `*(0x800775E0 + (n * 3 + i) * 8)` over three, toward zero
-/// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`).
+/// `*(0x800775E0 + (n * 3 + i) * 8)` over **six**, toward zero
+/// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`:
+/// `0x2AAAAAAB` is `2^32 / 6`, and the high word alone is taken, with no
+/// shift). The recording's row stands bunched in front of Juggernaut on
+/// arms 21 and 26 where a third of the column spread it past the frame.
 /// The other three writes of the loop are fixed: `+0x38 = ESM_ROW_Z`,
 /// `+0x46 = 0`, node `+0x72 = ESM_ROW_SCALE` (and the node's radius `+0x58`
 /// halved). The pair, heading and radius go to `0x801FA474` / `0x801FA494`
 /// for arm 27's restore, which arm 28 repeats every pass.
 // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F6BE0..0x801F6D1C`, arm 0's party row)
 pub fn esm_row_x(formation_x: i16) -> i16 {
-    (i32::from(formation_x) / 3) as i16
+    (i32::from(formation_x) / 6) as i16
 }
 
 /// The arms 12..15 loop's depth step for one party seat this pass (it runs
@@ -228,7 +235,7 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 /// | 1 | the same, again (`0x801F6D8C` / `0x801F6D98`) | caster stages clip `6`, rate `2` (`0x801F6DE4` / `0x801F6DF0`) |
 /// | 10 | - | caster hidden (`0x801F70E0` / `0x801F70E8`); party shown, neutral tint (`0x801F7310` / `0x801F731C`) |
 /// | 12..15 | a party seat on its get-up `+0x1F2` with two keyframes left stages idle with the bump ([`esm_releases_get_up`]) | - |
-/// | 18 | - | party hidden again (`0x801F7C34` / `0x801F7C40`) |
+/// | 18 | - | party hidden again (`0x801F7C34` / `0x801F7C40`) and stood at `z = -0x400` ([`ESM_PARTY_RISE_Z`], the host's move) |
 /// | 21 | - | caster stages clip `0`, shown, neutral tint (`0x801F7EA8..0x801F7EC8`); party shown (`0x801F7EF8` / `0x801F7F04`) |
 /// | 23 | - | caster `+0x21C = 2`, the defeat-fade tint state (`0x801F8280`) |
 /// | 26 | - | the party hit, see [`EVIL_SERU_MAGIC_SWEEP_SHAPE`] |
@@ -407,13 +414,13 @@ mod esm_tests {
         }
     }
 
-    /// Arm 0's row takes a third of the formation point's x, toward zero,
+    /// Arm 0's row takes a sixth of the formation point's x, toward zero,
     /// and the arms 12..15 slide steps a struck seat back by character.
     #[test]
     fn the_row_and_the_get_up_slide() {
-        assert_eq!(esm_row_x(600), 200);
-        assert_eq!(esm_row_x(-600), -200);
-        assert_eq!(esm_row_x(-301), -100);
+        assert_eq!(esm_row_x(600), 100);
+        assert_eq!(esm_row_x(-600), -100);
+        assert_eq!(esm_row_x(-301), -50);
         // The entry-5 end step halves on an arithmetic shift.
         assert_eq!(esm_half_end_step(64), 32);
         assert_eq!(esm_half_end_step(-3), -2);

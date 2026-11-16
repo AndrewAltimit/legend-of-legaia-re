@@ -499,7 +499,7 @@ impl World {
     /// the row at half size, arm 27 puts every seat back and arm 28 repeats
     /// the party's restore every pass. `before` is the party row as the arm
     /// found it (the slide reads the clip the release loop read).
-    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 0 `0x801F6BE0..0x801F6D58`, arms 12..15 `0x801F7418..0x801F750C`, arm 21 `0x801F7E80..0x801F7EB4`, arm 27 `0x801F8828..0x801F8904`, arm 28 `0x801F89E0..0x801F8A3C`)
+    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 0 `0x801F6BE0..0x801F6D58`, arms 12..15 `0x801F7418..0x801F750C`, arm 18 `0x801F7C10..0x801F7C28`, arm 21 `0x801F7E80..0x801F7EB4`, arm 27 `0x801F8828..0x801F8904`, arm 28 `0x801F89E0..0x801F8A3C`)
     pub(in crate::world::battle::cast_band) fn evil_seru_magic_row(
         &mut self,
         phase: u8,
@@ -508,8 +508,8 @@ impl World {
         before: &[legaia_engine_cast::cast_module_ticks::CastActorState],
     ) {
         use legaia_engine_cast::cast_module_ticks::{
-            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_CASTER_Z, ESM_ROW_SCALE, ESM_ROW_Z,
-            esm_get_up_slide, esm_half_end_step, esm_row_x,
+            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_CASTER_Z, ESM_PARTY_RISE_Z, ESM_ROW_SCALE,
+            ESM_ROW_Z, esm_get_up_slide, esm_half_end_step, esm_row_x,
         };
         let pc = usize::from(self.party.party_count).clamp(1, 3);
         let move_to = |a: &mut crate::world::types::Actor, x: i16, z: i16| {
@@ -567,6 +567,19 @@ impl World {
                     {
                         let (x, z) = (a.move_state.world_x, a.move_state.world_z.wrapping_add(dz));
                         move_to(a, x, z);
+                    }
+                }
+            }
+            // Arm 18's pass stands every party seat at `z = -0x400` as it
+            // hides the row (`li a2,-0x400` / `sh a2,0x38(v0)` at
+            // `0x801F7C10..0x801F7C28`), PROT 0927's monster move: arm 21
+            // shows the row there, in front of Juggernaut, and arm 26's
+            // knockdowns slide it on toward the lens.
+            18 if passed => {
+                for i in 0..pc {
+                    if let Some(a) = self.actors.get_mut(i) {
+                        let x = a.move_state.world_x;
+                        move_to(a, x, ESM_PARTY_RISE_Z);
                     }
                 }
             }
