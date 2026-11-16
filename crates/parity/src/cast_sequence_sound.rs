@@ -317,6 +317,17 @@ pub fn compare(
             (*c, k, p)
         })
         .collect();
+    // Distances on the engine side are counted on its game clock: the
+    // ticks a frame overran drain no game time (`Side::live_clock`), as
+    // retail's game clock spreads a slow frame's step over its vsyncs. On a
+    // pass that runs eight vsyncs at step `4` a cue keyed on the next pass
+    // otherwise reads up to its overrun late on the tick count alone, past
+    // the tolerance while it sits on retail's game time. A harness rule.
+    let glive = |t: u64| live.range(..=t).next_back().map(|(_, &l)| l);
+    let gdist = |a: u64, b: u64| match (glive(a), glive(b)) {
+        (Some(x), Some(y)) => x.abs_diff(y).min(a.abs_diff(b)),
+        _ => a.abs_diff(b),
+    };
     let mut taken = vec![false; ecues.len()];
     let mut done = vec![false; projected.len()];
     let mut matched = Vec::new();
@@ -330,8 +341,8 @@ pub fn compare(
             let best = ecues
                 .iter()
                 .enumerate()
-                .filter(|(j, e)| !taken[*j] && e.id == c.id && e.t.abs_diff(p) <= window)
-                .min_by_key(|(_, e)| e.t.abs_diff(p));
+                .filter(|(j, e)| !taken[*j] && e.id == c.id && gdist(e.t, p) <= window)
+                .min_by_key(|(_, e)| (gdist(e.t, p), e.t.abs_diff(p)));
             if let Some((j, e)) = best {
                 taken[j] = true;
                 done[i] = true;
@@ -346,7 +357,7 @@ pub fn compare(
             }
         }
     }
-    let (matched, timing) = uncross(matched, timing, tolerance);
+    let (matched, timing) = uncross(matched, timing, tolerance, &gdist);
     let missing: Vec<LoneCue> = projected
         .iter()
         .zip(&done)
@@ -407,6 +418,7 @@ fn uncross(
     matched: Vec<CuePair>,
     timing: Vec<CuePair>,
     tolerance: u64,
+    dist: &dyn Fn(u64, u64) -> u64,
 ) -> (Vec<CuePair>, Vec<CuePair>) {
     let mut by_id: BTreeMap<i32, Vec<CuePair>> = BTreeMap::new();
     for pair in matched.into_iter().chain(timing) {
@@ -417,12 +429,12 @@ fn uncross(
         pairs.sort_by_key(|p| p.projected_tick);
         let mut ticks: Vec<u64> = pairs.iter().map(|p| p.engine_tick).collect();
         ticks.sort_unstable();
-        let within = |d: i64| d.unsigned_abs() <= tolerance;
-        let picked = pairs.iter().filter(|p| within(p.dt)).count();
+        let within = |p: &CuePair, t: u64| dist(t, p.projected_tick) <= tolerance;
+        let picked = pairs.iter().filter(|p| within(p, p.engine_tick)).count();
         let ordered = pairs
             .iter()
             .zip(&ticks)
-            .filter(|(p, t)| within(**t as i64 - p.projected_tick as i64))
+            .filter(|(p, t)| within(p, **t))
             .count();
         if ordered >= picked {
             for (pair, tick) in pairs.iter_mut().zip(ticks) {
@@ -431,7 +443,7 @@ fn uncross(
             }
         }
         for pair in pairs.iter() {
-            if within(pair.dt) {
+            if within(pair, pair.engine_tick) {
                 matched.push(pair.clone());
             } else {
                 timing.push(pair.clone());
@@ -570,6 +582,24 @@ mod tests {
         assert_eq!(s.matched.len(), 1);
         assert_eq!(s.matched[0].dt, 1);
         assert_eq!(s.score, 1.0);
+    }
+
+    /// The engine's overrun ticks drain no game time, so a cue past them is
+    /// that much less late on the game clock: a pass of eight ticks at step
+    /// `4` puts a next-pass cue nine ticks out on the tick count, four on the
+    /// game clock.
+    #[test]
+    fn cue_distance_skips_the_engines_overrun_ticks() {
+        let r = side(&[(0x35, 3, 40)], 1000, true);
+        let mut e = side(&[(0x35, 3, 40)], 0, true);
+        for row in &mut e.rows[14..19] {
+            row.over = true;
+        }
+        let rc = [cue(1000 + 10, 0x205)];
+        let ec = [cue(19, 0x205)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
+        assert_eq!(s.matched.len(), 1, "{s:?}");
+        assert_eq!(s.matched[0].dt, 9);
     }
 
     /// A recording whose state stood past `0x1E`: its frame rows open on a later
