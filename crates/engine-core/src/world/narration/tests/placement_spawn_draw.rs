@@ -49,8 +49,8 @@ fn each_placement_with_a_move_draws_once_in_spawn_order() {
     let s2 = step(s1);
     assert_eq!(w.rng_state, s2, "one draw per placement with a move");
     let shape = legaia_engine_system::rand::bios_rand_shape;
-    assert_eq!(w.npcs.phase_draws.get(&1), Some(&shape(s1)));
-    assert_eq!(w.npcs.phase_draws.get(&3), Some(&shape(s2)));
+    assert_eq!(w.npcs.phase_draws.get(&1), Some(&(shape(s1), 3)));
+    assert_eq!(w.npcs.phase_draws.get(&3), Some(&(shape(s2), 7)));
     assert!(!w.npcs.phase_draws.contains_key(&2), "no move, no draw");
     assert!(
         !w.npcs.phase_draws.contains_key(&0),

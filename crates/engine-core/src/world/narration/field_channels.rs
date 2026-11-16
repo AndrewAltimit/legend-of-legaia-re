@@ -642,11 +642,12 @@ impl World {
             // spawn's clip-phase draw before the prologue slice.
             self.relink_ambient_at_tail(slot);
             self.drop_respawned_actor_state(slot);
-            if man_file
+            if let Some(anim) = man_file
                 .actor_placement(&man, index)
-                .is_some_and(|p| p.anim_id > 0)
+                .map(|p| p.anim_id)
+                .filter(|&a| a > 0)
             {
-                self.draw_placement_spawn_phase(slot);
+                self.draw_placement_spawn_phase(slot, anim);
             }
             self.npcs.positions.remove(&slot);
             self.npcs.headings.remove(&slot);
@@ -706,7 +707,7 @@ impl World {
             if p.anim_id > 0
                 && let Ok(slot) = u8::try_from(p.index)
             {
-                self.draw_placement_spawn_phase(slot);
+                self.draw_placement_spawn_phase(slot, p.anim_id);
             }
         }
     }
