@@ -57,6 +57,11 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// played and arm 8 parked on the wrong clip's cursor for the wait's whole
 /// bound.
 ///
+/// PROT 0966 (Evil Seru Magic) runs PROT 0927's creature stores on the same
+/// arms: `3` bare on every arm-19 pass (`0x801F7CAC`) and `5` on every arm-24
+/// pass (`0x801F82DC`). The recording's Juggernaut plays clip `2` out to
+/// cursor `1024` and clip `4` to `1536` before either takes.
+///
 /// PROT 0964's Element Strike (`0xB0..=0xB2`) stores `0` bare on its `k = 4`
 /// arm's pass (`sb zero,0x1da(v0)` at `0x801F8378` / `0x801F7B78` /
 /// `0x801F72E4`, the creature off `*(t3 + 0x1C)`, no `+0x1DC` store beside
@@ -70,9 +75,9 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// The commit path names no module, so the rule is the band's; a module joins
 /// this list once its director's stage stores carry their `+0x1DC` bumps
 /// (`ModuleCamState::creature_restage`), which an at-once commit hides.
-const CLIP_GATED_MODULES: [u32; 23] = [
+const CLIP_GATED_MODULES: [u32; 24] = [
     905, 910, 911, 918, 922, 920, 907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931,
-    932, 933, 934, 964,
+    932, 933, 934, 964, 966,
 ];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`

@@ -499,7 +499,7 @@ impl World {
     /// the row at half size, arm 27 puts every seat back and arm 28 repeats
     /// the party's restore every pass. `before` is the party row as the arm
     /// found it (the slide reads the clip the release loop read).
-    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 0 `0x801F6BE0..0x801F6D58`, arms 12..15 `0x801F7418..0x801F750C`, arm 21 `0x801F7E88..0x801F7EB4`, arm 27 `0x801F8828..0x801F8904`, arm 28 `0x801F89E0..0x801F8A3C`)
+    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 0 `0x801F6BE0..0x801F6D58`, arms 12..15 `0x801F7418..0x801F750C`, arm 21 `0x801F7E80..0x801F7EB4`, arm 27 `0x801F8828..0x801F8904`, arm 28 `0x801F89E0..0x801F8A3C`)
     pub(in crate::world::battle::cast_band) fn evil_seru_magic_row(
         &mut self,
         phase: u8,
@@ -508,8 +508,8 @@ impl World {
         before: &[legaia_engine_cast::cast_module_ticks::CastActorState],
     ) {
         use legaia_engine_cast::cast_module_ticks::{
-            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_ROW_SCALE, ESM_ROW_Z, esm_get_up_slide,
-            esm_half_end_step, esm_row_x,
+            ESM_CASTER_FACING, ESM_CASTER_Y, ESM_CASTER_Z, ESM_ROW_SCALE, ESM_ROW_Z,
+            esm_get_up_slide, esm_half_end_step, esm_row_x,
         };
         let pc = usize::from(self.party.party_count).clamp(1, 3);
         let move_to = |a: &mut crate::world::types::Actor, x: i16, z: i16| {
@@ -554,7 +554,11 @@ impl World {
                 }
             }
             12..=15 => {
-                let step = self.module_frame_step();
+                // `dt * 0x801FA460[id]` with `dt` the frame delta
+                // `0x1F800393` (`0x801F74B8..0x801F74E8`): the body runs once
+                // a vsync here, so a tick slides by one delta's worth, as the
+                // countdown drains (`cast_module_camera::evil_seru_magic_camera`).
+                let step = 1;
                 for (i, s) in before.iter().enumerate().take(pc) {
                     let char_id = self.party_roster_slot(i) as u8 + 1;
                     let dz = esm_get_up_slide(s, char_id, step);
@@ -568,7 +572,7 @@ impl World {
             }
             21 if passed => {
                 if let Some(c) = self.actors.get_mut(caster_slot) {
-                    move_to(c, 0, c.move_state.world_z);
+                    move_to(c, 0, ESM_CASTER_Z);
                     c.move_state.world_y = ESM_CASTER_Y;
                     c.battle.facing_angle = ESM_CASTER_FACING;
                     c.battle.render_scale = Some(ESM_ROW_SCALE);
@@ -607,6 +611,85 @@ impl World {
                 }
             }
             _ => {}
+        }
+    }
+}
+
+impl World {
+    /// PROT 0966's (Evil Seru Magic) creature, seat 7: arm 10 seats
+    /// Juggernaut's body on the stage behind the half-size party row
+    /// (`jal 0x801F19EC` at `0x801F70E4`), arms 11..24 play its clips
+    /// ([`legaia_engine_cast::cast_module_ticks::esm_creature_writes`]),
+    /// arm 18 lifts it, arm 19 walks it, arm 26 drops its floor clip and
+    /// arm 27 hides it and turns its node off (`+0x21C = 0xFF`, `+0x04 = 0`
+    /// at `0x801F8918` / `0x801F8928`, node `+0x10 |= 8` at `0x801F8990`).
+    /// The arms are PROT 0927's (`World::apply_juggernaut_writes`), on the
+    /// same arm numbers but arm 10's seat.
+    // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 10 `0x801F70E4..0x801F7148`, arm 18 `0x801F7BCC..0x801F7BFC`, arm 26 `0x801F84F4`, arm 27 `0x801F8918..0x801F8990`)
+    pub(in crate::world::battle::cast_band) fn evil_seru_magic_creature(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        caster_slot: usize,
+    ) {
+        use legaia_engine_cast::cast_module_ticks::{
+            ESM_CREATURE_FACING, ESM_CREATURE_RISE, ESM_CREATURE_SPELL, ESM_CREATURE_Z,
+            esm_creature_writes,
+        };
+        if phase == 10 && passed && self.casting.summon_actor_slot.is_none() {
+            let y = self
+                .actors
+                .get(caster_slot)
+                .map_or(0, |c| c.move_state.world_y);
+            self.casting.module_cam.creature =
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: 0,
+                    y,
+                    z: ESM_CREATURE_Z,
+                    facing: ESM_CREATURE_FACING,
+                });
+            self.casting.pending_summon_spawn = Some((ESM_CREATURE_SPELL, [0, y, ESM_CREATURE_Z]));
+            self.object_effect.write(1, [0, 0, 0, -0x300, 0]);
+            self.casting.module_creature_clip_kind = 2;
+            self.casting.module_cam.creature_floor_clip = true;
+        }
+        if passed {
+            match phase {
+                18 => self.object_effect.write(1, [0x400, 0, 0, -0x800, 0x800]),
+                26 => {
+                    self.casting.module_creature_clip_kind = 0;
+                    self.casting.module_cam.creature_floor_clip = false;
+                }
+                _ => {}
+            }
+        }
+        let Some(slot) = self.casting.summon_actor_slot else {
+            return;
+        };
+        let cursor = self
+            .actors
+            .get(usize::from(slot))
+            .and_then(|a| a.battle_animation.as_ref())
+            .map_or(0, |p| p.cursor_sixteenths());
+        // The body drains its countdown and walks by the frame delta, a
+        // vsync a tick here (`cast_module_camera::evil_seru_magic_camera`).
+        let mut s = self.cast_view(slot);
+        let walk = esm_creature_writes(phase, passed, i32::from(cursor), 1, &mut s);
+        self.write_cast_view(slot, &s);
+        let floor_clip = self.casting.module_cam.creature_floor_clip;
+        if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+            a.battle.floor_clip = floor_clip;
+            a.move_state.world_z = a.move_state.world_z.wrapping_sub(walk);
+            if phase == 18 && passed {
+                (a.move_state.world_y, a.move_state.world_z) = ESM_CREATURE_RISE;
+            }
+            if phase == 27 && passed {
+                a.battle.render_color = 0;
+                a.battle.render_flag = 0xFF;
+            }
+        }
+        if phase == 27 && passed {
+            self.despawn_summon_actor();
         }
     }
 }
