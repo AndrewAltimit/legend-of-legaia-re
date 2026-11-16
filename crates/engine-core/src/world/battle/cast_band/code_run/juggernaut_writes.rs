@@ -62,7 +62,7 @@ impl World {
     ///
     /// | arm | writes (on its pass) |
     /// |---|---|
-    /// | 0 (`0x801F6B30..0x801F6D0C`) | each live monster: pose saved, moved to the alternate-family seat `0x80077628 + (count + 3) * 0x20` at `x / 3`, `z / 2`, facing `0`, hidden; the backdrop pair's `+0x78 = 0x1000` |
+    /// | 0 (`0x801F6B30..0x801F6D0C`) | each live monster: pose saved, moved to the alternate-family seat `0x80077628 + (count + 3) * 0x20` at `x / 6`, `z / 2`, facing `0`, hidden; the backdrop pair's `+0x78 = 0x1000` |
     /// | 2 (`0x801F6DC8..0x801F7044`) | object-effect row 1 = angles `0`, bounds `(-0x300, 0)`, creature `+0x42 = 2`, seated at `(0, _, 0x1C0)` facing `0x800`; party hidden; each live monster shown |
     /// | 18 (`0x801F7400..0x801F74D4`) | row 1 = angles `(0x400, 0, 0)`, bounds `(-0x800, 0x800)`; creature at `y = 0x100`, `z = 0x800`; each live monster at `z = -0x400`, hidden |
     /// | 19 (`0x801F750C..0x801F7520`, every pass) | creature `z -= 3` a tick |
@@ -172,7 +172,9 @@ impl World {
                         ],
                         a.battle.facing_angle,
                     ));
-                    a.move_state.world_x = seat.x / 3;
+                    // `mult x, 0x2AAAAAAB` / `mfhi` / `subu` the sign, with
+                    // no shift (`0x801F6B94..0x801F6C08`): a sixth.
+                    a.move_state.world_x = seat.x / 6;
                     a.move_state.world_z = seat.z / 2;
                     a.battle.facing_angle = 0;
                     // The render node at half scale (`sh 0x800,0x72` at
