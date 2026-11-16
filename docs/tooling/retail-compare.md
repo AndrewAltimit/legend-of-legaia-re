@@ -2434,7 +2434,21 @@ its anim node's cursor `*(+0x22C) + 0x68` (12.4 sixteenths of a keyframe), and
 takes the cursor back to the frame on the screen: the display shows the frame
 built two game frames before the RAM's (`display_lag_vsyncs`), and each frame
 advances the cursor by `(frame step * +0x21D * entry +0x78) >> 1` (`>> 2` for
-a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). The image
+a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). Where the
+record ring `+0x234` holds the node's own record back to the displayed slot,
+the cursor ring `+0x17A` names that frame's cursor outright
+(`ram_read::displayed_clip_cursor`; the anim tick stamps both,
+`0x80047E58..0x80048060`). The walk back cannot see two things the ring does:
+a natural-end re-commit inside the lag, which zeroes the node cursor and drops
+the overshoot (`0x8004B068`), and a state saved inside the draw tick, whose
+node word holds a ghost's older ring cursor (`0x8004950C`, restored at
+`0x80049568`). A RAM cursor is never below zero - the tick only adds, and the
+commit, the set-up's random idle phase (`rand() % frames << 4` at
+`0x80051574`) and the loop window store none - so a walked-back cursor below
+zero is the arithmetic crossing a commit, never a state of the clip player.
+`battle_jou_gala_finisher_results_retail`'s Gala holds node `0` (the ring's
+slot 3) over ring `36, 24, 12`: walked back `-24`, wrapped onto the idle's
+tail, the still read `image` `.977`; on the ring's `12`, `.988`. The image
 child lands each slot on that cursor on the capture frame
 (`LEGAIA_SEAT_BATTLE_CLIPS`, `World::seat_battle_clip_cursor`) when it plays
 the same clip and the clip loops. Left on the replay's clock: a one-shot,

@@ -3379,3 +3379,31 @@ fn seat_targets_map_bystanders_onto_engine_slots() {
     // Pool 3 -> slot 2, pool 4 -> slot 3; pool 5 is past the row, pool 0 acts.
     assert_eq!(b.engine_seat_targets(), vec![(1, 3), (2, 0), (3, 1)]);
 }
+
+/// The displayed cursor comes off the history ring while the record ring
+/// holds the node's own record back to the displayed slot: a state saved in
+/// the draw tick holds a ghost's ring cursor in the node word
+/// (`battle_jou_gala_finisher_results_retail`'s Gala: node `0`, ring `36, 24,
+/// 12, 0`). With another record in the window the walk back stands.
+#[test]
+fn the_displayed_clip_cursor_reads_the_history_ring() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let gala = 0x800E_CF90;
+    let node = 0x800F_0000;
+    let entry = 0x8018_7A74;
+    put32(&mut ram, ACTOR_TABLE + 2 * 4, gala);
+    put32(&mut ram, gala + 0x22C, node);
+    put32(&mut ram, node + 0x4C, entry);
+    put8(&mut ram, gala + 0x21D, 8);
+    put8(&mut ram, entry + 0x78, 1);
+    put16(&mut ram, node + 0x68, 0);
+    for (k, c) in [36u16, 24, 12, 0].into_iter().enumerate() {
+        put16(&mut ram, gala + 0x17A + 2 * k as u32, c);
+        put32(&mut ram, gala + 0x234 + 4 * k as u32, entry);
+    }
+    assert_eq!(ram_read::displayed_clip_cursor(&ram, 2), Some((2, 0, 12)));
+    // A clip committed inside the window: the ring's cursor is another clip's.
+    put32(&mut ram, gala + 0x234 + 4 * 2, entry + 0x100);
+    let (_, _, walked) = ram_read::displayed_clip_cursor(&ram, 2).expect("seat");
+    assert!(walked < 0, "the node cursor walked back the lag: {walked}");
+}
