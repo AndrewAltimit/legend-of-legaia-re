@@ -180,6 +180,9 @@ impl World {
     pub fn name_entry_display_frames(&mut self, steps: u32) {
         self.frame = self.frame.wrapping_add(u64::from(steps));
         self.clock.display_frames += u64::from(steps);
+        // Every prompt step is a whole one-vsync frame (the actor holds the
+        // floor at `1`), so each credits the mover's clock too.
+        self.clock.credited_frames += u64::from(steps);
         let glide = &mut self.camera.state.glide_frames;
         *glide = (*glide - steps as i32).max(0);
     }
