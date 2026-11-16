@@ -1120,6 +1120,81 @@ fn a_kiss_of_death_shot_walks_back_past_its_origin_on_the_older_step() {
     assert_eq!(module_shot_frames(&ram, ctx), None);
 }
 
+/// The passes before Kiss of Death's arm ran on the fade's case-6 re-arm,
+/// which closes a share of its own gap: walked back from the shot's origin
+/// they step away from the fade's endpoint (TR y `0x500`, pitch `0`, TR z the
+/// prescaled `ctx[+0x6D0]`, the focus on the caster), not on the shot's
+/// increments. `battle_map01_lippian_kiss_of_death_mid_cast`: origin TR z
+/// `5210` on the fade's `4812`, a step-`3` pass back at `5345`
+/// (`image` `.950` on the shot's increments, `.999` on the fade).
+#[test]
+fn a_shot_set_out_from_the_fade_walks_its_prior_pass_on_the_fade() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let lippian = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 5);
+    put8(&mut ram, ctx + 0x279, 1);
+    put16(&mut ram, ctx + 0x6D0, 3008);
+    put32(&mut ram, ACTOR_TABLE + 5 * 4, lippian);
+    put8(&mut ram, lippian + 0x1DF, 0x6E);
+    put16(&mut ram, lippian + 0x34, 600);
+    put16(&mut ram, lippian + 0x38, 813);
+    // Live pitch `4090` to `4064` at `3`; yaw `3726` to `3866` at `14`; TR y
+    // `1236` to `1024` at `22`; TR z `4608` to `1603` at `301`; focus
+    // (stored negated) `-548` / `-742` to `-600` / `-813` at `6` / `8`.
+    put16(&mut ram, 0x8007_B790, 4090);
+    put16(&mut ram, 0x8007_B792, 3726);
+    put32(&mut ram, 0x8008_40BC, 1236);
+    put32(&mut ram, 0x8008_40C0, 4608);
+    put32(&mut ram, 0x8008_9118, (-548i32) as u32);
+    put32(&mut ram, 0x8008_9120, (-742i32) as u32);
+    for (k, inc, end) in [
+        (0u32, 3i16, 4064i16),
+        (1, 14, 3866),
+        (4, 22, 1024),
+        (5, 301, 1603),
+        (6, 6, -600),
+        (8, 8, -813),
+    ] {
+        put16(&mut ram, ctx + TWEEN_TABLE + k * 4, inc as u16);
+        put16(&mut ram, ctx + TWEEN_TABLE + k * 4 + 2, end as u16);
+    }
+    let shown = displayed_module_cam_live(&ram, ctx, &[4, 3]);
+    assert_eq!(shown.tr[2], 5345.0);
+    assert_eq!(shown.tr[1], 1280.0);
+    assert_eq!(shown.pitch, 0.0);
+    // The yaw keeps the shot's increments: five units back.
+    assert_eq!(shown.yaw, 3726.0 - 5.0 * 14.0);
+    // A style-2 fade (the origin off TR y `0x500`) keeps the stand-in.
+    put32(&mut ram, 0x8008_40BC, 1100);
+    let shown = displayed_module_cam_live(&ram, ctx, &[4, 3]);
+    assert_eq!(shown.tr[2], 4608.0 + 5.0 * 301.0);
+}
+
+/// Glare's arm-0 shot (PROT 0940, `0xC` frames) is a known shot only before
+/// arm 1's first pass drains the module word from its seed
+/// (`battle_uru2_nurga_glare_mid_cast` reads `2048`, `scalar << 8`).
+#[test]
+fn a_glare_shot_is_known_until_arm_one_drains_its_word() {
+    use legaia_engine_cast::cast_module_camera as cmc;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let nurga = 0x800E_D538;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x279, 1);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, nurga);
+    put8(&mut ram, nurga + 0x1DF, 0x3C);
+    let word = cmc::capture_countdown_va(0x3C).expect("Glare's word");
+    put32(&mut ram, word, cmc::GLARE_COUNTDOWN_SEED as u32);
+    assert_eq!(module_shot_frames(&ram, ctx), Some(0xC));
+    put32(&mut ram, word, cmc::GLARE_COUNTDOWN_SEED as u32 - 8);
+    assert_eq!(module_shot_frames(&ram, ctx), None);
+}
+
 /// The magic band rewrites a party-wide `8` to the lone member's slot
 /// (`ctx[+0x24A] - 1`, `0x801E431C`); the seed read `8`, so the reader hands
 /// the replay `8` back - only for an all-allies spell on that slot.

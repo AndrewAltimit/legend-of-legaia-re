@@ -1568,6 +1568,13 @@ pub fn slime_divide_shake(
     arm
 }
 
+/// Glare's arm 0 shot length: the builder `FUN_801D829C` (`jal` at
+/// `0x801F6BA0`) takes `a3 = 0xC` frames (`li a3,0xc` at `0x801F6B94`).
+pub const GLARE_ARM0_SHOT_FRAMES: u16 = 0xC;
+/// What Glare's arm 0 seeds its countdown word with (`scalar << 8`), which
+/// arm 1's first pass has not yet drained.
+pub const GLARE_COUNTDOWN_SEED: i32 = SPEED_SCALAR << 8;
+
 /// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
 /// countdown is the module word `0x801F864C` Mystic Shield also uses):
 ///
@@ -1589,7 +1596,7 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     let pull = drift(0, 0, 0, -8);
     match phase {
         0 => {
-            st.countdown.0 = SPEED_SCALAR << 8;
+            st.countdown.0 = GLARE_COUNTDOWN_SEED;
             let tr = if seats.caster_monster == 0xA9 {
                 [0, 0x600, 0x800]
             } else {
@@ -1600,7 +1607,7 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                     angles: [0, yaw_from(0x800, seats.caster.facing), 0],
                     tr,
                     focus: focus_on(seats.caster),
-                    frames: 0xC,
+                    frames: GLARE_ARM0_SHOT_FRAMES,
                 }),
                 drift: None,
                 hold: false,

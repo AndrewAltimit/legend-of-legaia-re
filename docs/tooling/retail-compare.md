@@ -3178,11 +3178,20 @@ holds the table two units in (pitch `3` a unit with `26` to go, TR z `301`
 with `3005`), so the RAM's pass built it and ran at step `2`: the history's
 newest entry (`0x2BC`) names the step-`4` pass to come, and a forward film
 then moves `4 * inc` a pass. The frame on screen stood one pass further back,
-on the fade's framing (`module_shot`, `prior_walks`), which walks on the
-shot's own increments at the older pass's step: the fade's case-6 endpoint is
-not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
-`image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
-on the table, `.950` on this walk; a sweep of the walk back peaks there.
+on the fade's framing (`module_shot`, `prior_walks`). That pass walks on the
+fade's own case-6 re-arm, which closes a share of its gap each pass: walked
+back from the shot's origin it steps `step * ceil(gap / (0xC - step))` away
+from the fade's endpoint (`fade_prior_ends`: pitch `0`, TR y `0x500`, TR z the
+prescaled `ctx[+0x6D0]` the ramp left, the focus on the caster's live pair).
+The yaw stays on the shot's increments, a stand-in: the style the fade rolled
+is not in the RAM (`0x70` stores `1` over it), and the style-`0` yaw fits one
+capture and not the other. `image` reads `.890` at the origin, `.953` on the
+shot's increments throughout and `.999` on the fade. Glare's arm 0 (PROT 0940,
+`li a3,0xc` at `0x801F6B94`, `GLARE_ARM0_SHOT_FRAMES`) sets out from the same
+fade and walks the same way while arm 1 has not yet drained the module word
+from its seed: `battle_uru2_nurga_glare_mid_cast` `.957` to `.971`. A sweep
+of its displayed yaw peaks `14` units below the stand-in (`.992`), where the
+style-`0` fade yaw lands; the rule does not take it (harness seat).
 
 <a id="a-drifting-arm-walks-back-on-its-drift"></a>
 An arm that writes the camera globals itself on every pass walks back on that
