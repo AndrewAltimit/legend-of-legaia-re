@@ -51,7 +51,10 @@
 //!
 //! A controller works the screen as the game's menus do: the D-pad or left
 //! stick moves, Cross activates, Triangle is the right-click, Circle leaves
-//! the Controls page, Start plays, L1 / R1 page the options.
+//! the Controls page, Square is `Delete` (an option back on its default, a
+//! remembered disc or card forgotten), Start plays, L1 / R1 page the
+//! options; while a controller was pressed last the help box names its
+//! buttons where the help says `Enter`, `Delete` or `Esc`.
 //!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
 //! change a value, Tab jumps between the columns, Page Up / Page Down / Home
@@ -1401,6 +1404,7 @@ impl LauncherApp {
                     self.open_finder()
                 }
                 PadNav::Activate(d) => self.activate(self.focus, d, evl),
+                PadNav::Reset => self.reset_focused(),
                 PadNav::Play => {
                     if self.can_play() {
                         self.activate(Item::Play, 1, evl);
@@ -3076,6 +3080,20 @@ impl LauncherApp {
                 lines.push(note);
             }
         }
+        // The help is written in the keyboard's words; while a controller
+        // was pressed last it names that controller's buttons instead, as the
+        // key reminder under it does.
+        if let Some(g) = self.pad_last {
+            let table = [
+                ("Shift+Enter", self.pad_label("Triangle", g)),
+                ("Enter", self.pad_label("Cross", g)),
+                ("Delete", self.pad_label("Square", g)),
+                ("Esc", self.pad_label("Circle", g)),
+            ];
+            for (text, _) in &mut lines {
+                *text = launcher::device_words(text, &table);
+            }
+        }
         lines
     }
 
@@ -3976,6 +3994,9 @@ enum PadNav {
     Activate(i8),
     /// Start: play the ready disc.
     Play,
+    /// Square: the keyboard's `Delete` - the option back on its default,
+    /// a remembered disc or card forgotten, the pack or card cleared.
+    Reset,
 }
 
 /// A held controller move steps again, as a held arrow key does
@@ -4026,6 +4047,7 @@ fn pad_nav(pressed: u16) -> Vec<PadNav> {
         (B::L1, PadNav::Page(-1)),
         (B::R1, PadNav::Page(1)),
         (B::Circle, PadNav::Back),
+        (B::Square, PadNav::Reset),
     ] {
         if on(b) {
             out.push(nav);
@@ -4589,6 +4611,7 @@ mod tests {
         assert_eq!(pad_nav(B::Cross.mask()), [PadNav::Activate(1)]);
         assert_eq!(pad_nav(B::Triangle.mask()), [PadNav::Activate(-1)]);
         assert_eq!(pad_nav(B::Circle.mask()), [PadNav::Back]);
+        assert_eq!(pad_nav(B::Square.mask()), [PadNav::Reset]);
         assert_eq!(pad_nav(B::Start.mask()), [PadNav::Play]);
         // One activation per poll: a chord does not both play and step.
         assert_eq!(

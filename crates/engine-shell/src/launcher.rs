@@ -61,6 +61,36 @@ fn env_dir(var: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// `text` with each control word in `table` put as the device's own: the
+/// row helps and the press labels are written in one vocabulary (`Cross`,
+/// `Delete`, `Enter`, ...), and a page shows them in the words of the
+/// keyboard or the controller pressed last (the play window's `F12` pages,
+/// the launcher's help box), as its controls line already is. A word is replaced whole, and not after
+/// a `+`, so `Alt+Enter` stays the key chord it names.
+pub fn device_words(text: &str, table: &[(&str, String)]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    'scan: while !rest.is_empty() {
+        let prev = out.chars().last();
+        let boundary = prev.is_none_or(|c| !c.is_alphanumeric() && c != '+');
+        if boundary {
+            for (from, to) in table {
+                if let Some(tail) = rest.strip_prefix(from)
+                    && !tail.starts_with(|c: char| c.is_alphanumeric())
+                {
+                    out.push_str(to);
+                    rest = tail;
+                    continue 'scan;
+                }
+            }
+        }
+        let mut chars = rest.chars();
+        out.extend(chars.next());
+        rest = chars.as_str();
+    }
+    out
+}
+
 /// Full path of the settings file, if a config directory is known.
 pub fn settings_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join(SETTINGS_FILE))

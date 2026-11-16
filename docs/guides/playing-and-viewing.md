@@ -229,8 +229,11 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 A controller works the launcher the way it works the game's menus: the D-pad
 or left stick moves the focus and steps an option, Cross presses, Triangle is
 the right-click (an option a value back, the previous disc on *Choose
-disc...*), Circle leaves the *Controls* or *Recent* page, Start plays a ready disc, and
-L1 / R1 page the option list. A held direction repeats, as a held arrow key
+disc...*), Square is `Delete` (an option back on its default, a remembered
+disc or card forgotten), Circle leaves the *Controls* or *Recent* page, Start
+plays a ready disc, and L1 / R1 page the option list. While the controller was
+pressed last, the help box names its buttons where the help says `Enter`,
+`Shift+Enter`, `Delete` or `Esc`. A held direction repeats, as a held arrow key
 does. A controller also rebinds: on the *Controls* page Cross starts a row's
 wait and the next controller button takes it (see [Changing the keys](#changing-the-keys)).
 

@@ -294,35 +294,7 @@ pub(super) fn pad_controls(template: &str, cross: &str, circle: &str) -> String 
         .replace("{circle}", circle)
 }
 
-/// `text` with each control word in `table` put as the device's own: the
-/// row helps and the press labels are written in one vocabulary (`Cross`,
-/// `Delete`, `Enter`, ...), and a page shows them in the words of the
-/// keyboard or the controller pressed last ([`PlayWindowApp::panel_words`]),
-/// as its controls line already is. A word is replaced whole, and not after
-/// a `+`, so `Alt+Enter` stays the key chord it names.
-pub(super) fn device_words(text: &str, table: &[(&str, String)]) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    'scan: while !rest.is_empty() {
-        let prev = out.chars().last();
-        let boundary = prev.is_none_or(|c| !c.is_alphanumeric() && c != '+');
-        if boundary {
-            for (from, to) in table {
-                if let Some(tail) = rest.strip_prefix(from)
-                    && !tail.starts_with(|c: char| c.is_alphanumeric())
-                {
-                    out.push_str(to);
-                    rest = tail;
-                    continue 'scan;
-                }
-            }
-        }
-        let mut chars = rest.chars();
-        out.extend(chars.next());
-        rest = chars.as_str();
-    }
-    out
-}
+pub(super) use crate::launcher::device_words;
 /// The gap between a row's label and the window key lettered after it.
 const KEY_GAP: i32 = 6;
 const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
