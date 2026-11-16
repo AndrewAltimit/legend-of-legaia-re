@@ -1021,6 +1021,21 @@ frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
 seat's own reader.
 
+The deadline is in vsyncs. `FUN_800267FC` runs once a game frame, from the
+frame-begin driver `FUN_8001698C` (`0x800169FC`), and adds that frame's step
+`DAT_1F800393` to the elapsed count (`0x80026878..0x80026888`); it expires on
+the first frame whose count is past the deadline. A field init runs no frame,
+so a release armed before a door holds its count across the load.
+[`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua)
+off `s1_newgame_field` reads it on the opening: `opstati`'s closing record arms
+`5 (90)` as it changes scene, the count climbs `2` a frame to `72` before the
+init, holds there through `opurud`'s load, and expires in `opurud` at `91`,
+after the fade has left `2063` at volume `16` and before `opurud`'s `2064`
+commit. The world ticks once a vsync and counts one a tick: a count that took
+the frame step on every tick would expire a field release at half its
+deadline and an overworld one at a third, cutting each fade at its midpoint.
+Pinned by `engine-scene-host/tests/opening_audio_timeline_disc.rs`.
+
 The arm half also starts the fade the stop finishes: `FUN_800267A8` hands the
 slot's sequence handle (`lh 0x536` = slot `+0xA`), the audio level
 `_DAT_8007B910` halved (`sll 15` / `sra 16`) and `deadline | 1` to

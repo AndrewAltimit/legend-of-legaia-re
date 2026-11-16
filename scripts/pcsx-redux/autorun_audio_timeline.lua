@@ -10,7 +10,9 @@
 --   ending source 0x800705BC: open (+0x8), the libsnd sequence (+0xA), its
 --   play flags (+0x98), tick wait (+0x90), the read cursor's byte offset from
 --   the score start (+0x00 - +0x04) and volume (+0x58); then the sounding
---   voice records split by owner (0x21 = the cue slot).
+--   voice records split by owner (0x21 = the cue slot), the frame step
+--   (0x1F800393) and the op-0x35 sub-op 5 timed release (FUN_800267A8):
+--   armed (gp+0x808), deadline (gp+0x814), elapsed (gp+0x81C).
 --
 -- A scene change shows as a run of mode 0x02 (the field MAIN INIT) between
 -- two runs of mode 0x03, and the score's cursor offset on each side of it
@@ -63,7 +65,7 @@ probe.run({
     on_arm = function()
         out = probe.csv_open(probe.out_path("timeline.csv"),
             "v,mode,scene,frame,word,req,loaded,flags,f_open,f_seq,f_flags,f_wait,f_off,f_vol,"
-            .. "e_open,e_seq,e_flags,e_wait,e_off,e_vol,music,cue")
+            .. "e_open,e_seq,e_flags,e_wait,e_off,e_vol,music,cue,step,rel_arm,rel_deadline,rel_elapsed")
         return {}
     end,
     on_capture = function(_, v)
@@ -82,10 +84,12 @@ probe.run({
                 if (probe.read_u16(r + 0x10) or 0) == 0x21 then cue = cue + 1 else music = music + 1 end
             end
         end
-        out:row("%d,%d,%s,%d,%d,%d,%d,%d,%s,%s,%d,%d", v, probe.read_u8(0x8007B83C) or 0, scene_name(),
+        out:row("%d,%d,%s,%d,%d,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%d", v, probe.read_u8(0x8007B83C) or 0, scene_name(),
             probe.read_u32(0x8007B798) or 0, probe.read_u32(0x8007BAC8) or 0,
             probe.read_u32(0x8007BAB8) or 0, probe.read_u32(0x8007BA9C) or 0,
-            probe.read_u32(0x8007B750) or 0, src(0x8007052C), src(0x800705BC), music, cue)
+            probe.read_u32(0x8007B750) or 0, src(0x8007052C), src(0x800705BC), music, cue,
+            probe.read_scratch_u8(0x1F800393) or 0, probe.read_u32(0x8007BB20) or 0,
+            probe.read_u32(0x8007BB2C) or 0, probe.read_u32(0x8007BB34) or 0)
     end,
     on_done = function()
         if out then out:close() end

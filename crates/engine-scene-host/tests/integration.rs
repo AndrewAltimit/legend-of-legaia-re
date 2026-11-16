@@ -174,6 +174,7 @@ mod opdeene_field_channels;
 mod opdeene_narration_playback;
 mod opdeene_record_pacing;
 mod opdeene_timeline_execution;
+mod opening_audio_timeline_disc;
 mod opening_chain_menu_refusal_disc;
 mod opening_chain_wall_time;
 mod opening_fade_from_black;

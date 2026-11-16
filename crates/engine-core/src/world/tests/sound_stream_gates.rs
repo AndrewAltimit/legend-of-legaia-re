@@ -254,3 +254,33 @@ fn the_timed_release_expiry_reaches_the_hosts_as_a_bgm_pause() {
     }
     assert_eq!(pauses, 1, "one pause, on the expiry frame");
 }
+
+/// The release's elapsed count is vsyncs, whatever the frame step: retail's
+/// frame-begin driver services it once a game frame and credits that frame's
+/// step (`FUN_800267FC`, `0x8002687C`), so `opstati`'s `5 (90)` counts `2` a
+/// frame and expires 91 vsyncs on. The world ticks once a vsync and credits
+/// one; crediting the step on every tick expired a field release at half its
+/// deadline and an overworld one at a third.
+#[test]
+fn the_timed_release_expires_on_its_deadline_in_vsyncs_at_any_frame_step() {
+    for step in [1u8, 2, 3] {
+        let mut w = World::default();
+        w.clock.frame_step = step;
+        w.clock.frame_step_floor = step;
+        w.arm_sound_release(90);
+        let mut fired_at = None;
+        for vsync in 1..=200u32 {
+            w.tick();
+            let paused = w.drain_field_events().iter().any(|e| {
+                matches!(
+                    e,
+                    legaia_engine_field::field_events::FieldEvent::Bgm { sub_op: 2, .. }
+                )
+            });
+            if paused && fired_at.is_none() {
+                fired_at = Some(vsync);
+            }
+        }
+        assert_eq!(fired_at, Some(92), "step {step}");
+    }
+}
