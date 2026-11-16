@@ -4639,6 +4639,14 @@ close to a minute. It is ported whole.
   playing clip's end, as the recording's creature rows read (clip `2` runs to
   cursor `1024`, clip `4` to `1536`). Port `esm_creature_writes`,
   `World::evil_seru_magic_creature`. Grade `disassembly` + `capture`.
+- **Arm 26's pass spawns three fades** (`0x801F84F8..0x801F85AC`, each
+  `FUN_80024E80(0x801C9070, 1)`): a `0x40`-frame white flash to black, a
+  `0x100`-frame blue grade from `(0x10, 0x10, 0x20)` to `(0x80, 0x80, 0xFF)`
+  held, whose actor goes into the part pool's word `0x801C92E8`
+  (`0x801F857C`) so arm 27's pool flush ends it, and the white-in after a
+  `0xC0` delay that arm 27's fade replaces. Port
+  `EVIL_SERU_MAGIC_ARM26_SIDE_FADES` beside the seat's fade. Grade
+  `disassembly` + `capture`.
 - **The first two hits are the stager's.** Arm 10 seats record `0x801F937C`,
   whose script is `WAIT 0x7F` then op `0x20` with arm `4`, and record
   `0x801F94D0`, `WAIT 0x187` then op `0x20` with arm `3`. Op `0x20` calls

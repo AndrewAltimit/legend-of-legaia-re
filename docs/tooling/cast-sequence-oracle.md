@@ -1377,10 +1377,12 @@ walk paced by the frame delta and the caster on arm 21's `z = 0x400`
 and 26 then read the seats the frames could not: the row stands at a sixth of the
 formation column, not a third; arm 18 moves it to `z = -1024` in front of Juggernaut; its
 radius is the halved `320` the separation pass reads; and arm 27 frames the caster after
-it is put back, so arm 28's shot centres `z = 944`. With those the film reads `.882`: arms
-11 to 21 `.94..1.00`, arm 23 `.86` to `.96`, arm 26 `.65` to `.80`, arm 28 `.997`. Still
-open: arm 22's sphere grows and goes some forty ticks ahead of retail's, and arm 27
-(`.50`) holds the flash.
+it is put back, so arm 28's shot centres `z = 944`. Arm 26's pass spawns three fades, not
+one: a white flash, a held blue grade parked in the part pool until arm 27's flush, and
+the delayed white-in; the engine had the last alone, so arm 27 opened on the burst where
+retail's opens white. With those the film reads `.899`: arms 11 to 21 `.94..1.00`, arm 23
+`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`. Still open:
+arm 22's sphere grows and goes some forty ticks ahead of retail's (`.58`).
 
 ### The enemy set on the rand-track seat
 

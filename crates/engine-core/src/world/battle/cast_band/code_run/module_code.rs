@@ -619,6 +619,20 @@ impl World {
             && let Some(arm) = capture_arm
         {
             let (phase, passed) = (ctx.phase, !arm.hold);
+            // Arm 27's pass flushes the pool, which ends the grade arm 26
+            // parked in it (`0x801F8794`), ahead of its own fade.
+            if passed && phase == 27 {
+                self.presentation
+                    .module_fades
+                    .retain(|f| !(f.mode[1] == -1 && f.duration == 0x100));
+            }
+            if passed && phase == 26 {
+                for t in &EVIL_SERU_MAGIC_ARM26_SIDE_FADES {
+                    let mut f = None;
+                    legaia_engine_system::fade::spawn_fade(&mut f, t, 1);
+                    self.presentation.module_fades.extend(f);
+                }
+            }
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
             }
