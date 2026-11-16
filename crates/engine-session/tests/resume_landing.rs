@@ -55,11 +55,11 @@ fn resume_lands_in_the_saved_scene_else_over_the_running_one_never_a_new_game() 
     session.host.world.party.money = 4321;
     let save = session.host.world.save_full();
 
-    // A save naming a scene this host cannot enter loads over the running
-    // scene - it neither re-enters anything nor becomes a New Game.
+    // A save naming a scene this host cannot enter re-enters the running
+    // scene under the save's flags - it never becomes a New Game.
     session.host.world.party.money = 7;
     let landing = session.resume_save(save.clone(), "no_such_scene", &opts);
-    assert_eq!(landing, ResumeLanding::CurrentScene("town01".into()));
+    assert_eq!(landing, ResumeLanding::CurrentScene("town01".into(), true));
     assert_eq!(session.host.world.party.money, 4321, "the save applied");
     assert_eq!(
         session.host.scene.as_ref().map(|s| s.name.as_str()),

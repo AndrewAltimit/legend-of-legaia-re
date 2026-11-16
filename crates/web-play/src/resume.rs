@@ -299,13 +299,14 @@ mod tests {
         assert_eq!(rt.world_mut().party.money, 555);
         assert!(!rt.world_mut().field_vm.free_roam_staging);
 
-        // Unenterable scene with a scene running -> loads over it.
+        // Unenterable scene with a scene running -> re-enters it under the
+        // save's flags.
         let bytes = lgsf(&mut rt, 666, "no_such_scene");
         rt.world_mut().party.money = 1;
         rt.import_save_core(&bytes).expect("import");
         assert_eq!(
             rt.resume_parked_save(),
-            Some(ResumeLanding::CurrentScene("town01".into()))
+            Some(ResumeLanding::CurrentScene("town01".into(), true))
         );
         assert_eq!(rt.world_mut().party.money, 666);
 
