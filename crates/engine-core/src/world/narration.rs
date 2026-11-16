@@ -1151,7 +1151,15 @@ impl World {
             || self
                 .input
                 .just_pressed(legaia_engine_system::input::PadButton::Circle);
-        panel.tick_at_auto(self.clock.frame_step, &mut auto);
+        // The pager runs once a game frame: a frame that outlasts its step
+        // credits no pager call on the vsyncs past it, so a title card typed
+        // over long frames takes as many frames as retail's
+        // (`opurud`'s card: thirteen, `autorun_audio_timeline.lua` pager state
+        // `0x801F2734` off `s1_newgame_field`).
+        // REF: FUN_801D84D0
+        if self.clock.frame_credited {
+            panel.tick_at_auto(self.clock.frame_step, &mut auto);
+        }
         let pressed = panel.take_auto_press() || confirm;
         if pressed {
             if panel.is_waiting_for_input() && !panel.is_done() {
@@ -1204,11 +1212,15 @@ impl World {
         // One-frame rule (see `step_inline_dialogue`): a menu that opened
         // on this tick is shown before any confirm can commit it.
         let menu_was_open = panel.menu_active();
-        panel.tick_at_auto_drawn(
-            self.clock.frame_step,
-            &mut self.dialog.auto_press,
-            &mut self.dialog.cursor_sprites,
-        );
+        // The pager runs once a game frame: a frame that outlasts its step
+        // credits no pager call on the vsyncs past it (`FrameClock::frame_credited`).
+        if self.clock.frame_credited {
+            panel.tick_at_auto_drawn(
+                self.clock.frame_step,
+                &mut self.dialog.auto_press,
+                &mut self.dialog.cursor_sprites,
+            );
+        }
         // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
         // confirm the player did not make.
         let confirm = confirm || panel.take_auto_press();

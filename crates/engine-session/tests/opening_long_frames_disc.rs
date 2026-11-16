@@ -11,7 +11,9 @@
 //! words `0x8007B6C0` / `0x8007B6C4`, and an exec-breakpoint stamp of
 //! `FUN_80019D50`) reads those frames on `opstati`'s game frames 1, 3 and 4
 //! and `opurud`'s 1, 2, 4 and 5, and `opstati`'s first `4A 5A` holds the
-//! record `101` vsyncs where `90` would be its credit.
+//! record `101` vsyncs where `90` would be its credit. The dialog pager runs
+//! once a game frame too, so `opurud`'s title card, typed over those frames,
+//! parks its record `61` vsyncs.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
@@ -48,6 +50,7 @@ fn the_openings_cyclers_lengthen_their_frames_and_tint_the_scene() {
     // the record's first `4A 5A` held (`opstati` only).
     let mut waits: std::collections::BTreeMap<String, Vec<u8>> = Default::default();
     let mut first_wait: Option<(u32, u32)> = None;
+    let mut card_hold = 0u32;
     let mut strip_before: Option<Vec<u16>> = None;
     let mut strip_after: Option<Vec<u16>> = None;
     let strip = |s: &NativeSession| -> Option<Vec<u16>> {
@@ -66,6 +69,9 @@ fn the_openings_cyclers_lengthen_their_frames_and_tint_the_scene() {
             if v.len() < 8 {
                 v.push(w.clock.game_frame_wait());
             }
+        }
+        if label == "opurud" && w.cutscene.timeline.as_ref().map(|tl| tl.pc) == Some(97) {
+            card_hold += 1;
         }
         if label == "opstati" {
             let pc = w.cutscene.timeline.as_ref().map(|tl| tl.pc);
@@ -95,7 +101,17 @@ fn the_openings_cyclers_lengthen_their_frames_and_tint_the_scene() {
         (97..=105).contains(&held),
         "opstati's first 4A 5A holds retail's 101 vsyncs: {held}"
     );
-    eprintln!("[long-frames] opstati {opstati:?} opurud {opurud:?} first 4A 5A {held}");
+    eprintln!(
+        "[long-frames] opstati {opstati:?} opurud {opurud:?} first 4A 5A {held} card {card_hold}"
+    );
+    // `opurud`'s title card (`CC F8 89` at `+0x5C`, its lines at `+0x61`)
+    // types over the scene's long frames: retail's pager runs once a game
+    // frame and parks the record on the card for 61 vsyncs; a pager that
+    // ran on the long frames' extra vsyncs typed it in 42.
+    assert!(
+        (50..=64).contains(&card_hold),
+        "opurud's card holds its record near retail's 61 vsyncs: {card_hold}"
+    );
     let (before, after) = (strip_before.unwrap(), strip_after.unwrap());
     assert_ne!(before, after, "the cyclers recolour the scene's CLUT rows");
 }
