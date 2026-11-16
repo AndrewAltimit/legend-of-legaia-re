@@ -304,6 +304,46 @@ fn dance_song_end_auto_restores_mode() {
     assert!(world.minigames.dance.is_none());
 }
 
+#[test]
+fn a_door_entered_dance_fades_out_and_takes_the_return_warp() {
+    // State `0x14` fades the hall to black `dt * 4` a game frame from the
+    // zero state `0xC` leaves (`0x801CFE4C`); at `0x100` the exit
+    // `FUN_801D414C` calls the return warp `0x80026018` (`0x801D4180`).
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.active_scene_label = "koin3".to_string();
+    world.arm_minigame_warp();
+    world.active_scene_label = "other7".to_string();
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
+    let mut fades = Vec::new();
+    for _ in 0..4000 {
+        if world.mode != SceneMode::Dance {
+            break;
+        }
+        world.set_pad(0);
+        let _ = world.tick();
+        if let Some(acc) = world.minigames.dance_results_fade
+            && fades.last() != Some(&acc)
+        {
+            fades.push(acc);
+        }
+    }
+    assert_eq!(world.mode, SceneMode::Field, "the results hand back");
+    let mut want: Vec<u32> = (0..22).map(|n| n * 12).collect();
+    want.push(0xFF);
+    assert_eq!(fades, want, "a step of 12 a game frame, parked at 0xFF");
+    assert_eq!(world.active_scene_label, "koin3", "the departure scene");
+    assert!(
+        world.minigames.scene_backup.is_none(),
+        "the round trip closed"
+    );
+    assert!(world.exit_dance().is_some(), "the final game for the host");
+    assert_eq!(world.minigames.dance_results_fade, None);
+}
+
 // --- Fishing minigame wiring -----------------------------------------------
 
 fn fishing_test_species(

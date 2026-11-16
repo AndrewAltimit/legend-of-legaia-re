@@ -333,6 +333,11 @@ pub fn compose_screen_prims(
     ));
     over.extend(dance_countin);
     over.extend(dance_hud);
+    // The dance's results state fades the hall to black in the nearest
+    // bucket, over its HUD (`FUN_80024EE4(0, 2, acc * 0x010101)`).
+    if let Some(acc) = world.minigames.dance_results_fade {
+        over.push(screen_prim::screen_effect_push_prim(0, 2, acc * 0x01_0101));
+    }
     over.extend(baka_hud);
     if slot_rules_page(world) {
         under.extend(slot_cabinet);
