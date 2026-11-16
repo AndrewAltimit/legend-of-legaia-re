@@ -53,6 +53,18 @@ impl ModeKind {
             Self::PropHunt => "Prop Hunt",
         }
     }
+
+    /// One line on what the kind is played as, for the mode picker's
+    /// focused row.
+    pub fn blurb(self) -> &'static str {
+        match self {
+            Self::Poker => "Texas Hold'em at a table of players.",
+            Self::CardDuel => "A card battle on a 3x3 grid: a higher side takes the card it faces.",
+            Self::Golf => "Mini-golf: sink the ball in the fewest strokes.",
+            Self::Race => "A race through the course's checkpoints.",
+            Self::PropHunt => "Hiders take the shape of a prop in the scene; seekers find them.",
+        }
+    }
 }
 
 /// One playable instance of a section.

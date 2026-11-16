@@ -321,7 +321,7 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         if s.draft.is_some() {
             "Enter: send   Esc: cancel"
         } else {
-            "Arrows pick, change  Cross go  Circle close"
+            "Arrows: pick, change   Cross: go   Circle: close"
         },
     );
     c

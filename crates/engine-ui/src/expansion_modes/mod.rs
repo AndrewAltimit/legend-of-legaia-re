@@ -707,18 +707,29 @@ fn picker(
             c.rect(x + 2, y, w - 4, 16, ink::SELECT);
             c.rect(x + 2, y, 3, 16, ink::HIGHLIGHT);
         }
-        c.text(
-            e.name.clone(),
-            x + 10,
-            y + 1,
-            if on { pen::WHITE } else { pen::DIM },
-        );
+        // Every row is playable: the name stays white off the cursor (dim
+        // read as greyed out), and the cursor is the fill and the bar.
+        c.text(e.name.clone(), x + 10, y + 1, pen::WHITE);
         c.text_right(
             e.kind.label(),
             x + w - 8,
             y + 1,
             if on { pen::GOLD } else { pen::DIM },
         );
+    }
+    // What the focused mode is, under the list: the names are a pack's own
+    // ("Practice Barn"), and the kind column alone says little.
+    if let Some(e) = entries.get(cursor) {
+        let below = top + shown.max(1) as i32 * 16 + 6 + 6;
+        // Clear of the error line's seat; a full list leaves no room.
+        let fits = ((STAGE_H - 34 - below) / LINE).clamp(0, 2) as usize;
+        for (i, line) in wrap(e.kind.blurb(), (w / 6) as usize)
+            .into_iter()
+            .take(fits)
+            .enumerate()
+        {
+            c.text_centre(line, STAGE_W / 2, below + i as i32 * LINE, pen::DIM);
+        }
     }
     if let Some(err) = error {
         c.text_centre(err, STAGE_W / 2, STAGE_H - 34, pen::RED);
