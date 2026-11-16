@@ -168,9 +168,9 @@ impl PlayWindowApp {
     /// with the browser play page in `legaia_engine_ui::pause_menu`.
     ///
     /// Returns empty unless boot-UI is in a FieldMenu state and the atlas
-    /// has been uploaded. The Save sub-session is excluded: it renders
-    /// through [`Self::save_select_chrome_sprite_draws`], which also serves
-    /// the boot Continue -> Load screen.
+    /// has been uploaded. The Save sub-session's own chrome renders through
+    /// [`Self::save_select_chrome_sprite_draws`], which also serves the boot
+    /// Continue -> Load screen; here it composes nothing but the carry.
     pub(super) fn field_menu_chrome_sprite_draws(
         &self,
         surface_w: u32,
@@ -192,7 +192,10 @@ impl PlayWindowApp {
             return Vec::new();
         }
         let sprites = match sub {
-            Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
+            // The Save screen's own chrome is the save-select stage's; this
+            // list still carries the screen a press into it leaves (the
+            // root's windows sliding out), as the page's does.
+            Some(FieldMenuSubsession::Save(_)) => Vec::new(),
             Some(active) => {
                 self.field_menu_sub_draws(active, surface_w, surface_h)
                     .sprites
