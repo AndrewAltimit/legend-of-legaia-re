@@ -721,6 +721,10 @@ The model prices only a field or cutscene frame; a minigame screen or a battle d
 
 There is no load frame to model. A PCSX-Redux film across each load reads the cleared ring and then the scene's own cost: `doman_arrival_from_korb2`'s first frames cost `326..360` and run at `2`, `son_arrival_from_doman`'s first costs one long frame (`700` at step `4`) and then son's `605..620`, the excess (`1002` hblanks against `607`) the camera re-centre `FUN_80017EC8` a scripted player move calls from the field VM (`376` hblanks), which the model does not price, and the `700` frames of `s2_rimelm_town01` are not a load's but the town01 opening shot's own: every frame of it runs past the `0x2D0` rung, at step `4` for as long as the film runs. The model prices that shot (`rim_elm_zoom_intro`) at `701`, under the rung, and runs it at `3`.
 
+The New Game opening's field scenes do open on long frames, and they are not the step law's. [`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua) off `s1_newgame_field` logs the game frame counter beside the step byte: `opstati`'s first seven frames last `2, 8, 3, 9, 8, 3, 4` vsyncs at steps `3, 3, 4, 3, 4, 4, 3`, and `opurud`'s `9, 7, 2, 9, 7, 2, 4` at `2, 4, 4, 3, 4, 4, 3`, so a frame outlasts the step it credits by up to six vsyncs and every wait in them runs that much longer on the clock (`opstati`'s first `4A 5A`: `101` vsyncs against `90`).
+
+`map01` and `opdeene` open on frames of their step. The model has no term for it: the port runs those frames at their step, and the residual is `opstati` `+11`, `opurud` `+24` (its `2064` select and commit sit in that window).
+
 ### Where a field frame's time goes
 
 [`autorun_field_frame_profile.lua`](../../scripts/pcsx-redux/autorun_field_frame_profile.lua) stamps the CPU cycle counter on entry to and return from a list of routines and sums each over a game frame; at `2152` cycles an hblank, the master frame driver `FUN_80016444`'s total comes within a few hblanks of the pacer's stored frame time on every library field state, so the frame time is CPU time. Over the film states the parts fit as:
