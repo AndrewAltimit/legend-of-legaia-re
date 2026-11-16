@@ -474,6 +474,22 @@ def state_creature_restage(out: Path) -> bool:
     return ram[a - RAM_BASE + 0x1DC] & 1 != 0
 
 
+def state_live_cursor(ram: bytes, a: int, node: int) -> int:
+    """The anim node's cursor as the last anim tick left it: the history ring's
+    slot 0 (`+0x17A`, stamped beside the committed record `+0x234` at
+    `0x80047E58..0x80048060`) while that slot holds the node's own record,
+    else the node word `+0x68`. A state saved inside the draw tick holds a
+    ghost's older ring cursor in the node word (the after-image walk swaps it
+    in around each ghost draw, `0x8004950C`): `battle_cave01_theeder_thunderbolt_mid_cast`'s
+    Theeder reads node `8` over ring `40, 32, 24`. A harness seat."""
+    o = node - RAM_BASE
+    word = int.from_bytes(ram[o + 0x68:o + 0x6A], "little")
+    ao = a - RAM_BASE
+    if ram_u32(ram, a + 0x234) == ram_u32(ram, node + 0x4C):
+        return int.from_bytes(ram[ao + 0x17A:ao + 0x17C], "little")
+    return word
+
+
 def state_opening_cursor(out: Path) -> str | None:
     """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
     anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
@@ -496,8 +512,7 @@ def state_opening_cursor(out: Path) -> str | None:
     node = ram_u32(ram, a + 0x22C)
     if not RAM_BASE <= node < RAM_TOP - 0x80:
         return None
-    o = node - RAM_BASE
-    return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
+    return f"{ram[a - RAM_BASE + 0x1D9]},{state_live_cursor(ram, a, node)}"
 
 
 def state_body_cursors(out: Path) -> str | None:
@@ -530,8 +545,7 @@ def state_body_cursors(out: Path) -> str | None:
         node = ram_u32(ram, a + 0x22C)
         if not RAM_BASE <= node < RAM_TOP - 0x80:
             continue
-        o = node - RAM_BASE
-        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], int.from_bytes(ram[o + 0x68:o + 0x6A], "little"))
+        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], state_live_cursor(ram, a, node))
     pc = max(1, sum(1 for s in bodies if s < 3))
     seeds = [f"{s if s < 3 else pc + s - 3}:{c}:{k}" for s, (c, k) in sorted(bodies.items()) if s != acting]
     return ",".join(seeds) or None
