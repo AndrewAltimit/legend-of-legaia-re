@@ -2319,6 +2319,12 @@ pager context (`*DAT_801C6EA4`) in the `v0_1_tetsu_dialogue_accept` state:
   sits at the top of the screen. The skin extends 8 px past the centre rect
   (measured footprint `x 30..289, y 8..65`): the outer 4 px are the tan
   border, the gradient fill covers the centre inflated by 4.
+- **Frame** = `ctx+0x10`, read each frame the box has lines
+  (`0x801D9958`): `1` draws no frame at all, only the text; `0` draws the
+  skin with emitter mode `0x61`; `2` draws it once with mode `0` and clears
+  the word (`0x801D99F0..0x801D9A00`). Field-VM op `0x4F` writes `+0x10`,
+  `+0x12` and `+0x14` together; the opening's title cards run `4F 01 38 5A`,
+  frameless text at `(0x38, 0x5A)`.
 - **Interior** = two stacked semi-transparent gouraud `POLY_G4` quads (top
   `(0x18,0x18,0x28)`, bottom `(0x40,0x40,0xA0)`), composing to
   `0.25*back + 0.75*gradient`.
