@@ -678,7 +678,9 @@ fn a_live_cast_stages_its_module_records() {
             ),
             _ => panic!("PROT {entry} seats per arm but the test names no arm list"),
         };
-        // PROT 0911's first staged frame also holds arm 2's sixteen stars.
+        // PROT 0911's arm 2 seats its sixteen stars on its own pass, the
+        // frame ahead of the flash calls the body-paced director hands over
+        // on arm 3's first tick: its first staged frame is the swarm.
         let swarm = if entry == 911 { 16 } else { 0 };
         let calls: usize = arms.iter().map(|a| a.len()).sum();
         // PROT 0907's and 0908's parts call their stager (op `0x20`), whose
@@ -690,8 +692,9 @@ fn a_live_cast_stages_its_module_records() {
         // on the same frame (the call runs inside the caller's step:
         // PROT 0907's arm-0 record seats its stager's record at once, PROT
         // 0913's its vortex), so the frame holds at least the arm's calls.
+        let first = if entry == 911 { swarm } else { arms[0].len() };
         assert!(
-            *parts >= arms[0].len() + swarm,
+            *parts >= first,
             "spell {id:#04x}: PROT {entry}'s first staged frame holds its first arm's calls"
         );
         // PROT 0911 and 0913 fold on their hit arms (9 / `0x13`), and a
