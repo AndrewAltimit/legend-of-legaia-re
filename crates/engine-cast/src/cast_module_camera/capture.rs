@@ -544,6 +544,9 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xA6 => Some(NEO_STAR_SLASH_COUNTDOWN),
         0xB6 => Some(DOOMSDAY_COUNTDOWN),
         0x6E => Some(super::KISS_OF_DEATH_COUNTDOWN),
+        // PROT 0963's word (`lui 0x8020` / `-0x6D38`): arm 0 seeds it
+        // (`0x801F6BC0`) and every later arm drains the bare step.
+        0xB3 => Some(GENOCIDAL_CANNON_COUNTDOWN),
         _ => None,
     }
 }
@@ -565,6 +568,10 @@ pub fn capture_countdown_units(action: u8) -> i32 {
 pub const NEO_STAR_SLASH_COUNTDOWN: u32 = 0x801F_8E50;
 /// PROT 0965's countdown word (Doomsday), in vsyncs: `0x20` from arm 0.
 pub const DOOMSDAY_COUNTDOWN: u32 = 0x801F_8370;
+/// PROT 0963's countdown word (Genocidal Cannon `0xB3`), in vsyncs: `0x20`
+/// from arm 0 (`sw v0,-0x6d38(v1)` at `0x801F6BC0`), drained by the frame
+/// step alone (`capture_countdown::GENOCIDAL_CANNON`).
+pub const GENOCIDAL_CANNON_COUNTDOWN: u32 = 0x801F_92C8;
 
 /// PROT 0940's countdown word (`lui 0x8020` / `-0x79B4`).
 pub const MYSTIC_SHIELD_COUNTDOWN: u32 = 0x801F_864C;
