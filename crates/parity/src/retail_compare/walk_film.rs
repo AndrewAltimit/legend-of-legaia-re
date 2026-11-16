@@ -249,7 +249,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record,scene,held,engaged,tint,rng,talk"
         )?;
         // A placement's flat MAN index is its channel slot past the scene's
         // partition-0 count, which is the scene's own: a film that crosses a
@@ -268,7 +268,7 @@ impl WalkFilm {
         let mut actors = self.out.clone();
         actors.set_extension("actors.csv");
         let mut a = std::io::BufWriter::new(std::fs::File::create(&actors)?);
-        writeln!(a, "tick,flat,x,z,heading")?;
+        writeln!(a, "tick,flat,x,z,heading,clip,cursor,rate")?;
         // Each ambient channel's `rand()` draws, per tick: what a split against
         // retail's `draws.csv` (a breakpoint on `0x80056798`) names.
         let mut draws_path = self.out.clone();
@@ -415,7 +415,20 @@ impl WalkFilm {
             }
             for (&slot, &(x, z)) in &world.npcs.positions {
                 let h = world.npcs.heading(slot).wrapping_sub(0x800);
-                writeln!(a, "{t},{},{x},{z},{h}", n0 + u16::from(slot))?;
+                // The placement's clip cursor, against retail's `+0x5C` /
+                // `+0x68` / `+0x6A`; `-1` for an actor no clip is bound to.
+                let (clip, cursor, rate) = world
+                    .npcs
+                    .clip_cursors
+                    .get(&slot)
+                    .map_or((-1, -1, -1), |c| {
+                        (i32::from(c.anim_id), i32::from(c.cursor), i32::from(c.rate))
+                    });
+                writeln!(
+                    a,
+                    "{t},{},{x},{z},{h},{clip},{cursor},{rate}",
+                    n0 + u16::from(slot)
+                )?;
             }
             let g = &session.camera.globals.0;
             let anim = world.locomotion.player_anim.as_ref();
@@ -430,7 +443,7 @@ impl WalkFilm {
                 .unwrap_or(0);
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:08x},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -453,6 +466,7 @@ impl WalkFilm {
                 u8::from(world.script_context_engages_player()),
                 tint,
                 world.rng_state,
+                u8::from(world.dialogue_owns_input()),
             )?;
         }
         session.host.world.input.set_pad(0);
