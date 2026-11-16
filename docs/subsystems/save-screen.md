@@ -92,14 +92,40 @@ under a positive one. An exiting sub-screen writes `0xF2` to the *delta*
 `> 0x79`; state 1 hands over at `< 0x79` (two distinct constants).
 
 **Field wipe around it.** The pause-menu session `FUN_801ED308` (field overlay
-handler `0x30`) raises the same level word by `10 * frame_step` per frame from
+handler `0x30`) raises the same level word by `10 * frame_step` a pass from
 `0` and spawns the menu only once `level + 0x70 > 0xF2`, so the field darkens
-for a few frames before any window exists; on close it lowers the level the
-same way with the field running. Both phases draw through the wipe emitter
-`FUN_8003479C`. Port: `engine-system::pause_wipe::PauseWipe`, owned by
-`BootSession` (opened by `press_field_menu`, released by `close_field_menu`).
+for a few passes before any window exists; on close it draws one more pass at
+`0xF2` and lowers the level the same way with the field running. The session
+is a node of the field's actor lists, so a pass is a game frame, not a vsync:
+at the field's step of `2` the level climbs `20` every second vsync.
+
+Both phases draw through the wipe emitter `FUN_8003479C`, which is a curtain,
+not a fade. Two `0x80`-line `POLY_G4` bands under texpage `0x5E` (ABR `2`,
+`B - F`) subtract white at their outer edges and nothing at their inner ones,
+the top band spanning `level - 0x84 .. level - 4` and the bottom band
+`0xE0 - level .. 0x160 - level`; from level `0x81` up opaque black bars fill
+the screen beyond them, and from `0xF2` up one black quad covers it all. The
+visible field is a strip that narrows toward the screen's middle.
+
+[`autorun_pause_wipe_step.lua`](../../scripts/pcsx-redux/autorun_pause_wipe_step.lua)
+logs every emitter call and session pass per vsync on `town01_field_card_boot`
+(menu button Triangle, root cancel Circle):
+
+| Beat | Retail |
+|---|---|
+| Opening ramp | levels `20, 40, .., 140` on every second vsync at step `2`; the menu spawns on the seventh pass |
+| Spawn to windows | `160` drawn once in mode `0x16`, then the screen is black while the menu overlay loads; the first window slides in about `50` vsyncs after the spawn, the frame step reading `1` (floor `1`) from then on |
+| Cancel to field | about `15` vsyncs of the menu's own close, then about `65` black vsyncs while the field overlay loads |
+| Closing ramp | `242, 222, .., 2` on every second vsync, then `0` |
+
+Port: `engine-system::pause_wipe::PauseWipe`, owned by `BootSession` (opened by
+`press_field_menu`, released by `close_field_menu`), ticked once a vsync and
+stepping on the vsync that completes a game frame; the curtain is
+`render-kernels::wipe_curtain` (differential `retail-exec/tests/wipe_curtain.rs`).
 Both play hosts keep the field drawing until `menu_spawned`, route no input to
-the menu before it, and draw `fade_level` as a subtractive quad.
+the menu before it, and draw `curtain_level` through the curtain. The two
+overlay loads are not modelled: the port loads no overlay, and the menu opens
+and closes without the black holds.
 
 ### The entry-context decode picks the screen family
 

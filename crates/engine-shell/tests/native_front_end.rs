@@ -188,7 +188,7 @@ fn boot_ui_continue_loads_the_port_two_card() {
 
 /// The frame the pause wipe spawns the menu draws the menu. The session hands
 /// the tick over on the next claim (`TickOwner::PauseMenuSpawned`), and once
-/// the menu exists the wipe draws nothing (`PauseWipe::fade_level` is `None`),
+/// the menu exists the wipe draws nothing (`PauseWipe::curtain_level` is `None`),
 /// so a window that waited for that claim to raise its menu state drew one
 /// frame of the lit field between the black wipe and the menu - on the world
 /// map, whose one-tick frames put the spawn on a frame's last tick. The page

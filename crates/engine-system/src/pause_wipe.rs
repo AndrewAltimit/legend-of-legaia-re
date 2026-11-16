@@ -4,23 +4,32 @@
 //! Retail opens the pause menu through the field overlay's subsystem actor,
 //! whose session handler `FUN_801ED308` (handler `0x30`) owns a brightness
 //! accumulator `_DAT_8007B440` and hands it to the field's wipe emitter
-//! `FUN_8003479C` every frame:
+//! `FUN_8003479C` every pass:
 //!
-//! - phase `0` zeroes the level; phase `1` raises it by `10 * frame_step`
-//!   (`DAT_1F800393`) a frame, and once `level + 0x70 > 0xF2` spawns the menu
-//!   (`FUN_801D841C`) - so the field darkens for a few frames before any
-//!   window appears, and the menu takes no input until it exists;
+//! - phase `0` zeroes the level and falls into phase `1`, which raises it by
+//!   `10 * frame_step` (`DAT_1F800393`) a pass, and once `level + 0x70 > 0xF2`
+//!   spawns the menu (`FUN_801D841C`) - so the field darkens for a few passes
+//!   before any window appears, and the menu takes no input until it exists;
 //! - phase `2` keeps raising it to `0xF2`, phase `3` holds `0xF2` while the
 //!   menu runs;
-//! - on the menu's close (exit code `> 5`) phase `4` lowers it by
-//!   `10 * frame_step` a frame back to `0`, with the field running again
-//!   under the lifting wipe.
+//! - on the menu's close (exit code `> 5`) phase `3` draws one more pass at
+//!   `0xF2`, then phase `4` lowers it by `10 * frame_step` a pass back to `0`,
+//!   with the field running again under the lifting wipe.
 //!
-//! [`PauseWipe`] is that accumulator. Both play hosts own one through
+//! The session is a node of the field's actor lists, so it runs once a
+//! **game frame**, not once a vsync: at the field's step of `2` the level
+//! climbs `20` every second vsync. The town01 capture
+//! (`autorun_pause_wipe_step.lua`) reads the emitter's level `20, 40, ..,
+//! 140` on every second vsync from the first pass, the menu mode `0x17` two
+//! passes after the spawn, and the close's ramp `242, 222, .., 2, 0` on every
+//! second vsync once the field is back.
+//!
+//! [`PauseWipe`] is that accumulator, ticked once a vsync with its own count
+//! of the vsyncs into the game frame. Both play hosts own one through
 //! `BootSession`, start it on a field menu press, release it on the close,
-//! and draw [`PauseWipe::fade_level`] as the subtractive full-screen quad the
-//! shop's opening fade already uses (`screen_prim::fade_prim(level * 0x010101,
-//! 2, 0)`).
+//! and draw [`PauseWipe::curtain_level`] through the emitter's port
+//! (`legaia_render_kernels::wipe_curtain`): two soft-edged curtains closing
+//! from the top and the bottom of the screen, not an even fade.
 //!
 //! REF: FUN_801ED308 (phases 0..4 of the pause-menu session)
 
@@ -28,32 +37,38 @@
 pub const PAUSE_WIPE_FULL: i32 = 0xF2;
 /// The spawn test's offset: the menu appears once `level + 0x70 > 0xF2`.
 pub const PAUSE_WIPE_SPAWN_OFFSET: i32 = 0x70;
-/// Per-frame step, scaled by the frame-skip factor.
+/// Per-pass step, scaled by the frame-skip factor.
 pub const PAUSE_WIPE_STEP: i32 = 10;
 
-/// Where the wipe is.
+/// Where the wipe is. `vsyncs` counts the vsyncs since the session's last
+/// pass; a pass runs when it reaches the frame step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PauseWipe {
     /// No menu, no wipe.
     #[default]
     Idle,
     /// Phases `1..=3`: the field darkening, then held black under the menu.
-    Opening { level: i32 },
+    Opening { level: i32, vsyncs: u8 },
     /// Phase `4`: the menu has closed and the field is brightening.
-    Closing { level: i32 },
+    Closing { level: i32, vsyncs: u8 },
 }
 
 impl PauseWipe {
-    /// A menu press: phase `0` zeroes the level.
+    /// A menu press: phase `0` zeroes the level. Its first pass is the next
+    /// game frame's.
     pub fn open(&mut self) {
-        *self = PauseWipe::Opening { level: 0 };
+        *self = PauseWipe::Opening {
+            level: 0,
+            vsyncs: 0,
+        };
     }
 
     /// The menu closed: phase `4` ramps down from wherever the level stands
-    /// (`0xF2` once the menu has been up).
+    /// (`0xF2` once the menu has been up). The level stands one game frame
+    /// before the first step down, as phase `3`'s last pass draws it.
     pub fn close(&mut self) {
-        if let PauseWipe::Opening { level } = *self {
-            *self = PauseWipe::Closing { level };
+        if let PauseWipe::Opening { level, .. } = *self {
+            *self = PauseWipe::Closing { level, vsyncs: 0 };
         }
     }
 
@@ -62,41 +77,54 @@ impl PauseWipe {
         *self = PauseWipe::Idle;
     }
 
-    /// One frame, `frame_step` vsyncs long.
+    /// One vsync of a game frame `frame_step` vsyncs long: the session's
+    /// pass runs on the vsync that completes the frame.
     pub fn tick(&mut self, frame_step: u8) {
-        let step = PAUSE_WIPE_STEP * i32::from(frame_step.max(1));
+        let wait = frame_step.max(1);
+        let step = PAUSE_WIPE_STEP * i32::from(wait);
         *self = match *self {
             PauseWipe::Idle => PauseWipe::Idle,
-            PauseWipe::Opening { level } => PauseWipe::Opening {
-                level: (level + step).min(PAUSE_WIPE_FULL),
+            PauseWipe::Opening { level, vsyncs } if vsyncs + 1 < wait => PauseWipe::Opening {
+                level,
+                vsyncs: vsyncs + 1,
             },
-            PauseWipe::Closing { level } if level - step < 1 => PauseWipe::Idle,
-            PauseWipe::Closing { level } => PauseWipe::Closing {
+            PauseWipe::Opening { level, .. } => PauseWipe::Opening {
+                level: (level + step).min(PAUSE_WIPE_FULL),
+                vsyncs: 0,
+            },
+            PauseWipe::Closing { level, vsyncs } if vsyncs + 1 < wait => PauseWipe::Closing {
+                level,
+                vsyncs: vsyncs + 1,
+            },
+            PauseWipe::Closing { level, .. } if level - step < 1 => PauseWipe::Idle,
+            PauseWipe::Closing { level, .. } => PauseWipe::Closing {
                 level: level - step,
+                vsyncs: 0,
             },
         };
     }
 
-    /// Whether the menu exists yet: retail spawns it the frame the opening
+    /// Whether the menu exists yet: retail spawns it the pass the opening
     /// level passes `0xF2 - 0x70`. Before that the field is drawing (under
     /// the wipe) and the menu takes no input.
     pub fn menu_spawned(&self) -> bool {
         match *self {
-            PauseWipe::Opening { level } => level + PAUSE_WIPE_SPAWN_OFFSET > PAUSE_WIPE_FULL,
+            PauseWipe::Opening { level, .. } => level + PAUSE_WIPE_SPAWN_OFFSET > PAUSE_WIPE_FULL,
             _ => true,
         }
     }
 
-    /// The subtractive quad's grey level (`0..=255`) to draw over the field
-    /// this frame, `None` when the field is not showing (the menu covers
-    /// it) or no wipe runs. `0xF2` is full black: the emitter's own scale.
-    pub fn fade_level(&self) -> Option<u8> {
+    /// The level (`0..=0xF2`) to hand the curtain emitter
+    /// (`legaia_render_kernels::wipe_curtain::curtain_prims`) this frame,
+    /// `None` when the field is not showing (the menu covers it) or no wipe
+    /// runs. `0` draws nothing.
+    pub fn curtain_level(&self) -> Option<u8> {
         let level = match *self {
-            PauseWipe::Opening { level } if !self.menu_spawned() => level,
-            PauseWipe::Closing { level } => level,
+            PauseWipe::Opening { level, .. } if !self.menu_spawned() => level,
+            PauseWipe::Closing { level, .. } => level,
             _ => return None,
         };
-        Some(((level.clamp(0, PAUSE_WIPE_FULL) * 255) / PAUSE_WIPE_FULL) as u8)
+        Some(level.clamp(0, PAUSE_WIPE_FULL) as u8)
     }
 }
 
@@ -104,43 +132,88 @@ impl PauseWipe {
 mod tests {
     use super::*;
 
-    /// At the 30 fps frame step (`2`) the menu spawns on the seventh frame
-    /// (level `140 > 130`), the opening ramp reaches `0xF2` on the
-    /// thirteenth, and the close lifts it in thirteen.
-    #[test]
-    fn the_ramp_matches_the_session_phases() {
-        let mut w = PauseWipe::default();
-        assert!(w.menu_spawned() && w.fade_level().is_none());
-        w.open();
-        assert_eq!(w.fade_level(), Some(0));
-        let mut spawned_at = None;
-        for f in 1..=20 {
-            w.tick(2);
-            if spawned_at.is_none() && w.menu_spawned() {
-                spawned_at = Some(f);
-            }
-        }
-        assert_eq!(spawned_at, Some(7));
-        assert_eq!(w, PauseWipe::Opening { level: 0xF2 });
-        assert!(w.fade_level().is_none(), "the menu covers the field");
-        w.close();
-        assert_eq!(w.fade_level(), Some(255));
-        let mut frames = 0;
-        while w != PauseWipe::Idle {
-            w.tick(2);
-            frames += 1;
-        }
-        assert_eq!(frames, 13);
+    /// The pass's level after each vsync of a run of ticks.
+    fn levels(w: &mut PauseWipe, step: u8, n: usize) -> Vec<Option<u8>> {
+        (0..n)
+            .map(|_| {
+                w.tick(step);
+                w.curtain_level()
+            })
+            .collect()
     }
 
-    /// A close before the menu spawned lifts from where the ramp stood.
+    /// At the field's frame step of `2` the session runs every second vsync:
+    /// the level climbs `20` a pass, the menu spawns on the seventh pass
+    /// (level `140 > 130`, fourteen vsyncs after the press), the opening
+    /// ramp reaches `0xF2` on the thirteenth pass, and the close stands at
+    /// `0xF2` one pass and lifts in thirteen - the town01 capture's
+    /// `242, 222, .., 2` then `0`.
+    #[test]
+    fn the_ramp_runs_once_a_game_frame() {
+        let mut w = PauseWipe::default();
+        assert!(w.menu_spawned() && w.curtain_level().is_none());
+        w.open();
+        assert_eq!(w.curtain_level(), Some(0));
+        let opening = levels(&mut w, 2, 4);
+        assert_eq!(opening, vec![Some(0), Some(20), Some(20), Some(40)]);
+        let mut spawned_at = None;
+        for v in 5..=40 {
+            w.tick(2);
+            if spawned_at.is_none() && w.menu_spawned() {
+                spawned_at = Some(v);
+            }
+        }
+        assert_eq!(spawned_at, Some(14));
+        assert_eq!(
+            w,
+            PauseWipe::Opening {
+                level: 0xF2,
+                vsyncs: 0
+            }
+        );
+        assert!(w.curtain_level().is_none(), "the menu covers the field");
+        w.close();
+        assert_eq!(w.curtain_level(), Some(0xF2));
+        let mut drawn = vec![w.curtain_level()];
+        while w != PauseWipe::Idle {
+            w.tick(2);
+            drawn.push(w.curtain_level());
+        }
+        let passes: Vec<u8> = drawn.iter().step_by(2).flatten().copied().collect();
+        assert_eq!(
+            passes,
+            vec![242, 222, 202, 182, 162, 142, 122, 102, 82, 62, 42, 22, 2]
+        );
+        assert_eq!(drawn.len(), 27, "thirteen passes of two vsyncs, then idle");
+    }
+
+    /// At a step of `3` each pass spans three vsyncs and climbs `30`.
+    #[test]
+    fn a_step_of_three_climbs_thirty_every_third_vsync() {
+        let mut w = PauseWipe::default();
+        w.open();
+        let l = levels(&mut w, 3, 6);
+        assert_eq!(
+            l,
+            vec![Some(0), Some(0), Some(30), Some(30), Some(30), Some(60)]
+        );
+    }
+
+    /// A close before the menu spawned lifts from the current level.
     #[test]
     fn an_early_close_lifts_from_the_current_level() {
         let mut w = PauseWipe::default();
         w.open();
-        w.tick(2);
-        w.tick(2);
+        for _ in 0..4 {
+            w.tick(2);
+        }
         w.close();
-        assert_eq!(w, PauseWipe::Closing { level: 40 });
+        assert_eq!(
+            w,
+            PauseWipe::Closing {
+                level: 40,
+                vsyncs: 0
+            }
+        );
     }
 }

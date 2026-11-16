@@ -137,7 +137,7 @@ impl LegaiaRuntime {
         let pause_wipe = self
             .scene_host
             .session()
-            .and_then(|s| s.pause_wipe().fade_level());
+            .and_then(|s| s.pause_wipe().curtain_level());
         let (mut under, over) = match self.scene_host.host() {
             Some(h) => legaia_engine_screens::screen_layers::compose_screen_prims(
                 &h.world,

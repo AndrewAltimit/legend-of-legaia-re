@@ -4139,6 +4139,7 @@
     "ui_tint",
     "vram_capture",
     "vram_grab",
+    "wipe_curtain",
     "world_map_sky"
    ],
    "band": "kernels",

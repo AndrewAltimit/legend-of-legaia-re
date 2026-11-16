@@ -51,4 +51,5 @@ pub mod streak_pass;
 pub mod ui_tint;
 pub mod vram_capture;
 pub mod vram_grab;
+pub mod wipe_curtain;
 pub mod world_map_sky;

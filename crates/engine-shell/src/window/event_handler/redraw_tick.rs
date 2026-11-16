@@ -236,7 +236,7 @@ impl PlayWindowApp {
         // The wipe spawned the pause menu on this frame's last tick. The
         // session hands the tick over on the next claim
         // (`TickOwner::PauseMenuSpawned`), but from this frame on the menu
-        // covers the field and the wipe draws nothing (`PauseWipe::fade_level`),
+        // covers the field and the wipe draws nothing (`PauseWipe::curtain_level`),
         // so the frame drawn now is the menu's - as the page draws it, off
         // `menu_spawned` - and not one frame of the lit field.
         if matches!(self.boot_ui, BootUiState::Inactive)

@@ -499,7 +499,7 @@ impl PlayWindowApp {
         let (mut under, mut over) = legaia_engine_screens::screen_layers::compose_screen_prims(
             &self.session.host.world,
             &self.menu_runtime,
-            self.session.pause_wipe().fade_level(),
+            self.session.pause_wipe().curtain_level(),
             host,
         );
         // A cast's frames build on the last one where the target allows it, and
