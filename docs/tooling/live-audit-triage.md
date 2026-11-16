@@ -320,6 +320,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `BattleState::forced_monster_ground` | a cast-sequence capture seat, written by the native host's debug seeding through a tuple assignment the tool does not read as a write |
 | `Sequencer::set_exact_tempo` | an engine option for the score's written tempo; the default is retail's rounded vsync budget (`FUN_80061954`) |
 | `MenuRuntime::open_scene_inn`, `open_inn` | deleted with the whole prompt (`InnSession`, the two menu states, `SceneHost::scene_inn_cost`): retail has no inn screen, a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), and only tests opened it |
+| `World::set_hub_equip_mode` | `_DAT_8007BB9C` feeds the equip sub-panel under the entry-list painter (record `7`), which no descriptor on the disc installs ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)) |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 | `BakaUi::player_char` | deleted: nothing wrote it, so the play page's minigame JSON named Vahn for every fighter, and no page script read the key; the duel draws its fighters from the engine's own scene surface |
@@ -336,13 +337,6 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   disc carries a type-`0x0B` descriptor (the tuple census in
   `scene-formats::scene_asset_table`), while every observed state reads the
   base as zero ([`mdt.md`](../formats/mdt.md)).
-- `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
-  nibble; the hub's equipment panel stays on its no-candidate arm until the list
-  machinery publishes it. The panel sits under the entry-list painter, and no
-  production frame paints that record yet
-  ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)),
-  so the row waits on the state machine that installs record `7`, not on the
-  word.
 - `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
   the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
   which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
@@ -896,12 +890,20 @@ installed set by whether the program opens with the close-all sub-op
 opener's pinned window is drawn alongside, not instead.
 
 What no production frame reaches is record `7`, the **entry list**
-(`FUN_801F16C0`, whose rows call the equip sub-panel): none of the
-descriptors the ported state machines install (`PANEL_COIN_IDLE`,
-`PANEL_COIN_CONFIRM`, `PANEL_START`, `PANEL_SUBMENU_IDLE` /
-`PANEL_SUBMENU_CONFIRM`, `PANEL_PROMPT`, `PANEL_DRAW_TICK`) names it, so the
-install that does is in a state machine that is not ported. The equip
-sub-panel waits on that installer, not on the descriptor format.
+(`FUN_801F16C0`, whose rows call the equip sub-panel), and retail does not
+reach it either. Its one install is the installer's own sub-op `12`
+(jump table `0x801CF25C`, case `0x801E9D50`): it sizes record `7` off the
+byte `0x80084594` (`sh` to the record's `+0x0A` / `+0x0E` / `+0x12` at
+`0x801E9D78..0x801E9D84`) and re-enters `FUN_801E9B3C` with descriptor
+`0x801F3170` = `[1, 7]` (`0x801E9D80`). No descriptor in PROT 0897's image
+carries sub-op `12`, and every `FUN_801E9B3C` call site there resolves to a
+descriptor that names another record: the coin counter's `0x801F3340` /
+`0x801F3360`, the start menu's `0x801F3370`, the prompt's `0x801F3388`, the
+sub-menu's `0x801F3294` / `0x801F32A4`, the flag window's `0x801F3304`, the
+code lock's `0x801F32F4`, name entry's `0x801F3314`, sub-op `0xA`'s
+`0x801F3274`, and `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`.
+Nothing on the disc opens the entry list, so its painter and the equip
+sub-panel under it are owed no host.
 
 ### The field / motion / camera block
 
