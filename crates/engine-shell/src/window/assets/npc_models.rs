@@ -66,9 +66,7 @@ impl PlayWindowApp {
         let changed = player_changed || {
             let world = &self.session.host.world;
             self.field_npc_draws.iter().any(|d| {
-                world
-                    .field_npc_live_model(d.slot)
-                    .is_some_and(|id| id != d.bound_model)
+                world.field_npc_live_model(d.slot).unwrap_or(d.spawn_model) != d.bound_model
             })
         };
         if changed {

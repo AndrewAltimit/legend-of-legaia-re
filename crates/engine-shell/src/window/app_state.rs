@@ -1285,6 +1285,10 @@ pub(super) struct FieldNpcDraw {
     /// `rebind_live_npc_models` notices a swap the world made after the
     /// upload ran.
     pub(super) bound_model: i16,
+    /// The placement's own `model_index`, the model a slot with no live
+    /// entry draws: a `4C D2` re-seat drops the entry, and the new actor
+    /// draws its header model again (`FUN_8003A1E4`).
+    pub(super) spawn_model: i16,
 }
 
 /// The field env meshes' light-source row shading (see

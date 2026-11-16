@@ -641,6 +641,7 @@ impl World {
             // A fresh node at the list's tail (`FUN_80020454`), and the
             // spawn's clip-phase draw before the prologue slice.
             self.relink_ambient_at_tail(slot);
+            self.drop_respawned_actor_state(slot);
             if man_file
                 .actor_placement(&man, index)
                 .is_some_and(|p| p.anim_id > 0)
@@ -669,6 +670,26 @@ impl World {
         }
         // The spawn section runs the same story gates a scene entry does.
         self.retire_killed_field_channels();
+    }
+
+    /// What a `4C D2` re-seat starts afresh on placement `slot`: the actor is
+    /// a new allocation, so nothing the retired one wore survives it.
+    /// `FUN_8003A1E4` writes the header's model byte into the spawn template
+    /// (`0x8003A300` / `0x8003A324`) and allocates from it (`0x8003A398`);
+    /// the allocator `FUN_80020DE0` copies the template model into `+0x64`
+    /// (`0x80020E70`), zeroes the pitch and roll `+0x24` / `+0x28`
+    /// (`0x80020E50`, `0x80020E48`) and the face row and value `+0x6D` /
+    /// `+0x7A` (`0x80020E44`, `0x80020EC4`), and seats the playing clip
+    /// `+0x5E = -1` (`0x80020E9C`), so the first clip request restarts. A
+    /// model the retired actor was swapped to (`4C 50`, `CC <id> 50`, motion
+    /// op `0x0E`) would otherwise draw on the new one.
+    // REF: FUN_8003A1E4 (0x8003A2E8..0x8003A398), FUN_80020DE0
+    fn drop_respawned_actor_state(&mut self, slot: u8) {
+        self.npcs.models.remove(&slot);
+        self.npcs.clip_bones.remove(&slot);
+        self.npcs.tilts.remove(&slot);
+        self.npcs.faces.remove(&slot);
+        self.npcs.clip_current.remove(&slot);
     }
 
     /// The clip-phase `rand()` draw of every placement the spawn loop

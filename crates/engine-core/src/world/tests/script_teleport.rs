@@ -15,7 +15,7 @@ use crate::world::vm_hosts::apply_script_table_teleport;
 /// followed by six zero-length sections so `man_section::parse` accepts the
 /// buffer. Partition 0 is empty, so a context's flat `+0x50` id equals its
 /// placement index.
-fn man_bytes_with_placement_records(headers: &[[u8; 4]]) -> Vec<u8> {
+pub(super) fn man_bytes_with_placement_records(headers: &[[u8; 4]]) -> Vec<u8> {
     let records: Vec<([u8; 4], Vec<u8>)> = headers.iter().map(|h| (*h, vec![0x21])).collect();
     man_bytes_with_scripted_records(&records)
 }

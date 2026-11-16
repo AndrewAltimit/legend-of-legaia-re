@@ -1032,7 +1032,11 @@ template whose model word is the placement header's byte plus the bank base
 no swap reaches the next scene, a return from battle included. The port's live
 model table (`World::npcs.models`) is keyed by placement index, not by actor,
 so every scene entry clears it (`World::seed_field_channels`,
-`World::drop_man_installed_state`). Kept, a slot inherited the previous
+`World::drop_man_installed_state`), and so does a `4C D2` re-seat of a
+retired placement, which allocates through the same `FUN_8003A1E4`: the new
+actor draws its header model, with the pitch and roll, the face row and the
+playing clip the allocator `FUN_80020DE0` zeroes (`+0x24` / `+0x28`,
+`+0x6D` / `+0x7A`, `+0x5E = -1`) dropped with it. Kept, a slot inherited the previous
 scene's id and resolved it through the new scene's bank: after `uru`'s
 beat (`P2[35]`, `CC 1C..23 50 4B 00`) the `bubu1` villagers in
 placements 7..14 drew `bubu1`'s one-object bank model `0x4B`, a floor pelt,
