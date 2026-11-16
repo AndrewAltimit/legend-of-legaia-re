@@ -275,6 +275,10 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
+    /// PROT 0909's stager arm 0 stood its creature on the caller's frame
+    /// (`World::seat_viguro_creature`); the module tick that runs the queued
+    /// call steps the phase and leaves the seat alone.
+    pub module_viguro_seated_early: bool,
     /// How many op-`0x20` calls have reached a module's stager arm
     /// (wrapping): the ones `World::run_part_stager_calls` drains, and PROT
     /// 0925's, whose arm runs inside the calling part's step. Nothing in the
@@ -677,6 +681,7 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            module_viguro_seated_early: false,
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
             summon_parts_dealt: 0,
