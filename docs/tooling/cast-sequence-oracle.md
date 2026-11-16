@@ -1742,6 +1742,19 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   so stood on `192` against the RAM's `168`, reached its walk's natural end a
   pass early and struck from `(130, 335)` where retail's strikes from
   `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Target bytes.** The release at the gate also aims every seat but the acting
+  one at the target its RAM holds (`+0x1DD`, `LEGAIA_BATTLE_SEAT_TARGETS`, a
+  physical film only: an injected cast acts from another seat). The replay
+  reaches the gate on the acting seat's round alone, and a bystander's target
+  is the far end of its root-motion range poll (`jal 0x8004E2F0` at
+  `0x80047D50`): a positive clip speed steps the live pair only while the poll
+  reads out of reach. A struck monster keeps the target its own last action
+  aimed at, which the commit that strikes it never rewrites.
+  `battle_garmel_party_vahn_tornado_flame_open`'s Zenoir is aimed at Gala, across
+  the stage, so its speed-`1` reaction carries it after Vahn through the whole
+  art; aimed at the replay's Vahn, in reach, it stood still and landed
+  `(35, 68)` off retail's ground. A harness seat: that film `.846` to `.863`
+  (its Done band `.854` to `.939`), no other arts or strike film moves.
 - **Walk phase.** A monster saved in the strike loop still on its walk
   (`battle_map02_mad_ogre_strike`, `+0x1DC = 3` with its swing staged) holds the
   swing until the walk's natural end: the arrival stages idle under bit 0

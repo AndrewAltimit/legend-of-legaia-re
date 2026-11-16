@@ -74,13 +74,17 @@ DROP_ENV = {
     # the whole cast from there, and retail's ring ran the party's step
     # (`chitei2_cort_pre_mystic_circle` opens on `3`, the pin held `2`).
     "LEGAIA_BATTLE_PARTY_STEP",
+    # The bystanders' target bytes: the capture's, for its own round. An
+    # injected cast acts from another seat than the capture's, whose target
+    # the seat would overwrite.
+    "LEGAIA_BATTLE_SEAT_TARGETS",
 }
 
 # What a `--physical` recording keeps of those: it plays the state's own round,
 # so its drive and the re-seat that stands that round on the capture's ground.
 PHYSICAL_KEEP_ENV = {
     "LEGAIA_BATTLE_DRIVE", "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP",
-    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT",
+    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_BATTLE_SEAT_TARGETS",
 }
 
 

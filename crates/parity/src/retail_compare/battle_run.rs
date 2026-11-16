@@ -967,6 +967,19 @@ pub(super) fn battle_image(
                 },
             ),
         ));
+        // The bystanders' target bytes, which a film's release at its gate
+        // stands with the ground (`RetailBattle::engine_seat_targets`).
+        let targets = battle.engine_seat_targets();
+        if !targets.is_empty() {
+            env.push((
+                "LEGAIA_BATTLE_SEAT_TARGETS",
+                targets
+                    .iter()
+                    .map(|(s, t)| format!("{s}:{t}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
+        }
         // The pairs the RAM holds, beside the displayed frame's: a film runs
         // on from the gate on the RAM's clip cursors (the cast-sequence
         // oracle drops `LEGAIA_SEAT_DISPLAYED_CLIPS`), so it stands on the

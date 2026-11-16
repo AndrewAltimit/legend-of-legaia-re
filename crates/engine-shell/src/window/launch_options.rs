@@ -242,6 +242,11 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
     /// image channel on an action drive.
     pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_SEAT_TARGETS=slot:target,...`: the capture's bystanders'
+    /// target bytes `+0x1DD`, by engine slot, which a film's release at its
+    /// gate stands with the ground. Set by the retail-compare image channel
+    /// on an action drive.
+    pub battle_seat_targets: Vec<(u8, u8)>,
     /// `LEGAIA_CAST_RAND_SEED=st7:phase:seed`: a recorded cast's `rand()`
     /// seed on one cast key, set on the world stream before every tick under
     /// that key ([`legaia_engine_capture::cast_rand`]). Set by the
@@ -1175,6 +1180,16 @@ impl ScreenshotConfig {
             leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_seat_targets: std::env::var("LEGAIA_BATTLE_SEAT_TARGETS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (s, t) = e.trim().split_once(':')?;
+                            Some((s.parse().ok()?, t.parse().ok()?))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             battle_ghost_pose: std::env::var("LEGAIA_BATTLE_GHOST_POSE")
                 .ok()

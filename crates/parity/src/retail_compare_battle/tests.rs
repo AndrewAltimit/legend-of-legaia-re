@@ -3272,3 +3272,35 @@ fn results_drop_reads_the_report_row() {
     );
     assert_eq!(ram_read::results_drop(&ram, ctx), Some(0x1D));
 }
+
+/// The bystanders' target bytes go to engine slots, the acting seat's stays
+/// with its drive: `battle_garmel_party_vahn_tornado_flame_open` holds Zenoir
+/// (pool `4`) aimed at Gala (pool `1`), the far end of its reaction's range
+/// poll, and the engine packs the monster row behind the party.
+#[test]
+fn seat_targets_map_bystanders_onto_engine_slots() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.party_count = 2;
+    b.monster_count = 2;
+    b.active_actor = 0;
+    b.seat_targets = vec![
+        Some(4),
+        Some(4),
+        None,
+        Some(0),
+        Some(1),
+        Some(8),
+        None,
+        None,
+    ];
+    // Pool 3 -> slot 2, pool 4 -> slot 3; pool 5 is past the row, pool 0 acts.
+    assert_eq!(b.engine_seat_targets(), vec![(1, 3), (2, 0), (3, 1)]);
+}

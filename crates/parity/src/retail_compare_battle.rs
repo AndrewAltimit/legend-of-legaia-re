@@ -841,6 +841,13 @@ pub struct RetailBattle {
     /// the last target it struck. The results framing reads it (case 6's
     /// battle-over yaw is `0x800 - actor[+0x46]`).
     pub facing: Vec<Option<u16>>,
+    /// Each pool slot's target byte `+0x1DD`. A body's root motion reads
+    /// it: a positive clip speed steps the live pair only while the range
+    /// law reads the body out of reach of its own target (`jal 0x8004E2F0`
+    /// at `0x80047D50`), and a struck monster's target is the seat its own
+    /// last action aimed at, which the commit that struck it never rewrites
+    /// ([`Self::engine_seat_targets`]).
+    pub seat_targets: Vec<Option<u8>>,
     /// Each pool slot's colour lanes `+0x04`, for a slot whose tint state
     /// `+0x21C` is the defeat fade (`2`): a monster killed earlier has
     /// stepped its lanes to black (`noa_levelup_banner`'s Gobu reads `0`)
