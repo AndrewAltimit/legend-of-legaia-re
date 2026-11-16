@@ -53,6 +53,17 @@ PAGE_STATE_RULES = [
         "the hall's tree, stagers and frame step",
     },
     {
+        "what": "the field frame stages each draw's link word after its last draw",
+        "path": REPO / "site/js/play-view-frame.js",
+        "kind": "before",
+        "source": "this._fieldFxDraws(rt, fieldVp, draws);",
+        "then": "this._stageFieldPrimOrder(rt, draws);",
+        "why": "a draw appended after the staging keeps per-pixel depth in PSX "
+        "mode where the window links it: rugi's landing tunnel, a script-spawned "
+        "actor, blended its rings over an NPC the window draws in front of them, "
+        "and no field effect model took its far-corner word",
+    },
+    {
         "what": "a pause-menu tick composes the frame's screen layers",
         "path": REPO / "crates/web-play/src/runtime/frame_ticks.rs",
         "kind": "before",

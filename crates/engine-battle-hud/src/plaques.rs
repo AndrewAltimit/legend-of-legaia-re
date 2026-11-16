@@ -387,6 +387,18 @@ pub(super) const MESSAGE_BAR_SEATS_Y: (i32, i32) = (234, 192);
 /// glide `FUN_801D8DE8(0x5B, 0)` starts
 /// ([`legaia_engine_battle_loop::battle_state::BattleState::message_bar_glide`]). `0` with
 /// no bar up or once it has landed.
+/// The top message banner's row offset from its rest seat this frame
+/// (elements `0x59` / `0x65` / `0x66`): the record's glide from seat A
+/// `(16, -24)` down onto seat B `(16, 14)` on the raise, and back up on the
+/// unload ([`legaia_engine_battle_loop::message_banner::BattleMessageBanner::dy`]).
+/// `0` with no line up, or outside battle.
+pub fn battle_message_banner_dy(world: &legaia_engine_core::world::World) -> i32 {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return 0;
+    }
+    world.battle.message_banner.as_ref().map_or(0, |b| b.dy())
+}
+
 pub fn battle_message_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.steal_caption.is_none()

@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
+#[derive(Debug)]
 pub struct EncounterState {
     /// A tooling knob, not retail state: hold the world `rand()` stream at
     /// this value at the head of every tick a forced encounter spends in its

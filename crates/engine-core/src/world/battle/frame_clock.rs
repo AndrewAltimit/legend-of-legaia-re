@@ -8,6 +8,9 @@ use super::*;
 /// frames at the clamp in the band `0x70` (`3207` frames, `4` to `11`).
 const MODULE_LINE_FRAME_VSYNCS: u8 = 6;
 
+/// Action state `0x71`, the capture band's finalize: the module has returned
+/// done and the state waits on the victim to settle (`FUN_801E4490`'s table).
+const CAPTURE_FINALIZE_STATE: u8 = 0x71;
 /// Action state `0x50`, the Done band's first pass.
 const DONE_CLEANUP_STATE: u8 = 0x50;
 /// Action state `0x51`, the HP-bar settle.
@@ -86,11 +89,21 @@ impl World {
         let summon_band = (ActionState::SummonFadeIn.as_byte()
             ..=ActionState::SummonReturn.as_byte())
             .contains(&state);
+        // So do the band's two tail states `0x37` / `0x38`: their frames' own
+        // work sits under the step-2 edge on every Seru film (retail's
+        // `172..370` hblanks), and retail still runs them at `2` to `3` off
+        // the band's frames still in the ring, which the band's arm tables
+        // stand in for with their step alone. Their measured rows hold
+        // retail's step (`0x38` `.943` against `.800` priced).
+        let summon_tail = matches!(
+            ActionState::from_byte(state),
+            Some(ActionState::SummonVerifyAlive | ActionState::SummonDone)
+        );
         let table_kept = (arm_step.is_some()
             && (!window_source
                 || state == ActionState::SummonSustain.as_byte()
                 || state == ActionState::SummonReturn.as_byte()))
-            || (!window_source && summon_band)
+            || (!window_source && (summon_band || summon_tail))
             || state == ActionState::SummonFadeIn.as_byte()
             || state == ActionState::SummonActorFreeze.as_byte();
         // The census of world state (`World::note_linked_polys`), or the
@@ -630,10 +643,16 @@ impl World {
         // the Done band loads only what that count has left. The drive word
         // keeps its own span, and the span law, whose frames run retail's
         // length, needs no second count.
+        //
+        // The capture band's finalize `0x71` takes the same cut: it is the
+        // module's line outliving the module. Over the enemy films' PCSX-Redux
+        // recordings `2.5%` of retail's `0x71` vsyncs read the clamp where the
+        // port's read it on `48%`, and the state's step agreed on `.30` of its
+        // game time (the port on a mean step of `3.42` against `2.42`).
         if !self.toggles.battle_frame_span_law
             && matches!(
                 self.battle_ctx.action_state,
-                DONE_CLEANUP_STATE | DONE_SETTLE_STATE
+                CAPTURE_FINALIZE_STATE | DONE_CLEANUP_STATE | DONE_SETTLE_STATE
             )
         {
             self.audio.battle_xa_load_frames = self
@@ -1195,11 +1214,12 @@ impl World {
             self.tick_battle_cast_drive(n);
             self.battle.in_draw_cast_tick = false;
         }
-        // The draw: every body pair from the pose the pass left, for the
-        // next pass's SM and camera to read - a seat the root-motion pass
-        // has not seeded yet included (the draw stores every drawn actor's).
+        // The draw: every drawn body's pair from the pose the pass left, for
+        // the next pass's SM and camera to read - a seat the root-motion pass
+        // has not seeded yet included; a body the frame does not draw keeps
+        // its last pair.
         self.seed_battle_seats();
-        self.refresh_battle_body_pairs();
+        self.refresh_drawn_battle_body_pairs();
         // ... and the render pass's own `rand()` draws (the jittered rings).
         self.deal_battle_draw_rands();
         // The same draw sheds the burning bodies' puffs (the tail of

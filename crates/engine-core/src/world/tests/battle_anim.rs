@@ -2209,6 +2209,42 @@ fn an_attackers_in_slice_commit_shows_the_new_clips_first_keyframe() {
     assert_eq!(front.frame, 0);
 }
 
+/// A looping clip's natural end re-commits it (`FUN_8004AD80` from
+/// `0x80047B54`), which zeroes the cursor (`0x8004B068`) ahead of the draw: a
+/// wrap that overshoots the end is drawn on keyframe 0, not on the advance's
+/// blend a few sixteenths into the next cycle (`noaru_barra_v2_strike`'s
+/// Vahn, a step-3 idle wrapping from `136`: retail's decode reads cursor `0`).
+#[test]
+fn a_loops_overshooting_wrap_is_drawn_on_keyframe_0() {
+    use legaia_actor_formats::monster_archive::PartPose;
+    let mut world = pose_test_world();
+    world.mode = SceneMode::Battle;
+    world.toggles.battle_sm_frame_cadence = true;
+    let mut idle = pose_test_clip(0, 2, 0);
+    idle.frames[1] = vec![PartPose {
+        tx: 160,
+        ..PartPose::default()
+    }];
+    world.actors[0].battle_animation =
+        legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(&idle);
+    world.actors[0].battle.current_anim = 0;
+    world.actors[0].battle.queued_anim = 0;
+    let p = world.actors[0].battle_animation.as_mut().unwrap();
+    p.step = 288;
+    world.actors[0].pose_frame = Some(p.seat_cursor(24));
+    world.battle.anim_pass_vsyncs = 1;
+    // `24 + 12` crosses the 32-sixteenth end by four.
+    world.tick_battle_anim_pass();
+    let p = world.actors[0].battle_animation.as_ref().unwrap();
+    assert_eq!(p.cursor_sixteenths(), 0, "the re-commit zeroed the cursor");
+    let pose = world.battle_stream_pose_translations(0).unwrap();
+    assert_eq!(pose[0][0], 0, "keyframe 0, not the blend toward keyframe 1");
+    assert_eq!(
+        world.actors[0].battle_pose_history.front().unwrap().frame,
+        0
+    );
+}
+
 /// The battle loader seats each body's idle at the phase setup drew
 /// (`FUN_800513F0`, `sh v1,0x68(s1)` at `0x80051574`), and the action SM's
 /// idle requests answer `FUN_801D5854`, which writes no anim field: a request

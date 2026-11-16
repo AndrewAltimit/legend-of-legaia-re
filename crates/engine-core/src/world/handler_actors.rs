@@ -544,6 +544,35 @@ impl World {
         self.presentation.fx.clear();
         self.presentation.fx_frame = Default::default();
         self.field_vm.eased_moves.clear();
+        // The second sweep's own class: `FUN_80037018` is the camera-register
+        // zone ramp's handler (op `43 03..06`), whose records the engine holds
+        // off the pool on `camera.register_ramps`. The sweep at
+        // `0x8003B414..0x8003B43C` ORs `+0x10 |= 8` into every node whose
+        // `+0x0C` is that handler, so no ramp of the last scene outlives the
+        // load. The four registers it wrote go back to the zone-miss set the
+        // file starts from: retail's registers ARE the zone block's words
+        // (`FUN_801DBC20` stores all four at `0x801DBD90..0x801DBE84`), which
+        // the new scene's first zone query rewrites. Kept, Ratayu's
+        // projection ramp (`retockin` `P1[0]`, GTE `H` at `0x8007B618`) went
+        // on writing `H` in every later scene, and its last value overrode
+        // each next scene's zone `H` on the landing frame.
+        // REF: FUN_80037018, FUN_801DBC20
+        self.camera.register_ramps.clear();
+        self.camera.registers = Default::default();
+        // The property-ramp pool goes too. On an ordinary scene change
+        // (`_DAT_8007B8B8 != 2`, the `bne` at `0x8003B510` to `0x8003B658`)
+        // the loader runs an inlined copy of the pool reset `FUN_8003CDA8`
+        // (`0x8003B854..0x8003B898`): every slot's busy word `+0x1E` zeroed,
+        // slot 0's links cleared, `_DAT_801C66BE = 1`, and a fresh driver
+        // actor spawned from `0x800742EC`. A floor-rung ramp (move-VM ext
+        // `0x29`) or a timed `4C 49` camera-offset ramp still running at the
+        // door therefore ends there instead of writing into the next scene's
+        // ladder or offset. The return from a battle (`== 2`) jumps past it
+        // (`j 0x8003B9A8` at `0x8003B650`), and so does the engine's, which
+        // runs no MAN load.
+        // REF: FUN_8003CDA8, FUN_8003C5F0
+        self.terrain.floor_ladder_ramps.reset_pool();
+        self.camera.offset_ramps.reset_pool();
         // The MAN loader resets the live audio level `_DAT_8007B910` to the
         // configured one, so a field script's duck (`4C 4D`) ends at the door.
         self.audio.field_duck_pct = Some(100);
@@ -756,6 +785,55 @@ mod tests {
         w.man_load_actor_reset();
         assert!(!w.presentation.fx.is_active(), "every widget freed");
         assert!(w.presentation.fx_frame.is_empty(), "nothing left to draw");
+    }
+
+    /// The MAN loader's second sweep retires every `FUN_80037018` node, the
+    /// camera-register zone ramp (`0x8003B414..0x8003B43C`), and the next
+    /// scene's zone query rewrites the four registers. A ramp spawned by
+    /// `retockin`'s entry script must not reach the next scene.
+    #[test]
+    fn a_scene_load_retires_the_camera_register_ramps() {
+        use legaia_engine_field::register_ramp::{
+            CameraRegisterFile, RampSlot, spawn_register_ramp,
+        };
+        let mut w = World::default();
+        // `retockin` P1[0]: `43 03 0E 5A 13 5F 58 01 A0 00`.
+        let ramp = spawn_register_ramp(3, [0x0E, 0x5A, 0x13, 0x5F], 0x158, 0xA0).unwrap();
+        w.camera.register_ramps.push(ramp);
+        w.camera.registers.set(RampSlot::Dat8007B618, 0xA0);
+        assert!(w.camera.registers.written());
+        w.man_load_actor_reset();
+        assert!(w.camera.register_ramps.is_empty(), "the ramp is retired");
+        assert_eq!(w.camera.registers, CameraRegisterFile::default());
+        assert!(
+            !w.camera.registers.written(),
+            "the next scene's zone owns H"
+        );
+    }
+
+    /// The MAN loader's inlined pool reset (`0x8003B854..0x8003B898`) ends a
+    /// floor-rung ramp and a timed camera-offset ramp at the door.
+    #[test]
+    fn a_scene_load_resets_the_property_ramp_pool() {
+        let mut w = World::default();
+        w.ramp_camera_offset_ease(0x100, 60);
+        w.ramp_camera_scene_offset(0x80, 60);
+        w.terrain
+            .floor_ladder_ramps
+            .install(legaia_engine_motion_vm::ambient_motion::Ramp {
+                dest: 3,
+                owner: 0,
+                start: 0,
+                end: -0x80,
+                total: 60,
+                remaining: 60,
+                kind: legaia_engine_motion_vm::ambient_motion::RampKind::U16,
+            });
+        assert_eq!(w.camera.offset_ramps.active(), 2);
+        assert_eq!(w.terrain.floor_ladder_ramps.active(), 1);
+        w.man_load_actor_reset();
+        assert_eq!(w.camera.offset_ramps.active(), 0);
+        assert_eq!(w.terrain.floor_ladder_ramps.active(), 0);
     }
 
     #[test]

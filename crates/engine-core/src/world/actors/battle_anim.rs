@@ -700,6 +700,23 @@ impl World {
                     if let Some(before) = a.battle_pose_history.get(1).map(|f| f.pose.clone()) {
                         a.pose_frame = Some(before);
                     }
+                } else if commit_after {
+                    // The re-commit zeroed the cursor ahead of the draw, so the
+                    // draw's decode reads the loop's keyframe 0, not the
+                    // advance's overshoot past the end: a step-3 idle wrapping
+                    // from `136` decodes at `0`, where the advance's `148`
+                    // blends a quarter toward keyframe 1. The body pair the
+                    // next pass's range law and separation read is keyframe
+                    // 0's: `noaru_barra_v2_strike`'s Vahn wraps on the pass
+                    // Barra's swing lands, retail's decode reads the
+                    // centroid `(-5, -60)` at cursor `0` (the port's blend
+                    // read `(-5, -61)`), and that one unit tipped the
+                    // separation pass's pair angle over `sin >> 10`'s step,
+                    // pushing Vahn `(+3, -7)` and Barra `(-3, +7)` where
+                    // retail's push is `(+1, -7)` / `(-1, +7)`.
+                    // PORT: FUN_8004AD80 (`0x8004B068`, the cursor zero the draw decodes)
+                    // REF: FUN_8004998C (the draw's decode at the zeroed cursor)
+                    self.show_committed_first_keyframe(i);
                 }
             }
             // `+0x1F7`, written for every node right after its cursor

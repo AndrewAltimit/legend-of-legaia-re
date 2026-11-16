@@ -27,6 +27,30 @@ impl World {
         balloon.pen()
     }
 
+    /// The pause menu's accept engages the player, and a balloon with no
+    /// parent link ends on it.
+    ///
+    /// Retail's menu-open accept in `FUN_801D01B0` raises the player's engaged
+    /// bit (`+0x10 & 0x80000`, the capture in `field-menu.md`'s *party
+    /// readout under the pause wipe*), and the balloon handler's handshake
+    /// fast-forwards a balloon with no parent link to its end on that bit
+    /// (`FUN_801DA7F0`, `0x801DA838..0x801DA88C`): the place-name banner is
+    /// gone from the press on. The engine's per-tick substitute for the bit
+    /// (`dialogue_owns_input`) sees no dialogue at a pause press, and the menu
+    /// suspends the field tick, so the banner stayed up under the wipe and
+    /// came back with its remaining frames when the menu closed. A linked
+    /// balloon (a script's `4C E1` from the interaction that holds the
+    /// engagement) keeps its handshake.
+    ///
+    /// REF: FUN_801DA7F0
+    pub fn end_unlinked_balloon_on_engage(&mut self) {
+        if let Some(b) = self.cutscene.text_balloon.as_mut()
+            && !b.parent_link
+        {
+            b.timer = b.total;
+        }
+    }
+
     /// The live `4C E1` balloon's raw page bytes while it is past its startup
     /// tick and still running - i.e. exactly the frames retail's handler
     /// reaches `FUN_80036888`. `None` otherwise.
@@ -58,7 +82,7 @@ impl World {
     /// Nothing counts down in a zone ramp, so a record never completes - it
     /// tracks the player and runs backwards when he walks back. Retail clears
     /// them on the MAN loader's retire sweep, which is
-    /// [`World::reset_for_scene_entry`] here. Two arms do drop a record:
+    /// [`World::man_load_actor_reset`] here. Two arms do drop a record:
     /// an out-of-range destination width (retail sets the actor's own
     /// `+0x10 |= 8` yield bit instead of writing) and a degenerate `z_lo ==
     /// z_hi` window (retail divides by the zero span and executes the MIPS

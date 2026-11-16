@@ -381,3 +381,53 @@ fn shop_edges_reach_the_sfx_channel() {
     assert_eq!(queued(&rt), before + 1, "an idle frame keys nothing");
     eprintln!("[ran] shop cue reached the page SFX channel");
 }
+
+/// Every frame the shop holds the screen after its opening fade stands on
+/// black, its closing frames included: the native window skips the field's
+/// 3D pass on `MenuRuntime::covers_field` alone, and the page paints the
+/// overlay's black backdrop for the same frames. The page used to close the
+/// layer once the exit's windows had slid off and nothing was left to draw,
+/// so for the last frames before the session dropped the frozen field showed
+/// through where the window shows black (host pair `shop_hold`, `bylon`,
+/// ticks 341 and 351: 28.9% of the frame off).
+#[test]
+fn a_closing_shop_stands_on_black_until_it_drops() {
+    let Some(mut rt) = loaded_in_town() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    if !rt.debug_open_test_shop() {
+        eprintln!("[skip] no priced merchant record available on this disc build");
+        return;
+    }
+    settle(&mut rt);
+    rt.play_shop_input(DOWN);
+    rt.play_shop_input(DOWN);
+    rt.play_shop_input(CROSS);
+    let mut frames = 0;
+    let mut empty_frames = 0;
+    while rt.play_shop_is_open() && frames < 64 {
+        let v: serde_json::Value =
+            serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");
+        assert_eq!(
+            (v["open"].as_bool(), v["backdrop"].as_str()),
+            (Some(true), Some("black")),
+            "exit frame {frames}: the shop still owns the screen, so the overlay paints black"
+        );
+        if v["sprites"].as_array().is_some_and(|a| a.is_empty())
+            && v["texts"].as_array().is_some_and(|a| a.is_empty())
+        {
+            empty_frames += 1;
+        }
+        rt.play_shop_input(0);
+        frames += 1;
+    }
+    assert!(!rt.play_shop_is_open(), "Exit closes the shop");
+    assert!(
+        empty_frames > 0,
+        "the exit reaches frames with no window left to draw - the case this pins"
+    );
+    let v: serde_json::Value =
+        serde_json::from_str(&rt.play_overlay_draws_json(320, 240)).expect("overlay json");
+    assert_eq!(v["open"], false, "with the shop gone the layer closes");
+}

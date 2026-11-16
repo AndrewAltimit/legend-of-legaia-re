@@ -2322,9 +2322,7 @@ The slot is a literal operand against the `0x80084708` records, one op per
 party member. Charge and restore are decoupled, so a free rest is the same
 tail without the gate, and the price is a script literal - there is no inn
 cost table. The full flow, the cost scanner (`legaia_scene_formats::inn_costs`) and
-the port (`restore_party_slot`; `MenuRuntime::open_inn` is an
-engine-side convenience session, not a port of a retail screen) are on
-[`inn.md`](inn.md).
+the port (`restore_party_slot`) are on [`inn.md`](inn.md).
 
 ## Battle readout tint law (the panel's sibling)
 

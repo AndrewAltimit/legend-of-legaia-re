@@ -30,6 +30,10 @@ pub fn install(ctx: &egui::Context) {
         ctx.style_mut_of(theme, |s| {
             s.spacing.button_padding = spacing::BUTTON_PADDING.into();
             s.spacing.item_spacing = spacing::ITEM_SPACING.into();
+            s.text_styles.insert(
+                egui::TextStyle::Small,
+                egui::FontId::proportional(spacing::SMALL_TEXT),
+            );
         });
     }
 }
@@ -173,6 +177,21 @@ mod tests {
                     weak.contrast(s)
                 );
             }
+        }
+    }
+
+    /// Hint lines (`.small()`) are set at the shared smallest size in both
+    /// themes, not egui's 9 pt fine print.
+    #[test]
+    fn small_text_is_the_shared_hint_size() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        for theme in [egui::Theme::Dark, egui::Theme::Light] {
+            let style = ctx.style_of(theme);
+            let small = egui::TextStyle::Small.resolve(&style);
+            assert_eq!(small.size, spacing::SMALL_TEXT, "{theme:?}");
+            let body = egui::TextStyle::Body.resolve(&style);
+            assert!(small.size < body.size, "{theme:?}");
         }
     }
 }

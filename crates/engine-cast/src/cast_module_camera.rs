@@ -306,6 +306,15 @@ pub struct ModuleCamState {
     /// reads the caster (`0x801F7D3C..0x801F7DDC`), so the director frames
     /// the restored pair.
     pub caster_saved: Option<(i16, i16, u16)>,
+    /// The caster's height `+0x36` beside [`Self::caster_saved`], where a
+    /// re-seat also lifts it: PROT 0966's arm 21 stands Cort at `-0x380`
+    /// and arm 27 copies the saved `+0x34..+0x3B` back.
+    pub caster_saved_y: Option<i16>,
+    /// The end-of-clip step `+0x0E` of each party seat's action entry 5,
+    /// as PROT 0966's arm 0 found it before halving it
+    /// (`0x801C9360[i][5] + 0x0E`, saved at `0x801FA49C + i * 2`), for arm
+    /// 27's restore.
+    pub party_end_step_saved: [Option<i16>; 3],
     /// The caster's target code `+0x1DD` as the host last read it: a seat
     /// below `8`, a group code from `8` (PROT 0914 and 0929 frame a group
     /// through `FUN_801DCEAC` and a seat otherwise). `None` where the host
@@ -1160,6 +1169,29 @@ pub fn heading(a: ModuleSeat, b: ModuleSeat) -> u16 {
     bearing_12bit_approx(a.z, a.x, b.z, b.x)
 }
 
+/// The facing a capture-class body's opening turn gives its caster: the
+/// bearing `FUN_80019B28` from the caster onto its target plus a half turn,
+/// `+0x46 = (bearing + 0x800) & 0xFFF`. For the party code `8` the target is
+/// the row's centroid `FUN_801DCEAC(8, ..)` measures, negated off the stack
+/// (`ModuleCamState::target_aim`, fed for [`CAPTURE_TARGET_AIM_BODIES`]);
+/// for a seat code, the victim seat's live pair. The idiom, read off PROT
+/// 0936 (`0x801F6B48..0x801F6B8C`), 0939 (`0x801F6AC4..0x801F6B18`), 0946
+/// (`0x801F6B04..0x801F6B58`), 0953 (`0x801F6BB4..0x801F6C08`), 0956 and
+/// 0963; PROT 0937's (`0x801F6B04..0x801F6B30`) takes the seat alone.
+pub fn caster_turn_onto_target(st: &ModuleCamState, seats: ModuleCamSeats) -> u16 {
+    let c = seats.caster;
+    let onto = match st.target_aim.filter(|_| st.target_code == Some(8)) {
+        Some(a) => bearing_12bit_approx(
+            a.centroid_z.wrapping_neg(),
+            a.centroid_x.wrapping_neg(),
+            c.z,
+            c.x,
+        ),
+        None => heading(seats.victim, c),
+    };
+    onto.wrapping_add(0x800) & 0xFFF
+}
+
 /// Half a trig sample, rounded toward zero - the `srl 0x1f; addu; sra 1`
 /// idiom every placement arm uses.
 pub(super) fn half(v: i16) -> i32 {
@@ -1751,6 +1783,24 @@ pub const fn module_seat_arm(prot_entry: u32) -> Option<u8> {
 /// The director for a player-Seru module, by owning PROT entry.
 pub fn module_director(prot_entry: u32) -> Option<ModuleDirector> {
     module_profile(prot_entry).map(|p| p.direct)
+}
+
+/// The capture-class bodies whose directors frame or turn on the cast's
+/// target group as `FUN_801DCEAC` measures it
+/// ([`ModuleCamState::target_aim`]): every capture-class module image that
+/// calls the routine (`jal 0x801DCEAC`) - Earthquake (0935), Hyper Crush
+/// (0936), Mystic Circle and Chaos Breath (0938), Spore Gas (0939), Curse All
+/// (0944), Call Wave / Big Wave (0946), Terio Punch (0953), Water Hazard
+/// (0956) and Genocidal Cannon (0963). Each turns its caster onto the party
+/// row's centroid for the target code `8` ([`caster_turn_onto_target`]); the
+/// world feeds the aim to these. `capture_target_aim_sites` holds the table to
+/// the module bytes on a disc.
+pub const CAPTURE_TARGET_AIM_BODIES: &[u32] = &[935, 936, 938, 939, 944, 946, 953, 956, 963];
+
+/// Whether PROT `prot_entry`'s capture-class director reads the target
+/// group's aim ([`CAPTURE_TARGET_AIM_BODIES`]).
+pub fn capture_body_reads_target_aim(prot_entry: u32) -> bool {
+    CAPTURE_TARGET_AIM_BODIES.contains(&prot_entry)
 }
 
 #[cfg(test)]

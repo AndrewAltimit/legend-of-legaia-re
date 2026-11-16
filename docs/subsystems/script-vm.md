@@ -570,6 +570,88 @@ and `ropeway`'s paper (`P1[21]`, `CC 07 8C 18 00`) drive their objects the
 same way. Disc-gated:
 `crates/engine-scene-host/tests/bylon_west_voz_monk_disc.rs`.
 
+### Which context an op runs on
+
+Retail has one rule for every runner. The context runner hands the
+dispatcher the executing actor's own context, and the prologue swaps an
+extended op's resolved target into `s5` before the arm runs
+(`0x801DE894..0x801DE8B4`). Every arm that touches an actor word addresses it
+off `s5`, so the system script, a talk, a touched object's record and a
+spawned record all write the actor the id byte names. A plain op writes the
+executing actor; `0xF8` names the player object.
+
+The port's runners route those ops case by case, and an op a runner does not
+route runs on the context the runner stands on:
+
+| Runner | Stands on | Routes onto the named actor |
+|---|---|---|
+| System script (`World::step_field`) | the `0xFB` context | seats, class bits, box tests, facings, and every actor-word op (`step_on_resolved_channel`) |
+| Placement pre-run | the placement's own channel | every extended op with a resolved channel |
+| Object-bind pre-run | the object's own channel | nothing |
+| Talk (`World::step_inline_dialogue`) | a stand-in for the talker | the listed actor ops, object words, player legs, the talker's own actor words |
+| Prop runner | a stand-in for the object | NPC actor words, object prop words, player legs |
+| Spawned record / interaction | the record's own context | every extended op with a resolved channel |
+
+The actor-word ops are the clip `22`, the clip-control word `2B` / `2C` /
+`2D`, the morph arm `4B`, the ambient-tree install `34 3x` and the resolved-actor
+`4C` sub-ops ([menu-ctrl table](script-vm-menuctrl.md#which-sub-ops-act-on-the-resolved-actor)).
+A player-aimed op that no runner models reaches the player through
+`field_step_routed` or the VM's `player_cflag` hook: the scale `CC F8 40`,
+the height and tilt words, the look turn, the clip rate `CC F8 41`, the
+party-bank and height-law bits, the shadow-drop bit `B1 F8 15` and the
+ambient install `B4 F8 3x`.
+
+The disc-wide routing census
+(`crates/engine-scene-host/tests/field_route_census_disc.rs`) enters every
+field scene under a cold bank and a late milestone (or all thirty-six flag
+states), lets the system script and spawned records run, talks every talker
+to the end of its talk and touches every prop, and lists each op a runner
+stepped on its fall-through context. The routes it showed missing, each pinned
+in `crates/engine-scene-host/tests/field_context_routing_disc.rs`:
+
+- `koin1` `P1[0]` re-stages six objects with `CC 02..07 50 <model>`, the
+  stage's light rig over the hall (models `98..103`, none of them the mesh
+  its object's `.MAP` draw carries); on the system context the objects kept
+  their `.MAP` meshes and the stage stood dark.
+- `town0e` `P1[0]` installs an ambient tree on each of four villagers
+  (`B4 07 30 01` behind `CC 07 8C 05 00`); on the system context the trees
+  staged at the system context's seat.
+- `juui2`'s entry, `tunnelc`'s and the opening records of `opdeene`,
+  `town01` and `cave01` raise or drop the player's shadow-suppress bit
+  (`B1` / `B2 F8 15`, read by the shadow gate `0x8001BE20..0x8001BE48`);
+  stepped on the issuing context, a collapsed player kept its blob. The field
+  initializer allocates a fresh player on a load (`FUN_801D6704`
+  `0x801D6D68..0x801D6D7C`), so the bit starts clear in every scene.
+- A talk's `A2 <id> <clip>` re-points the named NPC's clip (`bubu1` `P1[22]`
+  plays its helper's gestures with `A2 4F 09` / `A2 4F 17`); the talk timed
+  the clip on a cursor nobody drew.
+- A talk's own look turn (`bubu1` `P1[7]`, `CC 1E 45 ..` on its own id) turns
+  the talker's head; keyed off the stand-in's party-bank bit it turned the
+  player's.
+- A talk's compass walk on the player (`C1 F8 02 82`, `bubu1` `P1[7]` and
+  `doman` `P1[15]`) glides the player and parks the talk until it lands.
+- `suimon`'s Water Gate talk (`P1[4]`) plays the gate's clip with `A2 00 02`
+  and moves the sluice objects with `CC 05..09 42 ..`.
+- `bylon` `P1[47]`'s talk sets the player's clip rate with `CC F8 41 ..`.
+- `town0b` `P1[36]`'s talk seats object 8 with `CC 08 51 1C ..`, as the
+  system script seats an object.
+- A talk's `AB` / `AC <id> <bit>` on a placement writes that placement's
+  clip-control word, which its clip tick reads every frame, and not only the
+  cursor the talk times its waits on (`balden` `P1[4]`, `AB 1C 01`). Behind
+  the talker's own id it lands on the talker's bridged word, and a seat
+  behind its own id (`balden` `P1[61]`, `A3 54 61 0F`) seats the talker.
+
+- The player-aimed `B1 F8 0D` (the slow-fall class `0x2000`, which halves
+  the floor glide; `town01` `P2[3]`) and `B1 F8 13` (the movement lock;
+  `conc` `P1[9]` and `suimon` `P1[4]`, ahead of a fade and a scene change)
+  land on the player's flag word.
+- A talk's own clip rate (`4C 41`, `CC <own id> 41`; `doman` `P1[15]`,
+  `koin3` `P1[25]`, `ropeway2` `P1[33]`) reaches the talker's channel, whose
+  `+0x6A` its clip tick reads.
+
+The one kind of site the census still lists is a talk's own `31 16` /
+`32 16` (`+0x10 & 0x400000`), a bit nothing in the port reads.
+
 The **install slice** comes first. When the scene loads, `FUN_8003AB2C`
 runs `P1[0]` straight through the dispatcher (only when its first byte is
 `0x24` / `0x25`) and leaves after the op it ran was `0x21`
@@ -1585,6 +1667,15 @@ i.e. a **projection ramp** - the field of view opens or closes as the player
 crosses the zone. Ports: `engine-field::register_ramp` (spawn + record) +
 `World::tick_register_ramps` (the handler) + `Camera::tick_globals` (the
 consumer).
+
+Nothing counts down, so a ramp lives until the scene does. The MAN loader's
+second retire sweep (`0x8003B414..0x8003B43C` in `FUN_8003AEB0`) ORs the
+kill bit into every node whose `+0x0C` is `0x80037018`, and the next scene's
+zone query (`FUN_801DBC20`, stores at `0x801DBD90..0x801DBE84`) rewrites all
+four registers. The port does both in `World::man_load_actor_reset`: the
+records go and the register file returns to its zone-miss set. The two
+decoded sites are `retockin` (Ratayu) `P1[0]` and its ending twin
+`edretoin` `P1[0]`, the same `43 03 0E 5A 13 5F 58 01 A0 00`.
 
 Not a "sound register ramp" writing four target values over a `ticks`
 duration with a `curve`; see

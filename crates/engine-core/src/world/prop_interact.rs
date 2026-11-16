@@ -913,6 +913,12 @@ impl World {
                     // record's own context alone, neither landed and the
                     // sprout stayed where the bridge should have grown.
                     // REF: FUN_801DE840 (the op-0x4B arm 0x801E0820..0x801E08C0), FUN_80024E08
+                    host.world.note_route_fallthrough(
+                        crate::world::route_census::RouteRunner::Prop,
+                        own_record.and_then(|k| u16::try_from(k).ok()),
+                        &id.bytecode,
+                        id.pc,
+                    );
                     let own_actor_op = !player_target
                         && !other_target
                         && (b == 0x4B || (b == 0x4C && id.bytecode.get(id.pc + 1) == Some(&0x50)));

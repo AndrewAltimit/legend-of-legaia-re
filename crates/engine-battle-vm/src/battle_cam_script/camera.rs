@@ -230,6 +230,8 @@ pub(super) const ACTION_SEED_STATE: u8 = 0x0C;
 pub(super) const ATTACK_BAND_FIRST: u8 = 0x14;
 pub(super) const ATTACK_BAND_LAST: u8 = 0x20;
 pub(super) const ACTION_DONE_STATE: u8 = 0x50;
+/// The summon band's last state `0x38`, which calls no framing case.
+pub(super) const SUMMON_DONE_STATE: u8 = 0x38;
 
 /// The Battle Camera option's Close value (`_DAT_800846C0 == 0`), the one
 /// every dynamic arm of the action shots runs under.
@@ -329,6 +331,15 @@ pub struct BattleCamera {
     /// which owns the camera through the summon band's `0x35` / `0x36`
     /// ([`BattleCamera::arm_module_shot`]).
     pub(super) module_glide: Option<Glide>,
+    /// A case-8 frame a module arm armed this pass that the camera has not
+    /// yet walked ([`BattleCamera::arm_module_end_frame`]): the walker
+    /// `FUN_8002149C` runs in the frame the builder armed it, so a pass that
+    /// also leaves the module's states still takes that step.
+    pub(super) module_end_frame_fresh: bool,
+    /// The release walked that frame on this pass: the pass is the module's,
+    /// and the next state's framing arms from the walked pose on the pass
+    /// after.
+    pub(super) end_frame_owns_pass: bool,
     /// Set once a successful flee arms its shot
     /// ([`BattleCamera::arm_escape_shot`]): from then on the shot owns the
     /// camera for the rest of the battle, whatever the phase or state.

@@ -277,8 +277,36 @@ impl World {
         // ... and the stage loader that re-seeds the floor runs four entry
         // counter units into the sweep (`World::tick_battle_ambient`).
         self.battle.stage_registration_pending = true;
+        // The battle block battle init zeroes holds the context words this
+        // state mirrors (`BattleState::reset_context_mirrors`).
+        // REF: FUN_80055B6C (`0x80055F14..0x80055F24`)
+        self.battle.reset_context_mirrors();
         self.battle.ground_grid_drawn = true;
         self.battle.end = None;
+        // The frame driver's cost history is retail's one sixteen-entry ring
+        // `0x80084098` (`FUN_80016B6C`), which every field frame between two
+        // fights rewrites. The engine's battle copy sits idle outside a
+        // battle, so the second fight of a session opened on the first one's
+        // last sixteen costs - a full ring of battle frames, step `3` from its
+        // first pass where the first fight opens on the field's `2`. Every
+        // fight opens where the first does; the frame ids run on unbroken, so
+        // no per-frame latch of the last fight can match one of this.
+        // REF: FUN_80016B6C
+        {
+            use legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
+            self.battle.frame_cost_ring = Default::default();
+            self.battle.frame_cost_step = DEFAULT_BATTLE_FRAME_STEP;
+            self.battle.frame_work = 0;
+            self.battle.frame_cost_state = None;
+            self.battle.cast_arm_pass = None;
+            // No draw of this battle has measured the cast census yet: its
+            // first pass measures it at its own head, as the first fight's
+            // did.
+            self.battle.cast_census_drawn = false;
+            let tick = self.clock.display_frames;
+            self.battle.frame_clock.retime_span(tick, 0);
+            self.set_battle_frame_step(DEFAULT_BATTLE_FRAME_STEP);
+        }
         // The end-of-battle marker starts clear: battle init stores zero to
         // `DAT_8007BD71` (`sb zero` at `0x80056014`), the byte whose `0xFE`
         // hands the battle frame to the results sequencer. A sequencer the

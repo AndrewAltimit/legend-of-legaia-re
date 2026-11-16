@@ -510,7 +510,29 @@ impl<S: AudioSink> AudioDirector<S> {
             self.release_sustained_sfx();
         }
         self.sfx_in_battle = Some(in_battle);
-        let ops = world.take_sfx_ring_ops();
+        let mut ops = world.take_sfx_ring_ops();
+        if in_battle && ring_at_frame_end() {
+            // A harness seat for the cast channels (`scripts/ci/audio-pcm.py`'s
+            // `cast_steps`): retail's frame driver drains the ring at the
+            // head of `FUN_80016B6C`, after the frame's work, so a battle cue
+            // keys a frame step after the pass that pushed it (the settled
+            // "when does a ring cue sound against the frame that pushed it").
+            // The port keys it on the pushing tick, one step ahead of its
+            // picture's order, which it keeps; the oracle's render holds each
+            // batch the step instead. No play path sets it.
+            let now = world.clock.display_frames;
+            if !ops.is_empty() {
+                let due = now + u64::from(world.battle_frame_step().max(1));
+                self.ring_held.push((due, std::mem::take(&mut ops)));
+            }
+            while self.ring_held.first().is_some_and(|(due, _)| *due <= now) {
+                ops.extend(self.ring_held.remove(0).1);
+            }
+        } else if !self.ring_held.is_empty() {
+            let mut held: Vec<SfxRingOp> = self.ring_held.drain(..).flat_map(|(_, b)| b).collect();
+            held.append(&mut ops);
+            ops = held;
+        }
         // One `World::tick` is one vsync, and the scheduler ticks once per
         // `World::tick`, so the ring ages by the vsyncs one tick spans
         // (`display_frame_step`, always 1) - not by the game-tick cadence
@@ -714,4 +736,11 @@ impl<S: AudioSink> AudioDirector<S> {
     pub fn clear_sfx(&mut self) {
         self.sfx_sched.clear();
     }
+}
+
+/// Whether the harness holds battle ring cues to their frame's end
+/// (`LEGAIA_DIAG_CAST_RING_AT_FRAME_END`, read once).
+fn ring_at_frame_end() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("LEGAIA_DIAG_CAST_RING_AT_FRAME_END").is_ok())
 }

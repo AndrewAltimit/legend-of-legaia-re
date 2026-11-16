@@ -106,8 +106,10 @@ disc...* opens the launcher's own disc finder instead, in place of the
 options: the folder of the disc last used (else Downloads, else the home
 folder), its subfolders and its `.bin` / `.cue` files, then the usual places
 (home, Downloads, Desktop, Documents, the program's folder, and the top of each
-drive). Cross opens a folder or tries a disc image, and a disc that passes the
-check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
+drive). Each disc image is checked as it is listed: the one in use reads *In
+use*, another release of the game *Wrong disc*, a file that is no PlayStation
+image *Unreadable*, and the row's help says why. Cross opens a folder or tries
+a disc image, and a disc that passes the check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
 `Esc` closes the finder. The keyboard reaches it too, as *Find a disc on this
 computer...* on the *Recent* page. With a controller in hand, choosing a
 memory card or an expansion pack past the remembered ones opens the same

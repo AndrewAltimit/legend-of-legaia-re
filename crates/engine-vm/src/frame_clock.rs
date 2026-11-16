@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Frame clock: the adaptive frame-step factor and its telemetry, the vsync accumulators, the sim-tick / display-frame counters and play time.
+#[derive(Debug)]
 pub struct FrameClock {
     /// Whole seconds of the retail play counter (`0x80084570`, in the save
     /// block at `+0x430`), which counts **vsyncs the game ran**: the frame

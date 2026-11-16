@@ -821,3 +821,30 @@ fn the_pull_in_walks_the_depth_too() {
     cam.set_phase(BattleCamPhase::Recover);
     assert_eq!(cam.glide_target().tr[2], prescale_tr_z(3072 * 3 / 5));
 }
+
+/// A done arm's case 8 armed on the pass that ends the summon band walks its
+/// first step before the band lets the shot go, and the next state's framing
+/// waits a pass: retail's walker steps the tween the frame the builder armed
+/// it, and `0x37`'s case 6 builds from the walked pose a pass later.
+#[test]
+fn a_done_arms_case_8_walks_once_as_the_band_ends() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    cam.set_actor(BattleCamActor::default());
+    cam.observe_action_state(0x36);
+    cam.target = Some(PostActionTarget {
+        world: [200.0, 0.0, 600.0],
+        live: false,
+        ..Default::default()
+    });
+    let start = cam.pose;
+    cam.arm_module_end_frame();
+    assert_eq!(cam.pose.pitch, start.pitch, "armed, not yet walked");
+    cam.observe_action_state(0x37);
+    let walked = cam.pose;
+    assert!(
+        walked.pitch > start.pitch && walked.pitch < DEATH_PITCH_FLAT as f32,
+        "one step toward the death framing: {}",
+        walked.pitch
+    );
+    assert!(cam.end_frame_owns_pass, "the pass is the module's");
+}

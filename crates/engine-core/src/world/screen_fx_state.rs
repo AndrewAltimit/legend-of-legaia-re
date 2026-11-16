@@ -6,6 +6,7 @@
 use super::*;
 
 /// Full-screen presentation state: fades, tints, the screen-effect widget host and the cinematic bars.
+#[derive(Debug)]
 pub struct ScreenFxState {
     /// Last fade colour requested by move-VM ext sub-op 0x3C - engines
     /// drain this each frame to drive the screen fade. `None` when no

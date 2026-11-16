@@ -400,7 +400,7 @@ const WIDTH: i32 = 300;
 const ROW_H: i32 = super::settings_panel::ROW_H;
 const HELP_H: i32 = 12;
 const NOTE_LINES: usize = 2;
-const CONTROLS: &str = "Up/Down pick  Cross use  Esc close";
+const CONTROLS: &str = "Arrows pick  Enter use  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
 const PAD_CONTROLS: &str = "D-pad pick  {cross} use  {circle} close";
 const FLIP_HINT: &str = "L1/R1 or Tab: keys";

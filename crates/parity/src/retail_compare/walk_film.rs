@@ -165,6 +165,7 @@ impl WalkFilm {
         // stretch runs on at the raised step until those samples leave the
         // ring, and falls to the floor when retail's does. A harness seat;
         // `LEGAIA_RC_NO_FRAME_RING=1` holds the state's step instead.
+        let mut anchor_cost = None;
         if std::env::var_os("LEGAIA_RC_NO_FRAME_RING").is_none()
             && let Some((history, cursor, step, cost)) = retail.frame_cost_seat()
         {
@@ -177,12 +178,13 @@ impl WalkFilm {
             }
             // The frame-cost model, where it prices the field, carries the
             // change from the state's measured cost, not its own level
-            // (`World::anchor_field_frame_cost`). A harness seat;
+            // (`World::anchor_field_frame_cost`), once the camera and the
+            // fog pool stand where the state's do (below). A harness seat;
             // `LEGAIA_RC_NO_COST_ANCHOR=1` runs the model as play does.
             if world.toggles.field_frame_cost
                 && std::env::var_os("LEGAIA_RC_NO_COST_ANCHOR").is_none()
             {
-                world.anchor_field_frame_cost(cost);
+                anchor_cost = Some(cost);
             }
         }
         let hold_first = seat_frame_phase(&mut session.host.world, retail.vsync_phase);
@@ -199,10 +201,50 @@ impl WalkFilm {
         // frame's fog walk, not the next frame's actor pass. Run it here, so
         // the pool ages and frees a pass in step with retail's and the first
         // spawner reads the count that walk writes.
-        if pending_fog_walk(retail) && std::env::var_os("LEGAIA_RC_NO_FOG_WALK").is_none() {
+        //
+        // A state saved inside the walk itself has walked part of the pool
+        // already: the walk counts its survivors into the live word as it
+        // goes, slot by slot, so the first `live` records up are the frame's
+        // walked ones and only those past them still owe the frame's step.
+        let pending = pending_fog_walk(retail);
+        if pending != PendingFogWalk::None && std::env::var_os("LEGAIA_RC_NO_FOG_WALK").is_none() {
             let step = u32::from(session.host.world.clock.frame_step.max(1));
+            let walked: Vec<usize> = match pending {
+                PendingFogWalk::From(rank) => {
+                    let pool = &mut session.host.world.fog;
+                    let done: Vec<usize> = (0..pool.records.len())
+                        .filter(|&i| pool.records[i].alive)
+                        .take(rank)
+                        .collect();
+                    for &i in &done {
+                        pool.records[i].alive = false;
+                    }
+                    done
+                }
+                _ => Vec::new(),
+            };
             session.host.world.fog.pending_dt = step;
             session.fog_render_tick();
+            let pool = &mut session.host.world.fog;
+            for &i in &walked {
+                pool.records[i].alive = true;
+            }
+            pool.live += walked.len() as u16;
+        }
+        // The anchor prices the seat with the fog sheets the state's pool
+        // draws, which the seat itself has not emitted (an installed
+        // snapshot carries no quads): a walk over a copy of the pool counts
+        // them, and only the count is kept. Anchored on an empty sheet list,
+        // `retona_field_card_boot`'s `45` sheets had read as a cost rise the
+        // moment the first walk drew them.
+        if let Some(cost) = anchor_cost {
+            let saved = session.host.world.fog.clone();
+            session.host.world.fog.pending_dt = 1;
+            session.fog_render_tick();
+            let quads = std::mem::take(&mut session.host.world.fog.quads);
+            session.host.world.fog = saved;
+            session.host.world.fog.quads = quads;
+            session.host.world.anchor_field_frame_cost(cost);
         }
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
@@ -249,7 +291,7 @@ impl WalkFilm {
                 let mut p = self.out.clone();
                 p.set_extension("fog.csv");
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
-                writeln!(w, "tick,live,cap,recs")?;
+                writeln!(w, "tick,live,cap,recs,box,view")?;
                 Some(w)
             }
             None => None,
@@ -275,7 +317,7 @@ impl WalkFilm {
                 let mut w = std::io::BufWriter::new(std::fs::File::create(&p)?);
                 writeln!(
                     w,
-                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells"
+                    "tick,fired,step,dec_draws,dec_prims,dec_verts,ground,placed_draws,placed_prims,placed_verts,npcs,fog,parts,actors,scene,dec_quads,dec_lit,placed_quads,placed_lit,cost,npc_prims,loop_cells,fog_quads"
                 )?;
                 Some(w)
             }
@@ -305,14 +347,30 @@ impl WalkFilm {
                         )
                     })
                     .collect();
-                writeln!(w, "{t},{},{},{}", pool.live, pool.cap, recs.join(" "))?;
+                let b = session.host.world.terrain.region_attributes.box_bytes;
+                let v = pool.view_window.unwrap_or_default();
+                writeln!(
+                    w,
+                    "{t},{},{},{},{}:{}:{}:{},{}:{}:{}:{}",
+                    pool.live,
+                    pool.cap,
+                    recs.join(" "),
+                    b[0],
+                    b[1],
+                    b[2],
+                    b[3],
+                    v[0],
+                    v[1],
+                    v[2],
+                    v[3]
+                )?;
             }
             if let Some(w) = cost.as_mut() {
                 let world = &session.host.world;
                 let f = world.field_frame_features().unwrap_or_default();
                 writeln!(
                     w,
-                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                    "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                     u8::from(world.clock.game_tick_fired),
                     world.clock.frame_step,
                     f.decoration_draws,
@@ -334,6 +392,7 @@ impl WalkFilm {
                     world.clock.frame_cost.unwrap_or(-1),
                     f.npc_prims,
                     f.decoration_loop_cells,
+                    f.fog_quads,
                 )?;
             }
             if session.host.world.active_scene_label != n0_scene {
@@ -431,20 +490,56 @@ fn seat_frame_phase(world: &mut legaia_engine_core::world::World, phase: u32) ->
     phase == 0
 }
 
-/// Whether the state was saved with its frame's fog walk still to run.
+/// How much of its frame's fog walk the state was saved with still to run.
 ///
 /// The table the frame is building holds packets but no fog sheet
 /// ([`RetailObs::frame_table`]): the render pass has not reached its fog
 /// stage. Or the pool says so itself: a record the spawner seated this frame
 /// stands at age `0` until a walk adds `rate * dt` to it (`FUN_8003F3FC`),
 /// and the live count `_DAT_8007BCA8` is the last walk's.
-fn pending_fog_walk(retail: &RetailObs) -> bool {
+///
+/// A table that already holds fog sheets was saved inside the walk. The walk
+/// zeroes the live word before it starts and adds each survivor as it passes
+/// it (`0x8003F398`, `0x8003F3C8`), so the word counts the records behind its
+/// cursor: `vell_fog_field` holds `24` up and the word `14`, and its first
+/// vsync steps the ten records past the fourteenth and none before them.
+fn pending_fog_walk(retail: &RetailObs) -> PendingFogWalk {
     if retail.fog_live.is_empty() {
-        return false;
+        return PendingFogWalk::None;
     }
-    retail.frame_table.is_some_and(|(n, fog)| n > 0 && fog == 0)
+    let live = usize::from(retail.fog_live_count);
+    // The walk had started: its sheets are in the table and the live word
+    // holds its running count. It walks in slot order (`FUN_8003F348`), so
+    // the first `live` records up are behind its cursor.
+    if retail.frame_table.is_some_and(|(_, fog)| fog > 0) && retail.fog_live.len() > live {
+        let mut slots: Vec<u8> = retail.fog_live.iter().map(|r| r.slot).collect();
+        slots.sort_unstable();
+        let behind = |s: u8| slots.iter().position(|&x| x == s).is_some_and(|i| i < live);
+        // A record behind the cursor has taken the frame's step; one at age
+        // `0` there would not have, so that pool is not mid-walk.
+        if !retail.fog_live.iter().any(|r| r.age == 0 && behind(r.slot)) {
+            return PendingFogWalk::From(live);
+        }
+    }
+    if retail.frame_table.is_some_and(|(n, fog)| n > 0 && fog == 0)
         || retail.fog_live.iter().any(|r| r.age == 0)
-        || retail.fog_live.len() > usize::from(retail.fog_live_count)
+        || retail.fog_live.len() > live
+    {
+        PendingFogWalk::Whole
+    } else {
+        PendingFogWalk::None
+    }
+}
+
+/// What of the frame's fog walk a state still owes ([`pending_fog_walk`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PendingFogWalk {
+    /// The walk ran before the save, or the pool is empty.
+    None,
+    /// The render pass had not reached its fog stage: every record owes it.
+    Whole,
+    /// Saved inside the walk: the records past the first `n` up owe it.
+    From(usize),
 }
 
 fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
@@ -455,6 +550,37 @@ fn seat_frame_accums(world: &mut legaia_engine_core::world::World, accum: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The fog walk a state owes: none on an empty pool or a finished walk,
+    /// the whole walk before the render pass reaches its fog stage, and the
+    /// records past the live word's count when the table already holds
+    /// sheets (`vell_fog_field`: `24` up, the word `14`).
+    #[test]
+    fn a_state_saved_inside_the_fog_walk_owes_the_records_past_the_count() {
+        use legaia_engine_field::fog_particles::FogParticle;
+        let mut r = RetailObs::from_ram(&vec![0u8; 0x20_0000], None);
+        assert_eq!(pending_fog_walk(&r), PendingFogWalk::None);
+        r.fog_live = (0..24u8)
+            .map(|i| FogParticle {
+                slot: 48 + i,
+                age: 1000 + u16::from(i),
+                rate: 10,
+                alive: true,
+                ..FogParticle::default()
+            })
+            .collect();
+        r.fog_live_count = 24;
+        r.frame_table = Some((990, 21));
+        assert_eq!(pending_fog_walk(&r), PendingFogWalk::None);
+        r.fog_live_count = 14;
+        assert_eq!(pending_fog_walk(&r), PendingFogWalk::From(14));
+        r.frame_table = Some((990, 0));
+        assert_eq!(pending_fog_walk(&r), PendingFogWalk::Whole);
+        // A record behind the count still at age `0` was never walked.
+        r.frame_table = Some((990, 21));
+        r.fog_live[3].age = 0;
+        assert_eq!(pending_fog_walk(&r), PendingFogWalk::Whole);
+    }
 
     /// The first pass opens `step - phase` vsyncs on: `phase - 1` on the
     /// accumulators, a held first vsync on `0`, and a state saved on the

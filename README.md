@@ -38,7 +38,7 @@ One engine runs behind every host. The simulation crates carry no GPU, windowing
 
 ## Three ways to port a PS1 game
 
-Most PS1 ports lately are static recompilations, and for good reason: the whole game runs early, with its retail behaviour nearly for free. This project takes the third route, **reimplementation**: a new engine that loads the game's data and is held to retail by measurement rather than by running the original code.
+Static recompilation has become a fast route to a PS1 port, and a strong one: the whole game runs early, with its retail behaviour nearly for free. Matching decompilation is the route that proves what the code says. This project takes the third route, **reimplementation**: a new engine that loads the game's data and ships none of the original code, held to retail by measurement. Part of that measurement runs the original's own routines, off your disc and inside the test suite, beside the Rust that ports them ([one routine, end to end](docs/porting-by-reimplementation.md#one-routine-end-to-end)).
 
 <p align="center">
   <picture>
@@ -47,7 +47,7 @@ Most PS1 ports lately are static recompilations, and for good reason: the whole 
   </picture>
 </p>
 
-A recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game. That engine has no PS1 underneath, so it renders through wgpu, runs in the browser and in VR, takes mods as TOML expansion packs, and keeps every rule as a readable Rust kernel citing its retail address. The price is that fidelity is a long tail paid continuously, on top of decompilation-grade reading of the disassembly, not instead of it.
+A recomp gets you the game; a reimplementation, plus the oracles that measure it, gets you an engine for the game. That engine has no PS1 underneath, so it renders through wgpu, runs in the browser and in VR, takes mods as TOML expansion packs, and keeps every rule as a readable Rust kernel citing its retail address. The price is that fidelity is a long tail paid continuously. Every routine the port depends on has to be read accurately from the disassembly, but nothing has to be decompiled: no matching source, no reproduced compiler, no byte match, and the routines the port never relies on can stay unread.
 
 - [Decomp, recomp, reimplementation](docs/decomp-recomp-reimplementation.md) - this engine and a static recomp of the same game as a case study ([on the site](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/decomp-recomp-reimplementation.html)).
 - [Porting by reimplementation](docs/porting-by-reimplementation.md) - the three routes compared fairly, what this one costs and buys, and the method step by step ([on the site](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/porting-by-reimplementation.html)).

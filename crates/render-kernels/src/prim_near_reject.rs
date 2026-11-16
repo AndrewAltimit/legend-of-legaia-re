@@ -100,6 +100,25 @@ pub fn shader_params(cut: Option<(f32, u32)>, span_h: Option<f32>) -> [f32; 4] {
     }
 }
 
+/// The view depth (clip `w`) that `buckets` ordering-table slots span under
+/// [`shader_params`]' parameters: a slot is `4 << ot_shift` `SZ` (the leaves'
+/// `OTZ = (ZSF * sum) >> 12` with `ZSF4 = 0x400 >> ot_shift`, then `andi
+/// 0xFFFC` on the byte offset), so `16` `SZ` in battle and `32` on the field,
+/// over the frame's `sz_per_w`. Parameters that are off (`enable` zero) read
+/// as the battle camera's (`sz_per_w = 1`, shift [`BATTLE_SHIFT_DEFAULT`]).
+pub fn ot_buckets_view_depth(params: [f32; 4], buckets: u32) -> f32 {
+    let (sz_per_w, shift) = if params[0] >= 0.5 && params[1] > 0.0 {
+        (params[1], params[2] as u32)
+    } else {
+        (1.0, BATTLE_SHIFT_DEFAULT)
+    };
+    (buckets * (4 << shift)) as f32 / sz_per_w
+}
+
+/// The battle ordering table's shift (`0x1F8003A4 = 2` in every catalogued
+/// battle state), the default [`ot_buckets_view_depth`] reads with.
+pub const BATTLE_SHIFT_DEFAULT: u32 = 2;
+
 /// The GPU's polygon-size limit: it skips a polygon whose screen corners lie
 /// more than `1023` pixels apart horizontally or `511` vertically
 /// ([`crate::prim_near_reject`]'s sibling cut, documented with the dance hall
@@ -438,6 +457,18 @@ pub fn prim_corner_plan_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Twenty battle slots are `320` `SZ` (`16` each, shift `2`), ten field
+    /// slots `320` `SZ` too (`32` each, shift `3`) over the field's `6` `SZ`
+    /// per port unit; parameters that are off read as battle's.
+    #[test]
+    fn ot_slots_span_four_sz_shifted_by_the_table_shift() {
+        let battle = shader_params(Some((1.0, 2)), None);
+        assert_eq!(ot_buckets_view_depth(battle, 20), 320.0);
+        let field = shader_params(Some((6.0, 3)), None);
+        assert_eq!(ot_buckets_view_depth(field, 10), 320.0 / 6.0);
+        assert_eq!(ot_buckets_view_depth(shader_params(None, None), 20), 320.0);
+    }
 
     #[test]
     fn a_quad_off_one_edge_is_dropped_and_one_across_two_is_not() {

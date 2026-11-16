@@ -230,3 +230,66 @@ fn save_anywhere_lifts_the_scene_gate_and_retail_holds_it_off() {
     assert!(!session.host.world.toggles.save_anywhere);
     assert!(!save_enabled(&mut session), "retail mode holds it off");
 }
+
+/// The pause press ends the place-name banner: retail's menu accept raises
+/// the player's engaged bit and the balloon handler fast-forwards a balloon
+/// with no parent link to its end on that bit (`FUN_801DA7F0`). The banner
+/// used to stay up under the native window's pause wipe and come back with
+/// its remaining frames once the menu closed (host pair `pack_menu`, tick
+/// `91`: the window drew the banner the page had dropped).
+#[test]
+fn the_pause_press_ends_the_place_name_banner() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let cfg = BootConfig {
+        scene: "town01".to_string(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
+    session
+        .enter_field_live("town01", &FieldLiveOpts::default())
+        .expect("enter town01 live");
+    let banner = legaia_engine_scene_host::place_name_banner::man_load_banner(b"Rim Elm", true)
+        .expect("a named scene raises a banner");
+    session.host.world.cutscene.text_balloon = Some(banner);
+    session.host.world.commit_text_balloon_width(56);
+    for _ in 0..4 {
+        session.tick().expect("tick");
+    }
+    assert!(
+        session.host.world.text_balloon_drawing().is_some(),
+        "the banner draws before the press"
+    );
+
+    session.open_field_menu();
+    assert!(session.field_menu.is_some(), "the press opens the menu");
+    assert!(
+        session.host.world.text_balloon_drawing().is_none(),
+        "the accept engages the player: an unlinked balloon draws no more"
+    );
+    session.close_field_menu();
+    for _ in 0..4 {
+        session.tick().expect("tick");
+    }
+    assert!(
+        session.host.world.cutscene.text_balloon.is_none(),
+        "the banner does not come back when the menu closes"
+    );
+}
+
+/// A balloon a script spawned from the interaction holding the engagement
+/// (parent link set) keeps its handshake through the same press.
+#[test]
+fn the_pause_press_leaves_a_linked_balloon() {
+    let mut world = legaia_engine_core::world::World::new();
+    let mut b =
+        legaia_engine_scene_host::place_name_banner::man_load_banner(b"x", true).expect("banner");
+    b.parent_link = true;
+    b.timer = 5;
+    world.cutscene.text_balloon = Some(b);
+    world.end_unlinked_balloon_on_engage();
+    let b = world.cutscene.text_balloon.as_ref().expect("still up");
+    assert_eq!(b.timer, 5, "a linked balloon is not fast-forwarded");
+}

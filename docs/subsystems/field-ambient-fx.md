@@ -822,8 +822,15 @@ The port holds the emitter for the session's `Transition` phase.
 
 The scene arm takes twenty-four independent draws per pass, each with a one
 in sixteen chance of bursting `(rand & 3) + 1` particles at one point sampled
-inside the camera's visible-tile span `DAT_1F8003E8..EB`, centred on the
-negated player X/Z that `_DAT_80089118` / `_DAT_80089120` hold. What decides
+inside the camera's visible-tile span `DAT_1F8003E8..EB`, centred on
+`-(_DAT_80089118 >> 7)` / `-(_DAT_80089120 >> 7)` (`0x801D6194..0x801D61B0`):
+the camera translation, the negated focus whatever camera wrote it. Under the
+follow camera that is the player; under a scripted shot it is the shot's
+focus, which a door cut can stand tiles from the player (`taiku2_field_door_hop`:
+focus `(6802, 2514)`, player `(6976, 2112)`). The port reads the pair the
+cull view carries (`FieldCullView::focus_stored`); centred on the player it
+drew its bursts on other tiles from the cut on, and the spawner seated sheets
+retail's rejected. What decides
 whether any of that happens is the master gate `_DAT_8007B854`, read by the
 handler's first instruction (`0x801D605C`). The gate is **script-driven**,
 not per-scene data: field-VM op `0x4C`, outer nibble `3`, sub-`0` sets it

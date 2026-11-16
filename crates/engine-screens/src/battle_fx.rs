@@ -51,22 +51,39 @@ pub fn battle_fx_vp(world: &World) -> [f32; 16] {
 // REF: FUN_800485BC, FUN_801E1AB0, FUN_801E1D98 - the packet ports live in
 // render-kernels (`battle_trail`, `afterimage`, `streak_pass`).
 pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
+    battle_fx_prims_by_link(world, false)
+}
+
+/// [`battle_fx_prims`], with the weapon-trail bands, the afterimage streak
+/// and the clip-tag ribbon depth-tested at their own ordering-table links
+/// when `by_link` - the PSX-mode battle frame, whose bodies and effect parts
+/// draw by link too (`docs/subsystems/renderer-port.md`, "The battle sorts by
+/// each primitive's link"). Retail links each packet among the scene's
+/// (`FUN_800485BC` at its band's averaged entry, `FUN_801E1AB0` /
+/// `FUN_801E1D98` at the anchor's projector depth), so a body nearer the
+/// camera covers it. Off, they composite over the 3D frame.
+pub fn battle_fx_prims_by_link(world: &World, by_link: bool) -> Vec<ScreenPrim> {
     use legaia_engine_world_views::screen_passes::{
-        cast_ribbon_prims, move_fx_streak_quads, weapon_trail_prims,
+        cast_ribbon_prims, move_fx_streak_prims, weapon_trail_prims, weapon_trail_prims_linked,
     };
     use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
     if world.mode != SceneMode::Battle {
         return Vec::new();
     }
     let vp = battle_fx_vp(world);
-    let mut out = weapon_trail_prims(world);
+    let mut out = if by_link {
+        weapon_trail_prims_linked(world, &vp)
+    } else {
+        weapon_trail_prims(world)
+    };
     let mvp = glam::Mat4::from_cols_array(&vp)
         * glam::Mat4::from_scale(glam::Vec3::splat(BATTLE_WORLD_SCALE));
-    out.extend(
-        move_fx_streak_quads(world, &mvp)
-            .iter()
-            .map(|q| q.to_screen_prim(MOVE_FX_STREAK_OT)),
-    );
+    out.extend(move_fx_streak_prims(
+        world,
+        &mvp,
+        MOVE_FX_STREAK_OT,
+        by_link,
+    ));
     out.extend(cast_ribbon_prims(world, &mvp, MOVE_FX_STREAK_OT));
     out.extend(death_game_prims(world));
     out
@@ -115,6 +132,7 @@ mod tests {
     fn every_layer_is_empty_off_battle() {
         let world = World::default();
         assert!(battle_fx_prims(&world).is_empty());
+        assert!(battle_fx_prims_by_link(&world, true).is_empty());
         assert!(theeder_prims(&world).is_empty());
     }
 

@@ -4011,20 +4011,40 @@ a step track (`<label>.steps` beside the WAV), and the child takes it as the cas
 `--retail-steps` does (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`). It is harness-only and scores the
 cast's sound with the two emulators' frame costs taken out; `cast` stays the engine's own clock.
 
+<a id="the-step-track-opens-on-the-states-instant"></a>
+**The step track opens on the state's instant.** The recording's frames start at the state, so the
+track must start there too, not at the cast's begin, where the child's replay of the cast's opening
+would spend them. A state inside the summon sustain `0x35` names its instant by the band word: the
+child arms the track on the first pass that leaves the SM in the state's `(state, arm)` with
+`ctx[+0x6D8]` at or below the state's (`LEGAIA_DIAG_CAST_STEP_ARM`, read off the state by `audio-pcm.py`).
+On Zenoir it matters because PROT 0908's arm 3 waits for that word to read exactly `0`
+(`lh v0,0x0(s8)` / `beq v0,zero` at `0x801F6E08..0x801F6E10`), and `0x35` re-reads it after the stager
+call and leaves once it is negative ([state `0x35`](battle-action.md#state-0x35---summon---sustain)).
+`zenoir_summon_mid_cast` stands in arm 3 with the word at `97`, and its eleven step-`3` frames and
+thirty-two step-`2` frames drain it to `0` exactly. Armed at the cast's begin, the engine spent them from
+arm 3's entry at `112`: the step-`2` frames carried the odd remainder past `0`, the SM left `0x35` for
+`0x36` during arm 3, and arms 5 to 10 ran in a state the track never recorded. Armed on the word, every
+arm from 4 to the module's `0xFF` lands within `2` vsyncs of mednafen's frame-stepped run.
+
+<a id="a-ring-cue-keys-at-its-frames-end"></a>
+**A ring cue keys at its frame's end.** On retail's steps the channel also holds each battle ring batch
+one frame step before the director keys it (`LEGAIA_DIAG_CAST_RING_AT_FRAME_END`, in
+`AudioDirector::route_world_sfx`): the frame driver drains the ring after the frame's work, so a cue keys
+a frame step after the pass that pushed it ([settled](../reference/re-settled-threads/audio.md#when-does-a-ring-cue-sound-against-the-frame-that-pushed-it)).
+The engine itself keeps keying on the pushing tick, one step from retail's order where the held cue would
+be two; `cast` keeps that, because a hold on the engine's own steps is a hold on steps retail does not run.
+
 | State | `cast` (the engine's steps) | `cast_steps` (mednafen's steps) |
 |---|---|---|
 | `cort_guilty_cross_mid_cast` | `0.859` | `0.981` |
-| `zenoir_summon_mid_cast` | `0.854` | `0.873` |
+| `zenoir_summon_mid_cast` | `0.854` | `0.881` |
 | `theeder_summon_mid_cast` | `0.954` | `0.964` |
 
 Guilty Cross's whole loss is the step. Theeder's is not: mednafen runs its arms `6` to `12` at `1`
-or `2` against the table's `3` and `4`, and the score moves by `0.01` either way. Zenoir's row is not a clean reading. On the engine's own steps its band
-holds `0x35` to arm 11, as retail's does, but on mednafen's the action SM leaves `0x35` for `0x36`
-after one arm-4 pass: the band word (`ctx[+0x6D8]`, shared with PROT 0908's countdown) goes negative
-at the hand-over. Mednafen's arm 3 opens on eleven step-`3` frames and the engine's on the module's
-`1`, so the countdown the arm re-seeds stands elsewhere when arm 4 reads it. The track keys a frame by
-action state and arm, so arms 5 to 10 then run under keys mednafen never recorded and keep the step
-they had. Why the shared word ends the band under those steps and not under retail's is open. Which emulator a console agrees with is
+or `2` against the table's `3` and `4`, and the score moves by `0.01` either way. Zenoir's arms now
+match, and what its row keeps is the cast's sound against them: the ring cues of arm 12 still key
+about four vsyncs ahead of retail's, two of them the arm's own lead, and the voice sits about two
+vsyncs late against the track. Which emulator a console agrees with is
 [open](../reference/open-rev-eng-threads.md): PCSX-Redux's entry is the CPU's alone, and mednafen's adds
 a GPU wait on a CPU that costs less. The GPU wait is the table's drawing, and what moves Guilty Cross's
 arms is PCSX-Redux's CD command wait ([a real console's frame cost](battle-stage-camera.md#what-a-real-consoles-frame-costs)).

@@ -1,6 +1,6 @@
 # Porting a game by engine reimplementation
 
-This page explains how this project ports Legend of Legaia and why it goes about it this way. Three broad methods can bring an old console game to modern machines: decompilation, static recompilation and engine reimplementation. This project takes the third: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of `SCUS_942.54`.
+This page explains how this project ports Legend of Legaia and why it goes about it this way. Three broad methods can bring an old console game to modern machines: decompilation, static recompilation and engine reimplementation. This project takes the third: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs and the traced disassembly, with Ghidra's decompiled C as a pointer to where to read. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of `SCUS_942.54`.
 
 [A separate case study](decomp-recomp-reimplementation.md) sets this engine beside a static recompilation of the same game. Each method suits different goals, and none of them is the best in general. The page compares the three, says what this choice costs and buys, and then walks through the method step by step, with the gate that keeps each step honest and an example from this repository. The tool pages hold the detail; this page is the thread that connects them.
 
@@ -18,6 +18,7 @@ Nothing here changes the ground rules: the user supplies the disc, no Sony-owned
 - [Step 5: play the whole game on pad input](#step-5-play-the-whole-game-on-pad-input)
 - [Step 6: measure against a retail corpus](#step-6-measure-against-a-retail-corpus)
 - [Step 7: keep iteration quick](#step-7-keep-iteration-quick)
+- [One routine, end to end](#one-routine-end-to-end)
 - [What is tested, and the gap each test closes](#what-is-tested-and-the-gap-each-test-closes)
 - [The feedback loops](#the-feedback-loops)
 - [Evidence grades](#evidence-grades)
@@ -40,7 +41,7 @@ The clearest way to separate the methods is by what each one starts with and wha
 |---|---|---|---|
 | **Works from** | The executable, rewritten as source | The executable, translated mechanically | Format docs and the traced behaviour |
 | **Starts with** | A check on every function, when matching | The whole game running, with retail behaviour | Free choice of structure, language and platform |
-| **Has to earn** | Coverage, names, then a platform layer | Readable structure and the freedom to change it | Every behaviour, and proof that it matches |
+| **Has to earn** | Coverage, names, then a platform layer | Readable structure and the freedom to change it | Every behaviour, and evidence that it matches |
 | **What executes** | The original's logic, recompiled from source | The original's code, translated | New code; the original's code is reference only |
 
 **Decompilation** turns the executable back into source code. In a *matching* decompilation the source must compile to the retail bytes, function by function, so the byte match proves the source says what the game does. That gives exact source-level truth, and nothing else on this page gives it. The cost is reproducing the original compiler and its flags, and patient per-function work. A *non-matching* decompilation gives up the proof for speed, and has to test equivalence some other way. Names and types are human work in both. Decompiled source can then be retargeted, which is its own project with its own platform layer, and in return the whole game can be changed at the source level.
@@ -63,12 +64,12 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 
 ### What it costs
 
-- **Accuracy has to be earned.** A recomp inherits retail behaviour; this port has to reach it, one mechanism at a time, and prove it. Most of the tooling linked below exists to pay this cost.
+- **Accuracy has to be earned.** A recomp inherits retail behaviour; this port has to reach it, one mechanism at a time, and show by measurement that it has. Most of the tooling linked below exists to pay this cost.
 - **A long road to first playable.** Formats, VMs, a renderer, an audio stack and a battle system all have to exist before the game can be played at all.
 - **The measuring instruments are a project of their own.** Seeding the engine from retail RAM, scoring frames and keeping baselines honest take real, ongoing engineering.
 - **Being faithful is a discipline.** Every enhancement must leave the faithful mode bit-identical when off, or "faithful" stops being a testable claim.
 - **Fidelity is a long tail, paid continuously.** The first playable game is far from the last divergence. Every scene, cast and menu screen the corpus has not seen is unmeasured, and parity on what it has seen says nothing about the rest ([step 6](#step-6-measure-against-a-retail-corpus)).
-- **It rests on decompilation-grade analysis; it does not replace it.** Every port is read from the disassembly with the care a decompilation takes, routine by routine. Reimplementing changes what gets written from that reading, not how much of the original has to be understood.
+- **It needs accurate reading of the disassembly, not a decompilation.** Each routine the port depends on is read as exactly as a decompilation would read it: the arithmetic, the order of random draws, the timing. What it skips is the matching work, which is most of a matching decompilation's cost: no compilable source, no reproduced compiler and flags, no byte match, and no obligation to read routines the port never relies on. The price of skipping the byte match is that a misreading is not caught at once; the oracles below exist to catch it.
 
 ### What it buys
 
@@ -76,17 +77,17 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 - **Its own audio stack.** A from-scratch [SPU and sequencer](subsystems/audio.md) play the game's banks on both hosts, and pack music mixes beside them.
 - **More hosts.** The same session runs in a native window and [in the browser](subsystems/browser-host.md), with [VR](subsystems/vr-mode.md) on the site's 3D pages.
 - **Modding by game concept.** An [expansion pack](formats/expansion-pack.md) is TOML that names monsters, formations, maps, quests, arts and items, not addresses and byte patches; [run rules](subsystems/run-rules.md) add difficulty and an in-engine randomizer, and [game modes](subsystems/expansion-modes.md) and [netplay](subsystems/netplay.md) are the port's own. Features the disc patcher proves against retail with MIPS hooks graduate into engine toggles ([gameplay tweaks](subsystems/gameplay-tweaks.md)).
-- **Rules you can read.** A damage formula, an AI pick or a script opcode is a named Rust kernel with no `World` behind it, tagged `// PORT:` with the retail address it was read from, so the retail routine stays its provenance and the [port catalog](tooling/port-catalog.md) can derive what is ported from the tree.
-- **No original code executing.** The engine parses data tables out of `SCUS_942.54` and the overlays on the user's disc, and reads a cast module's image to recover which presentation calls each arm makes (`legaia_overlay_images::cast_presentation`), but no MIPS executes, so there is no translated code to carry.
+- **Rules you can read.** A damage formula, an AI pick or a script opcode is a named Rust kernel, a function of its inputs with none of the engine's `World` state behind it, tagged `// PORT:` with the retail address it was read from, so the retail routine stays its provenance and the [port catalog](tooling/port-catalog.md) can derive what is ported from the tree.
+- **No original code executing at play time.** The engine parses data tables out of `SCUS_942.54` and the overlays on the user's disc, and reads a cast module's image to recover which presentation calls each arm makes (`legaia_overlay_images::cast_presentation`), but no MIPS executes, so there is no translated code to carry. Retail routines do execute in the test suite, in an interpreter, as the check on their ports ([step 2](#step-2-port-functions-from-the-disassembly)).
 
 ### Fidelity is measured, not inherited
 
-A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise:
+A recomp is faithful as far as its hardware model is, because the original's code runs. Here nothing of the original runs at play time, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise:
 
-- **Stills.** The [retail comparison corpus](tooling/retail-compare.md) seats the engine where each of several hundred retail save states stood and scores the frame, camera, player, placements, music, flags, party and enemies per state, in [`scripts/ci/retail-compare-baseline.json`](../scripts/ci/retail-compare-baseline.json).
+- **Stills.** The [retail comparison corpus](tooling/retail-compare.md) seats the engine where each catalogued retail save state stood (the manifest is [`scripts/scenarios.toml`](../scripts/scenarios.toml)) and scores the frame, camera, player, placements, music, flags, party and enemies per state, in [`scripts/ci/retail-compare-baseline.json`](../scripts/ci/retail-compare-baseline.json).
 - **Film.** The [cast-sequence oracle](tooling/cast-sequence-oracle.md) records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still would see one instant. The [walk film](tooling/walk-film.md) does the same for a field walk on a fixed pad schedule. Films carry retail pixels, so their image scores are reported and not committed.
 - **Sound.** The [audio-state sweep and real retail PCM](subsystems/audio.md#the-audio-state-sweep) compare the music and cues against what the emulator actually played, in `scripts/ci/audio-sweep-baseline.json` and `scripts/ci/audio-pcm-baseline.json`. A film's sound cues are the one part of it that is ratcheted ([the cue ratchet](tooling/cast-sequence-oracle.md#the-cue-ratchet)).
-- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. It is the one instrument in which retail's own code executes, and the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`). What it cannot see is when, and with what, the engine calls the kernel.
+- **Routines.** The [retail kernel differential](tooling/retail-kernel-differential.md) runs a retail routine off the user's disc in the `crates/retail-exec` R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. The emulator-side instruments watch retail's code run on the inputs a capture happened to hold; this one runs a single routine on inputs it chooses, so it is the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count of tagged routines it covers is a ratchet (`scripts/ci/differential-coverage-baseline.json`). What it cannot see is when, and with what, the engine calls the kernel.
 - **The whole game.** The [full-game ladder](tooling/full-game-ladder.md) plays New Game to credits on pad input, segment by segment and as one continuous run.
 
 [The verification ladder](tooling/verification-ladder.md) stacks these with the format docs and port provenance, rung by rung, with what each one cannot see, and [the coverage map](#what-is-tested-and-the-gap-each-test-closes) below lists every instrument by the gap it closes. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc ([capture coverage](tooling/capture-coverage.md)) and why its gates refuse a silent loosening ([ratchet integrity](tooling/ratchet-integrity.md)).
@@ -142,7 +143,7 @@ Every step runs through a gate. A gate here is a check that fails on its own, us
 
 **What is done.** Dump the function, read the instruction stream, and write a fresh Rust function that does the same thing, then tag it with `// PORT: FUN_<addr>`. The rule is to port and document from the disassembly and use the decompiled C only as a hint about where to look. The C is a rendering, and it fails in repeatable ways: register arguments vanish from calls, stores get reordered or dropped, labels print as calls, and a module imported at the wrong base prints every address shifted by a constant ([decompiler artifacts](tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
-**What it produces.** World-free kernels in the engine's crates, a citation in the docs, and a row in the [port catalog](tooling/port-catalog.md), which derives each function's status from the tree on every run and so cannot go stale the way a hand-kept table does.
+**What it produces.** Kernels in the engine's crates that are pure functions of their inputs (no `World`, the engine's whole game state, behind them), a citation in the docs, and a row in the [port catalog](tooling/port-catalog.md), which derives each function's status from the tree on every run and so cannot go stale the way a hand-kept table does.
 
 **The gate.** Three checks, each on a different question. `port-catalog.py --check` ratchets what is ported, with worklists read through [worklist classification](tooling/worklist-classification.md) so that an address which is no real function entry does not read as work.
 [Port provenance](tooling/port-provenance.md) asks whether a `// PORT:` address names the routine the Rust implements; its signals rank suspicion rather than prove anything, so `check-port-provenance.py --check` gates the delta: a commit that adds an unwaived finding fails, and each waiver records what the bytes showed.
@@ -224,9 +225,72 @@ The line is not simply where a library ends. It depends on what a player can obs
 
 **What it produces.** [Frame benchmarks](tooling/frame-bench.md) on both hosts, covering frame time, allocations and scene entry, and [build and test profiles](tooling/build-and-test-speed.md) with an edit-time `dev-fast` path, a result cache on the corpus, and a parallel [full gate](tooling/build-and-test-speed.md#the-full-gate). The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake. Counts do not flake, so the [cost ratchet](tooling/frame-bench.md#cost-ratchet) commits those instead: draws and allocations per frame on tick-locked runs, and the shipped bundle's size.
 
-**The gate.** A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's `.ppf` from a fixed seed must hash the same ([profiling](tooling/build-and-test-speed.md#profiling-without-perf)). A cache has to key on everything its result depends on: the corpus's [result cache](tooling/retail-compare.md#parallel-states-and-the-result-cache) hashes the binary, disc, state, memory card, manifest row, frame mode and environment, and a bless or a check never reads it. In the browser, the [frame hash](tooling/frame-hash.md) steps the play page tick by tick on a scripted pad and compares two bundles frame for frame. A rise in a ratcheted count is a loosening and takes a ledger entry like any other.
+**The gate.** A speedup is proved by the output, not by the timing. The ladder's trace with its
+wall-clock fields stripped must match line for line, and a patcher feature's `.ppf` from a fixed
+seed must hash the same ([profiling](tooling/build-and-test-speed.md#profiling-without-perf)). A
+cache has to key on everything its result depends on: the corpus's [result
+cache](tooling/retail-compare.md#parallel-states-and-the-result-cache) hashes the binary, disc,
+state, memory card, manifest row, frame mode and environment, and a bless or a check never reads it.
+In the browser, the [frame hash](tooling/frame-hash.md) steps the play page tick by tick on a
+scripted pad and compares two bundles frame for frame. A rise in a ratcheted count is a loosening
+and takes a ledger entry like any other.
 
 **An example.** The `readPixels` on the battle transition's arming frame is expensive, and an asynchronous read would remove the wait. It would also land the capture frames later, which moves the transition, so that is not an optimisation available here ([what the numbers have shown](tooling/frame-bench.md#what-the-numbers-have-shown)). The deferred work that was taken is a pure function of what the load captured, so its reader gets what it would have had.
+
+## One routine, end to end
+
+The method is easiest to judge on a routine small enough to read whole. `FUN_80019B28` in `SCUS_942.54` is the 12-bit bearing: given two points on the ground plane it returns a heading, `0x000` toward `+Z` and `0x400` toward `+X`. Battle code calls it whenever an actor turns to face another (a strike's approach, a cast's caster turn), and the move VM and the field facings reach it too. It is a leaf of 138 instructions with no stack frame ([`battle-action-helpers.md`](subsystems/battle-action-helpers.md)).
+
+**What the instructions say** (grade `disassembly`, from the dump `ghidra/scripts/funcs/80019b28.txt`, which is not committed):
+
+- The four arguments are halfwords in `a0..a3`: `p1z`, `p1x`, `p2z`, `p2x`. `subu a2,a2,a0` at `0x80019B2C`, and `subu a3,a3,a1` in the delay slot at `0x80019B34`, take the displacement in 32 bits, so a delta between two extreme halfwords runs past `i16` and does not wrap.
+- Two `bgez` tests negate each negative leg and build a quadrant code in `v1`: `2` for a negative `dz` (`li v1,0x2` at `0x80019B3C`), plus `1` for a negative `dx` (`0x80019B4C`). A `beq` tree at `0x80019B50..0x80019B78` dispatches the four codes.
+- Each quadrant compares the legs with `slt` and branches round the divide when the shorter leg is zero, so no `div` sees a zero divisor. Otherwise it shifts the shorter leg left by 11 and divides by the longer (`sll v0,a3,0xb; div v0,a2`), an index in `0..=0x800`.
+- The index reads a signed halfword (`lh`) from a table at `0x8006F4C8` (`lui v1,0x8007; addiu v1,v1,-0xb38`), and the quadrant's constant (`0x400`, `0x800`, `0xC00` or `0x1000`) is added or subtracted. Every path ends at one `andi v0,v1,0xfff` (`0x80019D44`).
+
+**The Rust.** `legaia_engine_system::trig::bearing12` in [`crates/engine-system/src/trig.rs`](../crates/engine-system/src/trig.rs) carries the tag and the same algebra. It takes the displacement as `i32` for the reason in the first bullet; abridged and reformatted:
+
+```rust
+// PORT: FUN_80019B28
+pub fn bearing12(dz: i32, dx: i32) -> u16 {
+    let lut = atan_lut();
+    let (mut dz, mut dx) = (dz, dx);
+    let mut quad = 0u32;
+    if dz < 0 { dz = -dz; quad |= 2; }
+    if dx < 0 { dx = -dx; quad |= 1; }
+    let at = |n: i32, d: i32| i32::from(lut[((n << 11) / d) as usize]);
+    let raw: i32 = match quad {
+        0 if dz >= dx => if dx == 0 { 0 } else { at(dx, dz) },
+        0 => 0x400 - at(dz, dx),
+        // ... quadrants 1, 2 and 3 likewise, with their constants
+    };
+    (raw & 0xFFF) as u16
+}
+```
+
+The table is not copied. `atan_lut()` computes entry `i` as `trunc(atan(i / 2048) * 4096 / 2pi)`, the arctangent of the ratio in 4096ths of a turn, truncated toward zero.
+
+**The check.** [`crates/retail-exec/tests/bearing.rs`](../crates/retail-exec/tests/bearing.rs) holds two tests, and both skip without a disc:
+
+- `the_bearing_is_the_retail_bearing` opens with `differential!(scus(BEARING))`, so it fails unless the interpreter entered `0x80019B28` with the bytes of the disc's `SCUS_942.54` there. It calls the retail routine on twenty thousand random point pairs, drawn at four spans from the whole `i16` plane down to sixteen units, plus a grid of short distances round the origin, and compares `v0 & 0xFFF` with the port on each.
+- `the_port_arctan_table_is_the_retail_one` runs no routine, so it is declared `not_a_differential!` with that reason and is not counted as coverage. It compares all `0x801` computed entries with the table in the disc's executable.
+
+```bash
+LEGAIA_DISC_BIN=/path/to/disc.bin \
+  cargo test -p psx-retail-exec --test integration bearing
+```
+
+**What it caught.** The first port of the table rounded where retail truncates. Rounding moves 1037
+of the 2049 entries up by one unit, and the differential disagreed with the port on about half of
+its inputs. A heading one 4096th of a turn off is invisible in a still and lost in a film's noise,
+so no other instrument would have named it. Routing every caller through the one exact port then
+exposed a second defect, found by reading the callers' instructions rather than by a test: move VM
+sub-op `0x3A` calls this routine with the player as `p2` (`0x801D484C..0x801D486C`), and the port
+had used a floating-point `atan2` measured from `+X`, so every angle it wrote was `0x400` minus
+retail's. Its unit test asserted the mirrored convention, which is how a test can hold a defect in
+place.
+
+**What it does not show.** That the battle code calls the bearing with the right points at the right moment. That half is measured where a player would notice it, by the films and stills; [three quiet defects](decomp-recomp-reimplementation.md#three-quiet-defects-and-what-found-them) include one where the bearing was right and its caller fed it the wrong point.
 
 ## What is tested, and the gap each test closes
 

@@ -706,6 +706,17 @@ mod npc_draw_pose_tests {
         assert!(w.field_npc_draw_pose(3, (100, 200)).is_none());
     }
 
+    /// A tilt is the tweening actor's own `+0x24` / `+0x28`, and a scene load
+    /// re-spawns every actor: the next scene's slot 3 stands untilted.
+    #[test]
+    fn a_scene_load_drops_the_npc_tilts() {
+        let mut w = World::default();
+        w.npcs.tilts.insert(3, (-1, 0));
+        assert!(w.field_npc_tilt(3).is_some());
+        w.drop_man_installed_state();
+        assert_eq!(w.field_npc_tilt(3), None);
+    }
+
     /// An arc on a placement writes `-y` into the placement's held height
     /// `+0x8E` (`FUN_801D5C08`, `0x801D5CB0` / `0x801D5D40`), so one on the
     /// held-height arm (`+0x10 & 0x20000000`) stands at the landing after it

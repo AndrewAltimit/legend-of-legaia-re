@@ -33,9 +33,10 @@
 //! scan (robust to the dialogue-picker jump tables that desync a linear
 //! walk - see [`crate::shop_stock`]) is safe.
 //!
-//! The engine consumes an inn site's cost as the `open_inn(cost)` argument
-//! (`docs/subsystems/inn.md`); the debit itself replays through the field
-//! VM's own `ADD_MONEY` op, so no separate cost table exists anywhere.
+//! The engine needs no cost from this scan: a stay is the innkeeper's own
+//! field-VM record (`docs/subsystems/inn.md`), whose gate and debit run
+//! through the field VM's own ops, so no separate cost table exists
+//! anywhere. The scan is the disc census behind that page's cost table.
 
 use crate::scene_asset_table;
 

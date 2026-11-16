@@ -463,7 +463,12 @@ impl PlayWindowApp {
             // The weapon-trail bands, the move-FX afterimage streak and the
             // Theeder beam: one placement and projection, the page's too
             // (`engine-screens::battle_fx`).
-            battle_fx: legaia_engine_screens::battle_fx::battle_fx_prims(&self.session.host.world),
+            // In PSX mode each packet is depth-tested at its own link, as
+            // the bodies around it are drawn.
+            battle_fx: legaia_engine_screens::battle_fx::battle_fx_prims_by_link(
+                &self.session.host.world,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ),
             field_fog: field_fog_prims,
             // The actor drop shadows (`FUN_8001C394`), through the same
             // `World::field_drop_shadows` kernel as the page.
@@ -508,6 +513,15 @@ impl PlayWindowApp {
             use legaia_engine_ui::expansion_modes::light::light_prims;
             light_prims(&mut under, &light);
             light_prims(&mut over, &light);
+        }
+        // The Multiplayer screen, when it owns the frame, is opaque and covers
+        // the stage: the scene's own layers have nothing to show under it,
+        // and the depth-tested ones (the actors' drop shadows) won through
+        // it as grey blobs over its rows. The roaming panel sits over the
+        // field and keeps them.
+        if self.multiplayer_screen_up() {
+            under.clear();
+            over.clear();
         }
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.

@@ -85,7 +85,7 @@ pub struct HostTraceFrame {
     pub field_ctx: u64,
     /// Whether the pause menu is open, and where its field wipe stands.
     pub menu: (bool, legaia_engine_system::pause_wipe::PauseWipe),
-    /// The open menu-overlay screen (shop, prize exchange, inn), which each
+    /// The open menu-overlay screen (shop, prize exchange), which each
     /// host holds beside the session rather than in it: whether it is open,
     /// its UI frame word, the shop's opening fade, its state byte and cursor,
     /// and the shop screen it shows. `None` from [`sample`], which sees only

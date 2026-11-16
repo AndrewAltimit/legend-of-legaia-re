@@ -1021,6 +1021,20 @@ sites: `jagaroom` twice with `0x26`, `urudre1` with `0x5D` and then `0xF0`) it
 resolves through `FUN_8003C83C` to the player object, so the party-bank bit and
 the re-stage land on the player.
 
+A swap lasts as long as the actor it re-staged, which is one map install.
+`FUN_8003A1E4` allocates every placement's actor fresh on each install from a
+template whose model word is the placement header's byte plus the bank base
+(`0x8003A2E8..0x8003A324`, allocated by `jal 0x80024C88` at `0x8003A398`), so
+no swap reaches the next scene, a return from battle included. The port's live
+model table (`World::npcs.models`) is keyed by placement index, not by actor,
+so every scene entry clears it (`World::seed_field_channels`,
+`World::drop_man_installed_state`). Kept, a slot inherited the previous
+scene's id and resolved it through the new scene's bank: after `uru`'s
+beat (`P2[35]`, `CC 1C..23 50 4B 00`) the `bubu1` villagers in
+placements 7..14 drew `bubu1`'s one-object bank model `0x4B`, a floor pelt,
+and placement 14 walked its loop as it. The oracle is
+[`npc_live_model_scene_scope_disc.rs`](../../crates/engine-scene-host/tests/npc_live_model_scene_scope_disc.rs).
+
 #### Sub-1: the seat binds its move clip
 
 The arm writes, in order, on the actor `FUN_8003C83C` resolved (the
@@ -1541,7 +1555,9 @@ others. The census is `crates/engine-scene/tests/object_record_placement_ops_dis
 ## Port notes
 
 The cutscene timeline and the placement channels step every cross-context
-op on the resolved channel's context. The prop runner
+op on the resolved channel's context, and the system script steps these
+sub-ops there too (`step_on_resolved_channel`; the runner table is in
+[`script-vm.md`](script-vm.md#which-context-an-op-runs-on)). The prop runner
 (`World::step_prop_interaction`) and the talk runner
 (`World::drive_inline_dialogue`) run on a stand-in context of their own, so
 they route the resolved-actor sub-ops above (`is_resolved_actor_4c`) onto the

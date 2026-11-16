@@ -199,8 +199,6 @@ impl LegaiaRuntime {
 pub(crate) struct BakaUi {
     /// Roster id of the opponent (`1..=16`); `0` until an entry resolves it.
     pub(crate) opponent: usize,
-    /// PROT 1204 slot the player-side mesh comes from (0 = Vahn).
-    pub(crate) player_char: u32,
 }
 
 impl LegaiaRuntime {

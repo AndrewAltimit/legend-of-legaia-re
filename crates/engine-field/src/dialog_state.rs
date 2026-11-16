@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
+#[derive(Debug)]
 pub struct DialogState {
     /// Active dialog request - populated by the field-VM op 0x3F handler,
     /// cleared by the engine after the user dismisses the box. The MES

@@ -159,6 +159,7 @@ rung below it.
 | Does the page draw what the window draws? | [Host drift](host-drift.md) gates, the [host pair run](host-drift.md#the-host-pair-run) | The other host, on the same pad script | Retail |
 | Does the same input give the same run? | [Determinism replay](determinism-replay.md#determinism-gate), [frame hash](frame-hash.md) | The same run, twice | Whether the run is right |
 | Does a talker lose a line, or speak one retail does not? | [Talker sweep](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts) (`field_talker_sweep_disc`) | Each silent record's own bytes, every scene from every standable tile | Talks gated on anything but position and story flags |
+| Does an op land on the actor it names, whichever runner steps it? | [Routing census](../subsystems/script-vm.md#which-context-an-op-runs-on) (`field_route_census_disc`) | The dispatcher's `s5` swap, op family by runner | Ops behind talks and touches the sweep does not reach |
 | Does anything panic, stall or loop? | [Soak harness](soak-harness.md) | Its own detectors | Retail divergence |
 | Did a frame get more expensive? | [Cost ratchet](frame-bench.md#cost-ratchet) | Committed counts of draws, allocations, bundle bytes | Time |
 | Did a baseline loosen, or a check not run? | [Ratchet integrity](ratchet-integrity.md) | Baselines at the base revision; skips counted | A value wrong when blessed |

@@ -22,12 +22,12 @@ pub struct TickClaims {
     /// (title, save select, the pause menu once spawned, the party-wipe
     /// hold), the page's spawned pause menu and party-wipe hold.
     pub host_screen: bool,
-    /// A menu-overlay screen (shop, prize exchange, inn) is open: it owns the
+    /// A menu-overlay screen (shop, prize exchange) is open: it owns the
     /// pad, so no pause press reaches the field menu.
     pub overlay_open: bool,
     /// The open overlay screen suspends the field (a shop, the prize
     /// exchange): retail runs it at game mode `0x17` with the field overlay
-    /// swapped out, so it takes the whole tick. An inn prompt does not.
+    /// swapped out, so it takes the whole tick.
     pub overlay_suspends: bool,
     /// The host can draw a pause menu now (the browser page builds its menu
     /// assets on first use). The native window always can.

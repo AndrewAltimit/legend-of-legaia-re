@@ -339,13 +339,35 @@ impl World {
         // the host camera's, which takes the latch in
         // `frame_step::camera_after_world_tick`.
         if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
-            self.recentre_field_window_on_player();
-            self.battle.field_camera_reseat = true;
-            // The field-back load re-runs the MAN installer, whose tail
-            // leaves the post-load pad hold and the entry fade
-            // (`FUN_8003ADAC`).
-            self.seat_map_install_tail();
+            self.seat_warp_field_return();
         }
+    }
+
+    /// What the field init's warp arm (`_DAT_8007B8B8 == 2`) leaves on a
+    /// field the engine kept resident under a fight or a minigame: retail
+    /// re-enters MAIN INIT on both returns and reloads the scene, the engine
+    /// restores it, and these are the pieces of that reload the engine does
+    /// not get for free.
+    ///
+    /// - The camera window re-centred on the saved player tile
+    ///   (`FUN_80017DD4` at `pos >> 7`, `0x801D6E0C..0x801D6ECC`) after the
+    ///   unconditional camera reset `FUN_80025C24` (`0x801D698C`); the window
+    ///   is the world's, the camera half is the host camera's, which takes
+    ///   the latch in `frame_step::camera_after_world_tick`.
+    /// - The MAN installer's tail: the post-load pad hold and the entry fade
+    ///   (`FUN_8003ADAC`).
+    /// - The initialiser's camera-offset seed, stored ahead of its warp test
+    ///   (`li v0,0x3c` / `sw v0,-0x4354(v1)` at `0x801D67B8`). The engine's
+    ///   ease walked the accumulator on whatever stood in the player's slot
+    ///   while the field was away.
+    ///
+    /// REF: FUN_801D6704, FUN_8003ADAC
+    pub(in crate::world) fn seat_warp_field_return(&mut self) {
+        self.recentre_field_window_on_player();
+        self.battle.field_camera_reseat = true;
+        self.seat_map_install_tail();
+        self.camera.offset_ease = legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED;
+        self.camera.ease_prev_yz = None;
     }
 
     /// Take the battle exit's camera re-seat latch

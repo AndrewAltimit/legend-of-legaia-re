@@ -908,7 +908,7 @@ pub(super) struct PlayWindowApp {
     /// bind out of the same key set - a key the table has no name for is not
     /// bindable on either.
     pub(super) pending_key_name: Option<&'static str>,
-    /// Menu runtime - drives shop / inn / status screens. Ticked per frame
+    /// Menu runtime - drives shop / status screens. Ticked per frame
     /// when `is_open()`; renders shop overlay via `shop_draws_for`.
     pub(super) menu_runtime: legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
     /// Pad state from the previous frame - used to compute newly-pressed bits

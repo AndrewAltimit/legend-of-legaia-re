@@ -28,6 +28,7 @@ pub enum AmbientEngageOwner {
 }
 
 /// Field NPC state: positions, headings, motions, ambient anims, dialog bindings and the solid / animate toggles.
+#[derive(Debug)]
 pub struct FieldNpcState {
     /// When set, pad locomotion also blocks a direction when any of retail's
     /// **actor-collision probes** (`FIELD_ACTOR_PROBES`, the `DAT_801f21b4`

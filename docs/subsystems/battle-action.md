@@ -1349,6 +1349,22 @@ That ~110 is the pose centroid: `+0x3C`/`+0x40` is the actor's **body pair**, no
 +0x40 = +0x38 + ((sin[0xFFF-f]*cx >> 12) + (cos[f]*cz >> 12)) * s >> 12
 ```
 
+Only a drawn body gets the store. The decode runs inside the battle draw
+`FUN_80048A08` (`jal 0x8004998C` at `0x80048A84`, no branch ahead of it), the
+draw tick `FUN_800480D8` reaches that draw only for a body whose node colour
+word `+0x74` is lit or greyed (`0x800481CC`, `jal 0x80048A08` at `0x800482E0` /
+`0x800482F8`), and the render dispatcher `FUN_8001ADA4` calls the draw tick only
+for a node with `+0x10 & 0xA` clear at view depth `0xA1` or deeper (`slti
+v0,v0,0xa1` at `0x8001AEE8`). A body behind the lens, or one a cast module hid,
+keeps the pair it last drew with, and the range law and the separation pass
+read that pair. After Doomsday's line-up Noa stands behind the camera on the
+spot the cast left her, and the separation pass pushes evolved Cort off it
+(`(+10, +10)` a pass) until his own pair, refreshed on every drawn frame, clears
+the window. Two bodies neither of which is drawn are pushed every pass until the
+camera draws one, since nothing else stores the pair. The port's draw makes the store under the same gates
+(`World::refresh_drawn_battle_body_pairs`); harness seats and the per-vsync
+cadence take every pair.
+
 (`sin` = `*0x8007B81C`, `cos` = `*0x8007B7F8`; a non-zero pitch `+0x44` re-derives `z` through a longer arm, `0x8004A534..0x8004A5F8`.) Everything that measures an actor from outside reads this pair: the target side of the range law `FUN_8004E2F0` and both sides of the separation pass `FUN_80050BB8`. Because it follows the live pair, an overlap the separation nudge resolves stays resolved, and the next attacker walks at where its target actually stands.
 
 The part count is the playing stream's own, the byte at `*(entry + 0x88)` (`lbu v1,0x0(s4)` before each `div`), so the average runs over the stream's channels only. A party clip the port expands per assembled object carries equipment channels past them that copy their attach bone's translation; averaged in, they held Vahn's invoke-clip centroid some nine units short in `x` on keyframes 2..5 (`30` against the stream's `39`), which the summon close-up's focus reads. The melee streams take the same count: recomputed from `battle_melee_hit_spark`'s RAM, Vahn's Somersault (`+0x1D9 = 0x11`, a 15-part stream the port draws over 17 channels) at cursor `128` and Gimard's reaction (an 11-part stream) at cursor `60` both reproduce the stored body pairs to the unit, `(-24, 95)` and `(-2, 492)`.

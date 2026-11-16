@@ -9,8 +9,7 @@ sub-session from the world, and writes each outcome back.
 
 - **`menu_runtime`** - `MenuRuntime`, the host of the `engine-menus` menu state
   machine: the save-slot directory and its disk round-trip (`SAVE_EXT`), the
-  shop flow, the inn sessions (including `open_scene_inn`, which reads the
-  scene's inn cost off the `SceneHost`), the level-up and art-learned notices,
+  shop flow, the level-up and art-learned notices,
   and the `MenuHost` implementation the state machine calls back into.
 - **`field_menu_dispatch`** - the pause menu's seven rows routed to their
   sub-sessions (`FieldMenuSubsession`): the session builders that read the

@@ -1606,3 +1606,20 @@ changes = [
   ["counts/browser/town01/retail/gl_draws_per_frame", 43.81, 43.92],
   ["counts/bundle/play_gzip_bytes", 5101437, 5125685],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Two retail-grounded battle animation laws, each one scored block. Devil Pump, Skull Knight and (unbaselined here, at 0.994/0.995 run to run) Orb's Jewel Beam pre-cast bisect to 'a seek inside the last keyframe span stands' (retail's end test reads whole keyframes at 0x80047A48, so a seeded cursor past the last keyframe's start is valid); the same commit makes Barra's and Gilium's strike cameras exact (films .947 -> .980, .991 -> .997) and both stills' MAE improves. Noa's chain mid and the Ghost Knight Windhash camera bisect to 'the battle draw stores no body pair for a body it does not draw' (retail refreshes +0x3C/+0x40 only inside the draw, FUN_8004998C under FUN_80048A08's gates 0x800481CC / 0x8001AEE8): the undrawn target and caster hold their last drawn pairs and the Windhash focus centroid moves about 7 units; it was already 28 units off retail on main. Not measured: whether retail rejects the same bodies on those frames."
+changes = [
+  ["states/battle_balden_devil_pump_multi_cutter_mid_cast/image", 0.95, 0.949],
+  ["states/battle_jou_party_noa_chain_mid/image", 0.994, 0.993],
+  ["states/battle_korb2_ghost_knight_windhash_mid_cast/camera", 0.999, 0.998],
+  ["states/battle_retockin_skull_knight_strike/image", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "New engine code shared by the play bundle: field context routing for every runner, per-fight battle block and scene-entry resets, the battle message banner glide, Evil Seru Magic's row, the arm-0 caster turn for five capture casts, the PSX ghost link and screen-primitive link exports, and the census lead-in seat. Measured by full-gate's wasm build: 5125685 -> 5133386 gzip bytes (+7.7 KB, +0.15%); no asset or dependency was added."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 5125685, 5133386],
+]

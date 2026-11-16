@@ -849,6 +849,12 @@ impl World {
                         }
                         None => {
                             let bc = &man[record_offset..];
+                            host.world.note_route_fallthrough(
+                                crate::world::route_census::RouteRunner::PlacementPrologue,
+                                u16::try_from(channels[i].placement_index).ok(),
+                                bc,
+                                pc,
+                            );
                             field_step_routed(&mut host, &mut channels[i].ctx, bc, pc)
                         }
                     }
@@ -1033,6 +1039,18 @@ impl World {
         self.npcs.face_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
         self.npcs.clip_rate_live.clear();
         self.npcs.clip_bones.clear();
+        // Every placement's actor is a fresh allocation whose model is its
+        // header byte: `FUN_8003A1E4` stores the byte (plus the scene-bank
+        // base, or the player-bank base at `>= 0xF0`) into the spawn
+        // template's model word (`sh v0,0x3e5c(a0)` at `0x8003A300` /
+        // `sh v1,0x3e5c(a1)` at `0x8003A324`) and allocates the actor from
+        // it (`jal 0x80024C88` at `0x8003A398`). A swap the previous scene
+        // made (`4C 50`, `CC <id> 50`, motion op `0x0E`) dies with that
+        // scene's actors; kept, it named a model id in the new scene's bank:
+        // after `uru`'s beat (`P2[35]`, `CC 1C..23 50 4B 00`) the
+        // `bubu1` villagers in placements 7..14 drew `bubu1`'s one-object
+        // bank model `0x4B`, and placement 14 walked its loop as that prop.
+        self.npcs.models.clear();
     }
 
     /// Append the `.MAP` **object-bind** channels (retail scene-init
@@ -1089,6 +1107,12 @@ impl World {
     ) {
         self.field_vm.object_channel_binds = binds.to_vec();
         self.field_vm.retired_objects.clear();
+        // A compass walk is its object actor's own state, and the load that
+        // replaces the bind list re-spawns every object actor. A leg the last
+        // scene left in flight is keyed by a record index the new scene
+        // reuses for another object: kept, it walked that object and, on
+        // landing, cleared the `0x400` halt of a record it never parked.
+        self.field_vm.object_glide_legs.clear();
         self.field_vm.object_binds_by_key =
             legaia_engine_field::field_channels::object_channel_keys(binds)
                 .into_iter()
@@ -1139,6 +1163,12 @@ impl World {
                 // here arms the bound object's morph lanes.
                 self.field_vm.executing_object = Some(c.placement_index as u16);
                 let result = {
+                    self.note_route_fallthrough(
+                        crate::world::route_census::RouteRunner::ObjectPrologue,
+                        u16::try_from(c.placement_index).ok(),
+                        bc,
+                        pc,
+                    );
                     let mut host = FieldHostImpl { world: self };
                     field_step_routed(&mut host, &mut c.ctx, bc, pc)
                 };

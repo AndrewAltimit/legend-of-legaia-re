@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; porting by reimplementation</div>
   <h1>Porting a game by engine reimplementation</h1>
-  <p class="lede">How this project ports Legend of Legaia, and why it goes about it this way: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of <code>SCUS_942.54</code>. This page is the method; <a href="decomp-recomp-reimplementation.html">the case study</a> sets it beside the other routes, using a static recompilation of this same game built over the same months.</p>
+  <p class="lede">How this project ports Legend of Legaia, and why it goes about it this way: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs and the traced disassembly, with Ghidra's decompiled C as a pointer to where to read. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of <code>SCUS_942.54</code>. This page is the method; <a href="decomp-recomp-reimplementation.html">the case study</a> sets it beside the other routes, using a static recompilation of this same game built over the same months.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="contents,the-method-at-a-glance,the-feedback-loops">
@@ -146,7 +146,7 @@
         <path class="dg-edge" d="M500.0 172 L500.0 194" marker-end="url(#pr-routes-arrow)"/>
         <text class="dg-sub dg-start" x="366" y="296" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">FIDELITY</text>
         <text class="dg-label dg-start" x="366" y="316" style="font-size:14.5px;font-weight:600">Fidelity is inherited</text>
-        <text class="dg-sub dg-start" x="366" y="333" style="font-size:12.5px">its code runs, translated</text>
+        <text class="dg-sub dg-start" x="366" y="333" style="font-size:12.5px">as far as its hardware model holds</text>
         <text class="dg-sub dg-start" x="366" y="358" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">GOOD AT</text>
         <text class="dg-label dg-start" x="366" y="377" style="font-size:13px">Retail behaviour early, with</text>
         <text class="dg-label dg-start" x="366" y="394" style="font-size:13px">its quirks and timing included</text>
@@ -207,12 +207,12 @@
     <div>
       <h3>What it costs</h3>
       <ul class="bullets">
-        <li><strong>Accuracy has to be earned.</strong> A recomp inherits retail behaviour; this port has to reach it, one mechanism at a time, and prove it.</li>
+        <li><strong>Accuracy has to be earned.</strong> A recomp inherits retail behaviour; this port has to reach it, one mechanism at a time, and show by measurement that it has.</li>
         <li><strong>A long road to first playable.</strong> Formats, VMs, a renderer, an audio stack and a battle system all have to exist first.</li>
         <li><strong>The instruments are a project of their own.</strong> Seeding from retail RAM, scoring frames and keeping baselines honest take ongoing engineering.</li>
         <li><strong>Being faithful is a discipline.</strong> An enhancement must leave the faithful mode bit-identical when off.</li>
         <li><strong>Fidelity is a long tail, paid continuously.</strong> The first playable game is far from the last divergence, and parity on what the corpus has seen says nothing about what it has not.</li>
-        <li><strong>It rests on decompilation-grade analysis; it does not replace it.</strong> Every port is read from the disassembly with the care a decompilation takes. Reimplementing changes what gets written from that reading, not how much has to be understood.</li>
+        <li><strong>It needs accurate reading of the disassembly, not a decompilation.</strong> Each routine the port depends on is read as exactly as a decompilation would read it: the arithmetic, the order of random draws, the timing. What it skips is the matching work, which is most of a matching decompilation&rsquo;s cost: no compilable source, no reproduced compiler and flags, no byte match, and no obligation to read routines the port never relies on. The price of skipping the byte match is that a misreading is not caught at once; the oracles below exist to catch it.</li>
       </ul>
     </div>
     <div>
@@ -223,17 +223,17 @@
         <li><strong>More hosts.</strong> One session in a native window and <a href="../subsystems/browser-host.html">in the browser</a>, with <a href="../subsystems/vr-mode.html">VR</a> on the site's 3D pages.</li>
         <li><strong>Modding by game concept.</strong> An <a href="../formats/expansion-pack.html">expansion pack</a> is TOML naming monsters, maps, quests, arts and items, not addresses; <a href="../subsystems/run-rules.html">run rules</a>, <a href="../subsystems/expansion-modes.html">game modes</a> and <a href="../subsystems/netplay.html">netplay</a> are the port's own. Patcher features proved against retail graduate into <a href="../subsystems/gameplay-tweaks.html">engine toggles</a>.</li>
         <li><strong>Rules you can read.</strong> A damage formula, an AI pick or a script opcode is a named Rust kernel tagged <code>// PORT:</code> with the retail address it was read from, so the retail routine stays its provenance and the <a href="port-catalog.html">port catalog</a> derives what is ported from the tree.</li>
-        <li><strong>No original code executing.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and reads a cast module's image to recover which presentation calls each arm makes, but no MIPS executes.</li>
+        <li><strong>No original code executing at play time.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and reads a cast module's image to recover which presentation calls each arm makes, but no MIPS executes. Retail routines do run in the test suite, in an interpreter, as the check on their ports.</li>
       </ul>
     </div>
   </div>
   <h3 id="measured">Fidelity is measured, not inherited</h3>
-  <p>A recomp is faithful because the original's code runs. Here nothing of the original runs, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise.</p>
+  <p>A recomp is faithful as far as its hardware model is, because the original's code runs. Here nothing of the original runs at play time, so fidelity is a measurement, and each instrument scores one axis of it against retail and commits the result as a ratchet that may only rise.</p>
   <dl class="kv">
-    <dt>Stills</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> seats the engine where each of several hundred retail save states stood and scores frame, camera, player, placements, music, flags, party and enemies per state.</dd>
+    <dt>Stills</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> seats the engine where each catalogued retail save state stood (the manifest is <code>scripts/scenarios.toml</code>) and scores frame, camera, player, placements, music, flags, party and enemies per state.</dd>
     <dt>Film</dt><dd>The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> records a spell, summon or monster cast on both sides and scores it frame by frame on the game's own state-machine clock, where a still sees one instant. The <a href="walk-film.html">walk film</a> does the same for a field walk on a fixed pad schedule. Films carry retail pixels, so their image scores are reported and not committed.</dd>
     <dt>Sound</dt><dd>The <a href="../subsystems/audio.html#state-sweep">audio-state sweep and real retail PCM</a> compare music and cues against what the emulator actually played. A film's sound cues are the one part of it that is ratcheted (<a href="cast-sequence-oracle.html#cue-ratchet">the cue ratchet</a>).</dd>
-    <dt>Routines</dt><dd>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs a retail routine off your disc in the <code>crates/retail-exec</code> R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. It is the one instrument in which retail's own code executes, and the only one that reaches inputs no capture holds. Every test declares and proves the routines it runs, and the count it covers is a ratchet. What it cannot see is when, and with what, the engine calls the kernel.</dd>
+    <dt>Routines</dt><dd>The <a href="retail-kernel-differential.html">retail kernel differential</a> runs a retail routine off your disc in the <code>crates/retail-exec</code> R3000 interpreter, GTE included, beside the Rust kernel that ports it, on generated inputs, with no hand reading between the two. The emulator-side instruments watch retail's code run on the inputs a capture happened to hold; this one runs a single routine on inputs it chooses, so it is the only one that reaches inputs no capture holds (<a href="#one-routine">one routine, end to end</a>). Every test declares and proves the routines it runs, and the count it covers is a ratchet. What it cannot see is when, and with what, the engine calls the kernel.</dd>
     <dt>Whole game</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a> plays New Game to credits on pad input, segment by segment and as one continuous run.</dd>
   </dl>
   <p><a href="verification-ladder.html">The verification ladder</a> stacks these with the format docs and port provenance, rung by rung, with what each one cannot see, and <a href="#coverage">the coverage map</a> below lists every instrument by the gap it closes. None of these is a proof in the sense a matching decompilation's byte match is. Each measures what it samples, which is why the corpus takes its denominator from the disc (<a href="capture-coverage.html">capture coverage</a>) and its gates refuse a silent loosening.</p>
@@ -266,7 +266,7 @@
   <h2>Step 2: port functions from the disassembly</h2>
   <dl class="kv">
     <dt>Done</dt><dd>Dump the function, read the instruction stream, write a fresh Rust function that does the same thing, and tag it <code>// PORT: FUN_&lt;addr&gt;</code>. The decompiled C is only a hint about where to look: register arguments vanish from calls, stores get reordered or dropped, labels print as calls, and a module imported at the wrong base prints every address shifted by a constant (<a href="ghidra.html#decompiler-artifacts">decompiler artifacts</a>).</dd>
-    <dt>Produces</dt><dd><code>World</code>-free kernels in the engine's crates, a citation in the docs, and a row in the <a href="port-catalog.html">port catalog</a>, which derives each function's status from the tree on every run.</dd>
+    <dt>Produces</dt><dd>Kernels in the engine's crates that are pure functions of their inputs, with none of the engine's <code>World</code> (its whole game state) behind them, a citation in the docs, and a row in the <a href="port-catalog.html">port catalog</a>, which derives each function's status from the tree on every run.</dd>
     <dt>Gate</dt><dd>Three checks, each on its own question. <code>port-catalog.py --check</code> ratchets what is ported. <a href="port-provenance.html">Port provenance</a> asks whether a <code>// PORT:</code> address names the routine the Rust implements; its signals rank suspicion, so <code>--check</code> gates the delta: a commit that adds an unwaived finding fails. The <a href="retail-kernel-differential.html">retail kernel differential</a> asks whether the Rust computes what the routine computes, by running the routine off your disc in an R3000 interpreter beside its kernel, on generated inputs and one scripted <code>rand()</code> stream, and comparing the whole regions both wrote; each test declares and proves the routines it runs, and <code>differential-coverage.py --check</code> ratchets how many tagged routines are covered. A differential settles provenance for the addresses it runs (<a href="verification-ladder.html">the verification ladder</a>). The interpreter is user-mode, and a test that runs no retail routine says so with its reason, so it is never counted as coverage.</dd>
     <dt>Example</dt><dd>A sweep for writers of <code>_DAT_8007B8C2</code> searched the absolute <code>lui</code> + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's polarity. Its writer is <code>0x80015F08 sh v0,0x5aa(gp)</code>, a gp-relative store the scan could not see. A negative result is held to the same evidence bar as a positive one.</dd>
   </dl>
@@ -387,6 +387,87 @@
     <dt>Gate</dt><dd>A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's <code>.ppf</code> from a fixed seed must hash the same (<a href="build-and-test-speed.html#profiling">profiling</a>). A cache has to key on everything its result depends on, and a bless or a check never reads the corpus's. In the browser, the <a href="frame-hash.html">frame hash</a> steps the play page tick by tick on a scripted pad and compares two bundles frame for frame. A rise in a ratcheted count is a loosening and takes a ledger entry like any other.</dd>
     <dt>Example</dt><dd>The <code>readPixels</code> on the battle transition's arming frame is expensive, and an asynchronous read would remove the wait. It would also land the capture frames later, which moves the transition, so that is not an optimisation available here (<a href="frame-bench.html#shapes">what the numbers have shown</a>).</dd>
   </dl>
+</section>
+
+<section class="doc-section" id="one-routine" data-doc="one-routine-end-to-end">
+  <h2>One routine, end to end</h2>
+  <p>The method is easiest to judge on a routine small enough to read whole. <code>FUN_80019B28</code> in <code>SCUS_942.54</code> is the 12-bit bearing: given two points on the ground plane it returns a heading, <code>0x000</code> toward <code>+Z</code> and <code>0x400</code> toward <code>+X</code>. Battle code calls it whenever an actor turns to face another (a strike's approach, a cast's caster turn), and the move VM and the field facings reach it too. It is a leaf of 138 instructions with no stack frame.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 900 470" xmlns="http://www.w3.org/2000/svg" style="font-family:var(--font-body)" role="img" aria-label="The bearing routine stage by stage, retail instructions on the left and the Rust on the right. The displacement is taken in 32 bits by two subu instructions; the Rust takes i32 deltas. Two bgez tests build a quadrant code; the Rust ors 2 and 1 into quad. The shorter leg shifted left 11 is divided by the longer, behind a zero guard; the Rust computes the same index. A signed halfword is read from the table at 0x8006F4C8; the Rust computes that table by formula, truncating. The quadrant constant is added or subtracted and the result masked with 0xFFF; the Rust masks the same way. Beneath, the differential calls the retail routine on twenty thousand point pairs and compares every result, and compares all 0x801 table entries.">
+      <defs><marker id="pr-one-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-sub dg-start" x="20" y="22" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">RETAIL, FROM THE DISASSEMBLY</text>
+      <text class="dg-sub dg-start" x="510" y="22" style="font-size:10.5px;font-weight:700;letter-spacing:.08em">RUST, engine-system::trig::bearing12</text>
+      <rect class="dg-node-accent" x="20" y="32" width="390" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="55" style="font-size:13.5px;font-weight:600">Displacement in 32 bits</text>
+      <text class="dg-sub dg-start" x="34" y="75" style="font-size:12px;font-family:var(--font-mono)">subu a2,a2,a0 · subu a3,a3,a1   0x80019B2C</text>
+      <rect class="dg-node" x="510" y="32" width="370" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="524" y="55" style="font-size:13.5px;font-weight:600">Deltas taken as i32</text>
+      <text class="dg-sub dg-start" x="524" y="75" style="font-size:12px;font-family:var(--font-mono)">bearing12(dz: i32, dx: i32)</text>
+      <rect class="dg-node-accent" x="20" y="104" width="390" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="127" style="font-size:13.5px;font-weight:600">Quadrant code from the signs</text>
+      <text class="dg-sub dg-start" x="34" y="147" style="font-size:12px;font-family:var(--font-mono)">bgez ×2 · li v1,0x2 · addiu v1,v1,0x1</text>
+      <rect class="dg-node" x="510" y="104" width="370" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="524" y="127" style="font-size:13.5px;font-weight:600">Negate each leg, set a bit</text>
+      <text class="dg-sub dg-start" x="524" y="147" style="font-size:12px;font-family:var(--font-mono)">quad |= 2 · quad |= 1</text>
+      <rect class="dg-node-accent" x="20" y="176" width="390" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="199" style="font-size:13.5px;font-weight:600">Ratio index, zero divisor branched round</text>
+      <text class="dg-sub dg-start" x="34" y="219" style="font-size:12px;font-family:var(--font-mono)">slt · beq a3,zero · sll v0,a3,0xb · div v0,a2</text>
+      <rect class="dg-node" x="510" y="176" width="370" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="524" y="199" style="font-size:13.5px;font-weight:600">The same index, 0..=0x800</text>
+      <text class="dg-sub dg-start" x="524" y="219" style="font-size:12px;font-family:var(--font-mono)">(numer &lt;&lt; 11) / denom</text>
+      <rect class="dg-node-accent" x="20" y="248" width="390" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="271" style="font-size:13.5px;font-weight:600">Signed halfword from the table</text>
+      <text class="dg-sub dg-start" x="34" y="291" style="font-size:12px;font-family:var(--font-mono)">lui v1,0x8007 · addiu -0xb38 · lh   0x8006F4C8</text>
+      <rect class="dg-node" x="510" y="248" width="370" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="524" y="271" style="font-size:13.5px;font-weight:600">The table by formula, not copied</text>
+      <text class="dg-sub dg-start" x="524" y="291" style="font-size:12px;font-family:var(--font-mono)">trunc(atan(i / 2048) · 4096 / 2π)</text>
+      <rect class="dg-node-accent" x="20" y="320" width="390" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="34" y="343" style="font-size:13.5px;font-weight:600">Quadrant constant, one mask</text>
+      <text class="dg-sub dg-start" x="34" y="363" style="font-size:12px;font-family:var(--font-mono)">± 0x400 / 0x800 / 0xC00 / 0x1000 · andi 0xfff</text>
+      <rect class="dg-node" x="510" y="320" width="370" height="56" rx="6"/>
+      <text class="dg-label dg-start" x="524" y="343" style="font-size:13.5px;font-weight:600">The same constants, the same mask</text>
+      <text class="dg-sub dg-start" x="524" y="363" style="font-size:12px;font-family:var(--font-mono)">(raw &amp; 0xFFF) as u16</text>
+      <path class="dg-edge-dim" d="M410 60 L508 60"/>
+      <path class="dg-edge-dim" d="M410 132 L508 132"/>
+      <path class="dg-edge-dim" d="M410 204 L508 204"/>
+      <path class="dg-edge-dim" d="M410 276 L508 276"/>
+      <path class="dg-edge-dim" d="M410 348 L508 348"/>
+      <path class="dg-edge" d="M215 376 L300 402" marker-end="url(#pr-one-arrow)"/>
+      <path class="dg-edge" d="M695 376 L600 402" marker-end="url(#pr-one-arrow)"/>
+      <rect class="dg-node-ok" x="160" y="404" width="580" height="54" rx="6"/>
+      <text class="dg-label" x="450" y="426" style="font-size:13.5px;font-weight:600">retail-exec tests/bearing.rs, off the user's disc</text>
+      <text class="dg-sub" x="450" y="446" style="font-size:12px">20,000 point pairs: v0 &amp; 0xFFF against bearing12 · all 0x801 table entries</text>
+    </svg>
+    <figcaption>Each row pairs what the instructions do with the Rust that does it. The comparison under them runs the retail routine itself, so it checks the arithmetic without anyone's reading of it in between.</figcaption>
+  </figure>
+  <p><strong>What the instructions say</strong> (grade <code>disassembly</code>, from the dump <code>ghidra/scripts/funcs/80019b28.txt</code>, which is not committed):</p>
+  <ul class="bullets">
+    <li>The four arguments are halfwords in <code>a0..a3</code>: <code>p1z</code>, <code>p1x</code>, <code>p2z</code>, <code>p2x</code>. <code>subu a2,a2,a0</code> at <code>0x80019B2C</code>, and <code>subu a3,a3,a1</code> in the delay slot at <code>0x80019B34</code>, take the displacement in 32 bits, so a delta between two extreme halfwords runs past <code>i16</code> and does not wrap.</li>
+    <li>Two <code>bgez</code> tests negate each negative leg and build a quadrant code in <code>v1</code>: <code>2</code> for a negative <code>dz</code> (<code>0x80019B3C</code>), plus <code>1</code> for a negative <code>dx</code> (<code>0x80019B4C</code>). A <code>beq</code> tree at <code>0x80019B50..0x80019B78</code> dispatches the four codes.</li>
+    <li>Each quadrant compares the legs with <code>slt</code> and branches round the divide when the shorter leg is zero, so no <code>div</code> sees a zero divisor. Otherwise it shifts the shorter leg left by 11 and divides by the longer, an index in <code>0..=0x800</code>.</li>
+    <li>The index reads a signed halfword from a table at <code>0x8006F4C8</code>, and the quadrant's constant is added or subtracted. Every path ends at one <code>andi v0,v1,0xfff</code> (<code>0x80019D44</code>).</li>
+  </ul>
+  <p><strong>The Rust</strong>, abridged and reformatted from <code>crates/engine-system/src/trig.rs</code>:</p>
+<pre><code>// PORT: FUN_80019B28
+pub fn bearing12(dz: i32, dx: i32) -> u16 {
+    let lut = atan_lut();
+    let (mut dz, mut dx) = (dz, dx);
+    let mut quad = 0u32;
+    if dz &lt; 0 { dz = -dz; quad |= 2; }
+    if dx &lt; 0 { dx = -dx; quad |= 1; }
+    let at = |n: i32, d: i32| i32::from(lut[((n &lt;&lt; 11) / d) as usize]);
+    let raw: i32 = match quad {
+        0 if dz &gt;= dx =&gt; if dx == 0 { 0 } else { at(dx, dz) },
+        0 =&gt; 0x400 - at(dz, dx),
+        // ... quadrants 1, 2 and 3 likewise, with their constants
+    };
+    (raw &amp; 0xFFF) as u16
+}</code></pre>
+  <p><strong>The check.</strong> <code>crates/retail-exec/tests/bearing.rs</code> holds two tests, and both skip without a disc. <code>the_bearing_is_the_retail_bearing</code> opens with <code>differential!(scus(BEARING))</code>, so it fails unless the interpreter entered <code>0x80019B28</code> with the bytes of the disc's executable there; it calls the retail routine on twenty thousand random point pairs, drawn at four spans from the whole <code>i16</code> plane down to sixteen units, plus a grid of short distances round the origin, and compares each result with the port. <code>the_port_arctan_table_is_the_retail_one</code> runs no routine, so it is declared <code>not_a_differential!</code> with that reason and is not counted as coverage; it compares all <code>0x801</code> computed entries with the table on the disc.</p>
+<pre><code>LEGAIA_DISC_BIN=/path/to/disc.bin \
+  cargo test -p psx-retail-exec --test integration bearing</code></pre>
+  <p><strong>What it caught.</strong> The first port of the table rounded where retail truncates. Rounding moves 1037 of the 2049 entries up by one unit, and the differential disagreed with the port on about half of its inputs. A heading one 4096th of a turn off is invisible in a still and lost in a film's noise, so no other instrument would have named it. Routing every caller through the one exact port then exposed a second defect, found by reading the callers' instructions rather than by a test: move VM sub-op <code>0x3A</code> calls this routine with the player as <code>p2</code> (<code>0x801D484C..0x801D486C</code>), and the port had used a floating-point <code>atan2</code> measured from <code>+X</code>, so every angle it wrote was <code>0x400</code> minus retail's. Its unit test asserted the mirrored convention, which is how a test can hold a defect in place.</p>
+  <p><strong>What it does not show.</strong> That the battle code calls the bearing with the right points at the right moment. That half is measured where a player would notice it, by the films and stills, and <a href="decomp-recomp-reimplementation.html#quiet-defects">three quiet defects</a> include one where the bearing was right and its caller fed it the wrong point.</p>
 </section>
 
 <section class="doc-section" id="coverage" data-doc="what-is-tested-and-the-gap-each-test-closes">

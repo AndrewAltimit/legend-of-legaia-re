@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Field-VM execution state beyond the main context: per-record channels, helper contexts, spawn requests, the op-0x49 submode block / screen, eased moves and the entry / free-roam latches.
+#[derive(Debug)]
 pub struct FieldVmState {
     /// `_DAT_8007B868` - the dev/retail branch discriminator. **Retail is
     /// zero**; a non-zero value is the dev build's "not an ordinary field
@@ -117,6 +118,10 @@ pub struct FieldVmState {
     /// flat record for the first object a record binds, a per-object key for
     /// the rest. `None` outside such a step.
     pub(crate) executing_object: Option<u16>,
+    /// The routing census ([`crate::world::route_census`]): when `Some`,
+    /// every op a script runner steps on its fall-through path is noted
+    /// here. `None` (the default) outside a disc sweep.
+    pub route_census: Option<Vec<crate::world::route_census::RouteCensusHit>>,
     /// Placement indices whose context a cross-context `CFLAG_SET` bit 8
     /// (`B1 <id> 08`, `+0x10 |= 0x100`) engaged: retail's per-actor tick
     /// `FUN_8003BC08` runs an engaged context through `FUN_80039B7C` from
@@ -280,6 +285,7 @@ impl FieldVmState {
             channels_man: None,
             executing_channel: None,
             executing_object: None,
+            route_census: None,
             pending_engagements: Vec::new(),
             retired_placements: Default::default(),
             pending_placement_respawns: Vec::new(),

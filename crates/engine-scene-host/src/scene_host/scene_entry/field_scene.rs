@@ -272,6 +272,13 @@ impl SceneHost {
         // capture hands it the capture's step (`World::seed_frame_step`).
         // REF: FUN_801D6704, FUN_80016B6C
         self.world.clock.frame_step_floor = 2;
+        // The same initialiser seeds the camera offset accumulator
+        // `_DAT_8007BCAC` (`li v0,0x3c` / `sw v0,-0x4354(v1)` at
+        // `0x801D67B8`, before its warp test), and the player it allocates
+        // carries no previous footing for the ease's settle test.
+        // REF: FUN_801D6704
+        self.world.camera.offset_ease = legaia_engine_field::camera_ease::CAMERA_OFFSET_EASE_SEED;
+        self.world.camera.ease_prev_yz = None;
         // A capture's frame-time ring is that scene's load history.
         self.world.clock.clear_frame_cost();
         self.world.clock.frame_step = if legaia_engine_scene::scene::is_world_map_scene(name) {

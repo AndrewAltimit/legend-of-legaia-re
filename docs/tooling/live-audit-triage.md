@@ -319,9 +319,13 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `DevMenuSession::closed_gate` | `_DAT_8007B868`, the dual-mode word (`dual_mode_gate` above) |
 | `BattleState::forced_monster_ground` | a cast-sequence capture seat, written by the native host's debug seeding through a tuple assignment the tool does not read as a write |
 | `Sequencer::set_exact_tempo` | an engine option for the score's written tempo; the default is retail's rounded vsync budget (`FUN_80061954`) |
-| `MenuRuntime::open_scene_inn`, `open_inn` | retail has no inn screen: a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), which both hosts run; the prompt is a tooling entry |
+| `MenuRuntime::open_scene_inn`, `open_inn` | deleted with the whole prompt (`InnSession`, the two menu states, `SceneHost::scene_inn_cost`): retail has no inn screen, a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), and only tests opened it |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
+| `BakaUi::player_char` | deleted: nothing wrote it, so the play page's minigame JSON named Vahn for every fighter, and no page script read the key; the duel draws its fighters from the engine's own scene surface |
+| `PlayWindowApp::persist_cards` | the headless window's opt-in; the play window writes cards whenever persistence is not disabled |
+| `StaticQuestWorld::pack_bosses`, `pack_formations` | a quest-test double; `World` answers the same trait from the loaded pack |
+| `SeqChannel::alt_start`, `loop_marker`, `repeat_target`, `chain_channel` | the libsnd channel mirror `decode_event` / `track_end` read in `note-trace` only; BGM plays through `Sequencer`, which holds a `SeqChannel` for its volume slide alone |
 ### Open rows
 
 - `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested` are the
@@ -344,6 +348,45 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   ramped its lanes to zero and the grey gate draws it. Whether that frame is
   darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
   fade frame before anything is carried across frames.
+
+### State a scene change carries
+
+The same shape from the other side: a field the old scene wrote that the
+new one reads before writing. Retail re-allocates its actor lists, the scene
+control block and the player on a load, so their words start clean; the
+engine keeps one `World`, so every such field needs an explicit reset at the
+retail seat. `SceneHost::load_scene` and `enter_field_scene` are the two
+seats, and the MAN loader's sweep is `World::man_load_actor_reset`. A fight is
+the same shape between two battles: `battle_second_fight_resets` (engine-core)
+ends one fight by a flee and by a win, enters a second, and holds every
+`BattleState` field to a fresh first entry's, each allowed difference named.
+
+| Field | Retail reset | What a player saw |
+|---|---|---|
+| `CameraRig::register_ramps`, `registers` | the MAN loader's sweep of `FUN_80037018` nodes (`0x8003B414`); the zone query rewrites the four registers (`FUN_801DBC20`) | after Ratayu, the next scene landed on its projection ramp's last `H` |
+| `CameraRig::scene_offset` | the control-block reset's `sh zero,0x4a` (`0x8003A0D4`) | a scene with no `4C 49` eased the fog toward the last scene's offset |
+| `CameraRig::offset_ease` | the field initialiser's `0x3C` (`0x801D67B8`) | the same, from the accumulator's side |
+| `FieldVmState::object_glide_legs` | object actors re-spawn with the bind list | a leg in flight walked the next scene's object of the same record and cleared its halt |
+| `FieldNpcState::tilts` | the actor's own `+0x24` / `+0x28` | a `juui1` tilt drew on the next scene's NPC in that slot |
+| `FieldLocomotion::eased_mirror_y` | the fresh player (`0x801D6D68`) carries no `+0x8E` mirror | a lift cut short by a door held the player's height in every later scene |
+| `FieldTerrain::floor_ladder_ramps`, `CameraRig::offset_ramps` | the MAN loader's inlined pool reset on an ordinary scene change (`0x8003B854..0x8003B898`, a copy of `FUN_8003CDA8` that respawns the driver) | a floor-rung or timed `4C 49` ramp running at the door wrote on into the next scene |
+| `BattleState` context mirrors (`BattleState::reset_context_mirrors`) | battle init zeroes the whole battle block, context included (`0x80055F14..0x80055F24`) | a second fight priced its first hit with the last strike's guard ramp and held its first prompt a pass on the last glide gate |
+| `BattleState::frame_cost_ring` | the frame driver's ring is the one global history field frames rewrite (`FUN_80016B6C`) | a second fight opened at step `3` on the first one's battle costs |
+| `CameraRig::offset_ease` on a fight's return | the field initialiser's seed runs ahead of its warp test (`0x801D67B8`), so the return from a fight takes it too | the field came back from every fight with the fog's offset at `0` |
+| `AmbientFxState::pending_game_ticks` through a fight or a minigame | the mode switch re-seeds the lists (`FUN_8001E1B4`) and the return brings the parked pool back whole (`0x8001E308`): the parts stand still | the first field frame after a fight ran up to 600 of the parts' passes at once, `rand()` ops included |
+| A minigame's return (`World::minigame_return_warp`) | MAIN INIT's warp arm, the same field-back load a fight's end makes (`World::seat_warp_field_return`) | a cabinet left by Start put the player straight back under the pad on a fully lit field |
+
+Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
+`_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
+`uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
+stands in a bridge box and writes `4C CF 00 00` outside them, so a door
+taken from inside a box carries the pin - in the port, and in retail too
+unless an undumped routine clears the pair. Two walk-on exits sit inside a
+box: `P2[29]` at tiles `(110..112, 35)` (box `103..121` x `7..49`, X pinned on
+tile `0x6F`) changes to `urudre1`, and `P2[33]` at `(10..12, 98)` (box
+`4..17` x `83..111`) to `urudre2`; no other scene authors the op, so nothing
+there releases it. The library's one uru state stands at the `map03` exit,
+outside every box, so a capture walked to either door settles it.
 
 ### Host hooks nothing implements
 
@@ -1353,7 +1396,7 @@ and the only thing that can be stale is a marker that exists.
 | Anchor | Verdict | `REPLACED-BY:` mechanism |
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
-| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
+| `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image; the MAN loader carries its own inlined copy (`0x8003B854..0x8003B898`), the seat `World::man_load_actor_reset` takes for the floor-rung and camera-offset ramps. |
 | `nested_record_copy::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_actor_formats::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
 | `rgb_wash_scale::scale_rgb24` (`80046978`) | `REPLACE` | `render-kernels::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |

@@ -69,7 +69,8 @@ use vm::move_vm::ActorState as MoveActorState;
 
 use vm_hosts::{
     ActorVmHostImpl, BattleHostImpl, EffectHostImpl, FieldCarrierHostImpl, FieldHostImpl,
-    MoveVmHostImpl, WorldMapEntityHostImpl, field_step_routed,
+    MoveVmHostImpl, WorldMapEntityHostImpl, field_step_routed, is_resolved_actor_word_op,
+    step_on_resolved_channel,
 };
 
 mod ambient_fx_state;
@@ -239,6 +240,7 @@ use legaia_engine_field::object_tint::{
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
+pub mod route_census;
 pub mod run_rules;
 pub mod run_rules_boss_rush;
 pub use retail_progression::RetailProgressionTables;

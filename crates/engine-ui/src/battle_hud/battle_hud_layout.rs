@@ -99,6 +99,12 @@ pub(super) const MOVE_NAME_Y: i32 = 148;
 pub(super) const TARGET_PLAQUE_RIGHT: i32 = 312;
 /// Vertical inset of the plaque's contents from its plate top.
 pub(super) const PLAQUE_CONTENT_DY: i32 = 4;
+
+/// How far above its rest seat the gliding message banner's frame clears the
+/// plaque's text row: the frame spans rows `8..36` at rest
+/// (`battle_hud_chrome::BANNER_PEN` less its 4-px inset, a 28-row one-line
+/// frame) and the plaque's text starts on row `PLAQUE_Y + PLAQUE_CONTENT_DY`.
+pub(super) const BANNER_CLEARS_PLAQUE_DY: i32 = 36 - (PLAQUE_Y + PLAQUE_CONTENT_DY);
 /// Width of the element badge the plaque wears, and the gap between it and
 /// the first name glyph (`battle_chrome::BADGE_W` / `PLAQUE_BADGE_GAP`).
 pub(super) const PLAQUE_BADGE_W: i32 = 20;

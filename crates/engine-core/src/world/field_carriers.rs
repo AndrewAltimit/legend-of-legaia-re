@@ -70,13 +70,16 @@ impl World {
         self.field_vm.object_channel_binds.clear();
         self.field_vm.object_binds_by_key.clear();
         self.field_vm.retired_objects.clear();
+        self.field_vm.object_glide_legs.clear();
         let n = &mut self.npcs;
         n.ambient.clear();
+        n.tilts.clear();
         n.ambient_order.clear();
         n.ambient_engaged = false;
         n.ambient_engage_owner = None;
         n.object_ambient.clear();
         n.object_models.clear();
+        n.models.clear();
         n.clip_cursors.clear();
         n.phase_draws.clear();
         n.faces.clear();

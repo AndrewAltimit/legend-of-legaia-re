@@ -38,6 +38,7 @@ enum Event {
     VictoryStage(u8),
     Sfx(u16),
     CueSpawn(u8),
+    FrameHeight(i16),
 }
 
 #[derive(Default)]
@@ -133,6 +134,9 @@ impl BattleActionHost for RecHost {
     }
     fn ui_element(&mut self, effect_id: u8, mode: u8) {
         self.record(Event::Ui(effect_id, mode));
+    }
+    fn camera_frame_height(&mut self, height: i16) {
+        self.record(Event::FrameHeight(height));
     }
     fn begin_counterattack(&mut self, counterer: u8, _attacker: u8) -> bool {
         let Some(q) = self.counter_queue.clone() else {

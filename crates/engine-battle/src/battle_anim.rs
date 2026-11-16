@@ -514,9 +514,15 @@ impl MonsterAnimPlayer {
 
     /// Store the node cursor `+0x68` in retail's 12.4 unit - the halfword a
     /// cast module writes to replay a clip from a keyframe (PROT 0928's arms
-    /// 8 and 9 store `0xF0`, keyframe 15). Clamped to the clip's length.
+    /// 8 and 9 store `0xF0`, keyframe 15). Clamped to the clip's length:
+    /// the last sixteenth before the end, not the last keyframe's start. The
+    /// natural-end test reads whole keyframes (`slt frame, frames` at
+    /// `0x80047A48..0x80047A60`), so a cursor inside the last keyframe's span
+    /// stands, and the decode blends it toward the next entry: a state saved
+    /// with a nine-keyframe idle at `132` wraps to `0` on the next step-3
+    /// pass, where the old clamp seated it on `128` and it took a pass more.
     pub fn seek_sixteenths(&mut self, sixteenths: u16) {
-        let max = self.frame_count().saturating_sub(1) << PHASE_FRAC_BITS;
+        let max = (self.frame_count() * 16).saturating_sub(1) << 4;
         self.phase = (u32::from(sixteenths) << 4).min(max);
         self.finished = false;
         self.crossed = false;
@@ -972,6 +978,23 @@ mod one_shot_tests {
         assert_eq!(f2.bone_outputs[0].0[0], 20);
         assert!(f2.finished);
         assert!(!p.take_natural_end());
+    }
+
+    #[test]
+    fn a_seek_inside_the_last_keyframe_stands() {
+        // A loop saved at `132` of its `144` sixteenths (`132 >> 4 = 8 <
+        // 9`, no natural end) seats there, not on keyframe 8's `128`, and
+        // one step-3 pass of `12` wraps it.
+        let mut l = MonsterAnimPlayer::new(&clip(9)).unwrap();
+        l.seek_sixteenths(132);
+        assert_eq!(l.cursor_sixteenths(), 132);
+        l.step = 12 << 4;
+        let _ = l.tick();
+        assert!(l.take_natural_end(), "the pass crosses the end");
+        // Past the end clamps on the last sixteenth.
+        l.seek_sixteenths(400);
+        assert_eq!(l.cursor_sixteenths(), 143);
+        assert_eq!(l.current_frame(), 8);
     }
 
     #[test]

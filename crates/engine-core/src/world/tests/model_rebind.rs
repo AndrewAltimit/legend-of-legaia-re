@@ -182,3 +182,15 @@ fn a_new_model_drops_the_slots_bound_bone_count() {
     w.tick_field_npc_ambient();
     assert_eq!(w.npcs.clip_bones.get(&5), None);
 }
+
+/// A placement's live model is scene-scoped: retail allocates each
+/// placement's actor fresh, from its header model, on every map install
+/// (`FUN_8003A1E4`), so a scene entered without a MAN (a pack map) drops
+/// the swaps the previous scene's scripts made too.
+#[test]
+fn a_man_less_scene_entry_drops_the_previous_scenes_model_swaps() {
+    let mut w = World::new();
+    w.set_field_npc_live_model(14, 0x4B);
+    w.drop_man_installed_state();
+    assert_eq!(w.field_npc_live_model(14), None);
+}

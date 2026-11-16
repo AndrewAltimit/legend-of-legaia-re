@@ -1149,6 +1149,43 @@ impl World {
             }
             return true;
         }
+        // `B1 F8 15` / `B2 F8 15`: the player's drop-shadow suppress bit,
+        // which the renderer's shadow gate reads off the flag word
+        // (`0x8001BE20..0x8001BE48`). A scene that collapses the player to a
+        // point (`CC F8 40 00 00 ..`) raises it beside the scale, because the
+        // renderer's zero-scale early-out branches to the gate rather than
+        // past it: `opdeene`'s and `town01`'s opening records, `juui2`'s
+        // entry and `cave01`'s Seru-lesson records all hide Vahn this way.
+        // Stepped on the issuing record's own context, the bit never reached
+        // the player and the blob stayed on the floor under nobody.
+        // REF: FUN_8001B964 (0x8001BE20..0x8001BE48), FUN_801DE840 (cases 0x31 / 0x32)
+        //
+        // Two more bits of the same word land the same way. `B1 F8 0D`
+        // raises the slow-fall class `0x2000`, which halves the floor glide
+        // (`0x801D1C30..0x801D1C68`, read by the settle head): `town01`'s
+        // opening record `P2[3]` raises it before it parks Vahn. `B1 F8 13`
+        // raises the movement lock `0x80000` the pad step tests: `conc`
+        // `P1[9]` and `suimon` `P1[4]` raise it in front of their fade and
+        // scene change, and the map-install tail (`FUN_8003ADAC`) clears it
+        // on the next load.
+        // REF: FUN_801DE840 (cases 0x31 / 0x32), FUN_8003ADAC
+        if mask == legaia_render_kernels::drop_shadow::SHADOW_SUPPRESS_BIT
+            || mask == crate::world::field_loop::PLAYER_SLOW_FALL_BIT
+            || mask == 0x0008_0000
+        {
+            let Some(actor) = self
+                .player_actor_slot
+                .and_then(|slot| self.actors.get_mut(usize::from(slot)))
+            else {
+                return false;
+            };
+            if set {
+                actor.move_state.flags |= mask;
+            } else {
+                actor.move_state.flags &= !mask;
+            }
+            return true;
+        }
         if mask != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
             return false;
         }

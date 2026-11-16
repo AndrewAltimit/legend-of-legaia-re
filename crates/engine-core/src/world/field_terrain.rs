@@ -28,6 +28,7 @@ pub fn step_floor_ladder(
 }
 
 /// Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
+#[derive(Debug)]
 pub struct FieldTerrain {
     /// Per-scene field collision / floor grid. Retail equivalent: the
     /// walkability map at `*(_DAT_1F8003EC) + 0x4000` that the locomotion

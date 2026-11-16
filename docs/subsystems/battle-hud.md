@@ -1397,6 +1397,16 @@ to the field, where retail raises them on the battle result screen, so the
 widget is not gated on battle mode. A multi-line message grows the interior by
 the 14-px text pitch per extra row and nothing else moves.
 
+**The banner glides.** Records `0x59`, `0x65` and `0x66` are raised and unloaded
+through the spawner `FUN_801D8DE8` like every other element, so each raise and
+unload is a tracked glide (`FUN_801DB7B0`, stepped by `FUN_801D9BBC`): the raise
+spawns the line at seat A `(16, -24)` and walks it down onto seat B `(16, 14)`
+over sixteen frames, the unload walks it back up and the line goes when it
+lands. The plaque stays drawn under the frame until the frame reaches its row;
+a recording of Viguro's magic-level line holds `Vahn` below the half-lowered
+frame. The port keeps the glide on `BattleMessageBanner::glide` and steps it
+with the other plates, so it holds the menu SM's pass gate as they do.
+
 ### The bottom message bar (record `0x5B`)
 
 The steal captions ("Stole the ...", a thief's loot handed back) rise on the

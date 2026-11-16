@@ -475,7 +475,8 @@ impl World {
                 }
                 id.pc = next_pc;
                 id.park_frames = 0;
-                if id.player_walk.is_some() || id.player_turn.is_some() {
+                if id.player_walk.is_some() || id.player_turn.is_some() || id.player_glide.is_some()
+                {
                     // The kernel takes the leg's first step in the arming
                     // frame, after the talk's slice.
                     if host.world.clock.game_tick_live && host.world.clock.script_frame_delta() > 0
@@ -668,7 +669,7 @@ impl World {
                     crate::world::prop_interact::is_talk_object_word_op(&id.bytecode, id.pc)
                 })
                 .and_then(|t| host.world.cross_context_object_prop(t));
-            let saved_local_flags = id.ctx.local_flags;
+            let mut saved_local_flags = id.ctx.local_flags;
             let bound = ext_target
                 .filter(|_| morph_target.is_none() && object_target.is_none())
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
@@ -838,10 +839,78 @@ impl World {
                     t,
                 )
             });
+            // A clip aimed at another placement (`A2 <id> <clip>`) re-points
+            // THAT actor's clip (`FUN_80024E08` on `s5`), as the prop runner
+            // and a cutscene record step it. Run on the talk's stand-in, the
+            // talk timed the clip on a cursor nobody draws and the named NPC
+            // never moved: `bubu1` `P1[22]`'s talk plays its helper's
+            // gestures (`A2 4F 09`, `A2 4F 17`, each with `AD 4F 08` behind
+            // it) and `doman` `P1[15]` its colleague's (`A2 1F 08`).
+            // REF: FUN_801DE840 (0x801DE998..0x801DEAB8), FUN_80024E08, FUN_8003C83C
+            let clip_target = (b == 0xA2)
+                .then(|| {
+                    crate::world::prop_interact::npc_word_op_slot(host.world, &id.bytecode, id.pc)
+                })
+                .flatten()
+                .filter(|&slot| Some(slot) != talker);
+            // An actor-word op aimed at a placed object that the prop-word set
+            // above does not carry - its clip (`A2 <id>`), height, scale or
+            // tilt (`CC <id> 40..44`), model (`CC <id> 50`) - runs on the
+            // object's own context, whose words its draw reads. `suimon`'s
+            // Water Gate talk (`P1[4]`) plays the gate's clip with `A2 00 02`
+            // and lowers the five sluice objects with `CC 05..09 42 ..`;
+            // stepped on the talker's stand-in, none of them moved.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4), FUN_8003C83C
+            let object_channel_target = ext_target
+                .filter(|_| morph_target.is_none() && object_target.is_none())
+                .filter(|_| {
+                    crate::world::is_resolved_actor_word_op(&id.bytecode, id.pc)
+                        // The seat `CC <id> 51 x z ..` on an object, as the
+                        // system script steps it: `town0b` `P1[36]` seats
+                        // object 8 with `CC 08 51 1C ..`.
+                        || (b == 0xCC && id.bytecode.get(id.pc + 2) == Some(&0x51))
+                })
+                .and_then(|t| {
+                    legaia_engine_field::field_channels::resolve_target(
+                        &host.world.field_vm.channels,
+                        t,
+                    )
+                })
+                .filter(|&ci| host.world.field_vm.channels[ci].object_bind);
+            // The talker's own actor words (`4C 40..45`, `48`, `50`, the
+            // ambient install `34 3x`), plain or behind its own id: the talk
+            // and the placement are one retail context, so the arm writes the
+            // talker's actor - the look turn its head buffer, the scale and
+            // tilt words its draw reads, the model its mesh. On the stand-in
+            // they reached nobody, and the look turn - its key read off the
+            // party-bank bit when no channel steps - turned the player's head
+            // instead: `bubu1`'s talks turn their speakers with
+            // `CC 1E 45 ..` / `CC 2D 45 ..`. The clip-control word, the rate
+            // and the clip keep the stand-in, which the slice bridges.
+            // REF: FUN_801DE840 (0x801DE894..0x801DE8B4, the nibble-4 arms), FUN_8003C83C
+            let talker_channel = talker.and_then(|slot| {
+                host.world
+                    .field_vm
+                    .channels
+                    .iter()
+                    .position(|c| !c.object_bind && c.placement_index == usize::from(slot))
+            });
+            let own_actor_op = talker_channel
+                .filter(|_| id.prop_anchor.is_none())
+                .filter(|_| match ext_target {
+                    None => true,
+                    Some(t) => {
+                        legaia_engine_field::field_channels::resolve_target(
+                            &host.world.field_vm.channels,
+                            t,
+                        ) == talker_channel
+                    }
+                })
+                .filter(|_| is_talker_actor_word_op(&id.bytecode, id.pc));
             // The NPC's own leg holds its halt bit: the op waits at the
             // dispatcher's halted-target early-out until the kernel lands it.
             // REF: FUN_801DE840 (0x801DE90C..0x801DE944)
-            if let Some(slot) = actor_target.or(seat_target)
+            if let Some(slot) = actor_target.or(seat_target).or(clip_target)
                 && host.world.npc_leg_in_flight(slot)
             {
                 break;
@@ -900,7 +969,13 @@ impl World {
                 host.world.field_vm.executing_object = None;
                 host.world.store_object_prop_ctx(key, &target_ctx);
                 r
-            } else if let Some(slot) = reseat.or(actor_target).or(seat_target) {
+            } else if let Some(ci) = object_channel_target {
+                let caller = id.ctx.script_id;
+                crate::world::step_on_resolved_channel(&mut host, ci, caller, &id.bytecode, id.pc)
+            } else if let Some(ci) = own_actor_op {
+                let caller = id.ctx.script_id;
+                crate::world::step_on_resolved_channel(&mut host, ci, caller, &id.bytecode, id.pc)
+            } else if let Some(slot) = reseat.or(actor_target).or(seat_target).or(clip_target) {
                 host.world.dialog.stepping_inline_npc = None;
                 crate::world::prop_interact::step_npc_word_op(&mut host, &mut id, slot)
             } else if let Some(ci) = target_word_test {
@@ -933,7 +1008,23 @@ impl World {
                 // A talk runs on the touched actor's context, so a plain
                 // `22 <clip>` plays the clip on that actor (`FUN_80024E08`):
                 // Terra's legs through `cave01` P1[2]'s `22 09` walk-off.
-                let own_clip = b == 0x22 && id.prop_anchor.is_none();
+                host.world.note_route_fallthrough(
+                    crate::world::route_census::RouteRunner::Talk,
+                    id.npc_slot.map(u16::from),
+                    &id.bytecode,
+                    id.pc,
+                );
+                // `A2 <own id> <clip>` is the same op behind the talker's id.
+                let own_clip = id.prop_anchor.is_none()
+                    && (b == 0x22
+                        || (b == 0xA2
+                            && talker_channel.is_some()
+                            && ext_target.and_then(|t| {
+                                legaia_engine_field::field_channels::resolve_target(
+                                    &host.world.field_vm.channels,
+                                    t,
+                                )
+                            }) == talker_channel));
                 if own_clip {
                     host.world.field_vm.executing_channel = id.npc_slot;
                 }
@@ -952,8 +1043,41 @@ impl World {
             // `+0x14B6`, `23 47 43`) left her where the talk's walk had
             // stopped, short of the `(71, 67)` spot her next stage talks from.
             // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC)
+            // The talker's own clip rate (`4C 41 ..`, or `CC <own id> 41 ..`)
+            // is its actor's `+0x6A`, which the clip tick steps its cursor by
+            // every frame (`World::tick_npc_clips` reads the channel's copy).
+            // The stand-in keeps the rate for the talk's own clip binds; the
+            // channel takes it so a clip already playing slows or speeds up:
+            // `doman` `P1[15]` (`CC 18 41 10 ..`), `koin3` `P1[25]` and
+            // `ropeway2` `P1[33]` (`4C 41 10 ..`).
+            // REF: FUN_801DE840 (the nibble-4 sub-1 arm), FUN_800204F8
+            if op == 0x4C
+                && id.bytecode.get(id.pc + if b & 0x80 != 0 { 2 } else { 1 }) == Some(&0x41)
+                && matches!(step, FieldStepResult::Advance { .. })
+                && id.prop_anchor.is_none()
+                && let Some(ci) = talker_channel
+                && (ext_target.is_none()
+                    || ext_target.and_then(|t| {
+                        legaia_engine_field::field_channels::resolve_target(
+                            &host.world.field_vm.channels,
+                            t,
+                        )
+                    }) == Some(ci))
+            {
+                host.world.field_vm.channels[ci].ctx.field_6a = id.ctx.field_6a;
+            }
+            // `A3 <own id> x z` is the same seat behind the talker's id
+            // (`balden` `P1[61]`'s `A3 54 61 0F`).
             if op == 0x23
-                && ext_target.is_none()
+                && (ext_target.is_none()
+                    || (other_seat.is_none()
+                        && ext_target.and_then(|t| {
+                            legaia_engine_field::field_channels::resolve_target(
+                                &host.world.field_vm.channels,
+                                t,
+                            )
+                        }) == talker_channel
+                        && talker_channel.is_some()))
                 && let Some(slot) = talker
                 && matches!(step, FieldStepResult::Advance { .. })
                 && !host.world.field_vm.entry_prerun
@@ -1002,6 +1126,35 @@ impl World {
                 if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                     // The body's clip obeys the bits the talk just wrote.
                     host.world.mirror_player_clip_control(id.ctx.local_flags);
+                }
+                // A placement's `+0x62` is its channel's word, which its clip
+                // tick reads every frame (`World::tick_npc_clips`): the bit the
+                // op moved lands there too, or the clip a talk's `A2 <id>`
+                // binds plays under whatever the word held before (`balden`'s
+                // talks clamp their speakers' clips with `AB <id> 01` first).
+                // On the talker's own word the bridged stand-in takes it.
+                // REF: FUN_801DE840 (cases 0x2B / 0x2C), FUN_800204F8
+                if matches!(b & 0x7F, 0x2B | 0x2C)
+                    && let Some(&bit) = id.bytecode.get(id.pc + 2)
+                    && let Some(ci) = legaia_engine_field::field_channels::resolve_target(
+                        &host.world.field_vm.channels,
+                        target,
+                    )
+                    && !host.world.field_vm.channels[ci].object_bind
+                    && let Some(mask) = 1u16.checked_shl(u32::from(bit & 0x1F))
+                {
+                    let apply = |w: u16| {
+                        if b & 0x7F == 0x2B {
+                            w | mask
+                        } else {
+                            w & !mask
+                        }
+                    };
+                    let word = &mut host.world.field_vm.channels[ci].ctx.local_flags;
+                    *word = apply(*word);
+                    if Some(ci) == talker_channel {
+                        saved_local_flags = apply(saved_local_flags);
+                    }
                 }
                 id.ctx.local_flags = saved_local_flags;
             }
@@ -1712,6 +1865,31 @@ impl World {
                 }
                 Some(pc + 4)
             }
+            // A compass walk on the player (`B7` / `C1 F8 <b0> <b1>`): the arm
+            // seats the op on the player's `+0x94` and raises its `0x400`,
+            // and the player target parks the caller as well, so the talk
+            // waits until the walk kernel lands the glide. Stepped on the
+            // talk's stand-in, the player never moved and the talk ran on:
+            // `bubu1` `P1[7]` / `P1[22]` and `doman` `P1[15]` step Vahn
+            // aside this way.
+            // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+            op @ (0xB7 | 0xC1) => {
+                let (body0, body1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
+                id.player_glide = Some(
+                    legaia_engine_field::cutscene_timeline::TimelinePlayerGlide {
+                        state: legaia_engine_motion_vm::motion_vm::MotionState {
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        body0,
+                        body1,
+                        rate: if op == 0xB7 { 0x80 } else { 0x40 },
+                        resume_pc: pc + 4,
+                        frames: 0,
+                    },
+                );
+                Some(pc + 4)
+            }
             _ => None,
         }
     }
@@ -1737,10 +1915,19 @@ impl World {
             }
             self.npcs.talk_player_landed = None;
         }
-        if grid == 0 && (id.player_walk.is_some() || id.player_turn.is_some()) {
+        let any_leg =
+            id.player_walk.is_some() || id.player_turn.is_some() || id.player_glide.is_some();
+        if grid == 0 && any_leg {
             return true;
         }
-        let had_leg = id.player_walk.is_some() || id.player_turn.is_some();
+        let had_leg = any_leg;
+        if let Some(mut glide) = id.player_glide.take() {
+            glide.state.speed = grid;
+            if self.step_player_glide(&mut glide) {
+                id.player_glide = Some(glide);
+                return true;
+            }
+        }
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
             let arrived = self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach);
@@ -2099,5 +2286,26 @@ impl World {
             self.pending_field_events
                 .push(legaia_engine_field::field_events::FieldEvent::DialogDismissed);
         }
+    }
+}
+
+/// The talker's own actor-word ops a talk steps on the talker's channel
+/// context rather than on its stand-in: the nibble-4 words (`4C 40` scale,
+/// `42` height, `43` / `44` tilt, `45` look, `48` heading), the model set
+/// `4C 50`, the height law `4C D9` / `DA` and the ambient install `34 3x`.
+/// The clip-control word, the rate `4C 41`, the clip `22`, the morph `4B` and
+/// the cursor ops stay on the stand-in, which the talk slice bridges to the
+/// placement.
+fn is_talker_actor_word_op(bytecode: &[u8], pc: usize) -> bool {
+    let Some(&b) = bytecode.get(pc) else {
+        return false;
+    };
+    let sub = bytecode
+        .get(pc + if b & 0x80 != 0 { 2 } else { 1 })
+        .copied();
+    match b & 0x7F {
+        0x34 => sub.is_some_and(|s| s >> 4 == 3),
+        0x4C => matches!(sub, Some(0x40 | 0x42..=0x45 | 0x48 | 0x50 | 0xD9 | 0xDA)),
+        _ => false,
     }
 }

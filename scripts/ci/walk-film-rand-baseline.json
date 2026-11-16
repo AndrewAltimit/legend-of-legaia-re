@@ -57,7 +57,7 @@
       "draws": 1
     },
     "concnow_field_door_hop": {
-      "agree": 15,
+      "agree": 34,
       "draws": 100
     },
     "concnow_field_door_hop_settled": {
@@ -189,7 +189,7 @@
       "draws": 101
     },
     "map01_tree_revival_cutscene": {
-      "agree": 2,
+      "agree": 76,
       "draws": 76
     },
     "map02_field_door_hop": {
@@ -237,7 +237,7 @@
       "draws": 151
     },
     "rikuroa2_field_door_hop": {
-      "agree": 46,
+      "agree": 150,
       "draws": 151
     },
     "rikuroa_field_card_walk": {
@@ -245,7 +245,7 @@
       "draws": 151
     },
     "rikuroa_field_cave_exit_arrival": {
-      "agree": 71,
+      "agree": 150,
       "draws": 151
     },
     "rim_elm_queen_bee_battle": {
@@ -269,7 +269,7 @@
       "draws": 1
     },
     "s2_rimelm_town01": {
-      "agree": 5,
+      "agree": 17,
       "draws": 18
     },
     "s4_rimelm_door_transition": {
@@ -277,7 +277,7 @@
       "draws": 32
     },
     "son_arrival_from_doman": {
-      "agree": 2,
+      "agree": 4,
       "draws": 17
     },
     "son_field_door_hop": {
@@ -297,7 +297,7 @@
       "draws": 150
     },
     "taiku2_field_door_hop": {
-      "agree": 51,
+      "agree": 150,
       "draws": 151
     },
     "taiku_field_card_walk": {
@@ -341,7 +341,7 @@
       "draws": 150
     },
     "vell_fog_field": {
-      "agree": 29,
+      "agree": 150,
       "draws": 151
     },
     "vozz_field_card_boot": {

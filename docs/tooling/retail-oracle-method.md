@@ -22,8 +22,9 @@ their ports, films of what unfolds over time, sound scored against what was
 played, and checks of the port against itself. Each has a section below.
 
 A static recompilation inherits retail behaviour by running the original's
-translated code; a reimplementation runs none of it, so its fidelity exists
-only as far as it is measured, and this loop is that measurement. The same
+translated code, as far as its hardware model is faithful; a reimplementation
+runs none of it at play time, so its fidelity exists only as far as it is
+measured, and this loop is that measurement. The same
 loop also serves a decompilation or a recomp as a regression oracle, since it
 asks nothing about how the engine under test was built
 ([three ways to port a game](../porting-by-reimplementation.md#three-ways-to-port-a-game)).
@@ -262,9 +263,12 @@ Three rules make it a gate rather than a test suite:
   from the reimplementation.** A model copied from the code under test shares
   its defects, and a defect on both sides cancels in the comparison.
 
-The differential is also the strongest provenance evidence there is: a tag
-claiming a routine is checked by running that routine
+The differential is also the strongest provenance evidence this method has: a
+tag claiming a routine is checked by running that routine
 ([a differential is evidence](port-provenance.md#a-differential-is-evidence)).
+[One routine, end to end](../porting-by-reimplementation.md#one-routine-end-to-end)
+walks a small one, the bearing `FUN_80019B28`, from its instructions to its
+Rust and its test, with the defect the test found.
 What it cannot see is when and with what the engine calls the kernel, which is
 what the state corpus and the films measure. Where it sits among the other
 checks is [the verification ladder](verification-ladder.md).

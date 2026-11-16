@@ -7,6 +7,7 @@ use legaia_engine_vm::MAX_ACTORS;
 use legaia_engine_vm::actor_tick::TickResult;
 
 /// Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words and the per-tick outcomes.
+#[derive(Debug)]
 pub struct MoveVmGlobals {
     /// Per-actor move-VM bytecode buffers. Indexed by actor slot. Empty
     /// vec means "no active move" - the move VM is not ticked for that

@@ -1625,6 +1625,7 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            make_way_countdown: game_anchors::u16_at(ram, ctx + 0x6D6) as i16,
             displayed_ground: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);

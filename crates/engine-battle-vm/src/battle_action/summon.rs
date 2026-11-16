@@ -502,16 +502,24 @@ pub(super) fn summon_verify_alive<H: BattleActionHost + ?Sized>(
     // `0x800` (`0x801E4E6C..0x801E4E70`): the Done band after a summon frames
     // the caster there (`shiny_refactor_gimard_levelup` reads
     // `ctx[+0x6D0] = 0x800` in `0x51`).
+    //
+    // The store sits behind the pass's case-6 call (`jal 0x801D5854` at
+    // `0x801E4D68`, the depth at `0x801E4E70`), so this pass still frames on
+    // the route depth; the camera first reads `0x800` at `0x50`'s call, since
+    // `0x38` calls no framing case. The host takes the depth on `0x38`'s pass.
     ctx.camera_variant = 1;
     ctx.camera_frame_height = SUMMON_EXIT_FRAME_HEIGHT;
-    host.camera_frame_height(SUMMON_EXIT_FRAME_HEIGHT);
     transition(ctx, ActionState::SummonDone)
 }
 
+/// State `0x38`: kill the creature's render node and go to `0x50`
+/// (`0x801E4EB8..0x801E4EF8`). It calls no framing case, so the tween `0x37`
+/// armed walks on; the exit depth `0x37` stored reaches the camera here.
 pub(super) fn summon_done<H: BattleActionHost + ?Sized>(
-    _host: &mut H,
+    host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    host.camera_frame_height(SUMMON_EXIT_FRAME_HEIGHT);
     transition(ctx, ActionState::DoneCleanup)
 }
 

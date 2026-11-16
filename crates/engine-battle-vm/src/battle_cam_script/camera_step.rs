@@ -105,6 +105,8 @@ impl BattleCamera {
             attack: AttackChannel::default(),
             rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
+            module_end_frame_fresh: false,
+            end_frame_owns_pass: false,
             escape_shot: false,
             framing_held: false,
             cursor: None,
@@ -263,7 +265,7 @@ impl BattleCamera {
         if !SPELL_CAM_STATES.contains(&state) {
             self.spell_shot = None;
         }
-        self.release_module_shot(state);
+        self.release_module_shot(state, prev);
         // The magic exit's camera write, on the pass that leaves `0x2E` for
         // `0x50` (`0x801E4958..0x801E497C`): a pitch at or above `0x191`
         // snaps to `0` and eye Y to the absolute `0x500`; below it the
@@ -1845,6 +1847,17 @@ impl BattleCamera {
             return;
         }
         if self.framing_held {
+            self.step_front_glide();
+            return;
+        }
+        // The pass that ended the summon band walked its standing tween
+        // ([`Self::release_module_shot`]); the next state frames on the next.
+        if std::mem::take(&mut self.end_frame_owns_pass) {
+            return;
+        }
+        // `0x38` calls no framing case (`0x801E4EB8..0x801E4EF8`): the walker
+        // steps the tween `0x37` armed.
+        if self.phase == BattleCamPhase::Action && self.last_action_state == SUMMON_DONE_STATE {
             self.step_front_glide();
             return;
         }

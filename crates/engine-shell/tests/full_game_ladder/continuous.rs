@@ -20,6 +20,9 @@ use legaia_engine_save_state::WorldSaveState;
 /// wipe, the guard retry included: twice the pad pass's allowance. A player
 /// keeps retrying, and one stream in fourteen takes twelve goes at Cort.
 const CONTINUOUS_WIPE_ATTEMPTS: u32 = 2 * PAD_WIPE_ATTEMPTS;
+/// Reloads a stretch takes for a walk that stalled with nothing holding the
+/// player, before the stall ends the run.
+const WALK_STALL_RELOADS: u32 = 2;
 
 thread_local! {
     /// Set for the continuous run: the hand plays to keep a party it will
@@ -507,6 +510,8 @@ fn part_c_continuous_run() {
     let mut cp_fit = true;
     let mut reloads = 0u32;
     let mut run_tried = false;
+    // The stretches a stalled walk has already reloaded once ([`WALK_STALL_RELOADS`]).
+    let mut stall_reloads: std::collections::HashMap<usize, u32> = std::collections::HashMap::new();
     let mut stall: Option<String> = None;
     // Attempts a stretch had used when a reload sent the run back behind
     // it, by stretch.
@@ -704,12 +709,35 @@ fn part_c_continuous_run() {
                 && !run_tried
                 && !session.host.world.locomotion.run_default
                 && anchor_run[i + 1] == Some(true);
+            // A walk that stalls where nothing holds the player - no wipe, no
+            // script, the next cell open - is a player who reloads the last
+            // save and plays the stretch again, the stream dealt another
+            // hand. `jouinc`'s corridor to `jouind` stalled a walk west past
+            // the P1[16] plug after two back-to-back fights on one deal and
+            // walked on every other; ending the run there scored the deal,
+            // not the stretch. Bounded per stretch, and every one is counted
+            // in the reloads the headline prints.
+            let stall_retry = !wiped
+                && !run_retry
+                && err.contains("pad walk stalled")
+                && err.contains("tiles short of")
+                && !err.contains("the player is held")
+                && stall_reloads.get(&i).copied().unwrap_or(0) < WALK_STALL_RELOADS;
+            if stall_retry {
+                *stall_reloads.entry(i).or_insert(0) += 1;
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [reload] {} -> {}: walk stalled, playing the stretch again: {err}",
+                        spine[i].id, to.id
+                    );
+                }
+            }
             let again = match guard {
                 Some(el) if wiped && prepare.is_none() => {
                     prepare = Some(el);
                     true
                 }
-                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || run_retry,
+                _ => (wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS) || run_retry || stall_retry,
             };
             if !again {
                 print_state_diff(&mut session, &inp, to);

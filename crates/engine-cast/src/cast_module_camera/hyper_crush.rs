@@ -112,8 +112,12 @@ pub fn hyper_crush_camera(
     match phase {
         0 => {
             st.countdown.0 = SPEED_SCALAR * 0x60;
+            // The caster turns onto its target first (`0x801F6B48..0x801F6B8C`;
+            // Hyper Lightning's arm 0, `0x801F6B04..0x801F6B30`, on the seat).
+            let facing = super::caster_turn_onto_target(st, seats);
+            arm.caster_write.facing = Some(facing);
             arm.shot = Some(ModuleShot {
-                angles: [-0x40, yaw_from(0x800, c.facing), 0],
+                angles: [-0x40, yaw_from(0x800, facing), 0],
                 tr: [-0x100, 0x500, 0x400],
                 focus: focus_on(c),
                 frames: 0x40,

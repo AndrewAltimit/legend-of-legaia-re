@@ -12,7 +12,7 @@ const JEDO_ENTRY: u32 = 931;
 /// The party formation points `0x800775E0` (SCUS), `(x, z)` by party count
 /// and seat: the `+0` / `+4` halfwords of each 8-byte entry, a row of three
 /// entries per count. Row 0 is never read by a cast with a party.
-const HORN_FORMATION: [[[i16; 2]; 3]; 4] = [
+pub(super) const HORN_FORMATION: [[[i16; 2]; 3]; 4] = [
     [[0, -800], [600, -1000], [-600, -1000]],
     [[300, -800], [-300, -800], [0, -1000]],
     [[0, -825], [600, -775], [-600, -775]],

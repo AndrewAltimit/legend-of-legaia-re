@@ -54,24 +54,13 @@ impl World {
             return;
         }
         if mode & 1 != 0 {
-            if self
-                .battle
-                .message_banner
-                .as_ref()
-                .is_some_and(|b| b.element == element)
-            {
-                self.battle.message_banner = None;
-            }
+            self.battle.unload_message_banner(element);
             return;
         }
         if element == ABSORB_BANNER_ELEMENT
             && let Some(text) = self.absorb_banner_text()
         {
-            self.battle.message_banner = Some(BattleMessageBanner {
-                element,
-                text,
-                hold: 0,
-            });
+            self.battle.message_banner = Some(BattleMessageBanner::raised(element, text, 0));
         }
     }
 
@@ -84,11 +73,11 @@ impl World {
         let Some(text) = self.battle_overlay_string(va) else {
             return false;
         };
-        self.battle.message_banner = Some(BattleMessageBanner {
-            element: TIMED_MESSAGE_ELEMENT,
+        self.battle.message_banner = Some(BattleMessageBanner::raised(
+            TIMED_MESSAGE_ELEMENT,
             text,
             hold,
-        });
+        ));
         true
     }
 

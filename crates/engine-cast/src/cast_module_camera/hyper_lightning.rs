@@ -73,6 +73,8 @@ pub fn hyper_lightning_camera(
             let crush = super::hyper_crush_camera(st, phase, seats);
             arm.shot = crush.shot;
             arm.hold = crush.hold;
+            // Arm 0's turn onto the victim seat (`0x801F6B04..0x801F6B30`).
+            arm.caster_write.facing = crush.caster_write.facing;
             if phase == 1 && !arm.hold {
                 let (x, z) = ahead(c, 104, 88);
                 for (slot, &r) in arm.pass_spawns.iter_mut().zip(&ARM1_RECORDS) {

@@ -65,6 +65,10 @@ DROP_ENV = {
     # (-978, 339) cast from (1977, 2207)).
     "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP", "LEGAIA_BATTLE_APPROACH_YAW",
     "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_SEAT_DISPLAYED_CLIPS",
+    # The bystanders a make-way step moved inside the display lag: the
+    # displayed frame's ground, which a film running on from the RAM's does not
+    # stand on.
+    "LEGAIA_BATTLE_DISPLAYED_BYSTANDERS",
     # The still's pin to the default step, for a replay whose gate counts
     # passes from a prompt the capture's history did not run on: a film plays
     # the whole cast from there, and retail's ring ran the party's step
@@ -241,6 +245,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_SFX_CALLERS"] = "1"
     if a.pose_objects:
         env["LEGAIA_POSE_OBJECTS"] = "1"
+    if a.body_decode:
+        env["LEGAIA_BODY_DECODE"] = "1"
     if a.watch:
         env["LEGAIA_WATCH_W"] = a.watch
     if a.range_trace:
@@ -268,7 +274,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects or a.body_decode
             or a.range_trace or a.hit_trace or a.wrapper_trace or a.ghost_trace or a.ribbon_trace or a.popup_trace or a.calc_clock or a.cd_trace):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
@@ -409,7 +415,8 @@ def state_ram(sstate: str) -> bytes | None:
         sstate = str(REPO / "saves" / "library" / "pcsx-redux" / Path(sstate).name)
         if not Path(sstate).exists():
             return None
-    tmp = REPO / "target" / "cast-sequence-state-ram.bin"
+    # One file a process: two batches in one tree read states at once.
+    tmp = REPO / "target" / f"cast-sequence-state-ram-{os.getpid()}.bin"
     r = subprocess.run([str(exe), "extract", sstate, "--start", hex(RAM_BASE), "--end", hex(RAM_TOP),
                         "--out", str(tmp)], capture_output=True)
     if r.returncode != 0 or not tmp.exists():
@@ -1403,6 +1410,9 @@ def main() -> int:
     ap.add_argument("--pose-objects", action="store_true",
                     help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
                          "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
+    ap.add_argument("--body-decode", action="store_true",
+                    help="retail: decode.csv, each seat's body-pair store in FUN_8004998C (0x8004A5FC): "
+                         "clip, cursor, pose centroid, facing, live and body pairs (breakpoint core)")
     ap.add_argument("--cd-trace", action="store_true",
                     help="retail: cd.csv, every libcd command, CdSync span, CD interrupt and its callbacks "
                          "with the CPU cycle, and each frame's CPU-done mark (breakpoint core)")

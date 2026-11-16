@@ -5,7 +5,7 @@
 //! overlay's widget
 //! choreography, category / arrange tables and open sequence, name entry,
 //! the card write flow and `bu` I/O,
-//! the debug character editor, key rebinding, game over and the inn: the
+//! the debug character editor, key rebinding and game over: the
 //! `World`-free half of the engine's menu layer. The field dialog pager and
 //! the inline-dialogue / cutscene-timeline context state live one crate
 //! down, in `legaia-engine-dialog`; the publisher-logo and title phases
@@ -28,7 +28,6 @@ pub mod equipment;
 pub mod field_menu;
 pub mod game_over;
 pub mod gameover_banner;
-pub mod inn;
 pub mod inventory_use;
 pub mod item_bag;
 pub mod items;

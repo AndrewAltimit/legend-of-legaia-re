@@ -8,7 +8,9 @@ The recorder's `meta.csv` (`scripts/ci/cast-sequence.py`) logs, per vsync, the
 battle frame counter, the frame step and the frame-cost ring's newest entry.
 On the first row of a frame those are the pass that just ran: its module
 phase, the entry its own frame end stored, and the step that frame end read
-for the next pass. A step of `4` is a raw cost of `0x2D1` or more (the ring
+for the next pass. A step-`1` frame that overruns its vsync is the exception:
+its first row is read before its own frame end, so the entry and step there
+are the frame before's, and the frame's next row holds its own. A step of `4` is a raw cost of `0x2D1` or more (the ring
 stores such a frame as `0x2BC`, which reads `3`), so the frame's cost rung is
 `4` on that step and the entry's own rung otherwise.
 
@@ -52,7 +54,19 @@ def rung(cost: int, step: int) -> int:
 def arm_runs(meta: Path) -> list[tuple[int, list[tuple[int, int]]]]:
     """`(arm, [(rung, frames), ..])` for each arm of the band, in order."""
     rows = list(csv.DictReader(open(meta)))
-    frames = [r for p, r in zip(rows, rows[1:]) if r["frame"] != p["frame"] and r["st7"] in BAND]
+    frames = []
+    for i in range(1, len(rows)):
+        p, r = rows[i - 1], rows[i]
+        if r["frame"] == p["frame"] or r["st7"] not in BAND:
+            continue
+        n = rows[i + 1] if i + 1 < len(rows) else None
+        # A step-1 frame still on the counter at the next vsync overran it, so
+        # its first row was read before its own frame end ran: the entry and
+        # step there are the frame before's, and the next row holds its own.
+        if n is not None and r["step"] == "1" and n["frame"] == r["frame"] and n["phase"] == r["phase"] \
+                and n["cost"] != r["cost"]:
+            r = dict(r, cost=n["cost"], step=n["step"])
+        frames.append(r)
     out = []
     for arm, g in itertools.groupby(frames, key=lambda r: int(r["phase"])):
         rungs = [rung(int(r["cost"]), int(r["step"])) for r in g]

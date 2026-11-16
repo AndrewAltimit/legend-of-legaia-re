@@ -8,6 +8,7 @@
 pub type SeededVramRect = ((u16, u16, u16, u16), Vec<u16>);
 
 /// What [`AmbientFxState::venue_restore`] keeps of the walked-in scene.
+#[derive(Debug)]
 pub struct VenueAmbientRestore {
     pub ambient: AmbientFxState,
     pub stagers: Vec<legaia_overlay_images::summon_overlay::SummonPart>,
@@ -17,6 +18,7 @@ pub struct VenueAmbientRestore {
 }
 
 /// Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
+#[derive(Debug)]
 pub struct AmbientFxState {
     /// The field's ambient seat (state, stager table and bundle) while the
     /// dance hall's own tree runs in this one

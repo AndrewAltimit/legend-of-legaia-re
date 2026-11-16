@@ -58,14 +58,86 @@ pub const ESM_RELEASE_ARM_LAST: u8 = 15;
 /// The Evil Seru Magic recording stores the release at `0x801F765C` /
 /// `0x801F7674` with `stream[1] - 2` = `23`, `26`, `13` for the three seats'
 /// 25-, 28- and 15-keyframe get-ups, and the cut at `0x80047A40` the same
-/// pass. The other arms of the loop (the `+0x38` slide by `dt *
-/// 0x801FA460[id]` and Noa's `-0x10` on release) move the seats the port
-/// does not stand where arm 0 stands them.
+/// pass. The loop's other half, the `+0x38` slide by `dt *
+/// 0x801FA460[id]` and Noa's `-0x10` on release, is [`esm_get_up_slide`].
 // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F7418..0x801F7490`, the arms 12..15 release loop)
 pub fn esm_releases_get_up(s: &CastActorState) -> bool {
     s.playing_anim != 0
         && s.playing_anim == s.reaction_gate
         && i32::from(s.anim_frame) >= i32::from(s.anim_frames) - 2
+}
+
+/// Arm 0's row depth: every party seat stands at `+0x38 = 0x190`
+/// (`li v0,0x190` / `sh v0,0x38` at `0x801F6C64` / `0x801F6C68`).
+pub const ESM_ROW_Z: i16 = 0x190;
+
+/// The render scale arm 0 gives each party seat, and arm 21 the caster:
+/// node `+0x72 = 0x800`, half size (`0x801F6CA0`, `0x801F7EB4`); arm 27 puts
+/// `0x1000` back (`0x801F886C`, `0x801F8904`).
+pub const ESM_ROW_SCALE: u16 = 0x800;
+
+/// Arm 21's caster seat: `+0x34 = 0`, `+0x36 = -0x380`, `+0x46 = 0x800`
+/// (`0x801F7E88..0x801F7EA4`), above the row and facing it.
+pub const ESM_CASTER_Y: i16 = -0x380;
+/// Arm 21's caster heading.
+pub const ESM_CASTER_FACING: u16 = 0x800;
+
+/// The arms 12..15 slide a pass by character id, the bytes `0x801FA460`
+/// (`lbu` off `t0 = 0x801FA460` indexed by `DAT_8007BD10[seat]`,
+/// `0x801F74B8..0x801F74C8`): Vahn and Noa `1`, Gala `2`.
+pub const ESM_GET_UP_SLIDE: [u8; 4] = [0, 1, 1, 2];
+
+/// What Noa's release takes off her row depth (`addiu v0,v0,-0x10` at
+/// `0x801F74B4`, behind `li v0,0x2` / `bne` on her character id).
+pub const ESM_NOA_RELEASE_PULL: i16 = 0x10;
+
+/// The party action entry whose end-of-clip step arm 0 halves: the sixth
+/// pointer of each member's entry table `0x801C9360[i]` (`lw v0,0x14(v0)`
+/// at `0x801F6CD0`), its `+0x0E` halfword (`lhu` / `sll 16` / `sra 0x11`,
+/// `0x801F6CD8..0x801F6D04`): the displacement the commit paths apply in
+/// proportion to how far the clip got, halved with the model.
+pub const ESM_END_STEP_ENTRY: usize = 5;
+
+/// Arm 0's half of an entry's end-of-clip step: an arithmetic shift, so a
+/// negative step rounds toward minus infinity.
+pub const fn esm_half_end_step(step: i16) -> i16 {
+    step >> 1
+}
+
+/// Arm 0's row column for party seat `i` of `n`: the formation point's x
+/// `*(0x800775E0 + (n * 3 + i) * 8)` over three, toward zero
+/// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`).
+/// The other three writes of the loop are fixed: `+0x38 = ESM_ROW_Z`,
+/// `+0x46 = 0`, node `+0x72 = ESM_ROW_SCALE` (and the node's radius `+0x58`
+/// halved). The pair, heading and radius go to `0x801FA474` / `0x801FA494`
+/// for arm 27's restore, which arm 28 repeats every pass.
+// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F6BE0..0x801F6D1C`, arm 0's party row)
+pub fn esm_row_x(formation_x: i16) -> i16 {
+    (i32::from(formation_x) / 3) as i16
+}
+
+/// The arms 12..15 loop's depth step for one party seat this pass (it runs
+/// ahead of the countdown, so on every pass the arm holds): nothing on an
+/// idle seat; on a seat [`esm_releases_get_up`] releases, Noa's `-0x10` and
+/// nothing for the others; on any other clip `frame_step *
+/// ESM_GET_UP_SLIDE[char_id]` (`0x801F7428..0x801F74E8`).
+// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F7494..0x801F74E8`, the arms 12..15 slide)
+pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 {
+    if s.playing_anim == 0 {
+        return 0;
+    }
+    if esm_releases_get_up(s) {
+        return if char_id == 2 {
+            -ESM_NOA_RELEASE_PULL
+        } else {
+            0
+        };
+    }
+    let per = ESM_GET_UP_SLIDE
+        .get(usize::from(char_id))
+        .copied()
+        .unwrap_or(0);
+    i16::from(frame_step) * i16::from(per)
 }
 
 /// The seat writes of one pass of PROT 0966's arm `phase`. `passed` is
@@ -91,10 +163,13 @@ pub fn esm_releases_get_up(s: &CastActorState) -> bool {
 /// it to the live HP, and stages the seat's own knockdown `+0x1F1` at rate
 /// `2` - the stager's writes with the other clamp.
 ///
-/// Not carried: the creature seat 7's stages and rate bytes (the engine seats
-/// no creature for a capture cast), the seat poses and model scales arms 0 /
-/// 27 / 28 save and restore, the effect records and the arm-20 banner (the
-/// screen fades are the band seam's, `World::run_cast_module_code`).
+/// The seat moves (arm 0's half-size row, the arms 12..15 slide, arm 21's
+/// caster seat, the arm 27 / 28 restore) are the host's, over these
+/// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`],
+/// [`esm_half_end_step`]). Not carried: the creature seat 7's stages and
+/// rate bytes (the engine seats no creature for a capture cast), the effect
+/// records and the arm-20 banner (the screen fades are the band seam's,
+/// `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)
 pub fn evil_seru_magic_seat_writes(
@@ -253,6 +328,36 @@ mod esm_tests {
             present_04: ESM_NEUTRAL_TINT,
             ..Default::default()
         }
+    }
+
+    /// Arm 0's row takes a third of the formation point's x, toward zero,
+    /// and the arms 12..15 slide steps a struck seat back by character.
+    #[test]
+    fn the_row_and_the_get_up_slide() {
+        assert_eq!(esm_row_x(600), 200);
+        assert_eq!(esm_row_x(-600), -200);
+        assert_eq!(esm_row_x(-301), -100);
+        // The entry-5 end step halves on an arithmetic shift.
+        assert_eq!(esm_half_end_step(64), 32);
+        assert_eq!(esm_half_end_step(-3), -2);
+        let mut s = seat(100);
+        // Idle slides nothing.
+        assert_eq!(esm_get_up_slide(&s, 3, 4), 0);
+        // A reaction slides by the frame step times the character's byte.
+        s.playing_anim = 0x0B;
+        assert_eq!(esm_get_up_slide(&s, 1, 4), 4);
+        assert_eq!(esm_get_up_slide(&s, 3, 4), 8);
+        // A released get-up pulls Noa forward and leaves the others.
+        s.playing_anim = 0x0C;
+        s.reaction_gate = 0x0C;
+        s.anim_frames = 25;
+        s.anim_frame = 23;
+        assert!(esm_releases_get_up(&s));
+        assert_eq!(esm_get_up_slide(&s, 2, 4), -ESM_NOA_RELEASE_PULL);
+        assert_eq!(esm_get_up_slide(&s, 1, 4), 0);
+        // Short of its last two keyframes the get-up still slides.
+        s.anim_frame = 20;
+        assert_eq!(esm_get_up_slide(&s, 2, 2), 2);
     }
 
     #[test]

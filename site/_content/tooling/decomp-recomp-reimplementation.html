@@ -178,7 +178,7 @@
         <tr><th>Assurance the code is right</th>
           <td data-r="Decompilation"><span class="cs-p cs-come">&#9679; Built in</span>When matching: a byte match per function.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-come">&#9679; Built in</span>Translation is mechanical. The runtime carries the risk.</td>
-          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>Measured over samples, never proved.</td></tr>
+          <td data-r="Reimplementation"><span class="cs-p cs-against">&#9675; Poor fit</span>Measured per routine and per state, over samples, never proved.</td></tr>
         <tr><th>Rules a person can read</th>
           <td data-r="Decompilation"><span class="cs-p cs-earn">&#9680; Extra work</span>Naming and typing, after the match.</td>
           <td data-r="Static recompilation"><span class="cs-p cs-against">&#9675; Poor fit</span>Generated C. Machine state stays visible.</td>
@@ -255,11 +255,37 @@
   <p>Above those, a pad-only run plays New Game to the credits, which proves the game can be finished and compares nothing with retail. <a href="porting-by-reimplementation.html#coverage">The coverage map</a> lists every instrument with the gap it closes and what it stays blind to.</p>
 </section>
 
+<section class="doc-section" id="quiet-defects" data-doc="three-quiet-defects-and-what-found-them">
+  <h2>Three quiet defects, and what found them</h2>
+  <p>Each of these left the game running and playable, which is the failure described above, and each was found a different way. <a href="porting-by-reimplementation.html#one-routine">One routine, end to end</a> adds a fourth, which the routine differential found on its own. Addresses are from the disassembly; the visible effects are from captures and play.</p>
+  <div class="cs-exhibits">
+    <article>
+      <h3>A caster facing the wrong way</h3>
+      <div class="cs-side"><span>Retail</span><p>Water Hazard's cast module (PROT 0956) turns the caster onto its target in arm 0, the first branch of its state machine, before the first cut. For a group target it measures the group's centroid (<code>jal 0x801DCEAC</code> at <code>0x801F73A0</code>) and takes the bearing to it plus a half turn (<code>0x801F73D4..0x801F73E4</code>). Every later shot is framed from that facing.</p></div>
+      <div class="cs-side cs-reimpl"><span>The port</span><p>The centroid went to four other modules but not to this one, so the caster turned onto the victim's seat: facing <code>2533</code> against retail's <code>2364</code>, 169 units of a 4096-unit turn (about fifteen degrees), and every shot of the cast framed off by that much.</p></div>
+      <p class="cs-moral cs-found"><strong>Found by a film, explained by the disassembly.</strong> The <a href="cast-sequence-oracle.html">cast-sequence oracle</a> showed the offset on every paired frame, and for a while these docs blamed the instrument. Reading arm 0 found the cause; two residuals written up separately, a brighter water column and a ring two frames early, were the same camera. Checking every other module that calls <code>FUN_801DCEAC</code> found the same missing turn in five more casts, and a disc-gated test now derives that list from the module bytes.</p>
+    </article>
+    <article>
+      <h3>A villager drawn as a prop</h3>
+      <div class="cs-side"><span>Retail</span><p>A field script can swap the model a placement draws (<code>CC &lt;id&gt; 50</code>). Retail allocates every placement's actor fresh on each map install from the placement header (<code>FUN_8003A1E4</code>: the header's model byte plus the bank base, stored at <code>0x8003A324</code>, then <code>jal 0x80024C88</code> at <code>0x8003A398</code>), so a swap ends with its scene.</p></div>
+      <div class="cs-side cs-reimpl"><span>The port</span><p>One long-lived table of live models by placement slot, never cleared. After a beat in <code>uru</code> that swaps slots 7 to 14, the next scene's villagers in those slots resolved the old id through the new scene's bank, and in <code>bubu1</code> one walked its loop drawn as a one-object prop.</p></div>
+      <p class="cs-moral cs-found"><strong>Found by a player, and no oracle could have.</strong> It showed only after that route, and the project owner saw it playing. The stills seed each scene fresh from a retail state, and no captured state stands in <code>bubu1</code> after that beat. Scene entry now clears the table, and a disc-gated test drives the route (<a href="../subsystems/script-vm-menuctrl.html">menu-control ops</a>).</p>
+    </article>
+    <article>
+      <h3>A second fight that remembers the first</h3>
+      <div class="cs-side"><span>Retail</span><p>Battle init allocates the battle block per fight and zeroes all of it (<code>FUN_80055B6C</code>: a <code>sw zero</code> loop at <code>0x80055F14..0x80055F24</code> bounded by <code>sltiu a1,0x1E8D</code>; the context, block base plus <code>0x37B4</code>, is stored to <code>0x8007BD24</code> at <code>0x80055EC8</code>).</p></div>
+      <div class="cs-side cs-reimpl"><span>The port</span><p>The context's mirrors live on a structure that outlives a fight, so a second fight opened on the first one's values: its first hit priced with the last strike's guard ramp, its first prompt held one pass on the last glide gate, and its frame-cost history begun where the last fight ended.</p></div>
+      <p class="cs-moral cs-found"><strong>Found by an audit against retail's allocations.</strong> A still seeds one fight from a state and cannot see it; the full-game ladder plays many fights and compares nothing with retail. Listing what retail re-allocates or zeroes at each scene and mode entry, and checking the engine field by field, did. A test now ends a fight by a flee and by a win, enters a second, and holds every field of the battle state to a fresh first entry's, each allowed difference named.</p>
+    </article>
+  </div>
+  <p>The last two are one defect class, and it belongs to this route. A decompilation or a recompilation runs retail's own allocations and zeroing loops, so it inherits every lifetime they imply. An engine that keeps one long-lived game state has to reset each field where retail re-creates it, and nothing fails when it does not; the countermeasure is an audit run against retail's allocation and clear sites. The first case shows the other half of the method: an oracle can point at a difference for a long time before anyone reads the right instructions, and the reading, not the score, settles it.</p>
+</section>
+
 <section class="doc-section" id="ai" data-doc="why-reimplementation-is-more-viable-now">
   <h2>Why reimplementation is more viable now</h2>
   <p>Reimplementation has had two standing problems: years of labour before the first reward, and differences from the original that go unnoticed. Both have become more tractable, for connected reasons.</p>
   <ul class="bullets">
-    <li><strong>The labour is the kind coding agents do well.</strong> Reading a routine, writing the equivalent function, wiring it up, and repeating that across a whole game was the cost. By hand, that work is measured in years: OpenLoco finished reimplementing its game in C++ only in December 2025.</li>
+    <li><strong>The labour is the kind coding agents can do at volume, provided each result is checked against something outside the agent.</strong> Reading a routine, writing the equivalent function, wiring it up, and repeating that across a whole game was the cost. By hand, that work is measured in years: OpenLoco finished reimplementing its game in C++ only in December 2025.</li>
     <li><strong>The instruments have got cheap to build.</strong> Scriptable emulators, readable save states and headless Ghidra existed already. What a small project could not afford was the software on top: state readers, scoring channels, ratchets and replay. An agent can write those too.</li>
     <li><strong>Those two fit together.</strong> An agent is a fast and confident writer, and unnoticed differences are what a fast, confident writer produces. A reimplementation with measurement gives that writer something external to answer to.</li>
   </ul>
@@ -394,6 +420,7 @@
   .cs-recomp { border-left-color: var(--warn); }
   .cs-reimpl { border-left-color: var(--accent-line); }
   .cs-moral { font-weight: 600; color: var(--text-bright); font-size: 0.94rem; }
+  .cs-moral.cs-found { font-weight: 400; color: var(--text); line-height: 1.5; }
 
   .cs-errs { margin: 1rem 0 1.25rem; display: grid; gap: 0.5rem; }
   .cs-errs > div { display: grid; grid-template-columns: 11rem 11.5rem minmax(0, 1fr); gap: 0.9rem; align-items: center; font-size: 0.92rem; }

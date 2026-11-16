@@ -1154,6 +1154,21 @@ never reach a natural end while staged, and Ultra Charge is the one whose clip w
 there. Cross Beam's caster stands on clip `8`, cursor `416`, for the three passes of
 `0x71` and `0x50` where the port's is already on idle.
 
+That one is the tick, not the close. Arm 5 shows the Curry Devil (`+0x04 = 0x20080200`)
+and stages idle with the bump on one pass (`0x801F7238..0x801F7240`), and the bump's
+commit is the anim tick's (`0x800478EC..0x80047948`); the clip carries no `+0x76` lock.
+But the tick skips a seat whose render node's colour word is zero
+(`0x800474D4..0x800474E0`), arm 2's hide left it zero, and only the body's next deep
+draw refreshes it. A `--ghost-trace` recording of `ropeway_curry_devil_pre_cross_beam`
+holds the staged byte at `0` from vsync `559` and the clip on `416` until `569`, four
+passes into `0x51`, as the Done band's pan brings the body back into the frame; its
+first after-image ghosts are drawn from `565`, and the frames cost `327` to `505` until
+then and the clamp after. The port commits the bump in the module's write-back, on the pass
+itself, and its ghosts load `0x71`'s frames onto step `4`. Gating that commit on the
+latched colour word holds the clip for the rest of the film instead: the port's latch
+never reads the Curry Devil drawn at `0xA1` or deeper there, which is still open. Grade
+`disassembly` + `capture`.
+
 ### One owner per hit
 
 **The flurry lands in the module, not in the hit kernel.** A cast clip's hit
@@ -3876,6 +3891,24 @@ the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` an
   Noa sounded `0x62` and two `0x15` where retail's recording holds no cue at all; the fold
   now lands that hit quietly (`chain_hit_stages_no_reaction`), and a victim the hit downs
   still takes the dead branch's knockdown.
+- PROT 0956's Water Hazard arm 0 turns the caster onto its target before the cut: for a
+  group code the centroid `FUN_801DCEAC` measures (`jal 0x801DCEAC` at `0x801F73A0`), a
+  seat's pair otherwise, through the bearing `FUN_80019B28` plus a half turn
+  (`0x801F73D4..0x801F73E4`). Every later shot frames `0x800 - facing`, so a caster turned
+  onto the wrong point frames the whole cast off it: the port's director took the victim
+  seat's pair for the party code and stood `169` yaw units off retail's on
+  `battle_jou_gizam_v3_water_hazard_mid_cast`. Grade `disassembly` + `capture`.
+- The same opening turn is an idiom of the band. Every capture-class image that calls
+  `FUN_801DCEAC` (PROT 0935, 0936, 0938, 0939, 0944, 0946, 0953, 0956, 0963; the disc test
+  `capture_target_aim_sites` derives the list from the module bytes) turns its caster with
+  it, the centroid for the party code `8` and the victim seat otherwise, and PROT 0937 and
+  0954 turn onto the seat alone. Hyper Crush (`0x801F6B48..0x801F6B8C`), Hyper Lightning
+  (`0x801F6B04..0x801F6B30`), Spore Gas (`0x801F6AC4..0x801F6B18`), Big Wave's branch of
+  0946 (`0x801F6B04..0x801F6B58`, behind the caster's latch; Call Wave does not turn) and
+  Terio Punch's centroid case had no port of it, so a live cast kept the caster's previous
+  heading and framed its shots off that. `cast_module_camera::caster_turn_onto_target` is
+  the turn. A `*_mid_cast` film hides it, since the state carries retail's facing. Grade
+  `disassembly`.
 - PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
   sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
 
@@ -4584,8 +4617,7 @@ close to a minute. It is ported whole.
   never fires. Every other seat off its idle, the get-up before its release
   included, slides instead: `+0x38 +=
   dt * 0x801FA460[id]` (`0, 1, 1, 2` by character id), and Noa's release
-  takes `0x10` off it; the port leaves the slide out with the rest of arm 0's
-  seats. A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
+  takes `0x10` off it (`esm_get_up_slide`). A watch on the seats' `+0x1DA` / `+0x1DC` names the stores
   (`0x801F765C` / `0x801F7674`, `stream[1] - 2` = `23`, `26`, `13`) and the cut
   at `0x80047A40` on one pass. Port `evil_seru_magic_seat_writes` with
   `esm_releases_get_up`, held to the image by the differential
@@ -4597,10 +4629,25 @@ close to a minute. It is ported whole.
   ends, until arm 28 stores `2` again. The recording walks each member's node
   cursor through the arm and reads rate `0` from the clip's end.
 
-Not carried: arms 0 / 27 / 28 save the party's poses, re-seat them in a row of
-half-size models at `z = 0x190`, and restore them; arm 10 seats the creature
-at seat 7. The engine keeps every seat where the battle put it, so the cuts
-frame the stage rather than the moved seats. The arm-20 spell-name banner is
+- **Arm 0 stands the party in a half-size row.** For party seat `i` of `n`
+  the loop (`0x801F6BE0..0x801F6D1C`) saves `+0x34..+0x3B` and the heading,
+  then stores `+0x34` = the formation point's x (`0x800775E0 + (n * 3 + i) *
+  8`) over three toward zero, `+0x38 = 0x190`, `+0x46 = 0`, node `+0x72 =
+  0x800` and the node radius `+0x58` halved (the ground shadow's scale). Arm
+  21 lifts the caster to `+0x36 = -0x380`, `x = 0`, heading `0x800` at the
+  same half scale (`0x801F7E88..0x801F7EB4`). Arm 27's pass copies every
+  saved seat back and doubles the scales and radii (`0x801F8828..0x801F8904`),
+  and arm 28 copies the party's back on every pass (`0x801F89E0..0x801F8A3C`).
+  Port `World::evil_seru_magic_row` over `esm_row_x`. Grade `disassembly`.
+
+- **Arm 0 halves each member's entry-5 end step.** The halfword it halves
+  beside the scale is `+0x0E` of the sixth pointer of the member's action-entry
+  table `0x801C9360[i]` (`lw 0x14` / `lhu 0xE` / `sra` at `0x801F6CD0..0x801F6D04`,
+  saved at `0x801FA49C`): the end-of-clip displacement the commit paths apply in
+  proportion to how far the clip got. Arm 27 copies it back. The port rewrites
+  the installed entry in place (`esm_half_end_step`). Grade `disassembly`.
+
+Not carried: arm 10 seats the creature at seat 7. The arm-20 spell-name banner is
 also left out. The screen fades are carried on the engine's one fade seat; arm
 26 spawns three at once, and the seat keeps the last, the delayed white-in that
 arm 27 fades out of.
@@ -4675,6 +4722,22 @@ keeps drifting it, and once the module returns, the Done band's case 6 frames
 the caster from whatever the walk and the drift left. The port loads the
 director's `yaw_base` from the battle camera's counter before each pass and
 stores it back after (as it does for PROT 0966's `0x780`).
+
+A done arm can hand the camera back the same way. Aluru (`0x801F8894`), Theeder
+(`0x801F80E4`) and Viguro (`0x801F78D4`) end on an arm that calls
+`FUN_801D5854(ctx[+0x13], 8)` and returns done on that pass, so `0x36` leaves for
+`0x37` there. The walker `FUN_8002149C` steps the case-8 tween in that frame, and
+`0x37`'s case 6 builds from the walked pose on the next pass. An Aluru RAM image at
+the done arm holds the dead victim's colour word `0x20080200` and `+0x21C = 0xC8`
+(the arm hides it only after the call, `0x801F88BC`), so case 8 takes the death
+framing, pitch `0x140` and TR y `0x300`, and the walker's first pass reads pitch
+`108`. The port's camera walks a case-8 frame the module armed on the band's last
+pass before it lets the shot go, and holds the next framing for that pass
+(`BattleCamera::release_module_shot`). The same holds for a module with no done-arm call:
+`0x36`'s exit pass frames nothing (`0x801E4CA8..0x801E4D4C`), so the walker steps the
+module's last shot there, and `0x37`'s case 6 starts a pass later. `0x37` stores the exit
+depth `0x800` behind its case-6 call (`0x801E4D68`, `0x801E4E70`) and `0x38` calls no
+framing case, so the camera first reads `0x800` at `0x50`'s call.
 
 Directors, each read off its own tick's disassembly:
 

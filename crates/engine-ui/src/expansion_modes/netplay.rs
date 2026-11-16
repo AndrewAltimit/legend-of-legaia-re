@@ -221,6 +221,9 @@ fn player_state(p: &NetPlayerRow) -> &'static str {
     }
 }
 
+/// The players box's line before anyone is in a room.
+const NO_PLAYERS: &str = "Not in a room yet";
+
 fn compose_screen(s: &NetScreen<'_>) -> Canvas {
     let mut c = Canvas::default();
     c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
@@ -238,6 +241,11 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
     let (px, pw) = (6, 150);
     let ph = s.players.len().max(1) as i32 * LINE + 6;
     c.panel(px, y + 2, pw, ph, ink::PANEL, ink::PANEL_EDGE);
+    // Before a room there is nobody to list: the box says so, not a blank
+    // that reads as a list failed to load.
+    if s.players.is_empty() {
+        c.text(NO_PLAYERS, px + 6, y + 4, pen::DIM);
+    }
     for (i, p) in s.players.iter().enumerate() {
         let ry = y + 4 + i as i32 * LINE;
         if let Some(seat) = p.seat {

@@ -55,6 +55,7 @@ mod battle_reentry_after_unfinished;
 mod battle_round_retarget;
 mod battle_rumble;
 mod battle_scene_smoke;
+mod battle_second_fight_resets;
 mod battle_shout_cue;
 mod battle_stage_cort_e2e;
 mod battle_stat_seeding;

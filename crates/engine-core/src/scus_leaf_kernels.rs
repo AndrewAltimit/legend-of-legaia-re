@@ -39,5 +39,10 @@ impl crate::world::World {
         self.board.draw_list.clear();
         // `sw zero, -0x49d0(v0)` at `0x8003A07C`: `_DAT_8007B630 = 0`.
         self.camera.shake_amplitude = 0;
+        // `sh zero,0x4a(v0)` at `0x8003A0D4`: the block's camera vertical
+        // offset, which the engine holds on the camera rig. A scene whose
+        // script authors no op `4C 49` eases toward zero, not toward the
+        // offset the last scene asked for.
+        self.camera.scene_offset = 0;
     }
 }

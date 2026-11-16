@@ -998,6 +998,13 @@ pub(super) fn battle_image(
                     legaia_engine_capture::ground_snap::ground_snaps_to_env(&seats),
                 ));
             }
+            let bystanders = battle.engine_image_displayed_bystanders();
+            if !bystanders.is_empty() {
+                env.push((
+                    "LEGAIA_BATTLE_DISPLAYED_BYSTANDERS",
+                    legaia_engine_capture::ground_snap::ground_snaps_to_env(&bystanders),
+                ));
+            }
         }
         if battle.displayed_camera_on_agreement() {
             env.push((

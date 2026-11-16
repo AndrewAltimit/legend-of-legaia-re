@@ -4,6 +4,7 @@
 //! Fields keep their retail provenance notes.
 
 /// Pause-menu runtime state: disc-parsed text / widget tables and the pending warp / escape requests.
+#[derive(Debug)]
 pub struct MenuState {
     /// Disc-derived pause-menu text (item names + descriptions, spell
     /// names / descriptions, accessory passive lines). `None` on a

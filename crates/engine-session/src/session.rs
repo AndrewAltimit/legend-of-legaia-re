@@ -441,6 +441,38 @@ mod tests {
         .expect("an empty scene name boots no scene")
     }
 
+    /// A loaded card's Field Move word reaches the host's options and stays:
+    /// the per-tick host step (`adopt_loaded_options`, then
+    /// `apply_option_knobs`, in that order on both play hosts) takes a save
+    /// made running as Run, and the knob re-assert after it keeps it rather
+    /// than pushing the host's pre-load Walk back over it.
+    #[test]
+    fn a_loaded_cards_field_move_run_is_the_hosts_field_move() {
+        use legaia_engine_menus::options::OptionsPins;
+        use legaia_engine_save_state::WorldSaveState;
+        use legaia_engine_system::option_values::FieldMoveOpt;
+        let mut s = headless_session();
+        let mut opts = OptionsState::default();
+        let mut pins = OptionsPins::default();
+        assert_eq!(opts.field_move, FieldMoveOpt::Walk);
+        s.apply_option_knobs(&opts, None);
+        assert!(!s.host.world.locomotion.run_default);
+        let mut save = s.host.world.save_full();
+        save.ext_v2.options = Some(legaia_save::card::RetailOptions {
+            field_move: 1,
+            ..Default::default()
+        });
+        s.host.world.load_full(save);
+        assert!(s.host.world.locomotion.run_default, "the load runs at once");
+        for _ in 0..3 {
+            s.adopt_loaded_options(&mut opts, &mut pins);
+            s.apply_option_knobs(&opts, None);
+            assert_eq!(opts.field_move, FieldMoveOpt::Run);
+            assert!(s.host.world.locomotion.run_default);
+        }
+        assert_eq!(pins.persistable(&opts).field_move, FieldMoveOpt::Run);
+    }
+
     /// The camera azimuth a host hands in is consumed by the next tick.
     /// The press rule every host routes through: no press does nothing, a
     /// Start edge opens exactly when the engine predicate allows it, a press

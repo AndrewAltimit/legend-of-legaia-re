@@ -1,4 +1,4 @@
-//! Opening the menu's sessions (field overlay, shop, inn, prize exchange) and the
+//! Opening the menu's sessions (field overlay, shop, prize exchange) and the
 //! open / suspend / cover state queries hosts read.
 
 use super::*;
@@ -65,8 +65,8 @@ impl MenuRuntime {
         if opened_this_tick { 0 } else { pressed_edge }
     }
 
-    /// One sim tick of an open field session (shop, prize exchange, inn
-    /// prompt) on that tick's pad **edges**, then the unpark of whatever
+    /// One sim tick of an open field session (shop, prize exchange) on
+    /// that tick's pad **edges**, then the unpark of whatever
     /// field script a closed session left suspended - the whole per-tick
     /// step both play hosts run, so neither can tick the screen on a
     /// different clock or release the merchant op on a different test.
@@ -186,34 +186,6 @@ impl MenuRuntime {
         self.ctx.cursor = 0;
     }
 
-    /// Install an inn session and prepare for `InnConfirm` entry. `cost` is
-    /// the gold required for a rest at this inn - in production the scene's
-    /// scripted gold-gate literal (see [`Self::open_scene_inn`], which
-    /// resolves it from the loaded scene); passing a constant directly is
-    /// the test / tooling path.
-    pub fn open_inn(&mut self, cost: u32) {
-        self.inn_session = Some(InnSession::new(cost));
-    }
-
-    /// Open the inn prompt with the **current scene's scripted cost** - the
-    /// op-`0x4E` gold-gate literal scanned from the scene MAN at load
-    /// ([`legaia_engine_scene_host::scene_host::SceneHost::scene_inn_cost`]). Installs the session
-    /// and enters `InnConfirm` at the Yes slot, mirroring the
-    /// [`Self::open_shop_buy`] field-trigger entry shape. Returns the
-    /// resolved cost, or `None` (no session installed, state untouched)
-    /// when the scene charges nothing - free rests (Rim Elm's bed, Biron)
-    /// have no gate + debit pair in their scripts.
-    pub fn open_scene_inn(
-        &mut self,
-        host: &legaia_engine_scene_host::scene_host::SceneHost,
-    ) -> Option<u32> {
-        let cost = host.scene_inn_cost()?;
-        self.inn_session = Some(InnSession::new(cost));
-        self.ctx.state = MenuState::InnConfirm.as_byte();
-        self.ctx.cursor = 0;
-        Some(cost)
-    }
-
     /// Open the menu (entry-point - typically called when the field VM
     /// requests menu via op `0x4C` sub-1).
     pub fn open(&mut self) {
@@ -237,16 +209,15 @@ impl MenuRuntime {
     /// holds game mode `0x17` with 0899's clean prefix resident and the field
     /// overlay swapped out (`scripts/scenarios.toml` `casino_prize_shop`), so
     /// no field code - locomotion, NPC motion, the field VM - can run under
-    /// the screen. The inn is not one of these: retail's inn is an ordinary
-    /// field-VM dialogue ([`legaia_engine_menus::inn`]), so the field keeps its tick under
-    /// the prompt.
+    /// the screen. An inn stay is not one of these: retail's inn is an
+    /// ordinary field-VM dialogue, so the field keeps its tick under it.
     ///
     /// Hosts skip the world tick while this holds. The browser page always
     /// froze the field under a shop; the native window used to tick it with a
     /// neutral pad, so NPCs kept walking and scene programs kept running
     /// behind the buy list.
     pub fn suspends_field(&self) -> bool {
-        self.prize_session.is_some() || (self.is_open() && self.inn_session.is_none())
+        self.prize_session.is_some() || self.is_open()
     }
 
     /// `true` while the screen behind the menu is **black** rather than the

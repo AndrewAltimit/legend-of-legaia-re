@@ -287,7 +287,7 @@ impl HeadlessPlayWindow {
         &mut self.app.session
     }
 
-    /// The window's menu-overlay screen (shop, prize exchange, inn).
+    /// The window's menu-overlay screen (shop, prize exchange).
     pub fn menu_runtime(&self) -> &legaia_engine_menu_runtime::menu_runtime::MenuRuntime {
         &self.app.menu_runtime
     }

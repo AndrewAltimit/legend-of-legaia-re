@@ -54,14 +54,6 @@ fn a_shop_suspends_the_field_and_an_inn_does_not() {
     ));
     assert!(rt.is_open());
     assert!(rt.suspends_field(), "a shop freezes the field");
-
-    // The inn prompt as `open_scene_inn` enters it: the session plus
-    // the `InnConfirm` state - open, but the field keeps ticking.
-    let mut inn = MenuRuntime::new(tmp.path().to_path_buf());
-    inn.open_inn(100);
-    inn.ctx.state = MenuState::InnConfirm.as_byte();
-    assert!(inn.is_open());
-    assert!(!inn.suspends_field(), "an inn is a field dialogue");
 }
 
 #[test]
@@ -1083,56 +1075,6 @@ fn shop_triangle_from_list_tears_down_session_and_closes() {
         runtime.shop_session.is_none(),
         "session cleared on teardown"
     );
-}
-
-#[test]
-fn inn_rest_drives_through_tick_restores_hp_and_charges_gold() {
-    let mut world = world_with_party(1);
-    world.party.money = 50;
-    world.party.party_count = 1;
-    world.actors[0].active = true;
-    let mut hms = world.party.roster.members[0].hp_mp_sp();
-    hms.hp_max = 100;
-    hms.hp_cur = 10;
-    world.party.roster.members[0].set_hp_mp_sp(hms);
-    world.mirror_roster_hp_mp(0);
-
-    let mut runtime = MenuRuntime::new("/tmp/legaia-test");
-    runtime.open_inn(10);
-    runtime.ctx.state = MenuState::InnConfirm.as_byte();
-
-    // InnConfirm (cursor 0 = yes) -> InnSleep, rest applied.
-    runtime.tick(&mut world, cross());
-    assert_eq!(runtime.ctx.state, MenuState::InnSleep.as_byte());
-    assert_eq!(world.party.money, 40, "10 gold charged");
-    assert_eq!(world.actors[0].battle.hp, 100, "HP restored to max");
-    assert_eq!(
-        world.party.roster.members[0].hp_mp_sp().hp_cur,
-        100,
-        "the record holds the restored pool"
-    );
-    assert!(runtime.inn_session.is_none(), "inn session cleared");
-
-    // Sleep fade holds, then closes.
-    for _ in 0..8 {
-        runtime.tick(&mut world, MenuInput::default());
-    }
-    assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
-}
-
-#[test]
-fn inn_decline_closes_without_charging() {
-    let mut world = world_with_party(1);
-    world.party.money = 50;
-    let mut runtime = MenuRuntime::new("/tmp/legaia-test");
-    runtime.open_inn(10);
-    runtime.ctx.state = MenuState::InnConfirm.as_byte();
-    runtime.ctx.cursor = 1; // slot 1 = no
-
-    runtime.tick(&mut world, cross());
-    assert_eq!(runtime.ctx.state, MenuState::Closing.as_byte());
-    assert_eq!(world.party.money, 50, "no gold charged on decline");
-    assert!(runtime.inn_session.is_none(), "inn session cleared");
 }
 
 #[test]

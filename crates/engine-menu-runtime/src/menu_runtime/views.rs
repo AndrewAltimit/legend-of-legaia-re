@@ -105,8 +105,6 @@ impl MenuRuntime {
             Some(MenuState::ShopTrade) => "SHOP - TRADE SERU",
             Some(MenuState::ShopTradeConfirm) => "SHOP - TRADE?",
             Some(MenuState::ShopExit) => "SHOP - DONE",
-            Some(MenuState::InnConfirm) => "INN - REST?",
-            Some(MenuState::InnSleep) => "INN - RESTING",
             Some(MenuState::ItemPickTarget) => "ITEM - TARGET",
             Some(MenuState::ItemApply) => "ITEM - APPLY",
             Some(MenuState::ItemDone) => "ITEM - DONE",

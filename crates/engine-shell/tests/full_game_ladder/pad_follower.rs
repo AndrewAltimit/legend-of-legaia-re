@@ -656,6 +656,15 @@ pub(super) fn pad_walk(
             planned_from = None;
             path.clear();
             since = 0;
+            // The walk after a fight is judged afresh. The stall test counts
+            // a frame as progress only on a new cell or a nearer one, and a
+            // route re-planned from where the fight left the walker can
+            // run back over ground it already crossed: `jouinc`'s corridor
+            // to `jouind` after two fights in a row walked Left (+R1) at
+            // eight units a frame over its own earlier cells, west round the
+            // P1[16] plug, and read as stalled after 300 of them.
+            visited.clear();
+            best = dist(here(session));
             continue;
         }
         if close_scripted_menu(session) {

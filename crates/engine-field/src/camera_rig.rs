@@ -6,6 +6,7 @@
 use legaia_engine_vm::field::CameraParam;
 
 /// Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
+#[derive(Debug)]
 pub struct CameraRig {
     /// Screen-shake amplitude - retail `_DAT_8007B630`.
     ///

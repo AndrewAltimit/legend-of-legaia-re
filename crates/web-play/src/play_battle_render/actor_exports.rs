@@ -450,6 +450,30 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Ghost `g` of battle actor `i`'s own position in the placement frame
+    /// (`battle_afterimage::placement_pos`), with no eye push: the place a
+    /// PSX-mode frame draws it, by link twenty buckets behind its corners
+    /// (`DRAW_ORDER_FAR_BUCKETS`, the walk's `0x50`-byte table offset at
+    /// `FUN_80048A08` `0x80048E7C`), as the native window does. Empty when
+    /// the ghost is not active.
+    pub fn play_battle_actor_ghost_link_pos(&self, i: u32, g: u32) -> Vec<f32> {
+        use legaia_engine_battle::battle_afterimage as ai;
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let Some(a) = br.actors.get(i as usize) else {
+            return Vec::new();
+        };
+        legaia_engine_world_views::battle_draws::battle_ghost_draws(&host.world)
+            .iter()
+            .filter(|d| d.actor_slot as usize == a.actor_idx)
+            .nth(g as usize)
+            .map(|d| {
+                ai::placement_pos([d.pos[0] as f32, d.pos[1] as f32, d.pos[2] as f32]).to_vec()
+            })
+            .unwrap_or_default()
+    }
+
     /// Ghost `g` of battle actor `i`'s NCLIP word, in
     /// `TmdRenderer.setNclipCull`'s encoding (the page's placement
     /// `nclip`): the shared `BattleGhostDraw::nclip_mode`, single-sided as

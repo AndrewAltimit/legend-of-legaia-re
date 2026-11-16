@@ -468,11 +468,21 @@
             hideObjects(a.out, a.objectIds, hiddenOf(rt, i, g));
             this.renderer.updateSceneMeshPositions(a.ghostMeshIds[g], a.out);
             const j = g * STRIDE;
+            /* Drawn by link (PSX mode), a ghost stands at its own pose and
+             * links twenty buckets behind its corners (meanDepth 1 +
+             * DRAW_ORDER_FAR_BUCKETS, the walk's 0x50-byte table offset), as
+             * the native window draws it; the eye push is the depth buffer's
+             * stand-in. Guarded against a cached WASM. */
+            const link = this.psxRender && typeof rt.play_battle_actor_ghost_link_pos === 'function'
+              && typeof rt.play_field_prim_order === 'function' && rt.play_field_prim_order()
+              ? rt.play_battle_actor_ghost_link_pos(i, g) : null;
+            const at = link && link.length === 3 ? link : null;
             draws.push({
               meshId: a.ghostMeshIds[g],
-              x: gh[j] * S, y: gh[j + 1] * S, z: gh[j + 2] * S,
+              x: (at ? at[0] : gh[j]) * S, y: (at ? at[1] : gh[j + 1]) * S, z: (at ? at[2] : gh[j + 2]) * S,
               rotY: -tf[o + 3],
-              scale: S * gh[j + 6],
+              scale: at ? S : S * gh[j + 6],
+              meanDepth: at ? 1 + 8 : undefined,
               /* Single-sided, as the live body (`BattleGhostDraw::
                * nclip_mode`): both shells additive read twice retail's
                * ghost. Guarded against a cached WASM. */

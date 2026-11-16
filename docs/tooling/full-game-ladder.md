@@ -203,7 +203,12 @@ pass toward each milestone in turn, never re-seeding:
 - At each milestone reached it takes the engine's own save
   (`World::save_full`). After a party wipe it reloads that save, as a
   player would, with the same guard retry and reload allowance the pad
-  tier has.
+  tier has. A walk that stalls with nothing holding the player (no
+  script, the stall's next cell open) reloads it too, at most twice a
+  stretch, on another hand of the stream: a corridor that wedged one deal
+  of the dice is a reload for a player, not the end of the game. Every
+  such reload is counted in the headline's reloads, and the trace names it
+  (`[reload]`).
 - It stops at the first milestone it cannot reach and prints the stall.
 
 Its score is `[continuous] reached` in the baseline: the count of
@@ -1542,6 +1547,8 @@ map as its street:
 
 ### The follower
 
+- **A walk after a fight is judged afresh.** The stall test counts a frame as progress only on a new cell or a nearer one, and the route re-planned from where a fight left the walker can run back over its own cells. After a fight the walk forgets the cells it crossed and measures from where it stands: `jouinc`'s corridor to `jouind` after two fights in a row walked west round the P1[16] plug at eight units a frame and read as a stall.
+- **Every fight hands the walk back under the post-load hold.** The return runs the map install's tail, and the pad is off for `0x28` vsyncs ([the post-load hold](../subsystems/field-locomotion.md#the-post-load-hold)): a walk pressing through it stands for 39 ticks, fewer when a heal or a repel in the field menu came first. It is retail, not a wedge; the stall test's 300-frame window clears it.
 - **Cross-axis offset.** The follower leaves a cross-axis offset of a few units alone while the other axis still has ground to cover. Chasing its own overshoot flips the diagonal every frame, and along a terrace edge the side-step toward the drop is a ledge hop (`tunnela`'s corridor at (89, 79) drops the party to (89, 80), a one-way hop it cannot climb back).
 - **A script that fires and changes no flag** more than a couple of dozen times on one walk makes that walk a stall. `retock` P2[26], the Mt. Letona checkpoint, turns the party back every time it is crossed without Lord Saryu's key. The count is per record as well as per park site: `jouinc`'s camera bands P2[3..57], one every three tiles of the way to `jouind`, all park at the same `pc` and op, and are distinct records, not one script firing repeatedly.
 - **A script that carries the walker to a landing it has carried it to before**, leaving the same flags, is a loop after the third time, even when the flags it toggles keep the first count from building. `chitei2`'s transport rides between (98, 102) and (94, 22), each ride flipping the car's flags (met on a walk to P2[9]).
