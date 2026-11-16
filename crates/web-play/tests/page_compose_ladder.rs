@@ -504,6 +504,9 @@ fn rung2b_a_refused_load_raises_the_refusal_notice() {
     rt.play_menu_press(LEFT); // -> Yes
     rt.play_menu_press(CROSS); // - and there is no card to load from
     run_commit_beat(&mut rt);
+    // The press frame still draws the screen it leaves (retail dispatches a
+    // requested screen the frame after); the next frame draws the new one.
+    rt.play_menu_input(0);
     assert!(
         !rt.play_menu_take_load(),
         "a Load off an ejected card must not park a save"
@@ -662,6 +665,8 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
         }
         let before = json(&rt.play_menu_draws_json(W, H));
         rt.play_menu_press(CROSS);
+        // Past the press frame, which still draws the list it leaves.
+        rt.play_menu_input(0);
         let after = json(&rt.play_menu_draws_json(W, H));
         assert_eq!(after["open"], true, "the confirm closed the menu");
         (before, after)

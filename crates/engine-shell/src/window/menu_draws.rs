@@ -46,6 +46,40 @@ impl PlayWindowApp {
         )
     }
 
+    /// One of the pause menu's draw lists through its carry
+    /// (`pause_menu::PauseScreenCarry`): the screen a press is leaving stays
+    /// on the press frame, and its closing windows slide out under the new
+    /// screen. `text` picks the text pass's carry, else the sprite pass's.
+    pub(super) fn carry_pause_draws(
+        &self,
+        now: Vec<TextDraw>,
+        text: bool,
+        surface_w: u32,
+        surface_h: u32,
+    ) -> Vec<TextDraw> {
+        let origins = self.pause_window_origins();
+        let state = match &self.boot_ui {
+            BootUiState::FieldMenu { sub } => {
+                legaia_engine_menu_runtime::field_menu_dispatch::pause_screen_carry(
+                    &self.session.host.world,
+                    self.session.field_menu.as_ref(),
+                    sub.as_ref(),
+                )
+            }
+            _ => None,
+        };
+        let (pending, closing) = state.unwrap_or_default();
+        let ctx = self.menu_ctx(surface_w, surface_h);
+        let carry = if text {
+            &self.pause_text_carry
+        } else {
+            &self.pause_sprite_carry
+        };
+        carry.borrow_mut().frame(
+            now, origins, pending, &closing, &ctx.rects, ctx.origin, ctx.scale,
+        )
+    }
+
     /// Windows 6 and 5 - the pair the pause menu draws when the op-`0x49`
     /// entry context's kind byte is `0x0D`
     /// (`pause_screens::context_locked_screen_draws`).

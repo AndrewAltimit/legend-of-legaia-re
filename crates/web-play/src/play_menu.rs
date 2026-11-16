@@ -117,6 +117,11 @@ pub struct PlayMenu {
     // session's copy - two answers to one press. This struct holds only what
     // the page's sub-screen driver adds on top.
     sub: Option<PlaySub>,
+    /// The carry of the screen a press leaves, one per draw list
+    /// (`legaia_engine_ui::pause_menu::PauseScreenCarry`, the native window's
+    /// rule).
+    text_carry: std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
+    sprite_carry: std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
     /// The save screen's shared driver: block-grid cursor + the card read
     /// behind it. Lives in `engine-core` so this page and the native window
     /// step the same cursor and gate the same confirms.
@@ -176,6 +181,8 @@ impl PlayMenu {
         PlayMenu {
             pending_key: None,
             sub: None,
+            text_carry: Default::default(),
+            sprite_carry: Default::default(),
             save_flow: SaveScreenFlow::new(),
             pending_load_scene: None,
             from_title: false,

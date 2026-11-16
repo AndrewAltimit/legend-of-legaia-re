@@ -140,3 +140,29 @@ pub fn pause_window_origins<const N: usize>(
         .widgets
         .live_origins(&scripts.lock_window_ids::<N>(), pending)
 }
+
+/// Each closing window's id and live origin.
+pub type ClosingWindows = Vec<(usize, (i32, i32))>;
+
+/// What the pause menu's draw carries over from the screen it is leaving
+/// (`legaia_engine_ui::pause_menu::PauseScreenCarry`): whether a press has
+/// requested a screen whose phase 0 has not run (retail still draws the old
+/// screen on that frame - the master tick `FUN_801DC6B4` dispatches a request
+/// the frame after it), and each window the list is closing with the live
+/// origin the walker has carried it to, as `(pending, closing)`. `None`
+/// with no menu or without the overlay's programs.
+pub fn pause_screen_carry(
+    world: &World,
+    menu: Option<&FieldMenuSession>,
+    sub: Option<&FieldMenuSubsession>,
+) -> Option<(bool, ClosingWindows)> {
+    world.menu.widget_scripts.as_ref()?;
+    let screen = pause_screen(menu?, sub)?;
+    if screen.subscreen == PORT_ONLY_SUBSCREEN {
+        return None;
+    }
+    Some((
+        world.menu.pause_slide_lock.screen() != Some(screen),
+        world.menu.widgets.closing_origins(),
+    ))
+}

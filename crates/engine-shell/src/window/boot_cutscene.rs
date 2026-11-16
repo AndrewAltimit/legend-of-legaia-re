@@ -1025,7 +1025,7 @@ impl PlayWindowApp {
                 // then opens their own one, so the command rows are not on
                 // screen while either is up.
                 let context_screen = self.context_locked_screen_draws(surface_w, surface_h);
-                let mut draws = if !context_screen.is_empty() {
+                let draws = if !context_screen.is_empty() {
                     context_screen.texts
                 } else if let Some(FieldMenuSubsession::Save(s)) = sub {
                     // The Save sub-session renders through the save-select
@@ -1042,6 +1042,9 @@ impl PlayWindowApp {
                     // window set).
                     self.field_menu_root_draws(surface_w, surface_h).texts
                 };
+                // The screen a press leaves stays up on the press frame and
+                // slides its windows out under the new one.
+                let mut draws = self.carry_pause_draws(draws, true, surface_w, surface_h);
                 // Window 7 - the spell level-up notice - overlays whichever
                 // menu screen is current while `MenuRuntime` holds the beat.
                 // Its window covers the screen's text under it; the text

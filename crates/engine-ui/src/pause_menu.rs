@@ -923,7 +923,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             } else {
                 &windows[..]
             }));
-            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
+            sprites.extend(ctx.frame_around(crate::items_info_extra_box_rect(
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            )));
             texts.extend(crate::list_page_arrow_draws(
                 ctx.font,
                 (v.view.page, v.view.pages),
@@ -981,7 +983,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             texts
                 .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             sprites.extend(ctx.window_chrome(&TARGET_SELECT_WINDOWS));
-            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
+            sprites.extend(ctx.frame_around(crate::items_info_extra_box_rect(
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            )));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::items_screen_sprites_for(
                     rects,
@@ -1740,5 +1744,206 @@ mod clip_to_stage_tests {
         assert_eq!((d[1].dst.2, d[1].dst.3), (0, 0));
         assert_eq!((d[2].dst, d[2].src), ((400, 10, 40, 16), (4, 4, 20, 8)));
         assert_eq!((d[3].dst, d[3].src), ((950, 470, 10, 10), (0, 0, 5, 5)));
+    }
+}
+
+/// Everything window `id`'s renderer draws, as a content rect relative to
+/// the window's origin: its descriptor rect, plus what the renderer paints
+/// outside it - window 17's widget box at `WY + 0x38`
+/// ([`crate::items_info_extra_box_rect`]) and the money box's coin row above
+/// window 49 ([`money_box_rect`]).
+fn window_draw_extent(rects: &MenuRects, id: usize) -> (i32, i32, i32, i32) {
+    let (_, _, w, h) = rects.home_rect(id);
+    match id {
+        window_ids::ITEMS_INFO => (0, 0, w.max(0x90), 0x38 + 0x28),
+        window_ids::TOP_MONEY_TIME => (0, -0x0E, w, h + 0x0E),
+        _ => (0, 0, w, h),
+    }
+}
+
+/// A rect `(x, y, w, h)` in surface pixels.
+type StageRect = (i32, i32, i32, i32);
+
+/// The screen a pause-menu change leaves, carried on screen while retail
+/// still draws it.
+///
+/// Retail's master tick `FUN_801DC6B4` dispatches a requested screen the
+/// frame after the press, so the press frame still draws the old screen
+/// whole; the new screen's phase 0 then closes the old set (`[05]`), and the
+/// window walker `FUN_80031AE4` carries each closing window to its park over
+/// twelve frames while the draw walker `FUN_80031D00` keeps painting its
+/// content there. The port composes only the current screen, so a host keeps
+/// one of these per draw list: each settled frame it holds a snapshot of
+/// what was drawn and where every window stood
+/// ([`MenuRects::with_live_origins`]'s origins); on a pending frame it hands
+/// the snapshot back in place of the new screen; while windows close it
+/// draws the snapshot's draws inside each closing window's frame, moved by
+/// how far that window has travelled, under the new screen.
+#[derive(Debug, Clone, Default)]
+pub struct PauseScreenCarry {
+    last: Option<(Vec<TextDraw>, LiveWindowOrigins)>,
+}
+
+impl PauseScreenCarry {
+    /// This frame's list. `now` is the current screen's composition (surface
+    /// pixels at `origin` / `scale`), `origins` the live origins it was laid
+    /// at (`None` outside the pause menu: the carry empties), `pending` and
+    /// `closing` the window list's state
+    /// (`field_menu_dispatch::pause_screen_carry`), `rects` the resolver the
+    /// snapshot's window sizes come from.
+    #[allow(clippy::too_many_arguments)]
+    pub fn frame(
+        &mut self,
+        now: Vec<TextDraw>,
+        origins: Option<LiveWindowOrigins>,
+        pending: bool,
+        closing: &[(usize, (i32, i32))],
+        rects: &MenuRects,
+        origin: (i32, i32),
+        scale: u32,
+    ) -> Vec<TextDraw> {
+        let Some(origins) = origins else {
+            self.last = None;
+            return now;
+        };
+        let Some((snap, snap_origins)) = self.last.as_ref() else {
+            if !pending && closing.is_empty() {
+                self.last = Some((now.clone(), origins));
+            }
+            return now;
+        };
+        if pending {
+            return snap.clone();
+        }
+        // Closing windows that stood somewhere in the snapshot: their frame
+        // there (surface pixels) and how far they have moved since.
+        let s = scale.max(1) as i32;
+        let moving: Vec<(StageRect, (i32, i32))> = closing
+            .iter()
+            .filter_map(|&(id, (x, y))| {
+                let (sx, sy) = snap_origins.get(id).copied().flatten()?;
+                let (ex, ey, w, h) = window_draw_extent(rects, id);
+                let frame = (
+                    origin.0 + (sx + ex - 8) * s,
+                    origin.1 + (sy + ey - 8) * s,
+                    (w + 16) * s,
+                    (h + 16) * s,
+                );
+                Some((frame, ((x - sx) * s, (y - sy) * s)))
+            })
+            .collect();
+        if moving.is_empty() {
+            self.last = Some((now.clone(), origins));
+            return now;
+        }
+        let inside = |(fx, fy, fw, fh): (i32, i32, i32, i32), x: i32, y: i32| {
+            x >= fx && x < fx + fw && y >= fy && y < fy + fh
+        };
+        let mut out: Vec<TextDraw> = snap
+            .iter()
+            .filter_map(|d| {
+                let (_, (dx, dy)) = moving
+                    .iter()
+                    .rev()
+                    .find(|(f, _)| inside(*f, d.dst.0, d.dst.1))?;
+                let mut d = *d;
+                d.dst.0 += dx;
+                d.dst.1 += dy;
+                Some(d)
+            })
+            .collect();
+        out.extend(now);
+        out
+    }
+}
+
+#[cfg(test)]
+mod carry_tests {
+    use super::*;
+
+    fn quad(x: i32, y: i32) -> TextDraw {
+        TextDraw {
+            dst: (x, y, 8, 8),
+            src: (0, 0, 8, 8),
+            color: [1.0; 4],
+        }
+    }
+
+    /// Window 50 (the root list, fallback rect `(24, 24, 104, 94)`) at home
+    /// in the snapshot; a draw inside it and one in no window.
+    fn origins_at(x: i32) -> LiveWindowOrigins {
+        let mut o = [None; LIVE_WINDOW_SLOTS];
+        o[window_ids::TOP_COMMAND_LIST] = Some((x, 24));
+        o
+    }
+
+    #[test]
+    fn the_left_screen_holds_the_press_frame_then_slides_out_with_its_window() {
+        let rects = MenuRects::new(None);
+        let mut c = PauseScreenCarry::default();
+        let old = vec![quad(30, 30), quad(200, 200)];
+        // A settled frame: drawn as composed, and kept.
+        assert_eq!(
+            c.frame(
+                old.clone(),
+                Some(origins_at(24)),
+                false,
+                &[],
+                &rects,
+                (0, 0),
+                1
+            )
+            .len(),
+            2
+        );
+        // The press frame: the old screen again, whatever the new one is.
+        let new = vec![quad(100, 100)];
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            true,
+            &[],
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(
+            out.iter().map(|d| d.dst.0).collect::<Vec<_>>(),
+            vec![30, 200]
+        );
+        // Window 50 closing, 10 px toward its park: its draw rides it, the
+        // draw in no closing window goes, the new screen draws on top.
+        let closing = [(window_ids::TOP_COMMAND_LIST, (14, 24))];
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            false,
+            &closing,
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(
+            out.iter().map(|d| (d.dst.0, d.dst.1)).collect::<Vec<_>>(),
+            vec![(20, 30), (100, 100)]
+        );
+        // The close done: the new screen alone, and it is the next snapshot.
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            false,
+            &[],
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(out.len(), 1);
+        let out = c.frame(vec![], Some(origins_at(24)), true, &[], &rects, (0, 0), 1);
+        assert_eq!(out.iter().map(|d| d.dst.0).collect::<Vec<_>>(), vec![100]);
+        // Out of the menu the carry empties.
+        assert!(
+            c.frame(vec![], None, true, &[], &rects, (0, 0), 1)
+                .is_empty()
+        );
     }
 }

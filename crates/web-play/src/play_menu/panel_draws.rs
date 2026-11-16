@@ -89,8 +89,32 @@ impl LegaiaRuntime {
                 ),
             },
         };
-        sprites.extend(screen.sprites);
-        texts.extend(screen.texts);
+        // The screen a press leaves stays up on the press frame and slides
+        // its windows out under the new one (the native window's carry).
+        let (pending, closing) = match (world, self.scene_host.session()) {
+            (Some(w), Some(session)) => field_menu_dispatch::pause_screen_carry(
+                w,
+                session.field_menu.as_ref(),
+                menu.sub.as_ref().map(|PlaySub::Session(s)| s.as_ref()),
+            )
+            .unwrap_or_default(),
+            _ => Default::default(),
+        };
+        let carry_ctx = menu_ctx();
+        let carry = |c: &std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
+                     now: Vec<TextDraw>| {
+            c.borrow_mut().frame(
+                now,
+                live,
+                pending,
+                &closing,
+                &carry_ctx.rects,
+                origin,
+                scale,
+            )
+        };
+        sprites.extend(carry(&menu.sprite_carry, screen.sprites));
+        texts.extend(carry(&menu.text_carry, screen.texts));
         // A held notice's window covers the screen's text under it; the
         // text pass runs after every sprite, so the covered glyphs go.
         legaia_engine_ui::pause_menu::occlude_under_menu_notices(

@@ -191,7 +191,7 @@ impl PlayWindowApp {
         {
             return Vec::new();
         }
-        let mut sprites = match sub {
+        let sprites = match sub {
             Some(FieldMenuSubsession::Save(_)) => return Vec::new(),
             Some(active) => {
                 self.field_menu_sub_draws(active, surface_w, surface_h)
@@ -199,6 +199,7 @@ impl PlayWindowApp {
             }
             None => self.field_menu_root_draws(surface_w, surface_h).sprites,
         };
+        let mut sprites = self.carry_pause_draws(sprites, false, surface_w, surface_h);
         // Windows 7 / 8 - the spell level-up and art-learned notices - are
         // framed over the screen below while the runtime holds their beat.
         sprites.extend(legaia_engine_ui::pause_menu::menu_notice_chrome(

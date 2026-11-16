@@ -346,6 +346,11 @@ pub(super) struct PlayWindowApp {
     /// screen. `None` when the disc isn't loaded (pinned fallback rects
     /// in [`MENU_WINDOW_FALLBACK`] apply).
     pub(super) menu_window_table: Option<legaia_game_tables::menu_windows::MenuWindowTable>,
+    /// The pause menu's carry of the screen a press leaves, one per draw
+    /// list (`legaia_engine_ui::pause_menu::PauseScreenCarry`).
+    pub(super) pause_text_carry: std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
+    pub(super) pause_sprite_carry:
+        std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
     /// Uploaded "It was the Seru." caption sprite atlas (opdeene's baked TIM,
     /// `World::cutscene.caption`). Uploaded lazily the first frame the caption
     /// image is present and dropped when it clears on scene change; holds
