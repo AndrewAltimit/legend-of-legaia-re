@@ -2282,7 +2282,9 @@ cyclers](field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh), reco
 each prologue scene's effect-script bundle (extraction 0748 `opdeene`, 0753 `opstati`, 0763
 `opurud`; no other scene carries them). Each sets its HSV adds with op `0x2B` and captures a CLUT
 rect with op `0x2C`; the render tail `FUN_80019D50` re-uploads the capture through the HSV pass
-every frame, into the packet buffer and out by `LoadImage`:
+on each tick until the part halts, into the packet buffer and out by `LoadImage`, and the last
+upload stays in VRAM (in `opstati` and `opurud` the greyers upload on the scene's first frames
+and the tinters on the next two or three, then all four halt):
 
 | Records | Op `0x2B` (h, s, v) | Rect captured | Effect |
 |---|---|---|---|
@@ -2341,8 +2343,11 @@ CLUT) and the amber family (the loaded TMDs' rewritten words).
   it (a `max`, a `>>1` blue) finds nothing because it is two passes of the general HSV
   re-tint `FUN_80019D50`, data-driven by the effect scripts above.
 
-**Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law in
-the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette entry.
+**Engine port.** The engine runs the four cyclers as retail does, so its software VRAM holds the
+rewritten rows once their uploads land
+([the chained capture](field-ambient-fx.md#a-capture-reads-the-rows-another-part-recoloured)),
+and it applies the law in the mesh shaders as well - equivalent, because a 4/8bpp texel *is* a
+palette entry, and idempotent over the rewritten rows, whose `max` channel is the disc entry's.
 [`Renderer::set_palette_grade`](../../crates/engine-render/src/renderer/state.rs) arms the
 **palette-collapse mode** (`palette_law_word` / `palette_collapse_prim` in
 [`shaders.rs`](../../crates/engine-render/src/shaders.rs), CPU mirrors + lockstep tests in
