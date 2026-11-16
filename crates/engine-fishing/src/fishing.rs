@@ -20,13 +20,15 @@
 //!   persistent-point cap, and the best-catch (value + fish id) update
 //!   (`FUN_801d5298`); the award itself is [`FishingSpecies::score_for`].
 //!
-//! What is an **engine-side reconstruction** (the retail win/lose conditions are
-//! in this module's [Open](../../../docs/subsystems/minigame-fishing.md#open)
-//! list): [`PondSession`] composes the confirmed kernels into the retail
-//! cast -> wait -> strike -> fight -> score loop, and the glue it adds (flight
-//! timing, the line-record reel-down rates, the snap-at-max-tension loss) is
-//! marked at each call site. No Sony bytes are baked in - the species, spawn
-//! and cadence tables decode from the user's disc ([`FishingTables`]).
+//! [`PondSession`] composes the kernels into the retail cast -> wait -> strike
+//! -> fight -> score loop: the lure's flight and its in-water position, the
+//! line record measured off that position, the line break and the record's
+//! credit stages are the lure tick's and the result actor's own (the minigame
+//! film's replay agrees with retail on every game frame of a catch). What the
+//! session still stands in for is listed under the fishing page's
+//! [Open](../../../docs/subsystems/minigame-fishing.md#open) and marked at each
+//! call site. No Sony bytes are baked in - the species, spawn and cadence
+//! tables decode from the user's disc ([`FishingTables`]).
 //!
 //! Chain: retail `FUN_801cf3bc` (mode SM) -> `FUN_801d4004` (fish-AI + tension)
 //! -> `FUN_801d5298` (catch scoring).

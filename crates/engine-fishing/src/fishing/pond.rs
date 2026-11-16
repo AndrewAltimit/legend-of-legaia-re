@@ -45,6 +45,7 @@ impl PondSession {
             last_award: 0,
             result_ramp: 0,
             lift_timer: None,
+            credit_stage: 0,
             tick_entry: PondPhase::Idle,
             exit_requested: false,
             lure_gate_armed: true,
@@ -117,6 +118,16 @@ impl PondSession {
     /// check and the hooked fish take comes off it.
     pub fn rng_state(&self) -> u32 {
         self.rng.state()
+    }
+
+    /// One `rand()` draw for a venue actor off the session's stream. Retail
+    /// has one kernel `rand()` (`jal 0x80056798`), so the lead's re-target
+    /// roll (`FUN_801D2278`, five draws on an idle shore) and the landed
+    /// fish's trail (`FUN_801D4948` sub-state `4`, three draws a lift
+    /// frame) move the stream the next cast's band, strike and species
+    /// rolls read.
+    pub fn draw_rand(&mut self) -> u16 {
+        self.rng.next_u15()
     }
 
     /// Seat the session's `rand()` state, as a harness standing the pond on
@@ -359,10 +370,12 @@ impl PondSession {
             self.break_line();
         } else if self.line_record < LAND_RECORD {
             // Reel-in complete (`record < 0x136`): score the catch.
+            // The record is credited by the result actor, once the lift has
+            // seated it ([`PondPhase::Landed`]), not here.
             let award = sp.score_for(self.strength);
-            self.record.credit(sp.index, award);
             self.last_award = award;
             self.result_ramp = 0;
+            self.credit_stage = 0;
             // The landing frame is the lift's first: the line actor's
             // sub-state `4` runs this frame from a zero timer.
             self.lift_timer = Some(fs);
@@ -374,6 +387,31 @@ impl PondSession {
             if let Some(rod) = self.rod_actor.as_mut() {
                 rod.recover();
             }
+        }
+    }
+
+    /// One result-actor tick's record writes (`FUN_801D5298`), after the
+    /// plate counter has moved: the first tick adds the award to the point
+    /// total, capped at `999999` (`+0x2A == 0`, `0x801D5590..0x801D55CC`);
+    /// the tick the plate's level `clamp(ramp - 0x180, 0, 0x100)` reaches
+    /// `0x100` weighs the award against the best catch (`+0x2A == 1`,
+    /// `0x801D55D4..0x801D561C`), the same tick that raises the accept word.
+    /// So the total moves when the plate opens, not when the fish lands, and
+    /// the best catch when the plate settles.
+    ///
+    /// PORT: FUN_801d5298 (the `+0x2A` credit stages)
+    fn credit_result(&mut self) {
+        let Some(sp) = self.fight_species.and_then(|i| self.species.get(i)) else {
+            return;
+        };
+        let index = sp.index;
+        if self.credit_stage == 0 {
+            self.record.credit_points(self.last_award);
+            self.credit_stage = 1;
+        }
+        if self.credit_stage == 1 && self.result_ramp >= RESULT_ACCEPT_RAMP {
+            self.record.weigh_best(index, self.last_award);
+            self.credit_stage = 2;
         }
     }
 
@@ -794,6 +832,7 @@ impl PondSession {
                     // (`0x801D52F4..0x801D5314`), held at `0x1000`
                     // (`0x801D54B8..0x801D54CC`).
                     self.result_ramp = (self.result_ramp + 4 * fs).min(0x1000);
+                    self.credit_result();
                 }
                 // States `0x21` / `0x22` load the plate's accept word
                 // `DAT_801D90BC` as the leave gate (`0x801CFED8`).

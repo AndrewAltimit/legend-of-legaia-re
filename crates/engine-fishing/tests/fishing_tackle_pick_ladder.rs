@@ -375,6 +375,10 @@ fn the_picked_lure_and_rod_are_what_the_pond_opens_on() {
         })
         .expect("a landed event");
     assert!(award > 0);
+    // The best catch is weighed once the result plate settles (`FUN_801D5298`).
+    for _ in 0..0x400 {
+        p.tick(PondInput::default(), 1, 0x80);
+    }
     assert_eq!(p.record.best_fish, PICKED_LURE_SPECIES);
 }
 

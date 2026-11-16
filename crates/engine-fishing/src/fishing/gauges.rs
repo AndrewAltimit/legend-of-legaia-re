@@ -232,8 +232,20 @@ impl FishingRecord {
     /// caller sees the raw award).
     // PORT: FUN_801d5298 (persistent point credit + best-catch update)
     pub fn credit(&mut self, fish_id: usize, award: i32) {
+        self.credit_points(award);
+        self.weigh_best(fish_id, award);
+    }
+
+    /// The point-total half of [`Self::credit`]: the result actor's first
+    /// tick (`0x801D55A0..0x801D55CC`).
+    pub fn credit_points(&mut self, award: i32) {
+        self.points = (self.points + award.max(0)).min(FISH_POINTS_CAP);
+    }
+
+    /// The best-catch half of [`Self::credit`]: the tick the plate settles
+    /// (`0x801D55EC..0x801D560C`).
+    pub fn weigh_best(&mut self, fish_id: usize, award: i32) {
         let award = award.max(0);
-        self.points = (self.points + award).min(FISH_POINTS_CAP);
         if award > self.best_points {
             self.best_points = award;
             self.best_fish = fish_id;

@@ -364,7 +364,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <p>Measured over the ten species, three rods and twenty seeds each, holding reel A (Cross) from the hook breaks the line in about two fights of three, and reel B (Square) in nine of ten. Reeling only while the gauge is under half breaks none of the 600 and lands every one. Reel A divides harder and recovers line faster, so it is still the better button.</p>
   </div>
   <h3 id="port-fight">The port&rsquo;s fight model</h3>
-  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. A fish run out past record <code>0x899</code> adds <code>step * 300</code> to the gauge each frame, so a slack line far out climbs to the ceiling instead of bleeding off. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
+  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. A fish run out past record <code>0x899</code> adds <code>step * 300</code> to the gauge each frame, so a slack line far out climbs to the ceiling instead of bleeding off. The fish&rsquo;s position is the lure tick&rsquo;s too: the swim moves the lure and the line record is measured off where it ends up, so a retail replay of a catch agrees on the lure&rsquo;s coordinates and the record frame by frame.</p>
   <p class="dg-note">Provenance: gauge <code>DAT_801D9168</code> updated at the tail of <code>FUN_801D4004</code>; exits in <code>FUN_801D26CC</code> at <code>0x801D3AFC..0x801D3CD4</code>.</p>
 </section>
 
@@ -392,7 +392,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
 <section class="doc-section" id="scoring" data-doc="catch-scoring-and-the-result-plate">
   <h2>What a catch is worth</h2>
 <pre><code>points = species_value * (strength + 0x9C0) / 0x32000</code></pre>
-  <p>The points go into the saved pool, clamped to 999,999. A per-catch latch scores a fish once. A catch that beats the saved best replaces the best value and its fish id. The result plate fades up as the fish is lifted, with the species name rising into view, and its rank badge is chosen by the fight strength:</p>
+  <p>The points go into the saved pool, clamped to 999,999, on the result plate&rsquo;s first frame, not on the landing frame: the pool stands still through the whole close-up. A per-catch latch scores a fish once, and weighs it against the saved best a little later, on the frame the plate finishes fading up; a catch that beats the best replaces the best value and its fish id. The result plate fades up as the fish is lifted, with the species name rising into view, and its rank badge is chosen by the fight strength:</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Fight strength</th><th>Rank plate</th></tr></thead>

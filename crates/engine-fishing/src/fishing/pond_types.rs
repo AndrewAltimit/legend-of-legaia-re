@@ -222,6 +222,11 @@ pub struct PondSession {
     /// actor (record `0x801D9024`, tick `FUN_801D5298`) off it, so the plate's
     /// counter runs only once this is `None`.
     pub(super) lift_timer: Option<i32>,
+    /// The result actor's credit word `+0x2A` (`FUN_801D5298`): `0` until
+    /// its first tick adds the award to the point total (`0x801D5590..
+    /// 0x801D55CC`), `1` until the plate's level reaches `0x100` and the
+    /// best catch is weighed (`0x801D55DC..0x801D561C`), then `2`.
+    pub(super) credit_stage: u8,
     /// The phase the last [`PondSession::tick`] started in: the driver's
     /// state word as its switch ran, ahead of the actor ticks that can move
     /// it (the lure tick lands a catch after the driver's tail has drawn).
