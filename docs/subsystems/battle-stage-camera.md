@@ -1792,6 +1792,30 @@ build, the default against the census with the seat (image mean, cue mean):
 | Enemy casts | 109 | `.9351` / `.9985` | `.9360` / `.9991` |
 | Gate | 12 | `.9664` / `.9944` | `.9710` / `1.0` |
 
+The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
+frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
+Slippery's and Topaz's strike films recorded nothing (Warhalf's replay won the fight in round
+3). Held to the gate, all four record on their default reading. The span law then carries the
+CD stop watch's wait into the film: Tri-Somersault's `0x1E` runs `736` vsyncs for retail's
+`734` (`589` by default) and Dragon Fangs' `355` for `352`. The vsyncs alone move little,
+since a film pairs on the game clock, and the steps the frames read are the census's to fix:
+the arts agree with retail's step on `.837` of their game time by default, `.846` under the
+law alone and `.947` under the law and the census. One build, both seats held to the gate
+(image mean, cue mean):
+
+| Set | Films | Default | Span law | Census and span law |
+|---|---:|---|---|---|
+| Player arts | 20 | `.9316` / `.9982` | `.9333` / `.9911` | `.9358` / `1.0` |
+| Monster strikes | 65 | `.9825` / `.9996` | `.9825` / `.9996` | `.9839` / `.9996` |
+| Seru casts | 29 | `.9612` / `1.0` | `.9611` / `1.0` | `.9611` / `1.0` |
+| Enemy casts | 109 | `.9374` / `.9985` | `.9347` / `.9939` | `.9366` / `.9972` |
+
+Both stay opt-in. Under the law alone the enemy casts' step agreement falls (`.845` to
+`.820`), Death Game's film `.928` to `.834` and Aluru's cannon `.952` to `.886`; with the
+census Genocidal Cannon's two films still fall `.054` and Astral Wave's `0x2B` lands a cue a
+pass late (`.75`; `.5` under the law alone), where a step-`4` frame of eight vsyncs puts one
+pass past the cue tolerance.
+
 The Seru band's two tail states keep the table under the census like the band
 (`0x37` / `0x38`, `World::push_frame_cost`): their own frames' work sits under the step-`2`
 edge on every Seru film (retail's `172..370` hblanks), and retail still runs them at `2` and

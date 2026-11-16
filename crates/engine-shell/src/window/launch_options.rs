@@ -275,6 +275,14 @@ pub struct ScreenshotConfig {
     /// step, so pricing them moves the streams a pinned film was found on.
     /// Set by the cast-sequence oracle on request; `false` in play.
     pub leadin_table_cost: bool,
+    /// `LEGAIA_LEADIN_SPAN_LAW=1`: the replay's lead-in runs its battle frames
+    /// on the default one-vsync overrun, and the span law
+    /// (`WorldToggles::battle_frame_span_law`) takes over when the gate
+    /// opens. The lead-in's rounds under the law's longer frames re-deal:
+    /// `battle_korb2_warhalf_strike`'s replay won the fight in round 3 and
+    /// never met its gate. Set by the cast-sequence oracle on request;
+    /// `false` in play.
+    pub leadin_span_law: bool,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -1182,6 +1190,7 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
+            leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

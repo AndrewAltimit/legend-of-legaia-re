@@ -129,6 +129,20 @@ impl PlayWindowApp {
     /// or the cast-sequence recorder's cast begin (a seeded spell film has no
     /// gate).
     fn seat_leadin_cost(&mut self) {
+        // `LEGAIA_LEADIN_SPAN_LAW`: the same hold for the span law.
+        if self
+            .screenshot
+            .as_ref()
+            .is_some_and(|sc| sc.leadin_span_law)
+        {
+            let met = self.capture_gate_met()
+                || super::redraw_present::CAST_SEQ_STARTED
+                    .load(std::sync::atomic::Ordering::Relaxed);
+            self.session.host.world.toggles.battle_frame_span_law = met;
+            if met && let Some(sc) = self.screenshot.as_mut() {
+                sc.leadin_span_law = false;
+            }
+        }
         if !self
             .screenshot
             .as_ref()
