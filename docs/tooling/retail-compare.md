@@ -1222,6 +1222,7 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
+| Hold a rolling HP readout | a prompt capture's party readout `+0x172` and bar-step accumulator `+0x10`, where they stand off the live HP | stood on at the capture tick, `LEGAIA_BATTLE_READOUT=slot:word:acc` |
 | [Seat the capture's order](#the-seat-order-is-the-captures) | formation cells `0x8007BD0C[0..4]` as battle init left them | `EncounterState::seat_pin`, `LEGAIA_BATTLE_SEATS` |
 | [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |

@@ -1251,6 +1251,17 @@ impl RetailBattle {
             party: (0..u32::from(party_count))
                 .map(|s| combatant(ram, s))
                 .collect(),
+            party_hp_shown: (0..u32::from(party_count))
+                .map(|s| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
+                    in_ram(p).then(|| {
+                        (
+                            game_anchors::u16_at(ram, p + 0x172),
+                            game_anchors::u32_at(ram, p + 0x10) as i32,
+                        )
+                    })
+                })
+                .collect(),
             monsters: (0..u32::from(monster_count))
                 .map(|m| combatant(ram, 3 + m))
                 .collect(),

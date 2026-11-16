@@ -649,6 +649,10 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_BATTLE_AMBIENT_BASE=<base>`: the ambient base the captured frame's
     /// ground grid is coloured from (`RetailBattle::displayed_ambient_base`).
     pub battle_ambient_base: Option<u8>,
+    /// `LEGAIA_BATTLE_READOUT=slot:word:acc,...` (HARNESS): each party HP
+    /// readout the capture holds mid-roll - the displayed word `+0x172` and
+    /// the bar step's accumulator `+0x10` - stood on at the capture's tick.
+    pub battle_readout: Vec<(u8, u16, i32)>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -1489,6 +1493,20 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok()),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
+                .unwrap_or_default(),
+            battle_readout: std::env::var("LEGAIA_BATTLE_READOUT")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let mut it = e.trim().split(':');
+                            Some((
+                                it.next()?.parse().ok()?,
+                                it.next()?.parse().ok()?,
+                                it.next()?.parse().ok()?,
+                            ))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
             seat_battle_clips: std::env::var("LEGAIA_SEAT_BATTLE_CLIPS")

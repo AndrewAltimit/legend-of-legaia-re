@@ -54,6 +54,7 @@ impl PlayWindowApp {
     pub(super) fn seat_strike_deal(&mut self) {
         self.seat_film_guard();
         self.seat_leadin_cost();
+        self.seat_battle_readout();
         let Some(sc) = self.screenshot.as_ref() else {
             return;
         };
@@ -84,6 +85,42 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &deal,
             ),
+        }
+    }
+
+    /// `LEGAIA_BATTLE_READOUT` (HARNESS): on the capture's tick, stand each
+    /// party HP readout on the displayed word and bar-step accumulator the
+    /// capture holds, once - a heal or a hit retail caught mid-roll shows its
+    /// rolling figure, where the seeded bars show the live HP.
+    fn seat_battle_readout(&mut self) {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        if sc.battle_readout.is_empty() {
+            return;
+        }
+        let gated = sc.phase_gate.is_some()
+            || sc.arrival_gate.is_some()
+            || sc.script_gate.is_some()
+            || sc.battle_drive.is_some();
+        let due = if gated {
+            self.capture_gate_met()
+        } else {
+            self.tick_no + 1 >= sc.capture_tick
+        };
+        if !due || self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let readout = self
+            .screenshot
+            .as_mut()
+            .map(|sc| std::mem::take(&mut sc.battle_readout))
+            .unwrap_or_default();
+        for (slot, word, acc) in readout {
+            if let Some(a) = self.session.host.world.actors.get_mut(usize::from(slot)) {
+                a.battle.hp_display = Some(word);
+                a.battle.hp_bar_pending = acc;
+            }
         }
     }
 

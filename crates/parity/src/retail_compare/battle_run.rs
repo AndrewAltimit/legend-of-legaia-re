@@ -697,6 +697,28 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // HARNESS: a prompt capture's party readouts caught mid-roll, stood on
+    // at the capture tick (`LEGAIA_BATTLE_READOUT`).
+    if matches!(
+        battle.seed_plan(),
+        crate::retail_compare_battle::SeedPlan::Menu { .. }
+            | crate::retail_compare_battle::SeedPlan::Prompt
+    ) {
+        let readout: Vec<String> = battle
+            .party_hp_shown
+            .iter()
+            .zip(&battle.party)
+            .enumerate()
+            .filter_map(|(slot, (shown, c))| {
+                let (word, acc) = (*shown)?;
+                let hp = c.as_ref()?.hp;
+                (hp != 0 && (word != hp || acc != 0)).then(|| format!("{slot}:{word}:{acc}"))
+            })
+            .collect();
+        if !readout.is_empty() {
+            env.push(("LEGAIA_BATTLE_READOUT", readout.join(",")));
+        }
+    }
     // ... and the re-seat of a driven action at its own seed pass.
     if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
         env.push(("LEGAIA_BATTLE_RESEAT", seat.to_string()));

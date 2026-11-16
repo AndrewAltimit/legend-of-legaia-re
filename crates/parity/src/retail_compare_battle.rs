@@ -452,6 +452,11 @@ pub struct RetailBattle {
     pub monster_ids: Vec<u8>,
     /// Party slots `0..party_count` (fixed pool slots).
     pub party: Vec<Option<Combatant>>,
+    /// Each party seat's HP readout as the capture shows it: the displayed
+    /// word `+0x172` and the bar step's signed accumulator `+0x10`, which
+    /// stand off the live HP `+0x14C` while a heal or a hit rolls the figure
+    /// (`FUN_80047430`). `None` for an empty seat.
+    pub party_hp_shown: Vec<Option<(u16, i32)>>,
     /// Monster seats (pool slots `3..3 + monster_count`).
     pub monsters: Vec<Option<Combatant>>,
     /// `ctx[+0x13]` - the seat the action SM is running; ahead of the seed
