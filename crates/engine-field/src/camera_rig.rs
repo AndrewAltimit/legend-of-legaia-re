@@ -83,7 +83,8 @@ pub struct CameraRig {
     /// clamped focus axis with the negated override when it is non-zero. A
     /// zero axis means "no override". Nothing else writes the pair - no scene
     /// reset clears it - so it lives as long as the script leaves it; `uru`,
-    /// the one scene that sets it, clears both in its entry record.
+    /// the one scene that sets it, clears both in its entry record and in
+    /// the two walk-on doors inside its bridge boxes (`P2[29]`, `P2[33]`).
     pub script_focus: [i16; 2],
     /// The camera focus as retail stores it, `_DAT_80089118` (X) /
     /// `_DAT_80089120` (Z), both **negated**. The camera globals live on the

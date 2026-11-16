@@ -505,8 +505,12 @@ record `P1[0]` opens with `4C CF 00 00`, and the bridge regions of the same
 record's per-frame bounding-box chain pin the X focus on one tile column
 (`4C CF 6F 00`, `0B`, `51`) or release it; the cutscene records use the
 cross-context `CC F8 CF` form, whose `0xFF` byte snapshots the player's
-coordinate once. Nothing clears the pair on a scene change. The port keeps it
-on `CameraRig::script_focus`, which both `clamp_focus` callers read.
+coordinate once. Nothing clears the pair on a scene change, and no door
+needs it to: the two walk-on exits that sit inside a bridge box, `P2[29]` to
+`urudre1` and `P2[33]` to `urudre2`, each run `4C CF 00 00` before their
+`0x3F`, which a capture walked onto `P2[29]`'s band shows live. The port
+keeps the pair on `CameraRig::script_focus`, which both `clamp_focus` callers
+read.
 
 #### `4C C0` seats the clip at a random phase
 

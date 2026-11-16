@@ -376,17 +376,18 @@ ends one fight by a flee and by a win, enters a second, and holds every
 | `AmbientFxState::pending_game_ticks` through a fight or a minigame | the mode switch re-seeds the lists (`FUN_8001E1B4`) and the return brings the parked pool back whole (`0x8001E308`): the parts stand still | the first field frame after a fight ran up to 600 of the parts' passes at once, `rand()` ops included |
 | A minigame's return (`World::minigame_return_warp`) | MAIN INIT's warp arm, the same field-back load a fight's end makes (`World::seat_warp_field_return`) | a cabinet left by Start put the player straight back under the pad on a fully lit field |
 
-Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
-`_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
-`uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
-stands in a bridge box and writes `4C CF 00 00` outside them, so a door
-taken from inside a box carries the pin - in the port, and in retail too
-unless an undumped routine clears the pair. Two walk-on exits sit inside a
-box: `P2[29]` at tiles `(110..112, 35)` (box `103..121` x `7..49`, X pinned on
-tile `0x6F`) changes to `urudre1`, and `P2[33]` at `(10..12, 98)` (box
-`4..17` x `83..111`) to `urudre2`; no other scene authors the op, so nothing
-there releases it. The library's one uru state stands at the `map03` exit,
-outside every box, so a capture walked to either door settles it.
+`CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` / `_DAT_8007B62A`)
+has no reset on any scene change, and needs none. Its one carrier is `uru`:
+`P1[0]`'s per-frame region test pins a focus axis while the player stands in
+a bridge box and writes `4C CF 00 00` outside them. The two walk-on exits
+inside a box, `P2[29]` (to `urudre1`) and `P2[33]` (to `urudre2`), each run
+`4C CF 00 00` on their straight-line opening (`+0x4E`, `+0x4C`) before their
+`0x3F`, so the pin is gone before the door. A PCSX-Redux run from
+`uru_field_run` seated on tile `(111, 38)` reads the pin `(14272, 0)` until
+`P2[29]` spawns and `(0, 0)` once it reaches the op
+(`autorun_uru_exit_probe.lua` with `LEGAIA_SEAT_X` / `LEGAIA_SEAT_Z`). The
+port runs the same records, so it clears at the same op
+([settled](../reference/re-settled-threads/field.md#threads)).
 
 ### Host hooks nothing implements
 
