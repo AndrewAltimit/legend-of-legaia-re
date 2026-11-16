@@ -219,9 +219,9 @@ pub struct AudioState {
     /// re-emit the field track on exit.
     pub(crate) minigame_bgm_active: bool,
     /// Retail's timed sound-source auto-release (`gp+0x808`/`0x814`/`0x81C`),
-    /// serviced by the frame-begin driver. Advanced by [`crate::world::World::tick`] on the
-    /// sim ticks that map to a retail vsync, by [`legaia_engine_vm::frame_clock::FrameClock::frame_step`] - the
-    /// same cadence-invariant clock every other retail duration uses.
+    /// serviced by the frame-begin driver once a game frame by that frame's
+    /// step, so its count is vsyncs. Advanced by [`crate::world::World::tick`]
+    /// by one a tick, a tick being one vsync.
     ///
     /// REF: FUN_800267FC, FUN_8001698C
     pub(crate) sound_release: legaia_engine_system::sound_state::SoundReleaseTimer,

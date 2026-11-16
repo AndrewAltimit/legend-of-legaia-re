@@ -1039,6 +1039,18 @@ further along an 80-frame linear glide (pitch `600` against retail's `590`,
 eye Z `7622` against `7552`); on a tiled floor that one frame cost a quarter
 of the image score.
 
+The op-`0x35` sub-op `5` timed release is the same kind of history. The seed
+replays the record from an op before the capture's PC, so a release it
+re-arms has counted the engine's ticks since, and the dialogue the drive pages
+is quicker than the player retail recorded. When the gate meets, the seed
+stands the engine's release on the state's cells (`gp+0x808` / `+0x814` /
+`+0x81C`): a release retail has spent, its field-BGM source stopped, fires
+now; one retail still counts takes its elapsed vsyncs
+(`retail_obs::seat_timed_release`). `chapter2_garmel_pre_songi` and
+`chapter2_garmel_pre_zeto` are the cases: `P2[12]` runs `9 (2033) · 5 (100)`
+and pages a line, and both states hold `2043` stopped behind the pending
+commit.
+
 A capture parked on the PC right after a record's `0x3F` scene change is
 inside the departing scene's transition hold: the record spins on its
 `26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old

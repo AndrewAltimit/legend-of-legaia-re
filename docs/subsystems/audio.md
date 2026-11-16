@@ -800,8 +800,8 @@ key-off of voices `0x10..0x17`.
 long scene before `fmv_id 6`; `jouine`'s post-Cort record `P2[16]` runs `9`
 (`2040`), `0xA`, `5` (`60`), then `9` (`2069`), a 60-frame wait, `0xA`, a
 20-frame wait and `fmv_id 8`. In both the last word before the trigger is a
-commit that attaches a fresh track (the timed release fades and stops the one
-before it - [the timed release](#the-timed-release-is-a-scheduled-bgm-pause)),
+commit that attaches a fresh track (the commit releases the one before it, or
+[the timed release](#the-timed-release-is-a-scheduled-bgm-pause) does first),
 the `town01` shape measured sounding above, so both movies play over the score.
 
 **The title attract is the exception.** The attract underflow arm of the title
@@ -1076,8 +1076,19 @@ of those run a sub-op `5` before the commit
 (`engine-scene-host/tests/bgm_swap_commit_disc.rs`; the one exception is
 `bubu1`'s `2057`). The port holds the selected track until the commit the same
 way, so an expiry inside the window releases the outgoing track and the commit
-then starts the new one; an expiry after the commit (`jouine`'s `9 · 0xA · 5`)
-stops the new track, as retail's does.
+then starts the new one.
+
+Three calls disarm a release before it expires, each with `sw zero,0x808(gp)`:
+the slot's stop `FUN_800266E0` (`0x800266F4`, ahead of its active test) and
+re-attach `FUN_80026478` (`0x800264A0`). So the commit, the stop (sub-op `2`),
+the replay (sub-op `4`), a mid-scene start's stage-2 teardown and stage-6
+attach, and the field init's close each end it. A `9 · 5 · 0xA` committed
+before its deadline never stops the track the commit brings in, and a release
+armed right after a commit (`jouine`'s `P2[16]`, `9 (2040) · 0xA · 5 (60)`) is
+disarmed by `2040`'s attach two frames on (`inference` from the script words:
+not captured). Behind sub-op 6 there is no close, and a release armed before
+the door counts on in the next scene, as `opstati`'s does. The port's
+`World::disarm_sound_release` sits at each of those calls.
 
 ### Sub-op 8 replays an empty record
 

@@ -477,6 +477,10 @@ fn seed_and_settle(
                     eprintln!("script gate met t={t}: {}", g.trace(&session.host.world));
                 }
                 met_at = Some(t);
+                // The timed release the replay re-armed, as far along as
+                // retail's: a release retail has spent stops its track now.
+                super::retail_obs::seat_timed_release(&mut session.host.world, retail);
+                route_bgm(&mut session, &mut director)?;
                 // The glide in flight, as far along as retail's and set out
                 // from retail's pose, where its endpoint is the engine's:
                 // the channel then scores the shot, not the history that

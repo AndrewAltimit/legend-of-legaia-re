@@ -55,6 +55,48 @@ impl World {
             == legaia_engine_system::sound_state::BgmSwapTick::Install
         {
             self.audio.bgm_install_due = true;
+            // Stage 6's re-attach `FUN_80026478` (skipped under pause bit 1)
+            // disarms a timed release.
+            if !self.audio.bgm_script_paused {
+                self.disarm_sound_release();
+            }
+        }
+    }
+
+    /// Disarm the timed release, as the BGM slot's stop `FUN_800266E0`
+    /// (`sw zero,0x808(gp)` at `0x800266F4`, before its active test) and
+    /// re-attach `FUN_80026478` (`0x800264A0`) both do: the deadline is a
+    /// release of the occupant it was armed under, and a later track is not
+    /// that occupant.
+    ///
+    /// REF: FUN_800266E0, FUN_80026478
+    pub(crate) fn disarm_sound_release(&mut self) {
+        self.audio.sound_release.armed = false;
+    }
+
+    /// Stand the timed release on a retail state's cells (`gp+0x808` armed,
+    /// `+0x814` deadline, `+0x81C` elapsed), for a seed that replayed the
+    /// record which armed it. `spent` says retail's release ran out on the
+    /// occupant it was armed under (disarmed, the field-BGM source stopped):
+    /// one the engine still counts fires now, through the expiry's sub-op 2.
+    /// A release retail disarmed another way is disarmed silently; one it
+    /// still counts takes its elapsed vsyncs.
+    pub fn seat_sound_release(&mut self, armed: bool, deadline: i32, elapsed: i32, spent: bool) {
+        if armed {
+            self.audio.sound_release.armed = true;
+            self.audio.sound_release.deadline = deadline;
+            self.audio.sound_release.elapsed = elapsed;
+        } else if self.audio.sound_release.armed {
+            self.audio.sound_release.armed = false;
+            if spent {
+                self.audio.pending_sound_release = true;
+                self.pending_field_events.push(
+                    legaia_engine_field::field_events::FieldEvent::Bgm {
+                        text_id: 0,
+                        sub_op: 2,
+                    },
+                );
+            }
         }
     }
 
