@@ -21,6 +21,9 @@
 //! | 20 | `0x29` | 2 -> 3 | dwell `2 .. 0x28`, **not** zeroed on exit |
 //! | 1 | `0x29` | 3 -> 4 | resolve: `FUN_8001FD44(record, 0x55)` |
 //!
+//! A field tick is a game frame: the engine's world ticks once a vsync, so
+//! the test steps it to each actor pass ([`field_tick`]).
+//!
 //! The resolve seated the party at `(37 << 7) + 0x40, (109 << 7) + 0x40` on
 //! map01 - the return triple cave01's long-layout region record stored at
 //! `0x80084628` / `24` / `2C`, refreshed by the menu's installer.
@@ -87,13 +90,25 @@ fn row(w: &World) -> Row {
     }
 }
 
+/// One retail field tick: the world ticks once a vsync, and the session and
+/// the art run on the vsync the actor pass fires (every `frame_step`).
+fn field_tick(w: &mut World) {
+    for _ in 0..8 {
+        let _ = w.tick();
+        if w.clock.game_tick_fired {
+            return;
+        }
+    }
+    panic!("no actor pass in eight vsyncs");
+}
+
 #[test]
 fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
     let mut w = cave_world();
     w.menu.pending_escape = true;
     // Tick 1: the drain seeds the session and the session runs its first
     // post-menu tick in the same world tick.
-    let _ = w.tick();
+    field_tick(&mut w);
     assert_eq!(
         row(&w),
         Row::Session {
@@ -104,7 +119,7 @@ fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
     );
     // Twelve ramp ticks, -20 each at frame step 2.
     for k in 1..=12 {
-        let _ = w.tick();
+        field_tick(&mut w);
         assert_eq!(
             row(&w),
             Row::Session {
@@ -113,22 +128,22 @@ fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
             }
         );
     }
-    let _ = w.tick();
+    field_tick(&mut w);
     assert_eq!(row(&w), Row::Session { phase: 6, level: 0 });
     // Phase 6 installs Riremito at its phase 0 ...
-    let _ = w.tick();
+    field_tick(&mut w);
     let s = w.menu.pause_session.as_ref().expect("session");
     assert_eq!(s.handler_id, 0x29);
     assert!(matches!(&s.stage, PauseSessionStage::Art(a) if a.art == TravelArt::Riremito));
     assert_eq!(row(&w), Row::Art { phase: 0, dwell: 0 });
     // ... whose next tick queues the opener and enters phase 1.
-    let _ = w.tick();
+    field_tick(&mut w);
     assert_eq!(row(&w), Row::Art { phase: 1, dwell: 0 });
     // The effect gate: however long the engine's opener runs, the dwell
     // does not move until it clears.
     let mut gated = 0;
     while row(&w) == (Row::Art { phase: 1, dwell: 0 }) {
-        let _ = w.tick();
+        field_tick(&mut w);
         gated += 1;
         assert!(gated < 600, "the opener effect never cleared");
     }
@@ -136,7 +151,7 @@ fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
     let mut dwell_ticks = 1;
     while let Row::Art { phase: 1, dwell } = row(&w) {
         assert_eq!(dwell, 2 * dwell_ticks);
-        let _ = w.tick();
+        field_tick(&mut w);
         dwell_ticks += 1;
     }
     assert_eq!(dwell_ticks, 40, "0x50 at frame step 2");
@@ -146,7 +161,7 @@ fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
     assert_eq!(fade.duration, 0x20);
     assert_eq!(fade.mode[1], -1);
     for k in 1..=20 {
-        let _ = w.tick();
+        field_tick(&mut w);
         let expect = if k < 20 {
             Row::Art {
                 phase: 2,
@@ -161,7 +176,7 @@ fn a_door_of_light_follows_the_captured_session_and_riremito_timeline() {
         assert_eq!(row(&w), expect, "phase-2 tick {k}");
     }
     assert_eq!(w.pending_named_scene_transition, None);
-    let _ = w.tick();
+    field_tick(&mut w);
     assert_eq!(row(&w), Row::Arriving);
     assert_eq!(
         w.pending_named_scene_transition,
@@ -184,7 +199,7 @@ fn a_door_of_light_with_no_region_triple_falls_back_to_the_visited_map() {
     w.mode = SceneMode::Field;
     w.menu.pending_escape = true;
     for _ in 0..600 {
-        let _ = w.tick();
+        field_tick(&mut w);
         if w.pending_named_scene_transition.is_some() {
             break;
         }
@@ -206,7 +221,7 @@ fn a_region_triple_that_names_no_scene_drops_the_use() {
         });
     }
     w.menu.pending_escape = true;
-    let _ = w.tick();
+    field_tick(&mut w);
     assert!(
         !w.pause_session_active(),
         "UNFIND MAP NUMBER 0: nothing runs"

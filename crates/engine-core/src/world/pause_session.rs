@@ -161,7 +161,15 @@ impl World {
     ///
     /// REF: FUN_801ED308 (ported as `fade_flash_tick`), FUN_801EE094,
     /// FUN_801EE328 (ported as `TravelArtActor::tick`)
+    ///
+    /// The session and the art are nodes of the field's actor lists, so they
+    /// run once a game frame, on the tick the actor pass fires, and scale
+    /// every rate by that frame's step; the world ticks once a vsync, and a
+    /// pass on every tick ran the ramp and the art `frame_step` times fast.
     pub fn tick_pause_session(&mut self) {
+        if !(self.clock.game_tick_live && self.clock.game_tick_fired) {
+            return;
+        }
         let Some(mut session) = self.menu.pause_session.take() else {
             return;
         };
