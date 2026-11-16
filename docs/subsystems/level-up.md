@@ -291,7 +291,7 @@ Port: the seven strings are read off the user's executable (`legaia_ui_formats::
 
 Every window the results frame opens spawns at its record's seat A, off screen (`y = 236` for the report or loss window, `-24` for the level-up window), and glides to seat B (`160` and `14`) over the `0x10` frames `FUN_801D9BBC` steps every tracked widget by. The battle main dispatcher keeps calling it under the sequencer.
 
-Port: one glide armed on the results frame (`BattleState::result_windows_glide`); both hosts offset the windows by `battle_hud::battle_result_windows_dy`.
+Port: one glide armed on the results frame (`BattleState::result_windows_glide`); both hosts offset the windows by `BattleState::result_windows_dy`, which `engine-battle-hud`'s result-window layout reads.
 
 ### The gold frame band is a nine-slice off the system-UI atlas
 
