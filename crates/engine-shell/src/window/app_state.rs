@@ -1107,7 +1107,7 @@ pub(super) struct PlayWindowApp {
     /// play page's Retail-faithful box does. `None` until the launch sets it.
     pub(super) launch_switches: Option<legaia_engine_session::session_switches::SessionSwitches>,
     /// The settings page's first shown row: it scrolls once it holds more
-    /// rows than its plate ([`super::settings_panel::SHOWN_ROWS`]).
+    /// rows than its plate ([`super::settings_panel::SETTINGS_SHOWN`]).
     pub(super) settings_scroll: usize,
     /// The Cheats page's cursor, picks and last outcome.
     pub(super) cheats_page: super::cheats_panel::CheatsPage,

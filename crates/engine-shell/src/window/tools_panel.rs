@@ -115,7 +115,7 @@ pub(super) const TOOL_ROWS: [(ToolRow, &str, &str); 22] = [
     (
         ToolRow::MemoryCard,
         "Memory card 2",
-        "Left/Right pick, Cross insert: a card the launcher mounted before, or one in the saves folder.",
+        "Left/Right pick, Cross insert: a card mounted before, or one in the saves folder.",
     ),
     (
         ToolRow::ExportSession,
@@ -840,7 +840,7 @@ impl PlayWindowApp {
                 (ToolValue::Switch(on), false) => if *on { "On" } else { "Off" }.to_string(),
                 (ToolValue::Pick(v), true) => format!("< {v} >"),
                 (ToolValue::Pick(v), false) => v.clone(),
-                (ToolValue::Press(v), true) => v.to_string(),
+                (ToolValue::Press(v), true) => self.panel_words(v),
                 (ToolValue::Press(_), false) => String::new(),
             };
             let ink = match (&value, focused) {
@@ -857,7 +857,7 @@ impl PlayWindowApp {
             .note
             .as_deref()
             .unwrap_or(TOOL_ROWS[self.tools_page.cursor].2);
-        for line in super::settings_panel::wrap_lines(note, WIDTH - 12, &width)
+        for line in super::settings_panel::wrap_lines(&self.panel_words(note), WIDTH - 12, &width)
             .iter()
             .take(NOTE_LINES)
         {
@@ -1099,8 +1099,11 @@ mod tests {
         if let Some(font) = font {
             let width = |s: &str| font.layout_ascii(s).advance_x as i32;
             for (_, label, help) in TOOL_ROWS {
-                let lines = super::super::settings_panel::wrap_lines(help, WIDTH - 12, &width);
-                assert!(lines.len() <= NOTE_LINES, "{label}: {lines:?}");
+                for table in super::super::settings_panel::widest_word_tables() {
+                    let help = super::super::settings_panel::device_words(help, &table);
+                    let lines = super::super::settings_panel::wrap_lines(&help, WIDTH - 12, &width);
+                    assert!(lines.len() <= NOTE_LINES, "{label}: {lines:?}");
+                }
                 assert!(width(label) + width("< Off >") <= WIDTH - 12, "{label}");
             }
             for i in 0..BGM_PICKS {

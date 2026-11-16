@@ -128,9 +128,10 @@ impl PlayWindowApp {
             );
             stage.extend(text_draws_for(&layout, (8, y), color));
         }
-        // The Keys page fills the stage top to bottom, so it is fitted to
-        // the window on its own ([`fit_plate_draws`]) rather than riding the
-        // stage's whole step.
+        // The Keys page's text fills the stage top to bottom, so it is
+        // fitted into the list pages' plate on its own ([`fit_draws_into`])
+        // rather than riding the stage's whole step; the plate itself is the
+        // other pages' (`LIST_PLATE`), so flipping pages keeps one frame.
         let mut keys_page = Vec::new();
         if self.hotkey_help {
             use crate::window::settings_panel::PanelPage;
@@ -139,12 +140,33 @@ impl PlayWindowApp {
                 PanelPage::Cheats => stage.extend(self.cheats_stage_draws()),
                 PanelPage::Scenes => stage.extend(self.scenes_stage_draws()),
                 PanelPage::Tools => stage.extend(self.tools_stage_draws()),
-                PanelPage::Keys => keys_page = self.hotkey_help_stage_draws(),
+                PanelPage::Keys => {
+                    let (x, y, pw, ph) = crate::window::settings_panel::LIST_PLATE;
+                    self.push_scrim(
+                        &mut stage,
+                        (x, y),
+                        (pw as u32, ph as u32),
+                        crate::window::settings_panel::PANEL_SCRIM,
+                    );
+                    keys_page = self.hotkey_help_stage_draws();
+                }
             }
         }
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
         legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
-        fit_plate_draws(&mut keys_page, (w, h), stage_scale);
+        if !keys_page.is_empty() {
+            let (x, y, pw, ph) = crate::window::settings_panel::LIST_PLATE;
+            let s = stage_scale as i32;
+            // The text keeps the plate's own inset: 6 stage px at the sides
+            // (the list pages' left edge), 2 at the head and the foot.
+            let rect = (
+                stage_origin.0 + (x + KEYS_INSET_X) * s,
+                stage_origin.1 + (y + KEYS_INSET_Y) * s,
+                (pw - 2 * KEYS_INSET_X) * s,
+                (ph - 2 * KEYS_INSET_Y) * s,
+            );
+            fit_draws_into(&mut keys_page, rect, stage_scale);
+        }
         stage.extend(keys_page);
         stage
     }
@@ -233,14 +255,9 @@ impl PlayWindowApp {
         states.push(None);
         let pad = pad_key_rows(&self.mapping);
         let l = help_panel_layout(&self.font, &entries, &pad);
+        // The plate under it is the list pages' (`LIST_PLATE`), drawn by
+        // the caller; this is the text alone, fitted into that plate.
         let mut out = Vec::new();
-        // The scrim every page of the panel shares.
-        self.push_scrim(
-            &mut out,
-            (l.x0 - 4, l.y0 - 4),
-            ((l.width + 8) as u32, l.height as u32),
-            crate::window::settings_panel::PANEL_SCRIM,
-        );
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
         };
@@ -946,21 +963,18 @@ impl PlayWindowApp {
     }
 }
 
-/// Quarter steps a fitted plate scales by ([`fit_plate_draws`]).
+/// Quarter steps a fitted plate scales by ([`fit_draws_into`]).
 const PLATE_STEP_DEN: i32 = 4;
+/// The Keys page text's inset inside the list plate, in stage pixels.
+const KEYS_INSET_X: i32 = 6;
+const KEYS_INSET_Y: i32 = 2;
 
-/// Scale a panel's stage-pixel `draws` (its plate first among them) into a
-/// `(w, h)` surface centred, with a margin of a thirtieth of the surface's
-/// height (16 px at least) on every side: the largest quarter step that
-/// fits, never above the stage's own whole step `stage_scale`. The Keys
-/// page's two columns, pad rows and footer fill the 320x240 stage top to
-/// bottom, so at the stage's step its plate met the window's edges; fitted,
-/// it keeps nearly the same size and gains the margin. A quarter step draws
-/// the font's pixels a mix of widths, which reads fine at the 2x-and-up
-/// sizes a window gives it.
-pub(in crate::window) fn fit_plate_draws(
+/// Scale stage-pixel `draws` into the window rect `(x, y, w, h)`, centred:
+/// the largest quarter step that fits, never above the stage's whole step
+/// `stage_scale` (half a step at the least).
+pub(in crate::window) fn fit_draws_into(
     draws: &mut [TextDraw],
-    (w, h): (u32, u32),
+    (rx, ry, rw, rh): (i32, i32, i32, i32),
     stage_scale: u32,
 ) {
     let Some(first) = draws.first() else {
@@ -975,24 +989,22 @@ pub(in crate::window) fn fit_plate_draws(
         y1 = y1.max(d.dst.1 + d.dst.3 as i32);
     }
     let (bw, bh) = ((x1 - x0).max(1), (y1 - y0).max(1));
-    let (w, h) = (w as i32, h as i32);
-    let margin = (h / 30).max(16);
-    let q = (((w - 2 * margin) * PLATE_STEP_DEN) / bw)
-        .min(((h - 2 * margin) * PLATE_STEP_DEN) / bh)
+    let q = ((rw * PLATE_STEP_DEN) / bw)
+        .min((rh * PLATE_STEP_DEN) / bh)
         .clamp(
             PLATE_STEP_DEN / 2,
             stage_scale.max(1) as i32 * PLATE_STEP_DEN,
         );
     let px = |v: i32| (v * q).div_euclid(PLATE_STEP_DEN);
-    let origin = ((w - px(bw)) / 2, (h - px(bh)) / 2);
+    let origin = (rx + (rw - px(bw)) / 2, ry + (rh - px(bh)) / 2);
     for d in draws.iter_mut() {
         let (lx, ly) = (d.dst.0 - x0, d.dst.1 - y0);
-        let (rx, ry) = (lx + d.dst.2 as i32, ly + d.dst.3 as i32);
+        let (ex, ey) = (lx + d.dst.2 as i32, ly + d.dst.3 as i32);
         d.dst = (
             origin.0 + px(lx),
             origin.1 + px(ly),
-            (px(rx) - px(lx)) as u32,
-            (px(ry) - px(ly)) as u32,
+            (px(ex) - px(lx)) as u32,
+            (px(ey) - px(ly)) as u32,
         );
     }
 }
@@ -1318,28 +1330,37 @@ mod help_panel_tests {
 
     use super::*;
 
-    /// A plate as tall as the 320x240 stage keeps a margin in the window
-    /// instead of meeting its edges, stays within the stage's own step, and
-    /// sits centred.
+    /// Text as tall as the 320x240 stage fits inside the list plate's
+    /// window rect, centred, never above the stage's own step.
     #[test]
-    fn a_fitted_plate_keeps_a_margin() {
-        let quad = |x: i32, y: i32, w: u32, h: u32| TextDraw {
+    fn the_keys_text_fits_inside_the_list_plate() {
+        let glyph = |x: i32, y: i32, w: u32, h: u32| TextDraw {
             dst: (x, y, w, h),
             src: (0, 0, 1, 1),
             color: [1.0; 4],
         };
-        for (w, h, scale) in [(960u32, 720u32, 3u32), (1280, 720, 3), (640, 480, 2)] {
-            let mut d = vec![quad(6, 0, 308, 240), quad(10, 4, 8, 12)];
-            fit_plate_draws(&mut d, (w, h), scale);
-            let plate = d[0].dst;
-            let margin = (h as i32 / 30).max(16);
-            assert!(plate.1 >= margin && plate.1 + plate.3 as i32 <= h as i32 - margin);
-            assert!(plate.0 >= margin && plate.0 + plate.2 as i32 <= w as i32 - margin);
-            assert!(plate.3 <= 240 * scale);
-            assert!((plate.0 - (w as i32 - plate.0 - plate.2 as i32)).abs() <= 1);
-            // The glyph stays inside its plate.
-            let g = d[1].dst;
-            assert!(g.0 > plate.0 && g.1 > plate.1);
+        let (px, py, pw, ph) = crate::window::settings_panel::LIST_PLATE;
+        for scale in [2i32, 3, 4] {
+            let rect = (
+                (px + KEYS_INSET_X) * scale,
+                (py + KEYS_INSET_Y) * scale,
+                (pw - 2 * KEYS_INSET_X) * scale,
+                (ph - 2 * KEYS_INSET_Y) * scale,
+            );
+            let mut d = vec![glyph(14, 4, 290, 12), glyph(14, 228, 200, 12)];
+            fit_draws_into(&mut d, rect, scale as u32);
+            for g in &d {
+                assert!(g.dst.0 >= rect.0 && g.dst.0 + g.dst.2 as i32 <= rect.0 + rect.2);
+                assert!(g.dst.1 >= rect.1 && g.dst.1 + g.dst.3 as i32 <= rect.1 + rect.3);
+            }
+            // Never larger than the stage's step: 290 px wide at most 290 * scale.
+            assert!(d[0].dst.2 as i32 <= 290 * scale);
+            // Centred across.
+            let (l, r) = (
+                d[0].dst.0 - rect.0,
+                rect.0 + rect.2 - d[0].dst.0 - d[0].dst.2 as i32,
+            );
+            assert!((l - r).abs() <= 1, "{l} {r}");
         }
     }
     use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};

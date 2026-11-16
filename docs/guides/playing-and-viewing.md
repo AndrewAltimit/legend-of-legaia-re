@@ -556,7 +556,7 @@ fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
 tuning*); the focused row is marked as on the launcher, a lighter band with a
 gold bar down its left edge, on every page of the panel. Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
-`Delete` puts it back on its default as on the launcher, with the row's help
+`Delete` (Square on a controller) puts it back on its default as on the launcher, with the row's help
 underneath; a change takes effect behind the panel at once, and the list
 scrolls under the plate. Options go to `legaia-options.toml`; the launcher's
 own rows (the PlayStation pixel look, the living ground pulse, action
@@ -605,9 +605,14 @@ button back on its default and writes `legaia-input.toml`, the way out of a
 rebind that left no way into the menu.
 `Esc`, `F12`, Circle or Start close the panel. Each page's last line names its
 keys, or, while a controller was the last thing pressed, that controller's
-buttons by the labels its maker prints (*D-pad pick, change  B close*); on the
-Settings page a row whose help runs to three lines has that line for its
-third. A state the original game does
+buttons by the labels its maker prints (*D-pad pick, change  X default  B
+close*). The row helps and the value column's press labels follow the same
+device: on the keyboard they say *Enter* and *Esc* for the panel's Cross and
+Circle and name the key bound to any other button (*X on its list*), on a
+controller its own labels (*A insert*, *X: back to Enhanced*). The Settings
+page shows thirteen rows so a three-line help and the controls line both fit,
+and the Keys page stands on the same plate as the list pages, its text scaled
+to fit inside it. A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
 stays hidden while the panel is up. In a multiplayer session, whose other

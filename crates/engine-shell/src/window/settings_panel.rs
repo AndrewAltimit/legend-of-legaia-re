@@ -121,17 +121,23 @@ pub(super) fn group_of(row: OptionRow) -> &'static str {
 /// Scenes) a stage margin under its controls line: at fifteen the plate ran
 /// to the stage's last row and its controls line sat on the window's edge.
 pub(super) const SHOWN_ROWS: usize = 14;
+/// The rows the Settings page shows: one fewer than [`SHOWN_ROWS`], so its
+/// plate - as tall as the Scenes plate - holds a three-line help *and* the
+/// controls line. Most rows' help runs to three lines, and at fourteen rows
+/// the third took the controls line's place, so the keys vanished on the
+/// rows a player reads longest.
+pub(super) const SETTINGS_SHOWN: usize = SHOWN_ROWS - 1;
 /// The stage rows a list plate leaves free under it, at the least.
 #[cfg(test)]
 const PLATE_FOOT_MARGIN: i32 = 8;
 
 /// The first shown row that keeps `cursor` in view from `scroll`.
 pub(super) fn scroll_to_cursor(scroll: usize, cursor: usize) -> usize {
-    let max = SETTINGS_ROWS.len().saturating_sub(SHOWN_ROWS);
+    let max = SETTINGS_ROWS.len().saturating_sub(SETTINGS_SHOWN);
     if cursor < scroll {
         cursor
-    } else if cursor >= scroll + SHOWN_ROWS {
-        cursor + 1 - SHOWN_ROWS
+    } else if cursor >= scroll + SETTINGS_SHOWN {
+        cursor + 1 - SETTINGS_SHOWN
     } else {
         scroll
     }
@@ -162,6 +168,8 @@ pub(super) enum PanelInput {
     Confirm,
     Flip,
     Close,
+    /// Square: the row back on its default, the keyboard's `Delete`.
+    Reset,
 }
 
 /// With a scripted `--screenshot` run: step the cursor of each panel page this
@@ -187,6 +195,8 @@ pub(super) fn panel_input(edge: u16) -> Option<PanelInput> {
         Some(PanelInput::Change(1))
     } else if hit(PadButton::Cross) {
         Some(PanelInput::Confirm)
+    } else if hit(PadButton::Square) {
+        Some(PanelInput::Reset)
     } else {
         None
     }
@@ -233,34 +243,85 @@ const X0: i32 = 10;
 /// the controls line.
 pub(super) const Y0: i32 = 5;
 const WIDTH: i32 = 300;
+/// The tallest list plate's stage rect `(x, y, w, h)`: Settings and Scenes
+/// fill it, and the Keys page draws its plate on it too, so every page of
+/// the panel stands on one plate.
+pub(in crate::window) const LIST_PLATE: (i32, i32, i32, i32) =
+    (X0, Y0, WIDTH, plate_height(SHOWN_ROWS, 2));
 /// The pitch of a list row on every page of the panel. The font's ink is 11
 /// rows tall, capitals to descenders, so at an 11-row pitch a `g` or a `p`
 /// stood on the capitals of the row under it; one row more is the air
 /// between them.
 pub(super) const ROW_H: i32 = 12;
-/// The row help's line budget: the longest row help wraps to this many.
+/// The row help's line budget: the longest row help wraps to this many,
+/// and the Settings plate is sized for them over its controls line.
 const HELP_LINES: usize = 3;
-/// The help lines the Settings plate is sized for. A help that needs the
-/// third takes the controls line's place under them: [`SHOWN_ROWS`] at
-/// [`ROW_H`], three help lines and a controls line run past the stage's
-/// foot margin, and the controls are the same on every row.
-const PLATE_HELP_LINES: usize = 2;
 const HELP_H: i32 = 12;
 const CONTROLS: &str = "Arrows pick, change  Del default  Esc close";
 /// [`CONTROLS`] while a controller was pressed last ([`pad_controls`]).
-const PAD_CONTROLS: &str = "D-pad pick, change  {circle} close";
+const PAD_CONTROLS: &str = "D-pad pick, change  {square} default  {circle} close";
 /// The longest button labels a page's controller line names: what the
 /// tests fit each line with (a PlayStation pad, or Cross rebound to
 /// Triangle).
 #[cfg(test)]
 pub(super) const WIDEST_PAD_LABELS: [&str; 2] = ["Triangle", "Circle"];
 
+/// The word tables a help is fitted under in the tests: the keyboard's
+/// (with every other button on the widest key label, `RShift`) and a
+/// controller's, every button lettered with the widest pad label.
+#[cfg(test)]
+pub(super) fn widest_word_tables() -> [Vec<(&'static str, String)>; 3] {
+    const OTHERS: [&str; 6] = ["Square", "Triangle", "L1", "R1", "L2", "R2"];
+    let mut keys = vec![
+        ("Cross", "Enter".to_string()),
+        ("Circle", "Esc".to_string()),
+    ];
+    keys.extend(OTHERS.iter().map(|&b| (b, "RShift".to_string())));
+    let mut pad: Vec<(&str, String)> = ["Enter", "Delete", "Esc", "Cross", "Circle"]
+        .iter()
+        .map(|&w| (w, "Triangle".to_string()))
+        .collect();
+    pad.extend(OTHERS.iter().map(|&b| (b, "Triangle".to_string())));
+    [Vec::new(), keys, pad]
+}
+
 /// A page's controller line: `template` with `{cross}` and `{circle}` put
 /// as the labels printed on the buttons the game's Cross and Circle are on.
 pub(super) fn pad_controls(template: &str, cross: &str, circle: &str) -> String {
     template
+        .replace("{square}", "Square")
         .replace("{cross}", cross)
         .replace("{circle}", circle)
+}
+
+/// `text` with each control word in `table` put as the device's own: the
+/// row helps and the press labels are written in one vocabulary (`Cross`,
+/// `Delete`, `Enter`, ...), and a page shows them in the words of the
+/// keyboard or the controller pressed last ([`PlayWindowApp::panel_words`]),
+/// as its controls line already is. A word is replaced whole, and not after
+/// a `+`, so `Alt+Enter` stays the key chord it names.
+pub(super) fn device_words(text: &str, table: &[(&str, String)]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    'scan: while !rest.is_empty() {
+        let prev = out.chars().last();
+        let boundary = prev.is_none_or(|c| !c.is_alphanumeric() && c != '+');
+        if boundary {
+            for (from, to) in table {
+                if let Some(tail) = rest.strip_prefix(from)
+                    && !tail.starts_with(|c: char| c.is_alphanumeric())
+                {
+                    out.push_str(to);
+                    rest = tail;
+                    continue 'scan;
+                }
+            }
+        }
+        let mut chars = rest.chars();
+        out.extend(chars.next());
+        rest = chars.as_str();
+    }
+    out
 }
 /// The gap between a row's label and the window key lettered after it.
 const KEY_GAP: i32 = 6;
@@ -330,7 +391,57 @@ impl PlayWindowApp {
                         .prompt_label(b, Some(style))
                         .unwrap_or_else(|| b.to_string())
                 };
-                pad_controls(pad, &label("Cross"), &label("Circle"))
+                pad_controls(
+                    &pad.replace("{square}", &label("Square")),
+                    &label("Cross"),
+                    &label("Circle"),
+                )
+            }
+        }
+    }
+
+    /// `text` (a row's help, a press label) in the controls' words of the
+    /// device used last ([`device_words`]): on the keyboard the panel's
+    /// Cross and Circle are `Enter` and `Esc`, and any other button is the
+    /// key bound to it; on a controller `Enter`, `Delete` and `Esc` are the
+    /// buttons that do the same on the panel, lettered as that pad prints
+    /// them.
+    pub(super) fn panel_words(&self, text: &str) -> String {
+        device_words(text, &self.panel_word_table())
+    }
+
+    fn panel_word_table(&self) -> Vec<(&'static str, String)> {
+        const OTHERS: [&str; 6] = ["Square", "Triangle", "L1", "R1", "L2", "R2"];
+        match self.last_pad {
+            None => {
+                let key = |b: &str| {
+                    self.mapping
+                        .key_label_for_button(b)
+                        .unwrap_or(b)
+                        .to_string()
+                };
+                let mut t = vec![
+                    ("Cross", "Enter".to_string()),
+                    ("Circle", "Esc".to_string()),
+                ];
+                t.extend(OTHERS.iter().map(|&b| (b, key(b))));
+                t
+            }
+            Some(style) => {
+                let label = |b: &str| {
+                    self.mapping
+                        .prompt_label(b, Some(style))
+                        .unwrap_or_else(|| b.to_string())
+                };
+                let mut t = vec![
+                    ("Enter", label("Cross")),
+                    ("Delete", label("Square")),
+                    ("Esc", label("Circle")),
+                    ("Cross", label("Cross")),
+                    ("Circle", label("Circle")),
+                ];
+                t.extend(OTHERS.iter().map(|&b| (b, label(b))));
+                t
             }
         }
     }
@@ -355,7 +466,10 @@ impl PlayWindowApp {
     /// `page=` prefix (`settings`, `cheats`, `scenes`, `tools`) keeps it to
     /// that page, and only then are the letters after a colon pressed in
     /// order on the row (`L`, `R`, `U`, `D`, `X` for Cross): `tools=11:RX`
-    /// steps the Tools page to row 11, presses Right, then Cross.
+    /// steps the Tools page to row 11, presses Right, then Cross. A leading
+    /// `xbox:` or `ps:` letters the page as for that controller pressed last
+    /// (a scripted run has no controller of its own), so a documentation
+    /// shot can show a pad's words: `xbox:tools=11`.
     fn scripted_panel_focus(&mut self) {
         if !self.scripted_run() {
             return;
@@ -363,6 +477,20 @@ impl PlayWindowApp {
         let Ok(spec) = std::env::var(PANEL_FOCUS_ENV) else {
             return;
         };
+        use legaia_engine_system::gamepad::{ButtonSpace, GlyphSet, PadStyle};
+        let (glyphs, spec) = if let Some(rest) = spec.strip_prefix("xbox:") {
+            (Some(GlyphSet::Xbox), rest.to_string())
+        } else if let Some(rest) = spec.strip_prefix("ps:") {
+            (Some(GlyphSet::PlayStation), rest.to_string())
+        } else {
+            (None, spec)
+        };
+        if let Some(glyphs) = glyphs {
+            self.last_pad = Some(PadStyle {
+                glyphs,
+                space: ButtonSpace::Standard,
+            });
+        }
         let (page, spec) = match spec.split_once('=') {
             Some((page, rest)) => (Some(page.trim().to_ascii_lowercase()), rest),
             None => (None, spec.as_str()),
@@ -413,6 +541,7 @@ impl PlayWindowApp {
             }
             PanelInput::Change(dir) if page == PanelPage::Settings => self.change_setting(dir),
             PanelInput::Confirm if page == PanelPage::Settings => self.change_setting(1),
+            PanelInput::Reset if page == PanelPage::Settings => self.reset_setting(),
             PanelInput::Move(d) if page == PanelPage::Cheats => self.cheats_page.move_cursor(d),
             PanelInput::Change(dir) if page == PanelPage::Cheats => self.cheats_change(dir),
             PanelInput::Confirm if page == PanelPage::Cheats => self.cheats_apply(),
@@ -427,7 +556,10 @@ impl PlayWindowApp {
             PanelInput::Confirm if page == PanelPage::Keys => self.keys_reset_press(),
             // Any other press on the Keys page takes the armed reset back.
             _ if page == PanelPage::Keys => self.keys_reset = Default::default(),
-            PanelInput::Move(_) | PanelInput::Change(_) | PanelInput::Confirm => {}
+            PanelInput::Move(_)
+            | PanelInput::Change(_)
+            | PanelInput::Confirm
+            | PanelInput::Reset => {}
         }
     }
 
@@ -759,7 +891,7 @@ impl PlayWindowApp {
         let heading = self.chrome().heading;
         let text = self.chrome().text;
         let faint = self.chrome().faint;
-        let height = plate_height(SHOWN_ROWS.min(SETTINGS_ROWS.len()), PLATE_HELP_LINES);
+        let height = plate_height(SETTINGS_SHOWN.min(SETTINGS_ROWS.len()), HELP_LINES);
         let mut out = Vec::new();
         self.push_scrim(
             &mut out,
@@ -788,14 +920,14 @@ impl PlayWindowApp {
         let retail = switches.switches.retail;
         let mut y = Y0 + HEAD_H;
         let scroll = scroll_to_cursor(self.settings_scroll, self.settings_cursor);
-        if SETTINGS_ROWS.len() > SHOWN_ROWS
+        if SETTINGS_ROWS.len() > SETTINGS_SHOWN
             && let Some(src) = self.battle_hud_solid_src()
         {
             // The scroll bar: the whole list is the track, the view the thumb.
-            let track_h = SHOWN_ROWS as i32 * ROW_H;
+            let track_h = SETTINGS_SHOWN as i32 * ROW_H;
             let n = SETTINGS_ROWS.len() as i32;
-            let thumb_h = track_h * SHOWN_ROWS as i32 / n;
-            let max = n - SHOWN_ROWS as i32;
+            let thumb_h = track_h * SETTINGS_SHOWN as i32 / n;
+            let max = n - SETTINGS_SHOWN as i32;
             let thumb_y = y + (track_h - thumb_h) * scroll as i32 / max.max(1);
             let x = X0 + WIDTH - 3;
             out.push(TextDraw {
@@ -813,7 +945,7 @@ impl PlayWindowApp {
             .iter()
             .enumerate()
             .skip(scroll)
-            .take(SHOWN_ROWS)
+            .take(SETTINGS_SHOWN)
         {
             let focused = i == self.settings_cursor;
             if focused {
@@ -861,27 +993,18 @@ impl PlayWindowApp {
             y += ROW_H;
         }
         y += ROWS_GAP;
-        // The row's help, then the controls or what went wrong saving. A
-        // help of three lines has the controls' place for its third
-        // (`PLATE_HELP_LINES`); a save that failed keeps its line, and the
-        // help its first two.
+        // The row's help in the controls' words of the device used last,
+        // then the controls - or, in their place, what went wrong saving.
         let row = SETTINGS_ROWS[self.settings_cursor];
-        let help = wrap_lines(row.help(), WIDTH - 12, &width);
-        let failed = self.options_save_error.borrow();
-        let foot = foot_line(help.len(), failed.is_some());
-        let shown = match foot {
-            FootLine::Help => HELP_LINES,
-            FootLine::Controls | FootLine::SaveError => PLATE_HELP_LINES,
-        };
-        for line in help.iter().take(shown) {
+        let help = wrap_lines(&self.panel_words(row.help()), WIDTH - 12, &width);
+        for line in help.iter().take(HELP_LINES) {
             put(&mut out, line, (left, y), text);
             y += HELP_H;
         }
         y = controls_y(Y0, height);
-        match (foot, failed.as_deref()) {
-            (FootLine::Help, _) => {}
-            (_, Some(e)) => put(&mut out, e, (left, y), heading),
-            (_, None) => put(
+        match self.options_save_error.borrow().as_deref() {
+            Some(e) => put(&mut out, e, (left, y), heading),
+            None => put(
                 &mut out,
                 &self.panel_controls(CONTROLS, PAD_CONTROLS),
                 (left, y),
@@ -889,30 +1012,6 @@ impl PlayWindowApp {
             ),
         }
         out
-    }
-}
-
-/// What the Settings plate's foot shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FootLine {
-    /// The controls line.
-    Controls,
-    /// Why the options file would not save, in the controls' place.
-    SaveError,
-    /// Nothing of its own: the focused row's help runs to a third line.
-    Help,
-}
-
-/// The foot for a help of `help_lines` lines: a failed save is said before
-/// anything, and otherwise a help past [`PLATE_HELP_LINES`] takes the
-/// controls' place.
-fn foot_line(help_lines: usize, save_failed: bool) -> FootLine {
-    if save_failed {
-        FootLine::SaveError
-    } else if help_lines > PLATE_HELP_LINES {
-        FootLine::Help
-    } else {
-        FootLine::Controls
     }
 }
 
@@ -985,7 +1084,7 @@ mod tests {
     fn pad_controls_names_the_controllers_buttons() {
         assert_eq!(
             pad_controls(PAD_CONTROLS, "A", "B"),
-            "D-pad pick, change  B close"
+            "D-pad pick, change  Square default  B close"
         );
         assert_eq!(
             pad_controls("{cross} use  {circle} close", "Cross", "Circle"),
@@ -1089,10 +1188,10 @@ mod tests {
     fn the_row_list_scrolls_to_keep_the_cursor_shown() {
         let n = SETTINGS_ROWS.len();
         assert_eq!(scroll_to_cursor(0, 0), 0);
-        assert_eq!(scroll_to_cursor(0, SHOWN_ROWS - 1), 0);
+        assert_eq!(scroll_to_cursor(0, SETTINGS_SHOWN - 1), 0);
         let last = scroll_to_cursor(0, n - 1);
-        assert_eq!(last, n.saturating_sub(SHOWN_ROWS));
-        assert!(n - 1 < last + SHOWN_ROWS);
+        assert_eq!(last, n.saturating_sub(SETTINGS_SHOWN));
+        assert!(n - 1 < last + SETTINGS_SHOWN);
         // Back up the list: the view follows only once the cursor leaves it.
         assert_eq!(scroll_to_cursor(last, last), last);
         assert_eq!(scroll_to_cursor(last, 0), 0);
@@ -1129,7 +1228,8 @@ mod tests {
             assert_eq!(panel_input(b.mask()), Some(want), "{b:?}");
         }
         assert_eq!(panel_input(0), None);
-        assert_eq!(panel_input(PadButton::Square.mask()), None);
+        assert_eq!(panel_input(PadButton::Square.mask()), Some(Reset));
+        assert_eq!(panel_input(PadButton::Triangle.mask()), None);
     }
 
     /// Every row's help fits the page's budget in the disc's dialog font, the
@@ -1142,12 +1242,15 @@ mod tests {
         if let Some(font) = font {
             let width = |s: &str| font.layout_ascii(s).advance_x as i32;
             for row in SETTINGS_ROWS {
-                let lines = wrap_lines(row.help(), WIDTH - 12, &width);
-                assert!(lines.len() <= HELP_LINES, "{row:?}: {lines:?}");
+                for table in widest_word_tables() {
+                    let help = device_words(row.help(), &table);
+                    let lines = wrap_lines(&help, WIDTH - 12, &width);
+                    assert!(lines.len() <= HELP_LINES, "{row:?}: {lines:?}");
+                }
             }
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));
             let [a, b] = WIDEST_PAD_LABELS;
-            let pad = pad_controls(PAD_CONTROLS, a, b);
+            let pad = pad_controls(&PAD_CONTROLS.replace("{square}", a), a, b);
             assert!(width(&pad) <= WIDTH - 12, "{pad}: {}", width(&pad));
             // A row's label, its key and the widest focused value share one
             // line without touching.
@@ -1178,7 +1281,10 @@ mod tests {
     /// its controls line clear of the help budget.
     #[test]
     fn the_plate_fits_the_stage_with_a_gap_above_the_controls() {
-        let h = plate_height(SHOWN_ROWS, PLATE_HELP_LINES);
+        // The Settings plate (three help lines, one row fewer) is the Scenes
+        // plate's height, so the pages do not change size as they flip.
+        let h = plate_height(SETTINGS_SHOWN, HELP_LINES);
+        assert_eq!(h, plate_height(SHOWN_ROWS, 2));
         // The controls line's descenders end on the plate's last row, and
         // the plate on the stage.
         let foot = controls_y(Y0, h);
@@ -1187,24 +1293,32 @@ mod tests {
             Y0 + h + PLATE_FOOT_MARGIN <= legaia_engine_ui::BOOT_UI_STAGE_H as i32,
             "{h}"
         );
-        let help_top = Y0 + HEAD_H + SHOWN_ROWS as i32 * ROW_H + ROWS_GAP;
-        let help_end = help_top + PLATE_HELP_LINES as i32 * HELP_H;
-        assert!(foot - help_end >= FOOTER_GAP);
-        // A third help line, drawn in the controls' place, keeps its
-        // descenders on the plate too.
-        let third = help_top + (HELP_LINES as i32 - 1) * HELP_H;
-        assert!(third + INK_H <= Y0 + h, "{third}");
+        // Every help line, the third too, ends a gap above the controls.
+        let help_top = Y0 + HEAD_H + SETTINGS_SHOWN as i32 * ROW_H + ROWS_GAP;
+        let help_end = help_top + HELP_LINES as i32 * HELP_H;
+        assert!(foot - help_end >= FOOTER_GAP, "{foot} {help_end}");
     }
 
-    /// The foot is the controls line unless the help needs it, and a failed
-    /// save is said whatever the help.
+    /// The panel's words follow the device: whole words only, never inside
+    /// a chord or another word.
     #[test]
-    fn the_foot_yields_to_a_long_help_and_never_hides_a_failed_save() {
-        assert_eq!(foot_line(1, false), FootLine::Controls);
-        assert_eq!(foot_line(PLATE_HELP_LINES, false), FootLine::Controls);
-        assert_eq!(foot_line(HELP_LINES, false), FootLine::Help);
-        assert_eq!(foot_line(HELP_LINES, true), FootLine::SaveError);
-        assert_eq!(foot_line(1, true), FootLine::SaveError);
+    fn device_words_swap_whole_control_words() {
+        let keys = vec![("Cross", "Enter".to_string()), ("Square", "X".to_string())];
+        assert_eq!(
+            device_words("Left/Right pick, Cross insert: a card.", &keys),
+            "Left/Right pick, Enter insert: a card."
+        );
+        assert_eq!(device_words("Square on its list", &keys), "X on its list");
+        assert_eq!(
+            device_words("Crossing the Squares", &keys),
+            "Crossing the Squares"
+        );
+        let pad = vec![("Enter", "A".to_string()), ("Delete", "X".to_string())];
+        assert_eq!(
+            device_words("F11 or Alt+Enter. Delete: back to Enhanced.", &pad),
+            "F11 or Alt+Enter. X: back to Enhanced."
+        );
+        assert_eq!(device_words("", &pad), "");
     }
 
     /// A row's ink (11 rows in the disc font) leaves a row of air at the
