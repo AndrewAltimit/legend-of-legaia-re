@@ -175,15 +175,25 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if std::env::var("LEGAIA_BATTLE_GPU_COST").is_ok_and(|v| v.trim() == "1") {
         toggles.battle_gpu_cost_step = true;
     }
-    // Opt-in: each battle frame spans what retail's `VSync` law gives its
-    // cost (`WorldToggles::battle_frame_span_law`).
-    if std::env::var("LEGAIA_BATTLE_FRAME_SPAN").is_ok_and(|v| v.trim() == "1") {
-        toggles.battle_frame_span_law = true;
-    }
-    // Opt-in: price each battle frame's work off the polygons the window
-    // links (`WorldToggles::battle_poly_frame_cost`).
-    if std::env::var("LEGAIA_BATTLE_POLY_COST").is_ok_and(|v| v.trim() == "1") {
-        toggles.battle_poly_frame_cost = true;
+    // The battle frame-cost model's two halves, on by default, either way
+    // over it: each frame spans what retail's `VSync` law gives its cost
+    // (`WorldToggles::battle_frame_span_law`), and its work is priced off
+    // the primitives it links (`WorldToggles::battle_poly_frame_cost`).
+    for (var, slot) in [
+        (
+            "LEGAIA_BATTLE_FRAME_SPAN",
+            &mut toggles.battle_frame_span_law,
+        ),
+        (
+            "LEGAIA_BATTLE_POLY_COST",
+            &mut toggles.battle_poly_frame_cost,
+        ),
+    ] {
+        match std::env::var(var).as_deref().map(str::trim) {
+            Ok("1") => *slot = true,
+            Ok("0") => *slot = false,
+            _ => {}
+        }
     }
     // The field frame step off the frame-cost model
     // (`WorldToggles::field_frame_cost`), either way over the default.

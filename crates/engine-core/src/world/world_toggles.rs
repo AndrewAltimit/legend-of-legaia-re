@@ -168,25 +168,27 @@ pub struct WorldToggles {
     /// `LEGAIA_BATTLE_CD_TIMING=console` (`pcsx-redux` names the default), and
     /// the cast-sequence films from `--console-cd`.
     pub battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming,
-    /// Opt-in, off by default: run each battle frame for the span retail's
+    /// On by default: run each battle frame for the span retail's
     /// `VSync(n)` gives its cost (`frame_clock::frame_span`), a clip-loaded
     /// frame at its work over the polls' share (`xa_loaded_frame_cost`), and
     /// the drive word and load window for the clip's read
-    /// (`XA_READ_TAIL_VSYNCS`). Off, an ordinary frame runs its step and a
-    /// loaded one a single vsync past it. Retail's law, held back because the
-    /// share over the table overshoots a cheap fight's loaded frames and the
-    /// film seeds' lead-ins re-deal on longer frames
-    /// (`docs/subsystems/battle-stage-camera.md`, "A frame's span").
-    /// The native session raises it from `LEGAIA_BATTLE_FRAME_SPAN=1`.
+    /// (`XA_READ_TAIL_VSYNCS`): the CD stop watch's wait. Off, an ordinary
+    /// frame runs its step and a loaded one a single vsync past it. With the
+    /// census ([`Self::battle_poly_frame_cost`]) it raises all four film sets
+    /// and drops no cue (`docs/subsystems/battle-stage-camera.md`, "The
+    /// census"). A timing model, not a fidelity knob, so [`Self::pin_retail`]
+    /// leaves it alone; the native session takes `LEGAIA_BATTLE_FRAME_SPAN=0`
+    /// / `=1` over the default.
     pub battle_frame_span_law: bool,
-    /// Opt-in, off by default: price a battle frame's work from the polygons
-    /// the frame links (`frame_clock::polygon_frame_work`) in place of the
-    /// action state's measured base, the draw load and the cast arm tables,
-    /// and a clip-loaded frame at that work over the polls' share
-    /// (`frame_clock::xa_polled_work_cost`). The count is the scene host's
-    /// census of world state (`World::note_linked_polys`), the same on every
-    /// host; without a count the tables stand. The native session raises it
-    /// from `LEGAIA_BATTLE_POLY_COST=1`.
+    /// On by default: price a battle frame's work from the primitives the
+    /// frame links (`frame_clock::linked_frame_work`) in place of the action
+    /// state's measured base and the draw load (a cast arm whose table names
+    /// its step keeps it), and a clip-loaded frame at that work over the
+    /// polls' share (`frame_clock::xa_polled_work_cost`). The count is the
+    /// scene host's census of world state (`World::note_linked_polys`), the
+    /// same on every host; without a count the tables stand. A timing model,
+    /// not a fidelity knob; the native session takes
+    /// `LEGAIA_BATTLE_POLY_COST=0` / `=1` over the default.
     pub battle_poly_frame_cost: bool,
     /// Step each field frame by the frame time the field frame-cost model
     /// prices it at (`World::field_frame_features`, `field_frame_cost`)
@@ -493,8 +495,8 @@ impl WorldToggles {
             battle_party_cost_step: true,
             battle_gpu_cost_step: false,
             battle_cd_timing: legaia_engine_battle_loop::frame_clock::CdTiming::PcsxRedux,
-            battle_frame_span_law: false,
-            battle_poly_frame_cost: false,
+            battle_frame_span_law: true,
+            battle_poly_frame_cost: true,
             field_frame_cost: true,
             battle_poly_window_count: false,
             arts_saved_list: false,

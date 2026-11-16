@@ -124,38 +124,43 @@ impl PlayWindowApp {
         }
     }
 
-    /// `LEGAIA_LEADIN_TABLE_COST`: hold the polygon census off through the
-    /// lead-in and raise it, once, where the film starts: the capture's gate,
-    /// or the cast-sequence recorder's cast begin (a seeded spell film has no
-    /// gate).
+    /// `LEGAIA_LEADIN_TABLE_COST` / `LEGAIA_LEADIN_SPAN_LAW`: hold the
+    /// polygon census / the span law off through the lead-in and give each
+    /// back, once, where the film starts: the capture's gate, or the
+    /// cast-sequence recorder's cast begin (a seeded spell film has no gate).
+    /// Each half returns to what the session asked for
+    /// (`LEGAIA_BATTLE_POLY_COST` / `LEGAIA_BATTLE_FRAME_SPAN`, on by
+    /// default), read on the first call.
     fn seat_leadin_cost(&mut self) {
-        // `LEGAIA_LEADIN_SPAN_LAW`: the same hold for the span law.
-        if self
-            .screenshot
-            .as_ref()
-            .is_some_and(|sc| sc.leadin_span_law)
-        {
-            let met = self.capture_gate_met()
-                || super::redraw_present::CAST_SEQ_STARTED
-                    .load(std::sync::atomic::Ordering::Relaxed);
-            self.session.host.world.toggles.battle_frame_span_law = met;
-            if met && let Some(sc) = self.screenshot.as_mut() {
-                sc.leadin_span_law = false;
-            }
-        }
-        if !self
-            .screenshot
-            .as_ref()
-            .is_some_and(|sc| sc.leadin_table_cost)
-        {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        if !sc.leadin_span_law && !sc.leadin_table_cost {
             return;
         }
         let met = self.capture_gate_met()
             || super::redraw_present::CAST_SEQ_STARTED.load(std::sync::atomic::Ordering::Relaxed);
         let toggles = &mut self.session.host.world.toggles;
-        toggles.battle_poly_frame_cost = met;
-        if met && let Some(sc) = self.screenshot.as_mut() {
-            sc.leadin_table_cost = false;
+        let Some(sc) = self.screenshot.as_mut() else {
+            return;
+        };
+        if sc.leadin_span_law {
+            let wanted = *sc
+                .leadin_span_wanted
+                .get_or_insert(toggles.battle_frame_span_law);
+            toggles.battle_frame_span_law = met && wanted;
+            if met {
+                sc.leadin_span_law = false;
+            }
+        }
+        if sc.leadin_table_cost {
+            let wanted = *sc
+                .leadin_census_wanted
+                .get_or_insert(toggles.battle_poly_frame_cost);
+            toggles.battle_poly_frame_cost = met && wanted;
+            if met {
+                sc.leadin_table_cost = false;
+            }
         }
     }
 

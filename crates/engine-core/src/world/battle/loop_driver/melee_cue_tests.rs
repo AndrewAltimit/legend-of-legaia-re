@@ -273,9 +273,12 @@ fn a_blocked_party_swing_grunts() {
         (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
         (0x1D, 0, 0x26)
     );
+    // Under the span law the drive word also holds PCSX-Redux's read tail
+    // (`XA_READ_TAIL_VSYNCS`) past the span.
     assert_eq!(
-        w.audio.battle_xa_busy_frames, 0x26,
-        "the modelled drive stays busy for the read span"
+        w.audio.battle_xa_busy_frames,
+        0x26 + legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS,
+        "the modelled drive stays busy for the read span and its tail"
     );
 }
 

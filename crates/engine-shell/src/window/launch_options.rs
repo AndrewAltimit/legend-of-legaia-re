@@ -283,6 +283,10 @@ pub struct ScreenshotConfig {
     /// never met its gate. Set by the cast-sequence oracle on request;
     /// `false` in play.
     pub leadin_span_law: bool,
+    /// What the session asked of the census and the span law before the
+    /// lead-in holds took them, read on the holds' first tick.
+    pub leadin_census_wanted: Option<bool>,
+    pub leadin_span_wanted: Option<bool>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -1191,6 +1195,8 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok()),
             leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
             leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
+            leadin_census_wanted: None,
+            leadin_span_wanted: None,
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

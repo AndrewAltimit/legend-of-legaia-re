@@ -997,6 +997,13 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # The lead-in holds: the rounds the replay plays to its gate run the
+    # default overrun and the action-state table, and the census and the span
+    # law (on by default) take over where the film starts. Under them the
+    # lead-in re-deals: Warhalf's replay won its fight before its gate. A
+    # harness seat; `--engine-env` overrides either.
+    env.setdefault("LEGAIA_LEADIN_TABLE_COST", "1")
+    env.setdefault("LEGAIA_LEADIN_SPAN_LAW", "1")
     # The still stands a seat on the displayed frame's pair; a film runs on
     # from the gate on the RAM's clip cursors, so a physical recording stands
     # it on the RAM's pair (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the child

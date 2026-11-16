@@ -666,6 +666,13 @@ pub(super) fn battle_image(
         save
     });
     let mut env = vec![
+        // The lead-in holds: the replay reaches the capture on the action
+        // table and the default overrun, and the census and the span law (on
+        // by default) take over at its gate. Under them the lead-in
+        // re-dealt: `battle_doman_freed_strike`, `_jou_aluru_v3_strike`,
+        // `_jou_freed_v3_strike` and `_nilboa_lava_face_strike` drew no frame.
+        ("LEGAIA_LEADIN_TABLE_COST", "1".to_string()),
+        ("LEGAIA_LEADIN_SPAN_LAW", "1".to_string()),
         (
             "LEGAIA_BATTLE_STAGE",
             format!(
