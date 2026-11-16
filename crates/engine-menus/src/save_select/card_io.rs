@@ -583,7 +583,9 @@ pub fn card_block_snapshots(card: &legaia_save::emu::MountedCard) -> Vec<SlotSna
 /// ported in `crate::card_flow` - neither is a display-list emitter:
 /// `FUN_801E13B8` is the write/format state machine and `FUN_801E16E0`
 /// folds the poll result into the card-health counters)
-/// REF: FUN_801E380C (the remaining sibling call, unported)
+/// REF: FUN_801E380C (the remaining sibling call, the `bu` event step; its
+/// port `crate::card_bu_io::CardIoState::step` is replaced by the host's synchronous
+/// block backend - see `card_bu_io`'s module heading)
 ///
 /// WIRED: [`crate::save_screen::SaveScreenFlow::before_tick`] calls this once
 /// per frame for as long as a card-rack save screen is up, with the poll

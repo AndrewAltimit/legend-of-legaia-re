@@ -3,9 +3,10 @@
 //! case 6](../../../ghidra/scripts/funcs/8001f05c.txt)).
 //!
 //! REF: FUN_8001B964 - the runtime per-actor animated-mesh renderer that
-//! consumes this layout. The engine reproduces it via wgpu plus
-//! the ported [`BoneTransform::decode`] (`FUN_8001BE80`), so the GTE/OT draw
-//! loop of `FUN_8001B964` itself is not ported; this file owns the data side.
+//! consumes this layout. The engine draws it through wgpu with the ported
+//! [`BoneTransform::decode`] (`FUN_8001BE80`); the routine's per-part pose is
+//! ported in `legaia_engine_effects::effect_sprite_arm`, and the GTE/OT
+//! packet emission is the renderer's. This file owns the data side.
 //!
 //! Each town scene's first PROT slot ships a multi-section
 //! [`parse_player_lzs`]-shaped container; one of

@@ -59,8 +59,9 @@
 //!
 //! REF: FUN_801e1ab0 - the afterimage streak, the rider whose out-pointer
 //! order fixes [`BillboardCorners::xy`]; ported as [`crate::afterimage`].
-//! REF: FUN_800485bc - a cutscene / world-map sprite emitter riding the same
-//! projector, documented but not ported.
+//! REF: FUN_800485bc - the battle weapon-trail band emitter, which projects
+//! its control points through this projector; ported as
+//! [`crate::battle_trail`].
 //!
 //! ## Projection is the hardware path
 //!

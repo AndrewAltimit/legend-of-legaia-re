@@ -45,9 +45,11 @@
 //! nothing; with it set, [`tokenize_bank`] ports that arm too). Every Super
 //! Art chain is normal arts only, so
 //! [`derive_super_input`] needs no more than this. The AP-payment and
-//! learn-on-use side effects (`FUN_801EFBFC`, `+0x170`) are not modelled - they
-//! decide `0x19` vs `0x1A` and whether the walk aborts, not where the tokens
-//! land.
+//! learn-on-use side effects (`FUN_801EFBFC`, `+0x170`) are not modelled
+//! here - they decide `0x19` vs `0x1A` and whether the walk aborts, not where
+//! the tokens land. The live battle path runs them through
+//! `legaia_engine_battle_vm::battle_action::queue_applier` (the learn check
+//! and learn-on-use) and `engine-core`'s arts action.
 //!
 //! PORT: FUN_801EED1C (the art-normalisation loop `0x801EF2EC..0x801EF858`,
 //! normal-art arm).

@@ -12,22 +12,24 @@ pub fn is_cutscene_label(label: &str) -> bool {
     label.starts_with("op") || label.starts_with("ed")
 }
 
-/// Return the FMV [`MOV/MVn.STR`] filename associated with a CDNAME
-/// cutscene scene, if any. The retail engine reads the mapping from
-/// the cutscene overlay; until that table is captured the mapping is
-/// derived from CDNAME ordering: the five `op*` opening scenes map
-/// 1:1 to `MV1.STR..MV5.STR`, and the first `ed*` ending scene maps to
-/// `MV6.STR`. Other ending scenes are dialogue-actor-overlay driven
-/// (no FMV).
+/// Return the FMV [`MOV/MVn.STR`] filename a CDNAME cutscene label is
+/// conventionally paired with, if any - a **CLI convenience**, not the
+/// retail selection.
 ///
-/// Returns `Some("MOV/MVn.STR")` for resolvable scenes, `None`
-/// otherwise. Engines join the relative path against their extracted
-/// root (or read the named ISO9660 entry from a `.bin` disc image).
+/// Retail does not pick a movie by scene label. Field-VM op `0x4C 0xE2`
+/// carries an `fmv_id`, and the movie mode resolves it through the dispatch
+/// table `FUN_801CEA3C` reads (`0x801D0A6C`, stride `0x20`), which is
+/// captured and parsed (`legaia_game_tables::fmv_dispatch`, with the static
+/// fallback `legaia_engine_system::movie::cutscene::fmv_index_to_str_filename`).
+/// That is the path both play hosts take for every in-game movie
+/// (`World::cutscene.pending_fmv_trigger`). This label map serves only the
+/// native launch: `legaia-engine play --scene <label>` and `run` show a movie
+/// before entering a scene given by label, and pick it here: the five `op*` opening scenes pair 1:1 with
+/// `MV1.STR..MV5.STR` in CDNAME order and `edteien` with `MV6.STR`.
 ///
-/// Heuristic mapping pinned to the disc's MV1..MV6 file count + the
-/// CDNAME ordering of the `op*` / `ed*` scene labels. The exact retail
-/// table lives in the cutscene overlay (not yet captured); when it
-/// lands, this function should be updated to read the captured map.
+/// Returns `Some("MOV/MVn.STR")` for a paired label, `None` otherwise.
+/// Engines join the relative path against their extracted root (or read the
+/// named ISO9660 entry from a `.bin` disc image).
 pub fn cutscene_str_for(scene_label: &str) -> Option<&'static str> {
     match scene_label {
         // op* opening cutscenes - five in CDNAME order.
@@ -116,19 +118,16 @@ pub fn is_world_map_scene(label: &str) -> bool {
     }
 }
 
-/// Engine-override CDNAME→MV cutscene map.
+/// Engine-override CDNAME→MV cutscene map for the CLI's label-driven movie
+/// playback.
 ///
-/// The retail table lives in the FMV-cutscene overlay (game modes 26/27,
-/// see [`docs/subsystems/cutscene.md`](../../../../docs/subsystems/cutscene.md)).
-/// The retail overlay isn't in the captured corpus yet - `dump_str_fmv_overlay.py`
-/// is staged but not run - so the heuristic in [`cutscene_str_for`] ships
-/// as the default. Once the overlay capture lands, engines can populate a
-/// [`CutsceneMap`] from the captured table and override the heuristic via
-/// [`CutsceneMap::resolve`].
+/// Retail's movie selection is the `fmv_id` dispatch table, not a label map
+/// (see [`cutscene_str_for`]); no in-game movie trigger consults this. The
+/// map lets a `play --scene` / `run` launch override the label pairing of its
+/// pre-scene movie from a TOML file (`--cutscene-map`).
 ///
 /// The map is *additive*: entries the user inserts win, missing entries
-/// fall back to the heuristic. Engines feed it from a captured-data file
-/// or from the boot config.
+/// fall back to [`cutscene_str_for`].
 #[derive(Debug, Clone, Default)]
 pub struct CutsceneMap {
     forward: std::collections::HashMap<String, String>,
