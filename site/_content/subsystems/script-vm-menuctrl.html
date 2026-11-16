@@ -193,7 +193,7 @@
       <tr><td><code>4C CA</code> / <code>CB</code> / <code>CC</code></td><td>script counter set / add / subtract</td></tr>
       <tr><td><code>4C CD</code></td><td>wait for the camera glide</td></tr>
       <tr><td><code>4C CE</code></td><td>player clip override: re-points walk, idle and run at other scene-bank records</td></tr>
-      <tr><td><code>4C CF x z</code></td><td>script camera-focus override</td></tr>
+      <tr><td><code>4C CF x z</code></td><td>script camera-focus override. Only Uru Mais (<code>uru</code>) uses it, pinning the camera on a column while the player crosses a bridge; nothing clears it on a scene change, and the two doors inside a bridge box clear it themselves before they leave</td></tr>
       <tr><td><code>4C D0 x y</code></td><td>press-a-button prompt: a blinking cursor at <code>(x, y)</code> holds the script until confirm or cancel is pressed (Tetsu's lessons)</td></tr>
       <tr><td><code>4C D3</code></td><td>timed-flag scheduler (14 bytes)</td></tr>
       <tr><td><code>4C D4</code> / <code>D5</code></td><td>set / clear the VRAM semi-transparency bit over a rectangle</td></tr>
@@ -204,6 +204,7 @@
   </div>
   <p><strong>The timed-flag scheduler</strong> <code>4C D3 expiry:u16 below:u16 duration:u32 threshold:u32</code> arms a countdown that lives in the save block. A per-tick consumer sets the expiry flag at zero and the below flag while under the threshold. Retail uses it for the two escape sequences: a collapsing dungeon and the Floating Castle. Stopping the clock does not clear the below flag, which is the root of a traced <a href="../writeups/glitches/field-oddities.html">missing-encounters oddity</a>.</p>
   <p><code>4C D2</code>, <code>D6</code> and <code>D7</code> all <em>advance</em> in retail. A VM that halts on them holds a cross-context record forever.</p>
+  <p><code>4C D2 channel</code> seats a retired placement again, and the actor it seats is a fresh allocation: it draws the placement's own model from its header, untilted and with no face deformation, whatever the retired actor had been swapped to.</p>
 </section>
 
 <section class="doc-section" id="others" data-doc="-">
