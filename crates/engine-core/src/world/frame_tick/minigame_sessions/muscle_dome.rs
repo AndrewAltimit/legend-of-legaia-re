@@ -363,6 +363,13 @@ impl World {
                 .or_insert(0);
             *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
+        // The settlement ends in the shared minigame exit (`jal 0x80026018`
+        // at `0x801D1160`):
+        // a door-entered contest closes its round trip here, the departure
+        // scene and the field-back load with it, however the contest ended.
+        // The coin credit above is that exit's, so the round trip banks no
+        // second tally (the dome never writes the winnings accumulator).
+        self.close_minigame_round_trip();
         Some(out)
     }
 

@@ -594,3 +594,26 @@ fn settlement_hands_back_the_party_the_contest_found() {
     assert_eq!(w.party.money, 900);
     assert_eq!(w.party.inventory.get(&0x90), Some(&3));
 }
+
+#[test]
+fn a_door_entered_contest_closes_its_round_trip_at_settlement() {
+    // The settlement `FUN_801D0F60` ends in the shared minigame exit
+    // (`jal 0x80026018` at `0x801D1160`): the departure scene comes back
+    // and the coin bank takes the tally once.
+    let mut w = world_with_contest();
+    w.active_scene_label = "koin1".to_string();
+    w.arm_minigame_warp();
+    w.active_scene_label = "arena".to_string();
+    for _ in 0..3 {
+        w.report_muscle_leg(cleared());
+    }
+    let out = w.settle_muscle_contest().expect("the run finished");
+    assert_eq!(w.active_scene_label, "koin1", "the departure scene");
+    assert!(w.minigames.scene_backup.is_none(), "the round trip closed");
+    assert_eq!(
+        i64::from(w.minigames.casino_coins),
+        i64::from(out.score),
+        "paid once"
+    );
+    assert_eq!(w.mode, legaia_engine_mode::mode::SceneMode::Field);
+}

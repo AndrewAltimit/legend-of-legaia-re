@@ -397,7 +397,7 @@
     </tbody>
   </table>
   </div>
-  <p>The total is then paid by the shared minigame-exit routine into the casino <strong>coin bank</strong>, saturating at 9,999,999. The victory caption&rsquo;s &ldquo;acquired the power of&hellip;&rdquo; line is a string, not a grant: nothing in the arena awards anything but coins and the War God Icon.</p>
+  <p>The total is then paid by the shared minigame-exit routine into the casino <strong>coin bank</strong>, saturating at 9,999,999. The same routine hands the field back, however the contest ended, the way every minigame entered through its door returns. The victory caption&rsquo;s &ldquo;acquired the power of&hellip;&rdquo; line is a string, not a grant: nothing in the arena awards anything but coins and the War God Icon.</p>
   <p class="dg-note">Settlement <code>FUN_801D0F60</code> (PROT 0977 file <code>+0x2748</code>), tail-calling <code>FUN_80026018</code>: <code>coins += tally</code> on the bank at <code>0x800845A4</code>; running total <code>_DAT_80084440</code>; War God Icon through <code>FUN_800421D4(0xCD, 1)</code>.</p>
 </section>
 
