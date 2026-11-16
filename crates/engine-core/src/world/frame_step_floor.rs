@@ -12,13 +12,29 @@
 //! | field init `FUN_801D6704` | `0x801D6990` (PROT 0897) | `2` | scene entry installs it |
 //! | move-VM ext `0x2F` | `0x801D45E4` (PROT 0897) | operand | `ext_set_8007b9d8` |
 //! | name entry `FUN_801F03F0` | save `0x801F0468`, hold `0x801F0488`, restore `0x801F09A0` | `1` while open | [`World::open_name_entry`] / [`World::step_name_entry`] |
-//! | save screen `FUN_801DC6B4` (PROT 0899) | `0x801DC7B4` / `0x801DC9BC`; save `0x801DD8AC`, restore `0x801DFC30` | `1`, then `2` | not modelled |
+//! | save screen `FUN_801DC6B4` (PROT 0899) | `0x801DC7B4` / `0x801DC9BC`; save `0x801DD8AC`, restore `0x801DFC30` | `1`, then `2` | no consumer (below) |
 //! | fishing init (PROT 0972) | `0x801CF344` | `2` | `PondSession::vsync` (`VENUE_FRAME_STEP`) |
 //! | Baka Fighter (PROT 0976) | `0x801CFCC4` / `0x801D0FAC` | `1` / `4` | `BakaFight::frame` (`SECRET_TALLY_FRAME_STEP`) |
 //! | hub screens `FUN_801CF870` (PROT 0977) | `0x801CF8E0` | `2` | `HubTimers::tick` (`HUB_FRAME_STEP`) |
-//! | battle intro (PROT 0979) | `0x801CFE00` | `3` | not modelled |
+//! | battle intro (PROT 0979) | `0x801CFE00` | `3` | not modelled (below) |
 //! | dance (PROT 0980) | `0x801CF070` | `3` | `DanceGame::advance_vsync` (`HALL_FRAME_STEP`) |
 //! | monster test (PROT 0981) | `0x801CE884` / `0x801CEC1C` | variable | dev mode, not ported |
+//!
+//! The two unmodelled rows, measured on retail (PCSX-Redux, `DAT_1F800393` and
+//! this word per vsync):
+//!
+//! - **Save screen.** On the pause menu's Save grid and the title's Continue
+//!   grid the floor reads `1` and the step `1` throughout. The engine's save
+//!   screen (`engine-menus::save_screen`) counts its own frames and reads no
+//!   frame step, so the write has no reader to feed.
+//! - **Battle intro.** The store sits in the prologue of the scatter style's
+//!   per-frame body `FUN_801CFDA0` (delay slot at `0x801CFE00`), so it holds
+//!   only while style `0` runs, which `select_intro_style` picks for three
+//!   formations (slot-0 monster `0x4C`, `0x88`, `0xB3`). On a walked fight the
+//!   transition's mode entry leaves the floor at `1` and the step falls `3`/`4` -> `2`
+//!   -> `1` as the intro's cost drops; the intro's clocks count display frames
+//!   by the step, so its length is the same either way. No retail state stands
+//!   before one of the three fights, so style `0`'s cadence is unmeasured.
 //!
 //! The minigame rows are modelled by their engine sessions, which keep their
 //! own clocks rather than this word; the unmodelled rows run in modes whose
