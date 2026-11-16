@@ -345,6 +345,24 @@ impl World {
         self.npcs.phase_draws.insert(slot, (draw, anim));
     }
 
+    /// A `4C D2` re-seat's header clip on a placement whose cursor is still
+    /// bound: the new allocation's `+0x5E = -1` (`FUN_80020DE0`, `0x80020E9C`)
+    /// makes the spawner's bind restart the header clip at frame `0` and the
+    /// draw just taken seats its phase (`0x8003A404..0x8003A454`). A cursor on
+    /// another clip is left to the next bind, which spends the draw.
+    ///
+    /// REF: FUN_8003A1E4, FUN_80020DE0
+    pub(crate) fn restart_respawned_header_clip(&mut self, slot: u8, anim: u8) {
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        if c.anim_id != anim {
+            return;
+        }
+        c.cursor = 0;
+        self.seat_npc_phase_draw(slot);
+    }
+
     /// Seat a waiting clip-phase draw on NPC `slot`'s bound cursor, when the
     /// cursor plays the clip the draw was taken for. A cursor bound to another
     /// clip consumes the draw unseated: retail seated it on the old clip, and
@@ -833,6 +851,24 @@ mod tests {
         w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
         w.restart_npc_clip(3, 2, true, true);
         assert_eq!(w.npcs.clip_cursors[&3].cursor, 48);
+    }
+
+    /// A `4C D2` re-seat restarts the header clip a still-bound cursor plays
+    /// and seats the spawner's fresh draw on it.
+    #[test]
+    fn a_reseat_restarts_the_bound_header_clip_at_the_new_draw() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (10, 2), (10, 7)]);
+        let player = FieldClipPlayer::from_record(&scene, 2).unwrap();
+        let draw = World::new().next_rand();
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.bind_npc_clip_cursor(3, 3, &player);
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.draw_placement_spawn_phase(3, 3);
+        w.restart_respawned_header_clip(3, 3);
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!(c.cursor, ((draw % u32::from(c.frames)) << 4) as i16);
+        assert!(w.npcs.phase_draws.is_empty());
     }
 
     /// A header clip the host bound steps at the actor's own `+0x6A` once a

@@ -648,6 +648,7 @@ impl World {
                 .filter(|&a| a > 0)
             {
                 self.draw_placement_spawn_phase(slot, anim);
+                self.restart_respawned_header_clip(slot, anim);
             }
             self.npcs.positions.remove(&slot);
             self.npcs.headings.remove(&slot);
