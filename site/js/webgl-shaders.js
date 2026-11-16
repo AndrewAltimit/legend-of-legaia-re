@@ -1343,7 +1343,11 @@ float psxRowReach(vec4 bary, vec4 stp) {
 /* PSX mode's texel sample row (see main) - the twin of engine-render's
  * psx_sample_uv. uv_dy / bary_dy are GL's dFdy, a row up. */
 vec2 psxSampleUv(vec2 uv, vec2 uv_dy, vec4 bary, vec4 bary_dy) {
-  if (u_psx.z < 0.5) return uv;
+  /* The clean frame: the UV truncated past the tie bias, as the window's
+   * psx_sample_uv takes it - a texel boundary the UV sits on exactly (corners
+   * sharing one V) otherwise falls a hair below it through uv * w / w, and the
+   * page read a whole primitive a texel above the window's. */
+  if (u_psx.z < 0.5) return uv + vec2(${glslFloat(PSX_TEXEL_TIE_BIAS)});
   /* The native target (engine-render's psx_texel_uv): the UV is the GPU's at
    * its sample point already, and the GPU rounds it to a texel. The sample
    * point is the pixel the tie nudge moved the primitive off

@@ -1895,7 +1895,7 @@ reverse-engineering questions, so they are not on
 | an NPC inside `rugi`'s semi-transparent tunnel, PSX mode | Closed: the page staged each field draw's link word (`meanDepth`, `_stageFieldPrimOrder`) before it appended the script-spawned actors and the field effects, so the landing tunnel, a spawned actor, tested per pixel against NPC `4`, which both hosts draw by link; the window stages a word on every draw. Staged after the frame's last draw, `lamp_walk` under `--mode psx_only` reads tick `241` `0.78%` to `0.42%` and tick `211` `0.40%` to `0.31%`, the rest ring edges. NPC `4` carries no near-bucket bit on either host: a script holds its height (`+0x10 & 0x20000000`), so the actor tick never runs the floor sampler on it (`FUN_8003BC08` at `0x8003BC50`). A `PAGE_STATE_RULES` row pins the order. |
 | actor bindings after a landing over a scene | Closed: a scene entered over another kept the departing scene's TMD binding on every slot past its own pack, so a card landing on the page (entered over its running scene) and the window's cold one traced different binding lines on every frame (`ladder_menu`, `slot_save`). `init_scene_animations` clears those slots now; `ladder_menu` traces equal on all `35` frames. |
 | a resumed save's NPC clips | Open: `slot_save` (the page lands it over `town01` entered cold) still traces `town01` placements `33` and `34` on other clips (`31` / `62` where the window runs `29` / `60`) from its first frame, a clip a script picks; the pixels pair at `0.20%`, the walk's own figure. |
-| effect prims through the eye plane, clean rasterisation | Open: with PSX rasterisation off, beams that run past the camera draw differently on the two hosts (`cast_big_wave` up to `1.5%`, `cast_cannon` `1.5%`); retail mode pairs. See [effect prims through the eye plane](#effect-prims-through-the-eye-plane). |
+| a texel tie in the clean frame | Closed: with PSX rasterisation off, Big Wave's beams drew split and Genocidal Cannon's beam blotched on the page (`1.5%` of a frame); both hosts now truncate the clean UV past `PSX_TEXEL_TIE_BIAS`, and the scenes read `0.08%` and `0.01%` at worst. See [a texel tie in the clean frame](#a-texel-tie-in-the-clean-frame). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The Baka floor fan against retail
@@ -1928,30 +1928,32 @@ from `0x36` on ([Baka Fighter](../subsystems/minigame-baka-fighter.md#duel-hud-f
 The window's bars rise at tick `244`, `14` ticks after the pose that matches retail's
 vsync `216`; retail's are absent at vsync `231` and up at `234` of the same film.
 
-### Effect prims through the eye plane
+### A texel tie in the clean frame
 
-With PSX rasterisation off, a cast whose beams run past the camera draws them
-differently on the two hosts. Big Wave's fan of beams (`cast_big_wave` ticks
-`571..661`, up to `1.5%` of a `960 x 720` frame) splits into two narrow beams
-on the page where the window draws one wide one, and Genocidal Cannon's red
-beam (`cast_cannon` tick `1521`) takes dark blotches on the page. Retail mode
-pairs within `0.6%` on the same ticks, and the window's clean frame keeps the
-wide beam retail mode draws.
+With PSX rasterisation off, Big Wave's fan of beams (`cast_big_wave` ticks
+`571..661`, up to `1.5%` of a `960 x 720` frame) drew split in two on the page
+where the window drew each beam whole, and Genocidal Cannon's red beam
+(`cast_cannon` tick `1521`, `1.5%`) took dark blotches. Retail mode paired.
 
-| Ruled out | How |
+A dump of the page's baked effect stream at tick `631` named the primitives
+under the gap: beams that sample a two-texel strip of their page, corners
+`UV (0..1, 241)`, every corner on one `V`. The truncated `V` is a tie on
+every fragment. The window's `@interpolate(linear)` varying holds a value its
+corners share exactly; the page carries `uv * w` and `w` and divides, which
+lands a hair under `241` on part of the primitive, so the page read texel row
+`240` there.
+
+| Tried | What it showed |
 |---|---|
-| depth | the page's blend pass with its depth test forced off still splits the beam |
-| blend order | the page's subtractive draws skipped: the same split |
-| culling, the near and span rejects | face culling off, `u_prim_near` zeroed on the page: the same |
-| the enhancement passes | `no_ssao`, `no_lighting`, `no_shadows` keep it |
+| the page's blend pass with its depth test off, its subtractive draws skipped, face culling off, `u_prim_near` zeroed | the split stayed: not depth, blend order, culling or the rejects |
+| the window's shader carrying `uv * w` and `w` as the page does | the window drew the page's split, speckled where its own float error fell the other way |
+| the page's effect stream cut at the window's near plane on the CPU | not one pixel moved: the near plane was not it |
+| both hosts truncating the clean UV past `PSX_TEXEL_TIE_BIAS` | `cast_big_wave` `0.08%` worst, `cast_cannon` `0.01%` |
 
-What is left is the affine UV of a prim with a corner near or behind the eye.
-The window interpolates it `@interpolate(linear)` over the vertices the clipper
-makes; the page carries `uv * w` and `w` and divides, which is screen-linear
-over the whole unclipped triangle. The two are one law until a corner is
-clipped. Under PSX mode the GTE register limits clamp that corner on both hosts
-first, which is why retail mode pairs. Evidence grade: inference from the
-experiments above, with no per-prim dump of the frame.
+PSX mode already read the bias past its half texel, which is why retail mode
+paired; the clean frame now reads it too (`psx_sample_uv`, `psxSampleUv`),
+pinned by `the_clean_texel_is_past_the_tie_bias_on_both_hosts`. A 256th of a
+texel moves no texel a real UV does not already sit on.
 
 ### The minigames page has no `World`
 

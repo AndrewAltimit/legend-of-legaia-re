@@ -309,6 +309,12 @@ the mednafen states' frames the bias moves as many states up as down; the
 same bias taken below the boundary reads sixteen of eighteen moved states
 worse.
 
+The clean frame truncates its UV past the same bias. There a primitive whose
+corners share one `V` (an effect beam sampling a two-texel strip) puts every
+fragment on the tie, and the page's `uv * w / w` landed a hair under it where
+the window's `linear` varying holds the corners' value: the page read the row
+above on part of the primitive ([host drift](../tooling/host-drift.md#a-texel-tie-in-the-clean-frame)).
+
 The composited screen primitives take the same pixel centre and texel bias
 on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to
