@@ -913,6 +913,7 @@ impl World {
         }
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.effects = direction.map_or(&[], |d| d.effects);
         run.arm_point = direction.and_then(|d| d.arm_point);
         run.vram_move = direction.and_then(|d| d.vram_move).or(capture_vram_move);
         run.caption = direction.and_then(|d| d.caption);

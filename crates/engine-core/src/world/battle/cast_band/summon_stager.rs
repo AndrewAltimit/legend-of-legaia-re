@@ -208,6 +208,11 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
+            // The arm's pool spawns follow its seats (`FUN_801DFDF0` after the
+            // `FUN_80021B04` calls), from the tick ahead of the walker.
+            if !r.effects.is_empty() {
+                self.stage_module_arm_effects(r.effects, r.camera_shot, r.arm_point);
+            }
             // A pass's call: the arm spawns once a battle frame, however many
             // one-vsync ticks the pass runs.
             if !r.every_spawns.is_empty() && !self.casting.module_pass_repeat {

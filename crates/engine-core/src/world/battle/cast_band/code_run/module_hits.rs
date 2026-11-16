@@ -123,6 +123,7 @@ impl World {
             capture_drift_first: false,
             spawns: &[],
             every_spawns: &[],
+            effects: &[],
             arm_point: None,
             vram_move: None,
             caption: None,

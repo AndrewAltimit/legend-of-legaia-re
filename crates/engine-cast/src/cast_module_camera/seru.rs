@@ -705,6 +705,24 @@ pub const ZENOIR_SEAT_SPAWNS: [ModuleSpawn; 7] = module_spawns(
     SpawnAnchor::CreatureGround { y: 0 },
 );
 
+/// PROT 0908 arm 4's two `efect.dat` pool spawns behind its seven seats, on
+/// the same grid point at angle `0`: effect `3` (`0x801F6FA0..0x801F6FAC`)
+/// and effect `0x20` (`0x801F6FB0..0x801F6FBC`), `a1 = s0` the point the
+/// seats were handed. Their children draw `rand()` words from the pass that
+/// seats them on (the bursts and the per-frame sheds of the summoning ring).
+pub const ZENOIR_SEAT_EFFECTS: [ModuleEffect; 2] = [
+    ModuleEffect {
+        id: 3,
+        anchor: SpawnAnchor::CreatureGround { y: 0 },
+        angle: 0,
+    },
+    ModuleEffect {
+        id: 0x20,
+        anchor: SpawnAnchor::CreatureGround { y: 0 },
+        angle: 0,
+    },
+];
+
 /// PROT 0908 arm 6's spawn, under the creature at `y = -0x190`
 /// (`0x801F746C`).
 pub const ZENOIR_STRIKE_SPAWNS: [ModuleSpawn; 1] =
@@ -848,6 +866,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             st.countdown.0 = SPEED_SCALAR * 140;
             ArmDirection {
                 spawns: &ZENOIR_SEAT_SPAWNS,
+                effects: &ZENOIR_SEAT_EFFECTS,
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0x3C, 0, 0],
                     tr: [0, 0x400, 0xA00],

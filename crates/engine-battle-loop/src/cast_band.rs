@@ -171,6 +171,9 @@ pub struct CastModuleCodeRun {
     /// not, beside [`Self::spawns`]
     /// ([`legaia_engine_cast::cast_module_camera::creature_arm_spawns`]).
     pub every_spawns: &'static [legaia_engine_cast::cast_module_camera::ModuleSpawn],
+    /// The `efect.dat` pool spawns the module's arm made this frame, behind
+    /// [`Self::spawns`].
+    pub effects: &'static [legaia_engine_cast::cast_module_camera::ModuleEffect],
     /// The point the arm built for its [`legaia_engine_cast::cast_module_camera::SpawnAnchor::ArmPoint`]
     /// spawns this frame.
     pub arm_point: Option<([i16; 3], [i16; 3])>,
