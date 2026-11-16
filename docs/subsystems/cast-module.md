@@ -1212,10 +1212,12 @@ draw refreshes it. A `--ghost-trace` recording of `ropeway_curry_devil_pre_cross
 holds the staged byte at `0` from vsync `559` and the clip on `416` until `569`, four
 passes into `0x51`, as the Done band's pan brings the body back into the frame; its
 first after-image ghosts are drawn from `565`, and the frames cost `327` to `505` until
-then and the clamp after. The port commits the bump in the module's write-back, on the pass
-itself, and its ghosts load `0x71`'s frames onto step `4`. Gating that commit on the
-latched colour word holds the clip for the rest of the film instead: the port's latch
-never reads the Curry Devil drawn at `0xA1` or deeper there, which is still open. Grade
+then and the clamp after. The port held a module's caster bump for the anim tick only
+where the skip lets it through: a monster caster whose node word last latched zero keeps
+the bit (`CastFxState::module_bump_deferred`) until the tick runs, and the tick commits it
+then. The film's Curry Devil now holds clip `8` on cursor `416` through `0x71` and `0x50`
+and takes idle four ticks into `0x51`, where the recording's takes it six vsyncs in. The
+body is out of the frame through those passes, so the film's image does not move. Grade
 `disassembly` + `capture`.
 
 ### One owner per hit
@@ -4699,14 +4701,22 @@ close to a minute. It is ported whole.
 - **Arm 0 stands the party in a half-size row.** For party seat `i` of `n`
   the loop (`0x801F6BE0..0x801F6D1C`) saves `+0x34..+0x3B` and the heading,
   then stores `+0x34` = the formation point's x (`0x800775E0 + (n * 3 + i) *
-  8`) over three toward zero, `+0x38 = 0x190`, `+0x46 = 0`, node `+0x72 =
-  0x800` and the node radius `+0x58` halved (the ground shadow's scale). Arm
-  21 lifts the caster to `+0x36 = -0x380`, `x = 0`, `z = 0x400`, heading
-  `0x800` at the same half scale (`0x801F7E80..0x801F7EB4`); the recording's
-  caster stands at `z = 1024` from arm 21 to arm 28. Arm 27's pass copies every
-  saved seat back and doubles the scales and radii (`0x801F8828..0x801F8904`),
-  and arm 28 copies the party's back on every pass (`0x801F89E0..0x801F8A3C`).
-  Port `World::evil_seru_magic_row` over `esm_row_x`. Grade `disassembly`.
+  8`) over six toward zero (`mult 0x2AAAAAAB` / `mfhi`, `2^32 / 6` with no
+  shift), `+0x38 = 0x190`, `+0x46 = 0`, node `+0x72 = 0x800` and the node
+  radius `+0x58` halved, which the separation pass reads as well. Arm 18's
+  pass stands every party seat at `z = -0x400` as it hides them
+  (`0x801F7C10..0x801F7C28`), in front of Juggernaut, and arm 26's
+  knockdowns walk them on toward the lens. Arm 21 lifts the caster to
+  `+0x36 = -0x380`, `x = 0`, `z = 0x400`, heading `0x800` at the same half
+  scale (`0x801F7E80..0x801F7EB4`). Arm 27's pass copies every saved seat
+  back and doubles the scales and radii (`0x801F8828..0x801F8904`), and only
+  then reads the caster's `+0x34` / `+0x38` / `+0x46` for its shot
+  (`0x801F8930..0x801F895C`), so arm 28 frames the restored pose; arm 28
+  copies the party's back on every pass (`0x801F89E0..0x801F8A3C`). RAM dumps
+  of a recording of the cast hold the row at `x = 0, -100, 100` and
+  `z = 400` on arm 10, `-1024` from arm 19 to arm 26, the radius at `320`,
+  and the caster at `z = 1024` from arm 21. Port `World::evil_seru_magic_row`
+  over `esm_row_x`. Grade `disassembly` + `capture`.
 
 - **Arm 0 halves each member's entry-5 end step.** The halfword it halves
   beside the scale is `+0x0E` of the sixth pointer of the member's action-entry

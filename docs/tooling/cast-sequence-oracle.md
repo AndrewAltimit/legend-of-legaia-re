@@ -1373,14 +1373,14 @@ the arms from 11 on framed an empty stage where retail's frames hold the creatur
 driven through its clip, rate and walk stores, with the arms 12..15 slide and arm 19's
 walk paced by the frame delta and the caster on arm 21's `z = 0x400`
 ([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)), the film reads
-`.819` to `.871` plain: arms 11 to 21 from `.83..99` to `.94..1.00`, arm 22 `.43` to `.58`,
-arm 23 `.86` to `.92`, arm 24 `.75` to `.87`, arm 25 `.64` to `.78`. The caster's depth
-exposed one more read: arm 27's pass copies the saved seats back and only then frames the
-caster (`0x801F8930..0x801F895C`), so arm 28's shot centres the restored `z = 944`, which
-the recording's focus reads. Framed on arm 21's `1024`, the shot stood the stage out of
-the frame under the white fade, and arm 28 read `.745` where it reads `.997`. Still open:
-arm 22's sphere grows and goes some forty ticks ahead of retail's, and arms 26 and 27
-(`.65`, `.51`) hold the flash.
+`.819` to `.864` plain. A recording with `LEGAIA_RAM_AT` dumps on arms 10, 12, 14, 19, 22
+and 26 then read the seats the frames could not: the row stands at a sixth of the
+formation column, not a third; arm 18 moves it to `z = -1024` in front of Juggernaut; its
+radius is the halved `320` the separation pass reads; and arm 27 frames the caster after
+it is put back, so arm 28's shot centres `z = 944`. With those the film reads `.882`: arms
+11 to 21 `.94..1.00`, arm 23 `.86` to `.96`, arm 26 `.65` to `.80`, arm 28 `.997`. Still
+open: arm 22's sphere grows and goes some forty ticks ahead of retail's, and arm 27
+(`.50`) holds the flash.
 
 ### The enemy set on the rand-track seat
 
