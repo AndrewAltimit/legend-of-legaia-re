@@ -268,6 +268,21 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn first_monster_id(&self) -> u8 {
         self.world.formation_slot0_monster_id().unwrap_or(0)
     }
+    /// The five equipment ATK bytes battle entry resolved for a party seat
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::equip_atk`]);
+    /// monster seats carry none. The fold `FUN_801EC3E4` adds per hit reads
+    /// them (`fold_weapon_atk_on_hit`).
+    fn equip_attack_bonuses(&self, party_slot: u8) -> [u8; 5] {
+        if party_slot >= self.world.party.party_count {
+            return [0; 5];
+        }
+        self.world
+            .battle
+            .equip_atk
+            .get(usize::from(party_slot))
+            .copied()
+            .unwrap_or([0; 5])
+    }
     /// The arena session's word ORed with the battle's own
     /// ([`World::special_battle_word`]) - what the special-battle wipe rule
     /// reads.

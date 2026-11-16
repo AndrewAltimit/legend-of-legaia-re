@@ -660,8 +660,8 @@ pub struct BattleActor {
     pub input_cursor: u8,
     /// `+0x158` - ATK **working** (the attacker's offense the damage routine
     /// reads; `+0x15A` is the base a buff restores to). The Arms execution
-    /// resolver folds the equipped weapon's attack bonus into this per
-    /// committed command - see
+    /// resolver adds the equipped weapon's attack bonus to this value in a
+    /// register (`s0`, loaded at `0x801ECB84`) and never stores it back - see
     /// [`crate::battle_formulas::arms_weapon_atk_fold`].
     pub atk_working: u16,
     /// `+0x15A` - ATK **base**, the half a buff restores to. The stat block

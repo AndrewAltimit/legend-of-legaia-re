@@ -247,3 +247,43 @@ fn the_guard_ladder_runs_before_the_damage_cap() {
         "halved excess still clears the cap"
     );
 }
+
+/// The admitted-hit path folds through the port of the resolver's arms
+/// (`fold_weapon_atk_on_hit` over `BattleHostImpl`) and the unadmitted
+/// paths through `melee_equipment_fold`; for every committed slot the anim
+/// commit leaves (`0x0C..=0x11`) the two agree, and neither stores the fold
+/// into ATK working (`lhu s0,0x158` at `0x801ECB84`, never written back), so
+/// a chain's later hits fold against the same base.
+#[test]
+fn the_admitted_hit_fold_is_the_ports_and_stores_nothing() {
+    use legaia_engine_battle_vm::battle_action::{
+        ActionState, fold_weapon_atk_on_hit, hit_event_admits,
+    };
+    let mut w = duel();
+    w.battle.equip_atk[0] = [10, 20, 30, 40, 50];
+    w.actors[0].battle.atk_working = 200;
+    for committed in 0x0C..=0x11u8 {
+        w.actors[0].battle.current_anim = committed;
+        w.actors[0].battle.input_cursor = 0;
+        let hit = hit_event_admits(
+            ActionState::AttackChain.as_byte(),
+            &[committed, 0, 0, 0],
+            &[6, 0, 0, 0],
+            0,
+            5,
+        )
+        .expect("a swing entry admits its single hit");
+        let port = {
+            let host = BattleHostImpl { world: &mut w };
+            fold_weapon_atk_on_hit(&host, 0, ActionState::AttackChain.as_byte(), &hit)
+        };
+        assert_eq!(
+            port,
+            w.melee_equipment_fold(0, committed),
+            "committed {committed:#04x}"
+        );
+        assert_eq!(w.actors[0].battle.atk_working, 200, "nothing is stored");
+    }
+    // A monster attacker folds nothing on either path.
+    assert_eq!(w.melee_equipment_fold(1, 0x0C), None);
+}

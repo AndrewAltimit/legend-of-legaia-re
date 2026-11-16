@@ -109,7 +109,7 @@ fn a_small_partys_monster_never_takes_the_arms_fold() {
         )
         .expect("a swing entry admits its single hit");
         assert_eq!(
-            fold_weapon_atk_on_hit(&mut host, slot, ctx.action_state, &hit),
+            fold_weapon_atk_on_hit(&host, slot, ctx.action_state, &hit),
             None,
             "pc {pc} mc {mc} monster {k}"
         );
@@ -128,7 +128,7 @@ fn a_small_partys_monster_never_takes_the_arms_fold() {
     )
     .unwrap();
     assert_eq!(
-        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
         Some(15)
     );
 }

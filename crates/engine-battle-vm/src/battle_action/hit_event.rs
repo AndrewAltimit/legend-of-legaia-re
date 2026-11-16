@@ -364,16 +364,23 @@ pub fn art_strike_info_for_hit<H: BattleActionHost + ?Sized>(
 
 /// The kernel's execution-time equipment fold, run **at the hit** it belongs
 /// to: for a party attacker whose committed command byte (`+0x1D9`) is one
-/// of the six `PTR_801CF4B4` arms, add half the read equipment slots' ATK
-/// bonus into ATK working (`+0x158`). The head guards are the same ones
-/// [`hit_event_admits`] evaluated for this hit (`ctx[7]`, the admission band
-/// on the power byte, the cursor bound, the party branch); the caller passes
-/// the hit it admitted so the two cannot disagree.
+/// of the six `PTR_801CF4B4` arms, half the read equipment slots' ATK bonus.
+/// The head guards are the same ones [`hit_event_admits`] evaluated for this
+/// hit (`ctx[7]`, the admission band on the power byte, the cursor bound, the
+/// party branch); the caller passes the hit it admitted so the two cannot
+/// disagree.
 ///
-/// PORT: FUN_801EC3E4 (the ATK-working fold at `+0x158`, reached from the
-/// admitted head; arms in `crate::battle_formulas::arms_fold`)
+/// Returns the delta and **stores nothing**. Retail holds the fold in a
+/// register: `lhu s0,0x158(v1)` at `0x801ECB84` loads ATK working, the arm
+/// adds the halved bonus into `s0`, and the damage body reads `s0` - no
+/// instruction of `FUN_801EC3E4` writes `+0x158` back. Adding the delta into
+/// `BattleActor::atk_working` would grow it by the weapon on every hit of a
+/// chain. The caller adds it to the base offense it rolls with.
+///
+/// PORT: FUN_801EC3E4 (the register fold on `s0` from `0x801ECB84`, reached
+/// from the admitted head; arms in `crate::battle_formulas::arms_fold`)
 pub fn fold_weapon_atk_on_hit<H: BattleActionHost + ?Sized>(
-    host: &mut H,
+    host: &H,
     slot: u8,
     action_state: u8,
     hit: &HitEvent,
@@ -397,10 +404,7 @@ pub fn fold_weapon_atk_on_hit<H: BattleActionHost + ?Sized>(
         return None;
     }
     let bonuses = host.equip_attack_bonuses(slot);
-    let delta = arms_weapon_atk_fold(command, &bonuses)?;
-    let actor = host.actor_mut(slot)?;
-    actor.atk_working = actor.atk_working.wrapping_add(delta);
-    Some(delta)
+    arms_weapon_atk_fold(command, &bonuses)
 }
 
 #[cfg(test)]

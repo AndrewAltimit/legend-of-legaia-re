@@ -325,10 +325,13 @@ impl World {
             );
             return;
         }
-        {
-            let mut host = BattleHostImpl { world: self };
-            fold_weapon_atk_on_hit(&mut host, attacker, state, &hit);
-        }
+        // The execution-time equipment fold, through the port of the
+        // resolver's own arms: a register value (`s0` from `0x801ECB84`) the
+        // damage body rolls with, never stored back to `+0x158`.
+        let fold = {
+            let host = BattleHostImpl { world: self };
+            fold_weapon_atk_on_hit(&host, attacker, state, &hit)
+        };
         let cursor_parked =
             self.actors[attacker as usize].battle.strike_index == STRIKE_CURSOR_PARKED;
         let last_of_clip = hit.hit_index >= 3
@@ -354,14 +357,8 @@ impl World {
         // takes it, and otherwise it needs the parked cursor
         // (`ctx[+0x15] == 0xFF`, `0x801EE15C`) and the clip's last beat
         // (`entry[0x11 + idx] == 0 || idx == 3`, `0x801EE180..0x801EE19C`).
-        let dmg = self.land_melee_hit(
-            attacker,
-            target,
-            hit.power_byte,
-            committed,
-            art.is_some(),
-            applied,
-        );
+        let dmg =
+            self.land_melee_hit_folded(attacker, target, hit.power_byte, committed, applied, fold);
         if let Some(art) = art {
             self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
         }
@@ -694,29 +691,52 @@ impl World {
         _is_art: bool,
         kill_check: bool,
     ) -> u16 {
+        let fold = self.melee_equipment_fold(attacker, committed);
+        self.land_melee_hit_folded(attacker, target, power_byte, committed, kill_check, fold)
+    }
+
+    /// The execution-time equipment fold for a strike that reaches
+    /// [`Self::land_melee_hit`] without an admitted hit event (the
+    /// zero-length-clip fallback, the plain round): half of the one
+    /// equipment slot the committed command reads (`FUN_801EC3E4`'s
+    /// `PTR_801CF4B4` arms - footwear for High / Low, slot 2 / 3 for the two
+    /// arm commands, all five for an art). `committed` may be a queue byte
+    /// here rather than the anim commit's slot number, so an art id maps onto
+    /// the art arm the commit would have rewritten it to. Party attackers
+    /// only; the monster branch performs no fold.
+    pub(super) fn melee_equipment_fold(&self, attacker: u8, committed: u8) -> Option<u16> {
+        if attacker >= self.party.party_count {
+            return None;
+        }
+        let bonuses = self.battle.equip_atk.get(attacker as usize)?;
+        let fold_command =
+            if committed > legaia_engine_battle_vm::battle_formulas::ART_ANIM_THRESHOLD {
+                legaia_engine_battle_vm::battle_formulas::ARMS_ART_COMMAND
+            } else {
+                committed
+            };
+        legaia_engine_battle_vm::battle_formulas::arms_weapon_atk_fold(fold_command, bonuses)
+    }
+
+    /// [`Self::land_melee_hit`] with the equipment fold already resolved:
+    /// `fold` is what the resolver's arm adds to the base ATK in `s0`
+    /// (`0x801ECB84`), `None` when no arm folds.
+    pub(super) fn land_melee_hit_folded(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power_byte: u8,
+        committed: u8,
+        kill_check: bool,
+        fold: Option<u16>,
+    ) -> u16 {
         let attacker_i = attacker as usize;
         let target_i = target as usize;
-        // Base ATK (`+0x158`, seeded without equipment) plus the execution-time
-        // equipment fold: half of the one equipment slot the committed command
-        // reads (`FUN_801EC3E4`'s `PTR_801CF4B4` arms - footwear for High /
-        // Low, slot 2 / 3 for the two arm commands, all five for an art).
-        // Party attackers only; the monster branch performs no fold.
+        // Base ATK (`+0x158`, seeded without equipment) plus the
+        // execution-time equipment fold.
         let mut attack = self.battle.attack.get(attacker_i).copied().unwrap_or(0);
-        if attacker < self.party.party_count
-            && let Some(bonuses) = self.battle.equip_atk.get(attacker_i)
-        {
-            let fold_command =
-                if committed > legaia_engine_battle_vm::battle_formulas::ART_ANIM_THRESHOLD {
-                    legaia_engine_battle_vm::battle_formulas::ARMS_ART_COMMAND
-                } else {
-                    committed
-                };
-            if let Some(fold) = legaia_engine_battle_vm::battle_formulas::arms_weapon_atk_fold(
-                fold_command,
-                bonuses,
-            ) {
-                attack = attack.saturating_add(fold);
-            }
+        if let Some(fold) = fold {
+            attack = attack.saturating_add(fold);
         }
         // The block roll runs ahead of the damage rolls (`0x801EC5A8..
         // 0x801EC878` before the `0x801ECB84` fold), and a blocked hit skips
