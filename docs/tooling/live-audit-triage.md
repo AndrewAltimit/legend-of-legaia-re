@@ -341,7 +341,8 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   machinery publishes it. The panel sits under the entry-list painter, and no
   production frame paints that record yet
   ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)),
-  so the row waits on the descriptor-to-record map, not on the word.
+  so the row waits on the state machine that installs record `7`, not on the
+  word.
 - `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
   the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
   which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
@@ -883,20 +884,24 @@ ported live in `engine-ui`'s pause lists.
 
 #### What still chooses which painter runs
 
-`World::tick_submode_screen` calls `HubPainter::for_window` on whatever record
-index the open screen carries. Retail picks that index through a panel
-**descriptor**: a state machine installs one (`FUN_801E9B3C`) and the descriptor
-names the record. The port records the install as
-`HubAction::InstallPanel(<descriptor VA>)` and `World::apply_submode_actions`
-ignores it, so the index comes from the opener's argument.
-`World::open_coin_counter` passes record `1`; the field-VM op-`0x49` path
-(`op49_menu_request`) passes `None` for every sub-op it does not resolve
-elsewhere. So record `1` is the only index a production frame reaches.
+Retail picks a painter through a panel **descriptor**: a state machine
+installs one (`FUN_801E9B3C`) and the descriptor names the records. The port
+does the same. A state machine's frame carries
+`HubAction::InstallPanel(<descriptor VA>)`, `World::tick_submode_screen` reads
+the records it names (`submode_hub_actors::panel_windows`, plus the flag window's
+and the code lock's own descriptors through
+`field_submode_flag_window::installed_windows`), replaces or adds to the
+installed set by whether the program opens with the close-all sub-op
+(`descriptor_closes_all`), and calls `HubPainter::for_window` on each. An
+opener's pinned window is drawn alongside, not instead.
 
-The descriptors the ported state machines install (`0x801F3340`, `0x801F3360`,
-`0x801F3370`, `0x801F3294`, `0x801F3388`, `0x801F2A88`) sit outside the
-panel-window record table, so the descriptor -> record mapping is a second
-format, and it is unread.
+What no production frame reaches is record `7`, the **entry list**
+(`FUN_801F16C0`, whose rows call the equip sub-panel): none of the
+descriptors the ported state machines install (`PANEL_COIN_IDLE`,
+`PANEL_COIN_CONFIRM`, `PANEL_START`, `PANEL_SUBMENU_IDLE` /
+`PANEL_SUBMENU_CONFIRM`, `PANEL_PROMPT`, `PANEL_DRAW_TICK`) names it, so the
+install that does is in a state machine that is not ported. The equip
+sub-panel waits on that installer, not on the descriptor format.
 
 ### The field / motion / camera block
 
