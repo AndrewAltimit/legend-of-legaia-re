@@ -377,14 +377,22 @@ impl World {
     /// header clip before a prologue's poke ran, is zeroed by it), and a
     /// cursor already on `move_id` goes back to its start: one the world can
     /// re-bind from the scene's record table is dropped for
-    /// [`Self::bind_npc_scene_clip`] to bind afresh, a host-held one (party
-    /// bank) restarts in place, stepped once as a fresh bind is. A town's
+    /// [`Self::bind_npc_scene_clip`] to bind afresh when the caller binds next
+    /// (`rebind`), any other restarts in place, stepped once as a fresh bind
+    /// is: a host-held one (party bank), and the install pre-run's, which
+    /// leaves the bind to the hosts. A town's
     /// villagers, each poked by its prologue, so start their idles together,
     /// as retail's do, and a record that re-plays the gesture it is already
     /// in waits out the whole clip on its end latch.
     ///
     /// PORT: FUN_801DE840 (`0x801DEAA8..0x801DEAB4`, `0x801E1A90..0x801E1A9C`)
-    pub(crate) fn restart_npc_clip(&mut self, slot: u8, move_id: u8, party_bank: bool) {
+    pub(crate) fn restart_npc_clip(
+        &mut self,
+        slot: u8,
+        move_id: u8,
+        party_bank: bool,
+        rebind: bool,
+    ) {
         self.npcs.phase_draws.remove(&slot);
         if move_id == 0 {
             return;
@@ -395,7 +403,8 @@ impl World {
         if c.anim_id != move_id {
             return;
         }
-        let rebinds = !party_bank
+        let rebinds = rebind
+            && !party_bank
             && self
                 .locomotion
                 .scene_clip_meta
@@ -805,7 +814,7 @@ mod tests {
         let mut w = World::new();
         w.mode = SceneMode::Field;
         w.draw_placement_spawn_phase(3, 3);
-        w.restart_npc_clip(3, 3, false);
+        w.restart_npc_clip(3, 3, false, true);
         assert!(w.npcs.phase_draws.is_empty());
         w.bind_npc_clip_cursor(3, 3, &player);
         assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
@@ -813,11 +822,16 @@ mod tests {
         // A cursor mid-clip on the seat's own move restarts in place when the
         // world holds no record table for it (a host-held clip).
         w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
-        w.restart_npc_clip(3, 3, true);
+        w.restart_npc_clip(3, 3, true, true);
+        assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
+        // So does one whose caller leaves the bind to the hosts (the install
+        // pre-run, a `4C D2` re-seat's prologue).
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.restart_npc_clip(3, 3, false, false);
         assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
         // Another clip is left to the bind.
         w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
-        w.restart_npc_clip(3, 2, true);
+        w.restart_npc_clip(3, 2, true, true);
         assert_eq!(w.npcs.clip_cursors[&3].cursor, 48);
     }
 

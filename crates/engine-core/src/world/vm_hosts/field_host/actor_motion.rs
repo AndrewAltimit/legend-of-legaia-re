@@ -399,7 +399,7 @@ impl FieldHostImpl<'_> {
         if let Some(slot) = self.world.field_vm.executing_channel {
             // `+0x5E = 0xFFFE` on the NPC arm too (`0x801DEAAC`): the clip
             // restarts even when it is the one playing.
-            self.restart_run_clip(ctx, slot, move_id);
+            self.restart_run_clip(ctx, slot, move_id, true);
             self.world
                 .npcs
                 .anim_cues
@@ -532,7 +532,7 @@ impl FieldHostImpl<'_> {
             // phase the spawner seated on the header clip just before the
             // slice: a prologue-seated villager starts its idle at frame 0.
             if let Some(slot) = self.world.field_vm.executing_channel {
-                self.restart_run_clip(ctx, slot, move_id);
+                self.restart_run_clip(ctx, slot, move_id, false);
             }
             return;
         }
@@ -577,7 +577,7 @@ impl FieldHostImpl<'_> {
             // member a cutscene seats and then walks (`korout` `P2[3]`'s
             // `CC 09 51 .. 0A` / `CC 0A 51 .. 0F` ahead of their `C1`
             // legs) plays its walk clip instead of gliding in the idle.
-            self.restart_run_clip(ctx, slot, move_id);
+            self.restart_run_clip(ctx, slot, move_id, true);
             self.world.carry_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
             self.bind_run_clip(ctx, slot, move_id);
@@ -679,7 +679,7 @@ impl FieldHostImpl<'_> {
                 {
                     self.world.npcs.headings.insert(slot, heading);
                 }
-                self.restart_run_clip(ctx, slot, move_id);
+                self.restart_run_clip(ctx, slot, move_id, true);
                 self.world.carry_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
                 self.bind_run_clip(ctx, slot, move_id);
@@ -700,10 +700,12 @@ impl FieldHostImpl<'_> {
     /// `+0x68` cursor - before it plays move `22`; with no world cursor the
     /// spin stepped past at once and every later beat ran 95 vsyncs early.
     /// REF: FUN_800204F8, FUN_801DE840 (`0x801E1A68..0x801E1AB4`)
-    /// The seat's and ExecMove's forced restart ([`World::restart_npc_clip`]).
-    fn restart_run_clip(&mut self, ctx: &FieldCtx, slot: u8, move_id: u8) {
+    /// The seat's and ExecMove's forced restart ([`World::restart_npc_clip`]);
+    /// `rebind` when [`Self::bind_run_clip`] or the ExecMove bind follows.
+    fn restart_run_clip(&mut self, ctx: &FieldCtx, slot: u8, move_id: u8, rebind: bool) {
         let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
-        self.world.restart_npc_clip(slot, move_id, party_bank);
+        self.world
+            .restart_npc_clip(slot, move_id, party_bank, rebind);
     }
 
     fn bind_run_clip(&mut self, ctx: &mut FieldCtx, slot: u8, move_id: u8) {
