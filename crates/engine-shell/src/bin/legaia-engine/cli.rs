@@ -1512,8 +1512,9 @@ pub(crate) enum Cmd {
         #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(2..=6))]
         window_scale: Option<u8>,
         /// Run retail-faithful: every enhancement off (enhanced lighting and
-        /// its shadows, the volumetric fog, the occlusion fade, the entry
-        /// pulse) and every persisted engine-only option pinned to its retail
+        /// its shadows, bloom, ambient occlusion, the volumetric fog, the
+        /// occlusion fade, the entry pulse), every gameplay tweak and fix held
+        /// at retail, and every persisted engine-only option pinned to its retail
         /// value for this session (retail camera distance, the 8-way movement
         /// decode, no photosensitivity slew, retail tile windows). The one
         /// switch a parity capture passes; nothing is written back to the
