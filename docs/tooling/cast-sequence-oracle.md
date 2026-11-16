@@ -1305,10 +1305,13 @@ With them, the plain seat over the 29 films:
 
 No cue moves. Mushura's stream now holds through the creature's seat, and its arm-12
 chase still reads what it did: the chase's residue is not the stream's. Iota's stager
-caller now lives to late in arm 9, as retail's does (`0x93` `.986` to `.995`). Open:
-Viguro's creature sheds its first sparks on the frame its stager seats it, which the
-port's part tick reaches only after that frame's draw (retail's part tick runs inside the
-draw, ahead of the burning-body loop); Orb's body-paced director hands an arm's calls
+caller now lives to late in arm 9, as retail's does (`0x93` `.986` to `.995`), and the
+arm cost rows read a stale first row at any step, not only at step `1`
+([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)):
+Gilium's `0x95` reads `.9864` for `.9639`, and the 29 films `.9649` for `.9641`. Open:
+Viguro's first sparks land a frame after retail's (the creature now takes its selector
+on the stager call's frame, as retail's does, but the engine's frame grid around the
+call sits a vsync off the recording's); Orb's body-paced director hands an arm's calls
 over on the next arm's first tick, a pass late; and a pool effect retail first walks on
 the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11 draws
 its `30` stager words and the effect's `64` seeding words on one tick where retail draws
