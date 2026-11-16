@@ -994,6 +994,16 @@ impl World {
                 return;
             }
         }
+        // Parked on a title card's page: the pager types it and presses for
+        // itself; the record resumes past the card once the page turns.
+        if tl.card_pager.is_some() {
+            self.drive_card_pager(&mut tl);
+            if tl.card_pager.is_some() {
+                self.step_legs_under_box(&mut tl);
+                self.cutscene.timeline = Some(tl);
+                return;
+            }
+        }
         // Held AT an inline narration block's op because a PRIOR roller is
         // still scrolling (`narration_pending_open`) - two rollers never
         // stack. Wait for the active roller to drain; retail's `FUN_80037174`
@@ -1124,6 +1134,37 @@ impl World {
     /// segment to the one shared dialog box and parks the context on it
     /// (its `+0x9C == 2` arm) until the box closes.
     // REF: FUN_80039B7C
+    fn drive_card_pager(
+        &mut self,
+        tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,
+    ) {
+        let Some((mut panel, mut auto, end)) = tl.card_pager.take() else {
+            return;
+        };
+        let confirm = self
+            .input
+            .just_pressed(legaia_engine_system::input::PadButton::Cross)
+            || self
+                .input
+                .just_pressed(legaia_engine_system::input::PadButton::Circle);
+        panel.tick_at_auto(self.clock.frame_step, &mut auto);
+        let pressed = panel.take_auto_press() || confirm;
+        if pressed {
+            if panel.is_waiting_for_input() && !panel.is_done() {
+                panel.advance_page();
+            } else if !panel.is_done() {
+                panel.confirm_while_typing();
+            }
+        }
+        if panel.is_done() {
+            let held = HeldBox::after_press(&panel, post_page_byte(&panel));
+            tl.card_held_box = held.until_next_line.then_some(held);
+            tl.pc = end;
+        } else {
+            tl.card_pager = Some((panel, auto, end));
+        }
+    }
+
     fn drive_script_dialog(
         &mut self,
         tl: &mut legaia_engine_field::cutscene_timeline::CutsceneTimeline,

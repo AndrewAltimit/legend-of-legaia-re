@@ -45,6 +45,7 @@ mod minigame_audio_disc;
 mod new_game_seed;
 mod npc_conversation_terminates;
 mod npc_run_clip_bind_disc;
+mod opening_title_card_pager_disc;
 mod pack_audio_disc;
 mod pause_menu_slide_lock_disc;
 mod picker_party_disc;

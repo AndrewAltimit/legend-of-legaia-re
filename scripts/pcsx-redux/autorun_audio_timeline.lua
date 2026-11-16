@@ -22,6 +22,8 @@
 --   LEGAIA_SSTATE   state (run_probe.sh --scenario sets it)
 --   LEGAIA_FRAMES   vsyncs to run (default 12000)
 --   LEGAIA_CROSS_EVERY  tap Cross every N vsyncs (default 0 = never)
+--   LEGAIA_WATCH    comma list of extra words to log, hex; `base+off` reads
+--                   the word at `*base + off` (default none)
 --
 -- Vsync-driven, no breakpoints: run with --fast. Output is retail
 -- RAM-derived: never commit it.
@@ -31,6 +33,29 @@ local probe = require("probe")
 local SSTATE = probe.getenv("LEGAIA_SSTATE", "")
 local FRAMES = probe.getenv_num("LEGAIA_FRAMES", 12000)
 local CROSS_EVERY = probe.getenv_num("LEGAIA_CROSS_EVERY", 0)
+local WATCH = {}
+for tok in string.gmatch(probe.getenv("LEGAIA_WATCH", ""), "[^,]+") do
+    local b, o = string.match(tok, "^(%w+)%+(%w+)$")
+    if b then
+        WATCH[#WATCH + 1] = { base = tonumber(b, 16), off = tonumber(o, 16), name = tok }
+    else
+        WATCH[#WATCH + 1] = { addr = tonumber(tok, 16), name = tok }
+    end
+end
+local function watch_cols()
+    local out = {}
+    for _, w in ipairs(WATCH) do
+        local v
+        if w.base then
+            local p = probe.read_u32(w.base) or 0
+            v = (p >= 0x80000000 and p < 0x80200000) and (probe.read_u32(p + w.off) or 0) or -1
+        else
+            v = probe.read_u32(w.addr) or 0
+        end
+        out[#out + 1] = string.format("%d", v)
+    end
+    return table.concat(out, ",")
+end
 
 local function ok_ptr(p) return p ~= nil and p >= 0x80000000 and p < 0x80200000 end
 
@@ -65,7 +90,12 @@ probe.run({
     on_arm = function()
         out = probe.csv_open(probe.out_path("timeline.csv"),
             "v,mode,scene,frame,word,req,loaded,flags,f_open,f_seq,f_flags,f_wait,f_off,f_vol,"
-            .. "e_open,e_seq,e_flags,e_wait,e_off,e_vol,music,cue,step,rel_arm,rel_deadline,rel_elapsed")
+            .. "e_open,e_seq,e_flags,e_wait,e_off,e_vol,music,cue,step,rel_arm,rel_deadline,rel_elapsed"
+            .. (#WATCH > 0 and "," or "") .. (function()
+                local n = {}
+                for _, w in ipairs(WATCH) do n[#n + 1] = "w_" .. w.name end
+                return table.concat(n, ",")
+            end)())
         return {}
     end,
     on_capture = function(_, v)
@@ -84,12 +114,13 @@ probe.run({
                 if (probe.read_u16(r + 0x10) or 0) == 0x21 then cue = cue + 1 else music = music + 1 end
             end
         end
-        out:row("%d,%d,%s,%d,%d,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%d", v, probe.read_u8(0x8007B83C) or 0, scene_name(),
+        out:row("%d,%d,%s,%d,%d,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%d%s", v, probe.read_u8(0x8007B83C) or 0, scene_name(),
             probe.read_u32(0x8007B798) or 0, probe.read_u32(0x8007BAC8) or 0,
             probe.read_u32(0x8007BAB8) or 0, probe.read_u32(0x8007BA9C) or 0,
             probe.read_u32(0x8007B750) or 0, src(0x8007052C), src(0x800705BC), music, cue,
             probe.read_scratch_u8(0x1F800393) or 0, probe.read_u32(0x8007BB20) or 0,
-            probe.read_u32(0x8007BB2C) or 0, probe.read_u32(0x8007BB34) or 0)
+            probe.read_u32(0x8007BB2C) or 0, probe.read_u32(0x8007BB34) or 0,
+            #WATCH > 0 and ("," .. watch_cols()) or "")
     end,
     on_done = function()
         if out then out:close() end

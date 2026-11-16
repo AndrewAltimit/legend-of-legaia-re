@@ -1158,10 +1158,27 @@ which the engine runs as a helper context beside the field rather than as the mo
 the arm opens the roller the same way from it. Both installs parse the record's narration
 blocks (`World::install_helper_record`, `World::install_cutscene_timeline_record`).
 
-A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
+A sibling **title-card block** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
 an optional short placement word) but presents differently: the pages show **simultaneously**,
-centered, while the parent script continues; a later card block whose pages are blank clears the
-card. `map01`'s fly-in uses it for the "twilight of humanity" card and its clear.
+centered, and a later card block whose pages are blank clears the card. `map01`'s fly-in uses it
+for the "twilight of humanity" card and its clear.
+
+The op is not a card of its own: it is `4C 89` on the cutscene context, the dialog pager's
+automatic press (`_DAT_80073F00 = b1 | b2 << 8`, [menuctrl](script-vm-menuctrl.md#4c-89-the-dialog-auto-press)),
+and its lines are an ordinary text segment. The runner parks the record on that segment until the
+pager has opened the box, typed the lines and pressed for itself, as it does for any text. A
+per-vsync capture of the zero-input opening off `s1_newgame_field`
+([`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua) logging the
+pager state `0x801F2734`, beside `autorun_opdeene_pacing.lua`'s record PC) holds `map01`'s
+`P2[38]` on its card (`+0x72`) for 100 vsyncs: states `2`, `11` while the three lines type,
+`0x19`, the press, then `4`, the rows held by the `0x24` continuation behind the page. The blank
+card at `+0xF2` loads into those rows and scrolls them out (`5`, `12`, `11`, `15`, `0x19`) for 38
+vsyncs; `opurud`'s blank page at `+0xA5` takes 20. The engine keeps the card's presentation and
+runs the same pager over the lines without drawing it (`CutsceneTimeline::card_pager`, the held
+rows in `card_held_box`): the record waits as retail's does. Pinned by
+`engine-session/tests/opening_title_card_pager_disc.rs`. The other cards on the disc (`concend`,
+`dream`, `jouine`, `noaru`, `uru`, `urudre2`) set a press of `120` to `300` frames and hold
+their records for it.
 
 The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
