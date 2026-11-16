@@ -981,6 +981,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 
 | Module | Arm, edge | Seat | `+0x04` | `+0x21F` |
 |---|---|---|---|---|
+| 0904 Theeder | 4, pass (`0x801F6EDC`); 5's pass clears it (`0x801F70AC`) | creature | - | `2` |
 | 0908 Zenoir | 7, pass (`0x801F761C`) | creature | - | `1` |
 | 0908 Zenoir | 8, pass (`0x801F7800`) | victim | `0x3FF` | `1` |
 | 0908 Zenoir | 11, pass (`0x801F7D5C`, `0x801F7F64`) | victim, live row | `0x3FF` | `1` |
@@ -1005,7 +1006,10 @@ fire comes off Gala's body on the anim tick's accumulator.
 The table is `legaia_engine_cast::cast_module_impact`, applied by
 `World::apply_module_impacts` after the views' fold-back; PROT 0962 stores
 through its chain (`BladeBreathShape::strike_sub_flag`), and PROT 0903 and 0904
-through their tick ports.
+through their tick ports. Theeder's arm 4 stores its creature's `2` right behind the
+installer `FUN_801F19EC` (`0x801F6EC4..0x801F6EDC`), which the host runs after the tick,
+so the store waits for the seat (`ModuleCamState::creature_impact`) as a clip staged on
+the same pass does.
 
 **A selector outlives its colour only under a full blend.** The tint pass retires
 `+0x21F` once `+0x0C` has drained to zero, so a hit arm that stamps the selector
@@ -1076,6 +1080,51 @@ the arm's first pass. The port holds the stage to the clip's end
 (`battle_ghost_draws`). The engine's clip still ends sooner in the arm than retail's,
 which is the arm's [frame span](battle-stage-camera.md#a-frames-span). Grade
 `disassembly` + `capture`.
+
+### The draws a recording names
+
+Every frame draws the frame driver's `rand()` word, and every other draw of a cast
+comes off the same stream, so a summon film on its own steps stays on retail's words
+only while each frame makes retail's draws. A `--watch 0x80009010` recording logs every
+store into the seed word with its `ra`: the module's own sites (slot-B addresses), the
+burning-body emitter (`0x8004A634..0x8004A884`), the effect walker
+(`0x801DFF6C` / `0x801DFFD4` / `0x801E01D4`) and the frame driver (`0x80046D34`).
+Held against the engine's per-tick `rand` column at the first pass whose word leaves
+retail's (the LCG distance of each side's next word from the last shared one), each place
+the plain films parted named one unported site:
+
+- **A tick body's own pool spawns.** Some arms call the `efect.dat` pool spawner
+  `FUN_801DFDF0(id, point, angle)` behind their part spawns, and the effect's children
+  draw on the stream from that pass on. The port carries them as
+  `ArmDirection::effects`, staged behind the arm's seats on the same anchor:
+
+  | Module | Arm | Effect | Point | Angle |
+  |---|---|---|---|---|
+  | 0905 Vera | 9, pass (`0x801F7B9C..0x801F7BA8`) | `0x14` | the restored target's `+0x34` | its heading |
+  | 0908 Zenoir | 4, pass (`0x801F6FA0..0x801F6FBC`) | `3`, then `0x20` | the seat's grid point | `0` |
+  | 0911 Orb | 9, pass, behind each live member's ring (`0x801F7A4C..0x801F7A60`) | `0x14` | the member's `+0x34` | its heading less `0x800` |
+  | 0918 Kemaro | 8, pass (`0x801F773C..0x801F774C`) | `1` | the creature, grounded (`+0x36 = 0`) | `0` |
+
+  Zenoir's arm 4 drew `97` words on its pass and `8` a frame after it, which the port
+  never made, and the plain `0x86` film left retail's stream at arm 5: with the two
+  spawns it holds it to arm 11, and the film reads `.964` against `.924` (arm 7, the rays
+  stager arm 1 jitters, `.807` to `.962`). Vera's and Kemaro's films now hold retail's
+  words to the end of the cast.
+- **Theeder's creature sheds sparks through arm 5** (the selector row above): twelve
+  emitter words a frame.
+- **Mushura's arm 0 scatters the empty monster seats.** For each retail seat `3 + i`,
+  `i` from `ctx[+1]` to `3`, the ground pair takes `rand() % 1025 - 0x200`, `x` first
+  (`0x801F6BC8..0x801F6C58`): six words on a lone-monster fight, ahead of every later
+  deal of the cast.
+- **Orb's arm 2 seats its sixteen stars on its own pass** (forty words,
+  `0x801F6CDC..0x801F6D70`), not on arm 3's first tick with the flash discs the
+  body-paced director hands over.
+- **Jedo's sparks are jittered.** Arms 5..7 seat record `0x801F8E20` every pass at
+  `x = rand() % 0x301 - 0x180`, `y = rand() % 0x301 - 0x600`, on the creature's
+  `z + 0x180` (`0x801F6FA0..0x801F7028` and its two copies).
+
+Grade `disassembly` + `capture`. The sites a recording names that stay open are listed
+in the [open threads](../reference/open-rev-eng-threads.md#battle--rendering).
 
 ### A bare stage byte waits for the clip's end
 

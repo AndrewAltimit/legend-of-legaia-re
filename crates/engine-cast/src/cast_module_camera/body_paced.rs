@@ -89,8 +89,9 @@ where
         ArmTick::From(prev) => {
             let passed = (arms.pass)(st, prev);
             let own = (arms.each)(st, phase, 0);
-            // The pass's `FUN_80021B04` / `FUN_80050ED4` calls, fades and
-            // VRAM moves land with its shot, on the next arm's first tick.
+            // The pass's `FUN_80021B04` / `FUN_80050ED4` / `FUN_801DFDF0`
+            // calls, fades and VRAM moves land with its shot, on the next
+            // arm's first tick.
             ArmDirection {
                 shot: passed.shot.or(own.shot),
                 caption: passed.caption.or(own.caption),
@@ -103,6 +104,11 @@ where
                     own.spawns
                 } else {
                     passed.spawns
+                },
+                effects: if passed.effects.is_empty() {
+                    own.effects
+                } else {
+                    passed.effects
                 },
                 fades: if passed.fades.is_empty() {
                     own.fades
