@@ -1304,13 +1304,15 @@ With them, the plain seat over the 29 films:
 | the 29 films | `.9622` | `.9638` | |
 
 No cue moves. Mushura's stream now holds through the creature's seat, and its arm-12
-chase still reads what it did: the chase's residue is not the stream's. Three places the
-recordings name stay open: Viguro's creature sheds its first sparks on the frame its
-stager seats it, which the port's part tick reaches only after that frame's draw
-(retail's walker runs inside the draw, ahead of the burning-body loop); the body-paced
-directors (Orb, Ozma) hand an arm's calls over on the next arm's first tick, so their
-pass draws land a pass late; and Iota's stager stops being called at arm 9, where
-retail's caller keeps calling it through the arm.
+chase still reads what it did: the chase's residue is not the stream's. Iota's stager
+caller now lives to late in arm 9, as retail's does (`0x93` `.986` to `.995`). Open:
+Viguro's creature sheds its first sparks on the frame its stager seats it, which the
+port's part tick reaches only after that frame's draw (retail's part tick runs inside the
+draw, ahead of the burning-body loop); Orb's body-paced director hands an arm's calls
+over on the next arm's first tick, a pass late; and a pool effect retail first walks on
+the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11 draws
+its `30` stager words and the effect's `64` seeding words on one tick where retail draws
+them a frame apart; Meta's arm-7 mirror words land a frame early).
 
 ### Evil Seru Magic
 

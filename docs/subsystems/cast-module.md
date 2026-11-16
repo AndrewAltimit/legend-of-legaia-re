@@ -1119,6 +1119,15 @@ the plain films parted named one unported site:
 - **Orb's arm 2 seats its sixteen stars on its own pass** (forty words,
   `0x801F6CDC..0x801F6D70`), not on arm 3's first tick with the flash discs the
   body-paced director hands over.
+- **Iota's stager caller lives to late in arm 9.** Arm 3 seats record `0x801F8420`,
+  which calls the stager every frame (three words a call, `0x801F8050..0x801F8100`),
+  and parks it in handle `0x801F8C3C`. Arm 9 halts it only on a held pass that finds
+  the drained countdown at or under `scalar << 6`, and clears the handle
+  (`0x801F790C..0x801F794C`); the presentation decoder placed that kill on the arm's
+  first pass, since a `beq` on the handle stands between the guard and the store, and
+  the volley stopped a whole arm early. The hand port makes the kill
+  (`World::apply_iota_writes`): the `0x93` film reads `.995` against `.986` (arm 9
+  `.913` to `.996`) and holds retail's words to the Done band.
 - **Jedo's sparks are jittered.** Arms 5..7 seat record `0x801F8E20` every pass at
   `x = rand() % 0x301 - 0x180`, `y = rand() % 0x301 - 0x600`, on the creature's
   `z + 0x180` (`0x801F6FA0..0x801F7028` and its two copies).
