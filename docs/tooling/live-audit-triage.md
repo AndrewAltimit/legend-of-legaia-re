@@ -1113,53 +1113,37 @@ the two halves share. Both are written up in
 
 A pass over the whole minigame slice - `baka_fighter*`, `dance`, `fishing*`,
 `slot_machine`, `muscle_dome`, `minigame_floor`, `other_game_overlay` and
-`engine-ui`'s `muscle_dome_hud` - produced **no** new `WIRE` and **no** new
-`FALSE INERT`. Every anchor really is unreached. What it did produce is six
+`engine-ui`'s `muscle_dome_hud` - found every anchor unreached and produced
+**no** new `WIRE` and **no** new `FALSE INERT`. What it did produce is six
 disclosures whose named prerequisite already existed somewhere in the tree, and
 two of those turned out to be port defects rather than wording. The corrected
 texts live on the anchors; what belongs here is the pattern, because it is the
 one a future audit will hit again.
 
-#### The repeated blocker is a Rust-side quad sink, named six different ways
+#### The repeated blocker was one Rust-side quad sink, named three ways
 
-Three subsystems each disclosed the *same* gap as a different missing artefact:
+Three subsystems disclosed the *same* gap as a different missing artefact:
 
-| Anchor | What its reason claimed was missing | What actually exists |
+| Anchor | What its reason claimed was missing | What the gap was |
 |---|---|---|
-| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
-| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` has both, run per frame by the browser dance page |
-| the `muscle_dome_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
+| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts called the parser; no Rust caller asked the emitter for a packet |
+| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` had both; the HUD pass had no textured page to sample |
+| the `muscle_dome_hud` emitters | no engine-side dome HUD renderer | the same: the hosts composed quads from parsed descriptor geometry in JavaScript |
 
-The single real blocker under all three is that every host consumes the *parsed
-descriptor geometry* and composes its quads in JavaScript, so no Rust caller
-ever asks a ported emitter for a packet. One sink closes the block; three
-separately-worded reasons hid that.
+One sink closed all three. The lesson for the next audit is the shape: when several anchors name different prerequisites, check whether they share a consumer before treating them as separate blockers.
 
-##### What the sink needs, so the next attempt does not re-derive it
+##### Where the sink stands
 
-The sink is not a wrapper. Three things have to arrive together, and a shim
-that satisfies the audit without them is worse than the honest disclosure:
+Each emitter has a Rust caller, and both play hosts draw the result as screen-space PSX primitives through one projection in `engine-screens::minigame_hud`:
 
-- **A texel source on the native side.** The shape already exists - the play
-  window calls `minigame_fx::dance_quad_draws` every frame with the live
-  `DanceHudQuad` list - but it passes `solid_src: None`, because the dance
-  sprite page is not uploaded, so the sink materialises nothing. The fishing
-  HUD's icon glyphs degrade the same way (its gauge fills stretch the font's
-  solid texel instead, `FishingHudAtlas::solid_src`). Adding a
-  second emitter into that path reaches a dead end, not a renderer; the
-  prerequisite is the overlay's 4bpp page resident in engine VRAM.
-- **A quad-shaped request on the web side.** The dome page's HUD is a 2D
-  canvas blitter: `muscle_hud_json` hands it sheet **rects** and the page's own
-  `blit(src, pal, u, v, w, h, dx, dy, ...)` decides the destination. Consuming
-  emitted quads means the page asking for `xy` per packet, which is a change in
-  the page's JavaScript, not only in the wasm surface.
-- **Somewhere to get the anchors.** Even with both of the above, `(x, y,
-  scale)` is not disc-derived. Every call site of the three emitters - 9 / 31 /
-  23 of them - is an immediate inside PROT 0977's own hub screens
-  (`0x801CF2C0 .. 0x801D0324`), none of which is ported. So a sink makes each
-  widget's **extent**, gouraud ramp and CLUT disc-derived while its
-  **placement** stays the page's. That is real progress and it is worth doing;
-  it is not "the retail HUD", and a wire that lands should say so.
+| Emitter | Rust caller | Drawn |
+|---|---|---|
+| dance HUD quads `FUN_801d2f38` | `MinigameState::dance_hud_quads` (`DanceGame::hud_draw_quads`) -> `minigame_hud::dance_hud_prims` -> `engine-ui::dance::dance_hud_prims` | `POLY_GT4`s at the count-in's bucket, while the hall's HUD page is resident (`MinigameState::dance_hud_art_staged`); the text rows are the fallback without it |
+| dance count-in `FUN_801cf470` | `minigame_hud::dance_countin_prims`, off the run's own widget table | READY and `GO!` on the same page and flag |
+| Baka widgets `FUN_801d5ed0` | `BakaDuelSurface::hud_quads` -> `minigame_hud::baka_screen_prims` -> `engine-ui::baka_strips` | the cabinet's and the round chrome's strips |
+| dome hub screens `FUN_801d050c` / `FUN_801d08ec` / `FUN_801d15c8` | `muscle_dome_hud::hub_screen_quads` / `score_tally_quads` -> `minigame_hud::muscle_hub_sprites` | anchored at the hub screens' own immediates, so placement is disc-derived as well as extent, ramp and CLUT |
+
+The fishing HUD takes the same route (`engine-ui::fishing::sprite`); its gauge fills are sprite-pass primitives, and `FishingHudAtlas::solid_src` only serves a host without the sprite table.
 
 `dance_face_rig` has a second twist worth keeping: the browser resolves the rig
 from the disc **cast table**'s per-dancer kind, which on the qualifier floor is
