@@ -523,7 +523,22 @@ pub const fn polygon_frame_work(polys: u32) -> u16 {
 /// Hblanks of a battle frame's work that do not scale with what it links,
 /// the intercept of [`linked_frame_work`]: the frame driver, the battle VMs,
 /// the 2D layers the census does not count.
-pub const LINKED_FRAME_BASE: u16 = 117;
+pub const LINKED_FRAME_BASE: u16 = 75;
+
+/// Hblanks a battle frame spends on the backdrop pair and the ground grid
+/// while they draw, over the primitives of theirs it links: every backdrop
+/// primitive is transformed before the quad leaves' off-screen reject
+/// (`FUN_80044798`) or the winding test drops it, and the grid walks its
+/// cells to cull them (`battle_ground_grid::visible_cell_count`), so the
+/// pair costs a near-constant share of the frame the census's linked count
+/// does not see. Read off the cost-carrying PCSX-Redux recordings of the
+/// strike, arts and enemy film sets: the frames that draw neither (a black
+/// backdrop's close-ups: Final Crisis's arm 6, Fatal Decision's arms 6 and
+/// 7, Blazing Slash's last arms) cost `40` to `60` hblanks under the line
+/// [`LINKED_FRAME_BASE`] `+ 42` reads the rest on, and with the term the
+/// step those frames read agrees with retail's on `.77` of the enemy films'
+/// state-and-arm medians against `.73`, the strikes' and arts' unchanged.
+pub const LINKED_BACKDROP_WORK: u16 = 42;
 
 /// Hblanks a battle frame's work spends per primitive it links, in
 /// thousandths, over the census of world state
@@ -567,9 +582,16 @@ pub const fn is_strike_state(state: u8) -> bool {
 }
 
 /// The work a battle frame whose census counts `linked` primitives costs
-/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks.
-pub const fn linked_frame_work(linked: u32) -> u16 {
-    let c = LINKED_FRAME_BASE as u32 + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
+/// ([`LINKED_FRAME_BASE`], [`LINKED_WORK_MILLI`]), in hblanks, with
+/// [`LINKED_BACKDROP_WORK`] while the backdrop pair or the grid draws.
+pub const fn linked_frame_work(linked: u32, backdrop: bool) -> u16 {
+    let base = LINKED_FRAME_BASE as u32
+        + if backdrop {
+            LINKED_BACKDROP_WORK as u32
+        } else {
+            0
+        };
+    let c = base + (linked as u64 * LINKED_WORK_MILLI as u64 / 1000) as u32;
     if c > u16::MAX as u32 {
         u16::MAX
     } else {

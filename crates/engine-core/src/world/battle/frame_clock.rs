@@ -108,11 +108,11 @@ impl World {
             || state == ActionState::SummonActorFreeze.as_byte();
         // The census of world state (`World::note_linked_polys`), or the
         // window's own drawn table under the diagnostic source.
-        let poly = if window_source {
+        let census = if window_source {
             self.battle.drawn_polys.map(polygon_frame_work)
         } else {
             self.battle.linked_polys.map(|n| {
-                let w = linked_frame_work(n);
+                let w = linked_frame_work(n, self.battle_backdrop_drawn());
                 let monster_acting = self
                     .actors
                     .get(usize::from(self.battle_ctx.active_actor))
@@ -136,59 +136,12 @@ impl World {
                 }
             })
         }
-        .filter(|_| self.toggles.battle_poly_frame_cost && !table_kept);
-        let work = match poly {
-            Some(w) => w,
-            None => measured_frame_cost_at(self.party.party_count, state, passes)
-                .saturating_add(self.battle_frame_load_cost()),
-        };
+        .filter(|_| !table_kept);
+        let poly = census.filter(|_| self.toggles.battle_poly_frame_cost);
+        let table_work = measured_frame_cost_at(self.party.party_count, state, passes)
+            .saturating_add(self.battle_frame_load_cost());
+        let work = poly.unwrap_or(table_work);
         self.battle.frame_work = work;
-        // An XA clip's read span: the frame runs on the CD interrupt path
-        // (`FUN_8005DAB0`) once the stream is up.
-        let poll_wait = self.audio.battle_xa_poll_wait;
-        let loaded = xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing, poll_wait) {
-            // A clip whose seek the port times: its polls open `wait`
-            // hblanks into this pass, from the cue's own pass on.
-            (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
-                legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
-                    wait,
-                    work,
-                    xa_polled_work_cost,
-                )
-            }
-            (None, CdTiming::PcsxRedux, Some(wait)) => {
-                legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
-                    wait,
-                    work,
-                    legaia_engine_battle_loop::frame_clock::xa_loaded_frame_cost,
-                )
-            }
-            // The frame's own work under the stop watch's polls, a band
-            // module's line as the funnel's: the polls run for every clip the
-            // player starts (`FUN_8003D764`), so a frame's span under one is
-            // its work over the share they leave.
-            (Some(_), CdTiming::PcsxRedux, None) => match n {
-                0 => work,
-                1 => work.saturating_add(XA_STREAM_ONSET_COST),
-                _ => xa_polled_work_cost(work),
-            },
-            _ => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
-                n,
-                work,
-                self.toggles.battle_cd_timing,
-                self.toggles.battle_frame_span_law && self.audio.battle_xa_poll_load,
-            ),
-        });
-        // An arm table's step stands in for a cost the world cannot price;
-        // a priced frame needs no stand-in.
-        let cost = match (arm_step, poly) {
-            (Some(step), None) => cost_of_step(step),
-            _ => loaded.unwrap_or(work),
-        };
-        let cost = match self.battle.drawn_table_cost {
-            Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
-            _ => cost,
-        };
         // A frame the seek arm's `CdlSetloc` held for longer than one of
         // PCSX-Redux's ordinary seeks ran past its step. The full-party
         // Zenoir recording (`battle_tower_swordie_strike`) spends `11` vsyncs
@@ -200,13 +153,64 @@ impl World {
         // Measured on the summon band alone; a capture cast's hold keeps its
         // frame's cost.
         let held = std::mem::take(&mut self.casting.drive_held_vsyncs);
-        let cost = if held > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS
-            && matches!(state, 0x35 | 0x36)
-        {
-            cost.max(cost_of_step(3))
-        } else {
-            cost
+        let seek_held = held > legaia_engine_battle_loop::frame_clock::SEEK_HOLD_FREE_VSYNCS
+            && matches!(state, 0x35 | 0x36);
+        // What the pass costs at `work`, priced (`poly`) or not: an XA
+        // clip's read span runs the frame on the CD interrupt path
+        // (`FUN_8005DAB0`) once the stream is up, and an arm table's step
+        // stands in for a cost the world cannot price.
+        let price = |poly: Option<u16>, work: u16| -> (Option<u16>, u16) {
+            let poll_wait = self.audio.battle_xa_poll_wait;
+            let loaded =
+                xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing, poll_wait) {
+                    // A clip whose seek the port times: its polls open `wait`
+                    // hblanks into this pass, from the cue's own pass on.
+                    (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
+                        legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
+                            wait,
+                            work,
+                            xa_polled_work_cost,
+                        )
+                    }
+                    (None, CdTiming::PcsxRedux, Some(wait)) => {
+                        legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
+                            wait,
+                            work,
+                            legaia_engine_battle_loop::frame_clock::xa_loaded_frame_cost,
+                        )
+                    }
+                    // The frame's own work under the stop watch's polls, a band
+                    // module's line as the funnel's: the polls run for every clip
+                    // the player starts (`FUN_8003D764`), so a frame's span under
+                    // one is its work over the share they leave.
+                    (Some(_), CdTiming::PcsxRedux, None) => match n {
+                        0 => work,
+                        1 => work.saturating_add(XA_STREAM_ONSET_COST),
+                        _ => xa_polled_work_cost(work),
+                    },
+                    _ => legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost(
+                        n,
+                        work,
+                        self.toggles.battle_cd_timing,
+                        self.toggles.battle_frame_span_law && self.audio.battle_xa_poll_load,
+                    ),
+                });
+            let cost = match (arm_step, poly) {
+                (Some(step), None) => cost_of_step(step),
+                _ => loaded.unwrap_or(work),
+            };
+            let cost = match self.battle.drawn_table_cost {
+                Some(gpu) if self.toggles.battle_gpu_cost_step => cost.max(gpu),
+                _ => cost,
+            };
+            let cost = if seek_held {
+                cost.max(cost_of_step(3))
+            } else {
+                cost
+            };
+            (loaded, cost)
         };
+        let (loaded, cost) = price(poly, work);
         self.battle.frame_cost_ring_before =
             matches!((arm_step, poly), (Some(_), None)).then_some(self.battle.frame_cost_ring);
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
@@ -219,6 +223,13 @@ impl World {
             (Some(_), None) if self.audio.battle_xa_poll_load => loaded.unwrap_or(0),
             (Some(_), None) => 0,
         }
+    }
+
+    /// Whether the battle frame draws its backdrop pair or its ground grid,
+    /// the gates the census counts them under
+    /// ([`LINKED_BACKDROP_WORK`](legaia_engine_battle_loop::frame_clock::LINKED_BACKDROP_WORK)).
+    pub fn battle_backdrop_drawn(&self) -> bool {
+        self.battle_backdrop_cue().is_some() || self.battle_ground_grid_drawn()
     }
 
     /// Note the polygons the battle frame the host just drew links (its
@@ -2531,10 +2542,10 @@ mod tests {
         w.note_drawn_polys(9000);
         w.push_frame_cost(None);
         let table = w.battle.frame_work;
-        assert_ne!(table, linked_frame_work(9000), "no census: the table");
+        assert_ne!(table, linked_frame_work(9000, true), "no census: the table");
         w.note_linked_polys(3000);
         w.push_frame_cost(None);
-        assert_eq!(w.battle.frame_work, linked_frame_work(3000));
+        assert_eq!(w.battle.frame_work, linked_frame_work(3000, true));
     }
 
     /// Under the census an arm table's step and the summon band's opening
@@ -2555,7 +2566,11 @@ mod tests {
             w.toggles.battle_poly_frame_cost = true;
             w.note_linked_polys(3000);
             w.push_frame_cost(arm);
-            assert_ne!(w.battle.frame_work, linked_frame_work(3000), "{state:#x}");
+            assert_ne!(
+                w.battle.frame_work,
+                linked_frame_work(3000, true),
+                "{state:#x}"
+            );
         }
     }
 
