@@ -686,6 +686,26 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
     return None if seed is None else f"{st7}:{phase}:{seed}"
 
 
+def retail_capture_read_passes(out: Path) -> int | None:
+    """The passes the recording's capture band opened on its `0x6E` poll: the
+    frames whose first row reads action state `0x6E` (a frame's first row
+    holds the state its pass opens on), counted where the recording enters
+    the band through the cast begin `0x28`; `None` otherwise."""
+    begun, n, frame = False, 0, None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            st7 = int(r["st7"])
+            begun = begun or st7 == 0x28
+            if r["frame"] == frame:
+                continue
+            frame = r["frame"]
+            if st7 == 0x6E and begun:
+                n += 1
+            elif n:
+                break
+    return n or None
+
+
 def retail_cast_begin_key(out: Path, done: dict) -> str | None:
     """`st7:phase` of the retail row on the cast's begin (`done.txt`'s
     `cast` vsync), the key the engine recording opens on."""
@@ -1037,6 +1057,14 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     # fade and the rise spawned before it running on through the poll. A
     # harness seat ([CD-seek waits](docs/tooling/cast-sequence-oracle.md#cd-seek-waits)).
     env.setdefault("LEGAIA_SEAT_DRIVE_SEEK", str(drive_seek_seat(out) or DRIVE_SEEK_DEFAULT))
+    # The capture band's `0x6E` poll holds `14..18` vsyncs in the recordings,
+    # where the engine holds `14`: on a step-2 fight a vsync or two more is one
+    # pass more, one frame-driver `rand()` more, and the module enters on
+    # another word than retail's (Megaton Press's rocks, the Koru set). Seated
+    # on the recording's own pass count where the film enters the band through
+    # the cast begin. A harness seat.
+    if not a.physical and (n := retail_capture_read_passes(out)) is not None:
+        env.setdefault("LEGAIA_SEAT_CAPTURE_READ", str(n))
     # The sound channel reads the audio director's command record, so the
     # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
     if not a.no_sound:

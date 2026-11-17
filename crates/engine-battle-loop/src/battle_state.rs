@@ -933,6 +933,10 @@ pub struct BattleState {
     /// walk and the framing's pull-in run on through both
     /// (`World::arm_capture_read_wait`). `0` holds nothing.
     pub capture_read_until: u64,
+    /// The battle frame the capture band's `0x6E` poll answers on when a
+    /// harness seats the recording's own pass count
+    /// (`CastFxState::capture_read_seat`). No play path sets it.
+    pub capture_read_frame_until: Option<u64>,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on (`World::tick_battle_pass_draw`) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1727,6 +1731,7 @@ impl BattleState {
             retail_rand_track: None,
             death_game_deal_seat: None,
             capture_read_until: 0,
+            capture_read_frame_until: None,
             pass_draw_frame: None,
             sm_pass_frame: None,
             frame_start_ticks: [None; 3],

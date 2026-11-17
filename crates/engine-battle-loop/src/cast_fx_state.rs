@@ -174,6 +174,11 @@ pub struct CastFxState {
     /// A film recorded on another emulator's drive reads its own; no play
     /// path sets it.
     pub drive_seek_seat: Option<u16>,
+    /// A capture harness seat: the passes that open on the capture band's
+    /// `0x6E` poll in the recording, in place of the engine's
+    /// `World::arm_capture_read_wait` vsync constant. A film recorded on another
+    /// drive reads its own; no play path sets it.
+    pub capture_read_seat: Option<u16>,
     /// PROT 0948's beam counter, retail's module word `0x801F8858`: arm 2
     /// zeroes it as it passes and the beam builder `FUN_801F726C` adds
     /// `step * 2` on every call.
@@ -650,6 +655,7 @@ impl CastFxState {
             sideband_read_left: None,
             sideband_first_seek_seat: None,
             drive_seek_seat: None,
+            capture_read_seat: None,
             module_beam_counter: 0,
             module_beam_live: false,
             module_flee: false,

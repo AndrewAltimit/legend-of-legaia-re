@@ -832,6 +832,13 @@ look, Earthquake's rocks or a ray fan, plays another pattern every time.
 replace the seat. A `--physical` film keeps the state's own word
 (`LEGAIA_FILM_RAND`) or its strike deal. A harness seat.
 
+The key counts the module phase only inside the module bands (`0x35`, `0x36`,
+`0x70`), as the step and rand tracks key a frame. Retail's `ctx[+0x279]` keeps the
+last module's phase through the next action's begin (`255`, or the arm a prior cast
+left it on: Guilty Cross's `0x28` reads `7`), where a replay seated from the state
+reads `0`, so a key matched on the phase never fired on those films and they ran the
+replay's own stream from the cast's begin (`engine-capture::cast_rand`).
+
 On the enemy cast set, of the films measured both ways none falls: Rock Lizard's
 Earthquake `.786` to `.950` (its rocks now fall on retail's draws), Jewel Beam
 `.933` to `.941`, Vacuum Slicer `.980` to `.986`; over the Seru set from `.9279` to `.9303` plain and
@@ -1395,8 +1402,24 @@ it is put back, so arm 28's shot centres `z = 944`. Arm 26's pass spawns three f
 one: a white flash, a held blue grade parked in the part pool until arm 27's flush, and
 the delayed white-in; the engine had the last alone, so arm 27 opened on the burst where
 retail's opens white. With those the film reads `.899`: arms 11 to 21 `.94..1.00`, arm 23
-`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`. Still open:
-arm 22's sphere grows and goes some forty ticks ahead of retail's (`.58`).
+`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`.
+
+Arm 22's sphere is not the cast's. The state holds Cort's
+[Mystic Shield](../subsystems/cast-module.md#the-mystic-shield-effect) from an earlier turn,
+and the actor pass copies the seat's render scale onto it every frame; arm 21 halves the
+caster, so retail's sphere stands at half size through arm 27, where the port's kept
+`0x1000` and arm 22's dolly passed through it some forty ticks early (`.58`). With the
+seat's scale arm 22 reads `.92..98`. A `--retail-parts` recording names it: the only
+part whose words move across arms 21 and 22 is the sphere, kind `4` from arm 22's first
+pass at scale `0x800`.
+
+The film's cast-begin seat had not fired either. Retail's `ctx[+0x279]` still reads the
+previous cast's phase on the cast begin (`0x28` under phase `5` here), where the replay
+reads `0`, so the stream entered the band on the replay's own word. With the phase keyed
+only inside the module bands (`0x35`, `0x36`, `0x70`) the stream holds retail's word for
+word from arm 15 to the end; one pass of `0x6E`'s poll short, it runs a draw behind
+until arm 14's evade roll, and the film reads `.917` before the shield's scale and
+`.940` with it.
 
 ### The enemy set on the rand-track seat
 
@@ -1749,6 +1772,30 @@ each the white fall now leaving on the pass retail's does; the sound channel hol
 set: Horn's (`0x9C`) held its poll two passes, so its line passes
 `LEGAIA_SEAT_DRIVE_SEEK=5`, and the wisp loop arm 3 seats then runs on retail's passes
 ([the Seru set](#the-seru-set-on-three-seats)). A per-film seat, read off the recording's poll.
+
+<a id="the-capture-read-seat"></a>
+
+The capture band has a poll of its own ahead of its arms. State `0x6E` waits on the
+read the cast begin queued (`FUN_8003DE7C(1)`), and the engine holds it `14` vsyncs
+(`World::arm_capture_read_wait`). The enemy recordings hold it `14` to `18`: one module's
+casts part (Rogue Flame `15`, Rogue Wind `16`, Rogue Thunder `17`), so it is the drive's
+time, not the module's size. On a step-`2` fight a vsync or two more is a pass more, and a
+pass is one frame-driver `rand()`: the module entered one word behind retail's, and every
+arm that deals its look off the stream dealt another one (Gigaton Press's rocks, Ultra
+Charge's rays, Element Change's colour roll). The driver now seats the recording's own
+count of passes that open on `0x6E` (`LEGAIA_SEAT_CAPTURE_READ`,
+`CastFxState::capture_read_seat`) where the film enters the band through `0x28`. A
+harness seat, which no play path sets. Over the enemy set:
+
+| Seat | Before | After | Moved |
+|---|---|---|---|
+| plain | `.9411` | `.9446` | Ultra Charge `.869` to `.994`, Element Change `.807` to `.941`, Gigaton Press `.859` to `.926`, Blade Breath `.945` to `.974`, Evil Seru Magic `.940` to `.950`; Big Wave (Slippery) `.956` to `.943` |
+
+The cue channel holds, and the camera mean falls from `5.35` to `5.28` pixels (V-Windhash
+`12.5` to `9.3`, Evil Seru Magic `3.9` to `0.9`). Big Wave falls because its fight opens on
+step `3` in the engine where the recording runs `2`: seven passes of `0x6E` are
+twenty-one vsyncs there, and the film's frames stand that much later
+([the opening step](#the-enemy-set-on-the-plain-seat-and-what-holds-it)).
 
 A monster cast reached through the state's pad drive stages the clip the drive's
 replay picked, and the picker stores its clip bytes under draws the replay does not

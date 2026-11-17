@@ -914,7 +914,16 @@ impl World {
         /// `4..=6`, a read that does not move with the module or the fight.
         const BRANCH_READ_VSYNCS: u64 = 14;
         const FADE_READ_VSYNCS: u64 = 4;
+        self.battle.capture_read_frame_until = None;
         let vsyncs = if to == S::MagicCaptureBranch.as_byte() {
+            // A film's recording seats its own hold: the passes that open on
+            // `0x6E`, the last of which leaves (a harness seat).
+            if let Some(passes) = self.casting.capture_read_seat {
+                self.battle.capture_read_frame_until =
+                    Some(self.battle_frame_id() + u64::from(passes));
+                self.battle.capture_read_until = 0;
+                return;
+            }
             BRANCH_READ_VSYNCS
         } else if to == S::MagicCaptureFade.as_byte() {
             FADE_READ_VSYNCS
@@ -929,6 +938,11 @@ impl World {
     pub(in crate::world) fn capture_read_pending(&self) -> bool {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
         let state = self.battle_ctx.action_state;
+        if state == S::MagicCaptureBranch.as_byte()
+            && let Some(until) = self.battle.capture_read_frame_until
+        {
+            return self.battle_frame_id() < until;
+        }
         (state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte())
             && self.clock.display_frames < self.battle.capture_read_until
     }

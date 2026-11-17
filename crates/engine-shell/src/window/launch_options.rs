@@ -344,6 +344,10 @@ pub struct ScreenshotConfig {
     /// place of the modelled law (`CastFxState::drive_seek_seat`). Set by the
     /// cast-sequence driver for a PCSX-Redux recording.
     pub seat_drive_seek: Option<u16>,
+    /// `LEGAIA_SEAT_CAPTURE_READ=<passes>`: the passes the recording's
+    /// capture band opened on its `0x6E` poll, in place of the engine's constant
+    /// (`CastFxState::capture_read_seat`). Set by the cast-sequence driver.
+    pub seat_capture_read: Option<u16>,
     /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
     /// label opened on a commit younger than its displayed frame, so the
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
@@ -1243,6 +1247,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.parse().ok()),
             seat_drive_seek: std::env::var("LEGAIA_SEAT_DRIVE_SEEK")
+                .ok()
+                .and_then(|v| v.parse().ok()),
+            seat_capture_read: std::env::var("LEGAIA_SEAT_CAPTURE_READ")
                 .ok()
                 .and_then(|v| v.parse().ok()),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),

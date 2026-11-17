@@ -198,6 +198,9 @@ impl PlayWindowApp {
             if sc.seat_drive_seek.is_some() {
                 self.session.host.world.casting.drive_seek_seat = sc.seat_drive_seek;
             }
+            if sc.seat_capture_read.is_some() {
+                self.session.host.world.casting.capture_read_seat = sc.seat_capture_read;
+            }
             // Ahead of the cast it forks: battle init clears the word.
             if let Some(n) = sc.seat_ai_counter
                 && self.session.host.world.casting.active_summon.is_none()
