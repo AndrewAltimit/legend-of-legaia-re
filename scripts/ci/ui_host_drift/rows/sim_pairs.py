@@ -488,7 +488,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "display. Both entries ask `World::arm_picker_world_map_debug`",
         "sites": {
             "native": (NATIVE_RUN, "enter_launch_scene"),
-            "web": ("crates/web-play/src/runtime/scene_setup.rs", "enter_field_core"),
+            "web": ("crates/web-play/src/runtime/scene_setup.rs", "enter_field_seated"),
         },
         "mode": "symbols_all",
         "symbols": ["arm_picker_world_map_debug"],
@@ -1127,7 +1127,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "direct-entry sites must run `Camera::reset_for_scene_entry`",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
-            "web": (WEB_RUNTIME_SCENE_SETUP, "enter_field_core"),
+            "web": (WEB_RUNTIME_SCENE_SETUP, "enter_field_seated"),
         },
         "mode": "symbols_all",
         "symbols": ["reset_for_scene_entry"],
