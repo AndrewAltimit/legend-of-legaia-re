@@ -186,6 +186,10 @@ impl World {
             return;
         }
         let visible = a.battle.render_color != 0;
+        // `lw v0,0x22C(seat)` / `lhu v0,0x72(v0)` / `sh v0,0x72(sphere)`
+        // (`0x8004D578..0x8004D590`): the seat's render node scale, which
+        // Evil Seru Magic halves on the caster from arm 21 to arm 27.
+        let seat_scale = a.battle.render_scale.unwrap_or(SHIELD_SCALE);
         let anchor = self.shield_anchor(seat);
         if let Some(sphere) = self
             .casting
@@ -196,7 +200,7 @@ impl World {
             if visible {
                 sphere.state.move_substate =
                     legaia_engine_effects::effect_sprite_arm::DRAW_KIND_MULTI as i16;
-                sphere.state.field_72 = SHIELD_SCALE;
+                sphere.state.field_72 = seat_scale;
                 if let Some((pos, _)) = anchor {
                     sphere.state.world_x = pos[0];
                     sphere.state.world_y = pos[1];
