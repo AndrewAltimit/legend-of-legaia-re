@@ -3280,8 +3280,8 @@ whose actor committed nothing since its cast clip reads it far past retail's.
 **A monster's capture-class cast mid-load (`SpanGate::CaptureFade`).** The
 capture band's `0x6E` and `0x6F` wait on the disc: `0x6E` on the CD-ready poll
 `FUN_8003DE7C(1)` (`0x801E4F08`), `0x6F` on `FUN_8003F2B8(1)` (`0x801E5024`)
-while the cast module streams in. The engine's polls are always ready, so
-unheld it crosses both in a tick each. Retail's own words say how long the
+while the drive seeks the monster's voice file ([audio](../subsystems/audio.md#the-capture-bands-seek)). A seed inside them stands on an idle drive (its
+progress is not in RAM), so unheld it crosses both in a tick each. Retail's own words say how long the
 reads took:
 
 - every frame of either state calls `FUN_801D5854(ctx[+0x13], 6)`, whose
@@ -3292,7 +3292,9 @@ reads took:
   the SM's prologue adds about one a frame unless the Battle Camera option is
   Far), where the accumulator counts only from the caster's last clip commit.
 
-The drive holds the engine's polls busy (`BattleDrive::steer`) until its depth
+The corpus, its in-process seed and its image child alike, keeps PCSX-Redux's short `0x6F` hold,
+not the modelled seek (`CastFxState::capture_seek_recorded`): every monster cast's camera row was
+measured on it, and on the modelled seek `78` rows fell (`0.83..0.998`). The steer decides the rest. The drive holds the engine's polls busy (`BattleDrive::steer`) until its depth
 has come down to retail's (for a capture past `0x6F`, until the pass whose ramp
 lands it: `0x6F` ramps before it polls, so retail's exit pass ramped too, and
 released a pass late the engine cut every `0x70` shot one ramp step deeper -

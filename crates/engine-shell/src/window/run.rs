@@ -574,6 +574,11 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
         }
         _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
     };
+    // A capture child replays a recorded fight whose seeds stand on the
+    // recording drive's short capture-band hold
+    // (`CastFxState::capture_seek_recorded`), from its first tick: a seed can
+    // cross `0x6F` before the first frame is prepared.
+    session.host.world.casting.capture_seek_recorded = screenshot.is_some();
     let launch_switches = apply_launch_toggles(
         &mut session,
         LaunchToggles {

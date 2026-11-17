@@ -63,6 +63,41 @@ pub const XA_FILE_LBA: [u32; 34] = [
 /// well under a vsync.
 pub const SIDE_BAND_LBA: u32 = 242 + 41006;
 
+/// Where the head stands when a capture-class cast's band seeks its voice
+/// file: past the cast module the band's `0x28` read paged in, the capture
+/// images PROT `0935..=0966` (relative LBA `47471..=47605`, `134` sectors, a
+/// fortieth of a vsync of travel end to end).
+pub const CAPTURE_MODULE_LBA: u32 = 242 + 47471;
+
+/// Vsyncs state `0x6F` polls the capture band's seek: `0x6E` issues
+/// `FUN_8003EAE4(0, clip)` (`jal 0x8003EAE4` at `0x801E4F40`, `CdlSetloc` +
+/// `CdlSeekL`) to the acting monster's voice file, `clip` the byte
+/// `0x800787AF[DAT_8007BD09[seat]]` (`0x801E4F18..0x801E4F3C`), and `0x6F`
+/// waits on `FUN_8003F2B8(1)` until the drive reports it done. Frame-stepped,
+/// `zora_glare_petrify_pre` and `cort_evil_seru_magic_mid_cast` stand in `0x6F`
+/// with mednafen's `CdlSeekL` (`0x15`) in flight to `XA23` and `XA22`'s first
+/// sectors, `9.64M` and `15.58M` cycles of the physical seek left, under this
+/// law's `17.4M` and `16.6M` from the module's head.
+pub fn capture_seek_vsyncs(clip: u32) -> Option<u32> {
+    clip_lba(clip).map(|lba| seek_vsyncs(CAPTURE_MODULE_LBA, lba))
+}
+
+/// The seek-table clip a CD-XA cue id plays from: `(id - 0x100) >> 3`, with
+/// slots `1`, `3` and `5` remapped onto the streamed banks `0x1A`, `0x1B` and
+/// `0x1C` (`FUN_8004FCC8`, `0x8004FD04..0x8004FD34`). `None` below `0x100`,
+/// the ring's ids.
+///
+/// REF: FUN_8004FCC8
+pub fn voice_cue_clip(id: u16) -> Option<u32> {
+    let slot = u32::from(id.checked_sub(0x100)?) >> 3;
+    Some(match slot {
+        1 => 0x1A,
+        3 => 0x1B,
+        5 => 0x1C,
+        other => other,
+    })
+}
+
 /// The battle seek-ahead selector's clip for a party seat's Magic action
 /// (`FUN_8004DA00`, class `2`): the seat's fanfare file `0x19 + slot` when the
 /// spell's class byte (`DAT_800754C8`) is below `0x14`, the shared `7`
@@ -247,6 +282,26 @@ mod tests {
                 "{from} -> {to}: {physical} vsyncs against {first_frame} cycles"
             );
         }
+    }
+
+    /// The capture band's seek from the module's head to the two voice files
+    /// the frame-stepped states seek: each state's cycles left lie under the
+    /// law's whole seek.
+    #[test]
+    fn the_capture_band_seeks_the_states_stand_in() {
+        for (clip, left) in [(22, 9_644_438.0), (21, 15_582_168.0)] {
+            let physical = f64::from(capture_seek_vsyncs(clip).unwrap() - LOGICAL_SEEK_VSYNCS);
+            assert!(
+                physical >= (left / VSYNC_CYCLES).ceil(),
+                "clip {clip}: {physical}"
+            );
+            assert!(physical <= 40.0, "clip {clip}: {physical}");
+        }
+        assert_eq!(capture_seek_vsyncs(99), None);
+        // Glare's head cue plays `XA23` channel `7`, the file its seek parks on.
+        assert_eq!(voice_cue_clip(0x1B7), Some(22));
+        assert_eq!(voice_cue_clip(0x108), Some(0x1A));
+        assert_eq!(voice_cue_clip(0xFF), None);
     }
 
     /// A module's poll arm holds for exactly the vsyncs its seek takes, and

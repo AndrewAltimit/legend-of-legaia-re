@@ -348,6 +348,12 @@ pub struct ScreenshotConfig {
     /// capture band opened on its `0x6E` poll, in place of the engine's constant
     /// (`CastFxState::capture_read_seat`). Set by the cast-sequence driver.
     pub seat_capture_read: Option<u16>,
+    /// `LEGAIA_SEAT_CAPTURE_SEEK_LEFT=<vsyncs>`: what is left of the capture band's
+    /// `0x6F` seek at a state that stands inside it, read off the emulator's
+    /// CD controller (`World::seat_capture_seek_left`). The seed's drive is idle,
+    /// so without it the band leaves `0x6F` on its first pass. Set by the
+    /// real-PCM cast channel (`scripts/ci/audio-pcm.py`).
+    pub seat_capture_seek_left: std::cell::Cell<Option<u16>>,
     /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
     /// label opened on a commit younger than its displayed frame, so the
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
@@ -1252,6 +1258,11 @@ impl ScreenshotConfig {
             seat_capture_read: std::env::var("LEGAIA_SEAT_CAPTURE_READ")
                 .ok()
                 .and_then(|v| v.parse().ok()),
+            seat_capture_seek_left: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_CAPTURE_SEEK_LEFT")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+            ),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
             seat_cam_behind_commit: std::env::var_os("LEGAIA_SEAT_CAM_BEHIND_COMMIT").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")

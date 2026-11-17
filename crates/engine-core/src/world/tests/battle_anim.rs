@@ -1985,6 +1985,33 @@ fn the_capture_band_polls_hold_for_the_read() {
     assert!(!world.capture_read_pending());
 }
 
+/// A seeded state inside `0x6F` takes what is left of its seek from the
+/// harness seat; a recording drive's seek seat keeps that drive's hold.
+#[test]
+fn the_capture_seek_seats_hold_the_poll() {
+    use legaia_engine_battle_vm::battle_action::ActionState as S;
+    let mut world = World::new();
+    let start = world.clock.display_frames;
+    world.battle_ctx.action_state = S::MagicCapturePhase2.as_byte();
+    world.seat_capture_seek_left(20);
+    assert!(
+        !world.capture_read_pending(),
+        "outside the polls the seat is a no-op"
+    );
+    world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
+    world.seat_capture_seek_left(20);
+    world.clock.display_frames = start + 19;
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 20;
+    assert!(!world.capture_read_pending());
+    world.casting.drive_seek_seat = Some(2);
+    world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
+    world.clock.display_frames = start + 23;
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 24;
+    assert!(!world.capture_read_pending());
+}
+
 /// `FUN_800520F0` stores no category on the summon seat's node, so its runtime
 /// cues key record `0`; the party's keep the `7` of `0x80051548`.
 #[test]

@@ -120,15 +120,19 @@ impl World {
     /// mode switch (`0x8001E324..0x8001E364`), plus the battle overlay's own
     /// image words the cast band keeps in [`legaia_engine_battle_loop::cast_fx_state::CastFxState`].
     ///
-    /// Keeps the one non-battle member of `CastFxState`: the installed
-    /// cast-effect **data** pool (PROT 0903..0966, loaded once per host).
+    /// Keeps the non-battle members of `CastFxState`: the installed
+    /// cast-effect **data** pool (PROT 0903..0966, loaded once per host) and
+    /// the capture child's `capture_seek_recorded` seat.
     /// Idempotent.
     // REF: FUN_8001E1B4 (the actor free-stack + list-sentinel reset)
     pub fn teardown_battle_effects(&mut self) {
         *self.effect_pool = vm::effect_vm::Pool::new();
         let data_pool = self.casting.effect_pool.take();
+        let recorded = self.casting.capture_seek_recorded;
         self.casting = legaia_engine_battle_loop::cast_fx_state::CastFxState::new();
         self.casting.effect_pool = data_pool;
+        // A harness seat, the host's for the whole run.
+        self.casting.capture_seek_recorded = recorded;
         self.battle.clip_ribbon = None;
         self.battle.cast_ribbons = None;
         self.battle.cast_ribbon_seeds = None;

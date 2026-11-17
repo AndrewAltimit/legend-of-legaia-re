@@ -2646,14 +2646,24 @@ Without it Lapis Wave's rings and columns stand on seats the fight never held.
 ### The capture band's reads
 
 State `0x6E` polls `FUN_8003DE7C(1)` (`0x801E4F08`) for the read `0x28` queued, then
-`0x8003EAE4` starts the module's own read, which `0x6F` polls through `FUN_8003F2B8(1)`.
-The recordings of the harvest-state casts hold them `14..=17` and `4..=6` vsyncs, whichever
-module or fight. Neither poll idles: each `0x6E` pass walks the case-6 framing and each
-`0x6F` pass pulls `ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in
-stands on another pose for its whole length (Spore Gas read yaw `1991` where retail held
-`1121`) and every shot built on `ctx[+0x6D0]` lands at another depth. The engine holds the
-two states `14` and `4` ticks (`World::arm_capture_read_wait`), and the walk then matches
-retail to the unit through `0x6E`.
+`FUN_8003EAE4(0, clip)` (`0x801E4F40`, `CdlSetloc` + `CdlSeekL`) parks the drive on the acting
+monster's voice file, `clip` the byte `0x800787AF[DAT_8007BD09[seat]]`
+(`0x801E4F18..0x801E4F3C`), and `0x6F` polls that seek through `FUN_8003F2B8(1)`. The
+PCSX-Redux recordings of the harvest-state casts hold the two states `14..=17` and `4..=6`
+vsyncs, whichever module or fight: that drive answers a seek of any length in a few vsyncs.
+Neither poll idles: each `0x6E` pass walks the case-6 framing and each `0x6F` pass pulls
+`ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in stands on another pose
+for its whole length (Spore Gas read yaw `1991` where retail held `1121`) and every shot built
+on `ctx[+0x6D0]` lands at another depth. The engine holds `0x6E` `14` ticks
+(`World::arm_capture_read_wait`; a film seats its recording's own passes, `LEGAIA_SEAT_CAPTURE_READ`),
+and the walk then matches retail to the unit through it.
+
+`0x6F` takes the modelled drive's seek from the module's head to the voice file
+([`battle_cd_drive::capture_seek_vsyncs`](../subsystems/audio.md#the-capture-bands-seek)),
+the law the summon band's seeks take: `33` vsyncs for Glare's `XA23`, `32` for Evil Seru
+Magic's `XA22`. A capture child (a film, the retail comparison's image child, the real-PCM cast channel's) keeps
+PCSX-Redux's `4` (`CastFxState::capture_seek_recorded`), the hold the films' recordings measure and
+the corpus's seeds stand on.
 
 ## See also
 

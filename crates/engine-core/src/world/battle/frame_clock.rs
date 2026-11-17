@@ -934,17 +934,29 @@ impl World {
 
     /// Start the capture band's CD wait on the state the SM just entered.
     ///
-    /// `0x6E` polls the read `0x28` queued (`jal 0x8003DE7C` at `0x801E4F08`)
-    /// and `0x6F` the module's own (`jal 0x8003F2B8`), both on the disc in
-    /// retail and answered at once by the engine's resident image. The polls
-    /// are not idle: each `0x6E` pass walks the framing `FUN_801D5854(seat, 6)`
-    /// (`0x801E4F00`), and each `0x6F` pass pulls `ctx[+0x6D0]` in by
-    /// `step * 16`, so arm 0's long shot opens from another pose and every
-    /// shot reading `ctx[+0x6D0]` lands at another depth without them.
+    /// `0x6E` polls the read `0x28` queued (`jal 0x8003DE7C` at `0x801E4F08`),
+    /// then seeks the acting monster's voice file (`jal 0x8003EAE4` at
+    /// `0x801E4F40`), and `0x6F` polls that seek (`jal 0x8003F2B8`). Both are
+    /// on the disc in retail and answered at once by the engine's resident
+    /// image. The polls are not idle: each `0x6E` pass walks the framing
+    /// `FUN_801D5854(seat, 6)` (`0x801E4F00`), and each `0x6F` pass pulls
+    /// `ctx[+0x6D0]` in by `step * 16`, so arm 0's long shot opens from
+    /// another pose and every shot reading `ctx[+0x6D0]` lands at another
+    /// depth without them.
+    ///
+    /// The `0x6F` hold is the drive's seek from the module's head to the voice
+    /// file ([`legaia_engine_battle_vm::battle_cd_drive::capture_seek_vsyncs`]),
+    /// the law the summon band's seeks take. Under a recording drive's seek
+    /// seat (`CastFxState::drive_seek_seat`, a PCSX-Redux film) or in any
+    /// capture child (`CastFxState::capture_seek_recorded`) it is
+    /// PCSX-Redux's measured hold instead, which answers a seek of any length
+    /// in a few vsyncs and which the children's seeds stand on.
+    // REF: FUN_8003EAE4, FUN_8003F2B8, FUN_8003DE7C
     pub(in crate::world) fn arm_capture_read_wait(&mut self, to: u8) {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
-        /// Vsyncs each poll held over the harvest-state casts: `14..=17` and
-        /// `4..=6`, a read that does not move with the module or the fight.
+        /// Vsyncs each poll held over the PCSX-Redux harvest-state casts:
+        /// `14..=17` and `4..=6`, a read that does not move with the module or
+        /// the fight on that drive.
         const BRANCH_READ_VSYNCS: u64 = 14;
         const FADE_READ_VSYNCS: u64 = 4;
         self.battle.capture_read_frame_until = None;
@@ -959,11 +971,55 @@ impl World {
             }
             BRANCH_READ_VSYNCS
         } else if to == S::MagicCaptureFade.as_byte() {
-            FADE_READ_VSYNCS
+            if self.casting.drive_seek_seat.is_some() || self.casting.capture_seek_recorded {
+                FADE_READ_VSYNCS
+            } else {
+                self.capture_voice_clip()
+                    .and_then(legaia_engine_battle_vm::battle_cd_drive::capture_seek_vsyncs)
+                    .map_or(FADE_READ_VSYNCS, u64::from)
+            }
         } else {
             return;
         };
         self.battle.capture_read_until = self.clock.display_frames + vsyncs;
+    }
+
+    /// The clip file the capture band's `0x6E` seeks for the acting seat's
+    /// cast: retail reads it off the per-monster table `0x800787AF`
+    /// (`0x801E4F18..0x801E4F3C`), the file the module's own head cue then
+    /// plays from, so the port takes it off that cue
+    /// ([`legaia_engine_battle_vm::battle_cd_drive::voice_cue_clip`]).
+    /// `None` without a resident module or a head cue.
+    fn capture_voice_clip(&self) -> Option<u32> {
+        use legaia_engine_battle_vm::battle_cast_cue as cue;
+        let spell = self
+            .actors
+            .get(usize::from(self.battle_ctx.active_actor))?
+            .battle
+            .params[0];
+        let entry = self.cast_module_for(spell)?;
+        let pool = self.casting.effect_pool.as_ref()?;
+        let image = &pool.module(entry)?.bytes;
+        let head = match legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell) {
+            Some(va) => cue::body_head_cue(image, va),
+            None => cue::module_head_cue(image),
+        }?;
+        let id = match head {
+            cue::ModuleHeadCue::Literal(id) | cue::ModuleHeadCue::Random { base: id, .. } => id,
+        };
+        legaia_engine_battle_vm::battle_cd_drive::voice_cue_clip(id)
+    }
+
+    /// A harness seat: stand the capture band's poll `left` vsyncs short of
+    /// its answer, at a seeded state inside `0x6E` / `0x6F` whose read the
+    /// seed could not place (the drive's progress is not in RAM). Nothing
+    /// outside those states.
+    pub fn seat_capture_seek_left(&mut self, left: u16) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        if state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte() {
+            self.battle.capture_read_until = self.clock.display_frames + u64::from(left);
+        }
     }
 
     /// Whether the capture band's read has not answered yet

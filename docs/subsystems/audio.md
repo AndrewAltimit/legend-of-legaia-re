@@ -4029,6 +4029,10 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `orb_summon_mid_cast` | `0.993` | `-0.01` dB | `+608` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
 | `swordie_summon_mid_cast` | `0.990` | `+0.04` dB | `-1042` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
 | `gilium_summon_mid_cast` | `0.991` | `+0.02` dB | `-1365` | the voice `6.0` vsyncs after mednafen's, inside the seek window; the state stands inside arm 1's `CdlSetloc` ([below](#the-selector-seeks-when-the-side-band-drops)) |
+| `battle_gimard_tail_fire_a`, `_b` | `0.992`, `0.999` | `-0.10`, `+0.00` dB | | Tail Fire's two frames: the monster's own cues alone |
+| `zora_glare_petrify_pre` | `0.947` | `-0.01` dB | | Glare from inside the capture band's seek ([seated](#the-capture-bands-seek)); the voice `XA23` channel `7` |
+| `cort_evil_seru_magic_mid_cast` | `0.996` | `+0.04` dB | | Evil Seru Magic from inside the same seek; the voice `XA22` channel `6` |
+| `cort_mystic_circle_mid_cast` | `0.962` | `-0.03` dB | | not split window by window |
 
 <a id="the-casts-step-is-pcsx-reduxs"></a>
 **The cast's step is PCSX-Redux's.** The battle frame step carries each pass's cost into the next
@@ -4127,6 +4131,29 @@ Orb's and Swordie's voices then play at retail's level too, which the drive's wa
 level change under a sounding clip lifts it to the full CD volume
 ([the CD input volume](#the-cd-input-volume)), and Orb's duck is still ramping when its voice starts only
 because the blocked frames held the ramp.
+
+<a id="the-capture-bands-seek"></a>
+**The capture band seeks its voice file too.** A monster's special or a boss cast is a capture-class
+module, and the band ahead of it parks the drive the same way: state `0x6E` calls `FUN_8003EAE4(0, clip)`
+(`0x801E4F40`) with `clip` the acting monster's voice file, the byte `0x800787AF[DAT_8007BD09[seat]]`
+(`0x801E4F18..0x801E4F3C`), and `0x6F` polls that seek (`FUN_8003F2B8(1)`) before the module's first arm
+runs. Frame-stepped, `zora_glare_petrify_pre` and `cort_evil_seru_magic_mid_cast` both stand in `0x6F`
+with mednafen's `CdlSeekL` in flight to `XA23` and `XA22`'s first sectors, the files Glare's and Evil Seru
+Magic's head cues then play from, and `0x70` follows `20` and `31` vsyncs on, as the physical seek's
+cycles left (`9.64M`, `15.58M`) and the logical seek put it. The port held `0x6F` for PCSX-Redux's `4`
+vsyncs, a drive that answers any seek at once; it now takes the drive law from the module's head
+(`battle_cd_drive::capture_seek_vsyncs`, `CAPTURE_MODULE_LBA`), `33` vsyncs to `XA23` and `32` to `XA22`,
+the file read off the module's head cue (`voice_cue_clip`). Every capture child (film, retail
+comparison, this channel) keeps PCSX-Redux's hold, which its seeds stand on
+([capture band's reads](../tooling/cast-sequence-oracle.md#the-capture-bands-reads)); the seat below
+places a state inside the seek.
+
+A state inside that seek seeds with an idle drive, so the engine's band ran the module `18` and `27`
+vsyncs ahead of the recording and every sound of the cast with it: the two rows read `0.60` and `0.37`.
+The cast channel now seats what the seek has left off the state's own CD controller (`PSRCounter`
+while `DriveStatus` is `2`, plus the logical seek; `LEGAIA_SEAT_CAPTURE_SEEK_LEFT`, a harness seat), and the
+rows read `0.947` and `0.996`. The same controller holds the summon module seeks the
+[table below](#a-state-inside-a-drive-hold) names, which the seat does not reach yet.
 
 <a id="the-cast-channels-seek-window"></a>
 **The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and
