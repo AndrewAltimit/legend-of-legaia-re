@@ -658,6 +658,29 @@ pulls no samples. A door behind sub-op 6 has no close and is untouched. Pinned
 by `engine-session/tests/picker_switch_audio_disc.rs` and the page's
 `a_picked_scene_cuts_the_last_ones_sound_before_its_bank_loads`.
 
+What the player hears across a door, measured on retail with
+[`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua)
+(`LEGAIA_POKE=15:3:30:50` stands the player on `kor`'s door into the overworld
+`korout` from `kor_field_route_walk`; frame step 2, vsyncs from the poke):
+
+| Vsync | Retail |
+|---|---|
+| `+2` | the scene word names `korout`; the door's walk-out runs in mode `3`, `kor`'s `2005` at full |
+| `+82` | mode `2`, the field init |
+| `+85..+191` | the field source's flag `0x20` up, its volume `107 -> 1`, one step a vsync: the `0x78`-tick ramp |
+| `+123` | the entry script's head start stores `2000` (requested `2000`, loaded `-100`) |
+| `+211..+213` | the source closes, its last voices off; nothing sounds |
+| `+268` | the poller attaches the new track; `+269` is `korout`'s first frame |
+| `+283` | the score's first key-on |
+
+So the old track plays at full through the walk-out and fades over the load, and
+the new one attaches a vsync before the first frame and keys its first note `14`
+vsyncs after it. The engine
+plays the walk-out the same way (`72` ticks at full on the same door), cuts the
+`0x78`-tick ramp to its `30` ms fade at the change, and keys the new score's first
+note `17` frames after the first frame: the two frames the cut holds the start,
+plus the score's own lead-in.
+
 ### The overworld's story cutscenes are door records too
 
 `map01`'s entry script `P1[0]` tests a run of story flags and spawns one
