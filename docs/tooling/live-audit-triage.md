@@ -279,10 +279,13 @@ battle frame and the engine once a vsync, so its window counts on the tick
 that opens a frame only, and the arts entry's exhausted-pool scan waits while
 the window holds a direction (a PCSX-Redux run from `gaza2_card_first_menu`
 holding Left: one arrow a pass from 33 vsyncs in, the flow in `0x50` until
-release). The Muscle Dome round runs the same flow through its own session
-(`DomeSelectPad`), which still reads the edge alone: the dome counts one pass
-a vsync tick and keeps no battle frame clock, so the window folded in there
-would repeat at the tick rate, faster than retail's pass.
+release). A Muscle Dome round is an ordinary battle on both play hosts
+(`World::start_muscle_battle_leg`, `FUN_801D1510`), so its command flow is this
+one and reads the window at the battle's pass rate, as retail's round does
+through the same `FUN_801D0748`. Only the minigames page's standalone dome
+session (`DomeSelectPad`, `MuscleDomeSession::select_input`) still reads the
+edge alone: it counts one pass a call and keeps no battle frame clock, so the
+window folded in there would repeat faster than retail's pass.
 
 The tint pass's kept words are the defeat fade's. Arm 2 of `FUN_80050120`
 stamps the blend word `+0x0C = 0x1000` every pass, so each lit fade frame takes
