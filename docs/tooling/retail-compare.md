@@ -4035,6 +4035,13 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
 - **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
+- **The dance's play loop on a floor the pad never reached** (`DAT_801D5334 = 0xA`
+  with the human's score `DAT_801D53CC`, latch `DAT_801D548C` and miss counter
+  `DAT_801D568C` all zero), run hands-off from the count-in to the capture's song
+  timer `DAT_801D5820` less the display lag's game frames (`30` a frame). The
+  [minigame film](minigame-film.md) pairs every rival and camera word of a
+  hands-off song, so the floor the seed reaches is the capture's; a floor the pad
+  reached stays unseeded.
 - **The contest hub's first visit** (arm byte `DAT_801D1A78` in `0..=5` or
   `0x15`), sampled at the capture's level `0x801D1A84` or hold `0x801D1A70`.
 - **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`), sampled at the capture's card clock `DAT_801DBE94`: the card's whole picture is a function of that clock, and a state word alone stands the engine on the fade-in.
@@ -4064,7 +4071,7 @@ What stays unseeded, and what each needs:
   image child, or writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
 - **A played phase**: a Baka Fighter round (pad input and the AI's `rand()`
-  picks), a cast's flight and bite rolls, the chart's presses, the hub's legs.
+  picks), a cast's flight and bite rolls, the human's chart presses, the hub's legs.
 
 ## Channels
 
