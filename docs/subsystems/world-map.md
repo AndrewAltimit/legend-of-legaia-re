@@ -1711,6 +1711,17 @@ actor's `+0x14` / `+0x18`;
 `overlay_world_map_walk_801d01b0.txt`), so a faster walk takes more sub-steps
 per frame, each re-probing at the same 47-48 unit reach.
 
+The controller runs the remapped pad mask through the wall-slide resolver
+`FUN_80046494` before anything reads it (`jal 0x80046494` at `0x801D03EC` in
+`overlay_world_map_walk_801d01b0.txt`), on the overworld as on the field
+([wall slide](field-locomotion.md#wall-slide-resolution-fun_80046494)): a
+cardinal held into a wall gains the perpendicular bit of the open side and
+skids along it. A retail film of `map03_field_door_hop` with Left held into a
+ridge skids down-left for two frames (`x -20`, `z -20`) and walks on west;
+`World::step_world_map_locomotion` resolves the mask the same way, and the
+engine film holds retail's path to within two units on both legs of a
+Left-then-Down walk.
+
 ### The overworld is not one walk component
 
 `map01`'s wall bits split the kingdom into **two** walk components joined by a

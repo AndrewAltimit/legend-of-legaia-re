@@ -50,17 +50,20 @@ fn map01_player_walks_under_the_play_host_arming() {
         host.tick().expect("tick");
     }
     // The entry seat sits half a sub-cell north of a `.MAP` wall: the
-    // collision grid refuses `-Z` (the d-pad's Down under the entry camera),
-    // so a Down hold turns the player without moving it. Any walk check on
-    // this seat must hold an open direction.
+    // collision grid refuses `-Z` (the d-pad's Down under the entry camera).
+    // The overworld runs the field's pad controller, whose wall-slide
+    // resolver (`FUN_80046494`, `jal` at `0x801D03EC` in the walk overlay's
+    // `FUN_801D01B0`) turns the refused Down into a skid along the wall, so
+    // a Down hold moves the player without crossing the wall sub-cell.
     let (x, z, _) = pos(&host);
+    let wall_z = z - 64;
     assert!(
-        host.world.field_tile_is_wall(x, z - 64),
+        host.world.field_tile_is_wall(x, wall_z),
         "the grid's wall sub-cell south of the map01 seat"
     );
     let mut last = pos(&host);
     for (name, pad, moves) in [
-        ("down", PadButton::Down.mask(), false),
+        ("down", PadButton::Down.mask(), true),
         ("up", PadButton::Up.mask(), true),
         ("left", PadButton::Left.mask(), true),
         ("right", PadButton::Right.mask(), true),
@@ -71,6 +74,9 @@ fn map01_player_walks_under_the_play_host_arming() {
         }
         let now = pos(&host);
         eprintln!("[ok] {name}: {last:?} -> {now:?}");
+        if name == "down" {
+            assert!(now.1 > wall_z, "down skids north of the wall: {now:?}");
+        }
         assert_eq!(
             (now.0, now.1) != (last.0, last.1),
             moves,
