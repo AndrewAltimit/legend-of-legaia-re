@@ -1384,6 +1384,13 @@ impl RetailBattle {
                 &display_pass_steps(ram)[..usize::from(DISPLAY_LAG_PASSES).min(2)],
             ),
             cam_landed: camera_landed(ram, ctx),
+            cam_drift_owned: displayed_module_drift_live(
+                ram,
+                ctx,
+                game_anchors::u8_at(ram, ctx + 7),
+                &[1],
+            )
+            .is_some(),
             menu_glide_left: displayed_menu_glide_left(
                 ram,
                 ctx,
