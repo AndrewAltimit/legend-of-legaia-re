@@ -68,6 +68,7 @@ mod showcase_bgm_switches;
 mod showcase_skip_disc;
 mod soft_reset_records_page;
 mod status_marks_page;
+mod summon_channel_object_page;
 mod title_backdrop_parity;
 mod vell_bridge_grass_page;
 mod view_window_crop_page;

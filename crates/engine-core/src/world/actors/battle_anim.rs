@@ -445,12 +445,20 @@ impl World {
                 }
                 // The channel a module's table store moved an object onto
                 // places that object, and the object's own channel stands past
-                // the stream.
+                // the stream. The object may sit past every stream's part
+                // count, so no pose entry reaches it yet: Jedo's scythe is
+                // object 22 over clips of 22 parts (channel 6 draws it from
+                // clip 4 on), and left without an entry it stood unposed at
+                // the body's origin natively and collapsed on the browser
+                // page, which poses an object only from its own entry.
                 if let Some((channel, object)) = creature_channel
                     && let Some(&placed) = pose.bone_outputs.get(usize::from(channel))
-                    && let Some(slot) = pose.bone_outputs.get_mut(usize::from(object))
                 {
-                    *slot = placed;
+                    let object = usize::from(object);
+                    if pose.bone_outputs.len() <= object {
+                        pose.bone_outputs.resize(object + 1, placed);
+                    }
+                    pose.bone_outputs[object] = placed;
                 }
                 let after = player.current_frame();
                 // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
