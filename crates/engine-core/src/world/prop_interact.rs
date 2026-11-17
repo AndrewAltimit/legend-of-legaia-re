@@ -1016,7 +1016,7 @@ impl World {
         // the `+0x10` class word (whose bit `0` is the door's collision-off).
         self.sync_prop_from_ctx(anchor, &id.ctx);
         if let Some(seat) = own_seat {
-            self.seat_prop(anchor, seat);
+            self.seat_own_object(anchor, seat);
         }
         if parked {
             id.park_frames = id.park_frames.saturating_add(1);
@@ -1055,6 +1055,36 @@ impl World {
         if let Some(slot) = self.props.proxy_talk.take() {
             self.trigger_field_interact(0, slot);
         }
+    }
+
+    /// A prop record's own `23 <x> <z>`: seat the object's actor on `seat`.
+    ///
+    /// Retail runs the record on the object's actor, so the op's non-player
+    /// arm (`0x801DECAC`) writes the tile into the same `+0x14` / `+0x18` the
+    /// draw (`FUN_8001ADA4` case 5) and the box test (`FUN_801CFC40`) read.
+    /// The port runs the record on a context of its own, so the seat goes onto
+    /// the object-bind channel the draw reads, and the collider follows it
+    /// through [`Self::sync_prop_colliders_to_object_actors`]. Seating only
+    /// the collider left `vozz`'s cut Crystal Grass drawn where it stood while
+    /// the player walked through it. A prop with no bound channel moves its
+    /// collider alone.
+    ///
+    /// REF: FUN_801DE840 (0x23 arm, 0x801DECAC)
+    fn seat_own_object(&mut self, anchor: (u8, u8), seat: (i32, i32)) {
+        let channel = self.object_key_at_anchor(anchor).and_then(|key| {
+            self.field_vm
+                .channels
+                .iter()
+                .position(|c| c.object_bind && c.placement_index == key)
+        });
+        let Some(ci) = channel else {
+            self.seat_prop(anchor, seat);
+            return;
+        };
+        let ctx = &mut self.field_vm.channels[ci].ctx;
+        ctx.world_x = seat.0 as i16 as u16;
+        ctx.world_z = seat.1 as i16 as u16;
+        self.sync_prop_colliders_to_object_actors();
     }
 
     /// Move prop `anchor`'s actor to `seat`: its position, its contact-box

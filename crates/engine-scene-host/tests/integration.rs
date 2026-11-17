@@ -240,6 +240,7 @@ mod town01_opening_timeline_trace;
 mod translated_field_strings_disc;
 mod vahn_house_roundtrip_disc;
 mod vdf_morph_ambient_disc;
+mod vozz_crystal_grass_disc;
 mod walk_on_trigger_dispatch_disc;
 mod world_frame_tail_ladder;
 mod world_map_menu_gate;
