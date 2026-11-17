@@ -604,10 +604,7 @@ impl World {
             // `FUN_8001E1B4`, sentinels at `0x8001E338..0x8001E364`), so the
             // emitter's node is gone for the whole transition.
             // REF: FUN_801CE8CC, FUN_8001E1B4
-            let intro_rebuilt_lists = matches!(
-                self.encounters.session.as_ref().map(|s| s.phase()),
-                Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
-            );
+            let intro_rebuilt_lists = self.battle_intro_owns_frame();
             if actor_tick_fired && !intro_rebuilt_lists {
                 let mut rng = crate::world::WorldRng::new(self.rng_state);
                 self.tick_cutscene_elements(delta, || rng.step());
@@ -832,7 +829,9 @@ impl World {
                 // actor game tick, not per rendered frame - which is what
                 // keeps op 0x0D in lockstep with its ramp scheduler.
                 // REF: FUN_80038158, FUN_80036D80
-                if actor_tick_fired {
+                // The battle intro rebuilt the actor lists, so no placement's
+                // driver runs under it (`Self::battle_intro_owns_frame`).
+                if actor_tick_fired && !self.battle_intro_owns_frame() {
                     self.tick_field_npc_ambient();
                     // The same driver's height arm (`FUN_8003BC08`), after
                     // the tick moved anyone: the glide-class NPCs' Y.
@@ -1015,7 +1014,7 @@ impl World {
                 // `map03`'s floating castle (P1[1]: `31 1D` + `4C 42 84 03`,
                 // `+0x16 = -(+0x8E)` = 900 up) drifts along the ground.
                 // REF: FUN_8003BC08, FUN_80038158
-                if actor_tick_fired {
+                if actor_tick_fired && !self.battle_intro_owns_frame() {
                     self.tick_field_npc_ambient();
                     self.tick_field_npc_heights();
                 }

@@ -602,6 +602,26 @@ impl World {
             )
     }
 
+    /// `true` while the field-to-battle intro owns the frame (the encounter
+    /// session's `Transition` phase).
+    ///
+    /// The intro's init rebuilds the actor lists (`FUN_801CE8CC` ->
+    /// `FUN_8001DCF8` -> `FUN_8001E1B4`, sentinels at
+    /// `0x8001E338..0x8001E364`) and stores game mode `9`, so no field actor
+    /// node is walked again until the fight returns: no placement's driver
+    /// `FUN_8003BC08`, and so no ambient stream `FUN_80038158` and none of
+    /// its `rand()` draws. `rim_elm_queen_bee_battle`'s retail film holds the
+    /// seed for the whole intro window (`0xE49D91B4` from the intro's seeding
+    /// to the battle's first draw); the engine's wanderers had drawn on
+    /// through it, so the fight opened on another seed.
+    // REF: FUN_801CE8CC, FUN_8001E1B4, FUN_8003BC08
+    pub fn battle_intro_owns_frame(&self) -> bool {
+        matches!(
+            self.encounters.session.as_ref().map(|s| s.phase()),
+            Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
+        )
+    }
+
     /// `true` while a step must not roll a random encounter: retail's region
     /// reader `FUN_801D9E1C` returns without scaling the rate or draining the
     /// counter when the player carries the engaged bit
