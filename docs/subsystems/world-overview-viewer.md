@@ -235,6 +235,37 @@ retail shows the single bridge at the record-441 road crossing
 `(12224, 6336)`. `window.__woWalkStamps` exposes the stamp list actually
 queued per render (the headless-verification hook, like `__woCam`).
 
+### Posed landmarks and the story toggle
+
+A placed landmark whose object bind names a clip is a multi-object prop: the
+init sweep copies the bind header's anim byte into `+0x5C`, and the actor
+draws through `FUN_8001B964` (draw kind `1`) at its clip frame
+([`world-map.md`](world-map.md#placed-actors-and-the-mesh-resolver)). Drawn raw,
+its objects sit at their object-local origins. Each kingdom has one family:
+
+| Kingdom | Landmark | Prologue | Flag clear | Flag set |
+|---|---|---|---|---|
+| Drake | record 409, pack 2 (clip 5) | `72 7B 05 00` | frame 0 | last frame (`4C 36`) |
+| Sebucus | records 476 / 477, pack 12, three windmills (clip 4) | `71 D5 05 00` | clip loops from frame 0 | frame 0, held (`4C 35`) |
+| Karisto | record 458, pack 16, Conkram's shell lid (clip 4) | `74 C8 07 00` | frame 0, held: the lid open behind the town | last frame: the lid shut over it |
+
+The viewer poses them with the play hosts' kernels: `kingdom_landmarks`
+builds a `PropAnimBank` over the walk map's placed objects with each spawn
+prologue run against a page-chosen flag set, and `pack_mesh_posed` builds the
+slot through `build_hybrid_pack_mesh_posed` at `posed_prop_offsets` for the
+key the bank leaves. `walk_placement_anim_ids` / `walk_placement_pose_keys`
+are parallel to `walk_placement_slots` (`0` / `-1` = draw raw); decoration
+cells spawn no actor and stay raw. Drawn raw, Conkram's lid lay flat in front
+of the town and the Sebucus sails heaped at the foot of each tower.
+
+The page's **late story** checkbox raises every flag the posed landmarks'
+prologues test (`kingdom_landmark_story_flags`) through
+`set_kingdom_landmark_flags`; off, the kingdom is a new game, the same point
+the Mist draws. `0x4C8` is raised by `chitei2`'s entry script once Jette's
+Fortress's collapse countdown (`0x4C7`) has run out, so Conkram's shell is
+open for most of the game and shut after the Karisto Mist Generator falls.
+Disc-gated: `crates/web-viewer/tests/world_overview_posed_landmarks_real.rs`.
+
 **The legacy overview-frame placement layers stay hidden.** The
 `world-overview.json` MAN-table landmarks, live-RAM actor placements, and the
 unplaced-slot-1 layout grid (described under "Layout engine for unplaced

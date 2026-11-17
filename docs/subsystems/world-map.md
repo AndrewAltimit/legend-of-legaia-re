@@ -2494,7 +2494,9 @@ window sweep's record 457 (mesh 15, draw kind `5`, unposed). The lid's frame
 `+0x5C = 4`, `+0x62 = 0x1F`, cursor `0`. Both hosts draw these landmarks
 posed: the native window through the posed-prop pass the field's doors use
 (`resolve_world_map_draws` leaves them out of the static stamps), the page by
-carrying the bind's clip id on the landmark (`build_field_render`). Drawn
+carrying the bind's clip id on the landmark (`build_field_render`); the
+world-overview page poses them through the same bank under a chosen flag set
+([`world-overview-viewer.md`](world-overview-viewer.md#posed-landmarks-and-the-story-toggle)). Drawn
 unposed, Conkram's lid lay flat in front of the town; posed off both prologue
 arms at once, it lay over the town. The other two pick their arm on a flag
 the same way: `map02`'s three stamps test `0x1D5` (`71 D5 05 00`), set
