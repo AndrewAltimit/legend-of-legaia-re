@@ -546,10 +546,16 @@ impl World {
         let mut globals_in = self.flags.story_flags;
         // Retail's engaged bit `+0x10 & 0x80000`. The engine raises the word
         // itself only on a touch post and reads a script context's
-        // engagement through its predicate. A conversation is narrower than
-        // retail here: it holds only the talker (retail's `+0x10 & 0x100`
-        // on the actor whose record runs), not every deferring stream.
+        // engagement through its predicate. A talk or a touched object's
+        // run engages the player too: the record runner raises the bit on
+        // the record's first slice (`0x80039DB8..0x80039DD4`) and drops it
+        // when the last engaged record ends on its `21` and the count at
+        // `*(_DAT_801C6EA4) + 0xA` reaches zero (`0x80039EE8..0x80039F14`),
+        // so every deferring stream stands for the whole conversation, not
+        // only the talker (`town01_npc16_dialogue_first_page`: retail's
+        // wanderers hold their seats for a 300-vsync film under an open box).
         let player_engaged = self.script_context_engages_player()
+            || self.dialog.inline.is_some()
             || self
                 .player_actor_slot
                 .and_then(|s| self.actors.get(usize::from(s)))

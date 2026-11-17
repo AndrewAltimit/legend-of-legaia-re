@@ -95,6 +95,7 @@ not a finding by itself; a placement off retail from the first row is.
 - A cutscene glide steps once a game frame. The mover `FUN_801DC0BC` adds `DAT_1F800393` to its progress once a frame, from the actor-list walk that runs after the script arming it, so a glide's first frame already stands a whole step along and every pose holds until the next frame. The engine had credited one a vsync: `son_field_door_hop`'s glides stood between two of retail's poses on the vsyncs between, and the one armed inside the film trailed retail's by `step - 1` frames for its whole flight.
   Crediting the step on the frame's opening vsync (`FrameClock::count_credited_frame`) takes the camera fields off retail on `son_field_door_hop` from `200` vsyncs to `0`, `taiku2_field_door_hop` `141` to `0`, `vozz_genesis_tree_songi` `43` to `0`, and `concnow_field_door_hop` `76` to `3`, whose `rng` column then agrees to the end (`34` to `100` of `100`); the follow ease keeps banking vsyncs toward its passes.
 - A record's wait restarts when a player leg it armed lands. `tower_field_walk`'s lift glides the player, fades and waits `4A 3C`; the engine had moved the player `60` vsyncs after the fade began and retail moves him `60` after the glide lands, the landing clearing the record's `+0x54` ([script-vm](../subsystems/script-vm.md#0x37--0x41--0x47-yield-family-motion-ops)). The move now lands on retail's vsync: player position off `128` vsyncs to `16`, camera `213` to `101`, `rng` `44` to `52` of `150`.
+- A talk stands every deferring wanderer, as retail's does. The engine had held only the talker, so under an open box the rest walked and drew; with the player engaged for the whole run ([motion-vm](../subsystems/motion-vm.md#the-0x8a-byte-is-a-suppression-mask-not-an-enable)) `retock_innkeeper_talk_open`'s `rng` agrees `150` of `150` (from `1`) and `retock_inn_stay_prompt`'s `150` of `151` (from `10`), and over the idle set the placement rows off retail's heading fall from `13452` to `7449`, off its seat from `15950` to `8607`.
 
 ## The game frame's phase
 
@@ -127,12 +128,11 @@ The retail recorder writes the pacer's side of each vsync (`ring_cur`, the slot 
 | `0x801D371C`, `0x801D4600` | the move-VM extension `FUN_801D362C`: an ambient part's random operand | one an op |
 | `0x80038C74`, `0x80039080` | the scripted-motion VM `FUN_80038158`: a wanderer's stream | one a decision |
 
-Every film that parts before its end parts on one of five causes, read off that probe at the first parted pass:
+Every film that parts before its end parts on one of four causes, read off that probe at the first parted pass:
 
 | Cause | Films | Kind |
 |---|---|---|
 | The ambient parts the state holds and the seed does not: a spawner part's children live longer than the seed's settle, so the engine stands fewer of them (`garmel`: nine of retail's twenty-nine), and their random operands go undrawn | the five `garmel` films, `dohaty_field_card_walk`, `jagaroom_field_door_hop`, `koin1_field_route_walk`, `map02_field_door_hop`, `uru2_field_door_hop` | harness seat |
-| An open talk the seed does not resume: retail's wanderers stand under it and draw nothing for the whole film, the engine's are free and draw | `retock_innkeeper_talk_open`, `retock_inn_stay_prompt` | harness seat |
 | A wanderer's stream on another phase than the state's | `balden_field_route_walk`, `koin6_field_route_walk`, `doman_field_card_boot` | harness seat |
 | The fog pool: a burst point the spawner seats on one side and rejects on the other, the pools having parted earlier with no draw to show it | `tower_field_walk`, `concnow_field_door_hop`, `teien_field_run`, `son_arrival_from_doman` | engine (fog pool) or seat, film by film |
 | The measured step changing inside the film | `korout_field_door_hop`, `field_walled_collision_pin` | retail's frame time |
