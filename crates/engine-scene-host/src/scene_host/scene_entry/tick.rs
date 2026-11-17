@@ -231,6 +231,13 @@ impl SceneHost {
                     &man_bytes,
                     global_index,
                 ) {
+                    // The spawner held the player, and the spawn's share of
+                    // the runner's depth keeps it held past the spawner's
+                    // end: the record holds the player from here.
+                    // REF: FUN_8003BDE0 (0x8003C0C0..0x8003C0CC)
+                    if let Some(tl) = self.world.field_vm.helper_contexts.last_mut() {
+                        tl.held_from_install = true;
+                    }
                     log::info!(
                         "field: op-0x44 spawned P2 record (global index {global_index}) as a concurrent helper context",
                     );

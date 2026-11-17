@@ -314,7 +314,8 @@ impl World {
 
     /// Whether a context the script runner `FUN_80039B7C` counts in the modal
     /// depth `_DAT_801C6EA4+0xA` is still open: a conversation, the modal
-    /// timeline or a helper record that has run a slice. Retail bumps the
+    /// timeline or a helper record that has run a slice or that a running
+    /// script spawned (the spawn's own share of the depth). Retail bumps the
     /// depth at a context's slice (`0x80039D98`) and takes the context's
     /// share back when it ends, so the depth is non-zero exactly while one of
     /// these runs. A scene transition's hold and an expansion cutscene are
@@ -327,7 +328,7 @@ impl World {
                 .field_vm
                 .helper_contexts
                 .iter()
-                .any(|tl| tl.dialog.is_some() || (tl.stepped && !tl.is_done()))
+                .any(|tl| tl.dialog.is_some() || tl.holds_player())
     }
 
     /// The script runner's release hold, once a tick after the field frame.

@@ -630,7 +630,10 @@ impl World {
     /// sequencing. A helper counts from its first slice: one installed this
     /// tick has raised nothing yet, and one that runs to its end inside a
     /// slice is dropped before the next pad read, as retail's same-frame
-    /// raise-and-clear leaves the bit down.
+    /// raise-and-clear leaves the bit down. A helper a running script
+    /// spawned counts from its install: the spawner's slices raised the bit,
+    /// and the spawn's share of the depth keeps it up past the spawner's
+    /// end ([`legaia_engine_field::cutscene_timeline::CutsceneTimeline::held_from_install`]).
     ///
     /// REF: FUN_80039B7C (the raise and the clear), FUN_8003BC08 (`0x8003BD34`),
     /// FUN_8003BDE0 (the `0x100` install), FUN_801D1344 (`0x801D1694`)
@@ -654,7 +657,7 @@ impl World {
                 .field_vm
                 .helper_contexts
                 .iter()
-                .any(|tl| tl.stepped && !tl.is_done())
+                .any(|tl| tl.holds_player())
     }
 
     /// `true` while a script record that holds the player has an op-`0x45`

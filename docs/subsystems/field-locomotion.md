@@ -1592,6 +1592,12 @@ The three sum to 296 against the capture's 294 (the capture reads the span off t
 
 A concurrent helper record therefore refuses the pad - walking, the action button and the menu button - from its first slice to its closing `0x21`, exactly as a modal cutscene does; "modal" decides only the camera and the opening chain's beat sequencing. The engine's predicate is `World::script_context_engages_player` (the modal timeline or any live helper), which gates locomotion, the menu open and a prop touch. `korout`'s first-visit record (`P2[3]`, `C1 F8 04 90`: eight tiles along `+Z` over 256 vsyncs) is the helper case.
 
+**A record a script spawns holds the player from its spawn.** The runner adds one to the modal depth `*(_DAT_801C6EA4)+0xA` and to the context's own share `+0x2A` on every slice (`0x80039D98..0x80039DB4`), raises the player's `0x80000` (`0x80039DB8..0x80039DD4`), and on the context's closing `0x21` takes back its share and clears the bit only if the depth is then zero (`0x80039ECC..0x80039F14`). `FUN_8003BDE0` bumps the depth too and seeds the new context's share at `1` (`0x8003C080..0x8003C0CC`).
+
+So when a running script spawns a record (op `0x44`) and ends in the same frame, the depth stays non-zero and the bit its slices raised stays up: the player passes straight from the spawner to the record, and a tile crossing in that frame is spent under the lock (`FUN_801D1EC4`, `0x801D214C`). A walk-on spawn from free roam has no slice behind it, so its record holds the player from its first slice as above.
+
+`bylon`'s hall door back from West Voz is the case that shows it. `P0[31]` seats the player on `(23, 115)` (`A3 F8 17 73`), spawns `P2[6]` (`44 61`, Gala running ahead to the Mist) and ends; the seat tile carries a fallback kind-1 record for the same `P2[6]`. The engine marks an op-`0x44` helper as holding the player from its install (`CutsceneTimeline::held_from_install`); counted from its first slice instead, the door's last frame held nobody, the crossing spawned the record a second time and both copies ran. Disc-gated: `engine-scene-host/tests/bylon_hall_door_record_once_disc.rs`.
+
 ## The submode return state - a parked word nothing reads
 
 Opening a field sub-screen parks a state. The op-`0x49` enter does it twice, in two copies of one idiom in the field overlay, both reaching the scene struct through the pointer at `0x801C6EA4`:
