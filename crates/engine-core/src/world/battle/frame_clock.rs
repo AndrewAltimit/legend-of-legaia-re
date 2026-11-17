@@ -112,7 +112,18 @@ impl World {
             self.battle.drawn_polys.map(polygon_frame_work)
         } else {
             self.battle.linked_polys.map(|n| {
-                let w = linked_frame_work(n, self.battle_backdrop_drawn());
+                // The scanline wash below fills the screen where a backdrop
+                // stands and keeps the backdrop's share: its price was read
+                // over the line with that share in it, and Genocidal Cannon's
+                // close-ups under it (no stage, about `500` primitives) run
+                // step `4` under the polls on every retail frame, which the
+                // line without the share reads `3`.
+                let p = &self.casting.module_pres;
+                let wash = self.cast_module_resident()
+                    && p.wash_live
+                    && p.wash.armed()
+                    && matches!(p.wash.mode, 1 | 2);
+                let w = linked_frame_work(n, wash || self.battle_backdrop_drawn());
                 let monster_acting = self
                     .actors
                     .get(usize::from(self.battle_ctx.active_actor))
@@ -124,12 +135,7 @@ impl World {
                 };
                 // The resident module's scanline wash, a screen layer the
                 // census does not count (`SCANLINE_WASH_WORK`).
-                let p = &self.casting.module_pres;
-                if self.cast_module_resident()
-                    && p.wash_live
-                    && p.wash.armed()
-                    && matches!(p.wash.mode, 1 | 2)
-                {
+                if wash {
                     w.saturating_add(legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK)
                 } else {
                     w
