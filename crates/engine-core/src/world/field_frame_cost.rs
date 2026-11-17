@@ -111,7 +111,7 @@ impl FieldCostTable {
 
 /// The frame time, in hblanks, a field frame that draws `f` costs.
 ///
-/// Every weight is **fitted**, not read off a routine: the counts are what
+/// Every weight but the cyclers' is **fitted**, not read off a routine: the counts are what
 /// the ported gates say the frame's passes walk, and the weights price them
 /// against retail's measured frame times (PCSX-Redux walk films' `frame_cost`
 /// and `step` columns, and the sixteen-sample ring of every retail library
@@ -123,7 +123,8 @@ impl FieldCostTable {
 /// the decoration pass's primitives and the cells its loop visits, the ground
 /// emitter's cells, the actor passes' primitives and NPCs, the tick pass's
 /// ambient parts, and the fog walk's records and the half-sheets it emits.
-/// Integer arithmetic, so every host prices a frame alike; weights in
+/// The CLUT-cell cyclers' recolour is priced at what the kernel was measured
+/// to cost a texel. Integer arithmetic, so every host prices a frame alike; weights in
 /// 1/1024 hblank.
 ///
 /// Not capped: a frame priced past the `0x2D0` rung is a spike, which the
@@ -140,7 +141,16 @@ pub fn field_frame_cost(f: &FieldFrameFeatures) -> i32 {
         (f.fog_quads, COST_PER_FOG_HALF_SHEET),
         (f.parts, COST_PER_PART),
     ];
-    let sum: i64 = terms.iter().map(|&(n, w)| i64::from(n) * w).sum();
+    let cycler: [(u32, i64); 3] = [
+        (f.cycler_calls, COST_PER_CYCLER_CALL),
+        (f.cycler_texels, COST_PER_CYCLER_TEXEL),
+        (f.cycler_zero_texels, COST_PER_CYCLER_ZERO_TEXEL),
+    ];
+    let sum: i64 = terms
+        .iter()
+        .chain(&cycler)
+        .map(|&(n, w)| i64::from(n) * w)
+        .sum();
     (FIELD_FRAME_BASE_COST + (sum >> 10)).clamp(0, FIELD_FRAME_COST_MAX) as i32
 }
 
@@ -161,6 +171,15 @@ pub const COST_PER_NPC: i64 = 16_692;
 pub const COST_PER_FOG_RECORD: i64 = 1_277;
 pub const COST_PER_FOG_HALF_SHEET: i64 = 958;
 pub const COST_PER_PART: i64 = 1_784;
+/// What the CLUT-cell recolour `FUN_80019D50` costs, 1/1024 hblank a unit
+/// (measured, not fitted): a call, a non-zero texel (`RGB -> HSV -> RGB`,
+/// `FUN_8001A78C` / `FUN_8001A6C8`) and a zero texel, which the kernel
+/// copies through (`0x80019DF4`). Cycle-stamped on PCSX-Redux across
+/// `opstati`'s `320 x 34` and `320 x 2` strips and `jou`'s sixteen-texel
+/// rows: `1185`, `74` and `5` hblanks a call.
+pub const COST_PER_CYCLER_CALL: i64 = 1_311;
+pub const COST_PER_CYCLER_TEXEL: i64 = 234;
+pub const COST_PER_CYCLER_ZERO_TEXEL: i64 = 38;
 
 /// What one field frame draws ([`World::field_frame_features`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -188,6 +207,11 @@ pub struct FieldFrameFeatures {
     /// fills.
     pub fog_quads: u32,
     pub parts: u32,
+    /// The CLUT-cell cyclers uploading on the frame's tick, and the
+    /// non-zero and zero texels of their captures (`FUN_80019D50`).
+    pub cycler_calls: u32,
+    pub cycler_texels: u32,
+    pub cycler_zero_texels: u32,
 }
 
 impl World {
@@ -320,6 +344,25 @@ impl World {
             0
         };
         f.parts = self.ambient.fx.iter().filter(|p| !p.finished).count() as u32;
+        // The CLUT-cell cyclers that upload on this frame's tick: the arm runs
+        // `FUN_80019D50` on a part whose gate `+0x9C` already reads past `1`
+        // (the tick has not run yet, so the gate is the last tick's).
+        for p in &self.ambient.fx {
+            if p.finished || p.state.move_submode != 3 || p.state.field_9c < 2 {
+                continue;
+            }
+            f.cycler_calls += 1;
+            match p.cycler.texels.as_ref() {
+                Some(t) => {
+                    f.cycler_texels += p.cycler.lit;
+                    f.cycler_zero_texels += t.len() as u32 - p.cycler.lit;
+                }
+                None => {
+                    let d = p.state.keyframe_desc;
+                    f.cycler_zero_texels += u32::from(d[2]) * u32::from(d[3]);
+                }
+            }
+        }
         Some(f)
     }
 }

@@ -288,8 +288,13 @@ fn a_cast_reels_a_cadence_a_strike_and_a_landed_catch() {
         "the fight landed without the record reaching the reel-in gate"
     );
 
-    // FUN_801d5298: the award lands in the persistent total and, being the
-    // first catch, becomes the best.
+    // FUN_801d5298: the result actor credits the award to the persistent
+    // total once the lift has seated it and, being the first catch, makes
+    // it the best once the plate settles.
+    assert_eq!(p.record.points, 0, "the record waits for the plate");
+    for _ in 0..0x400 {
+        p.tick(PondInput::default(), 1, 0x80);
+    }
     assert_eq!(p.record.points, award, "award credited to the point total");
     assert_eq!(p.record.best_points, award, "first catch is the best catch");
     assert_eq!(p.record.best_fish, 3, "best catch names its species");

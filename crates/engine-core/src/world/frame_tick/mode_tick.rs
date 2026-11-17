@@ -269,10 +269,17 @@ impl World {
         self.tick_bgm_swap(self.clock.display_frame_step.clamp(1, 255));
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
-        // called at `0x800169FC`). Its accumulator advances by the frame step,
-        // so drive it on the sim ticks that map to a retail vsync.
+        // called at `0x800169FC`). It runs once a game frame and its
+        // accumulator advances by that frame's step (`lbu v0,0x393` at
+        // `0x8002687C`), so the elapsed count is the vsyncs of the frames that
+        // ran: a deadline of `90` expires 91 vsyncs on at any cadence
+        // (`autorun_audio_timeline.lua` off `s1_newgame_field`: `opstati`'s
+        // release counts `2` a frame, `1` a vsync). The world ticks once a
+        // vsync, so it counts one a tick; crediting the frame step on every
+        // tick ran the release two times fast in the field and three on the
+        // world map, cutting each fade at its midpoint.
         if self.clock.display_frame_step == 1 {
-            let step = self.clock.frame_step.max(1);
+            let step = 1;
             // The teardown gates (`record[+8]` active, `_DAT_8007B868`) live
             // in the libsnd voice binding the engine replaces, so the engine
             // arm is "release when it fires" unconditionally.
@@ -422,6 +429,7 @@ impl World {
         // The script contexts stepped below time themselves on this clock
         // (`FrameClock::script_frame_delta`).
         self.clock.game_tick_live = self.clock.display_frame_step == 1 && runs_master_driver;
+        self.clock.count_credited_frame();
         if actor_tick_fired {
             self.clock.actor_vsync_accum = 0;
             // The ambient move-VM effect parts (jou's CLUT-cell cyclers and

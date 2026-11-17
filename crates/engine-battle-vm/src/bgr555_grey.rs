@@ -24,20 +24,17 @@
 //! per-character index window of the row, read from `DAT_80078630`
 //! (`engine-battle::battle_status_clut::RotClutWindows`).
 //!
-//! The Stone arm, though live,, though live, does not fire in ordinary play. Retail's
-//! enemy-special status source is the **move-power record's `+0x0A`
-//! impact-effect selector**, which `FUN_801DEA50` parks at `ctx+0x1014` and
-//! `FUN_801E09F8` branches on at the impact phase;
-//! `legaia_game_tables::move_power` parses that byte and `engine-core`'s
-//! `World::apply_enemy_move_status` applies it, so a monster special puts
-//! Venom / Toxic / Rot on a *party* slot in play. But no `+0x0A` selector
-//! value maps to Stone: that ladder ends at `5` (`0x801E1620` tests only
-//! `5`), and `FUN_801EC3E4`'s sibling ladder adds only `6` = Curse.
-//! Petrification's applier is elsewhere entirely - `ori 0x4` at `0x80041CF4`
-//! / `0x80041DE4`, in the SCUS `0x80041...` item/effect band around
-//! `FUN_800402F4` - and that one is unported. Since `BattleHud::sync_status`
-//! arms the CLUT latch on `StatusKind::Stone` only, rows `481..=483` stay
-//! unexercised until that applier lands.
+//! The Stone arm fires in play. The move-power record's `+0x0A`
+//! impact-effect selector is not its source - that ladder ends at `5`
+//! (`0x801E1620`) and `FUN_801EC3E4`'s sibling ladder adds only `6` = Curse.
+//! Petrification has two appliers: the class-9 arm of `FUN_800402F4`
+//! (`ori v0,v0,0x4` at `0x80041CF4` / `0x80041DE4`), whose AGL roll is
+//! [`crate::status_effects::agl_status_inflict_roll`], and the Glare cast
+//! module (PROT 0940), which runs the same roll and stores the bit itself
+//! (`0x801F7090..0x801F70EC`). `engine-core`'s
+//! `World::apply_enemy_agl_status` ports the Glare landing over that roll,
+//! and `BattleHud::sync_status` arms the CLUT latch on `StatusKind::Stone`,
+//! so a petrified party member's row greys here.
 //!
 //! It is ported as its own kernel because its edge case (the luminance clamp)
 //! is observable and testable on its own.

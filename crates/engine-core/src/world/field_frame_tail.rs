@@ -319,7 +319,8 @@ impl World {
             return false;
         }
         let draw = self.next_rand();
-        self.npcs.phase_draws.insert(slot, draw);
+        let clip = move_id.unwrap_or(0);
+        self.npcs.phase_draws.insert(slot, (draw, clip));
         let bound = self
             .npcs
             .clip_cursors
@@ -333,27 +334,108 @@ impl World {
 
     /// The placement spawner's clip-phase draw (`FUN_8003A1E4`,
     /// `0x8003A404..0x8003A454`): a placement whose header names a move
-    /// (`+0x5C > 0`) binds the clip (`FUN_800204F8`), draws one `rand()` and
-    /// seats its cursor at `(rand() % frames) << 4`. The clip is not bound
-    /// here yet, so the draw waits in [`FieldNpcState::phase_draws`] for the
-    /// host's bind, the same hand-off as op `4C C0`.
+    /// (`+0x5C > 0`, `anim`) binds the clip (`FUN_800204F8`), draws one
+    /// `rand()` and seats its cursor at `(rand() % frames) << 4`. The clip is
+    /// not bound here yet, so the draw waits in [`FieldNpcState::phase_draws`]
+    /// for the host's bind of that clip, the same hand-off as op `4C C0`.
     ///
     /// PORT: FUN_8003A1E4 (`0x8003A410`, the spawn-time clip phase)
-    pub(crate) fn draw_placement_spawn_phase(&mut self, slot: u8) {
+    pub(crate) fn draw_placement_spawn_phase(&mut self, slot: u8, anim: u8) {
         let draw = self.next_rand();
-        self.npcs.phase_draws.insert(slot, draw);
+        self.npcs.phase_draws.insert(slot, (draw, anim));
     }
 
-    /// Seat a waiting op-`4C C0` draw on NPC `slot`'s bound cursor.
+    /// A `4C D2` re-seat's header clip on a placement whose cursor is still
+    /// bound: the new allocation's `+0x5E = -1` (`FUN_80020DE0`, `0x80020E9C`)
+    /// makes the spawner's bind restart the header clip at frame `0` and the
+    /// draw just taken seats its phase (`0x8003A404..0x8003A454`). A cursor on
+    /// another clip is left to the next bind, which spends the draw.
+    ///
+    /// REF: FUN_8003A1E4, FUN_80020DE0
+    pub(crate) fn restart_respawned_header_clip(&mut self, slot: u8, anim: u8) {
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        if c.anim_id != anim {
+            return;
+        }
+        c.cursor = 0;
+        self.seat_npc_phase_draw(slot);
+    }
+
+    /// Seat a waiting clip-phase draw on NPC `slot`'s bound cursor, when the
+    /// cursor plays the clip the draw was taken for. A cursor bound to another
+    /// clip consumes the draw unseated: retail seated it on the old clip, and
+    /// `FUN_800204F8`'s restart of the new one zeroed `+0x68`
+    /// (`sh zero,0x68(s0)` at `0x8002059C`).
     fn seat_npc_phase_draw(&mut self, slot: u8) {
         let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
             return;
         };
-        let Some(draw) = self.npcs.phase_draws.remove(&slot) else {
+        let Some((draw, clip)) = self.npcs.phase_draws.remove(&slot) else {
             return;
         };
+        if c.anim_id != clip {
+            return;
+        }
         let frames = u32::from(c.frames.max(1));
         c.cursor = ((draw % frames) << 4) as i16;
+    }
+
+    /// The forced clip restart of ops `0x22` / `A2` ExecMove and `4C 51` on
+    /// NPC `slot`. Both arms store `-2` into the playing-clip word `+0x5E`
+    /// before they write the move into `+0x5C` and call the consumer (`22`:
+    /// `sh v0,0x5e(s5)` at `0x801DEAAC`, `jal 0x800204F8` at `0x801DEAB4`;
+    /// `4C 51`: `0x801E1A90..0x801E1A9C`), so the consumer's change test
+    /// (`0x80020570..0x8002057C`) always fails and the clip restarts at
+    /// `+0x68 = 0` - the move already playing included. Only the ambient
+    /// motion VM's requests go through the change test unforced.
+    ///
+    /// So the op drops any waiting phase draw (the spawner's, seated on the
+    /// header clip before a prologue's poke ran, is zeroed by it), and a
+    /// cursor already on `move_id` goes back to its start: one the world can
+    /// re-bind from the scene's record table is dropped for
+    /// [`Self::bind_npc_scene_clip`] to bind afresh when the caller binds next
+    /// (`rebind`), any other restarts in place, stepped once as a fresh bind
+    /// is: a host-held one (party bank), and the install pre-run's, which
+    /// leaves the bind to the hosts. A town's
+    /// villagers, each poked by its prologue, so start their idles together,
+    /// as retail's do, and a record that re-plays the gesture it is already
+    /// in waits out the whole clip on its end latch.
+    ///
+    /// PORT: FUN_801DE840 (`0x801DEAA8..0x801DEAB4`, `0x801E1A90..0x801E1A9C`)
+    pub(crate) fn restart_npc_clip(
+        &mut self,
+        slot: u8,
+        move_id: u8,
+        party_bank: bool,
+        rebind: bool,
+    ) {
+        self.npcs.phase_draws.remove(&slot);
+        if move_id == 0 {
+            return;
+        }
+        let Some(c) = self.npcs.clip_cursors.get_mut(&slot) else {
+            return;
+        };
+        if c.anim_id != move_id {
+            return;
+        }
+        let rebinds = rebind
+            && !party_bank
+            && self
+                .locomotion
+                .scene_clip_meta
+                .get(usize::from(move_id) - 1)
+                .is_some_and(|&(frames, _, _)| frames != 0);
+        if rebinds {
+            self.npcs.clip_cursors.remove(&slot);
+        } else {
+            c.cursor = 0;
+            if self.clock.game_tick_live {
+                c.tick_scaled(u16::from(self.clock.frame_step.max(1)));
+            }
+        }
     }
 
     /// Bind NPC `slot`'s world-owned clip cursor to scene-bank clip `anim_id`
@@ -708,6 +790,84 @@ mod tests {
         let frames = u32::from(c.frames);
         assert!(frames > 1);
         assert_eq!(c.cursor, ((draw % frames) << 4) as i16);
+        assert!(w.npcs.phase_draws.is_empty());
+    }
+
+    /// The spawner's phase draw is taken for the header clip, and only a bind
+    /// of that clip seats it: a placement whose prologue binds another clip
+    /// first starts that one at frame `0`, as `FUN_800204F8`'s restart leaves
+    /// it (`0x8002059C`).
+    #[test]
+    fn a_spawn_phase_draw_seats_only_on_the_header_clip() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (10, 2), (10, 7)]);
+        let player = FieldClipPlayer::from_record(&scene, 2).unwrap();
+        let draw = World::new().next_rand();
+
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.draw_placement_spawn_phase(3, 3);
+        w.bind_npc_clip_cursor(3, 3, &player);
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!(c.cursor, ((draw % u32::from(c.frames)) << 4) as i16);
+
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.draw_placement_spawn_phase(3, 5);
+        w.bind_npc_clip_cursor(3, 3, &player);
+        assert_eq!(
+            w.npcs.clip_cursors[&3].cursor, 0,
+            "another clip starts at 0"
+        );
+        assert!(w.npcs.phase_draws.is_empty(), "the draw is spent");
+    }
+
+    /// Op `4C 51` restarts the clip it names even when that clip is already
+    /// playing (`+0x5E = -2` ahead of the consumer, `0x801E1A90`), and the
+    /// spawner's waiting draw goes with it: a prologue-seated villager starts
+    /// its idle at frame `0`.
+    #[test]
+    fn a_seat_restarts_the_playing_clip_and_drops_the_spawn_draw() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (10, 2), (10, 7)]);
+        let player = FieldClipPlayer::from_record(&scene, 2).unwrap();
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.draw_placement_spawn_phase(3, 3);
+        w.restart_npc_clip(3, 3, false, true);
+        assert!(w.npcs.phase_draws.is_empty());
+        w.bind_npc_clip_cursor(3, 3, &player);
+        assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
+
+        // A cursor mid-clip on the seat's own move restarts in place when the
+        // world holds no record table for it (a host-held clip).
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.restart_npc_clip(3, 3, true, true);
+        assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
+        // So does one whose caller leaves the bind to the hosts (the install
+        // pre-run, a `4C D2` re-seat's prologue).
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.restart_npc_clip(3, 3, false, false);
+        assert_eq!(w.npcs.clip_cursors[&3].cursor, 0);
+        // Another clip is left to the bind.
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.restart_npc_clip(3, 2, true, true);
+        assert_eq!(w.npcs.clip_cursors[&3].cursor, 48);
+    }
+
+    /// A `4C D2` re-seat restarts the header clip a still-bound cursor plays
+    /// and seats the spawner's fresh draw on it.
+    #[test]
+    fn a_reseat_restarts_the_bound_header_clip_at_the_new_draw() {
+        let scene = legaia_engine_field::field_anim::synth_anm_bundle(&[(10, 2), (10, 2), (10, 7)]);
+        let player = FieldClipPlayer::from_record(&scene, 2).unwrap();
+        let draw = World::new().next_rand();
+        let mut w = World::new();
+        w.mode = SceneMode::Field;
+        w.bind_npc_clip_cursor(3, 3, &player);
+        w.npcs.clip_cursors.get_mut(&3).unwrap().cursor = 48;
+        w.draw_placement_spawn_phase(3, 3);
+        w.restart_respawned_header_clip(3, 3);
+        let c = w.npcs.clip_cursors[&3];
+        assert_eq!(c.cursor, ((draw % u32::from(c.frames)) << 4) as i16);
         assert!(w.npcs.phase_draws.is_empty());
     }
 

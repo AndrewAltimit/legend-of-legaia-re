@@ -438,6 +438,7 @@ mod weapon_trail;
 mod window_emitter;
 mod window_rebuild;
 mod window_vm;
+mod wipe_curtain;
 mod world_leaves;
 mod world_map_entity;
 mod world_map_horizon;

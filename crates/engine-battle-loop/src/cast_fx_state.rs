@@ -275,6 +275,10 @@ pub struct CastFxState {
     /// (`World::run_cast_module_code`); PROT 0909's phase rendezvous are two
     /// of them.
     pub module_stager_calls: Vec<(u8, legaia_engine_cast::cast_module_ticks::StagerCaller)>,
+    /// PROT 0909's stager arm 0 stood its creature on the caller's frame
+    /// (`World::seat_viguro_creature`); the module tick that runs the queued
+    /// call steps the phase and leaves the seat alone.
+    pub module_viguro_seated_early: bool,
     /// How many op-`0x20` calls have reached a module's stager arm
     /// (wrapping): the ones `World::run_part_stager_calls` drains, and PROT
     /// 0925's, whose arm runs inside the calling part's step. Nothing in the
@@ -455,6 +459,12 @@ pub struct CastFxState {
     /// in the anim tick after the action SM, so a rate the arm stores in the
     /// same pass still meets the commit's decay (`0x8004B080`).
     pub module_bump_commits: u8,
+    /// The seats (bit per slot) whose `+0x1DC` bump waits on the anim tick:
+    /// the tick skips a seat whose node colour word `+0x74` latched zero
+    /// (`0x800474D4..0x800474E0`), so the bit stays up until a draw at view
+    /// depth `0xA1` or deeper refreshes the word and the tick runs again
+    /// (`World::write_cast_actor_state`, `World::tick_battle_animations`).
+    pub module_bump_deferred: u8,
     pub module_tick_after_drift: Option<(
         Option<legaia_engine_cast::cast_module_camera::CapturePoseSet>,
         Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
@@ -593,8 +603,6 @@ pub struct ModuleOrb {
     /// The creature's `(x, y, z)` after arm 5's step and lift, not yet on
     /// the actor.
     pub deferred_seat: Option<[i16; 3]>,
-    /// Arm 2 passed and its stars are owed on the next tick.
-    pub stars_owed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,6 +681,7 @@ impl CastFxState {
             module_settle_ticks: 0,
             module_nighto_outcome: None,
             module_stager_calls: Vec::new(),
+            module_viguro_seated_early: false,
             stager_arm_calls_run: 0,
             module_barra_counter: 0,
             summon_parts_dealt: 0,
@@ -718,6 +727,7 @@ impl CastFxState {
             module_tick_rest: None,
             module_tick_after_drift: None,
             module_bump_commits: 0,
+            module_bump_deferred: 0,
             module_held_moves: None,
             caster_stages: None,
             caster_size_store: None,

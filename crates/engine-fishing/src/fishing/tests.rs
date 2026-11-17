@@ -826,7 +826,9 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     assert_eq!(p.strength(), hooked_strength);
     let sp = *p.hooked().unwrap();
     assert_eq!(p.last_award(), sp.score_for(hooked_strength));
-    assert!(p.record.points > 0);
+    // The record waits for the result actor (`FUN_801D5298`): nothing is
+    // credited on the landing frame.
+    let (points_before, best_before) = (p.record.points, p.record.best_points);
     assert!(p.last_award() > 0);
     let events = p.take_events();
     assert!(events.iter().any(|e| matches!(e, PondEvent::Landed(_))));
@@ -850,8 +852,30 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         .catch_result()
         .expect("the seated result actor shows its plate");
     assert_eq!((r.ramp, r.points, r.species), (0, p.last_award(), id));
+    assert_eq!(
+        p.record.points, points_before,
+        "the record moves with the plate"
+    );
     p.tick(PondInput::default(), 3, 0x80);
     assert_eq!(p.catch_result().unwrap().ramp, 12);
+    // The plate's first tick credits the total (`+0x2A == 0`); the best
+    // catch waits for the plate to settle at `0x280` (`+0x2A == 1`).
+    assert_eq!(p.record.points, points_before + p.last_award());
+    assert_eq!(p.record.best_points, best_before);
+    while p.catch_result().unwrap().ramp < RESULT_ACCEPT_RAMP - 4 {
+        p.tick(PondInput::default(), 1, 0x80);
+    }
+    assert_eq!(
+        p.record.best_points, best_before,
+        "best weighed before the plate settled"
+    );
+    p.tick(PondInput::default(), 1, 0x80);
+    assert_eq!(p.record.best_points, best_before.max(p.last_award()));
+    assert_eq!(
+        p.record.points,
+        points_before + p.last_award(),
+        "credited once"
+    );
     for _ in 0..0x500 {
         p.tick(PondInput::default(), 1, 0x80);
     }

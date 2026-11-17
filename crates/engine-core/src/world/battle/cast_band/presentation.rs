@@ -86,6 +86,11 @@ const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
 /// The `FUN_80024E80` call of PROT 0934's hit ladder.
 const OZMA_LADDER_FADE_DECODED_SITE: u32 = 0x801F_907C;
+
+/// PROT 0921's kill of its stager caller, which its hand port makes
+/// (`World::apply_iota_writes`): the decoder places it on the arm's first
+/// held pass, past the countdown test it sits behind.
+const IOTA_CALLER_KILL_SITE: u32 = 0x801F_7944;
 /// Modules whose message-bar raise a hand port already makes: PROT 0940
 /// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
 /// composed line), 0954 (Fatal Decision, ported whole) and the two that
@@ -248,6 +253,9 @@ impl World {
             // (`World::ozma_hit_ladder`): the site sits inside the arm's
             // threshold test, which the decoder cannot place.
             if entry == 934 && s.va == OZMA_LADDER_FADE_DECODED_SITE {
+                continue;
+            }
+            if entry == 921 && s.va == IOTA_CALLER_KILL_SITE {
                 continue;
             }
             // A site behind a test of the module's own word runs only on

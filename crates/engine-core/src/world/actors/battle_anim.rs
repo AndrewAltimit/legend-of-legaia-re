@@ -363,6 +363,13 @@ impl World {
             {
                 continue;
             }
+            // A module's bump the skip held (`CastFxState::module_bump_deferred`)
+            // commits on the first tick that runs.
+            // PORT: FUN_80047430 (`0x800478EC..0x800478F8`, the bit-0 commit once the tick runs)
+            if i < 8 && self.casting.module_bump_deferred & (1 << i) != 0 {
+                self.casting.module_bump_deferred &= !(1 << i);
+                self.commit_staged_battle_anim_at_boundary(i);
+            }
             self.stamp_rage_delegation(i);
             // The decoder's last-frame tween reads the clip queued behind
             // this one; recompute it before the step, like the draw that

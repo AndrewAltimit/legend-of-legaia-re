@@ -253,6 +253,12 @@ pub struct MinigameState {
     /// The `GO!` banner's brightness (`acc * 2`, `FUN_801cf470` states 4 / 5)
     /// the last dance tick produced. `None` outside those states.
     pub dance_countin_go: Option<i32>,
+    /// The dance's **results state** `0x14`: the fade accumulator
+    /// `DAT_801D515C`, zeroed as state `0xC` hands over and stepped
+    /// `dt * 4` a game frame; each frame draws the fade to black
+    /// `FUN_80024EE4(0, 2, acc * 0x010101)` (`0x801CFF50..0x801CFF64`). `None`
+    /// outside the state.
+    pub dance_results_fade: Option<u32>,
     /// The last dance tick ran one of the hall's game frames: the count-in's
     /// animator or the song's frame, once every three vsyncs. The camera
     /// keyframe track steps on these frames alone, by their delta
@@ -411,6 +417,7 @@ impl MinigameState {
             dance_countin: None,
             dance_countin_banner: None,
             dance_countin_go: None,
+            dance_results_fade: None,
             dance_hall_frame: false,
             dance_pending_bgm: None,
             dance_tutorial: None,

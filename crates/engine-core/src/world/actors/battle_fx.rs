@@ -1410,6 +1410,34 @@ impl World {
             .unwrap_or(0)
     }
 
+    /// The `+0x1DA` a playing knockdown (tag `4`) holds behind it. Retail's
+    /// commit writes it when the knockdown installs (`0x8004BED0` with `ra`
+    /// on the natural-end path, the get-up `+0x1F2` or a dead member's `7`),
+    /// and the decoder's last-frame tween reads it; the engine evaluates the
+    /// row at the clip's natural end on the landed HP
+    /// (`World::finish_battle_reaction`), so until then this reads the row the
+    /// natural end will. A `--watch` on Vahn's `+0x1DA` through Blazing
+    /// Slash holds `5` from the knockdown's commit, and the knockdown's last
+    /// frames tween toward the get-up's lying first keyframe, where the
+    /// engine's tweened toward the idle stance.
+    // REF: FUN_8004AD80 (`0x8004BE30..0x8004BF4C`, the tag-4 row)
+    fn knockdown_staged_next(&self, slot: usize) -> Option<u8> {
+        use legaia_engine_battle_loop::clip_ladder::{LadderInputs, commit_tag_ladder};
+        let a = self.actors.get(slot)?;
+        if a.battle_reaction != Some(4) {
+            return None;
+        }
+        let map = self.battle_reaction_map(slot)?;
+        commit_tag_ladder(LadderInputs {
+            tag: 4,
+            hp_zero: a.battle.hp == 0,
+            party: a.battle_monster_id.is_none(),
+            first_monster: self.battle_first_monster_byte(),
+            getup_entry: map[3],
+        })
+        .next
+    }
+
     /// Commit every actor's staged battle anim id (`queued_anim` vs
     /// `current_anim`) through the retail anim-commit ladder. Engine port of
     /// the per-frame consumer that converges `+0x1D9` toward `+0x1DA`:
@@ -1462,7 +1490,9 @@ impl World {
             if a.battle.flag_bits.has(ActorFlags::EXIT) {
                 0
             } else {
-                a.battle_reaction_next.unwrap_or(0)
+                a.battle_reaction_next
+                    .or_else(|| self.knockdown_staged_next(slot))
+                    .unwrap_or(0)
             }
         } else if let Some(id) = a.battle_staged_anim {
             if player.is_looping() || a.battle.queued_anim != id {

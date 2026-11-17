@@ -1792,6 +1792,70 @@ build, the default against the census with the seat (image mean, cue mean):
 | Enemy casts | 109 | `.9351` / `.9985` | `.9360` / `.9991` |
 | Gate | 12 | `.9664` / `.9944` | `.9710` / `1.0` |
 
+The span law takes the same seat in the lead-in (`LEGAIA_LEADIN_SPAN_LAW=1`): its longer
+frames re-deal the rounds the replay plays to the gate, and under it Gilium's, Warhalf's,
+Slippery's and Topaz's strike films recorded nothing (Warhalf's replay won the fight in round
+3). Held to the gate, all four record on their default reading. The span law then carries the
+CD stop watch's wait into the film: Tri-Somersault's `0x1E` runs `736` vsyncs for retail's
+`734` (`589` by default) and Dragon Fangs' `355` for `352`. The vsyncs alone move little,
+since a film pairs on the game clock, and the steps the frames read are the census's to fix:
+the arts agree with retail's step on `.837` of their game time by default, `.846` under the
+law alone and `.947` under the law and the census. One build, both seats held to the gate
+(image mean, cue mean):
+
+| Set | Films | Default | Span law | Census and span law |
+|---|---:|---|---|---|
+| Player arts | 20 | `.9316` / `.9982` | `.9333` / `.9911` | `.9358` / `1.0` |
+| Monster strikes | 65 | `.9825` / `.9996` | `.9825` / `.9996` | `.9839` / `.9996` |
+| Seru casts | 29 | `.9612` / `1.0` | `.9611` / `1.0` | `.9611` / `1.0` |
+| Enemy casts | 109 | `.9374` / `.9985` | `.9347` / `.9939` | `.9366` / `.9972` |
+
+Under the law alone the enemy casts' step agreement falls (`.845` to `.820`), Death Game's
+film `.928` to `.834` and Aluru's cannon `.952` to `.886`. Three things stood between the
+two together and the default, and each is closed:
+
+- **The scanline wash.** PROT 0898's colour wash in its scanline modes (`ctx[+0x27D]` `1` /
+  `2`) builds every screen line on the CPU (`FUN_801F2410`, `0x801F2958..0x801F2D20`: a
+  `236`-instruction body with two `div`, two `mult` and a `POLY_FT4` linked per strip
+  through `FUN_8003D2C4`, for each of `224` lines), work the census does not count, since
+  the wash is a screen layer. About `580` cycles a line on PCSX-Redux is `60` hblanks a
+  frame (`SCANLINE_WASH_WORK`). Without it Genocidal Cannon's caster close-ups (arms 6, 7, 9
+  and `0x0B`, about `500` primitives) priced `217` on the census, `603` under the line's
+  polls, step `3` where every retail frame runs `4`; arm 6's rings then drew on more passes
+  per game tick and the black core outgrew retail's. Both Genocidal Cannon films read
+  `.936` before it and `.991` / `.992` with it, level with the table. Grade `disassembly`
+  for the loop, an instruction count for the price.
+- **A spent line in the Done band.** The census prices a cast's tail frames under retail's,
+  so a voice line covered more of the port's passes than of retail's and loaded `0x51` on
+  step `4` where retail's runs `3` (Scythe Wind, Water Crystals, Terio Punch). The Done
+  band's cut to the line's span on retail's frames
+  ([a voice line loads no Done-band frame](#a-voice-line-loads-no-done-band-frame)) runs
+  under the law too.
+- **The cue tolerance.** A cue's distance on the engine side is counted on its game clock:
+  a frame's overrun ticks drain no game time (`Side::live_clock`), as retail's game clock
+  spreads a slow frame's step over its vsyncs, so a cue keyed on the next pass of an
+  eight-vsync frame no longer reads a pass late (Astral Wave's `0x2B`). A harness rule.
+
+The stills take both lead-in holds (`battle_run`'s child, and the headless seed runs the
+table and the default overrun), so a still's replay reaches its capture on the rounds it
+always did: `battle_doman_freed_strike`, `_jou_aluru_v3_strike`, `_jou_freed_v3_strike` and
+`_nilboa_lava_face_strike`, which drew no frame under the law, read their default. On that
+tree, one build (image mean, cue mean, step agreement):
+
+| Set | Films | Table, one-vsync overrun | Census and span law |
+|---|---:|---|---|
+| Player arts | 20 | `.9320` / `.9982` / `.837` | `.9357` / `1.0` / `.947` |
+| Monster strikes | 65 | `.9825` / `.9996` / `.954` | `.9839` / `.9996` / `.959` |
+| Seru casts | 29 | `.9639` / `1.0` / `.990` | `.9639` / `1.0` / `.990` |
+| Enemy casts | 109 | `.9386` / `.9985` / `.845` | `.9401` / `.9995` / `.888` |
+
+The `battle_` stills read the same on all `386` (`.9929`). Every set holds or rises and no
+cue falls, so both are on by default (`WorldToggles::battle_poly_frame_cost`,
+`battle_frame_span_law`; `LEGAIA_BATTLE_POLY_COST=0` / `LEGAIA_BATTLE_FRAME_SPAN=0` lower
+them on a native session). Single films still part both ways: Caruban's Fire Breath
+`-.042`, Aluru's cannon `-.036`, Super Ironhead `-.037`, Lizard Tail `-.02`; Poisonous
+Bubbles `+.080`, Noa's chain `+.055`, Fissure `+.052`, Dragon Fangs `+.040`.
+
 The Seru band's two tail states keep the table under the census like the band
 (`0x37` / `0x38`, `World::push_frame_cost`): their own frames' work sits under the step-`2`
 edge on every Seru film (retail's `172..370` hblanks), and retail still runs them at `2` and
@@ -2518,10 +2582,13 @@ the step each arm spends the most vsyncs on. Measured against that and three oth
   (`cast_arm_frame_step_on_pass`, the pass counted through the band's two states),
   generated by [`cast-arm-cost-rows.py`](../../scripts/ci/cast-arm-cost-rows.py): on a
   frame's first row the recording's `cost` is the entry that frame's own pass stored, and
-  a step of `4` there is a raw cost past the clamp. A step-`1` frame that overruns its
-  vsync is the one exception: it is still on the counter at the next vsync, so its first
-  row is read before its own frame end and holds the frame before's entry, and the
-  generator takes the frame's next row. Iota's arm 3 and Barra's arm 3 open on such a
+  a step of `4` there is a raw cost past the clamp. A frame whose first row is read
+  before its own frame end is the one exception, at any step: the counter bump and the
+  ring store sit apart in the frame, a vsync read between them holds the frame before's
+  entry, and the frame's next row (same frame, same arm, another entry) holds its own,
+  which the generator takes. Read at step `1` only, Gilium's `0x95` film read `.9639`;
+  at every step it reads `.9864`, Jedo's `.9560` to `.9570`, and no other Seru film
+  moves. Iota's arm 3 and Barra's arm 3 open on such a
   frame (`258` and `522` hblanks where the first row read `171` and `143`); read on the
   stale entry, Iota's arm ran a second step-`1` pass where retail's runs `2`, `43` passes
   for `42`, and the plain film's stream left retail's words at arm 4. It is the summon band's reading of

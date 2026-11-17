@@ -136,16 +136,21 @@ fn slot_rules_page(world: &World) -> bool {
     })
 }
 
-/// The subtractive full-screen quad the shop's opening fade and the pause
-/// wipe both draw (`fade_prim(level * 0x010101, 2, 0)`).
+/// The subtractive full-screen quad the shop's opening fade draws
+/// (`fade_prim(level * 0x010101, 2, 0)`).
 fn level_fade(level: u8) -> ScreenPrim {
     screen_prim::fade_prim(u32::from(level) * 0x01_01_01, 2, 0)
+}
+
+/// The pause wipe's two curtains at `level` (`FUN_8003479C`'s port).
+fn pause_curtain(level: u8) -> Vec<ScreenPrim> {
+    legaia_render_kernels::wipe_curtain::curtain_prims(i32::from(level), screen_prim::PSX_DISPLAY_H)
 }
 
 /// Compose this frame's `(under, over)` screen-primitive lists.
 ///
 /// `pause_wipe` is the session's pause-menu wipe level
-/// (`PauseWipe::fade_level`). Under a menu-overlay screen with the field
+/// (`PauseWipe::curtain_level`). Under a menu-overlay screen with the field
 /// faded out (`MenuRuntime::covers_field`) the field's own effects are
 /// dropped: the field is not drawn at all, so none of them may survive onto
 /// the black backdrop.
@@ -189,7 +194,7 @@ pub fn compose_screen_prims(
     if world.mode == legaia_engine_mode::mode::SceneMode::Expansion {
         let mut over = Vec::new();
         if let Some(level) = pause_wipe {
-            over.push(level_fade(level));
+            over.extend(pause_curtain(level));
         }
         let mut under = Vec::new();
         if world.pack_mode_stage().is_some() {
@@ -284,7 +289,7 @@ pub fn compose_screen_prims(
         over.push(level_fade(level));
     }
     if let Some(level) = pause_wipe {
-        over.push(level_fade(level));
+        over.extend(pause_curtain(level));
     }
     // A field MAIN INIT hold (`World::field_init_hold`): retail is in mode
     // `0x02`, drawing nothing over the black the departure left.
@@ -328,6 +333,11 @@ pub fn compose_screen_prims(
     ));
     over.extend(dance_countin);
     over.extend(dance_hud);
+    // The dance's results state fades the hall to black in the nearest
+    // bucket, over its HUD (`FUN_80024EE4(0, 2, acc * 0x010101)`).
+    if let Some(acc) = world.minigames.dance_results_fade {
+        over.push(screen_prim::screen_effect_push_prim(0, 2, acc * 0x01_0101));
+    }
     over.extend(baka_hud);
     if slot_rules_page(world) {
         under.extend(slot_cabinet);
@@ -484,9 +494,10 @@ mod tests {
         assert!(over.is_empty());
     }
 
-    /// The pause wipe lands in the `over` tail, after the transition.
+    /// The pause wipe lands in the `over` tail, after the transition: the
+    /// curtain's two bands at OT `1` (no bars below level `0x81`).
     #[test]
-    fn pause_wipe_is_a_bucket_zero_fade_over_the_text() {
+    fn pause_wipe_is_the_curtain_over_the_text() {
         let w = World::new();
         let menu = MenuRuntime::new(std::env::temp_dir());
         let host = HostScreenPrims {
@@ -495,6 +506,7 @@ mod tests {
         };
         let (under, over) = compose_screen_prims(&w, &menu, Some(0x40), host);
         assert!(under.is_empty());
-        assert_eq!(tags(&over), vec![100, 0]);
+        assert_eq!(tags(&over), vec![100, 1, 1]);
+        assert_eq!(over[1..], pause_curtain(0x40)[..]);
     }
 }

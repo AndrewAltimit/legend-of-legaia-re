@@ -76,11 +76,92 @@ pub const ESM_ROW_Z: i16 = 0x190;
 /// `0x1000` back (`0x801F886C`, `0x801F8904`).
 pub const ESM_ROW_SCALE: u16 = 0x800;
 
-/// Arm 21's caster seat: `+0x34 = 0`, `+0x36 = -0x380`, `+0x46 = 0x800`
-/// (`0x801F7E88..0x801F7EA4`), above the row and facing it.
+/// Arm 21's caster seat: `+0x38 = 0x400`, `+0x34 = 0`, `+0x36 = -0x380`,
+/// `+0x46 = 0x800` (`0x801F7E80..0x801F7EA4`), above the row and facing it.
+/// The recording's caster stands at `z = 1024` from arm 21 on.
 pub const ESM_CASTER_Y: i16 = -0x380;
+/// Arm 18's party depth: every party seat goes to `+0x38 = -0x400` on the
+/// arm's pass beside the hide (`0x801F7C10..0x801F7C28`), where a watch on
+/// the recording's seats reads the store; arm 27 copies the saved seats back.
+pub const ESM_PARTY_RISE_Z: i16 = -0x400;
+/// Arm 21's caster depth (`li v0,0x400` / `sh v0,0x38(s2)` at `0x801F7E80`).
+pub const ESM_CASTER_Z: i16 = 0x400;
 /// Arm 21's caster heading.
 pub const ESM_CASTER_FACING: u16 = 0x800;
+
+/// The cast whose `summon.dat` group holds the creature arm 10 seats:
+/// Juggernaut's (`0x99`, group `72`), the body PROT 0966 shares its arm
+/// layout and stager with (PROT 0927). The seat installer `FUN_801F19EC`
+/// (`jal` at `0x801F70E4`) installs the streamed actor record as seat 7,
+/// and the recording's caption reads "Juggernaut".
+pub const ESM_CREATURE_SPELL: u8 = 0x99;
+
+/// Arm 10's creature seat after the installer: `+0x38 = 0x1C0`, `+0x34 =
+/// 0`, `+0x46 = 0x800`, rate `+0x21D = 0` (`0x801F7134..0x801F7148`), the
+/// node's floor clip `+0x42 = 2` (`0x801F7110`) and object-effect row 1's
+/// angles zero with bounds `(-0x300, 0)` (`0x801F7114..0x801F7130`).
+pub const ESM_CREATURE_Z: i16 = 0x1C0;
+/// Arm 10's creature heading.
+pub const ESM_CREATURE_FACING: u16 = 0x800;
+
+/// Arm 18's creature seat on its pass: `+0x36 = 0x100`, `+0x38 = 0x800`
+/// (`0x801F7BF4..0x801F7BFC`), beside object-effect row 1's angles
+/// `(0x400, 0, 0)` and bounds `(-0x800, 0x800)` (`0x801F7BD0..0x801F7BF0`).
+pub const ESM_CREATURE_RISE: (i16, i16) = (0x100, 0x800);
+
+/// The creature's clip and rate stores of one pass of arm `phase`
+/// (`s4 = actor_table[7]`, loaded at `0x801F6AEC`), on a view of seat 7.
+/// `cursor` is the creature node's clip cursor `+0x68` the module reads,
+/// `delta` the frame delta `0x1F800393` the call drains (the engine ticks
+/// the body once a vsync, so `1`). Returns the depth the arm walks the
+/// creature by this call.
+///
+/// | arm | every pass | on pass |
+/// |---|---|---|
+/// | 10 | - | rate `0` behind the installer (`0x801F7140`) |
+/// | 11 | - | rate `8` (`0x801F73E0`) |
+/// | 12 | rate `0` once `+0x68 >= 0x240` (`0x801F7510..0x801F752C`) | - |
+/// | 13 | - | rate `8`, `+0x1DA` and `+0x1DC` stepped (`0x801F7774..0x801F7794`) |
+/// | 14 | rate `0` once `+0x68 >= 0x2D0` (`0x801F78C4..0x801F78E0`) | - |
+/// | 18 | - | rate `8`, `+0x1DA` and `+0x1DC` stepped (`0x801F7BA4..0x801F7BCC`) |
+/// | 19 | `+0x38 -= 3 * delta`, `+0x1DA = 3` bare (`0x801F7C94..0x801F7CAC`) | - |
+/// | 23 | - | rate `2`, `+0x1DA` and `+0x1DC` stepped (`0x801F82A8..0x801F82C4`) |
+/// | 24 | `+0x1DA = 5` bare (`0x801F82DC`) | - |
+///
+/// The installer leaves rate `2`; arm 10 stores `0` on the same pass, and
+/// arm 11 holds it there until its own pass, so a host that seats the
+/// creature behind the pass stores `0` on every pass of both arms ahead of
+/// arm 11's.
+// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the seat-7 clip, rate and walk stores of arms 10..24)
+pub fn esm_creature_writes(
+    phase: u8,
+    passed: bool,
+    cursor: i32,
+    delta: u8,
+    s: &mut CastActorState,
+) -> i16 {
+    match phase {
+        10 => s.anim_rate = 0,
+        11 if !passed => s.anim_rate = 0,
+        12 if cursor >= 0x240 => s.anim_rate = 0,
+        14 if cursor >= 0x2D0 => s.anim_rate = 0,
+        19 => s.staged_anim = 3,
+        24 => s.staged_anim = 5,
+        _ => {}
+    }
+    if passed {
+        match phase {
+            11 => s.anim_rate = 8,
+            13 | 18 | 23 => {
+                s.anim_rate = if phase == 23 { 2 } else { 8 };
+                let next = s.staged_anim.wrapping_add(1);
+                stage_clip(s, next);
+            }
+            _ => {}
+        }
+    }
+    if phase == 19 { 3 * i16::from(delta) } else { 0 }
+}
 
 /// The arms 12..15 slide a pass by character id, the bytes `0x801FA460`
 /// (`lbu` off `t0 = 0x801FA460` indexed by `DAT_8007BD10[seat]`,
@@ -105,15 +186,18 @@ pub const fn esm_half_end_step(step: i16) -> i16 {
 }
 
 /// Arm 0's row column for party seat `i` of `n`: the formation point's x
-/// `*(0x800775E0 + (n * 3 + i) * 8)` over three, toward zero
-/// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`).
+/// `*(0x800775E0 + (n * 3 + i) * 8)` over **six**, toward zero
+/// (`mult 0x2AAAAAAB` / `mfhi` less the sign, `0x801F6C20..0x801F6C5C`:
+/// `0x2AAAAAAB` is `2^32 / 6`, and the high word alone is taken, with no
+/// shift). The recording's row stands bunched in front of Juggernaut on
+/// arms 21 and 26 where a third of the column spread it past the frame.
 /// The other three writes of the loop are fixed: `+0x38 = ESM_ROW_Z`,
 /// `+0x46 = 0`, node `+0x72 = ESM_ROW_SCALE` (and the node's radius `+0x58`
 /// halved). The pair, heading and radius go to `0x801FA474` / `0x801FA494`
 /// for arm 27's restore, which arm 28 repeats every pass.
 // PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; `0x801F6BE0..0x801F6D1C`, arm 0's party row)
 pub fn esm_row_x(formation_x: i16) -> i16 {
-    (i32::from(formation_x) / 3) as i16
+    (i32::from(formation_x) / 6) as i16
 }
 
 /// The arms 12..15 loop's depth step for one party seat this pass (it runs
@@ -151,7 +235,7 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 /// | 1 | the same, again (`0x801F6D8C` / `0x801F6D98`) | caster stages clip `6`, rate `2` (`0x801F6DE4` / `0x801F6DF0`) |
 /// | 10 | - | caster hidden (`0x801F70E0` / `0x801F70E8`); party shown, neutral tint (`0x801F7310` / `0x801F731C`) |
 /// | 12..15 | a party seat on its get-up `+0x1F2` with two keyframes left stages idle with the bump ([`esm_releases_get_up`]) | - |
-/// | 18 | - | party hidden again (`0x801F7C34` / `0x801F7C40`) |
+/// | 18 | - | party hidden again (`0x801F7C34` / `0x801F7C40`) and stood at `z = -0x400` ([`ESM_PARTY_RISE_Z`], the host's move) |
 /// | 21 | - | caster stages clip `0`, shown, neutral tint (`0x801F7EA8..0x801F7EC8`); party shown (`0x801F7EF8` / `0x801F7F04`) |
 /// | 23 | - | caster `+0x21C = 2`, the defeat-fade tint state (`0x801F8280`) |
 /// | 26 | - | the party hit, see [`EVIL_SERU_MAGIC_SWEEP_SHAPE`] |
@@ -166,9 +250,9 @@ pub fn esm_get_up_slide(s: &CastActorState, char_id: u8, frame_step: u8) -> i16 
 /// The seat moves (arm 0's half-size row, the arms 12..15 slide, arm 21's
 /// caster seat, the arm 27 / 28 restore) are the host's, over these
 /// kernels' constants ([`esm_row_x`], [`esm_get_up_slide`],
-/// [`esm_half_end_step`]). Not carried: the creature seat 7's stages and
-/// rate bytes (the engine seats no creature for a capture cast), the effect
-/// records and the arm-20 banner (the screen fades are the band seam's,
+/// [`esm_half_end_step`]). The creature seat 7's stores are
+/// [`esm_creature_writes`]. Not carried here: the effect records and the
+/// arm-20 banner (the screen fades are the band seam's,
 /// `World::run_cast_module_code`).
 ///
 /// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the party and caster writes and the arm-26 hit)
@@ -330,13 +414,13 @@ mod esm_tests {
         }
     }
 
-    /// Arm 0's row takes a third of the formation point's x, toward zero,
+    /// Arm 0's row takes a sixth of the formation point's x, toward zero,
     /// and the arms 12..15 slide steps a struck seat back by character.
     #[test]
     fn the_row_and_the_get_up_slide() {
-        assert_eq!(esm_row_x(600), 200);
-        assert_eq!(esm_row_x(-600), -200);
-        assert_eq!(esm_row_x(-301), -100);
+        assert_eq!(esm_row_x(600), 100);
+        assert_eq!(esm_row_x(-600), -100);
+        assert_eq!(esm_row_x(-301), -50);
         // The entry-5 end step halves on an arithmetic shift.
         assert_eq!(esm_half_end_step(64), 32);
         assert_eq!(esm_half_end_step(-3), -2);
@@ -480,5 +564,29 @@ mod esm_tests {
         assert!(seats[..3].iter().all(|s| s.render_flag == 0));
         assert!(seats[..3].iter().all(|s| s.present_04 == ESM_NEUTRAL_TINT));
         assert_eq!(seats[3].render_flag, 0);
+    }
+
+    #[test]
+    fn the_creature_plays_the_juggernaut_clips() {
+        let mut s = seat(9000);
+        s.anim_rate = 2;
+        esm_creature_writes(10, true, 0, 4, &mut s);
+        assert_eq!(s.anim_rate, 0, "arm 10 freezes the installer's rate");
+        esm_creature_writes(11, false, 0, 4, &mut s);
+        assert_eq!(s.anim_rate, 0);
+        esm_creature_writes(11, true, 0, 4, &mut s);
+        assert_eq!(s.anim_rate, 8);
+        esm_creature_writes(12, false, 0x23F, 4, &mut s);
+        assert_eq!(s.anim_rate, 8);
+        esm_creature_writes(12, false, 0x240, 4, &mut s);
+        assert_eq!(s.anim_rate, 0);
+        esm_creature_writes(13, true, 0x240, 4, &mut s);
+        assert_eq!((s.staged_anim, s.restage, s.anim_rate), (1, 1, 8));
+        assert_eq!(esm_creature_writes(19, false, 0, 4, &mut s), 12);
+        assert_eq!(s.staged_anim, 3, "arm 19 stores clip 3 bare");
+        esm_creature_writes(23, true, 0, 4, &mut s);
+        assert_eq!((s.staged_anim, s.anim_rate), (4, 2));
+        esm_creature_writes(24, false, 0, 4, &mut s);
+        assert_eq!(s.staged_anim, 5);
     }
 }

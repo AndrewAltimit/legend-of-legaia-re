@@ -297,6 +297,8 @@ The tally is then paid by the tail call to the **shared** minigame-exit routine 
 
 So a **leg** pays nothing and a **contest** pays coins: each score cell exactly once, the non-final legs through the tally screen and the last one at settlement. The victory caption's spell id (`ctx+0x269 + 0x80`) is a *string* index into `0x801F4DFC`, the shared battle-family cast-caption label table read by any cast in any battle overlay. It is not a Seru award; nothing in the arena overlay grants anything but the War God Icon.
 
+The settlement's last call is that exit (`jal 0x80026018` at `0x801D1160`), so however a contest ends - the course run out, a leg lost, a give-up - it hands the field back the way every door-entered minigame does: the departure scene name restored and MAIN INIT's warp arm. `World::settle_muscle_contest` closes the round trip there (`World::close_minigame_round_trip`); its coin credit is the exit's, so nothing is banked twice.
+
 Port: `muscle_dome::{DomeContest, settle_contest}`, driven by `World::report_muscle_leg` / `World::settle_muscle_contest` on the play hosts and by the `muscle_contest_*` bindings on the minigames page - one model, no per-host ladder rule. `World::exit_muscle_dome` credits no capture. See `ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
 
 ## Hub screens

@@ -226,7 +226,7 @@ impl World {
     ///
     /// - `actor.tmd_binding = slot_idx` (direct 1:1 ordering: the retail
     ///   `FUN_8001E890` loop registers TMDs in pack offset-table order -
-    ///   actor K → TMD slot K).
+    ///   actor K → TMD slot K), and no binding on a slot past the pack.
     /// - `actor.active_animation` seeded from ANM record 0 (idle) when an
     ///   ANM pack is present for that slot.
     ///
@@ -239,6 +239,14 @@ impl World {
         for (i, actor) in self.actors.iter_mut().enumerate() {
             if i < resources.tmds.len() {
                 actor.tmd_binding = Some(i);
+            } else {
+                // A slot past this scene's pack has no model to stand for:
+                // `FUN_8001E890` registers the pack's TMDs and nothing else.
+                // Left as it was, a slot the departing scene's longer pack
+                // bound kept that binding, so a scene entered over another
+                // differed from the same scene entered cold (the play page
+                // lands a card save over its running scene, the window cold).
+                actor.tmd_binding = None;
             }
             if actor.active_animation.is_none()
                 && let Some(anm) = resources.anm_pack_for_actor(i)

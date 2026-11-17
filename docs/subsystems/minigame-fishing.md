@@ -142,7 +142,8 @@ The step is in the cast itself. The spawn is `polar(facing, 200)` scaled by the 
 
 What does not scale is every roll made once a game tick: the strike draw, the band re-roll, the line-break roll at the ceiling and the fish tick's draws. A frame step of `1` makes twice as many of them a second as the floor allows.
 
-Driven on retail's own steps and pad words, frame by frame, with its `rand()` stream and the pad pump's auto-repeat clock `_DAT_8007B940` seated on the capture's (harness seats), the port's pond agrees with retail on every game frame of the cast, the wait, the strike, the fight and the landing: power, line record, lure accumulators, reel pull, rod sway, the band and strike rolls, the species, the fight strength, the tension and the award. What differs is the pace: on its pinned step of `2` the port runs a reeled wait and a fight half again as many game frames a second as the film's `3`, and every once-a-frame roll with them. The step is the resolver's measure of frame cost, which an emulator's timing does not pin for a console, so the port keeps its floor.
+Driven on retail's own steps and pad words, frame by frame, with its `rand()` stream and the pad pump's auto-repeat clock `_DAT_8007B940` seated on the capture's (harness seats), the port's pond agrees with retail on every game frame of the cast, the wait, the strike, the fight and the landing: power, line record, lure accumulators, reel pull, rod sway, the band and strike rolls, the species, the fight strength, the tension and the award, and on through the close-up and the plate: the `rand()` word and the point total.
+What differs is the pace: on its pinned step of `2` the port runs a reeled wait and a fight half again as many game frames a second as the film's `3`, and every once-a-frame roll with them. The step is the resolver's measure of frame cost, which an emulator's timing does not pin for a console, so the port keeps its floor.
 
 Port: `PondSession::vsync` runs a game tick every `VENUE_FRAME_STEP` (`2`) vsyncs on that step, the engine's deterministic arm of the resolver ([engine](engine.md#the-frame-model)), and every host drives the pond through it. A press between two game ticks is held for the next. The venue's actors (`tick_venue_actors`: the swell, the lead's wander, the camera, the line actor) and the pond's cue clock step on `PondSession::vsync_step`; the overlay's effect parts tick every vsync. Pinned by `fishing::tests::the_pond_ticks_every_second_vsync_and_holds_a_press_for_it` and `the_cast_spawns_the_lure_where_the_retail_cast_did`.
 
@@ -476,7 +477,16 @@ points = fish_base_value * (strength + 0x9c0) / 0x32000
 | `fish_base_value` | species record `+0x04` |
 | `strength` | `DAT_801d91b8`, the [fish weight](#fish-weight) sum |
 
-The points are added to the persistent counter `_DAT_8008444c`, clamped to `999999`. A per-catch latch at actor `+0x2a` scores a fish once. If the catch beats the current best (`_DAT_80084458`), the best value and its fish id (`_DAT_8008445c`) are updated.
+The points are added to the persistent counter `_DAT_8008444c`, clamped to `999999`, and the best catch is weighed later, in two stages of a per-catch latch at actor `+0x2a` *(disassembly; capture)*:
+
+| `+0x2a` | When | Writes |
+|---|---|---|
+| `0` | the result actor's first tick (`0x801D5590..0x801D55CC`) | the award added to `_DAT_8008444c`; latch `1` |
+| `1` | the tick the plate's `lift` reaches `0x100`, i.e. `+0x1A >= 0x280` (`0x801D55D4..0x801D561C`) | if the award beats the best (`_DAT_80084458`, unsigned compare), the best value and its fish id (`_DAT_8008445c`); the accept word `DAT_801d90bc = 1`; latch `2` |
+
+So the point total moves when the plate opens, a lift after the fish lands, not on the landing frame: the `minigame_fishing_retail_shore` replay film holds `_DAT_8008444c` at its old value through the whole close-up (state `0x1E`) and moves it on the first frame of state `0x20`.
+
+Port: `PondSession::credit_result` runs the two stages off the plate counter (`FishingRecord::credit_points`, `weigh_best`); the landing only fixes the award.
 
 `FUN_801d5298` is the tick of the **result actor**. The landed fish's lift `FUN_801d4948` seats it when it raises `DAT_801d9294` (`0x801D5208`); the driver clearing that word retires it. Each frame adds `frame_step * 4` to the actor's `+0x1A` counter (held at `0x1000`), and `lift = clamp(+0x1A - 0x180, 0, 0x100)` drives the whole draw, every sprite at brightness `lift / 2`:
 
@@ -1066,6 +1076,7 @@ The hook cue `0x3A` and the catch cue `0x2B` are category 6, and the venue's reg
 
   The browser play page draws the venue through its single-mesh path, which has no effect pass, so it draws the rings in the pond's own pass and camera: `FishingVenue::ripple_world_mesh` places every ring in raw world space (`play_mg_fishing_ripple_*`) and the page uploads pond and rings as one mesh while any ring is live. The minigames page, which runs the same step (`fishing_venue::tick_venue_actors`) over its own session, draws them as stage triangles (`FishingVenue::ripple_screen_tris`, `fishing_ripples_json`) with each triangle's mean packet colour.
   The catch close-up's parts are the overlay's own records too, seated in the same part scene ([The landed fish](#the-landed-fish));
+- the venue's `rand()` draws, off the session's stream (`PondSession::draw_rand`): retail has one `rand()`, so the lead's re-target roll (`FUN_801D2278`, five draws) and the landed fish's trail (`FUN_801D4948` sub-state `4`, three draws a lift frame, `0x801D4E9C` / `0x801D4EC4` / `0x801D4EDC`, the frame that ends the close-up included) move the stream the next cast's band, strike and species rolls read. The replay film's `rand()` word reads retail's through a catch's whole close-up and plate *(capture)*. Pinned by `fishing_venue::tests::the_wander_rolls_on_the_ponds_rand_stream`;
 - the venue floor solve: the pond `.MAP`'s extended footprint is read at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each frame through `fishing_chrome::float_actor_tick` -> `minigame_floor::ground_height`, over the venue's live ladder `FishingVenue::floor_ladder`;
 - the pond swell (`fishing_chrome::water_swell`), every venue frame, into that ladder; `fishing_scene::swell_ground_positions` re-heights the drawn ground from it, so the water heaves on the native window, the browser play page (both through `FishingSurface`) and the minigames page (`fishing_scene_ground_positions`);
 - the camera: the [fishing camera](#the-fishing-camera)'s driver, stepped every frame, its globals folded into the engine camera's retail global trios (`Camera::globals`: the `_DAT_8007B790..` / `_DAT_800840B8..` / `_DAT_80089118..` axes);

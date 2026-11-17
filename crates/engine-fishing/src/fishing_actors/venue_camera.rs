@@ -409,6 +409,9 @@ pub struct VenueCameraDriver {
     catch: Catch,
     /// The globals as the lead's tick saw them this frame ([`Self::sky_camera`]).
     sky: VenueCamera,
+    /// The landed fish's point this frame's close-up tick ran on
+    /// ([`Self::close_up_point`]).
+    close_up_at: Option<(i16, i16, i16)>,
 }
 
 impl VenueCameraDriver {
@@ -419,6 +422,7 @@ impl VenueCameraDriver {
         let step = f.step.max(1);
         let entered = self.prev != Some(f.phase);
         let before = self.camera;
+        self.close_up_at = None;
         match f.phase {
             // The no-lure screen is state `10`'s shore with the gate parked.
             P::Idle | P::NoLure => {
@@ -497,6 +501,16 @@ impl VenueCameraDriver {
         }
     }
 
+    /// The landed fish's point `(x, y, z)` this frame's close-up tick ran on:
+    /// [`Self::lift_point`] as the tick left it, and on the frame whose
+    /// timer ends the close-up too, which still runs sub-state `4`'s body -
+    /// its trail and its three `rand()` draws (`0x801D4E38..0x801D4F0C`) -
+    /// before the `+0x22 < 0xD3` test hands the camera back (`0x801D5144`).
+    /// `None` on a frame no close-up tick ran.
+    pub fn close_up_point(&self) -> Option<(i16, i16, i16)> {
+        self.close_up_at
+    }
+
     fn landed(&mut self, f: VenueCameraFrame, step: i32) {
         let (lx, _, lz, facing) = f.lead;
         match (self.catch, f.close_up) {
@@ -511,12 +525,14 @@ impl VenueCameraDriver {
                     .map_or_else(|| CatchLift::at_record(f.record), CatchLift::from_height);
                 lift.step(step);
                 self.catch = Catch::CloseUp(lift, (x, z), 0);
+                self.close_up_at = Some((x, 0, z));
             }
             (Catch::CloseUp(mut lift, at, _), _) => {
                 let y = lift.y();
                 self.camera.celebrate_step(y, step);
                 lift.step(step);
                 self.catch = Catch::CloseUp(lift, at, y);
+                self.close_up_at = Some((at.0, y, at.1));
             }
             (Catch::None, _) => {
                 // No close-up ran (no line actor): straight to the showcase.

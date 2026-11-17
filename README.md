@@ -84,6 +84,8 @@ Open the [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.ht
 
 Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and double-click **Legend of Legaia** in the unpacked folder (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
 
+The game starts with the port's enhancements on: enhanced lighting, ambient occlusion and see-through walls among them. To play it as it shipped, set the launcher's first row, *Look and feel*, to *Original* (or pass `--retail` to `legaia-engine play-window`); each enhancement also has its own launcher row and in-game key ([the full list](docs/guides/playing-and-viewing.md#options)).
+
 | Platform | Archive |
 |---|---|
 | Linux x86_64 (glibc 2.28+) | `legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz` |

@@ -32,7 +32,16 @@
 --   LEGAIA_SWEEP       vsyncs per probing direction (default 45)
 --   LEGAIA_TARGET_X    target tile X (default -1 = ignore X)
 --   LEGAIA_TARGET_Z    target tile Z (default -1 = ignore Z)
+--   LEGAIA_SEAT_X      seat the player on this tile X before the sweep
+--                      (default -1 = walk from where the state stands)
+--   LEGAIA_SEAT_Z      seat tile Z (both seat env vars or neither)
 --   LEGAIA_OUT_DIR     output directory (run_probe.sh sets this)
+--
+-- Every log line also carries the script focus pin `_DAT_8007B628` /
+-- `_DAT_8007B62A` (written only by field op `4C CF`, read only by the
+-- region clamp `FUN_801DAA50`) and the camera mode byte `0x8007B607`, so a
+-- run seated inside one of uru's bridge boxes and walked to the door in it
+-- shows whether the pin survives the scene change.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -43,6 +52,8 @@ local FRAMES   = probe.getenv_num("LEGAIA_FRAMES", 900)
 local SWEEP    = probe.getenv_num("LEGAIA_SWEEP", 45)
 local TARGET_X = probe.getenv_num("LEGAIA_TARGET_X", -1)
 local TARGET_Z = probe.getenv_num("LEGAIA_TARGET_Z", -1)
+local SEAT_X   = probe.getenv_num("LEGAIA_SEAT_X", -1)
+local SEAT_Z   = probe.getenv_num("LEGAIA_SEAT_Z", -1)
 local OUT_PATH = probe.out_path("uru_exit_probe.log")
 
 -- SCUS globals. Scene name + game mode are the transition witnesses; the
@@ -52,6 +63,9 @@ local SCENE_NAME_VA = 0x8007050C
 local GAME_MODE_VA  = 0x8007B83C
 local PLAYER_PTR_VA = 0x8007C364
 local FMV_ID_VA     = 0x8007BA78   -- _DAT_8007BA78, the s16 the 4C E2 op writes
+local FOCUS_PIN_VA  = 0x8007B628   -- s16 X, s16 Z at +2 (op 4C CF)
+local CAM_MODE_VA   = 0x8007B607   -- high nibble 5 skips the pin
+local CAM_FOCUS_VA  = 0x80089118   -- focus X; focus Z at 0x80089120
 local SPAWN_FN      = 0x8003BDE0   -- FUN_8003BDE0(x, z, record, gate)
 local SCENE_CHG_FN  = 0x8001FD44   -- FUN_8001FD44(name_ptr)
 
@@ -80,6 +94,25 @@ local function read_cstr(addr, maxlen)
 end
 
 local function scene_name() return read_cstr(SCENE_NAME_VA, 15) end
+
+local function s16(v)
+    v = v or 0
+    if v >= 0x8000 then v = v - 0x10000 end
+    return v
+end
+
+local function s32(v)
+    v = v or 0
+    if v >= 0x80000000 then v = v - 0x100000000 end
+    return v
+end
+
+local function pin_state()
+    return string.format("pin=(%d,%d) cam_mode=0x%02X focus=(%d,%d)",
+        s16(probe.read_u16(FOCUS_PIN_VA)), s16(probe.read_u16(FOCUS_PIN_VA + 2)),
+        probe.read_u8(CAM_MODE_VA) or 0,
+        s32(probe.read_u32(CAM_FOCUS_VA)), s32(probe.read_u32(CAM_FOCUS_VA + 8)))
+end
 
 -- NB the pointer sanity check is a plain range test, NOT
 -- `bit.band(p, 0xFFE00000) == 0x80000000`: LuaJIT's bit.band returns a SIGNED
@@ -155,6 +188,17 @@ probe.run({
             end
             return
         end
+        if start_scene == nil and SEAT_X >= 0 and SEAT_Z >= 0 and not ctx.seated then
+            -- Seat on the tile centre, then let a pass run so the scene's
+            -- per-frame scripts (uru `P1[0]`'s region test) see the seat.
+            local p = probe.read_u32(PLAYER_PTR_VA)
+            probe.write_u16(p + 0x14, SEAT_X * 128 + 64)
+            probe.write_u16(p + 0x18, SEAT_Z * 128 + 64)
+            ctx.seated = elapsed
+            logf("seated tile=(%d,%d) from pos=(%d,%d) %s", SEAT_X, SEAT_Z, x, z, pin_state())
+            return
+        end
+        if ctx.seated and elapsed - ctx.seated < 30 then return end
         if start_scene == nil then
             start_scene, start_x, start_z = scene_name(), x, z
             phase, phase_start = 1, elapsed
@@ -179,10 +223,20 @@ probe.run({
 
         local now = scene_name()
         if now ~= start_scene and now ~= "" then
-            logf("SCENE LEFT: %s -> %s at vsync %d (mode 0x%02X)",
-                start_scene, now, elapsed, probe.read_u8(GAME_MODE_VA) or 0)
-            hold(nil)
-            ctx.request_quit = true
+            if not ctx.left_at then
+                logf("SCENE LEFT: %s -> %s at vsync %d (mode 0x%02X) %s",
+                    start_scene, now, elapsed, probe.read_u8(GAME_MODE_VA) or 0, pin_state())
+                hold(nil)
+                ctx.left_at = elapsed
+            end
+            -- Keep logging the arrival scene's camera for a while: the pin
+            -- question is what the new scene's clamp does with it.
+            if (elapsed - ctx.left_at) % 30 == 0 then
+                logf("after vsync %4d scene=%s tile=(%d,%d) mode=0x%02X %s",
+                    elapsed - ctx.left_at, now, bit.rshift(x, 7), bit.rshift(z, 7),
+                    probe.read_u8(GAME_MODE_VA) or 0, pin_state())
+            end
+            if elapsed - ctx.left_at >= 240 then ctx.request_quit = true end
             return
         end
 
@@ -221,9 +275,9 @@ probe.run({
         end
 
         if (elapsed % 30) == 0 then
-            logf("vsync %4d scene=%s tile=(%d,%d) pos=(%d,%d) mode=0x%02X",
+            logf("vsync %4d scene=%s tile=(%d,%d) pos=(%d,%d) mode=0x%02X %s",
                 elapsed, now, bit.rshift(x, 7), bit.rshift(z, 7), x, z,
-                probe.read_u8(GAME_MODE_VA) or 0)
+                probe.read_u8(GAME_MODE_VA) or 0, pin_state())
         end
     end,
 

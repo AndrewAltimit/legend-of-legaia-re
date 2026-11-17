@@ -234,13 +234,22 @@ pub fn evil_seru_magic_camera(
             Some(26),
         ),
         26 => (0x100, None, Some(27)),
+        // The arm's pass copies the saved seats back first
+        // (`0x801F8828..0x801F8904`) and only then reads the caster's
+        // `+0x34` / `+0x38` / `+0x46` for the shot (`0x801F8930..0x801F895C`),
+        // so the shot frames the restored pose, not arm 21's lift.
         27 => (
             0x80,
-            Some(ModuleShot {
-                angles: [0, yaw_from(0x800, c.facing), 0],
-                tr: [0, 0x800, 0x400],
-                focus: focus_on(c),
-                frames: 1,
+            Some({
+                let c = st
+                    .caster_saved
+                    .map_or(c, |(x, z, facing)| super::ModuleSeat { x, z, facing, ..c });
+                ModuleShot {
+                    angles: [0, yaw_from(0x800, c.facing), 0],
+                    tr: [0, 0x800, 0x400],
+                    focus: focus_on(c),
+                    frames: 1,
+                }
             }),
             Some(28),
         ),

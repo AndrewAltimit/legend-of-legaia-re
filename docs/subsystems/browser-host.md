@@ -425,8 +425,8 @@ card-read beat, and the card's fifteen blocks then come up as retail's 5x3
 portrait grid with the focused block's info panel sliding up beneath it. Load
 lifts that block into the live world and parks it; the page then lands it with
 one call, `play_resume_save` (`resume.rs`, over the shared
-`engine-scene-host::resume::land_save`: the saved scene, else the running scene,
-else the opening town - never a New Game); Save raises the
+`engine-scene-host::resume::land_save`: the saved scene, else the running scene
+re-entered under the save's flags, else the opening town - never a New Game); Save raises the
 overwrite prompt and writes the session into the card image. The block-grid
 cursor is this crate's, not the session's - `SelectPhase::SlotPreview` ignores
 directions by design (see `docs/subsystems/save-screen.md`).
@@ -1658,7 +1658,10 @@ Save landed once the page says so: `card_store_handshake(true)` makes the
 that refuses the store (storage full or blocked) therefore reads "Unable to
 save." in the beat instead of "Save successful." over a save a reload loses,
 and a page that never answers is given up on as failed after
-`CARD_STORE_WAIT_FRAMES`. Without the handshake (the native tests driving the
+`CARD_STORE_WAIT_FRAMES`. The grid does not wait with the result line: it
+re-reads the written card at once (`save_written_pending_store`), as the
+window's re-reads it on the frame after its write, and a refused store puts it
+back as it was. Without the handshake (the native tests driving the
 runtime) the beat reports the write at once, and a refused store can only
 raise `card_store_failed`'s notice afterwards. Pinned by
 `menu_parity::the_save_beat_waits_for_the_page_to_store_the_card`.

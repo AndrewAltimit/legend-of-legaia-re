@@ -505,8 +505,12 @@ record `P1[0]` opens with `4C CF 00 00`, and the bridge regions of the same
 record's per-frame bounding-box chain pin the X focus on one tile column
 (`4C CF 6F 00`, `0B`, `51`) or release it; the cutscene records use the
 cross-context `CC F8 CF` form, whose `0xFF` byte snapshots the player's
-coordinate once. Nothing clears the pair on a scene change. The port keeps it
-on `CameraRig::script_focus`, which both `clamp_focus` callers read.
+coordinate once. Nothing clears the pair on a scene change, and no door
+needs it to: the two walk-on exits that sit inside a bridge box, `P2[29]` to
+`urudre1` and `P2[33]` to `urudre2`, each run `4C CF 00 00` before their
+`0x3F`, which a capture walked onto `P2[29]`'s band shows live. The port
+keeps the pair on `CameraRig::script_focus`, which both `clamp_focus` callers
+read.
 
 #### `4C C0` seats the clip at a random phase
 
@@ -1028,7 +1032,11 @@ template whose model word is the placement header's byte plus the bank base
 no swap reaches the next scene, a return from battle included. The port's live
 model table (`World::npcs.models`) is keyed by placement index, not by actor,
 so every scene entry clears it (`World::seed_field_channels`,
-`World::drop_man_installed_state`). Kept, a slot inherited the previous
+`World::drop_man_installed_state`), and so does a `4C D2` re-seat of a
+retired placement, which allocates through the same `FUN_8003A1E4`: the new
+actor draws its header model, with the pitch and roll, the face row and the
+playing clip the allocator `FUN_80020DE0` zeroes (`+0x24` / `+0x28`,
+`+0x6D` / `+0x7A`, `+0x5E = -1`) dropped with it. Kept, a slot inherited the previous
 scene's id and resolved it through the new scene's bank: after `uru`'s
 beat (`P2[35]`, `CC 1C..23 50 4B 00`) the `bubu1` villagers in
 placements 7..14 drew `bubu1`'s one-object bank model `0x4B`, a floor pelt,
@@ -1100,8 +1108,12 @@ floor re-sample drops any height the placement held (`World::seat_npc_floor_resa
 `town01` `P2[5]` seats Mei in Vahn's house after `P2[4]` left her gliding at her
 own door, and she stands on the house floor); the
 pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
-port's cue skips a re-request of the clip already playing
-(`World::carry_npc_run_anim`), where retail's `+0x5E = -2` restarts it.
+`+0x5E = -2` restart holds there too: the seat drops the spawner's waiting
+phase draw and restarts a cursor already on the move (`World::restart_npc_clip`),
+so prologue-seated villagers start their idles together, as retail's do
+([the spawner's phase](motion-vm.md#the-draws-are-the-worlds-stream)). The cue itself still skips a re-request of
+the clip already playing (`World::carry_npc_run_anim`), since the hosts' bind of
+the same clip keeps the world's restarted cursor.
 The run's byte is the actor's one `+0x5C`, which the scripted motion VM
 `FUN_80038158` also writes from its own ops, so the port stores it into that
 VM's requested move as well (`World::script_npc_move`, with the `A2` ExecMove

@@ -93,6 +93,10 @@ impl World {
         self.audio.bgm_swap.cancel();
         self.audio.bgm_field_init_open = true;
         if !keep {
+            // The close's `FUN_800266E0` (`0x801D7154`) disarms a timed
+            // release; behind sub-op 6 a release armed before the door
+            // counts on in the next scene.
+            self.disarm_sound_release();
             self.audio.sfx_voice_mutes.extend(0x10..=0x17);
             self.pending_field_events.push(FieldEvent::Bgm {
                 text_id: 0,

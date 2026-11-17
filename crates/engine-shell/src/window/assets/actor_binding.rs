@@ -519,6 +519,7 @@ impl PlayWindowApp {
             color_idx,
             spawn: (p.world_x, p.world_z),
             bound_model,
+            spawn_model: i16::from(p.model_index),
         });
     }
 

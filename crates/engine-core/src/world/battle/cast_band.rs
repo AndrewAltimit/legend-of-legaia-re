@@ -146,8 +146,9 @@ pub const AOE_STAGER_WORKING_ARM: u8 = 4;
 /// | 27 (`0x801F879C`) | 1 | `0x80` | white | black | - |
 ///
 /// Arm 26 spawns three fades at once (a white flash, a held blue grade, and
-/// the delayed white-in); the engine has one fade seat, so it carries the
-/// last, which is the one still on screen when arm 27 fades out of it.
+/// the delayed white-in); the seat carries the last, which is the one still
+/// on screen when arm 27 fades out of it, and the other two run beside it
+/// ([`EVIL_SERU_MAGIC_ARM26_SIDE_FADES`]).
 fn evil_seru_magic_fade(phase: u8) -> Option<legaia_engine_system::fade::FadeTemplate> {
     let (duration, start_rgb, end_rgb, mode) = match phase {
         2 => (0x10, [0xFF, 0x40, 0x40], [0; 3], [0, 0, 0]),
@@ -164,6 +165,39 @@ fn evil_seru_magic_fade(phase: u8) -> Option<legaia_engine_system::fade::FadeTem
         mode,
     })
 }
+
+/// The two fades PROT 0966's arm 26 spawns on its pass ahead of the delayed
+/// white-in (`FUN_80024E80` at `0x801F851C` and `0x801F8564`, each over the
+/// template the arm writes at `0x801C9070`):
+///
+/// | call | kind | frames | from | to | delay / hold |
+/// |---|---|---|---|---|---|
+/// | `0x801F851C` | 1 | `0x40` | white | black | - |
+/// | `0x801F8564` | 1 | `0x100` | `(0x10, 0x10, 0x20)` | `(0x80, 0x80, 0xFF)` | held |
+///
+/// The second's actor is parked in the part pool's word `0x801C92E8`
+/// (`sw v0,0x1F8(s0)` at `0x801F857C`), so arm 27's pool flush
+/// (`jal 0x80050E74` at `0x801F8794`) ends it. The recording's arm 27 opens
+/// on the white flash (frame mean `245` at its first frames, `175` sixty
+/// vsyncs on) and greys toward violet as the grade rises under the white-in.
+// PORT: FUN_801F6A74, overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; arm 26's fades `0x801F84F8..0x801F8568`)
+pub(in crate::world::battle) const EVIL_SERU_MAGIC_ARM26_SIDE_FADES:
+    [legaia_engine_system::fade::FadeTemplate; 2] = [
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 1,
+        duration: 0x40,
+        start_rgb: [0xFF; 3],
+        end_rgb: [0; 3],
+        mode: [0, 0, 0],
+    },
+    legaia_engine_system::fade::FadeTemplate {
+        kind: 1,
+        duration: 0x100,
+        start_rgb: [0x10, 0x10, 0x20],
+        end_rgb: [0x80, 0x80, 0xFF],
+        mode: [0, -1, 0],
+    },
+];
 
 /// Combat seats in retail's actor table `DAT_801C9370` - three party rows and
 /// five monster rows. The slot-B AoE sweeps' `ctx[+0]` / `ctx[+1]` bounds are

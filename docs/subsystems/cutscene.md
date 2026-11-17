@@ -1158,10 +1158,27 @@ which the engine runs as a helper context beside the field rather than as the mo
 the arm opens the roller the same way from it. Both installs parse the record's narration
 blocks (`World::install_helper_record`, `World::install_cutscene_timeline_record`).
 
-A sibling **static title-card op** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
+A sibling **title-card block** `[0xCC 0xF8 0x89 b1 b2]` carries the same page framing (after
 an optional short placement word) but presents differently: the pages show **simultaneously**,
-centered, while the parent script continues; a later card block whose pages are blank clears the
-card. `map01`'s fly-in uses it for the "twilight of humanity" card and its clear.
+centered, and a later card block whose pages are blank clears the card. `map01`'s fly-in uses it
+for the "twilight of humanity" card and its clear.
+
+The op is not a card of its own: it is `4C 89` on the cutscene context, the dialog pager's
+automatic press (`_DAT_80073F00 = b1 | b2 << 8`, [menuctrl](script-vm-menuctrl.md#4c-89-the-dialog-auto-press)),
+and its lines are an ordinary text segment. The runner parks the record on that segment until the
+pager has opened the box, typed the lines and pressed for itself, as it does for any text. A
+per-vsync capture of the zero-input opening off `s1_newgame_field`
+([`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua) logging the
+pager state `0x801F2734`, beside `autorun_opdeene_pacing.lua`'s record PC) holds `map01`'s
+`P2[38]` on its card (`+0x72`) for 100 vsyncs: states `2`, `11` while the three lines type,
+`0x19`, the press, then `4`, the rows held by the `0x24` continuation behind the page. The blank
+card at `+0xF2` loads into those rows and scrolls them out (`5`, `12`, `11`, `15`, `0x19`) for 38
+vsyncs; `opurud`'s blank page at `+0xA5` takes 20. The engine keeps the card's presentation and
+runs the same pager over the lines without drawing it (`CutsceneTimeline::card_pager`, the held
+rows in `card_held_box`): the record waits as retail's does. Pinned by
+`engine-session/tests/opening_title_card_pager_disc.rs`. The other cards on the disc (`concend`,
+`dream`, `jouine`, `noaru`, `uru`, `urudre2`) set a press of `120` to `300` frames and hold
+their records for it.
 
 The parser is [`legaia_scene_formats::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
@@ -2265,7 +2282,9 @@ cyclers](field-ambient-fx.md#the-clut-cell-hsv-cycler-the-pulsating-flesh), reco
 each prologue scene's effect-script bundle (extraction 0748 `opdeene`, 0753 `opstati`, 0763
 `opurud`; no other scene carries them). Each sets its HSV adds with op `0x2B` and captures a CLUT
 rect with op `0x2C`; the render tail `FUN_80019D50` re-uploads the capture through the HSV pass
-every frame, into the packet buffer and out by `LoadImage`:
+on each tick until the part halts, into the packet buffer and out by `LoadImage`, and the last
+upload stays in VRAM (in `opstati` and `opurud` the greyers upload on the scene's first frames
+and the tinters on the next two or three, then all four halt):
 
 | Records | Op `0x2B` (h, s, v) | Rect captured | Effect |
 |---|---|---|---|
@@ -2324,8 +2343,11 @@ CLUT) and the amber family (the loaded TMDs' rewritten words).
   it (a `max`, a `>>1` blue) finds nothing because it is two passes of the general HSV
   re-tint `FUN_80019D50`, data-driven by the effect scripts above.
 
-**Engine port.** The engine keeps the disc palettes in its software VRAM and applies the law in
-the mesh shaders instead - equivalent, because a 4/8bpp texel *is* a palette entry.
+**Engine port.** The engine runs the four cyclers as retail does, so its software VRAM holds the
+rewritten rows once their uploads land
+([the chained capture](field-ambient-fx.md#a-capture-reads-the-rows-another-part-recoloured)),
+and it applies the law in the mesh shaders as well - equivalent, because a 4/8bpp texel *is* a
+palette entry, and idempotent over the rewritten rows, whose `max` channel is the disc entry's.
 [`Renderer::set_palette_grade`](../../crates/engine-render/src/renderer/state.rs) arms the
 **palette-collapse mode** (`palette_law_word` / `palette_collapse_prim` in
 [`shaders.rs`](../../crates/engine-render/src/shaders.rs), CPU mirrors + lockstep tests in

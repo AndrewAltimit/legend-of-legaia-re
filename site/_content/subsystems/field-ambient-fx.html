@@ -117,6 +117,7 @@
     </tbody>
   </table>
   </div>
+  <p>A cycler captures its rect as the GPU holds it when the capture op runs, so it takes whatever another part uploaded there. The New Game opening is built on that: in <code>opstati</code> and <code>opurud</code> two parts grey the scene&rsquo;s CLUT rows and halt, and the two they spawn capture the grey rows and tint them, which is the opening&rsquo;s sepia. The walk reaches a child on the pass that spawns it. The port keeps a capture per part, taken from the rect&rsquo;s newest upload by another part.</p>
   <p>The pulsating ground never moves a vertex: it is palette-space colour cycling under a static mesh. The bytecode vocabulary these trees are written in is the <a href="move-vm-overlay-ext.html">move VM&rsquo;s overlay extension</a>. Record 0 of the stager bundle is not an effect at all - it is the scene&rsquo;s sound-effect descriptor bank.</p>
 </section>
 

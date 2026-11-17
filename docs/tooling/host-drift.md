@@ -1437,8 +1437,10 @@ difference by the pass behind it, `psx_only` or `retail_only` (one of retail mod
 switches), which splits it by rasterisation and gameplay rules, or `fog_bloom`, the two passes that default
 off turned on for both hosts. The window has no switch that turns either on, so
 that run writes them into the options file of its own working directory; the
-`fog_walk` scene (the Ravine) carries a fog bank for it. `LEGAIA_SSAO_VIEW=1`
-draws the AO term alone on both sides.
+`fog_walk` scene (the Ravine) carries a fog bank for it. `dusk` and `night` force
+enhanced lighting's time of day the same way (the page's selector on the other
+side), which lights the lamps, windows and halos a daylight scene's `auto` leaves
+off. `LEGAIA_SSAO_VIEW=1` draws the AO term alone on both sides.
 
 | Side | How it runs |
 |---|---|
@@ -1878,7 +1880,7 @@ reverse-engineering questions, so they are not on
 | dome hub shade | Closed: both hosts take the first visit's subtractive shade at the framebuffer's 5 bits (`F >> 3` steps, [ringside-still](../formats/ringside-still.md#in-the-port)), and the window draws a hub packet's vertical colour gradient row by row where it used to flatten it to the stops' mean. |
 | pause wipe, first frames | One half closed, one open. The frame the wipe spawns the menu: the window drew the lit field for one frame (the session hands the tick over on the next claim, and the wipe draws nothing once the menu exists), where the page draws the menu; the window now raises its menu state at the end of the spawning frame and holds the boot-UI arm off for the hand-over tick (`pause_menu_handover`), so `monkey_map`'s spawn frame reads `0.00%` where it read `95%`. Under the opening wipe the page dimmed the party HUD the window hides (`monkey_town` ticks 1680..1686); the window is retail ([field-menu.md](../subsystems/field-menu.md#the-party-readout-under-the-pause-wipe)), and the page now clears its overlay there. |
 | dome hub canvas | Closed: both hosts draw the one decomposition (`minigame_hud::muscle_hub_sprites`), the window through its sprite atlas, the page as screen primitives over the hub's own VRAM (`ringside_backdrop::hub_vram`: the arena's textures hold the page and CLUT rows the hub names). The page's 2D-canvas blit drew `3.55%` of every hub frame off (`9%` as the course card faded in). A wall tile stretched one texel (128 over 129 pixels) samples one pixel on a texel edge, which the two rasterisers split, so the decomposition picks the repeat (`unit_runs`). The `muscle` pair now reads `0.00%` on hub frames on a real GPU and `0.44%` on SwiftShader, its textured tie rows (see `PSX_TIE_NDC_Y`); the title's zoom stays scaled (`0.68%` / `1.73%`). Pinned by a tier 3 row and two tier 17 rows. |
-| save grid after a write | The window writes the card on the save's commit beat and the grid re-reads it on the next frame; the page waits for its store to answer (`card_store_handshake`) before it re-reads, so for a few frames under the "Saving" banner its grid still shows the slot empty. The world state agrees on every frame. |
+| save grid after a write | Closed: the window writes and stores the card on the save's commit beat and its grid re-reads the card on the next frame. The page stores the card image itself a few frames later (`card_store_handshake`), and its grid used to wait for that answer, showing the slot empty under the "Saving" banner. The page's grid now re-reads the written card at once (`SaveScreenFlow::save_written_pending_store`) while the result line still waits for the store, and a refused store puts the grid back as it was. |
 | lit summon parts | Closed. With enhanced lighting on, a summon's crystals (spell `0x8A`) lit as their mirror image on the page, `1.7%` of the `cast` scene's frame at tick `721`. A double-sided part's paired copies cancel in the smoothing, so its normals are the zero sentinel and both hosts light it off the facet: the window off its object-space positions, the page off its baked, world-space stream, whose battle frame flip mirrors every facet against the key light. The baked FX stream now carries the normal the window lights each vertex with (`play_battle_fx_normals`: the smoothed object-space normal, else the object-space facet, a billboard's native face normal), and the page reads it on the untextured prims too. The pair reads `0.08%` at its worst frame. |
 | Baka floor glow colour | Closed. On the Baka duel's intro sweep (`baka`, ticks 195..235) the page drew the frame's bottom 25 rows grey where the window drew the floor glow warm (red and green equal, blue exact), `3.6%` of a retail-mode frame at tick `211`, `1.9%` enhanced. The window blends the additive glow's near half after the fighters' subtractive shadows, far to near per prim; the page blended by mode, glow first, so the glow saturated red and green and the shadow then took one amount off all three. The page now orders the single mesh's semi prims as the window does (`orderSemiPrims`); the pair reads `0.91%` retail and `0.08%` enhanced at its worst frame. [Retail's side](#the-baka-floor-fan-against-retail). |
 | session export while playing | Closed: the page's *Export session* (`export_save`) and the window's `F12` Tools row of the same name write the running game through one writer (`write_with_resume` over `current_resume`) behind one refusal (`host_save_allowed`). The page keeps the last few in the browser; the window numbers `session_<scene>_NNN.lgsf` files in the saves folder and never writes over one. `native_tools_page_parity` exports from both and imports the window's file on the page. |
@@ -1891,6 +1893,11 @@ reverse-engineering questions, so they are not on
 | browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | pack-map ground | Closed: a pack map's layout picks narrowed 64-bit words to `usize` (the ground's cell pick, the `[[edges]]` runs' `usize::MAX - e` stream key), so on `wasm32` the page painted and decorated the map differently from the window while VRAM and trace agreed. Both now take 64-bit words (`terrain::pick_index`, `TileRng::new_keyed`); a native-against-wasm dump of every sample map's decorations and paint matches. `pack_village` reads `1.6%` retail, `0.05%` enhanced; `pack_tower` `0.3%` / `0.01%`. The rest is one-row raster ties. |
 | an NPC inside `rugi`'s semi-transparent tunnel, PSX mode | Closed: the page staged each field draw's link word (`meanDepth`, `_stageFieldPrimOrder`) before it appended the script-spawned actors and the field effects, so the landing tunnel, a spawned actor, tested per pixel against NPC `4`, which both hosts draw by link; the window stages a word on every draw. Staged after the frame's last draw, `lamp_walk` under `--mode psx_only` reads tick `241` `0.78%` to `0.42%` and tick `211` `0.40%` to `0.31%`, the rest ring edges. NPC `4` carries no near-bucket bit on either host: a script holds its height (`+0x10 & 0x20000000`), so the actor tick never runs the floor sampler on it (`FUN_8003BC08` at `0x8003BC50`). A `PAGE_STATE_RULES` row pins the order. |
+| actor bindings after a landing over a scene | Closed: a scene entered over another kept the departing scene's TMD binding on every slot past its own pack, so a card landing on the page (entered over its running scene) and the window's cold one traced different binding lines on every frame (`ladder_menu`, `slot_save`). `init_scene_animations` clears those slots now; `ladder_menu` traces equal on all `35` frames. |
+| a resumed save's NPC clips | Closed: a save that names no scene landed on the page's running `town01` without an entry, so `town01`'s spawn scripts had run under the flags before the load and placements `33` / `34` kept clips `31` / `62` (the window lands the file through `--scene` and seats `29` / `60`). Retail's card load runs the landing scene's loader over the restored flags (`FUN_8003AEB0`); `land_save` now re-enters the running scene too, and `slot_save` traces its clips equal. |
+| the press into Load or Save | Closed: the window's pause-menu sprite list returned early on the Save sub-session (its chrome is the save-select stage's), so the carry never ran there and the root's windows vanished on the press while their text slid out unframed; the page carried them (`menu` ticks `750..761`, `60%` of the frame at the press). The Save arm now composes an empty list through the carry, as the page's does; the span reads `0.48%` at worst. |
+| a texel tie in the clean frame | Closed: with PSX rasterisation off, Big Wave's beams drew split and Genocidal Cannon's beam blotched on the page (`1.5%` of a frame); both hosts now truncate the clean UV past `PSX_TEXEL_TIE_BIAS`, and the scenes read `0.08%` and `0.01%` at worst. See [a texel tie in the clean frame](#a-texel-tie-in-the-clean-frame). |
+| the near plane in the clean frame | Open: the window clips at clip `z = 0`, view depth `PSX_NEAR`, where the shared projection puts its near plane; the page's GL clips at `z = -w`, about half that depth. A primitive between the two draws on the page alone: `ed_bylon` enhanced tick `571` (`2.3%`), the near rim of the lead's hair under the vignette's close shot, which the window cuts open. PSX mode pairs (the GTE limits and the near reject decide first). A fix wants the page's clip at the shared plane (`WEBGL_clip_cull_distance`, or a remapped clip `z` the depth-reading passes then take back); evidence grade: inference from the frame. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The Baka floor fan against retail
@@ -1922,6 +1929,33 @@ The round HUD now waits for the spin as retail's does: the spin is cabinet state
 from `0x36` on ([Baka Fighter](../subsystems/minigame-baka-fighter.md#duel-hud-fun_801d2afc)).
 The window's bars rise at tick `244`, `14` ticks after the pose that matches retail's
 vsync `216`; retail's are absent at vsync `231` and up at `234` of the same film.
+
+### A texel tie in the clean frame
+
+With PSX rasterisation off, Big Wave's fan of beams (`cast_big_wave` ticks
+`571..661`, up to `1.5%` of a `960 x 720` frame) drew split in two on the page
+where the window drew each beam whole, and Genocidal Cannon's red beam
+(`cast_cannon` tick `1521`, `1.5%`) took dark blotches. Retail mode paired.
+
+A dump of the page's baked effect stream at tick `631` named the primitives
+under the gap: beams that sample a two-texel strip of their page, corners
+`UV (0..1, 241)`, every corner on one `V`. The truncated `V` is a tie on
+every fragment. The window's `@interpolate(linear)` varying holds a value its
+corners share exactly; the page carries `uv * w` and `w` and divides, which
+lands a hair under `241` on part of the primitive, so the page read texel row
+`240` there.
+
+| Tried | What it showed |
+|---|---|
+| the page's blend pass with its depth test off, its subtractive draws skipped, face culling off, `u_prim_near` zeroed | the split stayed: not depth, blend order, culling or the rejects |
+| the window's shader carrying `uv * w` and `w` as the page does | the window drew the page's split, speckled where its own float error fell the other way |
+| the page's effect stream cut at the window's near plane on the CPU | not one pixel moved: the near plane was not it |
+| both hosts truncating the clean UV past `PSX_TEXEL_TIE_BIAS` | `cast_big_wave` `0.08%` worst, `cast_cannon` `0.01%` |
+
+PSX mode already read the bias past its half texel, which is why retail mode
+paired; the clean frame now reads it too (`psx_sample_uv`, `psxSampleUv`),
+pinned by `the_clean_texel_is_past_the_tie_bias_on_both_hosts`. A 256th of a
+texel moves no texel a real UV does not already sit on.
 
 ### The minigames page has no `World`
 

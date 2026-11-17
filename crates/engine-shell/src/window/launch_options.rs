@@ -242,6 +242,11 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::ground_snap`]). Set by the retail-compare
     /// image channel on an action drive.
     pub battle_ground_snap: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_SEAT_TARGETS=slot:target,...`: the capture's bystanders'
+    /// target bytes `+0x1DD`, by engine slot, which a film's release at its
+    /// gate stands with the ground. Set by the retail-compare image channel
+    /// on an action drive.
+    pub battle_seat_targets: Vec<(u8, u8)>,
     /// `LEGAIA_CAST_RAND_SEED=st7:phase:seed`: a recorded cast's `rand()`
     /// seed on one cast key, set on the world stream before every tick under
     /// that key ([`legaia_engine_capture::cast_rand`]). Set by the
@@ -270,6 +275,18 @@ pub struct ScreenshotConfig {
     /// step, so pricing them moves the streams a pinned film was found on.
     /// Set by the cast-sequence oracle on request; `false` in play.
     pub leadin_table_cost: bool,
+    /// `LEGAIA_LEADIN_SPAN_LAW=1`: the replay's lead-in runs its battle frames
+    /// on the default one-vsync overrun, and the span law
+    /// (`WorldToggles::battle_frame_span_law`) takes over when the gate
+    /// opens. The lead-in's rounds under the law's longer frames re-deal:
+    /// `battle_korb2_warhalf_strike`'s replay won the fight in round 3 and
+    /// never met its gate. Set by the cast-sequence oracle on request;
+    /// `false` in play.
+    pub leadin_span_law: bool,
+    /// What the session asked of the census and the span law before the
+    /// lead-in holds took them, read on the holds' first tick.
+    pub leadin_census_wanted: Option<bool>,
+    pub leadin_span_wanted: Option<bool>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -644,6 +661,10 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_BATTLE_AMBIENT_BASE=<base>`: the ambient base the captured frame's
     /// ground grid is coloured from (`RetailBattle::displayed_ambient_base`).
     pub battle_ambient_base: Option<u8>,
+    /// `LEGAIA_BATTLE_READOUT=slot:word:acc,...` (HARNESS): each party HP
+    /// readout the capture holds mid-roll - the displayed word `+0x172` and
+    /// the bar step's accumulator `+0x10` - stood on at the capture's tick.
+    pub battle_readout: Vec<(u8, u16, i32)>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -1173,8 +1194,21 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             leadin_table_cost: std::env::var_os("LEGAIA_LEADIN_TABLE_COST").is_some(),
+            leadin_span_law: std::env::var_os("LEGAIA_LEADIN_SPAN_LAW").is_some(),
+            leadin_census_wanted: None,
+            leadin_span_wanted: None,
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
+                .unwrap_or_default(),
+            battle_seat_targets: std::env::var("LEGAIA_BATTLE_SEAT_TARGETS")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let (s, t) = e.trim().split_once(':')?;
+                            Some((s.parse().ok()?, t.parse().ok()?))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             battle_ghost_pose: std::env::var("LEGAIA_BATTLE_GHOST_POSE")
                 .ok()
@@ -1474,6 +1508,20 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok()),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
+                .unwrap_or_default(),
+            battle_readout: std::env::var("LEGAIA_BATTLE_READOUT")
+                .map(|v| {
+                    v.split(',')
+                        .filter_map(|e| {
+                            let mut it = e.trim().split(':');
+                            Some((
+                                it.next()?.parse().ok()?,
+                                it.next()?.parse().ok()?,
+                                it.next()?.parse().ok()?,
+                            ))
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
             seat_battle_clips: std::env::var("LEGAIA_SEAT_BATTLE_CLIPS")

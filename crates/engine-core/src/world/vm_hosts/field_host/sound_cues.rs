@@ -29,6 +29,15 @@ impl FieldHostImpl<'_> {
             1 | 9 | 4 | 0xA => self.world.audio.bgm_script_paused = false,
             _ => {}
         }
+        // The stop (sub-op 2's `FUN_800266E0`), the replay (sub-op 4's
+        // `FUN_80026478`) and the commit (sub-op `0xA`'s `FUN_800266E0`)
+        // each disarm a timed release (`sw zero,0x808(gp)` at `0x800266F4` /
+        // `0x800264A0`): a `9 · 5 · 0xA` whose commit comes first never
+        // stops the track it attaches. The pause (sub-op 3, `FUN_80026740`)
+        // leaves it armed.
+        if matches!(sub_op, 2 | 4 | 0xA) {
+            self.world.disarm_sound_release();
+        }
         // Sound-flag bit 2 up - raised by sub-op 6 and not yet cleared by the
         // field init (`0x801D7348`), or the init's install slice still open
         // over it: the poller copies the requested index onto the loaded one
@@ -67,6 +76,11 @@ impl FieldHostImpl<'_> {
                     .audio
                     .bgm_swap
                     .start(crate::world::World::BGM_SWAP_READ_VSYNCS);
+                // Stage 2 tears the slot down (`FUN_800266E0` at
+                // `0x80024648`) unless a sub-op 9 holds it for the commit.
+                if sub_op == 1 {
+                    self.world.disarm_sound_release();
+                }
             }
             // The park word ends a walk in flight: the poller copies requested
             // onto loaded and leaves before the stage table (`0x80024558` ->

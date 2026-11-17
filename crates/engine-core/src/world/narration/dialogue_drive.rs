@@ -115,11 +115,15 @@ impl World {
             // and reads the choice in the next, so the commit is always at
             // least one frame behind the open.
             let menu_was_open = panel.menu_active();
-            panel.tick_at_auto_drawn(
-                self.clock.frame_step,
-                &mut self.dialog.auto_press,
-                &mut self.dialog.cursor_sprites,
-            );
+            // The pager runs once a game frame: a frame that outlasts its step
+            // credits no pager call on the vsyncs past it (`FrameClock::frame_credited`).
+            if self.clock.frame_credited {
+                panel.tick_at_auto_drawn(
+                    self.clock.frame_step,
+                    &mut self.dialog.auto_press,
+                    &mut self.dialog.cursor_sprites,
+                );
+            }
             // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
@@ -2306,6 +2310,11 @@ fn is_talker_actor_word_op(bytecode: &[u8], pc: usize) -> bool {
     match b & 0x7F {
         0x34 => sub.is_some_and(|s| s >> 4 == 3),
         0x4C => matches!(sub, Some(0x40 | 0x42..=0x45 | 0x48 | 0x50 | 0xD9 | 0xDA)),
+        // The class bit `0x400000` (`31 16` / `32 16`): the dialog SM's exit
+        // tests it on the talker's own `+0x10` to decide the heading restore
+        // (`0x80039CD8`, `0x80039EAC`), so a talk that raises or drops it
+        // writes the talker's word, not the stand-in's.
+        0x31 | 0x32 => sub == Some(0x16),
         _ => false,
     }
 }

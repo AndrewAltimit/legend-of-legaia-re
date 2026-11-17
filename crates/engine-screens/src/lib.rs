@@ -181,6 +181,10 @@ pub fn shop_overlay_frame(
         .stage_texts
         .extend(coin_counter_window_draws(inputs.font, inputs.coin_counter));
     frame.banner_texts = banner_stage_draws(inputs);
+    // Nothing past the game area: a parked or sliding shop window would show
+    // in a wide surface's margins (the pause menu clips the same).
+    legaia_engine_ui::pause_menu::clip_to_stage(&mut frame.stage_texts, (0, 0), 1);
+    legaia_engine_ui::pause_menu::clip_to_stage(&mut frame.sprites, origin, scale);
     frame
 }
 

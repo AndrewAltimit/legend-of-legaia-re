@@ -888,6 +888,43 @@ impl RetailBattle {
         self.ground_snaps(false, false, false)
     }
 
+    /// Every captured combatant's target byte `+0x1DD` but the acting
+    /// seat's, as `(engine slot, engine target)` pairs, for the film's
+    /// release at its gate (`LEGAIA_BATTLE_SEAT_TARGETS`). The replay reaches
+    /// the gate on the acting seat's own round alone, so a bystander holds
+    /// whatever target the engine seeded, where retail's holds the seat its
+    /// own last action aimed at. That byte is the far end of the bystander's
+    /// root-motion range poll (`jal 0x8004E2F0` at `0x80047D50`): a positive
+    /// clip speed steps the live pair only while the poll reads out of
+    /// reach. `battle_garmel_party_vahn_tornado_flame_open`'s Zenoir holds
+    /// `1` (Gala, far across the stage), so its speed-`1` reaction carries it
+    /// after Vahn the length of the art; aimed at Vahn, in reach, it stood
+    /// still and landed `(35, 68)` off retail's ground. A target byte that
+    /// names no seated engine slot is left alone; `8` (all) stays `8`.
+    pub fn engine_seat_targets(&self) -> Vec<(u8, u8)> {
+        let pc = usize::from(self.party_count.clamp(1, 3));
+        let engine_slot = |pool: usize| -> Option<u8> {
+            if pool < 3 {
+                (pool < pc).then_some(pool as u8)
+            } else if pool < 8 {
+                let m = pool - 3;
+                (m < usize::from(self.monster_count)).then_some((pc + m) as u8)
+            } else {
+                None
+            }
+        };
+        self.seat_targets
+            .iter()
+            .enumerate()
+            .filter(|&(pool, _)| pool != usize::from(self.active_actor))
+            .filter_map(|(pool, t)| {
+                let t = usize::from((*t)?);
+                let target = if t == 8 { Some(8) } else { engine_slot(t) }?;
+                Some((engine_slot(pool)?, target))
+            })
+            .collect()
+    }
+
     /// Whether the capture sits on a monster strike's arrival pass: `0x1E`
     /// just stored by the poll `0x19`, no strike-loop pass run (cursor
     /// `ctx[+0x15] == 0`), on the walk clip ([`Self::walk_clock_arrival`])

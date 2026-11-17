@@ -30,8 +30,8 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 /// REF: FUN_80034b6c - the fill-state setter this guard gates, which takes
 /// the caller's mode selector and packed RGB word. Not ported.
 /// REF: FUN_8002c69c - the box writer, which inflates its own rect by 8px on
-/// every side. Not ported; the hosts draw their window chrome from the UI
-/// atlas instead.
+/// every side; ported for the reading box in `crate::title_save::panel`, and
+/// not reached from here because retail never runs this guard (below).
 // REPLACED-BY: nothing is owed a port - retail never runs the call either.
 // The routine has exactly one reference on the disc: the `jal` at `0x801DDEE8`
 // in PROT 0899 (`find-address-word-refs.py 801e4140 --prot --home 0899`, 1234

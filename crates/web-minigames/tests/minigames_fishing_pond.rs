@@ -270,6 +270,11 @@ fn pond_session_hooks_a_lure_row_species_and_lands_it() {
     }
     let pts = landed_points.expect("the fight lands");
     assert!(pts > 0);
+    // The result plate credits the record (`FUN_801D5298`): the total on
+    // its first tick, the best catch once it settles.
+    for _ in 0..2000 {
+        tick(&mut mg, 0, false);
+    }
     let st: serde_json::Value = serde_json::from_str(&mg.fishing_pond_state_json()).unwrap();
     assert_eq!(st["points"].as_i64(), Some(pts));
     assert_eq!(st["best"].as_i64(), Some(pts));

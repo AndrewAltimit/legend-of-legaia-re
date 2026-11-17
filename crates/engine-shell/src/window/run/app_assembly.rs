@@ -65,6 +65,8 @@ impl PlayWindowApp {
             save_menu: None,
             pending_save_menu_atlas: save_menu_atlas_data,
             menu_window_table,
+            pause_text_carry: Default::default(),
+            pause_sprite_carry: Default::default(),
             caption_atlas: None,
             uploaded_vram: None,
             meshes: Vec::new(),

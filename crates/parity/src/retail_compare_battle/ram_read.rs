@@ -1251,6 +1251,17 @@ impl RetailBattle {
             party: (0..u32::from(party_count))
                 .map(|s| combatant(ram, s))
                 .collect(),
+            party_hp_shown: (0..u32::from(party_count))
+                .map(|s| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
+                    in_ram(p).then(|| {
+                        (
+                            game_anchors::u16_at(ram, p + 0x172),
+                            game_anchors::u32_at(ram, p + 0x10) as i32,
+                        )
+                    })
+                })
+                .collect(),
             monsters: (0..u32::from(monster_count))
                 .map(|m| combatant(ram, 3 + m))
                 .collect(),
@@ -1545,57 +1556,7 @@ impl RetailBattle {
                 })
                 .and_then(|p| super::framing_body::displayed_framing_body(ram, p)),
             clip_cursors: (0..8u32)
-                .filter_map(|slot| {
-                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
-                    if !in_ram(p) {
-                        return None;
-                    }
-                    let node = game_anchors::u32_at(ram, p + 0x22C);
-                    if !in_ram(node) {
-                        return None;
-                    }
-                    let clip = game_anchors::u8_at(ram, p + 0x1D9);
-                    let cursor = i32::from(game_anchors::u16_at(ram, node + 0x68));
-                    // The frame on screen is the one built two game frames
-                    // before the RAM's ([`display_lag_vsyncs`]), and
-                    // each frame advances the cursor by `(frame step * rate
-                    // +0x21D * the entry's rate byte +0x78) >> 1` - `>> 2` for
-                    // a Slowed (`+0x16E & 0x1000`) member's idle
-                    // (`FUN_80047430`, `0x800476D8..0x80047764`).
-                    let entry = game_anchors::u32_at(ram, node + 0x4C);
-                    let entry_rate = if in_ram(entry) {
-                        i32::from(game_anchors::u8_at(ram, entry + 0x78))
-                    } else {
-                        0
-                    };
-                    let status = game_anchors::u16_at(ram, p + 0x16E);
-                    let slowed = status & 0x1000 != 0 && clip == 0;
-                    // A Stone or Numb body on its idle takes no advance at
-                    // all (`andi v0,a0,0x404` at `0x80047640`), so the frame
-                    // on screen shows the RAM's cursor.
-                    let frozen = status
-                        & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS
-                        != 0
-                        && clip == 0;
-                    // Each of the lag's passes on its own step
-                    // (`display_pass_steps`).
-                    let back: i32 = display_pass_steps(ram)
-                        .iter()
-                        .map(|&step| {
-                            let prod = i32::from(step)
-                                * i32::from(game_anchors::u8_at(ram, p + 0x21D))
-                                * entry_rate;
-                            if frozen {
-                                0
-                            } else if slowed {
-                                prod >> 2
-                            } else {
-                                prod >> 1
-                            }
-                        })
-                        .sum();
-                    Some((slot as u8, clip, cursor - back))
-                })
+                .filter_map(|slot| displayed_clip_cursor(ram, slot))
                 .collect(),
             captured: (0..8u32)
                 .map(|slot| {
@@ -1694,6 +1655,12 @@ impl RetailBattle {
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
                     in_ram(p).then(|| game_anchors::u16_at(ram, p + 0x46) & 0xFFF)
+                })
+                .collect(),
+            seat_targets: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u8_at(ram, p + 0x1DD))
                 })
                 .collect(),
             turn_owner: game_anchors::u8_at(ram, ctx + NEXT_ACTOR),
@@ -1891,4 +1858,81 @@ pub(super) fn results_drop(ram: &[u8], ctx: u32) -> Option<u8> {
         }
     }
     None
+}
+
+/// The displayed frame's playing clip and node cursor of battle slot `slot`
+/// (`RetailBattle::clip_cursors`): the cursor ring's displayed slot where the
+/// record ring holds the node's own record back to it, else the node cursor
+/// walked back the lag's advances.
+pub(super) fn displayed_clip_cursor(ram: &[u8], slot: u32) -> Option<(u8, u8, i32)> {
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+    if !in_ram(p) {
+        return None;
+    }
+    let node = game_anchors::u32_at(ram, p + 0x22C);
+    if !in_ram(node) {
+        return None;
+    }
+    let clip = game_anchors::u8_at(ram, p + 0x1D9);
+    let cursor = i32::from(game_anchors::u16_at(ram, node + 0x68));
+    // The frame on screen is the one built two game frames
+    // before the RAM's ([`display_lag_vsyncs`]), and
+    // each frame advances the cursor by `(frame step * rate
+    // +0x21D * the entry's rate byte +0x78) >> 1` - `>> 2` for
+    // a Slowed (`+0x16E & 0x1000`) member's idle
+    // (`FUN_80047430`, `0x800476D8..0x80047764`).
+    let entry = game_anchors::u32_at(ram, node + 0x4C);
+    let entry_rate = if in_ram(entry) {
+        i32::from(game_anchors::u8_at(ram, entry + 0x78))
+    } else {
+        0
+    };
+    let status = game_anchors::u16_at(ram, p + 0x16E);
+    let slowed = status & 0x1000 != 0 && clip == 0;
+    // A Stone or Numb body on its idle takes no advance at
+    // all (`andi v0,a0,0x404` at `0x80047640`), so the frame
+    // on screen shows the RAM's cursor.
+    let frozen = status & legaia_engine_battle_vm::battle_anim_rate::FROZEN_IDLE_STATUS_BITS != 0
+        && clip == 0;
+    // Each of the lag's passes on its own step
+    // (`display_pass_steps`).
+    let back: i32 = display_pass_steps(ram)
+        .iter()
+        .map(|&step| {
+            let prod =
+                i32::from(step) * i32::from(game_anchors::u8_at(ram, p + 0x21D)) * entry_rate;
+            if frozen {
+                0
+            } else if slowed {
+                prod >> 2
+            } else {
+                prod >> 1
+            }
+        })
+        .sum();
+    // The anim tick stamps the cursor it leaves into the history ring
+    // `+0x17A` a pass, beside the committed record `+0x234`
+    // (`0x80047E58..0x80048060`). Where every slot back to the displayed one
+    // holds the node's own record, the ring names the displayed cursor
+    // outright: across a natural-end re-commit, which zeroes the node cursor
+    // and drops the advance's overshoot (`0x8004B068`), and across a state
+    // saved inside the draw tick, whose node word holds a ghost's older ring
+    // cursor (the after-image walk swaps it in around each ghost draw,
+    // `0x8004950C`, and back at `0x80049568`). The walk back above sees
+    // neither. A RAM cursor is never negative - the tick only adds, and the
+    // commit, the battle set-up's `rand() % frames << 4` (`0x80051574`) and
+    // the loop window store none below zero - so a walk back below zero is
+    // the arithmetic crossing a commit. `battle_jou_gala_finisher_results_retail`'s
+    // Gala holds node `0` (the ring's slot 3) over ring `36, 24, 12`: the walk
+    // back read `-24`, the screen shows `12` (`image` `.977` to `.988`).
+    let ring_shown = (0..=DISPLAYED_FRAMES_BACK)
+        .all(|k| game_anchors::u32_at(ram, p + RING_RECORD + k * 4) == entry)
+        .then(|| {
+            i32::from(game_anchors::u16_at(ram, p + RING_CURSOR + DISPLAYED_FRAMES_BACK * 2) as i16)
+        });
+    let shown = match ring_shown {
+        Some(c) if in_ram(entry) => c,
+        _ => cursor - back,
+    };
+    Some((slot as u8, clip, shown))
 }

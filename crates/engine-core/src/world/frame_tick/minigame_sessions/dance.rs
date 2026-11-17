@@ -210,6 +210,7 @@ impl World {
         self.minigames.dance_countin = None;
         self.minigames.dance_countin_banner = None;
         self.minigames.dance_countin_go = None;
+        self.minigames.dance_results_fade = None;
         self.minigames.dance_pending_bgm = None;
         self.minigames.dance_tutorial = None;
         self.minigames.dance_tutorial_frame = None;
@@ -335,20 +336,51 @@ impl World {
         }
         self.route_dance_award_sounds(&award_sounds);
         if finished {
-            // Song finished: the results state grades the run into the pass
-            // flag, then the interrupted mode is restored, leaving `dance` in
-            // place so the host can read the final score before clearing.
-            self.mode = self.minigames.dance_return_mode;
-            // ... and copies the floor's scores into the script-counter
-            // slots the host town's dialogue reads back.
+            // The results state `0x14`: it grades the run into the pass flag
+            // and copies the floor's scores into the script-counter slots the
+            // host town's dialogue reads back.
             if let Some(slots) = counter_slots {
                 self.field_vm.slot_table[..3].copy_from_slice(&slots);
             }
             if clear_win {
                 self.system_flag_clear(legaia_engine_minigames::dance::WIN_FLAG);
             }
+            self.step_dance_results();
         }
         self.step_dance_tutorial();
+    }
+
+    /// One vsync of the results state `0x14` (`FUN_801cf470`,
+    /// `0x801CFE58..0x801CFF64`). State `0xC` zeroes the fade accumulator
+    /// `DAT_801D515C` as it hands over (`0x801CFE4C`); each of the hall's game
+    /// frames in `0x14` adds `dt * 4` and draws the fade to black at that
+    /// level. The frame it reaches `0x100` parks it at `0xFF` and calls the
+    /// exit `FUN_801D414C`, whose `jal 0x80026018` (`0x801D4180`) is the
+    /// minigame return warp: the hall hands back to the field the way every
+    /// door-entered minigame does, through MAIN INIT's warp arm. A run with
+    /// no door entry (a launcher's) only restores the interrupted mode.
+    ///
+    /// Either way the run stays installed, with the mode no longer `Dance`,
+    /// so the host reads the final game before
+    /// [`Self::finish_dance_if_over`] clears it.
+    ///
+    /// PORT: FUN_801cf470 (state 0x14: the fade and the exit call)
+    fn step_dance_results(&mut self) {
+        let Some(acc) = self.minigames.dance_results_fade else {
+            self.minigames.dance_results_fade = Some(0);
+            return;
+        };
+        if !self.minigames.dance_hall_frame {
+            return;
+        }
+        let acc = acc + 4 * legaia_engine_minigames::dance::HALL_FRAME_STEP;
+        if acc < 0x100 {
+            self.minigames.dance_results_fade = Some(acc);
+            return;
+        }
+        self.minigames.dance_results_fade = Some(0xFF);
+        self.mode = self.minigames.dance_return_mode;
+        self.close_minigame_round_trip();
     }
 
     /// Store one dance cue straight into a ring slot, the way every dance

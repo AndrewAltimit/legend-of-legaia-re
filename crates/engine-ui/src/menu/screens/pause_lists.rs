@@ -151,6 +151,13 @@ pub const MAGIC_SCREEN_WINDOW_RECTS: [(usize, (i32, i32, i32, i32)); 4] = [
 /// chrome alongside the id-17 frame.
 pub const ITEMS_INFO_EXTRA_BOX_RECT: (i32, i32, i32, i32) = (14, 164, 144, 40);
 
+/// [`ITEMS_INFO_EXTRA_BOX_RECT`] off window 17's live origin `info_pen`:
+/// the renderer emits the box at `(WX, WY + 0x38)`, so it moves with the
+/// window as it slides.
+pub fn items_info_extra_box_rect(info_pen: (i32, i32)) -> (i32, i32, i32, i32) {
+    (info_pen.0, info_pen.1 + 0x38, 0x90, 0x28)
+}
+
 /// Label the item-info panel's **Point Card** arm puts in the extra widget
 /// box, at [`ITEMS_INFO_POINTS_LABEL_OFFSET`] off the info window's content
 /// origin. Retail's own literal is a menu-overlay rodata string

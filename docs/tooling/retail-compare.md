@@ -1039,6 +1039,18 @@ further along an 80-frame linear glide (pitch `600` against retail's `590`,
 eye Z `7622` against `7552`); on a tiled floor that one frame cost a quarter
 of the image score.
 
+The op-`0x35` sub-op `5` timed release is the same kind of history. The seed
+replays the record from an op before the capture's PC, so a release it
+re-arms has counted the engine's ticks since, and the dialogue the drive pages
+is quicker than the player retail recorded. When the gate meets, the seed
+stands the engine's release on the state's cells (`gp+0x808` / `+0x814` /
+`+0x81C`): a release retail has spent, its field-BGM source stopped, fires
+now; one retail still counts takes its elapsed vsyncs
+(`retail_obs::seat_timed_release`). `chapter2_garmel_pre_songi` and
+`chapter2_garmel_pre_zeto` are the cases: `P2[12]` runs `9 (2033) · 5 (100)`
+and pages a line, and both states hold `2043` stopped behind the pending
+commit.
+
 A capture parked on the PC right after a record's `0x3F` scene change is
 inside the departing scene's transition hold: the record spins on its
 `26 FF FF` tail while the streaming actor (`FUN_8001FD44`) holds the old
@@ -1210,6 +1222,7 @@ for a reason that is not a port defect:
 | Step | What is taken from the capture | Engine side / knob |
 |---|---|---|
 | [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
+| Hold a rolling HP readout | a prompt capture's party readout `+0x172` and bar-step accumulator `+0x10`, where they stand off the live HP | stood on at the capture tick, `LEGAIA_BATTLE_READOUT=slot:word:acc` |
 | [Seat the capture's order](#the-seat-order-is-the-captures) | formation cells `0x8007BD0C[0..4]` as battle init left them | `EncounterState::seat_pin`, `LEGAIA_BATTLE_SEATS` |
 | [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
@@ -2421,7 +2434,21 @@ its anim node's cursor `*(+0x22C) + 0x68` (12.4 sixteenths of a keyframe), and
 takes the cursor back to the frame on the screen: the display shows the frame
 built two game frames before the RAM's (`display_lag_vsyncs`), and each frame
 advances the cursor by `(frame step * +0x21D * entry +0x78) >> 1` (`>> 2` for
-a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). The image
+a Slowed member's idle; `FUN_80047430`, `0x800476D8..0x80047764`). Where the
+record ring `+0x234` holds the node's own record back to the displayed slot,
+the cursor ring `+0x17A` names that frame's cursor outright
+(`ram_read::displayed_clip_cursor`; the anim tick stamps both,
+`0x80047E58..0x80048060`). The walk back cannot see two things the ring does:
+a natural-end re-commit inside the lag, which zeroes the node cursor and drops
+the overshoot (`0x8004B068`), and a state saved inside the draw tick, whose
+node word holds a ghost's older ring cursor (`0x8004950C`, restored at
+`0x80049568`). A RAM cursor is never below zero - the tick only adds, and the
+commit, the set-up's random idle phase (`rand() % frames << 4` at
+`0x80051574`) and the loop window store none - so a walked-back cursor below
+zero is the arithmetic crossing a commit, never a state of the clip player.
+`battle_jou_gala_finisher_results_retail`'s Gala holds node `0` (the ring's
+slot 3) over ring `36, 24, 12`: walked back `-24`, wrapped onto the idle's
+tail, the still read `image` `.977`; on the ring's `12`, `.988`. The image
 child lands each slot on that cursor on the capture frame
 (`LEGAIA_SEAT_BATTLE_CLIPS`, `World::seat_battle_clip_cursor`) when it plays
 the same clip and the clip loops. Left on the replay's clock: a one-shot,
@@ -3165,11 +3192,20 @@ holds the table two units in (pitch `3` a unit with `26` to go, TR z `301`
 with `3005`), so the RAM's pass built it and ran at step `2`: the history's
 newest entry (`0x2BC`) names the step-`4` pass to come, and a forward film
 then moves `4 * inc` a pass. The frame on screen stood one pass further back,
-on the fade's framing (`module_shot`, `prior_walks`), which walks on the
-shot's own increments at the older pass's step: the fade's case-6 endpoint is
-not in the RAM, so that pass is a stand-in fitted to the frame, not a law.
-`image` reads `.890` at the origin, `.911` on the lag's two passes taken whole
-on the table, `.950` on this walk; a sweep of the walk back peaks there.
+on the fade's framing (`module_shot`, `prior_walks`). That pass walks on the
+fade's own case-6 re-arm, which closes a share of its gap each pass: walked
+back from the shot's origin it steps `step * ceil(gap / (0xC - step))` away
+from the fade's endpoint (`fade_prior_ends`: pitch `0`, TR y `0x500`, TR z the
+prescaled `ctx[+0x6D0]` the ramp left, the focus on the caster's live pair).
+The yaw stays on the shot's increments, a stand-in: the style the fade rolled
+is not in the RAM (`0x70` stores `1` over it), and the style-`0` yaw fits one
+capture and not the other. `image` reads `.890` at the origin, `.953` on the
+shot's increments throughout and `.999` on the fade. Glare's arm 0 (PROT 0940,
+`li a3,0xc` at `0x801F6B94`, `GLARE_ARM0_SHOT_FRAMES`) sets out from the same
+fade and walks the same way while arm 1 has not yet drained the module word
+from its seed: `battle_uru2_nurga_glare_mid_cast` `.957` to `.971`. A sweep
+of its displayed yaw peaks `14` units below the stand-in (`.992`), where the
+style-`0` fade yaw lands; the rule does not take it (harness seat).
 
 <a id="a-drifting-arm-walks-back-on-its-drift"></a>
 An arm that writes the camera globals itself on every pass walks back on that

@@ -228,6 +228,12 @@ pub struct ModuleCamState {
     /// while it held - a write the phase-chain body, which does not run on
     /// a held pass, cannot make. The host takes it once.
     pub creature_stage: Option<u8>,
+    /// An impact selector `+0x21F` a tick body stored on the creature on the
+    /// pass its installer `FUN_801F19EC` ran, behind the installer's own
+    /// clear (PROT 0904's arm 4, `0x801F6EDC`). The host seats the creature
+    /// after the tick, so the store waits for the seat; the host takes it
+    /// once.
+    pub creature_impact: Option<u8>,
     /// The [`Self::creature_stage`] store came with the `+0x1DC` bump (the
     /// paired `lbu; addiu 1; sb` on both bytes), whose bit 0 cuts the
     /// playing clip at once; without it the staged byte waits for the
@@ -498,6 +504,9 @@ pub struct ArmDirection {
     pub nudge: Option<ModuleNudge>,
     /// The `FUN_80021B04` calls the arm made on this pass, in call order.
     pub spawns: &'static [ModuleSpawn],
+    /// The `efect.dat` pool spawns (`FUN_801DFDF0`) the arm made on this
+    /// pass, after [`Self::spawns`], in call order.
+    pub effects: &'static [ModuleEffect],
     /// The point and angle trio the arm built on its stack for a spawn whose
     /// anchor is [`SpawnAnchor::ArmPoint`] - an arm whose `a0` / `a1` are
     /// arithmetic over several seats and the band's own words.
@@ -1083,6 +1092,26 @@ pub struct ModuleSpawn {
     pub anchor: SpawnAnchor,
 }
 
+/// One `efect.dat` pool spawn `FUN_801DFDF0(id, point, angle)` out of a
+/// module arm's tick body: effect `id` on the point `anchor` names, turned
+/// `angle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleEffect {
+    pub id: u8,
+    pub anchor: SpawnAnchor,
+    pub angle: EffectAngle,
+}
+
+/// The `a2` a module's [`ModuleEffect`] passes the pool spawner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectAngle {
+    /// A literal the arm loads.
+    Literal(i16),
+    /// The heading `+0x46` of the seat the anchor stands on (`lh a2,0x46(sN)`)
+    /// plus this offset.
+    AnchorFacing(i16),
+}
+
 /// One `FUN_80058490(&rect, dst_x, dst_y)` - a VRAM-to-VRAM `MoveImage` - out
 /// of a module arm. The rect is the four halfwords the arm builds in the
 /// packet buffer `*(0x1F8003A0)`.
@@ -1113,6 +1142,7 @@ impl ArmDirection {
         end_frame: false,
         nudge: None,
         spawns: &[],
+        effects: &[],
         arm_point: None,
         vram_move: None,
         caption: None,
@@ -1132,6 +1162,7 @@ impl ArmDirection {
         end_frame: false,
         nudge: None,
         spawns: &[],
+        effects: &[],
         arm_point: None,
         vram_move: None,
         caption: None,

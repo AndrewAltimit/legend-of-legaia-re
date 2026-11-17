@@ -410,7 +410,39 @@ impl World {
                             } else {
                                 Some(site.pages.clone())
                             };
-                            tl.pc = site.end;
+                            let site_end = site.end;
+                            // `CC F8 89 lo hi` is `4C 89` on the cutscene
+                            // context: the pager's automatic press
+                            // (`_DAT_80073F00 = s16`). The lines after it are a
+                            // text segment the runner parks the record on
+                            // (`FUN_80039B7C`), so the record waits while the
+                            // box opens, types the lines and presses itself
+                            // (`autorun_audio_timeline.lua` off
+                            // `s1_newgame_field`: `map01`'s card holds its
+                            // record 100 vsyncs, `opurud`'s blank page 20).
+                            let auto = tl
+                                .bytecode
+                                .get(pc + 3..pc + 5)
+                                .map_or(0, |b| i16::from_le_bytes([b[0], b[1]]));
+                            let first_line = (pc + 5..site_end.min(tl.bytecode.len()))
+                                .find(|&i| tl.bytecode[i] == 0x1F);
+                            if modal
+                                && auto > 0
+                                && let Some(line) = first_line
+                            {
+                                let mut panel =
+                                    legaia_engine_field::inline_dialogue::HeldBox::next_line_panel(
+                                        tl.card_held_box.take(),
+                                        &tl.bytecode,
+                                        line,
+                                    );
+                                panel.substitutions = host.world.dialog_substitutions(&tl.bytecode);
+                                host.world.apply_dialog_window_format(&mut panel);
+                                tl.card_pager = Some((panel, auto, site_end));
+                                tl.pc = line;
+                                break;
+                            }
+                            tl.pc = site_end;
                             continue;
                         }
                     }

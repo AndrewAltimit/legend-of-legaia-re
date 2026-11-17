@@ -118,6 +118,33 @@ impl World {
             return;
         };
         if entry == 909 {
+            // Stager arm 0 seats the creature inside its caller's step
+            // (`FUN_801F7AF4`, `0x801F7B2C..0x801F7BA8`): its spark selector
+            // `2` is on the body for the next frame's draw, whose decode sheds
+            // the first sparks (six emitter words on a `--watch 0x80009010`
+            // recording, the frame after the call). Queued to the module's
+            // tick, the selector missed that draw. The phase step stays
+            // queued for the tick.
+            if !self.casting.module_viguro_seated_early
+                && self
+                    .casting
+                    .module_stager_calls
+                    .iter()
+                    .any(|(arm, _)| *arm == 0)
+            {
+                self.seat_viguro_creature();
+                self.casting.module_viguro_seated_early = true;
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|s| self.actors.get_mut(usize::from(s)))
+                {
+                    a.battle.render_flag = 0;
+                    a.battle.render_color = 0;
+                    a.battle.impact_state =
+                        legaia_engine_cast::cast_module_ticks::VIGURO_SEAT_BURN_SELECTOR;
+                }
+            }
             if self.seat_viguro_stager_spawns_now() {
                 self.seat_walk_active_summon();
             }
@@ -174,6 +201,10 @@ impl World {
             }
             if seated {
                 self.seat_walk_active_summon();
+            }
+            if entry == 927 {
+                let arms: Vec<u8> = now.iter().map(|(a, _)| *a).collect();
+                self.run_juggernaut_sweeps_now(&arms);
             }
             if entry == 966
                 && let Some(spell) = self.casting.capture_spell

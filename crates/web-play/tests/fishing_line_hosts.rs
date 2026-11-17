@@ -214,14 +214,16 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
     // morphed tip vertex and the faces are the rod draw's quads, and on some
     // poses (the hook a lure cast from the lead's footing reaches is one) the
     // tip lands a pixel off every corner. Which side retail's pair rounds to
-    // is unmeasured.
+    // is unmeasured. A face's bucket is its mean depth, so the tip face of
+    // a rod aimed down the view axis sits a bucket or two from the tip's
+    // own (the pose the pond's shared `rand()` stream deals here is one).
     assert!(
         faces.iter().any(|f| {
             let xy = f["xy"].as_array().unwrap();
             (0..4).any(|i| {
                 (xy[2 * i].as_i64().unwrap() - rx).abs() <= 1
                     && (xy[2 * i + 1].as_i64().unwrap() - ry).abs() <= 1
-                    && (f["ot"].as_i64().unwrap() - line_ot).abs() <= 1
+                    && (f["ot"].as_i64().unwrap() - line_ot).abs() <= 2
             })
         }),
         "no rod face meets the line's rod end {line}"

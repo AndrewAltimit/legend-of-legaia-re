@@ -272,9 +272,12 @@ fn arming_a_seru_cast_raises_the_captured_starter_triple() {
         (xa[0].clip, xa[0].channel, xa[0].duration_sectors),
         (6, 4, 686)
     );
+    // Under the span law the drive word also holds PCSX-Redux's read tail
+    // (`XA_READ_TAIL_VSYNCS`) past the span.
     assert_eq!(
-        w.audio.battle_xa_busy_frames, 686,
-        "the starter holds the drive for the clip's read span"
+        w.audio.battle_xa_busy_frames,
+        686 + legaia_engine_battle_loop::frame_clock::XA_READ_TAIL_VSYNCS,
+        "the starter holds the drive for the clip's read span and its tail"
     );
     eprintln!("[ok] PROT 0903 -> FUN_8003D53C(6, 4, 686)");
 

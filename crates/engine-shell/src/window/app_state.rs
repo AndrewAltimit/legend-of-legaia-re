@@ -346,6 +346,11 @@ pub(super) struct PlayWindowApp {
     /// screen. `None` when the disc isn't loaded (pinned fallback rects
     /// in [`MENU_WINDOW_FALLBACK`] apply).
     pub(super) menu_window_table: Option<legaia_game_tables::menu_windows::MenuWindowTable>,
+    /// The pause menu's carry of the screen a press leaves, one per draw
+    /// list (`legaia_engine_ui::pause_menu::PauseScreenCarry`).
+    pub(super) pause_text_carry: std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
+    pub(super) pause_sprite_carry:
+        std::cell::RefCell<legaia_engine_ui::pause_menu::PauseScreenCarry>,
     /// Uploaded "It was the Seru." caption sprite atlas (opdeene's baked TIM,
     /// `World::cutscene.caption`). Uploaded lazily the first frame the caption
     /// image is present and dropped when it clears on scene change; holds
@@ -1107,7 +1112,7 @@ pub(super) struct PlayWindowApp {
     /// play page's Retail-faithful box does. `None` until the launch sets it.
     pub(super) launch_switches: Option<legaia_engine_session::session_switches::SessionSwitches>,
     /// The settings page's first shown row: it scrolls once it holds more
-    /// rows than its plate ([`super::settings_panel::SHOWN_ROWS`]).
+    /// rows than its plate ([`super::settings_panel::SETTINGS_SHOWN`]).
     pub(super) settings_scroll: usize,
     /// The Cheats page's cursor, picks and last outcome.
     pub(super) cheats_page: super::cheats_panel::CheatsPage,
@@ -1285,6 +1290,10 @@ pub(super) struct FieldNpcDraw {
     /// `rebind_live_npc_models` notices a swap the world made after the
     /// upload ran.
     pub(super) bound_model: i16,
+    /// The placement's own `model_index`, the model a slot with no live
+    /// entry draws: a `4C D2` re-seat drops the entry, and the new actor
+    /// draws its header model again (`FUN_8003A1E4`).
+    pub(super) spawn_model: i16,
 }
 
 /// The field env meshes' light-source row shading (see

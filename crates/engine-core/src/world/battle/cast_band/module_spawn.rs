@@ -472,30 +472,15 @@ impl World {
         );
     }
 
-    /// Seat the spawn calls one module arm made this pass, each on its own
-    /// anchor, into the cast's running scene - the per-arm form of
-    /// [`Self::spawn_cast_module_fx`] for a module whose director reports its
-    /// spawns ([`legaia_engine_cast::cast_module_camera::ModuleProfile::stages_spawns`]).
-    ///
-    /// A record's program is bounded by the next record start, so each one
-    /// is parsed against the whole record set of its image: the module's own
-    /// recovered records for a [`SpawnRecord::Module`], the effect-prototype
-    /// table's for a [`SpawnRecord::BattleProto`].
-    ///
-    /// REF: FUN_80021B04 (the spawn calls), FUN_80058490 (the `MoveImage`)
-    ///
-    /// [`SpawnRecord::Module`]: legaia_engine_cast::cast_module_camera::SpawnRecord::Module
-    /// [`SpawnRecord::BattleProto`]: legaia_engine_cast::cast_module_camera::SpawnRecord::BattleProto
-    pub(super) fn stage_module_arm_spawns(
-        &mut self,
-        prot_entry: u32,
-        spawns: &[legaia_engine_cast::cast_module_camera::ModuleSpawn],
-        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
-        arm_point: Option<([i16; 3], [i16; 3])>,
+    /// The seats a module arm's spawn anchors read: the creature, the
+    /// victim and [`legaia_engine_cast::cast_module_camera::AnchorSeats`].
+    fn module_anchor_context(
+        &self,
+    ) -> (
+        Option<legaia_engine_cast::cast_module_camera::ModuleSeat>,
+        Option<legaia_engine_cast::cast_module_camera::ModuleSeat>,
+        legaia_engine_cast::cast_module_camera::AnchorSeats,
     ) {
-        use legaia_engine_cast::cast_module_camera::SpawnRecord;
-        use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
-        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
         let creature = self
             .casting
             .module_cam
@@ -559,6 +544,68 @@ impl World {
             }),
             depth: self.battle.camera_frame_height,
         };
+        (creature, victim, anchor_seats)
+    }
+
+    /// Spawn a module arm's `efect.dat` pool calls
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleEffect`]) on the
+    /// points their anchors name. The module tick runs ahead of the frame's
+    /// walker, so each master takes no catch-up sweep.
+    pub(super) fn stage_module_arm_effects(
+        &mut self,
+        effects: &[legaia_engine_cast::cast_module_camera::ModuleEffect],
+        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
+        arm_point: Option<([i16; 3], [i16; 3])>,
+    ) {
+        let (creature, victim, anchor_seats) = self.module_anchor_context();
+        for fx in effects {
+            let point = match fx.anchor {
+                legaia_engine_cast::cast_module_camera::SpawnAnchor::ArmPoint => arm_point,
+                anchor => legaia_engine_cast::cast_module_camera::spawn_anchor_point_with(
+                    anchor,
+                    creature,
+                    victim,
+                    shot,
+                    anchor_seats,
+                ),
+            };
+            if let Some((pos, rot)) = point {
+                let angle = match fx.angle {
+                    legaia_engine_cast::cast_module_camera::EffectAngle::Literal(a) => a,
+                    legaia_engine_cast::cast_module_camera::EffectAngle::AnchorFacing(d) => {
+                        rot[1].wrapping_add(d)
+                    }
+                };
+                self.try_spawn_effect(fx.id, pos, (angle as u16) & 0xFFF);
+            }
+        }
+    }
+
+    /// Seat the spawn calls one module arm made this pass, each on its own
+    /// anchor, into the cast's running scene - the per-arm form of
+    /// [`Self::spawn_cast_module_fx`] for a module whose director reports its
+    /// spawns ([`legaia_engine_cast::cast_module_camera::ModuleProfile::stages_spawns`]).
+    ///
+    /// A record's program is bounded by the next record start, so each one
+    /// is parsed against the whole record set of its image: the module's own
+    /// recovered records for a [`SpawnRecord::Module`], the effect-prototype
+    /// table's for a [`SpawnRecord::BattleProto`].
+    ///
+    /// REF: FUN_80021B04 (the spawn calls), FUN_80058490 (the `MoveImage`)
+    ///
+    /// [`SpawnRecord::Module`]: legaia_engine_cast::cast_module_camera::SpawnRecord::Module
+    /// [`SpawnRecord::BattleProto`]: legaia_engine_cast::cast_module_camera::SpawnRecord::BattleProto
+    pub(super) fn stage_module_arm_spawns(
+        &mut self,
+        prot_entry: u32,
+        spawns: &[legaia_engine_cast::cast_module_camera::ModuleSpawn],
+        shot: Option<legaia_engine_battle_vm::battle_cam_script::ModuleShot>,
+        arm_point: Option<([i16; 3], [i16; 3])>,
+    ) {
+        use legaia_engine_cast::cast_module_camera::SpawnRecord;
+        use legaia_game_tables::move_power::{self, BATTLE_OVERLAY_BASE};
+        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
+        let (creature, victim, anchor_seats) = self.module_anchor_context();
         // Seats of each record so far in this call: PROT 0930's arm 6 writes
         // a different drift into each glow it seats.
         let mut seats_of: Vec<(u32, usize)> = Vec::new();
@@ -593,6 +640,15 @@ impl World {
                         None => (self.next_rand() % 0x101) as i16 - 0x80,
                     };
                 }
+            }
+            // PROT 0931's sparks over the creature (arms 5..7, every pass):
+            // `x = rand() % 0x301 - 0x180` and then `y = rand() % 0x301 -
+            // 0x600`, absolute, on the creature's `z + 0x180`
+            // (`0x801F6FA0..0x801F7028`, `0x801F7138..0x801F71BC`,
+            // `0x801F72BC..0x801F7340`).
+            if prot_entry == 931 && spawn.record == SpawnRecord::Module(0x801F_8E20) {
+                pos[0] = (self.next_rand() % 0x301) as i16 - 0x180;
+                pos[1] = (self.next_rand() % 0x301) as i16 - 0x600;
             }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {

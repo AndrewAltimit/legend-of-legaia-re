@@ -619,6 +619,20 @@ impl World {
             && let Some(arm) = capture_arm
         {
             let (phase, passed) = (ctx.phase, !arm.hold);
+            // Arm 27's pass flushes the pool, which ends the grade arm 26
+            // parked in it (`0x801F8794`), ahead of its own fade.
+            if passed && phase == 27 {
+                self.presentation
+                    .module_fades
+                    .retain(|f| !(f.mode[1] == -1 && f.duration == 0x100));
+            }
+            if passed && phase == 26 {
+                for t in &EVIL_SERU_MAGIC_ARM26_SIDE_FADES {
+                    let mut f = None;
+                    legaia_engine_system::fade::spawn_fade(&mut f, t, 1);
+                    self.presentation.module_fades.extend(f);
+                }
+            }
             if passed && let Some(t) = evil_seru_magic_fade(phase) {
                 legaia_engine_system::fade::spawn_fade(&mut self.presentation.fade, &t, 1);
             }
@@ -684,6 +698,7 @@ impl World {
             );
             self.write_cast_seat_row(&seats);
             self.evil_seru_magic_row(phase, passed, usize::from(caster_slot), &before);
+            self.evil_seru_magic_creature(phase, passed, usize::from(caster_slot));
             run.aoe_hits = stager_hits;
             let hits = self.cast_hits_to_engine(hits.iter().map(|h| ticks::AoeHit {
                 seat: h.seat,
@@ -912,6 +927,7 @@ impl World {
         }
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
+        run.effects = direction.map_or(&[], |d| d.effects);
         run.arm_point = direction.and_then(|d| d.arm_point);
         run.vram_move = direction.and_then(|d| d.vram_move).or(capture_vram_move);
         run.caption = direction.and_then(|d| d.caption);
@@ -1975,6 +1991,16 @@ impl World {
         {
             self.casting.module_cam.creature_stage = Some(seat.staged_anim);
             self.casting.module_cam.creature_restage = seat.restage & 1 != 0;
+        }
+        // The same for the impact selector a tick stores behind the
+        // installer (PROT 0904's arm 4, `0x801F6ECC..0x801F6EDC`): the
+        // seat's reset would otherwise clear it.
+        if self.casting.summon_actor_slot != Some(seat_slot)
+            && (self.casting.summon_seat_owed.is_some()
+                || self.casting.pending_summon_spawn.is_some())
+            && seat.render_21f != seat_orig.render_21f
+        {
+            self.casting.module_cam.creature_impact = Some(seat.render_21f);
         }
         // PROT 0903's depth stores: arm 10's pass parks the walk-in's
         // `ctx[+0x6D0] = 0x800` (`0x801F7380`), and arm 11's pass - the hit -

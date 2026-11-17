@@ -1101,6 +1101,23 @@ impl World {
                 }
             }
             (9, _) => {
+                // The held pass that finds the countdown, drained, at or under
+                // `scalar << 6` halts the stager caller parked in handle
+                // `0x801F8C3C` (record `0x801F8420`, seated by arm 3) and
+                // clears the handle (`0x801F790C..0x801F794C`): its stager
+                // calls, three `rand()` words a frame, run until then.
+                let left = self.casting.module_cam.countdown.0;
+                if !passed
+                    && left > 0
+                    && left <= legaia_engine_cast::cast_module_camera::SPEED_SCALAR << 6
+                    && let Some(scene) = self.casting.active_summon.as_mut()
+                {
+                    for part in &mut scene.parts {
+                        if part.tag == Some(IOTA_STAGER_CALLER) {
+                            part.finished = true;
+                        }
+                    }
+                }
                 let quarter = (STEP / 4) as i16;
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
@@ -1255,3 +1272,7 @@ impl World {
         }
     }
 }
+
+/// PROT 0921's stager caller: arm 3 seats it (`0x801F6DFC`) and parks it in
+/// handle `0x801F8C3C`; it loops `op 0x20` / `WAIT 3` until arm 9 halts it.
+const IOTA_STAGER_CALLER: u32 = 0x801F_8420;

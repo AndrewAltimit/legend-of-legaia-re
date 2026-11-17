@@ -521,11 +521,14 @@ the poller every vsync (frame step 2 throughout):
 |---|---|---|---|---|---|---|
 | `retock_field_card_boot`, `2001` | 989, 78 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
 | `town01_field_card_boot`, `2045` | 1033, 74 sectors | +2..+6 | +7..+62 | +63 | +67 | +69 |
+| `retock_field_card_boot`, `2022` | 1010, 27 sectors | +1..+5 | +6..+61 | +62 | +66 | +68 |
+| `retock_field_card_boot`, `2044` | 1032, 101 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
 
 The old track's slot closes at stage 2, about six vsyncs in. The read, not
-the settle, holds the walk: stage 3 waits 56 vsyncs on both entries, so the
-settle has long run out when stage 4 is reached, and a new track is first
-heard a little over a second after the op.
+the settle, holds the walk: stage 3 waits 56 vsyncs on every entry, from 27
+sectors to 101, so the read's length is not the entry's and the settle has
+long run out when stage 4 is reached. A new track is first heard a little
+over a second after the op.
 
 Engine side: `legaia_engine_system::sound_state::BgmSwapPoller` is the walk
 on the vsync clock, seated at `AudioState::bgm_swap`, with the measured
@@ -797,8 +800,8 @@ key-off of voices `0x10..0x17`.
 long scene before `fmv_id 6`; `jouine`'s post-Cort record `P2[16]` runs `9`
 (`2040`), `0xA`, `5` (`60`), then `9` (`2069`), a 60-frame wait, `0xA`, a
 20-frame wait and `fmv_id 8`. In both the last word before the trigger is a
-commit that attaches a fresh track (the timed release fades and stops the one
-before it - [the timed release](#the-timed-release-is-a-scheduled-bgm-pause)),
+commit that attaches a fresh track (the commit releases the one before it, or
+[the timed release](#the-timed-release-is-a-scheduled-bgm-pause) does first),
 the `town01` shape measured sounding above, so both movies play over the score.
 
 **The title attract is the exception.** The attract underflow arm of the title
@@ -1018,6 +1021,24 @@ frame, and `SceneHost::route_bgm_events` hands it to either host's director.
 The raw expiry flag (`World::take_pending_sound_release`) stays for the mode
 seat's own reader.
 
+The deadline is in vsyncs. `FUN_800267FC` runs once a game frame, from the
+frame-begin driver `FUN_8001698C` (`0x800169FC`), and adds that frame's step
+`DAT_1F800393` to the elapsed count (`0x80026878..0x80026888`); it expires on
+the first frame whose count is past the deadline. A field init runs no frame,
+so a release armed before a door holds its count across the load.
+[`autorun_audio_timeline.lua`](../../scripts/pcsx-redux/autorun_audio_timeline.lua)
+off `s1_newgame_field` reads it on the opening: `opstati`'s closing record arms
+`5 (90)` as it changes scene, the count climbs `2` a frame to `72` before the
+init, holds there through `opurud`'s load, and expires in `opurud` at `91`,
+after the fade has left `2063` at volume `16` and before `opurud`'s `2064`
+commit. From `nilboa_delilas_family_pose`, inside `P2[7]`'s `9 (2028) · 5 (60) · 0xA`,
+the count reads `24` and climbs one a vsync to `62`, where the release stops
+`2032` (`39` vsyncs on); the commit follows `165` vsyncs later. The world ticks
+once a vsync and counts one a tick: a count that took
+the frame step on every tick would expire a field release at half its
+deadline and an overworld one at a third, cutting each fade at its midpoint.
+Pinned by `engine-scene-host/tests/opening_audio_timeline_disc.rs`.
+
 The arm half also starts the fade the stop finishes: `FUN_800267A8` hands the
 slot's sequence handle (`lh 0x536` = slot `+0xA`), the audio level
 `_DAT_8007B910` halved (`sll 15` / `sra 16`) and `deadline | 1` to
@@ -1058,8 +1079,21 @@ of those run a sub-op `5` before the commit
 (`engine-scene-host/tests/bgm_swap_commit_disc.rs`; the one exception is
 `bubu1`'s `2057`). The port holds the selected track until the commit the same
 way, so an expiry inside the window releases the outgoing track and the commit
-then starts the new one; an expiry after the commit (`jouine`'s `9 · 0xA · 5`)
-stops the new track, as retail's does.
+then starts the new one.
+
+Three calls disarm a release before it expires, each with `sw zero,0x808(gp)`:
+the slot's stop `FUN_800266E0` (`0x800266F4`, ahead of its active test) and
+re-attach `FUN_80026478` (`0x800264A0`). So the commit, the stop (sub-op `2`),
+the replay (sub-op `4`), a mid-scene start's stage-2 teardown and stage-6
+attach, the field init's close and a fight's attach of the battle source
+(`0x801CF930`, sound set `0` and up) each end it; a set of `-1` attaches
+nothing, and the release counts on through the fight. A `9 · 5 · 0xA` committed
+before its deadline never stops the track the commit brings in, and a release
+armed right after a commit (`jouine`'s `P2[16]`, `9 (2040) · 0xA · 5 (60)`) is
+disarmed by `2040`'s attach two frames on (`inference` from the script words:
+not captured). Behind sub-op 6 there is no close, and a release armed before
+the door counts on in the next scene, as `opstati`'s does. The port's
+`World::disarm_sound_release` sits at each of those calls.
 
 ### Sub-op 8 replays an empty record
 

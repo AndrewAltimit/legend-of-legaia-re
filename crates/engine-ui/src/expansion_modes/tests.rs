@@ -52,6 +52,33 @@ fn picker_lists_every_instance_with_its_kind() {
     assert!(mode_screen_prims(&screen).len() > 6);
 }
 
+/// The focused mode says what it is under the list, and only the focused
+/// one does.
+#[test]
+fn picker_explains_the_focused_mode() {
+    let (modes, _) = builtin_sections();
+    let list = entries(modes);
+    for cursor in 0..list.len() {
+        let screen = ModeScreen::Picker {
+            heading: "Practice modes",
+            entries: &list,
+            cursor,
+            error: None,
+        };
+        let joined = mode_screen_strings(&screen).join(" ");
+        assert!(
+            joined.contains(list[cursor].kind.blurb()),
+            "{}: no blurb in {joined:?}",
+            list[cursor].name
+        );
+        for (i, e) in list.iter().enumerate() {
+            if e.kind != list[cursor].kind {
+                assert!(!joined.contains(e.kind.blurb()), "row {i}'s blurb shows");
+            }
+        }
+    }
+}
+
 #[test]
 fn poker_table_shows_the_menu_board_and_seats() {
     let mut m = build("builtin-poker");

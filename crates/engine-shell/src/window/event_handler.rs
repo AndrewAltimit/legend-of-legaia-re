@@ -115,11 +115,14 @@ impl ApplicationHandler for PlayWindowApp {
             r.set_occlusion_fade(self.options_state.occlusion_fade);
             r.set_bloom(self.options_state.bloom);
             r.set_ssao(self.options_state.ssao);
-            // The opt-in battle frame cost prices the triangles each frame
-            // draws (`redraw_gpu_cost`), off a CPU copy of every upload.
+            // The window's own drawn-table price (`redraw_gpu_cost`), off a
+            // CPU copy of every upload, is read only by the GPU-cost step
+            // and the census's window-count source; the default census
+            // counts world state (`battle_link_census`) and needs no copy.
+            let t = &self.session.host.world.toggles;
             r.set_keep_cpu_meshes(
-                self.session.host.world.toggles.battle_gpu_cost_step
-                    || self.session.host.world.toggles.battle_poly_frame_cost
+                t.battle_gpu_cost_step
+                    || (t.battle_poly_frame_cost && t.battle_poly_window_count)
                     || redraw_gpu_cost::gpu_cost_diag_path().is_some(),
             );
         }

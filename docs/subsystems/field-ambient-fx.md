@@ -322,7 +322,7 @@ each part it seats.
 
 So the "pulsating flesh" never moves a vertex: it is **palette-space HSV
 cycling on the texture's CLUT rows**, re-uploaded every frame from the
-original capture.
+part's capture.
 
 `DAT_1F80037D` is the game-speed rate byte, `8` in the field (SCUS plants it
 at boot; `town01` and `koin1` captures read `8`), so the adds move
@@ -342,6 +342,41 @@ reloads it from a boot-time copy on every mode change
 ([`move-vm.md`](move-vm.md#0x0a---keyframe_load)), and every library save
 state reads `8`. The port's ambient tick and the cycler integrator take the
 byte from `legaia_engine_field::clut_cell_fx::SPEED_SCALAR`.
+
+#### A capture reads the rows another part recoloured
+
+A capture is the rect as the GPU holds it when op `0x2C` runs, so it takes
+whatever upload another part has made there. The New Game opening is built on
+that. `opdeene`, `opstati` and `opurud` each seat four cyclers over the CLUT
+rows `(0, 473, 320, 2)` and `(0, 476, 320, 34)`: two run `2B 00 FC00 00`
+(saturation `-0x400`, grey), wait, upload once or twice and halt, spawning as
+they halt two that run `2B 38 80 00` (hue `+0x38`, saturation `+0x80`). Those
+capture the grey rows, tint them on two uploads and halt in turn. A halted part
+uploads nothing more and its buffer is freed, so the last tint stays in VRAM
+for the rest of the scene: the opening's sepia
+([cutscene](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look)). A PCSX-Redux stamp of
+`FUN_80019D50`'s arguments off `s1_newgame_field` reads the tint parts'
+buffers grey where the grey parts' read the disc colours (`(13, 10, 9)` became
+`(13, 13, 13)`), and the uploads on `opstati`'s game frames 1, 3 and 4 and
+`opurud`'s 1, 2, 4 and 5 (grade: capture).
+
+Each wide upload converts `4066` non-zero texels and costs `1150..1316`
+hblanks, which is what makes those frames run past their step
+([engine](engine.md#the-field-frame-cost-model)).
+
+The tint parts' frames also show that the walk reaches a child on the pass
+that spawns it. A grey part halts on frame 1 and spawns its tint part, whose
+spawn-time run stops on `09 0000`; the tint part's op `0x2C` then has to run on
+frame 1 for its uploads to land on frames 3 and 4, the second and third arm
+runs after it. The walk reads each node's successor before its tick
+(`0x800251D8`), so the seater links the child behind the walk's cursor.
+
+The port keeps a capture per part (`AmbientPart::cycler`), taken after the
+tick whose op `0x2C` ran, from the rect's newest upload by another part when
+there is one and from VRAM otherwise (`World::take_cycler_captures`); the walk
+ticks a child spawned on the pass. A capture keyed by rect and taken at a
+part's first upload had given the tint parts the disc colours, and the
+recolour skipped every rect wider than `256`.
 
 ### The self-modifying spawn stepper
 

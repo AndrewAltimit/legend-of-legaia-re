@@ -396,3 +396,32 @@ fn an_arm_that_is_the_shared_bump_does_not_hide_the_phase_store() {
     assert_eq!(kills.len(), 2);
     assert!(kills.iter().all(|s| s.timing == SiteTiming::Pass));
 }
+
+/// PROT 0921's kill loop (`0x801F7A00..0x801F7A28`) starts its pointer one
+/// handle in (`addiu a0,v0,0x4` off `0x801F8C3C`) and runs the counter `1..11`:
+/// it halts handles `1..=10`, and the stager caller parked in handle `0`
+/// (`0x801F8420`, seated by arm 3) keeps calling through arm 9.
+#[test]
+fn iota_kill_loop_spares_its_first_handle() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] cast presentation: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let bytes = read_entry(&mut archive, 921);
+    let p = cast_presentation::decode(&bytes, content_end(&bytes, SLOT_B_LINK_BASE));
+    let kills: Vec<u32> = p
+        .sites
+        .iter()
+        .filter(|s| s.va == 0x801F_7A20)
+        .filter_map(|s| match s.call {
+            PresentationCall::ActorKill {
+                slot: cast_presentation::HandleSlot::Abs(a),
+            } => Some(a),
+            _ => None,
+        })
+        .collect();
+    let want: Vec<u32> = (1..=10).map(|k| 0x801F_8C3C + 4 * k).collect();
+    assert_eq!(kills, want, "{}", dump(&p));
+}

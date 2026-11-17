@@ -335,13 +335,16 @@ pub struct FieldNpcState {
     /// poses that way instead of looping. Bound by
     /// [`crate::world::World::bind_npc_clip_cursor`].
     pub clip_cursors: std::collections::BTreeMap<u8, legaia_engine_scene::field_env::PropAnim>,
-    /// Op `4C C0`'s `rand()` draws not yet seated, keyed by placement slot.
-    /// Retail binds the clip and seats `+0x68 = (rand() % frames) << 4`
-    /// inside the op; the port binds a re-targeted clip when the cue drains,
-    /// so the draw is taken at the op (keeping the `rand()` stream in retail
-    /// order) and seated by whichever bind lands the clip
+    /// Clip-phase `rand()` draws not yet seated, keyed by placement slot:
+    /// `(draw, clip)`, the clip the draw was taken for. Retail seats
+    /// `+0x68 = (rand() % frames) << 4` on the clip bound at the draw (op
+    /// `4C C0`, the spawner's header clip); the port binds a clip when its
+    /// cue drains, so the draw is taken at retail's moment (keeping the
+    /// `rand()` stream in retail order) and seated by the bind that lands
+    /// that clip. A bind of another clip drops it: retail's restart of a new
+    /// clip zeroes `+0x68` over the seated phase
     /// ([`crate::world::World::randomize_npc_clip_phase`]).
-    pub(crate) phase_draws: std::collections::HashMap<u8, u32>,
+    pub(crate) phase_draws: std::collections::HashMap<u8, (u32, u8)>,
     /// Slots whose [`Self::clip_cursors`] entry the world bound itself, from
     /// the scene bundle's record header at the poke
     /// ([`crate::world::World::bind_npc_scene_clip`]): their cursor keeps the

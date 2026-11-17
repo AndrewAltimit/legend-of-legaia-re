@@ -544,6 +544,9 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xA6 => Some(NEO_STAR_SLASH_COUNTDOWN),
         0xB6 => Some(DOOMSDAY_COUNTDOWN),
         0x6E => Some(super::KISS_OF_DEATH_COUNTDOWN),
+        // PROT 0963's word (`lui 0x8020` / `-0x6D38`): arm 0 seeds it
+        // (`0x801F6BC0`) and every later arm drains the bare step.
+        0xB3 => Some(GENOCIDAL_CANNON_COUNTDOWN),
         _ => None,
     }
 }
@@ -565,6 +568,10 @@ pub fn capture_countdown_units(action: u8) -> i32 {
 pub const NEO_STAR_SLASH_COUNTDOWN: u32 = 0x801F_8E50;
 /// PROT 0965's countdown word (Doomsday), in vsyncs: `0x20` from arm 0.
 pub const DOOMSDAY_COUNTDOWN: u32 = 0x801F_8370;
+/// PROT 0963's countdown word (Genocidal Cannon `0xB3`), in vsyncs: `0x20`
+/// from arm 0 (`sw v0,-0x6d38(v1)` at `0x801F6BC0`), drained by the frame
+/// step alone (`capture_countdown::GENOCIDAL_CANNON`).
+pub const GENOCIDAL_CANNON_COUNTDOWN: u32 = 0x801F_92C8;
 
 /// PROT 0940's countdown word (`lui 0x8020` / `-0x79B4`).
 pub const MYSTIC_SHIELD_COUNTDOWN: u32 = 0x801F_864C;
@@ -1561,6 +1568,13 @@ pub fn slime_divide_shake(
     arm
 }
 
+/// Glare's arm 0 shot length: the builder `FUN_801D829C` (`jal` at
+/// `0x801F6BA0`) takes `a3 = 0xC` frames (`li a3,0xc` at `0x801F6B94`).
+pub const GLARE_ARM0_SHOT_FRAMES: u16 = 0xC;
+/// What Glare's arm 0 seeds its countdown word with (`scalar << 8`), which
+/// arm 1's first pass has not yet drained.
+pub const GLARE_COUNTDOWN_SEED: i32 = SPEED_SCALAR << 8;
+
 /// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
 /// countdown is the module word `0x801F864C` Mystic Shield also uses):
 ///
@@ -1582,7 +1596,7 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
     let pull = drift(0, 0, 0, -8);
     match phase {
         0 => {
-            st.countdown.0 = SPEED_SCALAR << 8;
+            st.countdown.0 = GLARE_COUNTDOWN_SEED;
             let tr = if seats.caster_monster == 0xA9 {
                 [0, 0x600, 0x800]
             } else {
@@ -1593,7 +1607,7 @@ pub fn glare_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                     angles: [0, yaw_from(0x800, seats.caster.facing), 0],
                     tr,
                     focus: focus_on(seats.caster),
-                    frames: 0xC,
+                    frames: GLARE_ARM0_SHOT_FRAMES,
                 }),
                 drift: None,
                 hold: false,

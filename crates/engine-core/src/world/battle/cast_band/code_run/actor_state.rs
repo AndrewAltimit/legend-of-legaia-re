@@ -350,7 +350,19 @@ impl World {
         if let Some(entry) = reaction {
             self.commit_battle_reaction_entry(slot as usize, entry);
         }
-        if commit_now {
+        // The bump's commit is the anim tick's, and the tick skips a monster
+        // whose node colour word last latched zero (`0x800474D4..0x800474E0`):
+        // a caster a module hid by colour and shows again by `+0x04` alone
+        // keeps its clip until a deep draw refreshes the word. Cross Beam's
+        // arm 5 shows the Curry Devil and stages idle with the bump
+        // (`0x801F7238..0x801F7240`); the recording holds clip `8` on cursor
+        // `416` until the Done band's pan brings the body back into frame.
+        let latched_zero = self.actors.get(slot as usize).is_some_and(|a| {
+            a.battle_monster_id.is_some() && a.battle_node_colour_zero == Some(true)
+        });
+        if commit_now && latched_zero && slot < 8 {
+            self.casting.module_bump_deferred |= 1 << slot;
+        } else if commit_now {
             self.commit_staged_battle_anim_at_boundary(slot as usize);
             if slot < 8 {
                 self.casting.module_bump_commits |= 1 << slot;
@@ -432,5 +444,26 @@ mod tests {
         assert_eq!(w.casting.module_bump_commits, 1);
         w.apply_capture_seat_writes(0, rate_2);
         assert_eq!(w.actors[0].battle.anim_rate.0, 4);
+    }
+
+    /// A monster caster whose node colour word last latched zero keeps the
+    /// bump for the anim tick that runs again (`0x800474D4..0x800474E0`):
+    /// Cross Beam's Curry Devil holds clip `8` until a deep draw.
+    #[test]
+    fn a_bump_on_a_caster_latched_zero_waits_for_its_tick() {
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, 2);
+        let caster = w.party.party_count;
+        w.actors[usize::from(caster)].battle_monster_id = Some(1);
+        w.battle_ctx.active_actor = caster;
+        w.actors[usize::from(caster)].battle_node_colour_zero = Some(true);
+        w.casting.module_bump_commits = 0;
+        let mut v = w.cast_view(caster);
+        v.staged_anim = 0;
+        v.restage |= 1;
+        w.write_cast_view(caster, &v);
+        assert_eq!(w.casting.module_bump_commits, 0);
+        assert_eq!(w.casting.module_bump_deferred, 1 << caster);
     }
 }

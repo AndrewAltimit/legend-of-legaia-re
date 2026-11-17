@@ -6,9 +6,11 @@
 //! battle-load seeder `FUN_80053CB8` folds the equipment table's UDF (`+2`),
 //! LDF (`+3`) and SPD (`+4`) bytes and folds **neither** the INT (`+0`) nor the
 //! ATK (`+1`) byte, so a weapon's attack bonus never reaches the actor's ATK
-//! base (`+0x15A`) at battle load. It reaches ATK *working* (`+0x158`) here
-//! instead, at execution time, once per committed arms command - which is why
-//! the seeder skipping it is correct rather than an omission.
+//! base (`+0x15A`) at battle load. It reaches the offense here instead, at
+//! execution time, on every hit of a committed arms command: the resolver
+//! loads ATK *working* (`lhu s0,0x158` at `0x801ECB84`), adds the fold in `s0`
+//! and rolls with `s0`, never storing it back - which is why the seeder
+//! skipping it is correct rather than an omission.
 //!
 //! ## Where the numbers come from
 //!
@@ -19,7 +21,7 @@
 //! the same two-hop lookup the menu aggregator uses - item property record
 //! `DAT_80074368 + id*0xC` byte `+1` selects a row in the equipment stat table
 //! `DAT_80074F68 + row*8`, whose byte `+1` is the attack bonus
-//! (`legaia_game_tables::equip_stats`) - then folds it into ATK working:
+//! (`legaia_game_tables::equip_stats`) - then adds it to the loaded ATK working:
 //!
 //! | command | equipment slots read | record offsets | fold |
 //! |---|---|---|---|
@@ -105,7 +107,7 @@ pub fn arms_command_equip_slots(command: u8) -> Option<&'static [u8]> {
 /// two-hop lookup that produces it. Returns `None` for a command outside the
 /// dispatch table, and `Some(0)` for the live-but-empty arm `0x10`.
 ///
-/// PORT: FUN_801EC3E4 (the ATK-working fold at `+0x158`)
+/// PORT: FUN_801EC3E4 (the fold onto the ATK working loaded at `0x801ECB84`)
 pub fn arms_weapon_atk_fold(command: u8, atk_bonuses: &[u8; EQUIP_SLOTS]) -> Option<u16> {
     let slots = arms_command_equip_slots(command)?;
     let sum: u16 = slots

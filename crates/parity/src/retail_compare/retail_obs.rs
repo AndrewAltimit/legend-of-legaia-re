@@ -159,6 +159,14 @@ pub struct RetailObs {
     /// the one stream every `jal 0x80056798` draws from. Field and overworld
     /// classes only; a battle drive searches its own streams.
     pub rand_seed: Option<u32>,
+    /// The op-`0x35` sub-op `5` timed release as the state holds it
+    /// (`FUN_800267A8`'s cells): armed (`gp+0x808`), deadline (`gp+0x814`)
+    /// and elapsed vsyncs (`gp+0x81C`), and whether the field-BGM source's
+    /// sequence plays (`0x8007052C` `+0xA`, its libsnd record's `+0x98`
+    /// bit 0). Field and overworld classes only. [`seat_timed_release`]
+    /// stands the engine's where retail's is when the script gate meets, as
+    /// the glide in flight is.
+    pub timed_release: Option<(bool, i32, i32, bool)>,
     /// The live mode-3 CLUT-cell cyclers ([`retail_cell_fx`]), handed to the
     /// image child as `LEGAIA_SEAT_CLUT_FX` so the cycled palettes show the
     /// captured phase.
@@ -576,6 +584,14 @@ impl RetailObs {
                 StateClass::Field | StateClass::WorldMap | StateClass::Minigame
             )
             .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
+            timed_release: matches!(class, StateClass::Field | StateClass::WorldMap).then(|| {
+                (
+                    rd32(ram, TIMED_RELEASE_ARMED) != 0,
+                    rd32(ram, TIMED_RELEASE_DEADLINE),
+                    rd32(ram, TIMED_RELEASE_ELAPSED),
+                    field_bgm_playing(ram),
+                )
+            }),
         };
         // A walking capture's frame is two passes old ([`super::walk_rewind`]);
         // a focus off the player is a poked or script-carried seat, which
@@ -585,6 +601,39 @@ impl RetailObs {
         }
         obs
     }
+}
+
+/// `FUN_800267A8`'s cells: `gp+0x808` armed, `gp+0x814` deadline,
+/// `gp+0x81C` elapsed (`gp = 0x8007B318`).
+const TIMED_RELEASE_ARMED: u32 = 0x8007_BB20;
+const TIMED_RELEASE_DEADLINE: u32 = 0x8007_BB2C;
+const TIMED_RELEASE_ELAPSED: u32 = 0x8007_BB34;
+
+/// Stand the engine's timed release where the state's is, at the instant
+/// the script gate meets the capture's PC: the seed replays the record from
+/// an earlier op, and a sub-op `5` it re-arms has run the engine's vsyncs
+/// since, not retail's. A release retail has already spent fires now (its
+/// stop reaches the hosts as the expiry's sub-op `2`); one still counting
+/// takes retail's elapsed count. Harness seat: the release law is
+/// `World::tick`'s.
+pub(crate) fn seat_timed_release(world: &mut legaia_engine_core::world::World, retail: &RetailObs) {
+    let Some((armed, deadline, elapsed, playing)) = retail.timed_release else {
+        return;
+    };
+    world.seat_sound_release(armed, deadline, elapsed, !playing);
+}
+
+/// Whether the field-BGM source `0x8007052C` is open on a playing libsnd
+/// sequence: `+0x8` open, `+0xA` the sequence, whose record
+/// (`*(0x801CD2C0 + seq * 4)`) holds the play bit `0x1` at `+0x98`.
+fn field_bgm_playing(ram: &[u8]) -> bool {
+    const SOURCE: u32 = 0x8007_052C;
+    if game_anchors::u16_at(ram, SOURCE + 8) == 0 {
+        return false;
+    }
+    let seq = u32::from(game_anchors::u16_at(ram, SOURCE + 0xA)) % 32;
+    let rec = game_anchors::u32_at(ram, 0x801C_D2C0 + seq * 4);
+    (0x8000_0000..0x8020_0000).contains(&rec) && game_anchors::u32_at(ram, rec + 0x98) & 1 != 0
 }
 
 /// The field VM's script-counter slot table

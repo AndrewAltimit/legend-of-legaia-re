@@ -340,6 +340,7 @@ const NAV = [
       { href: 'tooling/retail-compare.html', text: 'Retail comparison corpus', key: 'tooling/retail-compare' },
       { href: 'tooling/cast-sequence-oracle.html', text: 'Cast-sequence oracle', key: 'tooling/cast-sequence-oracle', indent: true },
       { href: 'tooling/walk-film.html', text: 'Field walk film', key: 'tooling/walk-film', indent: true },
+      { href: 'tooling/minigame-film.html', text: 'Minigame film', key: 'tooling/minigame-film', indent: true },
       { href: 'tooling/gate-replay.html', text: 'Gate replay', key: 'tooling/gate-replay', indent: true },
       { href: 'tooling/capture-coverage.html', text: 'Capture coverage', key: 'tooling/capture-coverage', indent: true },
       { href: 'tooling/full-game-ladder.html', text: 'Full-game ladder', key: 'tooling/full-game-ladder' },

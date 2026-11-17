@@ -89,3 +89,70 @@ fn face_field_npc_toward_converges_and_skips_unplaced() {
     w.face_field_npc_toward(9, 100, 100);
     assert!(!w.npcs.headings.contains_key(&9));
 }
+
+fn talk_world_with_channel(flags: u32) -> World {
+    let mut w = World::new();
+    w.player_actor_slot = Some(0);
+    w.actors[0].active = true;
+    w.actors[0].move_state.world_x = 100;
+    w.actors[0].move_state.world_z = 0;
+    w.npcs.positions.insert(3, (0, 0));
+    w.npcs.headings.insert(3, 0x800);
+    let ctx = legaia_engine_vm::field::FieldCtx {
+        flags,
+        ..Default::default()
+    };
+    w.field_vm
+        .channels
+        .push(legaia_engine_field::field_channels::FieldChannel {
+            placement_index: 3,
+            ctx,
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        });
+    w
+}
+
+/// The dialog SM's exit restores `+0x5A` with no compare against the snapped
+/// bearing (`0x80039CC8..0x80039CE8`): a turn the talk record gave its own
+/// placement is undone when the talk ends.
+#[test]
+fn a_talk_turn_is_undone_by_the_restore() {
+    let mut w = talk_world_with_channel(0x0002_0000);
+    w.face_field_npc_at_player(3);
+    assert_eq!(w.npcs.headings.get(&3), Some(&0x400));
+    // The record turns its talker onto another compass point.
+    w.npcs.headings.insert(3, 0xC00);
+    w.release_talk_facing();
+    assert_eq!(w.npcs.headings.get(&3), Some(&0x800));
+}
+
+/// `0x400000` on the talker at the end skips the restore, and the save is
+/// taken anyway at the touch (`0x801D5BE4`), so a talk that drops the bit
+/// (`32 16`) restores a placement the snap skipped.
+#[test]
+fn the_class_bit_at_the_end_decides_the_restore() {
+    let mut w = talk_world_with_channel(0x0042_0000);
+    w.face_field_npc_at_player(3);
+    assert_eq!(
+        w.npcs.headings.get(&3),
+        Some(&0x800),
+        "no snap under 0x400000"
+    );
+    w.npcs.headings.insert(3, 0xC00);
+    w.release_talk_facing();
+    assert_eq!(w.npcs.headings.get(&3), Some(&0xC00), "kept: the bit is up");
+
+    let mut w = talk_world_with_channel(0x0042_0000);
+    w.face_field_npc_at_player(3);
+    w.npcs.headings.insert(3, 0xC00);
+    w.field_vm.channels[0].ctx.flags &= !0x0040_0000;
+    w.release_talk_facing();
+    assert_eq!(
+        w.npcs.headings.get(&3),
+        Some(&0x800),
+        "restored: the talk dropped it"
+    );
+}

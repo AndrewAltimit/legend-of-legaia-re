@@ -214,10 +214,13 @@ fn the_arrival_drops_the_held_fade() {
     });
     assert!(run_until_transition(&mut w, 600).is_some());
     assert!(w.presentation.fade.is_some());
-    // The scene host takes the transition; the next tick clears the fade the
-    // old scene's actor list would have taken with it.
+    // The scene host takes the transition; the next game frame clears the
+    // fade the old scene's actor list would have taken with it (the session
+    // runs on the actor pass, once a game frame).
     w.pending_named_scene_transition = None;
-    let _ = w.tick();
+    for _ in 0..w.clock.game_frame_wait() {
+        let _ = w.tick();
+    }
     assert!(w.presentation.fade.is_none());
     assert!(!w.pause_session_active());
 }

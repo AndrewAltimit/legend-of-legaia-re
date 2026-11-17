@@ -54,6 +54,7 @@ impl PlayWindowApp {
     pub(super) fn seat_strike_deal(&mut self) {
         self.seat_film_guard();
         self.seat_leadin_cost();
+        self.seat_battle_readout();
         let Some(sc) = self.screenshot.as_ref() else {
             return;
         };
@@ -87,24 +88,79 @@ impl PlayWindowApp {
         }
     }
 
-    /// `LEGAIA_LEADIN_TABLE_COST`: hold the polygon census off through the
-    /// lead-in and raise it, once, where the film starts: the capture's gate,
-    /// or the cast-sequence recorder's cast begin (a seeded spell film has no
-    /// gate).
-    fn seat_leadin_cost(&mut self) {
-        if !self
+    /// `LEGAIA_BATTLE_READOUT` (HARNESS): on the capture's tick, stand each
+    /// party HP readout on the displayed word and bar-step accumulator the
+    /// capture holds, once - a heal or a hit retail caught mid-roll shows its
+    /// rolling figure, where the seeded bars show the live HP.
+    fn seat_battle_readout(&mut self) {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        if sc.battle_readout.is_empty() {
+            return;
+        }
+        let gated = sc.phase_gate.is_some()
+            || sc.arrival_gate.is_some()
+            || sc.script_gate.is_some()
+            || sc.battle_drive.is_some();
+        let due = if gated {
+            self.capture_gate_met()
+        } else {
+            self.tick_no + 1 >= sc.capture_tick
+        };
+        if !due || self.session.host.world.mode != SceneMode::Battle {
+            return;
+        }
+        let readout = self
             .screenshot
-            .as_ref()
-            .is_some_and(|sc| sc.leadin_table_cost)
-        {
+            .as_mut()
+            .map(|sc| std::mem::take(&mut sc.battle_readout))
+            .unwrap_or_default();
+        for (slot, word, acc) in readout {
+            if let Some(a) = self.session.host.world.actors.get_mut(usize::from(slot)) {
+                a.battle.hp_display = Some(word);
+                a.battle.hp_bar_pending = acc;
+            }
+        }
+    }
+
+    /// `LEGAIA_LEADIN_TABLE_COST` / `LEGAIA_LEADIN_SPAN_LAW`: hold the
+    /// polygon census / the span law off through the lead-in and give each
+    /// back, once, where the film starts: the capture's gate, or the
+    /// cast-sequence recorder's cast begin (a seeded spell film has no gate).
+    /// Each half returns to what the session asked for
+    /// (`LEGAIA_BATTLE_POLY_COST` / `LEGAIA_BATTLE_FRAME_SPAN`, on by
+    /// default), read on the first call.
+    fn seat_leadin_cost(&mut self) {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        if !sc.leadin_span_law && !sc.leadin_table_cost {
             return;
         }
         let met = self.capture_gate_met()
             || super::redraw_present::CAST_SEQ_STARTED.load(std::sync::atomic::Ordering::Relaxed);
         let toggles = &mut self.session.host.world.toggles;
-        toggles.battle_poly_frame_cost = met;
-        if met && let Some(sc) = self.screenshot.as_mut() {
-            sc.leadin_table_cost = false;
+        let Some(sc) = self.screenshot.as_mut() else {
+            return;
+        };
+        if sc.leadin_span_law {
+            let wanted = *sc
+                .leadin_span_wanted
+                .get_or_insert(toggles.battle_frame_span_law);
+            toggles.battle_frame_span_law = met && wanted;
+            if met {
+                sc.leadin_span_law = false;
+            }
+        }
+        if sc.leadin_table_cost {
+            let wanted = *sc
+                .leadin_census_wanted
+                .get_or_insert(toggles.battle_poly_frame_cost);
+            toggles.battle_poly_frame_cost = met && wanted;
+            if met {
+                sc.leadin_table_cost = false;
+            }
         }
     }
 

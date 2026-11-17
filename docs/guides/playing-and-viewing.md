@@ -106,8 +106,8 @@ disc...* opens the launcher's own disc finder instead, in place of the
 options: the folder of the disc last used (else Downloads, else the home
 folder), its subfolders and its `.bin` / `.cue` files, then the usual places
 (home, Downloads, Desktop, Documents, the program's folder, and the top of each
-drive). Each disc image is checked as it is listed: the one in use reads *In
-use*, another release of the game *Wrong disc*, a file that is no PlayStation
+drive). Each disc image is checked as it is listed: the one in use (and the
+`.cue` beside its `.bin`, the same disc) reads *In use*, another release of the game *Wrong disc*, a file that is no PlayStation
 image *Unreadable*, and the row's help says why. Cross opens a folder or tries
 a disc image, and a disc that passes the check is adopted at once; *Up one folder* (or `Backspace`) climbs, Circle or
 `Esc` closes the finder. The keyboard reaches it too, as *Find a disc on this
@@ -229,8 +229,11 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 A controller works the launcher the way it works the game's menus: the D-pad
 or left stick moves the focus and steps an option, Cross presses, Triangle is
 the right-click (an option a value back, the previous disc on *Choose
-disc...*), Circle leaves the *Controls* or *Recent* page, Start plays a ready disc, and
-L1 / R1 page the option list. A held direction repeats, as a held arrow key
+disc...*), Square is `Delete` (an option back on its default, a remembered
+disc or card forgotten), Circle leaves the *Controls* or *Recent* page, Start
+plays a ready disc, and L1 / R1 page the option list. While the controller was
+pressed last, the help box names its buttons where the help says `Enter`,
+`Shift+Enter`, `Delete` or `Esc`. A held direction repeats, as a held arrow key
 does. A controller also rebinds: on the *Controls* page Cross starts a row's
 wait and the next controller button takes it (see [Changing the keys](#changing-the-keys)).
 
@@ -556,7 +559,7 @@ fog F9*, *Enhanced lighting I*), dimmed while the original game holds the row.
 The heading names the launcher group the focused row is in (*Settings: Battle
 tuning*); the focused row is marked as on the launcher, a lighter band with a
 gold bar down its left edge, on every page of the panel. Up / Down pick a row and Left / Right (Cross, or `Enter`) change it,
-`Delete` puts it back on its default as on the launcher, with the row's help
+`Delete` (Square on a controller) puts it back on its default as on the launcher, with the row's help
 underneath; a change takes effect behind the panel at once, and the list
 scrolls under the plate. Options go to `legaia-options.toml`; the launcher's
 own rows (the PlayStation pixel look, the living ground pulse, action
@@ -596,7 +599,8 @@ transition (`--battle first`, the page's button of the same name). The list scro
 under the cursor, with a bar on the plate's edge showing where the view is, as
 the settings page has. The play page has the debug camera and the diagnostics bar as
 boxes as well as `F3` and `F1`. **Keys** lists every toggle key with its current state (`F11`
-fullscreen among them; `End` only while an expansion pack is loaded), the key
+fullscreen among them; `End` only while an expansion pack is loaded, and
+`PrtSc` for a screenshot in that row's seat otherwise), the key
 each pad button is on (Cross, Circle, Start, ...), read from the live Key
 Config table, and the mouse's camera controls. Its last line is a reset:
 `Delete`, `Enter` or Cross, pressed twice, puts every key and controller
@@ -604,17 +608,24 @@ button back on its default and writes `legaia-input.toml`, the way out of a
 rebind that left no way into the menu.
 `Esc`, `F12`, Circle or Start close the panel. Each page's last line names its
 keys, or, while a controller was the last thing pressed, that controller's
-buttons by the labels its maker prints (*D-pad pick, change  B close*); on the
-Settings page a row whose help runs to three lines has that line for its
-third. A state the original game does
+buttons by the labels its maker prints (*D-pad pick, change  X default  B
+close*). The row helps and the value column's press labels follow the same
+device: on the keyboard they say *Enter* and *Esc* for the panel's Cross and
+Circle and name the key bound to any other button (*X on its list*), on a
+controller its own labels (*A insert*, *X: back to Enhanced*). The Settings
+page shows thirteen rows so a three-line help and the controls line both fit,
+and the Keys page stands on the same plate as the list pages, its text scaled
+to fit inside it. A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
 stays hidden while the panel is up. In a multiplayer session, whose other
 players would stall on a held game, `F12` shows the Keys page alone and takes
 no pad input.
 
-The window's first seconds say so (*F12 or Select+Start: settings - Esc twice
-quits*, bottom left) until the panel is opened. A `--screenshot` capture leaves
+The window's first seconds say so at the bottom, with the keys Cross and
+Circle are on (*Z: confirm  S: back  F12: settings  Esc twice: quit*; with a
+controller pressed last, its own buttons and the Select+Start chord), until
+the panel is opened. A `--screenshot` capture leaves
 that line, the toggle notices and the quit prompt out, so it shows only what the
 game draws; `--screenshot-chrome` keeps them (for a documentation shot - they
 are timed by the wall clock, so such a capture is not frame-exact). A scripted
@@ -662,7 +673,8 @@ vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
 is an F-key or `Home` / `End`, which the pad lookup never resolves, or a letter outside
 that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
 rebinding can collide with one. With an expansion pack, `\` opens its card menu and `` ` `` its
-game-mode picker over the field; `Tab` opens the [multiplayer screen](#playing-online).
+game-mode picker over the field (a line under its list says what the focused
+mode is played as); `Tab` opens the [multiplayer screen](#playing-online).
 
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
 into the scene.
@@ -1036,7 +1048,9 @@ The scene name is a positional argument here, not a `--scene` flag (`field`,
 `world` and `dialog` all take their subject that way). Started with no view
 named (a double-click), `asset-viewer` opens the archive browser on the
 `extracted/PROT.DAT` in the current folder or beside the program; with none
-there it says how to make one and points at `legaia-explorer`. The browser takes
+there it says how to make one and points at `legaia-explorer` - in the
+terminal, or, double-clicked, in a dialog whose *Choose folder...* picks the
+extracted folder to browse and whose *Legaia Explorer* starts Explorer. The browser takes
 entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
 another.
 

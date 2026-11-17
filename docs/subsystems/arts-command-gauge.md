@@ -361,7 +361,7 @@ A committed combo is replayed by the **Arms execution resolver `FUN_801EC3E4`** 
 
 The dispatch is bounded at six arms (`(command - 0x0C) < 6`, commands `0x0C..=0x11`). The head admission gate is a different band read from a different place: it tests the caller's command-record byte with `(cmd - 0x0C) < 0x14` (`0x0C..=0x1F`). A command in `0x12..=0x1F` is admitted and then folds nothing.
 
-Each arm resolves one or more of the character record's five equipment slots (`+0x196..+0x19B`) through a two-hop lookup: item property record `DAT_80074368 + id*0xC` byte `+1` → equipment stat row `DAT_80074F68 + row*8` byte `+1` (the **attack** bonus). It adds the result into the actor's ATK **working** halfword `+0x158`:
+Each arm resolves one or more of the character record's five equipment slots (`+0x196..+0x19B`) through a two-hop lookup: item property record `DAT_80074368 + id*0xC` byte `+1` → equipment stat row `DAT_80074F68 + row*8` byte `+1` (the **attack** bonus). It adds the result to the actor's ATK **working** (`+0x158`), loaded into `s0` at `0x801ECB84`; the damage body rolls with `s0`, and no instruction of the resolver stores it back, so every hit of a chain folds against the same working ATK:
 
 | command | equipment slots | fold into `+0x158` |
 |---|---|---|
@@ -373,9 +373,9 @@ Each arm resolves one or more of the character record's five equipment slots (`+
 
 `0x0E` and `0x0F` share a jump-table arm (slots `[2]` and `[3]` hold the same target). `0x10`'s slot is the same address the bounds check bails to: a live table entry that folds nothing. Retail applies no empty-slot test and no `kind == 1` item-class guard here, matching the battle-load seeder.
 
-This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md). The seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds neither INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK working here, per committed command. The seeder's omission is correct.
+This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md). The seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds neither INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches the offense here, per hit, without ever landing in a stat cell. The seeder's omission is correct.
 
-Port: `legaia_engine_battle_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits` (`crates/engine-battle-vm/src/battle_formulas/arms_fold.rs`). The live loop seeds a party slot's `battle.attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
+Port: `legaia_engine_battle_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits` (`crates/engine-battle-vm/src/battle_formulas/arms_fold.rs`). The live loop seeds a party slot's `battle.attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`): an admitted hit event through `fold_weapon_atk_on_hit`, which returns the delta and stores nothing, and the fallback strikes through the same arms. The player-facing formula is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
 
 ## Restoring the animation rate after an action
 

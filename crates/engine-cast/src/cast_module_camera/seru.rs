@@ -386,6 +386,16 @@ pub const VERA_SEAT_SPAWNS: [ModuleSpawn; 2] = module_spawns(
 pub const VERA_CREATURE_SPAWNS: [ModuleSpawn; 2] =
     module_spawns([0x801F_85D4, 0x801F_862C], SpawnAnchor::Creature);
 
+/// PROT 0905 arm 9's pool spawn behind [`VERA_RESTORE_SPAWNS`]: effect
+/// `0x14` on the restored target's `+0x34` trio, turned its heading
+/// (`li a0,0x14; lh a2,0x46(s3); jal 0x801DFDF0; move a1,s1` at
+/// `0x801F7B9C..0x801F7BA8`, `s1 = target + 0x34`).
+pub const VERA_RESTORE_EFFECTS: [ModuleEffect; 1] = [ModuleEffect {
+    id: 0x14,
+    anchor: SpawnAnchor::Victim,
+    angle: EffectAngle::AnchorFacing(0),
+}];
+
 /// PROT 0905 arm 9's five spawns, on the restored target (`a0 = target +
 /// 0x34`, `a1 = target + 0x44`; `0x801F7B34..0x801F7B94`).
 pub const VERA_RESTORE_SPAWNS: [ModuleSpawn; 5] = module_spawns(
@@ -650,6 +660,7 @@ pub fn vera_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             st.countdown.add(112);
             ArmDirection {
                 spawns: &VERA_RESTORE_SPAWNS,
+                effects: &VERA_RESTORE_EFFECTS,
                 ..ArmDirection::PASS
             }
             .nudged(drift)
@@ -704,6 +715,24 @@ pub const ZENOIR_SEAT_SPAWNS: [ModuleSpawn; 7] = module_spawns(
     ],
     SpawnAnchor::CreatureGround { y: 0 },
 );
+
+/// PROT 0908 arm 4's two `efect.dat` pool spawns behind its seven seats, on
+/// the same grid point at angle `0`: effect `3` (`0x801F6FA0..0x801F6FAC`)
+/// and effect `0x20` (`0x801F6FB0..0x801F6FBC`), `a1 = s0` the point the
+/// seats were handed. Their children draw `rand()` words from the pass that
+/// seats them on (the bursts and the per-frame sheds of the summoning ring).
+pub const ZENOIR_SEAT_EFFECTS: [ModuleEffect; 2] = [
+    ModuleEffect {
+        id: 3,
+        anchor: SpawnAnchor::CreatureGround { y: 0 },
+        angle: EffectAngle::Literal(0),
+    },
+    ModuleEffect {
+        id: 0x20,
+        anchor: SpawnAnchor::CreatureGround { y: 0 },
+        angle: EffectAngle::Literal(0),
+    },
+];
 
 /// PROT 0908 arm 6's spawn, under the creature at `y = -0x190`
 /// (`0x801F746C`).
@@ -848,6 +877,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             st.countdown.0 = SPEED_SCALAR * 140;
             ArmDirection {
                 spawns: &ZENOIR_SEAT_SPAWNS,
+                effects: &ZENOIR_SEAT_EFFECTS,
                 ..ArmDirection::shot(ModuleShot {
                     angles: [0x3C, 0, 0],
                     tr: [0, 0x400, 0xA00],
@@ -1081,6 +1111,27 @@ mod tests {
         }
         assert!(!zenoir_direct(&mut st, ZENOIR_FINISH_ARM, s).hold);
         assert!(st.creature_floor_clip);
+    }
+
+    /// PROT 0908's arm 4 spawns its two pool effects behind its seats, and
+    /// PROT 0905's arm 9 its effect `0x14` on the restored target, turned
+    /// its heading.
+    #[test]
+    fn zenoir_and_vera_arms_report_their_pool_effects() {
+        let mut st = ModuleCamState::default();
+        let d = zenoir_direct(&mut st, 4, seats());
+        assert_eq!(d.spawns.len(), 7);
+        let ids: Vec<u8> = d.effects.iter().map(|e| e.id).collect();
+        assert_eq!(ids, [3, 0x20]);
+        assert!(
+            d.effects
+                .iter()
+                .all(|e| e.anchor == SpawnAnchor::CreatureGround { y: 0 }
+                    && e.angle == EffectAngle::Literal(0))
+        );
+        assert_eq!(VERA_RESTORE_EFFECTS[0].id, 0x14);
+        assert_eq!(VERA_RESTORE_EFFECTS[0].anchor, SpawnAnchor::Victim);
+        assert_eq!(VERA_RESTORE_EFFECTS[0].angle, EffectAngle::AnchorFacing(0));
     }
 
     /// PROT 0908's arm 11 raises the floor clip inside the targetable-victim

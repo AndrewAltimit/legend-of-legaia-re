@@ -74,3 +74,51 @@ fn op_4c_ed_writes_the_dither_word() {
         assert_eq!(w.toggles.draw_dither, want);
     }
 }
+
+/// A `4C D2` re-seat allocates its actor afresh (`FUN_8003A1E4` through
+/// `FUN_80020DE0`): the model is the header's again, the tilt and face are
+/// zero and the playing clip is `-1`, whatever the retired actor wore.
+#[test]
+fn a_4c_d2_reseat_draws_the_header_model_not_the_retired_swap() {
+    use legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
+    // Record 0 is the scene controller; record 1 the placement, model 5.
+    let man = super::script_teleport::man_bytes_with_placement_records(&[
+        [0x00, 0, 0x01, 0x01],
+        [0x05, 0, 0x03, 0x04],
+    ]);
+    let man_file = legaia_scene_formats::man_section::parse(&man).expect("fixture parses");
+    let mut w = World::new();
+    w.seed_field_channels(&man_file, &man);
+    assert!(
+        w.field_vm.channels.iter().any(|c| c.placement_index == 1),
+        "the placement seats a channel"
+    );
+    // What the actor wore before it retired: a `4C 50` swap, a tilt, a face
+    // row and a playing clip.
+    w.set_field_npc_live_model(1, 0x4B);
+    w.npcs.clip_bones.insert(1, 3);
+    w.npcs.tilts.insert(1, (0x40, -0x40));
+    w.npcs.faces.insert(1, (2, 0x800));
+    w.npcs.clip_current.insert(1, 7);
+    for c in w.field_vm.channels.iter_mut() {
+        if c.placement_index == 1 {
+            c.ctx.flags |= CONTEXT_RETIRE_BIT;
+        }
+    }
+    w.sweep_field_channel_lifetimes();
+    assert!(w.field_placement_retired(1), "the context retired");
+    assert_eq!(
+        w.field_npc_live_model(1),
+        Some(0x4B),
+        "a retired actor's swap stays until something re-seats the slot"
+    );
+    // `4C D2 01` (channel = N0 + index, N0 = 0).
+    w.field_vm.pending_placement_respawns.push(1);
+    w.sweep_field_channel_lifetimes();
+    assert!(!w.field_placement_retired(1), "re-seated");
+    assert_eq!(w.field_npc_live_model(1), None, "the header model draws");
+    assert!(!w.npcs.clip_bones.contains_key(&1));
+    assert!(!w.npcs.tilts.contains_key(&1), "+0x24 / +0x28 zero");
+    assert!(!w.npcs.faces.contains_key(&1), "+0x6D / +0x7A zero");
+    assert!(!w.npcs.clip_current.contains_key(&1), "+0x5E = -1");
+}

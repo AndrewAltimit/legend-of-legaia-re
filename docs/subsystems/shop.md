@@ -139,13 +139,20 @@ The casino prize counter is the same stack: on black, the "Exchange" plaque
 purchase confirm (46) while it is up (the `casino_prize_shop` library state).
 Both hosts frame it through `engine-ui::shop_screen::prize_screen_draws`.
 
-**Slides.** Stepped one vsync at a time, every window that joins a screen
-leaves its descriptor's park edge (`+0x1`: bottom, left, top, right) from just
-off screen and lands home **eleven frames** later at a constant speed, all of
-a screen's new windows together; a window that leaves travels back out the
-same way. The port keeps the timing in `shop::ShopSlides` (stepped by the menu
-tick toward the screen's set) and moves each window's draws with it
-(`engine-ui::shop_screen::apply_shop_slides`).
+**Slides.** The shop's windows ride the same window walker as the pause
+menu's (`FUN_80031AE4`, twelve frames a slide at the menu's step of `1`): a
+window that joins a screen is created on the park `FUN_800326AC` computes off
+its descriptor's park edge (`+0x1`: bottom `y = 0xF0 + 0xC`, left
+`x = -w - 0x14`, top `y = -h - 0x14`, right `x = 0x140 + 0xC`, the diagonals
+by the smaller clearance) and stands at `park + (home - park) * p / 12` on its
+`p`-th frame, already a twelfth of the way in on its first and home on its
+twelfth, all of a screen's new windows together; a window that leaves travels
+back out along the same line. The Retock capture, stepped one vsync at a time,
+shows that motion. The port keeps the timing in `shop::ShopSlides` (stepped by
+the menu tick toward the screen's set), places each window with
+`shop::shop_window_origin`, moves each window's draws with it
+(`engine-ui::shop_screen::apply_shop_slides`), and clips the shop's quads to
+the 320x240 stage on both hosts.
 
 **Fade.** Before the first slide the field fades to black: linear, from the
 last dialogue frame to black in fourteen frames (the same per-vsync capture).

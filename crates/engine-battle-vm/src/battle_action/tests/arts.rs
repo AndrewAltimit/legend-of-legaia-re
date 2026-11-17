@@ -290,7 +290,7 @@ fn swing_hit(command: u8) -> HitEvent {
 }
 
 #[test]
-fn arms_command_folds_the_equipped_weapon_into_atk_working() {
+fn arms_command_folds_the_equipped_weapon_without_storing_it() {
     let (ctx, mut host) = fresh(ActionCategory::Attack, 1);
     // Command 0x0C reads equipment slot 2 and folds half its ATK bonus.
     host.actors[1].current_anim = 0x0C;
@@ -299,13 +299,18 @@ fn arms_command_folds_the_equipped_weapon_into_atk_working() {
 
     let hit = swing_hit(0x0C);
     assert_eq!(
-        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
         Some(15)
     );
+    // Retail's fold lives in `s0` (`0x801ECB84`); `+0x158` is never written,
+    // so a second hit of the chain folds against the same working ATK.
+    assert_eq!(host.actors[1].atk_working, 100, "the fold stores nothing");
     assert_eq!(
-        host.actors[1].atk_working, 115,
-        "slot 2 bonus 30 folds as 30 >> 1 = 15"
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
+        Some(15),
+        "slot 2 bonus 30 folds as 30 >> 1 = 15 on every hit"
     );
+    assert_eq!(host.actors[1].atk_working, 100);
 }
 
 #[test]
@@ -315,8 +320,11 @@ fn arms_command_0x11_folds_half_the_sum_of_every_slot() {
     host.equip_atk.insert(1, [10, 20, 30, 40, 50]);
 
     let hit = swing_hit(0x11);
-    fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit);
-    assert_eq!(host.actors[1].atk_working, 75, "(10+20+30+40+50) >> 1");
+    assert_eq!(
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
+        Some(75),
+        "(10+20+30+40+50) >> 1"
+    );
 }
 
 #[test]
@@ -330,7 +338,7 @@ fn non_arms_commands_leave_atk_working_alone() {
 
     let hit = swing_hit(0x19);
     assert_eq!(
-        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
         None
     );
     assert_eq!(host.actors[1].atk_working, 100);
@@ -347,7 +355,7 @@ fn arms_fold_is_gated_by_the_input_cursor_bound() {
 
     let hit = swing_hit(0x0C);
     assert_eq!(
-        fold_weapon_atk_on_hit(&mut host, 1, ctx.action_state, &hit),
+        fold_weapon_atk_on_hit(&host, 1, ctx.action_state, &hit),
         None
     );
     assert_eq!(host.actors[1].atk_working, 100, "cursor 4 bails");
@@ -365,7 +373,7 @@ fn arms_fold_does_not_run_for_enemy_slots() {
 
     let hit = swing_hit(0x0C);
     assert_eq!(
-        fold_weapon_atk_on_hit(&mut host, 3, ctx.action_state, &hit),
+        fold_weapon_atk_on_hit(&host, 3, ctx.action_state, &hit),
         None
     );
     assert_eq!(host.actors[3].atk_working, 100);

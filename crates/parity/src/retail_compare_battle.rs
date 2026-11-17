@@ -452,6 +452,11 @@ pub struct RetailBattle {
     pub monster_ids: Vec<u8>,
     /// Party slots `0..party_count` (fixed pool slots).
     pub party: Vec<Option<Combatant>>,
+    /// Each party seat's HP readout as the capture shows it: the displayed
+    /// word `+0x172` and the bar step's signed accumulator `+0x10`, which
+    /// stand off the live HP `+0x14C` while a heal or a hit rolls the figure
+    /// (`FUN_80047430`). `None` for an empty seat.
+    pub party_hp_shown: Vec<Option<(u16, i32)>>,
     /// Monster seats (pool slots `3..3 + monster_count`).
     pub monsters: Vec<Option<Combatant>>,
     /// `ctx[+0x13]` - the seat the action SM is running; ahead of the seed
@@ -841,6 +846,13 @@ pub struct RetailBattle {
     /// the last target it struck. The results framing reads it (case 6's
     /// battle-over yaw is `0x800 - actor[+0x46]`).
     pub facing: Vec<Option<u16>>,
+    /// Each pool slot's target byte `+0x1DD`. A body's root motion reads
+    /// it: a positive clip speed steps the live pair only while the range
+    /// law reads the body out of reach of its own target (`jal 0x8004E2F0`
+    /// at `0x80047D50`), and a struck monster's target is the seat its own
+    /// last action aimed at, which the commit that struck it never rewrites
+    /// ([`Self::engine_seat_targets`]).
+    pub seat_targets: Vec<Option<u8>>,
     /// Each pool slot's colour lanes `+0x04`, for a slot whose tint state
     /// `+0x21C` is the defeat fade (`2`): a monster killed earlier has
     /// stepped its lanes to black (`noa_levelup_banner`'s Gobu reads `0`)

@@ -51,7 +51,10 @@
 //!
 //! A controller works the screen as the game's menus do: the D-pad or left
 //! stick moves, Cross activates, Triangle is the right-click, Circle leaves
-//! the Controls page, Start plays, L1 / R1 page the options.
+//! the Controls page, Square is `Delete` (an option back on its default, a
+//! remembered disc or card forgotten), Start plays, L1 / R1 page the
+//! options; while a controller was pressed last the help box names its
+//! buttons where the help says `Enter`, `Delete` or `Esc`.
 //!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
 //! change a value, Tab jumps between the columns, Page Up / Page Down / Home
@@ -1401,6 +1404,7 @@ impl LauncherApp {
                     self.open_finder()
                 }
                 PadNav::Activate(d) => self.activate(self.focus, d, evl),
+                PadNav::Reset => self.reset_focused(),
                 PadNav::Play => {
                     if self.can_play() {
                         self.activate(Item::Play, 1, evl);
@@ -1857,6 +1861,11 @@ impl LauncherApp {
             return ("In use", GOOD, "The disc Play starts.".to_string());
         }
         match launcher::validate_disc(path) {
+            Ok(info) if same_disc_as(self.disc.as_ref(), &info) => (
+                "In use",
+                GOOD,
+                "The disc Play starts (a .cue and its .bin are the same disc).".to_string(),
+            ),
             Ok(_) => (tag, GOOD, help.to_string()),
             Err(p) => {
                 let tag = match p {
@@ -3071,6 +3080,20 @@ impl LauncherApp {
                 lines.push(note);
             }
         }
+        // The help is written in the keyboard's words; while a controller
+        // was pressed last it names that controller's buttons instead, as the
+        // key reminder under it does.
+        if let Some(g) = self.pad_last {
+            let table = [
+                ("Shift+Enter", self.pad_label("Triangle", g)),
+                ("Enter", self.pad_label("Cross", g)),
+                ("Delete", self.pad_label("Square", g)),
+                ("Esc", self.pad_label("Circle", g)),
+            ];
+            for (text, _) in &mut lines {
+                *text = launcher::device_words(text, &table);
+            }
+        }
         lines
     }
 
@@ -3971,6 +3994,9 @@ enum PadNav {
     Activate(i8),
     /// Start: play the ready disc.
     Play,
+    /// Square: the keyboard's `Delete` - the option back on its default,
+    /// a remembered disc or card forgotten, the pack or card cleared.
+    Reset,
 }
 
 /// A held controller move steps again, as a held arrow key does
@@ -4021,6 +4047,7 @@ fn pad_nav(pressed: u16) -> Vec<PadNav> {
         (B::L1, PadNav::Page(-1)),
         (B::R1, PadNav::Page(1)),
         (B::Circle, PadNav::Back),
+        (B::Square, PadNav::Reset),
     ] {
         if on(b) {
             out.push(nav);
@@ -4430,6 +4457,13 @@ fn clean_typed_path(s: &str) -> String {
     t.to_string()
 }
 
+/// Whether a checked disc image is the disc in use under another name: a
+/// `.cue` beside the `.bin` in use (or the other way round) reads the same
+/// `.bin`, so the finder tags it "In use" too, not "Disc image".
+fn same_disc_as(in_use: Option<&DiscInfo>, checked: &DiscInfo) -> bool {
+    in_use.is_some_and(|d| same_file(&d.bin, &checked.bin))
+}
+
 /// Whether two paths name one file (a remembered pack path written before a
 /// folder moved under a symlink, say).
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -4439,6 +4473,30 @@ fn same_file(a: &Path, b: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `.cue` that resolves to the `.bin` in use is that disc; another
+    /// image is not, and with no disc in use nothing is.
+    #[test]
+    fn a_cue_beside_the_disc_in_use_is_in_use() {
+        let dir = std::env::temp_dir().join(format!("legaia-same-disc-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (bin, other) = (dir.join("game.bin"), dir.join("other.bin"));
+        std::fs::write(&bin, b"x").unwrap();
+        std::fs::write(&other, b"y").unwrap();
+        let info = |path: &Path, bin: &Path| DiscInfo {
+            path: path.to_path_buf(),
+            bin: bin.to_path_buf(),
+            executable: launcher::USA_EXECUTABLE.into(),
+        };
+        let in_use = info(&bin, &bin);
+        assert!(same_disc_as(
+            Some(&in_use),
+            &info(&dir.join("game.cue"), &bin)
+        ));
+        assert!(!same_disc_as(Some(&in_use), &info(&other, &other)));
+        assert!(!same_disc_as(None, &info(&bin, &bin)));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn folder_line_elides_only_when_folders_were_left_out() {
@@ -4553,6 +4611,7 @@ mod tests {
         assert_eq!(pad_nav(B::Cross.mask()), [PadNav::Activate(1)]);
         assert_eq!(pad_nav(B::Triangle.mask()), [PadNav::Activate(-1)]);
         assert_eq!(pad_nav(B::Circle.mask()), [PadNav::Back]);
+        assert_eq!(pad_nav(B::Square.mask()), [PadNav::Reset]);
         assert_eq!(pad_nav(B::Start.mask()), [PadNav::Play]);
         // One activation per poll: a chord does not both play and step.
         assert_eq!(

@@ -98,9 +98,13 @@ fn talking_to_a_static_pose_placement_does_not_turn_it() {
             before,
             "static-pose placement {slot} must keep its authored heading"
         );
-        assert!(
-            host.world.npcs.facing_save.is_none(),
-            "a skipped snap must not arm the restore for slot {slot}"
+        // The touch post's save is unconditional (`0x801D5BE4`); the exit's
+        // own class test leaves the authored heading where it is.
+        host.world.release_talk_facing();
+        assert_eq!(
+            host.world.npcs.headings.get(&slot).copied(),
+            before,
+            "the restore under 0x400000 leaves slot {slot} alone"
         );
     }
 

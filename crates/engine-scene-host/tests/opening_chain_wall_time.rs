@@ -47,13 +47,15 @@
 //! `map01` leg carries the largest such window and gets its own asymmetric
 //! band, pinned by a per-frame decomposition of the retail capture against
 //! the record's authored ops (`chain_cam_full` camera trace vs the P2[38]
-//! disasm): 355 frames of world-map load + mode-2 init before the record's
-//! first op, then 322 frames of authored title-card `WaitFrames` (1:1),
-//! then the `apply 900` fly-in glide running concurrent with the authored
-//! `4A` 160 + 600 + 330 tail (1090 frames, the 3-page Mist crawl scrolling
-//! under them, non-blocking), then ~40 frames of transition fade. The
-//! engine plays the record-authored ~1410 frames and skips the ~440 frames
-//! of load + teardown, so it runs ~24 % SHORT and must never run LONG - a
+//! disasm): 355 frames before the record's `WaitFrames` - the world-map
+//! load and mode-2 init, then the title card's page, which the pager types
+//! for 100 vsyncs with the record parked on it - then 322 frames of
+//! authored `WaitFrames` (1:1) with the blank card's 38-vsync page among
+//! them, then the `apply 900` fly-in glide running concurrent with the
+//! authored `4A` 160 + 600 + 330 tail (1090 frames, the 3-page Mist crawl
+//! scrolling under them, non-blocking), then ~40 frames of transition fade.
+//! The engine plays the record's ~1550 frames, the two card pages included,
+//! and skips the load + teardown, so it runs SHORT and must never run LONG - a
 //! leg running long means record pacing broke (the historical failure was
 //! the final crawl being serialized against the authored tail waits).
 //!

@@ -977,14 +977,65 @@ pub(super) fn module_shot(ram: &[u8], ctx: u32) -> Option<KnownModuleShot> {
             prior_walks: false,
         });
     }
-    (phase == 1 && action == KISS_OF_DEATH).then_some(KnownModuleShot {
-        frames: i32::from(legaia_engine_cast::cast_module_camera::KISS_OF_DEATH_ARM0_SHOT_FRAMES),
+    if phase == 1 && action == KISS_OF_DEATH {
+        return Some(KnownModuleShot {
+            frames: i32::from(
+                legaia_engine_cast::cast_module_camera::KISS_OF_DEATH_ARM0_SHOT_FRAMES,
+            ),
+            prior_walks: true,
+        });
+    }
+    // Glare's arm 0 (PROT 0940, `0xC` frames) sets out from the fade as Kiss
+    // of Death's does. Only before arm 1's first pass, which drains the word
+    // and adds its own drift to the eye ([`displayed_module_drift_live`]).
+    use legaia_engine_cast::cast_module_camera as cmc;
+    (phase == 1
+        && action == GLARE
+        && cmc::capture_countdown_va(action)
+            .is_some_and(|va| game_anchors::u32_at(ram, va) as i32 == cmc::GLARE_COUNTDOWN_SEED))
+    .then_some(KnownModuleShot {
+        frames: i32::from(cmc::GLARE_ARM0_SHOT_FRAMES),
         prior_walks: true,
     })
 }
 
 /// Kiss of Death's action id (PROT 0955's body `0x6E`).
 const KISS_OF_DEATH: u8 = 0x6E;
+/// Glare's action id (PROT 0940's body `0x801F69F8`).
+const GLARE: u8 = 0x3C;
+
+/// Where the magic-capture fade `0x6F` aims each component of its case-6
+/// re-arm, in the walker's raw space, for the passes a module shot's walk
+/// back crosses before the arm that built it: pitch `0`, TR y `0x500`, TR z
+/// the prescaled `ctx[+0x6D0]` the fade's ramp left, and the focus (stored
+/// negated) on the caster's live pair `+0x34 / +0x38` - the in-fight arm's
+/// style-`0` / `1` pose (`0x801D64C4`). The yaw is left out: the style the
+/// fade rolled is not in the RAM (`0x70` stores `1` over it), and neither of
+/// the two captures fits the style-`0` yaw.
+///
+/// `None` unless the shot's origin already stands on the fade's TR y and
+/// pitch, which a style-`2` / `3` fade (TR y `0x400`, pitch `0x80`) does not.
+fn fade_prior_ends(ram: &[u8], ctx: u32, origin: &[i32; 9]) -> Option<[Option<i32>; 9]> {
+    if origin[0] & 0xFFF != 0 || origin[4] != ACTION_FADE_TR_Y {
+        return None;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    if !in_ram(actor) {
+        return None;
+    }
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0));
+    let mut ends = [None; 9];
+    ends[0] = Some(0);
+    ends[4] = Some(ACTION_FADE_TR_Y);
+    ends[5] = Some((depth << 8) / 0xA0);
+    ends[6] = Some(-i32::from(game_anchors::u16_at(ram, actor + 0x34) as i16));
+    ends[8] = Some(-i32::from(game_anchors::u16_at(ram, actor + 0x38) as i16));
+    Some(ends)
+}
+
+/// Case 6's in-fight TR y (`li v1,0x500` ahead of `0x801D64C4`).
+const ACTION_FADE_TR_Y: i32 = 0x500;
 
 /// A slot-B arm calls the builder `FUN_801D829C` on the pass it runs and
 /// never again, so the table the RAM holds is the one every pass since has
@@ -1028,6 +1079,7 @@ pub(super) fn displayed_module_cam_live(
     // ceil(gap / frames)`, read on the component that moves furthest a
     // unit); the frame before the arm stood on the framing the shot set out
     // from, which is the table's own origin, so the walk back stops there.
+    let mut fade_walked = None;
     if let Some(shot) = module_shot(ram, ctx)
         && let Some((inc, gap)) = (0..9u32)
             .filter(|&k| k != 2)
@@ -1037,6 +1089,9 @@ pub(super) fn displayed_module_cam_live(
     {
         let left = (gap.abs() + inc - 1) / inc;
         let walked = (shot.frames - left).max(0);
+        if shot.prior_walks && walked > 0 && vsyncs > walked {
+            fade_walked = Some(walked);
+        }
         vsyncs = if shot.prior_walks && walked > 0 && vsyncs > walked {
             // The pass that armed the shot walked `walked` units on its own
             // step; the passes before it ran on the framing it cut from.
@@ -1057,6 +1112,38 @@ pub(super) fn displayed_module_cam_live(
             continue;
         }
         back[k as usize] = gap.signum() * inc * vsyncs;
+    }
+    // The passes before the arm ran on the fade's case-6 re-arm, which
+    // closes a share of its own gap each pass, not the shot's increment:
+    // walked back from the shot's origin, each steps `fs * ceil(gap / (0xC -
+    // fs))` away from the fade's endpoint, the inverse of the re-arm
+    // ([`displayed_cam_live_steps`]). `battle_map01_lippian_kiss_of_death_mid_cast`
+    // reads `image` `.950` on the shot's increments and `.999` on the fade;
+    // `battle_uru2_nurga_glare_mid_cast` `.957` and `.973`.
+    if let Some(walked) = fade_walked {
+        let origin: [i32; 9] = std::array::from_fn(|k| {
+            let (inc, gap) = table(k as u32);
+            raw_live[k] - gap.signum() * inc * walked
+        });
+        if let Some(ends) = fade_prior_ends(ram, ctx, &origin) {
+            for k in (0..9usize).filter(|&k| k != 1 && k != 2) {
+                let Some(end) = ends[k] else { continue };
+                let mut pos = origin[k];
+                for &s in steps.iter().skip(1) {
+                    let fs = i32::from(s.max(1)).min(SHOT_TWEEN_DIVISOR - 1);
+                    // The pitch is 12-bit: the endpoint nearest the pose.
+                    let to = if k == 0 {
+                        (end - pos + 2048).rem_euclid(4096) - 2048
+                    } else {
+                        end - pos
+                    };
+                    pos -= to.signum()
+                        * fs
+                        * ((to.abs() + SHOT_TWEEN_DIVISOR - fs - 1) / (SHOT_TWEEN_DIVISOR - fs));
+                }
+                back[k] = raw_live[k] - pos;
+            }
+        }
     }
     let ang = |v: f32, k: usize| (v - back[k] as f32).rem_euclid(4096.0);
     legaia_engine_camera::projection::BattleCamPose {

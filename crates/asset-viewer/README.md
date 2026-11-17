@@ -28,9 +28,16 @@ asset-viewer world <SCENE> [--max-actors N]     # engine-core World composite de
 
 With no subcommand (a double-click in a file manager) the viewer runs `prot`
 on `extracted/PROT.DAT` in the current folder, else `PROT.DAT` there, else
-`extracted/PROT.DAT` beside the binary; with none of them it prints how to
-make one (and that `legaia-explorer` browses a disc image directly), waiting for
-Enter on Windows so the console does not close on the message. `prot` names
+`extracted/PROT.DAT` beside the binary. With none of them, a start from a
+terminal prints how to make one (and that `legaia-explorer` browses a disc
+image directly); a double-click, with no terminal to read that in, gets a
+desktop dialog instead (`src/first_run.rs`) with *Choose folder...* (the
+extracted folder, or the one holding it, which the viewer then browses) and
+*Legaia Explorer* (started from the release archive or the build folder,
+`legaia_app_theme::release_layout::find_explorer`). On Windows the
+double-click's console is let go (`FreeConsole`) before the dialog opens; it
+still flashes up for a moment, as any console-subsystem program's does from
+File Explorer. `prot` names
 its entries from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` is
 given. A failure prints one `asset-viewer: <what>: <cause>` line, and a
 window or renderer that cannot start ends the run with that line instead of

@@ -31,11 +31,6 @@ use crate::minigame_state::MinigameState;
 use legaia_engine_fishing::fishing::{PondEvent, PondPhase};
 use legaia_engine_fishing::fishing_chrome as fc;
 
-/// Seed of the venue's small `rand()` stand-in (an xorshift the port uses for
-/// the wander's retarget rolls). The native window seeded its host-side copy
-/// with the same word, so a fixed input stream retargets identically.
-pub const VENUE_RNG_SEED: u32 = 0x1234_5678;
-
 /// The party's anchor **tile** per venue, `(x, z)` in 128-unit `.MAP` tiles:
 /// venue `0` (Buma) `(0x25, 0x54)`, venue `1` (Vidna) `(0x2E, 0x23)`. The
 /// driver's setup state picks the pair on `DAT_801D90D0`
@@ -236,7 +231,6 @@ pub struct FishingVenue {
     /// the ground pass and the floor solver read it in: rungs `0..4` are this
     /// frame's [`fc::water_swell`], rungs `4..16` [`venue_floor_ladder`]'s.
     pub floor_ladder: [i16; 16],
-    rng: u32,
     /// The two ambient-ripple part records off the fishing overlay
     /// ([`RippleRecords`]), when the host installed them.
     pub ripple_records: Option<RippleRecords>,
@@ -381,7 +375,6 @@ impl Default for FishingVenue {
             floor: None,
             swell_angle: 0,
             floor_ladder: venue_floor_ladder(),
-            rng: VENUE_RNG_SEED,
             ripple_records: None,
             ripple_fx: None,
             camera: Default::default(),
@@ -462,20 +455,11 @@ impl FishingVenue {
     }
 
     /// One close-up frame's trail at the fish's `pos` ([`CATCH_TRAIL_RECORDS`]):
-    /// three `rand()` draws, the venue's stream standing in for the BIOS one.
+    /// `r` is the three `rand()` draws the frame took off the pond's stream.
     /// `odd` is bit `0` of the word `_DAT_80083838` the spark's size reads.
     ///
     /// PORT: FUN_801d4948 (sub-state 4's trail, `0x801D4E38..0x801D4F0C`)
-    fn seat_catch_trail(&mut self, pos: [i16; 3], odd: bool) {
-        let mut rand = || {
-            let mut x = self.rng;
-            x ^= x << 13;
-            x ^= x >> 17;
-            x ^= x << 5;
-            self.rng = x;
-            (x >> 16 & 0x7FFF) as u16
-        };
-        let r = [rand(), rand(), rand()];
+    fn seat_catch_trail(&mut self, pos: [i16; 3], odd: bool, r: [u16; 3]) {
         let at = [pos[0], pos[1].wrapping_sub(0x64), pos[2]];
         let size = if odd { 0x800 } else { 0x400 };
         if let Some(p) = self.seat_ring(CATCH_TRAIL_RECORDS[0], at, [0; 3]) {
@@ -877,7 +861,7 @@ pub fn tick_fishing_venue(
         mg.fishing_venue = FishingVenue::default();
         return VenueCameraWrites::default();
     }
-    let Some(session) = mg.fishing.as_ref() else {
+    let Some(session) = mg.fishing.as_mut() else {
         return VenueCameraWrites::default();
     };
     tick_venue_actors(
@@ -900,7 +884,7 @@ pub fn tick_fishing_venue(
 /// [`FishingVenue::ripple_fx`].
 pub fn tick_venue_actors(
     v: &mut FishingVenue,
-    session: &legaia_engine_fishing::fishing::PondSession,
+    session: &mut legaia_engine_fishing::fishing::PondSession,
     events: &[PondEvent],
     held_packed: u16,
     floor: impl FnOnce() -> Option<Vec<u8>>,
@@ -942,21 +926,12 @@ pub fn tick_venue_actors(
     // next state `10`. The D-pad steers the lead.
     let mut ripple = None;
     if phase == PondPhase::Idle {
-        let mut rng = v.rng;
         let rolled = v.wander.as_mut().and_then(|w| {
-            // The dwell steps by the game tick's step; the draws keep
-            // `rand()`'s fifteen bits, which the dwell's signed `% 200` needs
-            // to stay non-negative.
-            w.tick(held_packed, step, || {
-                let mut x = rng;
-                x ^= x << 13;
-                x ^= x >> 17;
-                x ^= x << 5;
-                rng = x;
-                x >> 16 & 0x7FFF
-            })
+            // The dwell steps by the game tick's step; the draws are the
+            // pond's own `rand()` stream (retail has one), fifteen bits,
+            // which the dwell's signed `% 200` needs to stay non-negative.
+            w.tick(held_packed, step, || u32::from(session.draw_rand()))
         });
-        v.rng = rng;
         // Retail spawns the ripple at the rolled point: an on-stack copy of
         // the lead's `+0x14..+0x18` trio with `x` / `z` offset and `y` kept
         // (`0x801D22A4..0x801D23C8`), handed to `FUN_80021B04(sp+0x10, ..)`
@@ -1057,12 +1032,19 @@ pub fn tick_venue_actors(
         // hook cue and the celebration tiers are queued by
         // `World::tick_fishing` off the session's own events, where every
         // host drains them.
-        if celebrating && let Some((x, y, z)) = v.camera.lift_point() {
+        if celebrating && let Some((x, y, z)) = v.camera.close_up_point() {
             if start == 0 {
                 v.seat_catch_sprites(x, z);
             }
             v.catch_frames = v.catch_frames.wrapping_add(1);
-            v.seat_catch_trail([x, y, z], v.catch_frames & 1 != 0);
+            // Three `rand()` draws a lift frame, off the pond's stream
+            // (`0x801D4E9C`, `0x801D4EC4`, `0x801D4EDC`).
+            let r = [
+                session.draw_rand(),
+                session.draw_rand(),
+                session.draw_rand(),
+            ];
+            v.seat_catch_trail([x, y, z], v.catch_frames & 1 != 0, r);
         }
         for b in &f.bursts {
             v.seat_catch_rings([b.offset.0, b.offset.1, b.offset.2]);
@@ -1215,6 +1197,36 @@ mod tests {
         );
         let facing = mg.fishing_venue.wander.as_ref().unwrap().facing;
         assert_ne!(facing, 0, "the held D-pad did not steer the wander");
+    }
+
+    #[test]
+    fn the_wander_rolls_on_the_ponds_rand_stream() {
+        // Retail has one `rand()`: the lead's re-target roll (`FUN_801D2278`,
+        // five draws) moves the stream the pond's next band and strike
+        // rolls read, so the venue draws from the session, not a stream of
+        // its own.
+        let mut mg = MinigameState::new();
+        mg.fishing = Some(session());
+        let seed = mg.fishing.as_ref().unwrap().rng_state();
+        let mut rolled = None;
+        for _ in 0..2000 {
+            tick_fishing_venue(&mut mg, true, 0, || None);
+            let now = mg.fishing.as_ref().unwrap().rng_state();
+            if now != seed {
+                rolled = Some(now);
+                break;
+            }
+        }
+        let now = rolled.expect("the wander never re-targeted");
+        let mut r = legaia_engine_system::rand::BiosRand::new(seed);
+        for _ in 0..5 {
+            r.next_u15();
+        }
+        assert_eq!(
+            now,
+            r.state(),
+            "one re-target is five draws off the pond's stream"
+        );
     }
 
     #[test]

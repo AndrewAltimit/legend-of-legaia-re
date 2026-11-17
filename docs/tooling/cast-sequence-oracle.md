@@ -140,6 +140,7 @@ Flags worth knowing:
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `LEGAIA_LEADIN_TABLE_COST=1` (engine child, beside `LEGAIA_BATTLE_POLY_COST=1`) | Engine: price the replay's lead-in on the action-state table and raise the polygon census where the film starts (the capture's gate, or the cast begin), so a census-priced film reaches its gate on the round a table-priced one does. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
+| `LEGAIA_LEADIN_SPAN_LAW=1` (engine child) | Engine: run the replay's lead-in on the default one-vsync overrun and raise the span law where the film starts, the same hold for the law's longer frames: under the law in the lead-in `battle_korb2_warhalf_strike`'s replay won its fight in round 3 and never met its gate, as Gilium, Slippery and Topaz did. A harness seat ([the film's lead-in](../subsystems/battle-stage-camera.md#the-census)) |
 | `--rand-track` | Engine: seat every module-band pass on the `rand()` word retail's frame before it ended on (`LEGAIA_CAST_RAND_TRACK`, [below](#the-rand-stream)). A harness seat |
 | `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
@@ -1280,6 +1281,45 @@ steps, no film falling more than `.0003`; the full-party Gimard, Gizam and Iota 
 about `.0016`. Mushura's
 yaw is its arm-13 shot's, framed on where its chase left the creature.
 
+<a id="where-a-plain-film-leaves-retails-words"></a>
+
+**Where a plain film leaves retail's words.** The engine's `meta.csv` carries the
+stream's word each tick, the recording's each vsync, so the first pass whose word is not
+retail's is a place to look, and the LCG distance of each side's next words from the last
+shared one says how many draws the two frames made. A `--watch 0x80009010` recording of
+the same cast names each draw's `ra`. Read that way, the plain films parted at pool
+spawns a tick body makes and the port did not, at a selector stored behind the
+installer, and at draws the port made a pass late or not at all
+([the draws a recording names](../subsystems/cast-module.md#the-draws-a-recording-names)).
+With them, the plain seat over the 29 films:
+
+| Film | Before | After | Stream now holds to |
+|---|---|---|---|
+| `0x86` Zenoir | `.9242` | `.9638` | arm 11 (was arm 5) |
+| `0x89` Orb | `.9483` | `.9530` | arm 9 (was arm 3) |
+| `0x9D` Jedo | `.9522` | `.9560` | - |
+| `0x90` Kemaro | `.9780` | `.9787` | the end (was arm 9) |
+| `0x83` Vera | `.9556` | `.9556` | the end (was arm 10) |
+| `0x82` Theeder | `.9682` | `.9680` | arm 6 (was arm 5) |
+| `0x8D` Mushura | `.9330` | `.9313` | arm 6 (was arm 1) |
+| the 29 films | `.9622` | `.9638` | |
+
+No cue moves. Mushura's stream now holds through the creature's seat, and its arm-12
+chase still reads what it did: the chase's residue is not the stream's. Iota's stager
+caller now lives to late in arm 9, as retail's does (`0x93` `.986` to `.995`), and the
+arm cost rows read a stale first row at any step, not only at step `1`
+([the arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)):
+Gilium's `0x95` reads `.9864` for `.9639`, and the 29 films `.9649` for `.9641`. Open:
+Viguro's first sparks land a frame after retail's (the creature now takes its selector
+on the stager call's frame, as retail's does, but the engine's frame grid around the
+call sits a vsync off the recording's); Orb's arm-9 pool effects now fall on the arm's own
+pass and Juggernaut's row sweeps on the stager call's frame (`0x89` and `0x99` hold
+retail's words to the end of the cast, `.9529` to `.9531` and `.9930` flat); and a pool
+effect retail first walks on
+the frame after its spawn the port walks on the spawn's own frame (Ozma's arm 11 draws
+its `30` stager words and the effect's `64` seeding words on one tick where retail draws
+them a frame apart; Meta's arm-7 mirror words land a frame early).
+
 ### Evil Seru Magic
 
 Cort's Evil Seru Magic (`0xAD`, PROT 0966) records from `chitei2_cort_pre_mystic_circle`
@@ -1335,6 +1375,22 @@ A row's
 `rand` column is sampled per vsync, so a burst inside a frame eight vsyncs long can read
 as two rows (`82` and `3` for one frame's `85`); the recording's frames and the engine's
 passes draw the same bursts.
+
+From arm 10 the recording's frames hold Juggernaut, seat 7, which the port had not seated:
+the arms from 11 on framed an empty stage where retail's frames hold the creature. Seated and
+driven through its clip, rate and walk stores, with the arms 12..15 slide and arm 19's
+walk paced by the frame delta and the caster on arm 21's `z = 0x400`
+([PROT 0966](../subsystems/cast-module.md#prot-0966-evil-seru-magic)), the film reads
+`.819` to `.864` plain. A recording with `LEGAIA_RAM_AT` dumps on arms 10, 12, 14, 19, 22
+and 26 then read the seats the frames could not: the row stands at a sixth of the
+formation column, not a third; arm 18 moves it to `z = -1024` in front of Juggernaut; its
+radius is the halved `320` the separation pass reads; and arm 27 frames the caster after
+it is put back, so arm 28's shot centres `z = 944`. Arm 26's pass spawns three fades, not
+one: a white flash, a held blue grade parked in the part pool until arm 27's flush, and
+the delayed white-in; the engine had the last alone, so arm 27 opened on the burst where
+retail's opens white. With those the film reads `.899`: arms 11 to 21 `.94..1.00`, arm 23
+`.86` to `.96`, arm 26 `.65` to `.80`, arm 27 `.50` to `.81`, arm 28 `.997`. Still open:
+arm 22's sphere grows and goes some forty ticks ahead of retail's (`.58`).
 
 ### The enemy set on the rand-track seat
 
@@ -1742,6 +1798,19 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   so stood on `192` against the RAM's `168`, reached its walk's natural end a
   pass early and struck from `(130, 335)` where retail's strikes from
   `(136, 325)` (`.955`); on `168` it walks retail's passes and reads `.994`.
+- **Target bytes.** The release at the gate also aims every seat but the acting
+  one at the target its RAM holds (`+0x1DD`, `LEGAIA_BATTLE_SEAT_TARGETS`, a
+  physical film only: an injected cast acts from another seat). The replay
+  reaches the gate on the acting seat's round alone, and a bystander's target
+  is the far end of its root-motion range poll (`jal 0x8004E2F0` at
+  `0x80047D50`): a positive clip speed steps the live pair only while the poll
+  reads out of reach. A struck monster keeps the target its own last action
+  aimed at, which the commit that strikes it never rewrites.
+  `battle_garmel_party_vahn_tornado_flame_open`'s Zenoir is aimed at Gala, across
+  the stage, so its speed-`1` reaction carries it after Vahn through the whole
+  art; aimed at the replay's Vahn, in reach, it stood still and landed
+  `(35, 68)` off retail's ground. A harness seat: that film `.846` to `.863`
+  (its Done band `.854` to `.939`), no other arts or strike film moves.
 - **Walk phase.** A monster saved in the strike loop still on its walk
   (`battle_map02_mad_ogre_strike`, `+0x1DC = 3` with its swing staged) holds the
   swing until the walk's natural end: the arrival stages idle under bit 0

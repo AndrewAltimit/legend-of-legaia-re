@@ -117,8 +117,20 @@ impl World {
                     .actors
                     .get(usize::from(self.battle_ctx.active_actor))
                     .is_some_and(|a| a.battle_monster_id.is_some());
-                if is_strike_state(state) && monster_acting {
+                let w = if is_strike_state(state) && monster_acting {
                     w.saturating_add(LINKED_STRIKE_WORK)
+                } else {
+                    w
+                };
+                // The resident module's scanline wash, a screen layer the
+                // census does not count (`SCANLINE_WASH_WORK`).
+                let p = &self.casting.module_pres;
+                if self.cast_module_resident()
+                    && p.wash_live
+                    && p.wash.armed()
+                    && matches!(p.wash.mode, 1 | 2)
+                {
+                    w.saturating_add(legaia_engine_battle_loop::frame_clock::SCANLINE_WASH_WORK)
                 } else {
                     w
                 }
@@ -641,20 +653,21 @@ impl World {
         // action). The line's span is counted a second time on retail's
         // frames ([`crate::world::AudioState::battle_xa_retail_left`]), and
         // the Done band loads only what that count has left. The drive word
-        // keeps its own span, and the span law, whose frames run retail's
-        // length, needs no second count.
+        // keeps its own span. The span law takes the cut too: its frames run
+        // the length their priced cost gives, and where that cost reads under
+        // retail's (a census frame of a cast's tail) the line still covers
+        // more passes than retail's and loaded `0x51` on step `4` where
+        // retail's runs `3` (Scythe Wind, Water Crystals, Terio Punch).
         //
         // The capture band's finalize `0x71` takes the same cut: it is the
         // module's line outliving the module. Over the enemy films' PCSX-Redux
         // recordings `2.5%` of retail's `0x71` vsyncs read the clamp where the
         // port's read it on `48%`, and the state's step agreed on `.30` of its
         // game time (the port on a mean step of `3.42` against `2.42`).
-        if !self.toggles.battle_frame_span_law
-            && matches!(
-                self.battle_ctx.action_state,
-                CAPTURE_FINALIZE_STATE | DONE_CLEANUP_STATE | DONE_SETTLE_STATE
-            )
-        {
+        if matches!(
+            self.battle_ctx.action_state,
+            CAPTURE_FINALIZE_STATE | DONE_CLEANUP_STATE | DONE_SETTLE_STATE
+        ) {
             self.audio.battle_xa_load_frames = self
                 .audio
                 .battle_xa_load_frames
@@ -1457,6 +1470,7 @@ impl World {
         let into = clock.ticks_into_frame(self.clock.display_frames);
         let vsyncs = step - into;
         self.clock.display_frames += vsyncs;
+        self.clock.credited_frames += vsyncs;
         vsyncs as u8
     }
 }

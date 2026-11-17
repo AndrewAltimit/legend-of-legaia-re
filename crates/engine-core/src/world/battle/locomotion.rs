@@ -1128,12 +1128,20 @@ impl World {
     /// The separation body radius of battle `slot`, the node `+0x58` word the
     /// seat stager writes: a party seat's [`PARTY_SEPARATION_RADIUS`] (or
     /// [`TERRA_SEPARATION_RADIUS`] on the roster-id-`4` seat), a monster's
-    /// size class `<< 5` (`0x800518C4..0x800518D4`).
+    /// size class `<< 5` (`0x800518C4..0x800518D4`); a word a module stored
+    /// over either (the body's `render_radius`) wins.
     ///
     /// REF: FUN_800513F0
     pub(crate) fn battle_separation_radius(&self, slot: usize) -> i16 {
         let s = slot as u8;
         if s < self.party.party_count {
+            // A module that rewrote the node's word holds it there: PROT
+            // 0966's arm 0 halves each member's `+0x58` beside the half-size
+            // row (`320` in the recording's RAM from arm 0 to arm 27), and
+            // the pass then lets the row stand closer.
+            if let Some(r) = self.actors.get(slot).and_then(|a| a.battle.render_radius) {
+                return r;
+            }
             if self.battle_party_char_id(s) == TERRA_ROSTER_ID {
                 TERRA_SEPARATION_RADIUS
             } else {

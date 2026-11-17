@@ -127,7 +127,7 @@ Settled rows:
 | `model_pool_is_world_map`, `4C 50` | 629 sites; none in mode 15 | Deleted with the `+0x60` field it gated: `FUN_80024E08`'s store to `+0x60` (`0x80024E50`) needs mode word `0xF`, and no image stores `0xF` to `_DAT_8007B83C` (mode 14's INIT `0x8002B904` stores `0`). See [the dead branch](#the-mode-15-branch-of-the-model-set). |
 | `op4c_nd_sub6_field_74_ack`, `4C D6` | `chitei2`, 24 sites | Deleted: the arm (`0x801E2D64..0x801E2DB0`) writes `+0x74` and nothing else, and the VM makes that write. Its blend byte reaches the draw: [below](#the-blend-byte-4c-d6-sets). |
 | `set_inverted_y_mirror`, `4C 37` | 312 sites, 30 scenes | Replaced, and the arm fixed: the VM stores `+0x8E = -player.y` itself and **advances**. Both exits are `j 0x801DF098`; the decompiled `caseD_4` return had read as a yield. |
-| `assign_child_random_offset`, effect spawn | Every `flags & 1` script | Deleted: the pool keeps the offsets in `MasterSlot::child_offsets`, which its own tick reads where retail reads the rewritten record. |
+| `assign_child_random_offset`, effect spawn | Every `flags & 1` script | Deleted: the pool keeps the offsets in `Pool::scribbled_legs`, per effect id, which its own tick reads where retail reads the rewritten record. |
 | `on_movement_step`, `on_render_loop`, `on_child_step_iter`, `on_per_bone_interp`, `on_special_effect_spawn` (`anim_vm`) | Battle | Deleted: nothing called them. Each names a routine ported as its own kernel (`FUN_80047430`, `FUN_80048A08`, `FUN_80049348`, `FUN_8004998C`, `FUN_8004E13C`). |
 | `field_halt_acquire_predicate`, ops `0x38` / `0x43` | Live | Kept at `true`, half modelled: see [the acquire's first clause](#the-halt-acquires-first-clause). |
 | `stub_16`, move op `0x16` | Live | No wire owed: `FUN_80024C80` is `jr ra; nop`. |
@@ -320,6 +320,7 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
 | `BattleState::forced_monster_ground` | a cast-sequence capture seat, written by the native host's debug seeding through a tuple assignment the tool does not read as a write |
 | `Sequencer::set_exact_tempo` | an engine option for the score's written tempo; the default is retail's rounded vsync budget (`FUN_80061954`) |
 | `MenuRuntime::open_scene_inn`, `open_inn` | deleted with the whole prompt (`InnSession`, the two menu states, `SceneHost::scene_inn_cost`): retail has no inn screen, a stay is the innkeeper's field-VM record ([`inn.md`](../subsystems/inn.md)), and only tests opened it |
+| `World::set_hub_equip_mode` | `_DAT_8007BB9C` feeds the equip sub-panel under the entry-list painter (record `7`), which no descriptor on the disc installs ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)) |
 | `ChainArm::clears_0d`, `CasterSlot::ra_seru_missing` | analysis defects, fixed: a `const fn` builder inside a `const` table, and a literal through `use ...::CasterSlot as SpellCasterSlot` |
 
 | `BakaUi::player_char` | deleted: nothing wrote it, so the play page's minigame JSON named Vahn for every fighter, and no page script read the key; the duel draws its fighters from the engine's own scene surface |
@@ -336,12 +337,6 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   disc carries a type-`0x0B` descriptor (the tuple census in
   `scene-formats::scene_asset_table`), while every observed state reads the
   base as zero ([`mdt.md`](../formats/mdt.md)).
-- `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
-  nibble; the hub's equipment panel stays on its no-candidate arm until the list
-  machinery publishes it. The panel sits under the entry-list painter, and no
-  production frame paints that record yet
-  ([what still chooses which painter runs](#what-still-chooses-which-painter-runs)),
-  so the row waits on the descriptor-to-record map, not on the word.
 - `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
   the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
   which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
@@ -376,17 +371,18 @@ ends one fight by a flee and by a win, enters a second, and holds every
 | `AmbientFxState::pending_game_ticks` through a fight or a minigame | the mode switch re-seeds the lists (`FUN_8001E1B4`) and the return brings the parked pool back whole (`0x8001E308`): the parts stand still | the first field frame after a fight ran up to 600 of the parts' passes at once, `rand()` ops included |
 | A minigame's return (`World::minigame_return_warp`) | MAIN INIT's warp arm, the same field-back load a fight's end makes (`World::seat_warp_field_return`) | a cabinet left by Start put the player straight back under the pad on a fully lit field |
 
-Still open: `CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` /
-`_DAT_8007B62A`) has no reset in any dumped routine. Its one carrier is
-`uru`: `P1[0]`'s per-frame region test pins a focus axis while the player
-stands in a bridge box and writes `4C CF 00 00` outside them, so a door
-taken from inside a box carries the pin - in the port, and in retail too
-unless an undumped routine clears the pair. Two walk-on exits sit inside a
-box: `P2[29]` at tiles `(110..112, 35)` (box `103..121` x `7..49`, X pinned on
-tile `0x6F`) changes to `urudre1`, and `P2[33]` at `(10..12, 98)` (box
-`4..17` x `83..111`) to `urudre2`; no other scene authors the op, so nothing
-there releases it. The library's one uru state stands at the `map03` exit,
-outside every box, so a capture walked to either door settles it.
+`CameraRig::script_focus` (op `4C CF`, `_DAT_8007B628` / `_DAT_8007B62A`)
+has no reset on any scene change, and needs none. Its one carrier is `uru`:
+`P1[0]`'s per-frame region test pins a focus axis while the player stands in
+a bridge box and writes `4C CF 00 00` outside them. The two walk-on exits
+inside a box, `P2[29]` (to `urudre1`) and `P2[33]` (to `urudre2`), each run
+`4C CF 00 00` on their straight-line opening (`+0x4E`, `+0x4C`) before their
+`0x3F`, so the pin is gone before the door. A PCSX-Redux run from
+`uru_field_run` seated on tile `(111, 38)` reads the pin `(14272, 0)` until
+`P2[29]` spawns and `(0, 0)` once it reaches the op
+(`autorun_uru_exit_probe.lua` with `LEGAIA_SEAT_X` / `LEGAIA_SEAT_Z`). The
+port runs the same records, so it clears at the same op
+([settled](../reference/re-settled-threads/field.md#threads)).
 
 ### Host hooks nothing implements
 
@@ -882,20 +878,32 @@ ported live in `engine-ui`'s pause lists.
 
 #### What still chooses which painter runs
 
-`World::tick_submode_screen` calls `HubPainter::for_window` on whatever record
-index the open screen carries. Retail picks that index through a panel
-**descriptor**: a state machine installs one (`FUN_801E9B3C`) and the descriptor
-names the record. The port records the install as
-`HubAction::InstallPanel(<descriptor VA>)` and `World::apply_submode_actions`
-ignores it, so the index comes from the opener's argument.
-`World::open_coin_counter` passes record `1`; the field-VM op-`0x49` path
-(`op49_menu_request`) passes `None` for every sub-op it does not resolve
-elsewhere. So record `1` is the only index a production frame reaches.
+Retail picks a painter through a panel **descriptor**: a state machine
+installs one (`FUN_801E9B3C`) and the descriptor names the records. The port
+does the same. A state machine's frame carries
+`HubAction::InstallPanel(<descriptor VA>)`, `World::tick_submode_screen` reads
+the records it names (`submode_hub_actors::panel_windows`, plus the flag window's
+and the code lock's own descriptors through
+`field_submode_flag_window::installed_windows`), replaces or adds to the
+installed set by whether the program opens with the close-all sub-op
+(`descriptor_closes_all`), and calls `HubPainter::for_window` on each. An
+opener's pinned window is drawn alongside, not instead.
 
-The descriptors the ported state machines install (`0x801F3340`, `0x801F3360`,
-`0x801F3370`, `0x801F3294`, `0x801F3388`, `0x801F2A88`) sit outside the
-panel-window record table, so the descriptor -> record mapping is a second
-format, and it is unread.
+What no production frame reaches is record `7`, the **entry list**
+(`FUN_801F16C0`, whose rows call the equip sub-panel), and retail does not
+reach it either. Its one install is the installer's own sub-op `12`
+(jump table `0x801CF25C`, case `0x801E9D50`): it sizes record `7` off the
+byte `0x80084594` (`sh` to the record's `+0x0A` / `+0x0E` / `+0x12` at
+`0x801E9D78..0x801E9D84`) and re-enters `FUN_801E9B3C` with descriptor
+`0x801F3170` = `[1, 7]` (`0x801E9D80`). No descriptor in PROT 0897's image
+carries sub-op `12`, and every `FUN_801E9B3C` call site there resolves to a
+descriptor that names another record: the coin counter's `0x801F3340` /
+`0x801F3360`, the start menu's `0x801F3370`, the prompt's `0x801F3388`, the
+sub-menu's `0x801F3294` / `0x801F32A4`, the flag window's `0x801F3304`, the
+code lock's `0x801F32F4`, name entry's `0x801F3314`, sub-op `0xA`'s
+`0x801F3274`, and `0x801F3284`, `0x801F32B4`, `0x801F32DC`, `0x801F2A88`.
+Nothing on the disc opens the entry list, so its painter and the equip
+sub-panel under it are owed no host.
 
 ### The field / motion / camera block
 
@@ -1105,53 +1113,37 @@ the two halves share. Both are written up in
 
 A pass over the whole minigame slice - `baka_fighter*`, `dance`, `fishing*`,
 `slot_machine`, `muscle_dome`, `minigame_floor`, `other_game_overlay` and
-`engine-ui`'s `muscle_dome_hud` - produced **no** new `WIRE` and **no** new
-`FALSE INERT`. Every anchor really is unreached. What it did produce is six
+`engine-ui`'s `muscle_dome_hud` - found every anchor unreached and produced
+**no** new `WIRE` and **no** new `FALSE INERT`. What it did produce is six
 disclosures whose named prerequisite already existed somewhere in the tree, and
 two of those turned out to be port defects rather than wording. The corrected
 texts live on the anchors; what belongs here is the pattern, because it is the
 one a future audit will hit again.
 
-#### The repeated blocker is a Rust-side quad sink, named six different ways
+#### The repeated blocker was one Rust-side quad sink, named three ways
 
-Three subsystems each disclosed the *same* gap as a different missing artefact:
+Three subsystems disclosed the *same* gap as a different missing artefact:
 
-| Anchor | What its reason claimed was missing | What actually exists |
+| Anchor | What its reason claimed was missing | What the gap was |
 |---|---|---|
-| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
-| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` has both, run per frame by the browser dance page |
-| the `muscle_dome_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
+| `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts called the parser; no Rust caller asked the emitter for a packet |
+| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` had both; the HUD pass had no textured page to sample |
+| the `muscle_dome_hud` emitters | no engine-side dome HUD renderer | the same: the hosts composed quads from parsed descriptor geometry in JavaScript |
 
-The single real blocker under all three is that every host consumes the *parsed
-descriptor geometry* and composes its quads in JavaScript, so no Rust caller
-ever asks a ported emitter for a packet. One sink closes the block; three
-separately-worded reasons hid that.
+One sink closed all three. The lesson for the next audit is the shape: when several anchors name different prerequisites, check whether they share a consumer before treating them as separate blockers.
 
-##### What the sink needs, so the next attempt does not re-derive it
+##### Where the sink stands
 
-The sink is not a wrapper. Three things have to arrive together, and a shim
-that satisfies the audit without them is worse than the honest disclosure:
+Each emitter has a Rust caller, and both play hosts draw the result as screen-space PSX primitives through one projection in `engine-screens::minigame_hud`:
 
-- **A texel source on the native side.** The shape already exists - the play
-  window calls `minigame_fx::dance_quad_draws` every frame with the live
-  `DanceHudQuad` list - but it passes `solid_src: None`, because the dance
-  sprite page is not uploaded, so the sink materialises nothing. The fishing
-  HUD's icon glyphs degrade the same way (its gauge fills stretch the font's
-  solid texel instead, `FishingHudAtlas::solid_src`). Adding a
-  second emitter into that path reaches a dead end, not a renderer; the
-  prerequisite is the overlay's 4bpp page resident in engine VRAM.
-- **A quad-shaped request on the web side.** The dome page's HUD is a 2D
-  canvas blitter: `muscle_hud_json` hands it sheet **rects** and the page's own
-  `blit(src, pal, u, v, w, h, dx, dy, ...)` decides the destination. Consuming
-  emitted quads means the page asking for `xy` per packet, which is a change in
-  the page's JavaScript, not only in the wasm surface.
-- **Somewhere to get the anchors.** Even with both of the above, `(x, y,
-  scale)` is not disc-derived. Every call site of the three emitters - 9 / 31 /
-  23 of them - is an immediate inside PROT 0977's own hub screens
-  (`0x801CF2C0 .. 0x801D0324`), none of which is ported. So a sink makes each
-  widget's **extent**, gouraud ramp and CLUT disc-derived while its
-  **placement** stays the page's. That is real progress and it is worth doing;
-  it is not "the retail HUD", and a wire that lands should say so.
+| Emitter | Rust caller | Drawn |
+|---|---|---|
+| dance HUD quads `FUN_801d2f38` | `MinigameState::dance_hud_quads` (`DanceGame::hud_draw_quads`) -> `minigame_hud::dance_hud_prims` -> `engine-ui::dance::dance_hud_prims` | `POLY_GT4`s at the count-in's bucket, while the hall's HUD page is resident (`MinigameState::dance_hud_art_staged`); the text rows are the fallback without it |
+| dance count-in `FUN_801cf470` | `minigame_hud::dance_countin_prims`, off the run's own widget table | READY and `GO!` on the same page and flag |
+| Baka widgets `FUN_801d5ed0` | `BakaDuelSurface::hud_quads` -> `minigame_hud::baka_screen_prims` -> `engine-ui::baka_strips` | the cabinet's and the round chrome's strips |
+| dome hub screens `FUN_801d050c` / `FUN_801d08ec` / `FUN_801d15c8` | `muscle_dome_hud::hub_screen_quads` / `score_tally_quads` -> `minigame_hud::muscle_hub_sprites` | anchored at the hub screens' own immediates, so placement is disc-derived as well as extent, ramp and CLUT |
+
+The fishing HUD takes the same route (`engine-ui::fishing::sprite`); its gauge fills are sprite-pass primitives, and `FishingHudAtlas::solid_src` only serves a host without the sprite table.
 
 `dance_face_rig` has a second twist worth keeping: the browser resolves the rig
 from the disc **cast table**'s per-dancer kind, which on the qualifier floor is

@@ -167,6 +167,15 @@ impl MenuRuntime {
         self.shop_slides.draw_list()
     }
 
+    /// [`Self::shop_slides`] with each window's direction of travel
+    /// (`ShopSlides::motion_list`).
+    pub fn shop_slide_motion(&self) -> Vec<(usize, u8, bool)> {
+        if self.shop_session.is_none() {
+            return Vec::new();
+        }
+        self.shop_slides.motion_list()
+    }
+
     /// Step the shop slides one frame toward the current screen's window
     /// set. A shop that is closing (the transient exit beat) slides every
     /// window out; no shop drops them.

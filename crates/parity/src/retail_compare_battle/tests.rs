@@ -1120,6 +1120,81 @@ fn a_kiss_of_death_shot_walks_back_past_its_origin_on_the_older_step() {
     assert_eq!(module_shot_frames(&ram, ctx), None);
 }
 
+/// The passes before Kiss of Death's arm ran on the fade's case-6 re-arm,
+/// which closes a share of its own gap: walked back from the shot's origin
+/// they step away from the fade's endpoint (TR y `0x500`, pitch `0`, TR z the
+/// prescaled `ctx[+0x6D0]`, the focus on the caster), not on the shot's
+/// increments. `battle_map01_lippian_kiss_of_death_mid_cast`: origin TR z
+/// `5210` on the fade's `4812`, a step-`3` pass back at `5345`
+/// (`image` `.950` on the shot's increments, `.999` on the fade).
+#[test]
+fn a_shot_set_out_from_the_fade_walks_its_prior_pass_on_the_fade() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let lippian = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 5);
+    put8(&mut ram, ctx + 0x279, 1);
+    put16(&mut ram, ctx + 0x6D0, 3008);
+    put32(&mut ram, ACTOR_TABLE + 5 * 4, lippian);
+    put8(&mut ram, lippian + 0x1DF, 0x6E);
+    put16(&mut ram, lippian + 0x34, 600);
+    put16(&mut ram, lippian + 0x38, 813);
+    // Live pitch `4090` to `4064` at `3`; yaw `3726` to `3866` at `14`; TR y
+    // `1236` to `1024` at `22`; TR z `4608` to `1603` at `301`; focus
+    // (stored negated) `-548` / `-742` to `-600` / `-813` at `6` / `8`.
+    put16(&mut ram, 0x8007_B790, 4090);
+    put16(&mut ram, 0x8007_B792, 3726);
+    put32(&mut ram, 0x8008_40BC, 1236);
+    put32(&mut ram, 0x8008_40C0, 4608);
+    put32(&mut ram, 0x8008_9118, (-548i32) as u32);
+    put32(&mut ram, 0x8008_9120, (-742i32) as u32);
+    for (k, inc, end) in [
+        (0u32, 3i16, 4064i16),
+        (1, 14, 3866),
+        (4, 22, 1024),
+        (5, 301, 1603),
+        (6, 6, -600),
+        (8, 8, -813),
+    ] {
+        put16(&mut ram, ctx + TWEEN_TABLE + k * 4, inc as u16);
+        put16(&mut ram, ctx + TWEEN_TABLE + k * 4 + 2, end as u16);
+    }
+    let shown = displayed_module_cam_live(&ram, ctx, &[4, 3]);
+    assert_eq!(shown.tr[2], 5345.0);
+    assert_eq!(shown.tr[1], 1280.0);
+    assert_eq!(shown.pitch, 0.0);
+    // The yaw keeps the shot's increments: five units back.
+    assert_eq!(shown.yaw, 3726.0 - 5.0 * 14.0);
+    // A style-2 fade (the origin off TR y `0x500`) keeps the stand-in.
+    put32(&mut ram, 0x8008_40BC, 1100);
+    let shown = displayed_module_cam_live(&ram, ctx, &[4, 3]);
+    assert_eq!(shown.tr[2], 4608.0 + 5.0 * 301.0);
+}
+
+/// Glare's arm-0 shot (PROT 0940, `0xC` frames) is a known shot only before
+/// arm 1's first pass drains the module word from its seed
+/// (`battle_uru2_nurga_glare_mid_cast` reads `2048`, `scalar << 8`).
+#[test]
+fn a_glare_shot_is_known_until_arm_one_drains_its_word() {
+    use legaia_engine_cast::cast_module_camera as cmc;
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let nurga = 0x800E_D538;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x279, 1);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, nurga);
+    put8(&mut ram, nurga + 0x1DF, 0x3C);
+    let word = cmc::capture_countdown_va(0x3C).expect("Glare's word");
+    put32(&mut ram, word, cmc::GLARE_COUNTDOWN_SEED as u32);
+    assert_eq!(module_shot_frames(&ram, ctx), Some(0xC));
+    put32(&mut ram, word, cmc::GLARE_COUNTDOWN_SEED as u32 - 8);
+    assert_eq!(module_shot_frames(&ram, ctx), None);
+}
+
 /// The magic band rewrites a party-wide `8` to the lone member's slot
 /// (`ctx[+0x24A] - 1`, `0x801E431C`); the seed read `8`, so the reader hands
 /// the replay `8` back - only for an all-allies spell on that slot.
@@ -3271,4 +3346,64 @@ fn results_drop_reads_the_report_row() {
         &[0xC1, 0x02, b'.', 0x7C, b'Y', 0xC2, 0x1D, b'.', 0],
     );
     assert_eq!(ram_read::results_drop(&ram, ctx), Some(0x1D));
+}
+
+/// The bystanders' target bytes go to engine slots, the acting seat's stays
+/// with its drive: `battle_garmel_party_vahn_tornado_flame_open` holds Zenoir
+/// (pool `4`) aimed at Gala (pool `1`), the far end of its reaction's range
+/// poll, and the engine packs the monster row behind the party.
+#[test]
+fn seat_targets_map_bystanders_onto_engine_slots() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.party_count = 2;
+    b.monster_count = 2;
+    b.active_actor = 0;
+    b.seat_targets = vec![
+        Some(4),
+        Some(4),
+        None,
+        Some(0),
+        Some(1),
+        Some(8),
+        None,
+        None,
+    ];
+    // Pool 3 -> slot 2, pool 4 -> slot 3; pool 5 is past the row, pool 0 acts.
+    assert_eq!(b.engine_seat_targets(), vec![(1, 3), (2, 0), (3, 1)]);
+}
+
+/// The displayed cursor comes off the history ring while the record ring
+/// holds the node's own record back to the displayed slot: a state saved in
+/// the draw tick holds a ghost's ring cursor in the node word
+/// (`battle_jou_gala_finisher_results_retail`'s Gala: node `0`, ring `36, 24,
+/// 12, 0`). With another record in the window the walk back stands.
+#[test]
+fn the_displayed_clip_cursor_reads_the_history_ring() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let gala = 0x800E_CF90;
+    let node = 0x800F_0000;
+    let entry = 0x8018_7A74;
+    put32(&mut ram, ACTOR_TABLE + 2 * 4, gala);
+    put32(&mut ram, gala + 0x22C, node);
+    put32(&mut ram, node + 0x4C, entry);
+    put8(&mut ram, gala + 0x21D, 8);
+    put8(&mut ram, entry + 0x78, 1);
+    put16(&mut ram, node + 0x68, 0);
+    for (k, c) in [36u16, 24, 12, 0].into_iter().enumerate() {
+        put16(&mut ram, gala + 0x17A + 2 * k as u32, c);
+        put32(&mut ram, gala + 0x234 + 4 * k as u32, entry);
+    }
+    assert_eq!(ram_read::displayed_clip_cursor(&ram, 2), Some((2, 0, 12)));
+    // A clip committed inside the window: the ring's cursor is another clip's.
+    put32(&mut ram, gala + 0x234 + 4 * 2, entry + 0x100);
+    let (_, _, walked) = ram_read::displayed_clip_cursor(&ram, 2).expect("seat");
+    assert!(walked < 0, "the node cursor walked back the lag: {walked}");
 }

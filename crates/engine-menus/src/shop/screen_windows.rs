@@ -64,10 +64,39 @@ pub fn shop_screen_windows(phase: ShopScreenPhase, toast: bool) -> Vec<usize> {
 }
 
 /// Frames a shop window takes to slide between its park position and its
-/// home rect. The Retock capture, stepped one vsync at a time, has every
-/// window of the open set (picker, list, purse, plate) leave its park edge
-/// together and land eleven frames later at a constant per-window speed.
-pub const SHOP_SLIDE_FRAMES: u8 = 11;
+/// home rect: the window walker's motion duration
+/// ([`crate::menu_widget::WIDGET_MOTION_FRAMES`], the `0xC` `FUN_800326AC`
+/// writes on every window it creates), at the menu's frame step of `1`. The
+/// Retock capture, stepped one vsync at a time, has every window of the open
+/// set leave its park edge together, already a twelfth of the way in on its
+/// first frame, and land eleven frames later.
+pub const SHOP_SLIDE_FRAMES: u8 = crate::menu_widget::WIDGET_MOTION_FRAMES as u8;
+
+/// Where the walker `FUN_80031AE4` has a shop window `desc` at slide
+/// `progress` (out of [`SHOP_SLIDE_FRAMES`], home at the end): a window
+/// coming in stands at `park + (home - park) * progress / 12` from the park
+/// `FUN_800326AC` creates it on ([`crate::menu_widget::park_position`]), one
+/// going out at `home + (park - home) * (12 - progress) / 12`, each division
+/// truncated as the walker's `div` truncates.
+///
+/// REF: FUN_80031AE4 (the slide and close placements; ported as `MenuWidgetState::step_motion`)
+pub fn shop_window_origin(
+    desc: &crate::menu_widget::WidgetDescriptor,
+    progress: u8,
+    leaving: bool,
+) -> (i32, i32) {
+    let dur = i32::from(SHOP_SLIDE_FRAMES);
+    let park = crate::menu_widget::park_position(desc, crate::menu_widget::ScreenBox::default());
+    let (px, py) = (i32::from(park.x), i32::from(park.y));
+    let (hx, hy) = (i32::from(desc.home.x), i32::from(desc.home.y));
+    let p = i32::from(progress.min(SHOP_SLIDE_FRAMES));
+    if leaving {
+        let q = dur - p;
+        (hx + (px - hx) * q / dur, hy + (py - hy) * q / dur)
+    } else {
+        (px + (hx - px) * p / dur, py + (hy - py) * p / dur)
+    }
+}
 
 /// The shop's window slides: which windows are on screen and how far along
 /// their slide each one is.
@@ -128,6 +157,12 @@ impl ShopSlides {
     /// [`SHOP_SLIDE_FRAMES`] is home; `0` is fully parked.
     pub fn draw_list(&self) -> Vec<(usize, u8)> {
         self.entries.iter().map(|e| (e.0, e.1)).collect()
+    }
+
+    /// `(window id, progress, leaving)` in draw order: [`Self::draw_list`]
+    /// with the direction each window travels.
+    pub fn motion_list(&self) -> Vec<(usize, u8, bool)> {
+        self.entries.clone()
     }
 
     /// Whether every window is home (nothing in motion).

@@ -412,6 +412,25 @@ previous heading in `World::npcs.facing_save`;
 frame. Both are called from the field tick, so the walk-up talk and the
 scripted `0x3E` interact get the same behaviour.
 
+The restore's own gate is the class word at the end of the talk, not the
+heading: both exit paths write `+0x5A` back when `+0x10 & 0x01020000` is
+non-zero and `+0x10 & 0x400000` is clear (`0x80039CC8..0x80039CE0`,
+`0x80039E9C..0x80039EB4`), with no compare against the snapped bearing. So a
+talk record that turns its own placement (`38`, `4C 85`, a `C1` walk) and does
+not raise `0x400000` (`31 16`) has that turn undone when the talk ends, and the
+save is taken at the touch whatever the class (`0x801D5BE4`), so a talk that
+drops the bit (`32 16`) restores a placement the snap skipped. The port does
+the same: `World::face_field_npc_at_player` saves before its class test,
+`World::release_talk_facing` tests only the talker's live `0x400000`, and a
+talk's `31 16` / `32 16` writes the talker's channel word rather than the
+talk's stand-in context. `nilboa` `P1[6]` ends its talk loop on another
+heading and turns back onto its pre-talk one; `bubu1` `P1[2]` / `P1[3]` end on
+the player bearing and restore as before
+(`engine-scene-host/tests/talk_heading_restore_disc.rs`). A walk film of
+`town01_field_card_boot` agrees on the plain case: the talker snaps to the
+player as the box opens and its `+0x5A` lands back as the last page closes, on
+both sides ([walk-film](../tooling/walk-film.md#what-it-has-settled)).
+
 ## Per-frame speed
 
 `DAT_1f800393` is the per-frame speed scalar (also drives the [move VM](move-vm.md) frame-time scratchpad). The motion VM consumes it as the budget for incremental motion - engines update once per frame, the VM consumes per opcode.
@@ -459,7 +478,7 @@ A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---
 - **Window-script VM `slide_to`** (ops `0x01` / `0x02`, retail `FUN_800357fc`): on the field-actor demo host, `World::start_actor_motion` records the glide target and steps the actor's sprite position toward it through the same pursue kernel (`World::tick_actor_motions`). The snap ops (`0x09` / `0x0A`, `FUN_800358c0`) write the position directly.
 - **Cutscene-timeline cross-context walks** (`C7 <id> <tx> <tz> <mode>`, the targeted `0x47` yield): a spawned partition-2 record walking a cast member. The timeline arms the leg with the op's own speed (`0x80 >> (2 + (mode & 7))`) into `CutsceneTimeline::npc_walks` and the record runs on (`li s7,4` in the delay slot at `0x801DF030`) - the retail shape where the yield-op pointer lands in the target's `+0x94` and the walk kernel moves it in place, the record's next op on that actor waiting at the halted-target refusal. Only the player-anchor form (`C7 F8 …`) parks the record, on `CutsceneTimeline::walk_wait`, stepping the player actor directly.
   The player's leg runs the same kernel step as an NPC's (`World::step_player_walk_leg` over `motion_vm::step`), approach mode and compass facing included: a player walk is not always mode `3`, and the `tower` floor doors, `stone`, `son` and `rikuroa` walk the player on modes `0`, `1` and `2`, which close one axis before the other and end an uneven leg on a different facing. Scripted legs keep stepping while a timeline is active.
-- **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): the same shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC into `CutsceneTimeline::npc_facings` and the record runs on (`li s7,3` in the delay slot at `0x801DEEFC`), stepping the leg once per tick into `World::npcs.headings` until the terminal compass snap - one tick per budget frame, the 1:1 retail duration. Only a player target parks the record, on `CutsceneTimeline::facing_wait`. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
+- **Cutscene-timeline cross-context turns** (`B8 <id> <dir|flags> <budget|dir>`, the targeted `0x38` yield - the field-VM CAM_CFG halt-acquire arm): the same shape for the rotate op. The timeline arms a `0x38` RotateToAngle leg on the NPC into `CutsceneTimeline::npc_facings` and the record runs on (`li s7,3` in the delay slot at `0x801DEEFC`), stepping the leg once per tick into `World::npcs.headings` until the terminal compass snap - one tick per budget frame, the 1:1 retail duration. Only a player target parks the record; its leg rides in the same `npc_facings` list with no slot, and its snap releases the park. The simple path (`op1 & 0x7F == 0`) is an instant compass write, no park.
 
 - **Cutscene-timeline cross-context face-ats** (`CC <id> 85|8E|8F <lo> <hi> <bind>`, the field-VM halt-acquire on a placement): the acquire hands the target this VM's `0x4C` FaceTarget leg, which turns it toward the bind (`0xF8` = the player) over the `u16` budget and snaps onto the live bearing on its terminal frame. The record runs on (only a player target parks it); the timeline steps the leg once per tick (`CutsceneTimeline::npc_faces`, `World::step_npc_face_leg`) and holds the actor's next op until the snap. In the opening (`opdeene` `P2[18]`) the vignette actors land on retail's own bearings to within a unit.
 
@@ -719,6 +738,10 @@ Two breakpoints show it on `town01` (`s3_rimelm_freeroam`): a placed object's re
 The object nodes spawn after every placement, so they sit between the placements still in spawn order and the ones a seat op relinked to the tail. The engine reads the bit once a tick, so `World::ambient_engage_release_held` holds the streams ahead of the owner for that one pass.
 
 The other draw at this layer is the placement spawner's: `FUN_8003A1E4` binds a placement's header clip through `FUN_800204F8` and, when the header anim byte is non-zero, seats `+0x68 = (rand() % frames) << 4` (`0x8003A410`) before its prologue slice, once per placement at scene entry and once per `4C D2` re-seat. `World::draw_placement_spawn_phases` and the re-seat take the draw at that point in the sequence and hand it to the clip bind through `FieldNpcState::phase_draws`, the same hand-off as op `4C C0`. On `map01` and `cave01` the placement count with a move (`6`, `7`) is the capture's count of draws at `0x8003A410` on those entries.
+
+The phase lasts only until something restarts the clip. A prologue that seats its placement with `4C 51` or pokes a move with `22` / `A2` restarts it at frame `0`: both arms store `-2` into the playing-clip word `+0x5E` before they call `FUN_800204F8` (`0x801E1A90..0x801E1A9C`, `0x801DEAA8..0x801DEAB4`), so its change test fails whatever was playing, and the cursor is zeroed (`0x8002059C`).
+Every placement's prologue runs on the same pass, so a town's villagers start their idles together.
+An idle film of `town01_field_card_boot` shows it on retail: the six placements on clip `13` all read cursor `168` (`21` passes of `8`), the six on clip `18` all read `336`, and the other poked placements stand on the same pass. The port takes the draw at the same moment and seats it only on the clip it was taken for, and both ops drop a waiting draw and restart the clip already playing (`World::restart_npc_clip`).
 
 No placed-object stream carries `0x18` or `0x06`, so the objects' streams take no place in this order (`crates/engine-scene/tests/ambient_motion_op_census_disc.rs`).
 

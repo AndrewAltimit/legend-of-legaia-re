@@ -224,6 +224,11 @@ impl World {
             return;
         };
         let keyed_off = std::mem::take(&mut self.audio.bgm_keyed_off_for_intro);
+        // The completion arm's attach of the battle source
+        // (`FUN_80026478(0x8007056C)`, `0x801CF930`) disarms a timed release
+        // the field armed (`0x800264A0`); a set of `-1` attaches nothing and
+        // leaves it counting through the fight.
+        self.disarm_sound_release();
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             // The field track is the battle's own, keyed off by the intro: the
             // attach plays it from its head (sub-op `4`'s re-attach).

@@ -1716,6 +1716,7 @@ dependencies = [
  "clap",
  "env_logger",
  "glam",
+ "legaia-app-theme",
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-audio",
@@ -1740,6 +1741,7 @@ dependencies = [
  "psx-seq",
  "psx-tim",
  "psx-vab",
+ "rfd",
  "winit",
 ]
 

@@ -375,14 +375,15 @@ impl FieldHostImpl<'_> {
 
     pub(super) fn exec_move(&mut self, ctx: &mut FieldCtx, move_id: u8) {
         // A cross-context ExecMove against an NPC channel (`A2 <id>
-        // <move_id>`): retail is `FUN_80024E08(actor, id)` - the id lands in
-        // the actor's anim slot and the anim-clock (`FUN_800204F8`) plays the
+        // <move_id>`): retail's `0x22` arm (`0x801DE998..0x801DEAB8`) stores
+        // the id in the actor's anim slot `+0x5C`, `+0x5E = 0xFFFE`, and calls
+        // the anim clock (`FUN_800204F8`), which restarts and plays the
         // named clip (scene-bundle record `id - 1`, the same `+0x5C` id space
         // the placement anim byte seeds). Surface it as an anim cue so the
         // windowed host re-targets the NPC's clip player - this is what makes
         // Mei visibly WALK (clip 61) then idle (clip 60) through her town01
         // walk-on beat instead of sliding in a frozen pose.
-        // REF: FUN_80024E08, FUN_800204F8
+        // REF: FUN_801DE840, FUN_800204F8
         //
         // Aimed at a `.MAP` placed object's actor (`A2 <record> <clip>`), the
         // same op re-points that prop's clip: `+0x5E = 0xFFFE` forces the anim
@@ -397,6 +398,9 @@ impl FieldHostImpl<'_> {
                 .play_object_prop_clip(record, move_id, ctx.local_flags, ctx.field_6a);
         }
         if let Some(slot) = self.world.field_vm.executing_channel {
+            // `+0x5E = 0xFFFE` on the NPC arm too (`0x801DEAAC`): the clip
+            // restarts even when it is the one playing.
+            self.restart_run_clip(ctx, slot, move_id, true);
             self.world
                 .npcs
                 .anim_cues
@@ -525,6 +529,12 @@ impl FieldHostImpl<'_> {
             {
                 self.world.npcs.headings.insert(slot, heading);
             }
+            // The arm's restart (`0x801E1A90..0x801E1A9C`) zeroes the clip
+            // phase the spawner seated on the header clip just before the
+            // slice: a prologue-seated villager starts its idle at frame 0.
+            if let Some(slot) = self.world.field_vm.executing_channel {
+                self.restart_run_clip(ctx, slot, move_id, false);
+            }
             return;
         }
         // A spawned partition-2 record's channel poke (the modal cutscene
@@ -568,6 +578,7 @@ impl FieldHostImpl<'_> {
             // member a cutscene seats and then walks (`korout` `P2[3]`'s
             // `CC 09 51 .. 0A` / `CC 0A 51 .. 0F` ahead of their `C1`
             // legs) plays its walk clip instead of gliding in the idle.
+            self.restart_run_clip(ctx, slot, move_id, true);
             self.world.carry_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
             self.bind_run_clip(ctx, slot, move_id);
@@ -669,6 +680,7 @@ impl FieldHostImpl<'_> {
                 {
                     self.world.npcs.headings.insert(slot, heading);
                 }
+                self.restart_run_clip(ctx, slot, move_id, true);
                 self.world.carry_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
                 self.bind_run_clip(ctx, slot, move_id);
@@ -689,6 +701,14 @@ impl FieldHostImpl<'_> {
     /// `+0x68` cursor - before it plays move `22`; with no world cursor the
     /// spin stepped past at once and every later beat ran 95 vsyncs early.
     /// REF: FUN_800204F8, FUN_801DE840 (`0x801E1A68..0x801E1AB4`)
+    /// The seat's and ExecMove's forced restart ([`World::restart_npc_clip`]);
+    /// `rebind` when [`Self::bind_run_clip`] or the ExecMove bind follows.
+    fn restart_run_clip(&mut self, ctx: &FieldCtx, slot: u8, move_id: u8, rebind: bool) {
+        let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
+        self.world
+            .restart_npc_clip(slot, move_id, party_bank, rebind);
+    }
+
     fn bind_run_clip(&mut self, ctx: &mut FieldCtx, slot: u8, move_id: u8) {
         let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
         if let Some(flags) =

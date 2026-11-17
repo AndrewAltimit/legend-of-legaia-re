@@ -591,7 +591,7 @@ impl PlayWindowApp {
             use std::io::Write as _;
             let _ = writeln!(
                 meta,
-                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts,over,work"
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand,drive_seek_arm,drive_poll_arm,drive_busy,fade_level,guard,cost,parts,ghosts,over,work,wash,linked"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
@@ -823,7 +823,7 @@ impl PlayWindowApp {
         use std::io::Write as _;
         let _ = writeln!(
             rec.meta,
-            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{},{over},{}",
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{},{seek_arm},{poll_arm},{busy},{fade_level},{guard},{},{},{},{over},{},{},{}",
             w.casting.module_phase,
             w.clock.display_frames,
             w.battle_ctx.frame_timer,
@@ -835,6 +835,15 @@ impl PlayWindowApp {
             w.battle_frame_load().0,
             w.battle_frame_load().1,
             w.battle.frame_work,
+            {
+                let p = &w.casting.module_pres;
+                if p.wash_live && p.wash.armed() {
+                    i32::from(p.wash.mode)
+                } else {
+                    -1
+                }
+            },
+            w.battle.linked_polys.map_or(-1, i64::from),
         );
         // `LEGAIA_DIAG_CAST_BODIES=1`: `bodies.csv`, every battle body a tick
         // (tick, seat, monster flag, drawn, triangles, raw position, radius,

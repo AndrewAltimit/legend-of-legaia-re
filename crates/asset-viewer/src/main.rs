@@ -43,6 +43,7 @@ mod cli;
 mod dialog_app;
 mod display;
 mod field_app;
+mod first_run;
 mod goto;
 mod loaders;
 mod mesh_bounds;
@@ -455,6 +456,9 @@ fn main() -> std::process::ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
     let double_clicked = args.cmd.is_none();
+    // Whether the view came from the desktop dialog: then a failure is said
+    // in a dialog too, there being no terminal to print it in.
+    let mut from_dialog = false;
     let cmd = match args.cmd {
         Some(c) => c,
         None => match default_prot_dat() {
@@ -463,6 +467,19 @@ fn main() -> std::process::ExitCode {
                     "no view named: browsing {} (asset-viewer --help lists the others)",
                     prot_dat.display()
                 );
+                Cmd::Prot {
+                    prot_dat,
+                    cdname: None,
+                    scus: None,
+                    start: 0,
+                }
+            }
+            None if first_run::double_clicked() => {
+                first_run::release_console();
+                let Some(prot_dat) = first_run::ask() else {
+                    return std::process::ExitCode::SUCCESS;
+                };
+                from_dialog = true;
                 Cmd::Prot {
                     prot_dat,
                     cdname: None,
@@ -483,6 +500,14 @@ fn main() -> std::process::ExitCode {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("asset-viewer: {e:#}");
+            if from_dialog {
+                let _ = rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("Legend of Legaia asset viewer")
+                    .set_description(format!("The viewer stopped: {e:#}"))
+                    .set_buttons(rfd::MessageButtons::Ok)
+                    .show();
+            }
             pause_if_double_clicked(double_clicked);
             std::process::ExitCode::FAILURE
         }

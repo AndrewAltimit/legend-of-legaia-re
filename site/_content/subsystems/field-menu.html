@@ -105,6 +105,8 @@
     </tbody>
   </table>
   <p>Live windows are doubly-linked structs carrying the descriptor id and an <em>animated</em> copy of the rect: on screen exit a window slides to its park edge and sits offscreen. The top-level windows stay parked in every sub-screen capture - which is how the top-level set was pinned without a top-level capture.</p>
+  <p>The port draws every window at that animated rect, on both the desktop app and the play page, so each screen change slides its windows in over twelve frames as retail's do; anything sliding past the 320x240 game area is clipped rather than shown in a wide window's margins.</p>
+  <p>As in retail, the screen a press leaves is still drawn whole on the press frame, and its windows then slide back to their parks, content and all, under the screen that replaces it.</p>
 </section>
 
 <section class="doc-section" id="submenu-dispatch">

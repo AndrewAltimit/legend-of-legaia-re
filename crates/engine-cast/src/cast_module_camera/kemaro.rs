@@ -72,6 +72,16 @@ pub const KEMARO_ARM17_SPAWNS: [ModuleSpawn; 5] = [
     rec(0x801F_9264, lit([0, 0, 0x400], [0, 0xC00, 0])),
 ];
 
+/// PROT 0918 arm 8's pool spawn on its pass: the arm grounds the creature
+/// (`sh zero,0x36(s3)`, `sh zero,0x44(s3)`) and spawns effect `1` on its
+/// `+0x34` trio at angle `0` (`li a0,0x1; addiu a1,s3,0x34; clear a2;
+/// jal 0x801DFDF0` at `0x801F773C..0x801F774C`).
+pub const KEMARO_ARM8_EFFECTS: [ModuleEffect; 1] = [ModuleEffect {
+    id: 1,
+    anchor: SpawnAnchor::CreatureGround { y: 0 },
+    angle: EffectAngle::Literal(0),
+}];
+
 /// A cut on the focus trio `(0, fy, fz)`.
 fn cut(angles: [i16; 2], tr: [i16; 3], fy: i16, fz: i16, frames: u16) -> ModuleShot {
     ModuleShot {
@@ -127,6 +137,7 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// | 5 | [`KEMARO_ARM5_SPAWNS`] |
 /// | 6 (`0x801F7448`) | the spell name, once the creature's scale reaches `0x1000` |
 /// | 7 (`0x801F754C`, `0x801F7590`) | [`KEMARO_ARM7_SPAWNS`], the attack-record name; cut pitch `-0x20`, yaw `-0x80`, TR `(0, 0x500, 0x1C00)`, focus z `0x400` |
+/// | 8 (`0x801F773C`) | [`KEMARO_ARM8_EFFECTS`], the pool's effect `1` on the grounded creature |
 /// | 9 (`0x801F785C`) | [`KEMARO_ARM9_SPAWNS`]; cut pitch `-0x40`, yaw `-0x200`, TR `(0, 0x400, 0x780)` on the creature's `z` |
 /// | 11 (`0x801F7ACC`) | cut pitch `0x40`, yaw `-0x700`, TR `(0, 0x400, 0x800)` on the creature's `z` |
 /// | 13 (`0x801F7DFC`) | cut pitch `0`, yaw `0`, TR `(0, 0x400, 0)` on the victim's `z` |
@@ -141,7 +152,7 @@ pub fn kemaro_drift(phase: u8, drained: i32) -> Option<CaptureDrift> {
 /// (`0x801F7B90..0x801F7BAC`). The walk arms 13..17 make of the arm-9 parts
 /// by handle is the host's (`World::kemaro_spear_writes`).
 ///
-/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, arm 4's TR y store, the spawn calls of arms 3, 5, 7, 9, 13 and 17 and the captions of arms 6, 7 and 0x13)
+/// PORT: overlay_summon_kemaro_0918_801f6c70 (PROT 0918; camera arms 0, 4, 7, 9, 11, 13, 14, 16 and 17, the drifts of arms 1, 4 and 8..13, arm 4's TR y store, the spawn calls of arms 3, 5, 7, 9, 13 and 17, arm 8's pool spawn and the captions of arms 6, 7 and 0x13)
 pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let drained = st.countdown.0 - SPEED_SCALAR;
     let ramp_before = st.ramp;
@@ -238,6 +249,10 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
         4 => ArmDirection::shot(cut([-0xC0, 0x800], [0, 0x1900, -0x1200], 0, 0x400, 0x80)),
         5 => ArmDirection {
             spawns: &KEMARO_ARM5_SPAWNS,
+            ..ArmDirection::PASS
+        },
+        8 => ArmDirection {
+            effects: &KEMARO_ARM8_EFFECTS,
             ..ArmDirection::PASS
         },
         7 => ArmDirection {

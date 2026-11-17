@@ -310,7 +310,7 @@ impl PlayWindowApp {
             ),
             (None, None) => String::new(),
         };
-        for line in super::settings_panel::wrap_lines(&note, WIDTH - 12, &width)
+        for line in super::settings_panel::wrap_lines(&self.panel_words(&note), WIDTH - 12, &width)
             .iter()
             .take(NOTE_LINES)
         {
@@ -392,8 +392,11 @@ mod tests {
                     "Cross: go to {}. Your party and items come along.",
                     row.name
                 );
-                let lines = super::super::settings_panel::wrap_lines(&note, WIDTH - 12, &width);
-                assert!(lines.len() <= NOTE_LINES, "{}: {lines:?}", row.label);
+                for table in super::super::settings_panel::widest_word_tables() {
+                    let note = super::super::settings_panel::device_words(&note, &table);
+                    let lines = super::super::settings_panel::wrap_lines(&note, WIDTH - 12, &width);
+                    assert!(lines.len() <= NOTE_LINES, "{}: {lines:?}", row.label);
+                }
             }
         }
     }

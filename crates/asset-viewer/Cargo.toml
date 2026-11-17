@@ -37,6 +37,11 @@ legaia-scene-formats.workspace = true
 legaia-ui-formats.workspace = true
 log.workspace = true
 winit.workspace = true
+# The double-click first-run dialog (`first_run`): a desktop message box
+# and folder picker (xdg-desktop-portal / zenity on Linux, no GTK link),
+# and the release layout to find Legaia Explorer by.
+rfd.workspace = true
+legaia-app-theme.workspace = true
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.

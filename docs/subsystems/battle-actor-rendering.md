@@ -243,7 +243,9 @@ A downed party member's chain is knockdown, entry `7`, entry `8`; entry `8` re-c
 - The ladder's staged entry is committed at the clip's natural end, in the slice of the advance that crossed it (`0x80047A48..0x80047B58`): a reaction's last pass is the pass that lands the next entry on its first keyframe, and state `0x20`'s hold reads the idle on the following pass. The downed party chain and the monster-death arm (latch, spoils via `battle_steal`, Seru get-up) follow the table.
 - The root-motion drive reads the latch in `battle.flag_bits`, not "a knockdown is playing".
 
-Differences from retail: the port stages the reaction inside the hit, ahead of the combo total's HP write, so the tag-`4` row is evaluated at the knockdown's natural end on the landed HP instead of at its commit. The tag-`2` rewrite changes the clip's tag, not the disc entry, and the `+0x56` bump has no engine field.
+Differences from retail: the port stages the reaction inside the hit, ahead of the combo total's HP write, so the tag-`4` row is evaluated at the knockdown's natural end on the landed HP instead of at its commit.
+
+The decoder's last-frame tween still reads the row while the knockdown plays: retail's `+0x1DA` holds the get-up from the knockdown's commit (`0x8004BED0`; a `--watch` on Vahn's `+0x1DA` through Blazing Slash reads `5` from that store), so the last frames ease toward the get-up's first keyframe, and the engine's tween target evaluates the row on the live HP until the natural end stages it. Without it the knockdown's last four frames pulled the body toward the idle stance (Blazing Slash's arm `0x18` closing frame `.764` to `.892`). The tag-`2` rewrite changes the clip's tag, not the disc entry, and the `+0x56` bump has no engine field.
 
 <a id="arts-presentation-slow-motion-and-after-image-ghosts"></a>
 

@@ -21,11 +21,11 @@
       "draws": 1
     },
     "chapter2_garmel_pre_songi": {
-      "agree": 7,
+      "agree": 150,
       "draws": 150
     },
     "chapter2_garmel_pre_zeto": {
-      "agree": 10,
+      "agree": 150,
       "draws": 150
     },
     "chest_open_trace_pcsx": {
@@ -73,7 +73,7 @@
       "draws": 151
     },
     "dohaty_field_card_walk": {
-      "agree": 1,
+      "agree": 150,
       "draws": 150
     },
     "dolk2_field_door_hop": {
@@ -97,7 +97,7 @@
       "draws": 34
     },
     "garmel_field_card_boot": {
-      "agree": 12,
+      "agree": 150,
       "draws": 151
     },
     "garmel_zeto_appears_rising": {
@@ -105,7 +105,7 @@
       "draws": 146
     },
     "garmel_zeto_appears_taunt": {
-      "agree": 2,
+      "agree": 150,
       "draws": 150
     },
     "geremi_field_door_hop": {

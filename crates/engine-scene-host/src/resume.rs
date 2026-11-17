@@ -24,7 +24,13 @@
 //! # Resume order
 //!
 //! 1. The save's own scene, when it names one and the host can enter it.
-//! 2. The scene already running, with the save loaded over it.
+//! 2. The scene already running, re-entered under the save's flags: retail's
+//!    card load restores the flag bank and then runs the landing scene's MAN
+//!    loader, so the scene's spawn scripts read the loaded flags. Loaded over
+//!    the running scene without an entry, its NPCs kept what they had
+//!    spawned under the flags before the load (a scene-less save landed on
+//!    `town01` seated two of its villagers on other clips than the same save
+//!    entering `town01`).
 //! 3. The opening town ([`legaia_game_tables::new_game::OPENING_SCENE`]), when
 //!    nothing is running - a cold boot's title Continue on a host that did
 //!    not pre-boot a scene.
@@ -50,9 +56,11 @@ pub const NEW_GAME_SCENES: [&str; 2] = [OPENING_CUTSCENE_SCENE, OPENING_SCENE];
 pub enum ResumeLanding {
     /// Entered the scene the save was written in.
     SavedScene(String),
-    /// The save named no scene this host could enter; it loads over the
-    /// scene already running, which was not re-entered.
-    CurrentScene(String),
+    /// The save named no scene this host could enter; the scene already
+    /// running is re-entered under the save's flags, as retail's card load
+    /// runs the landing scene's loader. `false` when that entry failed and
+    /// the save loaded over the running scene as it stood.
+    CurrentScene(String, bool),
     /// Neither the saved scene nor a running scene: entered the opening town.
     OpeningTown,
     /// Nothing could be entered and nothing was running. The save still
@@ -64,14 +72,17 @@ impl ResumeLanding {
     /// `true` when the landing entered a scene - the host's render-side
     /// scene state is stale and must be rebuilt.
     pub fn entered_scene(&self) -> bool {
-        matches!(self, Self::SavedScene(_) | Self::OpeningTown)
+        matches!(
+            self,
+            Self::SavedScene(_) | Self::OpeningTown | Self::CurrentScene(_, true)
+        )
     }
 
     /// The scene the player stands in after the landing (`None` for
     /// [`Self::Nowhere`]).
     pub fn scene(&self) -> Option<&str> {
         match self {
-            Self::SavedScene(s) | Self::CurrentScene(s) => Some(s),
+            Self::SavedScene(s) | Self::CurrentScene(s, _) => Some(s),
             Self::OpeningTown => Some(OPENING_SCENE),
             Self::Nowhere => None,
         }
@@ -81,7 +92,7 @@ impl ResumeLanding {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::SavedScene(_) => "saved",
-            Self::CurrentScene(_) => "current",
+            Self::CurrentScene(..) => "current",
             Self::OpeningTown => "opening",
             Self::Nowhere => "nowhere",
         }
@@ -93,7 +104,7 @@ impl ResumeLanding {
 /// `save_scene` is the save's resume label (empty for a save that carries
 /// none); `current_scene` is the scene the host has running, if any.
 /// `enter` enters one scene and reports failure; it is called at most twice
-/// (the saved scene, then the opening town). The caller applies the save
+/// (the saved scene, then the running scene or the opening town). The caller applies the save
 /// after this returns, whatever the landing.
 pub fn land_save<E: std::fmt::Display>(
     save_scene: &str,
@@ -110,7 +121,16 @@ pub fn land_save<E: std::fmt::Display>(
         }
     }
     if let Some(cur) = current_scene.filter(|s| !s.is_empty()) {
-        return ResumeLanding::CurrentScene(cur.to_string());
+        // REF: FUN_8003AEB0 (the MAN loader a card load runs over the
+        // restored flag bank)
+        let entered = match enter(cur) {
+            Ok(()) => true,
+            Err(e) => {
+                log::warn!("resume: re-entering the running scene '{cur}' failed ({e})");
+                false
+            }
+        };
+        return ResumeLanding::CurrentScene(cur.to_string(), entered);
     }
     match enter(OPENING_SCENE) {
         Ok(()) => ResumeLanding::OpeningTown,
@@ -292,9 +312,9 @@ mod tests {
                 ResumeLanding::SavedScene("rikuroa".into()),
             ),
             (
-                &[][..],
+                &["town01"][..],
                 Some("town01"),
-                ResumeLanding::CurrentScene("town01".into()),
+                ResumeLanding::CurrentScene("town01".into(), true),
             ),
         ] {
             let mut host = ProbeHost {
@@ -306,8 +326,10 @@ mod tests {
             };
             let landing = resume_card_load(&mut host, save.clone(), "rikuroa");
             assert_eq!(landing, want);
-            assert_eq!(host.seen_at_entry.len(), 1);
-            let (flag, roster, money) = host.seen_at_entry[0];
+            // The saved scene's entry, then (when it fails) the running one's.
+            let entries = if running.is_some() { 2 } else { 1 };
+            assert_eq!(host.seen_at_entry.len(), entries);
+            let (flag, roster, money) = host.seen_at_entry[entries - 1];
             assert!(flag, "the entry reads the saved story flags");
             assert_eq!(roster, 0, "no party record goes in ahead of the entry");
             assert_ne!(money, 4321, "nor the gold");
@@ -357,11 +379,20 @@ mod tests {
     }
 
     #[test]
-    fn unenterable_saved_scene_loads_over_the_running_scene() {
-        let landing = land_save("nosuch", Some("map01"), enter_only(&["map01"]));
-        assert_eq!(landing, ResumeLanding::CurrentScene("map01".into()));
-        assert!(!landing.entered_scene());
+    fn unenterable_saved_scene_re_enters_the_running_scene() {
+        let mut calls = Vec::new();
+        let landing = land_save("nosuch", Some("map01"), |s: &str| {
+            calls.push(s.to_string());
+            if s == "map01" { Ok(()) } else { Err("missing") }
+        });
+        assert_eq!(landing, ResumeLanding::CurrentScene("map01".into(), true));
+        assert!(landing.entered_scene());
         assert_eq!(landing.scene(), Some("map01"));
+        assert_eq!(calls, ["nosuch", "map01"]);
+        // A running scene that will not re-enter keeps the save over it.
+        let landing = land_save("nosuch", Some("map01"), enter_only(&[]));
+        assert_eq!(landing, ResumeLanding::CurrentScene("map01".into(), false));
+        assert!(!landing.entered_scene());
     }
 
     #[test]
@@ -388,8 +419,8 @@ mod tests {
             calls += 1;
             Ok::<(), String>(())
         });
-        assert_eq!(landing, ResumeLanding::CurrentScene("town01".into()));
-        assert_eq!(calls, 0);
+        assert_eq!(landing, ResumeLanding::CurrentScene("town01".into(), true));
+        assert_eq!(calls, 1, "the running scene re-entered, nothing else tried");
         let landing = land_save("", None, enter_only(&[]));
         assert_eq!(landing, ResumeLanding::Nowhere);
         assert_eq!(landing.scene(), None);
@@ -417,7 +448,10 @@ mod tests {
     #[test]
     fn landing_kinds_are_stable() {
         assert_eq!(ResumeLanding::SavedScene("a".into()).kind(), "saved");
-        assert_eq!(ResumeLanding::CurrentScene("a".into()).kind(), "current");
+        assert_eq!(
+            ResumeLanding::CurrentScene("a".into(), true).kind(),
+            "current"
+        );
         assert_eq!(ResumeLanding::OpeningTown.kind(), "opening");
         assert_eq!(ResumeLanding::Nowhere.kind(), "nowhere");
     }

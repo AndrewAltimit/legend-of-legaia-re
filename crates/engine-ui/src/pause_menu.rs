@@ -163,17 +163,38 @@ pub const MENU_WINDOW_FALLBACK: [(usize, (i32, i32, i32, i32)); 29] = [
     (WIN_EQUIP_COMPARE, (14, 40, 144, 52)),
 ];
 
+/// Window ids the live-origin overlay covers (the descriptor table holds 52).
+pub const LIVE_WINDOW_SLOTS: usize = 64;
+
+/// Each window's live origin on the overlay's window list, by descriptor id:
+/// where the window walker has slid it this frame, `None` for a window that
+/// is not on the list.
+pub type LiveWindowOrigins = [Option<(i32, i32)>; LIVE_WINDOW_SLOTS];
+
 /// Descriptor-rect resolver: the disc-parsed menu-overlay window table when
-/// the host has one, else the pinned mirror in [`MENU_WINDOW_FALLBACK`].
+/// the host has one, else the pinned mirror in [`MENU_WINDOW_FALLBACK`],
+/// moved to the window's live origin when the host hands the window list's
+/// positions over ([`Self::with_live_origins`]).
 #[derive(Clone, Copy, Default)]
 pub struct MenuRects<'a> {
     table: Option<&'a MenuWindowTable>,
+    live: Option<LiveWindowOrigins>,
 }
 
 impl<'a> MenuRects<'a> {
     /// Wrap a host's parsed table (or its absence).
     pub fn new(table: Option<&'a MenuWindowTable>) -> Self {
-        MenuRects { table }
+        MenuRects { table, live: None }
+    }
+
+    /// Draw each window at its live origin on the window list: retail draws
+    /// a window where the walker's motion pass `FUN_80031AE4` left it, so a
+    /// window that a screen change opens slides in from its park over twelve
+    /// frames (and one it closes slides out) before it stands on its
+    /// descriptor's home. A window off the list keeps its descriptor rect.
+    pub fn with_live_origins(mut self, live: Option<LiveWindowOrigins>) -> Self {
+        self.live = live;
+        self
     }
 
     /// The parsed table, when the host had one. The retail **painter** family
@@ -183,8 +204,25 @@ impl<'a> MenuRects<'a> {
         self.table
     }
 
-    /// Content rect for a menu window id.
+    /// Content rect for a menu window id: its descriptor's (or the pinned
+    /// fallback's) size, at its live origin when the window list holds it.
     pub fn rect(&self, id: usize) -> (i32, i32, i32, i32) {
+        let (x, y, w, h) = self.home_rect(id);
+        match self.live.and_then(|l| l.get(id).copied().flatten()) {
+            Some((lx, ly)) => (lx, ly, w, h),
+            None => (x, y, w, h),
+        }
+    }
+
+    /// [`Self::rect`] as a painter's rect: a retail painter draws off the
+    /// live window, so its content moves with the window's slide.
+    pub fn painter_rect(&self, id: usize) -> crate::menu::window_painters::PainterRect {
+        let (x, y, w, h) = self.rect(id);
+        crate::menu::window_painters::PainterRect::new(x, y, w, h)
+    }
+
+    /// The window's descriptor rect, wherever the window list has it.
+    pub fn home_rect(&self, id: usize) -> (i32, i32, i32, i32) {
         if let Some(d) = self.table.and_then(|t| t.window(id)) {
             return d.rect();
         }
@@ -306,12 +344,13 @@ impl<'a> PauseMenuCtx<'a> {
     ///
     /// REF: FUN_801DCAD8 - the Status tab's content renderer.
     fn tab_title(&self, tab_id: usize, label: &str) -> Vec<TextDraw> {
-        if let Some((d, _)) = self
+        if self
             .rects
             .table()
             .and_then(|t| painter_at(t, tab_id, MenuWindowPainter::TitleTab))
+            .is_some()
         {
-            return title_tab_draws_for(self.font, painter_rect(d), label);
+            return title_tab_draws_for(self.font, self.rects.painter_rect(tab_id), label);
         }
         crate::tab_label_draws(self.font, label, self.rects.pen(tab_id))
     }
@@ -648,7 +687,13 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
     let mut sprites: Vec<SpriteDraw> = Vec::new();
     match screen {
         PauseScreen::TopLevel(v) => {
-            let money_rect = money_box_rect(ctx.rects.rect(window_ids::TOP_MONEY_TIME), v.coins);
+            // The rewrite pins the box's rows; a slide moves it as a whole.
+            let money_rect = {
+                let live = ctx.rects.rect(window_ids::TOP_MONEY_TIME);
+                let home = ctx.rects.home_rect(window_ids::TOP_MONEY_TIME);
+                let (x, y, w, h) = money_box_rect(live, v.coins);
+                (x, y + live.1 - home.1, w, h)
+            };
             let money_pen = (money_rect.0, money_rect.1);
             texts.extend(crate::field_menu_draws_for(
                 ctx.font,
@@ -878,7 +923,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             } else {
                 &windows[..]
             }));
-            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
+            sprites.extend(ctx.frame_around(crate::items_info_extra_box_rect(
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            )));
             texts.extend(crate::list_page_arrow_draws(
                 ctx.font,
                 (v.view.page, v.view.pages),
@@ -936,7 +983,9 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             texts
                 .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             sprites.extend(ctx.window_chrome(&TARGET_SELECT_WINDOWS));
-            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
+            sprites.extend(ctx.frame_around(crate::items_info_extra_box_rect(
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            )));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::items_screen_sprites_for(
                     rects,
@@ -1077,13 +1126,14 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // staged too - the Remove row - and only the content waits for a
             // staged item.
             if !browse
-                && let Some((d, _)) = ctx
+                && ctx
                     .rects
                     .table()
                     .and_then(|t| painter_at(t, WIN_EQUIP_ITEM_INFO, MenuWindowPainter::CountPanel))
+                    .is_some()
             {
-                let r = painter_rect(d);
-                sprites.extend(ctx.frame_around(d.rect()));
+                let r = ctx.rects.painter_rect(WIN_EQUIP_ITEM_INFO);
+                sprites.extend(ctx.frame_around(ctx.rects.rect(WIN_EQUIP_ITEM_INFO)));
                 if let Some(info) = v.info.as_ref() {
                     texts.extend(crate::item_info_body_draws(ctx.font, (r.x, r.y), info));
                 }
@@ -1105,11 +1155,15 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the staged item's category counts only on slot rows `>= 4`,
             // and the "nothing staged" fallback is not row-gated at all.
             if let Some(cmp) = v.compare.as_ref()
-                && let Some((d, _)) = ctx.rects.table().and_then(|t| {
-                    painter_at(t, WIN_EQUIP_COMPARE, MenuWindowPainter::ActiveStatCompare)
-                })
+                && ctx
+                    .rects
+                    .table()
+                    .and_then(|t| {
+                        painter_at(t, WIN_EQUIP_COMPARE, MenuWindowPainter::ActiveStatCompare)
+                    })
+                    .is_some()
             {
-                let r = painter_rect(d);
+                let r = ctx.rects.painter_rect(WIN_EQUIP_COMPARE);
                 let category = crate::active_compare_category(crate::CompareCategoryInputs {
                     slot_row: cmp.slot_row,
                     staged_id: cmp.staged_id,
@@ -1140,7 +1194,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                         ],
                     },
                 };
-                sprites.extend(ctx.frame_around(d.rect()));
+                sprites.extend(ctx.frame_around(ctx.rects.rect(WIN_EQUIP_COMPARE)));
                 let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
                 texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
                 // An HP / MP row's "MAX" tag and label are atlas sprites.
@@ -1224,14 +1278,16 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             });
         }
         PauseScreen::ContextNotice { lines } => {
-            let Some((d, _)) = ctx
+            if ctx
                 .rects
                 .table()
                 .and_then(|t| painter_at(t, WIN_CONTEXT_NOTICE, MenuWindowPainter::LabelList))
-            else {
+                .is_none()
+            {
                 return PauseMenuDraws::default();
-            };
-            let (out, cursor) = label_list_draws_for(ctx.font, painter_rect(d), lines);
+            }
+            let (out, cursor) =
+                label_list_draws_for(ctx.font, ctx.rects.painter_rect(WIN_CONTEXT_NOTICE), lines);
             texts.extend(out);
             texts.extend(ctx.hand(cursor.x, cursor.y));
         }
@@ -1240,14 +1296,19 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             choices,
             cursor,
         } => {
-            let Some((d, _)) = ctx.rects.table().and_then(|t| {
-                painter_at(t, WIN_CONTEXT_READY, MenuWindowPainter::TwoLineChoicePanel)
-            }) else {
+            if ctx
+                .rects
+                .table()
+                .and_then(|t| {
+                    painter_at(t, WIN_CONTEXT_READY, MenuWindowPainter::TwoLineChoicePanel)
+                })
+                .is_none()
+            {
                 return PauseMenuDraws::default();
-            };
+            }
             let (out, marks) = two_line_choice_panel_draws_for(
                 ctx.font,
-                painter_rect(d),
+                ctx.rects.painter_rect(WIN_CONTEXT_READY),
                 headings,
                 choices,
                 ChoiceFlags(cursor),
@@ -1600,5 +1661,289 @@ mod clip_under_window_tests {
         assert_eq!(t.len(), 2);
         assert_eq!((t[0].dst, t[0].src), ((104, 108, 8, 4), (100, 204, 8, 4)));
         assert_eq!((t[1].dst, t[1].src), ((108, 104, 4, 4), (104, 200, 4, 4)));
+    }
+}
+
+/// Clip quads to the 320x240 stage at `origin` / `scale` (surface pixels).
+///
+/// Retail's windows park and slide off the display's edges, and the TV shows
+/// nothing past them; a host surface wider or taller than the stage would
+/// show a parked or sliding window in its margins. Each quad is trimmed to
+/// the stage, its source rect trimmed in proportion; a quad wholly outside
+/// keeps its slot with a zero-sized destination, so an index into the list
+/// (the page's save-screen darken marker) stays valid.
+pub fn clip_to_stage(draws: &mut [TextDraw], origin: (i32, i32), scale: u32) {
+    let s = scale.max(1) as i64;
+    let (x0, y0) = (i64::from(origin.0), i64::from(origin.1));
+    let x1 = x0 + i64::from(crate::BOOT_UI_STAGE_W) * s;
+    let y1 = y0 + i64::from(crate::BOOT_UI_STAGE_H) * s;
+    for d in draws.iter_mut() {
+        let (dx, dy, dw, dh) = (
+            i64::from(d.dst.0),
+            i64::from(d.dst.1),
+            i64::from(d.dst.2),
+            i64::from(d.dst.3),
+        );
+        if dw == 0 || dh == 0 {
+            continue;
+        }
+        let (sx, sy, sw, sh) = (
+            i64::from(d.src.0),
+            i64::from(d.src.1),
+            i64::from(d.src.2),
+            i64::from(d.src.3),
+        );
+        let (cx0, cy0) = (dx.max(x0), dy.max(y0));
+        let (cx1, cy1) = ((dx + dw).min(x1), (dy + dh).min(y1));
+        if cx1 <= cx0 || cy1 <= cy0 {
+            d.dst = (d.dst.0, d.dst.1, 0, 0);
+            continue;
+        }
+        if (cx0, cy0, cx1, cy1) == (dx, dy, dx + dw, dy + dh) {
+            continue;
+        }
+        let nsx = sx + (cx0 - dx) * sw / dw;
+        let nsy = sy + (cy0 - dy) * sh / dh;
+        let nsw = (sx + (cx1 - dx) * sw / dw - nsx).max(0);
+        let nsh = (sy + (cy1 - dy) * sh / dh - nsy).max(0);
+        d.dst = (
+            cx0 as i32,
+            cy0 as i32,
+            (cx1 - cx0) as u32,
+            (cy1 - cy0) as u32,
+        );
+        d.src = (nsx as u32, nsy as u32, nsw as u32, nsh as u32);
+    }
+}
+
+#[cfg(test)]
+mod clip_to_stage_tests {
+    use super::*;
+
+    fn quad(dst: (i32, i32, u32, u32), src: (u32, u32, u32, u32)) -> TextDraw {
+        TextDraw {
+            dst,
+            src,
+            color: [1.0; 4],
+        }
+    }
+
+    /// Stage scale 2 at x 320: a quad straddling the left edge is trimmed to
+    /// it with its source in proportion, one wholly in the margin keeps its
+    /// slot at zero size, one inside is untouched.
+    #[test]
+    fn quads_are_trimmed_to_the_stage() {
+        let mut d = vec![
+            quad((300, 10, 40, 16), (0, 0, 20, 8)),
+            quad((100, 10, 40, 16), (0, 0, 20, 8)),
+            quad((400, 10, 40, 16), (4, 4, 20, 8)),
+            quad((950, 470, 20, 20), (0, 0, 10, 10)),
+        ];
+        clip_to_stage(&mut d, (320, 0), 2);
+        assert_eq!((d[0].dst, d[0].src), ((320, 10, 20, 16), (10, 0, 10, 8)));
+        assert_eq!((d[1].dst.2, d[1].dst.3), (0, 0));
+        assert_eq!((d[2].dst, d[2].src), ((400, 10, 40, 16), (4, 4, 20, 8)));
+        assert_eq!((d[3].dst, d[3].src), ((950, 470, 10, 10), (0, 0, 5, 5)));
+    }
+}
+
+/// Everything window `id`'s renderer draws, as a content rect relative to
+/// the window's origin: its descriptor rect, plus what the renderer paints
+/// outside it - window 17's widget box at `WY + 0x38`
+/// ([`crate::items_info_extra_box_rect`]) and the money box's coin row above
+/// window 49 ([`money_box_rect`]).
+fn window_draw_extent(rects: &MenuRects, id: usize) -> (i32, i32, i32, i32) {
+    let (_, _, w, h) = rects.home_rect(id);
+    match id {
+        window_ids::ITEMS_INFO => (0, 0, w.max(0x90), 0x38 + 0x28),
+        window_ids::TOP_MONEY_TIME => (0, -0x0E, w, h + 0x0E),
+        _ => (0, 0, w, h),
+    }
+}
+
+/// A rect `(x, y, w, h)` in surface pixels.
+type StageRect = (i32, i32, i32, i32);
+
+/// The screen a pause-menu change leaves, carried on screen while retail
+/// still draws it.
+///
+/// Retail's master tick `FUN_801DC6B4` dispatches a requested screen the
+/// frame after the press, so the press frame still draws the old screen
+/// whole; the new screen's phase 0 then closes the old set (`[05]`), and the
+/// window walker `FUN_80031AE4` carries each closing window to its park over
+/// twelve frames while the draw walker `FUN_80031D00` keeps painting its
+/// content there. The port composes only the current screen, so a host keeps
+/// one of these per draw list: each settled frame it holds a snapshot of
+/// what was drawn and where every window stood
+/// ([`MenuRects::with_live_origins`]'s origins); on a pending frame it hands
+/// the snapshot back in place of the new screen; while windows close it
+/// draws the snapshot's draws inside each closing window's frame, moved by
+/// how far that window has travelled, under the new screen.
+#[derive(Debug, Clone, Default)]
+pub struct PauseScreenCarry {
+    last: Option<(Vec<TextDraw>, LiveWindowOrigins)>,
+}
+
+impl PauseScreenCarry {
+    /// This frame's list. `now` is the current screen's composition (surface
+    /// pixels at `origin` / `scale`), `origins` the live origins it was laid
+    /// at (`None` outside the pause menu: the carry empties), `pending` and
+    /// `closing` the window list's state
+    /// (`field_menu_dispatch::pause_screen_carry`), `rects` the resolver the
+    /// snapshot's window sizes come from.
+    #[allow(clippy::too_many_arguments)]
+    pub fn frame(
+        &mut self,
+        now: Vec<TextDraw>,
+        origins: Option<LiveWindowOrigins>,
+        pending: bool,
+        closing: &[(usize, (i32, i32))],
+        rects: &MenuRects,
+        origin: (i32, i32),
+        scale: u32,
+    ) -> Vec<TextDraw> {
+        let Some(origins) = origins else {
+            self.last = None;
+            return now;
+        };
+        let Some((snap, snap_origins)) = self.last.as_ref() else {
+            if !pending && closing.is_empty() {
+                self.last = Some((now.clone(), origins));
+            }
+            return now;
+        };
+        if pending {
+            return snap.clone();
+        }
+        // Closing windows that stood somewhere in the snapshot: their frame
+        // there (surface pixels) and how far they have moved since.
+        let s = scale.max(1) as i32;
+        let moving: Vec<(StageRect, (i32, i32))> = closing
+            .iter()
+            .filter_map(|&(id, (x, y))| {
+                let (sx, sy) = snap_origins.get(id).copied().flatten()?;
+                let (ex, ey, w, h) = window_draw_extent(rects, id);
+                let frame = (
+                    origin.0 + (sx + ex - 8) * s,
+                    origin.1 + (sy + ey - 8) * s,
+                    (w + 16) * s,
+                    (h + 16) * s,
+                );
+                Some((frame, ((x - sx) * s, (y - sy) * s)))
+            })
+            .collect();
+        if moving.is_empty() {
+            self.last = Some((now.clone(), origins));
+            return now;
+        }
+        let inside = |(fx, fy, fw, fh): (i32, i32, i32, i32), x: i32, y: i32| {
+            x >= fx && x < fx + fw && y >= fy && y < fy + fh
+        };
+        let mut out: Vec<TextDraw> = snap
+            .iter()
+            .filter_map(|d| {
+                let (_, (dx, dy)) = moving
+                    .iter()
+                    .rev()
+                    .find(|(f, _)| inside(*f, d.dst.0, d.dst.1))?;
+                let mut d = *d;
+                d.dst.0 += dx;
+                d.dst.1 += dy;
+                Some(d)
+            })
+            .collect();
+        out.extend(now);
+        out
+    }
+}
+
+#[cfg(test)]
+mod carry_tests {
+    use super::*;
+
+    fn quad(x: i32, y: i32) -> TextDraw {
+        TextDraw {
+            dst: (x, y, 8, 8),
+            src: (0, 0, 8, 8),
+            color: [1.0; 4],
+        }
+    }
+
+    /// Window 50 (the root list, fallback rect `(24, 24, 104, 94)`) at home
+    /// in the snapshot; a draw inside it and one in no window.
+    fn origins_at(x: i32) -> LiveWindowOrigins {
+        let mut o = [None; LIVE_WINDOW_SLOTS];
+        o[window_ids::TOP_COMMAND_LIST] = Some((x, 24));
+        o
+    }
+
+    #[test]
+    fn the_left_screen_holds_the_press_frame_then_slides_out_with_its_window() {
+        let rects = MenuRects::new(None);
+        let mut c = PauseScreenCarry::default();
+        let old = vec![quad(30, 30), quad(200, 200)];
+        // A settled frame: drawn as composed, and kept.
+        assert_eq!(
+            c.frame(
+                old.clone(),
+                Some(origins_at(24)),
+                false,
+                &[],
+                &rects,
+                (0, 0),
+                1
+            )
+            .len(),
+            2
+        );
+        // The press frame: the old screen again, whatever the new one is.
+        let new = vec![quad(100, 100)];
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            true,
+            &[],
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(
+            out.iter().map(|d| d.dst.0).collect::<Vec<_>>(),
+            vec![30, 200]
+        );
+        // Window 50 closing, 10 px toward its park: its draw rides it, the
+        // draw in no closing window goes, the new screen draws on top.
+        let closing = [(window_ids::TOP_COMMAND_LIST, (14, 24))];
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            false,
+            &closing,
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(
+            out.iter().map(|d| (d.dst.0, d.dst.1)).collect::<Vec<_>>(),
+            vec![(20, 30), (100, 100)]
+        );
+        // The close done: the new screen alone, and it is the next snapshot.
+        let out = c.frame(
+            new.clone(),
+            Some(origins_at(24)),
+            false,
+            &[],
+            &rects,
+            (0, 0),
+            1,
+        );
+        assert_eq!(out.len(), 1);
+        let out = c.frame(vec![], Some(origins_at(24)), true, &[], &rects, (0, 0), 1);
+        assert_eq!(out.iter().map(|d| d.dst.0).collect::<Vec<_>>(), vec![100]);
+        // Out of the menu the carry empties.
+        assert!(
+            c.frame(vec![], None, true, &[], &rects, (0, 0), 1)
+                .is_empty()
+        );
     }
 }

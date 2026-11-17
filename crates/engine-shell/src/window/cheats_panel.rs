@@ -222,7 +222,7 @@ impl PlayWindowApp {
                 _ => text,
             };
             let shown = match CheatControl::for_key(key) {
-                Some(CheatControl::Press) if focused => "Cross: apply".to_string(),
+                Some(CheatControl::Press) if focused => self.panel_words("Cross: apply"),
                 _ if focused && !value.is_empty() => format!("< {value} >"),
                 _ => value,
             };
@@ -236,7 +236,7 @@ impl PlayWindowApp {
             .outcome
             .as_deref()
             .unwrap_or_else(|| cheat_help(key));
-        for line in super::settings_panel::wrap_lines(note, WIDTH - 12, &width)
+        for line in super::settings_panel::wrap_lines(&self.panel_words(note), WIDTH - 12, &width)
             .iter()
             .take(NOTE_LINES)
         {
@@ -340,9 +340,11 @@ mod tests {
         if let Some(font) = font {
             let width = |s: &str| font.layout_ascii(s).advance_x as i32;
             for (key, label) in PLAYER_CHEAT_LIST {
-                let lines =
-                    super::super::settings_panel::wrap_lines(cheat_help(key), WIDTH - 12, &width);
-                assert!(lines.len() <= NOTE_LINES, "{key}: {lines:?}");
+                for table in super::super::settings_panel::widest_word_tables() {
+                    let help = super::super::settings_panel::device_words(cheat_help(key), &table);
+                    let lines = super::super::settings_panel::wrap_lines(&help, WIDTH - 12, &width);
+                    assert!(lines.len() <= NOTE_LINES, "{key}: {lines:?}");
+                }
                 assert!(width(label) + width("< 9999999 >") <= WIDTH - 12, "{key}");
             }
             assert!(width(CONTROLS) <= WIDTH - 12, "{}", width(CONTROLS));

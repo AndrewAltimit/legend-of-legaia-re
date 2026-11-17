@@ -982,6 +982,34 @@ page's `play_menu_press`) rather than on a frame count. Not keyed yet: the
 Options value popup (`[01 47]`), the shop's sub-screens (their own slide model,
 [shop.md](shop.md)) and the save screen's inner card steps.
 
+**The draw follows the window list.** Retail draws each window where the walker
+left it, so every screen change slides its windows in from their parks over
+twelve frames. Both hosts hand the composition the list's live origins
+(`field_menu_dispatch::pause_window_origins` into
+`MenuRects::with_live_origins`), and every rect, pen and painter rect follows
+them, as does what a renderer paints outside its window (window 17's widget
+box at `WY + 0x38`). A window the list closes, or one no lock program creates
+(a list window the list kernel opens, the Options popup), keeps its
+descriptor rect.
+
+**The screen a press leaves stays up.** The master tick dispatches a requested
+screen the frame after the press, so retail draws the old screen whole on the
+press frame; the new screen's phase 0 then closes the old set and the walker
+carries each closing window to its park while the draw walker keeps painting
+its content there. Each host keeps one `pause_menu::PauseScreenCarry` per draw
+list: on a settled frame it snapshots what was drawn and where every window
+stood; on the press frame (`field_menu_dispatch::pause_screen_carry` reports
+the lock has not seen the screen) it draws the snapshot in place of the new
+screen; while windows close it draws the snapshot's draws inside each closing
+window's frame, moved as far as that window has travelled, under the new
+screen. It is a draw rule only: the pad reaches the screens on the frames it
+did. Both hosts
+clip the menu's quads to the 320x240 stage (`pause_menu::clip_to_stage`), so
+a parked or sliding window never shows in a wide surface's margins. The
+menu-overlay loads either side of the menu, about `50` and `65` black vsyncs
+on retail, are not modelled
+([save-screen.md](save-screen.md#outer-dispatcher-fun_801dc6b4)).
+
 ### Which cue a confirm sounds
 
 Two pickers page the menu's rows, with different cues. The command windows run the
@@ -2291,6 +2319,12 @@ pager context (`*DAT_801C6EA4`) in the `v0_1_tetsu_dialogue_accept` state:
   sits at the top of the screen. The skin extends 8 px past the centre rect
   (measured footprint `x 30..289, y 8..65`): the outer 4 px are the tan
   border, the gradient fill covers the centre inflated by 4.
+- **Frame** = `ctx+0x10`, read each frame the box has lines
+  (`0x801D9958`): `1` draws no frame at all, only the text; `0` draws the
+  skin with emitter mode `0x61`; `2` draws it once with mode `0` and clears
+  the word (`0x801D99F0..0x801D9A00`). Field-VM op `0x4F` writes `+0x10`,
+  `+0x12` and `+0x14` together; the opening's title cards run `4F 01 38 5A`,
+  frameless text at `(0x38, 0x5A)`.
 - **Interior** = two stacked semi-transparent gouraud `POLY_G4` quads (top
   `(0x18,0x18,0x28)`, bottom `(0x40,0x40,0xA0)`), composing to
   `0.25*back + 0.75*gradient`.

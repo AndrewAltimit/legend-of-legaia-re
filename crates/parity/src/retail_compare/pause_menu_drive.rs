@@ -11,13 +11,15 @@ use super::*;
 /// the earliest; one more keeps the drive off the edge.
 pub const MENU_PRESS_GAP: u64 = 14;
 
-/// Extra ticks the first press after `Start` waits: the field darkens for up
-/// to fourteen ticks (`0x83 / 10` at a frame step of `1`) before the menu
-/// exists (`NativeSession::pause_wipe`, retail `FUN_801ED308` phase 1), and
-/// the root picker's windows then slide in for twelve more before it reads
-/// the pad. With one [`MENU_PRESS_GAP`] on top, the first press lands at
-/// tick 28.
-pub const MENU_OPEN_WIPE_TICKS: u64 = 14;
+/// Extra ticks the first press after `Start` waits: the field darkens before
+/// the menu exists (`NativeSession::pause_wipe`, retail `FUN_801ED308`'s
+/// phase `1`) for as many game frames as the session needs to pass `0x82` - seven
+/// passes of two vsyncs at the field's step of `2`, five of three at `3`,
+/// four of four at `4`, so up to sixteen ticks - and the root picker's
+/// windows then slide in for twelve more before it reads the pad. With one
+/// [`MENU_PRESS_GAP`] on top, the first press lands at tick 34, clear of the
+/// slowest step.
+pub const MENU_OPEN_WIPE_TICKS: u64 = 20;
 
 /// Ticks a card screen's grid takes to come up after its pill-row confirm:
 /// the "Now checking" card read runs first (`FUN_801DD35C` sub-modes `0x04`

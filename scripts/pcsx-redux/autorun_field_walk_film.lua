@@ -39,6 +39,7 @@ local GAME_MODE   = 0x8007B83C
 local RAND_SEED   = 0x80009010
 local RING        = 0x80084098
 local RING_CURSOR = 0x8007B758
+local FIELD_CTL   = 0x801C6EA4 -- field-control block; +0x62 the dialogue byte
 
 local function s16(a)
     local v = probe.read_u16(a)
@@ -77,10 +78,10 @@ local held = {}
 local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
     "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record,mode,rng," ..
-    "ring_cur,frame_cost,step\n")
+    "ring_cur,frame_cost,step,talk\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
-afh:write("vsync,flat,x,y,z,heading,flags,model\n")
+afh:write("vsync,flat,x,y,z,heading,flags,model,saved,record,clip,clip_cursor,rate\n")
 
 -- Every placement the field actor tick runs (retail_actor_facings' walk).
 local function log_actors(el, player)
@@ -94,9 +95,13 @@ local function log_actors(el, player)
                 local flat = probe.read_u16(n + 0x50)
                 if not seen_flat[flat] then
                     seen_flat[flat] = true
-                    afh:write(string.format("%d,%d,%d,%d,%d,%d,%08X,%d\n", el, flat,
+                    afh:write(string.format("%d,%d,%d,%d,%d,%d,%08X,%d,%d,%d,%d,%d,%d\n", el, flat,
                         s16(n + 0x14), s16(n + 0x16), s16(n + 0x18), s16(n + 0x26),
-                        probe.read_u32(n + 0x10), s16(n + 0x64)))
+                        probe.read_u32(n + 0x10), s16(n + 0x64),
+                        -- the talk save +0x5A, the record cursor +0x9E, and
+                        -- the clip: id +0x5C, cursor +0x68, rate +0x6A
+                        s16(n + 0x5A), probe.read_u16(n + 0x9E),
+                        s16(n + 0x5C), s16(n + 0x68), s16(n + 0x6A)))
                 end
             end
             n = probe.read_u32(n)
@@ -134,7 +139,7 @@ probe.run({
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
         fh:write(string.format(
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x,%d,%d,%d\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%08x,%d,%d,%d,%d\n",
             el, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
             s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
             s16(PITCH), s16(YAW), s16(H),
@@ -146,7 +151,8 @@ probe.run({
             probe.read_u32(GAME_MODE) % 256, probe.read_u32(RAND_SEED),
             (probe.read_u32(RING_CURSOR) or 0) % 16,
             probe.read_u16(RING + (((probe.read_u32(RING_CURSOR) or 1) - 1) % 16) * 2) or 0,
-            probe.read_scratch_u8(0x1F800393) or 0))
+            probe.read_scratch_u8(0x1F800393) or 0,
+            probe.read_u8((probe.read_u32(FIELD_CTL) or 0) + 0x62) or 0))
         fh:flush()
         log_actors(el, p)
     end,

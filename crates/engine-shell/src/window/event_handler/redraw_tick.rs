@@ -236,7 +236,7 @@ impl PlayWindowApp {
         // The wipe spawned the pause menu on this frame's last tick. The
         // session hands the tick over on the next claim
         // (`TickOwner::PauseMenuSpawned`), but from this frame on the menu
-        // covers the field and the wipe draws nothing (`PauseWipe::fade_level`),
+        // covers the field and the wipe draws nothing (`PauseWipe::curtain_level`),
         // so the frame drawn now is the menu's - as the page draws it, off
         // `menu_spawned` - and not one frame of the lit field.
         if matches!(self.boot_ui, BootUiState::Inactive)
@@ -701,6 +701,16 @@ impl PlayWindowApp {
                     .map(|s| legaia_engine_capture::ground_snap::GroundSnap { body: None, ..*s })
                     .collect();
                 let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+                // The bystanders' target bytes (`LEGAIA_BATTLE_SEAT_TARGETS`):
+                // the far end of each body's root-motion range poll
+                // (`jal 0x8004E2F0` at `0x80047D50`), which the replay never
+                // aimed where retail's last rounds did. A seat of the
+                // harness, like the ground.
+                for &(slot, target) in &sc.battle_seat_targets {
+                    if let Some(a) = world.actors.get_mut(usize::from(slot)) {
+                        a.battle.active_target = target;
+                    }
+                }
                 // The capture's frame-cost ring (`LEGAIA_BATTLE_COST_RING`,
                 // `entries;cursor`): the frames after the gate run on the
                 // ring from where retail's stood, not on the step the walk

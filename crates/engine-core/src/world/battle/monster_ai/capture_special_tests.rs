@@ -86,6 +86,32 @@ fn the_mystic_shield_breaks_at_half_hp() {
     );
 }
 
+/// The break sounds once: `FUN_8004FE5C(0x10D, 3)` (`0x8004D660`), which the
+/// funnel's high runtime leg rings as `0x10D + 0x19C` on the first monster
+/// seat's bank. A shield that holds, or one already broken, sounds nothing.
+#[test]
+fn the_mystic_shield_break_sounds_its_cue_once() {
+    use legaia_engine_system::sound_state::SfxRingOp;
+    let cue = |w: &World| {
+        w.audio
+            .sfx_ring_ops
+            .iter()
+            .filter(|op| {
+                matches!(op, SfxRingOp::PushUnlessSustained { id, .. }
+                    if *id == (super::mystic_shield::MYSTIC_SHIELD_BREAK_CUE + 0x19C) as i16)
+            })
+            .count()
+    };
+    let mut world = cort_under_shield(0xB4, 25_001);
+    world.tick_mystic_shield();
+    assert_eq!(cue(&world), 0, "a holding shield is silent");
+    world.actors[3].battle.hp = 25_000;
+    world.tick_mystic_shield();
+    assert_eq!(cue(&world), 1, "the break rings the cue");
+    world.tick_mystic_shield();
+    assert_eq!(cue(&world), 1, "a broken shield does not ring again");
+}
+
 /// A zero colour word on the first monster seat takes the hide branch
 /// (`beq v0,zero,0x8004D670`): no pose, and no break test either, however
 /// low the seat's HP has fallen.

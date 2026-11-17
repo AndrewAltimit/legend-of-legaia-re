@@ -791,6 +791,48 @@ fn a_timed_release_inside_a_pending_swap_releases_the_outgoing_track() {
     assert_eq!(release_pauses(&mut world, 40), 1);
 }
 
+/// The commit and the stop disarm a timed release (`FUN_800266E0`'s
+/// `sw zero,0x808(gp)` at `0x800266F4`), and so does the swap's re-attach
+/// (`FUN_80026478`, `0x800264A0`): a `9 · 5 (60) · 0xA` committed before the
+/// deadline never stops the track the commit brings in. A field init's close
+/// disarms one armed before a door; behind sub-op 6 it counts on.
+#[test]
+fn the_commit_stop_and_field_close_disarm_a_timed_release() {
+    use legaia_engine_vm::field::FieldAudioHost;
+
+    let mut world = World::new();
+    {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };
+        host.bgm(2028, 9);
+        host.bgm(60, 5);
+    }
+    world.drain_field_events();
+    assert_eq!(release_pauses(&mut world, 10), 0);
+    {
+        let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };
+        host.bgm(0, 0xA);
+    }
+    world.drain_field_events();
+    assert_eq!(release_pauses(&mut world, 200), 0, "the commit disarmed it");
+
+    let mut world = World::new();
+    world.arm_sound_release(60);
+    world.release_field_init_voices();
+    world.drain_field_events();
+    assert_eq!(
+        release_pauses(&mut world, 200),
+        0,
+        "the init's close disarmed it"
+    );
+
+    let mut world = World::new();
+    world.arm_sound_release(60);
+    world.raise_keep_audio_across_field_init();
+    world.release_field_init_voices();
+    world.drain_field_events();
+    assert_eq!(release_pauses(&mut world, 200), 1, "a kept door carries it");
+}
+
 /// Sound-flags pause bit 1: sub-ops 2 and 3 raise it; every start, the
 /// re-attach (4) and the commit (0xA) end it; a sound-set word leaves it
 /// alone.

@@ -120,6 +120,8 @@ MIRRORS = [
      "site/_content/tooling/cast-sequence-oracle.html"),
     ("docs/tooling/walk-film.md",
      "site/_content/tooling/walk-film.html"),
+    ("docs/tooling/minigame-film.md",
+     "site/_content/tooling/minigame-film.html"),
     ("docs/tooling/gate-replay.md",
      "site/_content/tooling/gate-replay.html"),
     ("docs/tooling/ratchet-integrity.md",

@@ -666,6 +666,13 @@ pub(super) fn battle_image(
         save
     });
     let mut env = vec![
+        // The lead-in holds: the replay reaches the capture on the action
+        // table and the default overrun, and the census and the span law (on
+        // by default) take over at its gate. Under them the lead-in
+        // re-dealt: `battle_doman_freed_strike`, `_jou_aluru_v3_strike`,
+        // `_jou_freed_v3_strike` and `_nilboa_lava_face_strike` drew no frame.
+        ("LEGAIA_LEADIN_TABLE_COST", "1".to_string()),
+        ("LEGAIA_LEADIN_SPAN_LAW", "1".to_string()),
         (
             "LEGAIA_BATTLE_STAGE",
             format!(
@@ -697,6 +704,28 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // HARNESS: a prompt capture's party readouts caught mid-roll, stood on
+    // at the capture tick (`LEGAIA_BATTLE_READOUT`).
+    if matches!(
+        battle.seed_plan(),
+        crate::retail_compare_battle::SeedPlan::Menu { .. }
+            | crate::retail_compare_battle::SeedPlan::Prompt
+    ) {
+        let readout: Vec<String> = battle
+            .party_hp_shown
+            .iter()
+            .zip(&battle.party)
+            .enumerate()
+            .filter_map(|(slot, (shown, c))| {
+                let (word, acc) = (*shown)?;
+                let hp = c.as_ref()?.hp;
+                (hp != 0 && (word != hp || acc != 0)).then(|| format!("{slot}:{word}:{acc}"))
+            })
+            .collect();
+        if !readout.is_empty() {
+            env.push(("LEGAIA_BATTLE_READOUT", readout.join(",")));
+        }
+    }
     // ... and the re-seat of a driven action at its own seed pass.
     if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
         env.push(("LEGAIA_BATTLE_RESEAT", seat.to_string()));
@@ -967,6 +996,19 @@ pub(super) fn battle_image(
                 },
             ),
         ));
+        // The bystanders' target bytes, which a film's release at its gate
+        // stands with the ground (`RetailBattle::engine_seat_targets`).
+        let targets = battle.engine_seat_targets();
+        if !targets.is_empty() {
+            env.push((
+                "LEGAIA_BATTLE_SEAT_TARGETS",
+                targets
+                    .iter()
+                    .map(|(s, t)| format!("{s}:{t}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ));
+        }
         // The pairs the RAM holds, beside the displayed frame's: a film runs
         // on from the gate on the RAM's clip cursors (the cast-sequence
         // oracle drops `LEGAIA_SEAT_DISPLAYED_CLIPS`), so it stands on the

@@ -229,6 +229,19 @@ pub struct CutsceneTimeline {
     /// The box the pager still draws after the press that dismissed
     /// [`Self::dialog`] ([`crate::inline_dialogue::HeldBox`]).
     pub held_box: Option<crate::inline_dialogue::HeldBox>,
+    /// The pager running a title card's page (`CC F8 89 lo hi` and its
+    /// `0x1F` lines): the op is `4C 89`, the pager's automatic press, and the
+    /// lines are an ordinary text segment, so retail parks the record on the
+    /// box while it opens, types and turns its page by itself. The card
+    /// overlay presents the lines; this panel is not drawn and keeps the
+    /// record's time. `.1` is the press countdown (`_DAT_80073F00`), `.2` the
+    /// PC the record resumes at.
+    // REF: FUN_801D84D0, FUN_80039B7C
+    pub card_pager: Option<(legaia_engine_dialog::dialog::OwnedDialogPanel, i16, usize)>,
+    /// The rows a card's press leaves in the pager (a `0x24` continuation
+    /// holds state `4`): the next card's line loads into them and scrolls
+    /// them out first. Not drawn, as the card's panel is not.
+    pub card_held_box: Option<crate::inline_dialogue::HeldBox>,
     /// Per-byte "an instruction was executed here" map over
     /// [`Self::bytecode`], kept for the timeline's whole life. A backward
     /// jump into an already-executed PC means the record's linear
@@ -578,6 +591,8 @@ impl CutsceneTimeline {
             dialog: None,
             dialog_claim: 0,
             held_box: None,
+            card_pager: None,
+            card_held_box: None,
             visited,
             channel_wait: None,
             player_move_frames: 0,

@@ -524,8 +524,14 @@ const PSX_ROW_EDGE_MARGIN: f32 = 1.0 / 64.0;
 // on a sliver the UV's row step is huge, so half a row of it lands far
 // outside the primitive's texels and draws them as a streak.
 fn psx_sample_uv(uv: vec2<f32>, uv_dy: vec2<f32>, bary: vec4<f32>, bary_dy: vec4<f32>) -> vec2<f32> {
+    // The clean frame truncates the UV, past the same tie bias: a texel
+    // boundary the UV sits on exactly (a primitive whose corners share one
+    // `V`) otherwise falls a hair either side by each host's interpolation -
+    // the window's `linear` varying holds it, the page's `uv * w / w` does
+    // not - and the hosts read a whole primitive a texel apart (Big Wave's
+    // beams, which sample a two-texel strip).
     if u.psx_params.z < 0.5 {
-        return uv;
+        return uv + vec2<f32>(PSX_TEXEL_TIE_BIAS, PSX_TEXEL_TIE_BIAS);
     }
     let per_row = u.psx_params.y / PSX_STAGE_H;
     let rows = 0.5 * per_row;

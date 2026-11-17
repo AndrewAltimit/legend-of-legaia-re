@@ -537,6 +537,20 @@ pub const LINKED_FRAME_BASE: u16 = 117;
 /// (`docs/subsystems/battle-stage-camera.md`, "The census").
 pub const LINKED_WORK_MILLI: u32 = 200;
 
+/// Hblanks of CPU work PROT 0898's colour wash adds to a frame in its scanline
+/// modes (`ctx[+0x27D]` `1` / `2`), which the census does not count (it is a
+/// screen layer, linked at the farthest bucket). The emitter
+/// (`FUN_801F2410`, `0x801F2958..0x801F2D20`) builds every screen line
+/// `0..0xE0` itself: a loop body of `236` instructions with two `div`, two
+/// `mult` and a `POLY_FT4` linked per strip through `FUN_8003D2C4` (two or
+/// three strips a line), some `580` cycles a line on PCSX-Redux's two cycles an
+/// instruction, `224` lines, `60` hblanks of `2152` cycles. The band mode
+/// (`0`) links a handful of `POLY_G4` and costs nothing worth pricing. Under
+/// it, Genocidal Cannon's caster close-ups (arms 7, 9 and `0x0B`, about `500`
+/// primitives) priced `217` on the census, `603` under the line's polls, step
+/// `3`, where every retail frame there runs step `4` five vsyncs long.
+pub const SCANLINE_WASH_WORK: u16 = 60;
+
 /// Hblanks a monster's strike frame (`0x1E..=0x20` with a monster acting)
 /// spends over what it links. Retail's unloaded monster-strike frames sit a
 /// steady offset over the census line (`+25` at the mean over the strike

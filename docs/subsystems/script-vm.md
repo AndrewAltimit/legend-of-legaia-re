@@ -1172,9 +1172,11 @@ choreographs its cast - the town01 post-naming Mei beat (`P2[4]`) drives
 `C7 46 11 1B 33` / `C7 46 11 1A 33` to walk Mei (channel `0x46`, placement 34)
 from her door seat to the conversation tile `(17,26)`, and `C7 F8 12 1A 33` to
 walk the player to the beat's camera-focus tile `(18,26)`. The paired
-cross-context `A2 <id> <move_id>` ExecMove (`FUN_80024E08`) selects the clip
+cross-context `A2 <id> <move_id>` ExecMove (`0x801DE998`) selects the clip
 the anim clock (`FUN_800204F8`) plays while the kernel moves the actor - the
-walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
+walk cycle (Mei: clip 61 walking, 60 idle). It stores `+0x5E = 0xFFFE` ahead of
+the bind (`0x801DEAAC`), so the clip restarts at frame `0` even when it is the
+one playing; the port restarts it the same way (`World::restart_npc_clip`). Engine port:
 `CutsceneTimeline::npc_walks` for an NPC (the record runs on) and
 `CutsceneTimeline::walk_wait` for the player (the record parks), over the
 motion-VM glide (`engine-core`), with the NPC anim cue surfaced from

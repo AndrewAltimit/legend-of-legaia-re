@@ -108,9 +108,10 @@ impl Camera {
     /// The mover is clocked in **display frames**, not sim ticks - retail
     /// credits `DAT_1F800393` (the adaptive frame-skip factor) per logic tick,
     /// which banks exactly one unit per display frame, making every authored
-    /// `apply` a duration in 60 Hz frames. `World::clock.display_frames` is the
-    /// engine's display-frame counter, so diffing it is the faithful clock
-    /// (the same thing the renderer's glide does).
+    /// `apply` a duration in 60 Hz frames - while each frame lasts its step.
+    /// A frame that runs past its step still credits only the step, so the
+    /// mover diffs the credited count (`FrameClock::credited_frames`), which
+    /// stands still on a long frame's vsyncs past its step.
     ///
     /// In [`CameraMode::Follow`] with no glide in flight, the follow camera
     /// owns the focus globals: `FUN_801DBE9C` stores the **negated** anchor
@@ -122,7 +123,7 @@ impl Camera {
     /// PORT: FUN_801DC0BC
     /// REF: FUN_801DBE9C
     fn tick_globals<W: CameraWorld + ?Sized>(&mut self, world: &W) {
-        let now = world.display_frames();
+        let now = world.credited_frames();
         let dt = now.saturating_sub(self.last_field_frame) as i32;
         self.last_field_frame = now;
 

@@ -74,13 +74,17 @@ DROP_ENV = {
     # the whole cast from there, and retail's ring ran the party's step
     # (`chitei2_cort_pre_mystic_circle` opens on `3`, the pin held `2`).
     "LEGAIA_BATTLE_PARTY_STEP",
+    # The bystanders' target bytes: the capture's, for its own round. An
+    # injected cast acts from another seat than the capture's, whose target
+    # the seat would overwrite.
+    "LEGAIA_BATTLE_SEAT_TARGETS",
 }
 
 # What a `--physical` recording keeps of those: it plays the state's own round,
 # so its drive and the re-seat that stands that round on the capture's ground.
 PHYSICAL_KEEP_ENV = {
     "LEGAIA_BATTLE_DRIVE", "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP",
-    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT",
+    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_BATTLE_SEAT_TARGETS",
 }
 
 
@@ -470,6 +474,22 @@ def state_creature_restage(out: Path) -> bool:
     return ram[a - RAM_BASE + 0x1DC] & 1 != 0
 
 
+def state_live_cursor(ram: bytes, a: int, node: int) -> int:
+    """The anim node's cursor as the last anim tick left it: the history ring's
+    slot 0 (`+0x17A`, stamped beside the committed record `+0x234` at
+    `0x80047E58..0x80048060`) while that slot holds the node's own record,
+    else the node word `+0x68`. A state saved inside the draw tick holds a
+    ghost's older ring cursor in the node word (the after-image walk swaps it
+    in around each ghost draw, `0x8004950C`): `battle_cave01_theeder_thunderbolt_mid_cast`'s
+    Theeder reads node `8` over ring `40, 32, 24`. A harness seat."""
+    o = node - RAM_BASE
+    word = int.from_bytes(ram[o + 0x68:o + 0x6A], "little")
+    ao = a - RAM_BASE
+    if ram_u32(ram, a + 0x234) == ram_u32(ram, node + 0x4C):
+        return int.from_bytes(ram[ao + 0x17A:ao + 0x17C], "little")
+    return word
+
+
 def state_opening_cursor(out: Path) -> str | None:
     """`clip,cursor` of the acting body in the state's own RAM (`+0x1D9`, its
     anim node `+0x22C`'s cursor `+0x68`), for a `--physical` film's
@@ -492,8 +512,7 @@ def state_opening_cursor(out: Path) -> str | None:
     node = ram_u32(ram, a + 0x22C)
     if not RAM_BASE <= node < RAM_TOP - 0x80:
         return None
-    o = node - RAM_BASE
-    return f"{ram[a - RAM_BASE + 0x1D9]},{int.from_bytes(ram[o + 0x68:o + 0x6A], 'little')}"
+    return f"{ram[a - RAM_BASE + 0x1D9]},{state_live_cursor(ram, a, node)}"
 
 
 def state_body_cursors(out: Path) -> str | None:
@@ -526,8 +545,7 @@ def state_body_cursors(out: Path) -> str | None:
         node = ram_u32(ram, a + 0x22C)
         if not RAM_BASE <= node < RAM_TOP - 0x80:
             continue
-        o = node - RAM_BASE
-        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], int.from_bytes(ram[o + 0x68:o + 0x6A], "little"))
+        bodies[seat] = (ram[a - RAM_BASE + 0x1D9], state_live_cursor(ram, a, node))
     pc = max(1, sum(1 for s in bodies if s < 3))
     seeds = [f"{s if s < 3 else pc + s - 3}:{c}:{k}" for s, (c, k) in sorted(bodies.items()) if s != acting]
     return ",".join(seeds) or None
@@ -979,6 +997,13 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # The lead-in holds: the rounds the replay plays to its gate run the
+    # default overrun and the action-state table, and the census and the span
+    # law (on by default) take over where the film starts. Under them the
+    # lead-in re-deals: Warhalf's replay won its fight before its gate. A
+    # harness seat; `--engine-env` overrides either.
+    env.setdefault("LEGAIA_LEADIN_TABLE_COST", "1")
+    env.setdefault("LEGAIA_LEADIN_SPAN_LAW", "1")
     # The still stands a seat on the displayed frame's pair; a film runs on
     # from the gate on the RAM's clip cursors, so a physical recording stands
     # it on the RAM's pair (`LEGAIA_BATTLE_GROUND_SNAP_RAM`, which the child

@@ -241,6 +241,9 @@ pub struct AmbientPart {
     /// Latest mode-3 CLUT-cell write this part emitted (refreshed per game
     /// tick; applied to VRAM by [`World::step_ambient_fx`]).
     pub cell_fx: Option<ClutCellFx>,
+    /// The part's op-`0x2C` capture and this tick's upload, for the mode-3
+    /// arm ([`CyclerCapture`]).
+    pub cycler: CyclerCapture,
     /// Mode-4 strip rotations this part has fired but not yet applied to
     /// VRAM. Each entry is one game tick's rotate; [`World::step_ambient_fx`]
     /// drains them in tick order (the writes are destructive, so unlike
@@ -249,6 +252,29 @@ pub struct AmbientPart {
     /// Morph-lane weight snapshot from the previous tick (change detection
     /// for the VDF render substitution's dirty set).
     pub prev_morph_weights: Vec<u16>,
+}
+
+/// A mode-3 part's own capture buffer and what its arm did this tick.
+///
+/// Op `0x2C` takes the part's rect out of VRAM with `StoreImage`
+/// (`FUN_8005842C` at `0x80023A30`) into a buffer of the part's own, and the
+/// arm recolours that buffer on every upload (`FUN_80019D50`, its
+/// `LoadImage` onto the same rect). A capture is the rect as it stands when
+/// the op runs, a recolour another part uploaded there included: `opstati`'s
+/// record 4 greys the scene's CLUT rows (`2B 00 FC00 00`), and the part it
+/// spawns as it halts captures the grey rows and tints them (`2B 38 80 00`),
+/// so the scene draws in sepia.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CyclerCapture {
+    /// The captured texels, `None` before the part's op `0x2C` has been
+    /// read out of VRAM.
+    pub texels: Option<Vec<u16>>,
+    /// Of [`Self::texels`], the non-zero ones: what the recolour converts
+    /// (a zero texel is copied through).
+    pub lit: u32,
+    /// Op `0x2C` ran on this tick: the capture is read once the tick's
+    /// uploads have landed.
+    pub due: bool,
 }
 
 /// A mesh-bearing ambient part with armed VDF morph lanes - the input the
@@ -560,6 +586,7 @@ impl World {
             state,
             finished: false,
             cell_fx: None,
+            cycler: CyclerCapture::default(),
             scroll_fx: Vec::new(),
             prev_morph_weights: Vec::new(),
         });
@@ -659,10 +686,16 @@ impl World {
         }
         self.ambient.morph_dirty_slots.extend(dirty);
 
+        // The arm runs ahead of the VM and steps a live gate past `1`, so a
+        // gate that reads `1` after the VM is an op `0x2C` this run took.
+        let captured = state.move_submode == 3 && state.field_9c == 1;
         {
             let part = &mut self.ambient.fx[idx];
             part.state = state;
             part.finished = finished;
+            if captured {
+                part.cycler.due = true;
+            }
             if let Some(fx) = scroll_fx
                 && part.scroll_fx.len() < MAX_PENDING_SCROLLS
             {
@@ -807,9 +840,20 @@ impl World {
         // `clut_cell_fx::SPEED_SCALAR`) per tick, so `WAIT_SET v` holds `v`
         // vsyncs.
         let drain = u16::from(self.clock.frame_step.max(1)) * clut_cell_fx::SPEED_SCALAR as u16;
-        let count = self.ambient.fx.len();
         let emitter_listener = self.sfx_emitter_listener();
-        for idx in 0..count {
+        // The walk reaches a child a part spawns on this pass: the seater
+        // links it behind the walk's cursor, so it takes a whole tick on its
+        // spawn pass as well as the spawn-time run. `opstati`'s grey parts
+        // halt into tint parts whose op `0x2C` lands on the same pass, and
+        // retail's tint uploads two passes later (frames 3 and 4 of the
+        // scene, `FUN_80019D50` stamped on PCSX-Redux); a pass later each
+        // fell a frame behind.
+        // REF: FUN_8002519C, FUN_80021B04
+        let mut idx = 0;
+        while idx < self.ambient.fx.len() {
+            let this = idx;
+            idx += 1;
+            let idx = this;
             if self.ambient.fx[idx].finished {
                 continue;
             }
@@ -1180,12 +1224,15 @@ impl World {
             return false;
         }
         let mut wrote = false;
+        // A part seated since the last step took its capture on its seat.
+        self.take_cycler_captures(vram);
         for _ in 0..ticks {
             self.tick_ambient_fx();
             // The mode-4 rotates are destructive and ordered: apply each
             // tick's before running the next, exactly as retail's render
             // tail does inside the tick that fired them.
             wrote |= self.apply_ambient_scrolls(vram);
+            self.take_cycler_captures(vram);
         }
         // Whatever a headless tick banked up (a host that ticked without a
         // VRAM surface) still lands, in queue order.
@@ -1203,28 +1250,33 @@ impl World {
                 }
             }
         }
-        let mut fx: Vec<ClutCellFx> = self
+        // Each live cycler's latest upload, from its own capture: the part
+        // index, or `None` for a seeded cell, which reads the rect cache.
+        let mut fx: Vec<(ClutCellFx, Option<usize>)> = self
             .ambient
             .fx
             .iter()
-            .filter_map(|p| {
+            .enumerate()
+            .filter_map(|(i, p)| {
                 (!p.finished || p.cell_fx.is_some())
                     .then_some(p.cell_fx)
                     .flatten()
+                    .map(|f| (f, Some(i)))
             })
             .collect();
         // A seeded cycler the engine has no part for (a part a later script
         // beat spawns) still writes its cell: the seed is what the state's
         // own part wrote there.
         for seed in &self.ambient.cell_fx_seed {
-            if !fx.iter().any(|f| f.rect == seed.rect) {
-                fx.push(*seed);
+            if !fx.iter().any(|(f, _)| f.rect == seed.rect) {
+                fx.push((*seed, None));
             }
         }
         if !self.toggles.reduce_flashing && !self.ambient.flash_applied.is_empty() {
             self.ambient.flash_applied.clear();
         }
-        for mut f in fx {
+        for (mut f, owner) in fx {
+            let mut owner = owner;
             if let Some(seed) = self
                 .ambient
                 .cell_fx_seed
@@ -1233,9 +1285,10 @@ impl World {
                 .find(|s| s.rect == f.rect)
             {
                 f = *seed;
+                owner = None;
             }
             let (x, y, w, h) = f.rect;
-            if w == 0 || h == 0 || w > 256 || h > 64 {
+            if !cycler_rect_fits(f.rect) {
                 continue;
             }
             let f = if self.toggles.reduce_flashing {
@@ -1243,13 +1296,18 @@ impl World {
             } else {
                 f
             };
-            let src = self
-                .ambient
-                .cell_captures
-                .entry(f.rect)
-                .or_insert_with(|| read_rect(vram, x, y, w, h))
-                .clone();
-            let out = clut_cell_fx::apply_hsv_cell(&src, &f);
+            let own = owner.and_then(|i| self.ambient.fx[i].cycler.texels.as_ref());
+            let out = match own {
+                Some(src) => clut_cell_fx::apply_hsv_cell(src, &f),
+                None => {
+                    let src = self
+                        .ambient
+                        .cell_captures
+                        .entry(f.rect)
+                        .or_insert_with(|| read_rect(vram, x, y, w, h));
+                    clut_cell_fx::apply_hsv_cell(src, &f)
+                }
+            };
             let cur = read_rect(vram, x, y, w, h);
             if cur != out {
                 write_rect(vram, x, y, w, &out);
@@ -1274,6 +1332,45 @@ impl World {
             }
         }
         wrote
+    }
+
+    /// Read the capture of every part whose op `0x2C` ran since the last
+    /// call: the rect as the GPU holds it once this tick's uploads have
+    /// landed. Where another part has uploaded a recolour onto the same
+    /// rect, that recolour is what `StoreImage` reads (`opstati`'s tint
+    /// parts capture the rows their parent greyed); otherwise the VRAM.
+    ///
+    /// REF: FUN_8005842C (op `0x2C`'s `StoreImage`, `FUN_80023070`
+    /// `0x80023A30`), FUN_80019D50
+    fn take_cycler_captures(&mut self, vram: &psx_tim::Vram) {
+        for i in 0..self.ambient.fx.len() {
+            if !self.ambient.fx[i].cycler.due {
+                continue;
+            }
+            self.ambient.fx[i].cycler.due = false;
+            let d = self.ambient.fx[i].state.keyframe_desc;
+            let rect = (d[0], d[1], d[2], d[3]);
+            if !cycler_rect_fits(rect) {
+                continue;
+            }
+            let shown = self
+                .ambient
+                .fx
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|&(j, _)| j != i)
+                .find_map(|(_, p)| {
+                    let f = p.cell_fx.filter(|f| f.rect == rect)?;
+                    let src = p.cycler.texels.as_ref()?;
+                    Some(clut_cell_fx::apply_hsv_cell(src, &f))
+                });
+            let texels = shown.unwrap_or_else(|| read_rect(vram, d[0], d[1], d[2], d[3]));
+            // Op `0x30`'s restore reads the rect's newest capture.
+            self.ambient.cell_captures.insert(rect, texels.clone());
+            self.ambient.fx[i].cycler.lit = texels.iter().filter(|&&c| c != 0).count() as u32;
+            self.ambient.fx[i].cycler.texels = Some(texels);
+        }
     }
 
     /// Photosensitivity guard (`OptionsState::reduce_flashing`, default ON):
@@ -1370,6 +1467,16 @@ fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
     (5..0x4000)
         .contains(&model_sel)
         .then(|| model_sel as usize - 5)
+}
+
+/// Whether a cycler rect is one the recolour can walk: non-empty and inside
+/// VRAM. `FUN_80019D50` itself bounds nothing; `opstati`'s cyclers walk
+/// `320`-wide strips of CLUT rows.
+fn cycler_rect_fits((x, y, w, h): (u16, u16, u16, u16)) -> bool {
+    w != 0
+        && h != 0
+        && usize::from(x) + usize::from(w) <= 1024
+        && usize::from(y) + usize::from(h) <= 512
 }
 
 /// Read a `w x h` halfword rect out of the software VRAM.

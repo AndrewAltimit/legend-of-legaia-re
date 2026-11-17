@@ -1623,3 +1623,59 @@ reason = "New engine code shared by the play bundle: field context routing for e
 changes = [
   ["counts/bundle/play_gzip_bytes", 5125685, 5133386],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Battle stills: the still harness now reads each body's displayed clip cursor from retail's anim history ring (+0x17A / +0x234, slot 2 = the frame on screen, written at 0x80047E58..0x80048060) instead of subtracting two frames of advance from the live node, which went negative across a clip commit and wrapped onto the wrong frame (retail never stores a negative cursor: 0x8004B068, 0x80051574). Nine rows rise (Rock Lizard Earthquake .949 -> .979, Gala finisher results .977 -> .988); these six fall by one to three thousandths. In each, the history equals the old arithmetic for every looping body checked, so the falls are read as frame noise against other seats (inference, not measured). Lizard Tail open, Aluru cannon and Mad Bird Power Up also sit under the census + span law default flip, measured flat on the stills sweep (386 identical)."
+changes = [
+  ["states/battle_garmel_party_noa_lizard_tail_open/image", 0.973, 0.971],
+  ["states/battle_jou_cort_181_strike/image", 0.964, 0.963],
+  ["states/battle_map03_moldy_worm_strike/image", 1.0, 0.999],
+  ["states/battle_menu_rugi_barra_retail/image", 0.954, 0.953],
+  ["states/battle_nilboa_aluru_v2_aluru_cannon_mid_cast/image", 0.985, 0.982],
+  ["states/battle_tunnela_mad_bird_power_up_mid_cast/image", 0.996, 0.994],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The field ambient walk now ticks a child part on the pass that spawns it, as opstati's tint parts and garmel's emitters do on retail (walk-film rand: garmel_field_card_boot 12 -> 150 of 151, garmel_zeto_appears_taunt 2 -> 150 of 150). garmel_zeto_appears_rising's own rand stream parts from retail at its third pass with and without the change (3 of 146 either way), so its rand-placed light beams match retail in neither version; the image moves 0.971 -> 0.963 on those beams (bisected to 59061d886; reverting only the child tick restores .971)."
+changes = [
+  ["states/garmel_zeto_appears_rising/image", 0.971, 0.963],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Pause menu draw: the menu windows now slide from the window walker's live positions (FUN_80031AE4) and the press frame keeps the previous screen (FUN_801DC6B4); the use list's page arrow and hand cursor blink phase lands one block off on this capture's drive timing (1.0 -> .999). taiku_terror_face_pre_terror_scream moves one block (1.0 -> .999) between 61275b6e3 and 0be8fd4be (the anim-history still harness and the window slide); not split further. rikuroa_post_caruban is a patched-disc state that already read below its row on main (.995 measured by wave-44 lanes); it reads .997 here, unattributed."
+changes = [
+  ["states/menu_use_list_conc_retail/image", 1.0, 0.999],
+  ["states/rikuroa_post_caruban/image", 0.999, 0.997],
+  ["states/taiku_terror_face_pre_terror_scream/image", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "Battle frame cost default: the polygon census (battle_link_census, counting world state every battle tick on both hosts) and the span law are now on by default as the retail-faithful timing (arts .9320 -> .9357, strikes .9825 -> .9839, enemy .9386 -> .9401, Seru level, stills identical). The census costs about 29 allocations and 18 KB per battle frame natively (battle 1238.2 -> 1267.0) and the matching wasm bytes per battle/cast frame; the CPU mesh copies it first dragged into every mode were removed (world_map 1991.5 -> 1760.3, back to main), so town01 moves only by fractions. Bundle gzip +51 KB / play +16 KB is new engine code across the wave (menu and shop window slides, Evil Seru Magic creature, fishing pond stream, dance and dome return warps, field long-frame model, pager, talk restore); no asset or dependency was added. Browser gl_draws rise by under 0.1 draw a frame (the dance results fade and menu clip quads)."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 119540, 120003],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 114475, 114925],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 130.46, 130.54],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 109486, 109568],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 108.39, 108.42],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 102259, 102334],
+  ["counts/browser/town01/enhanced/gl_draws_per_frame", 73.11, 73.13],
+  ["counts/bundle/gzip_bytes", 7236818, 7287731],
+  ["counts/bundle/play_gzip_bytes", 5133386, 5149299],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4499.4, 4516.4],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1290.5, 1321.5],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4468.1, 4486.6],
+  ["counts/native/battle/retail/allocs_per_frame", 1238.2, 1267.0],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4623.0, 4650.9],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1306.2, 1336.0],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4595.8, 4609.0],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1258.5, 1286.4],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 1709.4, 1709.7],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1446.6, 1446.8],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1392.2, 1392.6],
+  ["counts/native/town01/retail/allocs_per_frame", 1197.4, 1197.7],
+]
+

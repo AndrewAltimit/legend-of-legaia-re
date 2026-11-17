@@ -101,7 +101,7 @@ impl PlayWindowApp {
     pub(super) fn gpu_cost_pricing(&self) -> bool {
         let w = &self.session.host.world;
         (w.toggles.battle_gpu_cost_step
-            || w.toggles.battle_poly_frame_cost
+            || (w.toggles.battle_poly_frame_cost && w.toggles.battle_poly_window_count)
             || gpu_cost_diag_path().is_some())
             && w.mode == SceneMode::Battle
     }

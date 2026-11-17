@@ -1350,7 +1350,8 @@ fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
                 if bary(tri, [p[0], p[1] - 0.6]).iter().all(|w| *w > 0.0) {
                     assert!((n[1] - (uv[1] - uv_dy[1] * 0.5 * scale)).abs() < 1e-3);
                 }
-                // Off PSX mode the sample is the pixel centre.
+                // Off PSX mode the sample is the pixel centre, past the tie
+                // bias (`the_clean_texel_is_past_the_tie_bias_on_both_hosts`).
                 nm.set_uniform("psx_params", psx(false));
                 let off = nm
                     .call(
@@ -1360,7 +1361,8 @@ fn the_psx_texel_row_stays_on_its_triangle_on_both_hosts() {
                     .ok()
                     .flatten()
                     .expect("native sample");
-                assert_eq!(off.floats(), &uv[..]);
+                let tie = 0.003_906_25;
+                assert_eq!(off.floats(), &[uv[0] + tie, uv[1] + tie][..]);
                 checked += 1;
             }
         }
@@ -1446,6 +1448,77 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
             (got[0] - want[0]).abs() < 1e-4 && (got[1] - want[1]).abs() < 1e-4,
             "page: {got:?} vs {want:?}"
         );
+    }
+}
+
+/// The clean frame (PSX rasterisation off, `psx_params.z = 0`): both hosts
+/// truncate the UV past `PSX_TEXEL_TIE_BIAS`. A primitive whose corners share
+/// one `V` puts every fragment on that texel boundary; the window's `linear`
+/// varying holds it exactly and the page's `uv * w / w` lands a hair below,
+/// so without the bias the page read the texel row above the window's - Big
+/// Wave's beams, a two-texel strip, drew split on the page.
+#[test]
+fn the_clean_texel_is_past_the_tie_bias_on_both_hosts() {
+    let consts = js_consts(&site_js("webgl-shaders.js"));
+    let bias = match consts.get("PSX_TEXEL_TIE_BIAS") {
+        Some(super::page_glsl::JsConst::Num(v)) => *v as f32,
+        other => panic!("PSX_TEXEL_TIE_BIAS: {other:?}"),
+    };
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let page = parse_glsl(&page_fragment_glsl());
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let (mut nm, mut pm) = (
+        Machine::new(&native, no_fetch()),
+        Machine::new(&page, no_fetch()),
+    );
+    let clean = Val::f(&[960.0, 720.0, 0.0, 0.0]);
+    nm.set_uniform("psx_params", clean.clone());
+    pm.set_uniform("u_psx", clean);
+    // A corner value the page's division lands just under, and one inside a texel.
+    for uv in [[1.0f32, 241.0 - 1e-5], [12.25, 40.75]] {
+        let b = [0.2f32, 0.3, 0.5, 0.0];
+        let fnat = nm.function("psx_texel_uv");
+        let n = nm
+            .call(
+                fnat,
+                vec![
+                    Val::f(&uv),
+                    Val::f(&[1.0, 0.0]),
+                    Val::f(&[0.0, 1.0]),
+                    Val::f(&b),
+                    Val::f(&[0.0; 4]),
+                    Val::f(&[0.0; 4]),
+                ],
+            )
+            .ok()
+            .flatten()
+            .expect("native sample");
+        let fpage = pm.function("psxSampleUv");
+        let g = pm
+            .call(
+                fpage,
+                vec![
+                    Val::f(&uv),
+                    Val::f(&[0.0, -1.0]),
+                    Val::f(&b),
+                    Val::f(&[0.0; 4]),
+                ],
+            )
+            .ok()
+            .flatten()
+            .expect("page sample");
+        let want = [uv[0] + bias, uv[1] + bias];
+        for (host, got) in [("native", n.floats()), ("page", g.floats())] {
+            assert!(
+                (got[0] - want[0]).abs() < 1e-4 && (got[1] - want[1]).abs() < 1e-4,
+                "{host}: {got:?} vs {want:?}"
+            );
+            assert_eq!(
+                got[1].floor(),
+                241f32.min(want[1].floor()),
+                "{host}: texel row"
+            );
+        }
     }
 }
 

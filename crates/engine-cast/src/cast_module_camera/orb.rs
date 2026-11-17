@@ -56,6 +56,21 @@ pub const ORB_HEAL_SPAWNS: [ModuleSpawn; 7] = [
     orb_spawn(0x801F_84E4, SpawnAnchor::PartySeat(2)),
 ];
 
+/// PROT 0911 arm 9's pool spawns, one behind each live member's light
+/// ring, made on the arm's own pass (`World::orb_arm_writes`) where the
+/// body-paced director hands the rest of the pass's calls over a tick late: effect `0x14` on the member's `+0x34` trio turned its heading less
+/// `0x800` (`li a0,0x14; lhu a2,0x46(a1); addiu a2,a2,-0x800; jal
+/// 0x801DFDF0` at `0x801F7A4C..0x801F7A60`, in the loop at `0x801F7A1C`).
+pub const ORB_HEAL_EFFECTS: [ModuleEffect; 3] = [orb_effect(0), orb_effect(1), orb_effect(2)];
+
+const fn orb_effect(n: u8) -> ModuleEffect {
+    ModuleEffect {
+        id: 0x14,
+        anchor: SpawnAnchor::PartySeat(n),
+        angle: EffectAngle::AnchorFacing(-0x800),
+    }
+}
+
 const fn orb_spawn(va: u32, anchor: SpawnAnchor) -> ModuleSpawn {
     ModuleSpawn {
         record: SpawnRecord::Module(va),
