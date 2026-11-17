@@ -484,8 +484,9 @@ pub use minigame_warp::{
     DomeLeadFighter, MinigameWarpOutcome,
 };
 pub use scene_entry::{
-    DoorTaken, FmvHandoffOutcome, PICKER_SEAT_OVERRIDES, PickerSeat, PickerSeatRule,
-    field_scene_build, picker_seat_override,
+    DoorTaken, FmvHandoffOutcome, HeldReason, PICKER_ENTRY_BEATS, PICKER_ENTRY_BEATS_HELD,
+    PICKER_SEAT_OVERRIDES, PickerEntryBeat, PickerEntryBeatHeld, PickerSeat, PickerSeatRule,
+    field_scene_build, picker_entry_beat, picker_seat_override,
 };
 
 #[cfg(test)]

@@ -75,12 +75,14 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
-        // A picked scene seats the party where the disc's doors land them
-        // (`SceneHost::arm_picker_entry_seat`, the native `--scene` entry's
-        // rule too). The arm stands down for the opening chain's legs and a
-        // cutscene-owned entry; a card Load's resume carries its own seat.
+        // A picked scene seats the party where the disc's doors land them,
+        // on the story arrival whose entry beat plays there when the scene
+        // has one (`SceneHost::arm_picker_story_entry`, the native `--scene`
+        // entry's and Scenes page's rule too). The arm stands down for the
+        // opening chain's legs and a cutscene-owned entry; a card Load's
+        // resume carries its own seat.
         if !resume {
-            host.arm_picker_entry_seat(name);
+            host.arm_picker_story_entry(name);
         }
         // The page's runtime twins of the native launch switches
         // (`crate::play_toggles`).
@@ -348,6 +350,7 @@ impl LegaiaRuntime {
             Some(
                 legaia_engine_scene_host::scene_host::PickerSeat::Arrival { .. }
                     | legaia_engine_scene_host::scene_host::PickerSeat::Override { .. }
+                    | legaia_engine_scene_host::scene_host::PickerSeat::EntryBeat { .. }
             )
         ) {
             return;

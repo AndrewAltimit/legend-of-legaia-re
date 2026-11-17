@@ -278,6 +278,10 @@ fn picker_entry_seats_on_a_standable_door_arrival() {
                 println!("[{scene}] FALLBACK cold seat {seat:?} ({arrivals} arrival(s) rejected)");
                 fallbacks.push(format!("{scene} ({arrivals})"));
             }
+            // Only the selectors' story arm seats an entry beat.
+            Some(PickerSeat::EntryBeat { .. }) => failures.push(format!(
+                "{scene}: the default picker arm seated an entry beat"
+            )),
             None => failures.push(format!("{scene}: picker entry recorded no seat")),
         }
     }

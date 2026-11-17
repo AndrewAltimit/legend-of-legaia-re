@@ -614,9 +614,16 @@ impl SceneHost {
                     self.arrival_catalog().home_bgm(&arrival.from_scene);
                 self.world.face_player_sector(arrival.dir);
             }
-            self.picker_seat = Some(crate::scene_host::PickerSeat::Override {
-                rule: ov.rule,
-                seat: ov.seat,
+            self.picker_seat = Some(match ov.beat {
+                Some(record) => crate::scene_host::PickerSeat::EntryBeat {
+                    rule: ov.rule,
+                    seat: ov.seat,
+                    record,
+                },
+                None => crate::scene_host::PickerSeat::Override {
+                    rule: ov.rule,
+                    seat: ov.seat,
+                },
             });
         } else if operand.is_none()
             && let Some(ranked) = picker_arrivals.as_deref()

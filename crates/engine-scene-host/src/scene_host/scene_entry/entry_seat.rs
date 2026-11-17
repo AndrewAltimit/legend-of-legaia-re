@@ -34,6 +34,17 @@ pub enum PickerSeat {
         /// The world `(x, z)` seat it resolved to.
         seat: (i16, i16),
     },
+    /// A [`super::PICKER_ENTRY_BEATS`] row seated it: the selector's story
+    /// arrival, on the trigger tile of the beat it plays
+    /// ([`SceneHost::arm_picker_story_entry`]).
+    EntryBeat {
+        /// The arrival rule (always [`PickerSeatRule::Arrival`]).
+        rule: PickerSeatRule,
+        /// The world `(x, z)` seat.
+        seat: (i16, i16),
+        /// The partition-2 record the arrival's trigger spawns.
+        record: u8,
+    },
 }
 
 /// How a [`PICKER_SEAT_OVERRIDES`] row places the party, in the tile form the
@@ -164,6 +175,8 @@ pub(crate) struct PickerOverrideSeat {
     pub(crate) seat: (i16, i16),
     /// The arrival it came from, for its facing and home track.
     pub(crate) arrival: Option<SceneArrival>,
+    /// The beat record when a [`super::PICKER_ENTRY_BEATS`] row armed it.
+    pub(crate) beat: Option<u8>,
 }
 
 /// Retail's tile-centre conversion, `(tile << 7) + 0x40`.
@@ -322,6 +335,56 @@ impl SceneHost {
         true
     }
 
+    /// Arm a **scene-selector** entry into `scene`: the play hosts' scene
+    /// pickers (the native `F12` Scenes page and `--scene` switch, the browser
+    /// page's scene list) seat a scene with a [`super::PICKER_ENTRY_BEATS`]
+    /// row on its story arrival, the tile a door lands the party on and the
+    /// trigger of the beat that plays there, faced along the arrival - so
+    /// the area opens on the cutscene a player who walks in sees. Every
+    /// other scene, and every refusal, is [`Self::arm_picker_entry_seat`]'s.
+    ///
+    /// Whether the beat then plays is the record's own C1 / C2 gate against
+    /// the live flags: a session past the beat stands on the door's tile with
+    /// nothing firing, as retail does.
+    // REF: FUN_801D1EC4, FUN_8003BDE0
+    pub fn arm_picker_story_entry(&mut self, scene: &str) -> bool {
+        if !self.arm_picker_entry_seat(scene) {
+            return false;
+        }
+        if let Some(beat) = super::picker_entry_beat(scene) {
+            let rule = PickerSeatRule::Arrival {
+                from: beat.from,
+                tile: beat.tile,
+                step: (0, 0),
+            };
+            if let Some(mut seat) = self.resolve_picker_override(scene, rule) {
+                seat.beat = Some(beat.record);
+                self.pending_picker_override = Some(seat);
+                self.pending_picker_arrivals = Some(Vec::new());
+            }
+        }
+        true
+    }
+
+    /// Arm a picker entry into `scene` on an explicit [`PickerSeatRule`],
+    /// the way a [`PICKER_SEAT_OVERRIDES`] row seats it. `false` when the
+    /// default arm refuses (see [`Self::arm_picker_entry_seat`]) or an
+    /// [`PickerSeatRule::Arrival`] rule names an arrival the disc does not
+    /// carry. The entry-beat sweep seats each candidate arrival through it.
+    pub fn arm_picker_seat_rule(&mut self, scene: &str, rule: PickerSeatRule) -> bool {
+        if !self.arm_picker_entry_seat(scene) {
+            return false;
+        }
+        match self.resolve_picker_override(scene, rule) {
+            Some(seat) => {
+                self.pending_picker_override = Some(seat);
+                self.pending_picker_arrivals = Some(Vec::new());
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Whether the entered scene is a **pass-through**: every one of its
     /// `ranked` arrivals lands on a gate-1 walk-on trigger whose
     /// partition-2 record carries a `0x3F` scene change - the arrival's own
@@ -398,6 +461,7 @@ impl SceneHost {
                     rule,
                     seat: at(tile, step),
                     arrival: Some(arrival),
+                    beat: None,
                 })
             }
             PickerSeatRule::ManMoveTo { tile } | PickerSeatRule::Tile { tile } => {
@@ -405,6 +469,7 @@ impl SceneHost {
                     rule,
                     seat: at(tile, (0, 0)),
                     arrival: None,
+                    beat: None,
                 })
             }
         }
