@@ -264,3 +264,54 @@ impl World {
         }
     }
 }
+
+impl World {
+    /// Call body-paced director `entry` (PROT 0910..0913) behind a tick body
+    /// that has just let its arm through, for that arm's pass alone
+    /// ([`legaia_engine_cast::cast_module_camera::ModuleCamState::body_pass_now`]):
+    /// the camera state is fed as the call ahead of the body feeds it, on
+    /// the phase the body moved to. `None` with no director or no latched
+    /// victim, and on the pass that seats the creature: retail's installer
+    /// (`FUN_801F19EC`) stands it ahead of the pass's shot, where the host
+    /// seats it after the tick (PROT 0911's arm 3 frames Orb on its seat), so
+    /// that pass is left to the next arm's first tick.
+    pub(in crate::world::battle::cast_band) fn body_paced_pass_now(
+        &mut self,
+        entry: u32,
+        caster_slot: u8,
+        phase: u8,
+    ) -> Option<legaia_engine_cast::cast_module_camera::ArmDirection> {
+        let direct = legaia_engine_cast::cast_module_camera::module_director(entry)?;
+        let latched = self.casting.module_cam.victim_slot?;
+        if self.casting.summon_seat_owed.is_some() || self.casting.pending_summon_spawn.is_some() {
+            return None;
+        }
+        // The seat the body's pass moved the creature to (PROT 0911's arm-5
+        // step and lift), which the pass's own cut frames.
+        self.orb_land_deferred_seat();
+        if let Some(c) = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .filter(|a| a.active)
+        {
+            self.casting.module_cam.creature_live =
+                Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                    x: c.move_state.world_x,
+                    y: c.move_state.world_y,
+                    z: c.move_state.world_z,
+                    facing: c.battle.facing_angle & 0xFFF,
+                });
+        }
+        let seats = self.module_cam_seats(caster_slot, latched);
+        let mut st = self.module_cam_with_yaw_base();
+        self.feed_seru_cam(entry, caster_slot, &mut st);
+        st.victim_body = self.module_body_seat(latched);
+        st.frame_step = self.module_frame_step();
+        st.opens_pass = self.module_tick_opens_pass();
+        st.body_pass_now = true;
+        let d = direct(&mut st, phase, seats);
+        self.store_module_cam(st);
+        Some(d)
+    }
+}

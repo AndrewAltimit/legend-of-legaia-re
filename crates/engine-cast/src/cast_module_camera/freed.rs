@@ -337,7 +337,8 @@ mod tests {
         assert_eq!(climbed, FREED_RISE_CAP - FREED_RISE_FROM);
     }
 
-    /// The pass shots land on the next arm's first tick, once.
+    /// With no call behind the body, the pass shots land on the next arm's
+    /// first tick, once.
     #[test]
     fn freed_pass_shots_land_once() {
         let mut st = ModuleCamState::default();

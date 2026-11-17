@@ -156,11 +156,12 @@ impl CastFxState {
         }
     }
 
-    /// Hold the seat arm 5's pass wrote (`0x801F75E4..0x801F7600`) for the
-    /// next tick. Retail steps and lifts the creature in the pass that cuts
-    /// to it (`FUN_801D829C` at `0x801F7634`), so no frame shows the old shot
-    /// with the creature gone; the body-paced director lands that cut on the
-    /// next tick ([`ORB_LIFT_ARM`]'s pass moves to arm 9), and the seat moves
+    /// Hold the seat arm 5's pass wrote (`0x801F75E4..0x801F7600`) until the
+    /// cut. Retail steps and lifts the creature in the pass that cuts to it
+    /// (`FUN_801D829C` at `0x801F7634`), so no frame shows the old shot with
+    /// the creature gone; the body-paced director makes that cut
+    /// ([`ORB_LIFT_ARM`]'s pass moves to arm 9) in its call behind the body
+    /// (`World::body_paced_pass_now`) or on the next tick, and the seat lands
     /// with it. Returns whether the seat was held.
     pub fn orb_defer_seat(
         &mut self,

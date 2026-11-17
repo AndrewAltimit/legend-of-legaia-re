@@ -361,6 +361,11 @@ pub struct ModuleCamState {
     /// Whether this tick opens a battle frame, fed by the host: an arm whose
     /// state steps once a pass (PROT 0959's shake toggle) steps on it.
     pub opens_pass: bool,
+    /// The host calls a body-paced director (PROT 0910..0913) a second
+    /// time on a tick whose tick body has just let its arm through, for
+    /// that arm's **pass** alone: the shot, caption and spawns retail makes
+    /// after the gate on the same pass (`body_paced`). Taken by the call.
+    pub body_pass_now: bool,
     /// The battle frame step `*(0x1F800393)`, fed by the host.
     pub frame_step: u8,
     /// The caster's playing clip `+0x1D9`, fed by the host for a capture

@@ -1935,6 +1935,43 @@ impl World {
                 ctx.phase = next;
             }
         }
+        // A body-paced director's arm pass (PROT 0910..0913): the body has
+        // just let its arm through, and retail's pass makes its shot, caption
+        // and spawns behind the gate on this same pass, which the walker then
+        // steps (`cast_module_camera::body_paced`). The arm's drift ahead of
+        // its gate is in the globals first, so the shot is built from it; a
+        // yaw the pass stores straight replaces that drift's yaw.
+        if matches!(entry, 910..=913)
+            && ctx.phase != phase_in
+            && let Some(p) = self.body_paced_pass_now(entry, caster_slot, ctx.phase)
+        {
+            run.camera_shot = p.shot.or(run.camera_shot);
+            run.caption = p.caption.or(run.caption);
+            if !p.spawns.is_empty() {
+                run.spawns = p.spawns;
+            }
+            if !p.effects.is_empty() {
+                run.effects = p.effects;
+            }
+            if !p.fades.is_empty() {
+                run.fades = p.fades;
+            }
+            run.kills_fades |= p.kills_fades;
+            run.vram_move = p.vram_move.or(run.vram_move);
+            run.camera_end_frame |= p.end_frame;
+            if let Some(pd) = p.drift {
+                let mut d = run.capture_drift.unwrap_or_default();
+                d.pitch = d.pitch.wrapping_add(pd.pitch);
+                d.yaw = pd.yaw;
+                d.tr_x = d.tr_x.wrapping_add(pd.tr_x);
+                d.tr_y = d.tr_y.wrapping_add(pd.tr_y);
+                d.tr_z = d.tr_z.wrapping_add(pd.tr_z);
+                run.capture_drift = Some(d);
+            }
+            if p.shot.is_some() {
+                run.capture_drift_after_shot = false;
+            }
+        }
         // The finishing arm's `ctx[+0x6DA] = 0x780`, which the Done band's
         // case 6 frames from.
         if run.tick_ported

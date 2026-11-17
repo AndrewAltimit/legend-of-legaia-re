@@ -367,7 +367,7 @@ mod tests {
     }
 
     /// Nova reports its spawn calls on the arms that make them, each on the
-    /// next arm's first tick: the vortex (2), arm 8's twelve, the cloud banks (10), the
+    /// next arm's first tick when no call behind the body made the pass: the vortex (2), arm 8's twelve, the cloud banks (10), the
     /// whirlwind (13), the parts that ride the victim (18) and the landing
     /// flash (0x13).
     #[test]

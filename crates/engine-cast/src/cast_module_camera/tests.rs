@@ -930,7 +930,8 @@ fn seru_modules_take_their_caption_down() {
     );
 }
 
-/// A body-paced director's pass lands on the next arm's first tick, and it
+/// A body-paced director's pass with no call behind the body lands on the
+/// next arm's first tick, and it
 /// carries the pass's spawn calls with it: Orb's opening flash (arm 2), the
 /// light column (arm 5, which jumps to 9) and the heal's group parts and
 /// rings (arm 9), each on its own anchor.
