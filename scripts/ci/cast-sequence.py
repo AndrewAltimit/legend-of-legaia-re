@@ -992,6 +992,16 @@ def run_engine(a, out: Path) -> bool:
     return False
 
 
+def recording_first_state(out: Path) -> int | None:
+    """The action state `ctx[7]` on the retail recording's first row."""
+    try:
+        with open(out / "retail" / "meta.csv", newline="") as f:
+            row = next(csv.DictReader(f), None)
+        return int(row["st7"]) if row else None
+    except (OSError, KeyError, ValueError):
+        return None
+
+
 def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
     """One engine recording: `(ran, frames, the child carried the step pin)`."""
     kept = child_cmd(a, out)
@@ -1047,6 +1057,12 @@ def record_engine(a, out: Path, keep_pin: bool) -> tuple[bool, int, bool]:
         env["LEGAIA_BATTLE_DRIVE"] = f"{drive},q{q}"
     if "LEGAIA_SEAT_VRAM_RECTS" in env:
         env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_ACTION"] = "1"
+        # The rects are the state's own instant, the recording's first row:
+        # they land once on the engine's first pass in that action state,
+        # ahead of its rolls, as every retail pass since rolled them
+        # (`AmbientFxState::vram_rect_seed_until_state`).
+        if (st := recording_first_state(out)) is not None:
+            env["LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE"] = str(st)
     # The recording's drive is PCSX-Redux's, whose first `summon.dat` slot
     # reads with no seek ahead of it; the engine's modelled drive (mednafen's)
     # holds the side-band stage nine vsyncs longer. A harness seat.

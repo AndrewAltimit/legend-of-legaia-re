@@ -98,6 +98,19 @@ another band's colour through every arm. Released on `0x0C` it stands `3` rows o
 and `chitei2_cort_pre_mystic_circle` reads `.676` to `.893`,
 `chitei2_cort_pre_guilty_cross` `.686` to `.826`. A harness seat.
 
+The seed is the state's own instant, though, and retail rolls the page on every pass from
+it: the recording opens in the inject state `0x0A` and runs it and `0x0C` before the
+cast's `0x28`, one roll each. Written over those two passes, the seed left the engine's
+page two rolls (`6` rows at step `3`) behind, and the bands in Evil Seru Magic's arms 1
+and 2, where the camera stands inside the sphere, sat a few lines off retail's. The child
+now names the recording's first row's action state
+(`LEGAIA_SEAT_VRAM_RECTS_UNTIL_STATE`), and the seed lands once on the engine's first pass
+in that state, ahead of its rolls (`AmbientFxState::vram_rect_seed_until_state`):
+`chitei2_cort_pre_mystic_circle__B7` `.908` to `.981`, `chitei2_cort_pre_guilty_cross__37`
+`.904` to `.945`, Evil Seru Magic `.955` to `.974` (arms 1 and 2 `.79` to `.99`). A rotation
+sweep of the released seed peaks two rows further on (arms 1 and 2 at `1.000`), which the
+scroller's period countdown (`+0xC6`, not in the seed) may carry. A harness seat.
+
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
 and a binary built without it writes `meta.csv` but no `e_<tick>.png`.
@@ -381,7 +394,11 @@ a vsync and never moved the yaw (the replay's caster had faced elsewhere when ar
 where retail's table walks `301` and `14`. The still's child names retail's endpoints and the
 vsyncs its table has left (`LEGAIA_SEAT_MODULE_SHOT`, `RetailBattle::module_shot_seat`), and the
 film re-arms the shot onto them from the seated pose; the film's camera then tracks retail's to
-a unit or two through arm 2. The caster's clip cursor is the other: a module that gates on its
+a unit or two through arm 2. An arm that drifts the camera words itself every pass past a
+one-frame cut has no shot walking (`RetailBattle::cam_drift_owned`): the cut's increment is its
+whole gap, so the drift's gap read one frame left, and re-armed onto the cut's pose
+`noaru_songi_genocidal_cannon` opened five drifts behind retail and stayed there to arm 3's cut
+(camera `150` px). It takes no seat. The caster's clip cursor is the other: a module that gates on its
 countdown leaves the clip free-running, and the replay reached the gate `128` cursor units
 ahead of retail's, so the lips stood shut where retail's frame has them open. A `--physical`
 film seats the state's own RAM cursor on the gate (`state_opening_cursor`), falling back on the

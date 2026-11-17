@@ -60,6 +60,16 @@ impl World {
         }
         let moves = std::mem::take(&mut self.battle.vram_moves);
         let moved = apply_vram_moves(moves, vram);
+        // Capture alignment, a cast film's form: the snapshot lands once,
+        // ahead of the rolls of the first frame in the state it was taken in
+        // (`AmbientFxState::vram_rect_seed_until_state`), and rolls on.
+        let mut seeded = false;
+        if self.ambient.vram_rect_seed_until_state == Some(self.battle_ctx.action_state) {
+            seeded = self.apply_vram_rect_seed(vram);
+            self.ambient.vram_rect_seed.clear();
+            self.ambient.vram_rect_seed_until_state = None;
+            self.ambient.vram_rect_seed_until_action = false;
+        }
         let mut scrolled = false;
         for fx in std::mem::take(&mut self.battle.vram_scrolls) {
             scrolled |= super::super::ambient::apply_scroll_fx(vram, &fx);
@@ -68,12 +78,13 @@ impl World {
         // Capture alignment (empty outside a retail-compare child): a
         // retail state's live scroller rects, written after the engine's own
         // rotations as the field VRAM pass writes them.
-        let seeded = self.apply_vram_rect_seed(vram);
+        seeded |= self.apply_vram_rect_seed(vram);
         // The fresh fight's intro timer (`0x0A` / `0x0B`, the plates and the
         // banner) runs ahead of the seeded cast, where the state stood past it:
         // a release on `0x0B` let the rects roll through the whole intro
         // (Cort's shield page stood `72` rows on at the cast's `0x28`).
         if self.ambient.vram_rect_seed_until_action
+            && self.ambient.vram_rect_seed_until_state.is_none()
             && !matches!(self.battle_ctx.action_state, 0x00 | 0x0A | 0x0B)
         {
             self.ambient.vram_rect_seed.clear();
