@@ -260,8 +260,8 @@ impl LegaiaRuntime {
     /// `TmdRenderer.setGroundDrop` (the GLSL `u_ground_drop`), from the shared
     /// `field_view_window::field_ground_drop` the native window's
     /// `Renderer::set_field_ground_drop` call also reads. `0` keeps retail's
-    /// ordering-table buckets (retail's vantage, and off the field);
-    /// `debug_camera` is the page's `F3` vantage.
+    /// ordering-table buckets (retail's vantage under the page's PSX look,
+    /// and off the field); `debug_camera` is the page's `F3` vantage.
     pub fn play_render_ground_drop(&self, debug_camera: bool) -> f32 {
         self.scene_host
             .host()
@@ -270,6 +270,7 @@ impl LegaiaRuntime {
                     &h.world,
                     self.scene_host.camera(),
                     debug_camera,
+                    self.page_toggles.psx_render,
                 )
             })
             .unwrap_or(0.0)

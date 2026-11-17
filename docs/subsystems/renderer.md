@@ -1006,13 +1006,28 @@ horizon or pulled back sees those faces whole, painted over the ground:
   of the garden fence shows on the path (orbit `5.6`, tilt `-0.5`, zoom
   `0.7` by the hut west of Vahn's house).
 
+The buckets are also faithful only beside retail's mesh links. A bucket is
+a whole-primitive rule: retail links each mesh primitive at its own slot and
+the floor cell two slots behind its farthest corner, so a face buried under
+the floor loses to the cell or beats it whole. PSX mode links the meshes the
+same way ([the field sorts by each primitive's link](renderer-port.md#the-field-sorts-by-each-primitives-link));
+the clean rasteriser depth-tests a mesh per pixel, so the near edge of a
+buried face wins against the bucket even where retail's slot for the whole
+face loses. `bylon`'s fan pits are the case: pack mesh `82` is a box whose
+top, the grate, lies on the floor plane and whose walls run 96 units under
+it. In the dialogue shot at the east fan room (`P2[7]`, Gala's report), the
+clean rasteriser stood the pit's inner side walls over the floor as spikes
+under the grate's corners, and the grate read as raised off the floor; PSX
+mode, like retail, draws it flush.
+
 So both hosts stage a per-frame word through one kernel,
 `engine-world-views::field_view_window::field_ground_drop`: `None` at
 retail's vantage (`retail_vantage`: `F3` off, and a battle frame, a scripted
 shot, or the follow camera at `CameraDistance::Retail` with the knobs at
-identity) and off the field, `Some(FREE_VANTAGE_FLOOR_DROP)` (`8` units,
-`engine-scene::field_ground`) on any other field frame - the default `Far`
-preset included. Under a drop:
+identity) under PSX rasterisation, and off the field;
+`Some(FREE_VANTAGE_FLOOR_DROP)` (`8` units, `engine-scene::field_ground`) on
+any other field frame - the default `Far` preset and every clean-raster frame
+included. Under a drop:
 
 - a **flat** far-bucket or sorted cell is depth-tested as the plane `8` units
   below it, along each pixel's own ray (`field_ground::dropped_floor_w`): an
@@ -1042,7 +1057,7 @@ looked past it toward the sea (player at `(30, 22)`, orbit `2.7`, tilt
 Natively the word rides the scene-lights block (`Renderer::set_field_ground_drop`,
 `ground_drop_param` in the WGSL); the play page stages it as `u_ground_drop`
 (`play_render_ground_drop` -> `setGroundDrop`). The retail-compare corpus
-frames at retail's vantage, so its frames keep the buckets. Pins:
+frames at retail's vantage under PSX mode, so its frames keep the buckets. Pins:
 `the_dropped_floor_depth_agrees_on_both_hosts` (`engine-render`
 `tests/vertex_law_parity.rs`), `the_ground_drops_only_off_retail_vantage_on_the_field`,
 and the disc-gated `town01_plateau_ground_holds_against_the_beach_at_every_yaw`
