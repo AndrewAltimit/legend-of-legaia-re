@@ -100,6 +100,10 @@ pub trait CameraWorld {
     /// (`FrameClock::credited_frames`), which is what the mover's clock
     /// reads.
     fn credited_frames(&self) -> u64;
+    /// Display frames so far, one a world tick
+    /// (`FrameClock::display_frames`): the vsync clock the follow ease
+    /// banks toward its next pass on.
+    fn display_frames(&self) -> u64;
     /// Vsyncs a game pass takes (`DAT_1F800393`), the cadence the follow ease
     /// steps at.
     fn camera_frame_step(&self) -> u8 {

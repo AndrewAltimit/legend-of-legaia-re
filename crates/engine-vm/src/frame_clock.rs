@@ -159,10 +159,13 @@ pub struct FrameClock {
     pub display_frames: u64,
     /// The display frames the game frames have credited: what a clock
     /// retail runs once a game frame and steps by `DAT_1F800393` reads
-    /// ([`Self::count_credited_frame`]). Equal to [`Self::display_frames`]
-    /// until a frame outlasts its step ([`frame_wall_vsyncs`]); the vsyncs
-    /// past the step credit nothing, so a cutscene camera glide lands that
-    /// much later on the wall clock, as retail's does.
+    /// ([`Self::count_credited_frame`]). The whole step lands on the vsync
+    /// that opens the frame and nothing on the vsyncs between, so a reader
+    /// stands still between two game frames as retail's does; over a frame
+    /// it moves as [`Self::display_frames`] does, until a frame outlasts its
+    /// step ([`frame_wall_vsyncs`]): the vsyncs past the step credit nothing,
+    /// so a cutscene camera glide lands that much later on the wall clock,
+    /// as retail's does.
     pub credited_frames: u64,
     /// Vsyncs since the current game frame opened (`0` on its first).
     pub frame_vsync: u8,
@@ -284,12 +287,19 @@ impl FrameClock {
     }
 
     /// Count this world tick's display frame against the game frame it
-    /// falls in: one credited frame while the frame is within its step,
-    /// none on the vsyncs a long frame runs past it. Every tick credits one
-    /// while the game-tick clock is down.
+    /// falls in. [`Self::frame_credited`] says whether the vsync is within
+    /// the frame's step (none of the vsyncs a long frame runs past it is);
+    /// [`Self::credited_frames`] takes the whole step on the vsync that opens
+    /// the frame and nothing on the rest, which is how the camera mover
+    /// `FUN_801DC0BC` steps its progress: `t = min(t + DAT_1F800393, d)`
+    /// once a frame, from the actor-list walk. Crediting one a vsync stood
+    /// the glide between two of retail's poses on the vsyncs between, and a
+    /// glide armed on a frame took one credit where retail's mover, ticked
+    /// later in the same walk, took the step: it trailed retail's by
+    /// `step - 1` frames for its whole flight (`son`'s carried walk). Every
+    /// tick credits one while the game-tick clock is down.
     ///
-    /// REF: FUN_801DC0BC (the camera mover adds `DAT_1F800393` once a
-    /// frame), FUN_8005FB84
+    /// REF: FUN_801DC0BC (the progress add `t += DAT_1F800393`), FUN_8005FB84
     pub fn count_credited_frame(&mut self) {
         self.frame_credited = if self.game_tick_live {
             self.frame_vsync = if self.game_tick_fired {
@@ -301,8 +311,10 @@ impl FrameClock {
         } else {
             true
         };
-        if self.frame_credited {
+        if !self.game_tick_live {
             self.credited_frames += 1;
+        } else if self.game_tick_fired {
+            self.credited_frames += u64::from(self.frame_step.max(1));
         }
     }
 
@@ -410,7 +422,8 @@ mod tests {
         assert_eq!(c.next_frame_step, Some(3));
     }
 
-    /// A frame that lasts eight vsyncs at step three credits three of them.
+    /// A frame that lasts eight vsyncs at step three credits three, all on
+    /// the vsync that opens it, and the next frame its own three.
     #[test]
     fn a_long_frame_credits_its_step() {
         let mut c = FrameClock::new();
@@ -419,10 +432,11 @@ mod tests {
         for v in 0..8 {
             c.game_tick_fired = v == 0;
             c.count_credited_frame();
+            assert_eq!(c.credited_frames, 3, "vsync {v}");
+            assert_eq!(c.frame_credited, v < 3, "vsync {v}");
         }
-        assert_eq!(c.credited_frames, 3);
         c.game_tick_fired = true;
         c.count_credited_frame();
-        assert_eq!(c.credited_frames, 4);
+        assert_eq!(c.credited_frames, 6);
     }
 }

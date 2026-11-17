@@ -85,6 +85,10 @@ impl CameraWorld for World {
         self.clock.credited_frames
     }
 
+    fn display_frames(&self) -> u64 {
+        self.clock.display_frames
+    }
+
     fn cutscene_timeline_active(&self) -> bool {
         World::cutscene_timeline_active(self)
     }

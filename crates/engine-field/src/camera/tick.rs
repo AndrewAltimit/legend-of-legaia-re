@@ -126,6 +126,11 @@ impl Camera {
         let now = world.credited_frames();
         let dt = now.saturating_sub(self.last_field_frame) as i32;
         self.last_field_frame = now;
+        // The follow ease banks vsyncs toward its passes; the mover's clock
+        // above lands a whole step on the vsync that opens a game frame.
+        let vsyncs = world.display_frames();
+        let ease_dt = vsyncs.saturating_sub(self.last_display_frame) as i32;
+        self.last_display_frame = vsyncs;
 
         let gliding = if let Some(mv) = self.mover.as_mut() {
             let arrived = mv.tick(dt);
@@ -210,7 +215,7 @@ impl Camera {
             }
             self.zone.prev_scripted = scripted;
             if !scripted && self.mode == CameraMode::Follow {
-                self.zone_follow_tick(world, dt);
+                self.zone_follow_tick(world, ease_dt);
             } else {
                 // Retail's scene-entry pieces run under a scripted shot too:
                 // the MAN load's block query, the queued zone arms (a warp
@@ -219,7 +224,7 @@ impl Camera {
                     self.load_scene_zone_block(world);
                 }
                 self.drain_zone_requests_under_script(world);
-                self.tick_arrival_under_script(world, dt);
+                self.tick_arrival_under_script(world, ease_dt);
             }
             if scripted && gliding && self.mode == CameraMode::Follow {
                 // A scripted glide in a free-roam scene drives these same
