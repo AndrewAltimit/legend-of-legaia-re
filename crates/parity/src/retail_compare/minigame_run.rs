@@ -48,6 +48,14 @@ const DEPARTURE_DEFINE: u32 = 0x8007_BAC4;
 const FISHING_STATE: u32 = 0x801D_926C;
 /// The dance's `GO!` accumulator (`DAT_801D515C`).
 const DANCE_GO: u32 = 0x801D_515C;
+/// The dance's song timer (`DAT_801D5820`): `dt * 10` a game frame in the play
+/// states (`FUN_801CF470`'s tail).
+const DANCE_SONG: u32 = 0x801D_5820;
+/// The human dancer's score, press latch and miss counter (`DAT_801D53CC`,
+/// `DAT_801D548C`, `DAT_801D568C`): all zero on a floor the pad never reached.
+const DANCE_HUMAN_WORDS: [u32; 3] = [0x801D_53CC, 0x801D_548C, 0x801D_568C];
+/// The dance's main play state (`DAT_801D5334 = 0xA`).
+const DANCE_PLAYING: u32 = 0xA;
 /// The hub's arm-`5` hold (`0x801D1A70`).
 const HUB_CARD_HOLD: u32 = 0x801D_1A70;
 /// The Baka Fighter cabinet's state word (`DAT_801DBF44`, PROT 0976).
@@ -61,6 +69,10 @@ const BAKA_CARD_CLOCK: u32 = 0x801D_BE94;
 const WARP_TICK: u64 = 20;
 /// Ticks the entry may take to reach the captured phase.
 const ENTRY_DEADLINE: u64 = 900;
+/// Ticks a dance played hands-off may take to reach the captured song frame:
+/// the song's `0x64FC` timer at `30` a game frame of three vsyncs, past the
+/// count-in.
+const DANCE_SONG_DEADLINE: u64 = 4000;
 /// The image child's frame, past the warp: the captures sample the attract
 /// state 300 vsyncs after the field was left.
 const FRAME_TICKS_PAST_WARP: u64 = 300;
@@ -95,6 +107,10 @@ pub struct RetailMinigame {
     /// The hall's animated props' clip cursors as the RAM holds them, one per
     /// clip ([`dance_prop_clips`]).
     pub dance_props: [Option<(u8, i16)>; DANCE_PROP_CLIPS],
+    /// The dance's song timer and whether the human dancer's words show a
+    /// press (score, latch or miss non-zero), when the dance is the overlay
+    /// resident.
+    pub dance_song: Option<(u32, bool)>,
 }
 
 /// The hall's animated plain floor actors (tick `FUN_801D4098`) by clip: each
@@ -237,6 +253,14 @@ impl RetailMinigame {
             } else {
                 [None; DANCE_PROP_CLIPS]
             },
+            dance_song: (minigame == Some(MinigameSubId::Dance)).then(|| {
+                (
+                    game_anchors::u32_at(ram, DANCE_SONG),
+                    DANCE_HUMAN_WORDS
+                        .iter()
+                        .any(|&a| game_anchors::u32_at(ram, a) != 0),
+                )
+            }),
         }
     }
 
@@ -290,6 +314,16 @@ impl RetailMinigame {
             ),
             // States `3..=5`: the count-in the warp plays out on its own.
             (Some(MinigameSubId::Dance), _) if matches!(self.phase, Some((3..=5, _))) => None,
+            // The play loop on a floor the pad never reached: the hall, the
+            // rivals and the camera are a function of the song's game frames,
+            // which a hands-off run from the count-in reaches (the minigame
+            // film pairs every rival and camera word through the song).
+            (Some(MinigameSubId::Dance), _)
+                if matches!(self.phase, Some((DANCE_PLAYING, _)))
+                    && matches!(self.dance_song, Some((_, false))) =>
+            {
+                None
+            }
             (Some(MinigameSubId::Dance), _) => Some(
                 "dance past the count-in: the chart's presses and the rivals' rolls are \
                  history the seed does not replay"
@@ -336,6 +370,19 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                 && m.fishing
                     .as_ref()
                     .is_some_and(|f| f.phase() == legaia_engine_fishing::fishing::PondPhase::Idle)
+        }
+        (Some(MinigameSubId::Dance), Some((DANCE_PLAYING, _))) => {
+            // The song timer moves `dt * 10` a game frame; the frame on screen
+            // stands the display lag's game frames behind the RAM's.
+            let lag = crate::retail_compare_battle::DISPLAY_LAG_PASSES as i64
+                * i64::from(DANCE_FRAME_STEP)
+                * 10;
+            let song = mg.dance_song.map_or(0, |s| i64::from(s.0));
+            world.mode == SceneMode::Dance
+                && m.dance_countin.is_none()
+                && m.dance
+                    .as_ref()
+                    .is_some_and(|g| i64::from(g.song_timer()) >= song - lag)
         }
         (Some(MinigameSubId::Dance), Some((state, counter))) => {
             use legaia_engine_minigames::dance::CountInStage as S;
@@ -453,7 +500,11 @@ fn run_engine_minigame(
     }
     session.host.world.request_minigame_warp(sub.sub_id());
     let mut reached = None;
-    for t in 0..ENTRY_DEADLINE {
+    let deadline = match mg.phase {
+        Some((DANCE_PLAYING, _)) if sub == MinigameSubId::Dance => DANCE_SONG_DEADLINE,
+        _ => ENTRY_DEADLINE,
+    };
+    for t in 0..deadline {
         session.tick()?;
         if film.is_some() {
             // The film runs the venue step both play hosts run.
@@ -663,6 +714,7 @@ mod tests {
             departure_define: 0,
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
+            dance_song: None,
         }
     }
 
@@ -688,6 +740,7 @@ mod tests {
             departure_define: 0,
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
+            dance_song: None,
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -704,9 +757,19 @@ mod tests {
             departure_define: 0,
             dance_markers: Default::default(),
             dance_props: [None; DANCE_PROP_CLIPS],
+            dance_song: None,
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
+        // The play loop: seeded on a floor the pad never reached, not on one
+        // it did, nor when the words were not read.
         assert!(mg(6, 0xA).unseeded_reason().is_some());
+        let played = |pressed| RetailMinigame {
+            dance_song: Some((4800, pressed)),
+            ..mg(6, 0xA)
+        };
+        assert_eq!(played(false).unseeded_reason(), None);
+        assert!(played(true).unseeded_reason().is_some());
+        assert!(mg(6, 0xB).unseeded_reason().is_some());
         assert_eq!(mg(5, 1).unseeded_reason(), None);
         assert_eq!(mg(5, 0x15).unseeded_reason(), None);
         assert!(mg(5, 0xA).unseeded_reason().is_some());
