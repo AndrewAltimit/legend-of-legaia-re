@@ -190,6 +190,8 @@ impl World {
         } else {
             cost
         };
+        self.battle.frame_cost_ring_before =
+            matches!((arm_step, poly), (Some(_), None)).then_some(self.battle.frame_cost_ring);
         self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
         // A capture-band module's own line leaves its arms their table's
         // length: retail's frames under one run anywhere from inside the step
@@ -755,6 +757,49 @@ impl World {
         // on: Nova's arm 3 runs `1` then `4`, as its recording reads.
         self.battle.pending_frame_step = Some(want);
         self.battle.pending_frame_step_from = self.battle_frame_id();
+    }
+
+    /// Price the pass just closed again on the summon arm a part's stager
+    /// call has stepped it to, on the caller's frame (PROT 0909's
+    /// rendezvous, `World::run_viguro_rendezvous_now`). Retail's frame ends,
+    /// and its cost is read, after the part tick that made the call, so the
+    /// frame is the new arm's first: the recorder's first row behind it reads
+    /// the new phase and that arm's rung. The engine's part tick runs in the
+    /// frame tail, after the pass has pushed its cost
+    /// ([`Self::close_pass_frame_cost`]); the push is redone here from the
+    /// ring as it stood before it. A pass the arm tables did not price, or
+    /// one already taken by the next frame, keeps its push.
+    pub(in crate::world) fn reprice_pass_on_rendezvous(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let Some(before) = self.battle.frame_cost_ring_before else {
+            return;
+        };
+        if self.battle.pending_frame_step.is_none() || !self.battle.cast_arm_step_on {
+            return;
+        }
+        let phase = self.casting.module_phase;
+        let Some(step) = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .and_then(|st| self.cast_module_for(st.spell_id))
+            .and_then(|entry| {
+                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step_on_pass(
+                    entry,
+                    phase,
+                    0,
+                    self.toggles.battle_cd_timing,
+                )
+            })
+        else {
+            return;
+        };
+        self.battle.cast_arm_pass = Some((S::SummonSustain.as_byte(), phase, 0));
+        let mut ring = before;
+        let next = ring.push(legaia_engine_battle_loop::frame_clock::cost_of_step(step));
+        self.battle.frame_cost_ring = ring;
+        self.battle.frame_cost_step = next;
+        self.battle.pending_frame_step = Some(next);
     }
 
     /// Install the step the last pass left ([`BattleState::pending_frame_step`])

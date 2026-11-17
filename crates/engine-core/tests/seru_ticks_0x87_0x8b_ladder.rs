@@ -249,8 +249,8 @@ fn every_player_seru_tick_body_walks_its_phase_chain() {
 ///
 /// Three ways. A rendezvous phase entered with no record behind it holds for
 /// good. Through the band seam with the module's parts running, each
-/// rendezvous lasts at least as long as its record's script waits before its
-/// op-`0x20` call. And with the records seated but their parts stopped, the
+/// rendezvous lasts as long as its record's script waits before its
+/// op-`0x20` call, less the pass that seated the record. And with the records seated but their parts stopped, the
 /// phase holds for good again: a seated record is the only caller, so the
 /// band keeps no clock of its own in its place.
 #[test]
@@ -324,9 +324,13 @@ fn the_viguro_rendezvous_needs_the_stager() {
         .iter()
         .zip(VIGURO_STAGER_CALLERS)
     {
+        // The record is seated on the pass that leaves the arm before and
+        // takes that pass's part tick; its call steps the phase inside the
+        // calling pass's part tick, so the phase holds the record's wait
+        // less the seating pass's one vsync.
         let frames = held.get(phase).copied().unwrap_or(0);
         assert!(
-            frames > usize::from(wait),
+            frames + 1 >= usize::from(wait),
             "phase {phase} lasts the record's {wait} vsyncs before its call: held {frames} \
              ({held:?})"
         );

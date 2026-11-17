@@ -867,6 +867,11 @@ pub struct BattleState {
     pub cast_arm_step_on: bool,
     /// The frame driver's cost history (`FrameCostRing`), one push a pass.
     pub frame_cost_ring: crate::frame_clock::FrameCostRing,
+    /// The ring as it stood before the last pass's push, while that pass
+    /// was priced by an arm table: a summon pass whose arm a part's stager
+    /// call steps after the push is priced again on the arm it leaves on
+    /// (`World::reprice_pass_on_rendezvous`).
+    pub frame_cost_ring_before: Option<crate::frame_clock::FrameCostRing>,
     /// The step the ring read on the last pass.
     pub frame_cost_step: u8,
     /// The GPU's wait over the table the host drew last, in hblanks (draw
@@ -1707,6 +1712,7 @@ impl BattleState {
             frame_stretch: None,
             cast_arm_step_on: false,
             frame_cost_ring: Default::default(),
+            frame_cost_ring_before: None,
             frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             drawn_table_cost: None,
             frame_cost_state: None,
