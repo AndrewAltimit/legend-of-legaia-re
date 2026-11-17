@@ -112,7 +112,8 @@ const DIRECT_ENV: &str = "LEGAIA_LAUNCHER_DIRECT";
 const TITLE: &str = "Legend of Legaia";
 /// The help box's last line after a failed game: both ways to the report.
 const COPY_REPORT_HINT: &str = "Click or Ctrl+C: report";
-/// The help box's last line: the keys that work the screen.
+/// The header's key reminder ([`header_right`]): the keys that work the
+/// screen.
 const KEY_HINT: &str = "Arrows, Enter, Tab, Esc";
 /// The disc finder's row to the folder above.
 const FINDER_UP: &str = "Up one folder";
@@ -534,9 +535,8 @@ const TYPED_PATH_HELP: &str = "Enter checks the typed path and uses the disc the
 const FIRST_RUN_CARD: &str =
     "Use your own .bin or .cue dump: click Choose disc, drop the file here, or paste its path.";
 
-/// The *Choose disc* help on the first run. Short enough to leave the help
-/// box its key reminder: the first run is when a player least knows the
-/// screen is keyboard-driven. The disc card above says how to choose.
+/// The *Choose disc* help on the first run. The disc card above says how to
+/// choose.
 const FIRST_RUN_HELP: &str = "Pick your own disc image: a dump's .bin, or its .cue. It is checked and remembered; \
      no game data comes with this program. Ctrl+O.";
 
@@ -2532,10 +2532,11 @@ impl LauncherApp {
         let sq = c.stage.squeeze;
         c.band_to_top(HEADER_H, BAND);
         c.full_width(HEADER_H, 1, RULE);
-        c.text_scaled(PAD, 7 + sq / 2, "Legend of Legaia", GOLD, 2);
-        let sub = format!("engine port {}", env!("CARGO_PKG_VERSION"));
-        let w = c.width(&sub);
-        c.text(c.stage.width() - PAD - w, 20 + sq / 2, &sub, FAINT);
+        c.text_scaled(PAD, 7 + sq / 2, TITLE, GOLD, 2);
+        let key_hint = self.key_hint();
+        let head = header_right(c, &key_hint);
+        c.text(head.version.0, head.version.1, &head.version_text, FAINT);
+        c.text(head.hint.0, head.hint.1, &key_hint, DIM);
 
         self.disc_card(c);
 
@@ -2603,7 +2604,7 @@ impl LauncherApp {
         let help = help_rect(&c.stage);
         c.rect(help, CARD);
         let lines = self.help_lines();
-        let hl = help_layout(c, &lines);
+        let hl = help_layout(c, &lines, self.failure_report.is_some());
         let mut y = help.y + 6;
         'outer: for (wrapped, ink) in &hl.lines {
             for l in wrapped {
@@ -2615,19 +2616,10 @@ impl LauncherApp {
             }
             y += 3;
         }
-        let footer = hl.footer;
-        let key_hint = self.key_hint();
-        if footer {
-            c.text(
-                help.x + 6,
-                help.y + help.h - 14,
-                if self.failure_report.is_some() {
-                    COPY_REPORT_HINT
-                } else {
-                    &key_hint
-                },
-                FAINT,
-            );
+        // The key reminder sits in the header ([`header_right`]); the box's
+        // last line is kept only for the failure report's copy hint.
+        if hl.footer {
+            c.text(help.x + 6, help.y + help.h - 14, COPY_REPORT_HINT, FAINT);
         }
 
         // Right column.
@@ -3082,7 +3074,7 @@ impl LauncherApp {
         }
         // The help is written in the keyboard's words; while a controller
         // was pressed last it names that controller's buttons instead, as the
-        // key reminder under it does.
+        // header's key reminder does.
         if let Some(g) = self.pad_last {
             let table = [
                 ("Shift+Enter", self.pad_label("Triangle", g)),
@@ -4381,9 +4373,34 @@ fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
         + controls_note_lines(c, panel).len() as i32 * 12
 }
 
-/// How a help-box message lays out: its wrapped lines, whether the key
-/// reminder keeps its line, the last row text may reach, and whether every
-/// line fits.
+/// Where the header's right side puts its two lines: the version, and
+/// under it the key reminder (`Arrows, Enter, Tab, Esc`, or a controller's
+/// `Cross OK, Circle back`), both right-aligned and inside the band's
+/// visible rows on a squeezed stage too. The reminder lives here, not at
+/// the foot of the help box, so no help text, however long, can push it out.
+struct HeaderRight {
+    version_text: String,
+    version: (i32, i32),
+    hint: (i32, i32),
+}
+
+fn header_right(c: &Canvas, hint: &str) -> HeaderRight {
+    let sq = c.stage.squeeze;
+    // The band shows stage rows `sq .. HEADER_H`: two 12-row lines 3 apart,
+    // centred in them.
+    let top = sq + (HEADER_H - sq - 27) / 2;
+    let right = c.stage.width() - PAD;
+    let version_text = format!("engine port {}", env!("CARGO_PKG_VERSION"));
+    HeaderRight {
+        version: (right - c.width(&version_text), top),
+        hint: (right - c.width(hint), top + 15),
+        version_text,
+    }
+}
+
+/// How a help-box message lays out: its wrapped lines, whether the failure
+/// report's copy hint keeps the last line, the last row text may reach,
+/// and whether every line fits.
 struct HelpLayout {
     lines: Vec<(Vec<String>, Role)>,
     footer: bool,
@@ -4393,18 +4410,20 @@ struct HelpLayout {
     fits: bool,
 }
 
-fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
+/// `report`: a failed game's report is up, whose copy hint asks for the
+/// box's last line. Every other message has the whole box.
+fn help_layout(c: &Canvas, msg: &[Message], report: bool) -> HelpLayout {
     let help = help_rect(&c.stage);
     let lines: Vec<(Vec<String>, Role)> = msg
         .iter()
         .map(|(text, ink)| (c.wrap(text, help.w - 12), *ink))
         .collect();
-    // The key reminder gives its line up to a message that needs it (a disc
-    // problem's reason and fix): cutting the fix off mid-sentence would
-    // leave the one line that says what to do unread.
+    // The copy hint gives its line up to a report that needs it: cutting
+    // the reason off mid-sentence would leave it unread, and Ctrl+C still
+    // copies.
     let rows: i32 = lines.iter().map(|(l, _)| l.len() as i32).sum();
     let needed = rows * 12 + 3 * (lines.len() as i32 - 1).max(0);
-    let footer = needed <= help.h - 6 - 14;
+    let footer = report && needed <= help.h - 6 - 14;
     let bottom = help.y + help.h - if footer { 14 } else { 4 };
     HelpLayout {
         fits: help.y + 6 + needed <= bottom,
@@ -5263,7 +5282,7 @@ mod tests {
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
             for (what, msg) in help_messages() {
-                let l = help_layout(&c, &msg);
+                let l = help_layout(&c, &msg, false);
                 if !l.fits {
                     let rows: Vec<_> = l.lines.iter().map(|(w, _)| w).collect();
                     cut.push(format!("{name}: {what}: {rows:?}"));
@@ -5273,19 +5292,72 @@ mod tests {
         assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
     }
 
-    /// The buttons' own help leaves the help box its key reminder, with and
-    /// without a disc: the reminder is the screen's only word that it is
-    /// keyboard-driven, and the first run is when a player needs it most.
+    /// The key reminder has a header line of its own, under the version and
+    /// clear of the title, for the keyboard and every maker's controller
+    /// labels, on the base, the squeezed (minimum) and a wide stage: no help
+    /// text can push it out, the first run included.
     #[test]
-    fn button_help_keeps_the_key_reminder() {
+    fn the_key_reminder_has_its_own_header_line() {
+        use legaia_engine_system::gamepad::GlyphSet;
+        let stages = [
+            BASE_STAGE,
+            stage_for((STAGE_W as u32, (STAGE_H - HEADER_GIVE) as u32)),
+            stage_for((1920, 1080)),
+        ];
+        let mut bad = Vec::new();
+        for (font, condense, name) in fonts() {
+            let mut c = canvas_for(&font, condense);
+            let title_end = PAD + c.width(TITLE) * 2;
+            let mut app =
+                LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+            let mut hints = vec![app.key_hint()];
+            for glyphs in [GlyphSet::Xbox, GlyphSet::PlayStation, GlyphSet::Nintendo] {
+                app.pad_last = Some(glyphs);
+                hints.push(app.key_hint());
+                assert_eq!(app.play_key(), app.pad_label("Start", glyphs));
+            }
+            for st in stages {
+                c.stage = st;
+                for hint in &hints {
+                    let h = header_right(&c, hint);
+                    let ok = h.hint.0 >= title_end + 8
+                        && h.version.0 >= title_end + 8
+                        && h.version.1 >= st.squeeze
+                        && h.version.1 + 12 < h.hint.1
+                        && h.hint.1 + 12 <= HEADER_H;
+                    if !ok {
+                        bad.push(format!("{name}: squeeze {} {hint:?}", st.squeeze));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+        assert_eq!(pad_key_hint("Cross", "Circle"), "Cross OK, Circle back");
+    }
+
+    /// Every option row's help, with each note it can carry (the default it
+    /// differs from, *Not as in the original game*, held by *Original game
+    /// only*), and every button's help, with and without a disc, fits the
+    /// help box whole: the regression gate for the help box giving way to
+    /// the key reminder, which it used to share a line with.
+    #[test]
+    fn option_and_button_help_fit_whole() {
         let disc = DiscInfo {
             path: "/home/player/Games/Legend of Legaia (USA).bin".into(),
             bin: "/home/player/Games/Legend of Legaia (USA).bin".into(),
             executable: launcher::USA_EXECUTABLE.into(),
         };
-        let mut lost = Vec::new();
+        let mut cut = Vec::new();
         for (font, condense, name) in fonts() {
             let c = canvas_for(&font, condense);
+            for (what, msg) in help_messages()
+                .into_iter()
+                .filter(|(w, _)| OPTION_ROWS.iter().any(|(_, r)| w.starts_with(r.label())))
+            {
+                if !help_layout(&c, &msg, false).fits {
+                    cut.push(format!("{name}: {what}"));
+                }
+            }
             for with_disc in [false, true] {
                 let mut app =
                     LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
@@ -5296,47 +5368,13 @@ mod tests {
                 }
                 for item in BUTTONS {
                     app.focus = item;
-                    let l = help_layout(&c, &app.help_lines());
-                    if !l.footer {
-                        lost.push(format!("{name}: {item:?} (disc: {with_disc})"));
+                    if !help_layout(&c, &app.help_lines(), false).fits {
+                        cut.push(format!("{name}: {item:?} (disc: {with_disc})"));
                     }
                 }
             }
         }
-        assert!(
-            lost.is_empty(),
-            "the key reminder is pushed out:\n{}",
-            lost.join("\n")
-        );
-    }
-
-    /// A controller's key reminder fits the help box's last line for every
-    /// maker's labels, and *Choose disc*'s controller help leaves it room.
-    #[test]
-    fn controller_key_reminder_fits_and_stays() {
-        use legaia_engine_system::gamepad::GlyphSet;
-        let mut cut = Vec::new();
-        for (font, condense, name) in fonts() {
-            let c = canvas_for(&font, condense);
-            let room = help_rect(&BASE_STAGE).w - 12;
-            for glyphs in [GlyphSet::Xbox, GlyphSet::PlayStation, GlyphSet::Nintendo] {
-                let mut app =
-                    LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
-                app.status = None;
-                app.pad_last = Some(glyphs);
-                let hint = app.key_hint();
-                if c.width(&hint) > room {
-                    cut.push(format!("{name}: {glyphs:?} reminder {hint:?}"));
-                }
-                app.focus = Item::ChooseDisc;
-                if !help_layout(&c, &app.help_lines()).footer {
-                    cut.push(format!("{name}: {glyphs:?} Choose disc help"));
-                }
-                assert_eq!(app.play_key(), app.pad_label("Start", glyphs));
-            }
-        }
-        assert!(cut.is_empty(), "{}", cut.join("\n"));
-        assert_eq!(pad_key_hint("Cross", "Circle"), "Cross OK, Circle back");
+        assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
     }
 
     /// The disc finder lists a folder's subfolders and disc images under

@@ -53,7 +53,9 @@ arrives in the launcher as if it were dropped on its window.
 The launcher is one screen: a disc card at the top, the actions on the left
 (*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Expansion
 pack...*, *Controls*, *Recent*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
-focused, and the options on the right. Once a disc validates, the screen is
+focused, and the options on the right. The header's right side carries the
+version and, under it, the keys that work the screen (*Arrows, Enter, Tab,
+Esc*), on a line no help text can push out. Once a disc validates, the screen is
 lettered in the game's own dialog font, read from that disc. It is drawn in
 whole steps (2x in its 960x720 window); a window a little short of a step, as
 a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
@@ -117,7 +119,7 @@ finder on those files (`.mcr` / `.mcd` / `.srm` / `.gme` / `.mcs`, or
 `.lxpack` / `pack.toml`) rather than the file dialog; the card finder's
 places start with the emulators' card folders that exist (DuckStation's
 `memcards`, Mednafen's `sav`, RetroArch's `saves`, ePSXe's `memcards`). While a controller was the last thing
-pressed, the help box's key reminder and the "press to play" lines name its
+pressed, the header's key reminder and the "press to play" lines name its
 buttons, by the labels its maker prints on them.
 
 On a Wayland desktop the launcher window opens through XWayland, because the
