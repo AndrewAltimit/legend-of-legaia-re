@@ -1475,6 +1475,7 @@ a scratch directory only.
 | `cave_walk`, `dolk_walk` | dungeon walks: Snowdrift Cave, Drake Castle's mist entrance |
 | `lamp_walk` | `rugi`'s torches on their posts: MAN props whose enhanced-lighting set is read from their clip's first-frame pose |
 | `dolk2_audience`, `dream_light` | a cutscene beat armed by its scene record on both hosts (`--play-record P:R` natively, `debug_play_record` on the page): King Drake seated on his throne in the near buckets (`dolk2` `P2[7]`, flag `0x142` raised), the light Noa follows in her first dream (`dream` `P2[1]`) |
+| `door_beat` | `town01` with flag `0x226` raised and the player seated at Vahn's front door: the door spawns the measuring beat, whose own shot walks Vahn in behind the wall while the see-through-walls fade stands down (`field_occlusion::host_fade_arming`) |
 | `ed_bylon`, `ed_korout` | ending vignettes under their scripted shots; the picker lists no cutscene scene, so the page enters them from town01's |
 | `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
