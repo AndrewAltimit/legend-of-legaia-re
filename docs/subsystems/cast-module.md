@@ -2354,7 +2354,14 @@ pass kills before its own fade-out. Arm 11's pass draws one streak
 ring and the column of light; arm 12 draws sixteen streaks every pass, ahead
 of its gate, about the same point (`viguro_charge_ring`: angle
 `(i << 8) + (w/2 & 0xFF)`, each lane `table * (w/2 + 0x200) >> 11` off the
-climbing word `w`).
+climbing word `w`). The pass climbs `w` by a quarter of the whole frame product first
+(`0x801F73BC..0x801F73C0`) and lays the ring off the climbed word (`0x801F73CC`); the
+port deals the ring on the tick that opens the pass, so it reads the word that tick
+has climbed plus the rest of the pass's climb. Off the one tick's word, every
+streak's anchor stood about `0.8` of a pass behind the `--ribbon-trace` recording's,
+and the streaks whose chain length sits on a segment's edge drew a segment fewer or
+more; with it the anchors match the recording's unit for unit, the cast's `rand()`
+stream holds retail's words through arm 13, and arm 12 reads `.756` against `.672`.
 
 ### PROT 0910 (Swordie)
 
@@ -2578,7 +2585,11 @@ the creature stood in front of arm 15's pulled-back camera.
 The turn and arm 16's camera yaw `+= sin(W / 2) / 2` are each a fixed step a
 **pass** (`0x801F8000..0x801F8038`, `0x801F8068..0x801F80A4`), taken at the
 countdown the pass climbs to, and so is arm `0x13`'s `0x600` landing spin:
-none scales with the frame step. Retail's arm 16 runs 85 passes over its 260
+none scales with the frame step. Both sit ahead of the arm's gate (`slti 0x401` at
+`0x801F80A8`), so the pass that leaves arm 16 turns the victim too, by close to
+half a turn at the top of the climb; skipped there, the victim stood a half turn
+off retail's from arm 17 on, and the framings of arms 18..20 that read its heading
+looked at its back (arm `0x14` `.899` to `.966`). Retail's arm 16 runs 85 passes over its 260
 game ticks on Gobu Gobu (steps `4`, `3`, then `2`), so the port lands each on
 the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
 countdown fed through `module_words`), where it used to spread a step-`2`
@@ -3246,6 +3257,18 @@ Ten bodies re-run the target-size framing `FUN_801F0348` at the head of an arm w
 shot then reads `ctx[+0x6D0]`: 0903, 0906, 0907, 0910, 0913, 0914, 0916, 0917, 0918
 and 0920. Without that call the shot reads the band's `0x600` and frames at half
 retail's depth or less.
+Mushura's seat arm bumps the creature's `+0x1DC` right behind its installer call
+(`0x801F6E64..0x801F6E70`), over the clip bytes the installer zeroed, so the new node's
+first tick commits idle `0` at once and the commit's decay lifts the installer's rate `2`
+to `4`, as a bump an earlier cast left on the seat does. A retail recording holds seat
+7's `+0x21D` at `4` from arm 6 on, the walk clip's cursor climbing `32` a pass; at the
+installer's `2` the walk's effect frames (`FUN_801DEA50`'s pool spawns, `ra 0x801DEEA4` on a
+write watch of the master slots) shed half the dust, and the cast's `rand()` stream
+parted from retail's at arm 6. With the bump the stream stands on retail's word at the
+start of arms 7, 8 and 9. The walk clip's cursor still reads a pass ahead of the
+recording's, and the film's image falls (`.931` to `.916`, the rand-dealt rampage of
+arm 12 `.797` to `.725`). Grade `disassembly` + `capture`.
+
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the victim stepped back a sixth of its body radius on
 arm 6's pass (`*(+0x22C)[+0x58] / 6` into `+0x38`, the `0x2AAAAAAB` divide at
