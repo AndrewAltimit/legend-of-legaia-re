@@ -614,6 +614,12 @@ state's seated pose, not the arm's tween, and its first segment is the harness's
 the game's. An engine seat at another `acting` seat than the retail recording is a
 pairing artefact as well. These are read off the film, not the score.
 
+A tween whose engine column reads retail's previous row on every pass, from the arm's
+first row to its last, is a shot armed a pass late: the body-paced Seru directors made
+an arm's pass shot on the next arm's first tick until the host called them again behind
+the body ([cast module](../subsystems/cast-module.md#body-paced-directors)), and the
+`0x88`, `0x8A` and `0x8B` films read `.04` higher with it.
+
 ## The pairing rule
 
 Frames pair on the action-SM clock, never on wall time:

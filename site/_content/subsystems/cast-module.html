@@ -216,7 +216,7 @@
   <table>
     <thead><tr><th>Kind</th><th>Modules</th><th>What it owns</th></tr></thead>
     <tbody>
-      <tr><td>Body-paced</td><td><code>0910..0913</code></td><td>The tick body is ported and holds its own arms; the director runs ahead of it, never holds, and lands each arm's camera work on the first tick of the arm the pass moved to.</td></tr>
+      <tr><td>Body-paced</td><td><code>0910..0913</code></td><td>The tick body is ported and holds its own arms; the director runs ahead of it, never holds, and is called again behind a body that has let its arm through, so each arm's pass shot, caption and spawns land on the pass itself.</td></tr>
       <tr><td>Whole-chain</td><td>the summon creatures whose bodies are not ported (Gola Gola through Ozma)</td><td>The director is the phase chain: it drains the module's countdown by the module's own product, holds while the gate holds, stores each literal phase, and folds the cast's outcome once the phase passes the hit arm.</td></tr>
       <tr><td>Capture</td><td>keyed on module and body, such as Thunder Storm, Steal, Void Accessories, Curse All, Power Up, Stone Circle, Earthquake, Element Change, Scythe Wind, V-Windhash</td><td>Runs in state <code>0x70</code> against a held camera; it moves the camera only where the module does, and some own the phase outright.</td></tr>
     </tbody>
