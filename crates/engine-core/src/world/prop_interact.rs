@@ -704,9 +704,19 @@ impl World {
                 // The record's next cross-context op on the player waits while
                 // a compass leg it armed is still walking the player; the
                 // halt clear `32 F8 0A` is exempt.
-                // REF: FUN_801DE840 (0x801DE90C..0x801DE944, 0x801DE8E0..0x801DE904)
+                //
+                // A leg that landed on this pass still holds it: the runner
+                // steps the record ahead of the walk kernel in the object's
+                // tick (`FUN_8003BC08`: runner at `0x8003BD34`, kernel at
+                // `0x8003BD50`), so it found the leg in flight and the record
+                // moves on the next pass. `tower_field_walk`'s lift record
+                // walks the player, lands, and walks him on: resumed on the
+                // landing pass, each later leg started a pass ahead of
+                // retail's, and the `2F 10` that drops the camera's let-through
+                // after the last leg landed a pass early.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944, 0x801DE8E0..0x801DE904), FUN_8003BC08
                 if player_target
-                    && id.player_glide.is_some()
+                    && (id.player_glide.is_some() || leg_landed)
                     && !(b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A))
                 {
                     break;
