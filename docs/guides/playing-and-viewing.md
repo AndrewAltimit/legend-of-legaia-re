@@ -1052,7 +1052,10 @@ named (a double-click), `asset-viewer` opens the archive browser on the
 `extracted/PROT.DAT` in the current folder or beside the program; with none
 there it says how to make one and points at `legaia-explorer` - in the
 terminal, or, double-clicked, in a dialog whose *Choose folder...* picks the
-extracted folder to browse and whose *Legaia Explorer* starts Explorer. The browser takes
+extracted folder to browse and whose *Legaia Explorer* starts Explorer. On
+Windows a double-click opens no console window; started from `cmd.exe` the
+viewer prints there but the prompt comes back while its window is open
+(`start /wait asset-viewer ...` waits for it). The browser takes
 entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
 another.
 
