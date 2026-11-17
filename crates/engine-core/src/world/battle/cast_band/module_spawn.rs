@@ -4,6 +4,10 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The module whose seat arm bumps `+0x1DC` behind the installer on the same
+/// pass (PROT 0915, Mushura).
+const INSTALL_BUMP_ENTRY: u32 = 915;
+
 impl World {
     /// A host seated the summon creature at actor `slot`: adopt the seat,
     /// place it where the seat installer `FUN_801F19EC` leaves it, and mark
@@ -56,6 +60,14 @@ impl World {
         // (`BattleState::creature_seat_restage`) is spent by this creature.
         let stale_restage =
             staged.is_some() && std::mem::take(&mut self.battle.creature_seat_restage);
+        // PROT 0915 bumps the seat's `+0x1DC` itself right behind its
+        // installer call (`lbu`/`addiu 1`/`sb 0x1DC` at `0x801F6E64..
+        // 0x801F6E70`), over the clip bytes the installer zeroed, so the new
+        // node's first tick commits idle `0` at once just as a stale bump's
+        // does. A retail recording of Mushura's walk holds seat 7's `+0x21D`
+        // at `4` from arm 6 on, and its walk clip's effect frames shed twice
+        // the dust the engine's rate-`2` walk did.
+        let stale_restage = stale_restage || entry == Some(INSTALL_BUMP_ENTRY);
         let Some(a) = self.actors.get_mut(slot) else {
             return;
         };
