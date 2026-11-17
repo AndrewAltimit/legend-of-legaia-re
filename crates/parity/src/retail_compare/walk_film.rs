@@ -109,6 +109,23 @@ impl WalkFilm {
         // The wanderers' stream state and the world's seed, so a film's
         // `rng` column and its `rand()`-driven NPCs track retail's.
         super::seat_ambient_streams(session, retail);
+        // Every drawn actor's clip where the RAM holds it: a placement's
+        // idle phase is the history of the passes since its clip started,
+        // which the seed's scene entry does not replay, so a film left on the
+        // seed's phases compared two arbitrary cursors. Seated, the clip
+        // columns read how the pose moves from retail's. A harness seat;
+        // `LEGAIA_RC_NO_CLIP_SEAT=1` leaves the seed's phases.
+        if std::env::var_os("LEGAIA_RC_NO_CLIP_SEAT").is_none() {
+            for c in &retail.object_clips_ram {
+                session.host.world.seed_object_prop_clip(
+                    usize::from(c.record),
+                    c.clip,
+                    c.cursor,
+                    c.flags,
+                    c.rate,
+                );
+            }
+        }
         if std::env::var_os("LEGAIA_RC_PART_DIAG").is_some() {
             for s in &retail.part_vm {
                 eprintln!(

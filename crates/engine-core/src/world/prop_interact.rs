@@ -261,13 +261,17 @@ impl World {
             .iter()
             .find(|c| !c.object_bind && usize::from(c.ctx.script_id) == record)
             .and_then(|c| u8::try_from(c.placement_index).ok());
+        // A host-bound cursor not yet on the live rate word steps by the
+        // record's folded step (`bind_npc_clip_cursor`), not by `+0x6A`:
+        // handing it the raw word played a gated clip at twice its speed.
+        let live = slot.is_some_and(|s| self.npcs.clip_rate_live.contains(&s));
         if let Some(c) = slot
             .and_then(|s| self.npcs.clip_cursors.get_mut(&s))
             .filter(|c| c.anim_id == clip)
         {
             c.cursor = cursor;
             c.flags = flags;
-            if rate != 0 {
+            if rate != 0 && live {
                 c.rate = rate;
             }
         }

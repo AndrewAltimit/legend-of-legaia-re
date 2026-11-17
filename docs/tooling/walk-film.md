@@ -37,7 +37,9 @@ Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
 pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
 the step, so the two meet on every second row.
 
-Each side writes its talk state too: retail's dialogue byte `*(0x801C6EA4) + 0x62` (`talk`), each placement's talk save `+0x5A` and record cursor `+0x9E`, and the engine's `World::dialogue_owns_input`. A placement's clip is on both sides as well: retail's `+0x5C` / `+0x68` / `+0x6A` in `walk_film_actors.csv`, the engine's bound cursor (`FieldNpcState::clip_cursors`) in `engine.actors.csv`. The film does not seat placement clips, so their phases start where the seed's scene entry left them; read which placements share a phase, not the phase itself.
+Each side writes its talk state too: retail's dialogue byte `*(0x801C6EA4) + 0x62` (`talk`), each placement's talk save `+0x5A` and record cursor `+0x9E`, and the engine's `World::dialogue_owns_input`. A placement's clip is on both sides as well: retail's `+0x5C` / `+0x68` / `+0x6A` in `walk_film_actors.csv`, the engine's bound cursor (`FieldNpcState::clip_cursors`) in `engine.actors.csv`.
+
+The film seats every drawn actor's clip cursor where the state's RAM holds it (`RetailObs::object_clips_ram`, through `World::seed_object_prop_clip`), so the columns compare how each pose moves from retail's own phase; `LEGAIA_RC_NO_CLIP_SEAT=1` leaves the seed's phases. A harness seat. Over the idle set it takes the placements' cursor agreement from about a fifth of the rows to nine in ten; what still parts is a wanderer changing clips on its own stream, a cursor bound off the seat's record, and the clamped one-shots a scene entry plays to their end.
 
 The engine side also seats every wanderer's ambient stream and the world seed
 from the state's RAM (`retail_compare::retail_ambient_streams`,
