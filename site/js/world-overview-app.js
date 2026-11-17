@@ -45,6 +45,7 @@
   const $mistStatus = document.getElementById('wo-mist-status');
   const $showTerrain = document.getElementById('wo-show-terrain');
   const $showLandmarks = document.getElementById('wo-show-landmarks');
+  const $storyLate = document.getElementById('wo-story-late');
   const $lockTopView = document.getElementById('wo-lock-topview');
   const $exportGlb  = document.getElementById('wo-export-glb');
   /* Top-down map: the per-kingdom plot data gathered from the disc the last
@@ -255,7 +256,10 @@
       for (const p of worldExportState.draws) {
         let mi = meshHandles.get(p.meshId);
         if (mi === undefined) {
-          try { viewer.pack_mesh(p.meshId); } catch (e) { continue; }
+          try {
+            if (p.posed) viewer.pack_mesh_posed(p.posed.slot, p.posed.anim, p.posed.key);
+            else viewer.pack_mesh(p.meshId);
+          } catch (e) { continue; }
           /* Same hybrid packet-colour stream ensureMeshUploaded hands the
            * shader - the export bakes it into COLOR_0 (and the flag picks
            * textured-modulate vs untextured-fill per vertex), so the file
@@ -428,6 +432,13 @@
     $showLandmarks.addEventListener('change', () => {
       /* The walk-frame landmark draw list is built once per kingdom load,
        * so a flip has to re-enter the kingdom to add or clear the layer. */
+      if (viewMode === 'world') selectKingdom(currentKingdom);
+    });
+  }
+  if ($storyLate) {
+    $storyLate.addEventListener('change', () => {
+      /* The landmark poses are read once per kingdom load (the flags are
+       * applied right after `set_scene_kingdom`), so re-enter it. */
       if (viewMode === 'world') selectKingdom(currentKingdom);
     });
   }
@@ -770,6 +781,15 @@
       $meshInfo.textContent = 'set_scene_kingdom failed: ' + (err.message || err);
       return;
     }
+    /* Story point of the posed landmarks: a new game (every kingdom load
+     * starts there), or "late story" - every flag a posed landmark's spawn
+     * prologue tests raised (Karisto: 0x4C8, which shuts Conkram's shell
+     * once the party escapes Jette's Fortress). Guarded for a stale WASM. */
+    if (typeof viewer.set_kingdom_landmark_flags === 'function') {
+      const late = !!($storyLate && $storyLate.checked);
+      viewer.set_kingdom_landmark_flags(
+        late ? viewer.kingdom_landmark_story_flags() : new Uint16Array(0));
+    }
     glRenderer.uploadVram(viewer.pack_vram_bytes());
     /* Upload the disc-side ocean texture + 13-frame CLUT animation
      * table now that slot 0 has been decompressed. */
@@ -846,6 +866,23 @@
       used.add(ms);
       return true;
     }
+    /* A placed landmark whose object bind names a clip draws at the clip
+     * frame its spawn prologue picks (FUN_8001B964, draw kind 1), not as
+     * the raw object-local mesh: Conkram's shell lid (Karisto slot 16)
+     * stands open behind the town on a new game and lies shut over it once
+     * flag 0x4C8 is up. One upload per posed stamp, under its own id. */
+    const POSED_MESH_BASE = 100000;
+    function uploadPosedMesh(i, ms, anim, key) {
+      if (ms < 0 || ms >= packCount) return -1;
+      try { viewer.pack_mesh_posed(ms, anim, key); } catch (e) { return -1; }
+      const positions = viewer.pack_mesh_positions();
+      const idx = viewer.pack_mesh_indices();
+      if (positions.length === 0 || idx.length === 0) return -1;
+      const id = POSED_MESH_BASE + i;
+      glRenderer.uploadSceneMesh(id, positions, viewer.pack_mesh_uvs(),
+        viewer.pack_mesh_cba_tsb(), idx, viewer.pack_mesh_flat_rgba());
+      return id;
+    }
 
     /* Legacy placement layers (MAN-table landmarks, live-RAM actors,
      * unplaced slot-1 TMD layout grid). These are positioned in the
@@ -890,13 +927,26 @@
         /* 1 = placed object, 0 = decoration-layer stamp. */
         const layer = (typeof viewer.walk_placement_placed === 'function')
           ? viewer.walk_placement_placed() : null;
+        /* Clip id + pose key per stamp (0 / -1 = draw the raw mesh). */
+        const anims = (typeof viewer.walk_placement_anim_ids === 'function')
+          ? viewer.walk_placement_anim_ids() : null;
+        const keys = anims ? viewer.walk_placement_pose_keys() : null;
         for (let i = 0; i < wpCount; i++) {
           const ms = slots[i];
           if (suppress.some((s) =>
             s.mesh === ms && s.x === pos[i * 3] && s.z === pos[i * 3 + 2])) {
             continue;
           }
-          if (!ensureMeshUploaded(ms)) continue;
+          let meshId = ms;
+          let posed = null;
+          if (anims && anims[i] !== 0) {
+            const id = uploadPosedMesh(i, ms, anims[i], keys[i]);
+            if (id >= 0) {
+              meshId = id;
+              posed = { slot: ms, anim: anims[i], key: keys[i] };
+            }
+          }
+          if (!posed && !ensureMeshUploaded(ms)) continue;
           /* The WASM returns retail-frame world Y (PSX +Y down: the stamp
            * anchor is `-lut[nibble] + y_off`, the heightfield's PRE-flip
            * stored-vertex frame). placementModelScaledY flips only the
@@ -908,7 +958,8 @@
            * Kingdom LUT heights are small, so the un-negated artifact was
            * a subtle sink/hover that doubled with the cell height. */
           drawPlacements.push({
-            meshId: ms,
+            meshId,
+            posed,
             x: pos[i * 3],
             y: -pos[i * 3 + 1],
             z: pos[i * 3 + 2],

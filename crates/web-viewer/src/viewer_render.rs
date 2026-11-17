@@ -404,6 +404,7 @@ impl LegaiaViewer {
             byte_offsets,
             byte_ends,
             cur_slot: None,
+            cur_pose: None,
             ocean,
             clut_anim: None,
         })
@@ -469,9 +470,12 @@ impl LegaiaViewer {
         let end = *k.byte_ends.get(slot)?;
         let tmd_buf = k.pack.get(start..end)?;
         let tmd = legaia_tmd::parse(tmd_buf).ok()?;
-        Some(legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh(
-            &tmd, tmd_buf,
-        ))
+        Some(match &k.cur_pose {
+            Some(offsets) => legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh_posed(
+                &tmd, tmd_buf, offsets,
+            ),
+            None => legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh(&tmd, tmd_buf),
+        })
     }
 
     /// Triangle + vertex counts for the status line. Counts what the viewer

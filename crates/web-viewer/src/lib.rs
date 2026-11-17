@@ -15,6 +15,7 @@ pub mod equipment_view;
 pub mod field_npc;
 pub mod field_scene;
 mod inspect;
+pub mod kingdom_landmarks;
 mod monster;
 mod nav_disc;
 pub mod npc_dialog;
@@ -193,6 +194,10 @@ struct KingdomPack {
     byte_ends: Vec<usize>,
     /// Currently selected pack slot for the mesh accessors.
     cur_slot: Option<usize>,
+    /// Per-object `(translation, rotation)` offsets the selected slot is
+    /// posed at ([`LegaiaViewer::pack_mesh_posed`]), `None` for the raw mesh
+    /// ([`LegaiaViewer::pack_mesh`]).
+    cur_pose: Option<Vec<([i16; 3], [i16; 3])>>,
     /// Ocean tile texture + base CLUT + animation table, extracted from
     /// slot 0's TIM_LIST. `None` when the kingdom is not a world-map
     /// kingdom (the assets are only present in PROT 0085 / 0244 / 0391).
@@ -294,6 +299,15 @@ pub struct LegaiaViewer {
     /// accessors so the viewer draws the landmark meshes on top of the
     /// continent terrain instead of the misaligned overview-frame JSON layer.
     walk_placements: Option<Vec<WalkPlacement>>,
+    /// The loaded kingdom's posable landmarks (object binds that name a
+    /// clip), loaded by [`LegaiaViewer::kingdom_landmarks_load`]; `None`
+    /// until then, or when the kingdom's scene does not resolve.
+    kingdom_landmarks: Option<kingdom_landmarks::KingdomLandmarks>,
+    /// The landmarks' poses under [`Self::kingdom_landmark_flags`].
+    kingdom_landmark_poses: kingdom_landmarks::LandmarkPoses,
+    /// The story flags the overview's landmark prologues read as raised
+    /// (empty = a new game).
+    kingdom_landmark_flags: std::collections::BTreeSet<u16>,
     /// World-map labels of the currently-loaded kingdom (the location table
     /// trailing the kingdom MAN, filtered to the kingdom's region). Built by
     /// [`LegaiaViewer::set_scene_kingdom`]; consumed by
@@ -563,6 +577,9 @@ pub struct WalkPlacement {
     /// `false` for a decoration-layer stamp (trees, mountain groups, props).
     /// The page's top-down map draws the two as separate dot families.
     pub placed: bool,
+    /// The record's anchor tile (`(anchor_col, anchor_row)`), the key its
+    /// object bind is looked up by.
+    pub anchor: (u8, u8),
 }
 
 /// One world-map label of the loaded kingdom: a record of the 29-entry
@@ -676,6 +693,7 @@ pub fn build_walk_placements(
                 world_z: p.world_z,
                 rot_y: p.rot_y,
                 placed: p.flags & legaia_scene_formats::field_objects::FLAG_PLACED != 0,
+                anchor: (p.anchor_col, p.anchor_row),
             })
         })
         .collect();

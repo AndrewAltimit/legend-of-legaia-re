@@ -38,4 +38,5 @@ mod walk_placements_parity;
 mod world_map_labels_real;
 mod world_map_pack_hybrid_real;
 mod world_overview_clut_walk_real;
+mod world_overview_posed_landmarks_real;
 mod world_overview_regression;
