@@ -234,6 +234,16 @@ The records a script hands it are text pages, and the child is the narration
 roller `FUN_80037174`: the [crawl](cutscene.md#inline-narration-format), on
 whatever context the op runs on.
 
+The plain form `4C 80 N` runs the crawl on the executing context, and only
+talk records carry it: the three read-a-letter talks (`bylon` `P1[47]`,
+Maya's unfinished letter; `dolk` `P1[27]`, Drake III's; `retock` `P1[33]`,
+Bon Saryu's). Each dims the screen with op `0x34`, rolls the letter, waits on
+`33 0A` (its own halt bit, which the roller clears as it retires the last
+page), lifts the dim and closes with one more line. The talk runner opens the
+roller at the op and parks the talk on that test while it scrolls
+(`legaia_scene_formats::cutscene_text::crawl_at`). Disc-gated:
+`engine-scene-host/tests/letter_crawl_talk_disc.rs`.
+
 #### `4C 81`: the actor tint
 
 `+0x74 = colour` (`FUN_8003CEB8`, 24-bit `0xBBGGRR`) and `+0x78 = blend`

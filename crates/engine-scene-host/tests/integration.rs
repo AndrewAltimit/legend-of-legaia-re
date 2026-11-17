@@ -136,6 +136,7 @@ mod koin3_gold_card_door_disc;
 mod kor3_self_face_acquire_disc;
 mod kor5_genesis_figure_height_disc;
 mod kor5_old_deez_seat_disc;
+mod letter_crawl_talk_disc;
 mod man_load_flag7_dev_records_disc;
 mod map01_clut_fx_disc;
 mod map01_flyin_camera;

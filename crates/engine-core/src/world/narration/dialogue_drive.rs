@@ -296,6 +296,61 @@ impl World {
                     id.ctx.wait_accum = 0;
                 }
             }
+            // A crawl in the talk (`4C 80 N` on the talker, `CC <tt> 80 N` on
+            // another context): the op's arm halt-acquires its target and
+            // allocates the roller `FUN_80037174` over the `N` pages that
+            // follow, and the record walks on past them
+            // (`0x801E1ECC..0x801E1FBC`). The read-a-letter talks (`bylon`
+            // `P1[47]`, `dolk` `P1[27]`, `retock` `P1[33]`) dim the screen,
+            // roll the letter and wait for it on `33 0A`, the bit the roller
+            // clears as it retires its last page. Stepped as a plain op the
+            // child records went to the actor pool, no roller rolled, and the
+            // talk ended on the halt-bit test with the dim left up.
+            // REF: FUN_801DE840 (0x801E1ECC..0x801E1FBC), FUN_80037174
+            if let Some(block) = legaia_scene_formats::cutscene_text::crawl_at(&id.bytecode, id.pc)
+            {
+                // One roller at a time: a crawl still scrolling holds the
+                // next one at its op.
+                if host.world.cutscene_narration_active() {
+                    break;
+                }
+                if id.pc < id.visited.len() {
+                    id.visited[id.pc] = true;
+                }
+                if let Some(seed) = host
+                    .world
+                    .cutscene
+                    .narration_seed
+                    .config_op_before(&id.bytecode, id.pc)
+                {
+                    host.world.cutscene.narration_seed = seed;
+                }
+                let pages = block
+                    .pages
+                    .iter()
+                    .map(|p| host.world.narration_page_text(&p.raw))
+                    .collect();
+                host.world.open_cutscene_narration(pages);
+                id.crawl = Some(block.target);
+                id.pc = block.byte_span().1;
+                continue;
+            }
+            // The halt-bit test the crawl's opener waits on: parked while the
+            // roller runs, through once it has retired its last page.
+            if let Some(target) = id.crawl {
+                let waits = if target == legaia_scene_formats::cutscene_text::OWN_CONTEXT_CRAWL {
+                    b == 0x33 && id.bytecode.get(id.pc + 1) == Some(&0x0A)
+                } else {
+                    b == 0xB3
+                        && id.bytecode.get(id.pc + 1) == Some(&target)
+                        && id.bytecode.get(id.pc + 2) == Some(&0x0A)
+                };
+                if !host.world.cutscene_narration_active() {
+                    id.crawl = None;
+                } else if waits {
+                    break;
+                }
+            }
             // Retail SM transition test: a byte with `& 0x7F < 0x20` is a text
             // lead (`0x1F`) or a terminator (`0x00..0x1E`), not an opcode.
             if b & 0x7F < 0x20 {

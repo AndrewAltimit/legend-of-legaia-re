@@ -140,6 +140,13 @@ pub struct InlineDialogue {
     /// terminal frame clears the bit (`FUN_8003774C`, `0x80038004`). Plain
     /// ops and text leads run under the turn.
     pub own_turn: Option<u8>,
+    /// The target of the crawl this talk opened
+    /// ([`legaia_scene_formats::cutscene_text::crawl_at`]), while its roller
+    /// runs: the talk waits on the halt-bit test aimed at it (`33 0A` for a
+    /// plain `4C 80`, `B3 <tt> 0A` for `CC <tt> 80`) until the roller retires
+    /// its last page.
+    /// REF: FUN_80037174
+    pub crawl: Option<u8>,
     /// This pass has spawned a record (an own-context op `0x44`) or armed a
     /// mode-24 door warp (`3E` with `op0 >= 100`). A raw
     /// `0x21` after that is the conversation's real end, not a prologue that
@@ -421,6 +428,7 @@ impl InlineDialogue {
             parked_pc: None,
             face_ramp: None,
             own_turn: None,
+            crawl: None,
             spawned: false,
             player_walk: None,
             player_glide: None,
@@ -461,6 +469,7 @@ impl InlineDialogue {
             parked_pc: None,
             face_ramp: None,
             own_turn: None,
+            crawl: None,
             spawned: false,
             player_walk: None,
             player_glide: None,
