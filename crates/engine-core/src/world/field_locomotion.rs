@@ -164,6 +164,15 @@ pub struct FieldLocomotion {
     /// bit) does not stop this frame's ease. Refreshed at the top of every
     /// tick and again at the field walk gate.
     pub locked_at_walk_gate: bool,
+    /// Scratchpad `0x1F800394 & 0x10000` as the player's field tick read it
+    /// (`0x801D1704..0x801D1714`): the let-through that sends a locked,
+    /// script-carried player through the focus pin. The tick runs ahead of
+    /// the objects' record slices, so a record that drops the bit on the
+    /// pass its last leg settled still sees the focus pinned onto the
+    /// player that pass (`tower_field_walk`'s lift: the bit falls at vsync
+    /// `215` with the focus already on the landing). Refreshed with
+    /// [`Self::locked_at_walk_gate`].
+    pub let_through_at_player_tick: bool,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
@@ -407,6 +416,7 @@ impl FieldLocomotion {
             scene_ctrl_61: 0,
             camera_mode_byte: None,
             locked_at_walk_gate: false,
+            let_through_at_player_tick: false,
             precise_move_carry: (0.0, 0.0),
             player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             player_8e: 0,

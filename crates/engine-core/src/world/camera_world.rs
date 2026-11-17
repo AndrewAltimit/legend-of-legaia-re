@@ -113,6 +113,10 @@ impl CameraWorld for World {
         self.locomotion.locked_at_walk_gate
     }
 
+    fn camera_let_through_at_player_tick(&self) -> bool {
+        self.locomotion.let_through_at_player_tick
+    }
+
     fn scripted_shot_holds_camera(&self) -> bool {
         World::scripted_shot_holds_camera(self)
     }

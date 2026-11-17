@@ -141,6 +141,14 @@ pub trait CameraWorld {
     fn field_player_locked_at_walk_gate(&self) -> bool {
         self.field_player_movement_locked()
     }
+    /// Whether scratchpad `0x1F800394 & 0x10000` (the let-through of a
+    /// locked player's ease) was up when the player's field tick read it
+    /// (`0x801D1704..0x801D1714`). A record slice later in the same pass
+    /// can drop it, and the tick has already pinned the focus by then. The
+    /// default is the live word.
+    fn camera_let_through_at_player_tick(&self) -> bool {
+        self.story_flags() & crate::camera::CAMERA_LOCKED_EASE_FLAG != 0
+    }
     /// Whether a ledge hop is in flight.
     fn ledge_hop_active(&self) -> bool;
     /// Whether the player's scripted arc is live.

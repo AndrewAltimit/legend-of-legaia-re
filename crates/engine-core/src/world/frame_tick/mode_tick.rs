@@ -89,6 +89,8 @@ impl World {
         self.move_vm.begin_strip_tick();
         self.refresh_bag_window();
         self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
+        self.locomotion.let_through_at_player_tick =
+            self.flags.story_flags & legaia_engine_field::camera::CAMERA_LOCKED_EASE_FLAG != 0;
         let outcome = self.tick_modes();
         // The script runner's release: a conversation that showed a box and
         // has just let the player go leaves the pad hold
@@ -846,6 +848,9 @@ impl World {
                 // (`World::tick_field_walk_regen`); its Incense zero edge
                 // raises the wear-off notice, which runs here.
                 self.locomotion.locked_at_walk_gate = self.field_player_movement_locked();
+                self.locomotion.let_through_at_player_tick = self.flags.story_flags
+                    & legaia_engine_field::camera::CAMERA_LOCKED_EASE_FLAG
+                    != 0;
                 self.step_field_locomotion();
                 self.tick_incense_notice();
                 // Vertical settle + ledge-hop trigger. Retail runs this as a
