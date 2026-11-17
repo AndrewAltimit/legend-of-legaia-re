@@ -107,7 +107,11 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
         let mut rt = legaia_web_play::runtime::LegaiaRuntime::new();
         rt.load_disc(bytes.clone(), String::new())
             .expect("load disc");
-        rt.enter_field(scene).expect("enter");
+        // A plain visit: the selector's entry beat (`concnow`'s gate record
+        // `P2[13]`, `PICKER_ENTRY_BEATS`) would seat the page on its trigger
+        // and run a cutscene the viewer's preview, seated by the default
+        // door rule, never plays.
+        rt.enter_field_plain(scene).expect("enter");
 
         let mut pack = build_field_scene(&index, scene).expect("build");
         build_field_scene_live(index.clone(), &mut pack);

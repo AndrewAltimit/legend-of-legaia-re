@@ -49,6 +49,29 @@ impl LegaiaRuntime {
     /// applies after this returns; `false` for a picker / door /
     /// opening-chain entry.
     pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
+        self.enter_field_seated(name, resume, true)
+    }
+
+    /// A **plain** picker visit to `name`: staged as [`Self::enter_field`]
+    /// stages it, but seated by the default door rule
+    /// (`SceneHost::arm_picker_entry_seat`) without the selector's entry
+    /// beat (`SceneHost::arm_picker_story_entry`), so no arrival cutscene
+    /// plays. It is the seat the map viewer's live preview takes
+    /// (`legaia_engine_scene_host::scene_live::LiveScene`), which is what a
+    /// side-by-side comparison of the two hosts needs. Rust-side only: the
+    /// page's scene list enters through [`Self::enter_field`].
+    pub fn enter_field_plain(&mut self, name: &str) -> Result<String, String> {
+        self.enter_field_seated(name, false, false)
+    }
+
+    /// [`Self::enter_field_core`] with the seat rule chosen: `story` arms
+    /// the selector's entry beat, `false` the plain door seat.
+    fn enter_field_seated(
+        &mut self,
+        name: &str,
+        resume: bool,
+        story: bool,
+    ) -> Result<String, String> {
         self.field_morph_last.clear();
         let host = self
             .scene_host
@@ -82,7 +105,11 @@ impl LegaiaRuntime {
         // opening chain's legs and a cutscene-owned entry; a card Load's
         // resume carries its own seat.
         if !resume {
-            host.arm_picker_story_entry(name);
+            if story {
+                host.arm_picker_story_entry(name);
+            } else {
+                host.arm_picker_entry_seat(name);
+            }
         }
         // The page's runtime twins of the native launch switches
         // (`crate::play_toggles`).
