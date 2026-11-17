@@ -132,6 +132,10 @@ fn an_arts_entry_debits_and_ends_as_retail_does() {
             ev.cross = press == CONFIRM;
             ev.circle = press == CANCEL;
             s.input(ev, [dead; 3], [dead; 5]);
+            // The idle pass: case `0xB` returns ahead of the pool scan on a
+            // pass that carries a direction, so both sides end an exhausted
+            // entry on this one.
+            s.input(ArtsCommandPad::default(), [dead; 3], [dead; 5]);
             let retail_state = cpu.mem.rd8(CTX + 0x06);
             let retail_pool = cpu.mem.rd16(CTX + 0x6DC) as i16;
             let retail_count = cpu.mem.rd8(CTX + 0x19);
