@@ -5066,6 +5066,14 @@ Port: `World::raise_mystic_shield` at the arm-4 seam and `World::tick_mystic_shi
 in the actor pass, over `CastFxState::mystic_shield_fx` - a scene of its own,
 since the cast scene is retired when the next action opens.
 
+The scale is the seat's node `+0x72` (`lw 0x22C` / `lhu 0x72` / `sh 0x72` at
+`0x8004D578..0x8004D590`), not the spawn's `0x1000`. It shows under
+[Evil Seru Magic](#prot-0966-evil-seru-magic): arm 21 stands Cort at half scale and
+arm 27 restores him, so a shield still up from an earlier turn draws at half size
+through arms 22..26, and arm 22's dolly reaches it on retail's pass. A
+`--retail-parts` recording holds the sphere at scale `0x800` from arm 22's first
+pass. Grade `disassembly` + `capture`.
+
 The two parts are list nodes of the battle pass, so they take one part tick a
 battle frame, `step` vsyncs of it, like the cast's own parts. The scroller's
 period countdown shows why it matters: `FUN_80021DF4` drains `+0xC6` by the step
