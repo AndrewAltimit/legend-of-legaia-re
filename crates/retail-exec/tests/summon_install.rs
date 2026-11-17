@@ -210,7 +210,12 @@ fn the_summon_installer_relocates_and_seats_as_retail_does() {
         }
         assert_eq!(a.impact_state, r(0x21F), "{what}: +0x21F");
         assert_eq!(a.shatter, cpu.mem.rd16(seat + 0x1BA), "{what}: +0x1BA");
-        if !arm_writes(|w| w.rate.is_some()) {
+        // PROT 0915's arm bumps `+0x1DC` behind the installer on the same
+        // pass (`0x801F6E64..0x801F6E70`), and the port folds the commit that
+        // bump forces (rate 2 lifted to 4) into the seat: the rate is the
+        // arm's there, not the installer's.
+        let install_bump = world.cast_module_for(spell) == Some(915);
+        if !arm_writes(|w| w.rate.is_some()) && !install_bump {
             assert_eq!(a.anim_rate.0, r(0x21D), "{what}: +0x21D");
         }
         assert!((0..0x20).all(|o| r(0x1FB + o) == 0), "{what}: the id ring");
