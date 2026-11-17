@@ -360,7 +360,7 @@ It reaches field and town scenes (map, player, NPCs, doors, dialogue), live batt
 
 Two responsibilities fall to any host that enters a scene without a door to arrive through - the browser's scene picker is the case that exists:
 
-- **Seating.** A picker entry seats the party where the disc's doors land them. Both hosts call `SceneHost::arm_picker_entry_seat` before entering a picked scene (the page's `enter_field`, the native `--scene` entry); the entry then takes the first ranked door arrival the scene's walkability grid accepts. See [Picker door arrivals](#picker-door-arrivals) for the rule. A scene no door leads into, or whose every arrival is rejected, falls back to the cold seat below.
+- **Seating.** A picker entry seats the party where the disc's doors land them. Both hosts' scene selectors call `SceneHost::arm_picker_story_entry` before entering a picked scene (the page's `enter_field`, the native `--scene` entry and `F12` Scenes page): a scene with an [entry beat](#selector-entry-beats) seats on that arrival, every other scene takes the first ranked door arrival its walkability grid accepts (`SceneHost::arm_picker_entry_seat`, which the viewer's live preview calls directly). See [Picker door arrivals](#picker-door-arrivals) for the rule. A scene no door leads into, or whose every arrival is rejected, falls back to the cold seat below.
 - **The cold seat.** `enter_field_scene` seeds the player at the retail cold-boot spawn (`FIELD_COLD_SPAWN_XZ`), which is authored for `town01`, the one scene retail cold-boots into. Every other scene expects a door warp to override X/Z. `World::resolve_cold_field_spawn` then resolves a cold entry:
   - the retail seat is kept only when it is standable, inside the scene's **largest** connected walkable component (4-connected flood fill over the 64-unit sub-cell lattice: walk-visible floor, clear of the wall bits), and not a `.MAP` kind-0 teleport tile;
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
@@ -397,7 +397,7 @@ When every arrival is rejected, or nothing lands in the scene, the scene's own s
 
 Rim Elm (`town01`) is the exception: it is the one scene retail enters without a door, at the New Game seat in Vahn's yard, so a picked Rim Elm keeps the cold seat. The arm stands down when an entry operand is already armed (a door, a card load's saved seat), and while the opening chain or a cutscene timeline owns the entry. `SceneHost::picker_seat` reports the outcome: the arrival used (an own seat included), an override row, or the cold fallback. The browser's page-side relocation (`LegaiaRuntime::seat_player`) runs only on a fallback.
 
-The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and holds every seat, whatever chose it, to one test: off the wall bits, not walled in, off every gate-1 trigger and kind-0 pad (`taiku2` and `rugi` seat on their beat's trigger by design), still in the scene after the first ticks, and, for a seat away from its arrival's tile, not boxed into a pocket by walls and trigger rows. The last check is the one `garmel`'s former reviewed seat fails: two tiles of walled path north of its exit row. It prints the scenes that fall back to the cold seat.
+The disc-gated sweep `crates/engine-scene-host/tests/picker_door_arrival_disc.rs` enters every scene the play page lists and holds every seat, whatever chose it, to one test: off the wall bits, not walled in, off every gate-1 trigger and kind-0 pad (`taiku2` and `rugi` seat on their beat's trigger by design; the selectors' [entry beats](#selector-entry-beats) are a separate arm the sweep does not take), still in the scene after the first ticks, and, for a seat away from its arrival's tile, not boxed into a pocket by walls and trigger rows. The last check is the one `garmel`'s former reviewed seat fails: two tiles of walled path north of its exit row. It prints the scenes that fall back to the cold seat.
 
 ### Reviewed picker seats
 
@@ -408,6 +408,22 @@ A few scenes defeat the ranked rule, and `PICKER_SEAT_OVERRIDES` (`engine-scene-
 - `Tile { tile }` - a tile read off the walkability grid, for a scene whose only arrival is the `(0x7F, 0x7F)` hide box and whose own scripts seat the player nowhere usable.
 
 The failures the rows answer come in four shapes. A door that lands behind a closed grille (`conc`) passes the grid's tests, because the grille is a prop body, not a wall bit. An arrival on its own gate-1 trigger is stepped off by the ranked rule, sometimes across a warp or exit row (`geremi`), sometimes skipping the arrival beat the door plays (`rugi`, which the override seats on the door so the first tick fires it). A room whose doorway opens onto the unwalled map edge fails the enclosure test (`koin1b`). And a placeholder arrival is accepted by the grid but lands somewhere unplayable (`urudre2`, `urudre3`). The sweep checks every row seats its scene on a standable tile that is not walled in, at its floor height, and stays there.
+
+### Selector entry beats
+
+The ranked rule steps off every gate-1 trigger, so a picked scene never opens on the cutscene a door plays there. For the play hosts' selectors that is the wrong first impression: walking into Garmel, the Rogue's Tower or Noaru through the story entrance opens on a beat, spawned on the first post-arrival frame by the stale-tile compare (`FUN_801D1EC4` -> `FUN_801D5630` -> `FUN_8003BDE0`) and gated by the record's C1 (any set blocks) and C2 (all must be set) flag lists.
+
+`SceneHost::arm_picker_story_entry` seats a scene listed in `PICKER_ENTRY_BEATS` (`engine-scene-host`, `scene_entry::entry_beats`) on its row's arrival tile, faced along the arrival, so that beat plays on the first tick; `SceneHost::picker_seat` reports it as `PickerSeat::EntryBeat`. Whether it plays is still the record's own gate against the live flags: a session past the beat stands on the door's tile and nothing fires, as in retail.
+
+The table is generated, not curated. The disc-gated `crates/engine-scene-host/tests/picker_entry_beats_disc.rs` walks every selector scene's ranked arrivals and keeps those whose entry tile carries a gate-1 trigger on a record with no `0x3F`. It seats a fresh picker visit, after the free-roam staging, on each in turn and takes the first whose record installs on the first tick, runs at least 20 ticks and hands control back in the scene. Only an overworld entrance or a walk-on door counts: a beat behind a scripted arrival continues another scene's cutscene. The test fails when the committed block and the disc disagree, and `LEGAIA_PICKER_BEATS_WRITE=1` rewrites it. A second test enters the table's scenes through the hosts' arm and checks each beat starts on the first tick.
+
+Candidates the selector does not stage sit in `PICKER_ENTRY_BEATS_HELD` with a `HeldReason`, and their scenes keep the ranked seat:
+
+- **Needs flags.** The record's C2 list wants story flags the free-roam staging does not seed: `balden` (`0x1D5`), `bubu2` (`0x608`, `0x3D3`), `deroa` (`0x3E1`), `retockin`'s `jagaroom` door (`0x502`), `rayman2`'s `tunnelb` door (`0x1D5`).
+- **Blocked by flag `7`.** The MAN loader's always-set flag, which marks developer leftovers: `rayman2`'s `tunnela` door, `rikuroa`'s `rikuroa2` door.
+- **Scripted arrival.** `retockin` (from `dohaty`), `ropeway2` (from `rayman`), `bubu1` (from `map03`'s thaw) and `taiku` (from `son`) play a beat only behind another scene's cutscene hop.
+- **Does not end.** `town01`'s gate record `P2[3]` is the New Game opening, which runs on into name entry; a picked Rim Elm keeps Vahn's yard.
+- **Does not play.** The trigger's record installs nothing or ends at once from a fresh state (`bylon`, `balden2`, `stone`, `jagaroom`, `korout`, `dream`, `rikuroa`'s `noaru` door).
 
 ### Pass-through scenes
 

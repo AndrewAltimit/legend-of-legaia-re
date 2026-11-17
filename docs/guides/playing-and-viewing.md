@@ -576,7 +576,10 @@ town, field area and overworld, grouped as on the page, opened on the scene you
 stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `Enter` goes there with your party and bag, seated and staged as a
 `--scene` launch or the play page's list seats and stages it (the scene's
-free-roam visit, entered through one of its doors). It refuses on the
+free-roam visit, entered through one of its doors). Where walking in through
+the story entrance opens on a cutscene - Garmel's welcome, the Rogue's Tower
+entrance, Noaru's arrival among them - the party lands on that entrance and
+the cutscene plays, unless your game is already past it. It refuses on the
 title and in the pause menu, in a fight, a movie or a minigame, and says so
 under the rows. **Tools** holds what otherwise takes a launch switch or a
 keyboard key: the developer menu (`LEGAIA_DEV_MENU`), the diagnostic rows
