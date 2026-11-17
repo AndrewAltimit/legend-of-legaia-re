@@ -21,6 +21,8 @@ pub enum ObjectRampSlot {
     Roll28,
     /// `+0x72` - the render scale (`4C 40`).
     Scale72,
+    /// `+0x6A` - the clip rate (`4C 41`).
+    Rate6A,
     /// `+0x74` - the tint colour, per channel (`4C 81`, scheduler type 3).
     TintColour,
     /// `+0x78` - the tint blend (`4C 81`, scheduler type 2).

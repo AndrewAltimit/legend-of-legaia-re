@@ -1329,6 +1329,16 @@ spawn section set (`balden`, `balden2`, `bubu1`, `edstati3`, `garmel`, `jiji`,
 `koin2`, `koin3`, `nilboa`, `nilboa2`, `other7`, `station3`, `teien`,
 `town0d`), at `2`, `4` or `16`.
 
+The ramp form moves the same word. With a non-zero tick count the arm hands
+the scheduler `&actor+0x6A`, the live `lh +0x6A` as the start and the halved
+value as the end (`0x801E11D4..0x801E11DC`, then the exit `0x801E2054`, kind
+`2`). `bubu2`'s possessed villagers (`P1[2..=5]`) open with
+`4C 41 08 00 01 00` and the like, a one-frame ramp, and retail plays their
+header clip at `4` a vsync (`12` a pass at step `3`). Port:
+`FieldHostImpl::ramp_ctx_slot` installs it on the placement's slot ramps
+(`RAMP_DEST_RATE`) or an object's (`ObjectRampSlot::Rate6A`); dropped, the
+villagers shook at the template's `8`.
+
 Port: a clip a script binds steps live (`World::bind_npc_scene_clip`). A
 header clip is bound by the host from its clip player, at the step the record
 gives the template rate, and the NPC clip tick then moves that cursor onto the

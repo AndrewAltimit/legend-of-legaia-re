@@ -58,6 +58,10 @@ pub const RAMP_DEST_HEIGHT: u32 = 0x8E;
 /// `0x14`'s destination - `actor+0x72`, the uniform render scale.
 pub const RAMP_DEST_SCALE: u32 = 0x72;
 
+/// The field VM's `4C 41` tween destination - `actor+0x6A`, the clip rate
+/// the clip advance reads every tick.
+pub const RAMP_DEST_RATE: u32 = 0x6A;
+
 /// `0x0C`'s colour lane - `actor+0x74`, the packed RGB tint (`kind 3`).
 pub const RAMP_DEST_TINT: u32 = 0x74;
 
