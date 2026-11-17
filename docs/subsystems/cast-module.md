@@ -2589,7 +2589,15 @@ none scales with the frame step. Both sit ahead of the arm's gate (`slti 0x401` 
 `0x801F80A8`), so the pass that leaves arm 16 turns the victim too, by close to
 half a turn at the top of the climb; skipped there, the victim stood a half turn
 off retail's from arm 17 on, and the framings of arms 18..20 that read its heading
-looked at its back (arm `0x14` `.899` to `.966`). Retail's arm 16 runs 85 passes over its 260
+looked at its back (arm `0x14` `.899` to `.966`). The yaw add is a step a pass as well, so the rest of the
+passing pass repeats none of it (`ArmDirection::rest_drift`); repeated over that pass's
+second tick it landed twice, and arm 17 opened `1457` yaw units past the recording's.
+Arm 13's straight stores (`0x801F7B10..0x801F7B5C`, TR z `0x200` into `0x800840C0`) meet
+arm 12's `0x10`-frame pull still walking, and the walker writes the globals from it on
+the same frame: the recording reads the pull's endpoint, TR z `819`, from arm 14's first
+row, where a stored `0x200` read `512` and arm 15's pull opened `287` short. The port's
+arm-13 cut lands on that endpoint. With both, the `0x8B` film's camera matches the
+recording's from arm 13 through arm 20. Retail's arm 16 runs 85 passes over its 260
 game ticks on Gobu Gobu (steps `4`, `3`, then `2`), so the port lands each on
 the tick that opens a battle frame (`ModuleCamState::opens_pass`, the body's
 countdown fed through `module_words`), where it used to spread a step-`2`
