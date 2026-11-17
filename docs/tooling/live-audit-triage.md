@@ -257,6 +257,7 @@ A row settles the way any audit row does, from the disassembly:
 | `BattleSidebandInputs::pad_edge` | `_DAT_8007B938`, `0x8005638C` | a button held through the sparring fight's opening caption waited it out |
 | `DevMenuSession::equip_slot_bits` | equip record `+7` through the item table, `0x801E5A58..0x801E5A8C`; weapon bytes `0x8007B42C` | the developer menu's `EQUIP` confirm put every item on the body byte, and Noa's weapon on Vahn's weapon byte |
 | `VictorySequence::pose_actor`, `BattleActionHost::first_monster_id` | `ctx[+0x13]`, stored by the victory arm (`0x801E66EC..0x801E6760`); `DAT_8007BD0C[0]` | the leader struck every win pose, whoever finished the fight, and Songi's two fights posed the wrong seat |
+| `BattleTintInputs::prev_colour`, `prev_weight` | node `+0x74` / `+0x78`, kept by the no-lanes arm of `FUN_8004A908` | a lone scripted monster greyed out at the end of its defeat fade drew with its baked shading instead of the stamp's grey |
 
 The short-idle marker was not partial once its missing terms were read off
 the disassembly: the scene-entry arm's warp test is `_DAT_8007B6B0 != 0` (the
@@ -282,6 +283,21 @@ release). The Muscle Dome round runs the same flow through its own session
 (`DomeSelectPad`), which still reads the edge alone: the dome counts one pass
 a vsync tick and keeps no battle frame clock, so the window folded in there
 would repeat at the tick rate, faster than retail's pass.
+
+The tint pass's kept words are the defeat fade's. Arm 2 of `FUN_80050120`
+stamps the blend word `+0x0C = 0x1000` every pass, so each lit fade frame takes
+the plain arm (`weight = blend`, `colour |= top`) and the node holds `0x1000`
+with the mode byte once the lanes are spent: a `--watch` on Thunder Punch's
+killed target (`battle_garmel_party_gala_thunder_punch_open`) reads `+0x78 =
+0x1000` from the fade's first pass to its last drawn frame, and the Gimard
+results hold (`battle_results_gimard_retail`) keeps `0x85000000` / `0x1000` on
+the faded body. The words reach the pixel only under the lone-monster grey gate:
+its stamp is a whole-word store of the opaque `0x00808080` (`0x800482DC`),
+drawn (`0x800482E0`) before the pass re-tints, so the body takes the cue at the
+kept weight `0x1000` and draws whole in the stamp's grey. The engine reads the
+fade's two words (`World::battle_actor_draw_plan`) and lets a stamped draw take
+the cue (`BattleActorDrawPlan::grey_stamped`). The literal `fade: 0` is not one
+of them: `+0x226` is the additive fade the plan already reads.
 
 ### The pump's raw layout
 
@@ -364,12 +380,6 @@ of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
   disc carries a type-`0x0B` descriptor (the tuple census in
   `scene-formats::scene_asset_table`), while every observed state reads the
   base as zero ([`mdt.md`](../formats/mdt.md)).
-- `BattleTintInputs::prev_colour` / `prev_weight` and the literal `fade: 0` are
-  the node's own `+0x74` / `+0x78` / `+0x226`. The no-lanes arm keeps `+0x78`,
-  which becomes the cue's `IR0` when a lone no-escape boss's defeat fade has
-  ramped its lanes to zero and the grey gate draws it. Whether that frame is
-  darker in retail than `DEFEATED_GREY` needs a capture of the defeat's last
-  fade frame before anything is carried across frames.
 
 ### State a scene change carries
 

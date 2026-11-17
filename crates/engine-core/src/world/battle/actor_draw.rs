@@ -66,6 +66,9 @@ pub struct BattleActorDrawPlan {
     pub tint: tint::BattleTint,
     /// The colour word the draw sees - the tint's, or the grey stamp.
     pub draw_colour: u32,
+    /// Whether the lone-monster grey gate stamped [`Self::draw_colour`]
+    /// over the tint's word (`0x800482DC`).
+    pub grey_stamped: bool,
     /// The view depth the tint was computed at.
     pub view_z: i32,
     /// The body radius (render node `+0x58`) the tint and the ground shadow
@@ -149,9 +152,16 @@ impl BattleActorDrawPlan {
     /// silhouette. The blend rides every stream the body draws
     /// ([`Self::apply_body_blend`]), so the answer does not depend on
     /// whether the body is posed.
+    ///
+    /// The lone-monster grey gate's stamp is the exception on the fade: it
+    /// writes the opaque word `0x00808080` over the colour
+    /// (`0x800482D4..0x800482DC`) and draws (`jal 0x80048A08`) before the
+    /// pass re-tints, so the body takes the cue at the fade's kept weight
+    /// `0x1000` - drawn whole in the stamp's grey.
     pub fn tint_cue_applies(&self, render_flag: u8) -> bool {
         use legaia_engine_battle_vm::battle_action as ba;
-        render_flag != ba::CURSOR_FLAG_SELECTED && (render_flag != 2 || self.semi_mode().is_some())
+        render_flag != ba::CURSOR_FLAG_SELECTED
+            && (render_flag != 2 || self.semi_mode().is_some() || self.grey_stamped)
     }
 
     /// The GTE `IR0` as the hosts' `DrawCue.max_ir0` (`0x1000` = `1.0`).
@@ -405,6 +415,23 @@ impl World {
             (0, 0) => legaia_engine_battle_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
             (w, _) => w,
         };
+        // The node's own `+0x74` / `+0x78` from the last pass, which the
+        // no-lanes arm keeps. Only the capture / defeat fade reaches that
+        // arm with lanes the pass lit before: arm 2 stamps the blend word
+        // `+0x0C = 0x1000` every pass, so each lit fade frame took the plain
+        // arm's `weight = blend` and `colour |= top`, and the node holds
+        // those words once the lanes are spent. Retail RAM reads them so:
+        // Thunder Punch's killed target writes `+0x78 = 0x1000` from the
+        // fade's first pass to its last drawn frame, and the Gimard results
+        // hold's faded body keeps `0x85000000` / `0x1000`. The words matter
+        // where the lone-monster grey gate draws the faded body: its stamp
+        // replaces the colour word whole (`sw 0x00808080,0x74(s0)` at
+        // `0x800482DC`) and the draw reads the kept `+0x78` as its cue.
+        let (prev_colour, prev_weight) = if b.render_flag == RENDER_FLAG_DEFEAT_FADE {
+            (b.flag_word & 0xFF00_0000, b.render_blend as u16)
+        } else {
+            (0, 0)
+        };
         let t = tint::battle_actor_tint(&tint::BattleTintInputs {
             lanes,
             // `+0x8`'s top byte: the near-camera ghost pass's mode bits.
@@ -422,8 +449,8 @@ impl World {
             formation_cell,
             outdoor,
             ctx_243: self.battle_ctx.gauge_rearm_latch != 0,
-            prev_colour: 0,
-            prev_weight: 0,
+            prev_colour,
+            prev_weight,
         });
         let verdict = tick::battle_actor_tick(
             &tick::BattleActorView {
@@ -442,6 +469,7 @@ impl World {
             drawn: near_ok && verdict.drawn(),
             tint: t,
             draw_colour: verdict.colour,
+            grey_stamped: verdict.colour != t.colour,
             view_z,
             radius,
             seat,
@@ -846,6 +874,31 @@ mod tests {
         let p = world.battle_actor_draw_plan(3, None, 4.0, false).unwrap();
         assert!(p.drawn, "lone monster, scripted fight: stamped grey");
         assert_eq!(p.draw_colour, tick::DEFEATED_GREY);
+    }
+
+    /// The grey stamp draws at the weight the fade left on the node: arm 2's
+    /// blend `0x1000`, kept by the no-lanes arm once the lanes are spent, so
+    /// the cue takes the whole stamp colour.
+    #[test]
+    fn the_grey_stamp_draws_at_the_fades_kept_weight() {
+        let mut world = battle_world();
+        world.battle.no_escape = true;
+        let b = &mut world.actors[3].battle;
+        b.render_color = 0;
+        b.render_flag = 2;
+        b.render_blend = 0x1000;
+        b.flag_word = 0x8100_0000;
+        let p = world.battle_actor_draw_plan(3, None, 4.0, false).unwrap();
+        assert_eq!(p.tint.arm, tint::TintArm::NoLanes);
+        assert_eq!(p.tint.weight, 0x1000);
+        assert_eq!(p.tint.colour, 0x8100_0000);
+        assert_eq!(p.draw_colour, tick::DEFEATED_GREY);
+        assert!(p.tint_cue_applies(2));
+        assert_eq!(p.cue_ir0(), 1.0);
+        // Out of the fade the arm keeps nothing.
+        world.actors[3].battle.render_flag = 5;
+        let p = world.battle_actor_draw_plan(3, None, 4.0, false).unwrap();
+        assert_eq!(p.tint.weight, 0);
     }
 
     #[test]
