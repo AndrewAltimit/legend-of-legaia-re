@@ -62,7 +62,11 @@ fn press(b: &str) -> ArtsCommandPad {
         cross: b == "c",
         circle: b == "o",
         triangle: b == "t",
+        window_dirs: false,
     }
+}
+fn idle() -> ArtsCommandPad {
+    ArtsCommandPad::default()
 }
 fn rec(action: u8, cmds: &[Command], power: &[u8]) -> (ActionConstant, ArtRecord) {
     (
@@ -112,7 +116,38 @@ fn entry_auto_ends_when_nothing_is_affordable() {
     s.input(press("U"), party3(), one_monster());
     assert_eq!(s.buffer.len(), 3);
     assert_eq!(s.pool, 0);
+    // The press's own pass returns ahead of the scan (`0x801D1F98`); the
+    // next pass with no direction ends the entry.
+    assert!(matches!(s.phase, ArtsInputPhase::Entering));
+    s.input(idle(), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Review), "auto-ended");
+}
+
+/// A direction held in the pump's window keeps an exhausted entry open:
+/// each pass carries it, so the scan never runs (a PCSX-Redux run from
+/// `gaza2_card_first_menu` held Left for 150 vsyncs past the last
+/// affordable press and the flow stayed in `0x50`).
+#[test]
+fn a_held_direction_keeps_the_exhausted_entry_open() {
+    let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
+    s.input(press("L"), party3(), one_monster());
+    s.input(press("L"), party3(), one_monster());
+    assert_eq!(s.pool, 0);
+    let held = ArtsCommandPad {
+        window_dirs: true,
+        ..idle()
+    };
+    for _ in 0..10 {
+        s.input(held, party3(), one_monster());
+        s.input(press("L"), party3(), one_monster());
+    }
+    assert_eq!(s.buffer.len(), 2, "refused presses record nothing");
+    assert!(matches!(s.phase, ArtsInputPhase::Entering));
+    s.input(idle(), party3(), one_monster());
+    assert!(
+        matches!(s.phase, ArtsInputPhase::Review),
+        "released: auto-ended"
+    );
 }
 
 #[test]
@@ -136,6 +171,7 @@ fn unaffordable_press_is_refused_and_pool_untouched() {
     s.input(press("U"), party3(), one_monster());
     assert_eq!(s.buffer.len(), 3);
     assert_eq!(s.pool, 2);
+    s.input(idle(), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Review), "auto-ended");
 }
 
@@ -144,6 +180,7 @@ fn circle_on_the_review_restarts_the_entry() {
     let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
     s.input(press("U"), party3(), one_monster());
     s.input(press("D"), party3(), one_monster());
+    s.input(idle(), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Review));
     s.input(press("o"), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Entering));
@@ -159,6 +196,7 @@ fn the_review_press_resolves_through_the_target_picker() {
     let mut s = ArtsCommandInputSession::new(0, 0, 60, [30; 4], 0);
     s.input(press("U"), party3(), one_monster());
     s.input(press("U"), party3(), one_monster());
+    s.input(idle(), party3(), one_monster());
     assert!(matches!(s.phase, ArtsInputPhase::Review));
     s.input(press("c"), party3(), one_monster()); // review -> target
     // One monster: the picker may resolve immediately or need one

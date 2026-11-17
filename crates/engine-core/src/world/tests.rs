@@ -327,6 +327,7 @@ mod battle_capture_bgm;
 mod battle_capture_class_disc;
 mod battle_dead_target;
 mod battle_field_pool_draws;
+mod battle_held_repeat;
 mod battle_item_refund;
 mod battle_item_use_cue;
 mod battle_items_magic;

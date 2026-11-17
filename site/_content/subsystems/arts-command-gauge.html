@@ -111,11 +111,12 @@
     <figcaption>The Arts entry and its exits. A cancel with a typed buffer is a restart inside <code>0x50</code>, not an exit; Begin / Reselect opens once, after the last member that can act has committed.</figcaption>
   </figure>
   <ul class="bullets">
-    <li><strong>Auto-end.</strong> The arm walks the four costs at <code>ctx+0x14</code> against the pool; when none is affordable it writes <code>0x5A</code>.</li>
+    <li><strong>Auto-end.</strong> The arm walks the four costs at <code>ctx+0x14</code> against the pool; when none is affordable it writes <code>0x5A</code>. The walk runs only on a pass with no direction pressed, so the entry ends on the pass after the exhausting press - and stays open while a direction is held.</li>
     <li><strong>Confirm</strong> uses the configurable confirm mask <code>_DAT_800846D0</code> - the same one the round prompt and every menu read - and is only tested once something is committed.</li>
     <li><strong>Cancel</strong> uses the sibling mask <code>_DAT_800846D4</code> and forks on the count. With nothing typed it leaves to the attack-mode prompt <code>0x78</code> (<code>0x28</code> instead when <code>_DAT_800846C4</code> is set). With a typed buffer it restarts the entry: the gauge handler's case <code>0x26</code> wipes all sixteen queue bytes, re-seeds the pool from AGL and zeros the count, and the flow byte stays at <code>0x50</code>.</li>
   </ul>
   <p>The four direction tests read the <em>packed</em> pad word (<code>_DAT_8007B874 | _DAT_8007B938</code>), whose byte halves are swapped against the raw BIOS word - so the masks <code>0x8000 / 0x1000 / 0x4000 / 0x2000</code> are Left / Up / Down / Right, not Square / Triangle / Cross / Circle.</p>
+  <p>The second word, <code>_DAT_8007B938</code>, is the pad's held window: a button held for 32 vsyncs reads as pressed on every pass. Hold a direction in the entry and it repeats, one arrow a pass, until the pool runs out; the entry then waits for the button to come up. Held on the command ring it walks on through the prompts the same way. The port does both.</p>
 </section>
 
 <section class="doc-section" id="auto-command-string">

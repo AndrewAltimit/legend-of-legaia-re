@@ -110,9 +110,14 @@ impl World {
             depth: seats.depth_raw as i16,
             caster_monster: seats.caster_monster,
             victim_is_party: victim < self.party.party_count,
-            confirm: self
-                .input
-                .just_pressed(legaia_engine_system::input::PadButton::Cross),
+            // `_DAT_8007B874 | _DAT_8007B938` against the confirm mask
+            // (`0x801F76C4..0x801F76E0`): a confirm held across the pad
+            // pump's 32-vsync window stops the wheel as a press does.
+            confirm: {
+                let cross = legaia_engine_system::input::PadButton::Cross;
+                self.input.just_pressed(cross)
+                    || self.input.retail_pad().held_32 as u16 & cross.mask() != 0
+            },
             victim_status: self.raw_status_word(victim),
             victim_hp: v.map_or(0, |a| a.battle.hp),
             // `+0x1D9`: a reaction plays on its own channel, and a downed

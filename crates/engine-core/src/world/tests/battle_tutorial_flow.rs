@@ -413,7 +413,10 @@ fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
     for b in [PadButton::Up, PadButton::Down, PadButton::Up] {
         arts_press(&mut world, b);
     }
-    // Confirm ends the entry: `0x50 -> 0x5A`, the drill check.
+    // The third arrow spends the gauge, and the next pass with no direction
+    // ends the entry: `0x50 -> 0x5A`, the drill check.
+    world.tick_battle_arts_input();
+    assert_eq!(world.battle.flow, BattleFlowState::TargetSelect);
     arts_press(&mut world, PadButton::Cross);
     assert_eq!(world.battle.flow, BattleFlowState::TargetSelect);
     assert_eq!(

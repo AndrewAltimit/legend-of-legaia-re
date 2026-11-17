@@ -4462,8 +4462,11 @@ fold.
 - **Who stops it.** Arm 6 holds while the countdown is positive and the
   packed pad edge misses the confirm mask `_DAT_800846D0`. The countdown is
   `scalar * 1200` for a party victim, with "Press the (button) to decide your
-  fate!" in the message bar, and `scalar << 6` for a monster victim. The port
-  reads the engine's confirm (Cross).
+  fate!" in the message bar, and `scalar << 6` for a monster victim. The edge
+  is `_DAT_8007B874 | _DAT_8007B938` (`0x801F76C4..0x801F76E0`), so a confirm
+  held across the pad pump's 32-vsync window stops the wheel as a press does.
+  The port reads the engine's confirm (Cross), pressed or held through the
+  window.
 - **The landing.** Arm 7 decelerates over `scalar << 9` drained `2 * scalar`
   a frame, snaps the angle back to the slot boundary it crosses, flashes white
   (`FUN_80024E80`, a `0x20`-frame ramp), retires the backdrop, spawns the

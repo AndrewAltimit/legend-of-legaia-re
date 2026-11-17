@@ -809,8 +809,6 @@ Differences from retail:
 - the port ticks once per vsync and retail's pass spans the frame step, so the
   parking window opens on the tick the return first reads `5` rather than on
   the pass that contains it - one vsync later at the battle's step of `2`;
-- the pad word is the newly-pressed edge alone; retail's also carries the
-  held-for-32-vsyncs term (`_DAT_8007B938`);
 - the `ctx[+0x26A]` term of the exit is not modelled;
 - `Run` sliding off the right edge as the ring opens is not drawn;
 - the steps past the ring - the windows, the arms the attack-mode prompt

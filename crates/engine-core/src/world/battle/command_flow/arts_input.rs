@@ -440,14 +440,25 @@ impl World {
             return;
         };
         let (party, monsters) = self.battle_target_rows();
+        // The flow's `s2`: a direction held across the pump's 32-vsync
+        // window records once a pass, as retail's entry does
+        // (`Self::battle_command_held_repeat`).
+        let s2 = self.battle_command_s2();
+        let on = |b: PadButton| s2 & b.mask() != 0;
         let mut ev = ArtsCommandPad {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
-            left: self.input.just_pressed(PadButton::Left),
-            right: self.input.just_pressed(PadButton::Right),
-            cross: self.input.just_pressed(PadButton::Cross),
-            circle: self.input.just_pressed(PadButton::Circle),
-            triangle: self.input.just_pressed(PadButton::Triangle),
+            up: on(PadButton::Up),
+            down: on(PadButton::Down),
+            left: on(PadButton::Left),
+            right: on(PadButton::Right),
+            cross: on(PadButton::Cross),
+            circle: on(PadButton::Circle),
+            triangle: on(PadButton::Triangle),
+            window_dirs: self.input.retail_pad().held_32 as u16
+                & (PadButton::Up.mask()
+                    | PadButton::Down.mask()
+                    | PadButton::Left.mask()
+                    | PadButton::Right.mask())
+                != 0,
         };
         // A rotted limb's direction is refused during entry, with the buzz
         // cue (`legaia_engine_battle::arts_command_input::rot_blocks`).
