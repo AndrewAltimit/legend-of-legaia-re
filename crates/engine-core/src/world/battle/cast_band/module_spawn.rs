@@ -235,6 +235,21 @@ impl World {
             a.battle_node_colour_zero = Some(false);
         }
         self.tick_battle_animations_walk_of(false, Some(slot));
+        // PROT 0915's bump behind the installer is bit 0 over the clip bytes
+        // the installer zeroed: the node's first tick advances and then
+        // re-commits idle `0` at once (`0x800478F4`, the re-commit's cursor
+        // zero at `0x8004B064..0x8004B068`), so the seat pass ends on cursor
+        // `0`, as Mushura's recording's first creature row reads. The commit
+        // path here takes no staged byte equal to the playing clip, so the
+        // re-commit's rewind is made directly.
+        if entry == INSTALL_BUMP_ENTRY
+            && let Some(a) = self.actors.get_mut(slot)
+        {
+            if let Some(p) = a.battle_animation.as_mut() {
+                p.rewind();
+            }
+            a.battle_effect_cursor = 0;
+        }
         self.latch_battle_node_colours();
     }
 
