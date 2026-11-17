@@ -3187,7 +3187,12 @@ reaches on its own channel, is drawn on channel 14 from then on. PROT 0931 saves
 channels 6 and 22 on arm 4, and the tail of every pass stores object 22 into channel
 6 while the creature plays clip 4 or later (`0x801F89A0..0x801F89F0`). The port
 carries the store as `CastFxState::creature_channel_object`; the anim pass poses the
-object on the channel, and `battle_drawn_objects` swaps which of the two draws.
+object on the channel, and `battle_drawn_objects` swaps which of the two draws. Both
+weapons sit past every clip's part count (Jedo's clips have 22 parts over 23 objects,
+Meta's 15 or 16 over 17), so the anim pass grows the pose to reach the object before it
+copies the channel's entry there. Without the entry the native window drew the weapon
+unposed at the body's origin and the browser page, which poses an object only from its
+own entry, drew nothing (`web-play` `summon_channel_object_page`).
 
 The summon modules whose tick bodies are not ported (PROT 0914..0917, 0921,
 0923, 0928..0934, with 0920 above) each run a director that carries the

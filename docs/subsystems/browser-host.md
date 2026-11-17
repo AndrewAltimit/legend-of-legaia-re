@@ -1371,7 +1371,10 @@ turn and idles at the next prompt. A relaunch abandons the previous fight
 (`World::abandon_live_battle`), possibly mid-cast. The abandon drops that fight's
 CD-XA drive state, and the skip stops its clip. Otherwise a summon's
 still-running line held the next cast's side-band read for the rest of the line,
-which left a blank of tens of seconds after a second click during Ozma.
+which left a blank of tens of seconds after a second click during Ozma. The abandon
+also hands the music word back to the field (see
+[battle-round-loop](battle-round-loop.md)), so every relaunch starts the battle
+track again (`web-play` `showcase_bgm_switches`).
 
 The slot holds at most one engine. The view toggle remembers its choice per page
 (`legaia-stage-view:<page>` in `localStorage`), defaults to the full battle, and
