@@ -645,7 +645,15 @@ impl World {
     /// ([`Self::begin_next_muscle_leg`]); the sounds it fires queue for the
     /// host ([`Self::take_muscle_hub_sounds`]).
     pub fn tick_muscle_hub(&mut self) {
-        let pad = self.input.retail_pad().pressed as u16;
+        // `DAT_801D1A9C = _DAT_8007B874 | _DAT_8007B938` (`0x801CF8B0..0x801CF8C4`):
+        // the edge and the pump's 32-vsync held window, in the packed layout
+        // the skip mask `0xF4` is written in (Square, Cross, Circle,
+        // Triangle, L1). The pump holds the raw layout, where the same mask
+        // names the D-pad and R3.
+        let pad = {
+            let p = self.input.retail_pad();
+            legaia_engine_system::pad::retail_packed((p.pressed | p.held_32) as u16)
+        };
         // `_DAT_80084580`, the voice/SFX volume each tally cue halves.
         let volume_word = self.audio.levels.voice_volume as u32;
         let mut timers = std::mem::take(&mut self.minigames.muscle_hub);
@@ -767,5 +775,69 @@ mod menu_cue_tests {
             press(&mut w, PadButton::Circle),
             vec![SfxRingOp::Push(0x22)]
         );
+    }
+}
+
+#[cfg(test)]
+mod hub_skip_tests {
+    use crate::world::World;
+    use legaia_engine_minigames::muscle_dome::{HubScreen, HubScreenStage};
+    use legaia_engine_minigames::muscle_ringside::HubTimers;
+    use legaia_engine_system::input::PadButton;
+
+    /// The INTERVAL screen past its fade-in, as the hub hands it a tick.
+    fn interval_world() -> World {
+        let mut w = World::new();
+        w.minigames.muscle_hub = HubTimers {
+            interval: Some(HubScreen::interval(4000)),
+            ..Default::default()
+        };
+        while w
+            .minigames
+            .muscle_hub
+            .interval
+            .is_some_and(|i| i.stage() == HubScreenStage::FadeIn)
+        {
+            w.input.set_pad(0);
+            w.tick_muscle_hub();
+        }
+        w
+    }
+
+    fn boosted_by(pad: u16) -> bool {
+        let mut w = interval_world();
+        w.input.set_pad(pad);
+        w.tick_muscle_hub();
+        w.input.set_pad(0);
+        w.tick_muscle_hub();
+        w.minigames.muscle_hub.tally_boost
+    }
+
+    /// The hub's skip mask `0xF4` is written in the packed layout
+    /// (`andi v0,v0,0xf4` at `0x801CFBE0` / `0x801CFFE4` over
+    /// `DAT_801D1A9C`): the face buttons and L1 hurry the screen, the D-pad
+    /// does not.
+    #[test]
+    fn the_hub_skip_reads_the_face_buttons_not_the_dpad() {
+        assert!(boosted_by(PadButton::Cross.mask()));
+        assert!(boosted_by(PadButton::Triangle.mask()));
+        assert!(!boosted_by(PadButton::Up.mask()));
+        assert!(!boosted_by(PadButton::Left.mask()));
+    }
+
+    /// `DAT_801D1A9C` carries the pump's 32-vsync held window too
+    /// (`0x801CF8B0..0x801CF8BC`): a confirm held into the screen hurries it.
+    #[test]
+    fn a_held_confirm_hurries_the_screen() {
+        let mut w = World::new();
+        for _ in 0..40 {
+            w.input.set_pad(PadButton::Cross.mask());
+        }
+        w.minigames.muscle_hub = interval_world().minigames.muscle_hub;
+        for _ in 0..4 {
+            w.input.set_pad(PadButton::Cross.mask());
+            w.tick_muscle_hub();
+        }
+        assert!(w.minigames.muscle_hub.tally_boost);
     }
 }

@@ -103,6 +103,18 @@ impl World {
     /// and walks nothing.
     ///
     /// REF: FUN_80026CE4 (the pass; its fog stage at `0x80026EA4`)
+    /// `_DAT_8007B850 & 0xF000` (`0x8003F6CC..0x8003F6D8`): whether the
+    /// packed held word carries a D-pad bit, which ages a particle by the
+    /// player three times faster again. The pump holds the raw layout,
+    /// where the same mask names the face buttons, so the word is packed
+    /// first.
+    ///
+    /// REF: FUN_8003F3FC (`0x8003F6CC..0x8003F6E4`)
+    fn fog_dpad_held(&self) -> bool {
+        let held = legaia_engine_system::pad::retail_packed(self.input.retail_pad().held as u16);
+        u32::from(held) & FOG_DPAD_MASK != 0
+    }
+
     pub fn fog_render_step(&mut self, view: &FieldCameraView) -> &[FogQuad] {
         let dt = self.fog.pending_dt.min(u32::from(u8::MAX)) as u8;
         self.fog.pending_dt = 0;
@@ -139,7 +151,7 @@ impl World {
         let env = FogFrameEnv {
             dt,
             player: self.fog_player_world_pos(),
-            dpad_held: self.input.retail_pad().held & FOG_DPAD_MASK != 0,
+            dpad_held: self.fog_dpad_held(),
             y_offset: self.camera.offset_ease,
             tint,
             window: self.terrain.region_attributes.box_bytes,
@@ -192,5 +204,27 @@ impl World {
     /// The quads the last [`World::fog_render_step`] produced.
     pub fn fog_quads(&self) -> &[FogQuad] {
         &self.fog.quads
+    }
+}
+
+#[cfg(test)]
+mod dpad_tests {
+    use super::*;
+    use legaia_engine_system::input::PadButton;
+
+    /// The boost reads the D-pad, not the face buttons the same mask names
+    /// in the raw layout.
+    #[test]
+    fn the_fog_boost_reads_the_dpad() {
+        let mut w = World::new();
+        for (b, want) in [
+            (PadButton::Up, true),
+            (PadButton::Left, true),
+            (PadButton::Cross, false),
+            (PadButton::Square, false),
+        ] {
+            w.input.set_pad(b.mask());
+            assert_eq!(w.fog_dpad_held(), want, "{b:?}");
+        }
     }
 }

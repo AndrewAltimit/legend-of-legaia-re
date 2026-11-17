@@ -269,10 +269,34 @@ controller and the encounter roll their retail gate
 `_DAT_8007B938` is the pad pump's AND over its 32-vsync ring of held words
 (`0x80018594..0x800185BC`), which the engine has always computed
 (`RetailPadState::held_32`) and no reader took. The three rows above are the
-readers that `or` it into the press for a skip or a cursor step. Three more read
-it and stay open: the command flow's `s2` (`0x801D0804`, `0x801D0B18`), whose
-port reads the edge alone through `battle_command_pad_edges`; the Muscle Dome
-hub's skip snapshot (`0x801CF8B4`); and the Fatal Decision module (`0x801F76D0`).
+readers that `or` it into the press for a skip or a cursor step. Three more are
+wired the same way: the command flow's `s2` (`0x801D0804`, `0x801D0B18`,
+`World::battle_command_s2`), the Muscle Dome hub's skip snapshot `DAT_801D1A9C`
+(`0x801CF8B4`, `World::tick_muscle_hub`) and the Fatal Decision wheel's stop
+(`0x801F76D0`, `World::fatal_decision_view`). The command flow runs once a
+battle frame and the engine once a vsync, so its window counts on the tick
+that opens a frame only, and the arts entry's exhausted-pool scan waits while
+the window holds a direction (a PCSX-Redux run from `gaza2_card_first_menu`
+holding Left: one arrow a pass from 33 vsyncs in, the flow in `0x50` until
+release).
+
+### The pump's raw layout
+
+`World::set_pad` hands the raw `PadButton` word to the retail pump, so
+`RetailPadState::held`, `pressed` and `held_32` are raw words under packed
+names ([`pad::retail_packed`](../../crates/engine-system/src/pad.rs)). A
+reader that tests one against a retail mask must pack it first, or the mask
+names other buttons: packed `0xF000` (the D-pad) is raw Triangle, Circle,
+Cross and Square. Three readers did not, each with a visible fault:
+
+| Reader | Retail mask | What a player saw |
+|---|---|---|
+| `World::fog_dpad_held` | `_DAT_8007B850 & 0xF000`, `0x8003F6D8` | fog by the player thinned faster under a held face button (the run button among them) instead of a held direction |
+| `World::pick_victory_pose` | `_DAT_8007B850 & 0x0800` and the pick masks, `0x8004EAF4..0x8004EB8C` | R1 armed the held-button win pose instead of Start, and Start + a direction never picked one |
+| `World::tick_muscle_hub` | `DAT_801D1A9C & 0xF4`, `0x801CFBE0` / `0x801CFFE4` | the D-pad hurried the Muscle Dome hub's cards and tally, and Cross did not |
+
+A reader that only tests the word for zero (`BattleActionHost::pad_word`, the
+side-band skip) needs no packing.
 
 The two options were misnamed: `0x801F6C60` is `lw v0,0x46c8` off `lui v0,0x8008`,
 which is `0x800846C8`, not a `0x801D46C8` overlay word that "clears on the first
