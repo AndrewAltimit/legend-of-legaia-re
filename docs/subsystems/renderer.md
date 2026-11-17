@@ -3409,9 +3409,11 @@ so there is no neighbour-blink failure mode.
 field free-roam only - the player's floor tier lifted half a character
 height - and clears it for cutscenes (an occluded player there is a
 directorial choice), battle, world map and the boot UI. The arming terms
-combine in `field_occlusion::host_fade_armed`: the host's toggle, a debug or
+combine in `field_occlusion::host_fade_arming`: the host's toggle, a debug or
 VR first-person eye, a boot or menu-runtime screen owning the frame, plus the
-world's field mode, scripted shot and name-entry prompt.
+world's field mode and name-entry prompt; a scripted shot or a script holding
+the player answers `ScriptHeld`, which skips the visibility gate and eases
+the ramp out.
 
 **The browser play page ships the same fade.** `occl_keep` / `occl_bayer`
 have GLSL twins in `site/js/webgl-shaders.js` (tunables mirrored at the top

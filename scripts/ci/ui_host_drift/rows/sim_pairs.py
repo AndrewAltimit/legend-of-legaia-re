@@ -1020,7 +1020,8 @@ SIM_PAIRS: list[dict[str, object]] = [
         "scripted shot and the debug orbit, the page excluded only battle and "
         "the minigames, and the page carried the strength ramp's 0.25 ease "
         "and 0.01 snap in play-app.js. The arming terms combine in "
-        "`field_occlusion::host_fade_armed` and the ramp is "
+        "`field_occlusion::host_fade_arming` (whose `ScriptHeld` verdict "
+        "skips the gate while a script holds the camera) and the ramp is "
         "`field_occlusion::FadeRamp`; both sites must reach every kernel",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
@@ -1030,7 +1031,8 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": [
             "player_body_centre",
             "player_feet",
-            "host_fade_armed",
+            "host_fade_arming",
+            "FadeArming",
             "FadeHostTerms",
         ],
     },
