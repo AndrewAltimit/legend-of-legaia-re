@@ -205,7 +205,11 @@ impl PlayWindowApp {
             // depth words were seated against the recording drive's short
             // `0x6F` hold, not the modelled seek.
             self.session.host.world.casting.capture_seek_recorded = true;
-            if due && let Some(left) = sc.seat_capture_seek_left.take() {
+            // On the gate itself, not the frame a forced capture tick takes:
+            // the seek runs from the state's instant.
+            if self.capture_gate_met()
+                && let Some(left) = sc.seat_capture_seek_left.take()
+            {
                 self.session.host.world.seat_capture_seek_left(left);
             }
             // Ahead of the cast it forks: battle init clears the word.
