@@ -733,29 +733,34 @@ impl PlayWindowApp {
         // anchors to) lifted half a character height (~130-unit mesh;
         // field world is retail Y-down, so up is negative).
         //
-        // Arming is the shared `field_occlusion::host_fade_armed`: the
-        // world half (field mode, no scripted shot, no name-entry
-        // prompt) and this host's terms - its master toggle, the `F3`
-        // debug vantage, and a boot / menu-runtime screen owning the
-        // frame. The browser play page fills the same terms.
+        // Arming is the shared `field_occlusion::host_fade_arming`: the
+        // world half (field mode, no name-entry prompt), the script terms
+        // (a cutscene shot, a record holding the player) and this host's
+        // terms - its master toggle, the `F3` debug vantage, and a boot /
+        // menu-runtime screen owning the frame. The browser play page
+        // fills the same terms. Under a script hold the gate does not run
+        // and the ramp eases out from where it stood.
+        use legaia_engine_screens::field_occlusion::FadeArming;
         let host_terms = legaia_engine_screens::field_occlusion::FadeHostTerms {
             enabled: self.options_state.occlusion_fade,
             debug_camera: self.field_debug_camera,
             screen_owned: self.boot_ui.is_active() || self.menu_runtime.is_open(),
         };
-        let occl_focus = legaia_engine_screens::field_occlusion::host_fade_armed(
+        let arming = legaia_engine_screens::field_occlusion::host_fade_arming(
             &self.session.host.world,
             cutscene_cam.is_some(),
             host_terms,
-        )
-        .then(|| {
-            legaia_engine_screens::field_occlusion::player_body_centre(&self.session.host.world)
-        })
-        .flatten();
+        );
+        let occl_focus = (arming != FadeArming::Off)
+            .then(|| {
+                legaia_engine_screens::field_occlusion::player_body_centre(&self.session.host.world)
+            })
+            .flatten();
         let mut occl_staged = false;
         if let Some(centre) = occl_focus {
-            let fully_hidden = self
-                .field_follow_camera_eye()
+            let fully_hidden = (arming == FadeArming::Armed)
+                .then(|| self.field_follow_camera_eye())
+                .flatten()
                 .map(|eye| {
                     if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
                         let hits = self.field_occluders.sample_hits(eye.to_array(), centre);

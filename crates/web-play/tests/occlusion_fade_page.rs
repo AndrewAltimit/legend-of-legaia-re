@@ -227,3 +227,91 @@ fn town01_wall_dissolves_on_the_page_and_the_toggle_stands_it_down() {
     let on = rt.occlusion_fade();
     assert!(step_fade(&mut rt, on, 2).is_empty());
 }
+
+/// The channel due north of Vahn's front door (`.MAP` object `315`, key
+/// tile `(38, 25)`): the only walkable approach to its contact box
+/// (`engine-scene-host`'s `vahn_house_roundtrip_disc`).
+const VAHN_DOOR_APPROACH: (i16, i16) = (4824, 3110);
+
+/// The `town01` measuring beat (`P2[5]`), entered the way a player enters
+/// it: walking into Vahn's front door with `0x226` up, whose record
+/// (`P0[29]`) spawns it with `44 5E`. It runs as a concurrent record, not
+/// the modal timeline, so the hosts' cutscene arm never takes the frame;
+/// its shots reach the screen through the follow arm, which reads the
+/// globals the record stages. It walks Vahn in through the entrance hallway
+/// (`C7 F8 ..` legs after the `45 07 ..` shot at `+0x471`), and a wall sits
+/// between him and the lens for part of the walk.
+///
+/// The record holds the player from its first slice to its last, and the
+/// fade stages nothing over that span, while the gate does see him hidden
+/// on frames the cutscene arm alone left armed (non-vacuous: before the
+/// script term the hallway dissolved on exactly those frames).
+#[test]
+fn town01_measuring_beat_never_dissolves_the_hallway() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let bytes = std::fs::read(disc).expect("read disc");
+    let mut rt = LegaiaRuntime::new();
+    rt.load_disc(bytes, String::new()).expect("load disc");
+    rt.enter_field("town01").expect("enter town01");
+    for _ in 0..30 {
+        let _ = rt.tick_frame();
+    }
+    let host = rt.scene_host.host_mut().expect("host");
+    host.world.system_flag_set(0x226);
+    assert!(!host.world.system_flag_test(0x227));
+    assert!(rt.play_debug_seat(VAHN_DOOR_APPROACH.0, VAHN_DOOR_APPROACH.1));
+    let (mut held, mut hidden_unarmed, mut staged) = (0u32, 0u32, 0u32);
+    let mut ended = false;
+    for f in 0..8000u32 {
+        // Hold Up into the door until the record takes the player, then
+        // Cross through the beat's text boxes.
+        let pad = if held == 0 && f < 240 {
+            0x0010
+        } else if f % 30 < 2 {
+            0x4000
+        } else {
+            0
+        };
+        rt.set_pad(pad);
+        let _ = rt.tick_frame();
+        let eye = rt.play_camera_eye();
+        if eye.len() != 3 {
+            continue;
+        }
+        let w = &rt.scene_host.host().expect("host").world;
+        let holds = w.script_holds_camera();
+        let shot = legaia_engine_world_views::camera_view::cutscene_owns_camera(w);
+        let hidden = rt.field_player_occluded(eye[0], eye[1], eye[2]);
+        let fade = rt.play_occlusion_fade(eye[0], eye[1], eye[2], true, false, false);
+        if holds {
+            held += 1;
+            hidden_unarmed += u32::from(hidden && !shot);
+            if !fade.is_empty() {
+                staged += 1;
+                eprintln!("f{f}: the fade staged under the beat at {}", fade[0]);
+            }
+        } else if held > 0 {
+            ended = true;
+            break;
+        }
+    }
+    eprintln!(
+        "[measuring] held {held} frames, hidden outside the cutscene arm {hidden_unarmed}, \
+         staged {staged}"
+    );
+    assert!(held > 0, "the door never spawned the measuring beat");
+    assert!(ended, "the measuring beat never let go of the player");
+    let w = &rt.scene_host.host().expect("host").world;
+    assert!(
+        w.system_flag_test(0x227),
+        "the measuring did not raise 0x227"
+    );
+    assert!(
+        hidden_unarmed > 0,
+        "the walk-in never hid the player from the lens (vacuous)"
+    );
+    assert_eq!(staged, 0, "the fade dissolved the hallway under the beat");
+}

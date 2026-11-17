@@ -3318,6 +3318,35 @@ eye-player corridor never dithers while the player is plainly on screen.
 - `keikoku_corridor_walk_does_not_arm_the_gate` (disc-gated) pins the mist
   veil case.
 
+**Arming** (`legaia_engine_screens::field_occlusion::host_fade_arming`, both
+hosts). The fade is a field free-roam feature: off with the host's toggle,
+under a boot, pause or menu-runtime screen, a name-entry prompt, a debug
+vantage, and outside field mode, where the ramp resets. It also stands down
+while a **script owns the camera** (`World::script_holds_camera`): the
+player's engaged bit as retail's field tick reads it. `FUN_801D1344` tests
+`+0x10 & 0x80000` at `0x801D1694` and runs the pad controller and the
+free-roam follow tail (`0x801D17DC`) only with it down, so for the whole
+span a record holds the player the shot is the record's - the gaps between
+its op-`0x45` beats and an APPLY's ease back included, where nothing is
+staged. The modal timeline counts once it has taken a slice, as the camera
+ease reads the bit, so a stand-and-press walk-on beat that re-spawns and ends
+inside one slice keeps the fade along its band. A plain talk keeps the follow
+framing and the fade unless it stages a shot of its own.
+
+`town01`'s measuring beat (`P2[5]`) is the case that needs the engaged bit
+rather than the cutscene arm: Vahn's front door (`P0[29]`, `44 5E`) spawns
+it as a concurrent record, so the modal-timeline cutscene arm never takes the
+frame and its shots reach the screen through the follow arm. Its walk-in
+(`C7 F8 ..` legs under the `45 07 ..` shot at `+0x471`) puts the entrance
+hallway's wall between Vahn and the lens, and before this term the hallway
+dissolved there. Under a script hold the gate does not run and the ramp eases
+out from where it stood, a quarter of the gap per frame - a shot that opens
+with the player behind a wall releases the screen-door the way walking out
+from cover does, one that opens at rest never touches the scene - and when
+the script lets go the ramp eases back in on the gate's verdict.
+`town01_measuring_beat_never_dissolves_the_hallway` (disc-gated, the page's
+runtime) walks into the door and pins it.
+
 **The per-fragment rule** (`occl_keep` in the scene-lights WGSL layer; CPU
 mirror and tunables in `crates/engine-render/src/occlusion_fade.rs`). A
 fragment fades only when all four hold:

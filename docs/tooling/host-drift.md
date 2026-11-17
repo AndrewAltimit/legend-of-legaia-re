@@ -2380,7 +2380,7 @@ skips the picker's story baseline, which would otherwise clear system flags
 | script arcs (op `0x43`), attached lights (op `0x34` sub-1) | `World::script_actors`; lights through `light_pool_prims` ([`script-vm.md`](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light)) |
 | CLUT-walk shimmer | `engine-scene::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
 | resident texture pool under the scene build | `scene::underlay_field_texture_pool`: the effect textures and the field-character atlas, under the scene's own TIMs |
-| occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
+| occlusion fade | `field_occlusion::host_fade_arming`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
 | lighting mood, fog-bank tint | `engine-screens::field_frame::lighting_mood`, `fog_volume_color` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |

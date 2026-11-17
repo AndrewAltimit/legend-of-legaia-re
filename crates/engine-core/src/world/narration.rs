@@ -660,6 +660,48 @@ impl World {
                 .any(|tl| tl.holds_player())
     }
 
+    /// `true` while a script context that has taken a slice holds the player
+    /// and so owns the frame's camera: the engaged bit `+0x10 & 0x80000` as
+    /// the field tick reads it ahead of the pad controller, plus a talk's
+    /// own staged shot.
+    ///
+    /// Retail's field tick `FUN_801D1344` tests the player's engaged bit
+    /// (`lw +0x10` / `and 0x80000` at `0x801D1694..0x801D169C`) before the
+    /// pad controller `FUN_801D01B0`: only with it down does the free-roam
+    /// branch run, latching `s3 = 1` (`0x801D16C0`), and the follow tail
+    /// behind `beq s3,zero` (`0x801D17DC`) is skipped otherwise. While it is
+    /// up the pad does not walk the player and the camera is whatever the
+    /// record's op-`0x45` beats and mover glides leave in the globals, so the
+    /// framing is authored for the whole span - the settled gaps between
+    /// beats and an APPLY's ease back included. The runner
+    /// `FUN_80039B7C` raises it on every frame it steps a context
+    /// (`0x80039DB8..0x80039DD4`) and clears it on the closing `0x21`
+    /// (`0x80039EE8..0x80039F14`).
+    ///
+    /// Unlike [`Self::script_context_engages_player`] (the pad refusal) this
+    /// counts the modal timeline only once it has taken a slice
+    /// ([`Self::cutscene_timeline_holds_camera`]), as retail's camera ease
+    /// does, so a stand-and-press walk-on beat that re-spawns and ends inside
+    /// one slice on every frame of its band holds nothing, and it leaves out
+    /// the parked door countdown, which keeps the follow framing. A plain
+    /// talk holds the pad through the dialogue channel, not here, unless it
+    /// stages a shot of its own ([`Self::scripted_shot_holds_camera`]).
+    ///
+    /// The camera-occlusion fade (`engine-screens::field_occlusion`) stands
+    /// down under it: a scripted shot frames what the script means to show.
+    ///
+    /// REF: FUN_801D1344 (`0x801D1694`), FUN_80039B7C
+    pub fn script_holds_camera(&self) -> bool {
+        self.expansion.cutscene.locks_player()
+            || self.cutscene_timeline_holds_camera()
+            || self
+                .field_vm
+                .helper_contexts
+                .iter()
+                .any(|tl| tl.stepped && !tl.is_done())
+            || self.scripted_shot_holds_camera()
+    }
+
     /// `true` while a script record that holds the player has an op-`0x45`
     /// shot staged in the camera globals.
     ///

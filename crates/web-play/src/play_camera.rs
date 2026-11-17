@@ -387,7 +387,7 @@ impl LegaiaRuntime {
 
     /// One frame of the camera-occlusion fade, gate to ramp, through the
     /// kernels the native window's `stage_occlusion_fade` runs:
-    /// `field_occlusion::host_fade_armed` over the page's own terms, the
+    /// `field_occlusion::host_fade_arming` over the page's own terms, the
     /// visibility gate against `eye_*` (RAW retail Y-down world - the page
     /// negates its `_eye()` Y on the way in), then `FadeRamp::step`.
     ///
@@ -421,16 +421,20 @@ impl LegaiaRuntime {
         };
         let focus = self.scene_host.host().and_then(|host| {
             let w = &host.world;
-            if !fo::host_fade_armed(w, cutscene, terms) {
+            let arming = fo::host_fade_arming(w, cutscene, terms);
+            if arming == fo::FadeArming::Off {
                 return None;
             }
-            Some((fo::player_body_centre(w)?, fo::player_feet(w)?))
+            Some((arming, fo::player_body_centre(w)?, fo::player_feet(w)?))
         });
-        let Some((c, f)) = focus else {
+        let Some((arming, c, f)) = focus else {
             self.occl_fade.reset();
             return Vec::new();
         };
-        let hidden = self.field_player_occluded(eye_x, eye_y, eye_z);
+        // Under a script hold the gate does not run: the ramp eases out
+        // from where it stood (`FadeArming::ScriptHeld`).
+        let hidden =
+            arming == fo::FadeArming::Armed && self.field_player_occluded(eye_x, eye_y, eye_z);
         match self.occl_fade.step(hidden) {
             // Retail Y-down -> the page's Y-up draw frame.
             Some(s) => vec![s, c[0], -c[1], c[2], f[0], -f[1], f[2]],
