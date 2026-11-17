@@ -3277,10 +3277,14 @@ to `4`, as a bump an earlier cast left on the seat does. A retail recording hold
 7's `+0x21D` at `4` from arm 6 on, the walk clip's cursor climbing `32` a pass; at the
 installer's `2` the walk's effect frames (`FUN_801DEA50`'s pool spawns, `ra 0x801DEEA4` on a
 write watch of the master slots) shed half the dust, and the cast's `rand()` stream
-parted from retail's at arm 6. With the bump the stream stands on retail's word at the
-start of arms 7, 8 and 9. The walk clip's cursor still reads a pass ahead of the
-recording's, and the film's image falls (`.931` to `.916`, the rand-dealt rampage of
-arm 12 `.797` to `.725`). Grade `disassembly` + `capture`.
+parted from retail's at arm 6. With the bump the stream stands within a word or two of
+retail's at the start of arms 7, 8 and 9. The bump is bit 0 over the playing clip's own id, so the
+node's first tick advances and then re-commits idle `0` (the re-commit's cursor zero at
+`0x8004B064..0x8004B068`): the seat pass ends on cursor `0`, as the recording's first
+creature row reads, where the port's commit path takes no staged byte equal to the
+playing clip and the walk stood a pass ahead (`World::run_seat_pass_node_tick` makes the
+rewind). With both the `0x8D` film reads `.934` against `.931` (arms 6..8 `.98` to
+`.999`). Grade `disassembly` + `capture`.
 
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the victim stepped back a sixth of its body radius on
