@@ -1,5 +1,10 @@
 //! Phase 1 asset viewer.
 //!
+//! On Windows a `windows`-subsystem program, so a double-click opens no
+//! console window; a start from a terminal still prints there
+//! ([`first_run::attach_terminal`], and `docs/tooling/releases.md` for the
+//! trade-off).
+//!
 //! Modes:
 //!
 //! * `tim <PATH>` - display a single TIM file (the original Phase 1 demo).
@@ -35,6 +40,8 @@
 //! playback in [`seq_play`], and the shared loaders / view payloads in
 //! [`loaders`] / [`tmd_view`] / [`stage_view`] / [`display`] / [`mesh_bounds`] /
 //! [`pad_keymap`] / [`scene_files`].
+
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod battle_app;
 mod browser;
@@ -128,22 +135,6 @@ fn default_prot_dat() -> Option<PathBuf> {
         candidates.push(dir.join("extracted").join("PROT.DAT"));
     }
     candidates.into_iter().find(|p| p.is_file())
-}
-
-/// On Windows a double-clicked console program's window closes the moment
-/// it exits, taking the message with it: wait for Enter first.
-fn pause_if_double_clicked(double_clicked: bool) {
-    #[cfg(windows)]
-    {
-        use std::io::IsTerminal;
-        if double_clicked && std::io::stdin().is_terminal() {
-            eprintln!("\nPress Enter to close.");
-            let mut line = String::new();
-            let _ = std::io::stdin().read_line(&mut line);
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = double_clicked;
 }
 
 #[derive(Subcommand, Debug)]
@@ -453,9 +444,10 @@ fn reset_sigpipe() {
 
 fn main() -> std::process::ExitCode {
     reset_sigpipe();
+    // First, so `--help`, the logger and every error reach the terminal.
+    let at_terminal = first_run::attach_terminal();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let args = Args::parse();
-    let double_clicked = args.cmd.is_none();
     // Whether the view came from the desktop dialog: then a failure is said
     // in a dialog too, there being no terminal to print it in.
     let mut from_dialog = false;
@@ -474,8 +466,7 @@ fn main() -> std::process::ExitCode {
                     start: 0,
                 }
             }
-            None if first_run::double_clicked() => {
-                first_run::release_console();
+            None if !at_terminal => {
                 let Some(prot_dat) = first_run::ask() else {
                     return std::process::ExitCode::SUCCESS;
                 };
@@ -489,7 +480,6 @@ fn main() -> std::process::ExitCode {
             }
             None => {
                 eprint!("{NO_EXTRACTION}");
-                pause_if_double_clicked(true);
                 return std::process::ExitCode::FAILURE;
             }
         },
@@ -508,7 +498,6 @@ fn main() -> std::process::ExitCode {
                     .set_buttons(rfd::MessageButtons::Ok)
                     .show();
             }
-            pause_if_double_clicked(double_clicked);
             std::process::ExitCode::FAILURE
         }
     }

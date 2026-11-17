@@ -2,8 +2,12 @@
 //! at a terminal: a double-click in a file manager or File Explorer. The
 //! terminal start keeps its printed guide ([`super::NO_EXTRACTION`]); a
 //! double-click gets a desktop dialog instead, since its text would land
-//! nowhere (Linux) or in a console window that closes with the program
-//! (Windows).
+//! nowhere.
+//!
+//! On Windows the viewer is a `windows`-subsystem program, so a double-click
+//! opens no console window at all; [`attach_terminal`] reaches the terminal
+//! it was typed into, if any, so `--help`, the printed guide and errors still
+//! print there (`docs/tooling/releases.md`, "Windows: the console window").
 //!
 //! The dialog says what the viewer reads and offers the two ways on: pick
 //! the extracted folder (or the folder holding it), which the viewer then
@@ -29,29 +33,23 @@ const CHOOSE: &str = "Choose folder...";
 const EXPLORER: &str = "Legaia Explorer";
 const CLOSE: &str = "Close";
 
-/// Whether nobody is at a terminal to read a printed guide: standard error
-/// is no terminal (Linux, macOS), or the program is its console's only
-/// process, so the console was made for it by a double-click (Windows).
-pub(crate) fn double_clicked() -> bool {
+/// Connect standard output and error to the terminal the viewer was started
+/// from, before anything prints. Only Windows has work to do: a
+/// `windows`-subsystem program starts with no console, so it attaches to its
+/// parent's (a `cmd.exe` or PowerShell window) and points the missing
+/// standard handles at it. Output redirected to a file or a pipe arrives as
+/// ready handles and is left alone. Returns whether a terminal or a redirect
+/// is there to print to: `false` is a double-click.
+pub(crate) fn attach_terminal() -> bool {
     #[cfg(windows)]
     {
-        windows_console::sole_process()
+        windows_console::attach()
     }
     #[cfg(not(windows))]
     {
         use std::io::IsTerminal;
-        !std::io::stderr().is_terminal()
+        std::io::stderr().is_terminal()
     }
-}
-
-/// On Windows, let go of the console a double-click made for the program,
-/// so its window closes while the dialog is up rather than sitting empty
-/// behind it. The console flashes for a moment first: a console-subsystem
-/// program always gets one from File Explorer (`docs/tooling/releases.md`,
-/// "Windows: the console window").
-pub(crate) fn release_console() {
-    #[cfg(windows)]
-    windows_console::free();
 }
 
 /// The PROT.DAT a picked folder names: the folder's own, or that of an
@@ -127,26 +125,85 @@ fn start_explorer() -> Result<(), String> {
 
 #[cfg(windows)]
 mod windows_console {
+    use core::ffi::c_void;
+
+    type Handle = *mut c_void;
+    const STD_INPUT_HANDLE: u32 = -10i32 as u32;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    const FILE_TYPE_DISK: u32 = 1;
+    const FILE_TYPE_PIPE: u32 = 3;
+    const GENERIC_READ: u32 = 0x8000_0000;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_READ: u32 = 1;
+    const FILE_SHARE_WRITE: u32 = 2;
+    const OPEN_EXISTING: u32 = 3;
+
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn GetConsoleProcessList(list: *mut u32, count: u32) -> u32;
-        fn FreeConsole() -> i32;
+        fn AttachConsole(pid: u32) -> i32;
+        fn GetStdHandle(which: u32) -> Handle;
+        fn SetStdHandle(which: u32, handle: Handle) -> i32;
+        fn GetFileType(handle: Handle) -> u32;
+        fn CreateFileW(
+            name: *const u16,
+            access: u32,
+            share: u32,
+            security: *mut c_void,
+            disposition: u32,
+            flags: u32,
+            template: Handle,
+        ) -> Handle;
     }
 
-    /// Whether this process is alone on its console (File Explorer made the
-    /// console for it); a terminal's shell shares it.
-    pub(super) fn sole_process() -> bool {
-        let mut ids = [0u32; 2];
-        // SAFETY: the buffer holds `ids.len()` process ids, as passed.
-        let n = unsafe { GetConsoleProcessList(ids.as_mut_ptr(), ids.len() as u32) };
-        n == 1
-    }
-
-    pub(super) fn free() {
-        // SAFETY: no arguments; detaching from a console is always allowed.
+    /// Whether `which` already leads to a file or a pipe (`asset-viewer
+    /// --help > help.txt`, `| more`): the parent handed it over at start.
+    fn redirected(which: u32) -> bool {
+        // SAFETY: plain handle queries; a null or stale handle answers
+        // FILE_TYPE_UNKNOWN.
         unsafe {
-            FreeConsole();
+            let h = GetStdHandle(which);
+            !h.is_null()
+                && h as isize != -1
+                && matches!(GetFileType(h), FILE_TYPE_DISK | FILE_TYPE_PIPE)
         }
+    }
+
+    pub(super) fn attach() -> bool {
+        let streams = [
+            (STD_INPUT_HANDLE, "CONIN$"),
+            (STD_OUTPUT_HANDLE, "CONOUT$"),
+            (STD_ERROR_HANDLE, "CONOUT$"),
+        ];
+        let redirects = streams.map(|(which, _)| redirected(which));
+        // SAFETY: no arguments beyond the documented parent-process id.
+        let attached = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } != 0;
+        if attached {
+            for ((which, device), redirect) in streams.into_iter().zip(redirects) {
+                if redirect {
+                    continue;
+                }
+                let name: Vec<u16> = device.encode_utf16().chain(Some(0)).collect();
+                // SAFETY: `name` is NUL-terminated UTF-16 that outlives the
+                // call; the handle is kept for the process's lifetime.
+                unsafe {
+                    let h = CreateFileW(
+                        name.as_ptr(),
+                        GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        core::ptr::null_mut(),
+                        OPEN_EXISTING,
+                        0,
+                        core::ptr::null_mut(),
+                    );
+                    if h as isize != -1 {
+                        SetStdHandle(which, h);
+                    }
+                }
+            }
+        }
+        attached || redirects[1] || redirects[2]
     }
 }
 

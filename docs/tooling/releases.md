@@ -209,10 +209,23 @@ console for it), it calls `FreeConsole` and starts the game child with
 `LEGAIA_KEEP_CONSOLE` keeps the console for debugging. Started from a
 terminal, the console is shared and stays.
 
+`asset-viewer.exe` takes the other route, because its contract is the
+other way round: every subcommand opens a window, nothing pipes its
+output, and a double-click with no extraction beside it shows a dialog
+(`first_run` in `crates/asset-viewer`). It is a `windows`-subsystem program,
+so File Explorer never makes a console for it. At start it calls
+`AttachConsole(ATTACH_PARENT_PROCESS)` and opens `CONOUT$` / `CONIN$` for
+any standard handle that is not already a file or a pipe, so `--help`, the
+printed first-run guide, the log and errors still reach the terminal it was
+typed into, and redirection (`> help.txt`, `| more`) keeps working. The cost
+is the one the engine refuses: `cmd.exe` returns its prompt while the viewer
+runs and does not see its exit code; `start /wait asset-viewer ...` gives
+both back, and the tools folder's `README.txt` says so.
+
 `release-build.sh` reads the PE optional header of the staged files and fails
 unless the stub is subsystem 2 (Windows GUI) and the engine subsystem 3
 (console), so a build change cannot quietly bring the console back or take the
-terminal away. The same check holds `Legaia Explorer.exe` at subsystem 2 (see
+terminal away. The same check holds `Legaia Explorer.exe` and `asset-viewer.exe` at subsystem 2 (see
 below), and the [icon check](#icons) runs over the same three files.
 
 ### Legaia Explorer
