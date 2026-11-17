@@ -626,8 +626,9 @@ in this order:
 | later | the poller, op-`0x36` sub `1` | the next track's bank and the side-band bank arrive a CD read on |
 
 `see ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the complete dump), `80062004.txt`,
-`80061edc.txt`, `800657d0.txt`. On the battle return the ramp measures `129`
-vsyncs ([above](#the-battle-music-timeline)).
+`80061edc.txt`, `800657d0.txt`. The block runs only with the field-entry word
+`_DAT_8007B8B8` at `0` (`0x801D6A5C`, `0x801D6BA0`): a battle return has its own
+ramp, of the battle source ([below](#the-battle-music-timeline)).
 
 The engine's load is instant. Its close used to be a bare key-off of the score
 and of voices `0x10..0x17` at full level, and the next scene's head start
@@ -949,7 +950,7 @@ mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
 | `T + 80` | the field's last envelopes reach `0` | |
 | `T + 139` | mode `0x14`, source 5 attached and playing | the completion arm: `FUN_8001E54C(5, ..)` + `FUN_80026478(0x8007056C)` (`0x801CF91C..0x801CF930`) |
 | `E` | mode `2`, the battle sequence plays on | |
-| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0x78)`, while the map reads |
+| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0xB4)` on the battle source, while the map reads |
 | `E + 251` | the field source plays from its head | the init's poller |
 | `E + 306` | mode `3`, the first field frame | |
 
@@ -965,9 +966,41 @@ The session test `parity/tests/battle_music_timeline_disc.rs` reads the same ord
 forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
 ticks on, where retail's mode `9` runs `133` vsyncs.
 
-The return is the part the port does not reproduce: its load is instant, so the
-`250` vsyncs of battle theme over the loading screen collapse, and the field track
-restarts from its head on the frame the field returns, as retail's does.
+#### The return closes the battle score before the field's track loads
+
+The field init reads the battle-return word `_DAT_8007B8B8 == 2`
+([`battle-round-loop.md`](battle-round-loop.md#a-battle-left-before-its-exit)) and takes
+a branch of its own (`0x801D6B30..0x801D6B80`): with the battle sound set at or above
+`0` and the battle source `0x8007056C` open, it ramps that source's sequence to silence,
+`FUN_80062004(seq, .., 0xB4)`. The field-source ramp and close
+(`0x801D6A5C`) and the cue-voice mutes (`0x801D6BA0`) are skipped on that word. The
+init then forces the loaded index to `-100` (`0x801D70D4`) and drives the poller to
+completion with no `VSync` (`0x801D72D4..0x801D7320`); its stage 4 closes the battle
+source and the field's track loads from its head. The MAN installer `FUN_8003AEB0`
+runs the entry script's first slice inside that window, so a start the entry script
+issues on the return loads with the field too. Nothing of the battle score sounds
+under the field track's head, and the first field frame comes `55` vsyncs into it.
+
+The engine's load is instant, so the `250` vsyncs of battle theme over the loading
+screen collapse. The return takes the field close a door takes, in the same order:
+`World::restore_field_bgm` queues `BGM_SUB_OP_ENGINE_FIELD_CLOSE` ahead of the
+field track's start, so the battle score fades over `30` ms and is cut before the
+start replays, and the post-battle re-run of the entry script opens the init's
+window (`World::open_battle_return_field_init`), so its starts load at once. Before,
+the score was keyed off under the field track's first notes, and the re-run's starts
+took the mid-scene walk ([above](#the-swap-takes-a-settle-and-a-read)): after every
+fight the field played without its music for `66` frames. Pinned by
+`engine-session/tests/battle_return_audio_disc.rs` (a `teien` fight: battle voices gone
+by the second frame, the field track on the second).
+
+The port does not play the `0xB4` ramp at its retail length. Retail runs it, and the
+field track's first `55` vsyncs, over a loading screen: the player never hears the
+fade with the field in view, and hears the field's music from the field's first frame.
+Played over the engine's instant return, the ramp would either sound the battle score
+over the field for two seconds and start the field's music that late, or lay the two
+scores over each other, which retail never does. The compressed close keeps both
+things the player hears: the battle score ends in a fade, and the field's track is
+at its head when the field appears.
 
 **A fight on the park word ends the music.** The return loads what the track word
 names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door

@@ -188,6 +188,7 @@ impl SceneHost {
                 .and_then(|scene| scene.field_man_entry_script(&self.index).ok().flatten());
             if let Some((bytecode, pc0)) = entry_script {
                 self.world.load_field_script_at(bytecode, pc0);
+                self.world.open_battle_return_field_init();
                 log::info!("field: post-battle return re-ran the scene-entry script");
             }
         }

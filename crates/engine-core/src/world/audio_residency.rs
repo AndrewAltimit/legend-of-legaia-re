@@ -105,6 +105,26 @@ impl World {
         }
     }
 
+    /// Open the field init's BGM window for the scene-entry script a battle
+    /// return re-runs.
+    ///
+    /// Retail leaves a fight through MAIN INIT: the MAN installer
+    /// `FUN_8003AEB0` runs the entry script's first slice (`FUN_8003AB2C` at
+    /// `0x8003BAD8`) and the field init then drives the swap poller to
+    /// completion with no vsync wait (`0x801D72D4..0x801D7320`), after forcing
+    /// the loaded index to `-100` (`0x801D70D4`). A start the re-run issues
+    /// therefore loads with the field, its track at its head before the first
+    /// field frame, and not a settle and a read later. Without the window the
+    /// re-run's starts took the mid-scene walk: the field played silent for
+    /// sixty-odd frames after every fight.
+    ///
+    /// PORT: FUN_801D6704 (0x801D70D4, 0x801D72D4..0x801D7320)
+    // REF: FUN_8003AEB0, FUN_8003AB2C, FUN_800243F0
+    pub fn open_battle_return_field_init(&mut self) {
+        self.audio.bgm_swap.cancel();
+        self.audio.bgm_field_init_open = true;
+    }
+
     /// Raise sound-flag bit 2 as op-`0x35` sub-op 6 does (`0x801E01D8`), for
     /// a door record the field VM does not run: the overworld entity SM keeps
     /// only an entrance's `0x3F`, and the host replays the rest of the
