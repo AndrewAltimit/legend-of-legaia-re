@@ -909,10 +909,16 @@ focus at the origin, `±800` seats) read yaws `224`, `2632`, `3136`, `3808` and
 
 At yaw `0` the eye looks down the seat axis and the two rows project to the
 same screen X. Retail opens every fight there and orbits out of it. **The port
-does not**: it opens on the azimuth the field camera left, moved off the seat
-axis by `battle_entry_yaw`. This is a port judgement, carried by
-`BattleCamInputs::entry_yaw`, which `battle_cam_inputs` fills from
-`World::locomotion.camera_azimuth`. The sparring fight is the exception and
+reaches the prompt off that axis**: the far framing's orbit starts on the azimuth
+the field camera left, moved off the seat axis by `battle_entry_yaw`. This is a
+port judgement, carried by `BattleCamInputs::entry_yaw`, which
+`battle_cam_inputs` fills from `World::locomotion.camera_azimuth`. It does not
+reach the opening: the [entry sweep](#the-battle-entry-sweep) and the name hold
+run on retail's yaw `0`, which is what frames the whole enemy party under the
+intro banner, and the hand-over to case 9 swings the yaw out to the set-aside
+azimuth over its own glide (`BattleCamera::start_entry_sweep`,
+`hand_over_from_entry_sweep`). Opened on the field azimuth instead, the close-in
+on the origin left most of the enemy row out of frame. The sparring fight is the exception and
 keeps retail's zero: its sweep, its name hold and its caption close-up are
 all framed on it. So does every fight in the retail-faithful mode: the
 judgement is the toggle `WorldToggles::battle_entry_off_axis`, which
@@ -934,7 +940,7 @@ and then, advancing by the frame step `0x1F800393` a pass, runs the sweep
 | Counter | Camera |
 |---|---|
 | `0x80..0xA1` | TR y `+= 0x30 * fs`, TR z `-= 0x40 * fs` from battle init's pose: the camera rises and pulls in |
-| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass |
+| `0xA2..=0xC0` | `FUN_801D5854(0, 2)` every pass: case 2 builds its rotation target from the prologue's zeroed words (`0x801D58AC..0x801D58B4`), so it aims at yaw `0` |
 | past `0xC0` | parked at `0xFF`; the battle tick `FUN_801D0748` runs from then on |
 
 The step is not the fight's own from the first pass. The game-mode transition

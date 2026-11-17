@@ -47,9 +47,11 @@ impl BattleCamera {
     /// Start the battle-entry sweep from battle init's seeded pose.
     ///
     /// Battle init `FUN_80055B6C` writes the camera globals - pitch `0x3C`,
-    /// roll `0`, TR `(0, 0x500, 0x1C00)` (`0x80055E50..0x80055E90`); it also
-    /// zeroes the yaw `0x8007B792`, which the port keeps at the inherited
-    /// entry azimuth instead ([`battle_entry_yaw`]). The SCUS frame driver
+    /// roll `0`, TR `(0, 0x500, 0x1C00)` (`0x80055E50..0x80055E90`), and
+    /// zeroes the yaw `0x8007B792` (`0x80055E84`). The port does too: an
+    /// off-axis entry azimuth ([`battle_entry_yaw`]) is set aside for the
+    /// hand-over to case 9, so the sweep and the name hold frame the enemy
+    /// party down the seat axis as retail's do. The SCUS frame driver
     /// `FUN_80046A20` then owns the camera until its entry counter `gp+0x330`
     /// passes `0xC0` (`0x80046EEC..0x8004700C`), and only then calls the
     /// battle tick `FUN_801D0748`:
@@ -69,9 +71,11 @@ impl BattleCamera {
     ///
     /// REF: FUN_80055B6C, FUN_80046A20, FUN_801D5854 (case 2)
     pub fn start_entry_sweep(&mut self) {
+        let yaw = self.pose.yaw.rem_euclid(4096.0);
+        self.entry_off_axis_yaw = (yaw != 0.0).then_some(yaw);
         self.pose = BattleCamPose {
             pitch: ENTRY_PITCH,
-            yaw: self.pose.yaw,
+            yaw: 0.0,
             tr: ENTRY_TR,
             focus: [0.0; 3],
         };
@@ -158,11 +162,14 @@ impl BattleCamera {
         true
     }
 
-    /// One pass of `FUN_801D5854(0, 2)`'s chase of the close-in.
+    /// One pass of `FUN_801D5854(0, 2)`'s chase of the close-in. The case
+    /// builds its rotation target from the prologue's zeroed `sp+0x10..0x14`
+    /// (`0x801D58AC..0x801D58B4`) and stores only TR y / z
+    /// (`0x801D5BC0..0x801D5BD0`), so it aims at pitch `0`, yaw `0`.
     fn step_entry_close_in(&mut self) {
         let target = BattleCamPose {
             pitch: 0.0,
-            yaw: self.pose.yaw,
+            yaw: 0.0,
             tr: [0.0, ENTRY_CASE2_TR_Y, prescale_tr_z(ENTRY_CASE2_TR_Z_RAW)],
             focus: [0.0; 3],
         };
@@ -183,18 +190,26 @@ impl BattleCamera {
     /// dialogue close-up is a cut (PROT 0967's shot over `1` frame); any
     /// other opening re-arms case 9's far framing over its `a3 = 0xE` from
     /// wherever the sweep left the camera, with the orbit owning the yaw.
+    /// With an off-axis entry azimuth set aside (a port judgement,
+    /// [`battle_entry_yaw`]) that glide also swings the yaw out to it, and
+    /// the orbit runs on from there.
     fn hand_over_from_entry_sweep(&mut self) {
         self.glides.clear();
+        let off_axis = self.entry_off_axis_yaw.take();
         match self.phase {
             BattleCamPhase::Dialogue => self.pose = dialogue_pose(self.formation),
             BattleCamPhase::Menu => {
                 let mut from = self.pose;
+                let mut target = self.menu_pose();
+                if let Some(yaw) = off_axis {
+                    target.yaw = yaw;
+                }
                 let g = Glide::linear(
                     &mut from,
-                    self.menu_pose(),
+                    target,
                     menu_raw_z(self.formation),
                     self.steps_of(SWING_RETURN_STEPS),
-                    false,
+                    off_axis.is_some(),
                 );
                 self.pose = from;
                 self.glides.push_back(g);
