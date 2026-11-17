@@ -452,8 +452,17 @@ impl World {
         self.battle.effect_spawns.clear();
         self.audio.battle_sfx_cues.clear();
         self.audio.battle_shout_cues.clear();
-        self.audio.battle_bgm_active = false;
+        // The swap goes with the fight, and so does the battle track's claim
+        // on `current_bgm`: the word names the field's own track again (what
+        // the swap stashed). Left naming the battle track, the next fight's
+        // swap read it as already sounding (`current_bgm == Some(battle)`)
+        // and only re-attached a track the scene load had stopped - every
+        // showcase relaunch after the first fought in silence.
+        if std::mem::take(&mut self.audio.battle_bgm_active) {
+            self.audio.current_bgm = self.audio.field_bgm_resume;
+        }
         self.audio.field_bgm_resume = None;
+        self.audio.bgm_keyed_off_for_intro = false;
         // The fight's CD-XA clip goes with it. Its drive word gates the next
         // fight's side-band reads (`tick_sideband_token`) and is counted down
         // only by battle ticks, so a clip cut off mid-cast - a showcase

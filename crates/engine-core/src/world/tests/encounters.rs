@@ -1284,3 +1284,34 @@ fn the_intro_seeders_draw_off_the_world_stream() {
     }
     assert_eq!(world.rng_state, expect, "the transition's ticks draw none");
 }
+
+/// A battle abandoned mid-fight (a scene load over it, the art and magic
+/// pages' relaunch) gives `current_bgm` back to the field's track: left
+/// naming the battle track, the next fight's swap read it as sounding and
+/// started nothing.
+#[test]
+fn an_abandoned_battle_hands_the_bgm_word_back_to_the_field() {
+    let theme = legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID;
+    for field in [None, Some(2028)] {
+        let mut world = World::new();
+        world.audio.current_bgm = field;
+        world.set_battle_bgm(Some(theme));
+        world.swap_to_battle_bgm();
+        assert_eq!(world.audio.current_bgm, Some(theme));
+        world.mode = SceneMode::Battle;
+        world.abandon_live_battle();
+        assert_eq!(world.audio.current_bgm, field);
+        assert!(!world.audio.battle_bgm_active);
+        let _ = world.drain_field_events();
+        // The next fight swaps in and starts the battle track again.
+        world.swap_to_battle_bgm();
+        let evs = world.drain_field_events();
+        assert!(
+            evs.iter().any(|e| matches!(
+                e,
+                FieldEvent::Bgm { text_id, sub_op: 1 } if *text_id == theme
+            )),
+            "field {field:?}: {evs:?}"
+        );
+    }
+}
