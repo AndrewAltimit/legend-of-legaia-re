@@ -205,13 +205,18 @@ pub struct ScreenBox {
     pub bottom: u16,
 }
 
+/// The box every retail field, overworld, pause-menu and shop state holds:
+/// `(0, 4, 0x140, 0xE4)`, the 224 lines between the display's top and
+/// bottom margins rather than the 240-line frame. A window parked on the
+/// bottom edge stands at `0xE4 + 0xC = 240`, so the Items info window
+/// (`y = 108`) closes at 11 px a frame, as retail's film shows it, not 12.
 impl Default for ScreenBox {
     fn default() -> Self {
         Self {
             left: 0,
-            top: 0,
+            top: 4,
             right: 0x140,
-            bottom: 0xF0,
+            bottom: 0xE4,
         }
     }
 }
@@ -305,6 +310,30 @@ impl MenuWidgetState {
     /// Install descriptor records directly (tests, tools).
     pub fn set_descriptors(&mut self, descriptors: Vec<WidgetDescriptor>) {
         self.descriptors = descriptors;
+    }
+
+    /// Window 49's descriptor as the pause menu's open rewrites it:
+    /// `FUN_801DC6B4` state 0 stores the money / play-time box's `y = 0xB4`
+    /// and `h = 0x18` into the descriptor before the window opens, then,
+    /// with system flag `8` (the casino coin row) raised, `y -= 0xE` and
+    /// `h += 0xE` (`0x801DC810..0x801DC844`). The window is created, parked
+    /// and slid off that record, so its slide runs from `y = 0xA6` with the
+    /// coin row: `6` px a frame to the bottom park, not the `5` the disc
+    /// record's `178` gives. A no-op before the table installs.
+    ///
+    /// PORT: FUN_801DC6B4 (state 0's window-49 rewrite, `0x801DC804..0x801DC844`)
+    pub fn rewrite_money_box(&mut self, coin_row: bool) {
+        const MONEY_BOX: usize = legaia_game_tables::menu_windows::window_ids::TOP_MONEY_TIME;
+        let Some(d) = self.descriptors.get_mut(MONEY_BOX) else {
+            return;
+        };
+        let (y, h) = if coin_row {
+            (0xB4 - 0x0E, 0x18 + 0x0E)
+        } else {
+            (0xB4, 0x18)
+        };
+        d.home = vm::Position::new(d.home.x, y);
+        d.size = (d.size.0, h);
     }
 
     fn descriptor(&self, id: u8) -> WidgetDescriptor {
@@ -768,5 +797,29 @@ mod tests {
     #[test]
     fn resolve_from_overlay_rejects_short_buffer() {
         assert!(MenuWidgetScripts::resolve_from_overlay(&[0u8; 64]).is_none());
+    }
+
+    /// The menu-open rewrite moves window 49's record onto the box it
+    /// draws, and the bottom park of retail's display box is `240`.
+    #[test]
+    fn the_money_box_parks_from_its_rewritten_record() {
+        let mut st = MenuWidgetState::default();
+        let mut descs = vec![WidgetDescriptor::default(); 52];
+        descs[49] = WidgetDescriptor {
+            home: vm::Position::new(24, 178),
+            size: (104, 24),
+            park_edge: 0,
+            kind: 0,
+        };
+        st.set_descriptors(descs);
+        st.rewrite_money_box(true);
+        assert_eq!(st.descriptor(49).home, vm::Position::new(24, 0xA6));
+        assert_eq!(st.descriptor(49).size, (104, 0x26));
+        assert_eq!(
+            park_position(&st.descriptor(49), st.screen),
+            vm::Position::new(24, 240)
+        );
+        st.rewrite_money_box(false);
+        assert_eq!(st.descriptor(49).home, vm::Position::new(24, 0xB4));
     }
 }

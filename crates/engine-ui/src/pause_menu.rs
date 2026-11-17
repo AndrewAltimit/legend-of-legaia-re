@@ -214,6 +214,11 @@ impl<'a> MenuRects<'a> {
         }
     }
 
+    /// The window's live origin on the window list, `None` off it.
+    pub fn live_origin(&self, id: usize) -> Option<(i32, i32)> {
+        self.live.and_then(|l| l.get(id).copied().flatten())
+    }
+
     /// [`Self::rect`] as a painter's rect: a retail painter draws off the
     /// live window, so its content moves with the window's slide.
     pub fn painter_rect(&self, id: usize) -> crate::menu::window_painters::PainterRect {
@@ -439,38 +444,47 @@ fn clip_text_under_window(texts: &mut Vec<TextDraw>, content: (i32, i32, i32, i3
 /// window covers it. The hosts draw every text quad after every sprite, so a
 /// modal's frame cannot hide the text under it any other way.
 pub fn clip_text_under_frame(texts: &mut Vec<TextDraw>, frame: (i32, i32, i32, i32)) {
-    let (x0, y0) = (frame.0, frame.1);
-    let (x1, y1) = (frame.0 + frame.2, frame.1 + frame.3);
     let mut out = Vec::with_capacity(texts.len());
     for t in texts.drain(..) {
-        let (dx, dy) = (t.dst.0, t.dst.1);
-        let (ex, ey) = (dx + t.dst.2 as i32, dy + t.dst.3 as i32);
-        if ex <= x0 || dx >= x1 || ey <= y0 || dy >= y1 {
-            out.push(t);
-            continue;
-        }
-        let mut band = |bx0: i32, by0: i32, bx1: i32, by1: i32| {
-            if bx1 <= bx0 || by1 <= by0 {
-                return;
-            }
-            out.push(TextDraw {
-                dst: (bx0, by0, (bx1 - bx0) as u32, (by1 - by0) as u32),
-                src: (
-                    t.src.0 + (bx0 - dx) as u32,
-                    t.src.1 + (by0 - dy) as u32,
-                    (bx1 - bx0) as u32,
-                    (by1 - by0) as u32,
-                ),
-                color: t.color,
-            });
-        };
-        band(dx, dy, ex, y0.min(ey));
-        band(dx, y1.max(dy), ex, ey);
-        let (my0, my1) = (dy.max(y0), ey.min(y1));
-        band(dx, my0, x0.min(ex), my1);
-        band(x1.max(dx), my0, ex, my1);
+        clip_quad_outside(t, frame, &mut out);
     }
     *texts = out;
+}
+
+/// Push the bands of quad `t` that lie outside `frame` (`(x, y, w, h)`, the
+/// quad's pixels) onto `out`, each band's source rect cut in proportion to
+/// its destination (`1:1` for a glyph at stage scale, `1:s` once scaled).
+fn clip_quad_outside(t: TextDraw, frame: (i32, i32, i32, i32), out: &mut Vec<TextDraw>) {
+    let (x0, y0) = (frame.0, frame.1);
+    let (x1, y1) = (frame.0 + frame.2, frame.1 + frame.3);
+    let (dx, dy) = (t.dst.0, t.dst.1);
+    let (dw, dh) = (t.dst.2 as i64, t.dst.3 as i64);
+    let (ex, ey) = (dx + t.dst.2 as i32, dy + t.dst.3 as i32);
+    if dw == 0 || dh == 0 || ex <= x0 || dx >= x1 || ey <= y0 || dy >= y1 {
+        out.push(t);
+        return;
+    }
+    let (sx, sy) = (i64::from(t.src.0), i64::from(t.src.1));
+    let (sw, sh) = (i64::from(t.src.2), i64::from(t.src.3));
+    let mut band = |bx0: i32, by0: i32, bx1: i32, by1: i32| {
+        if bx1 <= bx0 || by1 <= by0 {
+            return;
+        }
+        let u0 = sx + i64::from(bx0 - dx) * sw / dw;
+        let v0 = sy + i64::from(by0 - dy) * sh / dh;
+        let u1 = sx + i64::from(bx1 - dx) * sw / dw;
+        let v1 = sy + i64::from(by1 - dy) * sh / dh;
+        out.push(TextDraw {
+            dst: (bx0, by0, (bx1 - bx0) as u32, (by1 - by0) as u32),
+            src: (u0 as u32, v0 as u32, (u1 - u0) as u32, (v1 - v0) as u32),
+            color: t.color,
+        });
+    };
+    band(dx, dy, ex, y0.min(ey));
+    band(dx, y1.max(dy), ex, ey);
+    let (my0, my1) = (dy.max(y0), ey.min(y1));
+    band(dx, my0, x0.min(ex), my1);
+    band(x1.max(dx), my0, ex, my1);
 }
 
 /// The Items screen's Use-route confirm (submenu `0xB` Door of Light ->
@@ -688,11 +702,17 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
     match screen {
         PauseScreen::TopLevel(v) => {
             // The rewrite pins the box's rows; a slide moves it as a whole.
+            // The window list's node already stands on the rewritten record
+            // (`MenuWidgetState::rewrite_money_box`), so a live origin is the
+            // box's own; off the list the box is the rewrite of the
+            // descriptor.
             let money_rect = {
-                let live = ctx.rects.rect(window_ids::TOP_MONEY_TIME);
-                let home = ctx.rects.home_rect(window_ids::TOP_MONEY_TIME);
-                let (x, y, w, h) = money_box_rect(live, v.coins);
-                (x, y + live.1 - home.1, w, h)
+                let desc = ctx.rects.home_rect(window_ids::TOP_MONEY_TIME);
+                let (x, y, w, h) = money_box_rect(desc, v.coins);
+                match ctx.rects.live_origin(window_ids::TOP_MONEY_TIME) {
+                    Some((lx, ly)) => (lx, ly, w, h),
+                    None => (x, y, w, h),
+                }
             };
             let money_pen = (money_rect.0, money_rect.1);
             texts.extend(crate::field_menu_draws_for(
@@ -1750,13 +1770,13 @@ mod clip_to_stage_tests {
 /// Everything window `id`'s renderer draws, as a content rect relative to
 /// the window's origin: its descriptor rect, plus what the renderer paints
 /// outside it - window 17's widget box at `WY + 0x38`
-/// ([`crate::items_info_extra_box_rect`]) and the money box's coin row above
-/// window 49 ([`money_box_rect`]).
+/// ([`crate::items_info_extra_box_rect`]) and window 49's coin row, which
+/// the rewritten record ([`money_box_rect`]) stands its origin on.
 fn window_draw_extent(rects: &MenuRects, id: usize) -> (i32, i32, i32, i32) {
     let (_, _, w, h) = rects.home_rect(id);
     match id {
         window_ids::ITEMS_INFO => (0, 0, w.max(0x90), 0x38 + 0x28),
-        window_ids::TOP_MONEY_TIME => (0, -0x0E, w, h + 0x0E),
+        window_ids::TOP_MONEY_TIME => (0, 0, w, h + 0x0E),
         _ => (0, 0, w, h),
     }
 }
@@ -1818,18 +1838,22 @@ impl PauseScreenCarry {
         // Closing windows that stood somewhere in the snapshot: their frame
         // there (surface pixels) and how far they have moved since.
         let s = scale.max(1) as i32;
-        let moving: Vec<(StageRect, (i32, i32))> = closing
+        // A window's frame (`(x, y)` its origin), surface pixels: its draw
+        // extent inflated by the 8-px border.
+        let frame_at = |id: usize, (x, y): (i32, i32)| -> StageRect {
+            let (ex, ey, w, h) = window_draw_extent(rects, id);
+            (
+                origin.0 + (x + ex - 8) * s,
+                origin.1 + (y + ey - 8) * s,
+                (w + 16) * s,
+                (h + 16) * s,
+            )
+        };
+        let moving: Vec<(usize, StageRect, (i32, i32))> = closing
             .iter()
             .filter_map(|&(id, (x, y))| {
                 let (sx, sy) = snap_origins.get(id).copied().flatten()?;
-                let (ex, ey, w, h) = window_draw_extent(rects, id);
-                let frame = (
-                    origin.0 + (sx + ex - 8) * s,
-                    origin.1 + (sy + ey - 8) * s,
-                    (w + 16) * s,
-                    (h + 16) * s,
-                );
-                Some((frame, ((x - sx) * s, (y - sy) * s)))
+                Some((id, frame_at(id, (sx, sy)), ((x - sx) * s, (y - sy) * s)))
             })
             .collect();
         if moving.is_empty() {
@@ -1839,20 +1863,65 @@ impl PauseScreenCarry {
         let inside = |(fx, fy, fw, fh): (i32, i32, i32, i32), x: i32, y: i32| {
             x >= fx && x < fx + fw && y >= fy && y < fy + fh
         };
-        let mut out: Vec<TextDraw> = snap
+        // Every window on the list this frame, ascending id: the open ones
+        // where the walker stands them and the closing ones where it has
+        // carried them.
+        let open: Vec<(usize, StageRect)> = origins
+            .iter()
+            .enumerate()
+            .filter_map(|(id, o)| o.map(|p| (id, frame_at(id, p))))
+            .collect();
+        let mut frames: Vec<(usize, StageRect)> = open.clone();
+        frames.extend(closing.iter().map(|&(id, p)| (id, frame_at(id, p))));
+        // Each draw with the window it belongs to: a carried draw rides its
+        // closing window, a draw of the new screen belongs to the lowest open
+        // window its corner stands in (none: drawn whole).
+        let mut tagged: Vec<(Option<usize>, TextDraw)> = snap
             .iter()
             .filter_map(|d| {
-                let (_, (dx, dy)) = moving
+                let (id, _, (dx, dy)) = moving
                     .iter()
                     .rev()
-                    .find(|(f, _)| inside(*f, d.dst.0, d.dst.1))?;
+                    .find(|(_, f, _)| inside(*f, d.dst.0, d.dst.1))?;
                 let mut d = *d;
                 d.dst.0 += dx;
                 d.dst.1 += dy;
-                Some(d)
+                Some((Some(*id), d))
             })
             .collect();
-        out.extend(now);
+        tagged.extend(now.into_iter().map(|d| {
+            let id = open
+                .iter()
+                .find(|(_, f)| inside(*f, d.dst.0, d.dst.1))
+                .map(|&(id, _)| id);
+            (id, d)
+        }));
+        // Retail's draw walker `FUN_80031D00` walks the list in order, and
+        // the create `FUN_80032434` keeps it sorted by ascending id
+        // (`0x80032528..0x8003255C` inserts before the first node whose id is
+        // not below the new one). Every window's primitives are linked into
+        // the same ordering-table slot (`FUN_8003D2C4` on
+        // `*(0x1F8003F4) + 4`, `0x8002C90C`), which draws the last linked
+        // first: the lowest id is drawn last, on top. So a closing item list
+        // (15) covers the party panel (51) sliding in under it. The hosts
+        // draw every text quad after every sprite, so a draw keeps only what
+        // no lower window's frame covers.
+        let mut out = Vec::with_capacity(tagged.len());
+        for (id, d) in tagged {
+            let Some(id) = id else {
+                out.push(d);
+                continue;
+            };
+            let mut parts = vec![d];
+            for &(_, f) in frames.iter().filter(|(v, _)| *v < id) {
+                let mut kept = Vec::with_capacity(parts.len());
+                for p in parts {
+                    clip_quad_outside(p, f, &mut kept);
+                }
+                parts = kept;
+            }
+            out.extend(parts);
+        }
         out
     }
 }
@@ -1944,6 +2013,44 @@ mod carry_tests {
         assert!(
             c.frame(vec![], None, true, &[], &rects, (0, 0), 1)
                 .is_empty()
+        );
+    }
+
+    /// The lower window id draws on top. The Items command window (13)
+    /// closing over the root list (50) sliding in covers the list's draws
+    /// under its frame; the command window's own draw stays whole.
+    #[test]
+    fn a_closing_lower_window_covers_a_higher_one_sliding_in_under_it() {
+        let rects = MenuRects::new(None);
+        let mut c = PauseScreenCarry::default();
+        let mut snap = [None; LIVE_WINDOW_SLOTS];
+        snap[window_ids::ITEMS_COMMAND] = Some((32, 44));
+        c.frame(
+            vec![quad(40, 50)],
+            Some(snap),
+            false,
+            &[],
+            &rects,
+            (0, 0),
+            1,
+        );
+        // Window 13 (frame `x 12..108`, `y 36..90` once it has moved 12 px
+        // toward its park) over window 50 standing home.
+        let closing = [(window_ids::ITEMS_COMMAND, (20, 44))];
+        let out = c.frame(
+            vec![quad(30, 30), quad(100, 60), quad(110, 60)],
+            Some(origins_at(24)),
+            false,
+            &closing,
+            &rects,
+            (0, 0),
+            1,
+        );
+        let at: Vec<_> = out.iter().map(|d| d.dst).collect();
+        assert_eq!(
+            at,
+            vec![(28, 50, 8, 8), (30, 30, 8, 6), (110, 60, 8, 8)],
+            "the carried draw rides 13 whole; 50's draws keep what 13's frame leaves"
         );
     }
 }
