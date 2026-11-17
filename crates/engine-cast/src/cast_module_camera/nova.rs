@@ -223,8 +223,8 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     },
                     9 => shot([0x40, yaw_from(0x800, f)], [0, 0x600, 0x800], c, 0x80),
                     0x0C => shot([-0x200, yaw_from(0x800, f)], [0, 0x1000, 0x200], c, 0x10),
-                    // The stores land the scaled TR z `0x200` itself: the
-                    // raw depth the tween builder scales to it.
+                    // The straight stores meet arm 0x0C's pull still
+                    // walking ([`NOVA_SNAP_TR_Z_RAW`]).
                     0x0D => ArmDirection {
                         spawns: &NOVA_WHIRLWIND_SPAWNS,
                         ..on_v(-0x200, 0x800, [0, 0x1000, NOVA_SNAP_TR_Z_RAW], 1)
@@ -275,7 +275,14 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     let step = i32::from(st.frame_step.max(1));
                     let n = st.module_words[0].max(0) + (p / 2) * step;
                     let (sin, _) = trig12(((n / 2) & 0xFFF) as u16);
-                    drift(0, i32::from(sin) / 2, 0, 0)
+                    // A step a pass: the rest of the pass that leaves the
+                    // arm repeats none of it. Repeated over the passing
+                    // pass's second tick, the add landed twice and arm 17
+                    // opened `1457` yaw units past the recording's.
+                    ArmDirection {
+                        rest_drift: Some(None),
+                        ..drift(0, i32::from(sin) / 2, 0, 0)
+                    }
                 }
                 0x14 => ArmDirection {
                     end_frame: true,
@@ -287,21 +294,26 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
     )
 }
 
-/// The raw TR z that scales to the `0x200` arm 0x0D stores into the scaled
-/// global: `(0x140 << 8) / 0xA0 = 0x200`.
-const NOVA_SNAP_TR_Z_RAW: i16 = 0x140;
+/// The TR z arm 0x0D's pass leaves. It stores `0x200` into the global
+/// straight (`sw v0,0x8(v1)` at `0x801F7B2C`, `v1 = 0x800840B8`), but arm
+/// 0x0C's `0x10`-frame pull to raw `0x200` is still walking when it does,
+/// and the walker writes the global from that tween on the same frame: a
+/// retail recording reads the pull's endpoint `(0x200 << 8) / 0xA0 = 819`
+/// from arm 0x0E's first row on, where a stored `0x200` read `512` and arm
+/// 0x0F's pull opened `287` short.
+const NOVA_SNAP_TR_Z_RAW: i16 = 0x200;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn nova_snap_depth_scales_to_the_stored_global() {
+    fn nova_snap_depth_lands_on_the_running_pull() {
         assert_eq!(
             legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(i32::from(
                 NOVA_SNAP_TR_Z_RAW
             )),
-            512.0
+            819.0
         );
     }
 
