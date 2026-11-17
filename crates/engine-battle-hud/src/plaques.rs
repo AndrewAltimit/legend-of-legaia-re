@@ -230,29 +230,24 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             // A summon module prints its own line at the label's place
             // (`FUN_8003541C(.., 0x96, ..)`): the spell name, then the
             // attack name, until the band's exit.
-            use legaia_engine_cast::cast_module_camera::ModuleCaption;
-            let id = actor.battle.params[0];
-            return match world.casting.module_caption? {
-                // The line prints the spell table's raw `+8` string, its `0xCE`
-                // element plate in front of the name (`CE 18 " Mushura"`).
-                ModuleCaption::SpellName => world.expansion_cast_name(id).or_else(|| {
-                    let text = world.menu.text.as_ref()?;
-                    let name = text.spell_name(id)?;
-                    let plate = text
-                        .spell_names
-                        .as_ref()
-                        .and_then(|t| t.icon(id))
-                        .and_then(|op| op.checked_add(0x2D))
-                        .filter(u8::is_ascii_uppercase);
-                    Some(match plate {
-                        Some(letter) => format!("^{} {name}", letter as char),
-                        None => name.to_string(),
-                    })
-                }),
-                ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
-                ModuleCaption::Cleared => None,
-                ModuleCaption::ModuleString(va) => world.cast_module_string(id, va),
-            };
+            return module_caption_text(
+                world,
+                actor.battle.params[0],
+                world.casting.module_caption?,
+            );
+        }
+        // A capture module that prints its own line after the label's
+        // window is gone: PROT 0966's arm 20 names its creature record
+        // (`0x801F7DDC..0x801F7E28`) until arm 27 takes it down.
+        if let Some(c) = world
+            .casting
+            .module_caption
+            .filter(|c| *c != legaia_engine_cast::cast_module_camera::ModuleCaption::Cleared)
+        {
+            let id = legaia_engine_cast::cast_module_ticks::capture_caption_record_cast(
+                actor.battle.params[0],
+            );
+            return module_caption_text(world, id, c);
         }
         // The label opens on the `0x28` pass itself, so the seed's pass
         // (which stores `0x28`) shows none: `battle_tunnelc_xain_strike` and
@@ -296,8 +291,41 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
     }
 }
 
-/// Whether [`battle_move_name`] names a summon module's own line - a party
-/// caster's Magic action under a module caption, which the module prints
+/// The text of a module's own line for cast `id`: the spell table's raw
+/// `+8` string with its element plate, the streamed record's name, or a
+/// string in the module image.
+fn module_caption_text(
+    world: &legaia_engine_core::world::World,
+    id: u8,
+    caption: legaia_engine_cast::cast_module_camera::ModuleCaption,
+) -> Option<String> {
+    use legaia_engine_cast::cast_module_camera::ModuleCaption;
+    match caption {
+        // The line prints the spell table's raw `+8` string, its `0xCE`
+        // element plate in front of the name (`CE 18 " Mushura"`).
+        ModuleCaption::SpellName => world.expansion_cast_name(id).or_else(|| {
+            let text = world.menu.text.as_ref()?;
+            let name = text.spell_name(id)?;
+            let plate = text
+                .spell_names
+                .as_ref()
+                .and_then(|t| t.icon(id))
+                .and_then(|op| op.checked_add(0x2D))
+                .filter(u8::is_ascii_uppercase);
+            Some(match plate {
+                Some(letter) => format!("^{} {name}", letter as char),
+                None => name.to_string(),
+            })
+        }),
+        ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
+        ModuleCaption::Cleared => None,
+        ModuleCaption::ModuleString(va) => world.cast_module_string(id, va),
+    }
+}
+
+/// Whether [`battle_move_name`] names a module's own line - a Magic action
+/// under a module caption (a party summon's, or PROT 0966's creature name
+/// line on Cort's Evil Seru Magic), which the module prints
 /// through `FUN_8003541C` rather than through the label's placement record
 /// (`BattleHudFrame::move_name_module_line`).
 pub fn battle_move_name_is_module_line(world: &legaia_engine_core::world::World) -> bool {
@@ -314,7 +342,6 @@ pub fn battle_move_name_is_module_line(world: &legaia_engine_core::world::World)
         return false;
     };
     actor.battle.action_category == ActionCategory::Magic.as_byte()
-        && a < party_count(world) as u8
         && !matches!(
             world.casting.module_caption,
             None | Some(ModuleCaption::Cleared)

@@ -2233,6 +2233,12 @@ impl World {
             if arm.flushes_pool {
                 self.casting.flush_module_part_pool();
             }
+            // The line a passing arm prints or clears at the label's place.
+            if !arm.hold
+                && let Some(c) = arm.caption
+            {
+                self.casting.module_caption = Some(c);
+            }
             if let Some(w) = arm.part_write
                 && let Some(scene) = self.casting.active_summon.as_mut()
             {

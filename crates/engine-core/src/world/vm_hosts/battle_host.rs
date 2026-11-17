@@ -428,6 +428,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
     fn capture_band_exit(&mut self) {
         self.world.casting.module_ctx_278 = 0;
+        // PROT 0966's name line is down by its arm 27; nothing a capture
+        // module prints outlives the band.
+        self.world.casting.module_caption = None;
     }
     fn camera_frame_height(&mut self, height: i16) {
         self.world.battle.camera_frame_height = height;

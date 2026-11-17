@@ -4719,6 +4719,15 @@ close to a minute. It is ported whole.
   playing clip's end, as the recording's creature rows read (clip `2` runs to
   cursor `1024`, clip `4` to `1536`). Port `esm_creature_writes`,
   `World::evil_seru_magic_creature`. Grade `disassembly` + `capture`.
+- **Arm 20 names the creature.** Arm 10 closes the spell label's window
+  (`FUN_800319A8(0x21)`, `0x801F7058`), and arm 20's pass prints the streamed
+  record's name `rec[0]` (`*(0x801C9348 + 0x10)`) as a frameless line at
+  `y = 0x96`, centred on `0xA6` (`0x801F7DDC..0x801F7E28`). Arm 27's pass
+  takes it down (`FUN_800319A8(0)`, `0x801F87E0`), both behind their gates.
+  The recording shows the Seru-plated "Juggernaut" from arm 20's pass to arm
+  27's. Port: the director's `CaptureCamArm::caption`, the move label's
+  monster branch reading `ESM_CREATURE_SPELL`'s record name
+  (`capture_caption_record_cast`). Grade `disassembly` + `capture`.
 - **Arm 26's pass spawns three fades** (`0x801F84F8..0x801F85AC`, each
   `FUN_80024E80(0x801C9070, 1)`): a `0x40`-frame white flash to black, a
   `0x100`-frame blue grade from `(0x10, 0x10, 0x20)` to `(0x80, 0x80, 0xFF)`

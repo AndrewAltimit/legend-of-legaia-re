@@ -96,6 +96,17 @@ pub const ESM_CASTER_FACING: u16 = 0x800;
 /// and the recording's caption reads "Juggernaut".
 pub const ESM_CREATURE_SPELL: u8 = 0x99;
 
+/// The cast whose streamed actor record a capture module's name line reads
+/// (`*(0x801C9348 + 0x10)`, `rec[0]`) for monster cast `cast_id`: Evil Seru
+/// Magic's arm 20 names [`ESM_CREATURE_SPELL`]'s record, the creature arm 10
+/// seated; any other cast reads its own.
+pub fn capture_caption_record_cast(cast_id: u8) -> u8 {
+    match cast_id {
+        0xAD => ESM_CREATURE_SPELL,
+        id => id,
+    }
+}
+
 /// Arm 10's creature seat after the installer: `+0x38 = 0x1C0`, `+0x34 =
 /// 0`, `+0x46 = 0x800`, rate `+0x21D = 0` (`0x801F7134..0x801F7148`), the
 /// node's floor clip `+0x42 = 2` (`0x801F7110`) and object-effect row 1's
