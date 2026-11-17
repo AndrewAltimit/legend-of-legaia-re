@@ -25,9 +25,9 @@ impl World {
     ///   round the victim on the world `rand()` stream
     ///   ([`nova_ring_jitter`] on both plane coordinates, ring by ring,
     ///   `0x801F7C80`, `0x801F7D8C`, `0x801F7F48`).
-    /// - Arm `0x10`, every pass: the victim climbs to
-    ///   [`nova_lift_height`], and on the tick that opens each pass turns by
-    ///   [`nova_lift_spin_per_pass`] at the countdown the pass leaves. Its
+    /// - Arm `0x10`, every pass, the passing one included: the victim climbs
+    ///   to [`nova_lift_height`], and on the tick that opens each pass turns
+    ///   by [`nova_lift_spin_per_pass`] at the countdown the pass leaves. Its
     ///   pass halts the sixteen rings (`0x801F8124..0x801F8140`).
     /// - Arm `0x13` while it holds: the victim turns `0x600` a pass and
     ///   comes down along [`nova_landing_height`], arm 18's three parts
@@ -132,7 +132,12 @@ impl World {
                 // pass's climb (`W += (rate * speed) >> 1`, `0x801F7FE4..
                 // 0x801F7FF8`), where the port's word has climbed one tick.
                 let w_pass = w + (pass_ticks - 1) * (SETTLE_DRAIN_PER_TICK >> 1);
-                let spin = if opens_pass && !passed {
+                // The turn sits ahead of the arm's gate (`sh v0,0x46(s2)` at
+                // `0x801F8038`, the `slti 0x401` test at `0x801F80A8`), so the
+                // pass that leaves the arm turns too: near the top of the
+                // climb that is half a turn, which the arm-17 cut and the
+                // later framings read off the victim.
+                let spin = if opens_pass {
                     nova_lift_spin_per_pass(w_pass)
                 } else {
                     0
