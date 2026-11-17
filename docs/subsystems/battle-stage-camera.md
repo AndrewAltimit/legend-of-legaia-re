@@ -1312,6 +1312,21 @@ The lone-monster defeat fork above it (`ctx[+0x287]` / `ctx[+0x288]` /
 sends a scripted fight's lone monster, dying in place, to the same stand-off
 arm as a gone node.
 
+The falling arm opens two passes after the death arm, on retail and on the
+engine alike. A `--watch` on Thunder Punch's killed target
+(`battle_garmel_party_gala_thunder_punch_open`) reads the death arm's
+`+0x21C = 2` at `0x8004B66C` inside the knockdown's natural-end commit, the
+first sink (`+0x36 = 13`, `0x800504A8`) on the next pass, since
+`FUN_80050120` runs ahead of the node ticks in the frame, and the camera's first
+falling pose on the pass after that, since the state arm frames ahead of the
+sink. The engine's death arm, sink and re-frame land on three consecutive passes
+the same way. Where a film opens the ramp a pass early the knockdown ended a pass
+early: Thunder Punch's replay kept a step-`4` frame where retail's dropped to `3`
+(`into` 124), its knockdown cursor ran `8` ahead, and the clip ended a pass
+sooner. Slash Kick's lead is one vsync of pass phase, left by two such step-`4`
+frames, and its ramp opens on the pass after the killing hit as retail's does.
+Both are the frame step's cost, not the fade's order.
+
 Port: `battle_cam_script::apply_death_reframe`, applied by
 `BattleCamera::action_end_pose` whenever the post-action target reads dead; the
 ramp is `battle_attack_camera::AttackCamCtx::death_ramp`, and the lone-defeat
