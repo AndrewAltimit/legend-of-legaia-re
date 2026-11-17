@@ -69,7 +69,8 @@ nothing. This crate is the projection between them for:
   and the fog bank's tint under it, the enhanced scene lights
   a frame draws and the frame clear colour, off the world and the open
   screen; and the camera-occlusion fade's world half (`field_occlusion`:
-  whether the fade arms, the player's body centre and feet it aims at),
+  whether the fade arms - `host_fade_arming`, which stands down while a
+  script holds the camera - and the player's body centre and feet it aims at),
   beside the host terms only a host can answer;
 - the **screen-space primitive layers** (`screen_layers`): the frame's
   `under` / `over` PSX primitive lists, composed in one order for both hosts.

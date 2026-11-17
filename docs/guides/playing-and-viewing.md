@@ -1174,7 +1174,8 @@ the Travel page.
 
 **Editing a pack while you play it.** `End` reloads the pack from its folder
 or `.lxpack` and, when you stand on one of its maps, rebuilds that map with you
-where you stood; the camera keeps its framing and no name banner plays. With
+where you stood; the camera keeps its framing, the screen does not fade
+through black and no name banner plays. With
 `--expansion-watch` the window does that by itself whenever a file of the pack
 changes, so a map edited in a text editor shows a moment after it is saved:
 
