@@ -1389,6 +1389,23 @@ fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
     assert!(d.hold);
 }
 
+/// The pass lays its streaks off the word its whole frame product climbed
+/// to (`0x801F73BC` ahead of `0x801F73CC`), not the one tick the port's
+/// word has climbed on the tick that deals them.
+#[test]
+fn viguro_arm_twelve_lays_its_ring_off_the_pass_climb() {
+    let mut st = ModuleCamState {
+        frame_step: 4,
+        ..Default::default()
+    };
+    let d = viguro_direct(&mut st, 12, ModuleCamSeats::default());
+    let pass_w = st.countdown.0 + 3 * (MODULE_DRAIN_PER_TICK / 4);
+    assert_eq!(
+        d.ribbons.map(|r| r.points),
+        Some(viguro_charge_ring([0, 0], pass_w))
+    );
+}
+
 /// Neo Star Slash's and Doomsday's words place a capture inside an arm:
 /// PROT 0960's is in the director's own unit, PROT 0965's counts vsyncs and
 /// is scaled into it (`gaza2_card_neo_star_slash_mid_cast` reads `96` on
