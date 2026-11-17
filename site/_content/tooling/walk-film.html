@@ -66,6 +66,10 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
     <li>Idle 300-vsync films of ten more fields (<code>retock</code>, <code>taiku</code>, <code>nilboa</code>, <code>jou</code> and others) read no placement off retail. Where placements did part with nothing pressed, each turned or stepped at retail&rsquo;s rate one vsync early or late: the game frame's phase, which the film seats (<a href="#the-game-frames-phase">below</a>). What still parts is <code>dolk2</code>'s flat <code>70</code> and wanderers.</li>
     <li><code>dolk2_market_noa</code>'s flat <code>70</code> is the state's history, not a spawn defect: the spawner seats it on its header's tile, which is the engine's seat, and the state's position is where a scene script's NPC run left it. A film seeded from the scene's spawn does not replay that beat.</li>
     <li>A beat's last turn holds when the engine plays the beat: in <code>son</code> the film from the mid-beat checkpoint ends on retail's heading and seat for Luctes.</li>
+    <li>A cutscene camera glide steps once a game frame: the mover adds the frame step to its progress once a frame, after the script that armed it, so its first frame already stands a whole step along and each pose holds until the next frame. The engine had stepped it a vsync at a time, a glide armed inside a film trailing retail's by a frame or two for its whole flight; stepped retail's way, <code>son</code>'s and <code>taiku2</code>'s door-hop films stand on retail's camera on every vsync.</li>
+    <li>A record's frame wait starts over when a walk it gave the player lands: the landing clears the record's counter along with its halt. <code>tower</code>'s lift glides the player, fades to white and waits sixty frames before it moves him, and retail moves him sixty vsyncs after the glide lands, not sixty after the fade began; the engine now lands the move on retail's vsync.</li>
+    <li>A talk stands every wanderer that defers to the player, as retail's does: the record runner marks the player engaged from a talk's first slice until it ends. The engine had held only the talker, so under an open box the rest of the town walked on; the two <code>retock</code> inn films now draw retail's random numbers to their end.</li>
+    <li>The film seats every placement's clip cursor from the state, so the clip columns compare how each pose moves rather than two phases the seed happened to leave. Read that way, <code>bubu2</code>'s possessed villagers played their idle at twice retail's speed: their spawn scripts slow the clip with a one-frame ramp on its rate, which the engine had dropped.</li>
   </ul>
 </section>
 
@@ -107,12 +111,11 @@ scripts/ci/walk-film.py kor3_field_route_walk --pad 0-120:UP --no-retail   # eng
       <tr><td>Scripted-motion VM (<code>FUN_80038158</code>)</td><td>One for a wanderer's decision</td></tr>
     </tbody>
   </table>
-  <p>Every film that parts before its end parts on one of five causes:</p>
+  <p>Every film that parts before its end parts on one of four causes:</p>
   <table>
     <thead><tr><th>Cause</th><th>Kind</th></tr></thead>
     <tbody>
       <tr><td>Ambient parts the state holds and the seed does not: a spawner part's children outlive the seed's settle, so the engine stands fewer of them (nine of retail's twenty-nine in <code>garmel</code>)</td><td>Harness seat</td></tr>
-      <tr><td>An open talk the seed does not resume: retail's wanderers stand still under it and draw nothing, the engine's roam and draw (the two <code>retock</code> inn films)</td><td>Harness seat</td></tr>
       <tr><td>A wanderer's stream on another phase than the state's</td><td>Harness seat</td></tr>
       <tr><td>The fog pool: a burst point the spawner seats on one side and rejects on the other</td><td>Engine or seat, film by film</td></tr>
       <tr><td>The measured frame step changing inside the film</td><td>Retail's frame time</td></tr>
