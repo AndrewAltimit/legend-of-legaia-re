@@ -227,9 +227,9 @@ impl LegaiaRuntime {
                     Ok(_) => {
                         reentered = true;
                         *self.scene_host.camera_mut() = camera;
-                        // A reload is not an arrival: no place-name banner.
+                        // A reload is not an arrival: no banner, no fade.
                         if let Some(h) = self.scene_host.host_mut() {
-                            h.world.cutscene.text_balloon = None;
+                            h.settle_expansion_reload();
                         }
                     }
                     Err(e) => {
@@ -1190,5 +1190,58 @@ mod tests {
             );
             assert_eq!(cold, again, "{map}: the reload builds what the entry built");
         }
+    }
+
+    /// The frames after `rt`'s last entry that draw a screen fade, and the
+    /// post-load pad hold left: ticked until no fade draws (capped).
+    fn fade_frames_after_entry(rt: &mut LegaiaRuntime) -> (usize, i32) {
+        fn world(rt: &LegaiaRuntime) -> &legaia_engine_core::world::World {
+            &rt.scene_host.host().expect("host").world
+        }
+        let hold = world(rt).post_load_hold();
+        let mut frames = 0;
+        while !world(rt).screen_fade_draws().is_empty() && frames < 600 {
+            rt.tick_frame().expect("tick");
+            frames += 1;
+        }
+        (frames, hold)
+    }
+
+    /// Disc-gated: an edit's hot reload is not an arrival. A map entry comes
+    /// up out of the MAN installer's fade pair and pad hold
+    /// (`World::seat_map_install_tail`), but the reload's re-entry draws no
+    /// fade and leaves no hold - the workbench preview does not go black on
+    /// every edit - and neither does a quiet arrival (the preview's own
+    /// entry of a map).
+    #[test]
+    fn reload_draws_no_entry_fade() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let pack = bundle(&sample_pack_files());
+        let map = "genesis_1f";
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let _ = rt.load_expansion_core(&pack);
+        rt.enter_expansion_map_core(map, "").expect("enter");
+        let (entry_frames, entry_hold) = fade_frames_after_entry(&mut rt);
+        assert!(entry_frames > 0, "an arrival fades in");
+        assert!(entry_hold > 0, "an arrival holds the pad");
+
+        let r = rt.reload_expansion_core(&pack);
+        assert_eq!(r["reentered"], true, "{r}");
+        let (frames, hold) = fade_frames_after_entry(&mut rt);
+        assert_eq!(
+            frames, 0,
+            "a reload draws no fade (an entry draws {entry_frames})"
+        );
+        assert_eq!(hold, 0, "a reload leaves no pad hold");
+
+        rt.expansion_set_quiet_arrivals(true);
+        rt.enter_expansion_map_core(map, "").expect("enter");
+        let (frames, hold) = fade_frames_after_entry(&mut rt);
+        assert_eq!((frames, hold), (0, 0), "a quiet arrival draws no fade");
     }
 }

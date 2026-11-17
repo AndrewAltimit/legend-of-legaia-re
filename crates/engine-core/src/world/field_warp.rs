@@ -283,6 +283,21 @@ impl World {
         }
     }
 
+    /// Take back what [`Self::seat_map_install_tail`] seated: its fade pair
+    /// and the post-load pad hold. Retail has no such step - every MAN
+    /// install is an arrival. The port's editor re-entries are not: an
+    /// expansion pack's hot reload re-enters the map the player stands on
+    /// after each workbench edit, and a quiet arrival is the workbench
+    /// preview's own entry of a map. Both come straight up on the new scene
+    /// instead of out of black, with the pad free. Called right after the
+    /// entry, when the only id-`1` module fades live are the installer's.
+    pub fn retire_map_install_tail(&mut self) {
+        self.locomotion.warp.hold = 0;
+        self.presentation
+            .module_fades
+            .retain(|f| f.mode[2] != MAP_INSTALL_FADE_ID);
+    }
+
     /// The post-warp / post-load hold still to drain, retail's
     /// `_DAT_8007B6B4`.
     pub fn post_load_hold(&self) -> i32 {
@@ -468,6 +483,26 @@ mod tests {
             "one per tick at ratio 1"
         );
         assert!(!w.encounter_roll_held());
+    }
+
+    /// An editor re-entry takes the install tail back: no fade draws, the
+    /// pad is free, and a fade another seat spawned stays.
+    #[test]
+    fn retiring_the_install_tail_drops_its_fades_and_hold_only() {
+        let mut w = world_with_player();
+        let other = legaia_engine_battle_vm::battle_action::summon_fade_template(
+            &legaia_engine_cast::cast_module_ticks::GENOCIDAL_CANNON_STAGER_FADE,
+        );
+        let mut seat = None;
+        legaia_engine_system::fade::spawn_fade(&mut seat, &other, 3);
+        w.presentation.module_fades.extend(seat);
+        w.seat_map_install_tail();
+        assert_eq!(w.presentation.module_fades.len(), 3);
+        w.retire_map_install_tail();
+        assert_eq!(w.presentation.module_fades.len(), 1, "the other fade stays");
+        assert_eq!(w.presentation.module_fades[0].mode[2], 3);
+        assert_eq!(w.post_load_hold(), 0);
+        assert!(!warp_tile::pad_suppressed(&w.locomotion.warp));
     }
 
     /// System flag `0x1B` turns the pair additive, once: the install clears it.

@@ -354,7 +354,8 @@ pub struct SceneHost {
     /// ([`crate::expansion_preload::MapPreloader`]).
     pub expansion_preload: crate::expansion_preload::MapPreloader,
     /// Enter pack maps without their arrival presentation: no place-name
-    /// banner and no arrival cutscene ([`SceneHost::enter_expansion_map`]).
+    /// banner, no arrival cutscene, and no entry fade or pad hold
+    /// ([`SceneHost::enter_expansion_map`]).
     /// The expansion workbench's 3D preview sets it, so an edit-and-look
     /// entry shows the map rather than its story beat; play leaves it off.
     pub quiet_expansion_arrivals: bool,

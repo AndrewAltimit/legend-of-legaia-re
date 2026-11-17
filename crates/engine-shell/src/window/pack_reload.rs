@@ -7,8 +7,9 @@
 //! from where `--expansion` named it, check it, activate it through the one
 //! activation path, and - when the player stands on one of its maps - re-enter
 //! that map with them seated where they stood
-//! (`SceneHost::enter_expansion_map_seated`), the follow camera's framing kept
-//! and no place-name banner. Both hosts read the seat through
+//! (`SceneHost::enter_expansion_map_seated`), the follow camera's framing kept,
+//! no place-name banner and no entry fade
+//! (`SceneHost::settle_expansion_reload`). Both hosts read the seat through
 //! `SceneHost::expansion_reload_seat` and word the outcome through
 //! `hotkeys::pack_reload_notice`.
 //!
@@ -170,8 +171,8 @@ impl PlayWindowApp {
                 return PackReloadOutcome::Refused(format!("{e:#}"));
             }
             self.session.camera = camera;
-            // A reload is not an arrival: no place-name banner.
-            self.session.host.world.cutscene.text_balloon = None;
+            // A reload is not an arrival: no banner, no fade.
+            self.session.host.settle_expansion_reload();
             self.rebuild_scene_render_state();
             map = Some(id);
         }
