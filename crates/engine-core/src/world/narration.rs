@@ -1134,6 +1134,8 @@ impl World {
                 tl.player_glide = Some(glide);
             } else {
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             }
         }
         for mut glide in std::mem::take(&mut tl.npc_glides) {
@@ -1148,11 +1150,15 @@ impl World {
             walk.frames += 1;
             if self.step_player_walk_leg(walk.target, walk.speed, grid, walk.approach) {
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             } else if walk.frames < WALK_PARK_TIMEOUT {
                 tl.walk_wait = Some(walk);
             } else {
                 self.seat_player_on_walk_leg_target(walk.target);
                 tl.player_landed_hold = true;
+                tl.ctx.flags &= !0x400;
+                tl.ctx.wait_accum = 0;
             }
         }
     }

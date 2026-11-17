@@ -222,6 +222,7 @@ impl World {
             tl.player_landed_hold = true;
             glide_hold = true;
         }
+        let mut player_glide_landed = false;
         if let Some(mut glide) = tl.player_glide.take() {
             if grid == 0 {
                 tl.player_glide = Some(glide);
@@ -231,6 +232,7 @@ impl World {
                     tl.player_glide = Some(glide);
                 } else {
                     tl.player_landed_hold = true;
+                    player_glide_landed = true;
                 }
             }
             glide_hold = true;
@@ -272,7 +274,11 @@ impl World {
         // on; the actor stays held for the script until the ramp snaps, and
         // on the snap frame.
         // REF: FUN_801DE840 (0x801DEE90..0x801DEF24), FUN_8003774C (case 0x38)
-        let mut face_landed = false;
+        // Any leg landing on the player clears the record's `+0x54` after
+        // the slice (below), the compass and walk legs as the turns do: the
+        // kernel's terminal stores run on the caller whenever the walked
+        // actor is the player (`0x80038008..0x80038028`).
+        let mut face_landed = player_walk_landed || player_glide_landed;
         for mut fw in std::mem::take(&mut tl.npc_facings) {
             match fw.slot {
                 Some(slot) => npc_glide_hold.push(slot),

@@ -432,6 +432,15 @@ impl World {
         // the player a pass, trailed it half as far (`tower_field_walk`).
         // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_801DE840 (0x801DEE90..0x801DEF1C)
         let grid = self.clock.script_frame_delta();
+        // A leg that lands on the player clears the record's `+0x54` along
+        // with its halt (`0x80038020`), and the kernel runs after the
+        // record's slice in the object's tick (`FUN_8003BC08`: runner at
+        // `0x8003BD34`, kernel at `0x8003BD50`), so a `4A` the record sits
+        // on loses what it counted while the player walked and counts its
+        // whole span again from the landing. `tower`'s lift fades to white,
+        // waits `4A 3C`, and moves the player: retail's move lands `60`
+        // vsyncs after the glide, not `60` after the fade began.
+        let mut leg_landed = false;
         if let Some(mut glide) = id.player_glide.take() {
             if grid == 0 {
                 id.player_glide = Some(glide);
@@ -439,6 +448,8 @@ impl World {
                 glide.state.speed = grid;
                 if self.step_player_glide(&mut glide) {
                     id.player_glide = Some(glide);
+                } else {
+                    leg_landed = true;
                 }
             }
         }
@@ -1011,6 +1022,11 @@ impl World {
                 // next tick continues).
                 parked = true;
             }
+        }
+        // The landing's `+0x54` clear, after the slice (see the head).
+        // REF: FUN_8003774C (0x80038008..0x80038028), FUN_8003BC08
+        if leg_landed {
+            id.ctx.wait_accum = 0;
         }
         // Mirror the context back onto the live prop: anim word, rate, and
         // the `+0x10` class word (whose bit `0` is the door's collision-off).
