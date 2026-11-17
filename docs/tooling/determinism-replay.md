@@ -209,9 +209,9 @@ zoom, the precise-movement toggle) are not recorded. The defaults are safe: the
 distance preset, orbit, tilt and zoom are pure render framing (no
 simulation effect - only the orbit reaches the compass), and replays run with
 `precise_movement` off (the retail-faithful quantised remap), matching
-the engine-core defaults. A session recorded while precise movement was
-ON (or with a non-zero drag-orbit compass) is not replay-stable; keep
-the toggles at their defaults when capturing replay fixtures.
+the engine-core defaults. The play hosts default precise movement on, so
+`record` pins it off for the session; a session that turns it back on with
+`R` (or records a non-zero drag-orbit compass) is not replay-stable.
 
 ## Determinism gate
 

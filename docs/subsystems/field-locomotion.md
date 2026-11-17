@@ -1750,10 +1750,11 @@ The held d-pad goes through the eight-entry ring retail's remap walks, rotated b
 
 All three default to 0, so headless hosts keep the identity remap. A host that renders the retail follow view sets `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the live yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera. The follow camera itself is documented with its record format in [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table) and ported in `camera_zone`.
 
-Two non-retail, opt-in knobs (play-window keybinds, persisted in `legaia-options.toml`):
+Two non-retail knobs (play-window keybinds, persisted in `legaia-options.toml`):
 
 - **Camera distance** (`Camera::distance`, presets retail / far / farther; `T` cycles) - a framing scale on the follow camera's eye-back depth that never feeds the simulation. The engine-core default stays `retail` so oracle / replay paths are bit-identical; the windowed host defaults to `far`.
-- **Free-angle movement** (`World::locomotion.precise_movement`; `R` toggles, default off) - swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
+- **Free-angle movement** (`World::locomotion.precise_movement`; `R` toggles) - on by default on both play hosts (`OptionsState::precise_movement`), off in the `World` default, so headless sessions, the oracles, walk films, the full-game ladder and `retail-compare` keep the retail decode, and `--retail` / `pin_retail` force it off for a session.
+  It swaps the quantised remap for a continuous decode (`decode_field_direction_precise`): the azimuth rotates the screen vector at full angular resolution, key diagonals walk true 45-degree vectors at normalised speed (no x0.75 cut), and a deflected analog stick (`InputState::lstick`) passes its angle through. The step still routes through the same 2-unit per-axis collision probes (`advance_with_collision_vector`, Z before X per sub-step), with a sub-step remainder carried across frames.
 
 ## Open
 

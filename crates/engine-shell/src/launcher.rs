@@ -1677,7 +1677,8 @@ impl OptionRow {
                  original framing. In game: T."
             }
             Self::PreciseMovement => {
-                "Walk at any angle instead of the original eight directions. In game: R."
+                "Walk at any angle (on by default). Off keeps the original eight \
+                 directions. In game: R."
             }
             Self::ReduceFlashing => {
                 "Softens fast-flashing light effects (a photosensitivity guard). Off shows \

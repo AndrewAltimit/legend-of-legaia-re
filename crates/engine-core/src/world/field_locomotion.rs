@@ -91,15 +91,17 @@ pub struct FieldLocomotion {
     /// `+Z`). Engines that orbit the camera write the current azimuth here
     /// each frame; the locomotion remap quantises it to the nearest 90°.
     pub camera_azimuth: u16,
-    /// Opt-in precise-movement mode for pad locomotion. When set,
+    /// Precise-movement mode for pad locomotion. When set,
     /// [`crate::world::World::step_field_locomotion`] decodes the held direction
     /// **continuously** instead of through retail's 4/8-way quantisation:
     /// the camera azimuth is applied at full angular resolution (not
     /// snapped to the nearest 90°), key diagonals walk true 45° vectors at
     /// full speed, and an analog stick ([`legaia_engine_system::input::InputState::lstick`])
-    /// passes its angle through untouched. Off by default - the default
-    /// path stays bit-identical to the retail-faithful quantised remap
-    /// (replays / oracles are unaffected unless a host opts in).
+    /// passes its angle through untouched. Off in the `World` default - the
+    /// default path stays bit-identical to the retail-faithful quantised
+    /// remap, so replays, oracles and walk films are unaffected. The play
+    /// hosts turn it on from `OptionsState::precise_movement`, which defaults
+    /// on and which `--retail` / `pin_retail` force off.
     pub precise_movement: bool,
     /// Field Move option: `false` = Walk, `true` = Run (retail config word
     /// `0x800846CC`, the pause menu's "Field Move" row - see

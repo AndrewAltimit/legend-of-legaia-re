@@ -261,7 +261,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Enhancements | Heal numbers (off = `--no-heal-numerals`) | `launcher.toml` | - | on |
-| Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Free-angle movement | `legaia-options.toml` | `R` | on |
 | Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
@@ -523,7 +523,7 @@ enhancement has a retail-faithful off position
 | `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
 | `Home` | Ambient occlusion: soft contact shadows where walls meet floors and at characters' feet | on, remembered | `--no-ssao` |
-| `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
+| `R` | Free-angle movement | on (off is retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
 | `F2` | Mute audio | off, remembered | `--no-audio` |

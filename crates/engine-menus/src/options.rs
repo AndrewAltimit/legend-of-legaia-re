@@ -195,9 +195,22 @@ pub struct OptionsState {
     /// world simulation, so replays / oracles are unaffected (headless
     /// hosts don't read options and keep the engine-core `Retail` default).
     pub camera_distance: legaia_engine_camera::camera_distance::CameraDistance,
-    /// Opt-in precise-movement toggle (engine-only, non-retail): mirrors
-    /// into `legaia_engine_core::world::FieldLocomotion::precise_movement`
-    /// by windowed hosts. Default off = retail's quantised 4/8-way remap.
+    /// Free-angle movement (engine-only, non-retail): mirrors into
+    /// `legaia_engine_core::world::FieldLocomotion::precise_movement` by both
+    /// play hosts. **Default on** - the movement vector follows the camera at
+    /// full angular resolution and an analog stick's angle passes through;
+    /// off is retail's quantised 4/8-way remap, which [`Self::pin_retail`]
+    /// forces and which every headless session, oracle and replay keeps (the
+    /// `World` default is off; only a host's options push turns it on).
+    ///
+    /// Persisted as `free_angle_movement`. The key it was written under while
+    /// the default was off, `precise_movement`, is no longer read: every
+    /// stored file carries every field, so a `false` there cannot tell a
+    /// player's choice from the old default, and while off was the default
+    /// the two were the same thing. An old file therefore loads the new
+    /// default, and an off chosen from here on is saved under the new key
+    /// and kept.
+    #[serde(rename = "free_angle_movement")]
     pub precise_movement: bool,
     /// Photosensitivity guard (engine-only, non-retail): slew-limits the
     /// luminance channels of the palette-space light animations so scenes
@@ -356,7 +369,7 @@ impl Default for OptionsState {
             message_speed: 5,
             muted: false,
             camera_distance: legaia_engine_camera::camera_distance::CameraDistance::Far,
-            precise_movement: false,
+            precise_movement: true,
             reduce_flashing: true,
             retail_static_window: true,
             retail_view_window: true,
@@ -1464,13 +1477,13 @@ mod tests {
         pins.pin(&live, options_pin::VOLUMETRIC_FOG);
         live.volumetric_fog = false;
         live.message_speed = 2;
-        live.precise_movement = true;
+        live.precise_movement = false;
         let saved = pins.persistable(&live);
         assert_eq!(
             saved.volumetric_fog, stored.volumetric_fog,
             "the override is not saved"
         );
-        assert!(saved.precise_movement, "an unpinned knob's edit is saved");
+        assert!(!saved.precise_movement, "an unpinned knob's edit is saved");
         assert_eq!(saved.message_speed, 2);
 
         pins.pin_retail(&mut live);
@@ -1481,7 +1494,7 @@ mod tests {
             saved.volumetric_fog, stored.volumetric_fog,
             "first pin's value kept"
         );
-        assert!(saved.precise_movement, "the value before the retail pin");
+        assert!(!saved.precise_movement, "the value before the retail pin");
         assert_eq!(
             saved.lighting_time_of_day, "night",
             "retail-session edit kept"
@@ -1490,9 +1503,33 @@ mod tests {
         pins.release_all(&mut live);
         assert!(!pins.any());
         assert_eq!(live.volumetric_fog, stored.volumetric_fog);
-        assert!(live.precise_movement);
+        assert!(!live.precise_movement);
         assert_eq!(live.lighting_time_of_day, "night");
         assert_eq!(pins.persistable(&live), live);
+    }
+
+    /// Free-angle movement is the interactive default. A file written while
+    /// it defaulted off carries `precise_movement = false` whether or not the
+    /// player chose it, so that key is not read and the file loads the new
+    /// default; an off chosen now is written under `free_angle_movement` and
+    /// kept.
+    #[test]
+    fn free_angle_movement_defaults_on_and_an_old_stored_off_migrates() {
+        assert!(OptionsState::default().precise_movement);
+        let old: OptionsState = toml::from_str("precise_movement = false\nmuted = true\n").unwrap();
+        assert!(
+            old.precise_movement && old.muted,
+            "the old default migrates"
+        );
+        let off = OptionsState {
+            precise_movement: false,
+            ..OptionsState::default()
+        };
+        let text = toml::to_string(&off).unwrap();
+        assert!(text.contains("free_angle_movement = false"), "{text}");
+        assert!(!text.contains("precise_movement"), "{text}");
+        let back: OptionsState = toml::from_str(&text).unwrap();
+        assert!(!back.precise_movement, "a chosen off stays off");
     }
 
     #[test]
@@ -1503,6 +1540,7 @@ mod tests {
             o.retail_deviations(),
             [
                 "camera_distance",
+                "precise_movement",
                 "reduce_flashing",
                 "enhanced_lighting",
                 "light_shadows",
@@ -1510,7 +1548,6 @@ mod tests {
                 "ssao"
             ]
         );
-        o.precise_movement = true;
         o.retail_static_window = false;
         o.retail_view_window = false;
         o.volumetric_fog = true;
@@ -1648,7 +1685,6 @@ mod tests {
         o.bloom = true;
         o.volumetric_fog = true;
         o.lighting_time_of_day = "night".to_string();
-        o.precise_movement = true;
         o.bgm_volume = 3;
         o.reset_visual_enhancements();
         let d = OptionsState::default();
@@ -1662,7 +1698,7 @@ mod tests {
         assert_eq!(o.camera_distance, d.camera_distance);
         assert_eq!(o.retail_view_window, d.retail_view_window);
         assert_eq!(o.retail_static_window, d.retail_static_window);
-        assert!(o.precise_movement, "movement is not a visual knob");
+        assert!(!o.precise_movement, "movement is not a visual knob");
         assert_eq!(o.bgm_volume, 3, "audio is not a visual knob");
         assert!(!o.reduce_flashing, "the flash guard keeps its value");
     }

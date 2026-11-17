@@ -411,11 +411,12 @@ impl PlayWindowApp {
             };
             // Camera-distance preset (`T` cycles) + precise-movement toggle
             // (`R`) - the compass/zoom state, appended to the status line.
+            // Free-angle movement is default-on; flag the non-default state.
             let cam_str = format!("  cam {} (T)", self.session.camera.distance.label());
             let precise_str = if self.options_state.precise_movement {
-                "  precise-move ON (R)"
-            } else {
                 ""
+            } else {
+                "  precise-move off (R)"
             };
             // Camera-occlusion fade is default-on; flag the non-default state
             // (`F4` toggles) so a "why is the wall solid again" session sees it.
