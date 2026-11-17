@@ -145,12 +145,29 @@ impl World {
         self.battle.frame_work = work;
         // An XA clip's read span: the frame runs on the CD interrupt path
         // (`FUN_8005DAB0`) once the stream is up.
-        let loaded = xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing) {
+        let poll_wait = self.audio.battle_xa_poll_wait;
+        let loaded = xa_passes.map(|n| match (poly, self.toggles.battle_cd_timing, poll_wait) {
+            // A clip whose seek the port times: its polls open `wait`
+            // hblanks into this pass, from the cue's own pass on.
+            (Some(_), CdTiming::PcsxRedux, Some(wait)) => {
+                legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
+                    wait,
+                    work,
+                    xa_polled_work_cost,
+                )
+            }
+            (None, CdTiming::PcsxRedux, Some(wait)) => {
+                legaia_engine_battle_loop::frame_clock::xa_partly_polled_cost(
+                    wait,
+                    work,
+                    legaia_engine_battle_loop::frame_clock::xa_loaded_frame_cost,
+                )
+            }
             // The frame's own work under the stop watch's polls, a band
             // module's line as the funnel's: the polls run for every clip the
             // player starts (`FUN_8003D764`), so a frame's span under one is
             // its work over the share they leave.
-            (Some(_), CdTiming::PcsxRedux) => match n {
+            (Some(_), CdTiming::PcsxRedux, None) => match n {
                 0 => work,
                 1 => work.saturating_add(XA_STREAM_ONSET_COST),
                 _ => xa_polled_work_cost(work),
@@ -702,7 +719,16 @@ impl World {
         if let Some(n) = self.battle_xa_passes_since_cue() {
             use legaia_engine_battle_loop::frame_clock as fc;
             let own = step.max(1);
-            let retail = if n < 2 {
+            let retail = if let Some(wait) = self.audio.battle_xa_poll_wait {
+                fc::frame_span(
+                    fc::xa_partly_polled_cost(
+                        wait,
+                        self.battle.frame_work,
+                        fc::xa_loaded_frame_cost,
+                    ),
+                    own,
+                )
+            } else if n < 2 {
                 own
             } else if self.audio.battle_xa_poll_load {
                 fc::frame_span(fc::xa_loaded_frame_cost(self.battle.frame_work), own)
@@ -731,6 +757,13 @@ impl World {
         } else {
             0
         };
+        // The seek runs on through the frame: the next pass opens this one's
+        // span later.
+        if let Some(wait) = self.audio.battle_xa_poll_wait.as_mut() {
+            let span = u32::from(step.max(1)) + u32::from(extra);
+            *wait = wait
+                .saturating_sub(span * legaia_engine_battle_loop::frame_clock::HBLANKS_PER_VSYNC);
+        }
         let tick = self.clock.display_frames;
         self.battle.frame_clock.retime_span(tick, extra);
         let ordinary = self.ordinary_battle_frame_step();

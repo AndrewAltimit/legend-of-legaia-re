@@ -42,10 +42,12 @@ impl World {
         let (ids, _) = avc::starter_commit_voice_ids(char_id, seat, mark, stage, next, &mut || {
             self.next_rand()
         });
+        let drive = self.arts_voice_drive_before();
         for id in ids {
             log::debug!("battle: SpecialStarter voice cue {id:#05x} (seat {i})");
             self.dispatch_battle_cue(id);
         }
+        self.time_arts_voice_seek(char_id, drive);
     }
 
     /// The shout site: on a party commit of a staged id `>= 0x10`, call the
@@ -93,6 +95,7 @@ impl World {
         let mut last = self.audio.arts_voice_last_channel;
         let emits = avc::select_arts_voice(&tables, &call, &mut last, &mut || self.next_rand());
         self.audio.arts_voice_last_channel = last;
+        let drive = self.arts_voice_drive_before();
         for emit in emits {
             log::debug!(
                 "battle: arts shout char {char_id} action {action:#04x} flag {flag:#04x} -> {emit:?}"
@@ -112,5 +115,46 @@ impl World {
                 }
             }
         }
+        self.time_arts_voice_seek(char_id, drive);
+    }
+
+    /// The drive as an anim commit's voice site finds it: whether a clip
+    /// still holds it, and how many clips the queue held.
+    fn arts_voice_drive_before(&self) -> (bool, usize) {
+        (
+            self.audio.battle_xa_busy_frames != 0,
+            self.audio.battle_xa_cues.len(),
+        )
+    }
+
+    /// Time the seek of a clip a party anim commit's voice site just started
+    /// (`FUN_8003D53C` from `FUN_8004AD80`'s two voice sites). The battle
+    /// seek-ahead selector parks the idle drive on the acting member's long
+    /// bank for an Attack (`FUN_8004DA00`, `(char - 1) * 2` at `0x8004DAFC`),
+    /// so a clip from that bank opens its polls at once and any other file
+    /// takes PCSX-Redux's seek first
+    /// ([`legaia_engine_battle_loop::frame_clock::ARTS_SHOUT_PARKED_POLL_HBLANKS`],
+    /// [`legaia_engine_battle_loop::frame_clock::ARTS_SHOUT_SEEK_POLL_HBLANKS`]).
+    ///
+    /// REF: FUN_8004DA00, FUN_8003D53C
+    fn time_arts_voice_seek(&mut self, char_id: u8, (busy, queued): (bool, usize)) {
+        use legaia_engine_battle_loop::frame_clock as fc;
+        if self.toggles.battle_cd_timing != fc::CdTiming::PcsxRedux {
+            return;
+        }
+        let Some(cue) = self
+            .audio
+            .battle_xa_cues
+            .get(queued..)
+            .and_then(|c| c.last())
+        else {
+            return;
+        };
+        let parked = !busy && cue.clip == u32::from(char_id.wrapping_sub(1)) * 2;
+        self.audio.battle_xa_poll_wait = Some(if parked {
+            fc::ARTS_SHOUT_PARKED_POLL_HBLANKS
+        } else {
+            fc::ARTS_SHOUT_SEEK_POLL_HBLANKS
+        });
     }
 }

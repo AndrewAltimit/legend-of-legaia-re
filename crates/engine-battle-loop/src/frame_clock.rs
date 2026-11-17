@@ -600,6 +600,36 @@ pub const fn xa_polled_work_cost(work: u16) -> u16 {
 /// `507` against the lone member's `0x3E` frames near `385`.
 pub const XA_STREAM_ONSET_COST: u16 = 122;
 
+/// Hblanks from the opening of an arts shout's pass to the clip's first poll
+/// on PCSX-Redux when the drive already stands on the clip's file. The battle
+/// seek-ahead selector (`FUN_8004DA00`) parks the head on the acting member's
+/// long bank `(char - 1) * 2` (`0x8004DAFC`) for an Attack whenever the drive
+/// is idle, so a shout from that bank (`FUN_8004C140` -> `FUN_8003D53C`) seeks
+/// nowhere: `--cd-trace` recordings of Frost Breath, Dragon Fangs' third line,
+/// Tri-Somersault's third and Rogue Flame issue the `CdlSeekL` `35k..50k`
+/// cycles into the frame and `CdlReadS` `21k` after it, so the polls load the
+/// shout's own pass (Frost Breath's runs `8` vsyncs).
+pub const ARTS_SHOUT_PARKED_POLL_HBLANKS: u32 = 31;
+
+/// Hblanks from the opening of an arts shout's pass to the clip's first poll
+/// on PCSX-Redux when the clip lies in another file than the parked bank:
+/// PCSX-Redux answers the seek in `1827k` cycles whatever its distance (every
+/// such seek of the arts and enemy `--cd-trace` recordings), issued `255k..320k`
+/// cycles into the frame. The shout's own pass runs out unloaded and the
+/// polls open part way into the next (Dragon Fangs' first line: `CdlReadS`
+/// `0.66` vsyncs into the pass after the cue, which runs `7` vsyncs).
+pub const ARTS_SHOUT_SEEK_POLL_HBLANKS: u32 = 983;
+
+/// What a frame of `work` hblanks costs when the clip's polls open `wait`
+/// hblanks into it, `polled` pricing the work they load: the work before the
+/// first poll runs at full speed, the rest under the polls' share.
+pub fn xa_partly_polled_cost(wait: u32, work: u16, polled: impl Fn(u16) -> u16) -> u16 {
+    match u16::try_from(wait) {
+        Ok(w) if w < work => w.saturating_add(polled(work - w)),
+        _ => work,
+    }
+}
+
 /// Hblanks one after-image ghost adds to a frame: the draw tick's walk
 /// `FUN_80049348` re-runs the body's whole object draw `FUN_80048A08` per
 /// ghost. Read off `battle_vell_nighto_49_strike`'s recording, whose two
@@ -948,6 +978,27 @@ impl RetailRandTrack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Frost Breath on a full party: the shout from Noa's parked bank loads
+    /// its own pass (retail `8` vsyncs), where a seek leaves it to its step
+    /// and opens the polls part way into the next (Dragon Fangs' first line:
+    /// its cue pass runs `3`, the next `7`).
+    #[test]
+    fn an_arts_shout_loads_from_where_its_seek_ends() {
+        let polled = xa_polled_work_cost;
+        let parked = xa_partly_polled_cost(ARTS_SHOUT_PARKED_POLL_HBLANKS, 542, polled);
+        assert!(frame_span(parked, 3) >= 6, "parked cue pass {parked}");
+        let seek = xa_partly_polled_cost(ARTS_SHOUT_SEEK_POLL_HBLANKS, 600, polled);
+        assert_eq!(seek, 600, "the seek outlasts the cue pass's work");
+        assert_eq!(frame_span(seek, 3), 3);
+        let next = ARTS_SHOUT_SEEK_POLL_HBLANKS - 3 * HBLANKS_PER_VSYNC;
+        let onset = xa_partly_polled_cost(next, 620, polled);
+        assert!(
+            frame_span(onset, 3) >= 6,
+            "pass after the seek's cue {onset}"
+        );
+        assert_eq!(xa_partly_polled_cost(0, 620, polled), polled(620));
+    }
 
     #[test]
     fn the_step_track_counts_from_the_films_first_pass() {

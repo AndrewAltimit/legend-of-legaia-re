@@ -1046,6 +1046,7 @@ impl World {
         self.audio.battle_xa_frame_load = true;
         self.audio.battle_xa_poll_load = true;
         self.audio.battle_xa_cue_frame = Some(self.battle_frame_id());
+        self.audio.battle_xa_poll_wait = None;
         self.audio.battle_xa_cues.push(cue);
     }
 

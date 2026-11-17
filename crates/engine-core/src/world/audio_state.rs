@@ -118,6 +118,13 @@ pub struct AudioState {
     /// ([`Self::battle_xa_frame_load`]): its sectors reach the frame's cost
     /// only after it ([`legaia_engine_battle_loop::frame_clock::xa_stream_pass_cost`]).
     pub battle_xa_cue_frame: Option<u64>,
+    /// Hblanks from the opening of the next priced pass to the loading clip's
+    /// first poll, for a clip whose seek the port times: an arts shout on
+    /// PCSX-Redux (`frame_clock::ARTS_SHOUT_PARKED_POLL_HBLANKS`,
+    /// `ARTS_SHOUT_SEEK_POLL_HBLANKS`). Each priced pass takes its span off it.
+    /// `None` for every other clip, whose passes keep the cue / onset /
+    /// loaded steps of `frame_clock::xa_stream_pass_cost`.
+    pub battle_xa_poll_wait: Option<u32>,
     /// The battle's runtime SFX descriptor bank - `bse.dat` (PROT 888), the
     /// rows behind ring ids `>= 0x200` while a battle is on screen
     /// (`docs/formats/bse-dat.md`). A fresh copy is installed at every battle
@@ -402,6 +409,7 @@ impl AudioState {
             battle_xa_retail_left: 0,
             battle_xa_poll_load: false,
             battle_xa_cue_frame: None,
+            battle_xa_poll_wait: None,
             battle_sfx_bank: None,
             field_xa_cues: Vec::new(),
             field_xa_prestage: Vec::new(),

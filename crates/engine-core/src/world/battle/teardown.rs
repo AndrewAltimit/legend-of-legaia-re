@@ -467,6 +467,7 @@ impl World {
         self.audio.battle_xa_frame_load = false;
         self.audio.battle_xa_poll_load = false;
         self.audio.battle_xa_cue_frame = None;
+        self.audio.battle_xa_poll_wait = None;
         self.casting.sideband_read_left = None;
         self.presentation.fade = None;
         self.presentation.module_fades.clear();

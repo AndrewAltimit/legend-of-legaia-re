@@ -2139,6 +2139,27 @@ the third of the CPU the polls leave. So the arm tables' whole-screen `4` is, on
 PCSX-Redux's CD timing and not the draw. Grade `disassembly` for the stop watch, `capture` for
 both emulators, `docs` for the console.
 
+<a id="an-arts-shouts-seek"></a>
+
+**An arts shout's seek.** Where the polls open depends on where the head stands. The battle
+seek-ahead selector `FUN_8004DA00` parks the idle drive on the acting member's long bank
+`(char - 1) * 2` for an Attack (`0x8004DAFC`), and re-parks it once each clip's read is done. The
+anim commit's voice sites (`FUN_8004AD80` into `FUN_8004C140`, then `FUN_8003D53C`) start a
+shout from that bank or from another file. PCSX-Redux answers a `CdlSeekL` to the parked sector in
+`21k` cycles and any other seek in `1827k`, whatever its distance: every clip seek of the arts and
+enemy `--cd-trace` recordings reads one or the other. So a parked shout loads its own pass from the
+start (Frost Breath's `CdlSeekL` lands `47k` cycles into the frame, which runs `8` vsyncs), and a
+seeking one leaves its pass to its step and opens the polls part way into the next (Dragon Fangs'
+first line: the cue pass runs `3`, `CdlReadS` lands `0.66` vsyncs into the next pass, which runs
+`7`). The port times the polls from the cue's pass
+(`frame_clock::ARTS_SHOUT_PARKED_POLL_HBLANKS`, `ARTS_SHOUT_SEEK_POLL_HBLANKS`,
+`World::time_arts_voice_seek`), the work before the first poll at full speed and the rest under the
+polls. With the cue-pass-free onset the other clips keep, the shout's first `0x1F` passes ran step
+`3` where retail's run `4`, every cursor cut of the per-art attack camera came a pass late, and the
+arts films' sustained camera error read `8.4` px; timed from the seek it reads `2.2`, Frost Breath
+`15.3` to `1.1` and Tornado Flame `15.6` to `0.9`. Grade `capture` for the seek times and the
+films, `disassembly` for the parked bank.
+
 **Port.** `WorldToggles::battle_cd_timing` (`CdTiming`) picks the machine. `PcsxRedux`, the
 default, keeps the recordings' tables, the clamp `1063` and the overrun. On `Console`, an opt-in
 (`LEGAIA_BATTLE_CD_TIMING=console` on a native session, `cast-sequence.py --console-cd`), the
