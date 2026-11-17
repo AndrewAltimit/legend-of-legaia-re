@@ -274,6 +274,19 @@ impl World {
             if rate != 0 && live {
                 c.rate = rate;
             }
+            // The advance reads the control word off the channel's context
+            // each tick (`World::tick_npc_clips_scaled`), so a seat that set
+            // only the cursor's copy lost its hold bit on the next tick: a
+            // clip retail holds at its end (`+0x62 & 2`) clamped back a frame
+            // (`chapter2_garmel_pre_songi` clip `23`, `239` to `224`).
+            if let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && usize::from(c.ctx.script_id) == record)
+            {
+                ch.ctx.local_flags = flags;
+            }
         }
     }
 

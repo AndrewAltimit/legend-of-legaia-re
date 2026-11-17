@@ -558,7 +558,10 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
-            object_clips_ram: if matches!(class, StateClass::Field) {
+            // A kingdom map's placements tick through the same driver
+            // (`FUN_8003BC08`), so their clips seat the same way (`map01`'s
+            // parked flats `15..=17` hold cursor `132` in the state).
+            object_clips_ram: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_clips_ram(ram)
             } else {
                 Vec::new()
