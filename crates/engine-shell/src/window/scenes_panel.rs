@@ -129,7 +129,9 @@ const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Arrows pick, page  Enter go  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
 const PAD_CONTROLS: &str = "D-pad pick, page  {cross} go  {circle} close";
-const FLIP_HINT: &str = "L1/R1 or Tab: tools";
+/// The page `Tab` (or `R1`) flips to, named in the heading's flip hint
+/// (`PlayWindowApp::flip_hint`).
+const FLIP_TO: &str = "tools";
 
 impl PlayWindowApp {
     /// Why a jump cannot be made now, if it cannot.
@@ -241,12 +243,8 @@ impl PlayWindowApp {
             (left, Y0 + 1),
             heading,
         );
-        put(
-            &mut out,
-            FLIP_HINT,
-            (right - width(FLIP_HINT), Y0 + 1),
-            text,
-        );
+        let flip = self.flip_hint(FLIP_TO);
+        put(&mut out, &flip, (right - width(&flip), Y0 + 1), text);
         let mut y = Y0 + super::settings_panel::HEAD_H;
         for (i, row) in rows.iter().enumerate().skip(page.scroll).take(SHOWN) {
             let focused = i == page.cursor;

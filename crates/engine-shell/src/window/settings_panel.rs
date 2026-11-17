@@ -297,7 +297,9 @@ pub(super) fn pad_controls(template: &str, cross: &str, circle: &str) -> String 
 pub(super) use crate::launcher::device_words;
 /// The gap between a row's label and the window key lettered after it.
 const KEY_GAP: i32 = 6;
-const FLIP_HINT: &str = "L1/R1 or Tab: cheats";
+/// The page `Tab` (or `R1`) flips to, named in the heading's flip hint
+/// ([`PlayWindowApp::flip_hint`]).
+const FLIP_TO: &str = "cheats";
 
 /// The scrim under every page of the `F12` panel. Near-opaque: the panel
 /// is read while the game holds still, and over the party readout's bright
@@ -368,6 +370,24 @@ impl PlayWindowApp {
                     &label("Cross"),
                     &label("Circle"),
                 )
+            }
+        }
+    }
+
+    /// A page heading's flip hint: the key or button that turns to the
+    /// `next` page, in the words of the device used last, so a heading never
+    /// mixes a keyboard key with a controller button. `Tab` on the keyboard;
+    /// on a controller the button the game's `R1` is on (`L1` flips forward
+    /// too, and naming the one keeps the hint short).
+    pub(super) fn flip_hint(&self, next: &str) -> String {
+        match self.last_pad {
+            None => format!("Tab: {next}"),
+            Some(style) => {
+                let r1 = self
+                    .mapping
+                    .prompt_label("R1", Some(style))
+                    .unwrap_or_else(|| "R1".to_string());
+                format!("{r1}: {next}")
             }
         }
     }
@@ -882,12 +902,8 @@ impl PlayWindowApp {
         let left = X0 + 6;
         let right = X0 + WIDTH - 6;
         put(&mut out, &self.settings_heading(), (left, Y0 + 1), heading);
-        put(
-            &mut out,
-            FLIP_HINT,
-            (right - width(FLIP_HINT), Y0 + 1),
-            text,
-        );
+        let flip = self.flip_hint(FLIP_TO);
+        put(&mut out, &flip, (right - width(&flip), Y0 + 1), text);
         let switches = self.live_switches();
         let retail = switches.switches.retail;
         let mut y = Y0 + HEAD_H;
@@ -1236,15 +1252,18 @@ mod tests {
                 }
             }
             assert!(width(&startup_hint_line("Z", "S")) <= 310);
-            // The longest heading leaves room for the flip hint beside it.
+            // The longest heading leaves room for the flip hint beside it,
+            // on the keyboard and under the widest controller label.
             for row in SETTINGS_ROWS {
                 let h = format!("Settings: {}", group_of(row));
-                assert!(
-                    width(&h) + 8 + width(FLIP_HINT) <= WIDTH - 12,
-                    "{h}: {} + {}",
-                    width(&h),
-                    width(FLIP_HINT)
-                );
+                for hint in [format!("Tab: {FLIP_TO}"), format!("{a}: {FLIP_TO}")] {
+                    assert!(
+                        width(&h) + 8 + width(&hint) <= WIDTH - 12,
+                        "{h}: {} + {}",
+                        width(&h),
+                        width(&hint)
+                    );
+                }
             }
         }
     }

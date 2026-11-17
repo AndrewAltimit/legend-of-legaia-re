@@ -519,7 +519,7 @@ enhancement has a retail-faithful off position
 | `I` | Enhanced lighting: a time-of-day mood, real lights at lamps and glowing props; off is the game's own baked shading | on, remembered | `--no-dynamic-lighting` |
 | `F8` | Lighting time of day: auto, day, dusk, night | auto, remembered | - |
 | `Y` | Shadows cast by the enhanced point lights | on, remembered | `--no-dyn-shadows` |
-| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
+| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither; story scenes that move the camera show them whole | on, remembered | `--no-occlusion-fade` |
 | `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
 | `Home` | Ambient occlusion: soft contact shadows where walls meet floors and at characters' feet | on, remembered | `--no-ssao` |
@@ -569,7 +569,9 @@ nothing else, so the next Play starts the way this game ended, as the play
 page remembers its boxes. While *Original game only* is on, the rows it holds
 read *Original* and do not change, as on the launcher. `L1` / `R1` (`Tab`)
 flip to the **Cheats** page ([below](#cheats)), then to the **Scenes** page,
-then to the **Tools** page, then to the **Keys** page. **Scenes** is the play page's scene list: every
+then to the **Tools** page, then to the **Keys** page; each page names its
+flip key at its heading's right in the words of the device used last (*Tab:
+cheats*, or the pad's own `R1` label). **Scenes** is the play page's scene list: every
 town, field area and overworld, grouped as on the page, opened on the scene you
 stand in (*(here)*). Up / Down pick one, Left / Right move a page, Cross or
 `Enter` goes there with your party and bag, seated and staged as a

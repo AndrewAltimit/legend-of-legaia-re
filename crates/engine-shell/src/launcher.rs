@@ -1659,8 +1659,8 @@ impl OptionRow {
             }
             Self::LampShadows => "Shadows cast by the enhanced lamp lights. In game: Y.",
             Self::SeeThroughWalls => {
-                "Walls between the camera and your character fade, so you never lose \
-                 sight of them. In game: F4."
+                "Walls between the camera and you fade, except in cutscenes. In \
+                 game: F4."
             }
             Self::GroundFog => "A low drifting mist in misty and night scenes. In game: F9.",
             Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",

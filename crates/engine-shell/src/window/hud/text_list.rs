@@ -263,9 +263,9 @@ impl PlayWindowApp {
         };
         put("Keys", (l.x0, l.y0), ink.heading);
         if self.netplay.is_none() && self.netplay_menu.is_none() {
-            let back = "L1/R1 or Tab: settings";
-            let w = self.font.layout_ascii(back).advance_x as i32;
-            put(back, (l.x0 + l.width - w, l.y0), ink.text);
+            let back = self.flip_hint("settings");
+            let w = self.font.layout_ascii(&back).advance_x as i32;
+            put(&back, (l.x0 + l.width - w, l.y0), ink.text);
         }
         let mut y = l.y0 + l.line_h + 2;
         put("Esc", (l.x0, y), ink.key);

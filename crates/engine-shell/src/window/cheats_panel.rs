@@ -133,7 +133,9 @@ const NOTE_LINES: usize = 2;
 const CONTROLS: &str = "Arrows pick, choose  Enter apply  Esc close";
 /// [`CONTROLS`] on a controller (`settings_panel::pad_controls`).
 const PAD_CONTROLS: &str = "D-pad pick, choose  {cross} apply  {circle} close";
-const FLIP_HINT: &str = "L1/R1 or Tab: scenes";
+/// The page `Tab` (or `R1`) flips to, named in the heading's flip hint
+/// (`PlayWindowApp::flip_hint`).
+const FLIP_TO: &str = "scenes";
 
 impl PlayWindowApp {
     /// Left / Right on the Cheats page: pick a value; a switch flips.
@@ -201,12 +203,8 @@ impl PlayWindowApp {
         let left = X0 + 6;
         let right = X0 + WIDTH - 6;
         put(&mut out, "Cheats", (left, Y0 + 1), heading);
-        put(
-            &mut out,
-            FLIP_HINT,
-            (right - width(FLIP_HINT), Y0 + 1),
-            text,
-        );
+        let flip = self.flip_hint(FLIP_TO);
+        put(&mut out, &flip, (right - width(&flip), Y0 + 1), text);
         let mut y = Y0 + super::settings_panel::HEAD_H;
         for (i, (key, label)) in PLAYER_CHEAT_LIST.iter().enumerate() {
             let focused = i == self.cheats_page.cursor;
